@@ -65,6 +65,24 @@ public record BuildingPlanVerdict(boolean available, boolean accepted, String co
                 mapOf(details.get("metrics")));
     }
 
+    /**
+     * Même projection, avec le message du résultat de l'action en secours (issue #282).
+     *
+     * <p>Avant #282, le plugin ne mettait pas le message dans {@code details} : le motif d'un
+     * refus n'existait que dans le message de l'action, et le champ « Ce qu'il faut changer »
+     * restait vide — l'administrateur recopiait lui-même l'erreur du serveur pour l'IA.</p>
+     */
+    public static BuildingPlanVerdict from(Map<String, Object> details, String fallbackMessage) {
+        BuildingPlanVerdict v = from(details);
+        if (!v.available() || !v.message().isBlank() || fallbackMessage == null
+                || fallbackMessage.isBlank()) {
+            return v;
+        }
+        return new BuildingPlanVerdict(v.available(), v.accepted(), v.code(), fallbackMessage,
+                v.buildingId(), v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(), v.codes(),
+                v.warnings(), v.exists(), v.metrics());
+    }
+
     /** Le verdict, en une phrase, pour l'en-tête d'une carte. */
     public String label() {
         if (!available) {

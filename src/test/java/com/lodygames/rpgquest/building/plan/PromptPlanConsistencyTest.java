@@ -67,6 +67,9 @@ class PromptPlanConsistencyTest {
         assertTrue(report.blocking().isEmpty(),
                 "l'exemple que le prompt montre comme valide doit l'être pour l'audit : "
                         + report.blocking());
+        // #282 : l'exemple montre DEUX étages réellement reliés — c'est ce que le modèle imitera.
+        assertTrue(report.metrics().floors() == 2 && report.metrics().reachableFloors() == 2,
+                "deux étages atteignables attendus : " + report.metrics());
     }
 
     // ---- Les exemples minimaux --------------------------------------------------------------
@@ -89,7 +92,7 @@ class PromptPlanConsistencyTest {
     @Test
     void everyArchitecturalInstructionHasAMinimalExample() {
         String fragments = section("UN EXEMPLE MINIMAL PAR INSTRUCTION D'ARCHITECTURE", "L'ORDRE COMPTE");
-        for (String op : List.of("door", "window", "light", "stair_run", "ladder", "pillars")) {
+        for (String op : List.of("door", "window", "light", "staircase", "ladder", "pillars")) {
             assertTrue(fragments.contains("- op: " + op), "exemple manquant pour « " + op + " »");
         }
     }

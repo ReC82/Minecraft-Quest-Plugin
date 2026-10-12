@@ -1,0 +1,493 @@
+package com.lodygames.rpgquest.panel.ai;
+
+import com.lodygames.rpgquest.panel.agent.AgentActionRow;
+import com.lodygames.rpgquest.panel.agent.AgentStore;
+import com.lodygames.rpgquest.panel.audit.AuditLog;
+import com.lodygames.rpgquest.panel.building.BuildingDesignRunStore;
+import com.lodygames.rpgquest.panel.building.BuildingDesignRunStore.Pass;
+import com.lodygames.rpgquest.panel.building.BuildingDesignRunStore.Run;
+import com.lodygames.rpgquest.panel.building.BuildingPlanDraft;
+import com.lodygames.rpgquest.panel.building.BuildingPlanDraftStore;
+import com.lodygames.rpgquest.panel.building.BuildingPlanVerdict;
+import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench;
+import com.lodygames.rpgquest.panel.building.BuildingProject;
+import com.lodygames.rpgquest.panel.building.BuildingProjectStore;
+import com.lodygames.rpgquest.panel.building.PlanVerdictText;
+import com.lodygames.rpgquest.panel.building.WorkshopAutopilot;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.BiFunction;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * La <strong>conception automatique</strong> d'un bâtiment (issue #282) : plusieurs passes d'IA et
+ * de moteur enchaînées, sous une enveloppe consentie, jusqu'à un plan conforme — puis embelli.
+ *
+ * <h2>Pourquoi</h2>
+ *
+ * <p>Le propriétaire : « Je préfère payer plusieurs appels pour obtenir une bibliothèque réussie
+ * plutôt que multiplier les essais médiocres qui nécessitent mon intervention. » Le 12/10/2026,
+ * chaque refus revenait à l'administrateur, qui recopiait l'erreur pour l'IA, payait, revérifiait —
+ * trois fois pour la Bibliothèque du Hub, sans succès.</p>
+ *
+ * <h2>Les passes</h2>
+ *
+ * <ol>
+ *   <li><strong>Conception</strong> (IA) si le projet n'a pas encore de plan ;</li>
+ *   <li><strong>Vérification</strong> (serveur, gratuite) : audit et aperçu sur la vraie grille ;</li>
+ *   <li><strong>Réparation</strong> (moteur, gratuite) : si le serveur sait corriger sans risque,
+ *       il le fait — {@link WorkshopAutopilot} crée la version réparée, revérifiée ;</li>
+ *   <li><strong>Correction</strong> (IA) avec le diagnostic exact du serveur, coordonnées et
+ *       instruction fautive comprises ;</li>
+ *   <li><strong>Critique architecturale</strong> (IA), une fois le plan conforme : beauté,
+ *       façades, aménagement, fidélité au brief. Son plan est vérifié ; s'il régresse, la version
+ *       conforme précédente reste le résultat.</li>
+ * </ol>
+ *
+ * <h2>Les garde-fous — contre les boucles, pas contre la qualité</h2>
+ *
+ * <ul>
+ *   <li><strong>une enveloppe consentie</strong>, bornée à {@value #MAX_CALLS_CEILING} appels :
+ *       chaque appel émis est compté, même s'il échoue ;</li>
+ *   <li><strong>aucune répétition mécanique</strong> : un plan déjà vu arrête la correction ; deux
+ *       refus identiques de suite déclenchent une conception NEUVE qui reçoit les écueils déjà
+ *       rencontrés, au lieu d'une troisième variante du même défaut ;</li>
+ *   <li><strong>le serveur doit répondre</strong> : sans verdict dans le délai, on s'arrête plutôt
+ *       que de payer à l'aveugle ;</li>
+ *   <li><strong>tout est conservé</strong> : chaque passe est une version, chaque dépense est
+ *       écrite au fil de l'eau ; un redémarrage du panel interrompt la session sans la relancer.</li>
+ * </ul>
+ */
+public final class BuildingDesignPipeline {
+
+    /** Borne dure d'une session : au-delà, c'est une dépense que personne ne surveille. */
+    public static final int MAX_CALLS_CEILING = 12;
+
+    private static final System.Logger LOG = System.getLogger(BuildingDesignPipeline.class.getName());
+    private static final Pattern USAGE = Pattern.compile("(\\d+) entrée / (\\d+) sortie");
+
+    /** Le niveau d'exigence choisi par l'administrateur, et l'enveloppe qui va avec. */
+    public enum Quality {
+        STANDARD("Standard", 4, 0, "un plan conforme, corrigé autant que nécessaire"),
+        SOIGNE("Soigné", 8, 1, "un plan conforme, puis une passe de critique architecturale"),
+        EXIGEANT("Exigeant", 12, 2, "deux passes de critique, pour les bâtiments vitrines");
+
+        private final String label;
+        private final int calls;
+        private final int critiques;
+        private final String description;
+
+        Quality(String label, int calls, int critiques, String description) {
+            this.label = label;
+            this.calls = calls;
+            this.critiques = critiques;
+            this.description = description;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        /** Le plafond d'appels par défaut de ce niveau. */
+        public int calls() {
+            return calls;
+        }
+
+        public int critiques() {
+            return critiques;
+        }
+
+        public String description() {
+            return description;
+        }
+
+        public static Quality of(String raw) {
+            for (Quality q : values()) {
+                if (q.name().equalsIgnoreCase(raw == null ? "" : raw.trim())) {
+                    return q;
+                }
+            }
+            return SOIGNE;
+        }
+    }
+
+    private final AiBuildingStudio studio;
+    private final BuildingDesignRunStore runs;
+    private final BuildingProjectStore projects;
+    private final BuildingPlanDraftStore drafts;
+    private final BuildingPlanWorkbench workbench;
+    private final AgentStore agents;
+    private final WorkshopAutopilot autopilot;
+    private final AuditLog audit;
+    private final Duration verdictTimeout;
+    private final ExecutorService executor;
+
+    public BuildingDesignPipeline(AiBuildingStudio studio, BuildingDesignRunStore runs,
+                                  BuildingProjectStore projects, BuildingPlanDraftStore drafts,
+                                  BuildingPlanWorkbench workbench, AgentStore agents,
+                                  WorkshopAutopilot autopilot, AuditLog audit,
+                                  Duration verdictTimeout) {
+        this.studio = studio;
+        this.runs = runs;
+        this.projects = projects;
+        this.drafts = drafts;
+        this.workbench = workbench;
+        this.agents = agents;
+        this.autopilot = autopilot;
+        this.audit = audit;
+        this.verdictTimeout = verdictTimeout;
+        this.executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "atelier-conception");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /** Lance la session en arrière-plan. La réservation (jeton, enveloppe) est déjà faite. */
+    public void launch(Run run) {
+        executor.submit(() -> execute(run.id()));
+    }
+
+    public void shutdown() {
+        executor.shutdownNow();
+    }
+
+    /** Déroule une session, du début à la fin. Ne lève jamais. Public pour les tests. */
+    public void execute(String runId) {
+        try {
+            Run run = runs.find(runId).orElseThrow();
+            Optional<BuildingProject> project = projects.find(run.projectId());
+            if (project.isEmpty()) {
+                runs.finish(runId, BuildingDesignRunStore.Status.STOPPED, "Projet introuvable.", "");
+                return;
+            }
+            new Session(run, project.get()).go();
+        } catch (RuntimeException failure) {
+            LOG.log(System.Logger.Level.WARNING, "event=design_run_failed run=" + runId + " error="
+                    + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            runs.finish(runId, BuildingDesignRunStore.Status.STOPPED, "Arrêt sur une erreur interne : "
+                    + failure.getClass().getSimpleName() + ". Les versions déjà produites sont conservées.",
+                    "");
+        }
+    }
+
+    /** Le verdict du serveur sur une version, et la réparation éventuelle du moteur. */
+    private record Judgement(boolean reached, BuildingPlanVerdict verdict, String diagnosis,
+                             BuildingPlanDraft repaired) {
+    }
+
+    /** Une session en cours : l'état de la boucle. */
+    private final class Session {
+        private final Run run;
+        private final BuildingProject project;
+        private final BuildingPromptBuilder.Demand demand;
+        private final Quality quality;
+        private final Set<String> seenPlans = new HashSet<>();
+        private final List<String> pitfalls = new ArrayList<>();
+        private int spent;
+        private int critiques;
+        private BuildingPlanDraft best;
+
+        Session(Run run, BuildingProject project) {
+            this.run = run;
+            this.project = project;
+            this.quality = Quality.of(run.quality());
+            this.demand = new BuildingPromptBuilder.Demand(project.id(), project.name(), project.front(),
+                    project.brief(), project.maxWidth(), project.maxHeight(), project.buildingId());
+            this.spent = run.spentCalls();
+        }
+
+        void go() {
+            BuildingPlanDraft current = drafts.forProject(run.agentId(), project.id()).stream()
+                    .filter(BuildingPlanDraft::hasPlan).findFirst().orElse(null);
+            String lastCodes = null;
+            int sameRefusals = 0;
+            while (true) {
+                if (current == null) {
+                    if (!canSpend()) {
+                        stop("Enveloppe épuisée avant le premier plan.");
+                        return;
+                    }
+                    current = paid("CONCEPTION", (provider, d) -> studio.propose(provider, d),
+                            BuildingPlanDraft.Origin.AI_PROPOSAL, "");
+                    if (current == null) {
+                        return;
+                    }
+                }
+                Judgement j = judge(current);
+                if (!j.reached()) {
+                    stop("Le serveur n'a pas rendu de verdict dans le délai : la session s'arrête plutôt "
+                            + "que de payer à l'aveugle. Vérifiez que l'agent du serveur est en ligne.");
+                    return;
+                }
+                if (j.repaired() != null) {
+                    current = j.repaired();
+                    j = judge(current);
+                    if (!j.reached()) {
+                        stop("Le serveur n'a pas jugé la version réparée dans le délai.");
+                        return;
+                    }
+                }
+                if (j.verdict().accepted()) {
+                    best = current;
+                    if (critiques < quality.critiques() && canSpend()) {
+                        critiques++;
+                        BuildingPlanDraft accepted = current;
+                        String measured = metrics(j.verdict());
+                        String remarks = String.join("\n", j.verdict().warnings());
+                        BuildingPlanDraft improved = paid("CRITIQUE", (provider, d) -> studio.critique(
+                                provider, d, accepted.plan(), measured, remarks),
+                                BuildingPlanDraft.Origin.AI_CORRECTION, accepted.id());
+                        if (improved == null) {
+                            succeed();
+                            return;
+                        }
+                        current = improved;
+                        continue;
+                    }
+                    succeed();
+                    return;
+                }
+                // ---- Refusé ----------------------------------------------------------------------
+                pitfalls.add(PlanVerdictText.headline(j.verdict(), false) + " — "
+                        + String.join(", ", j.verdict().codes()));
+                if (best != null && current.parentId().equals(best.id())) {
+                    // Une critique a cassé un plan conforme : on garde le conforme, et on corrige la
+                    // critique tant que l'enveloppe le permet.
+                    record(new Pass("NOTE", current.id(), current.version(), "", 0, 0,
+                            "L'amélioration a été refusée ; la version conforme précédente reste le "
+                                    + "résultat si la correction échoue."));
+                }
+                if (!canSpend()) {
+                    stop(best != null ? null : "Enveloppe épuisée : le dernier plan est encore refusé ("
+                            + String.join(", ", j.verdict().codes()) + ").");
+                    return;
+                }
+                String codes = String.join(",", j.verdict().codes());
+                sameRefusals = codes.equals(lastCodes) ? sameRefusals + 1 : 0;
+                lastCodes = codes;
+                BuildingPlanDraft refused = current;
+                if (sameRefusals >= 1 && best == null) {
+                    // Deux refus identiques de suite : corriger encore produirait une variante du même
+                    // défaut. On repart du brief, avec les écueils déjà rencontrés.
+                    sameRefusals = 0;
+                    lastCodes = null;
+                    BuildingPromptBuilder.Demand fresh = withPitfalls();
+                    current = paid("CONCEPTION NEUVE", (provider, d) -> studio.propose(provider, fresh),
+                            BuildingPlanDraft.Origin.AI_PROPOSAL, "");
+                } else {
+                    String motive = j.diagnosis();
+                    String measured = metrics(j.verdict());
+                    current = paid("CORRECTION", (provider, d) -> studio.correct(provider, d,
+                            refused.plan(), motive, measured),
+                            BuildingPlanDraft.Origin.AI_CORRECTION, refused.id());
+                }
+                if (current == null) {
+                    return;
+                }
+            }
+        }
+
+        private boolean canSpend() {
+            return spent < Math.min(MAX_CALLS_CEILING, run.maxCalls());
+        }
+
+        /**
+         * Un appel payant : compté avant tout examen, conservé comme version même s'il ne contient
+         * aucun plan, puis vérifié. {@code null} si la session doit s'arrêter.
+         */
+        private BuildingPlanDraft paid(String kind,
+                                       BiFunction<String, BuildingPromptBuilder.Demand,
+                                               AiBuildingStudio.Proposal> call,
+                                       BuildingPlanDraft.Origin origin, String parentId) {
+            AiBuildingStudio.Proposal p = call.apply(run.providerId(), demand);
+            spent++;
+            int[] tokens = tokens(p.usage());
+            audit.record(run.createdBy(), "building.plan.generate", "project=" + project.id()
+                            + " run=" + run.id() + " pass=" + kind + " provider=" + p.providerId()
+                            + " model=" + p.model() + " usage=" + p.usage(),
+                    p.callOk() ? "OK" : "FAILED", p.callOk() ? (p.hasPlan() ? "plan proposé"
+                            : "aucun plan exploitable") : p.error(), rid());
+            if (!p.callOk()) {
+                runs.addPass(run.id(), new Pass(kind, "", 0, "", 0, 0, "Appel échoué : " + p.error()), true);
+                stop("L'appel au fournisseur d'IA a échoué : " + p.error());
+                return null;
+            }
+            BuildingPlanDraft created = drafts.create(new BuildingPlanDraftStore.NewDraft(run.agentId(), "",
+                    p.hasPlan() ? p.plan() : "", origin, parentId, "", p.providerId(), p.providerLabel(),
+                    p.model(), p.usage(), p.rawResponse(), p.extractionNote(), demand.maxWidth(),
+                    demand.maxHeight(), run.createdBy(), project.id()));
+            projects.touch(project.id(), run.createdBy());
+            runs.addPass(run.id(), new Pass(kind, created.id(), created.version(), nz(p.model()), tokens[0],
+                    tokens[1], p.hasPlan() ? "Nouvelle version proposée." : "Réponse sans plan exploitable."),
+                    true);
+            if (!p.hasPlan()) {
+                stop("Le modèle a répondu sans plan exploitable ; sa réponse est conservée.");
+                return null;
+            }
+            if (!seenPlans.add(BuildingPlanDraftStore.sha256(p.plan().trim()))) {
+                stop("Le modèle a renvoyé un plan déjà essayé : la correction ne progresse plus.");
+                return null;
+            }
+            return created;
+        }
+
+        /** Vérifie une version (si ce n'est déjà fait) et attend le verdict du serveur. */
+        private Judgement judge(BuildingPlanDraft draft) {
+            seenPlans.add(BuildingPlanDraftStore.sha256(draft.plan().trim()));
+            var state = workbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
+            if (!state.current()) {
+                Optional<String> refused = autopilot.verify(draft, run.createdBy());
+                if (refused.isPresent()) {
+                    return new Judgement(false, BuildingPlanVerdict.none(), "", null);
+                }
+                state = workbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
+            }
+            Instant deadline = Instant.now().plus(verdictTimeout);
+            while (state.status() != BuildingPlanWorkbench.Status.DONE && Instant.now().isBefore(deadline)) {
+                sleep(500);
+                state = workbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
+            }
+            if (state.status() != BuildingPlanWorkbench.Status.DONE) {
+                record(new Pass("VÉRIFICATION", draft.id(), draft.version(), "", 0, 0,
+                        "Pas de réponse du serveur."));
+                return new Judgement(false, BuildingPlanVerdict.none(), "", null);
+            }
+            BuildingPlanVerdict verdict = BuildingPlanVerdict.from(state.details(),
+                    state.row().map(AgentActionRow::resultMessage).orElse(""));
+            String diagnosis = com.lodygames.rpgquest.panel.building.PlanDiagnosis.of(project, state);
+            record(new Pass("VÉRIFICATION", draft.id(), draft.version(), "", 0, 0,
+                    verdict.accepted() ? "Conforme." : PlanVerdictText.headline(verdict, false)
+                            + " (" + String.join(", ", verdict.codes()) + ")"));
+            BuildingPlanDraft repaired = null;
+            if (!verdict.accepted() && draft.origin() != BuildingPlanDraft.Origin.ENGINE_REPAIR
+                    && WorkshopAutopilot.EngineRepair.from(state.details()).isPresent()) {
+                String auditId = state.row().map(AgentActionRow::id).orElse("");
+                repaired = drafts.repairedFrom(auditId).or(() -> autopilot.repairFrom(auditId))
+                        .or(() -> drafts.repairedFrom(auditId)).orElse(null);
+                if (repaired != null) {
+                    record(new Pass("MOTEUR", repaired.id(), repaired.version(), "", 0, 0,
+                            "Réparé par le moteur, sans appel à l'IA."));
+                }
+            }
+            return new Judgement(true, verdict, diagnosis, repaired);
+        }
+
+        private BuildingPromptBuilder.Demand withPitfalls() {
+            String brief = demand.brief() + "\n\nÉCUEILS DES ESSAIS PRÉCÉDENTS — conçois autrement pour "
+                    + "les éviter :\n- " + String.join("\n- ", pitfalls);
+            return new BuildingPromptBuilder.Demand(demand.siteId(), demand.siteName(), demand.facing(),
+                    brief, demand.maxWidth(), demand.maxHeight(), demand.buildingId());
+        }
+
+        private void record(Pass pass) {
+            runs.addPass(run.id(), pass, false);
+        }
+
+        private void succeed() {
+            runs.finish(run.id(), BuildingDesignRunStore.Status.SUCCEEDED,
+                    "Plan conforme en " + spent + " appel(s) à l'IA" + (critiques > 0
+                            ? ", dont " + critiques + " passe(s) de critique architecturale." : "."),
+                    best.id());
+        }
+
+        /** Arrêt : avec un plan conforme déjà obtenu, c'est un succès partiel qu'on dit comme tel. */
+        private void stop(String why) {
+            if (best != null) {
+                runs.finish(run.id(), BuildingDesignRunStore.Status.SUCCEEDED, "Plan conforme obtenu ; "
+                        + (why == null ? "l'enveloppe ne permettait pas d'autre passe." : why
+                                + " La dernière version conforme est le résultat."), best.id());
+                return;
+            }
+            runs.finish(run.id(), BuildingDesignRunStore.Status.STOPPED, why, "");
+        }
+    }
+
+    /** Les mesures du serveur, en lignes pour le modèle. */
+    private static String metrics(BuildingPlanVerdict verdict) {
+        return BuildingCorrectionLoop.formatMetrics(verdict.metrics());
+    }
+
+    /** Jetons d'entrée et de sortie, lus dans le résumé du fournisseur ; 0 s'ils sont inconnus. */
+    static int[] tokens(String usage) {
+        Matcher m = USAGE.matcher(usage == null ? "" : usage);
+        return m.find() ? new int[] {Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))}
+                : new int[] {0, 0};
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("conception interrompue");
+        }
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
+    }
+
+    private static String rid() {
+        return UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    // ---- L'enveloppe annoncée ------------------------------------------------------------------
+
+    /**
+     * Le coût estimé d'une session, annoncé AVANT le consentement.
+     *
+     * <p>Les tarifs sont ceux publiés par les fournisseurs pour les modèles connus, en dollars par
+     * million de jetons ; un modèle inconnu n'a pas de prix inventé — l'écran dit alors « tarif
+     * inconnu » et ne montre que les jetons. Les jetons par appel viennent des appels réels du
+     * projet quand il y en a, sinon d'une hypothèse prudente.</p>
+     */
+    public record Envelope(int calls, int tokensIn, int tokensOut, double dollars, boolean priced,
+                           String model) {
+
+        public String label() {
+            String tokens = String.format(Locale.FRANCE, "%,d jetons d'entrée et %,d de sortie au plus",
+                    tokensIn, tokensOut);
+            return calls + " appel(s) à l'IA au plus — " + tokens + (priced
+                    ? String.format(Locale.FRANCE, ", soit environ %.2f $ au tarif public de %s", dollars, model)
+                    : " (tarif de « " + model + " » inconnu du panel : seuls les jetons sont annoncés)");
+        }
+    }
+
+    /** Tarifs publics connus ($ / million de jetons : entrée, sortie). */
+    private static final Map<String, double[]> PRICES = Map.of(
+            "gpt-4o-mini", new double[] {0.15, 0.60},
+            "gpt-4o", new double[] {2.50, 10.00},
+            "gpt-4.1-mini", new double[] {0.40, 1.60},
+            "gpt-4.1", new double[] {2.00, 8.00});
+
+    public static Envelope envelope(int calls, String model, int observedIn, int observedOut) {
+        // Une passe de correction relit le plan précédent et le diagnostic : on prévoit large.
+        int perIn = Math.max(observedIn > 0 ? observedIn * 2 : 0, 9_000);
+        int perOut = Math.max(observedOut > 0 ? observedOut * 2 : 0, 4_000);
+        String m = model == null || model.isBlank() ? "gpt-4o" : model.trim().toLowerCase(Locale.ROOT);
+        double[] price = null;
+        String bestKey = "";
+        for (var e : PRICES.entrySet()) {
+            if (m.startsWith(e.getKey()) && e.getKey().length() > bestKey.length()) {
+                bestKey = e.getKey();
+                price = e.getValue();
+            }
+        }
+        int in = calls * perIn;
+        int out = calls * perOut;
+        double dollars = price == null ? 0 : (in * price[0] + out * price[1]) / 1_000_000.0;
+        return new Envelope(calls, in, out, dollars, price != null, m);
+    }
+}

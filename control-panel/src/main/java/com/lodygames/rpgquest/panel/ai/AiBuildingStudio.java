@@ -79,6 +79,12 @@ public final class AiBuildingStudio {
                 BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics));
     }
 
+    /** La passe de critique architecturale d'un plan déjà conforme (issue #282). */
+    public Proposal critique(String providerId, BuildingPromptBuilder.Demand demand, String plan,
+                             String metrics, String warnings) {
+        return run(providerId, BuildingPromptBuilder.critiquePrompt(demand, plan, metrics, warnings));
+    }
+
     private Proposal run(String providerId, String userPrompt) {
         AiProvider provider = registry.byId(providerId).orElse(null);
         if (provider == null) {

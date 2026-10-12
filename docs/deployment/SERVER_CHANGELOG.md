@@ -7747,6 +7747,47 @@ d'écriture.
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
 
+## 2026-10-12 (soir) — Étages reliés, réparation déterministe, conception automatique (#282) — NON DÉPLOYÉ
+
+### Changement
+
+Plugin : primitive `op: staircase`, niveaux détectés sur les planchers structurels, refus
+`LEVEL_CLUTTERED`, diagnostic `LEVEL_UNREACHABLE` en coordonnées, réparation déterministe
+(`PlanRepair`) renvoyée dans `building.plan.audit` / `building.plan.preview` (bloc `repair`,
+`details.message` complet, paramètres optionnels `max_width` / `max_height`).
+Panel : vérification automatique des nouveaux plans, version « Réparé par le moteur » sans clic,
+« Améliorer avec l'IA » sans commentaire obligatoire, carte « Conception automatique ».
+
+### Action serveur
+
+**Deux déploiements** (voir la mémoire « Panel and plugin are two deploys ») :
+- remplacer le JAR RPGQuest (aucune migration `data.db`, aucun fichier de configuration) ;
+- redéployer le panel PlugAdmin (`scripts/plugadmin/deploy.sh`) : la table `building_design_run`
+  est créée au démarrage (`CREATE TABLE IF NOT EXISTS`), rien d'autre ne change dans
+  `control-panel.db`.
+
+Ordre recommandé : JAR d'abord. Un panel neuf face à un ancien plugin fonctionne (pas de bloc
+`repair`, donc pas de réparation automatique) ; un plugin neuf face à un ancien panel aussi
+(paramètres `max_*` absents = pas d'agrandissement).
+
+### Sauvegarde préalable
+
+JAR actuel, `data.db`, et `control-panel.db` (copie datée, sans écraser la précédente).
+
+### Déploiement
+
+**Pas encore autorisé** — en attente du feu vert du propriétaire.
+
+### Validation
+
+TC-290 (gratuit) puis TC-291 (appels OpenAI facturés, enveloppe à accepter).
+
+### Rollback
+
+Remettre le JAR et le panel sauvegardés. La table `building_design_run` peut rester : l'ancien panel
+l'ignore. Les versions « Réparé par le moteur » restent lisibles (origine inconnue = affichée comme
+proposition IA par l'ancien panel).
+
 ## 2026-10-12 (nuit) — Générateur IA V2 : audit architectural et primitives sémantiques (#94, lots A/B/C/D/F)
 
 ### Changement

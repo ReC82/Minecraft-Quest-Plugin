@@ -750,6 +750,18 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'une **quête** voit désormais les dialogues serveur qui la démarrent. **Plugin et panel modifiés :
   JAR + panel à déployer** (non déployé, tests manuels du propriétaire en cours).
   `PENDING MANUAL VALIDATION` : TC-280.
+- **Étages reliés, réparation déterministe et conception automatique** *(issue #282, branche
+  `feature/282-ai-build-vertical-circulation`, NON DÉPLOYÉ)* — primitive `op: staircase` (marches,
+  trémie, départ, palier calculés par le moteur, appliquée après le mobilier) ; niveaux détectés sur
+  les planchers structurels (plus le dessus des meubles), nouveau refus `LEVEL_CLUTTERED` ;
+  diagnostic `LEVEL_UNREACHABLE` en coordonnées avec l'instruction fautive et un escalier vérifié
+  par simulation ; `PlanRepair` répare seul les fautes sûres (zone hors volume, étage inaccessible,
+  circulation morte, box de meubles) et l'Atelier en fait une version « Réparé par le moteur »
+  revérifiée sans clic ; tout nouveau plan est vérifié et prévisualisé aussitôt ; « Améliorer avec
+  l'IA » envoie de lui-même le diagnostic du serveur (commentaire facultatif) ; carte « Conception
+  automatique » (Standard 4 / Soigné 8 / Exigeant 12 appels, critique architecturale, enveloppe
+  annoncée et consentie, journal `building_design_run`). Voir la Bible, « Étages reliés,
+  réparation déterministe et conception automatique ». Essais réels OpenAI sur DEV : PENDING.
 - **Brouillons de plan IA : reprendre un plan sans le repayer** *(issue #256, suite de #94,
   2026-10-12)* — premier plan V2 réel (OpenAI, `buildsite_0009`) : le clic sur « Auditer » quittait le
   parcours, la fiche d'action ne ramenait qu'à `/actions`, et le plan **payé** n'était plus

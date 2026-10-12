@@ -28,7 +28,8 @@ import java.util.Optional;
  * @param facade façade visée par une primitive sémantique, ou {@code null} pour un placement en
  *               coordonnées absolues (issue #94, lot C)
  * @param numbers paramètres nommés des primitives sémantiques — {@code offset}, {@code y},
- *               {@code width}, {@code height}, {@code spacing}, {@code count}, {@code steps}.
+ *               {@code width}, {@code height}, {@code spacing}, {@code count}, {@code steps},
+ *               {@code floor}.
  *               Portés dans une table plutôt qu'en champs dédiés : chaque primitive n'en lit que
  *               ce qui la concerne, et en ajouter une n'oblige pas à élargir ce record
  * @param fill  matériau de remplissage secondaire — les pignons pleins d'une toiture. Distinct de
@@ -84,7 +85,13 @@ public record PlanStep(Kind kind, PlanBox box, String state, String axis, Facade
          * réponse au vrai goulot de la V1 — le modèle n'avait utilisé que 21 instructions sur 80
          * autorisées, faute de pouvoir dire « un pilastre tous les 4 blocs ».
          */
-        PILLARS;
+        PILLARS,
+        /**
+         * Un escalier ENTRE DEUX NIVEAUX (issue #282) : le modèle donne le pied, la direction et le
+         * plancher à atteindre ; le moteur calcule le nombre de marches, la trémie, le départ et
+         * le palier, et réserve ce volume contre le mobilier posé ensuite. Voir {@link Staircase}.
+         */
+        STAIRCASE;
 
         public static Optional<Kind> of(String raw) {
             if (raw == null || raw.isBlank()) {
@@ -117,9 +124,10 @@ public record PlanStep(Kind kind, PlanBox box, String state, String axis, Facade
         }
     }
 
-    private static boolean semanticKind(Kind kind) {
+    /** Cette sorte d'instruction est-elle une primitive sémantique (matériau par défaut) ? */
+    public static boolean semanticKind(Kind kind) {
         return switch (kind) {
-            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS -> true;
+            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS, STAIRCASE -> true;
             default -> false;
         };
     }
@@ -151,9 +159,6 @@ public record PlanStep(Kind kind, PlanBox box, String state, String axis, Facade
      * décalage, ou par un point. Leur zone sert seulement de borne de sécurité.</p>
      */
     public boolean semantic() {
-        return switch (kind) {
-            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS -> true;
-            default -> false;
-        };
+        return semanticKind(kind);
     }
 }

@@ -162,6 +162,26 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
                             + "south, east ou west — et non un axe.");
                 }
             }
+            // #282 : l'escalier entre niveaux — direction connue, plancher au-dessus du pied, et
+            // toute la volée (départ et palier compris) dans le volume. Son rapport à la grille
+            // (enveloppe, porte, vitrage, appuis) se vérifie à l'expansion, où la grille existe.
+            if (step.kind() == PlanStep.Kind.STAIRCASE) {
+                if (!step.hasNumber("floor")) {
+                    return Optional.of(where + "clé « floor » absente : c'est le y du PLANCHER à "
+                            + "atteindre (le bloc sur lequel on marche à l'étage). Le moteur en "
+                            + "déduit le nombre de marches et la trémie.");
+                }
+                Optional<Staircase> stair = Staircase.of(step);
+                if (stair.isEmpty()) {
+                    return Optional.of(where + "direction de montée manquante ou inconnue : « "
+                            + step.axis() + " ». Écris « direction: » avec un point cardinal — "
+                            + "north, south, east ou west.");
+                }
+                Optional<String> refused = stair.get().refusal(sizeX, sizeY, sizeZ);
+                if (refused.isPresent()) {
+                    return Optional.of(where + refused.get());
+                }
+            }
             if (step.kind() == PlanStep.Kind.GABLE
                     && !step.axis().equals("x") && !step.axis().equals("z")) {
                 return Optional.of(where + "axe de pente manquant ou inconnu : « " + step.axis()

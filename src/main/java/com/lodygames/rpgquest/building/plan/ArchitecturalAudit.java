@@ -1,12 +1,8 @@
 package com.lodygames.rpgquest.building.plan;
 
 import com.lodygames.rpgquest.building.model.Blueprint;
-import com.lodygames.rpgquest.building.model.BlueprintBlock;
 import com.lodygames.rpgquest.building.model.Facing;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,10 +40,17 @@ public final class ArchitecturalAudit {
     }
 
     /** Le verdict complet. */
-    public record Report(List<ArchitecturalFinding> findings, Metrics metrics) {
+    public record Report(List<ArchitecturalFinding> findings, Metrics metrics,
+                         List<Staircase> staircases, List<Integer> clutteredLevels) {
 
         public Report {
             findings = List.copyOf(findings == null ? List.of() : findings);
+            staircases = List.copyOf(staircases == null ? List.of() : staircases);
+            clutteredLevels = List.copyOf(clutteredLevels == null ? List.of() : clutteredLevels);
+        }
+
+        public Report(List<ArchitecturalFinding> findings, Metrics metrics) {
+            this(findings, metrics, List.of(), List.of());
         }
 
         /** Y a-t-il au moins un constat bloquant ? */
@@ -83,6 +86,31 @@ public final class ArchitecturalAudit {
         }
     }
 
+    /**
+     * D'où vient une cellule : le rang de l'instruction qui l'a écrite en dernier (issue #282).
+     * Sans elle, l'audit ne peut dire que « une cellule est pleine » ; avec elle, il dit « posée
+     * par l'instruction 17 », ce que le modèle et l'administrateur savent corriger.
+     */
+    public interface Provenance {
+
+        Provenance NONE = new Provenance() {
+            @Override
+            public int stepAt(int x, int y, int z) {
+                return 0;
+            }
+
+            @Override
+            public String describe(int rank) {
+                return "instruction " + rank;
+            }
+        };
+
+        /** Rang à partir de 1, ou 0 si inconnu. */
+        int stepAt(int x, int y, int z);
+
+        String describe(int rank);
+    }
+
     /** Les mesures brutes, utiles pour l'écran, les tests et les futures coupes du lot E. */
     public record Metrics(int solidCells, int glazedCells, int glazedFacades, int lightSources,
                           int openEnvelopeCellsHigh, int floors, int reachableFloors,
@@ -98,38 +126,56 @@ public final class ArchitecturalAudit {
      * @param rules     le profil de seuils, dépendant du type de structure
      */
     public static Report audit(Blueprint blueprint, Facing front, ArchitecturalRules rules) {
-        List<ArchitecturalFinding> findings = new ArrayList<>();
+        return audit(blueprint, front, rules, Provenance.NONE);
+    }
+
+    /**
+     * Auditer, en sachant d'où vient chaque cellule (issue #282) : les constats nomment alors
+     * l'instruction fautive, et un étage inaccessible reçoit un escalier vérifié par simulation.
+     */
+    public static Report audit(Blueprint blueprint, Facing front, ArchitecturalRules rules,
+                               Provenance provenance) {
         if (blueprint == null || blueprint.blocks().isEmpty()) {
-            findings.add(ArchitecturalFinding.blocking("EMPTY_STRUCTURE",
-                    "La structure ne contient aucun bloc : il n'y a rien à auditer."));
-            return new Report(findings, new Metrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ""));
+            return new Report(List.of(ArchitecturalFinding.blocking("EMPTY_STRUCTURE",
+                    "La structure ne contient aucun bloc : il n'y a rien à auditer.")),
+                    new Metrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ""));
         }
         ArchitecturalRules r = rules == null ? ArchitecturalRules.habitable() : rules;
-        Grid grid = Grid.of(blueprint);
+        return run(AuditGrid.of(blueprint), front, r,
+                provenance == null ? Provenance.NONE : provenance, true);
+    }
 
+    /** Codes qu'un escalier ajouté a le droit de faire apparaître : ils concernent l'étage qu'il ouvre. */
+    private static final Set<String> NEWLY_VISIBLE = Set.of("DARK_AREA", "LEVEL_CLUTTERED");
+
+    private static Report run(AuditGrid grid, Facing front, ArchitecturalRules r,
+                              Provenance provenance, boolean plan) {
+        List<ArchitecturalFinding> findings = new ArrayList<>();
         int glazed = 0;
         Set<String> glazedFaces = new HashSet<>();
         int lights = 0;
         int furnishing = 0;
-        for (BlueprintBlock b : blueprint.blocks()) {
-            if (BlockSemantics.glazing(b.state())) {
+        for (var cell : grid.cells().entrySet()) {
+            String state = cell.getValue();
+            if (BlockSemantics.glazing(state)) {
                 glazed++;
-                String face = grid.faceOf(b.x(), b.z());
+                String face = grid.faceOf(AuditGrid.keyX(cell.getKey()),
+                        AuditGrid.keyZ(cell.getKey()));
                 if (face != null) {
                     glazedFaces.add(face);
                 }
             }
-            if (BlockSemantics.lightSource(b.state())) {
+            if (BlockSemantics.lightSource(state)) {
                 lights++;
             }
-            if (BlockSemantics.furnishing(b.state())) {
+            if (BlockSemantics.furnishing(state)) {
                 furnishing++;
             }
         }
 
         Entrance entrance = findEntrance(grid, front, r);
         int openHigh = openEnvelopeCellsAbove(grid, r.openingMaxHeight());
-        Levels levels = analyseLevels(grid);
+        Circulation.Analysis levels = Circulation.analyse(grid);
         Envelope envelope = envelopeMaterials(grid);
 
         // ---- Entrée --------------------------------------------------------------------------
@@ -205,15 +251,37 @@ public final class ArchitecturalAudit {
                             + "triangles verticaux à ses extrémités avec des blocs pleins."));
         }
 
-        // ---- Niveaux -------------------------------------------------------------------------
-        if (r.requireLevelAccess() && levels.floors() > 1 && levels.reachable() < levels.floors()) {
-            findings.add(ArchitecturalFinding.blocking("LEVEL_UNREACHABLE",
-                    "Niveau inaccessible : la structure compte " + levels.floors()
-                            + " niveau(x) praticable(s) (sols en y=" + levels.floorLabel()
-                            + ") mais seulement " + levels.reachable()
-                            + " est/sont atteignable(s) depuis le rez-de-chaussée. Ajoute un "
-                            + "escalier ou une échelle, ET perce la trémie DANS le plancher "
-                            + "lui-même — vider l'air au-dessus du plancher ne le troue pas."));
+        // ---- Niveaux (refondu par #282) -------------------------------------------------------
+        List<Staircase> staircases = new ArrayList<>();
+        List<Integer> cluttered = new ArrayList<>();
+        if (r.requireLevelAccess() && levels.levels().size() > 1) {
+            List<Circulation.LevelState> unreached = levels.states().stream()
+                    .filter(st -> !st.reached()).toList();
+            if (!unreached.isEmpty()) {
+                findings.add(ArchitecturalFinding.blocking("LEVEL_UNREACHABLE",
+                        unreachableMessage(grid, levels, unreached, front, r, provenance, plan,
+                                staircases)));
+            }
+        }
+        if (r.requireLevelAccess() && r.minLevelFreeShare() > 0) {
+            for (Circulation.LevelState st : levels.states()) {
+                if (st.reached() && st.freeShare() < r.minLevelFreeShare()) {
+                    cluttered.add(st.level().slabY());
+                    List<String> causes = Circulation.clutter(grid, st, provenance);
+                    findings.add(ArchitecturalFinding.blocking("LEVEL_CLUTTERED",
+                            "Niveau encombré : sur le plancher y=" + st.level().slabY()
+                                    + " (on s'y tient en y=" + st.level().standY() + "), un joueur "
+                                    + "ne peut se tenir que sur " + st.usable() + " cellule(s) sur "
+                                    + st.level().area() + " (" + Math.round(st.freeShare() * 100)
+                                    + " %, " + Math.round(r.minLevelFreeShare() * 100)
+                                    + " % au minimum). "
+                                    + (causes.isEmpty() ? "" : "En cause : "
+                                            + String.join(" ; ", causes) + ". ")
+                                    + "Range le mobilier le long des murs, en rangées séparées par "
+                                    + "des allées de 2 blocs : une « box » de meubles qui couvre "
+                                    + "tout un plancher le rend impraticable."));
+                }
+            }
         }
 
         // ---- Avertissements ------------------------------------------------------------------
@@ -237,83 +305,114 @@ public final class ArchitecturalAudit {
                             + "avertissement, la géométrie seule ne permet pas d'en juger."));
         }
 
-        return new Report(findings, new Metrics(blueprint.blocks().size(), glazed,
-                glazedFaces.size(), lights, openHigh, levels.floors(), levels.reachable(),
-                furnishing, envelope.materials(), envelope.topShare(), envelope.topMaterial()));
+        return new Report(findings, new Metrics(grid.cells().size(), glazed,
+                glazedFaces.size(), lights, openHigh, levels.levels().size(),
+                levels.reachedCount(), furnishing, envelope.materials(), envelope.topShare(),
+                envelope.topMaterial()), staircases, cluttered);
     }
-
-    // ---- La grille ------------------------------------------------------------------------------
 
     /**
-     * La grille expansée, plus les bornes réelles de la matière.
+     * Le refus d'un étage inaccessible, avec la géométrie et — si le moteur en trouve une — la
+     * réparation vérifiée.
      *
-     * <p>Les bornes viennent des blocs posés, pas des dimensions déclarées : un plan peut annoncer
-     * 19 × 19 et ne remplir que 17 × 17, et c'est la surface réelle qui porte les façades.</p>
+     * <p>Les escaliers proposés sont cherchés niveau par niveau, chacun sur la grille déjà
+     * réparée par les précédents, et chacun vérifié en rejouant l'audit entier : un escalier qui
+     * ouvrirait l'étage mais boucherait l'entrée n'est jamais proposé.</p>
      */
-    private record Grid(Map<Long, String> cells, int minX, int minY, int minZ,
-                        int maxX, int maxY, int maxZ) {
-
-        static Grid of(Blueprint blueprint) {
-            Map<Long, String> cells = new HashMap<>(blueprint.blocks().size() * 2);
-            int nx = Integer.MAX_VALUE;
-            int ny = Integer.MAX_VALUE;
-            int nz = Integer.MAX_VALUE;
-            int xx = Integer.MIN_VALUE;
-            int xy = Integer.MIN_VALUE;
-            int xz = Integer.MIN_VALUE;
-            for (BlueprintBlock b : blueprint.blocks()) {
-                cells.put(key(b.x(), b.y(), b.z()), b.state());
-                nx = Math.min(nx, b.x());
-                ny = Math.min(ny, b.y());
-                nz = Math.min(nz, b.z());
-                xx = Math.max(xx, b.x());
-                xy = Math.max(xy, b.y());
-                xz = Math.max(xz, b.z());
+    private static String unreachableMessage(AuditGrid grid, Circulation.Analysis levels,
+                                             List<Circulation.LevelState> unreached,
+                                             Facing front, ArchitecturalRules r,
+                                             Provenance provenance, boolean plan,
+                                             List<Staircase> staircases) {
+        StringBuilder sb = new StringBuilder("Niveau inaccessible : la structure compte "
+                + levels.levels().size() + " niveau(x) praticable(s) (sols en y="
+                + levels.floorLabel() + ") mais seulement " + levels.reachedCount()
+                + " est/sont atteignable(s) depuis le rez-de-chaussée. Un étage se rejoint par "
+                + "une volée dont la dernière marche affleure le plancher, ET une trémie percée "
+                + "DANS le plancher lui-même — vider l'air au-dessus du plancher ne le troue pas.");
+        for (Circulation.LevelState st : unreached) {
+            sb.append("\n     Étage non atteint (plancher y=").append(st.level().slabY())
+                    .append(") :");
+            for (String line : Circulation.diagnoseUnreached(grid, levels, st.level(), provenance)) {
+                sb.append("\n       - ").append(line);
             }
-            return new Grid(cells, nx, ny, nz, xx, xy, xz);
         }
-
-        String at(int x, int y, int z) {
-            return cells.get(key(x, y, z));
+        if (!plan) {
+            return sb.toString();
         }
-
-        boolean passable(int x, int y, int z) {
-            return BlockSemantics.passable(at(x, y, z));
-        }
-
-        boolean inside(int x, int y, int z) {
-            return x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
-        }
-
-        /** La façade à laquelle appartient cette colonne, ou {@code null} si elle est intérieure. */
-        String faceOf(int x, int z) {
-            if (x == minX) {
-                return "OUEST";
+        AuditGrid current = grid;
+        Circulation.Analysis now = levels;
+        String material = stairMaterial(grid);
+        for (Circulation.LevelState st : unreached) {
+            Circulation.Level target = st.level();
+            Circulation.Level lower = null;
+            for (Circulation.LevelState other : now.states()) {
+                if (other.reached() && other.level().slabY() < target.slabY()) {
+                    lower = other.level();
+                }
             }
-            if (x == maxX) {
-                return "EST";
+            if (lower == null) {
+                break;
             }
-            if (z == minZ) {
-                return "NORD";
+            Set<String> before = Set.copyOf(
+                    run(current, front, r, Provenance.NONE, false).blockingCodes());
+            var proposal = CirculationPlanner.propose(current, lower, target, material,
+                    candidate -> acceptable(candidate, front, r, before, target));
+            if (proposal.isEmpty()) {
+                break;
             }
-            if (z == maxZ) {
-                return "SUD";
-            }
-            return null;
+            staircases.add(proposal.get());
+            current = current.with(proposal.get());
+            now = Circulation.analyse(current);
         }
-
-        String facadeDescription(Facing front) {
-            return switch (front == null ? Facing.NORTH : front) {
-                case NORTH -> "z=" + minZ;
-                case SOUTH -> "z=" + maxZ;
-                case WEST -> "x=" + minX;
-                case EAST -> "x=" + maxX;
-            };
+        if (staircases.isEmpty()) {
+            sb.append("\n     Le moteur n'a trouvé aucune position où un escalier tient à "
+                    + "l'intérieur (sol au départ, plancher au palier, sans toucher murs, portes, "
+                    + "fenêtres ni lumières) : libère une bande de 2 cellules de large le long d'un "
+                    + "mur intérieur, du sol jusqu'au plancher y=")
+                    .append(unreached.get(0).level().slabY()).append('.');
+            return sb.toString();
         }
+        sb.append("\n     RÉPARATION VÉRIFIÉE PAR LE MOTEUR — ajoute exactement ")
+                .append(staircases.size() > 1 ? "ces instructions" : "cette instruction")
+                .append(" (l'escalier calcule seul ses marches, sa trémie et son palier, et passe "
+                        + "après le mobilier) et retire les escaliers, échelles et trémies qui ne "
+                        + "mènent nulle part :\n");
+        for (Staircase stair : staircases) {
+            sb.append(stair.yaml("       "));
+        }
+        return sb.toString().stripTrailing();
     }
 
-    private static long key(int x, int y, int z) {
-        return ((long) (x + 512) << 40) | ((long) (y + 512) << 20) | (z + 512);
+    /** La réparation simulée ouvre-t-elle l'étage, sans rien casser d'autre ? */
+    private static boolean acceptable(AuditGrid candidate, Facing front, ArchitecturalRules r,
+                                      Set<String> before, Circulation.Level target) {
+        Circulation.Analysis after = Circulation.analyse(candidate);
+        boolean opened = after.states().stream().anyMatch(st -> st.reached()
+                && st.level().slabY() == target.slabY());
+        if (!opened) {
+            return false;
+        }
+        for (String code : run(candidate, front, r, Provenance.NONE, false).blockingCodes()) {
+            if (!before.contains(code) && !NEWLY_VISIBLE.contains(code)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Le bloc d'escalier dominant à l'intérieur — l'escalier proposé garde le style du plan. */
+    private static String stairMaterial(AuditGrid grid) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (var e : grid.cells().entrySet()) {
+            String type = BlockStates.bareType(e.getValue());
+            if (type.endsWith("_stairs")
+                    && grid.interior(AuditGrid.keyX(e.getKey()), AuditGrid.keyZ(e.getKey()))) {
+                counts.merge(type, 1, Integer::sum);
+            }
+        }
+        return counts.entrySet().stream().max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey).orElse(Staircase.DEFAULT_MATERIAL);
     }
 
     // ---- Entrée ---------------------------------------------------------------------------------
@@ -330,7 +429,7 @@ public final class ArchitecturalAudit {
      * manquait à la V1 — son percement était cinq blocs en retrait du mur, donc dans de l'air déjà
      * vide, et ne traversait rien.</p>
      */
-    private static Entrance findEntrance(Grid grid, Facing front, ArchitecturalRules rules) {
+    private static Entrance findEntrance(AuditGrid grid, Facing front, ArchitecturalRules rules) {
         Facing f = front == null ? Facing.NORTH : front;
         boolean onX = f == Facing.WEST || f == Facing.EAST;
         int plane = switch (f) {
@@ -400,7 +499,7 @@ public final class ArchitecturalAudit {
      * <p>La hauteur de seuil écarte volontairement les ouvertures de rez-de-chaussée : une porte et
      * des fenêtres basses ne doivent pas être comptées comme des trous dans la couverture.</p>
      */
-    private static int openEnvelopeCellsAbove(Grid grid, int openingMaxHeight) {
+    private static int openEnvelopeCellsAbove(AuditGrid grid, int openingMaxHeight) {
         int from = grid.minY() + openingMaxHeight;
         int open = 0;
         for (int y = Math.max(grid.minY(), from); y <= grid.maxY(); y++) {
@@ -433,7 +532,7 @@ public final class ArchitecturalAudit {
     }
 
     /** Y a-t-il de la matière plus haut dans cette colonne ? */
-    private static boolean solidAbove(Grid grid, int x, int y, int z) {
+    private static boolean solidAbove(AuditGrid grid, int x, int y, int z) {
         for (int above = y + 1; above <= grid.maxY(); above++) {
             if (!BlockSemantics.passable(grid.at(x, above, z))) {
                 return true;
@@ -449,7 +548,7 @@ public final class ArchitecturalAudit {
      * n'a aucune face latérale « sous couverture », donc le contrôle précédent ne le verrait pas.
      * Ici on vérifie qu'il pleut nulle part.</p>
      */
-    private static int uncoveredColumns(Grid grid, Levels levels) {
+    private static int uncoveredColumns(AuditGrid grid, Circulation.Analysis levels) {
         if (levels.standingLevels().isEmpty()) {
             return 0;
         }
@@ -481,7 +580,7 @@ public final class ArchitecturalAudit {
      * coins vides comptés comme des trous d'enveloppe. On ne compte donc une cellule de surface que
      * si sa colonne porte réellement de la matière quelque part.</p>
      */
-    private static boolean coveredColumnExists(Grid grid, int x, int z) {
+    private static boolean coveredColumnExists(AuditGrid grid, int x, int z) {
         for (int y = grid.minY(); y <= grid.maxY(); y++) {
             if (!grid.passable(x, y, z)) {
                 return true;
@@ -493,7 +592,7 @@ public final class ArchitecturalAudit {
     private record Envelope(int materials, double topShare, String topMaterial) {
     }
 
-    private static Envelope envelopeMaterials(Grid grid) {
+    private static Envelope envelopeMaterials(AuditGrid grid) {
         Map<String, Integer> counts = new LinkedHashMap<>();
         int total = 0;
         for (int y = grid.minY(); y <= grid.maxY(); y++) {
@@ -528,162 +627,6 @@ public final class ArchitecturalAudit {
         return new Envelope(counts.size(), (double) best / total, top);
     }
 
-    // ---- Niveaux et circulation -----------------------------------------------------------------
-
-    private record Levels(int floors, int reachable, List<Integer> standingLevels,
-                          Set<Long> walkable) {
-
-        String floorLabel() {
-            return standingLevels.isEmpty() ? "aucun"
-                    : standingLevels.stream().map(String::valueOf)
-                            .reduce((a, b) -> a + ", " + b).orElse("");
-        }
-    }
-
-    /**
-     * Repère les niveaux praticables, puis vérifie lesquels sont atteignables depuis le plus bas.
-     *
-     * <p>Le départ est le <strong>rez-de-chaussée</strong>, et non l'entrée : cela sépare deux
-     * défauts qui n'ont pas la même cause. Un bâtiment sans porte doit échouer sur l'entrée, et un
-     * bâtiment dont l'étage n'a pas de trémie doit échouer sur les niveaux — même s'il a une porte.
-     * La V1 cumulait les deux, et les deux doivent être dits.</p>
-     *
-     * <p>La circulation admise est celle d'un joueur : avancer à l'horizontale, monter d'un bloc
-     * (marche ou escalier), ou grimper sur une cellule grimpable. Deux blocs de hauteur libre sont
-     * exigés, parce qu'un joueur ne rampe pas.</p>
-     */
-    private static Levels analyseLevels(Grid grid) {
-        int footprint = (grid.maxX() - grid.minX() + 1) * (grid.maxZ() - grid.minZ() + 1);
-        List<Integer> open = new ArrayList<>();
-        List<Integer> sheltered = new ArrayList<>();
-        for (int y = grid.minY(); y < grid.maxY(); y++) {
-            int supported = 0;
-            int underCover = 0;
-            for (int x = grid.minX(); x <= grid.maxX(); x++) {
-                for (int z = grid.minZ(); z <= grid.maxZ(); z++) {
-                    if (BlockSemantics.support(grid.at(x, y, z))
-                            && grid.passable(x, y + 1, z)
-                            && grid.passable(x, y + 2, z)) {
-                        supported++;
-                        if (covered(grid, x, y + 3, z)) {
-                            underCover++;
-                        }
-                    }
-                }
-            }
-            // Un quart de l'emprise : assez pour distinguer un plancher d'une marche isolée.
-            if (supported * 4 >= footprint) {
-                open.add(y + 1);
-            }
-            if (underCover * 4 >= footprint) {
-                sheltered.add(y + 1);
-            }
-        }
-        // #263 : les niveaux sont les sols ABRITÉS. Le dessus d'un toit à deux pentes n'en est pas un.
-        // Un bâtiment sans aucun sol abrité (pas de toit du tout) garde l'ancienne lecture : son
-        // niveau est alors à ciel ouvert, et c'est le contrôle de couverture qui le dira.
-        List<Integer> standing = sheltered.isEmpty() ? open : sheltered;
-        if (standing.isEmpty()) {
-            return new Levels(0, 0, List.of(), Set.of());
-        }
-
-        Set<Long> walkable = walkFrom(grid, standing.get(0));
-        int reachable = 0;
-        for (int level : standing) {
-            boolean any = false;
-            for (int x = grid.minX(); x <= grid.maxX() && !any; x++) {
-                for (int z = grid.minZ(); z <= grid.maxZ() && !any; z++) {
-                    if (walkable.contains(key(x, level, z))) {
-                        any = true;
-                    }
-                }
-            }
-            if (any) {
-                reachable++;
-            }
-        }
-        return new Levels(standing.size(), reachable, List.copyOf(standing), walkable);
-    }
-
-    /**
-     * Un bloc de matière se trouve-t-il plus haut dans la colonne ? (issue #263)
-     *
-     * <p>Un niveau, c'est un sol <em>sous un toit</em>. Sans cette condition, les rangées d'escaliers
-     * d'un toit à deux pentes comptaient comme des « niveaux » dès que l'emprise était petite (une
-     * rangée de 9 escaliers × 2 pentes dépasse le quart d'une emprise 9 × 7) : l'exemple même du
-     * prompt était refusé pour « niveau inaccessible » et « couverture incomplète », alors que ces
-     * marches sont le dessus du toit, à ciel ouvert. Une vraie pièce, elle, a toujours quelque chose
-     * au-dessus d'elle.</p>
-     */
-    private static boolean covered(Grid grid, int x, int fromY, int z) {
-        for (int y = fromY; y <= grid.maxY(); y++) {
-            if (!grid.passable(x, y, z)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** Diffusion depuis le niveau de départ, avec les déplacements d'un joueur. */
-    private static Set<Long> walkFrom(Grid grid, int startLevel) {
-        Set<Long> seen = new HashSet<>();
-        Deque<int[]> queue = new ArrayDeque<>();
-        for (int x = grid.minX(); x <= grid.maxX(); x++) {
-            for (int z = grid.minZ(); z <= grid.maxZ(); z++) {
-                if (standable(grid, x, startLevel, z)) {
-                    long k = key(x, startLevel, z);
-                    if (seen.add(k)) {
-                        queue.add(new int[] {x, startLevel, z});
-                    }
-                }
-            }
-        }
-        int[][] steps = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
-        while (!queue.isEmpty()) {
-            int[] c = queue.poll();
-            for (int[] s : steps) {
-                // Plain-pied, montée d'un bloc, descente d'un bloc : les trois pas d'un joueur.
-                for (int dy : new int[] {0, 1, -1}) {
-                    int nx = c[0] + s[0];
-                    int ny = c[1] + dy;
-                    int nz = c[2] + s[2];
-                    if (!grid.inside(nx, ny, nz) || !standable(grid, nx, ny, nz)) {
-                        continue;
-                    }
-                    long k = key(nx, ny, nz);
-                    if (seen.add(k)) {
-                        queue.add(new int[] {nx, ny, nz});
-                    }
-                }
-            }
-            // Échelle : on monte et on descend dans la même colonne.
-            for (int dy : new int[] {1, -1}) {
-                int ny = c[1] + dy;
-                if (grid.inside(c[0], ny, c[2]) && BlockSemantics.climbable(grid.at(c[0], ny, c[2]))) {
-                    long k = key(c[0], ny, c[2]);
-                    if (seen.add(k)) {
-                        queue.add(new int[] {c[0], ny, c[2]});
-                    }
-                }
-            }
-        }
-        return seen;
-    }
-
-    /** Peut-on se tenir debout ici : un support dessous, deux cellules libres. */
-    private static boolean standable(Grid grid, int x, int y, int z) {
-        if (!grid.inside(x, y, z)) {
-            return false;
-        }
-        boolean climbing = BlockSemantics.climbable(grid.at(x, y, z));
-        if (climbing) {
-            return true;
-        }
-        return BlockSemantics.support(grid.at(x, y - 1, z))
-                && grid.passable(x, y, z)
-                && grid.passable(x, y + 1, z);
-    }
-
     // ---- Éclairage ------------------------------------------------------------------------------
 
     private record Dark(boolean found, int x, int y, int z, int distance) {
@@ -695,15 +638,12 @@ public final class ArchitecturalAudit {
      * <p>La distance est celle de Tchebychev — le nombre de pas en comptant les diagonales — parce
      * que la lumière de Minecraft se propage ainsi, et non par un chemin de couloir.</p>
      */
-    private static Dark findDarkCell(Grid grid, Levels levels, int maxDistance) {
+    private static Dark findDarkCell(AuditGrid grid, Circulation.Analysis levels, int maxDistance) {
         List<int[]> sources = new ArrayList<>();
         for (var e : grid.cells().entrySet()) {
             if (BlockSemantics.lightSource(e.getValue())) {
                 long k = e.getKey();
-                int z = (int) (k & 0xFFFFF) - 512;
-                int y = (int) ((k >> 20) & 0xFFFFF) - 512;
-                int x = (int) ((k >> 40) & 0xFFFFF) - 512;
-                sources.add(new int[] {x, y, z});
+                sources.add(new int[] {AuditGrid.keyX(k), AuditGrid.keyY(k), AuditGrid.keyZ(k)});
             }
         }
         if (sources.isEmpty()) {
@@ -712,9 +652,9 @@ public final class ArchitecturalAudit {
         int worst = -1;
         int[] worstCell = null;
         for (long k : levels.walkable()) {
-            int z = (int) (k & 0xFFFFF) - 512;
-            int y = (int) ((k >> 20) & 0xFFFFF) - 512;
-            int x = (int) ((k >> 40) & 0xFFFFF) - 512;
+            int z = AuditGrid.keyZ(k);
+            int y = AuditGrid.keyY(k);
+            int x = AuditGrid.keyX(k);
             int best = Integer.MAX_VALUE;
             for (int[] s : sources) {
                 int d = Math.max(Math.abs(s[0] - x), Math.max(Math.abs(s[1] - y), Math.abs(s[2] - z)));

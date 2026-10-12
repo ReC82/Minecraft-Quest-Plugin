@@ -104,6 +104,11 @@ public final class PanelApp {
     /** Issue #256 — les plans proposés par l'IA, conservés comme brouillons de travail. */
     private final BuildingPlanDraftStore planDrafts;
     private final BuildingPlanWorkbench planWorkbench;
+    /** #282 : vérification automatique des nouveaux plans et réparation par le moteur. */
+    private final com.lodygames.rpgquest.panel.building.WorkshopAutopilot workshopAutopilot;
+    /** #282 : sessions de conception automatique (IA + moteur), sous enveloppe consentie. */
+    private final com.lodygames.rpgquest.panel.building.BuildingDesignRunStore designRuns;
+    private final com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline designPipeline;
     /** Issue #267 — les projets de l'Atelier, indépendants des emplacements. */
     private final com.lodygames.rpgquest.panel.building.BuildingProjectStore planProjects;
     private final ContentEditorPages contentEditor;
@@ -162,7 +167,15 @@ public final class PanelApp {
         // Issue #256 — même base que le reste du panel : un plan payé survit à un redémarrage.
         this.planDrafts = new BuildingPlanDraftStore(config.panelDbPath());
         this.planWorkbench = new BuildingPlanWorkbench(agentStore, planDrafts);
+        this.workshopAutopilot = new com.lodygames.rpgquest.panel.building.WorkshopAutopilot(agentStore,
+                planDrafts, audit);
         this.planProjects = new com.lodygames.rpgquest.panel.building.BuildingProjectStore(config.panelDbPath());
+        this.designRuns = new com.lodygames.rpgquest.panel.building.BuildingDesignRunStore(config.panelDbPath());
+        // Une session « en cours » au démarrage a perdu son fil : interrompue, jamais relancée seule.
+        this.designRuns.interruptOrphans();
+        this.designPipeline = new com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline(aiBuildingStudio,
+                designRuns, planProjects, planDrafts, planWorkbench, agentStore, workshopAutopilot, audit,
+                Duration.ofSeconds(Long.getLong("rpgquest.design.verdictTimeoutSeconds", 180)));
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.agentPages.useWorkshopProjects(planProjects);
@@ -202,6 +215,7 @@ public final class PanelApp {
                 config.agents().thresholds(), opsAgentId, null);
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
+        this.agentEndpoints.onResult(workshopAutopilot::onResult);
         PasswordHasher hasher = new PasswordHasher();
         this.users = new UserDirectory(userRepository, hasher);
         this.groups = new GroupDirectory(groupRepository);
@@ -346,6 +360,7 @@ public final class PanelApp {
             server = null;
         }
         restartService.shutdown();
+        designPipeline.shutdown();
     }
 
     // ---- Routage --------------------------------------------------------------------------
@@ -1170,6 +1185,7 @@ public final class PanelApp {
                 case "project_save" -> projectSave(session, project.get(), f);
                 case "propose" -> planPropose(session, agentId, project.get(), f);
                 case "correct" -> planCorrect(session, agentId, project.get(), f);
+                case "design" -> planDesign(session, agentId, project.get(), f);
                 case "save", "audit", "preview", "generate" -> planCheck(session, agentId, project.get(), f);
                 case "recover" -> planRecover(session, agentId, project.get(), f);
                 case "archive" -> planArchive(session, project.get(), f);
@@ -1225,7 +1241,7 @@ public final class PanelApp {
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE),
                 draft == null ? List.of() : planDrafts.revisions(draft.id()),
                 planWorkbench.recoverable(agentId, 10), UUID.randomUUID().toString(), notice, error,
-                conflictText, idTaken, isoView, isoCut);
+                conflictText, idTaken, isoView, isoCut, designRuns.latest(project.get().id()));
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -1302,18 +1318,27 @@ public final class PanelApp {
                     "Le plan a changé depuis l'affichage de la page : rien n'a été demandé à l'IA. Relisez-le, "
                             + "puis recommencez."));
         }
-        String reason = f.getOrDefault("reason", "").trim();
+        // #282 : le motif part de lui-même — c'est le diagnostic du DERNIER audit de CETTE version.
+        // Les consignes de l'administrateur sont facultatives et s'y ajoutent. « reason » reste lu
+        // pour les formulaires ouverts avant la mise à jour.
+        var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
+        String reason = correctionMotive(project, audit,
+                f.getOrDefault("notes", f.getOrDefault("reason", "")));
         if (reason.isEmpty()) {
-            return PlanOutcome.redirect(projectLocation(project.id(), draft.id(), null,
-                    "Dites ce qu'il faut changer : sans motif, l'IA n'a aucune raison de modifier son plan. "
-                            + "Rien n'a été demandé."));
+            boolean judged = audit.current()
+                    && audit.status() == BuildingPlanWorkbench.Status.DONE;
+            return PlanOutcome.redirect(projectLocation(project.id(), draft.id(), null, judged
+                    ? "Le serveur n'a rien relevé sur cette version : dites ce que vous voulez changer. "
+                            + "Rien n'a été demandé à l'IA."
+                    : "Cette version n'a pas encore été vérifiée (ou sa vérification est en cours) : "
+                            + "le diagnostic du serveur partira de lui-même avec la demande dès qu'il "
+                            + "sera connu. Rien n'a été demandé à l'IA."));
         }
         Optional<PlanOutcome> replay = replayedRequest(session, project.id(), f);
         if (replay.isPresent()) {
             return replay.get();
         }
         // Les mesures qui partent avec le motif sont celles de la vérification de CETTE version.
-        var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
         String measured = audit.current()
                 ? com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop.formatMetrics(
                         com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.from(audit.details()).metrics())
@@ -1323,6 +1348,81 @@ public final class PanelApp {
                 draft.plan(), reason, measured);
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
                 BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true);
+    }
+
+    /**
+     * « Conception automatique » (issue #282) : plusieurs passes d'IA et de moteur, sous une
+     * enveloppe que l'administrateur a vue et consentie AVANT le lancement.
+     *
+     * <p>Mêmes garanties que les gestes payants unitaires : jeton à usage unique (un double clic ne
+     * lance jamais deux sessions), une seule session en cours par projet, et la dépense est bornée
+     * par le niveau choisi et par {@link com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline#MAX_CALLS_CEILING}.</p>
+     */
+    private PlanOutcome planDesign(Session session, String agentId,
+                                   com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                   Map<String, String> f) {
+        if (!project.hasBrief()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Décrivez d'abord le bâtiment souhaité : sans description, il n'y a rien à concevoir."));
+        }
+        String token = f.getOrDefault("request_token", "").trim();
+        var existing = token.isEmpty() ? Optional.<com.lodygames.rpgquest.panel.building.BuildingDesignRunStore.Run>empty()
+                : designRuns.byToken(token);
+        if (existing.isPresent()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
+                    "Cette conception a déjà été lancée : aucun nouvel appel n'a été émis.", null));
+        }
+        if (designRuns.latest(project.id()).filter(r -> r.running()).isPresent()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Une conception automatique est déjà en cours sur ce projet : rien n'a été lancé."));
+        }
+        if (!"yes".equals(f.getOrDefault("consent", ""))) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Cochez l'acceptation de l'enveloppe : rien n'est dépensé sans votre accord explicite."));
+        }
+        if (token.isEmpty()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Formulaire périmé : rien n'a été lancé. Rechargez la page."));
+        }
+        String provider = f.getOrDefault("provider", "").trim();
+        if (aiBuildingStudio.usableProviders().stream().noneMatch(p -> p.id().equals(provider))) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Fournisseur d'IA inconnu ou inutilisable : rien n'a été lancé."));
+        }
+        var quality = com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline.Quality.of(f.get("quality"));
+        int calls = Math.min(quality.calls(), Math.max(1, parseIntOr(f.get("max_calls"), quality.calls())));
+        var started = designRuns.start(agentId, project.id(), token, provider, quality.name(), calls,
+                session.username());
+        if (started.isEmpty()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
+                    "Cette conception a déjà été lancée : aucun nouvel appel n'a été émis.", null));
+        }
+        audit.record(session.username(), "building.design.start", "project=" + project.id() + " run="
+                + started.get().id() + " quality=" + quality.name() + " max_calls=" + calls
+                + " provider=" + provider, "OK", "enveloppe consentie", UUID.randomUUID().toString().substring(0, 8));
+        designPipeline.launch(started.get());
+        return PlanOutcome.redirect(projectLocation(project.id(), "", "Conception automatique lancée ("
+                + quality.label() + ", " + calls + " appel(s) au plus). Suivez les passes ci-dessous.", null));
+    }
+
+    /**
+     * Le motif envoyé à l'IA : le diagnostic du serveur sur la version courante, puis les consignes
+     * de l'administrateur s'il en a donné (issue #282). Un audit périmé n'est jamais utilisé : il
+     * parlerait d'un autre plan.
+     */
+    static String correctionMotive(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                   BuildingPlanWorkbench.CheckState audit, String notes) {
+        String diagnosis = audit.current() ? WorkshopPages.diagnosis(project, audit) : "";
+        String extra = notes == null ? "" : notes.trim();
+        // Un ancien formulaire renvoyait le diagnostic prérempli dans « reason » : ne pas le doubler.
+        if (!extra.isEmpty() && !diagnosis.isEmpty() && extra.contains(diagnosis)) {
+            extra = extra.replace(diagnosis, "").trim();
+        }
+        if (extra.isEmpty()) {
+            return diagnosis;
+        }
+        return diagnosis.isEmpty() ? "Consignes de l'administrateur :\n" + extra
+                : diagnosis + "\n\nConsignes de l'administrateur, en plus :\n" + extra;
     }
 
     /**
@@ -1373,11 +1473,18 @@ public final class PanelApp {
                 proposal.extractionNote(), demand.maxWidth(), demand.maxHeight(), session.username(), project.id()));
         planDrafts.fulfil(token, created.id());
         planProjects.touch(project.id(), session.username());
+        // #282 : un plan neuf est vérifié et dessiné aussitôt, gratuitement. Si le serveur sait le
+        // réparer, l'Atelier crée la version réparée dès le retour de l'audit.
+        Optional<String> verifyRefused = created.hasPlan()
+                ? workshopAutopilot.verify(created, session.username()) : Optional.empty();
         audit.record(session.username(), "building.plan.draft.create",
                 "project=" + project.id() + " draft=" + created.id() + " origin=" + origin, "OK",
                 parentId.isEmpty() ? "" : "parent=" + parentId, UUID.randomUUID().toString().substring(0, 8));
         return PlanOutcome.redirect(projectLocation(project.id(), created.id(), proposal.hasPlan()
-                ? "Plan reçu. Prochaine étape : le vérifier."
+                ? (verifyRefused.isEmpty()
+                        ? "Plan reçu : vérification et aperçu demandés au serveur, le résultat s'affiche ici "
+                                + "dans quelques secondes."
+                        : "Plan reçu. La vérification n'a pas pu partir : " + verifyRefused.get())
                 : "L'IA a répondu sans plan exploitable. Sa réponse est conservée dans les détails techniques ; "
                         + "redemandez un plan.", null));
     }
@@ -1444,6 +1551,11 @@ public final class PanelApp {
         };
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("plan", current.plan());
+        if (check != BuildingPlanDraftStore.Check.GENERATE) {
+            // #282 : les bornes du projet, pour la réparation déterministe du plugin.
+            fields.put("max_width", String.valueOf(project.maxWidth()));
+            fields.put("max_height", String.valueOf(project.maxHeight()));
+        }
         if (check == BuildingPlanDraftStore.Check.GENERATE) {
             // #265 : jamais de remplacement depuis le parcours. Un nom technique déjà pris est signalé à
             // l'écran, et c'est à l'utilisateur d'en choisir un autre.
@@ -1460,7 +1572,8 @@ public final class PanelApp {
             // sur la même version. S'il ne peut pas partir, la vérification reste valable : l'écran
             // dira simplement que l'aperçu manque.
             Queued drawn = enqueueValidated(session, agentId, BuildingPlanDraftStore.Check.PREVIEW.actionType(),
-                    Map.of("plan", current.plan()));
+                    Map.of("plan", current.plan(), "max_width", String.valueOf(project.maxWidth()),
+                            "max_height", String.valueOf(project.maxHeight())));
             if (drawn.error() == null) {
                 planDrafts.link(current.id(), drawn.actionId(), BuildingPlanDraftStore.Check.PREVIEW,
                         current.version());

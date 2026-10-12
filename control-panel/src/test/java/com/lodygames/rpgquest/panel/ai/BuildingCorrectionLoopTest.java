@@ -259,7 +259,7 @@ class BuildingCorrectionLoopTest {
     void thepromptTeachesTheArchitecturalPrimitivesAndTheFacadeConvention() {
         String system = BuildingPromptBuilder.systemPrompt();
 
-        for (String primitive : List.of("op: door", "op: window", "op: light", "op: stair_run",
+        for (String primitive : List.of("op: door", "op: window", "op: light", "op: staircase",
                 "op: ladder", "op: pillars", "op: gable")) {
             assertTrue(system.contains(primitive), "primitive non enseignée : " + primitive);
         }
@@ -277,16 +277,18 @@ class BuildingCorrectionLoopTest {
      * pas — et c'est exactement ce qui rend une boucle de correction frustrante et coûteuse.
      */
     @Test
-    @DisplayName("Le prompt énonce les sept points du contrat architectural réellement contrôlé")
-    void thepromptStatesTheSevenActuallyCheckedContractPoints() {
+    @DisplayName("Le prompt énonce les huit points du contrat architectural réellement contrôlé")
+    void thepromptStatesTheEightActuallyCheckedContractPoints() {
         String system = BuildingPromptBuilder.systemPrompt();
 
         for (String point : List.of("UNE ENTRÉE", "DES VITRAGES", "DE LA LUMIÈRE",
-                "UNE ENVELOPPE CLOSE", "ÉTAGES ACCESSIBLES", "TROIS MATÉRIAUX", "DU MOBILIER")) {
+                "UNE ENVELOPPE CLOSE", "ÉTAGES ACCESSIBLES", "ÉTAGES PRATICABLES", "TROIS MATÉRIAUX",
+                "DU MOBILIER")) {
             assertTrue(system.contains(point), "point du contrat non énoncé : " + point);
         }
-        assertEquals(7, system.lines().filter(l -> l.trim().startsWith("[ ]")).count(),
-                "la liste de contrôle doit avoir exactement sept cases");
+        // #282 : « étages praticables » (LEVEL_CLUTTERED) est désormais mesuré par le serveur.
+        assertEquals(8, system.lines().filter(l -> l.trim().startsWith("[ ]")).count(),
+                "la liste de contrôle doit avoir exactement huit cases");
     }
 
     @Test
@@ -300,9 +302,11 @@ class BuildingCorrectionLoopTest {
         // Un exemple qui enfreindrait le contrat qu'il illustre serait la pire des consignes.
         assertTrue(body.contains("op: door"), "l'exemple doit montrer une entrée");
         assertTrue(body.contains("op: light"), "l'exemple doit montrer une source de lumière");
-        assertEquals(3, body.lines().filter(l -> l.contains("op: window")).count(),
-                "au moins deux façades vitrées : l'exemple en montre trois");
-        assertTrue(body.contains("fill: minecraft:stone_bricks"),
-                "l'exemple doit fermer ses pignons");
+        assertEquals(4, body.lines().filter(l -> l.contains("op: window")).count(),
+                "au moins deux façades vitrées, aux deux étages : l'exemple en montre quatre");
+        assertTrue(body.contains("fill: minecraft:"), "l'exemple doit fermer ses pignons");
+        // #282 : l'exemple a deux étages, reliés par la primitive qui calcule la trémie.
+        assertTrue(body.contains("op: staircase") && body.contains("floor: 5"),
+                "l'exemple doit montrer un escalier entre niveaux");
     }
 }

@@ -5420,3 +5420,38 @@ confirmer pendant ce test.
     bâtiment, au niveau du bas du bâtiment. »
 3.  Nulle part la phrase « centre de la porte, au niveau du sol » n'est affichée pour tous.
 
+
+### TC-290 — Réparation par le moteur et correction IA sans commentaire (issue #282, PENDING MANUAL VALIDATION)
+
+**Prérequis** : **JAR et panel** issus de #282. **Durée** : 5 minutes. **Gratuit** jusqu'à l'étape 5
+(1 appel IA facturé à l'étape 5).
+
+1.  Atelier → nouveau projet de test (jamais un projet existant), gabarit 11 × 8. Dans « Reprendre
+    un plan », reprendre l'action d'audit `077e207d` (Maison du bibliothécaire, toit de y=5 à y=8) —
+    aucun appel IA —, puis, dans les détails techniques, **vérifier à nouveau** cette version.
+2.  Sans autre clic, après **Rafraîchir** : une version « Réparé par le moteur » apparaît, la page
+    s'ouvre dessus et dit « Instruction 18 (gable) : zone … ramenée … ». Sa vérification et son aperçu
+    sont partis seuls ; le verdict est **conforme**. `/actions` : aucun appel IA.
+3.  Recommencer avec le 3<sup>e</sup> plan de la Bibliothèque du Hub (audit `b88b887b`) : la version
+    réparée ajoute un escalier de 6 marches, retire la volée et l'échelle mortes, range les
+    bibliothèques le long des murs. Aperçu 3D, coupe au niveau 6 : la trémie et l'escalier sont visibles.
+4.  Sur une version encore refusée : **Améliorer avec l'IA** montre « Ce que l'IA recevra
+    automatiquement » (le diagnostic du serveur) et un champ « Vos consignes en plus (facultatif) ».
+5.  Laisser le champ **vide** et envoyer : une nouvelle version arrive, déjà en vérification.
+
+### TC-291 — Conception automatique de bout en bout avec OpenAI (issue #282, PENDING MANUAL VALIDATION — appels facturés)
+
+**Prérequis** : JAR et panel issus de #282 sur DEV, **feu vert du propriétaire et enveloppe acceptée**.
+**Durée** : 5 à 10 minutes par essai. **Coût** : selon l'enveloppe affichée (Soigné ≈ 8 appels).
+
+1.  Nouveau projet « Bibliothèque essai #282 » (identifiant technique neuf), 19 × 14, façade ouest, la
+    description française de la Bibliothèque du Hub. Ne réutiliser aucun projet existant.
+2.  Carte **Conception automatique** → niveau **Soigné** → lire l'enveloppe → cocher l'acceptation →
+    **Lancer**. La page se recharge seule et liste les passes (conception, vérification, réparation,
+    correction, critique) avec leurs jetons.
+3.  Critère de réussite : session « Terminée : plan conforme » ; dans l'aperçu 3D, **deux étages**,
+    un escalier visible dans une trémie, l'étage praticable (allées), façades travaillées, toit,
+    fenêtres aux deux étages, éclairage aux deux étages — **sans aucune édition du plan**.
+4.  Noter : nombre d'appels, jetons, coût réel indiqué par le tableau de bord OpenAI, durée, et une
+    appréciation esthétique (capture). Ne pas enregistrer dans la bibliothèque sans décision du
+    propriétaire.

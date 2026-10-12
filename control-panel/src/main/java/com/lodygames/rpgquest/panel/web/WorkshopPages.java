@@ -3,7 +3,9 @@ package com.lodygames.rpgquest.panel.web;
 import com.lodygames.rpgquest.panel.agent.AgentActionRow;
 import com.lodygames.rpgquest.panel.ai.AiProvider;
 import com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop;
+import com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline;
 import com.lodygames.rpgquest.panel.building.BriefLevels;
+import com.lodygames.rpgquest.panel.building.BuildingDesignRunStore;
 import com.lodygames.rpgquest.panel.building.BuildingPlanDraft;
 import com.lodygames.rpgquest.panel.building.BuildingPlanDraftStore.Revision;
 import com.lodygames.rpgquest.panel.building.BuildingPlanPreview;
@@ -15,6 +17,7 @@ import com.lodygames.rpgquest.panel.building.BuildingProject;
 import com.lodygames.rpgquest.panel.building.BuildingSiteView;
 import com.lodygames.rpgquest.panel.building.BuildingVoxels;
 import com.lodygames.rpgquest.panel.building.IsometricView;
+import com.lodygames.rpgquest.panel.building.PlanDiagnosis;
 import com.lodygames.rpgquest.panel.building.PlanVerdictText;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.security.Session;
@@ -200,7 +203,8 @@ public final class WorkshopPages {
                               BuildingPlanDraft draft, CheckState audit, CheckState preview,
                               CheckState generate, List<Revision> revisions,
                               List<AgentActionRow> recoverable, String requestToken, String notice,
-                              String error, String conflictText, boolean idTaken, int isoView, int isoCut) {
+                              String error, String conflictText, boolean idTaken, int isoView, int isoCut,
+                              Optional<BuildingDesignRunStore.Run> designRun) {
     }
 
     /** Les étapes du parcours, dans l'ordre. */
@@ -218,12 +222,18 @@ public final class WorkshopPages {
                 + "cette page.", "<a class=\"btn btn-outline-secondary\" href=\"" + BASE + "\">"
                 + Icons.icon("back") + "Atelier</a>"));
         banners(sb, v.notice(), v.error());
+        if (v.draft() != null && v.draft().origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR) {
+            sb.append(Ui.banner("info", "<strong>Version réparée automatiquement par le moteur du serveur, "
+                    + "sans appel à l'IA.</strong> La version d'origine reste disponible.<br>"
+                    + Http.esc(v.draft().extractionNote()).replace("\n", "<br>")));
+        }
 
         Step step = step(v);
         sb.append(stepper(step));
         sb.append("<div class=\"card ws-main\"><div class=\"card-body\">");
         sb.append(mainCard(v, step));
         sb.append("</div></div>");
+        sb.append(designCard(v, step));
         sb.append(previewCard(v, step));
 
         // ---- Le bâtiment souhaité : ouvert tant qu'il n'est pas décrit ---------------------------
@@ -390,6 +400,120 @@ public final class WorkshopPages {
         return sb.append("</div></section>").toString();
     }
 
+    /**
+     * « Conception automatique » (issue #282) : l'enveloppe annoncée avant le consentement, puis le
+     * journal des passes — chacune avec ses jetons — pendant et après la session.
+     */
+    static String designCard(ProjectView v, Step step) {
+        if (step == Step.DESCRIBE || step == Step.DONE) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<section class=\"card ws-design\"><div class=\"card-body\">");
+        sb.append("<h2 class=\"h5\">").append(Icons.icon("wrench")).append("Conception automatique</h2>");
+        Optional<BuildingDesignRunStore.Run> latest = v.designRun();
+        latest.ifPresent(run -> sb.append(designRun(v, run)));
+        if (latest.map(BuildingDesignRunStore.Run::running).orElse(false)) {
+            return sb.append("</div></section>").toString();
+        }
+        if (v.providers().isEmpty()) {
+            return sb.append(noProvider()).append("</div></section>").toString();
+        }
+        sb.append("<p>L'IA conçoit, le serveur vérifie et répare ce qu'il sait réparer, l'IA corrige avec "
+                + "le diagnostic exact, puis relit le plan en architecte. Vous ne touchez à rien ; chaque "
+                + "passe devient une version que vous pouvez consulter.</p>");
+        String model = v.drafts().stream().map(BuildingPlanDraft::model).filter(m -> m != null && !m.isBlank())
+                .findFirst().orElse("");
+        int[] seen = v.drafts().stream().map(d -> usage(d.usage())).filter(u -> u[0] > 0).findFirst()
+                .orElse(new int[] {0, 0});
+        sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">");
+        sb.append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "design"))
+                .append(hidden("id", v.project().id())).append(hidden("request_token", v.requestToken()));
+        if (v.draft() != null) {
+            sb.append(hidden("draft", v.draft().id()));
+        }
+        sb.append(providerSelect(v, v.draft() == null ? "" : v.draft().providerId()));
+        sb.append("<fieldset class=\"field\"><legend>Niveau d'exigence</legend>");
+        for (BuildingDesignPipeline.Quality q : BuildingDesignPipeline.Quality.values()) {
+            BuildingDesignPipeline.Envelope e = BuildingDesignPipeline.envelope(q.calls(), model, seen[0], seen[1]);
+            sb.append("<label class=\"ws-choice\"><input type=\"radio\" name=\"quality\" value=\"")
+                    .append(q.name()).append('"').append(q == BuildingDesignPipeline.Quality.SOIGNE ? " checked" : "")
+                    .append("> <strong>").append(Http.esc(q.label())).append("</strong> — ")
+                    .append(Http.esc(q.description())).append("<br><span class=\"muted\">Enveloppe : ")
+                    .append(Http.esc(e.label())).append(".</span></label>");
+        }
+        sb.append("</fieldset>");
+        sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"consent\" value=\"yes\"> "
+                + "J'accepte cette enveloppe : au plus le nombre d'appels annoncé, <strong>facturés</strong> "
+                + "par le fournisseur. La session s'arrête d'elle-même dès qu'un plan est conforme (et "
+                + "embelli selon le niveau), si le serveur ne répond plus, ou si l'IA tourne en rond."
+                + "</label></div>");
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-primary\" type=\"submit\">")
+                .append(Icons.icon("wrench")).append("Lancer la conception automatique</button></div></form>");
+        return sb.append("</div></section>").toString();
+    }
+
+    private static String designRun(ProjectView v, BuildingDesignRunStore.Run run) {
+        StringBuilder sb = new StringBuilder();
+        if (run.running()) {
+            // Pas de script (CSP) : la page se recharge seule tant que la session tourne.
+            sb.append("<meta http-equiv=\"refresh\" content=\"5\">");
+        }
+        sb.append("<p><strong>").append(Http.esc(run.status().label())).append("</strong> — ")
+                .append(run.spentCalls()).append(" appel(s) à l'IA sur ").append(run.maxCalls())
+                .append(" consentis, ").append(String.format(java.util.Locale.FRANCE, "%,d", run.inputTokens()))
+                .append(" jetons d'entrée et ")
+                .append(String.format(java.util.Locale.FRANCE, "%,d", run.outputTokens()))
+                .append(" de sortie.");
+        if (!run.outcome().isBlank()) {
+            sb.append(" ").append(Http.esc(run.outcome()));
+        }
+        sb.append("</p>");
+        if (!run.finalDraftId().isBlank()) {
+            sb.append("<p><a class=\"btn btn-sm btn-primary\" href=\"")
+                    .append(projectUrl(v.project().id(), run.finalDraftId())).append("\">")
+                    .append(Icons.icon("check")).append("Voir le plan retenu</a></p>");
+        }
+        sb.append("<ol class=\"ws-passes\">");
+        for (BuildingDesignRunStore.Pass pass : run.passes()) {
+            sb.append("<li><strong>").append(Http.esc(passLabel(pass.kind()))).append("</strong>");
+            if (!pass.draftId().isBlank()) {
+                sb.append(" — <a href=\"").append(projectUrl(v.project().id(), pass.draftId()))
+                        .append("\">version ").append(shortId(pass.draftId())).append("</a>");
+            }
+            if (pass.tokensIn() > 0 || pass.tokensOut() > 0) {
+                sb.append(" <span class=\"muted\">(").append(Http.esc(pass.model())).append(", ")
+                        .append(pass.tokensIn()).append(" / ").append(pass.tokensOut()).append(" jetons)</span>");
+            }
+            sb.append(" : ").append(Http.esc(pass.verdict())).append("</li>");
+        }
+        sb.append("</ol>");
+        if (run.running()) {
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"")
+                    .append(projectUrl(v.project().id(), "")).append("\">").append(Icons.icon("refresh"))
+                    .append("Rafraîchir</a>");
+        }
+        return sb.toString();
+    }
+
+    private static String passLabel(String kind) {
+        return switch (kind) {
+            case "CONCEPTION" -> "Conception par l'IA (payant)";
+            case "CONCEPTION NEUVE" -> "Nouvelle conception par l'IA, en évitant les écueils (payant)";
+            case "CORRECTION" -> "Correction par l'IA avec le diagnostic du serveur (payant)";
+            case "CRITIQUE" -> "Critique architecturale par l'IA (payant)";
+            case "MOTEUR" -> "Réparation par le moteur (gratuit)";
+            case "VÉRIFICATION" -> "Vérification par le serveur (gratuit)";
+            default -> "Note";
+        };
+    }
+
+    private static int[] usage(String raw) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+) entrée / (\\d+) sortie")
+                .matcher(raw == null ? "" : raw);
+        return m.find() ? new int[] {Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))}
+                : new int[] {0, 0};
+    }
+
     /** Étape « Vérifier » : pas encore vérifié, vérification en cours, ou à corriger. */
     private static String checkCard(ProjectView v) {
         StringBuilder sb = new StringBuilder();
@@ -462,26 +586,21 @@ public final class WorkshopPages {
 
     /** Le motif de correction proposé : ce que le serveur a dit de la version courante, en clair. */
     static String correctionReason(ProjectView v) {
-        BuildingPlanVerdict verdict = currentVerdict(v);
-        List<String> lines = new ArrayList<>();
-        if (verdict.available() && !verdict.accepted()) {
-            lines.add(verdict.message());
-        }
-        if (verdict.available()) {
-            BriefLevels.divergence(v.project().brief(), verdict.metrics()).ifPresent(lines::add);
-            lines.addAll(verdict.warnings());
-        }
-        if (!verdict.available() && v.audit().current() && v.audit().status() == Status.DONE) {
-            v.audit().row().map(AgentActionRow::resultMessage).filter(m -> m != null && !m.isBlank())
-                    .ifPresent(lines::add);
-        }
-        return String.join("\n", lines).trim();
+        return diagnosis(v.project(), v.audit());
+    }
+
+    /** Voir {@link PlanDiagnosis#of} (issue #282). */
+    public static String diagnosis(BuildingProject project, CheckState audit) {
+        return PlanDiagnosis.of(project, audit);
     }
 
     private static BuildingPlanVerdict currentVerdict(ProjectView v) {
-        CheckState audit = v.audit();
-        return audit.current() && audit.status() == Status.DONE
-                ? BuildingPlanVerdict.from(audit.details()) : BuildingPlanVerdict.none();
+        return verdictOf(v.audit());
+    }
+
+    /** Le verdict de la version courante, avec le message de l'action en secours. */
+    static BuildingPlanVerdict verdictOf(CheckState audit) {
+        return PlanDiagnosis.verdict(audit);
     }
 
     // ---- Formulaires ----------------------------------------------------------------------
@@ -515,10 +634,21 @@ public final class WorkshopPages {
                 .append(hidden("version", String.valueOf(d.version())))
                 .append(hidden("request_token", v.requestToken()));
         sb.append(providerSelect(v, d.providerId()));
-        sb.append("<div class=\"field\"><label for=\"ws-reason\">Ce qu'il faut changer</label>")
-                .append("<textarea id=\"ws-reason\" name=\"reason\" rows=\"4\">").append(Http.esc(reason))
-                .append("</textarea><p class=\"field-help\">Prérempli avec ce que la vérification a "
-                        + "trouvé ; ajoutez ce que vous voulez en plus.</p></div>");
+        // #282 : le diagnostic du serveur part DE LUI-MÊME avec la demande. Il est montré en
+        // lecture seule ; le champ libre ne sert qu'aux consignes en plus, et il est facultatif.
+        if (!reason.isBlank()) {
+            sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Ce que l'IA recevra "
+                    + "automatiquement (diagnostic du serveur)</summary><pre class=\"ws-diagnosis\">")
+                    .append(Http.esc(reason)).append("</pre></details>");
+        }
+        sb.append("<div class=\"field\"><label for=\"ws-reason\">Vos consignes en plus "
+                + "<span class=\"muted\">(facultatif)</span></label>")
+                .append("<textarea id=\"ws-reason\" name=\"notes\" rows=\"3\"></textarea>")
+                .append("<p class=\"field-help\">").append(reason.isBlank()
+                        ? "Dites ce que vous voulez changer : le serveur n'a rien relevé sur cette version."
+                        : "Le diagnostic du serveur est déjà joint. Ajoutez seulement ce que vous voulez "
+                                + "en plus (style, pièces, matériaux…).")
+                .append("</p></div>");
         sb.append("<p class=\"field-help\">").append(Icons.icon("warning")).append("Appel <strong>facturé"
                 + "</strong>. La réponse devient une nouvelle version du plan ; la version actuelle reste "
                 + "disponible.</p>");

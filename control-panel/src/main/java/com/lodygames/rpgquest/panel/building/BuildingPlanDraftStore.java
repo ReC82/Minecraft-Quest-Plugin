@@ -372,6 +372,21 @@ public final class BuildingPlanDraftStore {
         }
     }
 
+    /** La version réparée par le moteur depuis cet audit, s'il en existe une (#282, idempotence). */
+    public Optional<BuildingPlanDraft> repairedFrom(String actionId) {
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT * FROM building_plan_draft WHERE source_action_id = ? AND origin = ? "
+                        + "ORDER BY created_at LIMIT 1")) {
+            ps.setString(1, nz(actionId));
+            ps.setString(2, BuildingPlanDraft.Origin.ENGINE_REPAIR.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(read(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture d'une réparation impossible (" + actionId + ")", e);
+        }
+    }
+
     public List<Revision> revisions(String draftId) {
         List<Revision> out = new ArrayList<>();
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(

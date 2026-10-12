@@ -36,6 +36,21 @@ public final class BuildingPlanYaml {
 
     /** Lit un plan depuis du YAML brut. Pratique pour un plan qui arrive en paramètre d'action. */
     public static Optional<BuildingPlan> read(String yaml, List<String> problems) {
+        return read(yaml, problems, true);
+    }
+
+    /**
+     * Lit un plan <strong>sans</strong> le valider (issue #282) : la forme est vérifiée — clés,
+     * instructions connues, coordonnées entières — mais pas les bornes ni les règles. C'est ce
+     * qui permet à {@link PlanRepair} de corriger un toit qui dépasse d'un bloc au lieu de
+     * renvoyer le plan entier à l'IA. Ne jamais expanser un plan lu ainsi sans le valider.
+     */
+    public static Optional<BuildingPlan> readUnvalidated(String yaml, List<String> problems) {
+        return read(yaml, problems, false);
+    }
+
+    private static Optional<BuildingPlan> read(String yaml, List<String> problems,
+                                               boolean validate) {
         if (yaml == null || yaml.isBlank()) {
             problems.add("Plan vide.");
             return Optional.empty();
@@ -48,11 +63,16 @@ public final class BuildingPlanYaml {
             problems.add("YAML illisible : " + broken.getMessage());
             return Optional.empty();
         }
-        return read(config, problems);
+        return read(config, problems, validate);
     }
 
     /** Lit un plan depuis une section déjà analysée. */
     public static Optional<BuildingPlan> read(ConfigurationSection section, List<String> problems) {
+        return read(section, problems, true);
+    }
+
+    private static Optional<BuildingPlan> read(ConfigurationSection section, List<String> problems,
+                                               boolean validate) {
         if (section == null) {
             problems.add("Plan vide ou illisible.");
             return Optional.empty();
@@ -129,7 +149,7 @@ public final class BuildingPlanYaml {
 
         BuildingPlan plan = new BuildingPlan(id, name, sizeX, sizeY, sizeZ, front.get(),
                 anchorX, anchorY, anchorZ, steps, kind);
-        Optional<String> invalid = plan.validate();
+        Optional<String> invalid = validate ? plan.validate() : Optional.empty();
         if (invalid.isPresent()) {
             problems.add(invalid.get());
             return Optional.empty();
@@ -143,7 +163,7 @@ public final class BuildingPlanYaml {
         if (kind.isEmpty()) {
             problems.add(where + "instruction inconnue : « " + str(map.get("op"))
                     + " ». Valeurs acceptées : box, shell, walls, clear, gable, door, window, "
-                    + "light, stair_run, ladder, pillars.");
+                    + "light, stair_run, staircase, ladder, pillars.");
             return Optional.empty();
         }
         PlanStep.Kind k = kind.get();
@@ -177,7 +197,7 @@ public final class BuildingPlanYaml {
         // Paramètres nommés. Une valeur non entière est refusée plutôt qu'arrondie en silence.
         java.util.Map<String, Integer> numbers = new java.util.LinkedHashMap<>();
         for (String key : new String[] {"offset", "y", "width", "height", "spacing", "count",
-            "steps", "hinge"}) {
+            "steps", "hinge", "floor"}) {
             Object raw = map.get(key);
             if (raw == null) {
                 continue;
@@ -229,10 +249,7 @@ public final class BuildingPlanYaml {
     }
 
     private static boolean semantic(PlanStep.Kind kind) {
-        return switch (kind) {
-            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS -> true;
-            default -> false;
-        };
+        return PlanStep.semanticKind(kind);
     }
 
     /** Ces primitives se repèrent par façade et décalage, pas par une zone. */
@@ -298,5 +315,80 @@ public final class BuildingPlanYaml {
 
     private static String str(Object raw) {
         return raw == null ? "" : String.valueOf(raw).trim();
+    }
+
+    // ---- Écriture (issue #282) ------------------------------------------------------------------
+
+    /** L'ordre d'écriture des paramètres nommés : fixe, pour qu'un même plan s'écrive toujours pareil. */
+    private static final String[] NUMBER_KEYS = {"offset", "y", "width", "height", "spacing",
+        "count", "steps", "hinge", "floor"};
+
+    /**
+     * Écrit un plan dans la forme canonique que {@link #read} relit à l'identique.
+     *
+     * <p>Sert à rendre un plan réparé par le moteur ({@link PlanRepair}) : l'administrateur et
+     * le modèle reçoivent un document complet, jamais un fragment à recoller. Les commentaires du
+     * plan d'origine ne survivent pas — ils n'ont aucun effet sur la grille.</p>
+     */
+    public static String write(BuildingPlan plan) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("id: ").append(plan.id()).append('\n');
+        sb.append("name: ").append(quoted(plan.name())).append('\n');
+        sb.append("kind: ").append(plan.kind().name().toLowerCase(java.util.Locale.ROOT)).append('\n');
+        sb.append("front: ").append(plan.front().name()).append('\n');
+        sb.append("size:\n  x: ").append(plan.sizeX()).append("\n  y: ").append(plan.sizeY())
+                .append("\n  z: ").append(plan.sizeZ()).append('\n');
+        sb.append("anchor:\n  x: ").append(plan.anchorX()).append("\n  y: ").append(plan.anchorY())
+                .append("\n  z: ").append(plan.anchorZ()).append('\n');
+        sb.append("steps:\n");
+        for (PlanStep step : plan.steps()) {
+            sb.append(writeStep(step, "  "));
+        }
+        return sb.toString();
+    }
+
+    /** Une instruction, en élément de la liste {@code steps}. */
+    public static String writeStep(PlanStep step, String indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(indent).append("- op: ").append(step.kind().name().toLowerCase(java.util.Locale.ROOT))
+                .append('\n');
+        String in = indent + "  ";
+        if (step.facade() != null) {
+            sb.append(in).append("facade: ").append(step.facade().name()).append('\n');
+        }
+        PlanBox b = step.box();
+        if (!(byFacade(step.kind()) && step.facade() != null)) {
+            sb.append(in).append("from: [").append(b.minX()).append(", ").append(b.minY())
+                    .append(", ").append(b.minZ()).append("]\n");
+            if (b.cells() > 1) {
+                sb.append(in).append("to: [").append(b.maxX()).append(", ").append(b.maxY())
+                        .append(", ").append(b.maxZ()).append("]\n");
+            }
+        }
+        if (!step.axis().isEmpty()) {
+            sb.append(in).append(step.kind() == PlanStep.Kind.GABLE ? "axis: " : "direction: ")
+                    .append(step.axis()).append('\n');
+        }
+        for (String key : NUMBER_KEYS) {
+            if (step.hasNumber(key)) {
+                sb.append(in).append(key).append(": ").append(step.number(key, 0)).append('\n');
+            }
+        }
+        if (!step.fill().isEmpty()) {
+            sb.append(in).append("fill: ").append(scalar(step.fill())).append('\n');
+        }
+        if (!step.state().isEmpty()) {
+            sb.append(in).append("block: ").append(scalar(step.state())).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** Un état de bloc : nu s'il est simple, entre guillemets s'il porte des propriétés. */
+    private static String scalar(String value) {
+        return value.matches("[a-z0-9_:.\\-/]+") ? value : quoted(value);
+    }
+
+    private static String quoted(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 }

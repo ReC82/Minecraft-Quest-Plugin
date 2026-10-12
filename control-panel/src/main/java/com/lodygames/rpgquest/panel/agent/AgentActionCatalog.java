@@ -782,6 +782,22 @@ public final class AgentActionCatalog {
                 if ("building.generate".equals(type) && "true".equals(trim(form.get("replace")))) {
                     params.put("replace", "true");
                 }
+                // #282 : les bornes du projet, pour que la réparation déterministe du plugin
+                // puisse agrandir le volume au lieu d'araser un toit. Optionnelles, entières.
+                if (!"building.generate".equals(type)) {
+                    for (String key : new String[] {"max_width", "max_height"}) {
+                        String raw = trim(form.get(key));
+                        if (raw.isEmpty()) {
+                            continue;
+                        }
+                        if (!raw.matches("[0-9]{1,2}") || Integer.parseInt(raw) < 1
+                                || Integer.parseInt(raw) > 64) {
+                            return Validation.fail("Borne « " + key + " » invalide : entier de 1 à "
+                                    + "64 attendu.");
+                        }
+                        params.put(key, raw);
+                    }
+                }
             }
             // Issue #94 — brief architectural. Un brief vide est valide : c'est « repartir de
             // zéro ». Au-delà de la borne, on REFUSE en disant de combien on dépasse, plutôt que

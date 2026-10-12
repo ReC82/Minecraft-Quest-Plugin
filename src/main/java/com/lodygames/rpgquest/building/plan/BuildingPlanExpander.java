@@ -3,9 +3,11 @@ package com.lodygames.rpgquest.building.plan;
 import com.lodygames.rpgquest.building.model.Blueprint;
 import com.lodygames.rpgquest.building.model.BlueprintBlock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Transforme un {@link BuildingPlan} en {@link Blueprint}, de façon déterministe (issue #94).
@@ -37,8 +39,25 @@ public final class BuildingPlanExpander {
     private BuildingPlanExpander() {
     }
 
-    /** Le résultat : un plan de blocs, ou le motif pour lequel il n'a pas pu être produit. */
-    public record Result(Blueprint blueprint, String error, int solidCount, long touchedCells) {
+    /**
+     * Le résultat : un plan de blocs, ou le motif pour lequel il n'a pas pu être produit.
+     *
+     * @param origins pour chaque cellule posée, le rang (à partir de 1) de l'instruction qui l'a
+     *                écrite en dernier (issue #282). C'est ce qui permet à l'audit de dire « cette
+     *                bibliothèque vient de l'instruction 17 » au lieu de « une cellule est
+     *                pleine » — la différence entre un refus actionnable et un refus qu'on
+     *                contourne par une autre variante du même bâtiment
+     */
+    public record Result(Blueprint blueprint, String error, int solidCount, long touchedCells,
+                         Map<Long, Integer> origins, BuildingPlan plan) {
+
+        public Result {
+            origins = origins == null ? Map.of() : Map.copyOf(origins);
+        }
+
+        public Result(Blueprint blueprint, String error, int solidCount, long touchedCells) {
+            this(blueprint, error, solidCount, touchedCells, Map.of(), null);
+        }
 
         public boolean ok() {
             return blueprint != null;
@@ -46,6 +65,81 @@ public final class BuildingPlanExpander {
 
         public static Result failure(String error) {
             return new Result(null, error, 0, 0);
+        }
+
+        /** La provenance des cellules, dans la forme que l'audit consomme. */
+        public ArchitecturalAudit.Provenance provenance() {
+            if (plan == null) {
+                return ArchitecturalAudit.Provenance.NONE;
+            }
+            return new ArchitecturalAudit.Provenance() {
+                @Override
+                public int stepAt(int x, int y, int z) {
+                    if (x < 0 || y < 0 || z < 0) {
+                        return 0;
+                    }
+                    return origins.getOrDefault(key(x, y, z), 0);
+                }
+
+                @Override
+                public String describe(int rank) {
+                    return describeStep(plan, rank);
+                }
+            };
+        }
+    }
+
+    /**
+     * Une instruction, désignée comme le modèle l'a écrite : rang, nature, matériau, zone.
+     * « instruction 17 (box minecraft:bookshelf de [2, 7, 2] à [16, 7, 16]) ».
+     */
+    public static String describeStep(BuildingPlan plan, int rank) {
+        if (plan == null || rank < 1 || rank > plan.steps().size()) {
+            return "instruction inconnue";
+        }
+        PlanStep step = plan.steps().get(rank - 1);
+        PlanBox b = step.box();
+        StringBuilder sb = new StringBuilder("instruction ").append(rank).append(" (")
+                .append(step.kind().name().toLowerCase(java.util.Locale.ROOT));
+        if (!step.state().isEmpty()) {
+            sb.append(' ').append(BlockStates.bareType(step.state()));
+        }
+        if (step.facade() != null) {
+            sb.append(" façade ").append(step.facade());
+        } else if (b.cells() == 1) {
+            sb.append(" en [").append(b.minX()).append(", ").append(b.minY()).append(", ")
+                    .append(b.minZ()).append(']');
+        } else {
+            sb.append(" de [").append(b.minX()).append(", ").append(b.minY()).append(", ")
+                    .append(b.minZ()).append("] à [").append(b.maxX()).append(", ")
+                    .append(b.maxY()).append(", ").append(b.maxZ()).append(']');
+        }
+        return sb.append(')').toString();
+    }
+
+    /**
+     * Les cellules en cours d'expansion, avec leur provenance.
+     *
+     * <p>Une seule écriture possible, {@link #put}, et un seul effacement, {@link #remove} : la
+     * provenance ne peut donc pas diverger du contenu.</p>
+     */
+    static final class Cells {
+        private final Map<Long, String> states = new LinkedHashMap<>();
+        private final Map<Long, Integer> origins = new HashMap<>();
+        private int current;
+
+        void put(long key, String state) {
+            states.put(key, state);
+            origins.put(key, current);
+        }
+
+        void remove(long key) {
+            states.remove(key);
+            origins.remove(key);
+        }
+
+        String get(long key) {
+            return states.get(key);
         }
     }
 
@@ -77,12 +171,31 @@ public final class BuildingPlanExpander {
             }
         }
 
-        Map<Long, String> cells = new LinkedHashMap<>();
-        for (PlanStep step : plan.steps()) {
-            apply(step, cells, plan);
+        Cells cells = new Cells();
+        // #282 : les escaliers entre niveaux passent EN DERNIER. Leur volume — marches, hauteur
+        // libre, trémie, départ, palier — est ainsi réservé : un meuble posé plus loin dans le
+        // plan ne peut plus le reboucher. C'est exactement ce qui avait fermé l'étage du 3e plan
+        // de la Bibliothèque du Hub, où une box de bibliothèques suivait l'escalier.
+        for (int i = 0; i < plan.steps().size(); i++) {
+            PlanStep step = plan.steps().get(i);
+            if (step.kind() != PlanStep.Kind.STAIRCASE) {
+                cells.current = i + 1;
+                apply(step, cells, plan);
+            }
+        }
+        for (int i = 0; i < plan.steps().size(); i++) {
+            PlanStep step = plan.steps().get(i);
+            if (step.kind() == PlanStep.Kind.STAIRCASE) {
+                cells.current = i + 1;
+                Optional<String> refused = staircase(step, cells);
+                if (refused.isPresent()) {
+                    return Result.failure("Instruction " + (i + 1) + " (STAIRCASE) : "
+                            + refused.get());
+                }
+            }
         }
 
-        List<BlueprintBlock> blocks = new ArrayList<>(cells.size());
+        List<BlueprintBlock> blocks = new ArrayList<>(cells.states.size());
         for (int y = 0; y < plan.sizeY(); y++) {
             for (int z = 0; z < plan.sizeZ(); z++) {
                 for (int x = 0; x < plan.sizeX(); x++) {
@@ -105,10 +218,10 @@ public final class BuildingPlanExpander {
             // interdit les débordements. Si cela arrive quand même, on refuse plutôt que d'écrire.
             return Result.failure("Plan de blocs incohérent : " + broken.get());
         }
-        return new Result(blueprint, "", blocks.size(), touched);
+        return new Result(blueprint, "", blocks.size(), touched, cells.origins, plan);
     }
 
-    private static void apply(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
+    private static void apply(PlanStep step, Cells cells, BuildingPlan plan) {
         PlanBox box = step.box();
         switch (step.kind()) {
             case BOX -> forEach(box, (x, y, z) -> cells.put(key(x, y, z), step.state()));
@@ -130,7 +243,89 @@ public final class BuildingPlanExpander {
             case STAIR_RUN -> stairRun(step, cells);
             case LADDER -> ladder(step, cells, plan);
             case PILLARS -> pillars(step, cells);
+            // Appliqué à part, après toutes les autres instructions : voir expand().
+            case STAIRCASE -> { }
         }
+    }
+
+    /**
+     * Un escalier entre deux niveaux (issue #282), appliqué après tout le reste.
+     *
+     * <p>Deux garde-fous, vérifiés AVANT d'écrire la moindre cellule :</p>
+     * <ul>
+     *   <li><strong>l'enveloppe est intouchable</strong> — mur extérieur, porte, vitrage. Une
+     *       correction d'accès ne doit jamais détruire la façade : on refuse en nommant la
+     *       cellule, plutôt que de percer en silence ;</li>
+     *   <li><strong>le départ et le palier doivent porter</strong> — un sol sous le départ, le
+     *       plancher sous le palier. Sinon la volée mène dans le vide, et c'est le plan qui se
+     *       trompe de plancher.</li>
+     * </ul>
+     */
+    private static Optional<String> staircase(PlanStep step, Cells cells) {
+        Optional<Staircase> parsed = Staircase.of(step);
+        if (parsed.isEmpty()) {
+            return Optional.of("direction de montée inconnue.");
+        }
+        Staircase stair = parsed.get();
+        int[] bounds = materialBounds(cells);
+        for (Staircase.Placement p : stair.placements()) {
+            boolean envelope = bounds != null && (p.x() <= bounds[0] || p.x() >= bounds[3]
+                    || p.z() <= bounds[2] || p.z() >= bounds[5]);
+            String there = cells.get(key(p.x(), p.y(), p.z()));
+            if (envelope && there != null) {
+                return Optional.of("l'escalier toucherait le mur extérieur en " + p.x() + "/"
+                        + p.y() + "/" + p.z() + " (" + BlockStates.bareType(there) + "). Place-le "
+                        + "entièrement à l'intérieur, à au moins une cellule des murs — départ et "
+                        + "palier compris.");
+            }
+            if (there != null && (BlockSemantics.glazing(there) || there.contains("_door["))) {
+                return Optional.of("l'escalier détruirait " + BlockStates.bareType(there) + " en "
+                        + p.x() + "/" + p.y() + "/" + p.z() + ". Une porte ou une fenêtre n'est "
+                        + "jamais sacrifiée à un escalier : déplace-le.");
+            }
+        }
+        for (int[] s : stair.supports()) {
+            String below = cells.get(key(s[0], s[1], s[2]));
+            if (!BlockSemantics.support(below)) {
+                boolean landing = s[1] == stair.floor();
+                return Optional.of(landing
+                        ? "le palier d'arrivée " + s[0] + "/" + (s[1] + 1) + "/" + s[2]
+                                + " n'a pas de plancher sous lui en y=" + s[1] + ". « floor » doit "
+                                + "être le y d'un plancher qui existe devant la dernière marche."
+                        : "le départ " + s[0] + "/" + (s[1] + 1) + "/" + s[2] + " n'a pas de sol "
+                                + "sous lui en y=" + s[1] + ". « from » est la première marche, "
+                                + "posée SUR le sol du niveau de départ.");
+            }
+        }
+        for (Staircase.Placement p : stair.placements()) {
+            if (p.clears()) {
+                cells.remove(key(p.x(), p.y(), p.z()));
+            } else {
+                cells.put(key(p.x(), p.y(), p.z()), p.state());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Les bornes de la matière déjà posée : {minX, minY, minZ, maxX, maxY, maxZ}, ou null. */
+    private static int[] materialBounds(Cells cells) {
+        if (cells.states.isEmpty()) {
+            return null;
+        }
+        int[] b = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE,
+            Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+        for (long k : cells.states.keySet()) {
+            int x = (int) (k >>> 40);
+            int y = (int) ((k >>> 20) & 0xFFFFF);
+            int z = (int) (k & 0xFFFFF);
+            b[0] = Math.min(b[0], x);
+            b[1] = Math.min(b[1], y);
+            b[2] = Math.min(b[2], z);
+            b[3] = Math.max(b[3], x);
+            b[4] = Math.max(b[4], y);
+            b[5] = Math.max(b[5], z);
+        }
+        return b;
     }
 
     // ---- Primitives sémantiques (issue #94, lot B) -------------------------------------------
@@ -143,7 +338,7 @@ public final class BuildingPlanExpander {
      * intérieure</strong> pour que la porte soit réellement traversable. C'est exactement la série
      * de calculs que la V1 avait ratée.</p>
      */
-    private static void door(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
+    private static void door(PlanStep step, Cells cells, BuildingPlan plan) {
         Facade facade = step.facade() == null ? Facade.FRONT : step.facade();
         int offset = step.number("offset", facade.span(plan.front(), plan.sizeX(), plan.sizeZ()) / 2);
         int y = step.number("y", 1);
@@ -174,7 +369,7 @@ public final class BuildingPlanExpander {
      * {@code count} et {@code spacing} permettent d'aligner une série de fenêtres en une seule
      * instruction.</p>
      */
-    private static void window(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
+    private static void window(PlanStep step, Cells cells, BuildingPlan plan) {
         Facade facade = step.facade() == null ? Facade.FRONT : step.facade();
         int span = facade.span(plan.front(), plan.sizeX(), plan.sizeZ());
         int offset = step.number("offset", 1);
@@ -212,7 +407,7 @@ public final class BuildingPlanExpander {
      * lanterne suspendue sans plafond flotte, une lanterne posée sans sol tombe. Le modèle n'a pas
      * à y penser.</p>
      */
-    private static void light(PlanStep step, Map<Long, String> cells) {
+    private static void light(PlanStep step, Cells cells) {
         PlanBox box = step.box();
         int spacing = Math.max(1, step.number("spacing", 5));
         String material = BlockStates.bareTypeOr(step.state(), "minecraft:lantern");
@@ -242,7 +437,7 @@ public final class BuildingPlanExpander {
      * <p>C'est précisément ce que la V1 avait raté : son percement était en {@code y=4} alors que
      * le plancher était en {@code y=3}, qui restait donc plein — étage inaccessible.</p>
      */
-    private static void stairRun(PlanStep step, Map<Long, String> cells) {
+    private static void stairRun(PlanStep step, Cells cells) {
         PlanBox box = step.box();
         BlockStates.Dir dir = BlockStates.Dir.NORTH;
         for (BlockStates.Dir candidate : BlockStates.Dir.values()) {
@@ -273,7 +468,7 @@ public final class BuildingPlanExpander {
     }
 
     /** Une échelle adossée : elle regarde à l'opposé du mur qui la porte. */
-    private static void ladder(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
+    private static void ladder(PlanStep step, Cells cells, BuildingPlan plan) {
         PlanBox box = step.box();
         Facade facade = step.facade() == null ? Facade.BACK : step.facade();
         BlockStates.Dir looks = facade.direction(plan.front()).opposite();
@@ -293,7 +488,7 @@ public final class BuildingPlanExpander {
      * instructions sur 80 autorisées, non par paresse, mais parce que rien ne lui permettait de
      * dire « un pilastre tous les quatre blocs ».</p>
      */
-    private static void pillars(PlanStep step, Map<Long, String> cells) {
+    private static void pillars(PlanStep step, Cells cells) {
         PlanBox box = step.box();
         int spacing = Math.max(2, step.number("spacing", 4));
         String material = BlockStates.bareTypeOr(step.state(), "minecraft:stone_bricks");
@@ -324,7 +519,7 @@ public final class BuildingPlanExpander {
      * souvent. Un toit plus haut que la zone est simplement tronqué à la zone : on ne sort jamais
      * du volume annoncé.</p>
      */
-    private static void gable(PlanStep step, Map<Long, String> cells) {
+    private static void gable(PlanStep step, Cells cells) {
         PlanBox box = step.box();
         boolean alongX = step.axis().equals("x");
         int span = alongX ? box.sizeZ() : box.sizeX();

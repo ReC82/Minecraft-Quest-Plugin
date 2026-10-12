@@ -81,6 +81,8 @@ class WorkshopFlowTest {
     private AgentStore store;
     private HttpServer ai;
     private final AtomicInteger aiCalls = new AtomicInteger();
+    /** Le dernier corps reçu par le faux fournisseur : ce que l'IA a réellement lu. */
+    private volatile String lastAiRequest = "";
     private String dbPath;
     private int port;
     private HttpClient client;
@@ -136,7 +138,8 @@ class WorkshopFlowTest {
         assertEquals(1, aiCalls.get());
 
         String page = get(withDraft).body();
-        assertTrue(page.contains("Vérifier le bâtiment"), "l'action suivante, en clair");
+        assertTrue(mainCard(page).contains("Vérification en cours"),
+                "#282 : un plan reçu part aussitôt en vérification, sans clic");
         get(withDraft);
         get("/buildings/workshop");
         get(project);
@@ -165,8 +168,7 @@ class WorkshopFlowTest {
     void aRefusedPlanIsExplainedInPlainFrenchWithoutCodesInTheMainCard() throws Exception {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        HttpResponse<String> res = gesture(get(withDraft).body(), "audit");
-        assertTrue(location(res).contains("draft="), "on revient au projet, pas à l'historique");
+        // #282 : la vérification est partie d'elle-même avec le plan.
         assertTrue(mainCard(get(withDraft).body()).contains("Vérification en cours"));
 
         answer(latest("building.plan.audit"), AUDIT_REFUSED);
@@ -186,7 +188,7 @@ class WorkshopFlowTest {
     void aVerifiedPlanOffersToSaveInTheLibraryAndSaysWhenItDiffersFromTheDescription() throws Exception {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        gesture(get(withDraft).body(), "audit");
+        // #282 : la vérification et l'aperçu partent d'eux-mêmes avec le plan.
         answer(latest("building.plan.audit"), AUDIT_OK);
 
         String main = mainCard(get(withDraft).body());
@@ -210,7 +212,7 @@ class WorkshopFlowTest {
     void aVerificationAlsoDrawsTheBuildingFromTheServerGrid() throws Exception {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        gesture(get(withDraft).body(), "audit");
+        // #282 : la vérification et l'aperçu partent d'eux-mêmes avec le plan.
         assertEquals(1, store.recentActions(TestConfig.AGENT_ID, 200).stream()
                 .filter(a -> a.type().equals("building.plan.preview")).count(), "l'aperçu part avec la vérification");
         assertTrue(get(withDraft).body().contains("Aperçu en cours de calcul"));
@@ -238,7 +240,7 @@ class WorkshopFlowTest {
     void anOlderPluginWithoutTheGridSaysWhatIsMissing() throws Exception {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        gesture(get(withDraft).body(), "audit");
+        // #282 : la vérification et l'aperçu partent d'eux-mêmes avec le plan.
         answer(latest("building.plan.preview"), "{\"code\":\"OK\",\"plans\":[],\"elevations\":[]}");
         String page = get(withDraft).body();
         assertTrue(page.contains("version plus récente du plugin"), "le manque est dit, pas maquillé");
@@ -254,7 +256,7 @@ class WorkshopFlowTest {
         String lid = store.createAction(TestConfig.AGENT_ID, "building.definition.list", Map.of(), "owner");
         answer(store.action(lid).orElseThrow(), library.replace("{\"buildings\"", "{\"code\":\"OK\",\"buildings\""));
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        gesture(get(withDraft).body(), "audit");
+        // #282 : la vérification et l'aperçu partent d'eux-mêmes avec le plan.
         answer(latest("building.plan.audit"), AUDIT_OK);
 
         String main = mainCard(get(withDraft).body());
@@ -266,7 +268,7 @@ class WorkshopFlowTest {
     void savingInTheLibraryNeverReplacesAnything() throws Exception {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        gesture(get(withDraft).body(), "audit");
+        // #282 : la vérification et l'aperçu partent d'eux-mêmes avec le plan.
         answer(latest("building.plan.audit"), AUDIT_OK);
 
         gesture(get(withDraft).body(), "generate");
@@ -324,7 +326,7 @@ class WorkshopFlowTest {
     void aProjectAndItsVerificationSurviveAPanelRestart() throws Exception {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        gesture(get(withDraft).body(), "audit");
+        // #282 : la vérification et l'aperçu partent d'eux-mêmes avec le plan.
         answer(latest("building.plan.audit"), AUDIT_OK);
 
         restart();
@@ -338,7 +340,7 @@ class WorkshopFlowTest {
     void anImprovementIsANewVersionAndLeavesTheCurrentOneUntouched() throws Exception {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
-        gesture(get(withDraft).body(), "audit");
+        // #282 : la vérification et l'aperçu partent d'eux-mêmes avec le plan.
         answer(latest("building.plan.audit"), AUDIT_REFUSED);
         String page = get(withDraft).body();
         String form = formAround(page, "value=\"correct\"");
@@ -354,6 +356,132 @@ class WorkshopFlowTest {
         assertNotEquals(draftId(withDraft), draftId(next));
         assertEquals(BuildingPlanDraft.Origin.AI_CORRECTION, drafts().find(draftId(next)).orElseThrow().origin());
         assertEquals(1, drafts().find(draftId(withDraft)).orElseThrow().version());
+    }
+
+    // ---- #282 : plus d'intermédiaire entre le validateur et l'IA -------------------------------
+
+    /**
+     * Le parcours exact du 12/10/2026 (« Maison du bibliothécaire ») : génération → audit en échec
+     * PLAN_INVALID → « Améliorer avec l'IA » SANS commentaire → nouvel audit, sans que personne ne
+     * recopie l'erreur du serveur.
+     */
+    @Test
+    void anAiCorrectionWithoutAnyCommentSendsTheServerDiagnosisAndIsVerifiedAgain() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison du bibliothécaire", BRIEF));
+        assertEquals(1, aiCalls.get());
+
+        // Vérification et aperçu sont partis d'eux-mêmes, avec les bornes du projet.
+        AgentActionRow firstAudit = latest("building.plan.audit");
+        assertEquals("19", firstAudit.params().get("max_width"));
+        assertEquals("14", firstAudit.params().get("max_height"));
+        assertEquals(1, store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .filter(a -> a.type().equals("building.plan.preview")).count());
+        assertTrue(mainCard(get(withDraft).body()).contains("Vérification en cours"));
+
+        // Le refus réel, avec un message plus long que les 500 caractères du résultat d'action.
+        String diagnosis = "Plan refusé : Instruction 18 (GABLE) : la zone 0/5/0 → 10/8/10 sort du "
+                + "volume 11 × 8 × 11. " + "Détail géométrique. ".repeat(40);
+        agentAnswers(firstAudit.id(), "FAILED", diagnosis.substring(0, 200), "{\"code\":\"PLAN_INVALID\","
+                + "\"codes\":[\"PLAN_INVALID\"],\"message\":" + Json.write(diagnosis) + ",\"warnings\":[],"
+                + "\"metrics\":{}}");
+
+        String page = get(withDraft).body();
+        String form = formAround(page, "value=\"correct\"");
+        assertTrue(form.contains("Instruction 18 (GABLE)"), "le diagnostic est joint d'office");
+        assertTrue(form.contains("(facultatif)"), "le commentaire est facultatif");
+
+        String body = "_csrf=" + csrf(page) + "&_action=correct&id=" + id(withDraft) + "&draft="
+                + draftId(withDraft) + "&version=" + field(form, "name=\"version\" value=\"([^\"]+)\"")
+                + "&provider=openai&request_token=" + token(form) + "&notes=";
+        String next = location(post("/buildings/workshop/project", body));
+        assertEquals(2, aiCalls.get(), "la correction est partie sans commentaire");
+        assertTrue(lastAiRequest.contains("Instruction 18 (GABLE)"), "l'IA a reçu le diagnostic exact");
+        assertTrue(lastAiRequest.contains("tail géométrique. Détail"),
+                "le diagnostic complet, pas les 500 premiers caractères");
+        assertNotEquals(draftId(withDraft), draftId(next));
+
+        // La nouvelle version est revérifiée d'elle-même.
+        AgentActionRow secondAudit = latest("building.plan.audit");
+        assertNotEquals(firstAudit.id(), secondAudit.id());
+        assertEquals(draftId(next), drafts().linkOf(secondAudit.id()).orElseThrow().draftId());
+    }
+
+    @Test
+    void withoutAnyAuditAnEmptyCommentIsRefusedAndNothingIsPaid() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison", BRIEF));
+        String page = get(withDraft).body();
+        String body = "_csrf=" + csrf(page) + "&_action=correct&id=" + id(withDraft) + "&draft="
+                + draftId(withDraft) + "&version=1&provider=openai&request_token=fresh-token&notes=";
+        String back = decoded(location(post("/buildings/workshop/project", body)));
+        assertTrue(back.contains("pas encore été vérifiée"), back);
+        assertEquals(1, aiCalls.get());
+    }
+
+    /** Une réparation sûre calculée par le plugin devient une version, sans clic ni appel à l'IA. */
+    @Test
+    void anEngineRepairBecomesAVerifiedVersionWithoutAClickOrAnAiCall() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison du bibliothécaire", BRIEF));
+        AgentActionRow audit = latest("building.plan.audit");
+        String repaired = PLAN.replace("bibliotheque_v2", "bibliotheque_v2") + "\n  - op: box\n"
+                + "    from: [1, 1, 1]\n    block: minecraft:lantern";
+        String details = "{\"code\":\"PLAN_INVALID\",\"codes\":[\"PLAN_INVALID\"],\"message\":\"toit trop haut\","
+                + "\"warnings\":[],\"metrics\":{},\"repair\":{\"plan\":" + Json.write(repaired) + ","
+                + "\"changes\":[\"Instruction 18 (gable) : zone ramenée au volume.\"],\"codes\":[],"
+                + "\"accepted\":true}}";
+        agentAnswers(audit.id(), "FAILED", "toit trop haut", details);
+
+        List<BuildingPlanDraft> versions = drafts().forProject(TestConfig.AGENT_ID, id(withDraft));
+        BuildingPlanDraft fixed = versions.stream()
+                .filter(d -> d.origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR).findFirst().orElseThrow();
+        assertEquals(repaired, fixed.plan());
+        assertEquals(draftId(withDraft), fixed.parentId());
+        assertEquals(1, aiCalls.get(), "aucun appel à l'IA");
+        AgentActionRow reaudit = latest("building.plan.audit");
+        assertEquals(fixed.id(), drafts().linkOf(reaudit.id()).orElseThrow().draftId(),
+                "la version réparée est revérifiée d'elle-même");
+
+        // La page du projet s'ouvre sur la version réparée, et dit ce qui a été fait.
+        String page = get("/buildings/workshop/project?id=" + id(withDraft)).body();
+        assertTrue(page.contains("réparée automatiquement par le moteur"), excerpt(page));
+        assertTrue(page.contains("zone ramenée au volume"));
+
+        // Un résultat rejoué ne crée pas de seconde réparation.
+        agentAnswers(audit.id(), "FAILED", "toit trop haut", details);
+        assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, id(withDraft)).stream()
+                .filter(d -> d.origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR).count());
+
+        // Et la réparation n'est jamais réparée à son tour : ce qui reste est le travail de l'IA.
+        agentAnswers(reaudit.id(), "FAILED", "encore", details);
+        assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, id(withDraft)).stream()
+                .filter(d -> d.origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR).count());
+    }
+
+    /** La conception automatique : enveloppe annoncée, consentement exigé, jamais lancée deux fois. */
+    @Test
+    void anAutomaticDesignNeedsConsentToAnAnnouncedEnvelopeAndRunsOnce() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        String page = get(project).body();
+        assertTrue(page.contains("Conception automatique"), "la carte est proposée");
+        assertTrue(page.contains("Enveloppe : 8 appel(s) à l&#39;IA au plus")
+                || page.contains("Enveloppe : 8 appel(s) à l'IA au plus"), "l'enveloppe est annoncée");
+
+        String form = formAround(page, "value=\"design\"");
+        String body = "_csrf=" + csrf(page) + "&_action=design&id=" + id(project) + "&provider=openai"
+                + "&quality=SOIGNE&request_token=" + token(form);
+        String refused = decoded(location(post("/buildings/workshop/project", body)));
+        assertTrue(refused.contains("acceptation de l'enveloppe"), refused);
+        assertEquals(0, aiCalls.get(), "rien n'est dépensé sans consentement");
+
+        String launched = decoded(location(post("/buildings/workshop/project", body + "&consent=yes")));
+        assertTrue(launched.contains("Conception automatique lancée (Soigné, 8 appel(s) au plus)"), launched);
+        String again = decoded(location(post("/buildings/workshop/project", body + "&consent=yes")));
+        assertTrue(again.contains("déjà été lancée"), again);
+        var runs = new com.lodygames.rpgquest.panel.building.BuildingDesignRunStore(dbPath);
+        assertEquals(8, runs.latest(id(project)).orElseThrow().maxCalls());
     }
 
     // ---- Reprendre l'existant -------------------------------------------------------------------
@@ -442,7 +570,7 @@ class WorkshopFlowTest {
         ai = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ai.createContext("/v1/chat/completions", exchange -> {
             aiCalls.incrementAndGet();
-            exchange.getRequestBody().readAllBytes();
+            lastAiRequest = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             Map<String, Object> message = new LinkedHashMap<>();
             message.put("role", "assistant");
             message.put("content", "```yaml\n" + PLAN + "\n```");
@@ -498,6 +626,28 @@ class WorkshopFlowTest {
                 "", message, "{\"action_id\":\"" + action.id() + "\",\"status\":\"" + status
                         + "\",\"message\":\"" + message + "\",\"details\":" + details + "}",
                 Instant.now());
+    }
+
+    /**
+     * Répond comme le vrai agent : livraison par le poll, puis résultat par l'API de l'agent. C'est
+     * ce chemin — et lui seul — qui déclenche l'automatisation de l'Atelier (#282).
+     */
+    private void agentAnswers(String actionId, String status, String message, String details)
+            throws Exception {
+        client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        String result = Json.write(Map.of("action_id", actionId, "status", status, "value", status,
+                "message", message, "details", Json.parseObject(details)));
+        HttpResponse<String> res = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + actionId
+                        + "/result"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(result)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, res.statusCode(), res.body());
     }
 
     private String createProject(String name, String brief) throws Exception {

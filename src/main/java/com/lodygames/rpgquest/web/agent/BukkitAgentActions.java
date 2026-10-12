@@ -896,6 +896,13 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml) {
+        return buildingPlanAudit(planYaml, 0, 0);
+    }
+
+    @Override
+    public CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml,
+                                                                       int maxWidth,
+                                                                       int maxHeight) {
         if (buildingGenerator == null) {
             return done(new BuildingPlanVerdictView(false, "UNAVAILABLE",
                     "La génération de bâtiments n'est pas disponible sur ce serveur.",
@@ -904,10 +911,11 @@ public final class BukkitAgentActions implements AgentActions {
         // Aucune écriture ici, mais l'expansion d'un plan de plusieurs milliers de cellules n'a
         // rien à faire sur le thread principal : elle n'y gagnerait rien et y coûterait un tick.
         return CompletableFuture.supplyAsync(() -> {
-            var v = buildingGenerator.inspect(planYaml);
+            var v = buildingGenerator.inspect(planYaml,
+                    new com.lodygames.rpgquest.building.plan.PlanRepair.Limits(maxWidth, maxHeight));
             return new BuildingPlanVerdictView(v.ok(), v.code(), v.message(), v.buildingId(),
                     v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(), v.codes(),
-                    v.warnings(), v.exists(), metricsOf(v.metrics()));
+                    v.warnings(), v.exists(), metricsOf(v.metrics()), repairOf(v.repair()));
         }).exceptionally(error -> new BuildingPlanVerdictView(false, "ERROR",
                 "Échec de l'audit du plan : " + rootName(error), "", "", 0, 0, 0, 0,
                 List.of(), List.of(), false, Map.of()));
@@ -915,13 +923,21 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml) {
+        return buildingPlanPreview(planYaml, 0, 0);
+    }
+
+    @Override
+    public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml,
+                                                                         int maxWidth,
+                                                                         int maxHeight) {
         if (buildingGenerator == null) {
             return done(new BuildingPlanPreviewView(false, "UNAVAILABLE",
                     "La génération de bâtiments n'est pas disponible sur ce serveur.",
                     "", "", 0, 0, 0, 0, 0, 0, 0, "", List.of(), List.of(), List.of(), List.of()));
         }
         return CompletableFuture.supplyAsync(() -> {
-            var exam = buildingGenerator.preview(planYaml);
+            var exam = buildingGenerator.preview(planYaml,
+                    new com.lodygames.rpgquest.building.plan.PlanRepair.Limits(maxWidth, maxHeight));
             var v = exam.verdict();
             var p = exam.preview();
             return new BuildingPlanPreviewView(v.ok(), v.code(), v.message(), v.buildingId(),
@@ -931,10 +947,24 @@ public final class BukkitAgentActions implements AgentActions {
                     v.codes(), v.warnings(),
                     slices(p == null ? List.of() : p.plans()),
                     slices(p == null ? List.of() : p.elevations()),
-                    p == null ? null : voxels(p.voxels()));
+                    p == null ? null : voxels(p.voxels()), repairOf(v.repair()));
         }).exceptionally(error -> new BuildingPlanPreviewView(false, "ERROR",
                 "Échec de l'aperçu du plan : " + rootName(error), "", "", 0, 0, 0, 0, 0, 0, 0, "",
                 List.of(), List.of(), List.of(), List.of()));
+    }
+
+    /** La réparation proposée par le moteur (#282), à plat ; vide s'il n'y en a pas. */
+    private static Map<String, Object> repairOf(
+            com.lodygames.rpgquest.building.plan.BuildingGenerator.Repair repair) {
+        if (repair == null) {
+            return Map.of();
+        }
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("plan", repair.plan());
+        out.put("changes", repair.changes());
+        out.put("codes", repair.codes());
+        out.put("accepted", repair.accepted());
+        return out;
     }
 
     private static BuildingVoxelsView voxels(

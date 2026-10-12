@@ -8125,3 +8125,21 @@ Aucune côté Minecraft. Redéployer le panel. Au démarrage : table `building_p
 
 TC-286.
 
+## 2026-10-12 — Emplacements recentrés sur le lieu, Bibliothèque « Placer sur un emplacement » (#268, lot C de #265) — **NON déployé**
+
+### Changement
+
+Panel seul. Fiche d'un emplacement : « Note d'administrateur » devient **« Description du lieu »** (même
+champ) ; plus de brief ni de génération IA. L'ancien brief reste lisible, replié, avec le lien vers son
+projet de l'Atelier ou « Reprendre dans l'Atelier ». Bibliothèque : « Placer sur un emplacement »
+(présélection du bâtiment sur les emplacements libres).
+
+### Action serveur
+
+Aucune côté Minecraft ; **aucune donnée modifiée** (le brief stocké par le plugin n'est ni vidé ni
+supprimé). Redéployer le panel. Pas de migration.
+
+### Validation
+
+TC-287.
+

@@ -5374,3 +5374,22 @@ refus.
     plan ; aucune clé.
 7.  Ancienne adresse `/buildings/plan?site=buildsite_0009` : on arrive sur le projet repris.
 8.  Sur téléphone : étapes lisibles, un bouton principal par écran.
+
+### TC-287 — Emplacements = des lieux, Bibliothèque → « Placer sur un emplacement » (issue #268, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de #268. **Durée** : 5 minutes. Gratuit ; **aucune pose ni restauration** à
+confirmer pendant ce test.
+
+1.  `/buildings/sites` → **Rafraîchir** → fiche de `buildsite_0009` : le champ s'appelle **« Description
+    du lieu »** ; aucun « Brief architectural », aucun « Générer un bâtiment avec l'IA ».
+2.  Sur la même fiche, l'ancienne description du bâtiment est **repliée**, lisible (« Lire la description
+    (488 caractères) »), sans champ d'édition. Si TC-286 a été fait : un lien vers le projet « Bibliothèque
+    du Hub » de l'Atelier ; sinon : « Reprendre dans l'Atelier ».
+3.  Cliquer le lien (ou la reprise) : on arrive sur le projet. Revenir : la fiche de l'emplacement est
+    inchangée, `/actions` ne montre aucune action nouvelle sur `buildsite_0009`.
+4.  `/buildings/library` → ouvrir un bâtiment → **Placer sur un emplacement** : la page Emplacements
+    s'ouvre avec le bandeau « Poser « … » » et le nombre d'emplacements libres ; sur la fiche d'un
+    emplacement libre, le bâtiment est **déjà choisi**. Ne pas confirmer la pose.
+5.  `/buildings/sites?place=inexistant` : aucun bandeau, aucune présélection.
+6.  Sur téléphone : fiche lisible, bouton « Placer sur un emplacement » accessible.
+

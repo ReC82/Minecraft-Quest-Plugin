@@ -21,8 +21,8 @@
 | Module | Rôle | Ce qu'on n'y trouve plus |
 |---|---|---|
 | **Atelier de création** | décrire, faire proposer un plan, le vérifier, l'améliorer, l'enregistrer | aucun emplacement requis |
-| **Bibliothèque** | les bâtiments prêts à poser | aucun brouillon |
-| **Emplacements** | les lieux du monde où poser un bâtiment de la bibliothèque | (lot C) plus de description de bâtiment |
+| **Bibliothèque** | les bâtiments prêts à poser, « Placer sur un emplacement » | aucun brouillon |
+| **Emplacements** | les lieux du monde (« Description du lieu ») où poser un bâtiment de la bibliothèque | ni description de bâtiment ni génération IA (#268) |
 
 Parcours :
 
@@ -33,7 +33,8 @@ Parcours :
 4. **Améliorer avec l'IA** (facturé) : le motif est prérempli avec ce que la vérification a trouvé ;
    la réponse est une nouvelle version, l'ancienne reste.
 5. **Enregistrer dans la bibliothèque** : jamais de remplacement implicite ; un nom déjà pris est signalé.
-6. **Emplacements** : choisir le bâtiment, prévisualiser la pose, confirmer (#213/#234).
+6. **Choisir un emplacement** (depuis l'Atelier) ou **Placer sur un emplacement** (depuis la Bibliothèque) :
+   les Emplacements s'ouvrent avec le bâtiment déjà choisi ; prévisualiser la pose, confirmer (#213/#234/#268).
 7. Retirer un bâtiment : **« Retirer le bâtiment et restaurer le terrain »**, en tête de la fiche d'un
    emplacement occupé, distinct de « Supprimer l'emplacement (le repère seulement) » (#239).
 
@@ -46,9 +47,12 @@ versions, réponse du modèle, reprise depuis l'historique, **« Copier le diagn
 - `/buildings/plan?site=…` mène à l'Atelier (au projet repris, ou à la liste avec la reprise proposée).
 - Le travail commencé sur un emplacement — description et brouillons — se **reprend** depuis l'Atelier :
   la description est **copiée**, les brouillons rattachés, la fiche de l'emplacement **n'est pas modifiée**.
+- La fiche d'un emplacement n'a plus de « Brief architectural » ni de « Générer un bâtiment avec l'IA ».
+  L'ancien brief reste lisible (replié, lecture seule) avec le lien vers son projet, ou « Reprendre dans
+  l'Atelier ». « Note d'administrateur » s'appelle **« Description du lieu »** (même donnée).
 - L'historique ouvre chaque action depuis sa ligne, et « Retour à ce brouillon » ramène au projet.
 
 ## Limites connues de cette version
 
 - Pas encore d'aperçu visuel fidèle (#273) : les coupes en caractères restent un outil de diagnostic.
-- Les emplacements portent encore l'ancien champ « Brief architectural » jusqu'au lot C (#268).
+- Le brief reste stocké par le plugin sur l'emplacement (non destructif) ; il n'est plus modifiable depuis la fiche.

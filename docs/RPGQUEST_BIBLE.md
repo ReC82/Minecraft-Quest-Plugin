@@ -1352,6 +1352,10 @@ au-dessus du plancher ne le troue pas »). Les avertissements, eux, remontent av
 
 #### Le parcours dans PlugAdmin
 
+> **Historique (#94) — remplacé.** Depuis #267/#268, on conçoit dans l'**Atelier de création** (section
+> suivante) ; la fiche d'un emplacement ne propose plus de génération et `/buildings/plan` ne fait plus
+> que rediriger. Les principes ci-dessous (deux gestes, le plugin seul validateur) restent valables.
+
 Fiche de l'emplacement → **« Générer un bâtiment avec l'IA »** (visible seulement si un brief
 existe) → `/buildings/plan`.
 
@@ -1393,6 +1397,20 @@ sont rattachés (`project_id`, colonne additive ; `site_id` reste noté), la fic
 pas touchée. Idempotent. `/buildings/plan?site=…` redirige vers l'Atelier.
 
 Parcours avant / après : `docs/control-panel/BATIMENTS_PARCOURS.md`.
+
+#### Emplacements et Bibliothèque recentrés (issue #268)
+
+- **Emplacements** = des lieux. Fiche : nom, monde/position, orientation, **Description du lieu**
+  (ancienne « note d'administrateur », même champ `description`, 500 car.), état, pose et retrait d'un
+  bâtiment. **Plus de brief ni de génération IA** sur un emplacement.
+- L'ancien **brief** d'un emplacement n'est **ni vidé ni supprimé** côté plugin (`aiBrief` intact) : la
+  fiche l'affiche replié, en lecture seule, avec soit le lien vers le projet de l'Atelier qui l'a repris,
+  soit le bouton « Reprendre dans l'Atelier » (même reprise non destructive que l'Atelier). L'action
+  agent `building.site.brief` reste au catalogue (compatibilité), sans formulaire.
+- **Bibliothèque** : « Placer sur un emplacement » sur chaque bâtiment posable → `/buildings/sites?place=<id>`,
+  qui présélectionne ce bâtiment sur les emplacements libres (identifiant inconnu ignoré ; aucune action
+  envoyée à l'arrivée). Un bâtiment de la bibliothèque ne se modifie pas : on en crée une nouvelle
+  version dans l'Atelier. L'étape « Enregistré » de l'Atelier mène à la même présélection.
 
 #### Brouillons de plan — reprendre un plan sans le repayer (issue #256)
 

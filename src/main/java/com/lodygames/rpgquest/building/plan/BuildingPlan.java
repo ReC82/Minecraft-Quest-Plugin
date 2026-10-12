@@ -145,6 +145,14 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
                             + (span - 1) + ").");
                 }
             }
+            // #263 : une échelle est une COLONNE. Avant, un « to » aux x/z différents de « from » était
+            // ignoré sans un mot — l'échelle sortait ailleurs que là où le plan la décrivait.
+            if (step.kind() == PlanStep.Kind.LADDER
+                    && (step.box().minX() != step.box().maxX() || step.box().minZ() != step.box().maxZ())) {
+                return Optional.of(where + "une échelle est verticale : « from » et « to » doivent "
+                        + "avoir les mêmes x et z, et ne diffèrent que par y (zone reçue "
+                        + step.box().label() + ").");
+            }
             if (step.kind() == PlanStep.Kind.STAIR_RUN) {
                 String dir = step.axis();
                 if (!dir.equals("north") && !dir.equals("south")

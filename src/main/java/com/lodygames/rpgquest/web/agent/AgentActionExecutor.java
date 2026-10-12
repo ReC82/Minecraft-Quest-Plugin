@@ -1543,6 +1543,13 @@ public final class AgentActionExecutor {
                     details.put("warnings", v.warnings());
                     details.put("plans", sliceDetails(v.plans()));
                     details.put("elevations", sliceDetails(v.elevations()));
+                    // Issue #273 : la grille entière, pour la vue en 3D. Absente avec son motif
+                    // quand elle n'est pas transmise — jamais tronquée en silence.
+                    Map<String, Object> voxels = new LinkedHashMap<>();
+                    voxels.put("palette", v.voxels().palette());
+                    voxels.put("layers", v.voxels().layers());
+                    voxels.put("omittedReason", v.voxels().omittedReason());
+                    details.put("voxels", voxels);
                     details.put("written", false);
                     // Un aperçu REMONTE même pour un plan refusé : c'est le cas où il est le plus
                     // utile. Le statut porte le verdict, le détail porte les coupes.

@@ -134,6 +134,22 @@ class AgentActionExecutorTest {
         assertEquals(List.of("###", "#+#", "#+#"), slice.get("rows"));
     }
 
+    /** Issue #273 : la grille de la vue en 3D remonte telle quelle, palette comprise. */
+    @Test
+    @DisplayName("L'aperçu remonte la grille de la vue en 3D")
+    void thePreviewReturnsTheVoxelGrid() {
+        AgentActionOutcome outcome = run(new AgentAction("bpp5", "building.plan.preview",
+                Map.of("plan", "id: hub_library")));
+
+        Map<?, ?> voxels = (Map<?, ?>) outcome.details().get("voxels");
+        assertEquals(3, ((List<?>) voxels.get("layers")).size(), "une couche par niveau");
+        assertEquals(List.of("A.A", "...", "A.A"), ((List<?>) voxels.get("layers")).get(1));
+        Map<?, ?> entry = (Map<?, ?>) ((List<?>) voxels.get("palette")).get(0);
+        assertEquals("stone_bricks", entry.get("block"));
+        assertEquals("#", entry.get("role"));
+        assertEquals("", voxels.get("omittedReason"));
+    }
+
     @Test
     @DisplayName("Un aperçu sans plan est rejeté sans atteindre le domaine")
     void apreviewWithNoPlanIsRejectedWithoutReachingTheDomain() {
@@ -1887,7 +1903,12 @@ class AgentActionExecutorTest {
                     List.of(new BuildingSliceView("plan-y0", "Niveau y = 0", "x → droite",
                             List.of("###", "###", "###"))),
                     List.of(new BuildingSliceView("elevation-front", "Façade avant — entrée",
-                            "largeur → droite", List.of("###", "#+#", "#+#")))));
+                            "largeur → droite", List.of("###", "#+#", "#+#"))),
+                    new AgentActions.BuildingVoxelsView(
+                            List.of(Map.of("symbol", "A", "block", "stone_bricks", "role", "#",
+                                    "shape", "full")),
+                            List.of(List.of("AAA", "AAA", "AAA"), List.of("A.A", "...", "A.A"),
+                                    List.of("...", ".A.", "...")), "")));
         }
 
         @Override

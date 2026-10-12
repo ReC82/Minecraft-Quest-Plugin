@@ -2620,8 +2620,13 @@ Accorder OP ne modifie aucun des trois, et le résultat le rappelle à l'adminis
 whitelist et renvoi au Hub réutilisent `PLAYER_MODERATE` comme demandé, sans inflation de
 permissions.
 
-**Garde-fous de l'élévation OP** : raison **obligatoire**, et il faut **retaper le pseudo exact** —
-un clic sur la mauvaise fiche ne peut donc pas élever le mauvais compte. L'opération est
+**Garde-fous de l'élévation OP** (simplifiés le 13/10/2026, issue #210) : la fiche affiche en clair
+le joueur ciblé (pseudo, UUID en information) et l'action ; **une seule case à cocher**, jamais
+cochée d'avance, puis le bouton — rien à retaper (l'ancienne saisie comparait le pseudo tapé à
+l'UUID de la cible et échouait toujours). La case est vérifiée **côté serveur** (`confirm=true`),
+la raison est facultative (à défaut, l'audit note « OP depuis PlugAdmin (sans motif saisi) »), et un
+second envoi pendant qu'un changement d'OP du même joueur est en attente est refusé (double clic).
+Permission dédiée `PLAYER_OP_WRITE` et audit inchangés. L'opération est
 **idempotente** (`ALREADY_OP` / `NOT_OP` au rejeu) et l'état est **relu** après écriture : si
 l'écriture n'a pas pris, le résultat est `NOT_APPLIED` avec la valeur relue, jamais un « OP
 accordé » mensonger.

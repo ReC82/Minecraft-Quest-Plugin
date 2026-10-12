@@ -4146,6 +4146,17 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, form.get("player"), v.error()));
             return;
         }
+        // Issue #210 : un double clic n'empile pas deux changements d'OP pour le même joueur.
+        if (("player.op".equals(type) || "player.deop".equals(type)) && agentStore.recentActions(agentId, 50)
+                .stream().anyMatch(a -> !a.status().terminal()
+                        && ("player.op".equals(a.type()) || "player.deop".equals(a.type()))
+                        && a.params().getOrDefault("player", "").equalsIgnoreCase(v.params().getOrDefault("player", "")))) {
+            audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                    "DENIED", "changement d'OP déjà en attente pour ce joueur", rid);
+            Http.redirect(exchange, withError(returnPath, agentId, form.get("player"),
+                    "Un changement d'OP est déjà en cours pour ce joueur : rien n'a été envoyé en double."));
+            return;
+        }
         // Issue #284 : un bâtiment posé ne se retire pas de la bibliothèque — refus avant la file,
         // sur le dernier relevé des emplacements (le plugin revérifie de son côté).
         if ("building.definition.retire".equals(type)) {

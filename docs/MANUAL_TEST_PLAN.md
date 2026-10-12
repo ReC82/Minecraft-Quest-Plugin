@@ -2776,7 +2776,7 @@ le résumé de récompenses de TC-014).
 
 ### TC-248 — OP/DEOP et actions de secours sur un joueur (issue #210)
 
--   **Fonctionnalité testée :** statut OP réel, OP/DEOP avec raison et confirmation d'identité,
+-   **Fonctionnalité testée :** statut OP réel, OP/DEOP avec une seule case à cocher (#210, 13/10/2026),
     renvoi au Hub, expulsion, whitelist, frontière de permission, et comportement hors ligne.
 -   **Préconditions :** JAR de cette session déployé, panel déployé.
 -   **IMPORTANT — identité de test.** Utiliser un **compte de test dédié**. **Ne pas** modifier les
@@ -2791,10 +2791,11 @@ le résumé de récompenses de TC-014).
     3.  `/deop <joueur_test>`, rafraîchir. **Attendu** : la fiche repasse à « non ».
 
 -   **B. OP/DEOP depuis le panel :**
-    4.  Cliquer **Accorder OP**. **Attendu** : raison obligatoire **et** champ demandant de retaper
-        le pseudo exact.
-    5.  Retaper un **mauvais** pseudo et valider. **Attendu** : **refus** citant le pseudo attendu.
-    6.  Retaper le bon pseudo, avec une raison, et valider. **Attendu** : succès ; le résultat
+    4.  Ouvrir la fiche de **LoDyMcFly** → zone OP. **Attendu** : « Joueur ciblé : LoDyMcFly » (UUID en
+        information), l'action en clair, une raison **facultative**, **une case** non cochée, aucun
+        champ à retaper.
+    5.  Cliquer **Accorder OP** sans cocher. **Attendu** : refus « Confirmation », rien d'envoyé.
+    6.  Cocher la case et valider (double-cliquer). **Attendu** : un seul envoi ; succès ; le résultat
         rappelle que **seul OP Minecraft** a changé. Vérifier en jeu `/op`-status.
     7.  Recliquer **Accorder OP** (rejeu). **Attendu** : « était déjà OP », pas une erreur.
     8.  **Retirer OP**, puis vérifier en jeu et après un **redémarrage** que l'état a persisté.

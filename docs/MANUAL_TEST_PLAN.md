@@ -5274,3 +5274,16 @@ sauvegarde) — à ne faire que si ce nettoyage est souhaité.
 9.  **Restauration** (si besoin) : recopier le fichier de `RPGQuest/content-backups/<horodatage>-dialogues/`
     dans `RPGQuest/dialogues/`, puis déclencher un rechargement du contenu depuis PlugAdmin (ou,
     pour un dialogue source, le republier depuis le panel).
+
+### TC-281 — « Arrêter la promenade » d'un PNJ depuis PlugAdmin (issue #216, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR contenant #216 déployé (correctif côté plugin). **Durée** : 3 minutes.
+
+1.  `/npcs` → un PNJ Citizens lié (ex. celui de TC-255) → section comportement → **Activer la
+    promenade** (rayon 25, amplitude 3). Constater en jeu qu'il se déplace.
+2.  Cliquer **Arrêter la promenade**. Attendu : action `SUCCESS`, message « Promenade désactivée,
+    déplacement interrompu — position finale x / y / z ». Plus de « Paramètre « x_range » manquant ».
+3.  En jeu : le PNJ s'immobilise. La fiche Citizens indique **immobile** après rafraîchissement.
+4.  Recliquer **Arrêter** : message explicite « La promenade n'est pas active sur ce PNJ … rien n'a
+    été modifié », sans erreur technique.
+5.  Vérifier que Look Close, le dialogue et les quêtes du PNJ sont inchangés.

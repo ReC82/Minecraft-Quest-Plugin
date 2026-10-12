@@ -260,6 +260,7 @@ public final class ContentEditorPages {
      * de l'ancien type sont <strong>effacées</strong>, jamais conservées en douce (§17).
      */
     private static Map<String, String> normaliseRow(Map<String, String> raw) {
+        raw = mergeListChoices(raw);
         Map<String, String> row = new LinkedHashMap<>();
         String kind = raw.getOrDefault("kind", "").trim().toUpperCase(Locale.ROOT);
         if (kind.isBlank()) {
@@ -283,6 +284,71 @@ public final class ContentEditorPages {
             row.put(k, typeChanged ? "" : e.getValue().trim());
         }
         return row;
+    }
+
+    /** Séparateur entre le nom d'un champ liste et la valeur d'une case cochée (issue #240). */
+    static final String LIST_CHOICE = "@";
+
+    /**
+     * Issue #240 — réunit les cases cochées ({@code worlds@wild=on}) et la saisie libre
+     * ({@code worlds=autre}) d'un champ liste en une seule valeur « a, b », sans doublon.
+     *
+     * <p>Une case par valeur, et non un {@code <select multiple>} : le lecteur de formulaire du panel
+     * ne garde qu'une valeur par nom, si bien que plusieurs mondes choisis n'en livreraient qu'un.</p>
+     */
+    static Map<String, String> mergeListChoices(Map<String, String> raw) {
+        Map<String, java.util.LinkedHashSet<String>> chosen = new LinkedHashMap<>();
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : raw.entrySet()) {
+            int at = e.getKey().indexOf(LIST_CHOICE);
+            if (at > 0) {
+                String value = e.getKey().substring(at + 1).trim();
+                if (!value.isEmpty() && !e.getValue().isBlank()) {
+                    chosen.computeIfAbsent(e.getKey().substring(0, at), x -> new java.util.LinkedHashSet<>())
+                            .add(value);
+                }
+                continue;
+            }
+            out.put(e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, java.util.LinkedHashSet<String>> c : chosen.entrySet()) {
+            java.util.LinkedHashSet<String> all = new java.util.LinkedHashSet<>(c.getValue());
+            all.addAll(com.lodygames.rpgquest.panel.content.QuestYaml.splitList(out.get(c.getKey())));
+            out.put(c.getKey(), String.join(", ", all));
+        }
+        return out;
+    }
+
+    /**
+     * Champ liste à valeurs connues (issue #240) : une case par valeur relevée sur le serveur, et un
+     * champ libre pour une valeur absente du relevé — le validateur l'avertira, sans la refuser.
+     */
+    private static String checkboxList(String name, Descriptors.Field fld, List<String> known,
+                                       String value, boolean enabled) {
+        List<String> current = com.lodygames.rpgquest.panel.content.QuestYaml.splitList(value);
+        String id = "f-" + name.replace('.', '-');
+        StringBuilder sb = new StringBuilder("<fieldset class=\"field\"><legend>")
+                .append(Http.esc(fld.label())).append("</legend><div class=\"d-flex flex-wrap gap-3\">");
+        int i = 0;
+        for (String option : known) {
+            boolean checked = current.stream().anyMatch(c -> c.equalsIgnoreCase(option));
+            String cid = id + "-" + (i++);
+            sb.append("<label class=\"inline\" for=\"").append(cid).append("\"><input type=\"checkbox\" id=\"")
+                    .append(cid).append("\" name=\"").append(Http.esc(name + LIST_CHOICE + option))
+                    .append("\" value=\"on\"").append(checked ? " checked" : "")
+                    .append(enabled ? "" : " disabled").append("> <code class=\"tid\">")
+                    .append(Http.esc(option)).append("</code></label>");
+        }
+        sb.append("</div>");
+        String others = String.join(", ", current.stream()
+                .filter(c -> known.stream().noneMatch(k -> k.equalsIgnoreCase(c))).toList());
+        sb.append("<label for=\"").append(id).append("\" class=\"field-help\">Autre(s), séparés par des "
+                + "virgules</label><input type=\"text\" id=\"").append(id).append("\" name=\"")
+                .append(Http.esc(name)).append("\" value=\"").append(Http.esc(others)).append("\"")
+                .append(enabled ? "" : " disabled").append(">");
+        sb.append("<p class=\"field-help\">").append(Http.esc(fld.help()))
+                .append(" Les cases sont les valeurs relevées sur le serveur.</p></fieldset>");
+        return sb.toString();
     }
 
     // ---- rendu du formulaire quête ---------------------------------------------------
@@ -506,8 +572,12 @@ public final class ContentEditorPages {
                     case SELECT -> sb.append(text(name, fld.label(), fld.help(), val, fld.required(), false,
                             null, datalistId(fld.selectSource()), on));
                     // Issue #185 : saisie texte « a, b » ; la liste YAML est produite à l'écriture.
-                    case LIST -> sb.append(text(name, fld.label(), fld.help(), val, false, false,
-                            null, null, on));
+                    // Issue #240 : si la source est relevée (les mondes du serveur), une case par
+                    // valeur connue — plus besoin de connaître les identifiants techniques.
+                    case LIST -> sb.append(ref.sourceKnown(fld.selectSource())
+                            && !ref.options(fld.selectSource()).isEmpty()
+                            ? checkboxList(name, fld, ref.options(fld.selectSource()), val, on)
+                            : text(name, fld.label(), fld.help(), val, false, false, null, null, on));
                     default -> sb.append(text(name, fld.label(), fld.help(), val, fld.required(), false, null, null, on));
                 }
             }

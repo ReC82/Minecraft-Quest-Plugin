@@ -60,6 +60,23 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Par défaut, le cache n'est ÉCRIT que depuis la branche par défaut (main), qui n'a pas de
+          # CI : chaque run retéléchargeait toutes les dépendances, sur quatre jobs à la fois, et
+          # Maven Central a fini par répondre 429 (2026-10-12). Les branches de travail écrivent
+          # donc le cache.
+          cache-read-only: false
+      # services.gradle.org renvoie parfois 504 ; le wrapper ne tente qu'une fois. Deux runs du
+      # 2026-10-12 ont échoué ainsi sans qu'aucun test ait tourné. Trois tentatives espacées, puis
+      # la distribution est en place pour la suite du job.
+      - name: Distribution Gradle (3 tentatives)
+        run: |
+          for attempt in 1 2 3; do
+            ./gradlew --version --console=plain >/dev/null && exit 0
+            echo "Téléchargement de Gradle : tentative $attempt échouée" >&2
+            sleep $((attempt * 20))
+          done
+          exit 1
       - name: ${{ matrix.module.task }}
         run: ./gradlew ${{ matrix.module.task }} --console=plain
       - name: Bilan des tests
@@ -96,6 +113,23 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Par défaut, le cache n'est ÉCRIT que depuis la branche par défaut (main), qui n'a pas de
+          # CI : chaque run retéléchargeait toutes les dépendances, sur quatre jobs à la fois, et
+          # Maven Central a fini par répondre 429 (2026-10-12). Les branches de travail écrivent
+          # donc le cache.
+          cache-read-only: false
+      # services.gradle.org renvoie parfois 504 ; le wrapper ne tente qu'une fois. Deux runs du
+      # 2026-10-12 ont échoué ainsi sans qu'aucun test ait tourné. Trois tentatives espacées, puis
+      # la distribution est en place pour la suite du job.
+      - name: Distribution Gradle (3 tentatives)
+        run: |
+          for attempt in 1 2 3; do
+            ./gradlew --version --console=plain >/dev/null && exit 0
+            echo "Téléchargement de Gradle : tentative $attempt échouée" >&2
+            sleep $((attempt * 20))
+          done
+          exit 1
       # assemble = JAR du plugin + distributions (zip/tar) des deux applications. Les tests tournent
       # dans le job « test », en parallèle : ne pas les rejouer ici.
       - name: ./gradlew assemble

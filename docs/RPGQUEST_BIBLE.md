@@ -1587,8 +1587,12 @@ sait rien poser — il n'y a donc rien à défaire en jeu. L'opération est **id
 identifiant déjà absent réussit en disant qu'il n'y avait rien, donc un double clic est inoffensif.
 L'identifiant supprimé n'est jamais réattribué.
 
-Cette suppression devra être **repensée** le jour où un bâtiment pourra être réellement posé sur un
-emplacement : il faudra alors la bloquer, ou traiter la construction posée explicitement.
+**Emplacement occupé : refusée** (issue #239). Le panel la refusait déjà ; le **serveur** la refuse
+aussi, pour tout client : `BuildingSiteService.delete` renvoie `OCCUPIED` sur un emplacement à l'état
+`OCCUPIED`, et l'action agent répond `SITE_OCCUPIED` (« retirez-le d'abord ») si un placement actif
+existe, même avec une fiche désynchronisée. C'est l'emplacement qui porte la sauvegarde du terrain :
+supprimer le repère laisserait le bâtiment sans moyen de restauration. Ordre attendu : « Retirer le
+bâtiment et restaurer le terrain », puis supprimer le repère si on le souhaite.
 
 #### Ce qui est prêt pour la suite, et ce qui ne l'est pas
 

@@ -554,23 +554,35 @@ public final class ArchitecturalAudit {
      */
     private static Levels analyseLevels(Grid grid) {
         int footprint = (grid.maxX() - grid.minX() + 1) * (grid.maxZ() - grid.minZ() + 1);
-        List<Integer> standing = new ArrayList<>();
+        List<Integer> open = new ArrayList<>();
+        List<Integer> sheltered = new ArrayList<>();
         for (int y = grid.minY(); y < grid.maxY(); y++) {
             int supported = 0;
+            int underCover = 0;
             for (int x = grid.minX(); x <= grid.maxX(); x++) {
                 for (int z = grid.minZ(); z <= grid.maxZ(); z++) {
                     if (BlockSemantics.support(grid.at(x, y, z))
                             && grid.passable(x, y + 1, z)
                             && grid.passable(x, y + 2, z)) {
                         supported++;
+                        if (covered(grid, x, y + 3, z)) {
+                            underCover++;
+                        }
                     }
                 }
             }
             // Un quart de l'emprise : assez pour distinguer un plancher d'une marche isolée.
             if (supported * 4 >= footprint) {
-                standing.add(y + 1);
+                open.add(y + 1);
+            }
+            if (underCover * 4 >= footprint) {
+                sheltered.add(y + 1);
             }
         }
+        // #263 : les niveaux sont les sols ABRITÉS. Le dessus d'un toit à deux pentes n'en est pas un.
+        // Un bâtiment sans aucun sol abrité (pas de toit du tout) garde l'ancienne lecture : son
+        // niveau est alors à ciel ouvert, et c'est le contrôle de couverture qui le dira.
+        List<Integer> standing = sheltered.isEmpty() ? open : sheltered;
         if (standing.isEmpty()) {
             return new Levels(0, 0, List.of(), Set.of());
         }
@@ -591,6 +603,25 @@ public final class ArchitecturalAudit {
             }
         }
         return new Levels(standing.size(), reachable, List.copyOf(standing), walkable);
+    }
+
+    /**
+     * Un bloc de matière se trouve-t-il plus haut dans la colonne ? (issue #263)
+     *
+     * <p>Un niveau, c'est un sol <em>sous un toit</em>. Sans cette condition, les rangées d'escaliers
+     * d'un toit à deux pentes comptaient comme des « niveaux » dès que l'emprise était petite (une
+     * rangée de 9 escaliers × 2 pentes dépasse le quart d'une emprise 9 × 7) : l'exemple même du
+     * prompt était refusé pour « niveau inaccessible » et « couverture incomplète », alors que ces
+     * marches sont le dessus du toit, à ciel ouvert. Une vraie pièce, elle, a toujours quelque chose
+     * au-dessus d'elle.</p>
+     */
+    private static boolean covered(Grid grid, int x, int fromY, int z) {
+        for (int y = fromY; y <= grid.maxY(); y++) {
+            if (!grid.passable(x, y, z)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Diffusion depuis le niveau de départ, avec les déplacements d'un joueur. */

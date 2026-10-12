@@ -8062,3 +8062,32 @@ présélectionnée par défaut. Aucune logique de quête, aucun prérequis, aucu
 
 Aucune côté Minecraft. Redéployer le panel. Validation : TC-283.
 
+## 2026-10-12 — Générateur IA : le prompt n'enseigne plus de syntaxe refusée (#263, suite de #94) — **NON déployé**, prioritaire
+
+### Changement
+
+- **Panel** (prompt) : coordonnées `[x, y, z]` explicites pour `light`, `stair_run`, `ladder` ;
+  un exemple minimal valide par instruction d'architecture ; l'exemple complet, qui était lui-même
+  refusé (hauteur 7, toit à y = 8), corrigé.
+- **Plugin** : échelle non verticale refusée (avant : ignorée en silence) ; message de refus qui dit
+  quoi écrire pour une coordonnée à deux nombres ; l'audit ne compte plus le dessus d'un toit à deux
+  pentes comme un niveau (faux « niveau inaccessible » / « couverture incomplète » sur une petite
+  emprise).
+
+### Action serveur
+
+**JAR + panel** à déployer. Aucune migration, aucune configuration. Les métriques `floors` de
+l'audit peuvent baisser sur de petits bâtiments à toit en pente : c'est la correction.
+
+### Déploiement
+
+Après feu vert du propriétaire — correctif prioritaire de la prochaine livraison.
+
+### Validation
+
+Relancer l'**audit** du plan `bibliotheque_du_hub_v2` (action `51874916…`) après correction de son
+instruction 16. Le plan est `front: WEST`, de taille 19 × 14 × 19 : BACK est le mur est (`x = 18`), donc la
+cellule intérieure contre lui est `x = 17`. La lecture la plus probable de `[1, 1]` / `[1, 5]`
+(décalage 1, hauteur 1 → 5) donne `from: [17, 1, 1]` / `to: [17, 5, 1]`. Ce correctif se fait à la
+main dans le brouillon (#256, « Enregistrer » puis « Auditer ») : **aucun appel IA nécessaire**.
+

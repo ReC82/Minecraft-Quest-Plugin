@@ -168,23 +168,70 @@ public final class BuildingPromptBuilder {
                                   « block » (un bloc de porte, ex. minecraft:oak_door).
                 - op: window    → une baie vitrée percée dans le mur et vitrée. Clés : « facade »,
                                   « offset », « y », « width », « height », « block » (un vitrage).
-                - op: light     → une source de lumière. Clés : « from », « to », « spacing »,
-                                  « block » (minecraft:lantern, minecraft:torch…).
+                - op: light     → une source de lumière. Clés : « from », « to » (des points
+                                  [x, y, z]), « spacing », « block » (minecraft:lantern,
+                                  minecraft:torch…).
                 - op: stair_run → une volée d'escalier praticable entre deux niveaux, avec deux
                                   blocs de hauteur libre au-dessus de chaque marche et un palier en
-                                  haut. Clés : « from » (le pied de la volée), « steps » (nombre de
-                                  marches, défaut 4), « direction » (le POINT CARDINAL vers lequel
-                                  on monte : north, south, east ou west — jamais un axe),
-                                  « block » (un bloc d'escalier).
-                - op: ladder    → une échelle adossée à un mur, qui regarde vers l'intérieur, et
-                                  dont le débouché du haut est dégagé. Clés : « facade » (la façade
-                                  contre laquelle elle est adossée), « from », « to » (le bas et le
-                                  haut de l'échelle), « block ».
+                                  haut. Clés : « from » (le pied de la volée, un point [x, y, z]),
+                                  « steps » (nombre de marches, défaut 4), « direction » (le POINT
+                                  CARDINAL vers lequel on monte : north, south, east ou west —
+                                  jamais un axe), « block » (un bloc d'escalier).
+                - op: ladder    → une échelle VERTICALE adossée à un mur, qui regarde vers
+                                  l'intérieur, et dont le débouché du haut est dégagé. Clés :
+                                  « facade » (le mur contre lequel elle s'adosse — il ne fixe QUE
+                                  son orientation, jamais sa position), « from » et « to » (le bas
+                                  et le haut, en points COMPLETS [x, y, z] : trois nombres, mêmes
+                                  x et z, seul y change), « block ». Place-la sur la cellule
+                                  INTÉRIEURE juste contre ce mur : dans un bâtiment « front: NORTH »
+                                  de profondeur 7, le mur arrière (BACK) est en z = 6, donc
+                                  l'échelle est en z = 5.
+
+                Seules « door » et « window » se repèrent par « facade » et « offset ». TOUTES les
+                autres instructions prennent des coordonnées COMPLÈTES [x, y, z] — trois nombres,
+                jamais deux.
 
                 « facade » prend FRONT, BACK, LEFT ou RIGHT. JAMAIS une coordonnée, JAMAIS un point
                 cardinal : FRONT est la façade d'entrée, quelle que soit l'orientation du bâtiment,
                 et LEFT/RIGHT sont vues depuis l'extérieur, face au bâtiment. « offset » part
                 toujours du coin de coordonnée minimale, de 0 à la largeur de la façade moins 1.
+
+                UN EXEMPLE MINIMAL PAR INSTRUCTION D'ARCHITECTURE
+
+                (Pour un bâtiment « front: NORTH » de taille x 9, y 9, z 7 — celui de l'exemple
+                complet plus bas. Chaque bloc est valide tel quel.)
+
+                  - op: door
+                    facade: FRONT
+                    offset: 4
+                    block: minecraft:oak_door
+                  - op: window
+                    facade: LEFT
+                    offset: 2
+                    y: 2
+                    width: 2
+                    height: 2
+                    block: minecraft:glass_pane
+                  - op: light
+                    from: [2, 4, 3]
+                    to: [6, 4, 3]
+                    spacing: 4
+                    block: minecraft:lantern
+                  - op: stair_run
+                    from: [2, 1, 3]
+                    steps: 4
+                    direction: east
+                    block: minecraft:oak_stairs
+                  - op: ladder
+                    facade: BACK
+                    from: [1, 1, 5]
+                    to: [1, 4, 5]
+                    block: minecraft:ladder
+                  - op: pillars
+                    from: [0, 1, 0]
+                    to: [8, 4, 6]
+                    spacing: 4
+                    block: minecraft:oak_log
 
                 L'ORDRE COMPTE
 
@@ -223,7 +270,7 @@ public final class BuildingPromptBuilder {
                 front: NORTH
                 size:
                   x: 9
-                  y: 7
+                  y: 9
                   z: 7
                 steps:
                   - op: box

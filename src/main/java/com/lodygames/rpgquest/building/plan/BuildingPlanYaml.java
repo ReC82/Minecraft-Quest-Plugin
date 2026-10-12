@@ -250,15 +250,30 @@ public final class BuildingPlanYaml {
                                          List<String> problems) {
         int[] from = triplet(map.get("from"));
         if (from == null) {
-            problems.add(where + "clé « from » absente ou mal formée (attendu : [x, y, z]).");
+            problems.add(where + "clé « from » absente ou mal formée (attendu : [x, y, z])"
+                    + countHint(map.get("from")));
             return Optional.empty();
         }
         int[] to = map.get("to") == null ? from : triplet(map.get("to"));
         if (to == null) {
-            problems.add(where + "clé « to » mal formée (attendu : [x, y, z]).");
+            problems.add(where + "clé « to » mal formée (attendu : [x, y, z])" + countHint(map.get("to")));
             return Optional.empty();
         }
         return Optional.of(PlanBox.of(from[0], from[1], from[2], to[0], to[1], to[2]));
+    }
+
+    /**
+     * Ce qui manque, quand le modèle a écrit une liste de mauvaise longueur (#263). Le cas réel :
+     * une échelle « facade: BACK, from: [1, 1] » — des coordonnées de façade, deux nombres. Le refus
+     * dit alors quoi écrire, au lieu de répéter la forme attendue.
+     */
+    private static String countHint(Object raw) {
+        if (raw instanceof List<?> list && list.size() != 3) {
+            return " : " + list.size() + " nombre(s) reçu(s), il en faut TROIS. Les coordonnées sont "
+                    + "toujours locales et complètes, [x, y, z], même pour une échelle ou une "
+                    + "lumière — « facade » ne remplace aucune coordonnée.";
+        }
+        return ".";
     }
 
     /** Un triplet de coordonnées, tolérant sur le type numérique écrit par le modèle. */

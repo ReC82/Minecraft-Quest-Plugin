@@ -162,9 +162,22 @@ public final class BuildingDesignPipeline {
         executor.submit(() -> execute(run.id()));
     }
 
+    /**
+     * Arrêt du panel : la session en cours est interrompue, notée comme telle, et l'on attend
+     * qu'elle ait fini d'écrire — sans cela, une écriture en base pouvait suivre l'arrêt (trouvé par
+     * la CI : le répertoire temporaire d'un test était encore utilisé à sa suppression).
+     */
     public void shutdown() {
+        stopping = true;
         executor.shutdownNow();
+        try {
+            executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
+
+    private volatile boolean stopping;
 
     /** Déroule une session, du début à la fin. Ne lève jamais. Public pour les tests. */
     public void execute(String runId) {
@@ -177,6 +190,11 @@ public final class BuildingDesignPipeline {
             }
             new Session(run, project.get()).go();
         } catch (RuntimeException failure) {
+            if (stopping) {
+                runs.finish(runId, BuildingDesignRunStore.Status.INTERRUPTED, "Le panel s'est arrêté pendant "
+                        + "la conception : rien n'a été relancé. Les versions déjà produites sont conservées.", "");
+                return;
+            }
             LOG.log(System.Logger.Level.WARNING, "event=design_run_failed run=" + runId + " error="
                     + failure.getClass().getSimpleName() + ": " + failure.getMessage());
             runs.finish(runId, BuildingDesignRunStore.Status.STOPPED, "Arrêt sur une erreur interne : "

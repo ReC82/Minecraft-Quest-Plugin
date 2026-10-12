@@ -535,6 +535,16 @@ public interface AgentActions {
     CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml);
 
     /**
+     * Même audit, en donnant au moteur les bornes du projet (issue #282) : la réparation
+     * déterministe peut alors agrandir le volume au lieu d'araser un toit. 0 = pas de borne connue.
+     */
+    default CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml,
+                                                                       int maxWidth,
+                                                                       int maxHeight) {
+        return buildingPlanAudit(planYaml);
+    }
+
+    /**
      * Le verdict d'un plan (issue #94, lot F), tel qu'il remonte au panel.
      *
      * <p>Les {@code codes} sont stables et destinés à l'écran et aux tests ; le {@code message} est
@@ -548,11 +558,20 @@ public interface AgentActions {
     record BuildingPlanVerdictView(boolean ok, String code, String message, String buildingId,
                                    String kind, int sizeX, int sizeY, int sizeZ, int blocks,
                                    List<String> codes, List<String> warnings, boolean exists,
-                                   Map<String, Object> metrics) {
+                                   Map<String, Object> metrics, Map<String, Object> repair) {
         public BuildingPlanVerdictView {
             codes = List.copyOf(codes == null ? List.of() : codes);
             warnings = List.copyOf(warnings == null ? List.of() : warnings);
             metrics = Map.copyOf(metrics == null ? Map.of() : metrics);
+            repair = Map.copyOf(repair == null ? Map.of() : repair);
+        }
+
+        public BuildingPlanVerdictView(boolean ok, String code, String message, String buildingId,
+                                       String kind, int sizeX, int sizeY, int sizeZ, int blocks,
+                                       List<String> codes, List<String> warnings, boolean exists,
+                                       Map<String, Object> metrics) {
+            this(ok, code, message, buildingId, kind, sizeX, sizeY, sizeZ, blocks, codes, warnings,
+                    exists, metrics, Map.of());
         }
     }
 
@@ -564,6 +583,13 @@ public interface AgentActions {
      * ce que le serveur construira.</p>
      */
     CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml);
+
+    /** Même aperçu, avec les bornes du projet pour la réparation déterministe (issue #282). */
+    default CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml,
+                                                                         int maxWidth,
+                                                                         int maxHeight) {
+        return buildingPlanPreview(planYaml);
+    }
 
     /**
      * Une coupe, telle qu'elle remonte au panel.
@@ -590,7 +616,18 @@ public interface AgentActions {
                                    List<String> codes, List<String> warnings,
                                    List<BuildingSliceView> plans,
                                    List<BuildingSliceView> elevations,
-                                   BuildingVoxelsView voxels) {
+                                   BuildingVoxelsView voxels, Map<String, Object> repair) {
+        public BuildingPlanPreviewView(boolean ok, String code, String message, String buildingId,
+                                       String kind, int sizeX, int sizeY, int sizeZ, int blocks,
+                                       int anchorX, int anchorY, int anchorZ, String front,
+                                       List<String> codes, List<String> warnings,
+                                       List<BuildingSliceView> plans,
+                                       List<BuildingSliceView> elevations,
+                                       BuildingVoxelsView voxels) {
+            this(ok, code, message, buildingId, kind, sizeX, sizeY, sizeZ, blocks, anchorX, anchorY,
+                    anchorZ, front, codes, warnings, plans, elevations, voxels, Map.of());
+        }
+
         public BuildingPlanPreviewView(boolean ok, String code, String message, String buildingId,
                                        String kind, int sizeX, int sizeY, int sizeZ, int blocks,
                                        int anchorX, int anchorY, int anchorZ, String front,
@@ -610,6 +647,7 @@ public interface AgentActions {
             codes = List.copyOf(codes == null ? List.of() : codes);
             warnings = List.copyOf(warnings == null ? List.of() : warnings);
             plans = List.copyOf(plans == null ? List.of() : plans);
+            repair = Map.copyOf(repair == null ? Map.of() : repair);
             elevations = List.copyOf(elevations == null ? List.of() : elevations);
             voxels = voxels == null ? BuildingVoxelsView.omitted("") : voxels;
         }

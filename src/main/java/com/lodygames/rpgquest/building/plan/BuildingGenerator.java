@@ -94,7 +94,7 @@ public final class BuildingGenerator {
     public record Verdict(boolean ok, String code, String message, String buildingId,
                           String kind, int sizeX, int sizeY, int sizeZ, int blocks,
                           List<String> codes, List<String> warnings, boolean exists,
-                          ArchitecturalAudit.Metrics metrics) {
+                          ArchitecturalAudit.Metrics metrics, Repair repair) {
 
         public Verdict {
             buildingId = buildingId == null ? "" : buildingId;
@@ -104,9 +104,37 @@ public final class BuildingGenerator {
             warnings = List.copyOf(warnings == null ? List.of() : warnings);
         }
 
+        public Verdict(boolean ok, String code, String message, String buildingId, String kind,
+                       int sizeX, int sizeY, int sizeZ, int blocks, List<String> codes,
+                       List<String> warnings, boolean exists, ArchitecturalAudit.Metrics metrics) {
+            this(ok, code, message, buildingId, kind, sizeX, sizeY, sizeZ, blocks, codes, warnings,
+                    exists, metrics, null);
+        }
+
         static Verdict unreadable(String message) {
             return new Verdict(false, "PLAN_INVALID", message, "", "", 0, 0, 0, 0,
                     List.of("PLAN_INVALID"), List.of(), false, null);
+        }
+
+        Verdict withRepair(Repair found) {
+            return new Verdict(ok, code, message, buildingId, kind, sizeX, sizeY, sizeZ, blocks,
+                    codes, warnings, exists, metrics, found);
+        }
+    }
+
+    /**
+     * La réparation déterministe proposée par le moteur pour un plan refusé (issue #282).
+     *
+     * @param plan     le plan réparé, complet, prêt à devenir une nouvelle version
+     * @param changes  une phrase par correction appliquée
+     * @param codes    les refus qui restent — vide si le plan réparé est conforme
+     * @param accepted le plan réparé passe entièrement l'audit
+     */
+    public record Repair(String plan, List<String> changes, List<String> codes, boolean accepted) {
+
+        public Repair {
+            changes = List.copyOf(changes == null ? List.of() : changes);
+            codes = List.copyOf(codes == null ? List.of() : codes);
         }
     }
 
@@ -125,7 +153,12 @@ public final class BuildingGenerator {
      * premier et ferait passer pour bon un plan que la génération refuse.</p>
      */
     public Verdict inspect(String planYaml) {
-        return examine(planYaml).verdict();
+        return inspect(planYaml, PlanRepair.Limits.none());
+    }
+
+    /** Même chose, en sachant jusqu'où le projet autorise le bâtiment à grandir (réparation). */
+    public Verdict inspect(String planYaml, PlanRepair.Limits limits) {
+        return examine(planYaml, limits).verdict();
     }
 
     /**
@@ -139,7 +172,11 @@ public final class BuildingGenerator {
      * <p>N'écrit rien, comme {@link #inspect(String)}.</p>
      */
     public Examination preview(String planYaml) {
-        return examine(planYaml);
+        return preview(planYaml, PlanRepair.Limits.none());
+    }
+
+    public Examination preview(String planYaml, PlanRepair.Limits limits) {
+        return examine(planYaml, limits);
     }
 
     /** Un plan examiné : son verdict, et l'aperçu s'il a pu être construit. */
@@ -159,7 +196,28 @@ public final class BuildingGenerator {
      * ferait passer pour bon un plan que la génération refuse, ou montrerait un aperçu qui ne
      * correspond pas à ce qui sera construit.</p>
      */
-    private Examination examine(String planYaml) {
+    private Examination examine(String planYaml, PlanRepair.Limits limits) {
+        Examination raw = examineAsIs(planYaml);
+        if (raw.verdict().ok()) {
+            return raw;
+        }
+        // #282 : le serveur connaît la faute ; s'il sait la corriger sans risque, il le dit — avec
+        // le plan corrigé et vérifié — au lieu de renvoyer l'administrateur vers l'IA.
+        List<String> ignored = new ArrayList<>();
+        Optional<BuildingPlan> loose = BuildingPlanYaml.readUnvalidated(planYaml, ignored);
+        if (loose.isEmpty()) {
+            return raw;
+        }
+        PlanRepair.Outcome outcome = PlanRepair.repair(loose.get(), limits);
+        if (!outcome.repaired()) {
+            return raw;
+        }
+        return new Examination(raw.verdict().withRepair(new Repair(
+                BuildingPlanYaml.write(outcome.plan()), outcome.changes(), outcome.after(),
+                outcome.accepted())), raw.preview());
+    }
+
+    private Examination examineAsIs(String planYaml) {
         List<String> problems = new ArrayList<>();
         Optional<BuildingPlan> parsed = BuildingPlanYaml.read(planYaml, problems);
         if (parsed.isEmpty()) {

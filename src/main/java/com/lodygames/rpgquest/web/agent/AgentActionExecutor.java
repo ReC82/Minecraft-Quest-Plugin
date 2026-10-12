@@ -1478,7 +1478,8 @@ public final class AgentActionExecutor {
                     "Plan trop volumineux : " + plan.length() + " caractères pour un maximum de "
                             + BUILD_PLAN_MAX + "."));
         }
-        return actions.buildingPlanAudit(plan)
+        return actions.buildingPlanAudit(plan, intParam(action, "max_width"),
+                        intParam(action, "max_height"))
                 .thenApply(v -> {
                     Map<String, Object> details = new LinkedHashMap<>();
                     details.put("code", v.code());
@@ -1492,6 +1493,10 @@ public final class AgentActionExecutor {
                     details.put("warnings", v.warnings());
                     details.put("exists", v.exists());
                     details.put("metrics", v.metrics());
+                    // #282 : la réparation déterministe, si le moteur en a trouvé une sûre.
+                    if (!v.repair().isEmpty()) {
+                        details.put("repair", v.repair());
+                    }
                     // Un audit n'est pas une génération, et le dire ici évite qu'un écran le
                     // présente comme telle : l'audit réussit, le bâtiment n'existe toujours pas.
                     details.put("written", false);
@@ -1525,7 +1530,8 @@ public final class AgentActionExecutor {
                     "Plan trop volumineux : " + plan.length() + " caractères pour un maximum de "
                             + BUILD_PLAN_MAX + "."));
         }
-        return actions.buildingPlanPreview(plan)
+        return actions.buildingPlanPreview(plan, intParam(action, "max_width"),
+                        intParam(action, "max_height"))
                 .thenApply(v -> {
                     Map<String, Object> details = new LinkedHashMap<>();
                     details.put("code", v.code());
@@ -1550,6 +1556,9 @@ public final class AgentActionExecutor {
                     voxels.put("layers", v.voxels().layers());
                     voxels.put("omittedReason", v.voxels().omittedReason());
                     details.put("voxels", voxels);
+                    if (!v.repair().isEmpty()) {
+                        details.put("repair", v.repair());
+                    }
                     details.put("written", false);
                     // Un aperçu REMONTE même pour un plan refusé : c'est le cas où il est le plus
                     // utile. Le statut porte le verdict, le détail porte les coupes.
@@ -1563,6 +1572,19 @@ public final class AgentActionExecutor {
                 })
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(),
                         "Échec : " + rootName(err)));
+    }
+
+    /** Un paramètre entier optionnel : 0 s'il est absent ou illisible. */
+    private static int intParam(AgentAction action, String key) {
+        String raw = action.param(key);
+        if (raw == null || raw.isBlank()) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Math.min(64, Integer.parseInt(raw.trim())));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private static List<Map<String, Object>> sliceDetails(

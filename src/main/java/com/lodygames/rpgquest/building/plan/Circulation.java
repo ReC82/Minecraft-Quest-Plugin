@@ -127,6 +127,10 @@ final class Circulation {
         for (int y = grid.minY(); y < grid.maxY(); y++) {
             Set<Long> top = new LinkedHashSet<>();
             Set<Long> covered = new LinkedHashSet<>();
+            // Au-dessus du rez-de-chaussée, un étage offre TROIS blocs libres sous son plafond.
+            // Deux, ce sont des combles : la maison du bibliothécaire (#282), toit entier, voyait
+            // ses combles sous le faîte pris pour un étage, et le moteur leur ajoutait un escalier.
+            boolean upper = !sheltered.isEmpty();
             for (int x = grid.minX(); x <= grid.maxX(); x++) {
                 for (int z = grid.minZ(); z <= grid.maxZ(); z++) {
                     if (interiorOnly && !grid.interior(x, z)) {
@@ -135,7 +139,9 @@ final class Circulation {
                     if (grid.structural(x, y, z) && !grid.structural(x, y + 1, z)) {
                         long k = AuditGrid.key(x, y, z);
                         top.add(k);
-                        if (coveredFrom(grid, x, y + 3, z)) {
+                        boolean roomy = !upper || grid.passable(x, y + 3, z)
+                                && coveredFrom(grid, x, y + 4, z);
+                        if (roomy && coveredFrom(grid, x, y + 3, z)) {
                             covered.add(k);
                         }
                     }

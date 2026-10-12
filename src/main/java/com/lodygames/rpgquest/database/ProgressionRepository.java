@@ -36,6 +36,8 @@ public final class ProgressionRepository {
             "SELECT p.last_name AS name, s.total_xp AS total_xp "
                     + "FROM player_skills s JOIN player_profiles p ON p.uuid = s.player_uuid "
                     + "WHERE s.skill = ? AND s.total_xp > 0 "
+                    // #55 : un joueur qui a masqué son profil web n'apparaît dans aucun classement.
+                    + "AND " + com.lodygames.rpgquest.player.PublicProfilePolicy.notHidden("p") + " "
                     + "ORDER BY s.total_xp DESC LIMIT ?";
 
     private final DatabaseManager database;

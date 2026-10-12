@@ -15,6 +15,7 @@ public final class PageLayout {
                 <html lang="fr">
                 <head>
                 <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>%s — %s</title>
                 <style>
                 body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; background:#12141a; color:#e8e8e8; }
@@ -23,10 +24,12 @@ public final class PageLayout {
                 .offline { background:#5a1e1e; padding: .5rem 1rem; border-radius: .25rem; }
                 table { border-collapse: collapse; width: 100%%; margin-top: 1rem; }
                 th, td { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid #333; }
+                .note { color: #9aa3ad; font-size: .9rem; }
+                @media (max-width: 600px) { nav a { display: inline-block; margin: 0 .75rem .5rem 0; } }
                 </style>
                 </head>
                 <body>
-                <nav><a href="/">Accueil</a><a href="/status">Statut</a><a href="/leaderboards">Classements</a><a href="/wiki">Wiki</a></nav>
+                <nav><a href="/">Accueil</a><a href="/status">Statut</a><a href="/leaderboards">Classements</a><a href="/joueurs">Joueurs</a><a href="/wiki">Wiki</a><a href="/confidentialite">Confidentialité</a></nav>
                 <h1>%s</h1>
                 %s
                 %s

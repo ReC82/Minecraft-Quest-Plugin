@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.webapi.api.CatalogHandler;
 import com.lodygames.rpgquest.webapi.api.LeaderboardsHandler;
 import com.lodygames.rpgquest.webapi.api.NotFoundHandler;
 import com.lodygames.rpgquest.webapi.api.PlayersHandler;
+import com.lodygames.rpgquest.webapi.api.ProfilesHandler;
 import com.lodygames.rpgquest.webapi.api.StatusHandler;
 import com.lodygames.rpgquest.webapi.http.AccessLogger;
 import com.lodygames.rpgquest.webapi.http.AuthFilter;
@@ -12,6 +13,8 @@ import com.lodygames.rpgquest.webapi.http.RateLimiter;
 import com.lodygames.rpgquest.webapi.http.RequestPipeline;
 import com.lodygames.rpgquest.webapi.site.HomePageHandler;
 import com.lodygames.rpgquest.webapi.site.LeaderboardsPageHandler;
+import com.lodygames.rpgquest.webapi.site.PlayersPageHandler;
+import com.lodygames.rpgquest.webapi.site.PrivacyPageHandler;
 import com.lodygames.rpgquest.webapi.site.StatusPageHandler;
 import com.lodygames.rpgquest.webapi.site.WikiPageHandler;
 import com.lodygames.rpgquest.webapi.store.AckDeliveryHandler;
@@ -73,6 +76,7 @@ public final class HttpServerBootstrap {
         server.createContext("/api/leaderboards", pipeline.wrap(true, new LeaderboardsHandler(snapshotStore)));
         server.createContext("/api/catalog", pipeline.wrap(true, new CatalogHandler(snapshotStore)));
         server.createContext("/api/announcements", pipeline.wrap(true, new AnnouncementsHandler(snapshotStore)));
+        server.createContext("/api/profiles", pipeline.wrap(true, new ProfilesHandler(snapshotStore)));
 
         // API boutique authentifiée (mission étape 22, points 5, 8, 11) : sondage de livraisons,
         // accusé de réception, historique admin, remboursement.
@@ -87,6 +91,8 @@ public final class HttpServerBootstrap {
         server.createContext("/status", pipeline.wrap(false, new StatusPageHandler(snapshotStore, config.siteTitle())));
         server.createContext("/leaderboards", pipeline.wrap(false, new LeaderboardsPageHandler(snapshotStore, config.siteTitle())));
         server.createContext("/wiki", pipeline.wrap(false, new WikiPageHandler(snapshotStore, config.siteTitle())));
+        server.createContext("/joueurs", pipeline.wrap(false, new PlayersPageHandler(snapshotStore, config.siteTitle())));
+        server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle())));
 
         // Boutique publique (mission étape 22, point 8) : /store/webhook n'est pas authentifié par
         // jeton (requiresAuth=false) — sa propre vérification de signature en tient lieu.

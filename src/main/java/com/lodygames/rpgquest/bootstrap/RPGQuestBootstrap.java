@@ -511,6 +511,9 @@ public final class RPGQuestBootstrap {
         webSnapshotWriter = new WebSnapshotWriter(
                 plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,
                 () -> configService.current().webExport(), plugin.getSLF4JLogger());
+        // Issue #54 : statistique « quêtes terminées », lue dans quest_progress (aucun compteur parallèle).
+        webSnapshotWriter.setQuestStatistics(
+                new com.lodygames.rpgquest.database.QuestStatisticsRepository(databaseService.databaseManager()));
         registry.start(webSnapshotWriter);
 
         // Bridge d'administration HTTP (issue #37) — désactivé sauf RPGQUEST_WEB_ADMIN_ENABLED=true
@@ -1257,6 +1260,8 @@ public final class RPGQuestBootstrap {
         }
 
         ProfileCommand profileCommand = new ProfileCommand(progressionService);
+        // Issue #55 : « /profile web prive|public » — le choix est une variable joueur persistante.
+        profileCommand.setVariables(variableRepository);
         var profile = plugin.getCommand("profile");
         if (profile != null) {
             profile.setExecutor(profileCommand);

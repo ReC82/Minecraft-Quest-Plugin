@@ -63,6 +63,20 @@ public final class WebSnapshotWriter implements PluginService {
         return thread;
     });
 
+    /**
+     * Version du format de l'instantané. 2 (#54/#56) : ajoute {@code statistics} (portées
+     * {@code lifetime}/{@code season}/{@code events}) et {@code profiles}. Les clés de la version 1
+     * sont inchangées : un portail plus ancien continue de fonctionner.
+     */
+    static final int SCHEMA_VERSION = 2;
+
+    private com.lodygames.rpgquest.database.QuestStatisticsRepository questStatistics;
+
+    /** Issue #54 — dépendance facultative : sans elle, la statistique de quêtes est simplement absente. */
+    public void setQuestStatistics(com.lodygames.rpgquest.database.QuestStatisticsRepository questStatistics) {
+        this.questStatistics = questStatistics;
+    }
+
     private BukkitTask task;
     private volatile long lastWriteMillis = Long.MIN_VALUE;
     private volatile boolean writeInProgress = false;
@@ -134,10 +148,18 @@ public final class WebSnapshotWriter implements PluginService {
                 : List.of();
         List<Map<String, Object>> catalog = buildCatalog();
 
+        CompletableFuture<List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row>> questRows =
+                questStatistics == null ? CompletableFuture.completedFuture(List.of())
+                        : questStatistics.topCompleted(current.leaderboardSize());
         gatherLeaderboards(current)
-                .thenAccept(leaderboards -> {
+                .thenCombine(questRows, (leaderboards, quests) -> {
                     Map<String, Object> snapshot =
                             buildSnapshot(current, playerCount, maxPlayers, playerNames, catalog, leaderboards);
+                    snapshot.put("statistics", statistics(leaderboards, quests));
+                    snapshot.put("profiles", profiles(leaderboards, quests));
+                    return snapshot;
+                })
+                .thenAccept(snapshot -> {
                     CompletableFuture.runAsync(() -> writeAtomic(current, Json.write(snapshot)), ioExecutor)
                             .whenComplete((ignored, error) -> {
                                 if (error != null) {
@@ -181,6 +203,7 @@ public final class WebSnapshotWriter implements PluginService {
                                                List<String> playerNames, List<Map<String, Object>> catalog,
                                                Map<SkillType, List<ProgressionRepository.LeaderboardRow>> leaderboardRows) {
         Map<String, Object> root = new LinkedHashMap<>();
+        root.put("schemaVersion", SCHEMA_VERSION);
         root.put("generatedAt", Instant.now().toString());
 
         Map<String, Object> server = new LinkedHashMap<>();
@@ -216,6 +239,73 @@ public final class WebSnapshotWriter implements PluginService {
         root.put("announcements", announcements);
 
         return root;
+    }
+
+    /**
+     * Statistiques par portée (#54). Aujourd'hui seule {@code lifetime} est alimentée, depuis les
+     * sources de vérité existantes (XP des pistes, quêtes terminées) ; {@code season} et
+     * {@code events} sont présents et vides, pour que le format ne change pas le jour où ils le
+     * seront. Aucune valeur n'est inventée.
+     */
+    static Map<String, Object> statistics(Map<SkillType, List<ProgressionRepository.LeaderboardRow>> leaderboards,
+                                          List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row> quests) {
+        Map<String, Object> lifetime = new LinkedHashMap<>();
+        for (Map.Entry<SkillType, List<ProgressionRepository.LeaderboardRow>> entry : leaderboards.entrySet()) {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (ProgressionRepository.LeaderboardRow row : entry.getValue()) {
+                rows.add(metricRow(row.name(), row.totalXp()));
+            }
+            lifetime.put("RPG_XP_" + entry.getKey().name(), rows);
+        }
+        List<Map<String, Object>> questBoard = new ArrayList<>();
+        for (var row : quests) {
+            questBoard.add(metricRow(row.name(), row.completed()));
+        }
+        lifetime.put("QUESTS_COMPLETED", questBoard);
+
+        Map<String, Object> statistics = new LinkedHashMap<>();
+        statistics.put("scopes", List.of("lifetime"));
+        statistics.put("lifetime", lifetime);
+        statistics.put("season", null);
+        statistics.put("events", List.of());
+        return statistics;
+    }
+
+    private static Map<String, Object> metricRow(String name, long value) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", name);
+        row.put("value", value);
+        return row;
+    }
+
+    /**
+     * Profils publics limités (#56) : uniquement les joueurs déjà présents dans un classement
+     * (donc non masqués, #55), avec ce que ces classements disent d'eux — rien de plus. Ni UUID, ni
+     * position, ni inventaire, ni date de connexion.
+     */
+    static List<Map<String, Object>> profiles(Map<SkillType, List<ProgressionRepository.LeaderboardRow>> leaderboards,
+                                              List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row> quests) {
+        Map<String, Map<String, Object>> byName = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Map.Entry<SkillType, List<ProgressionRepository.LeaderboardRow>> entry : leaderboards.entrySet()) {
+            for (ProgressionRepository.LeaderboardRow row : entry.getValue()) {
+                profile(byName, row.name()).computeIfAbsent("skills", k -> new LinkedHashMap<String, Object>());
+                @SuppressWarnings("unchecked")
+                Map<String, Object> skills = (Map<String, Object>) byName.get(row.name()).get("skills");
+                skills.put(entry.getKey().name(), row.totalXp());
+            }
+        }
+        for (var row : quests) {
+            profile(byName, row.name()).put("questsCompleted", row.completed());
+        }
+        return new ArrayList<>(byName.values());
+    }
+
+    private static Map<String, Object> profile(Map<String, Map<String, Object>> byName, String name) {
+        return byName.computeIfAbsent(name, n -> {
+            Map<String, Object> profile = new LinkedHashMap<>();
+            profile.put("name", n);
+            return profile;
+        });
     }
 
     private void writeAtomic(WebExportConfig current, String json) {

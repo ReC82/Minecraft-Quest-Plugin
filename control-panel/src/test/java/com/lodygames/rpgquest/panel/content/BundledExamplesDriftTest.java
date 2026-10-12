@@ -62,6 +62,18 @@ class BundledExamplesDriftTest {
     }
 
     @Test
+    @DisplayName("La copie des dialogues embarqués correspond à YamlDialogueEngine (#248)")
+    void bundledDialoguesMatchThePlugin() throws IOException {
+        List<String> fromPlugin = declaredExamples(
+                "src/main/java/com/lodygames/rpgquest/dialogue/YamlDialogueEngine.java");
+        Assumptions.assumeFalse(fromPlugin.isEmpty(),
+                "sources du plugin absentes : test de cohérence non applicable ici");
+
+        assertEquals(fromPlugin, ContentDeletionAnalyzer.BUNDLED_DIALOGUES,
+                "La liste du panel a dérivé de YamlDialogueEngine#BUNDLED_EXAMPLES.");
+    }
+
+    @Test
     @DisplayName("Les listes du panel ne sont pas vides : une liste vide désactiverait l'avertissement")
     void listsAreNotSilentlyEmpty() {
         assertTrue(ContentDeletionAnalyzer.BUNDLED_QUESTS.size() >= 1);

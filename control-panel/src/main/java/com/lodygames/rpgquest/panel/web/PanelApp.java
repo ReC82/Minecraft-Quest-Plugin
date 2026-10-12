@@ -247,6 +247,8 @@ public final class PanelApp {
         // Issue #194 : GET = aperçu des conséquences, POST = application après confirmation tapée.
         route("/quests/delete", exchange -> handleContentDelete(exchange, "quests"));
         route("/stories/delete", exchange -> handleContentDelete(exchange, "stories"));
+        // Issue #248 — même parcours pour un dialogue, avec le relevé du serveur dans l'aperçu.
+        route("/dialogues/delete", exchange -> handleContentDelete(exchange, "dialogues"));
         route("/npcs", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ",
                 Permission.NPC_READ, agentPages::npcs));
         // Issue #226 : GET = aperçu des dépendances couche par couche, POST = une opération précise
@@ -1747,15 +1749,24 @@ public final class PanelApp {
     // ---- Suppression de contenu (issue #194) ----------------------------------------------
 
     /**
-     * Suppression d'une quête ou d'une story.
+     * Suppression d'une quête, d'une story (#194) ou d'un dialogue (#248).
      *
      * <p>{@code GET} affiche l'aperçu des conséquences ; {@code POST} applique, et seulement si
-     * l'identifiant a été <strong>retapé</strong>. Après une suppression source réussie, la
-     * suppression de la copie serveur est enfilée comme action agent — sans quoi le contenu
-     * resterait chargé et donnerait l'impression de réapparaître.</p>
+     * l'identifiant a été <strong>retapé</strong> et que la source n'a pas changé depuis l'aperçu.
+     * Après une suppression source réussie, la suppression de la copie serveur est enfilée comme
+     * action agent — sans quoi le contenu resterait chargé et donnerait l'impression de
+     * réapparaître.</p>
+     *
+     * <p>#248 : le plan prend en compte les dialogues <strong>réellement chargés</strong> par le
+     * serveur (dernier {@code dialogue.list}, s'il est assez récent), y compris pour une quête. Le
+     * serveur revérifie de son côté au moment d'agir.</p>
      */
     private void handleContentDelete(HttpExchange exchange, String kind) throws IOException {
-        String base = "quests".equals(kind) ? "/quests" : "/stories";
+        String base = switch (kind) {
+            case "quests" -> "/quests";
+            case "dialogues" -> "/dialogues";
+            default -> "/stories";
+        };
         Optional<Session> maybe = requireSession(exchange);
         if (maybe.isEmpty()) {
             return;
@@ -1770,6 +1781,7 @@ public final class PanelApp {
         boolean post = "POST".equalsIgnoreCase(exchange.getRequestMethod());
         String slug;
         String typed = null;
+        String expectedSha = null;
         if (post) {
             Map<String, String> form = Http.formBody(exchange);
             if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
@@ -1779,51 +1791,106 @@ public final class PanelApp {
             }
             slug = form.getOrDefault("slug", "").trim();
             typed = form.getOrDefault(ContentDeletionPages.CONFIRM_FIELD, "");
+            expectedSha = form.get(ContentDeletionPages.EXPECTED_SHA_FIELD);
         } else {
             slug = Http.query(exchange).getOrDefault("slug", "").trim();
         }
 
-        boolean runtimePresent = agentPages.runtimeKnowsContent(agentId, kind, slug);
+        var inventory = agentPages.runtimeDialogueInventory(agentId);
+        Instant now = Instant.now();
+        boolean runtimePresent = "dialogues".equals(kind)
+                ? inventory.find(slug).isPresent()
+                : agentPages.runtimeKnowsContent(agentId, kind, slug);
         // #194 : sans relevé, « le serveur ne connaît pas ce contenu » serait une affirmation
         // fausse — on ne lui a jamais demandé. L'aperçu doit dire la différence.
-        boolean listingAvailable = agentPages.runtimeListingAvailable(agentId, kind);
-        String title = "quests".equals(kind) ? "Supprimer une quête" : "Supprimer une story";
+        boolean listingAvailable = "dialogues".equals(kind)
+                ? inventory.available()
+                : agentPages.runtimeListingAvailable(agentId, kind);
+        String title = switch (kind) {
+            case "quests" -> "Supprimer une quête";
+            case "dialogues" -> "Supprimer un dialogue";
+            default -> "Supprimer une story";
+        };
+        // Le plan est TOUJOURS recalculé, au GET comme au POST : la décision n'est jamais prise sur
+        // ce que le formulaire prétend.
+        var plan = contentDeletion.plan(kind, slug, runtimePresent, listingAvailable, inventory, now);
+        String refresh = dialogueRefreshForm(session, agentId, base);
 
         if (!post) {
             Http.html(exchange, 200, renderPage(title, session, base,
-                    contentDeletion.preview(kind, slug, runtimePresent, listingAvailable,
-                            session.csrfToken(), null)));
+                    contentDeletion.preview(plan, session.csrfToken(), null, refresh)));
             return;
         }
 
-        var plan = contentDeletion.plan(kind, slug, runtimePresent);
+        String refusal = null;
         if (!ContentDeletionPages.confirmationMatches(plan, typed)) {
-            // Confirmation absente ou erronée : on réaffiche l'aperçu, sans rien toucher.
+            refusal = "Confirmation incorrecte : il faut retaper exactement l'identifiant. "
+                    + "Aucune modification n'a été faite.";
+        } else if (plan.sourcePresent() && !java.util.Objects.equals(
+                expectedSha == null ? "" : expectedSha, plan.sourceSha())) {
+            // Course entre édition et suppression : on ne supprime pas ce qu'on n'a pas vu.
+            refusal = "Le fichier source a changé depuis l'affichage de cet aperçu : relire les "
+                    + "conséquences ci-dessous, puis confirmer à nouveau. Aucune modification n'a "
+                    + "été faite.";
+        }
+        if (refusal != null) {
             Http.html(exchange, 200, renderPage(title, session, base,
-                    contentDeletion.preview(kind, slug, runtimePresent, listingAvailable,
-                            session.csrfToken(),
-                            "Confirmation incorrecte : il faut retaper exactement l'identifiant. "
-                                    + "Aucune modification n'a été faite.")));
+                    contentDeletion.preview(plan, session.csrfToken(), refusal, refresh)));
             return;
         }
 
         String rid = UUID.randomUUID().toString().substring(0, 8);
-        var result = contentDeletion.apply(kind, slug, runtimePresent, typed);
+        var result = contentDeletion.apply(plan, typed);
         boolean queued = false;
-        if (result != null && result.ok() && runtimePresent) {
-            agentStore.createAction(agentId, "content.definition.delete",
-                    Map.of("kind", kind, "id", plan.plainId()), session.username());
+        String runtimeActionId = null;
+        if (result != null && result.ok() && plan.runtimePresent()) {
+            // Double clic, rechargement : une suppression serveur déjà en file n'est pas doublée.
+            runtimeActionId = openContentDeletion(agentId, kind, plan.plainId()).orElse(null);
+            if (runtimeActionId == null) {
+                runtimeActionId = agentStore.createAction(agentId, "content.definition.delete",
+                        Map.of("kind", kind, "id", plan.plainId()), session.username());
+            }
             queued = true;
         }
         audit.record(session.username(), kind + ".content.delete", base + "/" + slug,
                 result != null && result.ok() ? "OK" : "REFUSED",
-                result == null ? "confirmation invalide" : result.code(), rid);
+                result == null ? "confirmation invalide"
+                        : result.code() + (runtimeActionId == null ? "" : " action=" + runtimeActionId),
+                rid);
         LOG.log(System.Logger.Level.INFO, "event=content_delete rid=" + rid + " kind=" + kind
                 + " id=" + plan.plainId() + " ok=" + (result != null && result.ok())
                 + " runtime_queued=" + queued + " by=" + session.username());
 
         Http.html(exchange, 200, renderPage(title, session, base,
-                contentDeletion.result(kind, plan.plainId(), result, queued)));
+                contentDeletion.result(kind, plan.plainId(), result, queued, runtimeActionId)));
+    }
+
+    /** Une suppression serveur de ce contenu déjà en file (PENDING / DELIVERED), s'il y en a une. */
+    private Optional<String> openContentDeletion(String agentId, String kind, String plainId) {
+        return agentStore.recentActions(agentId, 200).stream()
+                .filter(a -> "content.definition.delete".equals(a.type()))
+                .filter(a -> !a.status().terminal())
+                .filter(a -> kind.equals(a.params().get("kind"))
+                        && plainId.equals(a.params().get("id")))
+                .map(AgentActionRow::id)
+                .findFirst();
+    }
+
+    /** Le bouton qui rafraîchit le relevé des dialogues, proposé quand la vérification est incomplète. */
+    private String dialogueRefreshForm(Session session, String agentId, String base) {
+        var spec = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec("dialogue.list");
+        if (spec.isEmpty() || !hasAllPermissions(session, spec.get())) {
+            return "";
+        }
+        return "<form method=\"post\" action=\"/agents/action\" class=\"actform\">"
+                + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
+                + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
+                + "<input type=\"hidden\" name=\"type\" value=\"dialogue.list\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"" + Http.esc(base) + "\">"
+                + "<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">"
+                + Icons.icon("refresh") + "Rafraîchir le relevé des dialogues</button>"
+                + "<p class=\"field-help\">Retour au catalogue ; rouvrir ensuite cet aperçu.</p>"
+                + "</form>";
     }
 
     // ---- Suppression d'un PNJ (issue #226) -----------------------------------------------

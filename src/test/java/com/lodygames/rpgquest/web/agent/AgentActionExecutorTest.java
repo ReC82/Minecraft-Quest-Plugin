@@ -149,12 +149,23 @@ class AgentActionExecutorTest {
     // ---- Whitelist + player.variable.get (issue #51) ---------------------------------------
 
     @Test
-    void contentDeleteRejectsAnythingButQuestsAndStories() {
-        for (String kind : new String[] {"dialogues", "npcs", "..", ""}) {
+    void contentDeleteRejectsAnythingButQuestsStoriesAndDialogues() {
+        for (String kind : new String[] {"npcs", "..", "/etc", ""}) {
             AgentActionOutcome outcome = run(new AgentAction("cd1", "content.definition.delete",
                     Map.of("kind", kind, "id", "test_cible")));
             assertEquals(AgentActionOutcome.REJECTED, outcome.status(), "type accepté à tort : " + kind);
         }
+    }
+
+    /** Issue #248 : les dialogues sont désormais supprimables, avec les mêmes contrôles. */
+    @Test
+    void contentDeleteAcceptsDialogues() {
+        AgentActionOutcome outcome = run(new AgentAction("cd4", "content.definition.delete",
+                Map.of("kind", "dialogues", "id", "rpgquest:help")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("dialogues", actions.lastDeleteKind);
+        assertEquals("rpgquest:help", actions.lastDeleteId);
     }
 
     @Test

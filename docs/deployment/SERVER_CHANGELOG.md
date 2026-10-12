@@ -7987,3 +7987,33 @@ identique à la distribution construite ; classes `BuildingPlanDraftStore`, `Bui
 `BriefLevels` présentes ; `/buildings/plan` → `303 /login` ; quatre tables `building_plan_*`
 créées. **Aucun JAR Minecraft transféré.**
 
+
+## 2026-10-12 — Suppression d'un dialogue depuis PlugAdmin (#248) — **NON déployé**
+
+### Changement
+
+`content.definition.delete` accepte `kind=dialogues` : revérification serveur (PNJ liés,
+`OPEN_DIALOGUE` entrants, guides de Hub), sauvegarde, suppression, rechargement des dialogues,
+constat. Pierre tombale `content-tombstones/dialogues/<fichier>` : un exemple du JAR supprimé n'est
+plus recréé au démarrage. Panel : `/dialogues/delete`, aperçu source + relevé serveur ; aperçu de
+suppression des quêtes complété par les dialogues serveur.
+
+### Action serveur
+
+**Remplacer le JAR RPGQuest** (plugin modifié) **et** redéployer le panel
+(`scripts/plugadmin/deploy.sh`). Aucune migration de `data.db`, aucun fichier de configuration.
+Nouveau dossier créé à la première suppression : `RPGQuest/content-tombstones/` (ne pas supprimer :
+il garantit qu'un exemple supprimé ne revient pas).
+
+### Sauvegarde préalable
+
+Procédure habituelle (`deploy-verygames.sh` sauvegarde le JAR en ligne).
+
+### Déploiement
+
+Après feu vert du propriétaire uniquement (tests manuels #256 / V2 en cours). CI verte requise
+(`deploy-verygames.sh` la lit).
+
+### Validation
+
+TC-280.

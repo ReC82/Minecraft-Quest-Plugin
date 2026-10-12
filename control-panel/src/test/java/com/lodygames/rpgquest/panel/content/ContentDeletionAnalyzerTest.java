@@ -266,12 +266,22 @@ class ContentDeletionAnalyzerTest {
     }
 
     @Test
-    @DisplayName("Seules les quêtes et les stories sont supprimables ici")
+    @DisplayName("Un type non prévu (PNJ) n'est pas supprimable ici")
     void refusesOtherKinds() {
+        DeletionPlan plan = analyzer.analyze("npcs", "test_garde", true);
+
+        assertFalse(plan.deletable());
+        assertTrue(plan.blockers().get(0).reason().contains("ne peuvent pas être supprimés ici"),
+                plan.blockers().toString());
+    }
+
+    @Test
+    @DisplayName("#248 : un dialogue n'est plus refusé d'office, mais sans relevé il ne conclut rien")
+    void dialoguesNeedAFreshSurvey() {
         DeletionPlan plan = analyzer.analyze("dialogues", "test_garde", true);
 
         assertFalse(plan.deletable());
-        assertTrue(plan.blockers().get(0).reason().contains("Seules les quêtes et les stories"),
+        assertTrue(plan.blockers().get(0).reason().contains("Vérification incomplète"),
                 plan.blockers().toString());
     }
 

@@ -311,8 +311,9 @@ public final class BukkitAgentActions implements AgentActions {
         // ne jamais être relues comme des définitions.
         java.nio.file.Path data = plugin.getDataFolder().toPath();
         this.contentDeleter = new com.lodygames.rpgquest.content.ContentDefinitionDeleter(
-                data.resolve("quests"), data.resolve("stories"),
-                data.resolve("content-backups"));
+                data.resolve("quests"), data.resolve("stories"), data.resolve("dialogues"),
+                data.resolve("hub-guides"), data.resolve("content-backups"),
+                com.lodygames.rpgquest.content.ContentTombstones.besideContent(data.resolve("dialogues")));
         this.luckPermsBridge = new LuckPermsBridge(plugin.getSLF4JLogger());
     }
 
@@ -1450,6 +1451,9 @@ public final class BukkitAgentActions implements AgentActions {
      */
     @Override
     public CompletableFuture<MutationResult> contentDefinitionDelete(String kind, String id) {
+        if ("dialogues".equals(kind)) {
+            return dialogueDelete(id);
+        }
         return CompletableFuture.supplyAsync(() -> contentDeleter.delete(kind, id))
                 .thenCompose(result -> {
                     if (!result.ok()) {
@@ -1471,6 +1475,48 @@ public final class BukkitAgentActions implements AgentActions {
                                 List.of(kind + "/" + result.file(), "sauvegarde: " + result.backupPath())));
                     });
                 });
+    }
+
+    /**
+     * Issue #248 — suppression de la copie serveur d'un dialogue.
+     *
+     * <p>Le serveur <strong>revérifie</strong> d'abord, sur ce qu'il a chargé, qu'aucun PNJ ni aucun
+     * autre dialogue n'en dépend ({@link DialogueDeletionGuard}) — l'aperçu du panel peut dater. Le
+     * deleter vérifie ensuite les guides de Hub sur le disque, sauvegarde, supprime et inscrit une
+     * pierre tombale. Les dialogues sont enfin rechargés, et le constat est rendu : combien sont
+     * chargés, et s'il reste des erreurs de chargement.</p>
+     *
+     * <p>Rien d'autre n'est touché : ni PNJ, ni quête démarrée par ce dialogue, ni progression.</p>
+     */
+    private CompletableFuture<MutationResult> dialogueDelete(String id) {
+        return dialogueDefinitions().thenCompose(view -> {
+            List<String> blockers = DialogueDeletionGuard.blockers(id, view.dialogues());
+            if (!blockers.isEmpty()) {
+                return done(MutationResult.of(false, "REFERENCED", "Dialogue encore utilisé — "
+                        + String.join(" ; ", blockers) + ". Rien n'a été supprimé."));
+            }
+            return CompletableFuture.supplyAsync(() -> contentDeleter.delete("dialogues", id))
+                    .thenCompose(result -> {
+                        if (!result.ok()) {
+                            return done(MutationResult.of(false, result.code(), result.message()));
+                        }
+                        return onMain(() -> {
+                            var report = dialogueEngine.reload();
+                            boolean stillLoaded = dialogueEngine.dialogues().stream()
+                                    .anyMatch(d -> DialogueDeletionGuard.key(d.id().toString())
+                                            .equals(DialogueDeletionGuard.key(id)));
+                            String constat = report.loaded().size() + " dialogue(s) rechargé(s), "
+                                    + report.issues().size() + " erreur(s) de chargement"
+                                    + (stillLoaded ? " — ATTENTION : un autre fichier déclare encore "
+                                            + "cet identifiant." : ".");
+                            return done(new MutationResult(!stillLoaded,
+                                    stillLoaded ? "STILL_LOADED" : "DELETED",
+                                    result.message() + " " + constat,
+                                    List.of("dialogues/" + result.file(),
+                                            "sauvegarde: " + result.backupPath())));
+                        });
+                    });
+        });
     }
 
     @Override

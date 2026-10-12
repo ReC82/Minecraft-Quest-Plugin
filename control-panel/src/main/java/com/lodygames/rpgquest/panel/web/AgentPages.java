@@ -6078,6 +6078,19 @@ public final class AgentPages {
                     + "dialogue chargé par le serveur DEV. En attendant, le fichier <code>dialogues/")
                     .append(Http.esc(key)).append(".yml</code> reste modifiable à la main dans la source.</p>");
         }
+        // Issue #248 — lien vers l'APERÇU, jamais une suppression directe : rien ne se supprime sans
+        // avoir vu les dépendances (source ET serveur) et retapé l'identifiant. Proposé aussi pour un
+        // dialogue « hors source » : c'est précisément le cas qu'on ne pouvait pas nettoyer.
+        if (!dialogueSlug.isEmpty() && session != null
+                && perms.can(session.effective(), Permission.CONTENT_DELETE)) {
+            if (!canWrite) {
+                sb.append(detailSection("target", "Actions"));
+            }
+            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">")
+                    .append("<a class=\"btn btn-sm btn-outline-danger\" href=\"/dialogues/delete?slug=")
+                    .append(Http.esc(dialogueSlug)).append("\">").append(Icons.icon("trash"))
+                    .append("Supprimer le dialogue…</a></div>");
+        }
 
         sb.append("</div></div></div>");
         return sb.toString();
@@ -7857,6 +7870,23 @@ public final class AgentPages {
      * contenu » serait faux : on ne lui a jamais demandé. L'aperçu de suppression doit pouvoir le
      * dire, parce que l'absence de suppression côté serveur fait réapparaître le contenu.</p>
      */
+    /**
+     * Issue #248 — les dialogues réellement chargés par le serveur, d'après le dernier
+     * {@code dialogue.list} réussi, <strong>avec sa date</strong> : c'est elle qui dit si l'on peut
+     * conclure à l'absence de référence.
+     */
+    public com.lodygames.rpgquest.panel.content.RuntimeDialogueInventory runtimeDialogueInventory(
+            String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.content.RuntimeDialogueInventory.unavailable();
+        }
+        return store.latestSuccessfulActionOfType(agentId, "dialogue.list")
+                .flatMap(row -> detailsOf(row).map(details ->
+                        com.lodygames.rpgquest.panel.content.RuntimeDialogueInventory.from(details,
+                                row.completedAt())))
+                .orElseGet(com.lodygames.rpgquest.panel.content.RuntimeDialogueInventory::unavailable);
+    }
+
     public boolean runtimeListingAvailable(String agentId, String kind) {
         return latestDetails(agentId, "quests".equals(kind) ? "quest.list" : "story.list").isPresent();
     }

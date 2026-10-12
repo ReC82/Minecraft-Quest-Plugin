@@ -163,7 +163,7 @@ public final class BuildingPlanYaml {
         if (kind.isEmpty()) {
             problems.add(where + "instruction inconnue : « " + str(map.get("op"))
                     + " ». Valeurs acceptées : box, shell, walls, clear, gable, door, window, "
-                    + "light, stair_run, staircase, ladder, pillars.");
+                    + "light, stair_run, staircase, ladder, pillars, bed.");
             return Optional.empty();
         }
         PlanStep.Kind k = kind.get();

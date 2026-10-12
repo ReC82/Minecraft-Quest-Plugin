@@ -83,7 +83,8 @@ class PlanRepair282Test {
         PlanRepair.Outcome outcome = PlanRepair.repair(raw, new PlanRepair.Limits(19, 14));
         assertTrue(outcome.repaired(), outcome.toString());
         // #291 : le seuil, un bloc au-dessus du terrain sans marche, est désormais vu aussi.
-        assertEquals(List.of("ENTRANCE_STEP", "LEVEL_UNREACHABLE"), outcome.before());
+        // #288 : ses lanternes de y=2 et y=8 flottaient aussi — elles se détachaient à la pose.
+        assertEquals(List.of("ENTRANCE_STEP", "UNSUPPORTED_BLOCK", "LEVEL_UNREACHABLE"), outcome.before());
         String changes = String.join("\n", outcome.changes());
         assertTrue(changes.contains("Ajout d'un escalier de 6 marche(s)"), changes);
         assertTrue(changes.contains("stair_run"), "la volée trop courte est retirée : " + changes);
@@ -91,6 +92,7 @@ class PlanRepair282Test {
         assertTrue(changes.contains("op: walls"), "les bibliothèques longent les murs : " + changes);
         // Façade sur la limite du volume : pas de place pour des marches, la fondation est enterrée.
         assertTrue(changes.contains("fondation enterrée"), changes);
+        assertTrue(changes.contains("suspendues à une chaîne"), changes);
         assertEquals(1, outcome.plan().anchorY());
         assertTrue(outcome.accepted(), "le plan réparé passe : " + outcome.after() + "\n" + changes);
 

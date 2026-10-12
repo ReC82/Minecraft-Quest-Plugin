@@ -199,6 +199,8 @@ public final class BuildingPlanExpander {
             }
         }
 
+        settleLanterns(cells, plan);
+
         List<BlueprintBlock> blocks = new ArrayList<>(cells.states.size());
         for (int y = 0; y < plan.sizeY(); y++) {
             for (int z = 0; z < plan.sizeZ(); z++) {
@@ -269,6 +271,10 @@ public final class BuildingPlanExpander {
             case DOOR -> {
                 return door(step, cells, plan);
             }
+            case BED -> Bed.of(step).ifPresent(bed -> {
+                cells.put(key(bed.x(), bed.y(), bed.z()), bed.foot());
+                cells.put(key(bed.headX(), bed.y(), bed.headZ()), bed.head());
+            });
             case WINDOW -> {
                 return window(step, cells, plan);
             }
@@ -353,6 +359,39 @@ public final class BuildingPlanExpander {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Les lanternes de « light » choisissent leur appui sur la grille FINALE (#288).
+     *
+     * <p>« hanging » était décidé au moment de l'instruction. Or le toit, le plafond ou la table
+     * viennent souvent après : sur la Maison de Lily, les lanternes de y=4 étaient posées avant le
+     * toit, donc « posées » sur le vide, et se détachaient à la première mise à jour — ramassables.
+     * Le moteur tranche maintenant une fois tout posé : suspendue s'il y a de quoi la tenir
+     * au-dessus, posée s'il y a un appui dessous. Sans l'un ni l'autre, l'état reste tel quel et
+     * l'audit de stabilité la refuse en la nommant — jamais retirée en silence.</p>
+     */
+    private static void settleLanterns(Cells cells, BuildingPlan plan) {
+        for (var e : new ArrayList<>(cells.states.entrySet())) {
+            int rank = cells.origins.getOrDefault(e.getKey(), 0);
+            // Les lanternes de « light », et toute lanterne dont le plan n'a écrit que le type : le
+            // modèle dit « une lanterne », le moteur décide comment elle tient. Un « hanging »
+            // écrit explicitement est respecté — et jugé par l'audit.
+            boolean computed = rank >= 1 && plan.steps().get(rank - 1).kind() == PlanStep.Kind.LIGHT
+                    || !e.getValue().contains("[");
+            if (!computed || !BlockCatalog.vanilla().hasProperty(e.getValue(), "hanging")) {
+                continue;
+            }
+            long k = e.getKey();
+            int x = (int) (k >>> 40);
+            int y = (int) ((k >>> 20) & 0xFFFFF);
+            int z = (int) (k & 0xFFFFF);
+            boolean hang = Stability.holdsFromAbove(cells.get(key(x, y + 1, z)));
+            boolean stand = Stability.holdsFromBelow(y > 0 ? cells.get(key(x, y - 1, z)) : null);
+            if (hang || stand) {
+                cells.states.put(k, BlockStates.lantern(BlockStates.bareType(e.getValue()), hang));
+            }
+        }
     }
 
     /** Les bornes de la matière déjà posée : {minX, minY, minZ, maxX, maxY, maxZ}, ou null. */
@@ -600,7 +639,10 @@ public final class BuildingPlanExpander {
         for (int y = box.minY(); y <= box.maxY(); y++) {
             for (int z = box.minZ(); z <= box.maxZ(); z++) {
                 for (int x = box.minX(); x <= box.maxX(); x++) {
-                    if ((x - box.minX()) % spacing != 0 || (z - box.minZ()) % spacing != 0) {
+                    // #288 : l'espacement vaut aussi en hauteur. Une zone de y=2 à y=8 posait une
+                    // colonne de sept lanternes empilées — chacune sur une lanterne, donc sur rien.
+                    if ((x - box.minX()) % spacing != 0 || (z - box.minZ()) % spacing != 0
+                            || (y - box.minY()) % spacing != 0) {
                         continue;
                     }
                     String above = cells.get(key(x, y + 1, z));

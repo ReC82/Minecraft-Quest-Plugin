@@ -209,6 +209,13 @@ public final class BuildingPromptBuilder {
                                   départ avant et une de palier après : toutes doivent être À
                                   L'INTÉRIEUR, à au moins une cellule des murs extérieurs. Ne perce
                                   JAMAIS la trémie toi-même.
+                - op: bed       → UN LIT, assemblage de deux cellules : le pied et la tête. Clés :
+                                  « from » (le PIED, [x, y, z] posé sur le sol), « direction »
+                                  (north, south, east ou west : la direction de la TÊTE vue depuis
+                                  le pied ; la tête occupe la cellule voisine dans cette direction),
+                                  « block » (un lit COLORÉ : minecraft:pink_bed, minecraft:blue_bed…).
+                                  JAMAIS un lit posé par « op: box » : il le serait en moitiés sans
+                                  leur paire, détruites à la pose — le plan est refusé.
                 - op: ladder    → une échelle VERTICALE adossée à un mur, qui regarde vers
                                   l'intérieur, et dont le débouché du haut est dégagé. Clés :
                                   « facade » (le mur contre lequel elle s'adosse — il ne fixe QUE
@@ -264,6 +271,10 @@ public final class BuildingPromptBuilder {
                     floor: 5
                     width: 1
                     block: minecraft:oak_stairs
+                  - op: bed
+                    from: [6, 1, 5]
+                    direction: east
+                    block: minecraft:red_bed
                   - op: ladder
                     facade: BACK
                     from: [1, 1, 5]
@@ -303,6 +314,12 @@ public final class BuildingPromptBuilder {
                   [ ] DE LA LUMIÈRE, à moins de 8 blocs de tout point intérieur.
                   [ ] UNE ENVELOPPE CLOSE : pas de trou dans les murs ni dans le toit, pignons
                       compris. « op: gable » avec « fill » les ferme pour toi.
+                  [ ] TOUT TIENT APRÈS LA POSE. Une lanterne se pose SUR un bloc plein (table,
+                      sol) ou se suspend SOUS un plafond, éventuellement au bout d'une chaîne
+                      (minecraft:iron_chain) ; jamais en l'air, jamais sur une autre lanterne.
+                      Torches murales, échelles et panneaux muraux s'adossent à un mur plein ;
+                      tapis, fleurs et torches reposent sur un bloc. Lits et portes se posent
+                      avec « op: bed » et « op: door ». Un bloc qui tomberait est REFUSÉ.
                   [ ] TOUS LES ÉTAGES ACCESSIBLES. Chaque plancher intermédiaire reçoit UN
                       « op: staircase » dont « floor » est le y de ce plancher. N'écris ni trémie
                       (« clear ») ni escalier marche par marche pour monter : le moteur s'en
@@ -434,7 +451,7 @@ public final class BuildingPromptBuilder {
 
                 Ta réponse a un budget de sortie limité. Un document COUPÉ EN PLEIN MILIEU est
                 totalement inutilisable : il n'y a pas de « plan partiel » exploitable. Si tu dois
-                choisir, fais un bâtiment plus SOBRE mais COMPLET, et qui satisfait les huit points
+                choisir, fais un bâtiment plus SOBRE mais COMPLET, et qui satisfait les neuf points
                 du contrat — c'est ce qui est contrôlé. N'ajoute des détails décoratifs que si le
                 plan tient déjà entièrement. Entre 30 et 80 instructions est la fourchette utile.
                 """;

@@ -91,7 +91,14 @@ public record PlanStep(Kind kind, PlanBox box, String state, String axis, Facade
          * plancher à atteindre ; le moteur calcule le nombre de marches, la trémie, le départ et
          * le palier, et réserve ce volume contre le mobilier posé ensuite. Voir {@link Staircase}.
          */
-        STAIRCASE;
+        STAIRCASE,
+        /**
+         * Un lit (#288) : DEUX cellules, pied et tête, même couleur, même orientation. Le modèle
+         * donne le pied et la direction de la tête ; le moteur pose la paire. Une « box » d'un bloc
+         * de lit posait deux pieds côte à côte, que la première mise à jour physique détruisait —
+         * le lit absent de la Maison du bibliothécaire.
+         */
+        BED;
 
         public static Optional<Kind> of(String raw) {
             if (raw == null || raw.isBlank()) {
@@ -127,7 +134,7 @@ public record PlanStep(Kind kind, PlanBox box, String state, String axis, Facade
     /** Cette sorte d'instruction est-elle une primitive sémantique (matériau par défaut) ? */
     public static boolean semanticKind(Kind kind) {
         return switch (kind) {
-            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS, STAIRCASE -> true;
+            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS, STAIRCASE, BED -> true;
             default -> false;
         };
     }

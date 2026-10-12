@@ -99,6 +99,7 @@ public final class PlanRepair {
         plan = openings(plan, changes);
         plan = circulation(plan, changes);
         plan = entrance(plan, changes);
+        plan = lanterns(plan, changes);
         List<String> after = codes(plan);
         if (changes.isEmpty() || worse(before, after)) {
             return new Outcome(null, List.of(), before, before);
@@ -371,6 +372,59 @@ public final class PlanRepair {
             }
         }
         return plan;
+    }
+
+    // ---- 4. Les lanternes flottantes (#288) ----------------------------------------------------
+
+    /** Hauteur maximale d'une chaîne de suspension ajoutée par le moteur. */
+    static final int MAX_CHAIN = 4;
+
+    /**
+     * Suspend à une chaîne les lanternes de « light » qui flottent, quand un plafond se trouve au
+     * plus {@value #MAX_CHAIN} cellules au-dessus, à travers de l'air seulement. La lanterne reste
+     * à sa place et devient suspendue : c'est le geste d'un bâtisseur, et la seule correction qui
+     * ne déplace pas la lumière décidée par le plan. Sans plafond atteignable, rien n'est inventé :
+     * le refus reste, avec la cellule.
+     */
+    static BuildingPlan lanterns(BuildingPlan plan, List<String> changes) {
+        Snapshot s = snapshot(plan);
+        if (s == null || !s.report().blockingCodes().contains("UNSUPPORTED_BLOCK")) {
+            return plan;
+        }
+        AuditGrid grid = AuditGrid.of(s.expansion().blueprint());
+        List<PlanStep> steps = new ArrayList<>(plan.steps());
+        List<String> hung = new ArrayList<>();
+        for (Stability.Problem p : Stability.unsupported(grid)) {
+            int rank = s.expansion().provenance().stepAt(p.x(), p.y(), p.z());
+            if (rank < 1 || plan.steps().get(rank - 1).kind() != PlanStep.Kind.LIGHT
+                    || !BlockState.type(p.state()).endsWith("lantern")) {
+                continue;
+            }
+            int top = -1;
+            for (int y = p.y() + 1; y <= p.y() + MAX_CHAIN + 1 && y < plan.sizeY(); y++) {
+                String at = grid.at(p.x(), y, p.z());
+                if (at != null) {
+                    top = Stability.holdsFromAbove(at) ? y : -1;
+                    break;
+                }
+            }
+            if (top <= p.y() + 1) {
+                continue;
+            }
+            steps.add(PlanStep.of(PlanStep.Kind.BOX, PlanBox.of(p.x(), p.y() + 1, p.z(), p.x(), top - 1,
+                    p.z()), "minecraft:iron_chain[axis=y,waterlogged=false]"));
+            hung.add(p.x() + "/" + p.y() + "/" + p.z() + " (" + (top - 1 - p.y()) + " maillon(s))");
+        }
+        if (hung.isEmpty()) {
+            return plan;
+        }
+        BuildingPlan chained = copy(plan, steps);
+        if (worse(s.report().blockingCodes(), codes(chained))) {
+            return plan;
+        }
+        changes.add("Lanternes flottantes suspendues à une chaîne jusqu'au plafond : "
+                + String.join(", ", hung) + ".");
+        return chained;
     }
 
     /** L'escalier du plan, pour que les marches d'entrée gardent son style. */

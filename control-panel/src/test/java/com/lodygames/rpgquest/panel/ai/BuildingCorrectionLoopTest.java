@@ -277,18 +277,19 @@ class BuildingCorrectionLoopTest {
      * pas — et c'est exactement ce qui rend une boucle de correction frustrante et coûteuse.
      */
     @Test
-    @DisplayName("Le prompt énonce les huit points du contrat architectural réellement contrôlé")
-    void thepromptStatesTheEightActuallyCheckedContractPoints() {
+    @DisplayName("Le prompt énonce les neuf points du contrat architectural réellement contrôlé")
+    void thepromptStatesTheNineActuallyCheckedContractPoints() {
         String system = BuildingPromptBuilder.systemPrompt();
 
         for (String point : List.of("UNE ENTRÉE", "DES VITRAGES", "DE LA LUMIÈRE",
-                "UNE ENVELOPPE CLOSE", "ÉTAGES ACCESSIBLES", "ÉTAGES PRATICABLES", "TROIS MATÉRIAUX",
-                "DU MOBILIER")) {
+                "UNE ENVELOPPE CLOSE", "TOUT TIENT APRÈS LA POSE", "ÉTAGES ACCESSIBLES",
+                "ÉTAGES PRATICABLES", "TROIS MATÉRIAUX", "DU MOBILIER")) {
             assertTrue(system.contains(point), "point du contrat non énoncé : " + point);
         }
         // #282 : « étages praticables » (LEVEL_CLUTTERED) est désormais mesuré par le serveur.
-        assertEquals(8, system.lines().filter(l -> l.trim().startsWith("[ ]")).count(),
-                "la liste de contrôle doit avoir exactement huit cases");
+        // #288 : « tout tient après la pose » (UNSUPPORTED_BLOCK, BROKEN_ASSEMBLY) est mesuré aussi.
+        assertEquals(9, system.lines().filter(l -> l.trim().startsWith("[ ]")).count(),
+                "la liste de contrôle doit avoir exactement neuf cases");
     }
 
     @Test

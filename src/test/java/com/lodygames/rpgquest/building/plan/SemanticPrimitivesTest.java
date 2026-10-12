@@ -377,8 +377,8 @@ class SemanticPrimitivesTest {
                     offset: 6
                     y: 3
                   - op: light
-                    from: [3, 5, 3]
-                    to: [7, 5, 5]
+                    from: [3, 1, 3]
+                    to: [7, 1, 5]
                     spacing: 4
                   - op: gable
                     from: [0, 6, 0]

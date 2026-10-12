@@ -221,6 +221,25 @@ public final class ArchitecturalAudit {
                     "Aucun passage traversant : cette structure doit pouvoir être franchie."));
         }
 
+        // ---- Stabilité (#288) : ce que la physique détruirait à la pose ---------------------------
+        List<Stability.Problem> broken = Stability.brokenAssemblies(grid);
+        if (!broken.isEmpty()) {
+            findings.add(ArchitecturalFinding.blocking("BROKEN_ASSEMBLY",
+                    problems("Assemblages incomplets — détruits par la première mise à jour "
+                            + "physique : ", broken, provenance)
+                            + " Un lit se pose avec « op: bed », une porte avec « op: door » : le "
+                            + "moteur pose alors les deux moitiés ensemble."));
+        }
+        List<Stability.Problem> loose = Stability.unsupported(grid);
+        if (!loose.isEmpty()) {
+            findings.add(ArchitecturalFinding.blocking("UNSUPPORTED_BLOCK",
+                    problems("Blocs sans appui — ils tomberaient ou se détacheraient à la pose : ",
+                            loose, provenance)
+                            + " Une lanterne se pose SUR un bloc plein ou se suspend SOUS un "
+                            + "plafond (ou une chaîne, minecraft:iron_chain) ; une torche murale, une "
+                            + "échelle, un panneau mural s'adossent à un mur plein."));
+        }
+
         if (r.requireEntrance() && access.hasInterior() && !access.blindGlazing().isEmpty()) {
             findings.add(ArchitecturalFinding.warning("WINDOW_OBSTRUCTED",
                     "Fenêtres bouchées : " + access.blindGlazing().size() + " vitrage(s) sont dans un "
@@ -553,6 +572,24 @@ public final class ArchitecturalAudit {
             sb.append(" et ").append(cells.size() - max).append(" autre(s)");
         }
         return sb.toString();
+    }
+
+    private static String problems(String head, List<Stability.Problem> list, Provenance provenance) {
+        StringBuilder sb = new StringBuilder(head).append(list.size()).append(" bloc(s). ");
+        for (int i = 0; i < Math.min(6, list.size()); i++) {
+            Stability.Problem p = list.get(i);
+            sb.append(i == 0 ? "" : " ; ").append(BlockState.type(p.state())).append(" en ")
+                    .append(p.x()).append('/').append(p.y()).append('/').append(p.z())
+                    .append(" : ").append(p.why());
+            int rank = provenance.stepAt(p.x(), p.y(), p.z());
+            if (rank > 0) {
+                sb.append(" — posé par l'").append(provenance.describe(rank));
+            }
+        }
+        if (list.size() > 6) {
+            sb.append(" ; et ").append(list.size() - 6).append(" autre(s)");
+        }
+        return sb.append('.').toString();
     }
 
     private static String detachedMessage(Access.Report access, Provenance provenance) {

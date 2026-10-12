@@ -191,6 +191,26 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
                     continue;
                 }
             }
+            // #288 : un lit est un assemblage de deux cellules. Posé par une « box », il devient
+            // deux pieds sans tête, que la physique détruit à la pose : on refuse en disant quoi
+            // écrire à la place.
+            if (step.kind() != PlanStep.Kind.BED && BlockState.type(step.state()).endsWith("_bed")) {
+                problems.add(where + "un lit occupe DEUX cellules (pied et tête) : « "
+                        + step.kind().name().toLowerCase(Locale.ROOT) + " » de « " + step.state()
+                        + " » poserait des moitiés sans leur paire, détruites à la pose. Utilise "
+                        + "« op: bed » avec « from » (le pied), « direction » (vers la tête) et "
+                        + "« block » (le lit de la couleur voulue, ex. minecraft:pink_bed).");
+                continue;
+            }
+            if (step.kind() == PlanStep.Kind.BED) {
+                Optional<String> bad = Bed.of(step).map(b -> b.refusal(sizeX, sizeY, sizeZ))
+                        .orElse(Optional.of("direction de la tête manquante ou inconnue : « "
+                                + step.axis() + " ». Écris « direction: » north, south, east ou west."));
+                if (bad.isPresent()) {
+                    problems.add(where + bad.get());
+                    continue;
+                }
+            }
             if (step.kind() == PlanStep.Kind.GABLE
                     && !step.axis().equals("x") && !step.axis().equals("z")) {
                 problems.add(where + "axe de pente manquant ou inconnu : « " + step.axis()

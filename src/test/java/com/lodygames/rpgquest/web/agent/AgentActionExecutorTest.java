@@ -42,6 +42,49 @@ class AgentActionExecutorTest {
         return executor.execute(action).join();
     }
 
+    // ---- building.placement.capture (issue #246) -------------------------------------------
+
+    @Test
+    void capturePreviewIsDispatchedWithItsMarginsAndIdentity() {
+        AgentActionOutcome outcome = run(new AgentAction("cap1", "building.placement.capture.preview",
+                Map.of("id", "buildsite_0003", "margin_east", "4", "margin_down", "-2",
+                        "new_id", "hutte_deco", "name", "Hutte décorée")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status(), outcome.message());
+        assertEquals("buildsite_0003", actions.lastCaptureRequest.siteId());
+        assertEquals(4, actions.lastCaptureRequest.east());
+        assertEquals(-2, actions.lastCaptureRequest.down());
+        assertEquals("hutte_deco", actions.lastCaptureRequest.newId());
+        assertEquals("0123456789abcdef0123456789abcdef", outcome.details().get("token"));
+        assertEquals(List.of("2 entité(s) NON capturée(s)"), outcome.details().get("warnings"));
+    }
+
+    @Test
+    void captureRefusesOutOfBoundsMarginsAndAMissingTokenOrConfirmation() {
+        AgentActionOutcome wide = run(new AgentAction("cap2", "building.placement.capture.preview",
+                Map.of("id", "buildsite_0003", "margin_up", "17", "new_id", "a", "name", "A")));
+        AgentActionOutcome noToken = run(new AgentAction("cap3", "building.placement.capture",
+                Map.of("id", "buildsite_0003", "new_id", "a", "name", "A", "confirm", "true")));
+        AgentActionOutcome noConfirm = run(new AgentAction("cap4", "building.placement.capture",
+                Map.of("id", "buildsite_0003", "new_id", "a", "name", "A", "token", "abc")));
+
+        assertEquals(AgentActionOutcome.REJECTED, wide.status());
+        assertEquals(AgentActionOutcome.REJECTED, noToken.status());
+        assertEquals(AgentActionOutcome.REJECTED, noConfirm.status());
+        assertNull(actions.lastCaptureToken, "rien n'a atteint le domaine");
+    }
+
+    @Test
+    void aConfirmedCaptureReachesTheDomainWithItsToken() {
+        AgentActionOutcome outcome = run(new AgentAction("cap5", "building.placement.capture",
+                Map.of("id", "buildsite_0003", "new_id", "hutte_deco", "name", "Hutte", "confirm", "true",
+                        "token", "0123456789abcdef0123456789abcdef")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status(), outcome.message());
+        assertEquals("0123456789abcdef0123456789abcdef", actions.lastCaptureToken);
+        assertEquals("hutte_deco", outcome.details().get("new_id"));
+    }
+
     // ---- building.plan.audit (issue #94, lot F) ---------------------------------------------
 
     /**
@@ -1552,6 +1595,25 @@ class AgentActionExecutorTest {
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
+        /** Issue #246 : ce que la capture a réellement reçu. */
+        BuildingCaptureRequest lastCaptureRequest;
+        String lastCaptureToken;
+
+        @Override
+        public CompletableFuture<BuildingCaptureView> buildingCapturePreview(BuildingCaptureRequest request) {
+            lastCaptureRequest = request;
+            return CompletableFuture.completedFuture(new BuildingCaptureView(true,
+                    Map.of("region", "1..9 / 2..8 / 3..7"), List.of(), List.of("2 entité(s) NON capturée(s)"),
+                    "0123456789abcdef0123456789abcdef"));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingCapture(BuildingCaptureRequest request, String actor,
+                                                                 String token) {
+            lastCaptureRequest = request;
+            lastCaptureToken = token;
+            return CompletableFuture.completedFuture(MutationResult.of(true, "CAPTURED", "ok"));
+        }
         UUID lastQuestStatusUuid;
         String lastGiveItemId;
         int lastGiveAmount;

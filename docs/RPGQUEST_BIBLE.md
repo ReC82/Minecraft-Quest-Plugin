@@ -2100,6 +2100,39 @@ ordre, par qui, et est-ce que ça a marché ? ». Ce n'est pas un système de ve
 rien. Les **échecs y figurent** : un journal qui ne garderait que les succès serait muet au moment
 exact où on le consulte.
 
+#### Capturer la construction actuelle (issue #246)
+
+Sur la fiche d'un emplacement **occupé** (`/buildings/sites`, section « Capturer la construction
+actuelle »), l'état **réel** du monde — retouches faites en jeu comprises — devient un **nouveau**
+bâtiment de la bibliothèque. Trois choses restent distinctes et intactes : le terrain d'origine
+(baseline), la définition d'origine, et le placement (toujours référencé à l'ancienne version).
+
+| Étape | Action agent | Permission | Écrit |
+| --- | --- | --- | --- |
+| Aperçu | `building.placement.capture.preview` | `BUILDING_READ` | rien |
+| Capture | `building.placement.capture` (`confirm=true` + jeton de l'aperçu) | `BUILDING_WRITE` | `schematics/<id>.schem` + `buildings/<id>.yml` |
+
+- **Bornes** : par défaut l'emprise persistée du placement (rotation comprise). Ajustement borné face
+  par face (`margin_west/east/north/south/down/up`, de −16 à +16). Refus si l'ancre sort de la zone,
+  si la zone dépasse 256 blocs par axe ou **262 144 blocs** de volume, si elle recouvre un autre
+  bâtiment posé ; avertissement si elle contient le repère d'un autre emplacement.
+- **Orientation et ancre** : aucun bloc n'est tourné. La façade de référence de la variante est la
+  direction que regarde réellement la façade posée (façade d'origine tournée de la rotation de pose),
+  l'ancre est la position de l'ancre du monde dans la zone. Posée ailleurs, la variante suit le flux
+  #213/#234 habituel.
+- **Politique** : l'air est capturé ; les conteneurs (coffres, tonneaux, fours, pupitres, juke-box,
+  feux de camp, pots décorés…) sont capturés **vides** — jamais leur contenu ; les **entités**
+  (cadres, tableaux, supports d'armure, animaux) ne sont **pas** capturées et sont listées par type
+  dans l'aperçu ; enseignes, bannières, têtes et pots de fleurs gardent leurs données.
+- **Sûreté** : aucun chunk n'est chargé de force (chunk absent → refus) ; jamais d'écrasement (un
+  identifiant, un `.yml` ou un `.schem` existant est refusé) ; écriture via fichier temporaire ; un
+  échec d'écriture de la définition retire le `.schem` ; anti-double-envoi par emplacement et par
+  identifiant ; aperçu périmé (jeton) refusé. La capture est inscrite au journal de l'emplacement
+  source (`CAPTURE`).
+- **YAML produit** : clés habituelles + `category` (facultative) et un bloc `provenance` (site,
+  bâtiment et version d'origine, rotation, monde, bornes, auteur, date, conteneurs vidés, entités
+  omises). Il n'y a pas de clé `plan` : une capture n'est pas régénérable depuis un plan.
+
 #### Villages et villes : préparés, pas commencés
 
 Chaque emplacement reste **indépendant**. Un futur `Settlement` / `ConstructionProject` n'aura qu'à

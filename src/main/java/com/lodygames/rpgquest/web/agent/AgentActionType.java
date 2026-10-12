@@ -262,6 +262,17 @@ public enum AgentActionType {
      * <strong>échecs y figurent</strong> : un journal muet au moment du problème ne sert à rien.
      */
     BUILDING_PLACEMENT_HISTORY("building.placement.history"),
+    /**
+     * Issue #246 — ce que donnerait la capture d'une construction posée comme nouveau bâtiment :
+     * bornes, volume, conteneurs vidés, entités omises. <strong>N'écrit rien.</strong> Porte un jeton
+     * à renvoyer à la confirmation.
+     */
+    BUILDING_PLACEMENT_CAPTURE_PREVIEW("building.placement.capture.preview"),
+    /**
+     * Issue #246 — capture la construction posée (état réel du monde) comme NOUVEAU bâtiment de
+     * bibliothèque. Aucun bloc modifié, aucun fichier écrasé, l'original et le placement intacts.
+     */
+    BUILDING_PLACEMENT_CAPTURE("building.placement.capture"),
     DIALOGUE_LIST("dialogue.list"),
     DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
     DIALOGUE_NODE_CREATE("dialogue.node.create"),

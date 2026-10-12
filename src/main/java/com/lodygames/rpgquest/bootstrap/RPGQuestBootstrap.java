@@ -945,6 +945,12 @@ public final class RPGQuestBootstrap {
         agentActions.setBuildingRetirement(new com.lodygames.rpgquest.building.BuildingRetirement(
                 buildingLibrary, plugin.getDataFolder().toPath().resolve("schematics"),
                 buildingPlacementService::all, plugin.getLogger(), java.time.Clock.systemUTC()));
+        // Issue #246 : capturer une construction posée comme nouveau bâtiment. Lecture seule du
+        // monde ; n'écrit que dans la bibliothèque, jamais par-dessus un fichier existant.
+        agentActions.setBuildingCapture(new com.lodygames.rpgquest.building.BuildingCaptureService(
+                buildingPlacementService, buildingSiteService, buildingLibrary, schematicGateway,
+                new com.lodygames.rpgquest.building.BukkitWorldProbe(), java.time.Clock.systemUTC(),
+                buildingHistoryRepository, plugin.getLogger()));
         agentActions.setBuildingGenerator(new com.lodygames.rpgquest.building.plan.BuildingGenerator(
                 buildingLibrary, buildingSchematics,
                 plugin.getDataFolder().toPath().resolve("buildings"), plugin.getLogger())

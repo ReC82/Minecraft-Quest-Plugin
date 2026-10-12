@@ -490,6 +490,22 @@ public interface AgentActions {
     /** Le journal des opérations d'un emplacement. Lecture seule. */
     CompletableFuture<BuildingHistoryView> buildingHistory(String siteId);
 
+    /**
+     * Issue #246 — aperçu de la capture d'une construction posée. <strong>Aucune écriture.</strong>
+     * Par défaut indisponible : seule la façade Bukkit sait lire le monde.
+     */
+    default CompletableFuture<BuildingCaptureView> buildingCapturePreview(BuildingCaptureRequest request) {
+        return CompletableFuture.completedFuture(new BuildingCaptureView(false, Map.of(),
+                List.of("Capture indisponible sur ce serveur."), List.of(), ""));
+    }
+
+    /** Issue #246 — capture la construction posée comme nouveau bâtiment de bibliothèque. */
+    default CompletableFuture<MutationResult> buildingCapture(BuildingCaptureRequest request,
+                                                              String actor, String token) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Capture indisponible sur ce serveur."));
+    }
+
     CompletableFuture<BuildingSiteCatalogView> buildingSites();
 
     /**
@@ -1168,6 +1184,20 @@ public interface AgentActions {
     default CompletableFuture<MutationResult> buildingDefinitionRetire(String id, String by) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
                 "Le retrait de bâtiments n'est pas disponible sur ce serveur."));
+    }
+
+    /**
+     * Issue #246 — ce que l'administrateur demande pour une capture : l'emplacement source, un
+     * ajustement borné des bornes face par face, et l'identité du nouveau bâtiment.
+     */
+    record BuildingCaptureRequest(String siteId, int west, int east, int down, int up, int north,
+                                  int south, String newId, String name, String description,
+                                  String category) {
+    }
+
+    /** Issue #246 — l'aperçu d'une capture, à plat pour le panel. */
+    record BuildingCaptureView(boolean capturable, Map<String, Object> details, List<String> refusals,
+                               List<String> warnings, String token) {
     }
 
     record MutationResult(boolean ok, String code, String message, List<String> effects) {

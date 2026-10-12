@@ -595,6 +595,89 @@ class BuildingLifecyclePageTest {
         assertEquals(403, response.statusCode());
     }
 
+    // ---- Issue #246 : capturer la construction actuelle -----------------------------------------
+
+    private static final String CAPTURE_OK = "{"
+            + "\"site_id\":\"buildsite_0002\",\"new_id\":\"hutte_deco\",\"name\":\"Hutte décorée\","
+            + "\"description\":\"Retouchée en jeu.\",\"category\":\"maisons\","
+            + "\"margins\":{\"west\":0,\"east\":2,\"down\":0,\"up\":0,\"north\":0,\"south\":0},"
+            + "\"source_building_id\":\"test_hut_01\",\"source_building_version\":1,\"source_rotation\":0,"
+            + "\"source_building_name\":\"Hutte de test\",\"world\":\"world_hub\","
+            + "\"region\":\"797..805 / 69..74 / -800..-796\",\"size\":\"9 × 5 × 6\",\"volume\":270,"
+            + "\"local_anchor\":\"3 / 1 / 0\",\"front\":\"NORTH\",\"non_air\":140,\"containers\":2,"
+            + "\"filled_containers\":1,\"entities\":3,\"entity_types\":{\"item_frame\":2,\"painting\":1},"
+            + "\"materials\":[\"oak_planks\"],\"capturable\":true,\"refusals\":[],"
+            + "\"warnings\":[\"3 entité(s) NON capturée(s)\"],"
+            + "\"token\":\"0123456789abcdef0123456789abcdef\"}";
+
+    @Test
+    void theOccupiedSheetOffersTheCaptureWithItsPolicyButNoButtonBeforeAPreview() throws Exception {
+        start();
+        seed("building.site.list", SITES_ALIGNED);
+        seed("building.definition.list", LIBRARY);
+
+        String page = fiche();
+
+        assertTrue(page.contains("Capturer la construction actuelle"));
+        assertTrue(page.contains("capturés <strong>vides</strong>"), "la politique des conteneurs est écrite");
+        assertTrue(page.contains("<strong>non capturées</strong>"), "celle des entités aussi");
+        assertTrue(page.contains("value=\"building.placement.capture.preview\""));
+        assertTrue(page.contains("name=\"new_id\" value=\"test_hut_01_capture\""), "un identifiant nouveau proposé");
+        assertFalse(page.contains("value=\"building.placement.capture\""), "aucune capture sans aperçu");
+    }
+
+    @Test
+    void aCapturablePreviewListsWhatIsLeftOutAndCarriesItsToken() throws Exception {
+        start();
+        seed("building.site.list", SITES_ALIGNED);
+        seed("building.definition.list", LIBRARY);
+        seed("building.placement.capture.preview", CAPTURE_OK);
+
+        String page = fiche();
+
+        assertTrue(page.contains("797..805 / 69..74 / -800..-796"), "les bornes capturées");
+        assertTrue(page.contains("2 × item_frame"), "les entités omises sont nommées");
+        assertTrue(page.contains("dont 1 non vide(s)"));
+        assertTrue(page.contains("value=\"building.placement.capture\""));
+        assertTrue(page.contains("name=\"token\" value=\"0123456789abcdef0123456789abcdef\""));
+        assertTrue(page.contains("name=\"margin_east\" value=\"2\""), "les bornes ajustées voyagent");
+    }
+
+    @Test
+    void aRefusedCapturePreviewUnlocksNothing() throws Exception {
+        start();
+        seed("building.site.list", SITES_ALIGNED);
+        seed("building.definition.list", LIBRARY);
+        seed("building.placement.capture.preview", CAPTURE_OK.replace("\"capturable\":true", "\"capturable\":false")
+                .replace("\"refusals\":[]", "\"refusals\":[\"L'identifiant « hutte_deco » est déjà pris.\"]"));
+
+        String page = fiche();
+
+        assertTrue(page.contains("est déjà pris"));
+        assertFalse(page.contains("value=\"building.placement.capture\""));
+    }
+
+    @Test
+    void theRealCaptureFormsAreAcceptedAndABadMarginIsRejected() throws Exception {
+        start();
+        seed("building.site.list", SITES_ALIGNED);
+        seed("building.definition.list", LIBRARY);
+        seed("building.placement.capture.preview", CAPTURE_OK);
+
+        HttpResponse<String> preview = submitRealForm("building.placement.capture.preview", Map.of());
+        HttpResponse<String> confirm = submitRealForm("building.placement.capture", Map.of("confirm", "true"));
+        HttpResponse<String> tooWide = submitRealForm("building.placement.capture.preview",
+                Map.of("margin_up", "40"));
+
+        assertEquals(303, preview.statusCode());
+        assertFalse(preview.headers().firstValue("Location").orElse("").contains("err"),
+                preview.headers().firstValue("Location").orElse(""));
+        assertEquals(303, confirm.statusCode());
+        assertFalse(confirm.headers().firstValue("Location").orElse("").contains("err"),
+                confirm.headers().firstValue("Location").orElse(""));
+        assertTrue(tooWide.headers().firstValue("Location").orElse("").contains("err"));
+    }
+
     // ---- Harnais --------------------------------------------------------------------------------
 
     private String fiche() throws Exception {
@@ -647,7 +730,8 @@ class BuildingLifecyclePageTest {
         post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent="
                 + TestConfig.AGENT_ID + "&return=/buildings/sites"
                 + (type.startsWith("building.placement")
-                        ? "&id=buildsite_0002&building=test_hut_01&facing=EAST&confirm=true" : ""));
+                        ? "&id=buildsite_0002&building=test_hut_01&facing=EAST&confirm=true" : "")
+                + (type.startsWith("building.placement.capture") ? "&new_id=hutte_deco&name=Hutte" : ""));
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),

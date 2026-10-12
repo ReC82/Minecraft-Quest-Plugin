@@ -259,6 +259,82 @@ public final class WorldEditSchematicGateway implements SchematicGateway {
     }
 
     @Override
+    public Outcome captureForLibrary(BuildingFootprint footprint, String fileName,
+                                     Collection<int[]> emptied) {
+        if (!available()) {
+            return Outcome.failure(unavailableReason);
+        }
+        Path file = resolve(fileName);
+        if (file == null) {
+            return Outcome.failure("Nom de fichier schematic invalide : « " + fileName + " ».");
+        }
+        if (Files.exists(file)) {
+            return Outcome.failure("Le fichier « " + fileName + " » existe déjà : il n'est jamais "
+                    + "écrasé par une capture.");
+        }
+        org.bukkit.World bukkitWorld = Bukkit.getWorld(footprint.world());
+        if (bukkitWorld == null) {
+            return Outcome.failure("Monde « " + footprint.world() + " » non chargé.");
+        }
+        Path temporary = file.resolveSibling(file.getFileName() + ".part");
+        try {
+            com.sk89q.worldedit.world.World world = BukkitAdapter.adapt(bukkitWorld);
+            BlockVector3 min = BlockVector3.at(footprint.minX(), footprint.minY(),
+                    footprint.minZ());
+            BlockVector3 max = BlockVector3.at(footprint.maxX(), footprint.maxY(),
+                    footprint.maxZ());
+            CuboidRegion region = new CuboidRegion(world, min, max);
+            BlockArrayClipboard clipboard = new BlockArrayClipboard(region);
+            clipboard.setOrigin(min);
+
+            // Lecture seule du monde : l'EditSession ne sert qu'à lire, rien n'y est écrit.
+            try (EditSession session = WorldEdit.getInstance().newEditSession(world)) {
+                ForwardExtentCopy copy = new ForwardExtentCopy(session, region, clipboard, min);
+                copy.setCopyingEntities(false);
+                copy.setCopyingBiomes(false);
+                Operations.complete(copy);
+            }
+            // Le contenu des conteneurs n'est jamais exporté : le bloc garde son état (type,
+            // orientation, double coffre…) mais perd ses données de bloc — donc son inventaire.
+            for (int[] at : emptied) {
+                BlockVector3 position = BlockVector3.at(at[0], at[1], at[2]);
+                if (region.contains(position)) {
+                    clipboard.setBlock(position, clipboard.getBlock(position).toBaseBlock());
+                }
+            }
+
+            Files.createDirectories(file.getParent());
+            try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(temporary));
+                 ClipboardWriter writer = FORMAT.getWriter(out)) {
+                writer.write(clipboard);
+            }
+            Files.move(temporary, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            return Outcome.success();
+        } catch (Exception | LinkageError error) {
+            try {
+                Files.deleteIfExists(temporary);
+            } catch (IOException ignored) {
+                // Le fichier .part ne porte pas l'extension .schem : la bibliothèque l'ignore.
+            }
+            return Outcome.failure("Capture impossible : " + describe(error));
+        }
+    }
+
+    @Override
+    public Outcome discard(String fileName) {
+        Path file = resolve(fileName);
+        if (file == null) {
+            return Outcome.failure("Nom de fichier schematic invalide : « " + fileName + " ».");
+        }
+        try {
+            Files.deleteIfExists(file);
+            return Outcome.success();
+        } catch (IOException error) {
+            return Outcome.failure("Suppression impossible : " + describe(error));
+        }
+    }
+
+    @Override
     public Outcome paste(PasteOrder order) {
         if (!available()) {
             return Outcome.failure(unavailableReason);

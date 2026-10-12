@@ -2605,7 +2605,155 @@ public final class AgentPages {
             }
         }
 
+        sb.append(buildingCaptureSection(session, agentId, site, placed));
         sb.append(buildingHistoryBlock(session, agentId, site.id()));
+        return sb.toString();
+    }
+
+    private static final String[][] CAPTURE_SIDES = {{"west", "Ouest (−X)"}, {"east", "Est (+X)"},
+            {"north", "Nord (−Z)"}, {"south", "Sud (+Z)"}, {"down", "Bas (−Y)"}, {"up", "Haut (+Y)"}};
+
+    /**
+     * Issue #246 — « Capturer la construction actuelle » : l'état réel du monde, retouches en jeu
+     * comprises, devient un NOUVEAU bâtiment de la bibliothèque. Aperçu d'abord (lecture seule),
+     * confirmation ensuite, avec le jeton de l'aperçu. La politique (air, conteneurs, entités) est
+     * écrite avant le bouton, pas découverte après.
+     */
+    private String buildingCaptureSection(Session session, String agentId,
+                                          com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+                                          com.lodygames.rpgquest.panel.building.BuildingPlacementView placed) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div id=\"capturer-").append(Http.esc(site.id())).append("\">");
+        sb.append(detailSection("save", "Capturer la construction actuelle"));
+        sb.append("<p class=\"field-help\">Enregistre les blocs <strong>réellement présents</strong> dans "
+                + "l'emprise de « ").append(Http.esc(placed.buildingName())).append(" » — retouches faites en "
+                + "jeu comprises — comme un <strong>nouveau</strong> bâtiment de la bibliothèque. Aucun bloc "
+                + "n'est modifié, le bâtiment d'origine et ce placement restent inchangés, aucun fichier "
+                + "n'est écrasé.</p>");
+        sb.append("<ul class=\"field-help\"><li><strong>Air</strong> : capturé — posée ailleurs, la "
+                + "variante remplace toute son emprise, comme tout bâtiment.</li>"
+                + "<li><strong>Conteneurs</strong> (coffres, tonneaux, fours, pupitres…) : capturés "
+                + "<strong>vides</strong> ; leur contenu n'est jamais exporté.</li>"
+                + "<li><strong>Entités</strong> (cadres, tableaux, supports d'armure, animaux) : "
+                + "<strong>non capturées</strong> — elles sont listées dans l'aperçu.</li>"
+                + "<li>Enseignes, bannières, têtes et pots de fleurs : capturés avec leur contenu.</li></ul>");
+        if (!perms.can(session.effective(), Permission.BUILDING_WRITE)) {
+            sb.append(Ui.banner("info", "Votre rôle ne permet pas d'ajouter un bâtiment à la bibliothèque."));
+            return sb.append("</div>").toString();
+        }
+        Map<String, Object> preview = latestDetails(agentId, "building.placement.capture.preview")
+                .filter(d -> site.id().equals(str(d.get("site_id"))))
+                .orElse(Map.of());
+        Map<String, Object> margins = asMap(preview.get("margins"));
+
+        sb.append(formStart(session, agentId, "building.placement.capture.preview", "/buildings/sites", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id())).append("\">");
+        captureField(sb, site.id(), "new_id", "Identifiant du nouveau bâtiment",
+                str(preview.getOrDefault("new_id", placed.buildingId() + "_capture")),
+                "minuscules, chiffres et « _ » — jamais un identifiant existant", "required pattern=\"[a-z0-9][a-z0-9_]{0,63}\"");
+        captureField(sb, site.id(), "name", "Nom", str(preview.getOrDefault("name", placed.buildingName() + " (retouchée)")),
+                "", "required maxlength=\"64\"");
+        captureField(sb, site.id(), "description", "Description", str(preview.getOrDefault("description", "")),
+                "", "maxlength=\"500\"");
+        captureField(sb, site.id(), "category", "Catégorie", str(preview.getOrDefault("category", "")),
+                "facultative, ex. « maisons »", "maxlength=\"32\"");
+        sb.append("<p class=\"field-help\">Bornes : l'emprise posée <code class=\"tid\">")
+                .append(Http.esc(placed.footprintLabel())).append("</code>, rotation comprise. Si des "
+                        + "décorations débordent (porche, jardinière…), agrandissez la zone face par face "
+                        + "(−16 à +16 blocs) ; une valeur négative la réduit. Une zone qui touche un autre "
+                        + "bâtiment posé est refusée.</p>");
+        sb.append("<div class=\"btnrow\">");
+        for (String[] side : CAPTURE_SIDES) {
+            Object value = margins.getOrDefault(side[0], 0);
+            sb.append("<label class=\"inline\">").append(side[1]).append(" <input type=\"number\" name=\"margin_")
+                    .append(side[0]).append("\" min=\"-16\" max=\"16\" step=\"1\" value=\"")
+                    .append(Http.esc(String.valueOf(value))).append("\" style=\"width:5em\"></label>");
+        }
+        sb.append("</div>");
+        sb.append(mutationConsent("building.placement.capture.preview", "", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                .append(Icons.icon("search")).append("Calculer l'aperçu de la capture</button></div></form>");
+
+        if (!preview.isEmpty()) {
+            sb.append(buildingCapturePreviewBlock(session, agentId, site, preview));
+        }
+        return sb.append("</div>").toString();
+    }
+
+    private static void captureField(StringBuilder sb, String siteId, String name, String label, String value,
+                                     String help, String attributes) {
+        String fid = "capture-" + name + "-" + siteId;
+        sb.append("<div class=\"field\"><label for=\"").append(Http.esc(fid)).append("\">").append(label)
+                .append("</label><input id=\"").append(Http.esc(fid)).append("\" type=\"text\" name=\"")
+                .append(name).append("\" value=\"").append(Http.esc(value)).append("\" ").append(attributes)
+                .append(" autocomplete=\"off\" spellcheck=\"false\">");
+        if (!help.isEmpty()) {
+            sb.append("<p class=\"field-help\">").append(Http.esc(help)).append("</p>");
+        }
+        sb.append("</div>");
+    }
+
+    /** L'aperçu de la capture et, seulement s'il est accepté, le bouton qui capture. */
+    private String buildingCapturePreviewBlock(Session session, String agentId,
+                                               com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+                                               Map<String, Object> preview) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(detailSection("search", "Aperçu de la capture"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Source", Http.esc(str(preview.get("source_building_name"))) + " "
+                + Ui.id(str(preview.get("source_building_id"))) + " <span class=\"muted\">version "
+                + Http.esc(str(preview.get("source_building_version"))) + ", posé à "
+                + Http.esc(str(preview.get("source_rotation"))) + "°</span>");
+        dlRow(sb, "Nouveau bâtiment", Http.esc(str(preview.get("name"))) + " " + Ui.id(str(preview.get("new_id"))));
+        dlRow(sb, "Bornes capturées", "<code class=\"tid\">" + Http.esc(str(preview.get("region")))
+                + "</code> <span class=\"muted\">(" + Http.esc(str(preview.get("world"))) + ")</span>");
+        dlRow(sb, "Dimensions", "<code class=\"tid\">" + Http.esc(str(preview.get("size"))) + "</code> — "
+                + Http.esc(str(preview.get("volume"))) + " blocs");
+        dlRow(sb, "Ancre locale", "<code class=\"tid\">" + Http.esc(str(preview.get("local_anchor"))) + "</code>");
+        dlRow(sb, "Façade de référence", Http.esc(str(preview.get("front"))));
+        if (preview.containsKey("non_air")) {
+            dlRow(sb, "Blocs non-air", Http.esc(str(preview.get("non_air"))));
+            dlRow(sb, "Conteneurs (capturés vides)", Http.esc(str(preview.get("containers")))
+                    + " <span class=\"muted\">dont " + Http.esc(str(preview.get("filled_containers")))
+                    + " non vide(s)</span>");
+            StringBuilder entities = new StringBuilder();
+            asMap(preview.get("entity_types")).forEach((type, count) -> entities.append(entities.isEmpty() ? "" : ", ")
+                    .append(Http.esc(str(count))).append(" × ").append(Http.esc(type)));
+            dlRow(sb, "Entités non capturées", entities.isEmpty() ? "aucune" : entities.toString());
+            dlRow(sb, "Matériaux principaux", Http.esc(String.join(", ",
+                    asList(preview.get("materials")).stream().map(AgentPages::str).toList())));
+        }
+        sb.append("</dl>");
+        for (Object refusal : asList(preview.get("refusals"))) {
+            sb.append(Ui.banner("error", Http.esc(str(refusal))));
+        }
+        for (Object warning : asList(preview.get("warnings"))) {
+            sb.append(Ui.banner("warning", Http.esc(str(warning))));
+        }
+        if (!Boolean.TRUE.equals(preview.get("capturable"))) {
+            sb.append("<p class=\"field-help\">Capture refusée : corrigez les motifs ci-dessus puis "
+                    + "recalculez l'aperçu. Rien n'a été écrit.</p>");
+            return sb.toString();
+        }
+        sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">Capturer — ajoute un bâtiment à la "
+                + "bibliothèque</div>");
+        sb.append("<p class=\"field-help\">Le monde n'est pas modifié. Le nouveau bâtiment pourra ensuite "
+                + "être posé sur un <strong>autre</strong> emplacement, par « Poser un bâtiment » sur sa fiche.</p>");
+        sb.append(formStart(session, agentId, "building.placement.capture", "/buildings/sites", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id())).append("\">");
+        for (String key : new String[] {"new_id", "name", "description", "category", "token"}) {
+            sb.append("<input type=\"hidden\" name=\"").append(key).append("\" value=\"")
+                    .append(Http.esc(str(preview.get(key)))).append("\">");
+        }
+        Map<String, Object> margins = asMap(preview.get("margins"));
+        for (String[] side : CAPTURE_SIDES) {
+            sb.append("<input type=\"hidden\" name=\"margin_").append(side[0]).append("\" value=\"")
+                    .append(Http.esc(String.valueOf(margins.getOrDefault(side[0], 0)))).append("\">");
+        }
+        sb.append(mutationConsent("building.placement.capture", "Capturer l'état actuel de « " + site.name()
+                + " » comme « " + str(preview.get("name")) + " » (conteneurs vides, entités non capturées)", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
+                .append(Icons.icon("save")).append("Capturer la construction actuelle</button></div></form></div>");
         return sb.toString();
     }
 

@@ -35,4 +35,15 @@ public interface WorldProbe {
      * veut bâtir, et refuser pour cela empêcherait tout placement.</p>
      */
     OptionalLong countNonAir(BuildingFootprint footprint);
+
+    /**
+     * Relevé complet d'une zone avant capture (issue #246) : blocs non-air, conteneurs, entités,
+     * matériaux. <strong>Lecture seule</strong>, sans forcer le chargement d'un chunk.
+     *
+     * <p>Vide si le monde n'est pas chargé. Une implémentation qui ne sait pas relever renvoie vide :
+     * la capture est alors refusée, jamais faite à l'aveugle.</p>
+     */
+    default java.util.Optional<CaptureSurvey> survey(BuildingFootprint footprint) {
+        return java.util.Optional.empty();
+    }
 }

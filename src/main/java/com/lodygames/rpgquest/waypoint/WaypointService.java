@@ -90,6 +90,38 @@ public final class WaypointService implements PluginService {
     private final Set<String> usedDisplayNames = ConcurrentHashMap.newKeySet();
 
     private final ConcurrentHashMap<UUID, Set<String>> discoveriesByPlayer = new ConcurrentHashMap<>();
+
+    /** Variable joueur du dernier waypoint activé par son bouton (issue #215). */
+    public static final String LAST_WAYPOINT_KEY = "LAST_WAYPOINT";
+
+    /** Issue #215 : dernier waypoint activé par joueur — chargé à la connexion, persisté à chaque appui. */
+    private final ConcurrentHashMap<UUID, String> lastActivatedByPlayer = new ConcurrentHashMap<>();
+    private volatile com.lodygames.rpgquest.database.PlayerVariableRepository lastWaypointStore;
+
+    /** Branche la persistance du dernier waypoint activé (issue #215) ; sans elle, rien n'est retenu. */
+    public void useLastWaypointStore(com.lodygames.rpgquest.database.PlayerVariableRepository store) {
+        this.lastWaypointStore = store;
+    }
+
+    /** Le dernier waypoint dont le joueur a appuyé sur le bouton, par identifiant stable (issue #215). */
+    public Optional<String> lastActivated(UUID playerId) {
+        return Optional.ofNullable(lastActivatedByPlayer.get(playerId));
+    }
+
+    /**
+     * Retient un appui VALIDE sur le bouton d'un waypoint (première découverte ou non) : c'est le
+     * seul geste qui fait foi — ni la proximité, ni le menu, ni une téléportation.
+     */
+    private void rememberActivation(UUID playerId, Waypoint waypoint) {
+        lastActivatedByPlayer.put(playerId, waypoint.id());
+        var store = lastWaypointStore;
+        if (store != null) {
+            store.set(playerId, LAST_WAYPOINT_KEY, waypoint.id()).exceptionally(error -> {
+                logger.error("Impossible d'enregistrer le dernier waypoint de {}", playerId, error);
+                return null;
+            });
+        }
+    }
     /** Issue #185 : abonnés aux PREMIÈRES découvertes (moteur de quêtes), jamais aux reclics. */
     private final List<BiConsumer<Player, Waypoint>> firstDiscoveryListeners = new CopyOnWriteArrayList<>();
     private final ConcurrentHashMap<UUID, String> lastInstanceByPlayer = new ConcurrentHashMap<>();
@@ -149,6 +181,16 @@ public final class WaypointService implements PluginService {
 
     void handleJoin(Player player) {
         UUID playerId = player.getUniqueId();
+        var store = lastWaypointStore;
+        if (store != null) {
+            store.get(playerId, LAST_WAYPOINT_KEY).thenAccept(last -> last.filter(id -> !id.isBlank())
+                    .ifPresentOrElse(id -> lastActivatedByPlayer.put(playerId, id),
+                            () -> lastActivatedByPlayer.remove(playerId)))
+                    .exceptionally(error -> {
+                        logger.error("Impossible de charger le dernier waypoint de {}", playerId, error);
+                        return null;
+                    });
+        }
         repository.discoveriesFor(playerId)
                 .thenAccept(ids -> {
                     Set<String> set = ConcurrentHashMap.newKeySet();
@@ -164,6 +206,7 @@ public final class WaypointService implements PluginService {
     void handleQuit(Player player) {
         UUID playerId = player.getUniqueId();
         discoveriesByPlayer.remove(playerId);
+        lastActivatedByPlayer.remove(playerId);
         lastInstanceByPlayer.remove(playerId);
         lastCheckByPlayer.remove(playerId);
     }
@@ -639,6 +682,7 @@ public final class WaypointService implements PluginService {
             // en silence, laissant croire que rien ne s'était passé. Même gabarit nom+biome que la
             // première découverte ci-dessous (issue #160 : les deux doivent utiliser le même nom
             // canonique persisté, jamais seulement le biome).
+            rememberActivation(playerId, waypoint);
             if (player.isOnline()) {
                 player.sendMessage(MM.deserialize(
                         "<yellow>Waypoint déjà découvert :</yellow> <white><name></white> <gray>—</gray> <white><biome></white>",
@@ -650,6 +694,7 @@ public final class WaypointService implements PluginService {
         repository.recordDiscovery(playerId, waypoint.id(), Instant.now())
                 .thenAccept(isNew -> runSync(() -> {
                     discovered.add(waypoint.id());
+                    rememberActivation(playerId, waypoint);
                     Player online = plugin.getServer().getPlayer(playerId);
                     if (isNew) {
                         // Issue #185 : notifié uniquement sur une PREMIÈRE découverte réelle. isNew

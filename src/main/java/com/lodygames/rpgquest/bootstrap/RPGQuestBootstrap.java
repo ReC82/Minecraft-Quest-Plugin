@@ -716,6 +716,8 @@ public final class RPGQuestBootstrap {
                 new WaypointIdentityResolver(), new WaypointGenerationPlanner(), waypointModelRegistry,
                 (world, x, y, z) -> claimService.claimAt(world.getName(), x, y, z).isEmpty(),
                 () -> configService.current().travel());
+        // Issue #215 : le dernier waypoint activé par bouton, persisté comme variable joueur.
+        waypointService.useLastWaypointStore(variableRepository);
         registry.start(waypointService);
 
         // Issue #185 : l'objectif « découvrir N waypoints » se branche ICI, et nulle part ailleurs.

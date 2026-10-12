@@ -4032,6 +4032,14 @@ trois catégories, toutes revalidées fraîchement à chaque clic :
 - **Villages** (#151) : centres administrés (`VillageCenter`, table `village_centers`, identité
   **indépendante du monde** — plusieurs centres possibles dans `world_hub`). Arrivée à la position
   et orientation exactes administrées (même confiance qu'un spawn).
+- **Dernier waypoint** (#215, 13/10/2026, dernière case du menu) : le dernier waypoint dont le
+  joueur a **appuyé sur le bouton** — première découverte ou waypoint déjà connu ; ni la proximité,
+  ni le menu, ni une téléportation ne le changent. Retenu par identifiant stable dans la variable
+  joueur `LAST_WAYPOINT` (persistante, chargée à la connexion) : un renommage ou un déplacement ne
+  casse pas la référence. Le voyage passe par le même chemin que la liste (revalidation de la
+  découverte et de l'activation, arrivée sûre) ; sans appui, ou destination désactivée ou
+  supprimée, l'icône et le message le disent — jamais de destination de remplacement. Chaque joueur
+  a la sienne. Les mondes ne sont pas codés en dur.
 
 **Noms de waypoints (#133/#135)** : chaque waypoint a un **nom d'affichage** unique et persistant
 (`waypoint.display_name`), identité lisible principale — le biome reste une métadonnée secondaire

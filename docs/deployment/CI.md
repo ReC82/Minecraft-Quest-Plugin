@@ -26,6 +26,13 @@ Déclenché par tout push et toute pull request qui touche du code, et manuellem
 
 Java 21 (Temurin), Gradle Wrapper du dépôt, cache Gradle (`gradle/actions/setup-gradle`).
 
+**Résistance aux pannes du réseau** (constatées le 2026-10-12, PR #262) : la distribution Gradle est
+téléchargée en **trois tentatives** espacées (`services.gradle.org` a renvoyé 504), et le cache Gradle
+est **écrit depuis les branches de travail** (`cache-read-only: false`) — par défaut il ne l'est que
+depuis `main`, qui n'a pas de CI, si bien que chaque run retéléchargeait toutes les dépendances et que
+Maven Central a fini par répondre 429. Un échec de ce type n'a fait tourner aucun test : il se relance
+(`gh run rerun <id> --failed`) sans toucher au code.
+
 **Ce qui ne déclenche pas la CI** : `docs/**`, `docs-site/**`, `.ai/**`, les `*.md` à la racine —
 **sauf** `docs/manual-tests/**`, lu par `ManualTestQuestPackTest`. La même règle est codée dans
 `val::is_doc_path` (`scripts/lib/validation.sh`) ; les deux listes doivent rester alignées, et

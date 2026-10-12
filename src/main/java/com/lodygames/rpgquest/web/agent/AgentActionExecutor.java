@@ -96,6 +96,7 @@ public final class AgentActionExecutor {
                 case BUILDING_SITE_FACING -> buildingSiteFacing(action);
                 case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
                 case BUILDING_DEFINITION_LIST -> buildingDefinitionList(action);
+                case BUILDING_DEFINITION_RETIRE -> buildingDefinitionRetire(action);
                 case BUILDING_PLACEMENT_PREVIEW -> buildingPlacementPreview(action);
                 case BUILDING_PLACEMENT_PLACE -> buildingPlacementPlace(action);
                 case BUILDING_PLACEMENT_ROLLBACK -> buildingPlacementRollback(action);
@@ -1632,6 +1633,23 @@ public final class AgentActionExecutor {
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
+    /** {@code building.definition.retire} (#284) : refus nommés, archivage, aucun effacement. */
+    private CompletableFuture<AgentActionOutcome> buildingDefinitionRetire(AgentAction action) {
+        String id = trimOrNull(action.param("id"));
+        if (id == null || !id.matches("[a-z0-9_]{3,48}")) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (identifiant de bâtiment)."));
+        }
+        if (!"true".equals(action.param("confirm"))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation explicite manquante : rien n'a été retiré."));
+        }
+        String by = trimOrNull(action.param("by"));
+        return actions.buildingDefinitionRetire(id, by == null ? "panel" : by)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
     private CompletableFuture<AgentActionOutcome> buildingDefinitionList(AgentAction action) {
         return actions.buildingLibrary().thenApply(view -> {
             List<Map<String, Object>> rows = new ArrayList<>();
@@ -1651,6 +1669,8 @@ public final class AgentActionExecutor {
                 row.put("schematic", b.schematic());
                 row.put("schematicPresent", b.schematicPresent());
                 row.put("version", b.version());
+                // #284 : un exemple embarqué est recréé au démarrage — le panel ne propose pas de le retirer.
+                row.put("bundled", b.bundled());
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();

@@ -7747,6 +7747,34 @@ d'écriture.
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
 
+## 2026-10-12 (soir) — Retirer un bâtiment de la bibliothèque (#284) — NON DÉPLOYÉ
+
+### Changement
+
+Nouvelle action `building.definition.retire` (plugin) et zone « Retirer de la bibliothèque » (panel).
+
+### Action serveur
+
+Remplacer le JAR RPGQuest **et** redéployer PlugAdmin. Aucune migration `data.db`, aucune table panel.
+Le dossier `plugins/RPGQuest/buildings/.retired/` sera créé au premier retrait.
+
+### Sauvegarde préalable
+
+JAR, `data.db`, dossiers `buildings/` et `schematics/`.
+
+### Déploiement
+
+**Pas encore autorisé.**
+
+### Validation
+
+TC-293, avec un bâtiment d'essai uniquement.
+
+### Rollback
+
+Remettre JAR et panel. Un bâtiment retiré se restaure en remettant ses deux fichiers depuis
+`buildings/.retired/…` puis `/rpgadmin building reload`.
+
 ## 2026-10-12 (soir) — Images de référence et nouvelle conception (#283) — NON DÉPLOYÉ
 
 ### Changement

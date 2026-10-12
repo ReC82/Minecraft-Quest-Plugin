@@ -315,7 +315,17 @@ public interface AgentActions {
                                      int sizeX, int sizeY, int sizeZ,
                                      int anchorX, int anchorY, int anchorZ,
                                      String front, List<String> materials,
-                                     String schematic, boolean schematicPresent, int version) {
+                                     String schematic, boolean schematicPresent, int version,
+                                     boolean bundled) {
+
+        /** Forme antérieure à #284 : sans l'indication « exemple embarqué ». */
+        public BuildingDefinitionSummary(String id, String name, String description, int sizeX,
+                                         int sizeY, int sizeZ, int anchorX, int anchorY, int anchorZ,
+                                         String front, List<String> materials, String schematic,
+                                         boolean schematicPresent, int version) {
+            this(id, name, description, sizeX, sizeY, sizeZ, anchorX, anchorY, anchorZ, front,
+                    materials, schematic, schematicPresent, version, false);
+        }
     }
 
     /**
@@ -1142,6 +1152,15 @@ public interface AgentActions {
      * {@code ALREADY_COMPLETED}, {@code OFFLINE}, {@code UNKNOWN_QUEST}) + message humain +
      * effets résumés (récompenses, quêtes complétées…).
      */
+    /**
+     * Retire un bâtiment de la bibliothèque (issue #284). Par défaut indisponible : seule la façade
+     * Bukkit sait déplacer les fichiers du serveur.
+     */
+    default CompletableFuture<MutationResult> buildingDefinitionRetire(String id, String by) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Le retrait de bâtiments n'est pas disponible sur ce serveur."));
+    }
+
     record MutationResult(boolean ok, String code, String message, List<String> effects) {
         public static MutationResult of(boolean ok, String code, String message) {
             return new MutationResult(ok, code, message, List.of());

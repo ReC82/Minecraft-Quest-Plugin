@@ -2063,6 +2063,10 @@ public final class AgentPages {
      * dans son fichier YAML et se relit au démarrage. Un formulaire web qui l'écrirait contournerait
      * la revue — et c'est précisément ce qu'on ne veut pas pour quelque chose qui écrase des blocs.
      * </p>
+     *
+     * <p>Une seule exception, étroite (issue #284) : <em>retirer</em> un bâtiment du catalogue. Le
+     * plugin refuse un bâtiment posé ou un exemple embarqué, et archive les fichiers au lieu de les
+     * effacer — le retrait reste réversible sur le serveur.</p>
      */
     public String buildingLibrary(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
@@ -2108,8 +2112,11 @@ public final class AgentPages {
         int index = 0;
         boolean canPlace = library.engineAvailable()
                 && perms.can(session.effective(), Permission.BUILDING_PLACE);
+        boolean canRetire = perms.can(session.effective(), Permission.BUILDING_DELETE);
+        var sites = buildingSiteDirectory(agentId);
         for (var building : library.buildings()) {
-            sb.append(buildingDefinitionItem(building, index++, canPlace));
+            sb.append(buildingDefinitionItem(building, index++, canPlace,
+                    canRetire ? retireZone(session, agentId, building, sites) : ""));
         }
         sb.append("</div>");
         sb.append("<div class=\"card\"><div class=\"card-body\">");
@@ -2125,6 +2132,62 @@ public final class AgentPages {
     private String buildingDefinitionItem(
             com.lodygames.rpgquest.panel.building.BuildingDefinitionView building, int index,
             boolean canPlace) {
+        return buildingDefinitionItem(building, index, canPlace, "");
+    }
+
+    /**
+     * « Retirer de la bibliothèque » (issue #284) : ce qui sera retiré, ce qui reste, et pourquoi
+     * c'est refusé quand ça l'est. Le retrait ne concerne QUE le catalogue — ni un emplacement, ni une
+     * version d'Atelier — et le texte le distingue explicitement.
+     */
+    private String retireZone(Session session, String agentId,
+                              com.lodygames.rpgquest.panel.building.BuildingDefinitionView building,
+                              com.lodygames.rpgquest.panel.building.BuildingSiteDirectory sites) {
+        StringBuilder sb = new StringBuilder("<div class=\"danger-zone\">");
+        sb.append(detailSection("trash", "Retirer de la bibliothèque"));
+        List<String> usedOn = sites.sites().stream().map(st -> sites.placementFor(st.id()))
+                .flatMap(Optional::stream).filter(p -> p.buildingId().equals(building.id()))
+                .map(p -> p.siteId()).toList();
+        List<String> projects = workshopProjects == null ? List.of()
+                : workshopProjects.list(agentId).stream()
+                        .filter(p -> p.buildingId().equals(building.id())).map(p -> p.name()).toList();
+        if (building.bundled()) {
+            sb.append("<p class=\"field-help\">Exemple fourni avec le plugin : il est recréé à chaque "
+                    + "démarrage du serveur, il ne peut donc pas être retiré.</p></div>");
+            return sb.toString();
+        }
+        if (!usedOn.isEmpty()) {
+            sb.append(Ui.banner("warning", "<strong>Posé sur " + Http.esc(String.join(", ", usedOn))
+                    + ".</strong> Retirez-le d'abord de chaque emplacement (« Retirer le bâtiment et restaurer "
+                    + "le terrain ») : un bâtiment posé ne peut pas quitter la bibliothèque."));
+            return sb.append("</div>").toString();
+        }
+        sb.append("<p>Retire <strong>").append(Http.esc(building.name())).append("</strong> (version ")
+                .append(building.version()).append(", fichier <code class=\"tid\">")
+                .append(Http.esc(building.schematic())).append("</code>) du catalogue : il ne pourra plus être "
+                        + "posé. Il n'est posé nulle part.</p><ul class=\"field-help\">"
+                        + "<li>Les fichiers sont <strong>archivés</strong> sur le serveur, pas effacés : un "
+                        + "retour en arrière reste possible.</li>"
+                        + "<li>Il ne réapparaîtra pas au redémarrage.</li>"
+                        + "<li>L'historique des poses et les sauvegardes de terrain sont conservés.</li>"
+                        + "<li>Ce n'est ni la suppression d'un emplacement, ni celle d'une version de l'Atelier.</li>");
+        if (!projects.isEmpty()) {
+            sb.append("<li>Projet(s) de l'Atelier qui produisent ce bâtiment : ")
+                    .append(Http.esc(String.join(", ", projects)))
+                    .append(" — ils sont conservés ; « Enregistrer dans la bibliothèque » le recréerait.</li>");
+        }
+        sb.append("</ul>");
+        sb.append(formStart(session, agentId, "building.definition.retire", "/buildings/library", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(building.id())).append("\">");
+        sb.append(confirmBox("Je retire « " + building.name() + " » de la bibliothèque."));
+        sb.append("<button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">").append(Icons.icon("trash"))
+                .append("Retirer de la bibliothèque</button></form>");
+        return sb.append("</div>").toString();
+    }
+
+    private String buildingDefinitionItem(
+            com.lodygames.rpgquest.panel.building.BuildingDefinitionView building, int index,
+            boolean canPlace, String retireZone) {
         String slug = "building-" + index + "-" + building.id().replaceAll("[^a-z0-9_-]", "-");
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\">");
@@ -2181,6 +2244,7 @@ public final class AgentPages {
         sb.append("<p class=\"field-help\">Un bâtiment de la bibliothèque ne se modifie pas : pour "
                 + "le changer, créez-en une nouvelle version dans l'Atelier de création. Les "
                 + "bâtiments déjà posés ne sont pas touchés.</p>");
+        sb.append(retireZone);
         sb.append("</div></div></div>");
         return sb.toString();
     }

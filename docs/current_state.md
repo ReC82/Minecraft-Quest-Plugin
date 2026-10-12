@@ -750,6 +750,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'une **quête** voit désormais les dialogues serveur qui la démarrent. **Plugin et panel modifiés :
   JAR + panel à déployer** (non déployé, tests manuels du propriétaire en cours).
   `PENDING MANUAL VALIDATION` : TC-280.
+- **Retirer un bâtiment de la bibliothèque** *(issue #284, NON DÉPLOYÉ, JAR + panel)* — action
+  `building.definition.retire` : refus si le bâtiment est posé ou si c'est un exemple embarqué ;
+  sinon fichiers archivés dans `buildings/.retired/`, pas de réapparition au redémarrage, historique
+  et sauvegardes de terrain conservés. Voir la Bible.
 - **Images de référence et « Recommencer depuis ma description »** *(issue #283, NON DÉPLOYÉ, panel
   seul)* — jusqu'à 4 images par projet (type vérifié sur les octets, 4 Mio, stockées dans
   `control-panel.db`, effacées au retrait), transmises en pixels à OpenAI / Anthropic / Gemini comme

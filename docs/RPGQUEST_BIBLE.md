@@ -1854,6 +1854,27 @@ emplacement est justement la case libre au-dessus du bloc cliqué.
 donc le nord : d'où `front: NORTH`. Déclarer `SOUTH` sur la même géométrie aurait caché un demi-tour
 permanent dans le code de collage — exactement l'offset implicite que ce lot devait éviter.
 
+#### Retirer un bâtiment de la bibliothèque (issue #284)
+
+Dans `/buildings/library`, chaque bâtiment ouvert propose **« Retirer de la bibliothèque »** aux rôles
+qui ont `BUILDING_DELETE` (action `building.definition.retire`, mutation sensible, case de
+confirmation, auteur = la session). Le panneau dit le nom, la version, le fichier `.schem`, les
+emplacements où il est posé et les projets d'Atelier qui le produisent.
+
+| Cas | Comportement |
+|---|---|
+| posé sur au moins un emplacement | **refusé** (dans le panel avant la file, puis par le plugin) en nommant les emplacements : il faut d'abord « Retirer le bâtiment et restaurer le terrain », car « Réorienter » et « Remplacer » relisent sa définition |
+| exemple embarqué (`test_hut_01`, `test_watchtower_01`) | **refusé** : le plugin le recrée à chaque démarrage |
+| libre | la définition est d'abord retirée de l'ensemble actif (plus aucune pose ne peut la choisir), l'usage est revérifié, puis `buildings/<fichier>.yml` et `schematics/<schem>` sont **déplacés** dans `buildings/.retired/<id>_<horodatage>/` avec une note `retired.yml` (auteur, date, version) |
+| `.schem` partagé par un autre bâtiment | conservé en place |
+| échec d'un déplacement | compensation : la définition est remise en place, rien n'est à moitié retiré |
+
+Le bâtiment **ne réapparaît pas au redémarrage** (la bibliothèque ne lit que les `*.yml` de premier
+niveau) ; l'historique des poses et les sauvegardes de terrain ne sont pas touchés ; les projets de
+l'Atelier sont conservés (« Enregistrer dans la bibliothèque » le recréerait). **Restaurer** : remettre
+les deux fichiers de l'archive à leur place, puis `/rpgadmin building reload`. Retirer un bâtiment
+n'est **ni** supprimer un emplacement, **ni** archiver une version de l'Atelier.
+
 ### Cycle de vie d'un bâtiment posé (issue #234)
 
 Un emplacement occupé **ne doit pas devenir une impasse** : il faut pouvoir essayer, restaurer,

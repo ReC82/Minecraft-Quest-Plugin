@@ -217,6 +217,13 @@ public enum AgentActionType {
      */
     BUILDING_DEFINITION_LIST("building.definition.list"),
     /**
+     * Retire un bâtiment de la bibliothèque (issue #284) — la seule écriture sur une définition
+     * venue du panel, et volontairement étroite : refusée si le bâtiment est posé quelque part ou
+     * s'il s'agit d'un exemple embarqué ; les fichiers sont <strong>archivés</strong>, jamais
+     * effacés, et rien ne réapparaît au redémarrage. Voir {@code BuildingRetirement}.
+     */
+    BUILDING_DEFINITION_RETIRE("building.definition.retire"),
+    /**
      * Calcule rotation et emprise pour un couple (emplacement, bâtiment). <strong>N'écrit
      * rien</strong>, ni dans le monde, ni en base : c'est ce qui permet de montrer l'emprise avant
      * de demander confirmation.

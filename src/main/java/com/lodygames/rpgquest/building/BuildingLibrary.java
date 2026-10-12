@@ -44,6 +44,8 @@ public final class BuildingLibrary {
     private final Logger logger;
 
     private volatile Map<String, BuildingDefinition> definitions = Map.of();
+    /** #284 : le fichier d'où vient chaque définition — l'identifiant ne dit pas le nom du fichier. */
+    private volatile Map<String, Path> sources = Map.of();
     private volatile List<String> problems = List.of();
 
     public BuildingLibrary(Path directory, Logger logger) {
@@ -60,6 +62,7 @@ public final class BuildingLibrary {
     /** Recharge depuis le disque et remplace l'ensemble actif. */
     public int reload() {
         Map<String, BuildingDefinition> loaded = new LinkedHashMap<>();
+        Map<String, Path> files2 = new LinkedHashMap<>();
         List<String> issues = new ArrayList<>();
 
         if (!Files.isDirectory(directory)) {
@@ -95,6 +98,9 @@ public final class BuildingLibrary {
                 if (definition.isPresent()) {
                     BuildingDefinition found = definition.get();
                     BuildingDefinition clash = loaded.putIfAbsent(found.id(), found);
+                    if (clash == null) {
+                        files2.put(found.id(), file);
+                    }
                     if (clash != null) {
                         fileProblems.add("Identifiant « " + found.id()
                                 + " » déjà déclaré par un autre fichier — celui-ci est ignoré.");
@@ -109,6 +115,7 @@ public final class BuildingLibrary {
         }
 
         this.definitions = Map.copyOf(loaded);
+        this.sources = Map.copyOf(files2);
         this.problems = List.copyOf(issues);
         logger.info("[building] bibliothèque : " + loaded.size() + " bâtiment(s), "
                 + issues.size() + " erreur(s).");
@@ -138,6 +145,37 @@ public final class BuildingLibrary {
 
     public int size() {
         return definitions.size();
+    }
+
+    /** Le dossier des définitions. */
+    public Path directory() {
+        return directory;
+    }
+
+    /** Le fichier YAML d'où vient cette définition (#284). */
+    public Optional<Path> source(String id) {
+        return id == null ? Optional.empty() : Optional.ofNullable(sources.get(id.trim().toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    /**
+     * Cette définition est-elle un exemple embarqué dans le JAR ? Un tel fichier est recréé à
+     * chaque démarrage s'il manque : le retirer serait un effacement qui ne tient pas (#284).
+     */
+    public boolean bundled(String id) {
+        return source(id).map(p -> java.util.Arrays.asList(BUNDLED_EXAMPLES)
+                .contains(p.getFileName().toString())).orElse(false);
+    }
+
+    /**
+     * Retire immédiatement la définition de l'ensemble actif, sans toucher au disque (#284) : à
+     * partir de cet instant, aucune pose ne peut plus la choisir. {@link #reload()} la rétablit si
+     * son fichier est toujours là.
+     */
+    public synchronized void withdraw(String id) {
+        String key = id == null ? "" : id.trim().toLowerCase(java.util.Locale.ROOT);
+        Map<String, BuildingDefinition> next = new LinkedHashMap<>(definitions);
+        next.remove(key);
+        this.definitions = Map.copyOf(next);
     }
 
     private void ensureExamplesExist() {

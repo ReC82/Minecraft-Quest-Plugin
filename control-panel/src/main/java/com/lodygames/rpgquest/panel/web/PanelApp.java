@@ -3959,6 +3959,11 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, null, "Agent inconnu."));
             return;
         }
+        if ("building.definition.retire".equals(type)) {
+            // #284 : l'auteur du retrait est noté par le plugin dans l'archive — c'est la session,
+            // jamais un champ du formulaire.
+            form.put("by", session.username());
+        }
         com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Validation v =
                 com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate(type, form);
         if (!v.valid()) {
@@ -3966,6 +3971,23 @@ public final class PanelApp {
                     "DENIED", v.error(), rid);
             Http.redirect(exchange, withError(returnPath, agentId, form.get("player"), v.error()));
             return;
+        }
+        // Issue #284 : un bâtiment posé ne se retire pas de la bibliothèque — refus avant la file,
+        // sur le dernier relevé des emplacements (le plugin revérifie de son côté).
+        if ("building.definition.retire".equals(type)) {
+            String buildingId = v.params().getOrDefault("id", "");
+            List<String> usedOn = agentPages.buildingSiteDirectory(agentId).sites().stream()
+                    .map(st -> agentPages.buildingSiteDirectory(agentId).placementFor(st.id()))
+                    .flatMap(Optional::stream).filter(p -> p.buildingId().equals(buildingId))
+                    .map(p -> p.siteId()).toList();
+            if (!usedOn.isEmpty()) {
+                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                        "DENIED", "bâtiment posé sur " + String.join(", ", usedOn), rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, "« " + buildingId
+                        + " » est posé sur " + String.join(", ", usedOn) + " : retirez-le d'abord de "
+                        + "chaque emplacement. Rien n'a été retiré."));
+                return;
+            }
         }
         // Issue #239 : le plugin accepte de supprimer le repère d'un emplacement OCCUPÉ ; le bâtiment
         // resterait dans le monde sans plus aucun moyen de restaurer le terrain. Refus avant la file.

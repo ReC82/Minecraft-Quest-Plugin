@@ -128,6 +128,63 @@ class BuildingPlacementPageTest {
         assertTrue(page.contains("210"), "le volume en blocs");
     }
 
+    // ---- #284 : retirer un bâtiment de la bibliothèque --------------------------------------------
+
+    /** Trois cas réels : un exemple embarqué posé, un bâtiment libre, et le refus d'un bâtiment posé. */
+    private static final String LIBRARY_284 = "{"
+            + "\"engineAvailable\":true,\"engineReason\":\"\",\"problems\":[],"
+            + "\"buildings\":["
+            + "{\"id\":\"test_hut_01\",\"name\":\"Hutte de test\",\"description\":\"\","
+            + "\"sizeX\":7,\"sizeY\":6,\"sizeZ\":5,\"anchorX\":3,\"anchorY\":1,\"anchorZ\":0,"
+            + "\"front\":\"NORTH\",\"materials\":[],\"schematic\":\"test_hut_01.schem\","
+            + "\"schematicPresent\":true,\"version\":1,\"bundled\":true},"
+            + "{\"id\":\"bibliotheque_v1\",\"name\":\"Bibliothèque V1\",\"description\":\"\","
+            + "\"sizeX\":19,\"sizeY\":14,\"sizeZ\":19,\"anchorX\":9,\"anchorY\":0,\"anchorZ\":9,"
+            + "\"front\":\"WEST\",\"materials\":[],\"schematic\":\"bibliotheque_v1.schem\","
+            + "\"schematicPresent\":true,\"version\":3,\"bundled\":false}"
+            + "]}";
+
+    @Test
+    void theLibraryOffersToRetireOnlyWhatCanReallyBeRetired() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY_284);
+        String page = get("/buildings/library?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("value=\"building.definition.retire\""), "un bâtiment libre peut être retiré");
+        assertTrue(page.contains("name=\"id\" value=\"bibliotheque_v1\""));
+        assertTrue(page.contains("version 3"), "la version visée est dite");
+        assertTrue(page.contains("archivés"), "et ce qu'il advient des fichiers");
+        assertTrue(page.contains("Exemple fourni avec le plugin"), "l'exemple embarqué explique son refus");
+        assertFalse(page.contains("name=\"id\" value=\"test_hut_01\""), "pas de formulaire pour lui");
+    }
+
+    @Test
+    void retiringNeedsConsentRecordsTheAuthorAndRefusesAPlacedBuildingBeforeTheQueue() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY_284);
+        String token = csrf(get("/buildings/library?agent=" + TestConfig.AGENT_ID).body());
+        String base = "_csrf=" + token + "&type=building.definition.retire&agent=" + TestConfig.AGENT_ID
+                + "&return=/buildings/library";
+
+        long before = count("building.definition.retire");
+        post("/agents/action", base + "&id=bibliotheque_v1");
+        assertEquals(before, count("building.definition.retire"), "sans case cochée, rien ne part");
+
+        post("/agents/action", base + "&id=test_hut_01&confirm=true");
+        assertEquals(before, count("building.definition.retire"),
+                "un bâtiment posé (buildsite_0002) est refusé avant la file");
+
+        post("/agents/action", base + "&id=bibliotheque_v1&confirm=true&by=quelquun");
+        assertEquals(before + 1, count("building.definition.retire"));
+        AgentActionRow queued = queued("building.definition.retire");
+        assertEquals("bibliotheque_v1", queued.params().get("id"));
+        assertEquals("true", queued.params().get("confirm"));
+        assertEquals(TestConfig.OWNER_USERNAME, queued.params().get("by"),
+                "l'auteur est la session, jamais un champ du formulaire");
+    }
+
     /** La bibliothèque est en lecture seule : aucun formulaire d'écriture ne doit y figurer. */
     /** #269 : l'ancre affichée est celle de CE bâtiment, pas une convention unique. */
     @Test

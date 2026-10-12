@@ -398,6 +398,11 @@ public final class AgentActionCatalog {
         // bâtiment est du contenu déclaratif versionné, qui se modifie dans son fichier YAML.
         add("building.definition.list", Permission.BUILDING_READ, false, false,
                 "Rafraîchir la bibliothèque de bâtiments");
+        // Issue #284 — retirer un bâtiment de la bibliothèque : mutation sensible, confirmation
+        // explicite, permission de suppression. Le plugin refuse un bâtiment posé ou un exemple
+        // embarqué, et ARCHIVE les fichiers au lieu de les effacer.
+        addSensitiveWrite("building.definition.retire", Permission.BUILDING_DELETE, false,
+                "Retirer un bâtiment de la bibliothèque", "building.definition.list");
         // L'aperçu n'écrit RIEN : ni bloc, ni ligne en base. Il est donc déclaré en lecture, et
         // c'est ce qui permet de le relancer autant de fois qu'on veut avant de se décider.
         add("building.placement.preview", Permission.BUILDING_READ, false, false,
@@ -838,6 +843,21 @@ public final class AgentActionCatalog {
                     return Validation.fail("Identifiant de waypoint manquant ou invalide.");
                 }
                 params.put("waypointId", waypointId);
+            }
+            case "building.definition.retire" -> {
+                String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+                if (!id.matches("[a-z0-9_]{3,48}")) {
+                    return Validation.fail("Identifiant de bâtiment manquant ou invalide.");
+                }
+                if (!"true".equals(trim(form.get("confirm")))) {
+                    return Validation.fail("Cochez la confirmation : rien n'a été retiré.");
+                }
+                params.put("id", id);
+                String by = trim(form.get("by"));
+                if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
+                    params.put("by", by);
+                }
+                params.put("confirm", "true");
             }
             case "building.site.delete" -> {
                 String id = buildSiteId(form);

@@ -8143,6 +8143,24 @@ supprimé). Redéployer le panel. Pas de migration.
 
 TC-287.
 
+## 2026-10-12 — Aperçu du bâtiment en 3D dans l'Atelier (#273, lot F de #265) — **NON déployé**
+
+### Changement
+
+**Plugin + panel.** `building.plan.preview` renvoie la grille complète du bâtiment (`details.voxels`,
+même expansion que l'audit, bornée) ; le panel la dessine en vue isométrique SVG (4 orientations, coupe
+par niveau, légende). « Vérifier le bâtiment » demande aussi l'aperçu (gratuit).
+
+### Action serveur
+
+**JAR à redéployer** (aucune migration, aucune donnée, aucun fichier de configuration) puis panel.
+Ordre indifférent : un panel récent face à l'ancien plugin affiche « il faut une version plus récente du
+plugin » ; un panel ancien ignore le nouveau champ.
+
+### Validation
+
+TC-288.
+
 ## 2026-10-12 — L'ancre décrite pour chaque bâtiment (#269, lot D de #265) — **NON déployé**
 
 ### Changement

@@ -589,7 +589,18 @@ public interface AgentActions {
                                    int anchorX, int anchorY, int anchorZ, String front,
                                    List<String> codes, List<String> warnings,
                                    List<BuildingSliceView> plans,
-                                   List<BuildingSliceView> elevations) {
+                                   List<BuildingSliceView> elevations,
+                                   BuildingVoxelsView voxels) {
+        public BuildingPlanPreviewView(boolean ok, String code, String message, String buildingId,
+                                       String kind, int sizeX, int sizeY, int sizeZ, int blocks,
+                                       int anchorX, int anchorY, int anchorZ, String front,
+                                       List<String> codes, List<String> warnings,
+                                       List<BuildingSliceView> plans,
+                                       List<BuildingSliceView> elevations) {
+            this(ok, code, message, buildingId, kind, sizeX, sizeY, sizeZ, blocks, anchorX, anchorY,
+                    anchorZ, front, codes, warnings, plans, elevations, null);
+        }
+
         public BuildingPlanPreviewView {
             code = code == null ? "" : code;
             message = message == null ? "" : message;
@@ -600,6 +611,26 @@ public interface AgentActions {
             warnings = List.copyOf(warnings == null ? List.of() : warnings);
             plans = List.copyOf(plans == null ? List.of() : plans);
             elevations = List.copyOf(elevations == null ? List.of() : elevations);
+            voxels = voxels == null ? BuildingVoxelsView.omitted("") : voxels;
+        }
+    }
+
+    /**
+     * Le bâtiment bloc par bloc, pour la vue en 3D du panel (issue #273) : une palette, puis une
+     * couche par niveau, une chaîne par rangée. Vide, avec un motif, quand il n'est pas transmis.
+     *
+     * @param palette chaque entrée : {@code symbol}, {@code block}, {@code role}, {@code shape}
+     */
+    record BuildingVoxelsView(List<Map<String, String>> palette, List<List<String>> layers,
+                              String omittedReason) {
+        public BuildingVoxelsView {
+            palette = List.copyOf(palette == null ? List.of() : palette);
+            layers = layers == null ? List.of() : layers.stream().map(List::copyOf).toList();
+            omittedReason = omittedReason == null ? "" : omittedReason;
+        }
+
+        public static BuildingVoxelsView omitted(String reason) {
+            return new BuildingVoxelsView(List.of(), List.of(), reason);
         }
     }
 

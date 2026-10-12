@@ -100,17 +100,71 @@ public final class PlanPreview {
      *
      * @param plans      une coupe horizontale par niveau, du sol vers le haut
      * @param elevations les quatre façades, vues de l'extérieur
+     * @param voxels     la grille entière, pour la vue en 3D du panel (issue #273)
      */
     public record Preview(int sizeX, int sizeY, int sizeZ, String front,
                           int anchorX, int anchorY, int anchorZ,
-                          List<Slice> plans, List<Slice> elevations) {
+                          List<Slice> plans, List<Slice> elevations, Voxels voxels) {
 
         public Preview {
             front = front == null ? "" : front;
             plans = List.copyOf(plans == null ? List.of() : plans);
             elevations = List.copyOf(elevations == null ? List.of() : elevations);
+            voxels = voxels == null ? Voxels.omitted("") : voxels;
+        }
+
+        public Preview(int sizeX, int sizeY, int sizeZ, String front, int anchorX, int anchorY,
+                       int anchorZ, List<Slice> plans, List<Slice> elevations) {
+            this(sizeX, sizeY, sizeZ, front, anchorX, anchorY, anchorZ, plans, elevations, null);
         }
     }
+
+    /**
+     * Une entrée de la palette de la vue 3D.
+     *
+     * @param symbol le caractère qui la désigne dans les couches
+     * @param block  le type de bloc, sans ses propriétés ({@code stone_bricks})
+     * @param role   son rôle, dans le vocabulaire des coupes ({@link #SOLID}, {@link #GLAZING}…)
+     * @param shape  {@code full}, ou {@code bottom}/{@code top} pour une dalle — la seule forme que
+     *               la vue dessine autrement qu'un cube
+     */
+    public record PaletteEntry(char symbol, String block, char role, String shape) {
+    }
+
+    /**
+     * Le bâtiment <strong>bloc par bloc</strong>, pour la vue en 3D du panel (issue #273).
+     *
+     * <p>Même principe que les coupes : le panel dessine, le plugin dit la vérité. Ces couches sont
+     * tirées de la <strong>même grille</strong> que l'audit, après la même expansion ; le panel n'a
+     * jamais à relire le plan. Format compact : une couche par niveau (du sol vers le haut), une
+     * chaîne par rangée {@code z}, un caractère par cellule {@code x} — {@link #EMPTY} pour l'air,
+     * sinon le symbole d'une entrée de la palette.</p>
+     *
+     * <p>Borné : au-delà de {@link #MAX_CELLS} cellules ou de {@link #SYMBOLS} types de blocs, la
+     * grille n'est pas transmise et {@code omittedReason} dit pourquoi. Un aperçu partiel qui
+     * paraîtrait complet serait pire que pas d'aperçu.</p>
+     */
+    public record Voxels(List<PaletteEntry> palette, List<List<String>> layers, String omittedReason) {
+
+        public static final int MAX_CELLS = 120_000;
+
+        public Voxels {
+            palette = List.copyOf(palette == null ? List.of() : palette);
+            layers = layers == null ? List.of() : layers.stream().map(List::copyOf).toList();
+            omittedReason = omittedReason == null ? "" : omittedReason;
+        }
+
+        public static Voxels omitted(String reason) {
+            return new Voxels(List.of(), List.of(), reason);
+        }
+
+        public boolean present() {
+            return !layers.isEmpty();
+        }
+    }
+
+    /** Les symboles de la palette : lisibles, sans le {@link #EMPTY}, sans échappement JSON. */
+    static final String SYMBOLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
     /**
      * Prend les coupes.
@@ -153,7 +207,7 @@ public final class PlanPreview {
             elevations.add(elevation(grid, facade, front, sizeX, sizeY, sizeZ));
         }
         return new Preview(sizeX, sizeY, sizeZ, front == null ? "" : front.name(),
-                anchorX, anchorY, anchorZ, plans, elevations);
+                anchorX, anchorY, anchorZ, plans, elevations, voxels(blueprint));
     }
 
     /**
@@ -195,6 +249,64 @@ public final class PlanPreview {
                         + (facade == Facade.FRONT ? " — entrée" : "")
                         + " (" + facade.direction(front) + ")",
                 "largeur → droite, hauteur → haut", rows);
+    }
+
+    /** La grille entière, couche par couche (issue #273). */
+    static Voxels voxels(Blueprint blueprint) {
+        long cells = (long) blueprint.sizeX() * blueprint.sizeY() * blueprint.sizeZ();
+        if (cells > Voxels.MAX_CELLS) {
+            return Voxels.omitted("Bâtiment trop grand pour la vue en 3D (" + cells
+                    + " cellules, maximum " + Voxels.MAX_CELLS + ").");
+        }
+        Map<String, PaletteEntry> palette = new java.util.LinkedHashMap<>();
+        char[][][] grid = new char[blueprint.sizeY()][blueprint.sizeZ()][blueprint.sizeX()];
+        for (char[][] layer : grid) {
+            for (char[] row : layer) {
+                java.util.Arrays.fill(row, EMPTY);
+            }
+        }
+        for (BlueprintBlock block : blueprint.blocks()) {
+            if (block.x() >= blueprint.sizeX() || block.y() >= blueprint.sizeY()
+                    || block.z() >= blueprint.sizeZ()) {
+                // Un plan refusé peut déborder de son volume : c'est justement ce que dit son
+                // verdict. La vue ne dessine pas un bâtiment tronqué en le présentant comme entier.
+                return Voxels.omitted("Des blocs sortent du volume déclaré : la vue en 3D n'est pas "
+                        + "dessinée, voir le résultat de la vérification.");
+            }
+            String shape = shape(block.state());
+            String key = block.material() + "|" + shape;
+            PaletteEntry entry = palette.get(key);
+            if (entry == null) {
+                if (palette.size() >= SYMBOLS.length()) {
+                    return Voxels.omitted("Trop de types de blocs différents pour la vue en 3D "
+                            + "(plus de " + SYMBOLS.length() + ").");
+                }
+                entry = new PaletteEntry(SYMBOLS.charAt(palette.size()), block.material(),
+                        role(block.state()), shape);
+                palette.put(key, entry);
+            }
+            grid[block.y()][block.z()][block.x()] = entry.symbol();
+        }
+        List<List<String>> layers = new ArrayList<>(blueprint.sizeY());
+        for (char[][] layer : grid) {
+            List<String> rows = new ArrayList<>(layer.length);
+            for (char[] row : layer) {
+                rows.add(new String(row));
+            }
+            layers.add(rows);
+        }
+        return new Voxels(new ArrayList<>(palette.values()), layers, "");
+    }
+
+    /** Une dalle se dessine en demi-bloc, en bas ou en haut ; tout le reste en cube. */
+    private static String shape(String state) {
+        if (!BlockState.type(state).endsWith("_slab")) {
+            return "full";
+        }
+        if (state.contains("type=top")) {
+            return "top";
+        }
+        return state.contains("type=double") ? "full" : "bottom";
     }
 
     /** Le rôle de chaque cellule occupée, calculé une seule fois. */

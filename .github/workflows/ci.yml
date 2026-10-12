@@ -4,8 +4,9 @@
 #   Wrapper du dépôt, avec le cache Gradle.
 # - Les artefacts (JAR du plugin, distributions du Control Panel et du web-api) sont construits et
 #   publiés pour chaque commit, avec leur SHA-256 dans le résumé.
-# - Un seul statut agrégé, « CI OK », que les scripts de déploiement interrogent
-#   (scripts/lib/validation.sh) : vert = rien à revalider localement pour ce commit.
+# - Un job agrégé, « CI OK », vert seulement si tous les autres le sont. Les scripts de déploiement
+#   lisent le RUN de ce workflow pour le commit (scripts/lib/validation.sh) : vert = rien à
+#   revalider localement pour ce commit.
 #
 # La documentation seule ne déclenche rien, SAUF docs/manual-tests/, lu par un test du plugin.
 # La même règle est appliquée côté scripts (val::is_doc_path) : les deux listes doivent rester

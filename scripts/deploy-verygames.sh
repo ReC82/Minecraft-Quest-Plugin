@@ -37,7 +37,7 @@
 #
 # Validation adaptée (issue #257). Le JAR est TOUJOURS construit ici, depuis l'arbre propre du
 # commit déployé ; seule la question « faut-il rejouer les tests ? » dépend de ce qui est prouvé :
-#   - CI « CI OK » verte pour ce commit   → ./gradlew assemble seulement ;
+#   - CI (workflow « CI ») verte pour ce commit → ./gradlew assemble seulement ;
 #   - CI rouge                             → REFUS (sauf --allow-ci-red) ;
 #   - CI en cours / absente                → marqueur local de scripts/dev/check.sh pour le code du
 #                                            plugin, sinon ./gradlew :test puis assemble.
@@ -236,8 +236,9 @@ else
   . "$SCRIPT_DIR/lib/validation.sh"
   vg::step "3/8 — Validation du code du plugin"
   RUN_TESTS=1
-  CI_SHA=$(val::ci_commit)
-  CI=$(val::ci_status "$CI_SHA")
+  HEAD_CI=$(val::head_ci)
+  CI_SHA=${HEAD_CI%% *}
+  CI=${HEAD_CI#* }
   if [ "$LOCAL_VALIDATION" -eq 0 ] && [ "$WAIT_CI" -eq 1 ] && [ "${CI%% *}" = pending ]; then
     vg::log "CI en cours sur ${CI_SHA:0:7}, attente (30 min max)…"
     CI=$(val::wait_ci "$CI_SHA" 1800)

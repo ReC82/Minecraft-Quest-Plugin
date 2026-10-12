@@ -22,7 +22,7 @@ Déclenché par tout push et toute pull request qui touche du code, et manuellem
 | `Tests plugin` / `Tests control-panel` / `Tests web-api` | `./gradlew :test`, `:control-panel:test`, `:web-api:test`, **en parallèle** ; bilan dans le résumé ; rapport HTML en artefact en cas d'échec |
 | `Artefacts` | `./gradlew assemble` : JAR du plugin, distributions du Control Panel et du web-api, publiés 30 jours (`rpgquest-<sha>`), avec leurs SHA-256 dans le résumé |
 | `Scripts` | `shellcheck` + `scripts/dev/test-validation.sh` (les scripts qui décident de ce qui est revalidé sont testés eux aussi) |
-| **`CI OK`** | statut agrégé : vert seulement si **tous** les jobs sont verts. C'est **le** statut que lisent les scripts |
+| **`CI OK`** | job agrégé : vert seulement si **tous** les jobs sont verts (utilisable comme vérification requise d'une PR). Les scripts lisent le **run** du workflow « CI » du commit, visible dès son démarrage et vert seulement si ce job l'est |
 
 Java 21 (Temurin), Gradle Wrapper du dépôt, cache Gradle (`gradle/actions/setup-gradle`).
 
@@ -64,10 +64,13 @@ modifications non commitées n'est jamais considéré comme validé, et n'écrit
 Les deux scripts construisent toujours ce qu'ils déploient **depuis le commit courant**. Seule la
 question « faut-il rejouer les tests ? » dépend de ce qui est déjà prouvé.
 
-Le commit dont la CI fait foi est `HEAD`, ou — si les derniers commits ne sont que de la
-documentation, sur lesquels la CI ne tourne pas — le dernier commit de code (`val::ci_commit`).
+**Quel run fait foi** (`val::head_ci`) : GitHub Actions ne tourne que sur le commit **poussé en
+tête**, jamais sur chaque commit intermédiaire, et pas du tout sur un push de documentation seule.
+On part donc de `HEAD` et on remonte tant que le commit examiné n'a aucun run **et** n'est que de la
+documentation. On ne franchit **jamais** un commit de code : ce serait lui prêter le verdict d'un
+autre code — il est alors « sans CI », et la validation locale du module s'applique.
 
-| Statut « CI OK » | `scripts/plugadmin/deploy.sh` (panel) | `scripts/deploy-verygames.sh` (plugin) |
+| Run « CI » du commit | `scripts/plugadmin/deploy.sh` (panel) | `scripts/deploy-verygames.sh` (plugin) |
 |---|---|---|
 | vert | aucun test, `installDist` | aucun test, `./gradlew assemble` |
 | **rouge** | **refus** — sauf `--allow-ci-red` | **refus** — sauf `--allow-ci-red` |

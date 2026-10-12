@@ -89,8 +89,8 @@ Continue jusqu'à ce que l'une de ces conditions soit remplie :
 - **Push automatique autorisé** vers la **branche de travail dédiée** de la
   tâche courante, une fois les **tests ciblés** du ou des modules touchés verts
   (`scripts/dev/check.sh`). La suite complète et la construction des artefacts
-  tournent ensuite dans **GitHub Actions** (`.github/workflows/ci.yml`, statut
-  « CI OK »), voir « TESTS / BUILD ».
+  tournent ensuite dans **GitHub Actions** (`.github/workflows/ci.yml` ; un run
+  n'est vert que si tous ses jobs le sont), voir « TESTS / BUILD ».
   - **Aucun push direct vers `main`.**
   - Toute **fusion vers `main`**, **suppression de branche distante**,
     **réécriture d'historique partagé** ou **release** nécessite une
@@ -170,8 +170,8 @@ Répéter jusqu'à ce que la tâche soit réellement terminée.
   code, qu'un commit de documentation n'invalide pas). Pour une seule classe :
   `scripts/dev/check.sh --module panel --tests '*Foo*'`.
 - **Validation complète : GitHub Actions.** Chaque push exécute les trois
-  suites en parallèle et construit les artefacts ; le statut agrégé est
-  « CI OK ». Ne pas relancer localement une suite complète déjà verte pour le
+  suites en parallèle et construit les artefacts ; le run du workflow « CI »
+  n'est vert que si tous ses jobs le sont (job agrégé « CI OK »). Ne pas relancer localement une suite complète déjà verte pour le
   même code (CI verte ou marqueur local) sans raison technique précise et dite.
 - Une tâche est terminée quand ses tests ciblés sont verts **et** que la CI du
   commit poussé est verte. Si la CI est indisponible, `scripts/dev/check.sh

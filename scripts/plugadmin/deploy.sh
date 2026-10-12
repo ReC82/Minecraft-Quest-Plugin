@@ -15,7 +15,7 @@
 # plugin, et jamais deux fois :
 #   1. code du panel non commité            → refus (sauf --allow-dirty) : on ne déploie pas
 #                                             un état qu'aucun commit ne décrit ;
-#   2. CI « CI OK » verte pour ce commit    → aucun test local ;
+#   2. CI (workflow « CI ») verte          → aucun test local ;
 #   3. CI rouge                             → REFUS (sauf --allow-ci-red, tracé dans DEPLOYED) ;
 #   4. CI en cours / absente                → marqueur local de scripts/dev/check.sh, sinon
 #                                             ./gradlew :control-panel:test (marqueur écrit).
@@ -59,8 +59,9 @@ if val::module_dirty panel; then
     exit 1
   fi
 fi
-CI_SHA="$(val::ci_commit)"
-CI="$(val::ci_status "$CI_SHA")"
+HEAD_CI="$(val::head_ci)"
+CI_SHA="${HEAD_CI%% *}"
+CI="${HEAD_CI#* }"
 if [ "$WAIT_CI" = 1 ] && [ "${CI%% *}" = pending ]; then
   echo "    CI en cours sur ${CI_SHA:0:7}, attente…"
   CI="$(val::wait_ci "$CI_SHA" 1800)"

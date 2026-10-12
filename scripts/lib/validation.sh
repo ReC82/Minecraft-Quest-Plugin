@@ -4,7 +4,7 @@
 #
 # Deux sources, et seulement deux :
 #
-#   1. la CI GitHub Actions (.github/workflows/ci.yml), job agrégé « CI OK », pour un commit poussé ;
+#   1. la CI GitHub Actions (.github/workflows/ci.yml, workflow « CI »), pour un commit poussé ;
 #   2. un marqueur LOCAL écrit par scripts/dev/check.sh après une exécution réussie, indexé par
 #      l'empreinte Git du CODE d'un module — pas par le commit. Un commit qui ne change que de la
 #      documentation ne change pas cette empreinte : il n'invalide rien.
@@ -14,7 +14,7 @@
 #
 # Modules connus : plugin, panel, webapi.
 
-VAL_CHECK_NAME="CI OK"
+VAL_WORKFLOW_NAME="CI"
 VAL_MARKER_DIR="${RPGQUEST_VALIDATION_DIR:-$HOME/.cache/rpgquest/validated}"
 
 # Fichiers de build communs : les modifier peut changer le résultat de n'importe quel module.
@@ -98,33 +98,47 @@ val::write_marker() {
     "$(val::module_task "$module")" > "$path"
 }
 
-# Le commit dont la CI fait foi pour HEAD : HEAD lui-même, ou le premier ancêtre (premier parent)
-# à partir duquel tout ce qui suit n'est que de la documentation — la CI ne tourne pas sur ces
-# commits-là, par construction.
-val::ci_commit() {
-  local c=HEAD n=0 f only_docs
-  while [ "$n" -lt 50 ]; do
-    only_docs=1
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      val::is_doc_path "$f" || { only_docs=0; break; }
-    done < <(git diff-tree --no-commit-id --name-only -r "$c" 2>/dev/null)
-    if [ "$only_docs" -eq 0 ] || ! git rev-parse --verify --quiet "$c^" >/dev/null; then
-      git rev-parse "$c"
+# Le commit dont la CI fait foi pour HEAD, et son statut : « <sha> <statut> <url> ».
+#
+# La CI ne tourne que sur le commit POUSSÉ en tête, jamais sur chaque commit intermédiaire, et pas du
+# tout sur un push de pure documentation. On part donc de HEAD et on remonte (premier parent) tant
+# que le commit examiné n'a aucun run ET n'est que de la documentation : franchir un commit de code
+# reviendrait à prêter à ce code le verdict d'un autre.
+val::_docs_only() {
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    val::is_doc_path "$f" || return 1
+  done < <(git diff-tree --no-commit-id --name-only -r "$1" 2>/dev/null)
+  return 0
+}
+
+val::head_ci() {
+  local c n=0 st
+  c=$(git rev-parse HEAD)
+  while :; do
+    st=$(val::ci_status "$c")
+    if [ "${st%% *}" != none ] || ! val::_docs_only "$c" || [ "$n" -ge 50 ] \
+        || ! git rev-parse --verify --quiet "$c^" >/dev/null; then
+      echo "$c $st"
       return 0
     fi
-    c="$c^"; n=$((n + 1))
+    c=$(git rev-parse "$c^"); n=$((n + 1))
   done
-  git rev-parse "$c"
 }
 
 # Statut CI d'un commit : « success|failure|pending|none <url> ». Ne lève jamais : sans gh, sans
 # réseau ou sans run, la réponse est « none » — c'est-à-dire « pas de preuve », jamais « vert ».
+#
+# On lit le RUN du workflow « CI » (visible dès son démarrage), et non le check « CI OK », qui
+# n'existe qu'une fois ses dépendances terminées. Le run n'est « success » que si TOUS ses jobs le
+# sont, « CI OK » compris ; annulé, ignoré ou en échec, ce n'est pas un vert.
 val::ci_status() {
   local sha=$1 out
   command -v gh >/dev/null 2>&1 || { echo "none -"; return 0; }
-  out=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?check_name=$(printf %s "$VAL_CHECK_NAME" | sed 's/ /%20/g')" \
-        --jq '.check_runs | sort_by(.started_at) | last | if . == null then "none -" else "\(.status) \(.conclusion // "-") \(.html_url)" end' \
+  out=$(gh api "repos/{owner}/{repo}/actions/runs?head_sha=$sha&per_page=20" \
+        --jq "[.workflow_runs[] | select(.name == \"$VAL_WORKFLOW_NAME\")] | sort_by(.created_at) | last
+              | if . == null then \"none -\" else \"\\(.status) \\(.conclusion // \"-\") \\(.html_url)\" end" \
         2>/dev/null) || { echo "none -"; return 0; }
   case "$out" in
     "none -"|"") echo "none -" ;;

@@ -61,19 +61,32 @@ check "mais pas celle du plugin" '[ "$(val::module_key plugin)" = "$K_PLUGIN" ]'
 check "et invalide le marqueur du panel" '! val::has_marker panel'
 C3=$(git rev-parse HEAD)
 
-echo "commit dont la CI fait foi"
-check "HEAD de code = lui-même" '[ "$(val::ci_commit)" = "$C3" ]'
+echo "commit dont la CI fait foi (faux gh : aucun run sauf sur \$RUN_ON)"
+mkdir -p "$WORK/bin"
+PATH="$WORK/bin:$PATH"
+cat > "$WORK/bin/gh" <<'GH'
+#!/usr/bin/env bash
+case "$*" in *"$RUN_ON"*) echo "completed success https://ci/run" ;; *) echo "none -" ;; esac
+GH
+chmod +x "$WORK/bin/gh"
+export RUN_ON=$C3
+check "HEAD de code avec run = lui-même" '[ "$(val::head_ci)" = "$C3 success https://ci/run" ]'
 echo x >> docs/D.md && git commit -qam d1
 echo y > README.md && git add README.md && git commit -qm d2
-check "après deux commits de doc = le dernier commit de code" '[ "$(val::ci_commit)" = "$C3" ]'
+check "deux commits de doc sans run = le run du commit de code" '[ "$(val::head_ci)" = "$C3 success https://ci/run" ]'
+RUN_ON=$(git rev-parse HEAD); export RUN_ON
+check "un run sur le commit de doc poussé fait foi" '[ "$(val::head_ci | cut -d" " -f2)" = success ]'
+export RUN_ON=nulle-part
+echo z >> src/A.java && git commit -qam code
+echo w >> docs/D.md && git commit -qam d3
+check "jamais au-delà d un commit de code sans run" '[ "$(val::head_ci | cut -d" " -f1)" = "$(git rev-parse HEAD^)" ] && [ "$(val::head_ci | cut -d" " -f2)" = none ]'
 mkdir -p docs/manual-tests && echo q > docs/manual-tests/q.yml && git add -A && git commit -qm mt
-check "docs/manual-tests compte comme du code" '[ "$(val::ci_commit)" = "$(git rev-parse HEAD)" ]'
+check "docs/manual-tests compte comme du code" '[ "$(val::head_ci | cut -d" " -f1)" = "$(git rev-parse HEAD)" ]'
 : "$C1" "$C2"
+rm -f "$WORK/bin/gh"
 
 echo "statut CI (faux gh)"
-mkdir -p "$WORK/bin"
 fake_gh() { printf '#!/usr/bin/env bash\n%s\n' "$1" > "$WORK/bin/gh"; chmod +x "$WORK/bin/gh"; }
-PATH="$WORK/bin:$PATH"
 fake_gh 'echo "completed success https://ci/1"'
 check "succès"     '[ "$(val::ci_status abc)" = "success https://ci/1" ]'
 fake_gh 'echo "completed failure https://ci/2"'

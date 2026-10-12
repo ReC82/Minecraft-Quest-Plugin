@@ -8173,3 +8173,20 @@ réelle. Corrige aussi le libellé « ancre explicite » affiché à tort pour u
 
 Aucune côté Minecraft. Redéployer le panel. Validation : TC-289.
 
+## 2026-10-12 — Le serveur refuse de supprimer un emplacement occupé (#239) — **NON déployé**
+
+### Changement
+
+Plugin. `building.site.delete` sur un emplacement où un bâtiment est posé répond `SITE_OCCUPIED` et ne
+supprime rien (auparavant : le repère était supprimé, le bâtiment restait sans restauration possible).
+Le panel le refusait déjà depuis PR #272 ; c'est désormais aussi la règle du serveur.
+
+### Action serveur
+
+**JAR à redéployer.** Aucune migration, aucune donnée modifiée.
+
+### Validation
+
+TC-285 étape 3 (le bouton est absent côté panel) ; le refus serveur est couvert par
+`BuildingSiteServiceTest.anOccupiedSiteIsNeverDeleted`.
+

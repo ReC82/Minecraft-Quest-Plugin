@@ -1335,15 +1335,28 @@ public final class BukkitAgentActions implements AgentActions {
      */
     @Override
     public CompletableFuture<MutationResult> buildingSiteDelete(String id) {
+        // #239 : un placement actif interdit la suppression, même si l'état de la fiche n'avait pas
+        // suivi (redémarrage pendant une pose) — c'est le placement qui porte le terrain d'origine.
+        if (buildingPlacements != null && id != null && buildingPlacements.at(id.trim()).isPresent()) {
+            return done(MutationResult.of(false, "SITE_OCCUPIED", occupiedMessage(id)));
+        }
         return buildingSiteService.delete(id)
-                .thenApply(removed -> removed
-                        ? new MutationResult(true, "DELETED",
-                                "Emplacement « " + safe(id) + " » supprimé.",
-                                List.of("aucun bloc du monde n'a été modifié"))
-                        : MutationResult.of(true, "ABSENT",
-                                "Aucun emplacement « " + safe(id) + " » : rien à supprimer."))
+                .thenApply(outcome -> switch (outcome) {
+                    case DELETED -> new MutationResult(true, "DELETED",
+                            "Emplacement « " + safe(id) + " » supprimé.",
+                            List.of("aucun bloc du monde n'a été modifié"));
+                    case ABSENT -> MutationResult.of(true, "ABSENT",
+                            "Aucun emplacement « " + safe(id) + " » : rien à supprimer.");
+                    case OCCUPIED -> MutationResult.of(false, "SITE_OCCUPIED", occupiedMessage(id));
+                })
                 .exceptionally(error -> MutationResult.of(false, "ERROR",
                         "Échec de la suppression : " + rootName(error)));
+    }
+
+    private static String occupiedMessage(String id) {
+        return "Un bâtiment est posé sur l'emplacement « " + safe(id) + " » : retirez-le d'abord "
+                + "(« Retirer le bâtiment et restaurer le terrain »). Supprimer le repère maintenant "
+                + "laisserait le bâtiment sans moyen de restaurer le terrain. Rien n'a été modifié.";
     }
 
     @Override

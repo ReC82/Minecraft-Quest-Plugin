@@ -147,7 +147,7 @@ class BuildingSiteServiceTest {
     @Test
     void identifiersAreNeverReusedAfterADeletion() throws Exception {
         String first = create("world_hub", 0, 64, 0, Facing.NORTH).site().id();
-        assertTrue(service.delete(first).get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(BuildingSiteService.DeleteOutcome.DELETED, service.delete(first).get(TIMEOUT, TimeUnit.SECONDS));
 
         String next = create("world_hub", 0, 64, 0, Facing.NORTH).site().id();
 
@@ -364,7 +364,7 @@ class BuildingSiteServiceTest {
     void deletingAnEmptySiteRemovesItEverywhere() throws Exception {
         create("world_hub", 0, 64, 0, Facing.NORTH);
 
-        assertTrue(service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(BuildingSiteService.DeleteOutcome.DELETED, service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS));
 
         assertTrue(service.all().isEmpty());
         assertTrue(repository.loadAll().get(TIMEOUT, TimeUnit.SECONDS).isEmpty());
@@ -375,17 +375,37 @@ class BuildingSiteServiceTest {
     void deletingTwiceIsIdempotent() throws Exception {
         create("world_hub", 0, 64, 0, Facing.NORTH);
 
-        assertTrue(service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS));
-        assertFalse(service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS),
+        assertEquals(BuildingSiteService.DeleteOutcome.DELETED, service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(BuildingSiteService.DeleteOutcome.ABSENT, service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS),
                 "rien à supprimer n'est pas une erreur");
         assertTrue(service.all().isEmpty());
     }
 
     @Test
     void deletingAnUnknownOrBlankIdIsHarmless() throws Exception {
-        assertFalse(service.delete("buildsite_9999").get(TIMEOUT, TimeUnit.SECONDS));
-        assertFalse(service.delete("").get(TIMEOUT, TimeUnit.SECONDS));
-        assertFalse(service.delete(null).get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(BuildingSiteService.DeleteOutcome.ABSENT, service.delete("buildsite_9999").get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(BuildingSiteService.DeleteOutcome.ABSENT, service.delete("").get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(BuildingSiteService.DeleteOutcome.ABSENT, service.delete(null).get(TIMEOUT, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Issue #239 : le serveur refuse de supprimer le repère d'un emplacement occupé — c'est lui qui
+     * porte la sauvegarde du terrain. Rien n'est effacé, ni en mémoire ni en base.
+     */
+    @Test
+    void anOccupiedSiteIsNeverDeleted() throws Exception {
+        create("world_hub", 0, 64, 0, Facing.NORTH);
+        service.markStatus("buildsite_0001", SiteStatus.OCCUPIED).get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(BuildingSiteService.DeleteOutcome.OCCUPIED,
+                service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(1, service.all().size(), "toujours là en mémoire");
+        assertEquals(1, repository.loadAll().get(TIMEOUT, TimeUnit.SECONDS).size(), "et en base");
+
+        // Une fois le bâtiment retiré (l'emplacement redevient libre), la suppression passe.
+        service.markStatus("buildsite_0001", SiteStatus.EMPTY).get(TIMEOUT, TimeUnit.SECONDS);
+        assertEquals(BuildingSiteService.DeleteOutcome.DELETED,
+                service.delete("buildsite_0001").get(TIMEOUT, TimeUnit.SECONDS));
     }
 
     @Test

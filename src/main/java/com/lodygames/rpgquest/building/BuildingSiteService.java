@@ -277,21 +277,40 @@ public final class BuildingSiteService {
                 updated -> repository.updateStatus(updated.id(), updated.status()));
     }
 
+    /** Ce qu'une demande de suppression a produit. */
+    public enum DeleteOutcome {
+        /** Le repère a été supprimé. */
+        DELETED,
+        /** Aucun emplacement de ce nom : rien à faire, et ce n'est pas une erreur. */
+        ABSENT,
+        /** Un bâtiment y est posé : refusé, voir {@link #delete}. */
+        OCCUPIED
+    }
+
     /**
      * Supprime un emplacement. <strong>Aucun bloc du monde n'est touché</strong> : un emplacement
-     * n'est qu'un marqueur logique, et ce lot ne sait rien poser.
+     * n'est qu'un marqueur logique.
      *
-     * <p><strong>Idempotent</strong> : un identifiant déjà absent renvoie {@code false} sans erreur.
-     * Un double clic sur « Supprimer » aboutit donc au même état, et c'est volontaire.</p>
+     * <p><strong>Idempotent</strong> : un identifiant déjà absent renvoie {@link DeleteOutcome#ABSENT}
+     * sans erreur. Un double clic sur « Supprimer » aboutit donc au même état, et c'est volontaire.</p>
+     *
+     * <p><strong>Refusé sur un emplacement occupé</strong> (issue #239) : c'est l'emplacement qui porte
+     * le placement, et donc la sauvegarde du terrain d'origine. Supprimer le repère laisserait le
+     * bâtiment dans le monde sans aucun moyen de le retirer ni de restaurer le terrain. Le panel le
+     * refusait déjà ; le serveur, qui est le juge, le refuse aussi — pour tout client.</p>
      */
-    public CompletableFuture<Boolean> delete(String id) {
+    public CompletableFuture<DeleteOutcome> delete(String id) {
         String key = id == null ? "" : id.trim().toLowerCase(Locale.ROOT);
         if (key.isEmpty()) {
-            return CompletableFuture.completedFuture(false);
+            return CompletableFuture.completedFuture(DeleteOutcome.ABSENT);
+        }
+        BuildingSite site = sites.get(key);
+        if (site != null && site.status() == SiteStatus.OCCUPIED) {
+            return CompletableFuture.completedFuture(DeleteOutcome.OCCUPIED);
         }
         return repository.delete(key).thenApply(rows -> {
             sites.remove(key);
-            return rows > 0;
+            return rows > 0 ? DeleteOutcome.DELETED : DeleteOutcome.ABSENT;
         });
     }
 

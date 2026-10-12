@@ -7987,3 +7987,18 @@ identique à la distribution construite ; classes `BuildingPlanDraftStore`, `Bui
 `BriefLevels` présentes ; `/buildings/plan` → `303 /login` ; quatre tables `building_plan_*`
 créées. **Aucun JAR Minecraft transféré.**
 
+## 2026-10-12 — « Arrêter la promenade » d'un PNJ (#216) — **NON déployé**
+
+### Changement
+
+`npc.citizens.wander` avec `enabled=false` n'exige plus `x_range` / `y_range` : l'arrêt ne lit ni
+zone ni ancre (le panel ne les envoie pas). Activer exige toujours la zone.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest. Aucune migration, aucune configuration, panel inchangé.
+
+### Déploiement
+
+Après feu vert du propriétaire. Validation : TC-281.
+

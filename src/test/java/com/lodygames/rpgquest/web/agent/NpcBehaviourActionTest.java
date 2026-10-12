@@ -121,12 +121,48 @@ class NpcBehaviourActionTest {
         assertTrue(actions.wander.isEmpty());
     }
 
+    /**
+     * Issue #216 — EXACTEMENT ce que le panel envoie pour « Arrêter la promenade » :
+     * {@code npc_id} et {@code enabled=false}, rien d'autre.
+     *
+     * <p>Ce test existait déjà sous ce nom, mais il transmettait {@code x_range} et
+     * {@code y_range} : il prouvait donc le contraire de son titre, et masquait le défaut vu en jeu
+     * (« Paramètre « x_range » manquant »). Un test de contrat doit envoyer ce que l'autre côté
+     * envoie réellement.</p>
+     */
     @Test
     void disablingWanderNeedsNeitherAnchorNorZone() {
         assertEquals(AgentActionOutcome.SUCCESS,
+                run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false")).status());
+        assertEquals("andy|false|null/null/null/null|0x0|confirm=false", actions.wander.get(0),
+                "aucune zone ni ancre ne part avec un arrêt");
+    }
+
+    /** Un arrêt ne lit pas les champs de zone : des valeurs absurdes ne le bloquent pas… */
+    @Test
+    void disablingIgnoresZoneAndAnchorFieldsEntirely() {
+        assertEquals(AgentActionOutcome.SUCCESS,
                 run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false",
-                        "x_range", "12", "y_range", "2")).status());
-        assertTrue(actions.wander.get(0).contains("|false|"));
+                        "x_range", "999", "y_range", "-4", "world", "world_hub")).status());
+        // … et ne les enregistre pas non plus au passage.
+        assertEquals("andy|false|null/null/null/null|0x0|confirm=false", actions.wander.get(0));
+    }
+
+    /** Recliquer « Arrêter » rejoue le même état, jamais une bascule. */
+    @Test
+    void stoppingTwiceAsksForTheSameStateTwice() {
+        run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false"));
+        run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false"));
+        assertEquals(2, actions.wander.size());
+        assertEquals(actions.wander.get(0), actions.wander.get(1));
+    }
+
+    /** Activer exige toujours la zone : le correctif n'assouplit que l'arrêt. */
+    @Test
+    void enablingStillRequiresTheZone() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run("npc.citizens.wander", params("npc_id", "andy", "enabled", "true")).status());
+        assertTrue(actions.wander.isEmpty());
     }
 
     @Test
@@ -211,7 +247,6 @@ class NpcBehaviourActionTest {
         assertEquals(AgentActionOutcome.SUCCESS,
                 run("npc.citizens.lookclose", params("npc_id", "andy", "enabled", "false")).status());
         assertEquals(AgentActionOutcome.SUCCESS,
-                run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false",
-                        "x_range", "8", "y_range", "2")).status());
+                run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false")).status());
     }
 }

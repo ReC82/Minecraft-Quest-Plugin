@@ -5244,3 +5244,16 @@ est en lecture). Ne **pas** cliquer « Générer » pendant ce test.
 
 **Ce que ce TC ne couvre pas** : la génération et la pose (décision du propriétaire, et
 l'identifiant `bibliotheque_du_hub` est pris par la V1 de `buildsite_0012`).
+
+### TC-281 — « Arrêter la promenade » d'un PNJ depuis PlugAdmin (issue #216, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR contenant #216 déployé (correctif côté plugin). **Durée** : 3 minutes.
+
+1.  `/npcs` → un PNJ Citizens lié (ex. celui de TC-255) → section comportement → **Activer la
+    promenade** (rayon 25, amplitude 3). Constater en jeu qu'il se déplace.
+2.  Cliquer **Arrêter la promenade**. Attendu : action `SUCCESS`, message « Promenade désactivée,
+    déplacement interrompu — position finale x / y / z ». Plus de « Paramètre « x_range » manquant ».
+3.  En jeu : le PNJ s'immobilise. La fiche Citizens indique **immobile** après rafraîchissement.
+4.  Recliquer **Arrêter** : message explicite « La promenade n'est pas active sur ce PNJ … rien n'a
+    été modifié », sans erreur technique.
+5.  Vérifier que Look Close, le dialogue et les quêtes du PNJ sont inchangés.

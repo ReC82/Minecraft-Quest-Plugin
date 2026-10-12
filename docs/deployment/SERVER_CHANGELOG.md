@@ -8161,3 +8161,15 @@ plugin » ; un panel ancien ignore le nouveau champ.
 
 TC-288.
 
+## 2026-10-12 — L'ancre décrite pour chaque bâtiment (#269, lot D de #265) — **NON déployé**
+
+### Changement
+
+Panel seul. La Bibliothèque affichait « centre de la porte, au niveau du sol » pour **tous** les
+bâtiments — faux pour ceux de l'Atelier (centre de la base). Chaque fiche décrit désormais l'ancre
+réelle. Corrige aussi le libellé « ancre explicite » affiché à tort pour un plan de largeur paire.
+
+### Action serveur
+
+Aucune côté Minecraft. Redéployer le panel. Validation : TC-289.
+

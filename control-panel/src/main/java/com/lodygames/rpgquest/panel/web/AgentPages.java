@@ -2155,8 +2155,8 @@ public final class AgentPages {
         dlRow(sb, "Dimensions", "<code class=\"tid\">" + Http.esc(building.sizeLabel())
                 + "</code> <span class=\"muted\">(largeur × profondeur × hauteur)</span>");
         dlRow(sb, "Volume", building.blockCount() + " blocs");
-        dlRow(sb, "Ancre", "<code class=\"tid\">" + Http.esc(building.anchorLabel())
-                + "</code> <span class=\"muted\">centre de la porte, au niveau du sol</span>");
+        dlRow(sb, "Ancre", Http.esc(building.anchorMeaning()) + " <code class=\"tid\">"
+                + Http.esc(building.anchorLabel()) + "</code>");
         dlRow(sb, "Façade de référence", Http.esc(building.frontLabel())
                 + " <code class=\"tid\">" + Http.esc(building.front()) + "</code>");
         dlRow(sb, "Schematic", "<code class=\"tid\">" + Http.esc(building.schematic()) + "</code>"

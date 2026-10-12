@@ -57,8 +57,12 @@ consultable, mais **rien ne peut être posé** — et aucun bouton ne prétend l
 
 ## L'ancre, et la convention à connaître
 
-L'ancre d'un bâtiment est le **centre de la porte, au niveau du sol**. C'est ce point qui tombe
-exactement sur l'ancre de l'emplacement, et c'est le **point fixe de la rotation**.
+L'ancre d'un bâtiment est le point qui tombe **exactement sur le repère de l'emplacement** ; c'est
+aussi le **point fixe de la rotation**. Chaque bâtiment déclare la sienne, et la fiche de la
+Bibliothèque la décrit en clair :
+
+- un bâtiment créé dans l'**Atelier** : **au centre du bâtiment, au niveau du bas** ;
+- la **hutte de test** : **au milieu de la façade d'entrée, un bloc au-dessus du bas**.
 
 Pour la hutte de test, l'ancre est `3 / 1 / 0`. Le `1` est important :
 

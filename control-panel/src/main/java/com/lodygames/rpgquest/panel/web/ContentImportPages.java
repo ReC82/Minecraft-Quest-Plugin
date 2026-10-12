@@ -36,6 +36,15 @@ public final class ContentImportPages {
                                ContentPackImport.Analysis analysis,
                                List<ContentPackImport.WriteOutcome> applied,
                                Map<String, ContentPackImport.Decision> decisions, String error) {
+        return render(workspace, packYaml, analysis, applied, decisions, error, List.of());
+    }
+
+    /** Même chose, avec les suites de la confirmation (PNJ logiques créés, issue #211). */
+    public static String render(ContentWorkspace workspace, String packYaml,
+                               ContentPackImport.Analysis analysis,
+                               List<ContentPackImport.WriteOutcome> applied,
+                               Map<String, ContentPackImport.Decision> decisions, String error,
+                               List<String> notes) {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("export", "Importer un content pack",
                 "Déposer un pack, lire l'analyse, trancher les collisions, voir le diff, puis "
@@ -54,6 +63,9 @@ public final class ContentImportPages {
         if (applied != null) {
             sb.append(appliedCard(applied));
         }
+        for (String note : notes == null ? List.<String>of() : notes) {
+            sb.append(Ui.banner("info", Http.esc(note)));
+        }
         sb.append(uploadCard(packYaml, analysis == null));
         if (analysis != null) {
             sb.append(analysisCard(analysis, packYaml, decisions));
@@ -67,10 +79,15 @@ public final class ContentImportPages {
     private static String uploadCard(String packYaml, boolean expanded) {
         StringBuilder sb = new StringBuilder("<section class=\"card\">");
         sb.append(Ui.sectionTitle("export", "1. Le pack à importer"));
-        sb.append("<p class=\"muted\">Coller le contenu du fichier <code>.yml</code>. "
-                + "Taille maximale : ").append(ContentPackImport.MAX_BYTES / 1024).append(" Kio. "
-                + "L'analyse ne modifie rien — elle lit le pack et le compare à la source.</p>");
-        sb.append("<form method=\"post\" action=\"/content/import\" class=\"actform\">%CSRF%");
+        sb.append("<p class=\"muted\">Déposer le fichier <code>.json</code> ou <code>.yml</code>, ou coller son "
+                + "contenu (YAML ou JSON, même format). Taille maximale : ").append(ContentPackImport.MAX_BYTES / 1024)
+                .append(" Kio. L'analyse ne modifie rien — elle lit le pack et le compare à la source.</p>");
+        sb.append("<form method=\"post\" action=\"/content/import\" class=\"actform\" "
+                + "enctype=\"multipart/form-data\">%CSRF%");
+        sb.append("<div class=\"field full\"><label for=\"f-pack-file\">Fichier du pack</label>"
+                + "<input id=\"f-pack-file\" type=\"file\" name=\"pack_file\" accept=\".json,.yml,.yaml,"
+                + "application/json,text/yaml\"><p class=\"field-help\">Un fichier déposé remplace le texte "
+                + "collé ci-dessous.</p></div>");
         sb.append("<div class=\"field full\"><label for=\"f-pack\">Contenu du pack</label>");
         sb.append("<textarea id=\"f-pack\" name=\"pack\" rows=\"").append(expanded ? 14 : 6)
                 .append("\" spellcheck=\"false\" placeholder=\"format: ")

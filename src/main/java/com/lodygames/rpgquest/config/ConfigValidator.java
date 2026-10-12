@@ -416,8 +416,21 @@ public final class ConfigValidator {
             throw new ConfigValidationException("« claims.world » ne peut pas être vide.");
         }
         boolean blockNetherTravel = claims.getBoolean("block-nether-travel", true);
+        // Issue #73 : arrivée d'un joueur sans claim par un World-Portal « CLAIM_HOME ».
+        int arrivalMin = claims.getInt("arrival.min-radius", ClaimConfig.DEFAULT_ARRIVAL_MIN_RADIUS);
+        int arrivalMax = claims.getInt("arrival.max-radius", ClaimConfig.DEFAULT_ARRIVAL_MAX_RADIUS);
+        int arrivalSpacing = claims.getInt("arrival.spacing", ClaimConfig.DEFAULT_ARRIVAL_SPACING);
+        if (arrivalMin < 0 || arrivalMax < arrivalMin) {
+            throw new ConfigValidationException("« claims.arrival.min-radius » doit être positif et ≤ « claims.arrival"
+                    + ".max-radius », valeurs trouvées : " + arrivalMin + " / " + arrivalMax);
+        }
+        if (arrivalSpacing < 0) {
+            throw new ConfigValidationException(
+                    "« claims.arrival.spacing » ne peut pas être négatif, valeur trouvée : " + arrivalSpacing);
+        }
 
-        return new ClaimConfig(maxWidth, maxHeight, maxClaimsPerPlayer, portalBufferBlocks, world, blockNetherTravel);
+        return new ClaimConfig(maxWidth, maxHeight, maxClaimsPerPlayer, portalBufferBlocks, world, blockNetherTravel,
+                arrivalMin, arrivalMax, arrivalSpacing);
     }
 
     private static ClaimConfig defaultClaims() {

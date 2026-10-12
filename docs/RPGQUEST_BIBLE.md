@@ -2620,8 +2620,13 @@ Accorder OP ne modifie aucun des trois, et le résultat le rappelle à l'adminis
 whitelist et renvoi au Hub réutilisent `PLAYER_MODERATE` comme demandé, sans inflation de
 permissions.
 
-**Garde-fous de l'élévation OP** : raison **obligatoire**, et il faut **retaper le pseudo exact** —
-un clic sur la mauvaise fiche ne peut donc pas élever le mauvais compte. L'opération est
+**Garde-fous de l'élévation OP** (simplifiés le 13/10/2026, issue #210) : la fiche affiche en clair
+le joueur ciblé (pseudo, UUID en information) et l'action ; **une seule case à cocher**, jamais
+cochée d'avance, puis le bouton — rien à retaper (l'ancienne saisie comparait le pseudo tapé à
+l'UUID de la cible et échouait toujours). La case est vérifiée **côté serveur** (`confirm=true`),
+la raison est facultative (à défaut, l'audit note « OP depuis PlugAdmin (sans motif saisi) »), et un
+second envoi pendant qu'un changement d'OP du même joueur est en attente est refusé (double clic).
+Permission dédiée `PLAYER_OP_WRITE` et audit inchangés. L'opération est
 **idempotente** (`ALREADY_OP` / `NOT_OP` au rejeu) et l'état est **relu** après écriture : si
 l'écriture n'a pas pris, le résultat est `NOT_APPLIED` avec la valeur relue, jamais un « OP
 accordé » mensonger.
@@ -3914,6 +3919,14 @@ Règles appliquées (idempotentes) :
     `hub.HubRescueFallbackService` complète un éventuel inventaire plein par un accès graphique
     minimal (1 bouton), et `player.StarterKitListener` ne marque plus la Rune distribuée si elle
     n'a pas pu être réellement ajoutée (retenté à la connexion suivante).
+-   **cooldown de retour suspendu hors ligne** (issue #221, 13/10/2026) : le cooldown de voyage par
+    objet est enregistré en **durée restante** (`item_travel_cooldowns.remaining_ms`, migration
+    V32) — à l'usage réussi (durée configurée de l'objet), à la déconnexion, à l'arrêt du serveur
+    et toutes les minutes. À la reconnexion, il reprend là où il en était : le temps hors ligne et
+    l'arrêt du serveur ne le consomment pas ; un arrêt brutal coûte au plus une minute d'attente en
+    plus, jamais une remise à zéro ; un cooldown fini est supprimé (aucun état négatif). Une ligne
+    antérieure (sans durée) garde son échéance absolue. Le message « se recharge encore » affiche
+    le temps restant réel. Le combat logging (#88) reste un chantier distinct.
 -   claims interdits (`ClaimService` refuse toute création dans le monde exact de `hub.world`, voir section 8).
 
 Log attendu au démarrage/chargement :
@@ -4019,6 +4032,14 @@ trois catégories, toutes revalidées fraîchement à chaque clic :
 - **Villages** (#151) : centres administrés (`VillageCenter`, table `village_centers`, identité
   **indépendante du monde** — plusieurs centres possibles dans `world_hub`). Arrivée à la position
   et orientation exactes administrées (même confiance qu'un spawn).
+- **Dernier waypoint** (#215, 13/10/2026, dernière case du menu) : le dernier waypoint dont le
+  joueur a **appuyé sur le bouton** — première découverte ou waypoint déjà connu ; ni la proximité,
+  ni le menu, ni une téléportation ne le changent. Retenu par identifiant stable dans la variable
+  joueur `LAST_WAYPOINT` (persistante, chargée à la connexion) : un renommage ou un déplacement ne
+  casse pas la référence. Le voyage passe par le même chemin que la liste (revalidation de la
+  découverte et de l'activation, arrivée sûre) ; sans appui, ou destination désactivée ou
+  supprimée, l'icône et le message le disent — jamais de destination de remplacement. Chaque joueur
+  a la sienne. Les mondes ne sont pas codés en dur.
 
 **Noms de waypoints (#133/#135)** : chaque waypoint a un **nom d'affichage** unique et persistant
 (`waypoint.display_name`), identité lisible principale — le biome reste une métadonnée secondaire
@@ -4268,6 +4289,29 @@ Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, 
 - **4 PNJ Citizens liés** — `guide`, `libraire`, **`guard`**, `jo` (via `/rpgadmin npc tag <id>`, jamais par le nom affiché ; mapping en base `npc_citizens_bindings`). Le PNJ **`guard`** démarre `first_steps` **et** démarre/valide `crystal_hunt` : sans lui, `CLAIM_TIER_1` ne peut **jamais** être accordé et le déblocage du claim est impossible (voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b).
 - **`dialogues/guard.yml` à jour** — doit contenir la branche `crystal_hunt` (choix « J'ai entendu dire… » + nœud `crystal_hunt_accepted`). Un `guard.yml` antérieur ne permet de démarrer que `first_steps`.
 - **Un World-Portal RPGQuest** `world_hub → claims` (`world-portals/hub_to_claims.yml`, `destination-world` = `claims.world`). `ClaimWorldAccessGuard` ne contrôle que les World-Portals : une téléportation par un autre moyen (`/mv tp`, `/tp`) est rattrapée par `ClaimWorldSafetyListener`, pas par le garde d'entrée.
+
+**Arrivée dans le monde des claims : `CLAIM_HOME` (issues #73, #208, 13/10/2026)** — le portail réel
+`hub_to_claims` était en `WORLD_SPAWN` : toute entrée tombait au même point, et un joueur réinitialisé
+y revenait, devant ses anciennes constructions (le reset retire propriété et protection, jamais les
+blocs), et y reposait son Acte. La stratégie `destination-strategy: CLAIM_HOME` d'un World-Portal :
+
+| Situation | Arrivée |
+|---|---|
+| le joueur a un claim principal dans ce monde | **sur son claim**, colonne sûre (centre, sinon balayage du claim) — dérivé du claim persistant, valable après reconnexion et redémarrage |
+| aucun claim (première entrée, ou après reset) | position sûre aléatoire entre `claims.arrival.min-radius` (64) et `max-radius` (2 000) du spawn du monde, à au moins `claims.arrival.spacing` (100) blocs de la **réserve** de tout claim : entrées réparties, jamais sur le terrain d'un autre ni sur l'ancien claim supprimé |
+| rien de sûr trouvé | repli `RANDOM_SAFE`, puis spawn du monde (journalisé) |
+
+Le contrôle d'éligibilité (`ClaimWorldAccessGuard`) et la Pierre de retour sont inchangés. Le reset
+joueur (`resetnew` / `resetfull`) efface aussi le **point de réapparition** (lit) du joueur en ligne ;
+hors ligne, sa connexion l'efface (voir ci-dessous, #220). L'aperçu du reset nomme chaque claim
+supprimé (monde, emprise) et la portée exacte : propriété et protection retirées, blocs conservés.
+
+**Aucun lit ne fixe la réapparition (issue #220, consigne du 12/10/2026)** — dans les claims comme
+ailleurs. Le lit (ou l'ancre) n'enregistre jamais de point (`PlayerSetSpawnEvent` annulé) ; le
+sommeil reste possible et le lit reste un meuble ; le message vanilla « Point de réapparition défini »
+est remplacé par la règle réelle (au plus une fois par minute). Un point enregistré avant la règle
+est effacé à la connexion et à la réapparition : lit détruit, obstrué, chunk déchargé ou redémarrage
+ne changent rien. La mort suit la politique LodyQuests (spawn du village, puis bornes et waypoints).
 
 **Compte OP = bypass, pas un bug** : `rpgquest.admin.world` (défaut `op`, aucun plugin de permissions requis) contourne le **contrôle d'éligibilité** de `ClaimWorldAccessGuard` (entre sans contrôle) et n'est **jamais renvoyé** par `ClaimWorldSafetyListener` (il est venu volontairement). Toute validation « le portail refuse » doit donc se faire avec un **compte non opéré** — un test OP produit exactement le symptôme « j'entre sans avoir débloqué ». Depuis l'issue #22, en revanche, le bypass **ne dispense plus de la Pierre de retour** : elle est garantie à l'entrée comme à l'arrivée. Le dispenser des deux laissait un administrateur éligible sans aucune sortie — c'est la cause racine du blocage signalé le 05/10/2026. Les décisions des deux composants sont journalisées (`[claims-access]` / `[claims-safety]` / `[claims-retour]`).
 
@@ -5167,6 +5211,8 @@ database:
 | V21 | `travel_beacons.biome_instance` (ALTER) | Appariement borne↔waypoint du Hub (#149), idempotence uniquement |
 | V22 | `waypoints.display_name` (ALTER + backfill + index unique) | Nom d'affichage humain unique par waypoint (#133/#135) |
 | V23 | `waypoints.display_name` (UPDATE via correspondance figée) | Renommage des noms concaténés sans séparateur en noms lisibles (retour joueur 2026-10-04) |
+| V24–V31 | voir `SchemaMigrator` | dialogues lus, récompenses, skins, bâtiments |
+| V32 | `item_travel_cooldowns.remaining_ms` (ALTER, nullable) | Cooldown de retour suspendu hors ligne (#221) |
 
 Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
 `rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en

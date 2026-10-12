@@ -720,6 +720,7 @@ public final class TravelBeaconService implements PluginService {
                 : icon(Material.BARRIER, "<yellow>Mon claim</yellow>", "<gray>Tu n'as pas encore de claim.</gray>"));
         inventory.setItem(6, icon(Material.BELL, "<yellow>Villages</yellow>",
                 "<gray>Centres de village configurés.</gray>"));
+        inventory.setItem(8, lastWaypointIcon(player));
         player.openInventory(inventory);
         sessions.put(player.getUniqueId(), new BeaconMenuSession(0, "", ""));
     }
@@ -730,8 +731,41 @@ public final class TravelBeaconService implements PluginService {
             case 2 -> openWorldSelection(player);
             case 4 -> travelToClaim(player);
             case 6 -> openVillages(player, 0);
+            case 8 -> travelToLastWaypoint(player);
             default -> { }
         }
+    }
+
+    // ---- Menu/voyage : Dernier waypoint (issue #215) ---------------------------------------
+
+    private ItemStack lastWaypointIcon(Player player) {
+        Optional<Waypoint> last = waypointService.lastActivated(player.getUniqueId()).flatMap(waypointService::byId);
+        if (last.isEmpty()) {
+            return icon(Material.BARRIER, "<yellow>Dernier waypoint</yellow>",
+                    "<gray>Appuie sur le bouton d'un waypoint</gray>", "<gray>pour pouvoir y revenir d'ici.</gray>");
+        }
+        Waypoint waypoint = last.get();
+        boolean usable = waypointService.hasActivelyDiscovered(player.getUniqueId(), waypoint.id());
+        return icon(usable ? Material.RECOVERY_COMPASS : Material.BARRIER, "<yellow>Dernier waypoint</yellow>",
+                "<white>" + waypoint.displayName() + "</white>",
+                "<gray>" + prettyBiome(waypoint.biomeKey()) + " — " + prettyWorldName(waypoint.world()) + "</gray>",
+                usable ? "<gray>Clique pour y voyager.</gray>" : "<red>Indisponible pour le moment.</red>");
+    }
+
+    /**
+     * Le dernier waypoint dont le joueur a appuyé sur le bouton, résolu par son identifiant stable
+     * (un renommage ou un déplacement ne casse pas la référence), puis le voyage habituel —
+     * revalidation de la découverte et de l'activation, arrivée sûre. Jamais de destination de
+     * remplacement : sans waypoint utilisable, un message dit pourquoi.
+     */
+    void travelToLastWaypoint(Player player) {
+        Optional<String> last = waypointService.lastActivated(player.getUniqueId());
+        if (last.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Aucun waypoint activé :</red> <gray>appuie sur le bouton "
+                    + "d'un waypoint pour pouvoir y revenir depuis une borne.</gray>"));
+            return;
+        }
+        travelTo(player, last.get());
     }
 
     // ---- Menu/voyage : Mon claim (issue #151) ----------------------------------------------

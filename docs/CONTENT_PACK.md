@@ -34,8 +34,10 @@ content:
   npcs: [ ... ]
 ```
 
-- **YAML** (pas JSON) : lisible et éditable à la main, cohérent avec le contenu RPGQuest existant,
-  facilement généré par une IA. Un futur JSON Schema (#110) décrira la même structure.
+- **YAML ou JSON** : l'export est en YAML (lisible et éditable à la main). L'import accepte aussi
+  le **même pack en JSON** (issue #211 — « un seul fichier JSON » produit par une IA externe) : même
+  structure, mêmes clés, mêmes types ; un fichier dont le premier caractère utile est `{` est lu en
+  JSON. Exemple complet : [`docs/content-packs/tom_reprend_la_route.json`](content-packs/tom_reprend_la_route.json).
 - Seuls `format` + `schemaVersion` sont **contractuels** pour l'import. Tout `metadata` peut être
   absent ou faux sans empêcher un import.
 - `content` contient **toujours** les 4 familles (`quests`, `stories`, `dialogues`, `npcs`), une
@@ -420,8 +422,18 @@ contourner la validation ni un conflit en attente.
   plugin — un test le vérifie sur le fichier réellement écrit.
 - Le remplacement passe par le **verrou optimiste** (empreinte relevée à l'analyse) : un fichier
   modifié entre-temps est refusé, pas écrasé.
-- Les familles écrivables sont exactement `ContentWorkspace.KINDS` (quêtes, stories, dialogues).
-  `npcs` est rapporté `SKIPPED` avec son motif.
+- Les familles écrivables dans la source sont exactement `ContentWorkspace.KINDS` (quêtes, stories,
+  dialogues). Depuis #211, les **PNJ logiques** (`npcs`) ne sont plus laissés de côté : un PNJ
+  inconnu du serveur est `NEW` et créé, **après** une écriture source entièrement réussie, par
+  l'action existante `npc.definition.create` (même validation que la page des PNJ, permission
+  `NPC_WRITE`) ; un PNJ déjà présent sur le serveur est `SKIPPED` — jamais modifié par un import ;
+  un PNJ mal formé (`displayName` absent, identifiant invalide…) est `INVALID` et bloque. Aucune
+  liaison Citizens ni position n'est importée : le lien physique se fait ensuite sur la page des PNJ.
+- **Aucun ensemble partiel (#211)** : chaque fichier remplacé est sauvegardé avant écriture ; au
+  premier échec, les fichiers créés par cet import sont supprimés et les fichiers remplacés
+  restaurés, et le rapport marque chaque élément « annulé ». Les PNJ ne sont alors pas créés.
+- Un **dialogue** s'identifie en `namespace:clé` comme une quête (`rpgquest:tom`) : seule la clé
+  nomme le fichier. (Avant #211, cette forme — celle des dialogues fournis — était refusée.)
 
 ### Références internes au pack
 
@@ -439,7 +451,29 @@ version attendue (aucun migrateur n'existe encore). Conforme à la stratégie de
 - Pas de **renommage/copie** à l'import : l'identifiant *est* le nom de fichier **et** vit dans le
   contenu, donc « importer sous un autre nom » demanderait de réécrire l'élément. Les deux décisions
   offertes sont *remplacer* et *ignorer* ; renommer se fait ensuite dans l'éditeur.
-- Pas d'import de **PNJ** (famille non éditable depuis le panel).
-- Pas d'**upload de fichier** : le pack se colle dans un champ texte (le serveur HTTP du panel ne
-  traite pas le `multipart/form-data`).
+- PNJ : création seulement (#211) ; un PNJ existant n'est pas remplacé par un import.
+- Le pack se **dépose** (fichier `.json`/`.yml`, formulaire `multipart/form-data`) ou se colle.
 - Pas d'**archive** : donc aucune surface de path traversal par archive, comme l'exigeait le ticket.
+
+
+---
+
+## 14. Pack de référence « Tom reprend la route » (issue #211)
+
+[`docs/content-packs/tom_reprend_la_route.json`](content-packs/tom_reprend_la_route.json) — le
+parcours complet attendu d'un pack généré par une IA externe, en JSON :
+
+| Famille | Élément | Rôle |
+|---|---|---|
+| `npcs` | `tom` « Tom le marchand », dialogue `rpgquest:tom` | PNJ logique créé à l'import (sans Citizens) |
+| `stories` | `tom_reprend_la_route` | les trois quêtes, dans l'ordre |
+| `quests` | `rpgquest:tom_chariot` | remettre 16 `OAK_LOG` à Tom (`DELIVER_ITEM_TO_NPC`) — 40 XP |
+| `quests` | `rpgquest:tom_bache` (prérequis : chariot) | remettre 6 `LEATHER` — 50 XP |
+| `quests` | `rpgquest:tom_marchandises` (prérequis : bâche) | remettre 16 `WHEAT` et 8 `APPLE` — 80 XP, 3 émeraudes, `TOM_ROUTE_DONE=true` |
+| `dialogues` | `rpgquest:tom` | présentation, offre / acceptation / refus de chaque quête, remise (`HAS_PENDING_DELIVERY` → `DELIVER_QUEST_ITEMS`, `%delivery_status%`), conclusion |
+
+**Ce que le moteur fait réellement** : posséder les objets ne suffit pas — ils sont **remis et
+consommés** dans le dialogue de Tom (dépôts partiels conservés) ; une quête se termine d'elle-même
+quand sa dernière remise est faite (récompenses une seule fois) ; la suivante devient proposable
+grâce aux conditions `QUEST_STATE … COMPLETED` / `NOT_STARTED`. Pas de chariot physique ni de
+commerce ouvert (hors MVP). Protocole de test : `docs/MANUAL_TEST_PLAN.md`, TC-298.

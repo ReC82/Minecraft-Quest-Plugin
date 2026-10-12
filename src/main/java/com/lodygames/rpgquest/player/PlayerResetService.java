@@ -329,9 +329,17 @@ public final class PlayerResetService {
             categories.add(new ResetCategory("Cooldowns de voyage par objet (Rune…)", itemTravelCooldowns.size(),
                     itemTravelCooldowns.isEmpty() ? "aucun cooldown persistant" : String.join(", ", itemTravelCooldowns.keySet())));
 
-            int claims = claimService.claimsOwnedBy(uuid).size();
-            categories.add(new ResetCategory("Claim principal", claims,
-                    claims == 0 ? "aucun claim" : claims + " claim(s) — données de protection uniquement, les blocs restent"));
+            // Issue #208 : le claim est désigné (monde, emprise) et la portée exacte est dite —
+            // la protection et la propriété disparaissent, les blocs restent sur le terrain.
+            var owned = claimService.claimsOwnedBy(uuid);
+            categories.add(new ResetCategory("Claim principal", owned.size(), owned.isEmpty() ? "aucun claim"
+                    : owned.stream().map(c -> c.id() + " (" + c.world() + " x " + c.minX() + "…" + c.maxX() + ", z "
+                            + c.minZ() + "…" + c.maxZ() + ")").collect(java.util.stream.Collectors.joining(", "))
+                            + " — propriété et protection supprimées ; les blocs construits restent sur le terrain. "
+                            + "À la prochaine entrée, l'arrivée se fait à l'écart de tout claim, jamais sur celui-ci."));
+            categories.add(new ResetCategory("Point de réapparition (lit, ancre)",
+                    ResetCategory.NOT_INSPECTABLE, "effacé au reset si le joueur est en ligne, sinon à sa "
+                            + "connexion — aucun lit ne fixe la réapparition (issue #220)"));
 
             Player online = plugin.getServer().getPlayer(uuid);
             String inventoryLabel = scope.wipesInventory()
@@ -373,6 +381,9 @@ public final class PlayerResetService {
             Player online = plugin.getServer().getPlayer(uuid);
             if (online != null) {
                 int removed = applyInventoryReset(online, scope, customItemRegistry);
+                // Issue #208 : aucun point de réapparition hérité (lit près de l'ancien claim) ne
+                // doit survivre au reset — hors ligne, la connexion l'efface (issue #220).
+                online.setRespawnLocation(null, true);
                 progressionService.loadForPlayer(uuid);       // recharge → cache vide
                 portalService.reloadCooldownsForPlayer(uuid);  // recharge → cache vide
                 itemTravelService.reloadCooldownsForPlayer(uuid);

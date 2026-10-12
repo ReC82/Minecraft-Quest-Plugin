@@ -960,10 +960,11 @@ public final class AgentActionExecutor {
      * interprété à l'exécution.</p>
      */
     private CompletableFuture<AgentActionOutcome> playerOperator(AgentAction action, boolean op) {
+        // Issue #210 : la confirmation est la case cochée du panel ; la raison est facultative.
         String reason = trimOrNull(firstNonBlank(action.param("reason"), action.param("motif")));
-        if (reason == null || reason.length() > MAX_REASON) {
+        if (reason != null && reason.length() > MAX_REASON) {
             return done(AgentActionOutcome.rejected(action.id(),
-                    "Une raison est obligatoire pour modifier le statut OP (max " + MAX_REASON + ")."));
+                    "Raison trop longue pour modifier le statut OP (max " + MAX_REASON + ")."));
         }
         return withResolvedUuid(action, (uuid, name) ->
                 actions.setOperator(uuid, name, op).thenApply(r -> toOutcome(action, r)));

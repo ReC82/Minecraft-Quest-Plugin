@@ -197,6 +197,39 @@ class PlayersPageTest {
         assertTrue(page.contains("name=\"type\" value=\"player.catalog\""));
     }
 
+    // ---- Issue #210 : OP avec une seule case à cocher ------------------------------------------
+
+    @Test
+    void opOfLodyIsQueuedWithASingleCheckboxAndADoubleClickDoesNotQueueTwice() throws Exception {
+        start();
+        seedCatalog(CATALOG);
+        String page = get("/players?agent=" + TestConfig.AGENT_ID).body();
+        int form = page.indexOf("value=\"player.op\"");
+        assertTrue(form > 0, "formulaire OP présent");
+        String opForm = page.substring(page.lastIndexOf("<form", form), page.indexOf("</form>", form));
+        assertFalse(opForm.contains("confirm_player"), "plus rien à retaper");
+        assertTrue(page.contains("Joueur ciblé : <strong>LoDyMcFly</strong>"), "cible en clair");
+        assertTrue(opForm.contains("type=\"checkbox\" name=\"confirm\" value=\"true\" required>"),
+                "une case, non cochée par défaut");
+        assertFalse(opForm.contains("checked"), "jamais cochée d'avance");
+
+        String token = csrf(page);
+        String body = "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID + "&type=player.op&return=/players"
+                + "&player=" + UUID_LODY;
+        int before = pendingFor(TestConfig.AGENT_ID);
+        HttpResponse<String> noBox = post("/agents/action", body);
+        assertEquals(before, pendingFor(TestConfig.AGENT_ID), "sans la case, rien n'est envoyé");
+        assertTrue(java.net.URLDecoder.decode(noBox.headers().firstValue("Location").orElse(""),
+                StandardCharsets.UTF_8).contains("Confirmation"), "refus côté serveur");
+
+        post("/agents/action", body + "&confirm=true");
+        assertEquals(before + 1, pendingFor(TestConfig.AGENT_ID), "OP envoyé avec la seule case cochée");
+        HttpResponse<String> again = post("/agents/action", body + "&confirm=true");
+        assertEquals(before + 1, pendingFor(TestConfig.AGENT_ID), "double clic : pas de second envoi");
+        assertTrue(java.net.URLDecoder.decode(again.headers().firstValue("Location").orElse(""),
+                StandardCharsets.UTF_8).contains("déjà en cours"));
+    }
+
     // ---- infra ----------------------------------------------------------------------------
 
     private void seedCatalog(String detailsJson) throws Exception {

@@ -7,9 +7,12 @@ import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -63,20 +66,70 @@ public final class ItemTravelService implements PluginService {
         definitions.put(definition.itemId(), definition);
     }
 
+    /** Issue #221 : point de sauvegarde des durées restantes, en ticks (une minute). */
+    static final long CHECKPOINT_TICKS = 20L * 60;
+
+    private org.bukkit.scheduler.BukkitTask checkpoint;
+
     @Override
     public void start() {
-        // Rien à démarrer : les définitions sont enregistrées par le bootstrap avant/après start(), sans ordre imposé.
+        // Les définitions sont enregistrées par le bootstrap avant/après start(), sans ordre imposé.
+        // Issue #221 : toutes les minutes, la durée restante des cooldowns en cours est enregistrée.
+        // Un arrêt brutal coûte au plus une minute d'attente en plus — jamais une remise à zéro.
+        checkpoint = plugin.getServer().getScheduler().runTaskTimer(plugin, this::checkpointAll,
+                CHECKPOINT_TICKS, CHECKPOINT_TICKS);
     }
 
     @Override
     public void stop() {
+        if (checkpoint != null) {
+            checkpoint.cancel();
+        }
         for (ChannelSession session : channeling.values()) {
             if (session.task != null) {
                 session.task.cancel();
             }
         }
         channeling.clear();
+        // Issue #221 : l'arrêt du serveur suspend le cooldown — la durée restante est enregistrée
+        // et attendue (bornée), sinon l'écriture partirait après la fermeture de la base.
+        List<CompletableFuture<Void>> writes = new ArrayList<>();
+        for (UUID playerId : cooldowns.keySet()) {
+            writes.add(persistRemaining(playerId));
+        }
+        try {
+            CompletableFuture.allOf(writes.toArray(CompletableFuture[]::new)).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception error) {
+            logger.warn("Durées restantes des cooldowns de voyage non toutes enregistrées à l'arrêt : {}",
+                    error.toString());
+        }
         cooldowns.clear();
+    }
+
+    /** Enregistre la durée restante de chaque cooldown en cours d'un joueur. */
+    CompletableFuture<Void> persistRemaining(UUID playerId) {
+        Map<String, Instant> byItem = cooldowns.get(playerId);
+        if (byItem == null || byItem.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        Instant now = Instant.now();
+        List<CompletableFuture<Void>> writes = new ArrayList<>();
+        for (Map.Entry<String, Instant> entry : byItem.entrySet()) {
+            Duration remaining = Duration.between(now, entry.getValue());
+            writes.add(cooldownRepository.saveRemaining(playerId, entry.getKey(),
+                    remaining.isNegative() ? Duration.ZERO : remaining).exceptionally(error -> {
+                        logger.error("Impossible d'enregistrer la durée restante de {} pour {}", entry.getKey(),
+                                playerId, error);
+                        return null;
+                    }));
+        }
+        return CompletableFuture.allOf(writes.toArray(CompletableFuture[]::new));
+    }
+
+    private void checkpointAll() {
+        for (UUID playerId : cooldowns.keySet()) {
+            persistRemaining(playerId);
+        }
     }
 
     public Listener listener() {
@@ -112,9 +165,11 @@ public final class ItemTravelService implements PluginService {
     }
 
     private void applyCooldown(UUID playerId, ItemTravelDefinition definition) {
+        // La durée réellement configurée de l'objet, enregistrée comme durée restante (#221).
         Instant expiresAt = Instant.now().plusSeconds(definition.cooldownSeconds());
         cooldowns.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>()).put(definition.itemId().toString(), expiresAt);
-        cooldownRepository.setCooldown(playerId, definition.itemId().toString(), expiresAt).exceptionally(error -> {
+        cooldownRepository.saveRemaining(playerId, definition.itemId().toString(),
+                Duration.ofSeconds(definition.cooldownSeconds())).exceptionally(error -> {
             logger.error("Impossible de persister le cooldown de {} pour {}", definition.itemId(), playerId, error);
             return null;
         });
@@ -188,6 +243,9 @@ public final class ItemTravelService implements PluginService {
         if (session != null && session.task != null) {
             session.task.cancel();
         }
+        // Issue #221 : la déconnexion SUSPEND le cooldown — sa durée restante est enregistrée et
+        // reprendra à la reconnexion ; le temps hors ligne ne la consomme pas.
+        persistRemaining(player.getUniqueId());
         cooldowns.remove(player.getUniqueId());
     }
 

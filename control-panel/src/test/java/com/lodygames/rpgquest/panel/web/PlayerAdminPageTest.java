@@ -91,36 +91,30 @@ class PlayerAdminPageTest {
     // ---- Validation des paramètres -----------------------------------------------------------
 
     @Test
-    void opRequiresAReasonAndAnExactIdentityConfirmation() {
-        // Sans raison : refusé.
-        assertFalse(AgentActionCatalog.validate("player.op",
-                Map.of("player", "Steve", "confirm", "true", "confirm_player", "Steve")).valid());
-
-        // Sans confirmation d'identité : refusé.
-        assertFalse(AgentActionCatalog.validate("player.op",
-                Map.of("player", "Steve", "confirm", "true", "reason", "test")).valid());
-
-        // Mauvaise identité retapée : refusé — c'est ce qui empêche d'élever le mauvais compte
-        // après un clic sur la mauvaise fiche.
-        AgentActionCatalog.Validation wrong = AgentActionCatalog.validate("player.op",
-                Map.of("player", "Steve", "confirm", "true", "reason", "test",
-                        "confirm_player", "Alex"));
-        assertFalse(wrong.valid());
-        assertTrue(wrong.error().contains("Steve"), wrong.error());
-
-        // Tout correct : accepté.
+    void opNeedsOnlyTheCheckboxAndNothingToRetype() {
+        // Issue #210, cas réel du 12/10/2026 : la fiche cible le joueur par son UUID. L'ancienne
+        // confirmation comparait le pseudo retapé à cet UUID et échouait toujours.
+        String uuid = "b56685c8-70df-43d5-8012-22bd7d2ac03a";
         AgentActionCatalog.Validation ok = AgentActionCatalog.validate("player.op",
-                Map.of("player", "Steve", "confirm", "true", "reason", "délégation temporaire",
-                        "confirm_player", "steve"));
+                Map.of("player", uuid, "confirm", "true"));
         assertTrue(ok.valid(), ok.error());
-        assertEquals("Steve", ok.params().get("player"));
-        assertEquals("délégation temporaire", ok.params().get("reason"));
+        assertEquals(uuid, ok.params().get("player"));
+        assertEquals("OP depuis PlugAdmin (sans motif saisi)", ok.params().get("reason"),
+                "sans raison saisie, l'audit porte un motif explicite");
+
+        AgentActionCatalog.Validation withReason = AgentActionCatalog.validate("player.deop",
+                Map.of("player", uuid, "confirm", "true", "reason", "fin de délégation"));
+        assertTrue(withReason.valid(), withReason.error());
+        assertEquals("fin de délégation", withReason.params().get("reason"));
+
+        assertFalse(AgentActionCatalog.validate("player.op",
+                Map.of("player", uuid, "confirm", "true", "reason", "a\nb")).valid(), "raison multi-ligne");
     }
 
     @Test
-    void opWithoutTheGenericConfirmationIsRefused() {
+    void opWithoutTheCheckboxIsRefusedServerSide() {
         AgentActionCatalog.Validation missing = AgentActionCatalog.validate("player.op",
-                Map.of("player", "Steve", "reason", "test", "confirm_player", "Steve"));
+                Map.of("player", "Steve", "reason", "test"));
 
         assertFalse(missing.valid());
         assertTrue(missing.error().contains("Confirmation"), missing.error());
@@ -158,7 +152,7 @@ class PlayerAdminPageTest {
         for (String type : new String[] {"player.op", "player.deop", "player.send.hub",
                 "player.kick", "player.whitelist.add", "player.whitelist.remove"}) {
             assertFalse(AgentActionCatalog.validate(type,
-                            Map.of("confirm", "true", "reason", "test", "confirm_player", "x")).valid(),
+                            Map.of("confirm", "true", "reason", "test")).valid(),
                     type + " sans joueur");
         }
     }

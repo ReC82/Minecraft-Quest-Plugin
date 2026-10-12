@@ -1737,23 +1737,16 @@ public final class AgentActionCatalog {
             }
             case "player.resetnew.confirm", "player.resetfull.confirm" -> params.put("confirm", "true");
             case "player.op", "player.deop" -> {
-                // Raison OBLIGATOIRE : une élévation OP sans motif rend l'audit inexploitable.
+                // Issue #210, consigne du 12/10/2026 : UNE case à cocher (« confirm », vérifiée
+                // plus haut comme pour toute mutation sensible), rien à retaper. L'ancienne saisie
+                // comparait le pseudo tapé à l'UUID de la cible et échouait toujours. La raison
+                // devient facultative ; à défaut, l'audit porte un motif explicite.
                 String reason = trim(form.get("reason"));
-                if (reason.isEmpty()) {
-                    return Validation.fail("Une raison est obligatoire pour modifier le statut OP.");
-                }
                 if (reason.length() > 200 || reason.indexOf('\n') >= 0) {
                     return Validation.fail("Raison trop longue (max 200) ou multi-ligne.");
                 }
-                // Confirmation portant sur l'IDENTITÉ : l'opérateur doit retaper le pseudo exact,
-                // pour qu'un clic sur la mauvaise fiche ne puisse pas élever le mauvais compte.
-                String typed = trim(form.get("confirm_player"));
-                String target = params.getOrDefault("player", "");
-                if (!typed.equalsIgnoreCase(target)) {
-                    return Validation.fail("Confirmation incorrecte : retaper exactement « " + safe(target)
-                            + " » pour confirmer la cible.");
-                }
-                params.put("reason", reason);
+                params.put("reason", reason.isEmpty()
+                        ? ("player.op".equals(type) ? "OP" : "DEOP") + " depuis PlugAdmin (sans motif saisi)" : reason);
             }
             case "economy.credit", "economy.debit" -> {
                 long value;

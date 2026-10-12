@@ -1007,13 +1007,15 @@ public final class AgentPages {
         sb.append("<p class=\"muted\">OP Minecraft uniquement. Le rôle PlugAdmin, les droits de "
                 + "construction par monde et le bypass de gameplay ne sont <strong>pas</strong> "
                 + "modifiés par cette action.</p>");
+        // Issue #210 : la cible et l'action en clair, une seule case à cocher, aucun texte à retaper.
+        sb.append("<p>Joueur ciblé : <strong>").append(Http.esc(name)).append("</strong> <span class=\"muted\">(UUID ")
+                .append(Http.esc(uuid)).append(")</span><br>Action : <strong>")
+                .append(currentlyOp ? "retirer le statut OP" : "accorder le statut OP").append("</strong></p>");
         sb.append(formStart(session, agentId, type, "/players", uuid));
-        sb.append("<label class=\"form-label\">Raison (obligatoire)</label>");
-        sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
-        sb.append("<label class=\"form-label\">Retaper le pseudo exact pour confirmer la cible</label>");
-        sb.append("<input class=\"form-control mb-2\" name=\"confirm_player\" autocomplete=\"off\" "
-                + "placeholder=\"").append(Http.esc(name)).append("\" required>");
-        sb.append(confirmBox(currentlyOp ? "Je confirme le retrait d'OP." : "Je confirme l'élévation OP."));
+        sb.append("<label class=\"form-label\">Raison (facultative, conservée dans le journal d'audit)</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\">");
+        sb.append(confirmBox(currentlyOp ? "Je confirme le retrait d'OP à « " + name + " »."
+                : "Je confirme l'élévation OP de « " + name + " »."));
         sb.append("<button class=\"btn btn-outline-danger\" type=\"submit\">")
                 .append(currentlyOp ? "Retirer OP" : "Accorder OP").append("</button></form>");
         return sb.toString();

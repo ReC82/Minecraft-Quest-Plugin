@@ -712,6 +712,60 @@ class TravelBeaconServiceTest {
                 ? holder.kind() : null;
     }
 
+    // ---- Issue #215 : Dernier waypoint ---------------------------------------------------------
+
+    private void press(PlayerMock player, Waypoint waypoint) {
+        Block button = interactorBlockOf(waypoint);
+        server.getPluginManager().callEvent(new PlayerInteractEvent(player, Action.RIGHT_CLICK_BLOCK,
+                new ItemStack(Material.AIR), button, BlockFace.valueOf(waypoint.facing()), EquipmentSlot.HAND));
+        await(() -> waypointService.lastActivated(player.getUniqueId()).filter(waypoint.id()::equals).isPresent());
+    }
+
+    @Test
+    void theLastPressedWaypointIsTheBeaconsReturnTargetAcrossARelog() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.useLastWaypointStore(variableRepository);
+        waypointService.start();
+        Waypoint a = seedWaypoint("wp_last_a", "minecraft:forest", 600, 65, 600);
+        Waypoint b = seedWaypoint("wp_last_b", "minecraft:plains", 700, 65, 700);
+        reloadAndAwaitIndexed(a, b);
+        service.start();
+        PlayerMock player = addPlayer();
+        PlayerMock other = addPlayer();
+
+        // Sans appui : option expliquée, aucun voyage.
+        service.openRoot(other);
+        click(other, 8);
+        assertTrue(other.nextMessage().contains("Aucun waypoint activé"));
+
+        // A, B, puis A de nouveau : la destination est A (un appui sur un waypoint déjà découvert compte).
+        press(player, a);
+        press(player, b);
+        press(player, a);
+        press(other, b);
+
+        // Reconnexion : la destination est persistée.
+        server.getPluginManager().callEvent(new org.bukkit.event.player.PlayerQuitEvent(player,
+                net.kyori.adventure.text.Component.empty(), org.bukkit.event.player.PlayerQuitEvent.QuitReason.DISCONNECTED));
+        assertTrue(waypointService.lastActivated(player.getUniqueId()).isEmpty());
+        server.getPluginManager().callEvent(new org.bukkit.event.player.PlayerJoinEvent(player,
+                net.kyori.adventure.text.Component.empty()));
+        await(() -> waypointService.lastActivated(player.getUniqueId()).filter(a.id()::equals).isPresent());
+        await(() -> waypointService.hasActivelyDiscovered(player.getUniqueId(), a.id()));
+
+        player.teleport(new Location(wild, 0.5, 65, 0.5));
+        service.openRoot(player);
+        click(player, 8);
+        assertTrue(Math.hypot(player.getLocation().getX() - a.x(), player.getLocation().getZ() - a.z()) < 2.0,
+                "retour au dernier waypoint activé : A");
+
+        other.teleport(new Location(wild, 0.5, 65, 0.5));
+        service.openRoot(other);
+        click(other, 8);
+        assertTrue(Math.hypot(other.getLocation().getX() - b.x(), other.getLocation().getZ() - b.z()) < 2.0,
+                "destinations indépendantes par joueur : B");
+    }
+
     @Test
     void realClickFromRootThroughWorldsThroughWaypointsOntoADestinationActuallyTravels() throws Exception {
         server.getPluginManager().registerEvents(waypointService.listener(), plugin);

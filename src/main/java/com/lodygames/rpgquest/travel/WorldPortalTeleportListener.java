@@ -79,6 +79,8 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
 
     private final Map<UUID, String> currentPortalByPlayer = new ConcurrentHashMap<>();
     private final Set<UUID> arrivalGrace = ConcurrentHashMap.newKeySet();
+    /** Issue #73 : l'arrivée « CLAIM_HOME », fournie par le module claims (absent : repli RANDOM_SAFE). */
+    private volatile ArrivalResolver claimArrival;
     /** Politique optionnelle d'autorisation d'entrée (mission « avertissement avant entrée dans le Wild »). */
     private volatile WorldPortalEntryGuard entryGuard;
     /** TODO(debug bug TP hub) : marqueur de ré-entrance — voir {@link #onTeleport}. */
@@ -91,6 +93,17 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         this.worldService = worldService;
         this.randomSafeArrivalConfig = randomSafeArrivalConfig;
         this.logger = logger;
+    }
+
+    /** Une arrivée calculée pour un joueur précis — vide : laisser le repli s'appliquer. */
+    @FunctionalInterface
+    public interface ArrivalResolver {
+        Optional<Location> resolve(Player player, World world);
+    }
+
+    /** Branche l'arrivée « CLAIM_HOME » (issue #73). */
+    public void setClaimArrival(ArrivalResolver resolver) {
+        this.claimArrival = resolver;
     }
 
     /** Durée du répit d'arrivée, en ticks — exposé pour {@code /rpgadmin worldportal info} (diagnostic, voir mission). */
@@ -243,7 +256,17 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         RandomSafeLocationFinder.SearchMetrics searchMetrics = new RandomSafeLocationFinder.SearchMetrics();
         long searchNanos = 0L;
         Location target;
-        if (portal.destinationStrategy() == DestinationStrategy.RANDOM_SAFE) {
+        if (portal.destinationStrategy() == DestinationStrategy.CLAIM_HOME) {
+            long searchStart = System.nanoTime();
+            ArrivalResolver resolver = claimArrival;
+            target = (resolver == null ? Optional.<Location>empty() : resolver.resolve(player, world))
+                    .orElseGet(() -> {
+                        logger.warn("Portail simple {} (CLAIM_HOME) : aucune arrivée de claim pour {} — repli "
+                                + "RANDOM_SAFE.", portal.id(), player.getName());
+                        return resolveRandomSafeLocation(portal, world, searchMetrics);
+                    });
+            searchNanos = System.nanoTime() - searchStart;
+        } else if (portal.destinationStrategy() == DestinationStrategy.RANDOM_SAFE) {
             long searchStart = System.nanoTime();
             target = resolveRandomSafeLocation(portal, world, searchMetrics);
             searchNanos = System.nanoTime() - searchStart;

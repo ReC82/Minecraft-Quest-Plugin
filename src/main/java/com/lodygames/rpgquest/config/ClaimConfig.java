@@ -11,5 +11,18 @@ package com.lodygames.rpgquest.config;
  * — simple bascule pour réautoriser plus tard sans changement de code.</p>
  */
 public record ClaimConfig(int maxWidth, int maxHeight, int maxClaimsPerPlayer, int portalBufferBlocks, String world,
-                           boolean blockNetherTravel) {
+                           boolean blockNetherTravel, int arrivalMinRadius, int arrivalMaxRadius,
+                           int arrivalSpacing) {
+
+    /** Arrivée « CLAIM_HOME » par défaut (issue #73) : 64 à 2 000 blocs du spawn, 100 blocs de tout claim. */
+    public static final int DEFAULT_ARRIVAL_MIN_RADIUS = 64;
+    public static final int DEFAULT_ARRIVAL_MAX_RADIUS = 2000;
+    public static final int DEFAULT_ARRIVAL_SPACING = 100;
+
+    /** Forme antérieure à #73 : paramètres d'arrivée par défaut. */
+    public ClaimConfig(int maxWidth, int maxHeight, int maxClaimsPerPlayer, int portalBufferBlocks, String world,
+                       boolean blockNetherTravel) {
+        this(maxWidth, maxHeight, maxClaimsPerPlayer, portalBufferBlocks, world, blockNetherTravel,
+                DEFAULT_ARRIVAL_MIN_RADIUS, DEFAULT_ARRIVAL_MAX_RADIUS, DEFAULT_ARRIVAL_SPACING);
+    }
 }

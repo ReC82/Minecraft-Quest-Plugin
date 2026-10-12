@@ -257,6 +257,51 @@ class ItemTravelServiceTest {
         assertTrue(persisted.containsKey(RUNE.toString()), "le cooldown doit être persisté par joueur");
     }
 
+    /**
+     * Issue #221 : la déconnexion SUSPEND le cooldown. Ce qui restait à la déconnexion reste à la
+     * reconnexion, quel que soit le temps passé hors ligne — la durée configurée, jamais négative.
+     */
+    @Test
+    void theCooldownIsPausedWhileOfflineAndResumesWithTheRemainingTime() throws Exception {
+        service.register(new ItemTravelDefinition(
+                RUNE, 1, 600, () -> Optional.of(destination), () -> Optional.of(world.getName())));
+        PlayerMock player = addPlayer();
+        service.handleInteract(player, rune());
+        awaitUntil(() -> service.isChanneling(player.getUniqueId()));
+        awaitUntil(() -> !service.isChanneling(player.getUniqueId()));
+
+        service.handleQuit(player);
+        Thread.sleep(300);
+        ItemTravelCooldownRepository repository = new ItemTravelCooldownRepository(database);
+        java.time.Instant stored = repository.allForPlayer(player.getUniqueId())
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).get(RUNE.toString());
+        // Simuler une longue absence : on relit plus tard — la durée n'a pas bougé.
+        Thread.sleep(1_500);
+        java.time.Instant reread = repository.allForPlayer(player.getUniqueId())
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).get(RUNE.toString());
+        long remainingSeconds = java.time.Duration.between(java.time.Instant.now(), reread).toSeconds();
+        assertTrue(remainingSeconds >= 597 && remainingSeconds <= 600,
+                "le temps hors ligne ne consomme pas le cooldown : " + remainingSeconds + " s");
+        assertTrue(reread.isAfter(stored), "la reprise part de la reconnexion, pas de l'ancienne échéance");
+    }
+
+    @Test
+    void aLegacyAbsoluteCooldownKeepsItsOldMeaningAndAnElapsedOneIsDeleted() throws Exception {
+        PlayerMock player = addPlayer();
+        new com.lodygames.rpgquest.database.PlayerProfileRepository(database)
+                .findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        ItemTravelCooldownRepository repository = new ItemTravelCooldownRepository(database);
+        java.time.Instant absolute = java.time.Instant.now().plusSeconds(120);
+        repository.setCooldown(player.getUniqueId(), "rpgquest:legacy", absolute).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(repository.allForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .get("rpgquest:legacy").equals(absolute), "ligne antérieure : échéance absolue inchangée");
+
+        repository.saveRemaining(player.getUniqueId(), RUNE.toString(), java.time.Duration.ofSeconds(-5))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertFalse(repository.allForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .containsKey(RUNE.toString()), "aucun état négatif : un cooldown fini n'est plus enregistré");
+    }
+
     @Test
     void theRuneIsRefusedOutsideItsRequiredWorld() throws Exception {
         World other = server.addSimpleWorld("not_wild");

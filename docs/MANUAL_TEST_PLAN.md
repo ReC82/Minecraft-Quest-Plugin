@@ -2776,7 +2776,7 @@ le résumé de récompenses de TC-014).
 
 ### TC-248 — OP/DEOP et actions de secours sur un joueur (issue #210)
 
--   **Fonctionnalité testée :** statut OP réel, OP/DEOP avec raison et confirmation d'identité,
+-   **Fonctionnalité testée :** statut OP réel, OP/DEOP avec une seule case à cocher (#210, 13/10/2026),
     renvoi au Hub, expulsion, whitelist, frontière de permission, et comportement hors ligne.
 -   **Préconditions :** JAR de cette session déployé, panel déployé.
 -   **IMPORTANT — identité de test.** Utiliser un **compte de test dédié**. **Ne pas** modifier les
@@ -2791,10 +2791,11 @@ le résumé de récompenses de TC-014).
     3.  `/deop <joueur_test>`, rafraîchir. **Attendu** : la fiche repasse à « non ».
 
 -   **B. OP/DEOP depuis le panel :**
-    4.  Cliquer **Accorder OP**. **Attendu** : raison obligatoire **et** champ demandant de retaper
-        le pseudo exact.
-    5.  Retaper un **mauvais** pseudo et valider. **Attendu** : **refus** citant le pseudo attendu.
-    6.  Retaper le bon pseudo, avec une raison, et valider. **Attendu** : succès ; le résultat
+    4.  Ouvrir la fiche de **LoDyMcFly** → zone OP. **Attendu** : « Joueur ciblé : LoDyMcFly » (UUID en
+        information), l'action en clair, une raison **facultative**, **une case** non cochée, aucun
+        champ à retaper.
+    5.  Cliquer **Accorder OP** sans cocher. **Attendu** : refus « Confirmation », rien d'envoyé.
+    6.  Cocher la case et valider (double-cliquer). **Attendu** : un seul envoi ; succès ; le résultat
         rappelle que **seul OP Minecraft** a changé. Vérifier en jeu `/op`-status.
     7.  Recliquer **Accorder OP** (rejeu). **Attendu** : « était déjà OP », pas une erreur.
     8.  **Retirer OP**, puis vérifier en jeu et après un **redémarrage** que l'état a persisté.
@@ -5559,3 +5560,28 @@ plus la conception automatique choisie.
 4.  Conception automatique « Soigné » sur un projet sans conception : le journal commence par
     « CONCEPTION DÉTAILLÉE », la critique note « OMISSIONS ET ÉCARTS ».
 5.  Jugement esthétique et fidélité au brief : par le propriétaire, en jeu — l'audit ne les mesure pas.
+
+### TC-298 — Histoire complète en JSON : « Tom reprend la route » (issue #211, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel et JAR issus de la nuit du 12→13/10/2026 ; Tom n'existe pas encore (ni PNJ
+`tom`, ni quêtes `rpgquest:tom_*`). **Durée** : 25 minutes. **Gratuit** (aucun appel IA).
+
+1.  `/content/import` → « Fichier du pack » : déposer `docs/content-packs/tom_reprend_la_route.json`
+    → **Analyser**. **Attendu** : 3 quêtes, 1 story, 1 dialogue « à créer », PNJ `tom` « créé sur le
+    serveur à la confirmation », aucune erreur ni collision.
+2.  **Confirmer**. **Attendu** : 5 fichiers écrits dans la source, bandeau « PNJ logique « tom » :
+    création envoyée au serveur ». Rafraîchir `/npcs` : Tom existe, sans PNJ Citizens.
+3.  Réimporter le même fichier. **Attendu** : tout « inchangé », Tom « existe déjà », rien à écrire.
+4.  Ouvrir `rpgquest:tom_bache` dans l'éditeur de quêtes : changer la quantité de cuir (6 → 4),
+    enregistrer, relire ; dans l'éditeur de dialogues, modifier la première réplique de Tom.
+5.  Publier les cinq contenus (`/content`, publication habituelle).
+6.  `/npcs` → Tom → lier un PNJ Citizens existant (ou en créer un), sans réimporter l'histoire.
+7.  En jeu, compte de test : parler à Tom → « Je peux t'aider ? » → **Commencer la quête : Du bois
+    pour le chariot**. Apporter 10 bûches → « J'apporte des matériaux » → **Donner** : 10/16 restent
+    acquis ; revenir avec 6 → quête terminée une seule fois (40 XP).
+8.  Revenir : « Et maintenant, la bâche ? » → accepter ; remettre le cuir ; puis « Il te manque des
+    marchandises ? » → accepter, remettre 16 blés et 8 pommes → 80 XP + 3 émeraudes une seule fois.
+9.  « Tu repars bientôt ? » → conclusion. Vérifier que `/quests` ne propose plus rien et qu'aucun
+    double gain n'apparaît après reconnexion.
+10. Refus : « Pas maintenant » ne démarre rien. Collision : modifier un fichier `tom_*` dans la
+    source puis réimporter → collision à trancher, rien d'écrasé sans décision.

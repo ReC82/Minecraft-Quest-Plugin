@@ -66,6 +66,38 @@ class WorldPortalTeleportListenerTest {
         MockBukkit.unmock();
     }
 
+    // ---- Stratégie CLAIM_HOME (issue #73) -------------------------------------------------------
+
+    @Test
+    void claimHomePortalUsesTheClaimArrivalForThisPlayer() throws Exception {
+        registry.create(new WorldPortalDefinition("hub_to_claims", "world", 100, 60, 100, 110, 70, 110,
+                "wild", true, DestinationStrategy.CLAIM_HOME));
+        PlayerMock player = server.addPlayer();
+        listener.setClaimArrival((who, world) -> who.equals(player)
+                ? java.util.Optional.of(new Location(world, 1234.5, 65, -987.5)) : java.util.Optional.empty());
+
+        listener.onMove(new PlayerMoveEvent(player, new Location(hub, 1000.5, 64, 1000.5),
+                new Location(hub, 105.5, 65, 105.5)));
+
+        assertEquals(wild, player.getWorld());
+        assertEquals(1234, player.getLocation().getBlockX());
+        assertEquals(-988, player.getLocation().getBlockZ());
+    }
+
+    @Test
+    void claimHomePortalWithoutAnyClaimArrivalFallsBackToARandomSafeSpotNotTheFixedSpawn() throws Exception {
+        registry.create(new WorldPortalDefinition("hub_to_claims", "world", 100, 60, 100, 110, 70, 110,
+                "wild", true, DestinationStrategy.CLAIM_HOME));
+        PlayerMock player = server.addPlayer();
+
+        listener.onMove(new PlayerMoveEvent(player, new Location(hub, 1000.5, 64, 1000.5),
+                new Location(hub, 105.5, 65, 105.5)));
+
+        assertEquals(wild, player.getWorld());
+        double distance = wild.getSpawnLocation().distance(player.getLocation());
+        assertTrue(distance >= randomSafeArrivalConfig.minRadius() - 1, "pas le spawn fixe : " + distance);
+    }
+
     // ---- Stratégie RANDOM_SAFE ------------------------------------------------------------------
 
     @Test

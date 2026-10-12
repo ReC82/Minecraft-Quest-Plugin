@@ -100,6 +100,15 @@ claims:
   # refusé (message au joueur, aucun impact sur le Nether lui-même ni sur les autres mondes/portails
   # RPGQuest). Simple bascule pour réautoriser plus tard.
   block-nether-travel: true
+  # Arrivée par un World-Portal en « destination-strategy: CLAIM_HOME » (issue #73) : un joueur qui a
+  # un claim dans ce monde arrive SUR son claim ; sinon, position sûre aléatoire entre min-radius et
+  # max-radius blocs du spawn du monde, à au moins « spacing » blocs de la réserve de tout claim —
+  # les premières entrées sont réparties et un joueur réinitialisé ne retombe pas sur son ancien
+  # emplacement. Les portails en WORLD_SPAWN gardent un point d'arrivée fixe.
+  arrival:
+    min-radius: 64
+    max-radius: 2000
+    spacing: 100
 
 progression:
   # Courbe de niveaux (par compétence) : coût du niveau n -> n+1 =

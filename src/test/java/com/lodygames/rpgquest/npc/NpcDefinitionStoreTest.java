@@ -16,6 +16,21 @@ class NpcDefinitionStoreTest {
     @TempDir
     Path dir;
 
+    /**
+     * Le dossier de sauvegarde, <strong>à l'intérieur</strong> du répertoire temporaire.
+     *
+     * <p>Ces trois tests utilisaient {@code dir.resolveSibling("npc-backups")}, ce qui a deux
+     * défauts. D'abord, un frère du {@code @TempDir} de JUnit est un dossier de {@code /tmp}
+     * <strong>partagé entre toutes les exécutions</strong> : il s'y accumulait des sauvegardes
+     * depuis des jours, et l'assertion « la première sauvegarde du dossier est celle du PNJ visé »
+     * finissait par tomber sur un reliquat d'un autre test. Ensuite, ce n'était même pas le
+     * comportement réel : la production calcule
+     * {@code plugin.getDataFolder().resolve("npc-backups")}, un <em>sous-dossier</em>.</p>
+     */
+    private Path backupsDir() {
+        return dir.resolve("npc-backups");
+    }
+
     private NpcDefinition def(String id, String name, String dialogue, boolean enabled) {
         return new NpcDefinition(id, name, null, dialogue, "quest_giver", enabled);
     }
@@ -71,7 +86,7 @@ class NpcDefinitionStoreTest {
     void deletingADefinitionBacksItUpFirstThenRemovesIt() throws Exception {
         NpcDefinitionStore store = new NpcDefinitionStore(dir);
         store.create(def("pnj_de_test", "PNJ de test", "rpgquest:pnj_de_test", true));
-        Path backups = dir.resolveSibling("npc-backups");
+        Path backups = backupsDir();
 
         NpcDefinitionStore.Result r = store.deleteDefinition("pnj_de_test", backups);
 
@@ -80,9 +95,13 @@ class NpcDefinitionStoreTest {
         assertFalse(Files.exists(dir.resolve("pnj_de_test.yml")));
         assertTrue(store.find("pnj_de_test").isEmpty());
         try (var files = Files.list(backups)) {
-            Path backup = files.findFirst().orElseThrow();
-            assertTrue(backup.getFileName().toString().endsWith("-pnj_de_test.yml"),
-                    backup.toString());
+            // On cherche la sauvegarde du PNJ visé, au lieu de prendre la première venue :
+            // « findFirst » sur un listage de dossier dépend de l'ordre du système de fichiers,
+            // et faisait passer ce test par chance.
+            Path backup = files
+                    .filter(f -> f.getFileName().toString().endsWith("-pnj_de_test.yml"))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("aucune sauvegarde de pnj_de_test"));
             assertTrue(Files.readString(backup).contains("pnj_de_test"), "la copie doit être réelle");
         }
         assertTrue(r.message().contains("Sauvegarde"), r.message());
@@ -93,7 +112,7 @@ class NpcDefinitionStoreTest {
     void deletingTwiceIsIdempotent() {
         NpcDefinitionStore store = new NpcDefinitionStore(dir);
         store.create(def("pnj_de_test", "PNJ de test", null, true));
-        Path backups = dir.resolveSibling("npc-backups");
+        Path backups = backupsDir();
 
         assertEquals("DELETED", store.deleteDefinition("pnj_de_test", backups).code());
         NpcDefinitionStore.Result again = store.deleteDefinition("pnj_de_test", backups);
@@ -121,7 +140,7 @@ class NpcDefinitionStoreTest {
         NpcDefinitionStore store = new NpcDefinitionStore(dir);
         store.create(def("mira_cartographer", "Mira la Cartographe", "rpgquest:mira_first_map", true));
         store.create(def("mira_apprentice", "Apprentie", null, true));
-        Path backups = dir.resolveSibling("npc-backups");
+        Path backups = backupsDir();
 
         assertTrue(store.deleteDefinition("mira_cartographer", backups).ok());
 

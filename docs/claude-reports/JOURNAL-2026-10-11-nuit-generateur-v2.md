@@ -357,3 +357,39 @@ je consigne telles quelles :
 La leçon est la même dans les deux cas : **compiler les deux modules après chaque
 lot**, et ne pas laisser un module hors du cycle sous prétexte que les tests
 ciblés de l'autre passent.
+
+## 08:30 — Le déploiement a échoué au step 3/8 : un test fragile de longue date
+
+**Aucun transfert n'a eu lieu.** Le script s'arrête avant toute connexion FTP, donc
+le JAR distant est intact et aucun redémarrage n'a été fait. Il n'y avait pas
+d'empreinte installée à vérifier.
+
+Cause, et elle n'est pas liée au lot #94 :
+
+```
+NpcDefinitionStoreTest > deletingADefinitionBacksItUpFirstThenRemovesIt FAILED
+  /tmp/npc-backups/20261012-004630-mira_cartographer.yml ==> expected: <true> but was: <false>
+```
+
+Deux défauts superposés dans ce test, présents depuis le 8 octobre :
+
+1. `dir.resolveSibling("npc-backups")` sur un `@TempDir` **sort du répertoire
+   temporaire** : un frère du dossier JUnit est un dossier de `/tmp` **partagé
+   entre toutes les exécutions**. Il s'y accumulait 45 fichiers depuis le 8 octobre.
+   Ce n'était même pas le comportement réel — la production calcule
+   `plugin.getDataFolder().resolve("npc-backups")`, un *sous-dossier*.
+2. l'assertion prenait la **première** sauvegarde du dossier (`findFirst()` sur un
+   listage), et vérifiait qu'elle concernait le PNJ visé. Elle ne passait **que par
+   chance**, selon l'ordre du système de fichiers.
+
+Le test a donc réussi à 02:32 dans la validation complète, puis échoué à 03:00 dans
+le déploiement : entre les deux, une exécution avait déposé une sauvegarde de
+`mira_cartographer` qui est passée devant.
+
+Corrigé : `dir.resolve("npc-backups")` — à l'image de la production, et à
+l'intérieur du temporaire — et l'assertion cherche la sauvegarde du PNJ visé au lieu
+de la première venue. Vérifié par deux exécutions avec `--rerun-tasks` : 45 fichiers
+dans `/tmp/npc-backups` avant, 45 après. **Plus aucune fuite.**
+
+Les 45 reliquats sont laissés en place : ce sont des fixtures de test dans `/tmp`,
+inoffensives, et le correctif les rend sans effet.

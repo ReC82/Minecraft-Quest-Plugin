@@ -218,6 +218,58 @@ L'aperçu est rendu **même pour un plan refusé** : c'est le cas où il sert le
 expansion et le même audit (`BuildingGenerator.examine`). Trois implémentations finiraient par
 diverger, et montreraient un aperçu qui ne correspond pas à ce qui sera construit.
 
+## Trois désalignements prompt ↔ moteur, trouvés par relecture
+
+Après avoir écrit deux tests qui vérifient que le contrat énoncé au modèle est bien celui que le
+serveur mesure, j'ai relu ligne à ligne les **clés** que le prompt annonce contre celles que le
+lecteur de plan et les primitives acceptent réellement. Trois écarts, et les trois ont la même
+forme : chaque côté était cohérent avec lui-même.
+
+| Écart | Conséquence pour le modèle |
+|---|---|
+| `pillars` : prompt « spacing (défaut 3) », moteur 4 avec minimum 2 | espacement inattendu, silencieux |
+| `ladder` : prompt annonçait une clé `offset` que la primitive **ignore** | échelle posée ailleurs, **sans erreur** |
+| `axis` : **axe du faîte** pour `gable` (`x`/`z`), **direction de montée** pour `stair_run` (point cardinal) | plan **refusé** |
+
+Le troisième est le plus grave, et c'est un défaut de **conception du langage**, pas une coquille de
+documentation : un seul mot-clé portait deux vocabulaires. Un modèle écrivant `axis: x` sur un
+escalier — ce que la symétrie avec `gable` invite à faire — voyait son plan refusé. **Mon propre
+test l'a écrit ainsi spontanément**, ce qui est la meilleure démonstration du piège.
+
+Corrigé dans le langage et non dans le prompt : `stair_run` lit désormais `direction:` (un point
+cardinal), `axis` reste accepté pour ne casser aucun plan déjà écrit, et le message de refus dit
+**quoi écrire** plutôt que de lister des valeurs sans expliquer la différence.
+
+**Aucun test ne pouvait attraper ces trois écarts.** Seule la relecture croisée des clés annoncées
+contre les clés lues les a révélés. C'est à noter, parce que c'est exactement le reproche que je
+fais à un contrat divergent, et je l'avais introduit moi-même.
+
+## Une erreur de ma part, et son rattrapage
+
+`CrystalHuntIntegrationTest` a échoué dans le worktree **propre**, ce qui n'avait aucune raison
+d'arriver. Cause trouvée immédiatement : le commit `165f9d0` a été préparé avec `git add -A src`,
+qui a balayé **six fichiers de contenu appartenant au propriétaire** — cinq nouveaux
+(`mira_cartographer`, `jeff_skeleton`, `lily_pumpkin`, `st0_meet_people`, `lily_memories`) et la
+modification locale de `crystal_hunt.yml`, dont la version du propriétaire ne satisfait pas les
+attentes du test d'intégration.
+
+C'est une consigne explicite de la mission que j'ai enfreinte. Rattrapage :
+
+1. les six fichiers sauvegardés hors du dépôt, avec empreintes ;
+2. `git rm --cached` sur les cinq nouveaux — ils redeviennent non suivis, et cette commande ne
+   touche pas le disque, donc ils n'ont jamais bougé ;
+3. `crystal_hunt.yml` ramené à sa version de `40e8176` dans l'historique, puis la version du
+   propriétaire restaurée dans l'arbre de travail ;
+4. commit `8b447be`, **additif** — historique non réécrit : la correction se voit, ce qui vaut mieux
+   qu'un historique maquillé.
+
+Vérifié après coup : `crystal_hunt.yml` porte à nouveau l'empreinte `9de7de59…` du propriétaire, et
+les cinq autres sont bien en `??`. **Rien n'a été perdu.** Les commits suivants mettent en scène des
+chemins explicites, jamais `git add -A`.
+
+Le build en cours était invalidé par ce fichier : arrêté, et relancé après correction. C'est la
+raison pour laquelle la validation complète de cette session a dû être lancée trois fois.
+
 ## La découverte qui corrige le diagnostic
 
 C'est le fait le plus important de cette session, et il contredit une de mes propres conclusions.
@@ -307,7 +359,66 @@ Les trois fichiers de contenu non suivis du propriétaire et la modification loc
 
 ## Tests automatiques
 
-*(Section complétée en fin de session — voir « Résultat des validations » ci-dessous.)*
+`./gradlew test build` depuis le worktree propre `/srv/rpgquest/worktree-nuit` @ `83d65c1` :
+
+| Module | Tests | Classes | Échecs | Erreurs |
+|---|---|---|---|---|
+| plugin | 2 384 | 225 | 0 | 0 |
+| panel | 1 336 | 103 | 0 | 0 |
+| **total** | **3 720** | **328** | **0** | **0** |
+
+`BUILD SUCCESSFUL`. JAR produit : 2 334 717 octets,
+SHA-256 `d0ee358366e7a122bc14fa687a5fd88ce01d1979797811bdea9888c183edbd66`.
+
+**Il a fallu trois lancements**, et les deux premiers ont échoué pour des raisons que je consigne
+telles quelles :
+
+1. le premier a été **invalidé par ma propre erreur** — la version du propriétaire de
+   `crystal_hunt.yml`, commitée par mégarde, faisait échouer `CrystalHuntIntegrationTest` ;
+2. le second a buté sur `:control-panel:compileJava` : `getOrDefault` refuse une valeur par défaut
+   typée sur une `Map<?, ?>` à clé capturée. **Le module panel n'avait jamais été compilé avec le
+   lot E** — les tests ciblés que j'avais lancés précédaient son écriture.
+
+La leçon est la même dans les deux cas : compiler **les deux modules** après chaque lot, et ne pas
+laisser un module hors du cycle sous prétexte que les tests ciblés de l'autre passent.
+
+### Un test fragile découvert au déploiement
+
+Le déploiement s'est arrêté au **step 3/8** sur un test qui venait de passer dans la validation
+complète :
+
+```
+NpcDefinitionStoreTest > deletingADefinitionBacksItUpFirstThenRemovesIt FAILED
+  /tmp/npc-backups/20261012-004630-mira_cartographer.yml ==> expected: <true> but was: <false>
+```
+
+Deux défauts superposés, présents depuis le 8 octobre et **sans rapport avec #94** :
+
+- `dir.resolveSibling("npc-backups")` sur un `@TempDir` **sort du répertoire temporaire** — un frère
+  du dossier JUnit est un dossier de `/tmp` partagé entre toutes les exécutions, où 45 fichiers
+  s'étaient accumulés. Ce n'était même pas le comportement réel : la production calcule
+  `plugin.getDataFolder().resolve("npc-backups")`, un *sous-dossier* ;
+- l'assertion prenait la **première** sauvegarde du dossier (`findFirst()` sur un listage) et
+  vérifiait qu'elle concernait le PNJ visé. Elle ne passait **que selon l'ordre du système de
+  fichiers**.
+
+D'où le comportement déroutant : réussi à 02:32, échoué à 03:00, parce qu'entre les deux une
+exécution avait déposé une sauvegarde de `mira_cartographer` qui est passée devant.
+
+Corrigé (`279f423`) : `dir.resolve("npc-backups")`, à l'image de la production et à l'intérieur du
+temporaire, et l'assertion cherche la sauvegarde du PNJ visé. Vérifié par deux exécutions avec
+`--rerun-tasks` : 45 fichiers dans `/tmp/npc-backups` avant, 45 après — **plus aucune fuite**.
+
+### Discipline de mémoire
+
+`RPGQUEST_TEST_MAX_HEAP=640m`, `--max-workers=1`, **jamais deux exécutions Gradle simultanées**. Les
+journaux complets sont dans `scratchpad/build-lotA.log`, `scratchpad/build-final.log` et
+`scratchpad/deploy.log`, consultables sans relancer.
+
+**Aucun test n'a été désactivé, ignoré ni affaibli pour obtenir un résultat vert.** Les assertions
+modifiées l'ont été parce qu'elles étaient devenues **fausses** après le correctif de `gable`, ou
+parce qu'elles dépendaient d'un ordre de système de fichiers ; chaque modification est justifiée en
+commentaire dans le test lui-même.
 
 Discipline de mémoire respectée : `RPGQUEST_TEST_MAX_HEAP=640m`, `--max-workers=1`, **jamais deux
 exécutions Gradle simultanées**. Les journaux complets sont dans

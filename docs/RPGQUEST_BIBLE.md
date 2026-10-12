@@ -1219,7 +1219,8 @@ se placent sur une façade nommée, et le moteur calcule tout le reste.
 | `door` | coordonnée de façade, orientation, les deux moitiés, la charnière, **et le dégagement intérieur** |
 | `window` | percement du mur **et** pose du vitrage, sur la largeur et la hauteur demandées |
 | `light` | répartition des sources selon `spacing` |
-| `stair_run` | une volée praticable : marches orientées, `half`, `shape` |
+| `staircase` | **l'escalier entre deux niveaux (issue #282)** : à partir du pied, de la direction et du plancher visé (`floor`), le nombre de marches, la trémie, 3 blocs de hauteur libre, le départ et le palier ; volume réservé contre le mobilier |
+| `stair_run` | *(historique, plus enseigné à l'IA)* une volée de `steps` marches orientées — le modèle doit compter juste lui-même |
 | `ladder` | échelle adossée au mur, orientée vers l'intérieur |
 
 > [!IMPORTANT]
@@ -1307,7 +1308,8 @@ percement visait `x=5` alors que le mur était en `x=0`, et il a vidé de l'air 
 | `GLAZING_MISSING` / `GLAZING_ONE_SIDED` | ≥ 2 cellules vitrées, sur ≥ 2 façades | bloquant |
 | `NO_LIGHT` / `DARK_AREA` | ≥ 1 source utile, et aucune cellule praticable à plus de 8 blocs | bloquant |
 | `ENVELOPE_OPEN` | couverture **et pignons** fermés (tolérance : 4 cellules) | bloquant |
-| `LEVEL_UNREACHABLE` | chaque niveau atteignable depuis le rez-de-chaussée | bloquant |
+| `LEVEL_UNREACHABLE` | chaque niveau atteignable depuis le rez-de-chaussée — avec, depuis #282, le diagnostic en coordonnées et un escalier vérifié proposé | bloquant |
+| `LEVEL_CLUTTERED` | *(#282)* au moins 30 % de chaque plancher atteint où l'on peut se tenir debout | bloquant |
 | `ENVELOPE_MONOTONOUS` / `MATERIAL_DOMINANT` | ≥ 3 matériaux d'enveloppe, aucun au-delà de 70 % | avertissement |
 | `FURNISHING_THIN` | intérieur meublé | **avertissement, jamais refus** |
 
@@ -1626,6 +1628,122 @@ Pas fait, et volontairement : aucune dimension ni emprise (le ticket les veut d�
 placement, et elles dépendent du bâtiment, pas du site), aucune action de téléportation vers un
 emplacement (il n'existe aucun service de TP admin réutilisable — le construire serait un lot à
 part), et aucun marqueur visuel en jeu.
+
+#### Étages reliés, réparation déterministe et conception automatique (issue #282)
+
+Le 12/10/2026, deux projets réels ont échoué : le 3<sup>e</sup> plan de la **Bibliothèque du Hub**
+(`LEVEL_UNREACHABLE`, audit `b88b887b`) et la **Maison du bibliothécaire** (`PLAN_INVALID`, toit
+`gable` de y=5 à y=8 dans un volume haut de 8, audit `077e207d`). Dans les deux cas le serveur
+connaissait la faute exacte, et l'administrateur servait d'intermédiaire entre le validateur et l'IA.
+
+**Ce que la grille du 3<sup>e</sup> plan a montré.** Trois défauts indépendants : une volée de
+5 marches pour un plancher qui en exigeait 6 (la dernière marche arrivait sous le plancher, hors de
+la trémie, et le « palier » de `stair_run` perçait alors le plancher) ; une `box` de bibliothèques
+de 15 × 15 posée *après* l'escalier, qui rebouchait sa hauteur libre ; une échelle arrêtée deux
+blocs sous le plancher. Et un **faux négatif** de l'audit : le « niveau » détecté était le dessus
+des étagères (y=8) — une fois l'escalier réparé, cet étage entièrement muré de meubles aurait été
+déclaré conforme.
+
+**`op: staircase` — le moteur calcule l'escalier.** Le modèle donne le pied (`from`, la première
+marche, posée sur le sol), la `direction` de montée et le plancher visé (`floor`, le y du plancher
+de l'étage) ; `width` (1 à 3) élargit la volée vers +z (montée est/ouest) ou +x (nord/sud).
+
+```yaml
+- op: staircase
+  from: [2, 1, 6]
+  direction: east
+  floor: 5
+  width: 2
+  block: minecraft:spruce_stairs
+```
+
+| Garantie | Comment |
+|---|---|
+| nombre de marches juste | `floor - from.y + 1` : la dernière marche **affleure** le plancher |
+| trémie au bon endroit | 3 blocs dégagés au-dessus de chaque marche (jamais au-delà de `floor + 2`) : là où ils croisent le plancher, c'est la trémie. Trois et non deux : franchir une demi-marche porte la tête à 3,3 blocs au-dessus de la marche quittée |
+| départ et palier | 3 blocs libres devant la première marche, 2 au-dessus du palier, qui doit **porter** sur le plancher |
+| volume réservé | appliqué **après toutes les autres instructions** : un meuble écrit plus loin ne peut plus le reboucher |
+| façade intouchable | refus nommant la cellule si la volée touche le mur extérieur, une porte ou un vitrage |
+
+`stair_run` reste lu pour les plans déjà écrits — son expansion n'a pas changé, pour que la
+régénération d'un bâtiment existant reproduise exactement son `.schem` — mais n'est plus enseigné.
+
+**Les niveaux sont des planchers.** Un niveau est une couche de blocs **porteurs qui ne sont pas des
+meubles**, sur au moins un quart de l'emprise *intérieure* (l'anneau des murs n'est jamais un
+plancher), sous une couverture. Deux planchers à moins de 3 blocs l'un de l'autre sont une estrade,
+pas un étage. Au-dessus du rez-de-chaussée, un étage offre **3 blocs libres** sous son plafond ;
+sinon ce sont des combles. Monter d'un bloc exige aussi la place de la tête au-dessus de soi.
+
+**Le diagnostic est en coordonnées.** `LEVEL_UNREACHABLE` liste désormais les ouvertures du plancher,
+le point le plus haut réellement atteint, la marche la plus haute, chaque échelle trop courte, et
+chaque cellule qui arrête le joueur **avec l'instruction qui l'a posée** (l'expanseur retient la
+provenance de chaque cellule) :
+
+```text
+- Ouverture(s) dans le plancher y=6 : x 5–10, z 5–8 (16 cellule(s)).
+- Point le plus haut réellement atteint : y=5 (8/5/5) — il manque 2 bloc(s) de montée.
+- Sur la marche 9/5/5, la cellule 9/7/5 est occupée par bookshelf — posée par l'instruction 17
+  (box minecraft:bookshelf de [2, 7, 2] à [16, 7, 16]) : il faut 3 blocs libres au-dessus de
+  chaque marche et 2 au-dessus du palier.
+RÉPARATION VÉRIFIÉE PAR LE MOTEUR — ajoute exactement cette instruction […] :
+  - op: staircase
+    from: [2, 1, 17]
+    direction: east
+    floor: 6
+    block: minecraft:dark_oak_stairs
+```
+
+L'escalier proposé est cherché sur la grille réelle (intérieur strict, sol au départ, plancher au
+palier, ni porte ni vitrage ni lumière détruits, de préférence le long d'un mur et sur deux voies) et
+**vérifié par simulation** : l'audit complet est rejoué et toute régression écarte le candidat.
+
+**Réparation déterministe (`PlanRepair`).** Quand un plan est refusé, le plugin essaie un catalogue
+fermé de corrections sûres, chacune rejouée par le vrai pipeline et jetée si elle fait apparaître un
+refus nouveau :
+
+| Faute | Correction |
+|---|---|
+| zone qui déborde du volume de 3 blocs au plus | volume agrandi si le projet le permet (`max_width`/`max_height` transmis par l'Atelier), sinon zone ramenée au volume — un toit `gable` est alors arasé, l'enveloppe restant close |
+| étage inaccessible | ajout de l'escalier vérifié |
+| escaliers, échelles, trémies d'origine qui ne mènent plus nulle part | retirés (une trémie orpheline est un trou où l'on tombe) |
+| `box` de meubles couvrant ≥ 40 % d'un plancher encombré | transformée en `walls` : rangée le long de son pourtour, centre libre |
+
+Sur les deux plans réels : la Maison passe après réparation ; la Bibliothèque aussi — escalier de
+6 marches ajouté, volée et échelle mortes retirées, bibliothèques le long des murs — sans un appel IA.
+Le résultat de `building.plan.audit` / `building.plan.preview` porte alors un bloc `repair`
+(`plan` complet, `changes`, `codes` restants, `accepted`) et `details.message` contient le
+diagnostic **complet** (le message d'action est tronqué à 500 caractères par le panel).
+
+**Dans l'Atelier, plus d'intermédiaire.**
+
+- Tout plan reçu de l'IA est **vérifié et prévisualisé aussitôt**, sans clic.
+- Si l'audit de la version courante revient avec une réparation, une version **« Réparé par le
+  moteur »** est créée et revérifiée d'elle-même (idempotent ; jamais de réparation d'une
+  réparation). La page s'ouvre sur elle et liste ce qui a été changé.
+- **« Améliorer avec l'IA » fonctionne sans commentaire** : le diagnostic du dernier audit de la
+  version courante (`PLAN_INVALID` compris) part de lui-même, visible sous « Ce que l'IA recevra ».
+  Le champ libre devient « Vos consignes en plus (facultatif) ».
+
+**Conception automatique.** Carte du projet : l'IA conçoit, le serveur vérifie et répare, l'IA
+corrige avec le diagnostic exact, puis relit le plan **en architecte** (silhouette, façades,
+aménagement, lumière, fidélité au brief) ; un plan embelli qui régresse ne remplace jamais la
+version conforme.
+
+| Niveau | Appels au plus | Passes de critique |
+|---|---|---|
+| Standard | 4 | 0 |
+| Soigné *(défaut)* | 8 | 1 |
+| Exigeant | 12 | 2 |
+
+L'enveloppe est annoncée **avant** le consentement, en appels, en jetons et — pour les modèles dont
+le tarif public est connu du panel (gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini) — en dollars ; un
+modèle inconnu n'a pas de prix inventé. Case d'acceptation obligatoire, jeton de demande à usage
+unique, une seule session par projet, plafond dur de 12 appels. La session s'arrête sur : plan
+conforme (embelli selon le niveau), enveloppe épuisée, plan déjà essayé, serveur sans verdict dans
+le délai (180 s). Deux refus identiques de suite déclenchent une **conception neuve** qui reçoit les
+écueils déjà rencontrés, au lieu d'une troisième variante du même défaut. Chaque passe est une
+version et une ligne du journal (`building_design_run`, base du panel), avec ses jetons. Un
+redémarrage du panel marque la session **interrompue** et ne la relance jamais seul.
 
 ### Bibliothèque de bâtiments et premier placement — `/buildings/library` (issue #213)
 

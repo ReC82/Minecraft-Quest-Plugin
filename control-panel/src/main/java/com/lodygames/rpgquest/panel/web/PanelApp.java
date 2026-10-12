@@ -3564,7 +3564,11 @@ public final class PanelApp {
                 safeParams(outgoing), rid);
         LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
                 + " type=" + type + " action=" + id + " by=" + session.username());
-        Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")) + "&toast=" + enc(id));
+        // Issue #241 : la fiche ouverte (« focus ») reste ouverte après l'action. Valeur filtrée :
+        // un identifiant de contenu, jamais un fragment d'URL arbitraire.
+        String focus = AgentPages.cleanFocus(form.get("focus"));
+        Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player"))
+                + (focus.isEmpty() ? "" : "&focus=" + enc(focus)) + "&toast=" + enc(id));
     }
 
     /**

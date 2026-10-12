@@ -857,7 +857,14 @@ public final class RPGQuestBootstrap {
         contentReloadService = new ContentReloadService(
                 questEngine, storyRegistry, dialogueEngine, npcEngine, customItemRegistry, mobRegistry,
                 plugin.getSLF4JLogger(),
-                families -> npcHintService.invalidateAll());
+                families -> {
+                    npcHintService.invalidateAll();
+                    // Issue #242 : une publication de quêtes reconstruit l'index et les écouteurs
+                    // de progression — sinon un type d'objectif nouveau n'est écouté qu'au redémarrage.
+                    if (families.contains(com.lodygames.rpgquest.content.reload.ReloadFamily.QUESTS)) {
+                        questProgressEngine.afterExternalReload();
+                    }
+                });
 
         // Issue #47 — publication de contenu depuis le Control Panel, SANS rebuild ni redémarrage.
         //

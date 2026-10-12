@@ -59,6 +59,13 @@ public final class ProgressionService implements PluginService, Listener {
     private final Map<UUID, BossBar> activeBossBars = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> bossBarHideTasks = new ConcurrentHashMap<>();
 
+    private com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar;
+
+    /** Issues #69 / #209 — canal partagé de l'action bar, branché au démarrage. */
+    public void setActionBar(com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar) {
+        this.actionBar = actionBar;
+    }
+
     public ProgressionService(Plugin plugin, ProgressionRepository repository, Supplier<ProgressionConfig> config, Logger logger) {
         this(plugin, repository, config, logger, System::currentTimeMillis);
     }
@@ -244,7 +251,14 @@ public final class ProgressionService implements PluginService, Listener {
                             Placeholder.unparsed("skill", label(result.skill())));
 
             switch (displayMode) {
-                case ACTION_BAR -> player.sendActionBar(message);
+                // #69 / #209 : ajoutée à une progression de quête récente au lieu de l'effacer.
+                case ACTION_BAR -> {
+                    if (actionBar != null) {
+                        actionBar.info(player, message);
+                    } else {
+                        player.sendActionBar(message);
+                    }
+                }
                 case BOSS_BAR -> showTransientBossBar(player, message, result);
                 case OFF -> {
                 }

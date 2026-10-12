@@ -559,6 +559,22 @@ silence et jamais de faux succès. Si l'occasion était déjà payée, **rien** 
 passent par le **chat** et jamais par l'ActionBar, qui appartient à la progression des objectifs :
 une notification d'économie y effacerait l'avancement affiché.
 
+**Progression visible à chaque kill — canal partagé de l'ActionBar** (`feedback.ActionBarFeedback`,
+issues #69 / #209). L'ActionBar n'affiche qu'une ligne : l'XP de combat du même kill (« +5 XP
+(Combat) », envoyée au tick suivant par `ProgressionService`) effaçait « Araignées : 3/10 » avant
+qu'on puisse le lire. Règle désormais :
+
+- une progression d'objectif est **prioritaire** et reste affichée **2 s** ;
+- plusieurs objectifs qui avancent dans cette fenêtre (un kill qui compte pour deux quêtes, kills
+  rapides) sont **regroupés** sur la ligne, un par objectif avec sa dernière valeur, au plus **3**
+  (les plus récents) — séparés par « · » ;
+- un message d'XP pendant la fenêtre est **ajouté** à la ligne (« Araignées : 3/10 · +5 XP
+  (Combat) ») ; hors fenêtre, il s'affiche seul comme avant.
+
+Les valeurs viennent du moteur **après** mutation : aucun compteur parallèle, aucun message pour un
+kill qui ne fait rien progresser. Le suivi d'une quête dans le journal n'est pas nécessaire. Le
+format reste `quest.objective-progress` de `messages.yml`.
+
 **Bourse dans le journal de quêtes** (`QuestJournalService`, issue #16) : le solde réel est affiché
 dans un emplacement **inerte** de la barre du haut de la liste (`BALANCE_SLOT`) et de la vue détail
 (`DETAIL_BALANCE_SLOT`) — l'objectif explicite étant que le solde soit lisible dans une interface

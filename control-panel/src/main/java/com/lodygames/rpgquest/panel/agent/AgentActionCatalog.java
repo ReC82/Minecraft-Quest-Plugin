@@ -438,6 +438,15 @@ public final class AgentActionCatalog {
                 "building.site.list", "building.definition.list");
         add("building.placement.history", Permission.BUILDING_READ, false, false,
                 "Journal des opérations d'un emplacement");
+        // Issue #246 — capturer une construction posée comme NOUVEAU bâtiment. L'aperçu n'écrit rien
+        // (lecture) ; la capture n'écrit que dans la bibliothèque — jamais dans le monde, jamais par-
+        // dessus un fichier — d'où BUILDING_WRITE, la permission de la génération. Sensible quand même :
+        // une confirmation explicite, et le jeton de l'aperçu.
+        add("building.placement.capture.preview", Permission.BUILDING_READ, false, false,
+                "Prévisualiser la capture d'une construction posée");
+        addSensitiveWrite("building.placement.capture", Permission.BUILDING_WRITE, false,
+                "Capturer la construction actuelle comme nouveau bâtiment",
+                "building.definition.list", "building.site.list");
         addContentWrite("npc.citizens.link", Permission.NPC_BIND_WRITE, "Lier un PNJ Citizens existant",
                 "npc.list", "npc.citizens.list");
         // Issue #226 — les trois suppressions de PNJ. Permission DÉDIÉE (NPC_DELETE) : créer et
@@ -1010,6 +1019,57 @@ public final class AgentActionCatalog {
                 if (!type.equals("building.placement.retarget.preview")) {
                     if (!token.matches("[0-9a-f]{0,32}")) {
                         return Validation.fail("Jeton d'aperçu invalide.");
+                    }
+                    params.put("token", token);
+                    params.put("confirm", "true");
+                }
+            }
+            // Issue #246 — le navigateur n'envoie que l'emplacement, des marges entières bornées et
+            // l'identité du nouveau bâtiment : jamais une emprise, un chemin ni un nom de fichier.
+            case "building.placement.capture.preview", "building.placement.capture" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                params.put("id", id);
+                for (String side : new String[] {"west", "east", "down", "up", "north", "south"}) {
+                    String raw = trim(form.get("margin_" + side));
+                    if (raw.isEmpty()) {
+                        raw = "0";
+                    }
+                    if (!raw.matches("-?[0-9]{1,2}") || Math.abs(Integer.parseInt(raw)) > 16) {
+                        return Validation.fail("Ajustement des bornes invalide (" + side
+                                + ") : un entier entre -16 et 16.");
+                    }
+                    params.put("margin_" + side, String.valueOf(Integer.parseInt(raw)));
+                }
+                String newId = trim(form.get("new_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!BUILDING_ID.matcher(newId).matches()) {
+                    return Validation.fail("Identifiant du nouveau bâtiment invalide (minuscules, "
+                            + "chiffres et « _ », 64 caractères au plus).");
+                }
+                String name = trim(form.get("name"));
+                if (name.isEmpty() || name.length() > 64 || name.contains("\n") || name.contains("\r")) {
+                    return Validation.fail("Nom du nouveau bâtiment requis, sur une ligne, 64 caractères "
+                            + "au plus.");
+                }
+                String description = trim(form.get("description")).replace("\r\n", "\n").replace('\r', '\n');
+                if (description.length() > 500) {
+                    return Validation.fail("Description trop longue (500 caractères au plus).");
+                }
+                String category = trim(form.get("category")).toLowerCase(java.util.Locale.ROOT);
+                if (!category.isEmpty() && !category.matches("[a-z0-9][a-z0-9_-]{0,31}")) {
+                    return Validation.fail("Catégorie invalide (minuscules, chiffres, « _ » ou « - »).");
+                }
+                params.put("new_id", newId);
+                params.put("name", name);
+                params.put("description", description);
+                params.put("category", category);
+                if (type.equals("building.placement.capture")) {
+                    String token = trim(form.get("token"));
+                    if (!token.matches("[0-9a-f]{32}")) {
+                        return Validation.fail("Jeton d'aperçu manquant : calculez l'aperçu de la capture "
+                                + "avant de confirmer.");
                     }
                     params.put("token", token);
                     params.put("confirm", "true");

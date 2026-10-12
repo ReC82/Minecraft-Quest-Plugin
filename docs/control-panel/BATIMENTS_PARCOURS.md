@@ -59,3 +59,18 @@ versions, réponse du modèle, reprise depuis l'historique, **« Copier le diagn
   dessinés en cubes. Nécessite le plugin de #273 (sinon l'écran le dit). Les coupes en caractères restent
   un outil de diagnostic.
 - Le brief reste stocké par le plugin sur l'emplacement (non destructif) ; il n'est plus modifiable depuis la fiche.
+
+## Garde-fous de non-régression (#270)
+
+| Exigence de #265 | Test automatique |
+|---|---|
+| Brouillons existants récupérés (Bibliothèque du Hub, `buildsite_0009`) | `WorkshopFlowTest.aSiteBriefAndItsDraftsAreImportedWithoutTouchingTheSite`, `BuildingProjectStoreTest` (migration d'une base #256) |
+| Reprise depuis l'ancien historique, sans IA | `WorkshopFlowTest.aPlanIsRecoveredFromAnActionIntoAProjectWithoutCallingTheAi` |
+| Même bâtiment sur plusieurs emplacements, retraits indépendants | `BuildingPlacementServiceTest.theSameBuildingOnTwoSitesGivesTwoIndependentPlacements` |
+| Aucun appel facturé en naviguant, en tournant ou en coupant l'aperçu | `WorkshopFlowTest.aPaidPlanBecomesAVersionAndNoNavigationCallsTheAiAgain`, `…aVerificationAlsoDrawsTheBuildingFromTheServerGrid` |
+| Aucun écrasement en bibliothèque | `WorkshopFlowTest.savingInTheLibraryNeverReplacesAnything`, `…aTakenLibraryNameBlocksSavingAndSaysWhatToDo` |
+| Anciennes adresses | `WorkshopFlowTest.oldGeneratorAddressesLeadToTheWorkshop`, `BuildingSitesPageTest.theOldGenerationAddressLeadsToTheWorkshop` |
+| Emplacement occupé : jamais supprimé | `BuildingSiteServiceTest.anOccupiedSiteIsNeverDeleted` (serveur), `BuildingLifecyclePageTest` (panel) |
+| L'ancien brief d'un emplacement n'est pas détruit | `BuildingSitesPageTest.onceTakenToTheWorkshopTheSiteLinksToItsProjectAndSendsNothingToTheServer` |
+
+Tests manuels : TC-284 à TC-289.

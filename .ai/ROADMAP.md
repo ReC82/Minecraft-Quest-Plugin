@@ -3217,3 +3217,16 @@ Tests manuels en attente: TC-279 (reprise du plan 7a1ab38d puis aperçu).
 Première étape à reprendre: TC-279.
 ```
 
+```text
+Date: 2026-10-12 (midi — #257 : CI GitHub Actions et validation adaptée)
+Branche de départ: fix/256-plan-drafts @ 8605201
+Branche de travail: chore/257-ci-github-actions
+Étapes terminées: workflow CI (3 suites parallèles + artefacts + scripts + CI OK), scripts/dev/check.sh
+  (tests ciblés + marqueurs par empreinte de code), validation adaptée dans les deux scripts de
+  déploiement (refus sur CI rouge), CLAUDE.md et docs/deployment/CI.md. Bogue d'ordre agent_action
+  (même seconde) révélé par la CI et corrigé.
+CI: verte sur ac88238 (run 38235781217, 5 min 23 s).
+Tests manuels en attente: TC-279 (#256) ; premier déploiement panel avec la nouvelle validation.
+Première étape à reprendre: TC-279 ; partir de chore/257-ci-github-actions pour les prochains lots.
+```
+

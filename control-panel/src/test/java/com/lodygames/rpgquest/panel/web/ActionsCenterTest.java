@@ -214,6 +214,54 @@ class ActionsCenterTest {
         assertEquals(404, get("/actions/deadbeef-0000-0000-0000-000000000000").statusCode());
     }
 
+    // ---- Issue #266 : ouvrir une action depuis sa ligne ---------------------------------
+
+    @Test
+    void everyDesktopRowOpensItsDetail() throws Exception {
+        start();
+        loginOwner();
+        String id = createAction("&type=player.list");
+        settleAgent(id, "SUCCESS", "7 joueurs");
+
+        String list = get("/actions?status=success").body();
+
+        assertTrue(list.contains("<tr class=\"act-row\" data-href=\"/actions/" + id + "?back="),
+                "la ligne entière mène à la fiche");
+        assertTrue(list.contains("<a class=\"act-label\" href=\"/actions/" + id + "?back="),
+                "le libellé est un vrai lien (clavier, lecteur d'écran)");
+        assertTrue(list.contains(">Voir le détail</a>"), "et le geste est dit en toutes lettres");
+    }
+
+    @Test
+    void theDetailLeadsBackToTheFilteredList() throws Exception {
+        start();
+        loginOwner();
+        String id = createAction("&type=player.list");
+        settleAgent(id, "SUCCESS", "7 joueurs");
+
+        String back = java.net.URLEncoder.encode("/actions?status=success&domain=all&q=joueurs",
+                java.nio.charset.StandardCharsets.UTF_8);
+        String detail = get("/actions/" + id + "?back=" + back).body();
+
+        assertTrue(detail.contains("href=\"/actions?status=success&amp;domain=all&amp;q=joueurs\""),
+                "retour à la liste filtrée, pas à une liste réinitialisée");
+        assertTrue(detail.contains("Retour à l&#39;historique") || detail.contains("Retour à l'historique"));
+    }
+
+    @Test
+    void aForeignBackLinkIsIgnored() throws Exception {
+        start();
+        loginOwner();
+        String id = createAction("&type=player.list");
+        for (String evil : new String[] {"https://exemple.invalid/", "//exemple.invalid", "/login",
+                "/actions?x=\"><script>"}) {
+            String detail = get("/actions/" + id + "?back="
+                    + java.net.URLEncoder.encode(evil, java.nio.charset.StandardCharsets.UTF_8)).body();
+            assertTrue(detail.contains("href=\"/actions\""), "repli sur l'historique pour : " + evil);
+            assertFalse(detail.contains("exemple.invalid"), evil);
+        }
+    }
+
     // ---- auth & permissions --------------------------------------------------------
 
     @Test

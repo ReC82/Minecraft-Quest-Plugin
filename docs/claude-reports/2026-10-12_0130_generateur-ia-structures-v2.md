@@ -6,15 +6,15 @@
 * Heure : 01:30 (heure locale, CEST)
 * Sujet : Générateur IA de structures V2 (#94) — audit architectural, primitives sémantiques,
   façades nommées, block states vérifiés, aperçu 2D et boucle de correction budgétée
-* Statut : **PARTIAL** — les six lots A à F sont codés et testés, mais rien n'est déployé à l'heure
-  où ces lignes sont écrites, et aucune génération réelle n'a été lancée
+* Statut : **PARTIAL** — les six lots A à F sont codés, testés et **déployés sur DEV avec empreintes
+  vérifiées**, mais aucune génération réelle n'a été lancée (consigne : aucun appel payant)
 * Branche Git : `feature/249-audit-architectural`
-* Commit actuel si disponible : voir la section « Commits » — le dernier commit du lot E est
-  postérieur à la rédaction de cette en-tête
+* Commit actuel si disponible : `feature/249-audit-architectural` → fusionnée dans la ligne
+  d'intégration DEV `feature/238-guard-dialogue-ux` (`00f2e9d`). Déployé : `1fb05da`
 * Début de la tâche : 2026-10-11 23:37:00 *(première action horodatée de la mission : création des
   sous-tickets #249 à #254. L'instant exact d'arrivée de la consigne n'a pas été capturé.)*
-* Fin de la tâche : à compléter en fin de session
-* Durée totale : à compléter en fin de session
+* Fin de la tâche : 2026-10-12 10:02:00 *(dernière action : envoi du rapport)*
+* Durée totale : 10:25:00
 
 ## Demande
 
@@ -459,7 +459,40 @@ produire un bâtiment où l'on peut entrer.
 Rien à défaire : aucune migration, aucune donnée écrite, aucun bloc du monde touché. Un `.schem`
 produit pendant un essai se retire à la main, avec sa définition `buildings/<id>.yml`.
 
-## Déploiement VeryGames
+## Déploiement VeryGames — EFFECTUÉ et vérifié
+
+| Question | Réponse | Preuve |
+|---|---|---|
+| JAR installé | **oui** | téléversement atomique puis renommage, 2 334 717 o en ligne (== local) |
+| Empreinte vérifiée | **oui, identique** | `d0ee358366e7a122bc14fa687a5fd88ce01d1979797811bdea9888c183edbd66`, obtenue en **retéléchargeant** le fichier depuis le serveur |
+| Contenu du JAR installé | **vérifié** | 43 classes `building/plan/`, dont `PlanPreview`, `BlockStateRules`, `Facade`, `BlockStates` |
+| Serveur en ligne | **oui** | `verygames-restart.sh` → retour `ONLINE`, plugin **activé**, Citizens et WorldEdit présents |
+| Panel déployé | **oui** | service `active (running)`, `/health` → `{"panel":"ONLINE"}`, JAR servi `4a4ea3cf…` identique à la distribution validée |
+| Backup préalable | **oui** | `rpgquest-20261012T071742Z-predeploy.jar`, 2 260 049 o, SHA-256 `e7c04ef9…` |
+
+Le backup est **plus petit** que le nouveau JAR (2 260 049 contre 2 334 717 octets). L'écart va dans
+le bon sens : ce lot ajoute du code. Un backup *plus gros* serait au contraire un signal d'arrêt.
+
+**Redémarrage** : deux contrôles consécutifs à 0 joueur, `save-all` puis `stop` RCON, attente de
+l'arrêt effectif, attente du retour en ligne. Aucune boucle de redémarrage.
+
+**Contournement TLS** : le transfert a d'abord échoué sur le certificat attendu
+(`curl: (60) SSL certificate problem: certificate has expired`). Vérifié avant d'agir : certificat
+**Let's Encrypt expiré le 11 octobre 2026 à 05:12 GMT**, sur l'hôte attendu — ni émetteur inconnu,
+ni erreur d'hôte, ni autre anomalie TLS. Le contournement a été appliqué **uniquement en ligne de
+commande**, via `VERYGAMES_FTP_EXTRA_CURL_ARGS`, et avec l'identité du serveur **épinglée**
+(`--pinnedpubkey sha256//…`) : seule l'expiration est ignorée, pas l'identité, et le transport est
+resté chiffré. Vérifié après coup : **aucune trace persistante** — rien dans Git (les deux seules
+mentions de `insecure` dans `scripts/` sont celles qui l'interdisent), rien d'actif en configuration
+(la ligne de `verygames.env` est restée commentée, elle est antérieure), rien dans les profils shell.
+
+> **À faire côté VeryGames** : renouveler le certificat. Tant qu'il est expiré, chaque déploiement de
+> JAR exigera une autorisation ponctuelle. `verygames-fetch-ca.sh` ne corrige pas une expiration.
+
+**Réserve honnête** : les journaux de démarrage du serveur **n'ont pas pu être inspectés** depuis
+cette machine (RCON n'expose pas les fichiers de log). Ce qui est établi, c'est que le plugin est
+*activé* et répond — pas que le démarrage soit exempt d'`ERROR`. À confirmer depuis le panel
+VeryGames.
 
 ### À transférer
 

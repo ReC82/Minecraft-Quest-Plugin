@@ -1030,3 +1030,18 @@ tr.act-row a.act-label:hover, tr.act-row a.act-label:focus { text-decoration: un
 .ws-tech summary { font-size: .9rem; }
 @media (max-width: 576px) { .ws-steps li { font-size: .85rem; padding: .3rem .55rem; } }
 
+
+/* Issue #273 — aperçu du bâtiment en 3D (SVG rendu par le serveur). */
+.ws-preview { margin-bottom: 1rem; }
+.ws-iso { margin: 0 0 .75rem; }
+.ws-iso .iso-view { display: block; width: 100%; max-width: 760px; height: auto; max-height: 70vh; margin: 0 auto;
+  background: var(--bs-tertiary-bg, #f8f9fa); border-radius: .5rem; }
+.ws-iso figcaption { margin-top: .4rem; font-size: .9rem; text-align: center; }
+.ws-iso-controls { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: center; margin-bottom: .75rem; }
+.ws-iso-controls label { display: flex; gap: .4rem; align-items: center; font-size: .9rem; }
+.ws-iso-controls select { max-width: 100%; }
+.ws-legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; list-style: none; padding: 0; margin: 0 0 .5rem;
+  font-size: .85rem; }
+.ws-legend li { display: flex; align-items: center; gap: .35rem; }
+.ws-swatch { width: .9rem; height: .9rem; border-radius: 2px; flex: none; }
+@media (max-width: 576px) { .ws-iso-controls label { width: 100%; } .ws-iso-controls select { flex: 1; } }

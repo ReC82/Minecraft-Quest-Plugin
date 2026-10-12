@@ -28,7 +28,8 @@ Parcours :
 
 1. **Atelier → Nouveau projet** : nom, « Décrivez le bâtiment souhaité », côté de l'entrée.
 2. **Créer un plan avec l'IA** (appel facturé, annoncé, protégé du double clic).
-3. **Vérifier le bâtiment** (gratuit) : le résultat s'affiche dans le projet, en français :
+3. **Vérifier le bâtiment** (gratuit) : le résultat s'affiche dans le projet, en français, avec
+   l'**aperçu du bâtiment en 3D** (tourner autour, couper au-dessus d'un niveau pour voir l'intérieur) :
    « Le bâtiment n'a pas de porte utilisable du côté de l'entrée », avec la piste de correction.
 4. **Améliorer avec l'IA** (facturé) : le motif est prérempli avec ce que la vérification a trouvé ;
    la réponse est une nouvelle version, l'ancienne reste.
@@ -54,5 +55,7 @@ versions, réponse du modèle, reprise depuis l'historique, **« Copier le diagn
 
 ## Limites connues de cette version
 
-- Pas encore d'aperçu visuel fidèle (#273) : les coupes en caractères restent un outil de diagnostic.
+- Aperçu en 3D (#273) : couleurs par matériau, pas de textures ; portes, vitres, escaliers et mobilier
+  dessinés en cubes. Nécessite le plugin de #273 (sinon l'écran le dit). Les coupes en caractères restent
+  un outil de diagnostic.
 - Le brief reste stocké par le plugin sur l'emplacement (non destructif) ; il n'est plus modifiable depuis la fiche.

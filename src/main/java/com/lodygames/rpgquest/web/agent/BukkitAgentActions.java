@@ -930,10 +930,21 @@ public final class BukkitAgentActions implements AgentActions {
                     p == null ? 0 : p.anchorZ(), p == null ? "" : p.front(),
                     v.codes(), v.warnings(),
                     slices(p == null ? List.of() : p.plans()),
-                    slices(p == null ? List.of() : p.elevations()));
+                    slices(p == null ? List.of() : p.elevations()),
+                    p == null ? null : voxels(p.voxels()));
         }).exceptionally(error -> new BuildingPlanPreviewView(false, "ERROR",
                 "Échec de l'aperçu du plan : " + rootName(error), "", "", 0, 0, 0, 0, 0, 0, 0, "",
                 List.of(), List.of(), List.of(), List.of()));
+    }
+
+    private static BuildingVoxelsView voxels(
+            com.lodygames.rpgquest.building.plan.PlanPreview.Voxels source) {
+        List<Map<String, String>> palette = new ArrayList<>(source.palette().size());
+        for (var entry : source.palette()) {
+            palette.add(Map.of("symbol", String.valueOf(entry.symbol()), "block", entry.block(),
+                    "role", String.valueOf(entry.role()), "shape", entry.shape()));
+        }
+        return new BuildingVoxelsView(palette, source.layers(), source.omittedReason());
     }
 
     private static List<BuildingSliceView> slices(

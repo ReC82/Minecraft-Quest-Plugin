@@ -13,6 +13,8 @@ import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.CheckState;
 import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.Status;
 import com.lodygames.rpgquest.panel.building.BuildingProject;
 import com.lodygames.rpgquest.panel.building.BuildingSiteView;
+import com.lodygames.rpgquest.panel.building.BuildingVoxels;
+import com.lodygames.rpgquest.panel.building.IsometricView;
 import com.lodygames.rpgquest.panel.building.PlanVerdictText;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.security.Session;
@@ -198,7 +200,7 @@ public final class WorkshopPages {
                               BuildingPlanDraft draft, CheckState audit, CheckState preview,
                               CheckState generate, List<Revision> revisions,
                               List<AgentActionRow> recoverable, String requestToken, String notice,
-                              String error, String conflictText, boolean idTaken) {
+                              String error, String conflictText, boolean idTaken, int isoView, int isoCut) {
     }
 
     /** Les étapes du parcours, dans l'ordre. */
@@ -222,6 +224,7 @@ public final class WorkshopPages {
         sb.append("<div class=\"card ws-main\"><div class=\"card-body\">");
         sb.append(mainCard(v, step));
         sb.append("</div></div>");
+        sb.append(previewCard(v, step));
 
         // ---- Le bâtiment souhaité : ouvert tant qu'il n'est pas décrit ---------------------------
         sb.append("<details class=\"npc-registry\"").append(step == Step.DESCRIBE ? " open" : "")
@@ -312,6 +315,81 @@ public final class WorkshopPages {
         return sb.toString();
     }
 
+    /**
+     * L'aperçu du bâtiment en 3D (issue #273) : la grille que le serveur construira, dessinée en SVG.
+     *
+     * <p>Orientation et coupe passent par un formulaire GET — aucun script (CSP), une URL partageable,
+     * aucune action envoyée au serveur pour tourner autour du bâtiment.</p>
+     */
+    static String previewCard(ProjectView v, Step step) {
+        BuildingPlanDraft d = v.draft();
+        if (d == null || !d.hasPlan() || step == Step.DESCRIBE) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<section class=\"card ws-preview\"><div class=\"card-body\">");
+        sb.append("<h2 class=\"h5\">").append(Icons.icon("box")).append("Aperçu du bâtiment</h2>");
+        CheckState preview = v.preview();
+        if (preview.status() == Status.NONE) {
+            sb.append("<p class=\"muted\">Le serveur dessine le bâtiment tel qu'il le construirait. Gratuit, "
+                    + "rien n'est posé.</p>").append(gestureForm(v, "preview", "Afficher l'aperçu", false));
+            return sb.append("</div></section>").toString();
+        }
+        if (preview.status() == Status.PENDING) {
+            sb.append("<p class=\"muted\">Aperçu en cours de calcul…</p><a class=\"btn btn-sm btn-outline-secondary\" "
+                    + "href=\"").append(projectUrl(v.project().id(), d.id())).append("\">")
+                    .append(Icons.icon("refresh")).append("Rafraîchir</a>");
+            return sb.append("</div></section>").toString();
+        }
+        BuildingVoxels voxels = BuildingVoxels.from(preview.details());
+        if (!voxels.present()) {
+            sb.append(Ui.banner("info", Http.esc(voxels.omittedReason())));
+            return sb.append("</div></section>").toString();
+        }
+        if (preview.stale()) {
+            sb.append(Ui.banner("warning", "Cet aperçu montre la version " + preview.version()
+                    + " du plan, pas la version actuelle. " + gestureForm(v, "preview", "Mettre à jour l'aperçu", false)));
+        }
+        String front = BuildingPlanPreview.from(preview.details()).front();
+        int view = v.isoView() >= 0 && v.isoView() < IsometricView.views() ? v.isoView()
+                : IsometricView.defaultView(front);
+        int top = voxels.sizeY() - 1;
+        int cut = v.isoCut() >= 0 && v.isoCut() < top ? v.isoCut() : top;
+        String title = v.project().name() + ", vu " + IsometricView.viewLabel(view)
+                + (cut < top ? ", coupé au niveau " + cut : "");
+        sb.append("<figure class=\"ws-iso\">").append(IsometricView.svg(voxels, view, cut, title))
+                .append("<figcaption class=\"muted\">Vu ").append(Http.esc(IsometricView.viewLabel(view)))
+                .append(cut < top ? ", tout ce qui dépasse le niveau " + cut + " est retiré" : "").append(". ")
+                .append(Http.esc(IsometricView.frontHint(front, view))).append("</figcaption></figure>");
+
+        sb.append("<form method=\"get\" action=\"").append(BASE).append("/project\" class=\"ws-iso-controls\">")
+                .append(hidden("id", v.project().id())).append(hidden("draft", d.id()));
+        sb.append("<label>Tourner <select name=\"view\">");
+        for (int i = 0; i < IsometricView.views(); i++) {
+            sb.append("<option value=\"").append(i).append('"').append(i == view ? " selected" : "").append('>')
+                    .append(Http.esc(IsometricView.viewLabel(i))).append("</option>");
+        }
+        sb.append("</select></label><label>Voir l'intérieur <select name=\"cut\">")
+                .append("<option value=\"-1\"").append(cut == top ? " selected" : "")
+                .append(">Bâtiment entier</option>");
+        for (int y = 0; y < top; y++) {
+            sb.append("<option value=\"").append(y).append('"').append(y == cut ? " selected" : "")
+                    .append(">Couper au-dessus du niveau ").append(y).append("</option>");
+        }
+        sb.append("</select></label><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">Afficher"
+                + "</button></form>");
+
+        sb.append("<ul class=\"ws-legend\">");
+        for (IsometricView.Swatch swatch : IsometricView.legend(voxels, 10)) {
+            sb.append("<li><svg class=\"ws-swatch\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><rect width=\"10\" "
+                    + "height=\"10\" fill=\"").append(swatch.color()).append("\"/></svg>")
+                    .append(Http.esc(swatch.label())).append("</li>");
+        }
+        sb.append("</ul><p class=\"field-help\">Vue simplifiée : une couleur par matériau, pas les textures du jeu ; "
+                + "portes, vitres, escaliers et mobilier sont dessinés comme des cubes, les lumières comme de "
+                + "petits cubes jaunes. Chaque cube est un vrai bloc du bâtiment que le serveur construirait.</p>");
+        return sb.append("</div></section>").toString();
+    }
+
     /** Étape « Vérifier » : pas encore vérifié, vérification en cours, ou à corriger. */
     private static String checkCard(ProjectView v) {
         StringBuilder sb = new StringBuilder();
@@ -375,8 +453,6 @@ public final class WorkshopPages {
             sb.append("<p class=\"field-help\">Le bâtiment rejoint la bibliothèque. Aucun bloc n'est posé "
                     + "dans le monde : vous choisirez ensuite un emplacement.</p>");
         }
-        sb.append("<p class=\"field-help\">Un aperçu visuel du bâtiment arrive dans une prochaine version "
-                + "(#273). En attendant, les coupes techniques sont dans « Détails techniques ».</p>");
         if (divergence.isPresent() || !verdict.warnings().isEmpty()) {
             sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Améliorer avec l'IA"
                     + "</summary>").append(correctionForm(v, correctionReason(v))).append("</details>");
@@ -595,7 +671,7 @@ public final class WorkshopPages {
                 .append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\" name=\"_action\" "
                         + "value=\"audit\">Vérifier ce texte</button>")
                 .append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\" name=\"_action\" "
-                        + "value=\"preview\">Calculer les coupes</button></div></form></details>");
+                        + "value=\"preview\">Calculer l'aperçu et les coupes</button></div></form></details>");
         return sb.toString();
     }
 

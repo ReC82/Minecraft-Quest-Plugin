@@ -7977,3 +7977,13 @@ Les quatre tables ajoutées sont ignorées par l'ancienne version ; elles peuven
 `PENDING MANUAL VALIDATION` : depuis `/buildings/plan?site=buildsite_0009`, reprendre le plan de
 l'action `7a1ab38d…` (« Récupérer un plan… » ou fiche de l'action), constater le verdict repris et
 l'avertissement « en écart avec le brief », puis **Prévisualiser**.
+
+### Déploiement effectué (2026-10-12 12:05)
+
+Commit `f5f8eaf` (`fix/256-plan-drafts`), depuis le worktree propre. Sauvegarde
+`/var/lib/plugadmin/control-panel.db.bak-256-20261012-120515` ; release précédente
+`/opt/plugadmin/releases/20261012-120515/`. `/health` → `{"panel":"ONLINE"}` ; JAR servi d'empreinte
+identique à la distribution construite ; classes `BuildingPlanDraftStore`, `BuildingPlanWorkbench`,
+`BriefLevels` présentes ; `/buildings/plan` → `303 /login` ; quatre tables `building_plan_*`
+créées. **Aucun JAR Minecraft transféré.**
+

@@ -617,6 +617,36 @@ class BuildingPlacementServiceTest {
     }
 
     /**
+     * Issue #270 (#265) : un bâtiment se conçoit une fois et se pose plusieurs fois. Le même
+     * bâtiment de la bibliothèque, posé sur deux emplacements, donne deux placements indépendants —
+     * chacun avec SA sauvegarde du terrain — et retirer l'un ne touche pas à l'autre.
+     */
+    @Test
+    void theSameBuildingOnTwoSitesGivesTwoIndependentPlacements() throws Exception {
+        BuildingSite first = site(Facing.NORTH);
+        BuildingSite second = sites.create("world_hub", new BuildingSiteAnchor(500, 70, 500),
+                Facing.EAST, "Loin", "Lody").get(TIMEOUT, TimeUnit.SECONDS).site();
+
+        BuildingPlacementService.PlaceResult a = place(first.id());
+        BuildingPlacementService.PlaceResult b = place(second.id());
+        assertTrue(a.placed(), a.error());
+        assertTrue(b.placed(), b.error());
+        assertEquals(2, service.all().size());
+        assertFalse(a.placement().backupSchematic().equals(b.placement().backupSchematic()),
+                "chaque pose sauvegarde son propre terrain");
+
+        BuildingPlacementService.RollbackResult undone =
+                service.rollback(first.id()).get(TIMEOUT, TimeUnit.SECONDS);
+        assertTrue(undone.restored(), undone.error());
+        assertEquals(a.placement().backupSchematic(), gateway.lastRestored, "c'est le terrain du PREMIER");
+        assertEquals(SiteStatus.EMPTY, sites.find(first.id()).orElseThrow().status());
+        assertEquals(SiteStatus.OCCUPIED, sites.find(second.id()).orElseThrow().status(),
+                "le second bâtiment reste posé");
+        assertTrue(service.at(second.id()).isPresent());
+        assertEquals(1, placementRepository.loadAll().get(TIMEOUT, TimeUnit.SECONDS).size());
+    }
+
+    /**
      * Un emplacement marqué occupé sans placement enregistré est signalé, pas écrasé.
      *
      * <p>C'est un état incohérent : poser par-dessus reviendrait à écraser quelque chose dont on ne

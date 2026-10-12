@@ -5330,3 +5330,28 @@ TC-260 (#185).
 3.  Au clavier : Tab jusqu'au libellé, Entrée → la fiche s'ouvre.
 4.  Sur la fiche, **Retour à l'historique** : la liste revient **avec le filtre et la recherche**.
 5.  Ouvrir un audit de plan lié à un brouillon : le bandeau propose **Retour à ce brouillon**.
+
+### TC-286 — Créer un bâtiment dans l'Atelier, sans emplacement, et reprendre la Bibliothèque du Hub (issue #267, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de #267. **Durée** : 10 minutes. Étape 4 = un appel IA facturé : à faire
+**seulement** si le propriétaire le décide ; tout le reste est gratuit.
+
+1.  Menu **Bâtiments** : trois entrées, dans l'ordre **Atelier de création**, **Bibliothèque**,
+    **Emplacements**.
+2.  **Atelier** : la section « Reprendre un travail commencé sur un emplacement » propose
+    `buildsite_0009` (Bibliothèque du Hub) avec sa description et **2 plan(s)**. Cliquer **Reprendre
+    dans l'Atelier** : le projet s'ouvre, description copiée, entrée « Ouest », plans rattachés. La
+    fiche de `buildsite_0009` (Emplacements) n'a pas changé. Recliquer depuis l'Atelier : aucun second
+    projet.
+3.  Dans le projet repris : changer le **nom technique** en `bibliotheque_du_hub_v2`, enregistrer.
+    Ouvrir « Versions du plan » : les deux brouillons sont là. Reprendre celui de l'audit `7a1ab38d` :
+    l'étape « Enregistrer » est mise en avant, avec l'avertissement « ne correspond pas tout à fait à
+    votre description » (2 niveaux demandés, 1 construit).
+4.  (Facultatif, facturé) **Nouveau projet** « Tour de guet », décrire, **Créer un plan avec l'IA** ;
+    recharger la page : aucun nouvel appel.
+5.  **Vérifier le bâtiment** : retour sur le projet, « Vérification en cours », puis **Rafraîchir** :
+    résultat en français, sans code dans la carte principale.
+6.  **Détails techniques → Copier le diagnostic** : coller dans un éditeur — projet, version, résultat,
+    plan ; aucune clé.
+7.  Ancienne adresse `/buildings/plan?site=buildsite_0009` : on arrive sur le projet repris.
+8.  Sur téléphone : étapes lisibles, un bouton principal par écran.

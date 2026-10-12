@@ -87,17 +87,15 @@ public final class BriefLevels {
         if (floors >= need && reachable >= need) {
             return Optional.empty();
         }
+        // #265 : en français courant — ni « brief », ni « grille », ni « audit ».
         if (floors < need) {
-            return Optional.of("Écart avec le brief : le brief demande " + need + " niveaux, mais "
-                    + "la grille construite n'en compte que " + floors + " (" + reachable
-                    + " atteignable(s)). L'audit ne connaît pas le brief : il ne peut pas refuser "
-                    + "un étage qui n'existe pas. Il manque un plancher praticable — un sol "
-                    + "couvrant au moins le quart de l'emprise, avec deux blocs libres au-dessus — "
-                    + "relié au rez-de-chaussée par un escalier ou une échelle.");
+            return Optional.of("Votre description demande " + need + " niveaux (rez-de-chaussée "
+                    + "compris), mais le plan n'en construit que " + floors + ". Il manque un étage "
+                    + "complet, relié au rez-de-chaussée par un escalier ou une échelle.");
         }
-        return Optional.of("Écart avec le brief : le brief demande " + need + " niveaux, la grille "
-                + "en compte " + floors + " mais seulement " + reachable + " atteignable(s) depuis "
-                + "le rez-de-chaussée.");
+        return Optional.of("Votre description demande " + need + " niveaux : le plan en construit "
+                + floors + ", mais seulement " + reachable + " accessible(s) depuis le rez-de-chaussée. "
+                + "Il manque un escalier ou une échelle.");
     }
 
     private static int number(String raw) {

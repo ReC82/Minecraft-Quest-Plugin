@@ -32,7 +32,7 @@ class BriefLevelsTest {
 
         assertTrue(warning.isPresent(), "un étage absent ne doit plus passer en silence");
         assertTrue(warning.get().contains("2 niveaux"), warning.get());
-        assertTrue(warning.get().contains("n'en compte que 1"), warning.get());
+        assertTrue(warning.get().contains("n'en construit que 1"), warning.get());
     }
 
     @Test
@@ -44,7 +44,7 @@ class BriefLevelsTest {
     @Test
     void anUnreachableUpperLevelIsReportedToo() {
         var warning = BriefLevels.divergence(HUB_LIBRARY, Map.of("floors", 2, "reachableFloors", 1));
-        assertTrue(warning.orElseThrow().contains("seulement 1 atteignable"), warning.get());
+        assertTrue(warning.orElseThrow().contains("seulement 1 accessible"), warning.get());
     }
 
     @Test

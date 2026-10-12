@@ -61,12 +61,15 @@ public final class Layout {
                 // précisément pour que la bibliothèque vienne s'y ranger sans déménagement : c'est
                 // ce qui arrive ici, et aucun lien déjà partagé n'est cassé.
                 //
-                // « Emplacements » d'abord, « Bibliothèque » ensuite : c'est l'ordre du parcours
-                // réel — on part d'un emplacement marqué en jeu, puis on lui choisit un bâtiment.
+                // Issue #265 — trois modules distincts, dans l'ordre du parcours : on CRÉE un
+                // bâtiment dans l'Atelier (sans emplacement), on le RANGE dans la bibliothèque, puis
+                // on le POSE sur un emplacement. Un bâtiment se conçoit une fois et se pose partout.
                 new NavGroup("Bâtiments", List.of(
-                        new NavItem("Emplacements", "/buildings/sites", "world",
-                                Permission.BUILDING_READ, true),
+                        new NavItem("Atelier de création", "/buildings/workshop", "box",
+                                Permission.AI_USE, true),
                         new NavItem("Bibliothèque", "/buildings/library", "world",
+                                Permission.BUILDING_READ, true),
+                        new NavItem("Emplacements", "/buildings/sites", "world",
                                 Permission.BUILDING_READ, true))),
                 new NavGroup("Serveur", List.of(
                         new NavItem("Exploitation", "/ops", "server", Permission.OPS_VIEW, true))),

@@ -10,10 +10,12 @@ import java.util.Map;
  * {@link QuestYaml} et {@link StoryYaml} dans le garde-fou round-trip (issue #46). Gère :
  * indentation par espaces, {@code clé: valeur}, blocs imbriqués (map / liste), listes {@code - }
  * (scalaire ou map en ligne {@code - clé: valeur}), scalaires entre guillemets doubles/simples,
- * {@code true}/{@code false}/{@code null}, commentaires {@code #} hors chaînes.
+ * {@code true}/{@code false}/{@code null}, commentaires {@code #} hors chaînes, et listes en ligne
+ * de scalaires {@code [a, "b c"]} (issue #240 : c'est la forme que {@link QuestYaml} émet pour un
+ * champ liste, et la relire comme du texte cassait le garde-fou round-trip).
  *
  * <p>Ce n'est <strong>pas</strong> un parseur YAML conforme : pas d'ancres, pas de scalaires
- * repliés, pas de flow-maps {@code {a: 1}}. Un fichier écrit ailleurs avec ces constructions se
+ * repliés, pas de flow-maps {@code {a: 1}}, pas de listes en ligne imbriquées. Un fichier écrit ailleurs avec ces constructions se
  * relira mal — l'éditeur le détecte via la comparaison round-trip et refuse d'écraser à l'aveugle.</p>
  */
 public final class MiniYaml {
@@ -129,7 +131,51 @@ public final class MiniYaml {
         if (s.equals("null") || s.equals("~")) {
             return null;
         }
+        if (s.length() >= 2 && s.charAt(0) == '[' && s.endsWith("]")) {
+            List<Object> items = flowSequence(s.substring(1, s.length() - 1));
+            if (items != null) {
+                return items;
+            }
+        }
         return s;
+    }
+
+    /**
+     * {@code a, "b, c", 'd'} → trois scalaires. {@code null} si la liste n'est pas une simple liste
+     * de scalaires (imbrication, guillemet non fermé) : le texte est alors rendu tel quel, et le
+     * garde-fou round-trip signale la divergence au lieu qu'on devine.
+     */
+    private static List<Object> flowSequence(String body) {
+        List<Object> out = new ArrayList<>();
+        if (body.isBlank()) {
+            return out;
+        }
+        StringBuilder item = new StringBuilder();
+        boolean inD = false;
+        boolean inS = false;
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (c == '"' && !inS && (i == 0 || body.charAt(i - 1) != '\\')) {
+                inD = !inD;
+            } else if (c == '\'' && !inD) {
+                inS = !inS;
+            } else if (!inD && !inS && (c == '[' || c == ']' || c == '{' || c == '}')) {
+                return null;
+            } else if (c == ',' && !inD && !inS) {
+                if (item.toString().isBlank()) {
+                    return null;
+                }
+                out.add(scalar(item.toString()));
+                item.setLength(0);
+                continue;
+            }
+            item.append(c);
+        }
+        if (inD || inS || item.toString().isBlank()) {
+            return null;
+        }
+        out.add(scalar(item.toString()));
+        return out;
     }
 
     private static String unquote(String s) {

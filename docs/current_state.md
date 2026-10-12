@@ -736,6 +736,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `PENDING MANUAL VALIDATION` : **aucun appel payant n'a été émis** — toute la chaîne est éprouvée
   sur des modèles scriptés. L'enchaînement réel prompt → plan → audit → correction, et le rendu en
   jeu d'une V2, restent à valider. Le bâtiment V1 de `buildsite_0012` n'a **pas** été touché.
+- **Quêtes DISCOVER_WAYPOINT enregistrables depuis PlugAdmin** *(issue #240, 2026-10-12)* — le
+  relecteur `MiniYaml` lisait `worlds: [wild]` (forme émise par l'éditeur et lue par le plugin) comme
+  un texte : le garde-fou round-trip refusait l'enregistrement. Il lit désormais les listes en ligne
+  de scalaires, sans assouplir le garde-fou. Le champ « Mondes » propose une case par monde chargé.
+  Panel seul, **non déployé**. `PENDING MANUAL VALIDATION` : TC-282 puis TC-260.
 - **Suppression d'un dialogue depuis PlugAdmin** *(issue #248, 2026-10-12)* — `/dialogues/delete`,
   y compris pour un dialogue **hors source**. Aperçu fondé sur la source **et** le dernier relevé
   `dialogue.list` (refus « vérification incomplète » au-delà de 15 min) ; PNJ lié et `OPEN_DIALOGUE`

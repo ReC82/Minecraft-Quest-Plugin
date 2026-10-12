@@ -5274,3 +5274,19 @@ sauvegarde) — à ne faire que si ce nettoyage est souhaité.
 9.  **Restauration** (si besoin) : recopier le fichier de `RPGQuest/content-backups/<horodatage>-dialogues/`
     dans `RPGQuest/dialogues/`, puis déclencher un rechargement du contenu depuis PlugAdmin (ou,
     pour un dialogue source, le republier depuis le panel).
+
+### TC-282 — Créer une quête DISCOVER_WAYPOINT depuis PlugAdmin (issue #240, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de #240 déployé (panel seul, aucun JAR). **Durée** : 5 minutes. Débloque
+TC-260 (#185).
+
+1.  `/quests/new` → objectif **Découvrir des waypoints**. Le champ « Mondes » propose **une case par
+    monde chargé** (ex. `world_hub`, `wild`) et un champ « Autre(s) ».
+2.  Créer `rpgquest:test_discover_waypoints` : quantité 2, cocher `wild`, règle `NEW_ONLY` →
+    **Vérifier** : aucune anomalie. **Enregistrer** : plus de « Divergence de sérialisation ».
+3.  Rouvrir la quête : `wild` est coché, `world_hub` ne l'est pas, la règle est `NEW_ONLY`.
+4.  Cocher aussi `world_hub`, passer en `INCLUDE_EXISTING`, enregistrer, rouvrir : les deux mondes et
+    la règle sont conservés.
+5.  Saisir un monde inconnu dans « Autre(s) » : **Vérifier** l'avertit (« hors des valeurs
+    connues »), sans bloquer.
+6.  Reprendre TC-260 à partir de cette quête.

@@ -8017,3 +8017,21 @@ Après feu vert du propriétaire uniquement (tests manuels #256 / V2 en cours). 
 ### Validation
 
 TC-280.
+
+## 2026-10-12 — Quêtes DISCOVER_WAYPOINT enregistrables depuis PlugAdmin (#240) — **NON déployé**
+
+### Changement
+
+Panel seul. Le garde-fou round-trip refusait toute quête `DISCOVER_WAYPOINT` avec un monde : le
+relecteur du panel lisait `worlds: [wild]` comme un texte. Il lit désormais les listes en ligne de
+scalaires (garde-fou inchangé). Le champ « Mondes » propose les mondes chargés du serveur.
+
+### Action serveur
+
+**Aucune côté Minecraft** : pas de JAR. Redéployer le panel (`scripts/plugadmin/deploy.sh`).
+Aucune migration.
+
+### Déploiement
+
+Après feu vert du propriétaire. Validation : TC-282, puis TC-260.
+

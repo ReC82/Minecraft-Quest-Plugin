@@ -5393,3 +5393,14 @@ confirmer pendant ce test.
 5.  `/buildings/sites?place=inexistant` : aucun bandeau, aucune présélection.
 6.  Sur téléphone : fiche lisible, bouton « Placer sur un emplacement » accessible.
 
+### TC-289 — L'ancre décrite pour chaque bâtiment de la bibliothèque (issue #269, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de #269. **Durée** : 2 minutes. Lecture seule.
+
+1.  `/buildings/library` → **Rafraîchir** → ouvrir la **hutte de test** : « Ancre » dit « Le repère de
+    l'emplacement tombe au milieu de la façade d'entrée, 1 bloc au-dessus du bas du bâtiment… »,
+    suivi de `3 / 1 / 0`.
+2.  Ouvrir un bâtiment produit par l'IA (par exemple la Bibliothèque du Hub V1) : « … tombe au centre du
+    bâtiment, au niveau du bas du bâtiment. »
+3.  Nulle part la phrase « centre de la porte, au niveau du sol » n'est affichée pour tous.
+

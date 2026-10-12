@@ -330,3 +330,30 @@ des valeurs sans expliquer la différence.
 C'est le troisième écart prompt ↔ moteur de la nuit, et les trois ont la même
 forme : chaque côté était cohérent avec lui-même. Aucun test ne pouvait les
 attraper — seulement la relecture croisée des clés annoncées contre les clés lues.
+
+## 02:32 — Validation complète VERTE
+
+`./gradlew test build` depuis le worktree propre `/srv/rpgquest/worktree-nuit` @ `83d65c1`.
+
+| Module | Tests | Classes | Échecs | Erreurs |
+|---|---|---|---|---|
+| plugin | 2 384 | 225 | 0 | 0 |
+| panel | 1 336 | 103 | 0 | 0 |
+| **total** | **3 720** | **328** | **0** | **0** |
+
+`BUILD SUCCESSFUL`. JAR produit : `build/libs/rpgquest-0.1.0-SNAPSHOT.jar`, 2 334 717 octets.
+
+Il a fallu trois lancements, et les deux premiers ont échoué pour des raisons que
+je consigne telles quelles :
+
+1. le premier a été **invalidé par ma propre erreur** — la version du propriétaire
+   de `crystal_hunt.yml` commitée par mégarde faisait échouer
+   `CrystalHuntIntegrationTest` ;
+2. le second a buté sur `:control-panel:compileJava` : `getOrDefault` refuse une
+   valeur par défaut typée sur une `Map<?, ?>` à clé capturée. Le module panel
+   n'avait jamais été compilé avec le lot E — les tests ciblés que j'avais lancés
+   précédaient son écriture.
+
+La leçon est la même dans les deux cas : **compiler les deux modules après chaque
+lot**, et ne pas laisser un module hors du cycle sous prétexte que les tests
+ciblés de l'autre passent.

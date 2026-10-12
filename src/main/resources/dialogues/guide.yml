@@ -133,6 +133,45 @@ nodes:
           - type: START_QUEST
             quest: rpgquest:kit_tier2
           - type: CLOSE
+      # Issue #218 : paliers 3 à 5, proposés d'après la variable STARTER_KIT_TIER (le palier
+      # réellement débloqué, comme CLAIM_TIER_1 pour les claims) — jamais deux paliers à la fois,
+      # jamais un palier sauté (la récompense « grant-tier » le refuserait de toute façon).
+      - text: "Commencer l'amélioration"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: STARTER_KIT_TIER
+            value: "2"
+          - type: QUEST_STATE
+            quest: rpgquest:kit_tier3
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:kit_tier3
+          - type: CLOSE
+      - text: "Commencer l'amélioration"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: STARTER_KIT_TIER
+            value: "3"
+          - type: QUEST_STATE
+            quest: rpgquest:kit_tier4
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:kit_tier4
+          - type: CLOSE
+      - text: "Commencer l'amélioration"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: STARTER_KIT_TIER
+            value: "4"
+          - type: QUEST_STATE
+            quest: rpgquest:kit_tier5
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:kit_tier5
+          - type: CLOSE
       - text: "J'ai des matériaux"
         conditions:
           - type: HAS_PENDING_DELIVERY

@@ -1,0 +1,34 @@
+# Issue #218 — montée au palier 5 du kit de départ (« Vétéran du Wild »). Les matériaux suivent les
+# recettes vanilla des NOUVEAUTÉS du palier, jamais la reconstruction complète du kit ; aucun fer.
+# Le palier n'est débloqué que par la récompense « rpgadmin kit grant-tier », qui refuse de sauter un
+# palier ; la variable STARTER_KIT_TIER en garde la trace et sert aux conditions du Guide.
+id: rpgquest:kit_tier5
+title: "<gold>Vétéran du Wild</gold>"
+description: >
+  <gray>Rapporte au Guide de quoi améliorer ton équipement de secours : huit cuirs pour un plastron, et trois blés pour un pain de plus. Tu peux lui
+  donner tes matériaux au fur et à mesure : ce qui est remis est gardé en sécurité, même si tu
+  meurs.</gray>
+category: kit
+icon: LEATHER_CHESTPLATE
+giver: guide
+repeatable: false
+prerequisites:
+  - rpgquest:kit_tier4
+
+steps:
+  - id: rapporter_les_materiaux
+    objectives:
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: LEATHER
+        amount: 8
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: WHEAT
+        amount: 3
+
+rewards:
+  - type: COMMAND
+    command: "rpgadmin kit grant-tier %player% 5"
+  - type: EXPERIENCE
+    amount: 50

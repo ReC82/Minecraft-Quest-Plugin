@@ -336,6 +336,48 @@ starter-tool-kit:
         - WOODEN_AXE
         - LEATHER_BOOTS
         - BREAD
+    # Paliers 3 à 5 (issue #218, 13/10/2026) : outils en pierre complets, armure de cuir complète,
+    # un peu plus de pain — jamais de fer. Chaque entrée = un exemplaire = un emplacement libre exigé.
+    - level: 3
+      name: "Explorateur"
+      unlock-quest: rpgquest:kit_tier3
+      items:
+        - STONE_SWORD
+        - STONE_PICKAXE
+        - WOODEN_SHOVEL
+        - STONE_AXE
+        - LEATHER_BOOTS
+        - LEATHER_HELMET
+        - BREAD
+        - BREAD
+    - level: 4
+      name: "Aventurier"
+      unlock-quest: rpgquest:kit_tier4
+      items:
+        - STONE_SWORD
+        - STONE_PICKAXE
+        - STONE_SHOVEL
+        - STONE_AXE
+        - LEATHER_BOOTS
+        - LEATHER_HELMET
+        - LEATHER_LEGGINGS
+        - BREAD
+        - BREAD
+    - level: 5
+      name: "Vétéran du Wild"
+      unlock-quest: rpgquest:kit_tier5
+      items:
+        - STONE_SWORD
+        - STONE_PICKAXE
+        - STONE_SHOVEL
+        - STONE_AXE
+        - LEATHER_BOOTS
+        - LEATHER_HELMET
+        - LEATHER_LEGGINGS
+        - LEATHER_CHESTPLATE
+        - BREAD
+        - BREAD
+        - BREAD
   # Conservé pour compatibilité : utilisé UNIQUEMENT si « tiers: » ci-dessus est absent.
   items:
     - WOODEN_SWORD

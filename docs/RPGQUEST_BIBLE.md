@@ -2893,8 +2893,23 @@ kit que le joueur récupère auprès du Guide après une mort. Implémentation :
     ⚠️ Les **graines** sont une décision de gameplay assumée, pas une erreur : produire du blé
     suppose déjà un endroit sécurisé pour cultiver, alors que des graines se trouvent immédiatement
     dans le Wild. **Ne pas « corriger » en `WHEAT`.**
--   **Paliers 3 à 5** : l'architecture les accepte (il suffit de les déclarer en configuration), mais
-    leur contenu exact **n'est pas décidé** et n'a donc pas été inventé.
+-   **Paliers 3 à 5** (13/10/2026, consigne « terminer la progression ») — même règle : la quête
+    demande **exactement les recettes vanilla des nouveautés** du palier, jamais la reconstruction du
+    kit ; pain demandé en **blé** à partir du palier 3 ; **aucun fer, or, diamant ni netherite** :
+
+    | Palier | Quête | Nouveautés | À remettre au Guide |
+    |---|---|---|---|
+    | 3 « Explorateur » | `rpgquest:kit_tier3` | pioche et hache en pierre, casque en cuir, 1 pain | 4 `STICK`, 6 `COBBLESTONE`, 5 `LEATHER`, 3 `WHEAT` |
+    | 4 « Aventurier » | `rpgquest:kit_tier4` | pelle en pierre, jambières en cuir | 2 `STICK`, 1 `COBBLESTONE`, 7 `LEATHER` |
+    | 5 « Vétéran du Wild » | `rpgquest:kit_tier5` | plastron en cuir, 1 pain | 8 `LEATHER`, 3 `WHEAT` |
+
+    Chaque quête exige la précédente (`prerequisites`) et se termine par la récompense
+    `rpgadmin kit grant-tier %player% <n>`, qui refuse de sauter un palier. Le Guide la propose
+    d'après la variable `STARTER_KIT_TIER` (`VARIABLE_EQUALS` 2, 3 puis 4) — le même principe que
+    `CLAIM_TIER_1` pour Jo, et une progression **indépendante** de celle des claims. Le palier 5
+    occupe 11 emplacements (calculés du kit, jamais codés en dur). **Serveur déjà en service** : son
+    `config.yml` ne reçoit pas les nouveaux paliers d'un JAR — les ajouter à `starter-tool-kit.tiers`
+    lors du déploiement (copie du `config.yml` fourni).
 -   **Palier persistant** : variable joueur `STARTER_KIT_TIER` (absente = palier 1). Survit à la
     mort, à la reconnexion et au redémarrage. `/rpgadmin player resetnew` (et `resetfull`) la remet
     à zéro avec les autres variables.

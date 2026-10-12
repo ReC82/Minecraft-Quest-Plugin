@@ -164,4 +164,66 @@ class ConfigFileCompleterTest {
         YamlConfiguration result = YamlConfiguration.loadConfiguration(file.toFile());
         assertEquals(ConfigFileCompleter.CURRENT_VERSION, result.getInt("config-version"));
     }
+    // ---- #218 : paliers ajoutés par niveau ; #12 : anciens défauts du signal PNJ ------------------
+
+    /** La forme RÉELLE du config.yml du serveur DEV au 13/10/2026 : paliers 1 et 2, signal par défaut. */
+    private static final String SERVER_LIKE = """
+            starter-tool-kit:
+              enabled: true
+              tiers:
+              - level: 1
+                name: Nouveau venu
+                items:
+                - WOODEN_SWORD
+              - level: 2
+                name: Mon palier deux
+                unlock-quest: rpgquest:kit_tier2
+                items:
+                - DIAMOND_SWORD
+            npc-hints:
+              enabled: true
+              period-ticks: 20
+              height-offset: 2.2
+            """;
+
+    private InputStream bundledTemplate() {
+        return getClass().getResourceAsStream("/config.yml");
+    }
+
+    @Test
+    void missingKitTiersAreAddedByLevelAndExistingOnesAreUntouched() throws Exception {
+        Path file = writeConfig(SERVER_LIKE);
+
+        assertTrue(ConfigFileCompleter.complete(file, bundledTemplate(), NOPLogger.NOP_LOGGER));
+
+        YamlConfiguration result = YamlConfiguration.loadConfiguration(file.toFile());
+        var tiers = result.getMapList("starter-tool-kit.tiers");
+        assertEquals(List.of(1, 2, 3, 4, 5), tiers.stream().map(t -> ((Number) t.get("level")).intValue()).toList());
+        assertEquals("Mon palier deux", tiers.get(1).get("name"), "un palier présent n'est jamais modifié");
+        assertEquals(List.of("DIAMOND_SWORD"), tiers.get(1).get("items"));
+        assertEquals("rpgquest:kit_tier3", tiers.get(2).get("unlock-quest"));
+    }
+
+    @Test
+    void retiredDefaultsMoveButACustomValueStays() throws Exception {
+        Path file = writeConfig(SERVER_LIKE);
+        ConfigFileCompleter.complete(file, bundledTemplate(), NOPLogger.NOP_LOGGER);
+        YamlConfiguration result = YamlConfiguration.loadConfiguration(file.toFile());
+        assertEquals(0.6, result.getDouble("npc-hints.height-offset"), 1e-9, "2.2 était l'ancien défaut");
+        assertEquals(10, result.getInt("npc-hints.period-ticks"), "20 était l'ancien défaut");
+
+        Path custom = writeConfig(SERVER_LIKE.replace("height-offset: 2.2", "height-offset: 1.1"));
+        ConfigFileCompleter.complete(custom, bundledTemplate(), NOPLogger.NOP_LOGGER);
+        assertEquals(1.1, YamlConfiguration.loadConfiguration(custom.toFile()).getDouble("npc-hints.height-offset"),
+                1e-9, "une valeur choisie par l'administrateur n'est jamais touchée");
+    }
+
+    @Test
+    void theKeyedMergeIsIdempotent() throws Exception {
+        Path file = writeConfig(SERVER_LIKE);
+        ConfigFileCompleter.complete(file, bundledTemplate(), NOPLogger.NOP_LOGGER);
+
+        assertFalse(ConfigFileCompleter.complete(file, bundledTemplate(), NOPLogger.NOP_LOGGER),
+                "second passage : rien à écrire");
+    }
 }

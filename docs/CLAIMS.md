@@ -539,7 +539,16 @@ uniquement** (jamais à `/rpgquest reload`), les sections/clés apparues
 depuis avec leurs valeurs par défaut actuelles — `config.ConfigFileCompleter`,
 appelé par `ConfigService#start()` juste après `saveDefaultConfig()` :
 
--   **jamais** une valeur déjà présente n'est modifiée, quelle qu'elle soit ;
+-   **jamais** une valeur déjà présente n'est modifiée — à une exception
+    près, explicite et listée dans `RETIRED_DEFAULTS` : une valeur qui porte
+    **encore exactement l'ancienne valeur par défaut livrée** passe à la
+    nouvelle (aujourd'hui `npc-hints.height-offset` 2.2 → 0.6 et
+    `npc-hints.period-ticks` 20 → 10, issue #12) ; toute autre valeur, donc
+    tout choix d'administrateur, reste intacte ;
+-   les **listes d'objets par clé** (`KEYED_LIST_PATHS`, aujourd'hui
+    `starter-tool-kit.tiers` par `level`, issue #218) reçoivent les éléments
+    du gabarit dont la clé manque ; un palier déjà présent n'est jamais
+    modifié ;
 -   une section entièrement absente (ex. `claims`) est copiée d'un bloc
     depuis le `config.yml` embarqué dans le jar (source de vérité) ; une
     section déjà partiellement présente est explorée récursivement pour

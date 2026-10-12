@@ -45,6 +45,11 @@ public final class Descriptors {
             return new Field(n, l, FieldType.INT, h, null, true);
         }
 
+        /** Entier facultatif : absent, le moteur applique sa valeur par défaut (issue #85). */
+        public static Field optionalInteger(String n, String l, String h) {
+            return new Field(n, l, FieldType.INT, h, null, false);
+        }
+
         public static Field dbl(String n, String l, String h) {
             return new Field(n, l, FieldType.DOUBLE, h, null, true);
         }
@@ -296,6 +301,11 @@ public final class Descriptors {
                             + "Reconnaît l'objet par son identité réelle, pas par son nom.",
                     List.of(Field.text("item", "Objet personnalisé",
                             "Identifiant de l'objet RPGQuest.", true))),
+            new Descriptor("HAS_INVENTORY_SPACE", "A de la place dans l'inventaire", "gift",
+                    "Vraie si l'inventaire principal du joueur a au moins ce nombre d'emplacements "
+                            + "libres. À mettre sur un choix qui remet un objet, avec un choix "
+                            + "« inventaire plein » en négation (issue #85).",
+                    List.of(Field.optionalInteger("slots", "Emplacements libres", "De 1 à 36. 1 par défaut."))),
             new Descriptor("HAS_PENDING_DELIVERY", "Attend encore des objets", "gift",
                     "Vraie si une quête active du joueur demande de remettre des objets à ce PNJ "
                             + "(issue #123). Permet d'afficher la branche de remise seulement quand "

@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
+import com.lodygames.rpgquest.dialogue.model.HasInventorySpaceCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -82,6 +84,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private final Logger logger;
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
+    /** Joueurs dont un choix est en cours d'évaluation (issue #72 : anti-double-clic). */
+    private final Set<UUID> choosing = ConcurrentHashMap.newKeySet();
     private volatile DialogueRenderer renderer;
     /** Valeurs dynamiques substituées dans le texte d'un nœud juste avant son rendu (issue #24). */
     private volatile DialogueTextPlaceholders placeholders = DialogueTextPlaceholders.none();
@@ -271,12 +275,27 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         }
         DialogueChoice choice = node.choices().get(choiceIndex);
 
+        // Issue #72 : un seul choix à la fois par joueur. La réévaluation est asynchrone : sans cette
+        // garde, deux clics rapides sur « Réclamer mon acte » passaient tous deux la condition
+        // « n'a pas l'acte » avant que le premier ne l'ait remis — deux actes.
+        UUID playerId = player.getUniqueId();
+        if (!choosing.add(playerId)) {
+            return;
+        }
         // Re-vérification défensive : la visibilité initiale garantit l'affichage, pas la validité au moment du clic.
-        evaluateAll(player, dialogueId, choice.conditions()).thenAccept(stillVisible -> runOnMainThread(() -> {
-            if (!stillVisible) {
-                return;
+        evaluateAll(player, dialogueId, choice.conditions()).whenComplete((stillVisible, error) -> runOnMainThread(() -> {
+            try {
+                DialogueSession current = sessions.get(playerId);
+                // Le nœud a pu changer entre le clic et la réponse (fermeture, autre choix) : la
+                // décision prise sur l'ancien nœud n'a plus cours.
+                if (error != null || !Boolean.TRUE.equals(stillVisible) || current == null
+                        || !current.dialogueId().equals(dialogueId) || !current.nodeId().equals(nodeId)) {
+                    return;
+                }
+                executeActionsAndTransition(player, dialogue, choice);
+            } finally {
+                choosing.remove(playerId);
             }
-            executeActionsAndTransition(player, dialogue, choice);
         }));
     }
 
@@ -377,6 +396,9 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             case HasMainClaimCondition ignored -> CompletableFuture.completedFuture(
                     claimService.mainClaimOf(player.getUniqueId()).isPresent());
             case LacksCustomItemCondition c -> CompletableFuture.completedFuture(!hasCustomItem(player, c.itemId()));
+            // Issue #85 : lecture de l'inventaire principal, sur le thread du clic — aucune requête.
+            case HasInventorySpaceCondition c -> CompletableFuture.completedFuture(
+                    freeStorageSlots(player) >= c.slots());
             // Issue #123 : lecture pure de l'état de remise, déjà en mémoire — aucune requête, donc
             // un future déjà complété, évalué à chaque ouverture de nœud sans coût.
             case PendingDeliveryCondition c -> CompletableFuture.completedFuture(
@@ -384,6 +406,17 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                             player.getUniqueId(), DialogueNpcResolution.resolve(c.npcId(), dialogueId)));
             case NegatedCondition c -> evaluateCondition(player, dialogueId, c.inner()).thenApply(result -> !result);
         };
+    }
+
+    /** Emplacements vides de l'inventaire principal (ni armure, ni seconde main). */
+    static int freeStorageSlots(Player player) {
+        int free = 0;
+        for (ItemStack stack : player.getInventory().getStorageContents()) {
+            if (stack == null || stack.getType().isAir()) {
+                free++;
+            }
+        }
+        return free;
     }
 
     private boolean hasCustomItem(Player player, NamespacedKey itemId) {

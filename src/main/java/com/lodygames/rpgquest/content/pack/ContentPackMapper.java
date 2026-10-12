@@ -190,6 +190,8 @@ public final class ContentPackMapper {
             case HasMainClaimCondition ignored -> DialoguePackEntry.Condition.flag("HAS_MAIN_CLAIM", negate);
             case LacksCustomItemCondition c -> DialoguePackEntry.Condition.lacksCustomItem(c.itemId().toString(), negate);
             case PendingDeliveryCondition c -> DialoguePackEntry.Condition.pendingDelivery(c.npcId(), negate);
+            case com.lodygames.rpgquest.dialogue.model.HasInventorySpaceCondition c ->
+                    DialoguePackEntry.Condition.inventorySpace(c.slots(), negate);
             case NegatedCondition ignored -> throw new IllegalStateException("négation déjà dépliée");
         };
     }

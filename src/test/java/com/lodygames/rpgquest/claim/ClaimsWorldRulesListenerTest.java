@@ -387,4 +387,64 @@ class ClaimsWorldRulesListenerTest {
         assertEquals(ClaimService.CreateOutcome.CREATED, outcome, "pré-requis du test : le claim doit vraiment être créé");
         server.getScheduler().performTicks(2);
     }
+    // ---- Issue #295 : phantoms et autres hostiles qui ne sont pas des Monster ---------------------
+
+    @Test
+    void aPhantomSpawnInTheClaimsWorldIsCancelledWhateverTheReason() {
+        var phantom = claimsWorld.spawn(new Location(claimsWorld, 0.5, 90, 0.5), org.bukkit.entity.Phantom.class);
+        for (CreatureSpawnEvent.SpawnReason reason : new CreatureSpawnEvent.SpawnReason[] {
+                CreatureSpawnEvent.SpawnReason.NATURAL, CreatureSpawnEvent.SpawnReason.CUSTOM,
+                CreatureSpawnEvent.SpawnReason.SPAWNER_EGG}) {
+            CreatureSpawnEvent event = new CreatureSpawnEvent(phantom, reason);
+
+            listener.onCreatureSpawn(event);
+
+            assertTrue(event.isCancelled(), "phantom (" + reason + ") : un Enemy, même s'il n'est pas un Monster");
+        }
+    }
+
+    @Test
+    void aPhantomInTheWildIsLeftAlone() {
+        var phantom = other.spawn(new Location(other, 0.5, 90, 0.5), org.bukkit.entity.Phantom.class);
+        CreatureSpawnEvent event = new CreatureSpawnEvent(phantom, CreatureSpawnEvent.SpawnReason.NATURAL);
+
+        listener.onCreatureSpawn(event);
+
+        assertFalse(event.isCancelled(), "le Wild garde ses hostiles");
+    }
+
+    @Test
+    void aResidualPhantomIsPurgedAtStartup() {
+        var phantom = claimsWorld.spawn(new Location(claimsWorld, 30.5, 90, 30.5), org.bukkit.entity.Phantom.class);
+        var cow = claimsWorld.spawn(new Location(claimsWorld, 31.5, 64, 30.5), org.bukkit.entity.Cow.class);
+
+        listener.purgeAlreadyLoadedWorld();
+
+        assertFalse(phantom.isValid(), "le phantom résiduel est retiré");
+        assertTrue(cow.isValid(), "les animaux restent");
+    }
+
+    @Test
+    void aHostileCannotTargetAPlayerInTheClaimsWorld() throws Exception {
+        PlayerMock player = addPlayer();
+        player.teleport(new Location(claimsWorld, 0.5, 64, 0.5));
+        var phantom = claimsWorld.spawn(new Location(claimsWorld, 0.5, 80, 0.5), org.bukkit.entity.Phantom.class);
+        var event = new org.bukkit.event.entity.EntityTargetLivingEntityEvent(phantom, player,
+                org.bukkit.event.entity.EntityTargetEvent.TargetReason.CLOSEST_PLAYER);
+
+        listener.onTarget(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void aHostileCannotTeleportIntoTheClaimsWorld() {
+        var zombie = other.spawn(new Location(other, 0.5, 64, 0.5), Zombie.class);
+        var event = new org.bukkit.event.entity.EntityTeleportEvent(zombie, zombie.getLocation(),
+                new Location(claimsWorld, 0.5, 64, 0.5));
+
+        listener.onEntityTeleport(event);
+
+        assertTrue(event.isCancelled());
+    }
 }

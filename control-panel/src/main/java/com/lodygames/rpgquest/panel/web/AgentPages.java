@@ -6926,6 +6926,7 @@ public final class AgentPages {
             case "CLOSE" -> "ferme";
             case "NO_MAIN_CLAIM" -> "sans claim";
             case "HAS_MAIN_CLAIM" -> "a un claim";
+            case "HAS_INVENTORY_SPACE" -> value + " place(s) libre(s) dans l'inventaire";
             default -> kind;
         };
     }

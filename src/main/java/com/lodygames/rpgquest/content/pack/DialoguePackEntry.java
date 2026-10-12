@@ -85,7 +85,8 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
     /**
      * Condition de choix. {@code type} ∈ {@code QUEST_STATE}, {@code HAS_ITEM},
      * {@code HAS_PERMISSION}, {@code VARIABLE_EQUALS}, {@code NO_MAIN_CLAIM}, {@code HAS_MAIN_CLAIM},
-     * {@code LACKS_CUSTOM_ITEM}, {@code HAS_PENDING_DELIVERY}. {@code negate} rend la condition
+     * {@code LACKS_CUSTOM_ITEM}, {@code HAS_PENDING_DELIVERY}, {@code HAS_INVENTORY_SPACE} (nombre
+     * d'emplacements libres dans {@code amount}). {@code negate} rend la condition
      * inverse.
      */
     public record Condition(String type, String quest, String state, String material, Integer amount,
@@ -114,6 +115,11 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
 
         public static Condition lacksCustomItem(String item, boolean negate) {
             return new Condition("LACKS_CUSTOM_ITEM", null, null, null, null, null, null, null, item, negate, null);
+        }
+
+        /** Au moins {@code slots} emplacements libres dans l'inventaire (issue #85). */
+        public static Condition inventorySpace(int slots, boolean negate) {
+            return new Condition("HAS_INVENTORY_SPACE", null, null, null, slots, null, null, null, null, negate, null);
         }
 
         /** Il reste des objets à remettre à ce PNJ (issue #123) ; {@code npc} nul = PNJ du dialogue. */

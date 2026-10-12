@@ -624,6 +624,121 @@ class DialogueSessionEngineTest {
                 "débloqué : l'explication « comment obtenir » doit disparaître");
     }
 
+    // ---- Issues #72 / #85 : Jo ne remet qu'un acte, et jamais au sol ------------------------------
+
+    private static final NamespacedKey JO = new NamespacedKey("rpgquest", "jo");
+    private static final NamespacedKey DEED = new NamespacedKey("rpgquest", "acte_propriete");
+
+    /**
+     * Le VRAI dialogue de Jo, tel qu'il est embarqué dans le JAR — conditions comprises. Seules les
+     * commandes sont remplacées par {@code give}, la seule autorisée par la liste blanche de ce banc.
+     */
+    private PlayerMock joReadyPlayer() throws Exception {
+        try (var in = getClass().getResourceAsStream("/dialogues/jo.yml")) {
+            String jo = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("command: \"customitem give %player% ", "command: \"give %player% ")
+                    .replace("command: \"claim admin sendhome %player%\"", "command: \"give %player% dirt 1\"");
+            Files.writeString(dialoguesDir.resolve("jo.yml"), jo);
+        }
+        assertTrue(dialogueEngine.reload().issues().isEmpty(), () -> "jo.yml : " + dialogueEngine.lastReport().issues());
+        assertTrue(dialogueEngine.find(JO).isPresent());
+        PlayerMock player = addPlayer();
+        variableRepository.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return player;
+    }
+
+    private String chooseDeed(PlayerMock player) throws Exception {
+        renderer.lastNode = null;
+        sessionEngine.open(player, JO);
+        awaitRendered();
+        List<VisibleChoice> deeds = renderer.lastVisibleChoices.stream()
+                .filter(c -> c.label().contains("Réclamer mon acte")).toList();
+        assertEquals(1, deeds.size(), () -> "un seul « Réclamer mon acte » visible : " + renderer.lastVisibleChoices);
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, JO, "greeting", deeds.get(0).index());
+        awaitRendered();
+        return renderer.lastNode.id();
+    }
+
+    @Test
+    void joSaysTheDeedIsAlreadyHeldInsteadOfGivingASecondOne() throws Exception {
+        PlayerMock player = joReadyPlayer();
+        player.getInventory().addItem(customItemRegistry.create(DEED, 1).orElseThrow());
+
+        assertEquals("deed_already_held", chooseDeed(player));
+    }
+
+    @Test
+    void joSaysTheInventoryIsFullInsteadOfDroppingTheDeed() throws Exception {
+        PlayerMock player = joReadyPlayer();
+        for (int i = 0; i < 36; i++) {
+            player.getInventory().setItem(i, new org.bukkit.inventory.ItemStack(Material.DIRT, 64));
+        }
+
+        assertEquals("deed_inventory_full", chooseDeed(player));
+        assertTrue(player.getWorld().getEntitiesByClass(org.bukkit.entity.Item.class).isEmpty(),
+                "rien n'est jeté au sol");
+    }
+
+    @Test
+    void anEligiblePlayerWithRoomIsOfferedTheDeedNode() throws Exception {
+        PlayerMock player = joReadyPlayer();
+
+        assertEquals("deed_given", chooseDeed(player));
+    }
+
+    /**
+     * Le double clic : la réévaluation est asynchrone (lecture de variable), donc deux clics rapides
+     * passaient tous deux la condition avant la première remise. Un seul doit être traité.
+     */
+    @Test
+    void aDoubleClickOnAGiftChoiceGivesOnlyOnce() throws Exception {
+        Files.writeString(dialoguesDir.resolve("gift.yml"), """
+                id: rpgquest:gift
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "Test"
+                    text: "Bonjour."
+                    choices:
+                      - text: "Un diamant"
+                        conditions:
+                          - type: VARIABLE_EQUALS
+                            key: GIFT_OK
+                            value: "true"
+                          - type: HAS_ITEM
+                            material: DIAMOND
+                            amount: 1
+                            negate: true
+                        actions:
+                          - type: GIVE_ITEM
+                            material: DIAMOND
+                            amount: 1
+                        next: greeting
+                """);
+        dialogueEngine.reload();
+        NamespacedKey gift = new NamespacedKey("rpgquest", "gift");
+        PlayerMock player = addPlayer();
+        variableRepository.set(player.getUniqueId(), "GIFT_OK", "true").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        sessionEngine.open(player, gift);
+        awaitRendered();
+        int index = renderer.lastVisibleChoices.get(0).index();
+
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, gift, "greeting", index);
+        sessionEngine.onChoiceSelected(player, gift, "greeting", index);
+        awaitRendered();
+        for (int i = 0; i < 20; i++) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(10);
+        }
+
+        int diamonds = player.getInventory().all(Material.DIAMOND).values().stream()
+                .mapToInt(org.bukkit.inventory.ItemStack::getAmount).sum();
+        assertEquals(1, diamonds, "un double clic ne donne qu'une fois");
+    }
+
     private int currentTopInventorySize(PlayerMock player) {
         var view = player.getOpenInventory();
         return (view == null || view.getTopInventory() == null) ? 0 : view.getTopInventory().getSize();

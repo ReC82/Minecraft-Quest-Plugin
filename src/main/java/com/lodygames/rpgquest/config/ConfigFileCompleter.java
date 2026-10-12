@@ -45,6 +45,35 @@ public final class ConfigFileCompleter {
 
     private static final List<String> ADDITIVE_LIST_PATHS = List.of("dialogue.allowed-commands");
 
+    /**
+     * Listes d'objets complétées <strong>par clé</strong> : un élément du gabarit dont la clé est
+     * absente du fichier est ajouté ; un élément présent n'est jamais modifié (#218 : les paliers 3
+     * à 5 du kit de départ arrivent sur un serveur qui n'avait que 1 et 2, sans toucher à ceux-ci).
+     */
+    private static final Map<String, String> KEYED_LIST_PATHS = Map.of("starter-tool-kit.tiers", "level");
+
+    /**
+     * Anciennes valeurs PAR DÉFAUT remplacées par la nouvelle valeur par défaut — seulement si le
+     * fichier porte encore exactement l'ancienne valeur livrée. Une valeur choisie par un
+     * administrateur (toute autre valeur) n'est jamais touchée.
+     *
+     * <p>#12, retour du 12/10/2026 : signal PNJ « trop haut et pas assez visible ». Les serveurs
+     * existants portaient {@code 2.2} et {@code 20} parce que c'était le défaut, pas un choix.</p>
+     */
+    private static final List<RetiredDefault> RETIRED_DEFAULTS = List.of(
+            new RetiredDefault("npc-hints.height-offset", 2.2, 0.6),
+            new RetiredDefault("npc-hints.period-ticks", 20, 10));
+
+    record RetiredDefault(String path, Object oldValue, Object newValue) {
+
+        boolean matches(Object current) {
+            if (current instanceof Number n && oldValue instanceof Number o) {
+                return Double.compare(n.doubleValue(), o.doubleValue()) == 0;
+            }
+            return oldValue.equals(current);
+        }
+    }
+
     private ConfigFileCompleter() {
     }
 
@@ -68,6 +97,8 @@ public final class ConfigFileCompleter {
 
         boolean changed = mergeMissingKeys(template, existing);
         changed |= mergeAdditiveLists(template, existing);
+        changed |= mergeKeyedLists(template, existing, logger);
+        changed |= replaceRetiredDefaults(existing, logger);
         if (existing.getInt("config-version", 0) != CURRENT_VERSION) {
             existing.set("config-version", CURRENT_VERSION);
             changed = true;
@@ -137,6 +168,50 @@ public final class ConfigFileCompleter {
             }
         }
         return anyChanged;
+    }
+
+    private static boolean mergeKeyedLists(YamlConfiguration template, YamlConfiguration existing, Logger logger) {
+        boolean anyChanged = false;
+        for (Map.Entry<String, String> entry : KEYED_LIST_PATHS.entrySet()) {
+            String path = entry.getKey();
+            String key = entry.getValue();
+            if (!template.isList(path) || !existing.isList(path)) {
+                continue; // liste absente : déjà copiée telle quelle par mergeMissingKeys
+            }
+            List<Map<?, ?>> merged = new ArrayList<>(existing.getMapList(path));
+            java.util.Set<String> present = new java.util.HashSet<>();
+            for (Map<?, ?> item : merged) {
+                present.add(String.valueOf(item.get(key)));
+            }
+            boolean pathChanged = false;
+            for (Map<?, ?> item : template.getMapList(path)) {
+                String id = String.valueOf(item.get(key));
+                if (item.get(key) != null && present.add(id)) {
+                    merged.add(item);
+                    pathChanged = true;
+                    logger.info("config.yml : {} — élément « {} = {} » ajouté depuis les valeurs par défaut.",
+                            path, key, id);
+                }
+            }
+            if (pathChanged) {
+                existing.set(path, merged);
+                anyChanged = true;
+            }
+        }
+        return anyChanged;
+    }
+
+    private static boolean replaceRetiredDefaults(YamlConfiguration existing, Logger logger) {
+        boolean changed = false;
+        for (RetiredDefault retired : RETIRED_DEFAULTS) {
+            if (existing.isSet(retired.path()) && retired.matches(existing.get(retired.path()))) {
+                existing.set(retired.path(), retired.newValue());
+                logger.info("config.yml : {} portait l'ancienne valeur par défaut {} — remplacée par la "
+                        + "nouvelle valeur par défaut {}.", retired.path(), retired.oldValue(), retired.newValue());
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private static void backup(Path configFile, Logger logger) {

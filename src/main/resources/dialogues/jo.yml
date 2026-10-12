@@ -11,8 +11,9 @@
 #   (a) claim NON débloqué  -> « Comment obtenir mon premier terrain ? » (CLAIM_TIER_1 != "true"
 #       ET aucun claim) : Jo explique qu'il faut finir l'histoire principale au Garde ;
 #   (b) claim débloqué mais AUCUN claim posé (CLAIM_TIER_1 == "true" ET NO_MAIN_CLAIM) : Jo remet
-#       l'Acte de propriété (redonné gratuitement à chaque passage tant que ces 2 conditions
-#       tiennent — le perdre n'empêche jamais de le redemander) ;
+#       l'Acte de propriété — UN SEUL à la fois (#72) : redonné seulement s'il n'est plus dans
+#       l'inventaire (le perdre n'empêche jamais de le redemander), et seulement s'il y a la place
+#       de le recevoir (#85, sinon Jo le dit et rien ne tombe au sol) ;
 #   (c) claim EXISTANT (HAS_MAIN_CLAIM) : « me rendre sur ma propriété », « revoir les limites »,
 #       « obtenir une Pierre de retour ».
 #
@@ -51,16 +52,44 @@ nodes:
             negate: true
           - type: NO_MAIN_CLAIM
         next: how_to_unlock
+      # Issues #72 / #85 : l'acte n'est remis que s'il n'est pas déjà dans l'inventaire ET qu'il y
+      # a la place de le recevoir. Les deux autres cas affichent le MÊME libellé mais mènent à une
+      # explication, jamais à une seconde remise ni à un objet jeté au sol. Les conditions sont
+      # réévaluées au clic, et un seul choix à la fois est traité par joueur (anti-double-clic).
       - text: "Réclamer mon acte"
         conditions:
           - type: VARIABLE_EQUALS
             key: CLAIM_TIER_1
             value: "true"
           - type: NO_MAIN_CLAIM
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:acte_propriete
+          - type: HAS_INVENTORY_SPACE
         actions:
           - type: RUN_SAFE_COMMAND
             command: "customitem give %player% rpgquest:acte_propriete 1"
         next: deed_given
+      - text: "Réclamer mon acte"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: CLAIM_TIER_1
+            value: "true"
+          - type: NO_MAIN_CLAIM
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:acte_propriete
+          - type: HAS_INVENTORY_SPACE
+            negate: true
+        next: deed_inventory_full
+      - text: "Réclamer mon acte"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: CLAIM_TIER_1
+            value: "true"
+          - type: NO_MAIN_CLAIM
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:acte_propriete
+            negate: true
+        next: deed_already_held
       - text: "Me rendre sur ma propriété"
         conditions:
           - type: HAS_MAIN_CLAIM
@@ -73,6 +102,7 @@ nodes:
           - type: HAS_MAIN_CLAIM
           - type: LACKS_CUSTOM_ITEM
             item: rpgquest:acte_propriete
+          - type: HAS_INVENTORY_SPACE
         actions:
           - type: RUN_SAFE_COMMAND
             command: "customitem give %player% rpgquest:acte_propriete 1"
@@ -108,5 +138,21 @@ nodes:
     text: "<green>Tiens, voici ton acte de propriété !</green> <gray>Passe par le portail vers le monde des claims et fais un clic droit avec pour poser ton premier terrain. Tu recevras une Pierre de retour en arrivant là-bas : un clic droit avec elle te ramènera au village.</gray>"
     choices:
       - text: "Merci Jo"
+        actions:
+          - type: CLOSE
+
+  deed_already_held:
+    speaker: "Jo"
+    text: "<yellow>Tu as déjà ton acte de propriété dans ton inventaire.</yellow> <gray>Je n'en remets qu'un : passe par le portail vers le monde des claims et fais un clic droit avec pour poser ton premier terrain.</gray>"
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  deed_inventory_full:
+    speaker: "Jo"
+    text: "<red>Ton inventaire est plein</red> <gray>: je ne peux pas te remettre ton acte de propriété. Libère une place, puis reviens me parler — il t'attend, rien n'est perdu.</gray>"
+    choices:
+      - text: "Je reviens"
         actions:
           - type: CLOSE

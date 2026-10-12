@@ -34,7 +34,7 @@ class DialogueDescriptorsTest {
     /** Réel : {@code dialogue.model.ConditionType}. */
     private static final Set<String> ENGINE_CONDITIONS = Set.of(
             "QUEST_STATE", "HAS_ITEM", "HAS_PERMISSION", "VARIABLE_EQUALS", "NO_MAIN_CLAIM",
-            "HAS_MAIN_CLAIM", "LACKS_CUSTOM_ITEM", "HAS_PENDING_DELIVERY");
+            "HAS_MAIN_CLAIM", "LACKS_CUSTOM_ITEM", "HAS_PENDING_DELIVERY", "HAS_INVENTORY_SPACE");
 
     /**
      * Clés YAML réellement lues par {@code DialogueDefinitionParser}, relevées cas par cas dans son
@@ -42,7 +42,7 @@ class DialogueDescriptorsTest {
      */
     private static final Set<String> ENGINE_FIELDS = Set.of(
             "quest", "material", "amount", "key", "value", "command", "dialogue", "merchant",
-            "npc", "permission", "item", "state", "negate");
+            "npc", "permission", "item", "state", "negate", "slots");
 
     /**
      * États de quête acceptés par {@code parseQuestState} : {@code quest.model.QuestState}, qui en

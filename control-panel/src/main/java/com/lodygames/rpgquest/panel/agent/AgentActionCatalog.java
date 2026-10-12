@@ -920,6 +920,13 @@ public final class AgentActionCatalog {
                 params.put("id", id);
                 // La libération écrit dans le monde ; le journal se contente de lire.
                 if (type.equals("building.placement.rollback")) {
+                    // Issue #239 : confirmation FORTE — l'identifiant de l'emplacement, retapé. Une
+                    // case cochée par réflexe ne suffit pas pour effacer des blocs.
+                    String typed = trim(form.get("confirm_site")).toLowerCase(java.util.Locale.ROOT);
+                    if (!typed.equals(id)) {
+                        return Validation.fail("Pour retirer le bâtiment, retapez exactement "
+                                + "l'identifiant de l'emplacement (« " + id + " »). Rien n'a été fait.");
+                    }
                     params.put("confirm", "true");
                 }
             }

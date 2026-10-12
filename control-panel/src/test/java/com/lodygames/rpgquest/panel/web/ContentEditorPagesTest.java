@@ -284,6 +284,70 @@ class ContentEditorPagesTest {
         assertTrue(reopened.contains("value=\"SPIDER\""));
     }
 
+    // ---- Issue #240 : DISCOVER_WAYPOINT depuis le formulaire réel ----------------------------
+
+    /** Les mondes chargés que l'agent annonce dans son heartbeat : c'est d'eux que naissent les cases. */
+    private void announceWorlds() {
+        new AgentStore(tmp.resolve("cp.db").toString()).saveHeartbeat(
+                new com.lodygames.rpgquest.panel.agent.HeartbeatRecord(TestConfig.AGENT_ID, "dev",
+                        java.time.Instant.now(), null, "agent/v1", "RPGQuest", "0.1.0", "ONLINE", 0, 20, 60,
+                        "{\"a\":{\"name\":\"world_hub\",\"loaded\":true},"
+                                + "\"b\":{\"name\":\"wild\",\"loaded\":true}}", "{}"));
+    }
+
+    @Test
+    void aDiscoverWaypointQuestIsCreatedFromTheFormAndReopensIntact() throws Exception {
+        start(true);
+        announceWorlds();
+        String page = get("/quests/new").body();
+        String token = csrf(page);
+        String form = "id=test_discover_waypoints&title=Explorateur&description=x&category=exploration"
+                + "&icon=COMPASS&step.0.id=step_1&obj.0.0.kind=DISCOVER_WAYPOINT&obj.0.0.amount=2"
+                + "&obj.0.0.worlds%40wild=on&obj.0.0.worlds=&obj.0.0.count-mode=NEW_ONLY"
+                + "&_csrf=" + token + "&_action=save";
+
+        HttpResponse<String> res = post("/quests/save", form);
+
+        assertEquals(303, res.statusCode(), "le garde-fou round-trip ne bloque plus : " + res.body());
+        String yaml = Files.readString(contentRoot.resolve("quests/test_discover_waypoints.yml"));
+        assertTrue(yaml.contains("type: DISCOVER_WAYPOINT"), yaml);
+        assertTrue(yaml.contains("worlds: [wild]"), yaml);
+        assertTrue(yaml.contains("count-mode: NEW_ONLY"), yaml);
+
+        String reopened = get("/quests/edit/test_discover_waypoints").body();
+        assertTrue(reopened.contains("name=\"obj.0.0.worlds@wild\" value=\"on\" checked"),
+                "le monde coché l'est toujours à la réouverture");
+        assertFalse(reopened.contains("name=\"obj.0.0.worlds@world_hub\" value=\"on\" checked"));
+        assertTrue(reopened.contains("<code class=\"tid\">world_hub</code>"), "les mondes connus sont proposés");
+    }
+
+    @Test
+    void checkedWorldsAndFreeTextAreMergedWithoutDuplicates() throws Exception {
+        start(true);
+        announceWorlds();
+        String token = csrf(get("/quests/new").body());
+        String form = "id=test_two_worlds&title=Deux&description=x&category=exploration&icon=COMPASS"
+                + "&step.0.id=step_1&obj.0.0.kind=DISCOVER_WAYPOINT&obj.0.0.amount=4"
+                + "&obj.0.0.worlds%40world_hub=on&obj.0.0.worlds%40wild=on"
+                + "&obj.0.0.worlds=wild%2C+monde_futur&obj.0.0.count-mode=INCLUDE_EXISTING"
+                + "&_csrf=" + token + "&_action=save";
+
+        post("/quests/save", form);
+
+        String yaml = Files.readString(contentRoot.resolve("quests/test_two_worlds.yml"));
+        assertTrue(yaml.contains("worlds: [world_hub, wild, monde_futur]"), yaml);
+        assertTrue(yaml.contains("count-mode: INCLUDE_EXISTING"), yaml);
+    }
+
+    @Test
+    void withoutAWorldSurveyTheFieldStaysAFreeText() throws Exception {
+        start(true);
+        String page = get("/quests/new").body();
+        assertTrue(page.contains("name=\"obj.0.0.worlds\"") || !page.contains("DISCOVER_WAYPOINT"),
+                "repli texte libre sans relevé");
+        assertFalse(page.contains("worlds@"), "aucune case inventée sans relevé");
+    }
+
     @Test
     void saveIsRejectedWhenValidationHasErrors() throws Exception {
         start(true);

@@ -1449,6 +1449,9 @@ public final class AgentActionExecutor {
                     details.put("version", r.version());
                     details.put("replaced", r.replaced());
                     details.put("effects", r.effects());
+                    // #292 : le motif COMPLET — le message de l'action est tronqué à 500 caractères
+                    // par le panel, et un refus de blocs en compte souvent davantage.
+                    details.put("message", r.message());
                     if (r.ok()) {
                         return AgentActionOutcome.success(action.id(), r.buildingId(), r.message(),
                                 details);
@@ -2101,7 +2104,7 @@ public final class AgentActionExecutor {
      * {@code BuildingSite.MAX_AI_BRIEF_LENGTH} : le panel, cette validation et le stockage refusent
      * au même seuil, sinon l'un des trois rejetterait ce que les autres acceptent.
      */
-    private static final int BUILD_SITE_BRIEF_MAX = 6000;
+    private static final int BUILD_SITE_BRIEF_MAX = com.lodygames.rpgquest.building.model.BuildingSite.MAX_AI_BRIEF_LENGTH;
     /**
      * Issue #94 — borne du plan transmis. Un plan de 400 instructions tient très largement
      * dedans ; la borne est là pour qu'un paramètre d'action ne devienne pas un canal de transfert

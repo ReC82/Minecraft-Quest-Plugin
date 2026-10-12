@@ -19,6 +19,7 @@ import com.lodygames.rpgquest.panel.building.BuildingSiteView;
 import com.lodygames.rpgquest.panel.building.BuildingVoxels;
 import com.lodygames.rpgquest.panel.building.IsometricView;
 import com.lodygames.rpgquest.panel.building.PlanDiagnosis;
+import com.lodygames.rpgquest.panel.building.SaveFailure;
 import com.lodygames.rpgquest.panel.building.PlanVerdictText;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.security.Session;
@@ -517,7 +518,8 @@ public final class WorkshopPages {
         sb.append(providerSelect(v, v.draft() == null ? "" : v.draft().providerId()));
         sb.append("<fieldset class=\"field\"><legend>Niveau d'exigence</legend>");
         for (BuildingDesignPipeline.Quality q : BuildingDesignPipeline.Quality.values()) {
-            BuildingDesignPipeline.Envelope e = BuildingDesignPipeline.envelope(q.calls(), model, seen[0], seen[1]);
+            BuildingDesignPipeline.Envelope e = BuildingDesignPipeline.envelope(q.calls(), model, seen[0], seen[1],
+                    v.project().brief().length(), v.images().size());
             sb.append("<label class=\"ws-choice\"><input type=\"radio\" name=\"quality\" value=\"")
                     .append(q.name()).append('"').append(q == BuildingDesignPipeline.Quality.SOIGNE ? " checked" : "")
                     .append("> <strong>").append(Http.esc(q.label())).append("</strong> — ")
@@ -642,6 +644,13 @@ public final class WorkshopPages {
     /** Étape « Enregistrer » : le plan est vérifié. */
     private static String saveCard(ProjectView v) {
         StringBuilder sb = new StringBuilder();
+        Optional<SaveFailure> failed = SaveFailure.of(v.generate());
+        if (failed.isPresent()) {
+            sb.append(saveFailure(v, failed.get()));
+        } else if (v.generate().current() && v.generate().status() == Status.PENDING) {
+            sb.append(Ui.banner("info", "<strong>Enregistrement en cours</strong> : le serveur écrit le "
+                    + "schematic et la définition. Rechargez la page dans quelques secondes."));
+        }
         BuildingPlanVerdict verdict = currentVerdict(v);
         Optional<String> divergence = BriefLevels.divergence(v.project().brief(), verdict.metrics());
         sb.append("<h2 class=\"h5\">").append(Icons.icon(divergence.isPresent() ? "warning" : "check"))
@@ -661,7 +670,10 @@ public final class WorkshopPages {
         if (!v.canWrite()) {
             sb.append(Ui.banner("info", "Votre rôle ne permet pas d'enregistrer dans la bibliothèque."));
         } else if (!v.idTaken()) {
-            sb.append(gestureForm(v, "generate", "Enregistrer dans la bibliothèque", true));
+            sb.append(gestureForm(v, "generate", SaveFailure.of(v.generate())
+                    .map(f -> f.kind() == SaveFailure.Kind.WRITE ? "Réessayer l'enregistrement"
+                            : "Enregistrer dans la bibliothèque")
+                    .orElse("Enregistrer dans la bibliothèque"), true));
             sb.append("<p class=\"field-help\">Le bâtiment rejoint la bibliothèque. Aucun bloc n'est posé "
                     + "dans le monde : vous choisirez ensuite un emplacement.</p>");
         }
@@ -672,14 +684,45 @@ public final class WorkshopPages {
         return sb.toString();
     }
 
+    /**
+     * L'échec du dernier enregistrement, en tête de carte (#292) : le motif exact, et l'action
+     * utile. Plus de bandeau vert seul pendant que l'enregistrement a échoué.
+     */
+    static String saveFailure(ProjectView v, SaveFailure f) {
+        StringBuilder sb = new StringBuilder();
+        String what = switch (f.kind()) {
+            case CONTENT -> "Le plan doit être corrigé : le serveur l'a refusé au moment de l'écrire. "
+                    + "« Améliorer avec l'IA » ci-dessous envoie ce motif exact, sans commentaire à "
+                    + "écrire.";
+            case CONFLICT -> "Un bâtiment de la bibliothèque porte déjà cet identifiant. Changez le nom "
+                    + "technique dans « Le bâtiment souhaité », puis enregistrez de nouveau.";
+            case WRITE -> "Échec d'écriture côté serveur (disque, WorldEdit ou bibliothèque) : le plan "
+                    + "avait passé ses contrôles. Réessayez ; si l'échec persiste, vérifiez WorldEdit "
+                    + "et les journaux du serveur. Rien n'est demandé à l'IA.";
+        };
+        sb.append(Ui.banner("err", "<strong>L'enregistrement a échoué (" + Http.esc(f.code())
+                + ").</strong> Aucune définition n'a été créée.<br><span class=\"ws-failure\">"
+                + Http.esc(f.message()).replace("\n", "<br>") + "</span><br>" + what));
+        if (f.kind() == SaveFailure.Kind.CONTENT && v.canWrite()) {
+            sb.append("<details class=\"npc-registry\" open><summary>Corriger avec l'IA</summary>")
+                    .append(correctionForm(v, correctionReason(v))).append("</details>");
+        }
+        return sb.toString();
+    }
+
     /** Le motif de correction proposé : ce que le serveur a dit de la version courante, en clair. */
     static String correctionReason(ProjectView v) {
-        return diagnosis(v.project(), v.audit());
+        return diagnosis(v.project(), v.audit(), v.generate());
     }
 
     /** Voir {@link PlanDiagnosis#of} (issue #282). */
     public static String diagnosis(BuildingProject project, CheckState audit) {
         return PlanDiagnosis.of(project, audit);
+    }
+
+    /** Voir {@link PlanDiagnosis#of(BuildingProject, CheckState, CheckState)} (#292). */
+    public static String diagnosis(BuildingProject project, CheckState audit, CheckState generate) {
+        return PlanDiagnosis.of(project, audit, generate);
     }
 
     private static BuildingPlanVerdict currentVerdict(ProjectView v) {

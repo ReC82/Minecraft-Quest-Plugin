@@ -799,7 +799,7 @@ class BuildingSitesPageTest {
         long before = count("building.site.brief");
         post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
                 + "&type=building.site.brief&return=/buildings/sites"
-                + "&id=buildsite_0001&brief=" + enc("b".repeat(6001)) + "&confirm=true");
+                + "&id=buildsite_0001&brief=" + enc("b".repeat(12_001)) + "&confirm=true");
         assertEquals(before, count("building.site.brief"),
                 "un brief trop long est refusé AVANT la file, pas tronqué pour y entrer");
     }

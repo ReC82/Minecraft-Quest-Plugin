@@ -68,11 +68,12 @@ public record BuildingSite(String id, String name, String description, String ai
      *
      * <p>Borne de <strong>sécurité</strong>, pas de confort : elle existe pour qu'un collage
      * accidentel de plusieurs pages ne gonfle ni la base, ni le relevé de l'agent, ni le prompt
-     * envoyé au fournisseur d'IA. 6 000 caractères représentent une à deux pages de brief détaillé
-     * — très au-delà des quatre briefs réellement écrits à ce jour (385 à 490 caractères), et bien
-     * au-delà du brief de référence de la Bibliothèque du Hub (479).</p>
+     * envoyé au fournisseur d'IA. Portée de 6 000 à 12 000 caractères par #292 : la description
+     * réelle de la Maison de Lily en compte 5 793 (chambre, cuisine, lecture, porche, décoration
+     * extérieure…) et en manquait déjà de place. 12 000 caractères restent environ 3 500 jetons,
+     * loin des limites des fournisseurs.</p>
      */
-    public static final int MAX_AI_BRIEF_LENGTH = 6000;
+    public static final int MAX_AI_BRIEF_LENGTH = 12_000;
 
     public BuildingSite {
         id = id == null ? "" : id.trim();

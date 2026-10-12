@@ -579,15 +579,15 @@ class AgentActionCatalogTest {
 
         // Au-delà : refus, avec le dépassement chiffré, et aucun paramètre retenu.
         var refused = AgentActionCatalog.validate("building.site.brief",
-                Map.of("id", "buildsite_0009", "brief", "b".repeat(6007)));
+                Map.of("id", "buildsite_0009", "brief", "b".repeat(12_007)));
         assertFalse(refused.valid());
-        assertTrue(refused.error().contains("6007"), refused.error());
+        assertTrue(refused.error().contains("12007"), refused.error());
         assertTrue(refused.error().contains("raccourcir de 7"), refused.error());
         assertTrue(refused.error().contains("Rien n'a été enregistré"), refused.error());
 
         // Pile à la borne : accepté. Refuser à la limite exacte serait un piège de plus.
         assertTrue(AgentActionCatalog.validate("building.site.brief",
-                Map.of("id", "buildsite_0009", "brief", "b".repeat(6000))).valid());
+                Map.of("id", "buildsite_0009", "brief", "b".repeat(12_000))).valid());
 
         // Un brief vide est valide : c'est « repartir de zéro ».
         assertTrue(AgentActionCatalog.validate("building.site.brief",

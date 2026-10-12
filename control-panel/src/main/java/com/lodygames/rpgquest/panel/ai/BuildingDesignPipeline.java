@@ -512,9 +512,28 @@ public final class BuildingDesignPipeline {
             "gpt-4.1", new double[] {2.00, 8.00});
 
     public static Envelope envelope(int calls, String model, int observedIn, int observedOut) {
-        // Une passe de correction relit le plan précédent et le diagnostic : on prévoit large.
-        int perIn = Math.max(observedIn > 0 ? observedIn * 2 : 0, 9_000);
+        return envelope(calls, model, observedIn, observedOut, 0, 0);
+    }
+
+    /** Caractères par jeton, estimation PRUDENTE pour du français et du YAML (#292). */
+    static final int CHARS_PER_TOKEN = 3;
+
+    /** Jetons comptés par image de référence : le haut de la fourchette des fournisseurs. */
+    static final int IMAGE_TOKENS = 1_600;
+
+    /**
+     * L'enveloppe, calculée sur le contenu RÉEL de la demande (#292) : le prompt système, la
+     * description du projet — jusqu'à 12 000 caractères — et ses images. Une passe de correction
+     * relit en plus le plan précédent et le diagnostic. L'ancienne estimation fixe (9 000 jetons
+     * d'entrée par appel) sous-estimait une description longue : le consentement portait sur
+     * moins que ce qui serait facturé.
+     */
+    public static Envelope envelope(int calls, String model, int observedIn, int observedOut,
+                                    int briefChars, int images) {
         int perOut = Math.max(observedOut > 0 ? observedOut * 2 : 0, 4_000);
+        int prompt = (BuildingPromptBuilder.systemPrompt().length() + 1_500 + Math.max(0, briefChars))
+                / CHARS_PER_TOKEN + Math.max(0, images) * IMAGE_TOKENS;
+        int perIn = Math.max(observedIn > 0 ? observedIn * 2 : 0, Math.max(9_000, prompt + perOut + 2_000));
         String m = model == null || model.isBlank() ? "gpt-4o" : model.trim().toLowerCase(Locale.ROOT);
         double[] price = null;
         String bestKey = "";

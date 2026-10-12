@@ -315,10 +315,23 @@ class BuildingDesignPipelineTest {
     void theEnvelopeIsAnnouncedInTokensAndDollarsOnlyForKnownPrices() {
         var known = BuildingDesignPipeline.envelope(8, "gpt-4o-2024-08-06", 4400, 900);
         assertTrue(known.priced());
-        assertEquals(8 * 9000, known.tokensIn());
+        // #292 : au moins le prompt réel (système, description, plan précédent, diagnostic) par appel.
+        assertTrue(known.tokensIn() >= 8 * 9000, String.valueOf(known.tokensIn()));
         assertTrue(known.dollars() > 0.4 && known.dollars() < 0.6, String.valueOf(known.dollars()));
         var unknown = BuildingDesignPipeline.envelope(8, "some-new-model", 0, 0);
         assertFalse(unknown.priced());
         assertTrue(unknown.label().contains("tarif"), unknown.label());
+    }
+
+    /** #292 : l'enveloppe suit la description réelle et les images, au lieu d'un forfait fixe. */
+    @org.junit.jupiter.api.Test
+    void theEnvelopeGrowsWithTheRealDescriptionAndImages() {
+        BuildingDesignPipeline.Envelope small = BuildingDesignPipeline.envelope(8, "gpt-4o", 0, 0, 500, 0);
+        BuildingDesignPipeline.Envelope lily = BuildingDesignPipeline.envelope(8, "gpt-4o", 0, 0, 12_000, 4);
+        org.junit.jupiter.api.Assertions.assertTrue(lily.tokensIn() > small.tokensIn(), lily + " / " + small);
+        int perCall = lily.tokensIn() / 8;
+        org.junit.jupiter.api.Assertions.assertTrue(perCall >= 12_000 / 3 + 4 * 1_600,
+                "la description et les images sont comptées à chaque appel : " + perCall);
+        org.junit.jupiter.api.Assertions.assertTrue(lily.dollars() > small.dollars());
     }
 }

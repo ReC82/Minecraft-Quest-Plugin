@@ -995,6 +995,9 @@ public final class PanelApp {
         if (generate.current() && generate.row().map(r -> "SUCCESS".equals(r.resultStatus())).orElse(false)) {
             return "Dans la bibliothèque";
         }
+        if (com.lodygames.rpgquest.panel.building.SaveFailure.of(generate).isPresent()) {
+            return "Enregistrement échoué";
+        }
         var audit = planWorkbench.state(latest, BuildingPlanDraftStore.Check.AUDIT);
         if (!audit.current()) {
             return "Plan à vérifier";
@@ -1330,7 +1333,8 @@ public final class PanelApp {
         // Les consignes de l'administrateur sont facultatives et s'y ajoutent. « reason » reste lu
         // pour les formulaires ouverts avant la mise à jour.
         var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
-        String reason = correctionMotive(project, audit,
+        var generate = planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE);
+        String reason = correctionMotive(project, audit, generate,
                 f.getOrDefault("notes", f.getOrDefault("reason", "")));
         if (reason.isEmpty()) {
             boolean judged = audit.current()
@@ -1530,7 +1534,15 @@ public final class PanelApp {
      */
     static String correctionMotive(com.lodygames.rpgquest.panel.building.BuildingProject project,
                                    BuildingPlanWorkbench.CheckState audit, String notes) {
-        String diagnosis = audit.current() ? WorkshopPages.diagnosis(project, audit) : "";
+        return correctionMotive(project, audit, null, notes);
+    }
+
+    /** Même chose, avec l'échec d'enregistrement de la version s'il porte sur le contenu (#292). */
+    static String correctionMotive(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                   BuildingPlanWorkbench.CheckState audit,
+                                   BuildingPlanWorkbench.CheckState generate, String notes) {
+        String diagnosis = audit.current() || com.lodygames.rpgquest.panel.building.SaveFailure.of(generate)
+                .isPresent() ? WorkshopPages.diagnosis(project, audit, generate) : "";
         String extra = notes == null ? "" : notes.trim();
         // Un ancien formulaire renvoyait le diagnostic prérempli dans « reason » : ne pas le doubler.
         if (!extra.isEmpty() && !diagnosis.isEmpty() && extra.contains(diagnosis)) {

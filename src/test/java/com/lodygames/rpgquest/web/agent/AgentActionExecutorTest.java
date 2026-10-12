@@ -636,9 +636,9 @@ class AgentActionExecutorTest {
         // Au-delà de la borne : REFUS, avec le dépassement chiffré. Jamais une coupure.
         actions.lastBuildSiteBrief = null;
         AgentActionOutcome refused = run(new AgentAction("b1", "building.site.brief",
-                Map.of("id", "buildsite_0009", "brief", "b".repeat(6001))));
+                Map.of("id", "buildsite_0009", "brief", "b".repeat(12_001))));
         assertEquals(AgentActionOutcome.REJECTED, refused.status());
-        assertTrue(refused.message().contains("6001"), refused.message());
+        assertTrue(refused.message().contains("12001"), refused.message());
         assertTrue(refused.message().contains("Rien n'a été enregistré"), refused.message());
         assertNull(actions.lastBuildSiteBrief,
                 "un brief refusé ne doit JAMAIS atteindre la façade métier");

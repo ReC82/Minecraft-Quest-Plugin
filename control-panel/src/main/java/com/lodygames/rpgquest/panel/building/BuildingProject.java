@@ -29,7 +29,12 @@ public record BuildingProject(String id, String agentId, String name, String bri
     /** Même règle que le plugin ({@code BuildingPlan#ID}) : refusé ici plutôt qu'à l'audit. */
     public static final Pattern BUILDING_ID = Pattern.compile("[a-z0-9_]{3,48}");
 
-    public static final int MAX_BRIEF = 6000;
+    /**
+     * Borne de la description (#292) : 12 000 caractères, la même que le plugin
+     * ({@code BuildingSite.MAX_AI_BRIEF_LENGTH}) et la validation d'action. Comptée APRÈS
+     * normalisation des fins de ligne : un navigateur envoie « \r\n », son compteur n'en voit qu'un.
+     */
+    public static final int MAX_BRIEF = 12_000;
     public static final int MAX_NAME = 80;
 
     public BuildingProject {

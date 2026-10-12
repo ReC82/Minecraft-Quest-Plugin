@@ -72,7 +72,7 @@ public final class AgentActionCatalog {
      * refusent au même seuil, sinon l'un des trois tronquerait ou rejetterait ce que les autres
      * acceptent.
      */
-    private static final int MAX_BUILD_SITE_BRIEF = 6000;
+    private static final int MAX_BUILD_SITE_BRIEF = com.lodygames.rpgquest.panel.building.BuildingProject.MAX_BRIEF;
     /** Issue #94 — borne du plan transmis, identique à celle de l'exécuteur côté plugin. */
     private static final int MAX_BUILD_PLAN = 64_000;
     /** Familles de contenu exportables (issue #108) — miroir de {@code ContentFamily} côté plugin. */
@@ -812,7 +812,8 @@ public final class AgentActionCatalog {
                 if (id == null) {
                     return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
                 }
-                String brief = trim(form.get("brief"));
+                // #292 : fins de ligne normalisées avant de compter, comme pour un projet d'Atelier.
+                String brief = trim(form.get("brief")).replace("\r\n", "\n").replace('\r', '\n');
                 if (brief.length() > MAX_BUILD_SITE_BRIEF) {
                     return Validation.fail("Brief trop long : " + brief.length()
                             + " caractères pour un maximum de " + MAX_BUILD_SITE_BRIEF

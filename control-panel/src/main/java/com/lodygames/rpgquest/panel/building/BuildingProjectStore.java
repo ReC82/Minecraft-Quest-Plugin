@@ -54,7 +54,9 @@ public final class BuildingProjectStore {
 
         public Fields {
             name = name == null ? "" : name.trim();
-            brief = brief == null ? "" : brief.trim();
+            // #292 : un formulaire envoie ses retours à la ligne en « \r\n ». Les garder doublait
+            // leur poids : 11 990 caractères au compteur de la page devenaient plus de 12 000 ici.
+            brief = brief == null ? "" : brief.replace("\r\n", "\n").replace('\r', '\n').trim();
             buildingId = buildingId == null ? "" : buildingId.trim().toLowerCase(java.util.Locale.ROOT);
             front = BuildingProject.normaliseFront(front);
             maxWidth = Math.min(64, Math.max(5, maxWidth));

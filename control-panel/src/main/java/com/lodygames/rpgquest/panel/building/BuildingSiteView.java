@@ -31,7 +31,7 @@ public record BuildingSiteView(String id, String name, String description, Strin
      * ({@code BuildingSite.MAX_AI_BRIEF_LENGTH}) et côté validation d'action. Trois seuils
      * différents reviendraient à tronquer ou rejeter à des endroits imprévisibles.
      */
-    public static final int MAX_BRIEF = 6000;
+    public static final int MAX_BRIEF = BuildingProject.MAX_BRIEF;
 
     private static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withLocale(Locale.FRANCE)

@@ -635,6 +635,86 @@ class WorkshopFlowTest {
 
     // ---- Harnais -------------------------------------------------------------------------------
 
+    // ---- #292 : descriptions longues, échec d'enregistrement visible ---------------------------
+
+    /**
+     * La Maison de Lily : audit conforme, puis l'enregistrement échoue. Le motif exact s'affiche
+     * dans l'Atelier, avec l'action utile — plus de bandeau vert seul.
+     */
+    @Test
+    void aFailedWriteIsShownWithItsExactReasonAndARetry() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison de Lily", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        gesture(get(withDraft).body(), "generate");
+        AgentActionRow save = latest("building.generate");
+        String full = "Le schematic n'a pas pu être écrit : Écriture du schematic impossible : disque plein."
+                + " Aucune définition n'a été créée. (Échec d'écriture : le plan avait passé la validation "
+                + "de ses blocs ; réessayer, ou vérifier WorldEdit et le disque du serveur.)";
+        agentAnswers(save.id(), "FAILED", full.substring(0, 60), "{\"code\":\"SCHEMATIC_FAILED\",\"message\":"
+                + Json.write(full) + "}");
+
+        String main = mainCard(get(withDraft).body());
+        assertTrue(main.contains("L'enregistrement a échoué (SCHEMATIC_FAILED)"), main);
+        assertTrue(main.contains("disque plein"), "le motif complet, pas un extrait : " + main);
+        assertTrue(main.contains("Réessayer l&#39;enregistrement"), main);
+        assertFalse(main.contains("Enregistré dans la bibliothèque"), main);
+        assertEquals(1, aiCalls.get(), "un échec d'écriture ne coûte aucun appel");
+    }
+
+    /** Un échec de CONTENU part vers l'IA tel quel, sans commentaire à écrire. */
+    @Test
+    void aContentFailureAtSaveIsSentToTheAiWithoutAComment() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison de Lily", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        gesture(get(withDraft).body(), "generate");
+        String refusal = "Plan refusé : Bloc inconnu — le bloc « minecraft:bed » n'existe pas en Minecraft "
+                + "1.21.11 : il n'existe qu'en version colorée. Employé par instruction 17 (box minecraft:bed "
+                + "de [9, 1, 13] à [10, 1, 14]).";
+        agentAnswers(latest("building.generate").id(), "FAILED", refusal, "{\"code\":\"PLAN_INVALID\","
+                + "\"message\":" + Json.write(refusal) + "}");
+
+        String page = get(withDraft).body();
+        assertTrue(mainCard(page).contains("Le plan doit être corrigé"), mainCard(page));
+        String form = formAround(page, "value=\"correct\"");
+        String body = "_csrf=" + csrf(page) + "&_action=correct&id=" + id(withDraft) + "&draft="
+                + draftId(withDraft) + "&version=" + field(form, "name=\"version\" value=\"([^\"]+)\"")
+                + "&provider=openai&request_token=" + token(form) + "&notes=";
+        location(post("/buildings/workshop/project", body));
+        assertEquals(2, aiCalls.get(), "la correction est partie sans commentaire");
+        assertTrue(lastAiRequest.contains("ÉCHOUÉ (PLAN_INVALID)"), "l'IA sait que l'enregistrement a échoué");
+        assertTrue(lastAiRequest.contains("minecraft:bed"), "avec le motif exact");
+    }
+
+    /** 12 000 caractères, retours à la ligne compris, sans rien couper jusqu'à l'IA. */
+    @Test
+    void aTwelveThousandCharacterDescriptionIsKeptWholeUpToTheAi() throws Exception {
+        start();
+        StringBuilder brief = new StringBuilder();
+        while (brief.toString().replace("\r\n", "\n").length() < 11_900) {
+            brief.append("La chambre de Lily, lit rose, tapis, fleurs aux fenêtres.\r\n");
+        }
+        brief.append("FIN-DU-BRIEF");
+        String normalised = brief.toString().replace("\r\n", "\n").trim();
+        assertTrue(brief.length() > 12_000 && normalised.length() <= 12_000,
+                "le texte brut dépasse avec les \\r\\n, pas une fois normalisé");
+        String project = createProject("Maison de Lily", brief.toString());
+        String page = get(project).body();
+        assertTrue(page.contains("FIN-DU-BRIEF"), "la description est conservée en entier");
+        assertTrue(page.contains(normalised.length() + "</span> / 12000"), "compteur exact");
+
+        propose(project);
+        assertTrue(lastAiRequest.contains("FIN-DU-BRIEF"), "l'IA reçoit la description entière");
+
+        String form = get("/buildings/workshop/new").body();
+        HttpResponse<String> refused = post("/buildings/workshop/new", "_csrf=" + csrf(form)
+                + "&name=Trop&brief=" + enc("x".repeat(12_001))
+                + "&front=WEST&max_width=19&max_height=14&building_id=trop_long");
+        assertTrue(refused.body().contains("12001 caractères pour 12000 au plus"), excerpt(refused.body()));
+        assertTrue(refused.body().contains("Rien n&#39;a été coupé"), "aucune troncature silencieuse");
+    }
+
     private void start() throws Exception {
         ai = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ai.createContext("/v1/chat/completions", exchange -> {

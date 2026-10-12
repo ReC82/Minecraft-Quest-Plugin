@@ -536,6 +536,11 @@ VeryGames.
 
 Le dossier `scratchpad` de la session est
 `/tmp/claude-1000/-srv-rpgquest-repo/86cab748-c957-4d18-8f57-e2db35f448a6/scratchpad`.
+**Déplacés avant le redémarrage de l'EC2 du 2026-10-12.** `/tmp` est vidé au démarrage
+(`D /tmp` dans `tmpfiles.d`), donc les journaux ci-dessus ont été recopiés dans
+`~/.local/share/rpgquest/claude-logs/2026-10-12-generateur-v2/` — chemin persistant, hors
+dépôt. Le fichier contenant l'épingle de clé publique du serveur FTPS est resté dans `/tmp` :
+il disparaîtra avec lui, ce qui est souhaitable.
 
 ## Documentation mise à jour
 

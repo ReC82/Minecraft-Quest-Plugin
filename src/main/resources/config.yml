@@ -440,8 +440,9 @@ wild:
 npc-hints:
   enabled: true
   # Période de la passe d'affichage, en ticks (20 = 1 s). Bornée 10–100. JAMAIS par tick :
-  # une passe par joueur connecté, jamais un balayage de tous les PNJ du monde.
-  period-ticks: 20
+  # une passe par joueur connecté, jamais un balayage de tous les PNJ du monde. 10 = le signal
+  # se renouvelle deux fois par seconde et reste visible en continu (#12, retour du 12/10).
+  period-ticks: 10
   # Distance maximale, en blocs, à laquelle un PNJ est signalé. Bornée 4–48. Au-delà, rien n'est
   # ni calculé ni envoyé : aucun effet distant, aucun chunk chargé pour l'occasion.
   radius: 16.0
@@ -451,11 +452,13 @@ npc-hints:
   # L'affichage réutilise le cache entre deux recalculs ; le cache est invalidé immédiatement
   # quand quelque chose change (quête acceptée, progression, nœud lu).
   refresh-seconds: 5
-  # Hauteur du signal au-dessus du PNJ, en blocs. Bornée 0–3.
-  height-offset: 2.2
-  # Deux conventions immédiatement distinguables. La quête PRIME sur le dialogue si les deux
-  # s'appliquent au même PNJ.
+  # Hauteur de la base du signal au-dessus de la TÊTE du PNJ, en blocs. Bornée 0–1,5.
+  # 0.6 = juste au-dessus du nom affiché. (2.2, l'ancienne valeur, le perdait dans le ciel.)
+  height-offset: 0.6
+  # Deux conventions immédiatement distinguables, dessinées en FORME : un « ! » vertical pour une
+  # quête, trois points « … » face au joueur pour un dialogue. La quête PRIME sur le dialogue si
+  # les deux s'appliquent au même PNJ.
   quest-particle: HAPPY_VILLAGER
   dialogue-particle: ENCHANT
-  # Nombre de particules par passe. Bornée 1–10 : 1 ou 2 suffisent pour rester discret.
+  # Nombre de particules PAR POINT de la forme. Bornée 1–10 : 1 suffit, la forme fait le reste.
   count: 1

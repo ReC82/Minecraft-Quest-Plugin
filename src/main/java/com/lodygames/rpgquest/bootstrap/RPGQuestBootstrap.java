@@ -502,6 +502,11 @@ public final class RPGQuestBootstrap {
         progressionService = new ProgressionService(
                 plugin, progressionRepository, () -> configService.current().progression(), plugin.getSLF4JLogger());
         registry.start(progressionService);
+        // Issues #69 / #209 : un seul canal pour l'action bar — la progression d'un objectif n'est
+        // plus effacée par l'XP de combat du même kill, envoyée au tick suivant.
+        var actionBarFeedback = new com.lodygames.rpgquest.feedback.ActionBarFeedback();
+        questProgressEngine.setActionBar(actionBarFeedback);
+        progressionService.setActionBar(actionBarFeedback);
 
         webSnapshotWriter = new WebSnapshotWriter(
                 plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,

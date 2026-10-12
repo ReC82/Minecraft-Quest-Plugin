@@ -44,7 +44,7 @@ public record NpcHintConfig(boolean enabled, int periodTicks, double radius,
     public static final int MIN_REFRESH_SECONDS = 1;
     public static final int MAX_REFRESH_SECONDS = 60;
     public static final double MIN_HEIGHT_OFFSET = 0.0;
-    public static final double MAX_HEIGHT_OFFSET = 3.0;
+    public static final double MAX_HEIGHT_OFFSET = 1.5;
     public static final int MIN_COUNT = 1;
     public static final int MAX_COUNT = 10;
 
@@ -55,7 +55,7 @@ public record NpcHintConfig(boolean enabled, int periodTicks, double radius,
      * rendues par un client vanilla.
      */
     public static NpcHintConfig defaults() {
-        return new NpcHintConfig(true, 20, 16.0, true, 5, 2.2,
+        return new NpcHintConfig(true, 10, 16.0, true, 5, 0.6,
                 Particle.HAPPY_VILLAGER, Particle.ENCHANT, 1);
     }
 

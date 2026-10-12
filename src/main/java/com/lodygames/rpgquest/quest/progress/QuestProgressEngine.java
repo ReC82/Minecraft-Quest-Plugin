@@ -128,6 +128,13 @@ public final class QuestProgressEngine implements PluginService {
         this.logger = plugin.getSLF4JLogger();
     }
 
+    private com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar;
+
+    /** Issues #69 / #209 — canal partagé de l'action bar, branché au démarrage. */
+    public void setActionBar(com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar) {
+        this.actionBar = actionBar;
+    }
+
     /** Issue #185 — branché une seule fois au démarrage (voir {@code bootstrap.RPGQuestBootstrap}). */
     public void setDiscoveredWaypointCounter(ToIntBiFunction<UUID, List<String>> counter) {
         this.discoveredWaypointCounter = counter;
@@ -579,7 +586,8 @@ public final class QuestProgressEngine implements PluginService {
                     logger.error("Impossible de persister l'avancement forcé de {} pour {}", questId, playerId, error);
                     return null;
                 });
-                showObjectiveProgress(player, step.objectives().get(i), required, required);
+                showObjectiveProgress(player, questId + "/" + step.id() + "/" + i, step.objectives().get(i),
+                        required, required);
             }
         }
         checkStepCompletion(player, quest, progress);
@@ -1069,7 +1077,8 @@ public final class QuestProgressEngine implements PluginService {
                     logger.error("Impossible de persister la progression de {} pour {}", ref.questId(), playerId, error);
                     return null;
                 });
-        showObjectiveProgress(player, ref.objective(), updated, required);
+        showObjectiveProgress(player, ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex(),
+                ref.objective(), updated, required);
 
         if (updated >= required) {
             questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
@@ -1236,7 +1245,8 @@ public final class QuestProgressEngine implements PluginService {
         rewardLines.forEach(player::sendMessage);
     }
 
-    private void showObjectiveProgress(Player player, QuestObjective objective, int current, int total) {
+    private void showObjectiveProgress(Player player, String key, QuestObjective objective, int current,
+                                       int total) {
         if (!player.isOnline()) {
             return;
         }
@@ -1244,7 +1254,12 @@ public final class QuestProgressEngine implements PluginService {
                 Placeholder.unparsed("objective", describeObjective(objective)),
                 Placeholder.unparsed("current", String.valueOf(current)),
                 Placeholder.unparsed("total", String.valueOf(total)));
-        player.sendActionBar(message);
+        // #69 / #209 : par le canal partagé, la progression n'est plus écrasée par l'XP du même kill.
+        if (actionBar != null) {
+            actionBar.objective(player, key, message);
+        } else {
+            player.sendActionBar(message);
+        }
     }
 
     /**

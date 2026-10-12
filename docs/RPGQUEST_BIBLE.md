@@ -559,6 +559,22 @@ silence et jamais de faux succès. Si l'occasion était déjà payée, **rien** 
 passent par le **chat** et jamais par l'ActionBar, qui appartient à la progression des objectifs :
 une notification d'économie y effacerait l'avancement affiché.
 
+**Progression visible à chaque kill — canal partagé de l'ActionBar** (`feedback.ActionBarFeedback`,
+issues #69 / #209). L'ActionBar n'affiche qu'une ligne : l'XP de combat du même kill (« +5 XP
+(Combat) », envoyée au tick suivant par `ProgressionService`) effaçait « Araignées : 3/10 » avant
+qu'on puisse le lire. Règle désormais :
+
+- une progression d'objectif est **prioritaire** et reste affichée **2 s** ;
+- plusieurs objectifs qui avancent dans cette fenêtre (un kill qui compte pour deux quêtes, kills
+  rapides) sont **regroupés** sur la ligne, un par objectif avec sa dernière valeur, au plus **3**
+  (les plus récents) — séparés par « · » ;
+- un message d'XP pendant la fenêtre est **ajouté** à la ligne (« Araignées : 3/10 · +5 XP
+  (Combat) ») ; hors fenêtre, il s'affiche seul comme avant.
+
+Les valeurs viennent du moteur **après** mutation : aucun compteur parallèle, aucun message pour un
+kill qui ne fait rien progresser. Le suivi d'une quête dans le journal n'est pas nécessaire. Le
+format reste `quest.objective-progress` de `messages.yml`.
+
 **Bourse dans le journal de quêtes** (`QuestJournalService`, issue #16) : le solde réel est affiché
 dans un emplacement **inerte** de la barre du haut de la liste (`BALANCE_SLOT`) et de la vue détail
 (`DETAIL_BALANCE_SLOT`) — l'objectif explicite étant que le solde soit lisible dans une interface
@@ -3011,7 +3027,7 @@ Un nœud est marqué lu **au moment où il est réellement affiché**, et nulle 
 
 #### Coût maîtrisé
 
-- **Jamais de travail à chaque tick** : une passe toutes les `period-ticks` (1 s par défaut), et
+- **Jamais de travail à chaque tick** : une passe toutes les `period-ticks` (0,5 s par défaut), et
   **par joueur connecté** — jamais un balayage de tous les PNJ du monde.
 - **Jamais de PNJ distant** : les candidats viennent de `getNearbyEntities` dans le `radius`
   configuré. Hors rayon, dans un autre monde, non chargé ou hors ligne de vue : rien n'est calculé
@@ -3027,14 +3043,20 @@ Un nœud est marqué lu **au moment où il est réellement affiché**, et nulle 
 | Clé | Défaut | Bornes | Effet |
 |---|---|---|---|
 | `enabled` | `true` | — | active le signal |
-| `period-ticks` | `20` | 10–100 | période de la passe d'affichage |
+| `period-ticks` | `10` | 10–100 | période de la passe d'affichage |
 | `radius` | `16.0` | 4–48 | distance maximale, en blocs |
 | `require-line-of-sight` | `true` | — | pas de signal à travers un mur |
 | `refresh-seconds` | `5` | 1–60 | intervalle minimal entre deux recalculs |
-| `height-offset` | `2.2` | 0–3 | hauteur au-dessus du PNJ |
+| `height-offset` | `0.6` | 0–1,5 | hauteur de la base du signal au-dessus de la tête du PNJ |
 | `quest-particle` | `HAPPY_VILLAGER` | nom valide | convention « quête » |
 | `dialogue-particle` | `ENCHANT` | nom valide | convention « dialogue » |
-| `count` | `1` | 1–10 | particules par passe |
+| `count` | `1` | 1–10 | particules par point de la forme |
+
+**Forme du signal (retour du 12/10/2026)** : une particule isolée à 2,2 blocs au-dessus de la tête
+était « trop haute et pas assez visible ». Le signal est désormais une **forme** posée juste
+au-dessus du nom : un **« ! » vertical** pour une quête, **trois points « … » face au joueur** pour
+un dialogue non lu. Une valeur `height-offset` supérieure à 1,5 (ex. l'ancien `2.2` d'un
+`config.yml` existant) est ramenée à 1,5 au chargement.
 
 Les valeurs numériques hors bornes sont **corrigées** au chargement : un signal visuel ne doit pas
 empêcher le serveur de démarrer. Une **particule inconnue**, en revanche, est **refusée** au

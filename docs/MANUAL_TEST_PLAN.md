@@ -5393,3 +5393,19 @@ confirmer pendant ce test.
 5.  `/buildings/sites?place=inexistant` : aucun bandeau, aucune présélection.
 6.  Sur téléphone : fiche lisible, bouton « Placer sur un emplacement » accessible.
 
+### TC-288 — Aperçu du bâtiment en 3D dans l'Atelier (issue #273, PENDING MANUAL VALIDATION)
+
+**Prérequis** : **JAR et panel** issus de #273. **Durée** : 5 minutes. Gratuit ; rien n'est posé.
+
+1.  Ouvrir le projet « Bibliothèque du Hub » (TC-286), une version qui a un plan → **Vérifier le
+    bâtiment** (ou **Afficher l'aperçu**), puis **Rafraîchir**.
+2.  La carte **« Aperçu du bâtiment »** montre le bâtiment en 3D. Comparer avec le plan : murs, fenêtres
+    (translucides), porte, toit, étages. Sous l'image : « Vu depuis … » et le côté de l'entrée.
+3.  **Tourner** : choisir chaque vue, « Afficher » — on fait le tour du bâtiment, sans effet miroir.
+4.  **Voir l'intérieur** : « Couper au-dessus du niveau 2 », puis 5… — les étages et escaliers
+    apparaissent. Vérifier `/actions` : aucune action nouvelle en tournant ou en coupant.
+5.  Légende des matériaux et phrase sur les limites présentes. Sur téléphone : l'image tient dans
+    l'écran, les sélecteurs s'empilent.
+6.  (Si l'ancien plugin est encore en place) l'écran dit qu'il faut une version plus récente du plugin,
+    sans image cassée.
+

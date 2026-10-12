@@ -7842,3 +7842,87 @@ plan conservé produirait maintenant un fichier différent. Ne jamais écraser l
   revenir en arrière côté panel **sans** revenir en arrière côté plugin laisse l'ancien prompt
   envoyer des plans que le nouvel audit refusera — ce qui est bruyant et sans danger, mais
   déroutant. Faire les deux rollbacks, ou aucun.
+
+## 2026-10-12 (matin) — Déploiement EFFECTUÉ du générateur V2 (#94, lots A à F)
+
+### Ce qui a réellement été fait
+
+Déploiement du commit `1fb05da` de la ligne d'intégration `feature/238-guard-dialogue-ux`
+(PR #255 fusionnée).
+
+| Étape | Résultat |
+|---|---|
+| `./gradlew test` + `build` | **OK** — 3 720 tests, 0 échec (plugin 2 384, panel 1 336) |
+| Backup de la version en ligne | `rpgquest-20261012T071742Z-predeploy.jar`, 2 260 049 o, SHA-256 `e7c04ef9…` |
+| Transfert du JAR | **OK** — téléversement atomique puis renommage |
+| **Empreinte du JAR installé** | **`d0ee358366e7a122bc14fa687a5fd88ce01d1979797811bdea9888c183edbd66`**, 2 334 717 o — **identique à l'attendu**, vérifiée en retéléchargeant le fichier depuis le serveur |
+| Contenu du JAR installé | 43 classes `building/plan/`, dont `PlanPreview`, `BlockStateRules`, `Facade`, `BlockStates` |
+| Redémarrage | **OK** — `verygames-restart.sh`, 0 joueur avant (deux contrôles), serveur revenu **ONLINE** |
+| Plugin après redémarrage | **activé** — présent dans `/plugins`, `version RPGQuest` répond ; Citizens et WorldEdit présents |
+| Panel PlugAdmin | **déployé** — `deploy.sh --no-build`, service `active (running)`, `/health` → `{"panel":"ONLINE"}` |
+| Empreinte du JAR panel servi | `4a4ea3cff713a03cc660e0f9464efe6e085f72b276ef0efdcbd8813707e536f8` — identique à la distribution validée |
+
+**Aucune migration de schéma.** Le dernier schéma reste V31. Aucun bloc du monde touché, aucun PNJ,
+aucune quête, aucune story, aucun dialogue. `buildsite_0012` et sa V1 sont intacts.
+
+### Le backup est plus petit que le nouveau JAR, et c'est normal
+
+2 260 049 o avant, 2 334 717 o après. L'écart va dans le **bon sens** : ce lot ajoute du code. Un
+backup *plus gros* que le nouveau JAR serait au contraire un signal d'arrêt — il signifierait qu'on
+écrase une version plus riche.
+
+### Contournement TLS : employé, et sans trace persistante
+
+Le transfert FTPS a d'abord échoué sur le certificat attendu :
+
+```
+curl: (60) SSL certificate problem: certificate has expired
+```
+
+Vérifié avant de contourner : certificat **Let's Encrypt expiré le 11 octobre 2026 à 05:12 GMT**,
+pour l'hôte attendu. Ce n'était donc ni un émetteur inconnu, ni une erreur d'hôte, ni une autre
+anomalie TLS.
+
+Le contournement a été appliqué **uniquement en ligne de commande**, sur l'autorisation ponctuelle
+du propriétaire, via `VERYGAMES_FTP_EXTRA_CURL_ARGS` — et avec l'identité du serveur
+**épinglée** (`--pinnedpubkey sha256//…`), de sorte que seule l'expiration est ignorée, pas
+l'identité. Le transport est resté chiffré et `--ssl-reqd` actif.
+
+Vérifié après coup, et à consigner :
+
+- **rien** dans Git : les deux seules mentions de `insecure` dans `scripts/` sont les commentaires
+  qui l'**interdisent** ;
+- **rien** dans les fichiers de configuration : la ligne `VERYGAMES_FTP_EXTRA_CURL_ARGS` de
+  `verygames.env` est restée **commentée** (modèle d'exemple, antérieure) ;
+- **rien** dans l'environnement persistant : aucun profil shell ne la définit.
+
+> **À faire côté VeryGames** : renouveler le certificat. Tant qu'il est expiré, chaque déploiement
+> de JAR exigera une autorisation ponctuelle. `verygames-fetch-ca.sh` ne corrige pas une expiration,
+> seulement une chaîne incomplète.
+
+### Ce qui reste à valider à la main
+
+`PENDING MANUAL VALIDATION` — **aucun appel payant à un fournisseur d'IA n'a été émis** :
+
+1. depuis la fiche d'un emplacement pourvu d'un brief, demander un plan et vérifier qu'il emploie
+   `facade:` et les primitives `door` / `window` / `light` ;
+2. « Auditer ce plan » → verdict et mesures, et **aucun fichier** créé dans `schematics/` ni
+   `buildings/` ;
+3. « Prévisualiser ce plan » → quatre façades et plans par niveau, avec légende, orientation
+   d'entrée et ancre ;
+4. générer, poser **sur un emplacement libre** (jamais `buildsite_0012`), et comparer le bâtiment en
+   jeu aux coupes de l'aperçu.
+
+**Les journaux de démarrage du serveur n'ont pas pu être inspectés depuis cette machine** (RCON
+n'expose pas les logs) : l'absence d'`ERROR` au démarrage reste donc à confirmer depuis le panel
+VeryGames. Ce qui est établi, c'est que le plugin est **activé** et répond.
+
+### Rollback
+
+* **Plugin** : `scripts/rollback-verygames.sh --latest` restaure `rpgquest-20261012T071742Z-predeploy.jar`,
+  puis redémarrer. Rien à défaire en base : aucune migration.
+* **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`. La release
+  précédente est dans `/opt/plugadmin/releases/20261012-095512`.
+* Faire **les deux** rollbacks ou aucun : un panel ancien avec le nouveau plugin enverrait l'ancien
+  prompt, dont les plans seront refusés par le nouvel audit — bruyant et sans danger, mais
+  déroutant.

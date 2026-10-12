@@ -92,9 +92,17 @@ public final class YamlDialogueEngine implements DialogueEngine {
             return;
         }
 
+        com.lodygames.rpgquest.content.ContentTombstones tombstones =
+                com.lodygames.rpgquest.content.ContentTombstones.besideContent(dialoguesDirectory);
         for (String example : BUNDLED_EXAMPLES) {
             Path target = dialoguesDirectory.resolve(example);
             if (Files.exists(target)) {
+                continue;
+            }
+            // Issue #248 : un exemple supprimé volontairement depuis le Control Panel ne revient pas.
+            if (tombstones.isDeleted("dialogues", example)) {
+                logger.info("Dialogue d'exemple {} non recréé : supprimé depuis le Control Panel "
+                        + "(content-tombstones/dialogues/{}).", example, example);
                 continue;
             }
             try (InputStream in = YamlDialogueEngine.class.getResourceAsStream("/dialogues/" + example)) {

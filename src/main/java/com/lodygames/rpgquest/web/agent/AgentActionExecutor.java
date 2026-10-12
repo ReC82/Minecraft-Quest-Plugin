@@ -633,8 +633,8 @@ public final class AgentActionExecutor {
     }
 
     /**
-     * {@code content.definition.delete} (#194) : supprime la définition d'une quête ou d'une story
-     * sur le serveur, avec sauvegarde, puis relit les définitions.
+     * {@code content.definition.delete} (#194, #248) : supprime la définition d'une quête, d'une
+     * story ou d'un dialogue sur le serveur, avec sauvegarde, puis relit les définitions.
      *
      * <p>Le type de contenu est validé contre une liste fermée : aucun chemin, aucun nom de
      * dossier ne vient du panel. L'identifiant est validé par le même motif que les autres
@@ -642,9 +642,9 @@ public final class AgentActionExecutor {
      */
     private CompletableFuture<AgentActionOutcome> contentDefinitionDelete(AgentAction action) {
         String kind = action.param("kind");
-        if (!"quests".equals(kind) && !"stories".equals(kind)) {
+        if (!"quests".equals(kind) && !"stories".equals(kind) && !"dialogues".equals(kind)) {
             return done(AgentActionOutcome.rejected(action.id(),
-                    "Paramètre « kind » attendu : « quests » ou « stories »."));
+                    "Paramètre « kind » attendu : « quests », « stories » ou « dialogues »."));
         }
         String id = firstNonBlank(action.param("id"), action.param("content_id"));
         if (id == null || !RESOURCE_ID.matcher(id).matches()) {

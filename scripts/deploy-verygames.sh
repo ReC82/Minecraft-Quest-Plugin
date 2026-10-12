@@ -31,6 +31,17 @@
 #   --check              Ne rien construire : charger + valider la config, et
 #                        (si les identifiants sont présents) tester la connexion.
 #   --skip-build         (avec --dry-run uniquement) sauter ./gradlew test+build.
+#   --allow-ci-red       Déployer malgré une CI rouge sur ce commit (tracé dans le récapitulatif).
+#   --wait-ci            Attendre la fin d'une CI en cours (30 min max) avant de décider.
+#   --local-validation   Ignorer la CI et rejouer localement les tests du plugin.
+#
+# Validation adaptée (issue #257). Le JAR est TOUJOURS construit ici, depuis l'arbre propre du
+# commit déployé ; seule la question « faut-il rejouer les tests ? » dépend de ce qui est prouvé :
+#   - CI « CI OK » verte pour ce commit   → ./gradlew assemble seulement ;
+#   - CI rouge                             → REFUS (sauf --allow-ci-red) ;
+#   - CI en cours / absente                → marqueur local de scripts/dev/check.sh pour le code du
+#                                            plugin, sinon ./gradlew :test puis assemble.
+#   Le plugin n'exige que SES tests : ni ceux du panel, ni ceux du web-api.
 #   --allow-dirty        Autoriser un working tree Git non propre (déconseillé).
 #   --allow-no-backup    Autoriser un déploiement même si un fichier ciblé
 #                        (JAR ou --also) n'existe pas encore en ligne.
@@ -67,6 +78,10 @@ SERVER_STOPPED=0
 PRUNE_KEEP=""
 JAR_OVERRIDE=""
 ALSO_SPECS=()
+ALLOW_CI_RED=0
+WAIT_CI=0
+LOCAL_VALIDATION=0
+VALIDATION="(non évaluée)"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -74,6 +89,9 @@ while [ $# -gt 0 ]; do
     --dry-run)         DRY_RUN=1 ;;
     --check)           CHECK_ONLY=1 ;;
     --skip-build)      SKIP_BUILD=1 ;;
+    --allow-ci-red)    ALLOW_CI_RED=1 ;;
+    --wait-ci)         WAIT_CI=1 ;;
+    --local-validation) LOCAL_VALIDATION=1 ;;
     --allow-dirty)     ALLOW_DIRTY=1 ;;
     --allow-no-backup) ALLOW_NO_BACKUP=1 ;;
     --server-stopped)  SERVER_STOPPED=1 ;;
@@ -214,10 +232,46 @@ GRADLEW=("./gradlew")
 if [ "$DRY_RUN" -eq 1 ] && [ "$SKIP_BUILD" -eq 1 ]; then
   vg::step "3-4/8 — ./gradlew test + build  (sautés : --dry-run --skip-build)"
 else
-  vg::step "3/8 — ./gradlew test"
-  ( cd "$REPO_ROOT" && "${GRADLEW[@]}" --console=plain test )
-  vg::step "4/8 — ./gradlew build"
-  ( cd "$REPO_ROOT" && "${GRADLEW[@]}" --console=plain build )
+  # shellcheck source=scripts/lib/validation.sh
+  . "$SCRIPT_DIR/lib/validation.sh"
+  vg::step "3/8 — Validation du code du plugin"
+  RUN_TESTS=1
+  CI_SHA=$(val::ci_commit)
+  CI=$(val::ci_status "$CI_SHA")
+  if [ "$LOCAL_VALIDATION" -eq 0 ] && [ "$WAIT_CI" -eq 1 ] && [ "${CI%% *}" = pending ]; then
+    vg::log "CI en cours sur ${CI_SHA:0:7}, attente (30 min max)…"
+    CI=$(val::wait_ci "$CI_SHA" 1800)
+  fi
+  if [ "$LOCAL_VALIDATION" -eq 1 ]; then
+    VALIDATION="tests du plugin rejoués localement (--local-validation)"
+  else
+    case "${CI%% *}" in
+      success)
+        RUN_TESTS=0
+        VALIDATION="CI verte sur ${CI_SHA:0:7} (${CI#* })" ;;
+      failure)
+        if [ "$ALLOW_CI_RED" -eq 1 ]; then
+          vg::warn "CI ROUGE sur ${CI_SHA:0:7} — déploiement forcé (--allow-ci-red) : ${CI#* }"
+          VALIDATION="CI ROUGE sur ${CI_SHA:0:7}, forcé par --allow-ci-red ; tests du plugin rejoués"
+        else
+          vg::die "CI rouge sur ${CI_SHA:0:7} : ${CI#* } — refus. Corriger, ou --allow-ci-red en connaissance de cause."
+        fi ;;
+      *)
+        if [ "$ALLOW_DIRTY" -eq 0 ] && val::has_marker plugin; then
+          RUN_TESTS=0
+          VALIDATION="tests du plugin déjà verts localement pour ce code (CI : ${CI%% *})"
+        else
+          VALIDATION="tests du plugin verts en local (CI : ${CI%% *})"
+        fi ;;
+    esac
+  fi
+  vg::log "Validation : $VALIDATION"
+  if [ "$RUN_TESTS" -eq 1 ]; then
+    ( cd "$REPO_ROOT" && "${GRADLEW[@]}" --console=plain :test )
+    [ "$ALLOW_DIRTY" -eq 0 ] && val::write_marker plugin
+  fi
+  vg::step "4/8 — ./gradlew assemble (JAR construit depuis ce commit)"
+  ( cd "$REPO_ROOT" && "${GRADLEW[@]}" --console=plain assemble )
 fi
 
 # ---------------------------------------------------------------------------
@@ -440,8 +494,8 @@ cat >&2 <<EOF
 ${VG_GREEN}Étapes réalisées :${VG_RESET}
   - working tree Git vérifié propre
   - branche $GIT_BRANCH / commit $GIT_COMMIT_SHORT
-  - ./gradlew test  : OK
-  - ./gradlew build : OK
+  - validation : $VALIDATION
+  - ./gradlew assemble : OK
   - JAR : $JAR_PATH ($JAR_SIZE o, SHA-256 $JAR_SHA)
   - backup JAR précédent : $BACKUP_JAR
   - JAR transféré vers : $(vg::redact "$(vg::remote_jar_url)")

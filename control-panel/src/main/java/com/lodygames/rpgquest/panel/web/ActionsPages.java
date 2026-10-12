@@ -69,6 +69,28 @@ public final class ActionsPages {
             }
             return sb.toString();
         }
+
+        /** Cette liste-ci, page comprise : là où « Retour » doit ramener depuis une fiche (#266). */
+        String selfHref() {
+            return href("page", String.valueOf(page));
+        }
+    }
+
+    /**
+     * Issue #266 — le lien vers la fiche d'une action, qui emporte la liste d'origine (filtres,
+     * recherche, page) pour que « Retour » y ramène au lieu de tout réinitialiser.
+     */
+    static String detailHref(AgentActionRow a, Query q) {
+        return "/actions/" + enc(a.id()) + (q == null ? "" : "?back=" + enc(q.selfHref()));
+    }
+
+    /** Un retour accepté seulement s'il reste dans l'historique : jamais une URL fournie au hasard. */
+    public static String safeBack(String raw) {
+        if (raw == null || !raw.startsWith("/actions?") || raw.contains("//") || raw.contains("\\")
+                || raw.length() > 300 || !raw.matches("[A-Za-z0-9/?&=%._+:-]*")) {
+            return "/actions";
+        }
+        return raw;
     }
 
     // ---- liste -----------------------------------------------------------------------
@@ -100,8 +122,8 @@ public final class ActionsPages {
                     ? "Aucune action ne correspond à ces critères."
                     : "Aucune action sur cette page."));
         } else {
-            sb.append(desktopTable(pageRows, now));
-            sb.append(mobileCards(pageRows, now));
+            sb.append(desktopTable(pageRows, now, q));
+            sb.append(mobileCards(pageRows, now, q));
         }
         sb.append(pagination(q, page, pages));
         return sb.toString();
@@ -185,35 +207,47 @@ public final class ActionsPages {
                 + Icons.icon(icon) + "<span>" + Http.esc(label) + "</span></a>";
     }
 
-    private static String desktopTable(List<AgentActionRow> rows, Instant now) {
+    /**
+     * Le tableau des actions sur grand écran. Issue #266 : chaque ligne ouvre sa fiche — le libellé
+     * est un vrai lien (clavier, lecteur d'écran, clic du milieu), la ligne entière est cliquable
+     * par {@code panel.js} ({@code data-href}), et « Voir le détail » le dit en toutes lettres.
+     * Avant, seules les cartes mobiles et les notifications menaient au détail.
+     */
+    private static String desktopTable(List<AgentActionRow> rows, Instant now, Query q) {
         StringBuilder sb = new StringBuilder(
                 "<div class=\"table-responsive d-none d-md-block\"><table class=\"table table-hover align-middle actions-table\">");
         sb.append("<thead><tr><th>Date</th><th>Domaine</th><th>Action</th><th>Cible</th>"
-                + "<th>Statut</th><th>Résultat</th><th>Acteur</th></tr></thead><tbody>");
+                + "<th>Statut</th><th>Résultat</th><th>Acteur</th><th><span class=\"visually-hidden\">"
+                + "Détail</span></th></tr></thead><tbody>");
         for (AgentActionRow a : rows) {
             String tgt = ActionView.target(a);
             String res = ActionView.shortResult(a);
-            sb.append("<tr>")
+            String href = detailHref(a, q);
+            sb.append("<tr class=\"act-row\" data-href=\"").append(Http.esc(href)).append("\">")
                     .append("<td class=\"nowrap\"><span title=\"").append(Http.esc(a.createdAt().toString()))
                     .append("\">").append(Http.esc(ActionView.relativeTime(a.createdAt(), now))).append("</span></td>")
                     .append("<td>").append(ActionView.domainBadge(ActionView.Domain.of(a.type()))).append("</td>")
-                    .append("<td><span class=\"act-label\">").append(Http.esc(ActionView.humanLabel(a.type())))
-                    .append("</span> ").append(Ui.id(a.type())).append("</td>")
+                    .append("<td><a class=\"act-label\" href=\"").append(Http.esc(href)).append("\">")
+                    .append(Http.esc(ActionView.humanLabel(a.type())))
+                    .append("</a> ").append(Ui.id(a.type())).append("</td>")
                     .append("<td>").append(tgt.isEmpty() ? "<span class=\"muted\">—</span>" : Http.esc(tgt)).append("</td>")
                     .append("<td>").append(ActionView.statusBadge(a.status())).append("</td>")
                     .append("<td class=\"act-res\">").append(res.isEmpty() ? "<span class=\"muted\">—</span>" : Http.esc(res)).append("</td>")
                     .append("<td class=\"muted nowrap\">").append(Http.esc(nz(a.createdBy()))).append("</td>")
+                    .append("<td class=\"nowrap\"><a class=\"btn btn-sm btn-outline-secondary\" href=\"")
+                    .append(Http.esc(href)).append("\" aria-label=\"Voir le détail de l'action ")
+                    .append(Http.esc(ActionView.humanLabel(a.type()))).append("\">Voir le détail</a></td>")
                     .append("</tr>");
         }
         return sb.append("</tbody></table></div>").toString();
     }
 
-    private static String mobileCards(List<AgentActionRow> rows, Instant now) {
+    private static String mobileCards(List<AgentActionRow> rows, Instant now, Query q) {
         StringBuilder sb = new StringBuilder("<div class=\"d-md-none actions-cards\">");
         for (AgentActionRow a : rows) {
             String tgt = ActionView.target(a);
             String res = ActionView.shortResult(a);
-            sb.append("<a class=\"card actions-card\" href=\"/actions/").append(Http.esc(a.id())).append("\">")
+            sb.append("<a class=\"card actions-card\" href=\"").append(Http.esc(detailHref(a, q))).append("\">")
                     .append("<div class=\"card-body\">")
                     .append("<div class=\"ac-top\">").append(ActionView.domainBadge(ActionView.Domain.of(a.type())))
                     .append(ActionView.statusBadge(a.status())).append("</div>")
@@ -263,10 +297,16 @@ public final class ActionsPages {
      * @param contextHtml HTML déjà sûr, ou vide
      */
     public static String detail(AgentActionRow a, Instant now, String contextHtml) {
+        return detail(a, now, contextHtml, "/actions");
+    }
+
+    /** @param backHref la liste d'où l'on vient (#266), déjà passée par {@link #safeBack} */
+    public static String detail(AgentActionRow a, Instant now, String contextHtml, String backHref) {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader(ActionView.Domain.of(a.type()).icon(), ActionView.humanLabel(a.type()),
                 ActionView.Domain.of(a.type()).label() + " · " + ActionView.relativeTime(a.createdAt(), now),
-                "<a class=\"btn btn-outline-secondary\" href=\"/actions\">" + Icons.icon("back") + "Retour</a>"));
+                "<a class=\"btn btn-outline-secondary\" href=\"" + Http.esc(safeBack(backHref)) + "\">"
+                        + Icons.icon("back") + "Retour à l'historique</a>"));
         if (contextHtml != null && !contextHtml.isBlank()) {
             sb.append(contextHtml);
         }

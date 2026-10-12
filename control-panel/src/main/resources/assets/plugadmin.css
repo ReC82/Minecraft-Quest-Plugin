@@ -1004,3 +1004,9 @@ tr[hidden]{display:none}
 /* Trois champs côte à côte (X/Y/Z, yaw/pitch) — empilés sur téléphone (#165). */
 .form-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 @media(max-width:575.98px){ .form-grid3{grid-template-columns:1fr} }
+
+/* Issue #266 — une ligne de l'historique ouvre sa fiche. */
+tr.act-row[data-href] { cursor: pointer; }
+tr.act-row a.act-label { font-weight: 600; text-decoration: none; }
+tr.act-row a.act-label:hover, tr.act-row a.act-label:focus { text-decoration: underline; }
+

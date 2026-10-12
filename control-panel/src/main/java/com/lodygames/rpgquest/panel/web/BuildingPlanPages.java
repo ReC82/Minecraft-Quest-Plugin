@@ -669,7 +669,7 @@ public final class BuildingPlanPages {
             return Ui.banner("info", "Ce plan appartient à un brouillon de l'emplacement "
                     + Ui.id(d.siteId()) + ". <a class=\"btn btn-sm btn-primary\" href=\""
                     + draftUrl(d.siteId(), d.id()) + "#brouillon\">" + Icons.icon("back")
-                    + "Revenir au plan</a>");
+                    + "Retour à ce brouillon</a>");
         }
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"banner info\">").append(Icons.icon("info")).append("<div>")

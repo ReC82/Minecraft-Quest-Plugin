@@ -1410,7 +1410,7 @@ place.
 `building.generate` transportent le plan complet. La page de génération liste les actions récentes
 qui portent un plan sans brouillon, avec « Reprendre ce plan » ; on peut aussi coller un identifiant
 d'action. La fiche d'une telle action (`/actions/<id>`) propose désormais **« Reprendre ce plan »**
-— ou **« Revenir au plan »** si un brouillon le contient déjà. La récupération est idempotente, et
+— ou **« Retour à ce brouillon »** si un brouillon le contient déjà. La récupération est idempotente, et
 le verdict de l'action d'origine est repris tel quel.
 
 **Écart avec le brief sur le nombre de niveaux.** L'audit du plugin ne connaît pas le brief : il ne

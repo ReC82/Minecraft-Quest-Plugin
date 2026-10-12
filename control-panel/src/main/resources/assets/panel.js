@@ -1482,9 +1482,28 @@
     run("initOpsConsole", initOpsConsole);
     run("initOpsState", initOpsState);
     run("initDrawer", initDrawer);
+    run("initRowLinks", initRowLinks);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.
     window.addEventListener("load", upgradeToasts);
+  }
+
+  // Issue #266 — une ligne de tableau marquée data-href ouvre sa fiche au clic. Le vrai lien de la
+  // ligne reste là pour le clavier et les lecteurs d'écran ; on ignore le clic sur un lien, un bouton
+  // ou une sélection de texte, et Ctrl/Cmd/clic du milieu ouvrent un nouvel onglet comme un lien.
+  function initRowLinks() {
+    var rows = document.querySelectorAll("tr[data-href]");
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].addEventListener("click", function (ev) {
+        if (ev.target.closest("a, button, input, select, label, textarea")) { return; }
+        var sel = window.getSelection && window.getSelection();
+        if (sel && String(sel).length > 0) { return; }
+        var href = this.getAttribute("data-href");
+        if (!href || href.charAt(0) !== "/") { return; }
+        if (ev.ctrlKey || ev.metaKey || ev.button === 1) { window.open(href, "_blank"); return; }
+        window.location.href = href;
+      });
+    }
   }
 
   function upgradeToasts() {

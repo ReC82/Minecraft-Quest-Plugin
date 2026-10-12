@@ -5238,7 +5238,7 @@ est en lecture). Ne **pas** cliquer « Générer » pendant ce test.
     secondes : les coupes s'affichent dans « Aperçu 2D ».
 6.  Fermer l'onglet, se déconnecter, se reconnecter, rouvrir `/buildings/plan?site=buildsite_0009` :
     le plan est listé avec **« Reprendre ce plan »**, et le reprendre réaffiche verdict et aperçu.
-7.  Revenir sur `/actions/7a1ab38d…` : le bandeau dit désormais **« Revenir au plan »**.
+7.  Revenir sur `/actions/7a1ab38d…` : le bandeau dit désormais **« Retour à ce brouillon »**.
 8.  Dans `/ai/providers` ou les journaux du fournisseur : **aucune** consommation nouvelle depuis le
     début du test.
 
@@ -5319,3 +5319,14 @@ TC-260 (#185).
     ouverte (`/quests?player=LoDyMcFly`), il affiche « — choisir une quête — » et refuse d'envoyer
     sans choix.
 5.  Sur téléphone : boutons lisibles, retour à la ligne correct.
+
+### TC-284 — Ouvrir une action depuis sa ligne de l'historique (issue #266, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de #266. **Durée** : 2 minutes. Sur PC **et** sur téléphone.
+
+1.  `/actions` → filtrer « Réussies » et chercher « bâtiment ».
+2.  Cliquer n'importe où sur une ligne : la fiche de l'action s'ouvre. Revenir, cliquer sur le
+    libellé : même résultat. Revenir, cliquer **Voir le détail** : même résultat.
+3.  Au clavier : Tab jusqu'au libellé, Entrée → la fiche s'ouvre.
+4.  Sur la fiche, **Retour à l'historique** : la liste revient **avec le filtre et la recherche**.
+5.  Ouvrir un audit de plan lié à un brouillon : le bandeau propose **Retour à ce brouillon**.

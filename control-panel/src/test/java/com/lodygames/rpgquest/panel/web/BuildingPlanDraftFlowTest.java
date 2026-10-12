@@ -332,7 +332,7 @@ class BuildingPlanDraftFlowTest {
         assertEquals(draftId(draftUrl), draftId(location(post("/buildings/plan", "_csrf=" + csrf
                 + "&_action=recover&site=" + SITE + "&action_id=" + auditId))));
         String backLink = get("/actions/" + auditId).body();
-        assertTrue(backLink.contains("Revenir au plan"), excerpt(backLink));
+        assertTrue(backLink.contains("Retour à ce brouillon"), excerpt(backLink));
         assertTrue(backLink.contains("draft=" + draftId(draftUrl)));
     }
 

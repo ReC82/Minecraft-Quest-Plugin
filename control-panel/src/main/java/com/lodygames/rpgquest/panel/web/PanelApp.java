@@ -3186,7 +3186,8 @@ public final class PanelApp {
                 return;
             }
             Http.html(exchange, 200, renderPage("Action", session, "/actions",
-                    ActionsPages.detail(row.get(), now, planContext(session, row.get()))));
+                    ActionsPages.detail(row.get(), now, planContext(session, row.get()),
+                            ActionsPages.safeBack(Http.query(exchange).get("back")))));
             return;
         }
         if (!path.equals("/actions") && !path.equals("/actions/")) {

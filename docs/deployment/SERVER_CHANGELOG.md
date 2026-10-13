@@ -70,6 +70,11 @@ Procédure de retour arrière.
 Remplacement du JAR et redéploiement de PlugAdmin. Aucune migration de base, aucune donnée joueur
 modifiée. Ne pas déposer `settings.yml` à la main.
 
+**Effectué le 2026-10-14 ~01:20** depuis `9060a03` (CI verte) : JAR SHA-256 `b3205a17…48bb52`
+(retéléchargé, identique), sauvegarde `rpgquest-20261013T231931Z-predeploy.jar` ; PlugAdmin redéployé
+(ancienne app : release `20261014-011156`) ; redémarrage RCON à 0 joueur ; `settings.get` relu avec
+succès depuis PlugAdmin.
+
 ### Validation
 
 `PENDING MANUAL VALIDATION` : voir le rapport du 2026-10-14.

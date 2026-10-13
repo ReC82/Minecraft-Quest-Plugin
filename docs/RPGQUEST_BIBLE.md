@@ -3338,6 +3338,46 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
 -   « Créer une quête qu'il propose » ouvre `/quests/new?giver=<id>` (champ « PNJ donneur »
     prérempli).
 -   L'identifiant ne se change pas : voir la FAQ de la page d'aide `pnj-citizens`.
+-   **Texture réellement posée (correctif #325)** : un lien MineSkin n'est plus passé à
+    `/npc skin --url` (fabrication en tâche de fond, résultat non vérifiable — Lucien gardait le
+    skin du compte « Lucien »). `MineSkinResolver` lit la texture signée sur
+    `api.mineskin.org/v2/skins/<id>` (public, sans clé), `SkinTrait.setSkinPersistent` la pose avec
+    `setFetchDefaultSkin(false)`, puis elle est relue. L'apparence par défaut est embarquée
+    (`MineSkinTexture.DEFAULT`, image `1a6007…309f`). `npc.citizens.list` porte
+    `skinMatchesSource` (vrai / faux / inconnu) ; faux ⇒ la fiche dit « Il ne porte pas son
+    apparence en jeu » et propose **Réessayer**.
+
+### Dialogues dans PlugAdmin (issue #332)
+
+-   `/dialogues` : liste lisible (« Dialogue de Lucien », personnage, état en jeu), « Créer un
+    dialogue », une seule « Actualiser » (`POST /dialogues/refresh` : `dialogue.list`, `npc.list`,
+    `quest.list`, `content.dev.state`). L'ancien écran (relevé, diagnostics, publication
+    détaillée, édition directe serveur) est sous `/dialogues/diagnostic`.
+-   `/dialogues/new` → `POST /dialogues/create` : personnage + première réplique. Pour un
+    personnage sans dialogue, le fichier prend son id (convention `rpgquest:<id>`) ; sinon un id
+    libre est choisi et `npc.definition.update` rattache le personnage.
+-   `/dialogues/edit/<id>` : « Le personnage dit… », « Le joueur peut répondre… », « Ensuite… »
+    (réplique ou fin), « Et aussi… » (`START_QUEST` / `ADVANCE_QUEST` / `TURN_IN_QUEST`, quête
+    choisie par titre). Conditions et autres effets repliés, en français. `content.DialogueForm`
+    fait l'aller-retour formulaire ↔ dialogue **sans perte** (ordre des effets, place de
+    `CLOSE`, champs inconnus) — vérifié sur tous les dialogues du dépôt. Un fichier non relisible
+    s'ouvre en lecture seule. Les notes `#` ne sont pas conservées (signalé).
+-   « Enregistrer » écrit la source (`expected_sha`) ; « Mettre en jeu » = `content.publish`
+    (#47) de ce seul dialogue. États : non enregistré / enregistré pas en jeu / en cours / à
+    jour / échoué (motif + Réessayer) / modifié sur le serveur.
+-   Aperçu pas à pas, aucune action exécutée. Suppression : page courte, case à cocher, blocage
+    tant qu'un personnage l'utilise ou qu'un dialogue y renvoie (liens directs).
+
+### Joueurs dans PlugAdmin (issue #328)
+
+-   `/players` : annuaire compact (recherche, filtres, tris, pagination inchangés), dernière
+    connexion à l'heure locale du navigateur.
+-   Fiche : `/players?player=<uuid>&tab=apercu|progression|economie|moderation|outils`. En-tête
+    (état, OP, connexions, position, UUID copiable), **un seul** bandeau de retour (dernière
+    action sur ce joueur, datée, « en cours » tant qu'elle n'a pas abouti), un formulaire ouvert
+    à la fois. Après une action, retour sur le même joueur et le même onglet (`focus=tab-…`).
+    Actions et garde-fous inchangés (raisons, confirmations, permissions, audit) ; expulser,
+    renvoyer au Hub et donner un objet ne sont proposés qu'à un joueur connecté.
 
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 

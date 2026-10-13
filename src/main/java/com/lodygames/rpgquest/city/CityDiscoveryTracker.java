@@ -55,6 +55,13 @@ public final class CityDiscoveryTracker {
         return primary;
     }
 
+    /** Ville supprimée : ses découvertes quittent la mémoire de tous les joueurs. */
+    public void forgetCity(String cityId) {
+        for (Set<String> discovered : discoveredByPlayer.values()) {
+            discovered.remove(cityId);
+        }
+    }
+
     /** Annule une réservation (écriture en base refusée) : la ville redevient découvrable. */
     public void release(UUID playerId, String cityId) {
         Set<String> discovered = discoveredByPlayer.get(playerId);

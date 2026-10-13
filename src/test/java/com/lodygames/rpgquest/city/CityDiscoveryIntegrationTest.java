@@ -241,6 +241,12 @@ class CityDiscoveryIntegrationTest {
         assertTrue(registry.find(city.id()).isEmpty());
         assertTrue(stored(player).isEmpty(), "les découvertes partent avec la ville");
         assertEquals(0, service.discoveredCount(player.getUniqueId(), null), "une ville supprimée ne compte plus");
+
+        // Recréée sous le même nom (donc le même identifiant) : elle se redécouvre sans reconnexion.
+        VillageCenter again = create("Brisval", hub, 0.5, 0.5);
+        assertEquals(city.id(), again.id());
+        settle(() -> announced.size() == 2);
+        assertEquals(2, announced.size(), "la mémoire du joueur a oublié la ville supprimée");
     }
 
     @Test

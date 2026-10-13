@@ -70,6 +70,7 @@ public final class CityDiscoveryService implements PluginService {
     public void start() {
         // Une ville créée, déplacée, agrandie ou réactivée sous les pieds d'un joueur doit pouvoir
         // être découverte sans qu'il ait à bouger d'un bloc.
+        cities.onDelete(tracker::forgetCity);
         cities.onChange(this::recheckOnline);
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             load(player);

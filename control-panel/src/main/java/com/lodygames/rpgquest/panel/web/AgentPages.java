@@ -3602,8 +3602,8 @@ public final class AgentPages {
         sb.append("<p class=\"muted\">Conséquences, toutes définitives :</p><ul class=\"muted\">");
         sb.append("<li>la ville disparaît de cette page et du menu de voyage « Villages » ;</li>");
         sb.append("<li><strong>ses ").append(city.discoveries()).append(" découverte(s) sont effacées</strong> : "
-                + "elles ne compteront plus pour aucune quête, même si une ville portant le même nom est recréée "
-                + "plus tard (elle aura un autre identifiant) ;</li>");
+                + "elles ne compteront plus pour aucune quête, et une ville recréée plus tard (même sous ce "
+                + "nom) repartira sans aucune découverte ;</li>");
         if (citingQuests.isEmpty()) {
             sb.append("<li>aucune quête de la source ne la cite précisément ;</li>");
         } else {

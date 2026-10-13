@@ -42,6 +42,7 @@ public final class CityRegistry {
     /** Identifiants réservés par une création en cours d'écriture : deux créations ne prennent jamais le même. */
     private final Set<String> reserved = ConcurrentHashMap.newKeySet();
     private final List<Runnable> changeListeners = new CopyOnWriteArrayList<>();
+    private final List<java.util.function.Consumer<String>> deleteListeners = new CopyOnWriteArrayList<>();
     private volatile CityIndex index = CityIndex.empty();
     private volatile boolean loaded;
 
@@ -84,6 +85,14 @@ public final class CityRegistry {
     /** Appelé sur le thread principal après chaque changement installé en mémoire. */
     public void onChange(Runnable listener) {
         changeListeners.add(listener);
+    }
+
+    /**
+     * Appelé sur le thread principal quand une ville est supprimée, AVANT la reconstruction de
+     * l'index : les découvertes en mémoire doivent partir avec celles de la base.
+     */
+    public void onDelete(java.util.function.Consumer<String> listener) {
+        deleteListeners.add(listener);
     }
 
     public Optional<VillageCenter> find(String id) {
@@ -181,6 +190,9 @@ public final class CityRegistry {
         }
         return repository.delete(id).thenApplyAsync(count -> {
             byId.remove(id);
+            for (var listener : deleteListeners) {
+                listener.accept(id);
+            }
             rebuild();
             return Result.ok(existing);
         }, mainThread);

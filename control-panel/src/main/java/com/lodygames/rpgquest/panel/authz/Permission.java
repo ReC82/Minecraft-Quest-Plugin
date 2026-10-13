@@ -34,6 +34,14 @@ public enum Permission {
      * {@link #TRAVEL_READ} : consulter le réseau n'est pas le modifier.</p>
      */
     TRAVEL_PAIR_WRITE,
+    /**
+     * Villes (issue #178) : renommer, régler la distance de détection, activer/désactiver, armer le
+     * déplacement du centre et montrer le périmètre en jeu. La lecture de la page Villes relève de
+     * {@link #TRAVEL_READ} : une ville est aussi une destination du réseau de voyage.
+     */
+    CITY_WRITE,
+    /** Supprimer une ville et ses découvertes (issue #178) — irréversible, d'où un droit à part. */
+    CITY_DELETE,
     /** Consultation des profils de mob spécial/boss + throttle Wild (issue #169). */
     MOB_READ,
     /** Créer/modifier/activer-désactiver un profil de mob spécial/boss, régler le throttle Wild (issue #169). */

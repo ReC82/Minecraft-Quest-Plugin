@@ -109,6 +109,27 @@ public final class Descriptors {
                                             + "NEW_ONLY empêche un nouveau cycle si le joueur a déjà tout "
                                             + "découvert — aucune découverte n'est jamais supprimée pour "
                                             + "rendre la quête rejouable.", false))),
+            // Issue #178 : deux formes dans un seul type, comme le moteur. « Ville précise » si une
+            // ville est choisie (la quantité vaut alors 1), sinon « X villes distinctes ».
+            new Descriptor("DISCOVER_CITY", "Découvrir des villes", "world",
+                    "Découvrir des villes DISTINCTES. Seule la première entrée réelle dans une ville compte "
+                            + "(à pied, par téléportation ou à la connexion) : y revenir, la renommer ou "
+                            + "redémarrer le serveur ne fait jamais monter le compteur. Choisir une ville "
+                            + "pour exiger CETTE ville ; laisser vide et indiquer une quantité pour « X villes "
+                            + "au choix du joueur ».",
+                    List.of(Field.select("city", "Ville précise (optionnel)", "city",
+                                    "Chercher par nom (« Port-Lily »). Laisser vide pour le mode « X villes "
+                                            + "distinctes ». Les villes se créent en jeu (outil de ville) et se "
+                                            + "gèrent dans la page Villes.", false),
+                            Field.optionalInteger("amount", "Nombre de villes distinctes",
+                                    "Obligatoire si aucune ville précise n'est choisie (entier > 0). Avec une "
+                                            + "ville précise, laisser vide."),
+                            Field.select("count-mode", "Villes déjà découvertes avant d'accepter la quête",
+                                    "countMode",
+                                    "NEW_ONLY (défaut) : seules les villes découvertes APRÈS l'acceptation "
+                                            + "comptent. INCLUDE_EXISTING : celles déjà découvertes comptent "
+                                            + "aussi. La règle choisie est affichée au joueur dans son journal.",
+                                    false))),
             new Descriptor("CRAFT_ITEM", "Fabriquer un objet", "gift",
                     "Fabriquer N exemplaires d'un objet (table de craft ou grille 2×2).",
                     List.of(Field.select("material", "Objet", "material",

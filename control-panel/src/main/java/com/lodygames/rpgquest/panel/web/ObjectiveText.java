@@ -35,6 +35,15 @@ public final class ObjectiveText {
 
     /** Construit le libellé depuis une ligne {@code objectiveDetails} du payload {@code quest.list}. */
     public static Objective fromSummary(Map<String, Object> summary) {
+        return fromSummary(summary, id -> id);
+    }
+
+    /**
+     * Comme {@link #fromSummary(Map)}, avec le nom affiché des villes (issue #178) : un résumé ne
+     * montre jamais l'identifiant technique d'une ville quand son nom est connu.
+     */
+    public static Objective fromSummary(Map<String, Object> summary,
+                                        java.util.function.Function<String, String> cityNames) {
         String kind = str(summary.get("kind")).toUpperCase(Locale.ROOT);
         String target = str(summary.get("target"));
         int amount = asInt(summary.get("amount"));
@@ -68,6 +77,15 @@ public final class ObjectiveText {
                 yield new Objective("Découvrir " + amount + " waypoint(s) — " + scope
                         + (cumulative ? " — découvertes déjà acquises incluses" : " — nouvelles découvertes"),
                         null);
+            }
+            // Issue #178 : forme « ville précise » (cible = identifiant) ou « X villes distinctes »,
+            // toujours avec la règle de comptage, comme les waypoints.
+            case "DISCOVER_CITY" -> {
+                boolean cumulative = "INCLUDE_EXISTING".equalsIgnoreCase(str(summary.get("countMode")));
+                String rule = cumulative ? " — découvertes déjà acquises incluses" : " — nouvelles découvertes";
+                yield target.isBlank()
+                        ? new Objective("Découvrir " + amount + " ville(s) distincte(s)" + rule, null)
+                        : new Objective("Découvrir la ville « " + cityNames.apply(target) + " »" + rule, target);
             }
             default -> {
                 String raw = str(summary.get("raw"));

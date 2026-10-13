@@ -297,6 +297,10 @@ public final class PanelApp {
         route("/buildings/library", exchange -> handleBusinessPage(exchange, "/buildings/library",
                 "Bibliothèque de bâtiments", Permission.BUILDING_READ,
                 agentPages::buildingLibrary));
+        // Issue #178 — villes. Lecture gardée par TRAVEL_READ ; les mutations passent par
+        // /agents/action, donc par le catalogue et CITY_WRITE / CITY_DELETE.
+        route("/cities", exchange -> handleBusinessPage(exchange, "/cities", "Villes",
+                Permission.TRAVEL_READ, agentPages::cities));
         route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Réseau de voyage",
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",

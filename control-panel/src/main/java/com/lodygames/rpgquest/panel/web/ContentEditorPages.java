@@ -1450,6 +1450,8 @@ public final class ContentEditorPages {
             case "quest" -> "dl-quest";
             case "world" -> "dl-world";
             case "waypointCountMode" -> "dl-waypoint-count-mode";
+            case "countMode" -> "dl-count-mode";
+            case "city" -> "dl-city";
             default -> null;
         };
     }
@@ -1480,7 +1482,22 @@ public final class ContentEditorPages {
                 + questDatalist("dl-quest", r)
                 + datalist("dl-world", r.worlds())
                 // Issue #185 : deux valeurs fixes, définies par le moteur — jamais un relevé serveur.
-                + datalist("dl-waypoint-count-mode", List.of("NEW_ONLY", "INCLUDE_EXISTING"));
+                + datalist("dl-waypoint-count-mode", List.of("NEW_ONLY", "INCLUDE_EXISTING"))
+                // Issue #178 : mêmes valeurs, avec leur sens en français pour la recherche.
+                + "<datalist id=\"dl-count-mode\"><option value=\"NEW_ONLY\" label=\"Nouvelles "
+                + "découvertes seulement\"><option value=\"INCLUDE_EXISTING\" label=\"Découvertes déjà "
+                + "acquises incluses\"></datalist>"
+                + cityDatalist("dl-city", r);
+    }
+
+    /** Issue #178 — villes : {@code value} = identifiant stable, {@code label} = nom affiché. */
+    private static String cityDatalist(String id, RefData ref) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"").append(id).append("\">");
+        for (Map.Entry<String, String> city : ref.cityNames().entrySet()) {
+            sb.append("<option value=\"").append(Http.esc(city.getKey())).append("\" label=\"")
+                    .append(Http.esc(city.getValue())).append("\">");
+        }
+        return sb.append("</datalist>").toString();
     }
 
     /**

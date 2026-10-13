@@ -35,6 +35,8 @@ public final class AgentActionCatalog {
     private static final int MAX_DIALOGUE_TEXT = 512;
     private static final int MAX_DIALOGUE_CHOICE_INDEX = 199;
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
+    /** Jeton anti-doublon d'un formulaire de création (issue #325). */
+    private static final Pattern REQUEST_TOKEN = Pattern.compile("[A-Za-z0-9_-]{8,64}");
     /** Issue #213 : exactement la forme que le serveur attribue à un emplacement. */
     private static final Pattern BUILD_SITE_ID = Pattern.compile("buildsite_[0-9]{1,12}");
     /** Issue #47 — les seules familles publiables, miroir de {@code content.publish.PublishKind}. */
@@ -87,6 +89,29 @@ public final class AgentActionCatalog {
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
     /** Issue #165 : lien MineSkin strict — même motif que la validation côté plugin. */
     private static final Pattern MINESKIN_URL = Pattern.compile("https://minesk\\.in/[A-Za-z0-9]{8,64}");
+
+    /** Adresse du catalogue public de MineSkin, proposée à côté du champ « Lien du skin » (#325). */
+    public static final String MINESKIN_CATALOG_URL = "https://mineskin.org/skins";
+
+    /**
+     * Issue #325 — ce qui ne va pas dans un lien de skin, en français simple, ou {@code null}. Le
+     * contrôle « commence par https:// » vient d'abord parce que c'est l'erreur la plus courante ;
+     * il ne suffit pas : seul le format {@code https://minesk.in/<identifiant>} est accepté, ici
+     * comme dans le plugin.
+     */
+    public static String mineSkinProblem(String url) {
+        String u = url == null ? "" : url.trim();
+        if (u.isEmpty()) {
+            return "Collez le lien du skin.";
+        }
+        if (!u.startsWith("https://")) {
+            return "Le lien doit commencer par https://";
+        }
+        if (!MINESKIN_URL.matcher(u).matches()) {
+            return "Ce lien n'est pas un lien MineSkin. Il doit ressembler à https://minesk.in/…";
+        }
+        return null;
+    }
     /** Bornes de sécurité de position miroir de {@code CitizensSpawnPlanner} côté plugin (#81 phase 2). */
     private static final double HORIZONTAL_LIMIT = 29_999_984.0;
     private static final double Y_MIN = -2048.0;
@@ -1216,19 +1241,38 @@ public final class AgentActionCatalog {
                 params.put("x", trimNumber(x));
                 params.put("y", trimNumber(y));
                 params.put("z", trimNumber(z));
+                // Issue #325 : la direction se choisit en mots (« le nord », « vers le haut »). Les
+                // angles précis, s'ils sont saisis, l'emportent. Rien de choisi = orientation gardée.
                 String rawYaw = trim(form.get("yaw"));
                 String rawPitch = trim(form.get("pitch"));
+                if (rawYaw.isEmpty()) {
+                    rawYaw = switch (trim(form.get("facing"))) {
+                        case "south" -> "0";
+                        case "west" -> "90";
+                        case "north" -> "180";
+                        case "east" -> "-90";
+                        default -> "";
+                    };
+                }
+                if (rawPitch.isEmpty()) {
+                    rawPitch = switch (trim(form.get("tilt"))) {
+                        case "level" -> "0";
+                        case "up" -> "-30";
+                        case "down" -> "30";
+                        default -> "";
+                    };
+                }
                 if (!rawYaw.isEmpty()) {
                     Double yawValue = finite(rawYaw);
                     if (yawValue == null) {
-                        return Validation.fail("Yaw non numérique.");
+                        return Validation.fail("La rotation doit être un nombre.");
                     }
                     params.put("yaw", trimNumber(yawValue));
                 }
                 if (!rawPitch.isEmpty()) {
                     Double pitchValue = finite(rawPitch);
                     if (pitchValue == null || pitchValue < -90.0 || pitchValue > 90.0) {
-                        return Validation.fail("Pitch hors bornes (-90 à 90).");
+                        return Validation.fail("L'inclinaison doit être comprise entre -90 et 90.");
                     }
                     params.put("pitch", trimNumber(pitchValue));
                 }
@@ -1242,6 +1286,11 @@ public final class AgentActionCatalog {
                     return Validation.fail("Identifiant de PNJ manquant ou invalide.");
                 }
                 String enabled = trim(form.get("enabled"));
+                // Issue #325 : formulaire à case à cocher. La case porte l'état voulu — cochée ou
+                // non — et ce sont ces deux états explicites qui partent, jamais une bascule.
+                if (enabled.isEmpty() && "1".equals(trim(form.get("state_form")))) {
+                    enabled = "on".equals(trim(form.get("state"))) ? "true" : "false";
+                }
                 if (!"true".equals(enabled) && !"false".equals(enabled)) {
                     return Validation.fail("État manquant : choisir « activé » ou « désactivé ».");
                 }
@@ -1251,8 +1300,8 @@ public final class AgentActionCatalog {
                 if (!rawRange.isEmpty()) {
                     Double range = finite(rawRange);
                     if (range == null || range <= 0 || range > LOOKCLOSE_MAX_RANGE) {
-                        return Validation.fail("Portée hors bornes (0 exclu à "
-                                + (long) LOOKCLOSE_MAX_RANGE + " blocs).");
+                        return Validation.fail("La portée doit être comprise entre 1 et "
+                                + (long) LOOKCLOSE_MAX_RANGE + " blocs.");
                     }
                     params.put("range", trimNumber(range));
                 }
@@ -1272,7 +1321,11 @@ public final class AgentActionCatalog {
                 params.put("enabled", enabled);
                 if ("false".equals(enabled)) {
                     // Désactiver ne demande ni ancre ni zone : on ne transmet rien d'autre, pour ne
-                    // pas laisser croire qu'un réglage a été enregistré au passage.
+                    // pas laisser croire qu'un réglage a été enregistré au passage. Seule exception
+                    // (issue #325) : revenir au point de départ en s'arrêtant.
+                    if ("true".equals(trim(form.get("return_home")))) {
+                        params.put("return_home", "true");
+                    }
                     break;
                 }
                 Integer xRange = positiveInt(form.get("x_range"));
@@ -1372,9 +1425,9 @@ public final class AgentActionCatalog {
                     params.put("skin_player", player);
                 } else {
                     String url = trim(form.get("skin_url"));
-                    if (!MINESKIN_URL.matcher(url).matches()) {
-                        return Validation.fail("Lien MineSkin invalide. Format attendu : "
-                                + "https://minesk.in/<identifiant> (coller le lien, pas la commande).");
+                    String problem = mineSkinProblem(url);
+                    if (problem != null) {
+                        return Validation.fail(problem);
                     }
                     params.put("skin_url", url);
                 }
@@ -1385,6 +1438,28 @@ public final class AgentActionCatalog {
                     return Validation.fail("Nom du PNJ manquant, trop long (128 maximum) ou multi-ligne.");
                 }
                 params.put("display_name", displayName);
+                // Issue #325 : identifiant retenu par le panel et dialogue initial (optionnels).
+                String wantedId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!wantedId.isEmpty()) {
+                    if (!NPC_ID.matcher(wantedId).matches()) {
+                        return Validation.fail("Identifiant de PNJ invalide.");
+                    }
+                    params.put("npc_id", wantedId);
+                }
+                String initialDialogue = trim(form.get("dialogue_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!initialDialogue.isEmpty()) {
+                    if (!DIALOGUE_REF.matcher(initialDialogue).matches()) {
+                        return Validation.fail("Dialogue initial invalide.");
+                    }
+                    params.put("dialogue_id", initialDialogue);
+                }
+                String requestToken = trim(form.get("request_token"));
+                if (!requestToken.isEmpty()) {
+                    if (!REQUEST_TOKEN.matcher(requestToken).matches()) {
+                        return Validation.fail("Jeton de demande invalide.");
+                    }
+                    params.put("request_token", requestToken);
+                }
 
                 // Skin optionnel. Une source renseignée sans valeur, ou l'inverse, est refusée :
                 // mieux vaut un message clair qu'une création au skin par défaut inattendu.
@@ -1401,9 +1476,9 @@ public final class AgentActionCatalog {
                         params.put("skin_player", skinPlayer);
                     }
                 } else if (!skinUrl.isEmpty()) {
-                    if (!MINESKIN_URL.matcher(skinUrl).matches()) {
-                        return Validation.fail("Lien MineSkin invalide. Format attendu : "
-                                + "https://minesk.in/<identifiant> (coller le lien, pas la commande).");
+                    String problem = mineSkinProblem(skinUrl);
+                    if (problem != null) {
+                        return Validation.fail(problem);
                     }
                     params.put("skin_source", "url");
                     params.put("skin_url", skinUrl);

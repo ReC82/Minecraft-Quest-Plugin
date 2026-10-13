@@ -958,6 +958,17 @@ public interface AgentActions {
                                                    double x, double y, double z, float yaw, float pitch);
 
     /**
+     * Issue #325 — déplacement où l'orientation est <strong>optionnelle</strong> : {@code null}
+     * garde celle du PNJ, au lieu de le remettre face au sud quand on ne change que sa position.
+     * Si le PNJ se promène, le centre de sa zone suit la destination.
+     */
+    default CompletableFuture<MutationResult> citizensRelocate(String npcId, String world,
+                                                               double x, double y, double z,
+                                                               Float yaw, Float pitch) {
+        return citizensMove(npcId, world, x, y, z, yaw == null ? 0f : yaw, pitch == null ? 0f : pitch);
+    }
+
+    /**
      * Applique un skin au PNJ Citizens lié. {@code byPlayerName} choisit la source : un pseudo
      * Minecraft résolu par Citizens, ou un lien MineSkin. Le <strong>nom en jeu n'est jamais
      * touché</strong>. La source appliquée est enregistrée, pour pouvoir être reconduite lors d'un
@@ -988,6 +999,14 @@ public interface AgentActions {
     CompletableFuture<MutationResult> citizensWander(String npcId, boolean enabled,
                                                      String world, Double x, Double y, Double z,
                                                      int xRange, int yRange, boolean confirmReplace);
+
+    /**
+     * Issue #325 — arrête la promenade et, si {@code returnHome}, ramène le PNJ au centre de sa
+     * zone (destination sûre vérifiée ; sinon il reste où il est et le résultat le dit).
+     */
+    default CompletableFuture<MutationResult> citizensWanderStop(String npcId, boolean returnHome) {
+        return citizensWander(npcId, false, null, null, null, null, 0, 0, false);
+    }
 
     /**
      * Un PNJ Citizens du registre (action {@code npc.citizens.list}). {@code linkedNpcId} = id
@@ -1078,6 +1097,18 @@ public interface AgentActions {
     CompletableFuture<CitizensProvisionResult> citizensProvision(
             String displayName, String skinValue, boolean skinByPlayerName,
             String world, Double x, Double y, Double z, Float yaw, Float pitch);
+
+    /**
+     * Issue #325 — création avec l'identifiant retenu par le panel ({@code requestedId}, vide =
+     * déduit du nom) et le dialogue initial à déclarer sur la définition ({@code dialogueId}, vide =
+     * aucun). Un skin vide pose l'apparence par défaut. Les implémentations historiques ignorent les
+     * deux nouveaux paramètres.
+     */
+    default CompletableFuture<CitizensProvisionResult> citizensProvision(
+            String requestedId, String dialogueId, String displayName, String skinValue,
+            boolean skinByPlayerName, String world, Double x, Double y, Double z, Float yaw, Float pitch) {
+        return citizensProvision(displayName, skinValue, skinByPlayerName, world, x, y, z, yaw, pitch);
+    }
 
     /** Catalogue Citizens <strong>physique</strong> (séparé du catalogue logique {@code npc.list}). */
     CompletableFuture<CitizensRosterView> citizensRoster();

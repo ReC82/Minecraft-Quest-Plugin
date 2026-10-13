@@ -72,6 +72,7 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.npc.NpcPlacementPlanner;
 import com.lodygames.rpgquest.npc.NpcRenameVerdict;
 import com.lodygames.rpgquest.npc.SkinPreservationPlanner;
+import com.lodygames.rpgquest.npc.WanderState;
 import com.lodygames.rpgquest.npc.NpcLoadIssue;
 import com.lodygames.rpgquest.npc.QuestGiverStore;
 import com.lodygames.rpgquest.npc.YamlNpcEngine;
@@ -1977,6 +1978,22 @@ public final class BukkitAgentActions implements AgentActions {
                     "citizens:skin-preserved=not-applicable");
         }
 
+        if (plan.decision() == SkinPreservationPlanner.Decision.APPLY_DEFAULT_THEN_RENAME) {
+            // Issue #325 : aucune source connue → l'apparence par défaut est posée PUIS enregistrée
+            // (RenameOutcome.record), pour que le prochain renommage la reconduise à l'identique.
+            if (!npcIdentityService.applyCitizensSkin(citizensUuid, NpcIdentityService.DEFAULT_SKIN_URL)) {
+                return new RenameOutcome(MutationResult.of(false, "SKIN_ANCHOR_FAILED",
+                        "Renommage annulé : Citizens a refusé l'apparence par défaut. Aucun nom n'a "
+                                + "été changé."), null);
+            }
+            RenameOutcome renamed = renameOnly(citizensUuid, name, previousName,
+                    " Apparence par défaut appliquée.", "citizens:skin-url=" + NpcIdentityService.DEFAULT_SKIN_URL);
+            return renamed.result().ok()
+                    ? new RenameOutcome(renamed.result(), new NpcSkinSourceRepository.SkinSource(
+                            NpcSkinSourceRepository.Kind.URL, NpcIdentityService.DEFAULT_SKIN_URL))
+                    : renamed;
+        }
+
         NpcSkinSourceRepository.SkinSource source = recorded.orElseThrow();
         boolean anchored = source.kind() == NpcSkinSourceRepository.Kind.URL
                 ? npcIdentityService.applyCitizensSkin(citizensUuid, source.value())
@@ -2249,27 +2266,43 @@ public final class BukkitAgentActions implements AgentActions {
     public CompletableFuture<CitizensProvisionResult> citizensProvision(
             String displayName, String skinValue, boolean skinByPlayerName,
             String world, Double x, Double y, Double z, Float yaw, Float pitch) {
+        return citizensProvision(null, null, displayName, skinValue, skinByPlayerName, world, x, y, z, yaw, pitch);
+    }
+
+    /**
+     * Issue #325 — même création, avec l'identifiant choisi par le panel (qui a déjà écarté les
+     * identifiants pris, d'où « lucien_2 ») et le dialogue initial à déclarer. Un identifiant déjà
+     * défini reste refusé ici : c'est le dernier rempart contre un doublon, quel que soit le panel.
+     */
+    @Override
+    public CompletableFuture<CitizensProvisionResult> citizensProvision(
+            String requestedId, String dialogueId, String displayName, String skinValue,
+            boolean skinByPlayerName, String world, Double x, Double y, Double z, Float yaw, Float pitch) {
 
         String name = displayName == null ? "" : displayName.trim();
         if (name.isEmpty() || name.length() > 128 || name.indexOf('\n') >= 0) {
             return done(CitizensProvisionResult.reject("INVALID_NAME",
                     "Nom manquant, trop long (128 maximum) ou multi-ligne."));
         }
-        String npcId = slugify(name);
+        String explicitId = requestedId == null ? "" : requestedId.trim();
+        String npcId = explicitId.isEmpty() ? slugify(name) : explicitId;
         if (npcId.isEmpty() || !NPC_ID_PATTERN.matcher(npcId).matches()) {
             return done(CitizensProvisionResult.reject("INVALID_NAME",
                     "Impossible de déduire un identifiant technique de « " + safe(name) + " » : "
                             + "ajouter au moins une lettre ou un chiffre."));
         }
         // Le skin est validé AVANT toute création : une URL invalide ne doit jamais laisser un PNJ
-        // derrière elle, ni être silencieusement remplacée par autre chose.
-        String skin = skinValue == null ? "" : skinValue.trim();
-        if (!skin.isEmpty()) {
-            boolean valid = skinByPlayerName
+        // derrière elle, ni être silencieusement remplacée par autre chose. Vide = apparence par
+        // défaut (issue #325) : un PNJ joueur a toujours une source d'apparence enregistrée.
+        String requestedSkin = skinValue == null ? "" : skinValue.trim();
+        boolean byPlayer = skinByPlayerName && !requestedSkin.isEmpty();
+        String skin = requestedSkin.isEmpty() ? NpcIdentityService.DEFAULT_SKIN_URL : requestedSkin;
+        {
+            boolean valid = byPlayer
                     ? NpcIdentityService.isValidSkinPlayerName(skin)
                     : NpcIdentityService.isValidMineSkinUrl(skin);
             if (!valid) {
-                return done(CitizensProvisionResult.reject("INVALID_SKIN", skinByPlayerName
+                return done(CitizensProvisionResult.reject("INVALID_SKIN", byPlayer
                         ? "Pseudo Minecraft invalide : 3 à 16 caractères, lettres, chiffres et « _ »."
                         : "Lien MineSkin invalide. Format accepté : https://minesk.in/<identifiant>."));
             }
@@ -2300,7 +2333,7 @@ public final class BukkitAgentActions implements AgentActions {
                 return done(CitizensProvisionResult.reject(spot.code(), spot.message()));
             }
             // 1) Définition RPGQuest, via le chemin d'écriture habituel.
-            return writeDefinition(npcId, name, null, null, true, true).thenCompose(defResult -> {
+            return writeDefinition(npcId, name, dialogueId, null, true, true).thenCompose(defResult -> {
                 if (!defResult.ok()) {
                     return done(CitizensProvisionResult.reject(defResult.code(), defResult.message()));
                 }
@@ -2310,7 +2343,7 @@ public final class BukkitAgentActions implements AgentActions {
                             if (!created.ok()) {
                                 return compensate(npcId, name, created.code(), created.message());
                             }
-                            return applyOptionalSkin(npcId, skin, skinByPlayerName).thenApply(skinOutcome ->
+                            return applyOptionalSkin(npcId, skin, byPlayer).thenApply(skinOutcome ->
                                     new CitizensProvisionResult(true,
                                             skinOutcome.applied() ? "PROVISIONED" : "PROVISIONED_SKIN_FAILED",
                                             "PNJ « " + name + " » créé : identifiant RPGQuest « " + npcId
@@ -2374,7 +2407,8 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     /**
-     * Applique le skin demandé, et décrit honnêtement ce qui s'est passé — jamais un succès muet.
+     * Applique le skin demandé (ou l'apparence par défaut), et décrit honnêtement ce qui s'est passé
+     * — jamais un succès muet.
      *
      * <p>Un refus de Citizens ici ne détruit pas le PNJ : il est créé, lié et valide. On le dit, on
      * marque le résultat d'un code distinct ({@code PROVISIONED_SKIN_FAILED}) et on indique où
@@ -2382,17 +2416,12 @@ public final class BukkitAgentActions implements AgentActions {
      * un nettoyage disproportionné.</p>
      */
     private CompletableFuture<SkinOutcome> applyOptionalSkin(String npcId, String skin, boolean byPlayerName) {
-        if (skin.isEmpty()) {
-            return done(new SkinOutcome(true,
-                    "Aucun skin demandé : le PNJ garde l'apparence par défaut de Citizens pour un PNJ "
-                            + "de type joueur. Aucun appel réseau n'a été fait."));
-        }
         return citizensSkin(npcId, skin, byPlayerName).thenApply(r -> r.ok()
-                ? new SkinOutcome(true, "Skin demandé à Citizens (" + (byPlayerName ? "pseudo " : "lien ")
-                        + skin + ") : résolution asynchrone, à vérifier en jeu.")
-                : new SkinOutcome(false, "ATTENTION : le PNJ est bien créé et lié, mais le skin n'a PAS "
-                        + "été appliqué (" + r.message() + "). Le réappliquer depuis « Nom en jeu & "
-                        + "apparence » — le PNJ lui-même n'a pas besoin d'être recréé."));
+                ? new SkinOutcome(true, NpcIdentityService.DEFAULT_SKIN_URL.equals(skin)
+                        ? "Apparence par défaut demandée (visible en jeu dans quelques secondes)."
+                        : "Apparence demandée (visible en jeu dans quelques secondes).")
+                : new SkinOutcome(false, "Le PNJ est créé, mais son apparence n'a pas été appliquée ("
+                        + r.message() + "). La réappliquer depuis « Apparence » sur sa fiche."));
     }
 
     /** Emplacement résolu, ou refus explicite. */
@@ -2491,15 +2520,29 @@ public final class BukkitAgentActions implements AgentActions {
     public CompletableFuture<MutationResult> citizensMove(String npcId, String world,
                                                           double x, double y, double z,
                                                           float yaw, float pitch) {
+        return citizensRelocate(npcId, world, x, y, z, yaw, pitch);
+    }
+
+    /**
+     * Déplace le PNJ lié. Issue #325 : orientation {@code null} = celle du PNJ est gardée, et si le
+     * PNJ se promène, le centre de sa zone devient la destination — jamais une position temporaire
+     * de sa promenade.
+     */
+    @Override
+    public CompletableFuture<MutationResult> citizensRelocate(String npcId, String world,
+                                                              double x, double y, double z,
+                                                              Float yaw, Float pitch) {
         String worldName = world == null ? "" : world.trim();
-        String positionError = CitizensSpawnPlanner.positionError(x, y, z, yaw, pitch);
+        String positionError = CitizensSpawnPlanner.positionError(x, y, z,
+                yaw == null ? 0f : yaw, pitch == null ? 0f : pitch);
         if (positionError != null) {
             return done(MutationResult.of(false, "INVALID_POSITION", positionError));
         }
         Set<String> allowed = allowedSpawnWorlds.get();
         if (worldName.isEmpty() || allowed.stream().noneMatch(w -> w.equalsIgnoreCase(worldName))) {
             return done(MutationResult.of(false, "UNKNOWN_WORLD",
-                    "Monde « " + safe(world) + " » hors de la liste blanche RPGQuest " + allowed + "."));
+                    "Ce monde n'accepte pas de PNJ (« " + safe(world) + " »). Mondes possibles : "
+                            + allowed + "."));
         }
         if (!npcIdentityService.citizensAvailable()) {
             return done(MutationResult.of(false, "CITIZENS_UNAVAILABLE", "Citizens n'est pas disponible."));
@@ -2507,7 +2550,7 @@ public final class BukkitAgentActions implements AgentActions {
         return citizensUuidOf(npcId).thenCompose(uuid -> {
             if (uuid.isEmpty()) {
                 return done(MutationResult.of(false, "NO_CITIZENS_BINDING",
-                        "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
+                        "Ce PNJ n'existe pas encore dans le monde."));
             }
             UUID citizensUuid = uuid.get();
             return onMain(() -> {
@@ -2518,33 +2561,30 @@ public final class BukkitAgentActions implements AgentActions {
                 }
                 if (y < w.getMinHeight() || y >= w.getMaxHeight()) {
                     return done(MutationResult.of(false, "INVALID_POSITION",
-                            "Y hors des limites réelles de « " + worldName + " » ("
-                                    + w.getMinHeight() + " à " + (w.getMaxHeight() - 1) + ")."));
+                            "La hauteur Y doit être comprise entre " + w.getMinHeight() + " et "
+                                    + (w.getMaxHeight() - 1) + "."));
                 }
                 // Sûreté de l'arrivée : même critère que le placement automatique — sol praticable
                 // et deux cases libres. On ne casse ni ne pose jamais de bloc pour y arriver.
                 NpcPlacementPlanner.Probe probe = new BukkitNpcPlacementProbe(w, java.util.Set.of());
-                int bx = (int) Math.floor(x);
-                int by = (int) Math.floor(y);
-                int bz = (int) Math.floor(z);
-                if (!NpcPlacementPlanner.isAcceptable(bx, by, bz, probe)) {
+                if (!NpcPlacementPlanner.isAcceptable((int) Math.floor(x), (int) Math.floor(y),
+                        (int) Math.floor(z), probe)) {
                     return done(MutationResult.of(false, "UNSAFE_DESTINATION",
-                            "Destination refusée : il faut un sol praticable et deux cases libres "
-                                    + "au-dessus, sans liquide ni portail. La position actuelle du PNJ "
-                                    + "est inchangée."));
+                            "Cet endroit ne laisse pas assez de place au PNJ : il faut un sol solide "
+                                    + "et deux blocs d'air au-dessus, sans eau ni lave. Le PNJ n'a pas bougé."));
                 }
+                Optional<CitizensNpc> current = npcIdentityService.citizensRoster().stream()
+                        .filter(n -> n.uuid().equals(citizensUuid)).findFirst();
+                float finalYaw = yaw != null ? yaw
+                        : current.filter(CitizensNpc::hasLocation).map(CitizensNpc::yaw).orElse(0f);
+                float finalPitch = pitch != null ? pitch
+                        : current.filter(CitizensNpc::hasLocation).map(CitizensNpc::pitch).orElse(0f);
 
-                Optional<org.bukkit.Location> before = npcIdentityService.citizensRoster().stream()
-                        .filter(n -> n.uuid().equals(citizensUuid) && n.hasLocation())
-                        .findFirst()
-                        .map(n -> new org.bukkit.Location(plugin.getServer().getWorld(n.world()),
-                                n.x(), n.y(), n.z()));
-
-                org.bukkit.Location target = new org.bukkit.Location(w, x, y, z, yaw, pitch);
+                org.bukkit.Location target = new org.bukkit.Location(w, x, y, z, finalYaw, finalPitch);
                 Optional<org.bukkit.Location> after = npcIdentityService.moveCitizens(citizensUuid, target);
                 if (after.isEmpty()) {
                     return done(MutationResult.of(false, "CITIZENS_NPC_MISSING",
-                            "Le PNJ Citizens lié est introuvable dans le registre (supprimé ?)."));
+                            "Le personnage est introuvable en jeu (supprimé ?)."));
                 }
                 org.bukkit.Location reached = after.get();
                 boolean sameWorld = reached.getWorld() != null
@@ -2554,21 +2594,20 @@ public final class BukkitAgentActions implements AgentActions {
                 if (!sameWorld || !close) {
                     // Vérification réelle plutôt que supposition : Citizens n'a pas appliqué.
                     return done(MutationResult.of(false, "MOVE_NOT_APPLIED",
-                            "Citizens n'a pas appliqué le déplacement : la position enregistrée reste "
-                                    + describe(reached) + (before.isPresent()
-                                    ? " (demandée : " + worldName + " " + fmt(x) + " / " + fmt(y) + " / "
-                                            + fmt(z) + ")" : "") + "."));
+                            "Le déplacement n'a pas été appliqué : le PNJ est toujours à "
+                                    + describe(reached) + "."));
                 }
-                boolean spawned = npcIdentityService.citizensRoster().stream()
-                        .anyMatch(n -> n.uuid().equals(citizensUuid) && n.spawned());
+                // Promenade active : le centre de la zone suit la destination explicite.
+                com.lodygames.rpgquest.npc.NpcBehaviourOutcome reanchored =
+                        npcIdentityService.reanchorWander(citizensUuid, reached.clone());
+                String wanderNote = "WANDER_REANCHORED".equals(reanchored.code())
+                        ? " " + reanchored.message() : "";
+                List<String> effects = new ArrayList<>(List.of("citizens:moved=" + describe(reached)));
+                if (!wanderNote.isEmpty()) {
+                    effects.add("citizens:wander-anchor=" + describe(reached));
+                }
                 return done(new MutationResult(true, "MOVED",
-                        "PNJ déplacé vers " + describe(reached) + "."
-                                + (spawned ? "" : " Ce PNJ n'était pas matérialisé : c'est sa "
-                                        + "position ENREGISTRÉE qui a changé, et il n'a pas été "
-                                        + "fait apparaître pour autant.")
-                                + " Identité Citizens, identifiant RPGQuest, skin, traits et liaisons "
-                                + "dialogues/quêtes inchangés.",
-                        List.of("citizens:moved=" + describe(reached))));
+                        "PNJ déplacé vers " + describe(reached) + "." + wanderNote, List.copyOf(effects)));
             });
         });
     }
@@ -2634,6 +2673,17 @@ public final class BukkitAgentActions implements AgentActions {
             World w = plugin.getServer().getWorld(world.trim());
             return w == null ? null : new org.bukkit.Location(w, x, y, z);
         }
+        // Issue #325 : une promenade déjà active garde SON centre. La position actuelle du PNJ n'est
+        // alors qu'un point temporaire de sa promenade, jamais un nouveau départ.
+        Optional<WanderState> active = npcIdentityService.wanderOf(citizensUuid)
+                .filter(ws -> ws.enabled() && ws.hasAnchor());
+        if (active.isPresent()) {
+            World w = plugin.getServer().getWorld(active.get().anchorWorld());
+            if (w != null) {
+                return new org.bukkit.Location(w, active.get().anchorX(), active.get().anchorY(),
+                        active.get().anchorZ());
+            }
+        }
         return npcIdentityService.citizensRoster().stream()
                 .filter(n -> n.uuid().equals(citizensUuid) && n.hasLocation())
                 .findFirst()
@@ -2642,6 +2692,52 @@ public final class BukkitAgentActions implements AgentActions {
                     return w == null ? null : new org.bukkit.Location(w, n.x(), n.y(), n.z());
                 })
                 .orElse(null);
+    }
+
+    /**
+     * Issue #325 — « Arrêter la promenade et revenir au départ ». Le centre est lu AVANT l'arrêt
+     * (après, Citizens l'a oublié), puis la destination est contrôlée comme un déplacement. Si le
+     * retour est impossible, la promenade reste arrêtée et le message dit où est le PNJ.
+     */
+    @Override
+    public CompletableFuture<MutationResult> citizensWanderStop(String npcId, boolean returnHome) {
+        return withBoundCitizens(npcId, uuid -> {
+            Optional<WanderState> before = npcIdentityService.wanderOf(uuid);
+            com.lodygames.rpgquest.npc.NpcBehaviourOutcome stopped = npcIdentityService.disableWander(uuid);
+            if (!stopped.ok() || !returnHome) {
+                return toMutation(stopped);
+            }
+            WanderState w = before.orElse(null);
+            World world = w == null || !w.hasAnchor() ? null : plugin.getServer().getWorld(w.anchorWorld());
+            if (world == null) {
+                return MutationResult.of(false, "WANDER_STOPPED_NO_HOME",
+                        "Promenade arrêtée, mais son point de départ est inconnu : le PNJ est resté "
+                                + "où il était. Utilisez « Déplacer » pour le replacer.");
+            }
+            NpcPlacementPlanner.Probe probe = new BukkitNpcPlacementProbe(world, java.util.Set.of());
+            if (!NpcPlacementPlanner.isAcceptable((int) Math.floor(w.anchorX()), (int) Math.floor(w.anchorY()),
+                    (int) Math.floor(w.anchorZ()), probe)) {
+                return MutationResult.of(false, "WANDER_STOPPED_HOME_UNSAFE",
+                        "Promenade arrêtée, mais son point de départ ne laisse plus assez de place au "
+                                + "PNJ : il est resté où il était. Utilisez « Déplacer » pour le replacer.");
+            }
+            Optional<CitizensNpc> current = npcIdentityService.citizensRoster().stream()
+                    .filter(n -> n.uuid().equals(uuid) && n.hasLocation()).findFirst();
+            org.bukkit.Location home = new org.bukkit.Location(world, w.anchorX(), w.anchorY(), w.anchorZ(),
+                    current.map(CitizensNpc::yaw).orElse(0f), current.map(CitizensNpc::pitch).orElse(0f));
+            Optional<org.bukkit.Location> reached = npcIdentityService.moveCitizens(uuid, home);
+            boolean back = reached.isPresent() && reached.get().getWorld() != null
+                    && reached.get().getWorld().getName().equalsIgnoreCase(world.getName())
+                    && reached.get().distanceSquared(home) < 1.0;
+            if (!back) {
+                return MutationResult.of(false, "WANDER_STOPPED_NOT_RETURNED",
+                        "Promenade arrêtée, mais le retour au départ n'a pas été appliqué. "
+                                + "Utilisez « Déplacer » pour le replacer.");
+            }
+            return new MutationResult(true, "WANDER_STOPPED_RETURNED",
+                    "Promenade arrêtée. Le PNJ est revenu à son point de départ (" + describe(home) + ").",
+                    List.of("citizens:moved=" + describe(home)));
+        });
     }
 
     /**

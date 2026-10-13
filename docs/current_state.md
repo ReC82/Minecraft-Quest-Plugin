@@ -6,6 +6,16 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **PNJ simplifiés dans PlugAdmin (#325, 13/10/2026)** — un seul bouton « Créer un PNJ » (nom,
+> emplacement, apparence) qui crée personnage + fiche + apparence par défaut + dialogue « Salut ! »
+> propre au PNJ, avec identifiant libre (`lucien_2`), anti-doublon par jeton et « Reprendre » ;
+> « Rattacher à RPGQuest » pour un personnage Citizens sans fiche ; une seule « Actualiser les
+> PNJ » ; fiche courte (un formulaire ouvert à la fois) ; direction en mots et orientation gardée
+> au déplacement ; promenade centrée sur la position de départ, recentrée par un déplacement,
+> « Arrêter la promenade et revenir au départ » ; renommage d'un PNJ joueur sans apparence
+> enregistrée → apparence par défaut au lieu d'un refus ; suppression en page courte ; registre et
+> messages techniques sur `/npcs/diagnostic`. **Validation en jeu par le propriétaire en attente.**
+
 > **Villes (#178, 13/10/2026)** — une ville est un centre de village (#151) étendu : centre choisi en
 > jeu avec l'outil de ville (`/rpgadmin ville outil`), nommé à l'enclume ; périmètre **carré**
 > horizontal (défaut 50 blocs dans chaque direction, 5–500, migration V33) ; titre « Bienvenue à … »

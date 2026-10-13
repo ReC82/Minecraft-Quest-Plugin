@@ -116,7 +116,7 @@ class PanelHardeningMalformedAgentDataTest {
 
         HttpResponse<String> npcs = get("/npcs?agent=" + TestConfig.AGENT_ID);
         assertEquals(200, npcs.statusCode());
-        assertTrue(npcs.body().contains("<code class=\"tid npc-id\">Citizens #7</code>"),
+        assertTrue(npcs.body().contains("data-res-id=\"citizens-7\"") && npcs.body().contains("Stan"),
                 "Stan reste visible même sans uuid/spawned dans le payload");
         assertEquals(200, get("/diagnostics").statusCode());
     }

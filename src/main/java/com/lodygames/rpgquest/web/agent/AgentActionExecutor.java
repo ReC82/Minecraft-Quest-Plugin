@@ -2583,14 +2583,16 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(),
                     "Paramètres « x » / « y » / « z » manquants ou non finis."));
         }
-        Double yaw = action.param("yaw") == null || action.param("yaw").isBlank()
-                ? 0.0 : parseFinite(action.param("yaw"));
-        Double pitch = action.param("pitch") == null || action.param("pitch").isBlank()
-                ? 0.0 : parseFinite(action.param("pitch"));
-        if (yaw == null || pitch == null) {
+        // Issue #325 : orientation absente = celle du PNJ est GARDÉE (et non remise face au sud).
+        boolean yawGiven = action.param("yaw") != null && !action.param("yaw").isBlank();
+        boolean pitchGiven = action.param("pitch") != null && !action.param("pitch").isBlank();
+        Double yaw = yawGiven ? parseFinite(action.param("yaw")) : null;
+        Double pitch = pitchGiven ? parseFinite(action.param("pitch")) : null;
+        if ((yawGiven && yaw == null) || (pitchGiven && pitch == null)) {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « yaw » / « pitch » non fini."));
         }
-        return actions.citizensMove(npcId, world, x, y, z, yaw.floatValue(), pitch.floatValue())
+        return actions.citizensRelocate(npcId, world, x, y, z,
+                        yaw == null ? null : yaw.floatValue(), pitch == null ? null : pitch.floatValue())
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
@@ -2644,7 +2646,9 @@ public final class AgentActionExecutor {
             // Issue #216 : ARRÊTER une promenade ne demande ni zone ni ancre. Le panel n'envoie
             // d'ailleurs rien d'autre, et exiger « x_range » ici rendait le bouton inutilisable.
             // Rien de ce qui suit n'est lu : aucune zone ne peut être enregistrée au passage.
-            return actions.citizensWander(npcId, false, null, null, null, null, 0, 0, false)
+            // Issue #325 : « Arrêter la promenade et revenir au départ » ramène le PNJ au centre.
+            boolean returnHome = Boolean.TRUE.equals(parseExplicitBoolean(action.param("return_home")));
+            return actions.citizensWanderStop(npcId, returnHome)
                     .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                     .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
         }
@@ -2782,7 +2786,16 @@ public final class AgentActionExecutor {
         Double pitch = action.param("pitch") == null || action.param("pitch").isBlank()
                 ? null : parseFinite(action.param("pitch"));
 
-        return actions.citizensProvision(displayName, skin, byPlayerName, world, x, y, z,
+        // Issue #325 : identifiant choisi par le panel et dialogue initial, tous deux optionnels.
+        String requestedId = trimOrNull(action.param("npc_id"));
+        if (requestedId != null && !NPC_ID.matcher(requestedId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » invalide."));
+        }
+        String dialogueId = trimOrNull(action.param("dialogue_id"));
+        if (dialogueId != null && !DIALOGUE_REF.matcher(dialogueId.toLowerCase(java.util.Locale.ROOT)).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « dialogue_id » invalide."));
+        }
+        return actions.citizensProvision(requestedId, dialogueId, displayName, skin, byPlayerName, world, x, y, z,
                         yaw == null ? null : yaw.floatValue(), pitch == null ? null : pitch.floatValue())
                 .thenApply(r -> {
                     Map<String, Object> details = new LinkedHashMap<>();

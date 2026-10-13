@@ -97,7 +97,7 @@ class NpcDeletionPageTest {
 
         String page = get("/npcs/delete?npc=pnj_de_test").body();
 
-        assertTrue(page.contains("Aucun relev"), page.substring(0, Math.min(1500, page.length())));
+        assertTrue(page.contains("pas encore chargée"), page.substring(0, Math.min(1500, page.length())));
         assertFalse(page.contains("action=\"/npcs/delete\""),
                 "aucun formulaire ne doit exister sans relevé");
     }
@@ -131,7 +131,7 @@ class NpcDeletionPageTest {
         assertTrue(page.contains("value=\"UNLINK_CITIZENS\""));
         assertTrue(page.contains("value=\"DELETE_CITIZENS\""));
         assertTrue(page.contains("value=\"FULL_CLEANUP\""));
-        assertTrue(page.contains("NE supprime PAS le dialogue"), "la garantie doit être écrite");
+        assertTrue(page.contains("Ce qui est conservé") && page.contains("Son dialogue"), "la garantie doit être écrite");
     }
 
     /** Une dépendance de remise bloque, et le formulaire correspondant n'existe pas. */
@@ -142,8 +142,8 @@ class NpcDeletionPageTest {
 
         String page = get("/npcs/delete?npc=pnj_livraison").body();
 
-        assertTrue(page.contains("rpgquest:test_remise"), "la quête bloquante doit être nommée");
-        assertTrue(page.contains("infinissables"), page.contains("rpgquest:test_remise") + "");
+        assertTrue(page.contains("href=\"/quests?q=test_remise\""), "la quête bloquante est nommée, avec son lien");
+        assertTrue(page.contains("Quêtes qui ont besoin de lui"));
         assertFalse(page.contains("value=\"DEFINITION_ONLY\""),
                 "une opération bloquée n'a pas de formulaire : il n'y a rien à cliquer");
         assertFalse(page.contains("value=\"FULL_CLEANUP\""));
@@ -279,7 +279,7 @@ class NpcDeletionPageTest {
         assertEquals(1, queuedOfType("npc.citizens.delete"));
         assertEquals(1, queuedOfType("npc.definition.delete"));
         assertEquals(0, queuedOfType("npc.citizens.unlink"));
-        assertTrue(page.contains("rpgquest:pnj_de_test") && page.contains("pas été touché"),
+        assertTrue(page.contains("est conservé"),
                 "la page de résultat doit dire que le dialogue est intact");
     }
 
@@ -334,7 +334,7 @@ class NpcDeletionPageTest {
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("/npcs/delete?npc=pnj_de_test"), "lien vers l'aperçu");
-        assertTrue(page.contains("danger-zone"), "la zone de danger est visuellement séparée");
+        assertTrue(page.contains("npc-danger"), "le bouton de suppression est visuellement distinct");
     }
 
     // ---- Harnais -------------------------------------------------------------------------------

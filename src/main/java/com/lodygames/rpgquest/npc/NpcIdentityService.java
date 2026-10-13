@@ -156,6 +156,14 @@ public final class NpcIdentityService {
     private static final java.util.regex.Pattern MINESKIN_URL =
             java.util.regex.Pattern.compile("^https://minesk\\.in/[A-Za-z0-9]{8,64}$");
 
+    /**
+     * Issue #325 — apparence par défaut d'un PNJ de type joueur : celle d'un nouveau PNJ créé sans
+     * apparence choisie, et celle qui débloque le renommage d'un PNJ joueur dont RPGQuest ne connaît
+     * pas la source. C'est un lien MineSkin public au format accepté ci-dessus : il est enregistré
+     * comme n'importe quelle source, donc reproductible. Jamais appliqué en masse aux anciens PNJ.
+     */
+    public static final String DEFAULT_SKIN_URL = "https://minesk.in/f534ead9d5a3413e9bb51bce9b211995";
+
     /** {@code true} si {@code url} est un lien MineSkin exploitable (validation côté serveur). */
     public static boolean isValidMineSkinUrl(String url) {
         return url != null && MINESKIN_URL.matcher(url.trim()).matches();
@@ -254,6 +262,12 @@ public final class NpcIdentityService {
     public NpcBehaviourOutcome disableWander(UUID citizensUuid) {
         return behaviourBridge == null ? behaviourUnavailable()
                 : behaviourBridge.applyWanderDisable(citizensUuid);
+    }
+
+    /** Issue #325 — recentre une promenade active sur {@code anchor}. <strong>Thread principal.</strong> */
+    public NpcBehaviourOutcome reanchorWander(UUID citizensUuid, org.bukkit.Location anchor) {
+        return behaviourBridge == null ? behaviourUnavailable()
+                : behaviourBridge.reanchorWander(citizensUuid, anchor);
     }
 
     private static NpcBehaviourOutcome behaviourUnavailable() {

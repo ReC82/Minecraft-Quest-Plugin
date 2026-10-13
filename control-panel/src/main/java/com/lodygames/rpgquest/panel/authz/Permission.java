@@ -246,7 +246,14 @@ public enum Permission {
      * explicite. Un deuxième garde-fou existe indépendamment d'elle : on ne peut jamais accorder
      * une permission que l'on ne détient pas soi-même (voir {@code GroupDirectory}).</p>
      */
-    USER_MANAGE;
+    USER_MANAGE,
+    /** Issue #335 — lire les paramètres généraux du jeu (monnaie, connexion…). */
+    SETTINGS_READ,
+    /**
+     * Issue #335 — modifier les paramètres généraux. Réservée au propriétaire et aux
+     * administrateurs : ces réglages s'appliquent à tous les joueurs.
+     */
+    SETTINGS_WRITE;
 
     /**
      * Permission portant ce nom, ou vide si le nom est inconnu. Utilisé à la lecture d'un groupe en

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.ui;
 
+import com.lodygames.rpgquest.economy.CurrencyName;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.JournalConfig;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
@@ -358,7 +359,7 @@ public final class QuestJournalService implements QuestJournalUi {
         ItemStack stack = new ItemStack(Material.GOLD_INGOT);
         ItemMeta meta = stack.getItemMeta();
         if (balance.isPresent()) {
-            meta.displayName(MM.deserialize("<gold>Bourse :</gold> <white><amount> pièce(s)</white>",
+            meta.displayName(MM.deserialize("<gold>Bourse :</gold> <white><amount> " + CurrencyName.get() + "</white>",
                     Placeholder.unparsed("amount", String.valueOf(balance.get()))));
             meta.lore(List.of(MM.deserialize("<dark_gray>Mis à jour à chaque transaction.</dark_gray>")));
         } else {
@@ -727,7 +728,7 @@ public final class QuestJournalService implements QuestJournalUi {
             // Issue #16 : annoncé comme PRÉVU, pas comme reçu. C'est bien l'objet de cette
             // infobulle (elle décrit la définition de la quête, pas l'historique du joueur) ; la
             // confirmation du crédit, elle, arrive dans le chat et seulement après la base.
-            case MoneyReward r -> Optional.of(Component.text(r.amount() + " pièce(s)"));
+            case MoneyReward r -> Optional.of(Component.text(CurrencyName.amount(r.amount())));
         };
     }
 

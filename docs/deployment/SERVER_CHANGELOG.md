@@ -48,6 +48,32 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Paramètres généraux, avertissement bêta, notification OP, variables typées (#335, #28, #316, #317, #319)
+
+### Changement
+
+- Nouveau fichier `plugins/RPGQuest/settings.yml`, **créé et écrit par le plugin** (actions
+  `settings.get` / `settings.set`) : nom de la monnaie (défaut *LodyCoins*), avertissement bêta
+  (activé par défaut) et son texte. Absent = valeurs par défaut.
+- Avertissement « version bêta » à chaque connexion (#28), préférence par joueur
+  (`BETA_WARNING_HIDDEN`).
+- OP/DEOP depuis PlugAdmin : message privé au joueur (#316), résumé unique à la connexion s'il était
+  absent (`OP_NOTICE_STATE`).
+- `messages.yml` : nouvelles clés `player.op-*` (ajoutées automatiquement) ; les deux textes de
+  récompense monétaire encore à leur ancien défaut passent à `<currency>`, un texte personnalisé est
+  laissé tel quel.
+- Outil variables : `CLAIM_TIER_<n>` = `true`/`false`, `STARTER_KIT_TIER` = entier, refus sinon ;
+  relecture après écriture.
+
+### Action serveur
+
+Remplacement du JAR et redéploiement de PlugAdmin. Aucune migration de base, aucune donnée joueur
+modifiée. Ne pas déposer `settings.yml` à la main.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : voir le rapport du 2026-10-14.
+
 ## 2026-10-13 - Dialogues et Joueurs simplifiés dans PlugAdmin (#332, #328)
 
 ### Changement

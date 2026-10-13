@@ -1229,3 +1229,8 @@ details.card.npc-more{padding:12px 16px}
   .npc-filters .pa-chip{white-space:nowrap}
   .npc-filters .npc-catbar-t{margin-left:0!important;flex-basis:100%}
 }
+/* Issue #319 / #317 : valeur réelle relue et historique daté, distincts de la saisie. */
+.pl-varstate{margin:10px 0 0;padding:8px 10px;border-radius:var(--radius-s);background:var(--surface-2);
+  border:1px solid var(--line);font-size:13.5px;overflow-wrap:anywhere}
+.pl-varstate-k{display:block;font-size:11.5px;font-weight:800;color:var(--txt-faint);text-transform:uppercase;letter-spacing:.04em}
+.pl-history{border-left:3px solid var(--line-2);padding-left:8px}

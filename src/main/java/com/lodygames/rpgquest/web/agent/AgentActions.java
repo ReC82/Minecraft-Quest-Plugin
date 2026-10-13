@@ -1004,6 +1004,23 @@ public interface AgentActions {
      * Issue #325 — arrête la promenade et, si {@code returnHome}, ramène le PNJ au centre de sa
      * zone (destination sûre vérifiée ; sinon il reste où il est et le résultat le dit).
      */
+    /**
+     * Issue #335 — paramètres généraux. {@code values} : clé → valeur texte ; {@code defaults} :
+     * valeurs par défaut ; {@code problem} : motif si {@code settings.yml} est illisible.
+     */
+    record GameSettingsView(boolean ok, String message, Map<String, String> values, Map<String, String> defaults,
+                            String updatedAt, String updatedBy, String problem) {
+    }
+
+    default CompletableFuture<GameSettingsView> settingsGet() {
+        return CompletableFuture.completedFuture(new GameSettingsView(false, "Paramètres indisponibles.",
+                Map.of(), Map.of(), "", "", ""));
+    }
+
+    default CompletableFuture<GameSettingsView> settingsSet(Map<String, String> changes, String actor) {
+        return settingsGet();
+    }
+
     default CompletableFuture<MutationResult> citizensWanderStop(String npcId, boolean returnHome) {
         return citizensWander(npcId, false, null, null, null, null, 0, 0, false);
     }

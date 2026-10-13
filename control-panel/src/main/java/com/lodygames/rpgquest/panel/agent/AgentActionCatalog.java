@@ -584,6 +584,9 @@ public final class AgentActionCatalog {
         // débit sont des mutations SENSIBLES, car un crédit crée de la monnaie.
         add("economy.balance", Permission.ECONOMY_READ, false, true,
                 "Lire le solde et le journal d'un joueur");
+        // Issue #335 — paramètres généraux. Écriture validée ici ET par le plugin, qui relit le fichier.
+        add("settings.get", Permission.SETTINGS_READ, false, false, "Lire les paramètres généraux");
+        addContentWrite("settings.set", Permission.SETTINGS_WRITE, "Modifier les paramètres généraux", "settings.get");
         addSensitiveWrite("economy.credit", Permission.ECONOMY_WRITE, true,
                 "Créditer un joueur", "player.catalog");
         addSensitiveWrite("economy.debit", Permission.ECONOMY_WRITE, true,
@@ -666,6 +669,9 @@ public final class AgentActionCatalog {
      * Valide {@code form} pour {@code type} et produit les paramètres normalisés à transmettre à
      * l'agent. Les mutations exigent {@code confirm=true} dans le formulaire.
      */
+    /** Issue #335 — clés de {@code settings.set}, les mêmes que le plugin. */
+    public static final List<String> SETTINGS_KEYS = List.of("currency_name", "beta_warning_enabled", "beta_warning_text");
+
     public static Validation validate(String type, Map<String, String> form) {
         Optional<Spec> maybe = spec(type);
         if (maybe.isEmpty()) {
@@ -701,6 +707,15 @@ public final class AgentActionCatalog {
                 }
                 if (value.isEmpty() || value.length() > 256) {
                     return Validation.fail("Valeur manquante ou trop longue (max 256).");
+                }
+                // Issue #319 : mêmes types que le plugin (VariableTypes), vérifiés des deux côtés.
+                String v = value.trim();
+                if (key.matches("CLAIM_TIER_\\d+|WILD_ENTRY_WARNING_HIDDEN|BETA_WARNING_HIDDEN|RUNE_RAPPEL_GRANTED")
+                        && !"true".equals(v) && !"false".equals(v)) {
+                    return Validation.fail("« " + v + " » n'est pas valide pour " + key + " : true ou false.");
+                }
+                if ("STARTER_KIT_TIER".equals(key) && !v.matches("[1-9]\\d?")) {
+                    return Validation.fail("« " + v + " » n'est pas valide pour STARTER_KIT_TIER : un nombre entier de 1 à 99.");
                 }
                 params.put("key", key);
                 params.put("value", value);
@@ -1947,6 +1962,33 @@ public final class AgentActionCatalog {
                 }
                 params.put("reason", reason.isEmpty()
                         ? ("player.op".equals(type) ? "OP" : "DEOP") + " depuis PlugAdmin (sans motif saisi)" : reason);
+            }
+            case "settings.set" -> {
+                for (String key : SETTINGS_KEYS) {
+                    String v = form.get(key);
+                    if (v != null) {
+                        params.put(key, v.trim());
+                    }
+                }
+                if (params.isEmpty()) {
+                    return Validation.fail("Aucun paramètre à modifier.");
+                }
+                String cur = params.get("currency_name");
+                if (cur != null && (cur.isEmpty() || cur.length() > 24 || !cur.matches("[\\p{L}\\p{N} '’.-]+"))) {
+                    return Validation.fail("Nom de la monnaie : 1 à 24 lettres, chiffres ou espaces.");
+                }
+                String on = params.get("beta_warning_enabled");
+                if (on != null && !"true".equals(on) && !"false".equals(on)) {
+                    return Validation.fail("Avertissement bêta : activé ou désactivé.");
+                }
+                String text = params.get("beta_warning_text");
+                if (text != null && (text.isEmpty() || text.length() > 500 || text.indexOf('<') >= 0)) {
+                    return Validation.fail("Texte de l'avertissement : 1 à 500 caractères, sans balise.");
+                }
+                String actor = trim(form.get("actor"));
+                if (!actor.isEmpty()) {
+                    params.put("actor", actor.length() > 64 ? actor.substring(0, 64) : actor);
+                }
             }
             case "economy.credit", "economy.debit" -> {
                 long value;

@@ -375,6 +375,13 @@ public enum AgentActionType {
      * comme de la monnaie.
      */
     ECONOMY_BALANCE("economy.balance"),
+    /** Issue #335 — paramètres généraux du jeu, tels que relus dans {@code settings.yml}. Lecture seule. */
+    SETTINGS_GET("settings.get"),
+    /**
+     * Issue #335 — modifie des paramètres généraux. Validés, écrits atomiquement, relus ; rien
+     * n'est écrit si une valeur est invalide.
+     */
+    SETTINGS_SET("settings.set"),
     /**
      * Issue #140 — crédit administratif. <strong>Crée de la monnaie</strong> : raison obligatoire,
      * enregistrée dans le journal des transactions.

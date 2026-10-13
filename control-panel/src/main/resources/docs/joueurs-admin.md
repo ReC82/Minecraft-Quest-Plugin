@@ -84,11 +84,32 @@ résultat d'un ajout le précise. Les **droits de construction** viennent des gr
 compte lié au joueur (page **Utilisateurs**) ; « Lire ses droits en jeu » montre ce que le serveur
 applique réellement. Aucun faux interrupteur n'est affiché.
 
+## OP Minecraft : le joueur est prévenu
+
+Après un « Accorder OP » ou « Retirer OP » **réellement appliqué**, le joueur connecté reçoit un
+message privé (« Tes droits opérateur Minecraft (OP) ont été activés / retirés »). Hors ligne : le
+résultat le dit, et à sa prochaine connexion il reçoit **un seul** résumé de l'état final, seulement
+si cet état a changé. Une demande sans effet (déjà OP) n'envoie rien. Textes dans `messages.yml`
+(`player.op-*`).
+
+## Variables (outil de test)
+
+« Valeur actuelle sur le serveur » est toujours une valeur **relue**, avec sa clé et sa date ;
+« absente » n'est jamais confondue avec `false`. La « Nouvelle valeur » démarre vide. Après une
+écriture, le serveur relit la variable et c'est cette valeur qui s'affiche. Pour `CLAIM_TIER_1`,
+`CLAIM_TIER_2`… seules `true` et `false` sont acceptées ; pour `STARTER_KIT_TIER`, un nombre entier
+(1, 2, 3…), vérifié dans le panel **et** sur le serveur.
+
 ## Remises à zéro
 
 Deux portées, chacune avec son **aperçu** (n'écrit rien), la liste de ce qui est **conservé** et de
 ce qui est **effacé**, et une confirmation : **Remettre à zéro la progression** (garde
 l'inventaire) et **Repartir comme un nouveau joueur** (vide l'inventaire). Voir *Reset d'un joueur*.
+
+Chaque portée indique la **dernière remise à zéro connue** pour ce joueur : date et heure locales,
+auteur, résultat. Un aperçu porte sa propre date et ne modifie rien. Hors ligne, les données de
+progression sont remises à zéro tout de suite ; seul le nettoyage de l'inventaire attend sa
+prochaine connexion.
 
 ## Sécurité
 

@@ -589,8 +589,7 @@ public final class AgentPages {
             String text = pending ? "en cours…" : row.resultMessage() == null ? row.status().name() : row.resultMessage();
             return "<div class=\"dlg-live tone-" + tone + " pl-feedback\" role=\"status\"><span><strong>"
                     + Http.esc(AgentActionCatalog.spec(row.type()).map(AgentActionCatalog.Spec::label).orElse(row.type())) + "</strong> — "
-                    + Http.esc(MiniText.prettifyTokens(text)) + " <span class=\"muted\">("
-                    + Http.esc(ActionView.relativeTime(when, Instant.now())) + ")</span></span>"
+                    + Http.esc(MiniText.prettifyTokens(text)) + " — " + when(when) + "</span>"
                     + "<a class=\"btn secondary sm\" href=\"/actions/" + Http.esc(row.id()) + "\">Détail</a></div>";
         }
         return "";
@@ -780,9 +779,11 @@ public final class AgentPages {
 
     /** Un résultat de lecture (solde, droits, aperçu…), daté. */
     private String readResult(String label, AgentActionRow row) {
-        Instant when = row.completedAt() != null ? row.completedAt() : row.createdAt();
-        return resultLine(label, row).replaceFirst("</p>$", " <span class=\"muted\">("
-                + Http.esc(ActionView.relativeTime(when, Instant.now())) + ")</span></p>");
+        String line = resultLine(label, row);
+        String mark = Http.esc(label) + " :</span>";
+        int i = line.indexOf(mark);
+        return i < 0 ? line : line.substring(0, i) + Http.esc(label) + " du " + when(at(row)) + " :</span>"
+                + line.substring(i + mark.length());
     }
 
     private static int parsePageParam(String raw) {
@@ -1044,7 +1045,7 @@ public final class AgentPages {
                 sb.append("<td>n°").append(asLong(debt.get("occurrence")));
                 sb.append("<span class=\"muted\"> / récompense ").append(asLong(debt.get("rewardIndex")) + 1)
                         .append("</span></td>");
-                sb.append("<td><strong>").append(asLong(debt.get("amount"))).append("</strong> pièce(s)</td>");
+                sb.append("<td><strong>").append(asLong(debt.get("amount"))).append("</strong> ").append(Http.esc(RewardText.currency())).append("</td>");
                 // État RÉEL : jamais « en attente » tout court quand il y a eu des échecs.
                 if (attempts == 0) {
                     sb.append("<td><span class=\"badge text-bg-secondary\">En attente</span></td>");
@@ -1205,8 +1206,38 @@ public final class AgentPages {
                 .append(Http.esc(uuid)).append("\" name=\"key\" value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
         sb.append(variableKeys(uuid));
         sb.append("<button class=\"btn sm\" type=\"submit\">Lire</button></form>");
-        latestForPlayer(agentId, "player.variable.get", uuid).ifPresent(row -> sb.append(readResult("Lu", row)));
+        sb.append(variableKnownValue(agentId, uuid));
         return sb.toString();
+    }
+
+    /**
+     * Issue #319 — la dernière valeur RELUE sur le serveur pour ce joueur (lecture, ou relecture
+     * après écriture), avec sa clé et sa date. « absente » n'est jamais confondue avec « false ».
+     */
+    private String variableKnownValue(String agentId, String uuid) {
+        AgentActionRow best = null;
+        for (AgentActionRow r : store.recentActions(agentId, 300)) {
+            boolean variable = "player.variable.get".equals(r.type()) || "player.variable.set".equals(r.type());
+            if (variable && uuid.equalsIgnoreCase(r.params().getOrDefault("player", "")) && r.status().terminal()
+                    && detailsOf(r).map(d -> d.containsKey("present")).orElse(false)) {
+                best = r;
+                break;
+            }
+        }
+        if (best == null) {
+            return "<p class=\"form-text\">Aucune valeur relue pour ce joueur : « Lire » interroge le serveur.</p>";
+        }
+        Map<String, Object> d = detailsOf(best).orElse(Map.of());
+        String key = str(d.get("key"));
+        boolean present = Boolean.TRUE.equals(d.get("present"));
+        String value = present ? cleanNull(str(d.get("value"))) : "";
+        if (present && value.isEmpty()) {
+            value = cleanNull(best.resultValue());
+        }
+        return "<div class=\"pl-varstate\"><span class=\"pl-varstate-k\">Valeur actuelle sur le serveur</span> <code>"
+                + Http.esc(key) + "</code> = " + (present ? "<strong>" + Http.esc(value) + "</strong>"
+                        : "<em>absente</em> (jamais posée)")
+                + " <span class=\"muted\">— relue le " + when(at(best)) + "</span></div>";
     }
 
     private String playerVariableWrite(Session session, String agentId, String uuid) {
@@ -1217,9 +1248,13 @@ public final class AgentPages {
         sb.append("<label class=\"form-label\">Nom de la variable</label><input class=\"form-control\" list=\"varkeys-")
                 .append(Http.esc(uuid)).append("-w\" name=\"key\" value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
         sb.append(variableKeys(uuid + "-w"));
-        sb.append("<label class=\"form-label\">Valeur</label><input class=\"form-control\" type=\"text\" name=\"value\" value=\"true\">");
+        sb.append("<label class=\"form-label\">Nouvelle valeur</label><input class=\"form-control\" type=\"text\" "
+                + "name=\"value\" value=\"\" required autocomplete=\"off\" placeholder=\"valeur à écrire\">");
+        sb.append("<p class=\"form-text\">CLAIM_TIER_1, CLAIM_TIER_2… : <code>true</code> ou <code>false</code>. "
+                + "STARTER_KIT_TIER : un nombre entier (1, 2, 3…). Toute autre valeur est refusée pour ces clés.</p>");
         sb.append(confirmBox("Je comprends que c'est un outil de test."));
-        sb.append("<button class=\"btn sm\" type=\"submit\">Écrire</button></form>");
+        sb.append("<button class=\"btn sm\" type=\"submit\">Écrire puis relire</button></form>");
+        sb.append(variableKnownValue(agentId, uuid));
         return sb.toString();
     }
 
@@ -1267,8 +1302,9 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("trash"))
                 .append(full ? "Repartir comme un nouveau joueur — vide l'inventaire"
                         : "Remettre à zéro la progression — garde l'inventaire")
-                .append("</p><p class=\"form-text\">Fonctionne aussi hors ligne : la remise à zéro est faite à sa "
-                        + "prochaine connexion. Faites d'abord l'aperçu : il n'écrit rien.</p>");
+                .append("</p><p class=\"form-text\">Fonctionne aussi hors ligne : la progression est remise à zéro "
+                        + "tout de suite, le nettoyage de l'inventaire se fait à sa prochaine connexion. Faites "
+                        + "d'abord l'aperçu : il n'écrit rien.</p>");
 
         // Ce qui est CONSERVÉ d'abord : c'est la question que l'administrateur se pose, et celle à
         // laquelle l'ancien écran ne répondait pas.
@@ -1301,9 +1337,18 @@ public final class AgentPages {
                     + "aux tests d'onboarding : à n'utiliser sur un vrai joueur qu'à sa demande."));
         }
 
+        // Issue #317 : le dernier reset CONNU de cette portée, daté et attribué — jamais une bannière
+        // de succès intemporelle prise pour la confirmation de ce qu'on est en train de faire.
+        Optional<AgentActionRow> lastReset = latestForPlayer(agentId, confirmType, uuid);
+        sb.append("<p class=\"form-text pl-history\">").append(lastReset.map(r -> "Dernière remise à zéro connue de cette "
+                + "portée : " + when(at(r)) + (r.createdBy() == null ? "" : " par " + Http.esc(r.createdBy())) + " — "
+                + (r.status().terminal() ? Http.esc(MiniText.prettifyTokens(r.resultMessage() == null ? r.status().name()
+                        : r.resultMessage())) : "en cours…")).orElse("Aucune remise à zéro de cette portée connue pour ce joueur."))
+                .append("</p>");
         sb.append(readForm(session, agentId, previewType, "/players", uuid, "Aperçu (aucune écriture)"));
         latestForPlayer(agentId, previewType, uuid).ifPresent(row -> {
             sb.append(readResult("Aperçu", row));
+            sb.append("<p class=\"form-text\">Un aperçu ne modifie rien : il décrit ce qui serait fait maintenant.</p>");
             detailsOf(row).map(d -> asList(d.get("lines"))).ifPresent(lines -> {
                 if (!lines.isEmpty()) {
                     sb.append(Ui.tableOpen("Catégorie", "Nombre", "Détail"));
@@ -6000,6 +6045,83 @@ public final class AgentPages {
     //  Dialogues (V1 lecture + squelette de création — base d'un futur éditeur)
     // ================================================================================
 
+    // ---- Issue #335 : paramètres généraux -----------------------------------------------------
+
+    /** Issue #335 — le nom de la monnaie relu sur le serveur, pour les pages qui affichent de l'argent. */
+    public void refreshCurrency(String agentId) {
+        if (agentId == null) {
+            return;
+        }
+        AgentActionRow best = null;
+        for (String type : List.of("settings.get", "settings.set")) {
+            Optional<AgentActionRow> row = store.latestSuccessfulActionOfType(agentId, type);
+            if (row.isPresent() && (best == null || (row.get().completedAt() != null && best.completedAt() != null
+                    && row.get().completedAt().isAfter(best.completedAt())))) {
+                best = row.get();
+            }
+        }
+        if (best != null) {
+            detailsOf(best).map(d -> str(asMap(d.get("values")).get("currency_name"))).ifPresent(RewardText::useCurrency);
+        }
+    }
+
+    /**
+     * Ce que le panel sait des paramètres généraux : la lecture ({@code settings.get}) ou l'écriture
+     * relue ({@code settings.set}) réussie la plus récente, plus l'état d'un enregistrement en cours ou
+     * refusé depuis.
+     */
+    public SettingsPages.State settingsState(String agentId) {
+        Map<String, String> values = Map.of();
+        Map<String, String> defaults = Map.of();
+        Instant readAt = null;
+        String updatedAt = "";
+        String updatedBy = "";
+        String problem = "";
+        boolean pending = false;
+        String lastError = "";
+        if (agentId != null) {
+            boolean sawNewerFailure = false;
+            for (AgentActionRow row : store.recentActions(agentId, 200)) {
+                if (!"settings.get".equals(row.type()) && !"settings.set".equals(row.type())) {
+                    continue;
+                }
+                if (!row.status().terminal()) {
+                    pending |= "settings.set".equals(row.type());
+                    continue;
+                }
+                Optional<Map<String, Object>> d = detailsOf(row);
+                if (row.status() != AgentActionStatus.SUCCESS) {
+                    if ("settings.set".equals(row.type()) && !sawNewerFailure && readAt == null) {
+                        lastError = row.resultMessage() == null ? "" : row.resultMessage();
+                        sawNewerFailure = true;
+                    }
+                    if (d.isEmpty()) {
+                        continue;
+                    }
+                }
+                if (d.isPresent() && !asMap(d.get().get("values")).isEmpty()) {
+                    values = new LinkedHashMap<>();
+                    for (Map.Entry<String, Object> e : asMap(d.get().get("values")).entrySet()) {
+                        values.put(e.getKey(), str(e.getValue()));
+                    }
+                    defaults = new LinkedHashMap<>();
+                    for (Map.Entry<String, Object> e : asMap(d.get().get("defaults")).entrySet()) {
+                        defaults.put(e.getKey(), str(e.getValue()));
+                    }
+                    readAt = row.completedAt() != null ? row.completedAt() : row.createdAt();
+                    updatedAt = cleanNull(str(d.get().get("updatedAt")));
+                    updatedBy = cleanNull(str(d.get().get("updatedBy")));
+                    problem = cleanNull(str(d.get().get("problem")));
+                    break;
+                }
+            }
+        }
+        if (!values.isEmpty()) {
+            RewardText.useCurrency(values.get("currency_name"));
+        }
+        return new SettingsPages.State(values, defaults, readAt, updatedAt, updatedBy, problem, pending, lastError);
+    }
+
     // ---- Issue #332 : dialogues, version simple — données préparées pour DialoguePages ------
 
     /** Personnages, quêtes et état « en jeu » dont les pages de dialogue ont besoin. */
@@ -8159,10 +8281,30 @@ public final class AgentPages {
     }
 
     private Optional<AgentActionRow> latestForPlayer(String agentId, String type, String player) {
-        // On ne filtre pas au niveau SQL sur le joueur (paramètre non indexé) : la dernière action
-        // du type suffit pour un usage interactif à un opérateur.
-        return store.latestActionOfType(agentId, type)
-                .filter(r -> player.isEmpty() || player.equalsIgnoreCase(r.params().getOrDefault("player", "")));
+        // Issue #317 : la dernière action de CE type pour CE joueur. Se contenter de la dernière du
+        // type (puis filtrer) cachait le résultat d'un joueur dès qu'un autre en avait un plus récent.
+        for (AgentActionRow r : store.recentActions(agentId, 300)) {
+            if (type.equals(r.type()) && (player.isEmpty()
+                    || player.equalsIgnoreCase(r.params().getOrDefault("player", "")))) {
+                return Optional.of(r);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Une date à l'heure locale du navigateur, suivie de son ancienneté : « 13 oct., 18:22 (il y a 3 h) ». */
+    private static String when(Instant at) {
+        if (at == null) {
+            return "<span class=\"muted\">date inconnue</span>";
+        }
+        String utc = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'")
+                .withZone(java.time.ZoneOffset.UTC).format(at);
+        return "<time datetime=\"" + at + "\" data-local-time>" + utc + "</time> <span class=\"muted\">("
+                + Http.esc(ActionView.relativeTime(at, Instant.now())) + ")</span>";
+    }
+
+    private static Instant at(AgentActionRow row) {
+        return row.completedAt() != null ? row.completedAt() : row.createdAt();
     }
 
     private Optional<Map<String, Object>> detailsOf(AgentActionRow row) {

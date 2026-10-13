@@ -192,6 +192,7 @@ public final class RPGQuestBootstrap {
     private final YamlQuestEngine questEngine;
     private final YamlNpcEngine npcEngine;
     private final QuestMessagesService questMessagesService;
+    private com.lodygames.rpgquest.settings.GameSettingsService gameSettingsService;
     private final YamlCustomItemRegistry customItemRegistry;
     private final ResourceNodeRegistry resourceNodeRegistry;
     private final YamlCraftingRegistry craftingRegistry;
@@ -460,6 +461,10 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, hubRescueFallbackService.listener()));
 
         registry.start(questEngine);
+        // Issue #335 : paramètres généraux (nom de la monnaie…) lus AVANT les messages, qui les citent.
+        gameSettingsService = new com.lodygames.rpgquest.settings.GameSettingsService(
+                plugin.getDataFolder().toPath(), plugin.getSLF4JLogger());
+        registry.start(gameSettingsService);
         registry.start(questMessagesService);
         registry.start(customItemRegistry);
         registry.start(new PlayerListenerService(plugin, new SpiderFangDropListener(customItemRegistry)));
@@ -647,6 +652,9 @@ public final class RPGQuestBootstrap {
                 plugin, variableRepository, () -> configService.current().travel().wildWorld(),
                 worldPortalTeleportListener, createWildEntryPromptPresenter());
         registry.start(new PlayerListenerService(plugin, wildEntryWarningService));
+        // Issue #28 : avertissement « version bêta » à la connexion, réglé dans PlugAdmin (#335).
+        registry.start(new PlayerListenerService(plugin, new com.lodygames.rpgquest.settings.BetaWarningService(
+                plugin, variableRepository, gameSettingsService::current, createWildEntryPromptPresenter())));
         worldPortalTeleportListener.setEntryGuard(new CompositeWorldPortalEntryGuard(List.of(
                 claimWorldAccessGuard,
                 wildEntryWarningService)));
@@ -985,6 +993,11 @@ public final class RPGQuestBootstrap {
         // Issue #246 : capturer une construction posée comme nouveau bâtiment. Lecture seule du
         // monde ; n'écrit que dans la bibliothèque, jamais par-dessus un fichier existant.
         agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
+        agentActions.setGameSettings(gameSettingsService);
+        com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
+                new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
+        registry.start(new PlayerListenerService(plugin, operatorNotices));
+        agentActions.setOperatorNotices(operatorNotices);
         agentActions.setBuildingCapture(new com.lodygames.rpgquest.building.BuildingCaptureService(
                 buildingPlacementService, buildingSiteService, buildingLibrary, schematicGateway,
                 new com.lodygames.rpgquest.building.BukkitWorldProbe(), java.time.Clock.systemUTC(),

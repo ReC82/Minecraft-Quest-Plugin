@@ -59,8 +59,8 @@ quest:
   reward-line-experience: "<yellow> + <amount> XP</yellow>"
   reward-line-item: "<yellow> + <amount>x <item></yellow>"
   reward-line-special: "<yellow> + Récompense spéciale</yellow>"
-  reward-money-credited: "<gold>Récompense de</gold> <white><quest></white> <gold>:</gold> <yellow>+<amount> pièce(s)</yellow> <gray>— solde :</gray> <white><balance></white>"
-  reward-money-failed: "<red>Ta récompense en pièces n'a pas pu être créditée. Rien n'a été perdu de ta progression : signale-le à un administrateur.</red>"
+  reward-money-credited: "<gold>Récompense de</gold> <white><quest></white> <gold>:</gold> <yellow>+<amount> <currency></yellow> <gray>— solde :</gray> <white><balance></white>"
+  reward-money-failed: "<red>Ta récompense en <currency> n'a pas pu être créditée. Rien n'a été perdu de ta progression : signale-le à un administrateur.</red>"
 
   # Remise d'objets à un PNJ (issue #123, DELIVER_ITEM_TO_NPC). Envoyés dans le CHAT, jamais en
   # ActionBar : une remise groupée touche plusieurs objectifs d'un coup et autant de messages
@@ -91,3 +91,12 @@ story:
   started: "<green><bold>Nouvelle aventure :</bold></green> <white><story></white>"
   next-objective: "<green>Nouvel objectif :</green> <white><quest></white>"
   completed: "<gold><bold>Aventure terminée :</bold></gold> <white><story></white>"
+
+# Droits opérateur Minecraft (OP) changés depuis PlugAdmin (issue #316). Message PRIVÉ, envoyé
+# seulement après un changement réel. « while-away » : résumé unique à la connexion suivante,
+# si l'état a changé pendant l'absence du joueur. Ne parle que d'OP Minecraft.
+player:
+  op-granted: "<gold>Tes droits opérateur Minecraft (OP) ont été activés.</gold>"
+  op-revoked: "<gold>Tes droits opérateur Minecraft (OP) ont été retirés.</gold>"
+  op-granted-while-away: "<gold>Pendant ton absence, tes droits opérateur Minecraft (OP) ont été activés.</gold>"
+  op-revoked-while-away: "<gold>Pendant ton absence, tes droits opérateur Minecraft (OP) ont été retirés.</gold>"

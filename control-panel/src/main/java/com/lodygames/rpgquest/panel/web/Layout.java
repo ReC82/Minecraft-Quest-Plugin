@@ -74,7 +74,8 @@ public final class Layout {
                         new NavItem("Emplacements", "/buildings/sites", "world",
                                 Permission.BUILDING_READ, true))),
                 new NavGroup("Serveur", List.of(
-                        new NavItem("Exploitation", "/ops", "server", Permission.OPS_VIEW, true))),
+                        new NavItem("Exploitation", "/ops", "server", Permission.OPS_VIEW, true),
+                        new NavItem("Paramètres généraux", "/settings", "admin", Permission.SETTINGS_READ, true))),
                 new NavGroup("Ressources", List.of(
                         new NavItem("Documentation", "/docs", "docs", Permission.DOCS_READ, true),
                         new NavItem("Diagnostics", "/diagnostics", "diagnostics", Permission.DIAGNOSTICS_READ, true))),

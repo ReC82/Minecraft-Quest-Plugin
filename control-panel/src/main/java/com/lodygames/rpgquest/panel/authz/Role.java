@@ -77,7 +77,9 @@ public enum Role {
             // Issue #95 : « exploitation du serveur » est la définition même de ce rôle.
             Permission.OPS_VIEW, Permission.OPS_ANNOUNCE, Permission.OPS_RESTART, Permission.OPS_LOGS,
             // Issue #140 : administrer la monnaie fait partie de l'exploitation courante.
-            Permission.ECONOMY_READ, Permission.ECONOMY_WRITE)),
+            Permission.ECONOMY_READ, Permission.ECONOMY_WRITE,
+            // Issue #335 : les paramètres généraux font partie de l'exploitation du serveur.
+            Permission.SETTINGS_READ, Permission.SETTINGS_WRITE)),
 
     TESTER("Testeur", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,

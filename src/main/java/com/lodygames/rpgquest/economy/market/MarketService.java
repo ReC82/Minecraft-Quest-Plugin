@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.economy.market;
 
+import com.lodygames.rpgquest.economy.CurrencyName;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.database.MarketListingRecord;
@@ -114,7 +115,7 @@ public final class MarketService implements PluginService {
 
         marketRepository.createListing(sellerId, itemData, price).thenAccept(id -> runOnMainThread(() ->
                 player.sendMessage(MM.deserialize(
-                        "<green>Objet mis en vente</green> <gray>(#<id>, <price> pièce(s))</gray>",
+                        "<green>Objet mis en vente</green> <gray>(#<id>, <price> " + CurrencyName.get() + ")</gray>",
                         Placeholder.unparsed("id", String.valueOf(id)),
                         Placeholder.unparsed("price", String.valueOf(price))))))
                 .exceptionally(error -> {
@@ -232,7 +233,7 @@ public final class MarketService implements PluginService {
         }
         lore.add(MM.deserialize("<white>Vendeur :</white> <gray><seller></gray>",
                 Placeholder.unparsed("seller", listing.sellerName().orElse(listing.sellerUuid().toString()))));
-        lore.add(MM.deserialize("<white>Prix :</white> <gold><price> pièce(s)</gold>",
+        lore.add(MM.deserialize("<white>Prix :</white> <gold><price> " + CurrencyName.get() + "</gold>",
                 Placeholder.unparsed("price", String.valueOf(listing.price()))));
         lore.add(listing.sellerUuid().equals(viewerId)
                 ? MM.deserialize("<yellow>Clique pour annuler et récupérer l'objet</yellow>")

@@ -57,8 +57,14 @@ public record DeletionPlan(
      * @param where chemin ou identifiant concerné, pour aller droit au bon endroit
      * @param hint  ce que l'opérateur peut faire pour débloquer — jamais « contactez un
      *              administrateur »
+     * @param link  page où corriger, ou {@code null} (issue #332 : la page courte de suppression
+     *              d'un dialogue mène droit au bon endroit)
      */
-    public record Blocker(String reason, String where, String hint) {
+    public record Blocker(String reason, String where, String hint, String link, String linkLabel) {
+
+        public Blocker(String reason, String where, String hint) {
+            this(reason, where, hint, null, null);
+        }
     }
 
     public DeletionPlan {

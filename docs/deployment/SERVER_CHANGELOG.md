@@ -48,25 +48,45 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-13 - Dialogues et Joueurs simplifiés dans PlugAdmin (#332, #328)
+
+### Changement
+
+PlugAdmin seulement : nouvelle page Dialogues (liste, éditeur simple, aperçu, mise en jeu par
+`content.publish`, suppression courte) et page Joueurs (annuaire + fiche à onglets). Aucun
+changement de plugin, de format de fichier ou de données.
+
+### Action serveur
+
+Redéploiement de PlugAdmin (`scripts/plugadmin/deploy.sh`). Aucun JAR, aucun redémarrage DEV.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : Lucien → modifier son dialogue → proposer une quête → mettre en
+jeu → parler à Lucien en jeu.
+
 ## 2026-10-13 - Apparence par défaut réellement posée sur les PNJ (#325, correctif)
 
 ### Changement
 
-Un lien `https://minesk.in/…` n'est plus transmis à `/npc skin --url` (qui attend une image et
-échouait en silence : Lucien portait le skin du compte Minecraft « Lucien »). Le plugin lit la
-texture signée sur l'API publique MineSkin (`api.mineskin.org/v2/skins/<id>`, sans clé), la pose
-via `SkinTrait` et la relit. L'apparence par défaut est embarquée dans le JAR (aucun appel réseau).
-Le relevé des PNJ indique si l'image portée est bien celle enregistrée (`skinMatchesSource`) ; la
-fiche propose « Réessayer » sinon.
+Un lien `https://minesk.in/…` n'est plus transmis à `/npc skin --url` : Citizens y fabrique le skin
+en tâche de fond sans pouvoir confirmer le résultat. Sur DEV, cela avait marché pour Elias mais pas
+pour Lucien, qui portait le skin du compte Minecraft « Lucien » (relu dans `Citizens/saves.yml` :
+`profileName: Lucien`) alors que l'action avait répondu « réussi ». Le plugin lit désormais la
+texture signée sur l'API publique MineSkin (`api.mineskin.org/v2/skins/<id>`, sans clé), la pose via
+`SkinTrait` et la relit. L'apparence par défaut est embarquée dans le JAR (aucun appel réseau). Le
+relevé des PNJ indique si l'image portée est bien celle enregistrée (`skinMatchesSource`) ; la fiche
+propose « Réessayer » sinon.
 
-### Action serveur
+### Action serveur — effectuée le 2026-10-13 vers 21:10
 
-Remplacement du JAR RPGQuest et redéploiement de PlugAdmin. Aucune migration. Puis, depuis la fiche
-de Lucien, « Réessayer » l'apparence (aucune recréation, dialogue et liaisons intacts).
-
-### Sauvegarde préalable
-
-JAR déployé + `data.db` + `Citizens/saves.yml`.
+- JAR `4bd94b4` (2 606 002 o, SHA-256 `f4495d6b…9643`, taille relue en ligne), PlugAdmin `4bd94b4`.
+- Sauvegardes : JAR précédent `~/.local/share/rpgquest/verygames-backups/rpgquest-20261013T191022Z-predeploy.jar`,
+  `Citizens/saves.yml` dans `/srv/rpgquest/backups/20261013-predeploy-skin/`. Aucune migration.
+- DEV redémarré (seul le propriétaire était connecté).
+- Lucien : la fiche affichait « Il ne porte pas son apparence en jeu » ; « Réessayer » a posé la
+  texture. Relu dans `Citizens/saves.yml` : image `1a6007…309f` (celle du lien demandé),
+  `fetchDefaultSkin: false`. Dialogue et liaison inchangés (`rpgquest:lucien`). Elias non modifié.
 
 ### Validation
 

@@ -55,6 +55,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import com.lodygames.rpgquest.panel.npc.NpcCreationPlanner;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -312,14 +313,19 @@ public final class PanelApp {
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",
                 Permission.MOB_READ, agentPages::mobs));
-        route("/dialogues", exchange -> handleBusinessPage(exchange, "/dialogues", "Dialogues",
-                Permission.DIALOGUE_READ, agentPages::dialogues));
-        route("/dialogues/new", exchange -> handleContentEditor(exchange, "dialogues", "/dialogues",
-                Permission.DIALOGUE_WRITE, "NEW"));
-        route("/dialogues/edit", exchange -> handleContentEditor(exchange, "dialogues", "/dialogues",
-                Permission.DIALOGUE_WRITE, "EDIT"));
-        route("/dialogues/save", exchange -> handleContentEditor(exchange, "dialogues", "/dialogues",
-                Permission.DIALOGUE_WRITE, "SAVE"));
+        // Issue #332 — dialogues, version simple : une liste, un éditeur, « Enregistrer » puis
+        // « Mettre en jeu » par la publication à chaud (#47). L'ancien écran reste en « Détails
+        // techniques ».
+        route("/dialogues", this::handleDialogueList);
+        route("/dialogues/diagnostic", exchange -> handleBusinessPage(exchange, "/dialogues",
+                "Dialogues — détails techniques", Permission.DIALOGUE_READ, agentPages::dialogues));
+        route("/dialogues/new", this::handleDialogueNew);
+        route("/dialogues/create", this::handleDialogueCreate);
+        route("/dialogues/edit", this::handleDialogueEdit);
+        route("/dialogues/save", this::handleDialogueSave);
+        route("/dialogues/publish", this::handleDialoguePublish);
+        route("/dialogues/refresh", this::handleDialogueRefresh);
+        route("/dialogues/link", this::handleDialogueLink);
         route("/content/export", this::handleContentExport);
         route("/content/export/download", this::handleContentExportDownload);
         // Issue #110 — contrat de contenu machine-readable. Trois téléchargements en lecture pure,
@@ -2483,6 +2489,7 @@ public final class PanelApp {
         String slug;
         String typed = null;
         String expectedSha = null;
+        String ackValue = null;
         if (post) {
             Map<String, String> form = Http.formBody(exchange);
             if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
@@ -2493,6 +2500,7 @@ public final class PanelApp {
             slug = form.getOrDefault("slug", "").trim();
             typed = form.getOrDefault(ContentDeletionPages.CONFIRM_FIELD, "");
             expectedSha = form.get(ContentDeletionPages.EXPECTED_SHA_FIELD);
+            ackValue = form.get(ContentDeletionPages.ACK_FIELD);
         } else {
             slug = Http.query(exchange).getOrDefault("slug", "").trim();
         }
@@ -2517,14 +2525,25 @@ public final class PanelApp {
         var plan = contentDeletion.plan(kind, slug, runtimePresent, listingAvailable, inventory, now);
         String refresh = dialogueRefreshForm(session, agentId, base);
 
+        boolean shortDialogue = "dialogues".equals(kind);
+        DialoguePages.Ctx dctx = shortDialogue ? agentPages.dialogueCtx(agentId) : null;
+        String dTitle = shortDialogue ? DialoguePages.title(plan.plainId(),
+                contentWorkspace.read("dialogues", plan.plainId())
+                        .map(f -> com.lodygames.rpgquest.panel.content.DialogueYaml.read(f.text()).draft()).orElse(null),
+                dctx.users(plan.plainId())) : "";
+        java.util.function.UnaryOperator<String> npcName = id -> dctx == null ? id
+                : dctx.npcs().stream().filter(n -> n.id().equals(id)).map(DialoguePages.Npc::name).findFirst().orElse(id);
         if (!post) {
-            Http.html(exchange, 200, renderPage(title, session, base,
-                    contentDeletion.preview(plan, session.csrfToken(), null, refresh)));
+            Http.html(exchange, 200, renderPage(title, session, base, shortDialogue
+                    ? contentDeletion.dialoguePreview(plan, dTitle, npcName, session.csrfToken(), null, refresh)
+                    : contentDeletion.preview(plan, session.csrfToken(), null, refresh)));
             return;
         }
 
         String refusal = null;
-        if (!ContentDeletionPages.confirmationMatches(plan, typed)) {
+        if (shortDialogue && !"1".equals(ackValue)) {
+            refusal = "Cochez « Je veux supprimer ce dialogue » pour confirmer. Rien n'a été supprimé.";
+        } else if (!ContentDeletionPages.confirmationMatches(plan, typed)) {
             refusal = "Confirmation incorrecte : il faut retaper exactement l'identifiant. "
                     + "Aucune modification n'a été faite.";
         } else if (plan.sourcePresent() && !java.util.Objects.equals(
@@ -2535,8 +2554,9 @@ public final class PanelApp {
                     + "été faite.";
         }
         if (refusal != null) {
-            Http.html(exchange, 200, renderPage(title, session, base,
-                    contentDeletion.preview(plan, session.csrfToken(), refusal, refresh)));
+            Http.html(exchange, 200, renderPage(title, session, base, shortDialogue
+                    ? contentDeletion.dialoguePreview(plan, dTitle, npcName, session.csrfToken(), refusal, refresh)
+                    : contentDeletion.preview(plan, session.csrfToken(), refusal, refresh)));
             return;
         }
 
@@ -2562,8 +2582,9 @@ public final class PanelApp {
                 + " id=" + plan.plainId() + " ok=" + (result != null && result.ok())
                 + " runtime_queued=" + queued + " by=" + session.username());
 
-        Http.html(exchange, 200, renderPage(title, session, base,
-                contentDeletion.result(kind, plan.plainId(), result, queued, runtimeActionId)));
+        Http.html(exchange, 200, renderPage(title, session, base, shortDialogue && result != null
+                ? contentDeletion.dialogueResult(dTitle, result, queued, runtimeActionId)
+                : contentDeletion.result(kind, plan.plainId(), result, queued, runtimeActionId)));
     }
 
     /** Une suppression serveur de ce contenu déjà en file (PENDING / DELIVERED), s'il y en a une. */
@@ -4425,20 +4446,12 @@ public final class PanelApp {
                         "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
                 return;
             }
-            result = switch (kind) {
-                case "quests" -> contentEditor.questPost(ref, form);
-                case "stories" -> contentEditor.storyPost(ref, form);
-                default -> contentEditor.dialoguePost(ref, form);
-            };
+            result = "quests".equals(kind) ? contentEditor.questPost(ref, form) : contentEditor.storyPost(ref, form);
             String actor = session.username();
             String act = form.getOrDefault("_action", "");
             if ("save".equals(act) && result instanceof ContentEditorPages.Result.Redirect rd) {
                 audit.record(actor, kind + ".content.write", rd.location(), "OK", null,
                         UUID.randomUUID().toString().substring(0, 8));
-                if ("dialogues".equals(kind)) {
-                    result = new ContentEditorPages.Result.Redirect(
-                            linkDialogueToNpc(session, form, rd.location()));
-                }
             }
         } else {
             String slug = null;
@@ -4456,11 +4469,8 @@ public final class PanelApp {
             }
             Map<String, String> query = Http.query(exchange);
             boolean saved = "1".equals(query.get("saved"));
-            result = switch (kind) {
-                case "quests" -> contentEditor.questPage(ref, slug, saved, query.get("giver"));
-                case "stories" -> contentEditor.storyPage(ref, slug, saved);
-                default -> contentEditor.dialoguePage(ref, slug, saved, query.get("npc"));
-            };
+            result = "quests".equals(kind) ? contentEditor.questPage(ref, slug, saved, query.get("giver"))
+                    : contentEditor.storyPage(ref, slug, saved);
         }
 
         if (result instanceof ContentEditorPages.Result.Redirect rd) {
@@ -4468,57 +4478,501 @@ public final class PanelApp {
             return;
         }
         String body = ((ContentEditorPages.Result.Html) result).body();
-        String title = switch (kind) {
-            case "quests" -> "Éditeur de quête";
-            case "stories" -> "Éditeur de story";
-            default -> "Éditeur de dialogue";
-        };
+        String title = "quests".equals(kind) ? "Éditeur de quête" : "Éditeur de story";
         Http.html(exchange, 200, renderPage(title, session, base, body));
     }
 
-    /**
-     * Deuxième écriture du workflow #145 (§5) : après l'enregistrement <em>source</em> d'un dialogue
-     * créé avec un PNJ sélectionné, met à jour la <strong>définition du PNJ</strong> pour qu'elle
-     * pointe vers ce dialogue, via l'action agent existante {@code npc.definition.update} (jamais de
-     * stockage parallèle). Le dialogue source est déjà écrit : si le rattachement ne peut pas être
-     * préparé (PNJ absent du dernier relevé), on le signale sans défaire l'écriture — demi-état
-     * explicite plutôt que silencieux.
-     *
-     * @return la {@code Location} de redirection à utiliser (avec {@code toast=} ou {@code err=})
-     */
-    private String linkDialogueToNpc(Session session, Map<String, String> form, String savedLocation) {
-        String npc = form.getOrDefault("npc", "").trim().toLowerCase(java.util.Locale.ROOT);
-        if (npc.isEmpty()) {
-            return savedLocation;
+    // ================================================================================
+    //  Dialogues, version simple (issue #332)
+    // ================================================================================
+
+    private DialoguePages.Rights dialogueRights(Session session) {
+        return new DialoguePages.Rights(
+                permissions.can(session.effective(), Permission.DIALOGUE_WRITE) && contentWorkspace.writable("dialogues"),
+                permissions.can(session.effective(), Permission.CONTENT_PUBLISH),
+                permissions.can(session.effective(), Permission.CONTENT_DELETE));
+    }
+
+    private void dialoguePage(HttpExchange exchange, Session session, String title, String body) throws IOException {
+        Http.html(exchange, 200, renderPage(title, session, "/dialogues", body));
+    }
+
+    private void handleDialogueList(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
         }
-        String agentId = config.agents().defaultAgentId();
-        String dialogueId = "rpgquest:" + com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(
-                form.getOrDefault("id", ""));
-        Optional<Map<String, String>> cur = agentPages.npcDefinitionFields(agentId, npc);
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.DIALOGUE_READ)) {
+            forbidden(exchange, session, "/dialogues");
+            return;
+        }
+        Map<String, String> query = Http.query(exchange);
+        DialoguePages.Ctx ctx = agentPages.dialogueCtx(config.agents().defaultAgentId());
+        dialoguePage(exchange, session, "Dialogues", actionFeedback(query)
+                + DialoguePages.list(session.csrfToken(), ctx, dialogueRights(session), agentPages.dialogueRows(ctx)));
+    }
+
+    private void handleDialogueNew(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!dialogueRights(session).write()) {
+            forbidden(exchange, session, "/dialogues");
+            return;
+        }
+        Map<String, String> query = Http.query(exchange);
+        DialoguePages.Ctx ctx = agentPages.dialogueCtx(config.agents().defaultAgentId());
+        dialoguePage(exchange, session, "Créer un dialogue", DialoguePages.create(session.csrfToken(), ctx,
+                query.getOrDefault("npc", ""), "", NpcCreationPlanner.GREETING, ""));
+    }
+
+    /** Lecture d'un POST de dialogue : session, jeton CSRF, droit d'écriture. {@code null} = déjà répondu. */
+    private NpcPost dialoguePost(HttpExchange exchange, boolean needWrite) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return null;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.redirect(exchange, "/dialogues");
+            return null;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(maybe.get().csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return null;
+        }
+        Session session = maybe.get();
+        boolean allowed = needWrite ? dialogueRights(session).write()
+                : permissions.can(session.effective(), Permission.DIALOGUE_READ);
+        if (!allowed) {
+            forbidden(exchange, session, "/dialogues");
+            return null;
+        }
+        return new NpcPost(session, form, config.agents().defaultAgentId());
+    }
+
+    /**
+     * « Créer un dialogue » : le fichier est écrit dans la source avec la première réplique et une
+     * réponse « Au revoir ». S'il est pour un personnage qui n'a pas encore de dialogue, il prend son
+     * identifiant (le jeu l'ouvre alors tout seul) ; sinon le personnage est rattaché au nouveau
+     * dialogue par l'action existante {@code npc.definition.update}.
+     */
+    private void handleDialogueCreate(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, true);
+        if (post == null) {
+            return;
+        }
+        Map<String, String> form = post.form();
+        DialoguePages.Ctx ctx = agentPages.dialogueCtx(post.agentId());
+        String npcId = form.getOrDefault("npc", "").trim().toLowerCase(java.util.Locale.ROOT);
+        String name = form.getOrDefault("name", "").trim();
+        String line = form.getOrDefault("first_line", "").trim();
+        DialoguePages.Npc npc = ctx.npcs().stream().filter(n -> n.id().equals(npcId)).findFirst().orElse(null);
+        String error = null;
+        if (!npcId.isEmpty() && npc == null) {
+            error = "Ce personnage est inconnu : actualisez la liste des dialogues puis réessayez.";
+        } else if (npc == null && name.isEmpty()) {
+            error = "Choisissez un personnage ou donnez un nom au dialogue.";
+        } else if (line.isEmpty()) {
+            error = "Écrivez ce que dit le personnage en premier.";
+        } else if (line.length() > 512) {
+            error = "La première réplique est trop longue (512 caractères au plus).";
+        }
+        java.util.Set<String> taken = new java.util.HashSet<>();
+        contentWorkspace.list("dialogues").forEach(f -> taken.add(f.slug()));
+        taken.addAll(ctx.serverKeys());
+        String slug = null;
+        if (error == null) {
+            boolean conventional = npc != null && (npc.dialogueKey().isEmpty() || npc.dialogueKey().equals(npc.id()))
+                    && !taken.contains(npc.id());
+            slug = conventional ? npc.id()
+                    : NpcCreationPlanner.freeId(name.isEmpty() ? npc.id() + " dialogue" : name, taken).orElse(null);
+            if (slug == null) {
+                error = "Ce nom ne permet pas de créer un dialogue : ajoutez au moins une lettre ou un chiffre.";
+            }
+        }
+        if (error != null) {
+            dialoguePage(exchange, post.session(), "Créer un dialogue",
+                    DialoguePages.create(post.session().csrfToken(), ctx, npcId, name, line, error));
+            return;
+        }
+        String speaker = npc != null ? MiniText.plain(npc.name()) : name;
+        com.lodygames.rpgquest.panel.content.DialogueDraft draft = new com.lodygames.rpgquest.panel.content.DialogueDraft();
+        draft.id = slug;
+        draft.start = "start";
+        com.lodygames.rpgquest.panel.content.DialogueDraft.Node start = new com.lodygames.rpgquest.panel.content.DialogueDraft.Node("start");
+        start.speaker = speaker;
+        start.text = line;
+        start.choices.add(new com.lodygames.rpgquest.panel.content.DialogueDraft.Choice(NpcCreationPlanner.FAREWELL, "", true));
+        draft.nodes.add(start);
+        ContentWorkspace.WriteResult wr = contentWorkspace.write("dialogues", slug,
+                com.lodygames.rpgquest.panel.content.DialogueYaml.write(draft), "");
+        if (!wr.ok()) {
+            dialoguePage(exchange, post.session(), "Créer un dialogue", DialoguePages.create(post.session().csrfToken(),
+                    ctx, npcId, name, line, "Le dialogue n'a pas pu être enregistré : " + wr.message()));
+            return;
+        }
+        audit.record(post.session().username(), "dialogues.content.write", "/dialogues/edit/" + slug, "OK",
+                "création", UUID.randomUUID().toString().substring(0, 8));
+        String dest = "/dialogues/edit/" + slug + "?created=1";
+        if (npc != null && !slug.equals(npc.id())) {
+            String linked = queueDialogueLink(post.session(), post.agentId(), npc.id(), slug);
+            dest += linked.startsWith("!") ? "&err=" + enc(linked.substring(1)) : "&toast=" + enc(linked);
+        }
+        Http.redirect(exchange, dest);
+    }
+
+    /**
+     * Met le personnage sur ce dialogue ({@code npc.definition.update}).
+     *
+     * @return l'id de l'action, ou {@code "!"} suivi du motif si rien n'a été envoyé
+     */
+    private String queueDialogueLink(Session session, String agentId, String npcId, String slug) {
+        if (!mayQueue(session, "npc.definition.update")) {
+            return "!Vous n'avez pas le droit de modifier les personnages : demandez à un administrateur de "
+                    + "lui donner ce dialogue.";
+        }
+        Optional<Map<String, String>> cur = agentPages.npcDefinitionFields(agentId, npcId);
         if (cur.isEmpty()) {
-            return "/dialogues?agent=" + enc(agentId) + "&err=" + enc("Dialogue enregistré dans la source. "
-                    + "Le PNJ « " + npc + " » est absent du dernier relevé — rafraîchir « PNJ » puis rattacher "
-                    + "le dialogue depuis la fiche du PNJ.");
+            return "!Ce personnage n'est plus dans la liste : actualisez, puis associez-le depuis le dialogue.";
         }
         Map<String, String> npcForm = new java.util.LinkedHashMap<>(cur.get());
-        npcForm.put("npc_id", npc);
-        npcForm.put("dialogue_id", dialogueId);
+        npcForm.put("npc_id", npcId);
+        npcForm.put("dialogue_id", "rpgquest:" + slug);
         npcForm.put("confirm", "true");
-        com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Validation v =
-                com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.definition.update", npcForm);
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.definition.update", npcForm);
         if (!v.valid()) {
-            return "/dialogues?agent=" + enc(agentId) + "&err=" + enc("Dialogue enregistré dans la source, mais "
-                    + "le rattachement au PNJ n'a pas pu être préparé : " + v.error());
-        }
-        Optional<AgentIdentity> agent = agentRegistry.byId(agentId);
-        if (agent.isEmpty()) {
-            return savedLocation;
+            return "!" + v.error();
         }
         String id = agentStore.createAction(agentId, "npc.definition.update", v.params(), session.username());
+        // Le personnage relu après la mise à jour : sa fiche et cette page le montrent sur le bon dialogue.
+        if (!agentStore.hasOpenActionOfType(agentId, "npc.list")) {
+            agentStore.createAction(agentId, "npc.list", Map.of(), session.username());
+        }
         audit.record(session.username(), "agent.action.create",
                 "agent=" + agentId + " type=npc.definition.update action=" + id, "PENDING",
-                "dialogue=" + dialogueId + " npc=" + npc, UUID.randomUUID().toString().substring(0, 8));
-        return "/dialogues?agent=" + enc(agentId) + "&toast=" + enc(id);
+                "dialogue=rpgquest:" + slug + " npc=" + npcId, UUID.randomUUID().toString().substring(0, 8));
+        return id;
+    }
+
+    private void handleDialogueLink(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, true);
+        if (post == null) {
+            return;
+        }
+        String slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(post.form().getOrDefault("slug", ""));
+        String npc = post.form().getOrDefault("npc", "").trim().toLowerCase(java.util.Locale.ROOT);
+        String back = "/dialogues/edit/" + slug;
+        if (slug.isEmpty() || npc.isEmpty() || !contentWorkspace.exists("dialogues", slug)) {
+            Http.redirect(exchange, back + "?err=" + enc("Choisissez un personnage."));
+            return;
+        }
+        String linked = queueDialogueLink(post.session(), post.agentId(), npc, slug);
+        Http.redirect(exchange, back + (linked.startsWith("!") ? "?err=" + enc(linked.substring(1))
+                : "?toast=" + enc(linked)));
+    }
+
+    private void handleDialogueRefresh(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, false);
+        if (post == null) {
+            return;
+        }
+        String back = post.form().getOrDefault("return", "/dialogues");
+        if (!back.startsWith("/dialogues")) {
+            back = "/dialogues";
+        }
+        String toast = "";
+        List<String> types = new ArrayList<>(List.of("dialogue.list", "npc.list"));
+        if (permissions.can(post.session().effective(), Permission.CONTENT_READ)) {
+            types.add("quest.list");
+            types.add("content.dev.state");
+        }
+        for (String type : types) {
+            if (!agentStore.hasOpenActionOfType(post.agentId(), type)) {
+                String id = agentStore.createAction(post.agentId(), type, Map.of(), post.session().username());
+                toast = toast.isEmpty() ? id : toast;
+            }
+        }
+        Http.redirect(exchange, back + (back.contains("?") ? "&" : "?") + (toast.isEmpty() ? "" : "toast=" + enc(toast)));
+    }
+
+    private void handleDialogueEdit(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.DIALOGUE_READ)) {
+            forbidden(exchange, session, "/dialogues");
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        String slug = path.startsWith("/dialogues/edit/") ? path.substring("/dialogues/edit/".length()) : "";
+        slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(slug.replace("/", ""));
+        Map<String, String> query = Http.query(exchange);
+        DialoguePages.Ctx ctx = agentPages.dialogueCtx(config.agents().defaultAgentId());
+        DialoguePages.Editing editing = dialogueEditing(ctx, slug, query);
+        if (editing == null) {
+            Http.redirect(exchange, "/dialogues?err=" + enc("Ce dialogue est introuvable."));
+            return;
+        }
+        dialoguePage(exchange, session, DialoguePages.title(slug, editing.draft(), ctx.users(slug)),
+                actionFeedback(query) + DialoguePages.editor(session.csrfToken(), ctx, dialogueRights(session), editing));
+    }
+
+    /** L'éditeur ouvert sur le fichier enregistré (ou, s'il n'est que sur le serveur, en lecture seule). */
+    private DialoguePages.Editing dialogueEditing(DialoguePages.Ctx ctx, String slug, Map<String, String> query) {
+        Optional<ContentWorkspace.ContentFile> file = slug.isEmpty() ? Optional.empty()
+                : contentWorkspace.read("dialogues", slug);
+        // « Enregistré » est déjà dit par le bandeau d'état : pas de second message.
+        String notice = "1".equals(query.get("created")) ? "Dialogue créé. Ajoutez des réponses, enregistrez, puis mettez-le en jeu."
+                : "";
+        if (file.isPresent()) {
+            var rr = com.lodygames.rpgquest.panel.content.DialogueYaml.read(file.get().text());
+            String readOnly = rr.draft() == null || !rr.ok()
+                    ? "Ce dialogue utilise une écriture que l'éditeur ne sait pas relire sans rien perdre ("
+                            + String.join(" ; ", rr.problems()) + "). Il s'affiche en lecture seule : modifiez son "
+                            + "fichier à la main."
+                    : "";
+            var draft = rr.draft() == null ? com.lodygames.rpgquest.panel.content.DialogueDraft.blank() : rr.draft();
+            return new DialoguePages.Editing(slug, draft, file.get().sha256(), readOnly, notice, "ok", Map.of(),
+                    false, file.get().text().lines().anyMatch(l -> l.trim().startsWith("#")));
+        }
+        if (!ctx.serverKeys().contains(slug)) {
+            return null;
+        }
+        // Seulement sur le serveur : on montre ce que le relevé en dit, sans rien modifier.
+        var draft = agentPages.serverDialogueDraft(ctx.agentId(), slug).orElse(null);
+        if (draft == null) {
+            return null;
+        }
+        return new DialoguePages.Editing(slug, draft, "", "Ce dialogue n'existe que sur le serveur (il vient du "
+                + "plugin ou a été déposé à la main) : il s'affiche en lecture seule.", notice, "ok", Map.of(), false, false);
+    }
+
+    /**
+     * POST de l'éditeur : un geste (ajouter, retirer…) réaffiche le formulaire sans rien écrire ;
+     * « Enregistrer » valide puis écrit ; « Enregistrer et mettre en jeu » enchaîne la publication.
+     * En cas d'erreur, la saisie est réaffichée telle quelle, avec le message près du champ.
+     */
+    private void handleDialogueSave(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, true);
+        if (post == null) {
+            return;
+        }
+        Map<String, String> form = post.form();
+        String slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(form.getOrDefault("slug", ""));
+        String expectedSha = form.getOrDefault("expected_sha", "");
+        String op = form.getOrDefault("_op", "save");
+        DialoguePages.Ctx ctx = agentPages.dialogueCtx(post.agentId());
+        Optional<ContentWorkspace.ContentFile> file = contentWorkspace.read("dialogues", slug);
+        if (slug.isEmpty() || file.isEmpty()) {
+            Http.redirect(exchange, "/dialogues?err=" + enc("Ce dialogue est introuvable : il a peut-être été supprimé."));
+            return;
+        }
+        var original = com.lodygames.rpgquest.panel.content.DialogueYaml.read(file.get().text());
+        if (original.draft() == null || !original.ok()) {
+            Http.redirect(exchange, "/dialogues/edit/" + slug);
+            return;
+        }
+        var parsed = com.lodygames.rpgquest.panel.content.DialogueForm.parse(form);
+        var draft = parsed.draft();
+        // L'identifiant ne change jamais depuis l'éditeur : c'est par lui que personnages et quêtes le retrouvent.
+        draft.id = original.draft().id;
+        boolean comments = file.get().text().lines().anyMatch(l -> l.trim().startsWith("#"));
+
+        String notice = "";
+        String tone = "info";
+        String[] parts = op.split(":");
+        switch (parts[0]) {
+            case "addreply" -> com.lodygames.rpgquest.panel.content.DialogueForm.addReply(draft, intAt(parts, 1));
+            case "delreply" -> {
+                int i = intAt(parts, 1);
+                int j = intAt(parts, 2);
+                if (i >= 0 && i < draft.nodes.size() && j >= 0 && j < draft.nodes.get(i).choices.size()) {
+                    draft.nodes.get(i).choices.remove(j);
+                    notice = "Réponse supprimée. Enregistrez pour la retirer du dialogue.";
+                }
+            }
+            case "addnode" -> {
+                com.lodygames.rpgquest.panel.content.DialogueForm.addNode(draft);
+                notice = "Réplique ajoutée en bas de la page. Choisissez-la dans « Ensuite… » d'une réponse pour "
+                        + "qu'on puisse l'atteindre.";
+            }
+            case "delnode" -> {
+                int n = com.lodygames.rpgquest.panel.content.DialogueForm.removeNode(draft, intAt(parts, 1));
+                notice = n < 0 ? "" : n == 0 ? "Réplique retirée." : "Réplique retirée. " + n + " réponse(s) qui y menaient "
+                        + "terminent maintenant la conversation.";
+                tone = n > 0 ? "warn" : "info";
+            }
+            case "addcd", "addfx" -> {
+                String kind = parts[0].substring(3);
+                int i = intAt(parts, 1);
+                int j = intAt(parts, 2);
+                com.lodygames.rpgquest.panel.content.DialogueForm.addEntry(draft, i, j, kind,
+                        form.getOrDefault("add_" + kind + "_" + i + "_" + j, ""));
+            }
+            case "delcd", "delfx" -> {
+                String kind = parts[0].substring(3);
+                int i = intAt(parts, 1);
+                int j = intAt(parts, 2);
+                int k = intAt(parts, 3);
+                removeEntry(draft, i, j, kind, k);
+            }
+            default -> {
+                saveDialogue(exchange, post, ctx, slug, expectedSha, draft, parsed.createdNodes(), comments,
+                        "save_publish".equals(op));
+                return;
+            }
+        }
+        DialoguePages.Editing editing = new DialoguePages.Editing(slug, draft, expectedSha, "", notice, tone, Map.of(),
+                true, comments);
+        dialoguePage(exchange, post.session(), DialoguePages.title(slug, draft, ctx.users(slug)),
+                DialoguePages.editor(post.session().csrfToken(), ctx, dialogueRights(post.session()), editing));
+    }
+
+    private static int intAt(String[] parts, int index) {
+        try {
+            return index < parts.length ? Integer.parseInt(parts[index]) : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** Retire la k-ième condition (cd) ou le k-ième autre effet (fx) tel que l'éditeur les numérote. */
+    private static void removeEntry(com.lodygames.rpgquest.panel.content.DialogueDraft d, int i, int j, String kind, int k) {
+        if (i < 0 || i >= d.nodes.size() || j < 0 || j >= d.nodes.get(i).choices.size() || k < 0) {
+            return;
+        }
+        var c = d.nodes.get(i).choices.get(j);
+        if ("cd".equals(kind)) {
+            if (k < c.conditions.size()) {
+                c.conditions.remove(k);
+            }
+            return;
+        }
+        var reply = com.lodygames.rpgquest.panel.content.DialogueForm.reply(c);
+        if (k >= reply.otherEffects().size()) {
+            return;
+        }
+        Map<String, String> target = reply.otherEffects().get(k);
+        for (int x = 0; x < c.actions.size(); x++) {
+            if (c.actions.get(x) == target) {
+                c.actions.remove(x);
+                return;
+            }
+        }
+    }
+
+    private void saveDialogue(HttpExchange exchange, NpcPost post, DialoguePages.Ctx ctx, String slug,
+                              String expectedSha, com.lodygames.rpgquest.panel.content.DialogueDraft draft,
+                              List<String> created, boolean comments, boolean publish) throws IOException {
+        var diags = com.lodygames.rpgquest.panel.content.DialogueValidator.validate(draft);
+        Map<String, List<String>> errors = DialoguePages.placeErrors(draft, diags);
+        String yaml = com.lodygames.rpgquest.panel.content.DialogueYaml.write(draft);
+        List<String> rtp = com.lodygames.rpgquest.panel.content.DialogueYaml.roundTripProblems(yaml);
+        if (!rtp.isEmpty()) {
+            errors = new java.util.LinkedHashMap<>(errors);
+            errors.computeIfAbsent("dialogue", k -> new ArrayList<>()).add("Ce dialogue ne peut pas être enregistré "
+                    + "sans risque de perte : " + String.join(" ; ", rtp));
+        }
+        if (!errors.isEmpty()) {
+            String msg = created.isEmpty() ? "Rien n'a été enregistré : corrigez les points signalés en rouge."
+                    : "Une nouvelle réplique a été ajoutée en bas : écrivez ce que dit le personnage, puis enregistrez.";
+            dialoguePage(exchange, post.session(), DialoguePages.title(slug, draft, ctx.users(slug)),
+                    DialoguePages.editor(post.session().csrfToken(), ctx, dialogueRights(post.session()),
+                            new DialoguePages.Editing(slug, draft, expectedSha, "", msg, created.isEmpty() ? "err" : "info",
+                                    errors, true, comments)));
+            return;
+        }
+        ContentWorkspace.WriteResult wr = contentWorkspace.write("dialogues", slug, yaml, expectedSha);
+        if (!wr.ok()) {
+            String msg = "CONFLICT".equals(wr.code())
+                    ? "Ce dialogue a été modifié ailleurs pendant que vous l'éditiez. Vos modifications sont toujours "
+                            + "affichées ci-dessous mais n'ont pas été enregistrées : rechargez la page pour voir l'autre "
+                            + "version (copiez d'abord ce que vous voulez garder)."
+                    : "Rien n'a été enregistré : " + wr.message();
+            dialoguePage(exchange, post.session(), DialoguePages.title(slug, draft, ctx.users(slug)),
+                    DialoguePages.editor(post.session().csrfToken(), ctx, dialogueRights(post.session()),
+                            new DialoguePages.Editing(slug, draft, expectedSha, "", msg, "err", Map.of(), true, comments)));
+            return;
+        }
+        audit.record(post.session().username(), "dialogues.content.write", "/dialogues/edit/" + slug, "OK", null,
+                UUID.randomUUID().toString().substring(0, 8));
+        String dest = "/dialogues/edit/" + slug + "?saved=1";
+        if (publish && dialogueRights(post.session()).publish()) {
+            String queued = queueDialoguePublish(post.session(), post.agentId(), slug, wr.sha256());
+            dest += queued.startsWith("!") ? "&err=" + enc(queued.substring(1)) : "&toast=" + enc(queued);
+        }
+        Http.redirect(exchange, dest);
+    }
+
+    /**
+     * « Mettre en jeu » : la publication à chaud existante (#47), pour ce seul dialogue. Les deux
+     * empreintes attendues voyagent avec l'action : une version modifiée entre-temps, d'un côté ou
+     * de l'autre, est refusée au lieu d'être écrasée.
+     *
+     * @return l'id de l'action, ou {@code "!"} suivi du motif
+     */
+    private String queueDialoguePublish(Session session, String agentId, String slug, String sourceSha) {
+        DialoguePages.LiveState live = agentPages.dialogueLive(agentId, slug);
+        if (live.live() == DialoguePages.Live.PUBLISHING) {
+            return "!Une mise en jeu de ce dialogue est déjà en cours.";
+        }
+        if (live.live() == DialoguePages.Live.CONFLICT) {
+            return "!Le serveur a une autre version de ce dialogue : comparez-les dans « Détails techniques » avant "
+                    + "de la remplacer.";
+        }
+        Map<String, String> publishForm = new java.util.LinkedHashMap<>();
+        publishForm.put("kind", "dialogues");
+        publishForm.put("id", slug);
+        publishForm.put("expected_dev_sha", live.expectedDev() == null ? "" : live.expectedDev());
+        publishForm.put("expected_source_sha", sourceSha);
+        publishForm.put("confirm", "true");
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("content.publish", publishForm);
+        if (!v.valid()) {
+            return "!" + v.error();
+        }
+        PublishEnrichment enriched = enrichPublish(v.params());
+        if (enriched.error() != null) {
+            return "!" + enriched.error();
+        }
+        String id = agentStore.createAction(agentId, "content.publish", enriched.params(), session.username());
+        audit.record(session.username(), "agent.action.create",
+                "agent=" + agentId + " type=content.publish action=" + id, "PENDING", "dialogue=" + slug,
+                UUID.randomUUID().toString().substring(0, 8));
+        return id;
+    }
+
+    private void handleDialoguePublish(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, false);
+        if (post == null) {
+            return;
+        }
+        if (!dialogueRights(post.session()).publish()) {
+            forbidden(exchange, post.session(), "/dialogues");
+            return;
+        }
+        String slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(post.form().getOrDefault("slug", ""));
+        Optional<ContentWorkspace.ContentFile> file = contentWorkspace.read("dialogues", slug);
+        String back = "/dialogues/edit/" + slug;
+        if (file.isEmpty()) {
+            Http.redirect(exchange, "/dialogues?err=" + enc("Ce dialogue est introuvable."));
+            return;
+        }
+        String seen = post.form().getOrDefault("expected_sha", "");
+        if (!seen.isEmpty() && !seen.equals(file.get().sha256())) {
+            Http.redirect(exchange, back + "?err=" + enc("Le dialogue a changé depuis l'affichage de la page : "
+                    + "vérifiez-le, puis mettez-le en jeu."));
+            return;
+        }
+        String queued = queueDialoguePublish(post.session(), post.agentId(), slug, file.get().sha256());
+        Http.redirect(exchange, back + (queued.startsWith("!") ? "?err=" + enc(queued.substring(1))
+                : "?toast=" + enc(queued)));
     }
 
     /** {@code POST /agents/action} : création générique d'une action whitelistée depuis n'importe quelle page. */

@@ -360,13 +360,17 @@ public final class ContentDeletionAnalyzer {
         }
 
         // 1. PNJ liés — d'après le serveur (déclaration « dialogue: » ou convention rpgquest:<pnj>).
-        runtime.filter(e -> !e.linkedNpcIds().isEmpty()).ifPresent(e -> blockers.add(
-                new DeletionPlan.Blocker(
-                        "Lié au(x) PNJ « " + String.join(", ", e.linkedNpcIds()) + " » : le PNJ "
-                                + "resterait sans dialogue. Le PNJ n'est jamais supprimé ici.",
-                        "PNJ " + String.join(", ", e.linkedNpcIds()),
+        runtime.ifPresent(e -> {
+            for (String npc : e.linkedNpcIds()) {
+                blockers.add(new DeletionPlan.Blocker(
+                        "Lié au(x) PNJ « " + npc + " » : le PNJ resterait sans dialogue. Le PNJ "
+                                + "n'est jamais supprimé ici.",
+                        "PNJ " + npc,
                         "Changer le dialogue de ce PNJ depuis sa fiche (ou supprimer le PNJ), "
-                                + "rafraîchir le relevé, puis relancer.")));
+                                + "rafraîchir le relevé, puis relancer.",
+                        "/npcs?focus=" + npc, npc));
+            }
+        });
 
         // 2. Dialogues qui l'ouvrent — serveur, puis source. Les réécrire changerait leur sens :
         //    on bloque, comme pour une quête démarrée par un dialogue.
@@ -375,7 +379,8 @@ public final class ContentDeletionAnalyzer {
                     "Ouvert par le dialogue " + opener + " (OPEN_DIALOGUE). Le serveur refuserait "
                             + "de recharger ce dialogue s'il pointait vers un dialogue disparu.",
                     "serveur DEV — dialogues",
-                    "Modifier ce dialogue pour retirer ou réorienter ce choix, puis relancer."));
+                    "Modifier ce dialogue pour retirer ou réorienter ce choix, puis relancer.",
+                    "/dialogues/edit/" + DialogueYaml.plainId(opener), DialogueYaml.plainId(opener)));
         }
         for (SourceCatalog.DialogueSource ds : source.dialogues()) {
             if (ds.plainId().equals(plainId)) {
@@ -389,7 +394,8 @@ public final class ContentDeletionAnalyzer {
                                 + (lines.size() == 1 ? "à la ligne " : "aux lignes ")
                                 + joinLines(lines) + " (OPEN_DIALOGUE).",
                         "src/main/resources/dialogues/" + ds.slug() + ".yml",
-                        "Modifier ce dialogue dans son éditeur, puis relancer."));
+                        "Modifier ce dialogue dans son éditeur, puis relancer.",
+                        "/dialogues/edit/" + ds.slug(), ds.slug()));
             }
         }
 

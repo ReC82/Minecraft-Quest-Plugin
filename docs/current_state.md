@@ -6,6 +6,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Dialogues et Joueurs simplifiés dans PlugAdmin (#332, #328, 13/10/2026)** — dialogues : liste
+> lisible, éditeur « Le personnage dit… / Le joueur peut répondre… / Ensuite… », proposition de
+> quête par titre, conditions avancées repliées, aller-retour sans perte, « Enregistrer » puis
+> « Mettre en jeu » (publication #47), aperçu, suppression courte ; joueurs : annuaire compact et
+> fiche à onglets avec un seul retour d'action daté. Skin : texture MineSkin posée et vérifiée
+> (correctif #325).
+>
 > **PNJ simplifiés dans PlugAdmin (#325, 13/10/2026)** — un seul bouton « Créer un PNJ » (nom,
 > emplacement, apparence) qui crée personnage + fiche + apparence par défaut + dialogue « Salut ! »
 > propre au PNJ, avec identifiant libre (`lucien_2`), anti-doublon par jeton et « Reprendre » ;

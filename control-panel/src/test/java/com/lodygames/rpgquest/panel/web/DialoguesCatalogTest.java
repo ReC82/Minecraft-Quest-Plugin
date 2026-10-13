@@ -67,12 +67,10 @@ class DialoguesCatalogTest {
     @Test
     void emptyStateOffersRefreshAndSourceCreation() throws Exception {
         start();
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
-        assertTrue(page.contains("<h1>Dialogues</h1>"));
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Dialogues — détails techniques"));
         assertTrue(page.contains("Aucun catalogue chargé"));
         assertTrue(page.contains("name=\"type\" value=\"dialogue.list\""));
-        // #145 : la création passe désormais par l'éditeur source /dialogues/new (comme /quests/new).
-        assertTrue(page.contains("href=\"/dialogues/new\""));
         // nav : entrée Dialogues active
         assertTrue(page.contains("href=\"/dialogues\""));
     }
@@ -81,7 +79,7 @@ class DialoguesCatalogTest {
     void catalogRendersGraphTypedActionsAndWarnings() throws Exception {
         start();
         runListWithSuccess(DIALOGUE_DETAILS);
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
 
         // liste = accordion Bootstrap (synthèse repliée, détail au clic)
         assertTrue(page.contains("class=\"accordion npc-accordion\" id=\"dialogues-accordion\""), "accordion de dialogues");
@@ -120,7 +118,7 @@ class DialoguesCatalogTest {
     @Test
     void createSkeletonActionIsValidatedAndQueued() throws Exception {
         start();
-        String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
+        String token = csrf(get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body());
 
         // Création de contenu réversible (#118) : aucune case à cocher cachée — acceptée sans « confirm ».
         HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
@@ -153,7 +151,7 @@ class DialoguesCatalogTest {
     void catalogExposesGuidedEditFormsAndTargetSelect() throws Exception {
         start();
         runListWithSuccess(DIALOGUE_DETAILS);
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("name=\"type\" value=\"dialogue.node.update\""), "édition de nœud");
         assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.add\""), "ajout de choix");
@@ -197,7 +195,7 @@ class DialoguesCatalogTest {
         runListWithSuccess(DIALOGUE_DETAILS.replace(
                 "{\"text\":\"Non merci\",\"nextNodeId\":\"\",\"actions\":[],\"conditions\":[]}",
                 "{\"text\":\"" + longLabel + "\",\"nextNodeId\":\"\",\"actions\":[],\"conditions\":[]}"));
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
 
         // La mesure est annoncée pour chaque libellé, même quand tout va bien : l'auteur apprend la
         // contrainte dans l'éditeur plutôt qu'en jeu.
@@ -219,7 +217,7 @@ class DialoguesCatalogTest {
     void theAddChoiceFormExplainsTheButtonBudgetBeforeAnythingIsTyped() throws Exception {
         start();
         runListWithSuccess(DIALOGUE_DETAILS);
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("Le bouton fait 150 px de large en jeu"),
                 "la contrainte est annoncée avant la saisie");
@@ -232,7 +230,7 @@ class DialoguesCatalogTest {
     void richChoiceKeepsItsUneditablePropertiesAndSaysSo() throws Exception {
         start();
         runListWithSuccess(RICH_CHOICE_DETAILS);
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
 
         // L'action GIVE_ITEM et la condition HAS_PERMISSION ne sont pas éditables ici : elles sont
         // annoncées comme conservées à l'identique, jamais perdues en silence.
@@ -265,7 +263,7 @@ class DialoguesCatalogTest {
     void nodeUpdateActionIsValidatedAndQueued() throws Exception {
         start();
         runListWithSuccess(DIALOGUE_DETAILS);
-        String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
+        String token = csrf(get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body());
 
         // Édition réversible : plus de confirmation cachée (#111 / #118).
         HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
@@ -285,7 +283,7 @@ class DialoguesCatalogTest {
     void choiceAddActionRejectsAmbiguousTarget() throws Exception {
         start();
         runListWithSuccess(DIALOGUE_DETAILS);
-        String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
+        String token = csrf(get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body());
 
         HttpResponse<String> both = post("/agents/action", "_csrf=" + token
                 + "&type=dialogue.choice.add&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
@@ -310,7 +308,7 @@ class DialoguesCatalogTest {
     }
 
     private void runListWithSuccess(String details) throws Exception {
-        String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
+        String token = csrf(get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body());
         post("/agents/action", "_csrf=" + token + "&type=dialogue.list&agent=" + TestConfig.AGENT_ID + "&return=/dialogues");
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)

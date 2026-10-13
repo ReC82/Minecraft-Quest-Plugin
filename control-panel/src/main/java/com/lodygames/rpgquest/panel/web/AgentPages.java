@@ -364,88 +364,425 @@ public final class AgentPages {
     //  Joueurs
     // ================================================================================
 
+    /** Ce que la session peut faire sur la fiche d'un joueur (issue #328). */
+    private record PlayerRights(boolean moderate, boolean varGet, boolean varSet, boolean give, boolean reset,
+                                boolean op, boolean ecoRead, boolean ecoWrite, boolean mcRights) {
+        boolean tools() {
+            return varSet || give;
+        }
+    }
+
+    /** Les cinq onglets de la fiche, dans l'ordre affiché. */
+    private static final List<String[]> PLAYER_TABS = List.of(
+            new String[] {"apercu", "Vue d'ensemble"},
+            new String[] {"progression", "Progression"},
+            new String[] {"economie", "Économie"},
+            new String[] {"moderation", "Permissions et modération"},
+            new String[] {"outils", "Outils avancés"});
+
+    /**
+     * Issue #328 — l'annuaire des joueurs, ou la fiche d'un joueur ({@code ?player=}). La fiche est
+     * une page à part, avec ses onglets : plus aucune fiche ne se déroule au milieu de la liste.
+     * Après une action, le panel revient ici avec {@code player=} et l'onglet ({@code focus=tab-…}).
+     */
     public String players(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
-        StringBuilder sb = new StringBuilder();
-        sb.append(Ui.pageHeader("players", "Joueurs",
-                "Annuaire des joueurs — connectés et déjà venus. Cliquez sur un joueur pour son détail "
-                        + "et les actions disponibles (chaque action indique si elle fonctionne hors ligne).",
-                docLink("joueurs-admin", "Documentation : gérer les joueurs")));
         if (agent.isEmpty()) {
-            return sb.append(noAgent()).toString();
+            return Ui.pageHeader("players", "Joueurs", "", "") + noAgent();
         }
         String agentId = agent.get().id();
-        boolean canModerate = perms.can(session.effective(), Permission.PLAYER_MODERATE);
-        boolean canVarGet = perms.can(session.effective(), Permission.ACTION_VARIABLE_GET);
-        boolean canVarSet = perms.can(session.effective(), Permission.ACTION_VARIABLE_SET);
-        boolean canGive = perms.can(session.effective(), Permission.ACTION_ITEM_GIVE);
-        // Issue #235 : l'un OU l'autre suffit à ouvrir la section — chaque bloc vérifie ensuite son
-        // propre droit, donc un rôle qui n'a que l'un des deux ne voit pas le bouton de l'autre.
-        boolean canReset = perms.can(session.effective(), Permission.ACTION_PLAYER_RESET)
-                || perms.can(session.effective(), Permission.ACTION_PLAYER_RESET_FULL);
-        // Issue #210 : permission DÉDIÉE, la plus restreinte du panel (OWNER uniquement).
-        boolean canOp = perms.can(session.effective(), Permission.PLAYER_OP_WRITE);
-        // Issue #140 : lire un solde et en créer sont deux gestes distincts.
-        boolean canEcoRead = perms.can(session.effective(), Permission.ECONOMY_READ);
-        boolean canEcoWrite = perms.can(session.effective(), Permission.ECONOMY_WRITE);
-        String focus = cleanPlayer(q.get("player"));
-
-        sb.append(agentPicker(agentId, "/players", ""));
-
-        // ---- Toolbar compacte -------------------------------------------------------
-        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Annuaire</span>");
-        sb.append(compactRefresh(session, agentId, "player.catalog", "Actualiser", "btn-outline-primary", "/players"));
-        sb.append("</div>");
-
+        PlayerRights rights = new PlayerRights(
+                perms.can(session.effective(), Permission.PLAYER_MODERATE),
+                perms.can(session.effective(), Permission.ACTION_VARIABLE_GET),
+                perms.can(session.effective(), Permission.ACTION_VARIABLE_SET),
+                perms.can(session.effective(), Permission.ACTION_ITEM_GIVE),
+                // Issue #235 : l'un OU l'autre ouvre la section ; chaque bloc revérifie son droit.
+                perms.can(session.effective(), Permission.ACTION_PLAYER_RESET)
+                        || perms.can(session.effective(), Permission.ACTION_PLAYER_RESET_FULL),
+                perms.can(session.effective(), Permission.PLAYER_OP_WRITE),
+                perms.can(session.effective(), Permission.ECONOMY_READ),
+                perms.can(session.effective(), Permission.ECONOMY_WRITE),
+                perms.can(session.effective(), Permission.USER_MANAGE));
         Optional<Map<String, Object>> catalog = latestDetails(agentId, "player.catalog");
+        String focusPlayer = cleanPlayer(q.get("player"));
+        List<PlayerCatalog.Entry> all = catalog.map(c -> PlayerCatalog.parse(c.get("players"))).orElse(List.of());
+        if (!focusPlayer.isEmpty()) {
+            Optional<PlayerCatalog.Entry> found = all.stream()
+                    .filter(e -> focusPlayer.equalsIgnoreCase(e.uuid()) || focusPlayer.equalsIgnoreCase(e.displayName()))
+                    .findFirst();
+            if (found.isPresent()) {
+                String tab = q.getOrDefault("tab", "");
+                String focus = cleanFocus(q.get("focus"));
+                if (tab.isEmpty() && focus.startsWith("tab-")) {
+                    tab = focus.substring(4);
+                }
+                return playerSheet(session, agentId, found.get(), tab, rights);
+            }
+        }
+        return playerDirectory(session, agentId, q, catalog, all, focusPlayer);
+    }
+
+    private String playerDirectory(Session session, String agentId, Map<String, String> q,
+                                   Optional<Map<String, Object>> catalog, List<PlayerCatalog.Entry> all,
+                                   String missingPlayer) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("players", "Joueurs",
+                "Les joueurs connectés et ceux déjà venus. Cliquez sur un joueur pour ouvrir sa fiche.",
+                docLink("joueurs-admin", "Aide")));
+        sb.append(agentPicker(agentId, "/players", ""));
+        sb.append("<div class=\"npc-catbar\">")
+                .append(compactRefresh(session, agentId, "player.catalog", "Actualiser", "btn-outline-primary", "/players"))
+                .append("</div>");
         if (catalog.isEmpty()) {
-            sb.append(Ui.empty("players", "Annuaire non chargé — cliquer sur « Actualiser »."));
+            sb.append(Ui.empty("players", "La liste des joueurs n'est pas encore chargée : cliquez sur « Actualiser »."));
             return sb.toString();
         }
-        List<PlayerCatalog.Entry> all = PlayerCatalog.parse(catalog.get().get("players"));
-
+        if (!missingPlayer.isEmpty()) {
+            sb.append(Ui.banner("warn", "Ce joueur n'apparaît pas dans la liste chargée. Actualisez, puis "
+                    + "rouvrez sa fiche."));
+        }
         String query = q.getOrDefault("q", "").trim();
         PlayerCatalog.Filter filter = PlayerCatalog.Filter.of(q.get("filter"));
         PlayerCatalog.Sort sort = PlayerCatalog.Sort.of(q.get("sort"));
-        int page = parsePageParam(q.get("page"));
-        PlayerCatalog.Page view = PlayerCatalog.view(all, query, filter, sort, page, PlayerCatalog.DEFAULT_PAGE_SIZE);
+        PlayerCatalog.Page view = PlayerCatalog.view(all, query, filter, sort, parsePageParam(q.get("page")),
+                PlayerCatalog.DEFAULT_PAGE_SIZE);
 
         if (Boolean.TRUE.equals(catalog.get().get("truncated"))) {
-            sb.append("<div class=\"alert alert-warning npc-alert\">").append(Icons.icon("warning"))
-                    .append("<div>L'annuaire a été tronqué par l'agent (trop de joueurs). Affinez la recherche "
-                            + "ou augmentez la limite côté serveur.</div></div>");
+            sb.append(Ui.banner("warn", "La liste est incomplète (trop de joueurs) : affinez la recherche."));
         }
-
-        sb.append("<p class=\"npc-summary\">").append(view.total()).append(" joueur(s) connus · ")
+        sb.append("<p class=\"npc-summary\">").append(view.total()).append(" joueur(s) · ")
                 .append(view.online()).append(" en ligne · ").append(view.offline()).append(" hors ligne · ")
                 .append(view.banned()).append(" banni(s)</p>");
-
-        // ---- Recherche (GET) + filtres (liens) -------------------------------------
         sb.append(playersControls(agentId, query, filter, sort));
         sb.append("<p class=\"count-note\" data-noun=\"joueur\">").append(view.matched())
                 .append(view.matched() > 1 ? " joueurs" : " joueur")
                 .append(view.matched() != view.total() ? " (sur " + view.total() + ")" : "").append("</p>");
-
         if (view.entries().isEmpty()) {
-            sb.append(Ui.empty("players", "Aucun joueur ne correspond à ce filtre / cette recherche."));
+            sb.append(Ui.empty("players", "Aucun joueur ne correspond à cette recherche."));
             return sb.toString();
         }
-
-        List<Object> knownItems = latestDetails(agentId, "item.list").map(d -> asList(d.get("items"))).orElse(List.of());
-
-        sb.append("<div class=\"accordion npc-accordion\" id=\"players-accordion\">");
-        int idx = 0;
+        // Le retour depuis une fiche ramène à cette liste, recherche et filtre compris (panel.js).
+        sb.append("<table class=\"table pl-table\" data-players-list><thead><tr><th>Joueur</th><th>État</th>")
+                .append("<th>Dernière connexion</th><th>Monde</th></tr></thead><tbody>");
         for (PlayerCatalog.Entry e : view.entries()) {
-            boolean open = !focus.isEmpty()
-                    && (focus.equalsIgnoreCase(e.uuid()) || focus.equalsIgnoreCase(e.displayName()));
-            sb.append(renderPlayerAccordionItem(session, agentId, e, idx++, open, knownItems,
-                    canModerate, canVarGet, canVarSet, canGive, canReset, canOp,
-                    canEcoRead, canEcoWrite));
+            String href = "/players?agent=" + Http.esc(agentId) + "&amp;player=" + Http.esc(e.uuid());
+            sb.append("<tr data-href=\"").append(href.replace("&amp;", "&")).append("\">");
+            sb.append("<td data-label=\"Joueur\"><a class=\"pl-name\" href=\"").append(href).append("\">")
+                    .append(Http.esc(e.displayName())).append("</a></td>");
+            sb.append("<td data-label=\"État\">").append(playerStateChips(e)).append("</td>");
+            sb.append("<td data-label=\"Dernière connexion\">").append(e.online() ? "connecté maintenant"
+                    : localTime(e.lastSeen(), true)).append("</td>");
+            sb.append("<td data-label=\"Monde\">").append(e.online() && e.world() != null ? Http.esc(e.world())
+                    : "<span class=\"muted\">—</span>").append("</td></tr>");
+        }
+        sb.append("</tbody></table>");
+        sb.append(playersPager(agentId, query, filter, sort, view));
+        return sb.toString();
+    }
+
+    private static String playerStateChips(PlayerCatalog.Entry e) {
+        StringBuilder sb = new StringBuilder(e.online()
+                ? "<span class=\"dlg-chip tone-ok\">En ligne</span>"
+                : "<span class=\"dlg-chip tone-neutral\">Hors ligne</span>");
+        if (e.banned()) {
+            sb.append(" <span class=\"dlg-chip tone-err\">Banni</span>");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Une date affichée à l'heure locale du navigateur ({@code panel.js}), avec la date absolue en
+     * infobulle. Sans JavaScript : la date en UTC, dite comme telle.
+     */
+    private static String localTime(Long millis, boolean relative) {
+        if (millis == null || millis <= 0) {
+            return "<span class=\"muted\">inconnue</span>";
+        }
+        String iso = java.time.Instant.ofEpochMilli(millis).toString();
+        return "<time datetime=\"" + iso + "\" data-local-time" + (relative ? " data-relative" : "")
+                + " title=\"" + Http.esc(plainWhen(millis)) + "\">"
+                + Http.esc(relative ? relWhen(millis) : plainWhen(millis)) + "</time>";
+    }
+
+    // ---- Fiche joueur ---------------------------------------------------------------------
+
+    private String playerSheet(Session session, String agentId, PlayerCatalog.Entry e, String rawTab,
+                               PlayerRights r) {
+        String uuid = e.uuid();
+        String name = e.displayName();
+        String tab = PLAYER_TABS.stream().map(t -> t[0]).filter(t -> t.equals(rawTab)).findFirst().orElse("apercu");
+        StringBuilder sb = new StringBuilder();
+        sb.append("<p class=\"pl-back\"><a href=\"/players?agent=").append(Http.esc(agentId))
+                .append("\" data-players-back>").append(Icons.icon("back")).append("Joueurs</a></p>");
+
+        // En-tête : qui, où, depuis quand.
+        sb.append("<header class=\"card pl-head\"><div class=\"pl-head-main\"><h1 class=\"pl-title\">")
+                .append(Http.esc(name)).append("</h1><div class=\"pl-chips\">").append(playerStateChips(e));
+        if (e.op()) {
+            sb.append(" <span class=\"dlg-chip tone-warn\">OP Minecraft</span>");
+        }
+        sb.append("</div></div><dl class=\"pl-facts\">");
+        sb.append("<div><dt>Première connexion</dt><dd>").append(localTime(e.firstPlayed(), false)).append("</dd></div>");
+        sb.append("<div><dt>Dernière connexion</dt><dd>").append(e.online() ? "connecté maintenant"
+                : localTime(e.lastSeen(), false)).append("</dd></div>");
+        if (e.online()) {
+            sb.append("<div><dt>Position</dt><dd>").append(e.world() == null ? "<span class=\"muted\">inconnue</span>"
+                    : Http.esc(e.world()) + (e.x() == null ? "" : " · " + e.x() + " / " + e.y() + " / " + e.z()))
+                    .append("</dd></div>");
+        }
+        sb.append("<div class=\"pl-uuid\"><dt>UUID</dt><dd><code>").append(Http.esc(uuid))
+                .append("</code> <button class=\"btn secondary sm\" type=\"button\" data-copy=\"").append(Http.esc(uuid))
+                .append("\">").append(Icons.icon("copy")).append("Copier</button></dd></div>");
+        sb.append("</dl></header>");
+
+        sb.append(playerFeedback(agentId, uuid));
+
+        sb.append("<nav class=\"pl-tabs\" aria-label=\"Sections de la fiche\">");
+        for (String[] t : PLAYER_TABS) {
+            sb.append("<a href=\"/players?agent=").append(Http.esc(agentId)).append("&amp;player=").append(Http.esc(uuid))
+                    .append("&amp;tab=").append(t[0]).append("\"").append(t[0].equals(tab) ? " aria-current=\"page\"" : "")
+                    .append(">").append(Http.esc(t[1])).append("</a>");
+        }
+        sb.append("</nav>");
+
+        String slug = "pl-" + uuid.replaceAll("[^0-9a-fA-F]", "");
+        String body = switch (tab) {
+            case "progression" -> playerProgressionTab(session, agentId, e, slug, r);
+            case "economie" -> playerEconomyTab(session, agentId, e, slug, r);
+            case "moderation" -> playerModerationTab(session, agentId, e, slug, r);
+            case "outils" -> playerToolsTab(session, agentId, e, slug, r);
+            default -> playerOverviewTab(agentId, e);
+        };
+        // Après une action, on revient sur cet onglet : chaque formulaire porte l'onglet courant.
+        body = body.replace("<input type=\"hidden\" name=\"return\" value=\"/players\">",
+                "<input type=\"hidden\" name=\"return\" value=\"/players\"><input type=\"hidden\" name=\"focus\" value=\"tab-"
+                        + tab + "\">");
+        sb.append("<section class=\"pl-tab\" data-one-form>").append(body).append("</section>");
+        return sb.toString();
+    }
+
+    /** Types d'action qui concernent un joueur : leur dernier résultat est le retour affiché. */
+    private static final java.util.Set<String> PLAYER_ACTION_TYPES = java.util.Set.of(
+            "player.ban", "player.unban", "player.kick", "player.send.hub", "player.op", "player.deop",
+            "player.whitelist.add", "player.whitelist.remove", "player.variable.set", "player.item.give",
+            "player.resetnew.confirm", "player.resetfull.confirm", "economy.credit", "economy.debit",
+            "economy.debt.retry", "economy.debt.settle", "mc.rights.sync");
+
+    /**
+     * Un seul emplacement de retour : la dernière action faite sur CE joueur, datée. Jamais
+     * l'empilement de « Dernière action » contradictoires de l'ancienne fiche ; une action en cours
+     * est dite en cours, jamais réussie d'avance.
+     */
+    private String playerFeedback(String agentId, String uuid) {
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (!PLAYER_ACTION_TYPES.contains(row.type())
+                    || !uuid.equalsIgnoreCase(row.params().getOrDefault("player", ""))) {
+                continue;
+            }
+            Instant when = row.completedAt() != null ? row.completedAt() : row.createdAt();
+            if (when != null && when.isBefore(Instant.now().minus(java.time.Duration.ofDays(1)))) {
+                return "";
+            }
+            boolean pending = !row.status().terminal();
+            boolean ok = row.status() == AgentActionStatus.SUCCESS;
+            String tone = pending ? "info" : ok ? "ok" : "err";
+            String text = pending ? "en cours…" : row.resultMessage() == null ? row.status().name() : row.resultMessage();
+            return "<div class=\"dlg-live tone-" + tone + " pl-feedback\" role=\"status\"><span><strong>"
+                    + Http.esc(AgentActionCatalog.spec(row.type()).map(AgentActionCatalog.Spec::label).orElse(row.type())) + "</strong> — "
+                    + Http.esc(MiniText.prettifyTokens(text)) + " <span class=\"muted\">("
+                    + Http.esc(ActionView.relativeTime(when, Instant.now())) + ")</span></span>"
+                    + "<a class=\"btn secondary sm\" href=\"/actions/" + Http.esc(row.id()) + "\">Détail</a></div>";
+        }
+        return "";
+    }
+
+    private String playerOverviewTab(String agentId, PlayerCatalog.Entry e) {
+        String uuid = e.uuid();
+        StringBuilder sb = new StringBuilder("<div class=\"pl-grid\">");
+        sb.append("<div class=\"card pl-card\"><h2>Activité</h2><p>").append(e.online()
+                ? "Connecté maintenant" + (e.world() == null ? "." : ", dans " + Http.esc(e.world()) + ".")
+                : "Hors ligne. Dernière venue : " + localTime(e.lastSeen(), true) + ".").append("</p></div>");
+        sb.append("<div class=\"card pl-card\"><h2>RPGQuest</h2><div class=\"d-flex flex-wrap gap-2\">")
+                .append("<a class=\"btn secondary sm\" href=\"/quests?agent=").append(Http.esc(agentId)).append("&amp;player=")
+                .append(Http.esc(uuid)).append("\">").append(Icons.icon("quests")).append("Ses quêtes</a>")
+                .append("<a class=\"btn secondary sm\" href=\"/stories?agent=").append(Http.esc(agentId)).append("&amp;player=")
+                .append(Http.esc(uuid)).append("\">").append(Icons.icon("stories")).append("Ses stories</a>")
+                .append("<a class=\"btn secondary sm\" href=\"/actions?domain=players&amp;q=").append(Http.esc(shorten(uuid, 8)))
+                .append("\">").append(Icons.icon("history")).append("Historique</a></div></div>");
+        sb.append("<div class=\"card pl-card\"><h2>Modération</h2><ul class=\"pl-facts-list\">")
+                .append("<li>").append(e.banned() ? "<strong>Banni</strong>" + (e.banReason() == null ? ""
+                        : " — " + Http.esc(e.banReason())) : "Pas banni").append("</li>")
+                .append("<li>").append(e.op() ? "<strong>OP Minecraft</strong>" : "Pas OP Minecraft").append("</li>")
+                .append("<li>").append(e.whitelisted() ? "Inscrit sur la whitelist" : "Pas sur la whitelist")
+                .append("</li></ul><a href=\"/players?agent=").append(Http.esc(agentId)).append("&amp;player=")
+                .append(Http.esc(uuid)).append("&amp;tab=moderation\">Permissions et modération</a></div>");
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    private String playerProgressionTab(Session session, String agentId, PlayerCatalog.Entry e, String slug,
+                                        PlayerRights r) {
+        String uuid = e.uuid();
+        String name = e.displayName();
+        StringBuilder sb = new StringBuilder("<div class=\"card pl-card\"><h2>Quêtes et stories</h2>")
+                .append("<div class=\"d-flex flex-wrap gap-2\">")
+                .append("<a class=\"btn secondary sm\" href=\"/quests?agent=").append(Http.esc(agentId)).append("&amp;player=")
+                .append(Http.esc(uuid)).append("\">").append(Icons.icon("quests")).append("Ses quêtes</a>")
+                .append("<a class=\"btn secondary sm\" href=\"/stories?agent=").append(Http.esc(agentId)).append("&amp;player=")
+                .append(Http.esc(uuid)).append("\">").append(Icons.icon("stories")).append("Ses stories</a>")
+                .append("<a class=\"btn secondary sm\" href=\"/actions?domain=players&amp;q=").append(Http.esc(shorten(uuid, 8)))
+                .append("\">").append(Icons.icon("history")).append("Historique</a></div></div>");
+        List<String[]> toggles = new ArrayList<>();
+        StringBuilder forms = new StringBuilder();
+        if (r.varGet()) {
+            toggles.add(new String[] {slug + "-f-var", "Lire une variable", "eye", "secondary sm"});
+            forms.append(actionCollapse(slug + "-f-var", "<div class=\"card card-body npc-formcard\">"
+                    + playerVariableRead(session, agentId, uuid) + "</div>"));
+        }
+        if (r.reset()) {
+            toggles.add(new String[] {slug + "-f-reset1", "Remettre à zéro la progression", "trash", "secondary sm npc-danger"});
+            forms.append(actionCollapse(slug + "-f-reset1", "<div class=\"card card-body npc-formcard\">"
+                    + playerResetBlock(session, agentId, uuid, name, false) + "</div>"));
+            toggles.add(new String[] {slug + "-f-reset2", "Repartir comme un nouveau joueur", "trash", "secondary sm npc-danger"});
+            forms.append(actionCollapse(slug + "-f-reset2", "<div class=\"card card-body npc-formcard\">"
+                    + playerResetBlock(session, agentId, uuid, name, true) + "</div>"));
+        }
+        sb.append(actionBlock("Variables et remises à zéro", toggles, forms));
+        return sb.toString();
+    }
+
+    private String playerEconomyTab(Session session, String agentId, PlayerCatalog.Entry e, String slug,
+                                    PlayerRights r) {
+        if (!r.ecoRead()) {
+            return "<p class=\"muted\">Votre rôle ne permet pas de voir la monnaie des joueurs.</p>";
+        }
+        String uuid = e.uuid();
+        String name = e.displayName();
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"card pl-card\">").append(playerEconomyTools(session, agentId, uuid, name, false))
+                .append("</div>");
+        List<String[]> toggles = new ArrayList<>();
+        StringBuilder forms = new StringBuilder();
+        if (r.ecoWrite()) {
+            toggles.add(new String[] {slug + "-f-credit", "Créditer", "plus", "secondary sm"});
+            forms.append(actionCollapse(slug + "-f-credit", "<div class=\"card card-body npc-formcard\">"
+                    + playerMoneyForm(session, agentId, uuid, name, true) + "</div>"));
+            toggles.add(new String[] {slug + "-f-debit", "Débiter", "money", "secondary sm"});
+            forms.append(actionCollapse(slug + "-f-debit", "<div class=\"card card-body npc-formcard\">"
+                    + playerMoneyForm(session, agentId, uuid, name, false) + "</div>"));
+        }
+        toggles.add(new String[] {slug + "-f-debt", "Récompenses en attente", "gift", "secondary sm"});
+        forms.append(actionCollapse(slug + "-f-debt", "<div class=\"card card-body npc-formcard\">"
+                + playerRewardDebtTools(session, agentId, uuid, name, r.ecoWrite()) + "</div>"));
+        sb.append(actionBlock("Actions", toggles, forms));
+        return sb.toString();
+    }
+
+    private String playerModerationTab(Session session, String agentId, PlayerCatalog.Entry e, String slug,
+                                       PlayerRights r) {
+        String uuid = e.uuid();
+        String name = e.displayName();
+        StringBuilder sb = new StringBuilder("<div class=\"card pl-card\"><h2>État actuel</h2><dl class=\"npc-dl\">");
+        dlRow(sb, "Bannissement", e.banned() ? "<strong>actif</strong>" + (e.banReason() == null ? ""
+                : " — " + Http.esc(e.banReason())) : "aucun");
+        dlRow(sb, "OP Minecraft", e.op() ? "<strong>oui</strong>" : "non");
+        dlRow(sb, "Whitelist", e.whitelisted() ? "inscrit" : "pas inscrit");
+        dlRow(sb, "Droits de construction", "<span class=\"muted\">gérés par les groupes PlugAdmin du compte lié "
+                + "à ce joueur (page « Utilisateurs »)</span>");
+        sb.append("</dl>");
+        sb.append("<p class=\"form-text\">OP Minecraft, rôle PlugAdmin et droits de construction sont trois choses "
+                + "distinctes : changer l'une ne change pas les autres. La whitelist n'empêche quelqu'un d'entrer que "
+                + "si elle est activée sur le serveur — le résultat d'un ajout le précise.</p>");
+        if (r.mcRights()) {
+            sb.append(readForm(session, agentId, "mc.rights.read", "/players", uuid, "Lire ses droits en jeu"));
+            latestForPlayer(agentId, "mc.rights.read", uuid).ifPresent(row -> sb.append(readResult("Droits en jeu", row)));
         }
         sb.append("</div>");
 
-        sb.append(playersPager(agentId, query, filter, sort, view));
+        List<String[]> toggles = new ArrayList<>();
+        StringBuilder forms = new StringBuilder();
+        if (r.moderate()) {
+            if (e.banned()) {
+                toggles.add(new String[] {slug + "-f-unban", "Débannir", "check", "secondary sm"});
+                forms.append(actionCollapse(slug + "-f-unban", "<div class=\"card card-body npc-formcard\">"
+                        + playerUnbanForm(session, agentId, uuid, name) + "</div>"));
+            } else {
+                toggles.add(new String[] {slug + "-f-ban", "Bannir", "lock", "secondary sm npc-danger"});
+                forms.append(actionCollapse(slug + "-f-ban", "<div class=\"card card-body npc-formcard\">"
+                        + playerBanForm(session, agentId, uuid, name) + "</div>"));
+            }
+            if (e.online()) {
+                toggles.add(new String[] {slug + "-f-kick", "Expulser", "open", "secondary sm"});
+                forms.append(actionCollapse(slug + "-f-kick", "<div class=\"card card-body npc-formcard\">"
+                        + playerKickForm(session, agentId, uuid, name, true) + "</div>"));
+                toggles.add(new String[] {slug + "-f-rescue", "Renvoyer au Hub", "travel", "secondary sm"});
+                forms.append(actionCollapse(slug + "-f-rescue", "<div class=\"card card-body npc-formcard\">"
+                        + playerRescueForm(session, agentId, uuid, name, true) + "</div>"));
+            }
+            toggles.add(new String[] {slug + "-f-wl", e.whitelisted() ? "Retirer de la whitelist" : "Inscrire sur la whitelist",
+                    "users", "secondary sm"});
+            forms.append(actionCollapse(slug + "-f-wl", "<div class=\"card card-body npc-formcard\">"
+                    + playerWhitelistForm(session, agentId, uuid, name, e.whitelisted()) + "</div>"));
+        }
+        if (r.op()) {
+            toggles.add(new String[] {slug + "-f-op", e.op() ? "Retirer OP" : "Accorder OP", "admin", "secondary sm npc-danger"});
+            forms.append(actionCollapse(slug + "-f-op", "<div class=\"card card-body npc-formcard\">"
+                    + playerOpForm(session, agentId, uuid, name, e.op()) + "</div>"));
+        }
+        sb.append(actionBlock("Actions", toggles, forms));
+        if (r.moderate() && !e.online()) {
+            sb.append("<p class=\"form-text\">« Expulser » et « Renvoyer au Hub » ne concernent qu'un joueur "
+                    + "connecté : ils réapparaissent ici dès sa prochaine connexion. « Bannir » fonctionne hors ligne.</p>");
+        }
         return sb.toString();
+    }
+
+    private String playerToolsTab(Session session, String agentId, PlayerCatalog.Entry e, String slug, PlayerRights r) {
+        String uuid = e.uuid();
+        String name = e.displayName();
+        List<String[]> toggles = new ArrayList<>();
+        StringBuilder forms = new StringBuilder();
+        if (r.varSet()) {
+            toggles.add(new String[] {slug + "-f-varset", "Écrire une variable", "edit", "secondary sm"});
+            forms.append(actionCollapse(slug + "-f-varset", "<div class=\"card card-body npc-formcard\">"
+                    + playerVariableWrite(session, agentId, uuid) + "</div>"));
+        }
+        if (r.give() && e.online()) {
+            List<Object> knownItems = latestDetails(agentId, "item.list").map(d -> asList(d.get("items"))).orElse(List.of());
+            toggles.add(new String[] {slug + "-f-give", "Donner un objet", "gift", "secondary sm"});
+            forms.append(actionCollapse(slug + "-f-give", "<div class=\"card card-body npc-formcard\">"
+                    + playerGiveForm(session, agentId, uuid, name, knownItems) + "</div>"));
+        }
+        StringBuilder sb = new StringBuilder();
+        if (!r.tools()) {
+            return "<p class=\"muted\">Votre rôle ne donne accès à aucun outil avancé.</p>";
+        }
+        sb.append("<p class=\"form-text\">Outils de test : ils agissent directement, sans rejouer de progression.</p>");
+        sb.append(actionBlock("Outils", toggles, forms));
+        if (r.give() && !e.online()) {
+            sb.append("<p class=\"form-text\">« Donner un objet » n'est possible que si le joueur est connecté.</p>");
+        }
+        return sb.toString();
+    }
+
+    /** Une rangée de boutons ; un seul formulaire ouvert à la fois (data-one-form sur l'onglet). */
+    private static String actionBlock(String title, List<String[]> toggles, StringBuilder forms) {
+        if (toggles.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"card pl-card\"><h2>").append(Http.esc(title))
+                .append("</h2><div class=\"npc-actions d-flex flex-wrap gap-2\">");
+        for (String[] t : toggles) {
+            sb.append(actionToggle(t[0], t[1], t[2], t[3]));
+        }
+        return sb.append("</div>").append(forms).append("</div>").toString();
+    }
+
+    /** Un résultat de lecture (solde, droits, aperçu…), daté. */
+    private String readResult(String label, AgentActionRow row) {
+        Instant when = row.completedAt() != null ? row.completedAt() : row.createdAt();
+        return resultLine(label, row).replaceFirst("</p>$", " <span class=\"muted\">("
+                + Http.esc(ActionView.relativeTime(when, Instant.now())) + ")</span></p>");
     }
 
     private static int parsePageParam(String raw) {
@@ -543,209 +880,6 @@ public final class AgentPages {
         return sb.append("</nav>").toString();
     }
 
-    // ================================================================================
-    //  Joueurs — une ligne d'accordion : synthèse + détail structuré
-    // ================================================================================
-
-    private String renderPlayerAccordionItem(Session session, String agentId, PlayerCatalog.Entry e, int idx,
-                                             boolean open, List<Object> knownItems, boolean canModerate,
-                                             boolean canVarGet, boolean canVarSet, boolean canGive,
-                                             boolean canReset, boolean canOp,
-                                             boolean canEcoRead, boolean canEcoWrite) {
-        String uuid = e.uuid();
-        String name = e.displayName();
-        String slug = "pl-" + idx + "-" + uuid.replaceAll("[^0-9a-fA-F]", "").substring(0, Math.min(12, uuid.replaceAll("[^0-9a-fA-F]", "").length()));
-        String cat = (e.online() ? "online" : "offline") + (e.banned() ? " banned" : "");
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"players\" data-filter-cat=\"")
-                .append(cat).append("\" data-res-id=\"").append(Http.esc(uuid)).append("\">");
-        sb.append("<h3 class=\"accordion-header\">");
-        sb.append("<button class=\"accordion-button").append(open ? "" : " collapsed")
-                .append(" npc-head\" type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
-                .append("\" aria-expanded=\"").append(open).append("\" aria-controls=\"").append(slug).append("\">");
-        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(Http.esc(name)).append("</span>")
-                .append("<span class=\"muted npc-id\">").append(playerWhenShort(e)).append("</span></span>");
-        sb.append("<span class=\"npc-head-badges\">").append(onlineBadge(e.online()));
-        if (e.banned()) {
-            sb.append("<span class=\"badge text-bg-danger\">Banni</span>");
-        }
-        sb.append("</span></button></h3>");
-
-        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse").append(open ? " show" : "")
-                .append("\" data-bs-parent=\"#players-accordion\"><div class=\"accordion-body npc-detail\">");
-
-        // ---- IDENTITÉ ----
-        sb.append(detailSection("players", "Identité"));
-        sb.append("<dl class=\"npc-dl\">");
-        dlRow(sb, "Pseudo", Http.esc(name));
-        dlRow(sb, "UUID", Ui.id(uuid, uuid));
-        dlRow(sb, "État", onlineBadge(e.online()) + (e.banned() ? " <span class=\"badge text-bg-danger\">Banni</span>" : ""));
-        dlRow(sb, "Première connexion", playerWhen(e.firstPlayed()));
-        dlRow(sb, "Dernière connexion", e.online() ? "maintenant (connecté)" : playerWhen(e.lastSeen()));
-        sb.append("</dl>");
-
-        // ---- ACTIVITÉ ----
-        sb.append(detailSection("activity", "Activité"));
-        sb.append("<dl class=\"npc-dl\">");
-        if (e.online()) {
-            dlRow(sb, "Monde", e.world() == null ? "<span class=\"muted\">?</span>" : Http.esc(e.world()));
-            String pos = e.x() == null ? "<span class=\"muted\">?</span>"
-                    : Http.esc(e.x() + " " + e.y() + " " + e.z());
-            dlRow(sb, "Position", pos);
-        } else {
-            dlRow(sb, "Statut", "<span class=\"muted\">Hors ligne — dernière présence : "
-                    + Http.esc(plainWhen(e.lastSeen())) + "</span>");
-        }
-        sb.append("</dl>");
-
-        // ---- RPGQUEST (liens, jamais un dump) ----
-        sb.append(detailSection("quests", "RPGQuest"));
-        sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
-        sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/quests?agent=").append(Http.esc(agentId))
-                .append("&player=").append(Http.esc(uuid)).append("\">").append(Icons.icon("open")).append("Quêtes du joueur</a>");
-        sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/stories?agent=").append(Http.esc(agentId))
-                .append("&player=").append(Http.esc(uuid)).append("\">").append(Icons.icon("open")).append("Stories du joueur</a>");
-        sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/actions?domain=players&q=")
-                .append(Http.esc(shorten(uuid, 8))).append("\">").append(Icons.icon("history"))
-                .append("Historique de ce joueur</a>");
-        sb.append("</div>");
-
-        // ---- DROITS ----
-        sb.append(detailSection("shield-lock", "Droits"));
-        sb.append("<dl class=\"npc-dl\">");
-        dlRow(sb, "Droit de construction",
-                "<span class=\"muted\">non géré par PlugAdmin</span>");
-        sb.append("</dl>");
-        sb.append("<p class=\"muted npc-content-empty\">Accorder un droit de construction persistant à un joueur "
-                + "hors ligne nécessite un gestionnaire de permissions persistant (issue #27 + LuckPerms) — "
-                + "voir la documentation. PlugAdmin ne pose jamais un faux interrupteur qui ne contrôle rien.</p>");
-
-        // ---- MODÉRATION ----
-        sb.append(detailSection("shield-lock", "Modération"));
-        sb.append("<dl class=\"npc-dl\">");
-        if (e.banned()) {
-            dlRow(sb, "Bannissement", "<span class=\"badge text-bg-danger\">Actif</span>"
-                    + (e.banReason() == null ? "" : " <span class=\"muted\">— " + Http.esc(e.banReason()) + "</span>"));
-        } else {
-            dlRow(sb, "Bannissement", "<span class=\"muted\">aucun</span>");
-        }
-        // Issue #210 : statut OP RÉEL, relu du serveur au dernier relevé. La mention « Minecraft »
-        // est délibérée : ce n'est ni le rôle PlugAdmin, ni un droit de construction, ni un bypass.
-        dlRow(sb, "OP Minecraft", e.op()
-                ? "<span class=\"badge text-bg-warning\">Opérateur</span>"
-                : "<span class=\"muted\">non</span>");
-        dlRow(sb, "Whitelist", e.whitelisted()
-                ? "<span class=\"badge text-bg-info\">Présent</span>"
-                : "<span class=\"muted\">absent</span>");
-        sb.append("</dl>");
-
-        // ---- ACTIONS ----
-        List<String[]> toggles = new ArrayList<>();
-        StringBuilder forms = new StringBuilder();
-
-        if (canModerate && !e.banned()) {
-            toggles.add(new String[] {slug + "-f-ban", "Bannir", "shield-lock", "btn-danger"});
-            forms.append(actionCollapse(slug + "-f-ban", "<div class=\"card card-body npc-formcard\">"
-                    + playerBanForm(session, agentId, uuid, name) + "</div>"));
-        }
-        if (canModerate && e.banned()) {
-            toggles.add(new String[] {slug + "-f-unban", "Débannir", "shield-lock", "btn-outline-primary"});
-            forms.append(actionCollapse(slug + "-f-unban", "<div class=\"card card-body npc-formcard\">"
-                    + playerUnbanForm(session, agentId, uuid, name) + "</div>"));
-        }
-        if (canVarGet || canVarSet || canGive) {
-            toggles.add(new String[] {slug + "-f-tools", "Outils de test", "code-slash", "btn-outline-secondary"});
-            forms.append(actionCollapse(slug + "-f-tools", "<div class=\"card card-body npc-formcard\">"
-                    + playerTestTools(session, agentId, uuid, name, e.online(), knownItems, canVarGet, canVarSet, canGive)
-                    + "</div>"));
-        }
-        // ---- Issue #140 : monnaie ----
-        if (canEcoRead) {
-            toggles.add(new String[] {slug + "-f-eco", "Monnaie", "box", "btn-outline-secondary"});
-            forms.append(actionCollapse(slug + "-f-eco", "<div class=\"card card-body npc-formcard\">"
-                    + playerEconomyTools(session, agentId, uuid, name, canEcoWrite) + "</div>"));
-            toggles.add(new String[] {slug + "-f-debt", "Récompenses en attente", "money",
-                    "btn-outline-secondary"});
-            forms.append(actionCollapse(slug + "-f-debt", "<div class=\"card card-body npc-formcard\">"
-                    + playerRewardDebtTools(session, agentId, uuid, name, canEcoWrite) + "</div>"));
-        }
-        // ---- Issue #210 : OP/DEOP, secours, expulsion, whitelist ----
-        if (canOp) {
-            String label = e.op() ? "Retirer OP" : "Accorder OP";
-            toggles.add(new String[] {slug + "-f-op", label, "shield-lock", "btn-outline-danger"});
-            forms.append(actionCollapse(slug + "-f-op", "<div class=\"card card-body npc-formcard\">"
-                    + playerOpForm(session, agentId, uuid, name, e.op()) + "</div>"));
-        }
-        if (canModerate) {
-            toggles.add(new String[] {slug + "-f-rescue", "Renvoyer au Hub", "travel",
-                    e.online() ? "btn-outline-primary" : "btn-outline-secondary disabled"});
-            forms.append(actionCollapse(slug + "-f-rescue", "<div class=\"card card-body npc-formcard\">"
-                    + playerRescueForm(session, agentId, uuid, name, e.online()) + "</div>"));
-            toggles.add(new String[] {slug + "-f-kick", "Expulser", "open",
-                    e.online() ? "btn-outline-warning" : "btn-outline-secondary disabled"});
-            forms.append(actionCollapse(slug + "-f-kick", "<div class=\"card card-body npc-formcard\">"
-                    + playerKickForm(session, agentId, uuid, name, e.online()) + "</div>"));
-            toggles.add(new String[] {slug + "-f-wl", e.whitelisted() ? "Retirer de la whitelist"
-                    : "Ajouter à la whitelist", "users", "btn-outline-secondary"});
-            forms.append(actionCollapse(slug + "-f-wl", "<div class=\"card card-body npc-formcard\">"
-                    + playerWhitelistForm(session, agentId, uuid, name, e.whitelisted()) + "</div>"));
-        }
-        if (canReset) {
-            // Issue #235 : le libellé ne dit plus « Reset » tout court — il y a deux portées, et
-            // c'est l'ambiguïté qui a produit le double kit observé en jeu.
-            toggles.add(new String[] {slug + "-f-reset", "Resets joueur (2 portées)", "trash", "btn-outline-danger"});
-            forms.append(actionCollapse(slug + "-f-reset", "<div class=\"card card-body npc-formcard\">"
-                    + playerResetTools(session, agentId, uuid, name) + "</div>"));
-        }
-
-        if (!toggles.isEmpty()) {
-            sb.append(detailSection("target", "Actions"));
-            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
-            for (String[] t : toggles) {
-                sb.append(actionToggle(t[0], t[1], t[2], t[3]));
-            }
-            sb.append("</div>");
-        } else {
-            sb.append("<p class=\"muted npc-content-empty\">Aucune action disponible avec votre rôle.</p>");
-        }
-        sb.append(forms);
-
-        // Résultats récents pour ce joueur (compact — pas l'historique complet).
-        for (String type : new String[] {"player.ban", "player.unban", "player.resetnew.confirm",
-                "player.resetfull.confirm",
-                "player.op", "player.deop", "player.send.hub", "player.kick",
-                "player.whitelist.add", "player.whitelist.remove",
-                "economy.balance", "economy.credit", "economy.debit",
-                "economy.debts", "economy.debt.retry", "economy.debt.settle"}) {
-            latestForPlayer(agentId, type, uuid).ifPresent(row -> sb.append(resultLine("Dernière action", row)));
-        }
-
-        sb.append("</div></div></div>");
-        return sb.toString();
-    }
-
-    private static String onlineBadge(boolean online) {
-        return online
-                ? "<span class=\"badge text-bg-success\">● En ligne</span>"
-                : "<span class=\"badge text-bg-secondary\">○ Hors ligne</span>";
-    }
-
-    /** « il y a 5 min » / « hier » / date courte. {@code null} → « jamais ». */
-    private static String playerWhen(Long millis) {
-        if (millis == null || millis <= 0) {
-            return "<span class=\"muted\">inconnue</span>";
-        }
-        return "<span title=\"" + Http.esc(plainWhen(millis)) + "\">" + Http.esc(relWhen(millis)) + "</span>";
-    }
-
-    private static String playerWhenShort(PlayerCatalog.Entry e) {
-        if (e.online()) {
-            return "Dernière connexion : maintenant";
-        }
-        return "Dernière connexion : " + Http.esc(relWhen(e.lastSeen()));
-    }
-
     private static String relWhen(Long millis) {
         if (millis == null || millis <= 0) {
             return "jamais";
@@ -817,61 +951,39 @@ public final class AgentPages {
      */
     private String playerEconomyTools(Session session, String agentId, String uuid, String name,
                                       boolean canWrite) {
-        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("box"))
-                .append("Monnaie de ").append(Http.esc(name)).append("</p>");
-        sb.append("<p class=\"muted\">Le solde vient du <strong>portefeuille persistant</strong>, "
-                + "seule source de vérité. Aucun objet d'inventaire n'est compté comme de la "
-                + "monnaie.</p>");
-
-        // Lecture : relève le solde ET le journal récent.
+        StringBuilder sb = new StringBuilder("<h2>Porte-monnaie</h2>");
+        sb.append("<p class=\"form-text\">Le solde vient du porte-monnaie enregistré du joueur : c'est la seule "
+                + "source de vérité. Aucun objet d'inventaire n'est compté.</p>");
         sb.append(formStart(session, agentId, "economy.balance", "/players", uuid));
         sb.append("<input type=\"hidden\" name=\"history\" value=\"20\">");
-        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+        sb.append("<button class=\"btn secondary sm\" type=\"submit\">")
                 .append(Icons.icon("refresh")).append("Lire le solde et le journal</button></form>");
         latestForPlayer(agentId, "economy.balance", uuid)
-                .ifPresent(row -> sb.append(resultLine("Dernier relevé", row)));
+                .ifPresent(row -> sb.append(readResult("Solde", row)));
+        return sb.toString();
+    }
 
-        if (!canWrite) {
-            sb.append("<p class=\"muted\">Votre rôle permet de consulter le solde, pas de le "
-                    + "modifier.</p>");
-            return sb.toString();
-        }
-
-        for (boolean credit : new boolean[] {true, false}) {
-            String type = credit ? "economy.credit" : "economy.debit";
-            sb.append("<hr>");
-            sb.append("<p class=\"fs-h\">").append(credit ? "Créditer" : "Débiter").append("</p>");
-            if (credit) {
-                sb.append("<p class=\"muted\">Un crédit <strong>crée de la monnaie</strong>. "
-                        + "L'opération est tracée avec sa raison.</p>");
-                sb.append("<p class=\"muted\">Ce n'est <strong>pas</strong> la même chose que "
-                        + "reprendre une récompense de quête : un crédit manuel est une compensation "
-                        + "libre et ne règle aucune dette. Si vous compensez une récompense non payée, "
-                        + "marquez-la ensuite <strong>réglée à la main</strong> dans « Récompenses en "
-                        + "attente », sinon elle resterait payable une seconde fois.</p>");
-            } else {
-                sb.append("<p class=\"muted\">Un débit ne peut <strong>jamais</strong> rendre le "
-                        + "solde négatif : si les fonds sont insuffisants, rien n'est modifié et le "
-                        + "résultat le dit.</p>");
-            }
-            sb.append(formStart(session, agentId, type, "/players", uuid));
-            sb.append("<label class=\"form-label\">Montant (entier positif, max ")
-                    .append(AgentActionCatalog.MAX_ECONOMY_AMOUNT).append(")</label>");
-            sb.append("<input class=\"form-control mb-2\" type=\"number\" min=\"1\" max=\"")
-                    .append(AgentActionCatalog.MAX_ECONOMY_AMOUNT)
-                    .append("\" name=\"amount\" required>");
-            sb.append("<label class=\"form-label\">Raison (obligatoire, enregistrée au journal)</label>");
-            sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
-            sb.append(confirmBox(credit
-                    ? "Je confirme la création de monnaie pour « " + name + " »."
-                    : "Je confirme le retrait de monnaie à « " + name + " »."));
-            sb.append("<button class=\"btn btn-sm ")
-                    .append(credit ? "btn-outline-primary" : "btn-outline-warning")
-                    .append("\" type=\"submit\">").append(credit ? "Créditer" : "Débiter")
-                    .append("</button></form>");
-            latestForPlayer(agentId, type, uuid)
-                    .ifPresent(row -> sb.append(resultLine("Dernière opération", row)));
-        }
+    /**
+     * Créditer ou débiter (issue #140) : montant entier, raison obligatoire (elle part au journal),
+     * confirmation. Un débit ne rend jamais le solde négatif ; un crédit ne règle aucune dette.
+     */
+    private String playerMoneyForm(Session session, String agentId, String uuid, String name, boolean credit) {
+        String type = credit ? "economy.credit" : "economy.debit";
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(credit ? "Créditer " : "Débiter ")
+                .append(Http.esc(name)).append("</p>");
+        sb.append("<p class=\"form-text\">").append(credit
+                ? "Crée de la monnaie, tracée avec sa raison. Ce n'est pas le règlement d'une récompense en "
+                        + "attente : après une compensation, marquez-la « réglée à la main »."
+                : "Si le solde ne suffit pas, rien n'est retiré et le résultat le dit.").append("</p>");
+        sb.append(formStart(session, agentId, type, "/players", uuid));
+        sb.append("<label class=\"form-label\">Montant (1 à ").append(AgentActionCatalog.MAX_ECONOMY_AMOUNT).append(")</label>");
+        sb.append("<input class=\"form-control mb-2\" type=\"number\" min=\"1\" max=\"")
+                .append(AgentActionCatalog.MAX_ECONOMY_AMOUNT).append("\" name=\"amount\" required inputmode=\"numeric\">");
+        sb.append("<label class=\"form-label\">Raison (obligatoire)</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
+        sb.append(confirmBox(credit ? "Je confirme la création de monnaie pour « " + name + " »."
+                : "Je confirme le retrait de monnaie à « " + name + " »."));
+        sb.append("<button class=\"btn\" type=\"submit\">").append(credit ? "Créditer" : "Débiter").append("</button></form>");
         return sb.toString();
     }
 
@@ -909,7 +1021,7 @@ public final class AgentPages {
                 .append(Icons.icon("refresh")).append("Lire les récompenses en attente</button></form>");
 
         Optional<AgentActionRow> survey = latestForPlayer(agentId, "economy.debts", uuid);
-        survey.ifPresent(row -> sb.append(resultLine("Dernier relevé", row)));
+        survey.ifPresent(row -> sb.append(readResult("Dernier relevé", row)));
         List<Object> debts = survey.flatMap(this::detailsOf)
                 .map(details -> asList(details.get("debts"))).orElse(List.of());
 
@@ -957,10 +1069,6 @@ public final class AgentPages {
             }
         }
 
-        for (String type : new String[] {"economy.debt.retry", "economy.debt.settle"}) {
-            latestForPlayer(agentId, type, uuid)
-                    .ifPresent(row -> sb.append(resultLine("Dernière opération", row)));
-        }
         return sb.toString();
     }
 
@@ -1089,88 +1197,61 @@ public final class AgentPages {
         return sb.toString();
     }
 
-    private String playerTestTools(Session session, String agentId, String uuid, String name, boolean online,
-                                   List<Object> knownItems, boolean canVarGet, boolean canVarSet, boolean canGive) {
-        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("code-slash"))
-                .append("Outils de test</p>");
-        if (canVarGet) {
-            sb.append("<p class=\"npc-fs-h\">Lire une variable <span class=\"badge text-bg-secondary\">hors ligne OK</span></p>");
-            sb.append(formStart(session, agentId, "player.variable.get", "/players", uuid));
-            sb.append("<label class=\"form-label\">Clé</label><input class=\"form-control\" list=\"varkeys-").append(Http.esc(uuid))
-                    .append("\" name=\"key\" value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
-            sb.append("<datalist id=\"varkeys-").append(Http.esc(uuid)).append("\">");
-            for (String k : AgentActionCatalog.KNOWN_VARIABLE_KEYS) {
-                sb.append("<option value=\"").append(Http.esc(k)).append("\">");
-            }
-            sb.append("</datalist><button class=\"btn btn-sm\" type=\"submit\">Lire</button></form>");
-            latestForPlayer(agentId, "player.variable.get", uuid).ifPresent(row ->
-                    sb.append(resultLine("Dernière lecture", row)));
-        }
-        if (canVarSet) {
-            sb.append("<p class=\"npc-fs-h\">Écrire une variable "
-                    + "<span class=\"badge text-bg-secondary\">hors ligne OK</span> "
-                    + "<span class=\"muted\">— outil debug, ne rejoue pas une progression</span></p>");
-            sb.append(formStart(session, agentId, "player.variable.set", "/players", uuid));
-            sb.append("<label class=\"form-label\">Clé</label><input class=\"form-control\" name=\"key\" "
-                    + "value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
-            sb.append("<label class=\"form-label\">Valeur</label><input class=\"form-control\" type=\"text\" name=\"value\" value=\"true\">");
-            sb.append(confirmBox("Je comprends que c'est un outil debug bas niveau."));
-            sb.append("<button class=\"btn btn-sm\" type=\"submit\">Écrire (debug)</button></form>");
-            latestForPlayer(agentId, "player.variable.set", uuid).ifPresent(row ->
-                    sb.append(resultLine("Dernière écriture", row)));
-        }
-        if (canGive) {
-            sb.append("<p class=\"npc-fs-h\">Donner un objet ");
-            if (online) {
-                sb.append("<span class=\"badge text-bg-warning\">en ligne uniquement</span></p>");
-                sb.append(formStart(session, agentId, "player.item.give", "/players", uuid));
-                sb.append("<label class=\"form-label\">Objet</label>");
-                if (knownItems.isEmpty()) {
-                    sb.append("<input class=\"form-control\" type=\"text\" name=\"item_id\" placeholder=\"rpgquest:rune_rappel\">");
-                } else {
-                    sb.append("<select class=\"form-select\" name=\"item_id\">");
-                    for (Object o : knownItems) {
-                        Map<String, Object> it = asMap(o);
-                        String dn = MiniText.plain(str(it.get("displayName")));
-                        sb.append("<option value=\"").append(Http.esc(str(it.get("id")))).append("\">")
-                                .append(Http.esc(dn.isEmpty() ? str(it.get("id")) : dn)).append("  ·  ")
-                                .append(Http.esc(str(it.get("id")))).append("</option>");
-                    }
-                    sb.append("</select>");
-                }
-                sb.append("<label class=\"form-label\">Quantité (1–64)</label>"
-                        + "<input class=\"form-control\" type=\"number\" name=\"amount\" value=\"1\" min=\"1\" max=\"64\">");
-                sb.append(confirmBox("Confirmer la remise de l'objet à « " + name + " »."));
-                sb.append("<button class=\"btn btn-sm\" type=\"submit\">Donner</button></form>");
-                latestForPlayer(agentId, "player.item.give", uuid).ifPresent(row ->
-                        sb.append(resultLine("Dernier give", row)));
-            } else {
-                sb.append("<span class=\"badge text-bg-warning\">en ligne uniquement</span></p>");
-                sb.append("<p class=\"muted npc-content-empty\">Indisponible : le joueur est hors ligne. "
-                        + "Aucun mécanisme de livraison différée n'existe pour cette action.</p>");
-            }
-        }
+    private String playerVariableRead(Session session, String agentId, String uuid) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">Lire une variable</p>");
+        sb.append("<p class=\"form-text\">Fonctionne aussi hors ligne. Lecture seule.</p>");
+        sb.append(formStart(session, agentId, "player.variable.get", "/players", uuid));
+        sb.append("<label class=\"form-label\">Nom de la variable</label><input class=\"form-control\" list=\"varkeys-")
+                .append(Http.esc(uuid)).append("\" name=\"key\" value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
+        sb.append(variableKeys(uuid));
+        sb.append("<button class=\"btn sm\" type=\"submit\">Lire</button></form>");
+        latestForPlayer(agentId, "player.variable.get", uuid).ifPresent(row -> sb.append(readResult("Lu", row)));
         return sb.toString();
     }
 
-    /**
-     * Les deux resets d'un joueur (issue #235) — et ils ne s'appellent plus tous les deux « Reset ».
-     *
-     * <h2>Pourquoi deux blocs et non deux boutons côte à côte</h2>
-     *
-     * <p>Le retour utilisateur qui a ouvert #235 est exactement une confusion d'intention : un reset
-     * présenté comme « nouveau joueur » avait rétabli le droit au kit de départ sans retirer le kit
-     * déjà reçu, et le joueur en a obtenu un second. L'écran ne mentait pas, il ne <em>disait</em>
-     * rien du sort de l'inventaire.</p>
-     *
-     * <p>Chaque portée a donc son bloc, son aperçu, son libellé et sa confirmation, et chacune
-     * <strong>énumère ce qu'elle conserve autant que ce qu'elle efface</strong> — « conserve » est
-     * l'information qui manquait.</p>
-     */
-    private String playerResetTools(Session session, String agentId, String uuid, String name) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(playerResetBlock(session, agentId, uuid, name, false));
-        sb.append(playerResetBlock(session, agentId, uuid, name, true));
+    private String playerVariableWrite(Session session, String agentId, String uuid) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">Écrire une variable</p>");
+        sb.append(Ui.banner("warn", "Outil de test : écrire une variable ne rejoue pas la progression qui "
+                + "l'aurait posée (aucune récompense, aucune étape)."));
+        sb.append(formStart(session, agentId, "player.variable.set", "/players", uuid));
+        sb.append("<label class=\"form-label\">Nom de la variable</label><input class=\"form-control\" list=\"varkeys-")
+                .append(Http.esc(uuid)).append("-w\" name=\"key\" value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
+        sb.append(variableKeys(uuid + "-w"));
+        sb.append("<label class=\"form-label\">Valeur</label><input class=\"form-control\" type=\"text\" name=\"value\" value=\"true\">");
+        sb.append(confirmBox("Je comprends que c'est un outil de test."));
+        sb.append("<button class=\"btn sm\" type=\"submit\">Écrire</button></form>");
+        return sb.toString();
+    }
+
+    private static String variableKeys(String id) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"varkeys-").append(Http.esc(id)).append("\">");
+        for (String k : AgentActionCatalog.KNOWN_VARIABLE_KEYS) {
+            sb.append("<option value=\"").append(Http.esc(k)).append("\">");
+        }
+        return sb.append("</datalist>").toString();
+    }
+
+    /** Donner un objet du catalogue (1 à 64) — joueur connecté uniquement, avec confirmation. */
+    private String playerGiveForm(Session session, String agentId, String uuid, String name, List<Object> knownItems) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">Donner un objet à ").append(Http.esc(name)).append("</p>");
+        sb.append(formStart(session, agentId, "player.item.give", "/players", uuid));
+        sb.append("<label class=\"form-label\">Objet</label>");
+        if (knownItems.isEmpty()) {
+            sb.append("<input class=\"form-control\" type=\"text\" name=\"item_id\" placeholder=\"rpgquest:rune_rappel\">");
+        } else {
+            sb.append("<select class=\"form-select\" name=\"item_id\">");
+            for (Object o : knownItems) {
+                Map<String, Object> it = asMap(o);
+                String dn = MiniText.plain(str(it.get("displayName")));
+                sb.append("<option value=\"").append(Http.esc(str(it.get("id")))).append("\">")
+                        .append(Http.esc(dn.isEmpty() ? str(it.get("id")) : dn)).append("</option>");
+            }
+            sb.append("</select>");
+        }
+        sb.append("<label class=\"form-label\">Quantité (1 à 64)</label>"
+                + "<input class=\"form-control\" type=\"number\" name=\"amount\" value=\"1\" min=\"1\" max=\"64\" inputmode=\"numeric\">");
+        sb.append(confirmBox("Je confirme la remise de l'objet à « " + name + " »."));
+        sb.append("<button class=\"btn sm\" type=\"submit\">Donner</button></form>");
         return sb.toString();
     }
 
@@ -1184,11 +1265,10 @@ public final class AgentPages {
         Permission needed = full ? Permission.ACTION_PLAYER_RESET_FULL : Permission.ACTION_PLAYER_RESET;
 
         StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("trash"))
-                .append(full ? "Reset nouveau joueur complet <span class=\"badge text-bg-danger\">DEV / "
-                        + "vide l'inventaire</span>"
-                        : "Reset progression RPGQuest <span class=\"badge text-bg-secondary\">inventaire "
-                                + "conservé</span>")
-                .append(" <span class=\"badge text-bg-secondary\">hors ligne OK</span></p>");
+                .append(full ? "Repartir comme un nouveau joueur — vide l'inventaire"
+                        : "Remettre à zéro la progression — garde l'inventaire")
+                .append("</p><p class=\"form-text\">Fonctionne aussi hors ligne : la remise à zéro est faite à sa "
+                        + "prochaine connexion. Faites d'abord l'aperçu : il n'écrit rien.</p>");
 
         // Ce qui est CONSERVÉ d'abord : c'est la question que l'administrateur se pose, et celle à
         // laquelle l'ancien écran ne répondait pas.
@@ -1223,7 +1303,7 @@ public final class AgentPages {
 
         sb.append(readForm(session, agentId, previewType, "/players", uuid, "Aperçu (aucune écriture)"));
         latestForPlayer(agentId, previewType, uuid).ifPresent(row -> {
-            sb.append(resultLine("Aperçu", row));
+            sb.append(readResult("Aperçu", row));
             detailsOf(row).map(d -> asList(d.get("lines"))).ifPresent(lines -> {
                 if (!lines.isEmpty()) {
                     sb.append(Ui.tableOpen("Catégorie", "Nombre", "Détail"));
@@ -1252,11 +1332,9 @@ public final class AgentPages {
                 : "Je confirme la remise à zéro de la progression RPGQuest de « " + name
                         + " » (son inventaire est conservé)."));
         sb.append("<button class=\"btn btn-danger\" type=\"submit\">")
-                .append(full ? "Reset nouveau joueur complet (vide l'inventaire)"
-                        : "Reset progression RPGQuest (garde l'inventaire)")
+                .append(full ? "Repartir comme un nouveau joueur (vide l'inventaire)"
+                        : "Remettre à zéro la progression (garde l'inventaire)")
                 .append("</button></form>");
-        latestForPlayer(agentId, confirmType, uuid).ifPresent(row ->
-                sb.append(resultLine("Dernier reset", row)));
         sb.append("</div>");
         return sb.toString();
     }
@@ -5144,7 +5222,7 @@ public final class AgentPages {
                     .append(Http.esc(sourceDialogueSlugs.get(plain))).append("?npc=").append(Http.esc(id)).append("\">")
                     .append(Icons.icon("edit")).append("Modifier le dialogue</a>");
         } else if (!plain.isEmpty()) {
-            sb.append("<a class=\"btn secondary sm\" href=\"/dialogues?q=")
+            sb.append("<a class=\"btn secondary sm\" href=\"/dialogues/edit/")
                     .append(Http.esc(plain)).append("\">").append(Icons.icon("open")).append("Voir le dialogue</a>");
         } else if (rights.dialogue()) {
             sb.append("<a class=\"btn sm\" href=\"/dialogues/new?npc=").append(Http.esc(id))
@@ -5922,14 +6000,190 @@ public final class AgentPages {
     //  Dialogues (V1 lecture + squelette de création — base d'un futur éditeur)
     // ================================================================================
 
+    // ---- Issue #332 : dialogues, version simple — données préparées pour DialoguePages ------
+
+    /** Personnages, quêtes et état « en jeu » dont les pages de dialogue ont besoin. */
+    public DialoguePages.Ctx dialogueCtx(String agentId) {
+        List<DialoguePages.Npc> npcs = new ArrayList<>();
+        Optional<Map<String, Object>> npcDet = agentId == null ? Optional.empty() : latestDetails(agentId, "npc.list");
+        for (Object o : npcDet.map(d -> asList(d.get("npcs"))).orElse(List.of())) {
+            Map<String, Object> n = asMap(o);
+            String id = str(n.get("id"));
+            if (id.isEmpty() || !Boolean.TRUE.equals(n.get("logicalDefinitionPresent"))) {
+                continue;
+            }
+            String defined = cleanNull(str(n.get("definedDialogueId")));
+            String effective = defined.isEmpty() ? cleanNull(str(n.get("dialogueId"))) : defined;
+            String name = cleanNull(str(n.get("displayName")));
+            npcs.add(new DialoguePages.Npc(id, name.isEmpty() ? id : name, dialoguePlainKey(effective)));
+        }
+        com.lodygames.rpgquest.panel.content.RefData ref = referenceData(agentId);
+        List<DialoguePages.Quest> quests = new ArrayList<>();
+        java.util.Set<String> seenQuests = new java.util.HashSet<>();
+        for (String q : ref.quests()) {
+            if (seenQuests.add(QuestYaml.plainId(q))) {
+                quests.add(new DialoguePages.Quest(q.contains(":") ? q : "rpgquest:" + q, ref.questLabel(q)));
+            }
+        }
+        java.util.Set<String> serverKeys = new java.util.LinkedHashSet<>();
+        if (agentId != null) {
+            for (Object o : latestDetails(agentId, "dialogue.list").map(x -> asList(x.get("dialogues"))).orElse(List.of())) {
+                Map<String, Object> m = asMap(o);
+                String key = dialoguePlainKey(str(m.get("id")));
+                serverKeys.add(key.isEmpty() ? dialoguePlainKey(str(m.get("key"))) : key);
+            }
+        }
+        return new DialoguePages.Ctx(agentId == null ? "" : agentId, List.copyOf(npcs), List.copyOf(quests),
+                java.util.Set.copyOf(serverKeys), npcDet.isPresent(), slug -> dialogueLive(agentId, slug));
+    }
+
+    /**
+     * Un dialogue qui n'existe que sur le serveur, reconstitué depuis le dernier relevé pour être
+     * <strong>lu</strong> dans l'éditeur (jamais enregistré : il n'a pas de fichier dans PlugAdmin).
+     */
+    public Optional<com.lodygames.rpgquest.panel.content.DialogueDraft> serverDialogueDraft(String agentId, String slug) {
+        for (Object o : latestDetails(agentId, "dialogue.list").map(x -> asList(x.get("dialogues"))).orElse(List.of())) {
+            Map<String, Object> m = asMap(o);
+            String key = dialoguePlainKey(str(m.get("id")));
+            if (!slug.equals(key.isEmpty() ? dialoguePlainKey(str(m.get("key"))) : key)) {
+                continue;
+            }
+            var d = new com.lodygames.rpgquest.panel.content.DialogueDraft();
+            d.id = slug;
+            d.start = str(m.get("startNodeId"));
+            for (Object no : asList(m.get("nodes"))) {
+                Map<String, Object> nm = asMap(no);
+                var node = new com.lodygames.rpgquest.panel.content.DialogueDraft.Node(str(nm.get("id")));
+                node.speaker = str(nm.get("speaker"));
+                node.text = str(nm.get("text"));
+                for (Object co : asList(nm.get("choices"))) {
+                    Map<String, Object> cm = asMap(co);
+                    var c = new com.lodygames.rpgquest.panel.content.DialogueDraft.Choice();
+                    c.text = str(cm.get("text"));
+                    c.next = cleanNull(str(cm.get("nextNodeId")));
+                    for (Object ao : asList(cm.get("actions"))) {
+                        c.actions.add(runtimeEntry(asMap(ao), false));
+                    }
+                    for (Object qo : asList(cm.get("conditions"))) {
+                        c.conditions.add(runtimeEntry(asMap(qo), true));
+                    }
+                    c.close = c.actions.stream().anyMatch(a -> "CLOSE".equals(a.get("type")));
+                    node.choices.add(c);
+                }
+                d.nodes.add(node);
+            }
+            return Optional.of(d);
+        }
+        return Optional.empty();
+    }
+
+    private static Map<String, String> runtimeEntry(Map<String, Object> m, boolean condition) {
+        Map<String, String> e = new LinkedHashMap<>();
+        String kind = str(m.get("kind"));
+        e.put("type", kind);
+        String target = cleanNull(str(m.get("target")));
+        if (!target.isEmpty()) {
+            e.put(kind.contains("QUEST") ? "quest" : "target", target);
+        }
+        String value = cleanNull(str(m.get("value")));
+        if (!value.isEmpty()) {
+            e.put("QUEST_STATE".equals(kind) ? "state" : "value", value);
+        }
+        if (condition && Boolean.TRUE.equals(m.get("negated"))) {
+            e.put("negate", "true");
+        }
+        return e;
+    }
+
+    /** Les dialogues de la liste : ceux de la source, puis ceux qui ne sont que sur le serveur. */
+    public List<DialoguePages.Row> dialogueRows(DialoguePages.Ctx ctx) {
+        List<DialoguePages.Row> rows = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (SourceCatalog.DialogueSource ds : sourceCatalog.dialogues()) {
+            if (seen.add(ds.slug())) {
+                rows.add(new DialoguePages.Row(ds.slug(), ds.draft(), ds.parseOk()));
+            }
+        }
+        for (String key : ctx.serverKeys()) {
+            if (!key.isEmpty() && seen.add(key)) {
+                rows.add(new DialoguePages.Row(key, null, true));
+            }
+        }
+        rows.sort((a, b) -> DialoguePages.title(a.key(), a.draft(), ctx.users(a.key()))
+                .compareToIgnoreCase(DialoguePages.title(b.key(), b.draft(), ctx.users(b.key()))));
+        return rows;
+    }
+
+    /**
+     * Où en est le dialogue enregistré par rapport au jeu (issue #332). Même vérité que la section
+     * « Publication sur DEV » ({@link #publishSection}) : relevé DEV réconcilié avec la dernière
+     * publication. Un envoi en cours n'est jamais un succès, et un échec ne compte que pour la
+     * version enregistrée qu'il concernait.
+     */
+    public DialoguePages.LiveState dialogueLive(String agentId, String slug) {
+        String sourceSha = sourceCatalog.sha("dialogues", slug).orElse("");
+        if (agentId == null || agentId.isBlank()) {
+            return new DialoguePages.LiveState(DialoguePages.Live.UNKNOWN, "", sourceSha, "", null);
+        }
+        var devIndex = devContentIndex(agentId);
+        Optional<Map<String, Object>> lastPublish = lastPublishOf(agentId, "dialogues", slug);
+        String lastDevSha = lastPublish.map(d -> str(d.get("devShaAfter"))).orElse("");
+        boolean stale = readingIsStale(agentId, "dialogues", slug);
+        String expectedDev = stale && !lastDevSha.isEmpty() ? lastDevSha : devIndex.devSha("dialogues", slug);
+
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (!"content.publish".equals(row.type()) || !"dialogues".equals(row.params().get("kind"))
+                    || !slug.equals(row.params().get("id"))) {
+                continue;
+            }
+            Instant when = row.completedAt() != null ? row.completedAt() : row.createdAt();
+            if (!row.status().terminal()) {
+                return new DialoguePages.LiveState(DialoguePages.Live.PUBLISHING, "", sourceSha, expectedDev, when);
+            }
+            Optional<Map<String, Object>> details = detailsOf(row);
+            boolean ok = row.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS
+                    && details.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false);
+            String forSource = row.params().getOrDefault("expected_source_sha", "");
+            if (!ok && (forSource.isEmpty() || forSource.equals(sourceSha))) {
+                String msg = row.resultMessage() == null ? "" : MiniText.prettifyTokens(row.resultMessage());
+                return new DialoguePages.LiveState(DialoguePages.Live.FAILED,
+                        msg.length() > 240 ? msg.substring(0, 239) + "…" : msg, sourceSha,
+                        expectedDev, when);
+            }
+            break;
+        }
+        if (sourceSha.isEmpty()) {
+            return new DialoguePages.LiveState(devIndex.available() || !latestDetails(agentId, "dialogue.list").isEmpty()
+                    ? DialoguePages.Live.SERVER_ONLY : DialoguePages.Live.UNKNOWN, "", "", expectedDev, null);
+        }
+        var readState = devIndex.stateOf("dialogues", slug, "rpgquest:" + slug, sourceSha, sourceCatalog.available(),
+                lastDevSha);
+        var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState, stale,
+                lastPublish.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false),
+                lastPublish.map(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed"))).orElse(false),
+                lastDevSha, sourceSha);
+        Instant when = lastPublishAt(agentId, "dialogues", slug).orElse(null);
+        return switch (state) {
+            case SYNCED -> new DialoguePages.LiveState(DialoguePages.Live.UP_TO_DATE, "", sourceSha, expectedDev, when);
+            case SOURCE_ONLY, DIFFERENT -> new DialoguePages.LiveState(DialoguePages.Live.NOT_LIVE, "", sourceSha,
+                    expectedDev, when);
+            case NOT_LOADED -> new DialoguePages.LiveState(DialoguePages.Live.FAILED,
+                    "le serveur a reçu le dialogue mais ne l'a pas chargé", sourceSha, expectedDev, when);
+            case CONFLICT -> new DialoguePages.LiveState(DialoguePages.Live.CONFLICT, "", sourceSha, expectedDev, when);
+            case RUNTIME_ONLY -> new DialoguePages.LiveState(DialoguePages.Live.SERVER_ONLY, "", sourceSha, expectedDev, when);
+            case UNKNOWN -> new DialoguePages.LiveState(DialoguePages.Live.UNKNOWN, "", sourceSha, expectedDev, when);
+        };
+    }
+
     public String dialogues(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
         boolean canWrite = perms.can(session.effective(), Permission.DIALOGUE_WRITE);
-        sb.append(Ui.pageHeader("dialogues", "Dialogues",
-                "Lecture structurée des dialogues à embranchements (dialogues/<id>.yml) : nœuds, "
-                        + "choix, actions et conditions typées, relations PNJ / quêtes, diagnostics.",
-                (canWrite ? Ui.primaryLink("/dialogues/new", "plus", "Créer un dialogue") : "")
+        sb.append(Ui.pageHeader("dialogues", "Dialogues — détails techniques",
+                "Relevé du serveur, diagnostics, publication détaillée et édition directe des "
+                        + "dialogues chargés en jeu. Pour modifier un dialogue, utilisez plutôt la page "
+                        + "« Dialogues ».",
+                "<a class=\"btn secondary\" href=\"/dialogues\">" + Icons.icon("back") + "Dialogues</a>"
                         + docLink("dialogues", "Documentation : dialogues")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();

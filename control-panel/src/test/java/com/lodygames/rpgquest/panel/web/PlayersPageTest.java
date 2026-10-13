@@ -65,30 +65,21 @@ class PlayersPageTest {
         String page = get("/players?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("<h1>Joueurs</h1>"));
-        assertTrue(page.contains("class=\"accordion npc-accordion\" id=\"players-accordion\""), "liste = accordion");
-        // badges avec texte (pas seulement la couleur)
-        assertTrue(page.contains("text-bg-success\">● En ligne</span>"));
-        assertTrue(page.contains("text-bg-secondary\">○ Hors ligne</span>"));
-        assertTrue(page.contains("text-bg-danger\">Banni</span>"));
-        // nom = libellé principal, UUID PAS en en-tête
-        assertTrue(page.contains("<span class=\"npc-name\">LoDyMcFly</span>"));
-        int lodyHead = page.indexOf("LoDyMcFly");
-        assertFalse(page.substring(lodyHead, lodyHead + 200).contains(UUID_LODY), "UUID absent de l'en-tête");
-        // synthèse
-        assertTrue(page.contains("3 joueur(s) connus · 1 en ligne · 2 hors ligne · 1 banni(s)"));
-        // online d'abord (LoDyMcFly avant Steve avant Grief_Kid)
+        // Issue #328 : une liste compacte, et plus aucune fiche dépliée au milieu de l'annuaire.
+        assertTrue(page.contains("class=\"table pl-table\""), "liste compacte");
+        assertFalse(page.contains("accordion"), "plus d'accordéon");
+        assertFalse(page.contains("value=\"player.ban\""), "aucun formulaire dans la liste");
+        assertTrue(page.contains(">En ligne</span>") && page.contains(">Hors ligne</span>") && page.contains(">Banni</span>"),
+                "états écrits en toutes lettres");
+        assertTrue(page.contains("class=\"pl-name\""));
+        int lody = page.indexOf(">LoDyMcFly<");
+        assertFalse(page.substring(lody, lody + 300).contains(UUID_LODY + "<"), "UUID absent de la ligne");
+        assertTrue(page.contains("3 joueur(s) · 1 en ligne · 2 hors ligne · 1 banni(s)"));
         assertTrue(page.indexOf("LoDyMcFly") < page.indexOf(">Steve<"));
         assertTrue(page.indexOf(">Steve<") < page.indexOf("Grief_Kid"));
-        // sections du détail
-        for (String s : new String[] {">Identité<", ">Activité<", ">RPGQuest<", ">Droits<", ">Modération<", ">Actions<"}) {
-            assertTrue(page.contains(s), "section " + s);
-        }
-        // UUID copiable dans le détail
-        assertTrue(page.contains("data-copy=\"" + UUID_LODY + "\""));
-        // aucune saisie de commande brute
+        assertTrue(page.contains("data-local-time"), "dernière connexion à l'heure locale");
         assertFalse(page.contains("name=\"command\""), "aucune console libre sur /players");
     }
-
     @Test
     void serverSideSearchByNameAndUuid() throws Exception {
         start();
@@ -116,57 +107,62 @@ class PlayersPageTest {
     void banFormPresentForNonBannedAndValidated() throws Exception {
         start();
         seedCatalog(CATALOG);
-        String page = get("/players?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=moderation").body();
         assertTrue(page.contains("name=\"type\" value=\"player.ban\""), "form ban sur un joueur non banni");
         assertTrue(page.contains("name=\"reason\"") && page.contains("required"), "raison obligatoire");
         assertTrue(page.contains("value=\"" + UUID_STEVE + "\">"), "cible = UUID, jamais le pseudo seul");
-        // Grief_Kid (banni) : pas de ban, mais un unban
-        int griefItem = page.lastIndexOf("Grief_Kid");
-        assertTrue(page.indexOf("name=\"type\" value=\"player.unban\"") > 0, "form unban présent");
+        assertTrue(page.contains("name=\"focus\" value=\"tab-moderation\""), "on revient sur cet onglet");
+        String grief = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_GRIEF + "&tab=moderation").body();
+        assertTrue(grief.indexOf("name=\"type\" value=\"player.unban\"") > 0, "form unban présent");
+        assertFalse(grief.contains("value=\"player.ban\""), "un banni ne se rebannit pas");
 
         String token = csrf(page);
-        // sans confirm -> refusé
-        HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
-                + "&type=player.ban&agent=" + TestConfig.AGENT_ID + "&return=/players&player=" + UUID_STEVE
-                + "&reason=" + enc("comportement toxique"));
+        HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=player.ban&return=/players&player=" + UUID_STEVE + "&reason=x");
         assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="));
-        // sans raison -> refusé
-        HttpResponse<String> noReason = post("/agents/action", "_csrf=" + token
-                + "&type=player.ban&agent=" + TestConfig.AGENT_ID + "&return=/players&player=" + UUID_STEVE
-                + "&confirm=true");
+        HttpResponse<String> noReason = post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=player.ban&return=/players&player=" + UUID_STEVE + "&confirm=true");
         assertTrue(noReason.headers().firstValue("Location").orElse("").contains("err="));
-        // complet -> 303 + toast + action en file
-        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
-                + "&type=player.ban&agent=" + TestConfig.AGENT_ID + "&return=/players&player=" + UUID_STEVE
-                + "&reason=" + enc("comportement toxique") + "&confirm=true");
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=player.ban&return=/players&player=" + UUID_STEVE + "&reason=spam&confirm=true&focus=tab-moderation");
         assertEquals(303, ok.statusCode());
-        assertTrue(ok.headers().firstValue("Location").orElse("").contains("toast="));
+        String back = ok.headers().firstValue("Location").orElse("");
+        assertTrue(back.contains("toast=") && back.contains("player=" + UUID_STEVE) && back.contains("focus=tab-moderation"),
+                "retour sur le même joueur, le même onglet : " + back);
         assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
+        String after = get(back).body();
+        assertTrue(after.contains("pl-feedback"), "un seul emplacement de retour");
+        assertTrue(after.contains("en cours…"), "jamais un succès anticipé");
+        assertEquals(1, after.split("pl-feedback", -1).length - 1);
     }
-
     @Test
     void giveItemIsOnlineOnly() throws Exception {
         start();
         seedCatalog(CATALOG);
-        String page = get("/players?agent=" + TestConfig.AGENT_ID).body();
-        // LoDyMcFly online -> formulaire give présent (en ligne uniquement)
-        assertTrue(page.contains("en ligne uniquement"));
-        assertTrue(page.contains("name=\"type\" value=\"player.item.give\""));
-        // Steve offline -> explication d'indisponibilité, pas de submit give pour lui
-        assertTrue(page.contains("Indisponible : le joueur est hors ligne"));
+        String online = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_LODY + "&tab=outils").body();
+        assertTrue(online.contains("name=\"type\" value=\"player.item.give\""));
+        assertTrue(online.contains("max=\"64\""), "quantité bornée à 64");
+        String offline = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=outils").body();
+        assertFalse(offline.contains("value=\"player.item.give\""), "pas de bouton inopérant");
+        assertTrue(offline.contains("n&#39;est possible que si le joueur est connecté")
+                || offline.contains("n'est possible que si le joueur est connecté"), "la raison est dite");
     }
-
     @Test
     void focusParamPreOpensThatPlayer() throws Exception {
         start();
         seedCatalog(CATALOG);
         String page = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE).body();
-        // l'élément de Steve est déplié (collapse show), les autres non
-        int stevePanel = page.indexOf("data-res-id=\"" + UUID_STEVE + "\"");
-        String block = page.substring(stevePanel, page.indexOf("</div></div></div>", stevePanel));
-        assertTrue(block.contains("accordion-collapse collapse show"));
+        // Issue #328 : une fiche dédiée, avec son en-tête et ses cinq onglets.
+        assertTrue(page.contains("<h1 class=\"pl-title\">Steve</h1>"));
+        for (String tab : new String[] {"Vue d&#39;ensemble", "Progression", "Économie", "Permissions et modération",
+                "Outils avancés"}) {
+            assertTrue(page.contains(tab), "onglet " + tab);
+        }
+        assertTrue(page.contains("aria-current=\"page\">Vue d&#39;ensemble"), "vue d'ensemble par défaut");
+        assertTrue(page.contains("data-copy=\"" + UUID_STEVE + "\""), "UUID copiable");
+        assertTrue(page.contains("data-players-back"), "retour à la liste");
+        assertFalse(page.contains(">LoDyMcFly<"), "aucun autre joueur sur la fiche");
     }
-
     @Test
     void paginationBeyond50() throws Exception {
         start();
@@ -193,7 +189,7 @@ class PlayersPageTest {
     void emptyStateWhenCatalogNeverLoaded() throws Exception {
         start();
         String page = get("/players?agent=" + TestConfig.AGENT_ID).body();
-        assertTrue(page.contains("Annuaire non chargé"));
+        assertTrue(page.contains("pas encore chargée"));
         assertTrue(page.contains("name=\"type\" value=\"player.catalog\""));
     }
 
@@ -203,7 +199,7 @@ class PlayersPageTest {
     void opOfLodyIsQueuedWithASingleCheckboxAndADoubleClickDoesNotQueueTwice() throws Exception {
         start();
         seedCatalog(CATALOG);
-        String page = get("/players?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_LODY + "&tab=moderation").body();
         int form = page.indexOf("value=\"player.op\"");
         assertTrue(form > 0, "formulaire OP présent");
         String opForm = page.substring(page.lastIndexOf("<form", form), page.indexOf("</form>", form));

@@ -40,48 +40,55 @@ La liste est paginée (50 par page).
 
 ## Ouvrir une fiche
 
-Un clic sur un joueur déplie son détail : **Identité**, **Activité**, **RPGQuest** (liens vers
-ses quêtes / stories / historique), **Droits**, **Modération**, **Actions**.
+Un clic sur un joueur ouvre **sa fiche**, sur une page à part. « ← Joueurs » ramène à la liste telle
+que vous l'avez laissée (recherche, filtre, tri, page).
+
+En haut : pseudo, état (en ligne, banni, OP Minecraft), première et dernière connexion à **votre**
+heure locale (la date complète au survol), monde et position s'il est connecté, et l'UUID avec un
+bouton **Copier**.
+
+Juste en dessous, **un seul bandeau** donne le résultat de la dernière action faite sur ce joueur,
+daté. Une action encore en cours est dite « en cours », jamais réussie d'avance.
+
+La fiche a cinq onglets. Chaque action est un bouton : son formulaire ne s'ouvre qu'au clic, et un
+seul à la fois.
+
+| Onglet | Contenu |
+|---|---|
+| **Vue d'ensemble** | activité, liens vers ses quêtes, ses stories et son historique, résumé modération |
+| **Progression** | quêtes, stories, historique, lire une variable, les deux remises à zéro |
+| **Économie** | solde et journal, créditer, débiter, récompenses en attente |
+| **Permissions et modération** | bannir / débannir, expulser, renvoyer au Hub, whitelist, OP, droits en jeu |
+| **Outils avancés** | écrire une variable, donner un objet |
 
 ## Bannir / débannir
 
-Disponible **en ligne comme hors ligne** (permission **modération joueur**).
+Disponible **en ligne comme hors ligne** (permission **modération joueur**) : onglet
+**Permissions et modération** → **Bannir**, raison obligatoire, confirmation. S'il est connecté, le
+joueur est expulsé tout de suite. Un joueur banni voit **Débannir** à la place.
 
-1. Ouvrir la fiche du joueur → **Actions** → **Bannir**.
-2. Saisir une **raison** (obligatoire).
-3. Cocher la confirmation, puis **Bannir le joueur**.
-
-Le joueur ne pourra plus se connecter ; s'il est en ligne il est **expulsé** immédiatement.
-Pour lever la sanction : **Actions** → **Débannir**. Les bannissements **temporaires** ne sont
-pas gérés ici.
-
-Chaque ban / unban est journalisé (acteur PlugAdmin, UUID + pseudo cible, raison, résultat).
-
-## Actions impossibles hors ligne
-
-Certaines actions n'ont de sens que sur un joueur **connecté** — elles sont alors indisponibles
-avec une explication, jamais un faux succès :
+## Actions qui demandent un joueur connecté
 
 | Action | Hors ligne | En ligne |
 |---|---|---|
-| Bannir / débannir | ✔ | ✔ |
-| Lire / écrire une variable (debug) | ✔ | ✔ |
-| Reset « nouveau joueur » | ✔ | ✔ |
-| Donner un objet | indisponible | ✔ |
+| Bannir / débannir, whitelist, OP | ✔ | ✔ |
+| Lire / écrire une variable | ✔ | ✔ |
+| Remises à zéro | ✔ (appliquées à la prochaine connexion) | ✔ |
+| Expulser, renvoyer au Hub, donner un objet | non proposées, avec la raison | ✔ |
 
-## Droit de construction
+## OP, whitelist et droits de construction
 
-**Non géré par PlugAdmin pour le moment.** Accorder un droit de construction *persistant* à un
-joueur hors ligne suppose un gestionnaire de permissions persistant (permissions granulaires
-*issue #27* + LuckPerms ou équivalent). Tant que ce socle n'est pas intégré à cette branche,
-PlugAdmin **n'affiche pas d'interrupteur** qui ne contrôlerait rien. La fiche indique simplement
-« non géré » et renvoie ici.
+Ce sont trois choses distinctes : **OP Minecraft** ne change ni le rôle PlugAdmin ni les droits de
+construction. La **whitelist** n'empêche d'entrer que si elle est activée sur le serveur : le
+résultat d'un ajout le précise. Les **droits de construction** viennent des groupes PlugAdmin du
+compte lié au joueur (page **Utilisateurs**) ; « Lire ses droits en jeu » montre ce que le serveur
+applique réellement. Aucun faux interrupteur n'est affiché.
 
-## Reset « nouveau joueur »
+## Remises à zéro
 
-Le reset existe déjà (voir *Reset d'un joueur*). Depuis la fiche : **Actions** → **Reset
-« nouveau joueur »** → **Aperçu** (ne modifie rien) puis confirmation explicite. Action
-**irréversible** — l'aperçu liste précisément ce qui serait effacé.
+Deux portées, chacune avec son **aperçu** (n'écrit rien), la liste de ce qui est **conservé** et de
+ce qui est **effacé**, et une confirmation : **Remettre à zéro la progression** (garde
+l'inventaire) et **Repartir comme un nouveau joueur** (vide l'inventaire). Voir *Reset d'un joueur*.
 
 ## Sécurité
 

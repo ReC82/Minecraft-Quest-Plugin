@@ -125,9 +125,14 @@ class ContentEditorPagesTest {
     @Test
     void theDialogueStartTextReplacesTheOldColourSelectWithTheSharedComponent() throws Exception {
         start(true);
-        String body = get("/dialogues/new").body();
+        Files.createDirectories(contentRoot.resolve("dialogues"));
+        Files.writeString(contentRoot.resolve("dialogues/lily.yml"), "id: rpgquest:lily\nstart: start\nnodes:\n"
+                + "  start:\n    speaker: \"Lily\"\n    text: \"Bonjour\"\n    choices:\n      - text: \"Bye\"\n"
+                + "        actions:\n          - type: CLOSE\n");
+        // Issue #332 : l'éditeur de dialogue utilise le composant partagé pour chaque réplique.
+        String body = get("/dialogues/edit/lily").body();
 
-        assertTrue(body.contains("id=\"dlg-start-text-store\"") && body.contains("name=\"start_text\""));
+        assertTrue(body.contains("name=\"n0_text\"") && body.contains("data-stylefield"));
         assertTrue(body.contains("data-sf-palette"), "palette présente sur l'éditeur de dialogue");
         assertFalse(body.contains("name=\"text_color\""),
                 "le select de couleur concurrent ne doit plus être émis");

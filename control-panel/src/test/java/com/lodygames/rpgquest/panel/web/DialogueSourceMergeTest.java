@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.audit.InMemoryAuditLog;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
-import com.lodygames.rpgquest.panel.json.Json;
 import com.lodygames.rpgquest.panel.support.TestConfig;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -99,24 +98,23 @@ class DialogueSourceMergeTest {
         assertFalse(cat.contains(">Hors source</span>"));
     }
 
-    // ---- D : création via /dialogues/new visible au retour catalogue -------------------
+    // ---- D : création via « Créer un dialogue » visible au retour catalogue (#332) --------
 
     @Test
     void dialogueCreatedFromEditorShowsUpImmediatelyWithoutAgentCall() throws Exception {
         start();
         String token = csrf(get("/dialogues/new").body());
-        HttpResponse<String> save = post("/dialogues/save", "id=lily_intro&speaker=Lily&start_text="
-                + enc("Bonjour.") + "&text_color=yellow&_csrf=" + token + "&_action=save");
+        HttpResponse<String> save = post("/dialogues/create", "name=" + enc("Lily intro") + "&first_line="
+                + enc("Bonjour.") + "&_csrf=" + token);
         assertEquals(303, save.statusCode());
         assertTrue(save.headers().firstValue("Location").orElse("").startsWith("/dialogues/edit/lily_intro"));
 
         String cat = catalog();
         assertTrue(cat.contains("data-res-id=\"rpgquest:lily_intro\""), "dialogue créé visible sans appel agent");
         assertTrue(cat.contains(">Source uniquement</span>"));
-        // le YAML écrit est au format canonique du moteur (enrobage couleur appliqué)
         String yaml = Files.readString(contentRoot.resolve("dialogues/lily_intro.yml"));
         assertTrue(yaml.contains("id: rpgquest:lily_intro"));
-        assertTrue(yaml.contains("<yellow>Bonjour.</yellow>"));
+        assertTrue(yaml.contains("Bonjour."));
         assertTrue(yaml.contains("- type: CLOSE"));
     }
 
@@ -134,55 +132,32 @@ class DialogueSourceMergeTest {
         assertTrue(cat.contains("2 dialogue(s)"));
     }
 
-    // ---- F : le formulaire de création propose le PNJ Lily par nom + id ----------------
+    // ---- F/G : le formulaire de création propose le PNJ par son nom, présélectionné ----------
 
     @Test
-    void createFormOffersExistingNpcByNameAndId() throws Exception {
+    void createFormOffersExistingNpcByName() throws Exception {
         start();
         runNpcList("[{\"id\":\"lily\",\"displayName\":\"Lily\",\"logicalDefinitionPresent\":true,"
                 + "\"enabled\":true,\"role\":\"villager\"}]");
-        String body = get("/dialogues/new").body();
-        String datalist = slice(body, "<datalist id=\"dl-npc\">", "</datalist>");
-        assertTrue(datalist.contains("value=\"lily\""), "PNJ proposé par id");
-        assertTrue(datalist.contains("label=\"Lily\""), "PNJ proposé par nom humain");
+        assertTrue(get("/dialogues/new").body().contains("<option value=\"lily\">Lily</option>"), "par son nom");
+        assertTrue(get("/dialogues/new?npc=lily").body().contains("<option value=\"lily\" selected>Lily</option>"),
+                "présélectionné depuis sa fiche");
     }
 
-    // ---- G : PNJ pré-sélectionné -> locuteur prérempli si vide -------------------------
+    // ---- H : un PNJ sans dialogue reçoit le sien par son nom, sans rattachement à envoyer --------
 
     @Test
-    void preselectedNpcPrefillsSpeakerWhenEmpty() throws Exception {
-        start();
-        runNpcList("[{\"id\":\"lily\",\"displayName\":\"Lily\",\"logicalDefinitionPresent\":true,"
-                + "\"enabled\":true,\"role\":\"villager\"}]");
-        String body = get("/dialogues/new?npc=lily").body();
-        assertTrue(body.contains("name=\"npc\" value=\"lily\""), "PNJ pré-sélectionné");
-        assertTrue(body.contains("name=\"speaker\" value=\"Lily\""), "locuteur prérempli avec le nom du PNJ");
-    }
-
-    // ---- H : création avec Lily sélectionnée -> npc.definition.update enfilé ------------
-
-    @Test
-    void creatingWithSelectedNpcQueuesNpcDefinitionUpdate() throws Exception {
+    void creatingForAnNpcWithoutDialogueUsesItsName() throws Exception {
         start();
         runNpcList("[{\"id\":\"lily\",\"displayName\":\"Lily\",\"logicalDefinitionPresent\":true,"
                 + "\"enabled\":true,\"role\":\"villager\"}]");
         String token = csrf(get("/dialogues/new?npc=lily").body());
-        HttpResponse<String> save = post("/dialogues/save", "id=lily_intro&npc=lily&speaker=Lily&start_text="
-                + enc("Bonjour.") + "&text_color=&_csrf=" + token + "&_action=save");
+        HttpResponse<String> save = post("/dialogues/create", "npc=lily&first_line=" + enc("Bonjour.")
+                + "&_csrf=" + token);
         assertEquals(303, save.statusCode());
-        assertTrue(save.headers().firstValue("Location").orElse("").contains("toast="),
-                "redirection avec toast de l'action de rattachement");
-
-        Map<String, Object> actions = Json.parseObject(get("/agents/actions.json?agent=" + TestConfig.AGENT_ID).body());
-        assertTrue(((Number) actions.get("pending")).intValue() >= 1, "action de rattachement en attente");
-
-        String poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
-                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
-                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),
-                HttpResponse.BodyHandlers.ofString()).body();
-        assertTrue(poll.contains("npc.definition.update"), "action npc.definition.update enfilée");
-        assertTrue(poll.contains("rpgquest:lily_intro"), "la définition PNJ pointera vers lily_intro");
-        assertTrue(poll.contains("\"lily\""), "cible = PNJ lily");
+        assertTrue(save.headers().firstValue("Location").orElse("").startsWith("/dialogues/edit/lily"));
+        assertTrue(Files.readString(contentRoot.resolve("dialogues/lily.yml")).contains("speaker: \"Lily\""),
+                "dit par Lily");
     }
 
     // ---- I : dialogue source-only sélectionnable depuis un formulaire PNJ --------------
@@ -212,82 +187,25 @@ class DialogueSourceMergeTest {
                 "aucune affirmation d'activité runtime");
     }
 
-    // ---- K : rééditer un dialogue riche ne le réduit jamais à un squelette (#145) -------
-
-    /** Dialogue existant à plusieurs nœuds, avec conditions, actions et embranchements. */
-    private static final String RICH_YAML = """
-            id: rpgquest:jeff
-            start: start
-            nodes:
-              start:
-                speaker: "Jeff"
-                text: "<gray>Compris.</gray>"
-                choices:
-                  - text: "Je vais m'en charger"
-                    conditions:
-                      - type: QUEST_STATE
-                        quest: rpgquest:cleanup
-                        state: NOT_STARTED
-                    actions:
-                      - type: START_QUEST
-                        quest: rpgquest:cleanup
-                    next: accepted
-                  - text: "Pas maintenant"
-                    actions:
-                      - type: CLOSE
-              accepted:
-                speaker: "Jeff"
-                text: "<green>Merci.</green>"
-                choices:
-                  - text: "OK"
-                    actions:
-                      - type: CLOSE
-            """;
-
-    @Test
-    void editingAnExistingRichDialogueOnlyChangesTheFieldsOfTheForm() throws Exception {
-        start();
-        writeDialogue("jeff", RICH_YAML);
-
-        String page = get("/dialogues/edit/jeff").body();
-        assertTrue(page.contains("name=\"speaker\" value=\"Jeff\""), "locuteur prérempli depuis le fichier");
-        assertTrue(page.contains("Conservé à l'identique"), "ce qui n'est pas éditable ici est annoncé");
-
-        String token = csrf(page);
-        HttpResponse<String> save = post("/dialogues/save", "slug=jeff&id=jeff&speaker=Jeff&start_text="
-                + enc("<gray>Bien reçu.</gray>") + "&text_color=&_csrf=" + token + "&_action=save"
-                + "&expectedSha=" + sha("dialogues", "jeff"));
-        assertEquals(303, save.statusCode(), save.body());
-
-        String after = Files.readString(contentRoot.resolve("dialogues/jeff.yml"));
-        // Seule la réplique du nœud de départ a changé…
-        assertTrue(after.contains("text: \"<gray>Bien reçu.</gray>\""), "texte de départ mis à jour");
-        assertFalse(after.contains("<gray>Compris.</gray>"), "ancien texte remplacé");
-        // …tout le reste est intact : second nœud, choix, condition, action, embranchement.
-        assertTrue(after.contains("  accepted:"), "le second nœud survit");
-        assertTrue(after.contains("- type: QUEST_STATE"), "la condition survit");
-        assertTrue(after.contains("- type: START_QUEST"), "l'action de quête survit");
-        assertTrue(after.contains("quest: rpgquest:cleanup"), "la quête référencée survit");
-        assertTrue(after.contains("next: accepted"), "l'embranchement survit");
-        assertTrue(after.contains("text: \"Je vais m'en charger\""), "le texte du choix survit");
-    }
+    // ---- K : un dialogue que l'éditeur ne sait pas relire fidèlement n'est jamais réécrit ------
 
     @Test
     void aDialogueTheEditorCannotReadFaithfullyIsNeverOverwritten() throws Exception {
         start();
-        // Texte de nœud localisé : le moteur l'accepte, l'éditeur source ne sait pas le représenter.
+        // Texte de nœud localisé : le moteur l'accepte, l'éditeur ne sait pas le représenter.
         String localized = "id: rpgquest:lily\nstart: start\nnodes:\n  start:\n    speaker: \"Lily\"\n"
                 + "    text:\n      default: \"Bonjour\"\n      en: \"Hello\"\n    choices:\n"
                 + "      - text: \"Bye\"\n        actions:\n          - type: CLOSE\n";
         writeDialogue("lily", localized);
 
         String page = get("/dialogues/edit/lily").body();
-        assertTrue(page.contains("n'est pas relu fidèlement"), "la limite est dite avant toute édition");
+        assertTrue(page.contains("lecture seule"), "la limite est dite avant toute édition");
+        assertFalse(page.contains("value=\"save_publish\""), "aucun bouton d'enregistrement");
 
-        HttpResponse<String> save = post("/dialogues/save", "slug=lily&id=lily&speaker=Lily&start_text="
-                + enc("Bonsoir") + "&text_color=&_csrf=" + csrf(page) + "&_action=save"
-                + "&expectedSha=" + sha("dialogues", "lily"));
-        assertEquals(200, save.statusCode(), "pas de redirection : enregistrement refusé");
+        HttpResponse<String> save = post("/dialogues/save", "slug=lily&n_count=1&n0_id=start&n0_speaker=Lily"
+                + "&n0_text=" + enc("Bonsoir") + "&n0_c_count=0&_op=save&_csrf=" + csrf(page)
+                + "&expected_sha=" + sha("dialogues", "lily"));
+        assertEquals(303, save.statusCode(), "renvoyé vers l'éditeur en lecture seule");
         assertEquals(localized, Files.readString(contentRoot.resolve("dialogues/lily.yml")), "fichier intact");
     }
 
@@ -304,7 +222,7 @@ class DialogueSourceMergeTest {
     // ---- helpers ----------------------------------------------------------------------
 
     private String catalog() throws Exception {
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
         int a = page.indexOf("<h2>Catalogue</h2>");
         return a < 0 ? page : page.substring(a);
     }

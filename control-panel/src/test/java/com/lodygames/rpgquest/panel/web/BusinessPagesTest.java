@@ -137,7 +137,7 @@ class BusinessPagesTest {
         assertTrue(get("/quests").body().contains("name=\"type\" value=\"quest.list\""));
         assertTrue(get("/stories").body().contains("name=\"type\" value=\"story.list\""));
         assertTrue(get("/npcs").body().contains("action=\"/npcs/refresh\""));
-        assertTrue(get("/dialogues").body().contains("name=\"type\" value=\"dialogue.list\""));
+        assertTrue(get("/dialogues").body().contains("action=\"/dialogues/refresh\""), "une seule actualisation (#332)");
     }
 
     @Test

@@ -180,9 +180,10 @@ celle que porte le personnage : le bouton **Réessayer** la repose. Un lien qui 
 `https://`, ou qui n'est pas un lien MineSkin, est refusé avec un message simple.
 
 > [!NOTE]
-> Pourquoi pas `/npc skin --url https://minesk.in/…` ? Cette commande attend l'adresse d'une
-> **image**, et un lien `minesk.in` ouvre une page web. Citizens échoue alors sans le dire, et le
-> PNJ garde le skin du compte Minecraft qui porte son nom (c'est ce qui était arrivé à Lucien).
+> Pourquoi plus `/npc skin --url https://minesk.in/…` ? Avec cette commande, Citizens fabrique le
+> skin en tâche de fond, sans pouvoir dire si cela a marché. Sur DEV, cela a marché pour Elias mais
+> pas pour Lucien, qui a gardé le skin du compte Minecraft « Lucien » alors que l'action avait
+> répondu « réussi ». Poser la texture exacte puis la relire supprime ce doute.
 
 ### En jeu, par commande Citizens
 

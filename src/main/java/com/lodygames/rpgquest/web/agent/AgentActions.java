@@ -1041,6 +1041,9 @@ public interface AgentActions {
      *                     l'API publique de Citizens ne permet pas de lire le skin en place. Cela
      *                     veut dire « sa source est inconnue », donc non reproductible.
      * @param skinSourceValue valeur correspondante (lien ou pseudo), ou {@code null}.
+     * @param skinMatchesSource issue #325 — l'image réellement portée par le PNJ est-elle celle de la
+     *                     source enregistrée ? {@code null} = invérifiable (pas une source par lien,
+     *                     ou lien pas encore relu), jamais « oui » supposé.
      */
     record CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
                               boolean availableForBinding, boolean spawned,
@@ -1050,7 +1053,8 @@ public interface AgentActions {
                               Boolean wanderEnabled, String wanderProvider, Integer wanderWaypoints,
                               String wanderWorld, Double wanderX, Double wanderY, Double wanderZ,
                               Integer wanderXRange, Integer wanderYRange,
-                              String entityType, String skinSourceKind, String skinSourceValue) {
+                              String entityType, String skinSourceKind, String skinSourceValue,
+                              Boolean skinMatchesSource) {
 
         /** Entrée sans position connue — les chemins qui n'en ont pas besoin, et les tests. */
         CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
@@ -1058,7 +1062,7 @@ public interface AgentActions {
             this(numericId, uuid, name, linkedNpcId, availableForBinding, spawned,
                     null, null, null, null, null, null, false, spawned, false,
                     null, null, null, null, null, null, null, null, null, null, null,
-                    null, null, null);
+                    null, null, null, null);
         }
     }
 

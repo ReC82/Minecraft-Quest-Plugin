@@ -2151,7 +2151,7 @@ class AgentActionExecutorTest {
                     new CitizensNpcSummary(6, "11111111-1111-1111-1111-111111111111", "Garde", "guard",
                             false, true, null, null, null, null, null, null, false, true, false,
                             null, null, null, null, null, null, null, null, null, null, null,
-                            "PLAYER", "URL", "https://minesk.in/abcd1234"),
+                            "PLAYER", "URL", "https://minesk.in/abcd1234", null),
                     new CitizensNpcSummary(14, "22222222-2222-2222-2222-222222222222", "Bûcheron Bob", null, true, true)),
                     2, 1, 1));
         }

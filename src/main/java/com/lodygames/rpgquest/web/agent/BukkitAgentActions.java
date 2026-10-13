@@ -163,6 +163,9 @@ public final class BukkitAgentActions implements AgentActions {
     private final NpcBindingRepository npcBindingRepository;
     /** Source d'apparence enregistrée par RPGQuest, pour la reconduire au travers d'un renommage. */
     private final NpcSkinSourceRepository npcSkinSourceRepository;
+    /** Issue #325 — lien MineSkin → texture signée (Citizens ne sait pas lire un lien minesk.in). */
+    private final com.lodygames.rpgquest.npc.MineSkinResolver skinResolver =
+            new com.lodygames.rpgquest.npc.MineSkinResolver();
     /** Même forme d'identifiant logique que l'exécuteur et le panel. */
     private static final java.util.regex.Pattern NPC_ID_PATTERN =
             java.util.regex.Pattern.compile("[a-z0-9._-]{1,64}");
@@ -1917,8 +1920,12 @@ public final class BukkitAgentActions implements AgentActions {
             // ne demande en corrigeant un nom. On rattache l'apparence AVANT de renommer — à la
             // source enregistrée si nous en avons une, sinon à l'ancien nom, ce qui reconduit à
             // l'identique ce que les joueurs voyaient déjà (jamais un skin neuf).
+            // La texture à reconduire est résolue AVANT le thread principal (appel réseau possible
+            // pour un lien personnalisé ; l'apparence par défaut est embarquée).
             return npcSkinSourceRepository.find(citizensUuid)
-                    .thenCompose(recorded -> onMain(() -> done(renameKeepingSkin(citizensUuid, name, recorded))))
+                    .thenCompose(recorded -> skinResolver.resolve(urlToKeep(recorded))
+                            .thenCompose(texture -> onMain(() ->
+                                    done(renameKeepingSkin(citizensUuid, name, recorded, texture)))))
                     .thenCompose(outcome -> outcome.record() == null
                             ? done(outcome.result())
                             : npcSkinSourceRepository
@@ -1936,30 +1943,44 @@ public final class BukkitAgentActions implements AgentActions {
     private record RenameOutcome(MutationResult result, NpcSkinSourceRepository.SkinSource record) {
     }
 
+    /** Lien dont la texture sera reconduite : la source enregistrée, sinon l'apparence par défaut. */
+    private static String urlToKeep(Optional<NpcSkinSourceRepository.SkinSource> recorded) {
+        return recorded.filter(r -> r.kind() == NpcSkinSourceRepository.Kind.URL)
+                .map(NpcSkinSourceRepository.SkinSource::value)
+                .orElse(NpcIdentityService.DEFAULT_SKIN_URL);
+    }
+
+    /**
+     * Issue #325 — résout un lien MineSkin puis pose sa texture sur le thread principal, relue
+     * après écriture. Le résultat dit exactement ce qui s'est passé : jamais « demande transmise ».
+     */
+    private CompletableFuture<com.lodygames.rpgquest.npc.NpcBehaviourOutcome> applyMineSkin(UUID citizensUuid,
+                                                                                       String url) {
+        return skinResolver.resolve(url).thenCompose(resolution -> resolution.ok()
+                ? onMain(() -> done(npcIdentityService.applyCitizensSkinTexture(citizensUuid, url,
+                        resolution.texture())))
+                : done(new com.lodygames.rpgquest.npc.NpcBehaviourOutcome(false, "SKIN_RESOLVE_FAILED",
+                        resolution.failure().message())));
+    }
+
     /**
      * Thread principal : décide si le renommage est sûr pour l'apparence, puis renomme.
      *
-     * <p><strong>Ce que Citizens permet réellement de savoir.</strong> L'artefact
-     * {@code citizensapi} — la seule dépendance Citizens de ce projet — <strong>n'expose aucune
-     * API de skin</strong> : ni {@code SkinTrait}, ni clé de skin dans l'enum public
-     * {@code NPC.Metadata} (vérifié sur {@code citizensapi:2.0.43}). Il est donc
-     * <strong>impossible</strong> de lire le skin actuellement appliqué à un PNJ, et donc de le
-     * restituer, sauf si c'est nous qui l'avons posé et enregistré.</p>
-     *
-     * <p>Conséquence assumée, plutôt qu'une préservation prétendue :</p>
      * <ul>
      *   <li>PNJ <strong>non joueur</strong> (villageois, zombie…) : aucun skin en jeu, le nom
      *       n'influence rien → renommage libre ;</li>
      *   <li>PNJ joueur avec une <strong>source enregistrée</strong> par le panel : elle est
      *       réappliquée avant le renommage → apparence réellement conservée ;</li>
-     *   <li>PNJ joueur <strong>sans source connue</strong> (skin posé directement via Citizens, ou
-     *       antérieur à la migration V27) : on <strong>refuse</strong>. Rattacher l'ancien nom
-     *       écraserait un éventuel skin explicite par une texture dérivée d'un pseudo — un
-     *       remplacement silencieux. Mieux vaut refuser et dire quoi faire.</li>
+     *   <li>PNJ joueur <strong>sans source connue</strong> : l'apparence par défaut est posée puis
+     *       enregistrée (issue #325), pour qu'un nom neuf ne lui donne pas le skin d'un inconnu.</li>
      * </ul>
+     *
+     * <p>Les textures sont posées par {@code SkinTrait} (issue #325) et relues : un lien
+     * {@code minesk.in} n'est jamais transmis tel quel à Citizens.</p>
      */
     private RenameOutcome renameKeepingSkin(UUID citizensUuid, String name,
-                                            Optional<NpcSkinSourceRepository.SkinSource> recorded) {
+                                            Optional<NpcSkinSourceRepository.SkinSource> recorded,
+                                            com.lodygames.rpgquest.npc.MineSkinResolver.Resolution texture) {
         Optional<String> before = npcIdentityService.citizensNameOf(citizensUuid);
         if (before.isEmpty()) {
             return new RenameOutcome(MutationResult.of(false, "CITIZENS_NPC_MISSING",
@@ -1981,10 +2002,12 @@ public final class BukkitAgentActions implements AgentActions {
         if (plan.decision() == SkinPreservationPlanner.Decision.APPLY_DEFAULT_THEN_RENAME) {
             // Issue #325 : aucune source connue → l'apparence par défaut est posée PUIS enregistrée
             // (RenameOutcome.record), pour que le prochain renommage la reconduise à l'identique.
-            if (!npcIdentityService.applyCitizensSkin(citizensUuid, NpcIdentityService.DEFAULT_SKIN_URL)) {
+            var applied = npcIdentityService.applyCitizensSkinTexture(citizensUuid,
+                    NpcIdentityService.DEFAULT_SKIN_URL, texture.texture());
+            if (!applied.ok()) {
                 return new RenameOutcome(MutationResult.of(false, "SKIN_ANCHOR_FAILED",
-                        "Renommage annulé : Citizens a refusé l'apparence par défaut. Aucun nom n'a "
-                                + "été changé."), null);
+                        "Renommage annulé : l'apparence par défaut n'a pas pu être posée ("
+                                + applied.message() + "). Aucun nom n'a été changé."), null);
             }
             RenameOutcome renamed = renameOnly(citizensUuid, name, previousName,
                     " Apparence par défaut appliquée.", "citizens:skin-url=" + NpcIdentityService.DEFAULT_SKIN_URL);
@@ -1995,8 +2018,13 @@ public final class BukkitAgentActions implements AgentActions {
         }
 
         NpcSkinSourceRepository.SkinSource source = recorded.orElseThrow();
+        if (source.kind() == NpcSkinSourceRepository.Kind.URL && !texture.ok()) {
+            return new RenameOutcome(MutationResult.of(false, "SKIN_RESOLVE_FAILED",
+                    "Renommage annulé : son apparence n'a pas pu être relue. " + texture.failure().message()
+                            + " Aucun nom n'a été changé."), null);
+        }
         boolean anchored = source.kind() == NpcSkinSourceRepository.Kind.URL
-                ? npcIdentityService.applyCitizensSkin(citizensUuid, source.value())
+                ? npcIdentityService.applyCitizensSkinTexture(citizensUuid, source.value(), texture.texture()).ok()
                 : npcIdentityService.pinCitizensSkinToName(citizensUuid, source.value());
         if (!anchored) {
             // Échec d'ancrage : ne jamais renommer derrière, et ne jamais rendre un faux succès.
@@ -2220,30 +2248,31 @@ public final class BukkitAgentActions implements AgentActions {
                         "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
             }
             UUID citizensUuid = uuid.get();
+            if (!byPlayerName) {
+                // Issue #325 : la texture exacte du lien est posée puis relue — succès = vérifié.
+                return applyMineSkin(citizensUuid, raw).thenCompose(applied -> applied.ok()
+                        ? npcSkinSourceRepository.save(citizensUuid, NpcSkinSourceRepository.Kind.URL, raw)
+                                .thenApply(ignored -> new MutationResult(true, "SKIN_APPLIED",
+                                        "Apparence posée sur le personnage et vérifiée. Les joueurs "
+                                                + "proches la voient tout de suite.",
+                                        List.of("citizens:skin-url=" + raw)))
+                        : done(MutationResult.of(false, applied.code(),
+                                applied.message() + " Le personnage garde son apparence actuelle.")));
+            }
             return onMain(() -> {
-                boolean accepted = byPlayerName
-                        ? npcIdentityService.pinCitizensSkinToName(citizensUuid, raw)
-                        : npcIdentityService.applyCitizensSkin(citizensUuid, raw);
-                if (!accepted) {
+                if (!npcIdentityService.pinCitizensSkinToName(citizensUuid, raw)) {
                     return done(MutationResult.of(false, "SKIN_REFUSED",
                             "Citizens a refusé la demande de skin (PNJ introuvable, ou type de PNJ "
                                     + "sans skin). Le skin précédent est conservé."));
                 }
-                // Citizens résout et télécharge lui-même, de façon asynchrone : RPGQuest ne fait
-                // aucun appel réseau et ne peut donc honnêtement confirmer que la PRISE EN COMPTE,
-                // jamais le rendu visuel ni l'existence du compte visé.
+                // Pseudo : Citizens télécharge lui-même le skin du compte, en tâche de fond. On ne
+                // peut confirmer que la prise en compte, jamais le rendu ni l'existence du compte.
                 return done(new MutationResult(true, "SKIN_REQUESTED",
-                        "Demande de skin transmise à Citizens (" + (byPlayerName ? "pseudo " : "lien ")
-                                + raw + "). La résolution est asynchrone et faite par Citizens : "
-                                + "vérifier en jeu. Le nom en jeu n'est pas modifié, et cette source "
-                                + "sera reconduite lors d'un renommage.",
-                        List.of(byPlayerName ? "citizens:skin-player=" + raw : "citizens:skin-url=" + raw)));
+                        "Demande transmise : le skin du compte « " + raw + " » arrive en jeu dans "
+                                + "quelques secondes si ce compte existe.",
+                        List.of("citizens:skin-player=" + raw)));
             }).thenCompose(result -> result.ok()
-                    ? npcSkinSourceRepository
-                            .save(citizensUuid,
-                                    byPlayerName ? NpcSkinSourceRepository.Kind.NAME
-                                            : NpcSkinSourceRepository.Kind.URL,
-                                    raw)
+                    ? npcSkinSourceRepository.save(citizensUuid, NpcSkinSourceRepository.Kind.NAME, raw)
                             .thenApply(ignored -> result)
                     : done(result));
         });
@@ -2417,9 +2446,11 @@ public final class BukkitAgentActions implements AgentActions {
      */
     private CompletableFuture<SkinOutcome> applyOptionalSkin(String npcId, String skin, boolean byPlayerName) {
         return citizensSkin(npcId, skin, byPlayerName).thenApply(r -> r.ok()
-                ? new SkinOutcome(true, NpcIdentityService.DEFAULT_SKIN_URL.equals(skin)
-                        ? "Apparence par défaut demandée (visible en jeu dans quelques secondes)."
-                        : "Apparence demandée (visible en jeu dans quelques secondes).")
+                ? new SkinOutcome(true, byPlayerName
+                        ? "Apparence demandée (visible en jeu dans quelques secondes)."
+                        : NpcIdentityService.DEFAULT_SKIN_URL.equals(skin)
+                                ? "Apparence par défaut posée et vérifiée."
+                                : "Apparence posée et vérifiée.")
                 : new SkinOutcome(false, "Le PNJ est créé, mais son apparence n'a pas été appliquée ("
                         + r.message() + "). La réappliquer depuis « Apparence » sur sa fiche."));
     }
@@ -2816,12 +2847,30 @@ public final class BukkitAgentActions implements AgentActions {
                             skinSources.containsKey(n.uuid())
                                     ? skinSources.get(n.uuid()).kind().name() : null,
                             skinSources.containsKey(n.uuid())
-                                    ? skinSources.get(n.uuid()).value() : null));
+                                    ? skinSources.get(n.uuid()).value() : null,
+                            skinMatchesSource(n, skinSources.get(n.uuid()))));
                 }
                 rows.sort((a, b) -> Integer.compare(a.numericId(), b.numericId()));
                 return done(new CitizensRosterView(true, List.copyOf(rows), rows.size(), available2, linked));
             });
         }));
+    }
+
+    /**
+     * Issue #325 — le PNJ porte-t-il réellement l'apparence enregistrée ? Compare l'image de la
+     * texture lue sur Citizens à celle du lien enregistré. {@code null} = on ne peut pas le savoir
+     * (pas un PNJ joueur, source par pseudo, lien personnalisé pas encore relu depuis le
+     * démarrage) — jamais « oui » par défaut. Thread principal.
+     */
+    private Boolean skinMatchesSource(CitizensNpc npc, NpcSkinSourceRepository.SkinSource source) {
+        if (!npc.playerType() || source == null || source.kind() != NpcSkinSourceRepository.Kind.URL) {
+            return null;
+        }
+        Optional<String> expected = skinResolver.knownHash(source.value());
+        if (expected.isEmpty()) {
+            return null;
+        }
+        return npcIdentityService.appliedSkinHash(npc.uuid()).map(expected.get()::equals).orElse(false);
     }
 
     @Override

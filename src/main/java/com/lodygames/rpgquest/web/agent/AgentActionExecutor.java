@@ -2430,6 +2430,7 @@ public final class AgentActionExecutor {
                 row.put("entityType", c.entityType());
                 row.put("skinSourceKind", c.skinSourceKind());
                 row.put("skinSourceValue", c.skinSourceValue());
+                row.put("skinMatchesSource", c.skinMatchesSource());
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();

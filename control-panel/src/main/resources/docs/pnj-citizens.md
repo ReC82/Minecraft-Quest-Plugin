@@ -161,22 +161,28 @@ Fiche du PNJ → section **Apparence**. L'état y est affiché, et repris sur la
 | **non applicable** | PNJ non joueur (villageois, zombie…), ou aucun PNJ Citizens lié | oui |
 
 > [!NOTE]
-> **« D'origine » ne veut pas dire « sans skin ».** L'API publique de Citizens ne permet pas de lire
-> le skin appliqué : RPGQuest ignore seulement d'où il vient. Depuis l'issue #325, renommer un tel PNJ
+> **« D'origine » ne veut pas dire « sans skin ».** RPGQuest ignore seulement d'où il vient. Depuis l'issue #325, renommer un tel PNJ
 > lui pose l'apparence par défaut (au lieu de refuser) ; choisissez-lui une apparence avant si vous
 > voulez en garder une autre.
 
-Deux sources, et seulement deux : un **lien MineSkin** (`https://minesk.in/…` — jamais la commande
-`/npc skin --url …`, refusée) ou un **pseudo Minecraft**, que Citizens résout lui-même. Le
-téléchargement est fait par Citizens : la fiche dit « demande envoyée », pas « appliquée », tant que
-le relevé suivant ne l'a pas confirmé — vérifier en jeu, une reconnexion du client peut être
-nécessaire. Un lien qui ne commence pas par `https://`, ou qui n'est pas un lien MineSkin, est
-refusé avec un message simple.
+Deux sources, et seulement deux : un **lien MineSkin** (`https://minesk.in/…`) ou un **pseudo
+Minecraft**.
+
+- **Lien MineSkin.** RPGQuest demande à MineSkin le skin exact de ce lien, le pose sur le personnage,
+  puis relit ce qu'il porte. « Apparence posée et vérifiée » veut donc dire que le personnage porte
+  bien cette image. Si MineSkin ne répond pas, ou ne connaît pas le lien, le message le dit et le
+  personnage garde son apparence actuelle. L'apparence par défaut est intégrée au plugin : elle
+  ne dépend pas de MineSkin.
+- **Pseudo.** Citizens télécharge lui-même le skin de ce compte, quelques secondes plus tard.
+
+Si la fiche indique **« Il ne porte pas son apparence en jeu »**, l'apparence enregistrée n'est pas
+celle que porte le personnage : le bouton **Réessayer** la repose. Un lien qui ne commence pas par
+`https://`, ou qui n'est pas un lien MineSkin, est refusé avec un message simple.
 
 > [!NOTE]
-> La fiche n'affiche **pas d'image** du skin, volontairement : Citizens ne donne pas accès à la
-> texture appliquée, et rendre une tête depuis un pseudo demanderait d'appeler un service d'images
-> tiers depuis votre navigateur. Mieux vaut la source exacte, nommée, qu'un visage peut-être faux.
+> Pourquoi pas `/npc skin --url https://minesk.in/…` ? Cette commande attend l'adresse d'une
+> **image**, et un lien `minesk.in` ouvre une page web. Citizens échoue alors sans le dire, et le
+> PNJ garde le skin du compte Minecraft qui porte son nom (c'est ce qui était arrivé à Lucien).
 
 ### En jeu, par commande Citizens
 

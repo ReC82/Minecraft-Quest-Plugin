@@ -8,6 +8,7 @@ import net.citizensnpcs.Settings;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.trait.LookClose;
+import net.citizensnpcs.trait.SkinTrait;
 import net.citizensnpcs.trait.waypoint.WanderWaypointProvider;
 import net.citizensnpcs.trait.waypoint.Waypoint;
 import net.citizensnpcs.trait.waypoint.WaypointProvider;
@@ -295,6 +296,55 @@ final class CitizensBehaviourBridge {
     }
 
     /** Toute écriture passe ici : une build incompatible produit un refus nommé, jamais un succès. */
+    // ------------------------------------------------------------------ Skin (issue #325)
+
+    /**
+     * Pose une texture signée sur le PNJ, puis la <strong>relit</strong> : on ne rapporte un succès
+     * que si le trait {@code skintrait} porte réellement cette texture après écriture.
+     *
+     * <p>{@code SkinTrait#setSkinPersistent} est le chemin public de {@code /npc skin -t} : il
+     * enregistre texture et signature (persistées par Citizens) et prévient les joueurs proches.
+     * {@code setFetchDefaultSkin(false)} empêche Citizens de revenir au skin du compte Minecraft qui
+     * porte le nom du PNJ — c'est ce repli qui donnait à Lucien l'apparence du compte « Lucien ».</p>
+     */
+    NpcBehaviourOutcome applySkinTexture(UUID uuid, String skinName, MineSkinTexture texture) {
+        return guarded(() -> {
+            NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+            if (npc == null) {
+                return NpcBehaviourOutcome.fail("CITIZENS_NOT_FOUND", "PNJ Citizens introuvable.");
+            }
+            SkinTrait trait = npc.getOrAddTrait(SkinTrait.class);
+            try {
+                trait.setFetchDefaultSkin(false);
+                trait.setSkinPersistent(skinName, texture.signature(), texture.value());
+            } catch (IllegalArgumentException e) {
+                return NpcBehaviourOutcome.fail("SKIN_TEXTURE_REFUSED",
+                        "Citizens a refusé cette texture de skin.");
+            }
+            CitizensAPI.getNPCRegistry().saveToStore();
+            if (!texture.value().equals(trait.getTexture()) || !texture.signature().equals(trait.getSignature())) {
+                return NpcBehaviourOutcome.fail("SKIN_NOT_APPLIED",
+                        "Citizens n'a pas retenu l'apparence demandée.");
+            }
+            return NpcBehaviourOutcome.ok("SKIN_APPLIED", "Apparence posée sur le personnage.");
+        });
+    }
+
+    /**
+     * Empreinte de l'image du skin que le PNJ porte réellement (texture enregistrée par Citizens),
+     * ou vide s'il n'a aucune texture enregistrée. Lire ne modifie rien : le trait n'est pas ajouté.
+     */
+    Optional<String> readSkinHash(UUID uuid) {
+        return guardedRead(() -> {
+            NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+            if (npc == null) {
+                return Optional.empty();
+            }
+            SkinTrait trait = npc.getTraitNullable(SkinTrait.class);
+            return trait == null ? Optional.empty() : MineSkinTexture.hashOf(trait.getTexture());
+        });
+    }
+
     private static NpcBehaviourOutcome guarded(java.util.function.Supplier<NpcBehaviourOutcome> body) {
         try {
             return body.get();

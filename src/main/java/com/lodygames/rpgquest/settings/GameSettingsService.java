@@ -99,6 +99,12 @@ public final class GameSettingsService implements PluginService {
         if (yaml.isSet("login.beta-warning.text")) {
             values.put("beta_warning_text", yaml.getString("login.beta-warning.text"));
         }
+        if (yaml.isSet("admin.bypass.available")) {
+            values.put("admin_bypass_available", String.valueOf(yaml.getBoolean("admin.bypass.available")));
+        }
+        if (yaml.isSet("admin.bypass.max-minutes")) {
+            values.put("admin_bypass_max_minutes", yaml.getString("admin.bypass.max-minutes"));
+        }
         GameSettings.Change change = d.with(values);
         String problem = change.ok() ? "" : "settings.yml : " + String.join(" ", change.errors())
                 + " Valeurs par défaut utilisées pour ces paramètres.";
@@ -138,6 +144,8 @@ public final class GameSettingsService implements PluginService {
         yaml.set("economy.currency-name", next.currencyName());
         yaml.set("login.beta-warning.enabled", next.betaWarningEnabled());
         yaml.set("login.beta-warning.text", next.betaWarningText());
+        yaml.set("admin.bypass.available", next.adminBypassAvailable());
+        yaml.set("admin.bypass.max-minutes", next.adminBypassMaxMinutes());
         yaml.set("meta.updated-at", at);
         yaml.set("meta.updated-by", by);
         try {

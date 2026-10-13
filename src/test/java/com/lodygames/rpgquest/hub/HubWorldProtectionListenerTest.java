@@ -53,6 +53,9 @@ class HubWorldProtectionListenerTest {
     Path tempDir;
 
     private ServerMock server;
+    /** Issue #35 : mode bypass explicite, fermé par défaut. */
+    private final com.lodygames.rpgquest.permission.AdminBypassMode bypass =
+            new com.lodygames.rpgquest.permission.AdminBypassMode(() -> com.lodygames.rpgquest.settings.GameSettings.DEFAULTS);
     private RPGQuestPlugin plugin;
     private World hub;
     private World other;
@@ -71,7 +74,7 @@ class HubWorldProtectionListenerTest {
         NpcIdentityService npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
 
-        listener = new HubWorldProtectionListener(() -> HUB_CONFIG, npcIdentityService);
+        listener = new HubWorldProtectionListener(() -> HUB_CONFIG, npcIdentityService, bypass);
     }
 
     @AfterEach
@@ -150,6 +153,13 @@ class HubWorldProtectionListenerTest {
         PlayerMock admin = server.addPlayer();
         admin.addAttachment(plugin, "rpgquest.admin.hub.combat", true);
         Cow cow = hub.spawn(new Location(hub, 0.5, 64, 0.5), Cow.class);
+        EntityDamageByEntityEvent withoutSession = new EntityDamageByEntityEvent(
+                admin, cow, EntityDamageEvent.DamageCause.ENTITY_ATTACK, 5.0);
+        listener.onEntityDamage(withoutSession);
+        assertTrue(withoutSession.isCancelled(), "issue #35 : le nœud combat seul ne suffit plus");
+
+        admin.addAttachment(plugin, com.lodygames.rpgquest.permission.AdminBypassMode.PERMISSION, true);
+        bypass.enable(admin);
         EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(
                 admin, cow, EntityDamageEvent.DamageCause.ENTITY_ATTACK, 5.0);
 

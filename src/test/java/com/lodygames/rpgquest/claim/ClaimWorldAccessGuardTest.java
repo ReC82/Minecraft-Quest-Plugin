@@ -14,6 +14,9 @@ import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
+import com.lodygames.rpgquest.permission.RpgPermissions;
+import com.lodygames.rpgquest.settings.GameSettings;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
@@ -63,6 +66,8 @@ class ClaimWorldAccessGuardTest {
     private ClaimService claimService;
     private YamlCustomItemRegistry customItemRegistry;
     private ClaimWorldAccessGuard guard;
+    private GameSettings settings = GameSettings.DEFAULTS;
+    private final AdminBypassMode bypass = new AdminBypassMode(() -> settings);
     private final AtomicInteger teleportNowCalls = new AtomicInteger();
     /** Destination réelle de la Pierre de retour ; vidée par un test pour simuler un spawn non résolu. */
     private Optional<Location> hubReturnTarget = Optional.empty();
@@ -102,7 +107,7 @@ class ClaimWorldAccessGuardTest {
         ClaimReturnService returnService = new ClaimReturnService(plugin, customItemRegistry,
                 () -> hubReturnTarget);
         guard = new ClaimWorldAccessGuard(plugin, claimService, returnService, () -> CLAIMS_CONFIG,
-                (player, portal) -> teleportNowCalls.incrementAndGet());
+                (player, portal) -> teleportNowCalls.incrementAndGet(), bypass);
     }
 
     @AfterEach
@@ -118,6 +123,12 @@ class ClaimWorldAccessGuardTest {
         player.teleport(new Location(server.getWorld("world_hub"), 2, 2, 2));
         player.nextMessage(); // vide le message de join éventuel.
         return player;
+    }
+
+    /** Session de bypass ouverte explicitement (issue #35), avec le droit de l'ouvrir. */
+    private void armBypass(PlayerMock player) {
+        player.addAttachment(plugin, AdminBypassMode.PERMISSION, true);
+        assertEquals(AdminBypassMode.Outcome.ENABLED, bypass.enable(player));
     }
 
     private void grantTierOne(PlayerMock player) throws Exception {
@@ -226,12 +237,105 @@ class ClaimWorldAccessGuardTest {
     void theExplicitBypassPermissionPasses() throws Exception {
         PlayerMock player = addPlayer();
         player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+        armBypass(player);
 
         assertTrue(guard.allowEntry(player, TO_CLAIMS));
         assertTrue(drainMessages(player).stream().noneMatch(m -> m.contains("réservé aux joueurs")),
                 "le bypass ne doit jamais être refusé");
         // Le bypass dispense du contrôle d'éligibilité, pas du moyen de repartir (issue #22).
         assertTrue(hasReturnStone(player), "un porteur du bypass reçoit tout de même sa Pierre de retour");
+    }
+
+    // ---- Issues #35/#321 : OP/DEOP × mode bypass ON/OFF × accès Claims ---------------------
+
+    @Test
+    void anOpWithoutTheBypassModeIsRefusedLikeAnyPlayer() throws Exception {
+        PlayerMock op = addPlayer();
+        op.setOp(true);
+
+        assertFalse(guard.allowEntry(op, TO_CLAIMS), "être OP ne contourne plus le verrou Claims (#321)");
+        awaitRefusal(op);
+        server.getScheduler().performTicks(5);
+        assertEquals(0, teleportNowCalls.get());
+        assertTrue(op.hasPermission(RpgPermissions.LEGACY_ADMIN_WORLD), "les droits d'administration de l'OP sont intacts");
+    }
+
+    @Test
+    void anOpWithTheBypassModeOnEntersThenIsRefusedAgainOnceItIsOff() throws Exception {
+        PlayerMock op = addPlayer();
+        op.setOp(true);
+        assertEquals(AdminBypassMode.Outcome.ENABLED, bypass.enable(op), "un OP peut ouvrir la session");
+
+        assertTrue(guard.allowEntry(op, TO_CLAIMS), "bypass ON : entrée sans CLAIM_TIER_1");
+
+        bypass.disable(op.getUniqueId());
+        assertFalse(guard.allowEntry(op, TO_CLAIMS), "bypass OFF : de nouveau les règles normales");
+        awaitRefusal(op);
+    }
+
+    @Test
+    void aDeoppedPlayerCannotOpenTheBypassAndIsRefused() throws Exception {
+        PlayerMock player = addPlayer();
+        player.setOp(false);
+
+        assertEquals(AdminBypassMode.Outcome.NO_PERMISSION, bypass.enable(player));
+        assertFalse(guard.allowEntry(player, TO_CLAIMS));
+        awaitRefusal(player);
+    }
+
+    @Test
+    void anOpWithAValidTierEntersWithoutTheBypass() throws Exception {
+        PlayerMock op = addPlayer();
+        op.setOp(true);
+        grantTierOne(op);
+
+        assertFalse(guard.allowEntry(op, TO_CLAIMS), "même parcours qu'un joueur normal : contrôle asynchrone");
+        pumpUntil(() -> teleportNowCalls.get() >= 1, "téléportation relancée pour un OP éligible");
+    }
+
+    @Test
+    void anInvalidOrFalseTierValueIsRefusedForAnOpToo() throws Exception {
+        for (String value : List.of("false", "TRUE", "oui", "1")) {
+            PlayerMock op = addPlayer();
+            op.setOp(true);
+            variableRepository.set(op.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, value)
+                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+            assertFalse(guard.allowEntry(op, TO_CLAIMS), "CLAIM_TIER_1=" + value);
+            awaitRefusal(op);
+        }
+        server.getScheduler().performTicks(5);
+        assertEquals(0, teleportNowCalls.get(), "aucune valeur autre que « true » ne débloque l'accès");
+    }
+
+    @Test
+    void theBypassNodeWithoutAnOpenSessionGrantsNothing() throws Exception {
+        PlayerMock player = addPlayer();
+        player.addAttachment(plugin, RpgPermissions.BYPASS_CLAIM_WORLD, true);
+
+        assertFalse(guard.allowEntry(player, TO_CLAIMS), "le nœud seul ne suffit plus : session explicite requise");
+        awaitRefusal(player);
+    }
+
+    @Test
+    void anOpenSessionWithoutABypassNodeGrantsNothing() throws Exception {
+        PlayerMock player = addPlayer();
+        armBypass(player); // rpgquest.admin.bypass seul, sans rpgquest.bypass.claimworld ni ombrelle.
+
+        assertFalse(guard.allowEntry(player, TO_CLAIMS), "le mode n'ajoute aucun droit, il arme ceux qu'on a");
+        awaitRefusal(player);
+    }
+
+    @Test
+    void whenTheModeIsWithdrawnInPlugAdminAnOpenSessionStopsCounting() throws Exception {
+        PlayerMock op = addPlayer();
+        op.setOp(true);
+        assertEquals(AdminBypassMode.Outcome.ENABLED, bypass.enable(op));
+        settings = GameSettings.DEFAULTS.with(java.util.Map.of("admin_bypass_available", "false")).settings();
+
+        assertFalse(guard.allowEntry(op, TO_CLAIMS));
+        awaitRefusal(op);
+        assertEquals(AdminBypassMode.Outcome.UNAVAILABLE, bypass.enable(op), "ni rouvrable");
     }
 
     // ---- Issue #22 : on n'entre pas sans le moyen de repartir ------------------------------
@@ -317,6 +421,7 @@ class ClaimWorldAccessGuardTest {
     void aBypassHolderIsNeverRefusedEvenWithoutAnyWayBack() throws Exception {
         PlayerMock player = addPlayer();
         player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+        armBypass(player);
         fillInventory(player);
         hubReturnTarget = Optional.empty();
 

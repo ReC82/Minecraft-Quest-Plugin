@@ -921,13 +921,17 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     private GameSettingsView settingsView(boolean ok, String message, com.lodygames.rpgquest.settings.GameSettings s) {
-        var d = com.lodygames.rpgquest.settings.GameSettings.DEFAULTS;
-        return new GameSettingsView(ok, message, Map.of("currency_name", s.currencyName(),
-                "beta_warning_enabled", String.valueOf(s.betaWarningEnabled()),
-                "beta_warning_text", s.betaWarningText()),
-                Map.of("currency_name", d.currencyName(), "beta_warning_enabled", String.valueOf(d.betaWarningEnabled()),
-                        "beta_warning_text", d.betaWarningText()),
+        return new GameSettingsView(ok, message, settingsValues(s),
+                settingsValues(com.lodygames.rpgquest.settings.GameSettings.DEFAULTS),
                 gameSettings.updatedAt(), gameSettings.updatedBy(), gameSettings.loadProblem());
+    }
+
+    private static Map<String, String> settingsValues(com.lodygames.rpgquest.settings.GameSettings s) {
+        return Map.of("currency_name", s.currencyName(),
+                "beta_warning_enabled", String.valueOf(s.betaWarningEnabled()),
+                "beta_warning_text", s.betaWarningText(),
+                "admin_bypass_available", String.valueOf(s.adminBypassAvailable()),
+                "admin_bypass_max_minutes", String.valueOf(s.adminBypassMaxMinutes()));
     }
 
     public void setCities(com.lodygames.rpgquest.city.CityRegistry registry,

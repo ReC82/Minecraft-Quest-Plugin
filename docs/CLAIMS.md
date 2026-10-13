@@ -104,7 +104,10 @@ les autres protections sont fixes, conformément à la mission.
 
 ## Bypass administrateur
 
-`rpgquest.admin.world` (même permission que le bypass des zones protégées)
+**Uniquement en mode bypass administrateur** (`/rpgadmin bypass on`, issue
+#35 — être OP ne suffit plus, voir `docs/PERMISSIONS.md`) :
+`rpgquest.bypass.claim` ou l'ombrelle `rpgquest.admin.world` (même logique
+que le bypass des zones protégées)
 exempte l'acteur direct d'une action de la protection d'un claim — jamais
 la victime. Le bypass s'applique de la même façon aux règles du monde des
 claims (`ClaimsWorldRulesListener`, construction hors de tout claim) — voir

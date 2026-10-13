@@ -98,7 +98,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "building", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content", "ville");
+            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "building", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content", "ville", "bypass");
     private static final List<String> TRAVEL_SUBCOMMANDS =
             List.of("beacon", "village", "diagnose", "repair", "restore", "signs", "maintenance");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
@@ -125,6 +125,15 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> BUILD_SITE_SUBCOMMANDS = List.of("tool", "list");
     /** Issue #178 — {@code /rpgadmin ville …}. */
     private static final List<String> CITY_SUBCOMMANDS = List.of("outil", "liste", "deplacer", "annuler");
+
+    /** Issue #35 — {@code /rpgadmin bypass on|off|status}. */
+    private static final List<String> BYPASS_SUBCOMMANDS = List.of("on", "off", "status");
+    private com.lodygames.rpgquest.permission.AdminBypassMode adminBypassMode;
+
+    /** Issue #35 — branché au démarrage : le mode bypass administrateur explicite. */
+    public void setAdminBypassMode(com.lodygames.rpgquest.permission.AdminBypassMode mode) {
+        this.adminBypassMode = mode;
+    }
 
     private com.lodygames.rpgquest.city.CityRegistry cities;
     private com.lodygames.rpgquest.city.PendingCityRegistry cityPendings;
@@ -268,6 +277,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 && !args[0].equalsIgnoreCase("buildsite")
                 && !args[0].equalsIgnoreCase("ville")
                 && !args[0].equalsIgnoreCase("building")
+                && !args[0].equalsIgnoreCase("bypass")
                 && !RpgPermissions.canRunLegacyAdminBranch(sender)) {
             sender.sendMessage(MM.deserialize(
                     "<red>Permission manquante pour cette sous-commande :</red> <white><permission></white>"
@@ -351,6 +361,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleWaystone(player, args);
         } else if (args[0].equalsIgnoreCase("travel")) {
             handleTravel(player, args);
+        } else if (args[0].equalsIgnoreCase("bypass")) {
+            handleBypass(player, args);
         } else {
             sendUsage(player);
         }
@@ -1091,6 +1103,72 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         } else {
             sendTravelUsage(player);
         }
+    }
+
+    /**
+     * Issue #35 — mode bypass administrateur explicite. Être OP ne contourne plus aucune règle de
+     * jeu : il faut ouvrir soi-même une session ({@code on}), qui exige
+     * {@code rpgquest.admin.bypass}, reste visible en barre d'action et se ferme à la déconnexion.
+     * Le mode n'ajoute aucun droit : il arme seulement les nœuds de bypass que le compte détient.
+     */
+    private void handleBypass(Player player, String[] args) {
+        if (adminBypassMode == null) {
+            player.sendMessage(MM.deserialize("<red>Mode bypass indisponible (non initialisé).</red>"));
+            return;
+        }
+        String mode = args.length >= 2 ? args[1].toLowerCase(Locale.ROOT) : "status";
+        switch (mode) {
+            case "on" -> {
+                switch (adminBypassMode.enable(player)) {
+                    case NO_PERMISSION -> player.sendMessage(MM.deserialize(
+                            "<red>Permission manquante :</red> <white><p></white>",
+                            Placeholder.unparsed("p", com.lodygames.rpgquest.permission.AdminBypassMode.PERMISSION)));
+                    case UNAVAILABLE -> player.sendMessage(MM.deserialize(
+                            "<red>Le mode bypass administrateur est désactivé sur ce serveur</red> "
+                                    + "<gray>(PlugAdmin > Paramètres généraux > Administration).</gray>"));
+                    case ENABLED -> {
+                        var status = adminBypassMode.status(player);
+                        plugin.getSLF4JLogger().info("[admin-bypass] {} : mode bypass ACTIVÉ ({})", player.getName(),
+                                status.remainingMillis() < 0 ? "jusqu'à la déconnexion"
+                                        : status.remainingMillis() / 60_000L + " min");
+                        player.sendMessage(MM.deserialize(
+                                "<red><bold>⚠ Mode bypass administrateur ACTIVÉ</bold></red> <gray>— <d>.</gray>\n"
+                                        + "<gray>Tu contournes les protections RPGQuest pour lesquelles tu as un droit "
+                                        + "de bypass (monde Claims, claims, zones, combat Hub). Ton jeu n'est plus celui "
+                                        + "d'un joueur normal : <white>/rpgadmin bypass off</white> pour revenir.</gray>",
+                                Placeholder.unparsed("d", describe(status))));
+                    }
+                }
+            }
+            case "off" -> {
+                boolean was = adminBypassMode.disable(player.getUniqueId());
+                if (was) {
+                    plugin.getSLF4JLogger().info("[admin-bypass] {} : mode bypass désactivé", player.getName());
+                }
+                player.sendActionBar(net.kyori.adventure.text.Component.empty());
+                player.sendMessage(MM.deserialize(was
+                        ? "<green>Mode bypass administrateur désactivé.</green> <gray>Les règles de jeu s'appliquent "
+                                + "de nouveau à toi, comme à un joueur normal.</gray>"
+                        : "<gray>Le mode bypass administrateur n'était pas actif.</gray>"));
+            }
+            case "status" -> {
+                var status = adminBypassMode.status(player);
+                player.sendMessage(MM.deserialize(status.active()
+                                ? "<red><bold>Mode bypass administrateur : ACTIF</bold></red> <gray>— <d>.</gray>"
+                                : "<green>Mode bypass administrateur : inactif</green> <gray>— les règles de jeu "
+                                        + "s'appliquent à toi comme à un joueur normal, même OP.</gray>",
+                        Placeholder.unparsed("d", describe(status))));
+            }
+            default -> player.sendMessage(MM.deserialize("<yellow>/rpgadmin bypass <on|off|status></yellow>"));
+        }
+    }
+
+    private static String describe(com.lodygames.rpgquest.permission.AdminBypassMode.Status status) {
+        if (status.remainingMillis() < 0) {
+            return "jusqu'à ta déconnexion ou au redémarrage du serveur";
+        }
+        long minutes = Math.max(1L, (status.remainingMillis() + 59_999L) / 60_000L);
+        return "encore " + minutes + " min au plus";
     }
 
     /**
@@ -3242,6 +3320,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 && cities != null) {
             return cities.all().stream().map(c -> c.id())
                     .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("bypass")) {
+            return BYPASS_SUBCOMMANDS.stream()
+                    .filter(c -> c.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("buildsite")) {
             return BUILD_SITE_SUBCOMMANDS.stream()

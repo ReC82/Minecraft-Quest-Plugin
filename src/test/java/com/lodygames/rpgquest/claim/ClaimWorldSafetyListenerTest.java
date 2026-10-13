@@ -49,6 +49,9 @@ class ClaimWorldSafetyListenerTest {
     Path tempDir;
 
     private ServerMock server;
+    /** Issue #35 : mode bypass explicite, fermé par défaut. */
+    private final com.lodygames.rpgquest.permission.AdminBypassMode bypass =
+            new com.lodygames.rpgquest.permission.AdminBypassMode(() -> com.lodygames.rpgquest.settings.GameSettings.DEFAULTS);
     private RPGQuestPlugin plugin;
     private DatabaseManager database;
     private PlayerProfileRepository profileRepository;
@@ -93,7 +96,7 @@ class ClaimWorldSafetyListenerTest {
         ClaimReturnService returnService = new ClaimReturnService(plugin, customItemRegistry,
                 () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
         listener = new ClaimWorldSafetyListener(plugin, claimService, returnService, () -> CLAIMS_CONFIG,
-                () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+                () -> Optional.of(new Location(hubWorld, 0, 64, 0)), bypass);
     }
 
     @AfterEach
@@ -246,6 +249,8 @@ class ClaimWorldSafetyListenerTest {
     void theExplicitBypassPermissionIsNeverBouncedButStillGetsAStone() throws Exception {
         PlayerMock player = addPlayer();
         player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+        player.addAttachment(plugin, com.lodygames.rpgquest.permission.AdminBypassMode.PERMISSION, true);
+        bypass.enable(player);
 
         arriveInClaims(player);
 
@@ -259,6 +264,8 @@ class ClaimWorldSafetyListenerTest {
     void aBypassHolderWhoAlreadyHasAStoneGetsNoDuplicate() throws Exception {
         PlayerMock player = addPlayer();
         player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+        player.addAttachment(plugin, com.lodygames.rpgquest.permission.AdminBypassMode.PERMISSION, true);
+        bypass.enable(player);
 
         arriveInClaims(player);
         pumpUntil(() -> hasReturnStone(player), "1re Pierre de retour");
@@ -272,6 +279,8 @@ class ClaimWorldSafetyListenerTest {
     void aBypassHolderWithAFullInventoryGetsTheStoneAtTheirFeetAndIsToldSo() throws Exception {
         PlayerMock player = addPlayer();
         player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+        player.addAttachment(plugin, com.lodygames.rpgquest.permission.AdminBypassMode.PERMISSION, true);
+        bypass.enable(player);
         fillInventory(player);
         assertEquals(-1, player.getInventory().firstEmpty(),
                 "précondition : l'inventaire doit être réellement plein");

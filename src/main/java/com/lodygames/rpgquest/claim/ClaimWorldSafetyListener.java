@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.claim;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,9 +33,9 @@ import org.bukkit.event.player.PlayerJoinEvent;
  *       on s'assure qu'il détient une <em>Pierre de retour</em> ({@link RpgItemKeys#PIERRE_RETOUR}) —
  *       objet de voyage claims → Hub géré par {@code travel.ItemTravelService}, permanent, jamais
  *       consommé, clic droit sans commande. Idempotent (jamais de second exemplaire) ;</li>
- *   <li><strong>joueur non éligible</strong> et sans le bypass {@code rpgquest.admin.world} : il est
+ *   <li><strong>joueur non éligible</strong> et sans le mode bypass administrateur actif (#35) : il est
  *       immédiatement renvoyé au Hub avec un message — jamais laissé sur place.</li>
- *   <li><strong>porteur du bypass</strong> {@code rpgquest.admin.world} : <strong>jamais</strong>
+ *   <li><strong>en mode bypass administrateur</strong> (#35, nœud {@code rpgquest.bypass.claimworld} ou ombrelle) : <strong>jamais</strong>
  *       téléporté de force — il est venu volontairement — mais il reçoit tout de même une Pierre de
  *       retour. Le bypass dispensait auparavant des deux, ce qui laissait un administrateur éligible
  *       sans aucune sortie (issue #22, blocage signalé le 05/10).</li>
@@ -54,14 +55,18 @@ public final class ClaimWorldSafetyListener implements Listener {
     /** Cible de repli au Hub (spawn du village configuré, sinon spawn du monde Hub) — jamais une position figée. */
     private final Supplier<Optional<Location>> hubReturnTarget;
 
+    /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
+    private final AdminBypassMode bypass;
+
     public ClaimWorldSafetyListener(RPGQuestPlugin plugin, ClaimService claimService,
                                      ClaimReturnService returnService, Supplier<ClaimConfig> config,
-                                     Supplier<Optional<Location>> hubReturnTarget) {
+                                     Supplier<Optional<Location>> hubReturnTarget, AdminBypassMode bypass) {
         this.plugin = plugin;
         this.claimService = claimService;
         this.returnService = returnService;
         this.config = config;
         this.hubReturnTarget = hubReturnTarget;
+        this.bypass = bypass;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -84,7 +89,7 @@ public final class ClaimWorldSafetyListener implements Listener {
         UUID playerId = player.getUniqueId();
         // Issue #200 : même règle que le garde d'accès — nœud dédié OU ombrelle historique.
         // Le correctif #22 est préservé : un porteur du bypass reçoit malgré tout sa Pierre.
-        if (RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
+        if (bypass.allows(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
             // Issue #22, cause racine du blocage signalé le 05/10. Le bypass dispensait de TOUT :
             // ni renvoi au Hub, ni Pierre de retour. Un administrateur éligible, arrivé ici par
             // portail, se retrouvait donc sans aucune sortie — exactement ce que ce filet existe

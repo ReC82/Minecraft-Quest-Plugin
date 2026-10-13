@@ -51,7 +51,7 @@ commands:
     usage: /<command> <create <typeId>|remove|inspect>
   rpgadmin:
     description: Commandes d'administration du monde (aplatissement, zones, portails, PNJ, spawn, mondes supplémentaires...).
-    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination|npc tag [id]|untag|info|spawn set|tp|world create <name>|tp <name>|list|worldportal create <id> <destinationWorld>|info <id>|list|enable <id>|disable <id>|delete <id>
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination|npc tag [id]|untag|info|spawn set|tp|world create <name>|tp <name>|list|worldportal create <id> <destinationWorld>|info <id>|list|enable <id>|disable <id>|delete <id>|bypass <on|off|status>
   money:
     description: Portefeuille et paiements entre joueurs.
     usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]
@@ -88,7 +88,7 @@ permissions:
     description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
     default: true
   rpgquest.admin.world:
-    description: "OMBRELLE HISTORIQUE (issues #27/#200). La détenir implique TOUS les droits découpés ci-dessous : construction dans les Hubs, bypass claims/zones/monde des claims, et toutes les branches de /rpgadmin. Conservée pour ne casser aucun administrateur existant. NE JAMAIS l'attribuer à un groupe builder ou éditeur de PNJ : elle donne tout."
+    description: "OMBRELLE HISTORIQUE (issues #27/#200). La détenir implique TOUS les droits découpés ci-dessous : construction dans les Hubs, bypass claims/zones/monde des claims (uniquement pendant une session /rpgadmin bypass on, issue #35), et toutes les branches de /rpgadmin. Conservée pour ne casser aucun administrateur existant. NE JAMAIS l'attribuer à un groupe builder ou éditeur de PNJ : elle donne tout."
     default: op
   rpgquest.admin.command:
     description: "Entrer dans /rpgadmin, SANS autoriser aucune branche (issue #200). Chaque sous-commande exige en plus son propre nœud, ou l'ombrelle rpgquest.admin.world. Un compte ne portant que ce nœud peut ouvrir la commande et n'exécuter aucune opération."
@@ -122,13 +122,13 @@ permissions:
     description: "Construire dans le Wild (issue #200). SANS EFFET à ce jour : le Wild n'a aucune restriction de construction, un joueur ordinaire y construit déjà librement. Ce nœud existe pour la convention et pour un éventuel verrou futur ; il n'accorde AUCUN bypass de zone protégée, de claim ou de waypoint — or le Wild en contient."
     default: false
   rpgquest.bypass.claim:
-    description: "Contourner la protection des claims d'autrui (issue #200). Strictement distinct de toute permission de construction : un builder de Hub ne l'obtient jamais par sa permission de build."
+    description: "Contourner la protection des claims d'autrui (issue #200). Strictement distinct de toute permission de construction : un builder de Hub ne l'obtient jamais par sa permission de build. Ne s'applique que pendant une session /rpgadmin bypass on (issue #35)."
     default: false
   rpgquest.bypass.zone:
-    description: "Contourner la protection des zones (issue #200). Distinct des claims et de la construction."
+    description: "Contourner la protection des zones (issue #200). Distinct des claims et de la construction. Ne s'applique que pendant une session /rpgadmin bypass on (issue #35)."
     default: false
   rpgquest.bypass.claimworld:
-    description: "Accès et règles administratifs du MONDE des claims (issue #200) : entrer sans être éligible et ignorer les règles de ce monde. Préserve le correctif #22 — l'entrée n'est jamais refusée à un porteur, et il reçoit malgré tout une Pierre de retour."
+    description: "Accès et règles administratifs du MONDE des claims (issue #200) : entrer sans être éligible et ignorer les règles de ce monde. Préserve le correctif #22 — l'entrée n'est jamais refusée à un porteur, et il reçoit malgré tout une Pierre de retour. Ne s'applique que pendant une session /rpgadmin bypass on (issue #35)."
     default: false
   rpgquest.admin.travel.maintenance:
     description: "Autorise, APRÈS activation explicite via /rpgadmin travel maintenance on, à casser les blocs d'un waypoint ou d'une borne de voyage (issue #191). Volontairement PAS accordée aux opérateurs : un bypass implicite par statut OP permettait de détruire ces structures sans geste délibéré."
@@ -137,7 +137,10 @@ permissions:
     description: Permission stricte supplémentaire pour les écritures bas niveau de debug (/rpgadmin player variable set). Ne jamais accorder à un joueur normal.
     default: op
   rpgquest.admin.hub.combat:
-    description: Bypass explicite (issues #30/#31), distinct de la construction, autorisant à infliger des dégâts aux entités protégées du Hub. Ne jamais accorder à un joueur normal.
+    description: "Bypass explicite (issues #30/#31), distinct de la construction, autorisant à infliger des dégâts aux entités protégées du Hub. Depuis #35, ne compte QUE pendant une session /rpgadmin bypass on. Ne jamais accorder à un joueur normal."
+    default: op
+  rpgquest.admin.bypass:
+    description: "Ouvrir soi-même une session de mode bypass administrateur (/rpgadmin bypass on|off|status, issue #35). N'accorde AUCUN contournement par elle-même : pendant la session, seuls les nœuds de bypass déjà détenus (rpgquest.bypass.*, rpgquest.admin.hub.combat ou l'ombrelle rpgquest.admin.world) s'appliquent. Hors session, un OP joue comme un joueur normal. Session visible en barre d'action, close à la déconnexion et au redémarrage."
     default: op
   rpgquest.money:
     description: Accès aux commandes joueur d'économie (/money, /money pay).

@@ -51,6 +51,9 @@ class ZoneProtectionListenerTest {
     Path tempDir;
 
     private ServerMock server;
+    /** Issue #35 : mode bypass explicite, fermé par défaut. */
+    private final com.lodygames.rpgquest.permission.AdminBypassMode bypass =
+            new com.lodygames.rpgquest.permission.AdminBypassMode(() -> com.lodygames.rpgquest.settings.GameSettings.DEFAULTS);
     private RPGQuestPlugin plugin;
     private World world;
     private DatabaseManager database;
@@ -72,7 +75,7 @@ class ZoneProtectionListenerTest {
         // Zone protégée (PvP/casse/explosions/mobs/environnement bloqués) couvrant -10..10 sur x/z.
         registry.create(new ZoneDefinition("safe", "world", -10, 0, -10, 10, 255, 10, ZoneFlags.defaults()));
 
-        listener = new ZoneProtectionListener(registry, npcIdentityService);
+        listener = new ZoneProtectionListener(registry, npcIdentityService, bypass);
     }
 
     @AfterEach
@@ -120,6 +123,7 @@ class ZoneProtectionListenerTest {
     void blockBreakByABypassingAdminIsAllowed() {
         PlayerMock admin = server.addPlayer();
         admin.setOp(true); // rpgquest.admin.world est "default: op"
+        bypass.enable(admin); // issue #35 : le bypass exige une session explicite.
         Block block = world.getBlockAt(0, 64, 0);
         BlockBreakEvent event = new BlockBreakEvent(block, admin);
 
@@ -159,6 +163,7 @@ class ZoneProtectionListenerTest {
     void blockPlaceByABypassingAdminIsAllowed() {
         PlayerMock admin = server.addPlayer();
         admin.setOp(true);
+        bypass.enable(admin);
         Block block = world.getBlockAt(0, 64, 0);
         block.setType(Material.STONE);
         BlockPlaceEvent event = new BlockPlaceEvent(block, block.getState(), block.getRelative(0, -1, 0),
@@ -201,6 +206,7 @@ class ZoneProtectionListenerTest {
     void pvpDamageByABypassingAdminIsAllowed() {
         PlayerMock attacker = server.addPlayer();
         attacker.setOp(true);
+        bypass.enable(attacker);
         PlayerMock victim = server.addPlayer();
         victim.teleport(new Location(world, 0.5, 64, 0.5));
         EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(

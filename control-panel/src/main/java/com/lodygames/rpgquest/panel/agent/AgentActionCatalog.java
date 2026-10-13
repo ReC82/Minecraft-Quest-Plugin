@@ -670,7 +670,8 @@ public final class AgentActionCatalog {
      * l'agent. Les mutations exigent {@code confirm=true} dans le formulaire.
      */
     /** Issue #335 — clés de {@code settings.set}, les mêmes que le plugin. */
-    public static final List<String> SETTINGS_KEYS = List.of("currency_name", "beta_warning_enabled", "beta_warning_text");
+    public static final List<String> SETTINGS_KEYS = List.of("currency_name", "beta_warning_enabled", "beta_warning_text",
+            "admin_bypass_available", "admin_bypass_max_minutes");
 
     public static Validation validate(String type, Map<String, String> form) {
         Optional<Spec> maybe = spec(type);
@@ -1984,6 +1985,14 @@ public final class AgentActionCatalog {
                 String text = params.get("beta_warning_text");
                 if (text != null && (text.isEmpty() || text.length() > 500 || text.indexOf('<') >= 0)) {
                     return Validation.fail("Texte de l'avertissement : 1 à 500 caractères, sans balise.");
+                }
+                String bypassOn = params.get("admin_bypass_available");
+                if (bypassOn != null && !"true".equals(bypassOn) && !"false".equals(bypassOn)) {
+                    return Validation.fail("Mode bypass administrateur : proposé ou désactivé.");
+                }
+                String bypassMinutes = params.get("admin_bypass_max_minutes");
+                if (bypassMinutes != null && (!bypassMinutes.matches("\\d{1,3}") || Integer.parseInt(bypassMinutes) > 480)) {
+                    return Validation.fail("Durée maximale du mode bypass : 0 à 480 minutes.");
                 }
                 String actor = trim(form.get("actor"));
                 if (!actor.isEmpty()) {

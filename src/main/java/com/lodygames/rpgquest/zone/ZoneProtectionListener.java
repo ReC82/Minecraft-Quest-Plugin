@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.zone;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Map;
 import java.util.Optional;
@@ -48,7 +49,7 @@ import org.jetbrains.annotations.Nullable;
  * ne coûte qu'un accès de map vide — jamais de balayage de toutes les
  * zones ni de tous les mondes.
  *
- * <p>Bypass ({@code rpgquest.admin.world}, la même permission que {@code
+ * <p>Bypass (mode bypass administrateur activé, issue #35, avec {@code rpgquest.bypass.zone} ou {@code rpgquest.admin.world}, la même permission que {@code
  * /rpgadmin flatten}) : vérifié sur l'acteur direct de chaque action
  * (joueur qui casse/pose/interagit, ou dégâts PvP/NPC), jamais sur la
  * victime — un administrateur peut agir librement dans la zone, mais
@@ -95,9 +96,13 @@ public final class ZoneProtectionListener implements Listener {
     private final NpcIdentityService npcIdentityService;
     private final Map<UUID, String> currentZoneByPlayer = new ConcurrentHashMap<>();
 
-    public ZoneProtectionListener(ZoneRegistry registry, NpcIdentityService npcIdentityService) {
+    /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
+    private final AdminBypassMode bypass;
+
+    public ZoneProtectionListener(ZoneRegistry registry, NpcIdentityService npcIdentityService, AdminBypassMode bypass) {
         this.registry = registry;
         this.npcIdentityService = npcIdentityService;
+        this.bypass = bypass;
     }
 
     // ---- Dégâts (PvP, mobs hostiles, environnement, explosions, PNJ) -------------------------
@@ -403,6 +408,6 @@ public final class ZoneProtectionListener implements Listener {
     private boolean isBypassing(Player player) {
         // Issue #200 : nœud DÉDIÉ au bypass de zone. Aucune permission de construction ne
         // passe par ici — construire et contourner une protection sont deux droits distincts.
-        return RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_ZONE);
+        return bypass.allows(player, RpgPermissions.BYPASS_ZONE);
     }
 }

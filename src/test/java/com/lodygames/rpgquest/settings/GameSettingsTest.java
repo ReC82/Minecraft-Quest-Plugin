@@ -35,6 +35,25 @@ class GameSettingsTest {
     }
 
     @Test
+    void theAdminBypassModeIsOfferedButLimitedToTheSessionByDefault() throws Exception {
+        assertTrue(GameSettings.DEFAULTS.adminBypassAvailable());
+        assertEquals(0, GameSettings.DEFAULTS.adminBypassMaxMinutes(), "0 = jusqu'à la déconnexion");
+        assertFalse(GameSettings.DEFAULTS.with(Map.of("admin_bypass_max_minutes", "481")).ok());
+        assertFalse(GameSettings.DEFAULTS.with(Map.of("admin_bypass_max_minutes", "-1")).ok());
+        assertFalse(GameSettings.DEFAULTS.with(Map.of("admin_bypass_available", "oui")).ok());
+
+        GameSettingsService service = new GameSettingsService(dir, LoggerFactory.getLogger("t"));
+        service.start();
+        assertTrue(service.update(Map.of("admin_bypass_available", "false", "admin_bypass_max_minutes", "45"),
+                "owner").ok());
+        GameSettingsService again = new GameSettingsService(dir, LoggerFactory.getLogger("t"));
+        again.start();
+        assertFalse(again.current().adminBypassAvailable());
+        assertEquals(45, again.current().adminBypassMaxMinutes());
+        assertTrue(Files.readString(dir.resolve("settings.yml")).contains("max-minutes: 45"));
+    }
+
+    @Test
     void savingWritesThenRereadsAndRecordsTheAuthor() throws Exception {
         GameSettingsService service = new GameSettingsService(dir, LoggerFactory.getLogger("t"));
         service.start();

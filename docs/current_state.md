@@ -6,9 +6,17 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Mode bypass administrateur explicite (#35, corrige #321, 14/10/2026)** — être OP ne contourne
+> plus aucune règle de jeu (accès et règles du monde Claims, claims d'autrui, zones protégées,
+> combat au Hub). `/rpgadmin bypass on|off|status` (permission `rpgquest.admin.bypass`, défaut OP) ouvre
+> une session en mémoire, visible en barre d'action, close à la déconnexion/au redémarrage ; elle
+> n'arme que les nœuds de bypass déjà détenus. Réglages globaux (proposé/désactivé, durée maximale)
+> dans PlugAdmin > Paramètres généraux > Administration. Droits d'administration et de construction
+> inchangés. Validation en jeu : PENDING.
+>
 > **Paramètres généraux (#335, 14/10/2026)** — PlugAdmin > Paramètres généraux : nom de la monnaie
 > (LodyCoins, propagé partout), avertissement bêta à la connexion (#28, « OK » / « OK et ne plus
-> afficher »), rubrique Administration sans faux interrupteur (#35 à venir) ; `settings.yml` écrit et
+> afficher »), rubrique Administration (réglages du mode bypass, #35) ; `settings.yml` écrit et
 > relu par le plugin. OP/DEOP : message privé au joueur (#316). Joueurs : résultats de reset datés et
 > par joueur (#317), variables relues et typées (#319, migration `CLAIM_TIER` préparée seulement).
 > Matrice des droits : `docs/PERMISSIONS.md` (#27).

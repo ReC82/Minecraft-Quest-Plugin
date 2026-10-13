@@ -200,4 +200,26 @@ class NpcAppearanceTest {
         assertEquals("par défaut", a.label());
         assertEquals("apparence par défaut", a.sourceLabel());
     }
+
+    @Test
+    @DisplayName("Issue #325 : une source enregistrée que le personnage ne porte pas est une erreur à réessayer")
+    void aRecordedSourceThatIsNotWornIsAnErrorToRetry() {
+        NpcAppearance a = NpcAppearance.of(true, "PLAYER", "URL", NpcAppearance.DEFAULT_SKIN_URL,
+                false, LastAttempt.NONE);
+        assertEquals(Status.ERROR, a.status());
+        assertEquals(Reason.NOT_WORN, a.reason());
+        assertTrue(a.explanation().contains("Réessayer"), a.explanation());
+    }
+
+    @Test
+    @DisplayName("Issue #325 : une apparence relue sur le personnage est annoncée comme vérifiée")
+    void aWornSourceIsAnnouncedAsChecked() {
+        NpcAppearance a = NpcAppearance.of(true, "PLAYER", "URL", NpcAppearance.DEFAULT_SKIN_URL,
+                true, LastAttempt.NONE);
+        assertEquals(Status.CONFIGURED, a.status());
+        assertTrue(a.explanation().contains("Vérifié"), a.explanation());
+        NpcAppearance unknown = NpcAppearance.of(true, "PLAYER", "URL", "https://minesk.in/abcd1234",
+                null, LastAttempt.NONE);
+        assertFalse(unknown.explanation().contains("Vérifié"), "invérifiable : rien n'est affirmé");
+    }
 }

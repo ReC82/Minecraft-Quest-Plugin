@@ -48,6 +48,31 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-13 - Apparence par défaut réellement posée sur les PNJ (#325, correctif)
+
+### Changement
+
+Un lien `https://minesk.in/…` n'est plus transmis à `/npc skin --url` (qui attend une image et
+échouait en silence : Lucien portait le skin du compte Minecraft « Lucien »). Le plugin lit la
+texture signée sur l'API publique MineSkin (`api.mineskin.org/v2/skins/<id>`, sans clé), la pose
+via `SkinTrait` et la relit. L'apparence par défaut est embarquée dans le JAR (aucun appel réseau).
+Le relevé des PNJ indique si l'image portée est bien celle enregistrée (`skinMatchesSource`) ; la
+fiche propose « Réessayer » sinon.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest et redéploiement de PlugAdmin. Aucune migration. Puis, depuis la fiche
+de Lucien, « Réessayer » l'apparence (aucune recréation, dialogue et liaisons intacts).
+
+### Sauvegarde préalable
+
+JAR déployé + `data.db` + `Citizens/saves.yml`.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : voir Lucien en jeu avec le skin
+`https://minesk.in/f534ead9d5a3413e9bb51bce9b211995`.
+
 ## 2026-10-13 - PNJ simplifiés dans PlugAdmin (#325)
 
 ### Changement

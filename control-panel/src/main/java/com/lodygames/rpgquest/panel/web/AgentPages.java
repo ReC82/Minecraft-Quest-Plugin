@@ -4577,7 +4577,10 @@ public final class AgentPages {
             problems.add(new NpcProblem("Ce PNJ n'est pas complètement rattaché à RPGQuest.", slug + "-f-attach",
                     "Terminer le rattachement"));
         }
-        if (appearance.status() == NpcAppearance.Status.ERROR) {
+        if (appearance.reason() == NpcAppearance.Reason.NOT_WORN) {
+            problems.add(new NpcProblem("Il ne porte pas son apparence en jeu.", slug + "-f-skin",
+                    "Réessayer"));
+        } else if (appearance.status() == NpcAppearance.Status.ERROR) {
             problems.add(new NpcProblem("La dernière apparence n'a pas pu être appliquée.", slug + "-f-skin",
                     "Choisir une apparence"));
         }
@@ -4831,6 +4834,20 @@ public final class AgentPages {
         sb.append("<p class=\"form-text\">").append(Http.esc(card.appearance().explanation())).append("</p>");
         if (card.appearance().reason() == NpcAppearance.Reason.NON_PLAYER) {
             return sb.toString();
+        }
+        String recorded = card.citizens() == null ? ""
+                : "URL".equalsIgnoreCase(str(card.citizens().get("skinSourceKind")))
+                        ? cleanNull(str(card.citizens().get("skinSourceValue"))) : "";
+        if (card.appearance().status() == NpcAppearance.Status.ERROR && recorded.startsWith("https://")) {
+            // Issue #325 : réessayer la même apparence en un clic, sans recopier le lien.
+            sb.append(formStart(session, agentId, "npc.citizens.skin", "/npcs", "")
+                    .replaceFirst("<form ", "<form data-submit-once class=\"npc-retry\" "));
+            sb.append(npcHidden(card.id()));
+            sb.append("<input type=\"hidden\" name=\"skin_source\" value=\"url\">");
+            sb.append("<input type=\"hidden\" name=\"skin_url\" value=\"").append(Http.esc(recorded)).append("\">");
+            sb.append(mutationConsent("npc.citizens.skin", "Confirmer l'apparence", null));
+            sb.append("<button class=\"btn\" type=\"submit\" data-busy-label=\"Application…\">Réessayer</button></form>");
+            sb.append("<p class=\"form-text\">Ou choisissez une autre apparence :</p>");
         }
         sb.append(formStart(session, agentId, "npc.citizens.skin", "/npcs", "")
                 .replaceFirst("<form ", "<form data-submit-once "));
@@ -7011,9 +7028,10 @@ public final class AgentPages {
         if (!boundCitizens || citizensRow == null) {
             return NpcAppearance.of(false, "", "", "", NpcAppearance.LastAttempt.NONE);
         }
+        Object worn = citizensRow.get("skinMatchesSource");
         return NpcAppearance.of(true, str(citizensRow.get("entityType")),
                 str(citizensRow.get("skinSourceKind")), str(citizensRow.get("skinSourceValue")),
-                lastAppearanceAttempt(agentId, npcId));
+                worn instanceof Boolean b ? b : null, lastAppearanceAttempt(agentId, npcId));
     }
 
     // ================================================================================

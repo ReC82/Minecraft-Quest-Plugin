@@ -286,11 +286,28 @@ public final class NpcIdentityService {
     }
 
     /**
-     * Issue #165 — applique un skin MineSkin au PNJ Citizens d'UUID donné.
-     * <strong>Thread principal</strong> (sélection + commande Citizens atomiques).
+     * Issue #325 — pose sur le PNJ la texture signée d'un lien MineSkin (résolue au préalable par
+     * {@link MineSkinResolver}), puis la relit. <strong>Thread principal.</strong>
+     *
+     * <p>Le nom de skin donné à Citizens est l'identifiant MineSkin (32 caractères) : aucun compte
+     * Minecraft ne peut porter ce nom (16 au plus), donc Citizens ne peut jamais le confondre avec
+     * le skin d'un joueur réel.</p>
      */
-    public boolean applyCitizensSkin(UUID citizensUuid, String minesSkinUrl) {
-        return citizensBridge != null && citizensBridge.applySkinUrlByUuid(citizensUuid, minesSkinUrl);
+    public NpcBehaviourOutcome applyCitizensSkinTexture(UUID citizensUuid, String mineSkinUrl,
+                                                        MineSkinTexture texture) {
+        if (behaviourBridge == null) {
+            return behaviourUnavailable();
+        }
+        String id = mineSkinUrl.substring(mineSkinUrl.lastIndexOf('/') + 1);
+        return behaviourBridge.applySkinTexture(citizensUuid, id, texture);
+    }
+
+    /**
+     * Empreinte de l'image que le PNJ porte réellement, ou vide (aucune texture enregistrée, ou
+     * build Citizens qui ne l'expose pas). <strong>Thread principal.</strong>
+     */
+    public Optional<String> appliedSkinHash(UUID citizensUuid) {
+        return behaviourBridge == null ? Optional.empty() : behaviourBridge.readSkinHash(citizensUuid);
     }
 
     /**

@@ -75,7 +75,12 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
         /** PNJ joueur dont la source d'apparence est inconnue — le renommage sera refusé. */
         SOURCE_UNKNOWN,
         /** Citizens n'a pas donné le type : le renommage sera refusé aussi, par prudence. */
-        TYPE_UNKNOWN
+        TYPE_UNKNOWN,
+        /**
+         * Issue #325 — la source est enregistrée, mais l'image que porte réellement le personnage
+         * n'est pas la sienne (relue sur Citizens). C'était le cas de Lucien.
+         */
+        NOT_WORN
     }
 
     /**
@@ -118,6 +123,16 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
     public static NpcAppearance of(boolean citizensBound, String entityType,
                                    String skinSourceKind, String skinSourceValue,
                                    LastAttempt lastAttempt) {
+        return of(citizensBound, entityType, skinSourceKind, skinSourceValue, null, lastAttempt);
+    }
+
+    /**
+     * @param worn issue #325 — l'image portée par le personnage est-elle celle de la source
+     *             enregistrée ({@code skinMatchesSource} du relevé) ? {@code null} = invérifiable.
+     */
+    public static NpcAppearance of(boolean citizensBound, String entityType,
+                                   String skinSourceKind, String skinSourceValue,
+                                   Boolean worn, LastAttempt lastAttempt) {
         String type = clean(entityType);
         String kind = clean(skinSourceKind).toUpperCase(Locale.ROOT);
         String value = clean(skinSourceValue);
@@ -135,9 +150,9 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
                             + "réessayez avec un autre lien.", source);
         }
         if (attempt == LastAttempt.PENDING) {
-            return new NpcAppearance(Status.IN_PROGRESS, Reason.ATTEMPT_PENDING, "demande envoyée",
-                    "Apparence demandée : elle devient visible en jeu après quelques secondes "
-                            + "(parfois après une reconnexion).", source);
+            return new NpcAppearance(Status.IN_PROGRESS, Reason.ATTEMPT_PENDING, "en cours",
+                    "Apparence en cours d'application. Actualisez les PNJ dans un instant pour "
+                            + "voir le résultat.", source);
         }
         if (type.isEmpty()) {
             return new NpcAppearance(Status.TO_CONFIGURE, Reason.TYPE_UNKNOWN, "inconnue",
@@ -156,9 +171,16 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
                             + "choisir une autre, il prendra l'apparence par défaut.", source);
         }
         boolean isDefault = "URL".equals(kind) && DEFAULT_SKIN_URL.equals(value);
+        if (Boolean.FALSE.equals(worn)) {
+            return new NpcAppearance(Status.ERROR, Reason.NOT_WORN, "pas appliquée",
+                    "Le personnage ne porte pas " + (isDefault ? "l'apparence par défaut" : "l'apparence choisie")
+                            + " en jeu. Appuyez sur « Réessayer ».", source);
+        }
+        String checked = Boolean.TRUE.equals(worn) ? " Vérifié sur le personnage." : "";
         return new NpcAppearance(Status.CONFIGURED, Reason.SOURCE_RECORDED,
                 isDefault ? "par défaut" : "personnalisée",
-                isDefault ? "Ce PNJ porte l'apparence par défaut." : "Apparence choisie : " + source + ".",
+                (isDefault ? "Ce PNJ porte l'apparence par défaut." : "Apparence choisie : " + source + ".")
+                        + checked,
                 source);
     }
 

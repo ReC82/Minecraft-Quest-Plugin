@@ -495,15 +495,17 @@ public final class AgentActionCatalog {
         // corriger un PNJ est réversible, détruire ne l'est pas, et un PNJ supprimé par erreur
         // emporte ce qui le référençait. Toutes trois sont des mutations sensibles, donc
         // confirmées, et toutes trois invalident les deux catalogues PNJ.
+        // Issue #325 : le relevé des dialogues aussi — sinon « supprimer aussi son dialogue », proposé
+        // juste après, retombe sur un relevé qui croit encore le PNJ lié et refuse.
         addSensitiveWrite("npc.definition.delete", Permission.NPC_DELETE, false,
-                "Supprimer la définition logique d'un PNJ", "npc.list", "npc.citizens.list");
+                "Supprimer la définition logique d'un PNJ", "npc.list", "npc.citizens.list", "dialogue.list");
         addSensitiveWrite("npc.citizens.unlink", Permission.NPC_DELETE, false,
                 "Délier un PNJ Citizens (sans le supprimer)", "npc.list", "npc.citizens.list");
         // Détruire l'entité Citizens est l'inverse exact de sa création : elle exige donc AUSSI
         // NPC_SPAWN_WRITE. Regrouper ne doit jamais accorder un droit que l'opérateur n'a pas.
         addOrchestratedWrite("npc.citizens.delete", Permission.NPC_DELETE,
                 List.of(Permission.NPC_SPAWN_WRITE),
-                "Supprimer le PNJ Citizens physique", "npc.list", "npc.citizens.list");
+                "Supprimer le PNJ Citizens physique", "npc.list", "npc.citizens.list", "dialogue.list");
         addSensitiveWrite("npc.citizens.create", Permission.NPC_SPAWN_WRITE, false, "Créer le PNJ Citizens",
                 "npc.list", "npc.citizens.list");
         // Issue #165 : opérations purement cosmétiques sur un PNJ Citizens existant. Réutilisent

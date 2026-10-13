@@ -162,8 +162,16 @@
       <tbody>
         <tr><td><code>rpgquest.quest</code></td><td>true (tous)</td><td><code>/quest list</code>, <code>/quest progress</code>, <code>/quest accept</code>, <code>/quest abandon</code></td></tr>
         <tr><td><code>rpgquest.admin</code></td><td>op</td><td><code>/quest admin reload|validate|reset</code>, <code>/quest complete</code></td></tr>
+        <tr><td><code>rpgquest.admin.bypass</code></td><td>op</td><td><code>/rpgadmin bypass on|off|status</code> — mode bypass administrateur explicite (#35)</td></tr>
       </tbody>
     </table>
+    <p class="text-body-secondary">
+      <strong>Tester comme un joueur, même en OP (#35)</strong> : être OP ne contourne plus les règles de jeu
+      (monde Claims, claims, zones, combat au Hub). Pour intervenir, <code>/rpgadmin bypass on</code> : la barre
+      d'action affiche en permanence « ⚠ MODE ADMIN / BYPASS ACTIF ». <code>/rpgadmin bypass off</code> rétablit
+      les règles ; la déconnexion et le redémarrage le coupent aussi. Avant de conclure qu'une protection est
+      cassée, vérifier que cette barre n'est <em>pas</em> affichée.
+    </p>
   </section>
 
   <section class="my-5">

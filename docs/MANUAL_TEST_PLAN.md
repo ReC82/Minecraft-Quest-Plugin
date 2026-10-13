@@ -4141,6 +4141,7 @@ le résumé de récompenses de TC-014).
 | TC-276 | Rattrapage ciblé d'une instance du Hub restée sans borne #156 | ✅ | | **VALIDÉ 2026-10-11** par le propriétaire — `minecraft:swamp@0,0`, SUCCESS/PAIRED, 16→17 bornes, 7→6 manques, borne physique et bouton fonctionnels en jeu |
 | TC-277 | Reprise après mort dans le Wild : Hub → borne → waypoint découvert #156 (PENDING — **dernier critère de #156**) | | | |
 | TC-278 | Filtre des instances du Hub : états, recherche, mobile #236 (PENDING) | | | |
+| TC-302 | Mode bypass administrateur explicite, OP/DEOP × ON/OFF × Claims #35/#321 (PENDING) | | | |
 
 ---
 
@@ -5670,3 +5671,44 @@ préserver : le centre ne modifie aucun bloc, mais choisir un endroit neutre év
     Même quête en `NEW_ONLY` → 0/1, et le journal énonce la règle.
 12. **Supprimer** une ville de test (case cochée) : consequences listées avant ; la ville disparaît,
     ses découvertes aussi.
+
+### TC-302 — Mode bypass administrateur explicite : OP/DEOP × bypass ON/OFF × accès Claims (issues #35 / #321, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR du lot #35. Le **compte OP du propriétaire reste OP** pendant tout le test (ne
+jamais le dé-OP pour « simuler » un joueur). Un **compte de test** non OP, qu'on peut OP/DEOP depuis
+PlugAdmin > Joueurs, sans claim et avec `CLAIM_TIER_1` absente (reset « nouveau joueur » si besoin).
+**Rappel** : un test « comme un joueur » se fait **mode bypass OFF**, même en OP — la barre d'action
+rouge « ⚠ MODE ADMIN / BYPASS ACTIF » ne doit pas être affichée. **Durée** : 20 minutes.
+
+1.  Compte de test **OP**, `/rpgadmin bypass status` → « inactif ». Portail Hub → Claims.
+    **Attendu** : refus « réservé aux joueurs… », aucune téléportation. Console :
+    `[claims-access] … REFUSÉE`. `/rpgadmin` reste utilisable (ex. `/rpgadmin travel diagnose`).
+2.  Même compte, `/rpgadmin bypass on`. **Attendu** : message rouge « Mode bypass administrateur
+    ACTIVÉ », barre d'action permanente (la vérifier ~10 s), console `[admin-bypass] … ACTIVÉ`.
+    Portail → **entrée autorisée**, Pierre de retour reçue ; console `[claims-access] … mode bypass`.
+3.  `/rpgadmin bypass off` → message vert, barre d'action disparue. Revenir au Hub, reprendre le
+    portail → **refusé** de nouveau.
+4.  `/rpgadmin bypass on`, se déconnecter, se reconnecter → **aucune** barre d'action ;
+    `status` → « inactif » ; portail → refusé.
+5.  `/rpgadmin bypass on` puis redémarrage DEV → après reconnexion, `status` → « inactif ».
+6.  Compte de test **DEOP** (PlugAdmin > Joueurs) : `/rpgadmin bypass on` → refusé (permission
+    manquante ou `/rpgadmin` inaccessible) ; portail → refusé.
+7.  Variable `CLAIM_TIER_1` (PlugAdmin, outil variables) : `false` → refusé ; `true` → entrée
+    autorisée (OP comme DEOP, bypass OFF) ; une valeur invalide est refusée par l'outil (#319).
+8.  Avec `CLAIM_TIER_1 = true`, poser le premier claim avec l'Acte, revenir au Hub, repasser le
+    portail : **entrée immédiate** (déjà propriétaire), OP ou non, bypass OFF.
+9.  PlugAdmin > Paramètres généraux > **Administration** : durée maximale **1** minute, enregistrer
+    (valeurs relues). `/rpgadmin bypass on` → « encore 1 min au plus » ; après ~1 min, message
+    « désactivé (durée maximale atteinte) » et barre d'action disparue. Remettre 0.
+10. Bypass ON, puis dans PlugAdmin « **Désactivé pour tout le monde** » → en jeu, message
+    « désactivé (mode retiré dans PlugAdmin…) » sous ~2 s ; `/rpgadmin bypass on` → refusé.
+    Remettre « Proposé ».
+11. Bypass OFF, compte OP : frapper une vache au Hub → **annulé** ; casser un bloc au Hub →
+    **autorisé** (droit de construction, inchangé). Bypass ON : la vache peut être frappée.
+
+**Couverture automatique** : `AdminBypassModeTest` (OFF par défaut, ON/OFF, DEOP, nœuds armés
+seulement, retrait PlugAdmin, durée maximale, permission perdue, indicateur, déconnexion, arrêt),
+`ClaimWorldAccessGuardTest` (OP sans bypass refusé, OP bypass ON puis OFF, DEOP, `CLAIM_TIER_1`
+`false`/`TRUE`/`oui`/`1` refusés, OP éligible accepté, nœud sans session, session sans nœud,
+retrait PlugAdmin), listeners claims/zones/Hub (OP sans session bloqué), `GameSettingsTest`,
+`SettingsPageTest` (rubrique Administration).

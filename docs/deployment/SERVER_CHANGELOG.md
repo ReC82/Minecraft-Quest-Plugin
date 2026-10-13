@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Mode bypass administrateur explicite (#35, #321)
+
+### Changement
+
+- Être OP ne contourne plus aucune règle de jeu RPGQuest : accès et règles du monde Claims, claims
+  d'autrui, zones protégées, combat au Hub. Le contournement exige `/rpgadmin bypass on`
+  (permission `rpgquest.admin.bypass`, défaut OP), visible en barre d'action, coupé à la
+  déconnexion et au redémarrage. Commandes d'administration et construction inchangées.
+- `settings.yml` : nouvelles clés `admin.bypass.available` (défaut `true`) et
+  `admin.bypass.max-minutes` (défaut `0` = jusqu'à la déconnexion), écrites par le plugin depuis
+  PlugAdmin > Paramètres généraux > Administration. Absentes = valeurs par défaut.
+
+### Action serveur
+
+Remplacement du JAR **et** redéploiement de PlugAdmin (rubrique Administration). Aucune migration
+de base, aucune donnée joueur modifiée, aucun fichier à déposer. Aucun groupe LuckPerms à modifier :
+un OP garde `rpgquest.admin.bypass` par défaut.
+
+### Sauvegarde préalable
+
+JAR actuel (procédure habituelle du script de déploiement).
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : `docs/MANUAL_TEST_PLAN.md` TC-302.
+
+### Rollback
+
+Remettre le JAR précédent et redémarrer (le mode est en mémoire seule ; les deux clés de
+`settings.yml` sont ignorées par l'ancienne version).
+
+---
+
 ## 2026-10-14 - Paramètres généraux, avertissement bêta, notification OP, variables typées (#335, #28, #316, #317, #319)
 
 ### Changement

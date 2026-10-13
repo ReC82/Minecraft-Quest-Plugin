@@ -5630,3 +5630,43 @@ claim. **Durée** : 10 minutes.
 6.  Après la pose du premier claim : « Revoir mes limites » n'apparaît que sans acte en poche et avec
     une place libre.
 
+
+### TC-301 — Villes : définir, administrer, découvrir, objectif DISCOVER_CITY (issue #178, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel du lot #178 (migration V33 appliquée). Un compte administrateur avec
+`rpgquest.admin.city` (ou l'ombrelle `rpgquest.admin.world`) et un **compte de test** qui n'a
+encore découvert aucune ville. **Ne pas** placer la ville sur une construction existante à
+préserver : le centre ne modifie aucun bloc, mais choisir un endroit neutre évite toute confusion.
+**Durée** : 20 minutes.
+
+1.  `/rpgadmin ville outil` → pelle en or « Outil de ville ». Clic droit sur un bloc → enclume →
+    taper « Ville Test » → cliquer le résultat. **Attendu** : « Ville créée », identifiant
+    `ville_ville_test`, centre, « s'étend de 50 blocs… (101 × 101 blocs) ». Fermer l'enclume au lieu
+    de valider → « aucune ville n'a été créée ».
+2.  PlugAdmin › **Villes** → **Rafraîchir les villes**. **Attendu** : la ville est listée, active,
+    50 blocs, limites X/Z = centre ± 50, aperçu du carré, 0 découverte.
+3.  **Montrer le périmètre en jeu** (votre pseudo). **Attendu** : contour orange et colonnes aux
+    coins pendant ~15 s, carré et non cercle.
+4.  Compte de test, hors de la ville : marcher vers le centre. **Attendu** : à la frontière (50
+    blocs), titre plein écran « Bienvenue à Ville Test » une seule fois. Sortir, revenir : aucun titre.
+    Se déconnecter dans la ville, se reconnecter : aucun titre.
+5.  Second compte (ou après suppression de la découverte par une nouvelle ville) : se
+    **téléporter** dans la ville → titre ; et se **connecter** déjà dans une autre ville jamais
+    découverte → titre peu après l'arrivée.
+6.  Panel : **Renommer** en « Port Test ». **Attendu** : identifiant inchangé, découvertes
+    inchangées (compteur relu), aucun nouveau titre pour le compte de test. **Appliquer la taille**
+    20 : limites relues ; un point à 30 blocs du centre n'est plus dans la ville.
+7.  **Désactiver la ville** → un compte neuf qui y entre ne voit rien ; **Activer** alors qu'il est
+    dedans → titre sans bouger.
+8.  **Préparer le déplacement du centre** (votre pseudo) → message en jeu → clic droit avec l'outil
+    ailleurs → message « Centre de la ville déplacé » ; **Rafraîchir** : nouveau centre et limites.
+9.  Deux villes qui se chevauchent : se téléporter dans la zone commune → **un seul** titre (ville au
+    centre le plus proche) ; avancer vers l'autre centre → son titre.
+10. Éditeur de quête → objectif **Découvrir des villes** : (a) « Ville précise » cherchée par son nom ;
+    (b) « Nombre de villes distinctes » = 2. Enregistrer, rouvrir (valeurs relues, résumé avec le
+    nom de la ville), publier sur DEV sans redémarrer. Compte de test : accepter les deux quêtes,
+    découvrir la ville précise → les deux progressent, l'action bar nomme chaque quête.
+11. Quête `INCLUDE_EXISTING` avec une ville déjà découverte : acceptée → objectif rempli aussitôt.
+    Même quête en `NEW_ONLY` → 0/1, et le journal énonce la règle.
+12. **Supprimer** une ville de test (case cochée) : consequences listées avant ; la ville disparaît,
+    ses découvertes aussi.

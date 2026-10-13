@@ -7747,6 +7747,55 @@ d'écriture.
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
 
+## 2026-10-13 01:44 — Déploiement EFFECTUÉ sur DEV du lot de la nuit (code `2fe36bc`, panel ensuite `d43a2f4`)
+
+### Changement
+
+JAR RPGQuest + panel depuis `2fe36bc` (fusion de la PR #312 ; inclut #303, #304, #309, #310, #311 ;
+CI verte, run 38322519098), puis panel seul depuis `d43a2f4` (PR #313, #299). Tickets : #73, #208,
+#220, #210, #221, #215, #211, #141, #242, #185, #240, #218, #246, #12, #69, #209, #72, #85, #295,
+#293, #301, #299 (partiel), portail #52–#57 (code seulement). Validation en jeu à faire par le
+propriétaire.
+
+### Action serveur réalisée
+
+- **Sauvegardes** (01:37) : `data.db` (1 802 240 o, intégrité OK), `config.yml`,
+  `world-portals/hub_to_claims.yml`, `dialogues/jo.yml` et `guide.yml`, `buildings/` (5),
+  `schematics/` (12) → `/srv/rpgquest/backups/20261013-predeploy-night/` ; `control-panel.db` →
+  `/opt/plugadmin/backups/control-panel-20261013-predeploy-night.db` (600, intégrité OK, 4 projets,
+  50 versions). JAR précédent `46493dd5…` →
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20261012T234139Z-predeploy.jar`.
+- **Panel** : `scripts/plugadmin/deploy.sh --wait-ci` ; JAR servi `6cc098c5…` ; `/health` 200 ;
+  `/notifications/read-all` répond 405 (route présente). Le sondage `/health` du script a échoué
+  par course au démarrage — servi vérifié ensuite.
+- **Plugin** : `scripts/deploy-verygames.sh -y --wait-ci`, JAR
+  `d1230d5ce1bf060b3fae46e00eb0ecf396d37c1972419dfdca12d828257dfbdb` (2 524 346 o), vérifié en
+  ligne. `--also` (chacun sauvegardé dans `extra-20261012T234139Z/`, manifeste) :
+  `dialogues/jo.yml` (#72/#85), `dialogues/guide.yml` (#218) — les deux identiques au dépôt avant
+  remplacement, donc sans retouche perdue — et `world-portals/hub_to_claims.yml`
+  (`destination-strategy: CLAIM_HOME`, #73/#208). Contournement TLS autorisé pour la nuit :
+  certificat `*.dg.vg` expiré le 11/10, seule l'expiration échoue, clé = épingle `sha256//Y9msc/…EE=`.
+- **`config.yml`** : **non téléversé**. Complété au démarrage par `ConfigFileCompleter` (copie
+  `config.yml.bak` faite par le plugin) : `claims.arrival` ajouté, paliers 3 à 5 du kit ajoutés
+  (1 et 2 inchangés, vérifié), `npc-hints.height-offset` 2.2 → 0.6 et `period-ticks` 20 → 10
+  (anciens défauts). Aucune autre section modifiée (comparaison avant/après).
+- **Migration** V32 appliquée (`item_travel_cooldowns.remaining_ms`) ; quêtes `kit_tier3`–`5`
+  déposées.
+- **Redémarrage** à 0 joueur (vérifié avant), `verygames-restart.sh`, ONLINE ; 5 plugins actifs ;
+  agent reconnecté (battement 23:44:17 UTC, 3 mondes chargés). Mondes, bâtiments, schematics et
+  données joueurs non modifiés.
+- **Panel #299** (01:50) : sauvegarde `control-panel-20261013-predeploy-299.db`, `deploy.sh --wait-ci`
+  depuis `d43a2f4` ; JAR servi `4722195f…`, `/health` 200, colonne `rewrite_design` créée, 4 projets
+  et 50 versions intacts. Aucun redémarrage Minecraft.
+- **Non déployé** : portail `web-api` (aucun hébergement, `web-export.enabled: false` conservé).
+
+### Rollback
+
+Plugin : `scripts/rollback-verygames.sh --latest` (même autorisation TLS) ; remettre les 3 fichiers
+depuis `extra-20261012T234139Z/` (**obligatoire** pour `hub_to_claims.yml` : l'ancien JAR ne connaît
+pas `CLAIM_HOME`) et `config.yml` depuis la sauvegarde de nuit ; puis redémarrage contrôlé à 0
+joueur. La colonne V32 est ignorée par l'ancien JAR. Panel : `scripts/plugadmin/rollback.sh app`.
+
 ## 2026-10-12 23:37 — Déploiement EFFECTUÉ sur DEV de #288 à #292 (code `ce87833`)
 
 ### Changement

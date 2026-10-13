@@ -281,6 +281,13 @@ public final class PanelApp {
         // Issue #226 : GET = aperçu des dépendances couche par couche, POST = une opération précise
         // après confirmation tapée. Même discipline que #194, sur un objet qui vit sur cinq couches.
         route("/npcs/delete", this::handleNpcDelete);
+        // Issue #325 — le parcours simple : une actualisation commune, une création en un geste,
+        // un rattachement en un geste, et une page à part pour le diagnostic.
+        route("/npcs/refresh", this::handleNpcRefresh);
+        route("/npcs/create", this::handleNpcCreate);
+        route("/npcs/attach", this::handleNpcAttach);
+        route("/npcs/diagnostic", exchange -> handleBusinessPage(exchange, "/npcs", "Diagnostic des PNJ",
+                Permission.NPC_READ, agentPages::npcDiagnostic));
         // Issue #213 — emplacements de construction. Lecture gardée par BUILDING_READ ; les
         // mutations passent par /agents/action, donc par le catalogue et ses propres permissions.
         route("/buildings/sites", exchange -> handleBusinessPage(exchange, "/buildings/sites",
@@ -2643,7 +2650,7 @@ public final class PanelApp {
 
         if (!post) {
             Http.html(exchange, 200, renderPage("Supprimer un PNJ", session, "/npcs",
-                    NpcDeletionPages.preview(plan, session.csrfToken(), null, canDeleteCitizens),
+                    NpcDeletionPages.preview(plan, session.csrfToken(), null, canDeleteCitizens, deletionContext(agentId, plan)),
                     Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
             return;
         }
@@ -2654,7 +2661,7 @@ public final class PanelApp {
             audit.record(session.username(), "npc.delete", "npc=" + plan.npcId() + " op=" + rawOp,
                     "REFUSED", refusal, UUID.randomUUID().toString().substring(0, 8));
             Http.html(exchange, 200, renderPage("Supprimer un PNJ", session, "/npcs",
-                    NpcDeletionPages.preview(plan, session.csrfToken(), refusal, canDeleteCitizens),
+                    NpcDeletionPages.preview(plan, session.csrfToken(), refusal, canDeleteCitizens, deletionContext(agentId, plan)),
                     Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
             return;
         }
@@ -2670,8 +2677,21 @@ public final class PanelApp {
                 + " actions=" + String.join(",", queued) + " by=" + session.username());
 
         Http.html(exchange, 200, renderPage("Supprimer un PNJ", session, "/npcs",
-                NpcDeletionPages.result(plan, op, queued),
+                NpcDeletionPages.result(plan, op, queued, deletionContext(agentId, plan)),
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /** Partage du dialogue du PNJ et son fichier source, pour la page de suppression (#325). */
+    private NpcDeletionPages.Context deletionContext(String agentId,
+                                                     com.lodygames.rpgquest.panel.npc.NpcDeletionPlan plan) {
+        var npc = plan.npc().orElse(null);
+        if (npc == null || !npc.hasLinkedDialogue()) {
+            return NpcDeletionPages.Context.none();
+        }
+        int holders = agentPages.npcDirectory(agentId).npcsLinkedToDialogue(npc.linkedDialogueId()).size();
+        String key = npc.linkedDialogueKey();
+        String slug = contentWorkspace.read("dialogues", key).map(ContentWorkspace.ContentFile::slug).orElse("");
+        return new NpcDeletionPages.Context(holders, slug);
     }
 
     /**
@@ -2756,6 +2776,339 @@ public final class PanelApp {
             queued.add("npc.definition.delete");
         }
         return queued;
+    }
+
+    // ---- PNJ : parcours simple (issue #325) ----------------------------------------------
+
+    /** Session + POST + CSRF + agent connu, ou {@code null} après avoir répondu. */
+    private record NpcPost(Session session, Map<String, String> form, String agentId) {
+    }
+
+    private NpcPost npcPost(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return null;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.redirect(exchange, "/npcs");
+            return null;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(maybe.get().csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return null;
+        }
+        String agentId = form.getOrDefault("agent", "").trim();
+        if (agentId.isEmpty()) {
+            agentId = config.agents().defaultAgentId();
+        }
+        if (agentId == null || agentRegistry.byId(agentId).isEmpty()) {
+            Http.redirect(exchange, withError("/npcs", "", null, "Serveur de jeu inconnu."));
+            return null;
+        }
+        return new NpcPost(maybe.get(), form, agentId);
+    }
+
+    /** Vrai si la session détient toutes les permissions de ces types d'action. */
+    private boolean mayQueue(Session session, String... types) {
+        for (String type : types) {
+            var spec = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec(type);
+            if (spec.isEmpty() || !hasAllPermissions(session, spec.get())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * « Actualiser les PNJ » : relit le catalogue RPGQuest ET les personnages du jeu, en une fois.
+     * Un relevé déjà en attente n'est pas réempilé.
+     */
+    private void handleNpcRefresh(HttpExchange exchange) throws IOException {
+        NpcPost post = npcPost(exchange);
+        if (post == null) {
+            return;
+        }
+        String back = "/npcs/diagnostic".equals(post.form().get("return")) ? "/npcs/diagnostic" : "/npcs";
+        if (!permissions.can(post.session().effective(), Permission.NPC_READ)) {
+            forbidden(exchange, post.session(), back);
+            return;
+        }
+        String toast = "";
+        for (String type : List.of("npc.list", "npc.citizens.list")) {
+            if (!agentStore.hasOpenActionOfType(post.agentId(), type)) {
+                String id = agentStore.createAction(post.agentId(), type, Map.of(), post.session().username());
+                toast = toast.isEmpty() ? id : toast;
+            }
+        }
+        Http.redirect(exchange, appendContext(back, post.agentId(), null)
+                + (toast.isEmpty() ? "" : "&toast=" + enc(toast)));
+    }
+
+    /**
+     * « Créer un PNJ » (et « Reprendre » une création inachevée).
+     *
+     * <p>Trois étapes, envoyées dans l'ordre et exécutées dans cet ordre par l'agent : le dialogue
+     * initial est écrit dans la source puis publié sur le serveur, puis le personnage est créé avec
+     * sa définition, sa liaison et son apparence. Rien n'est envoyé si la demande est invalide.</p>
+     *
+     * <p><strong>Anti-doublon.</strong> Chaque affichage du formulaire porte un jeton unique, recopié
+     * sur l'action de création : un double clic ou un renvoi retombe sur la création déjà demandée.
+     * Le plugin refuse en plus tout identifiant déjà défini.</p>
+     *
+     * <p><strong>Reprise.</strong> « Reprendre » rejoue seulement ce qui manque, avec les paramètres
+     * de la tentative précédente et le même identifiant : un dialogue déjà préparé n'est pas réécrit,
+     * un dialogue déjà publié n'est pas republié.</p>
+     */
+    private void handleNpcCreate(HttpExchange exchange) throws IOException {
+        NpcPost post = npcPost(exchange);
+        if (post == null) {
+            return;
+        }
+        Session session = post.session();
+        Map<String, String> form = post.form();
+        String agentId = post.agentId();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        if (!mayQueue(session, "npc.citizens.provision", "content.publish")
+                || !permissions.can(session.effective(), Permission.DIALOGUE_WRITE)) {
+            forbidden(exchange, session, "/npcs");
+            return;
+        }
+        String token = form.getOrDefault("request_token", "").trim();
+        var already = agentPages.npcCreationByToken(agentId, token);
+        if (already.isPresent()) {
+            Http.redirect(exchange, appendContext("/npcs", agentId, null) + "&focus="
+                    + enc(already.get().params().getOrDefault("npc_id", "")) + "&toast=" + enc(already.get().id()));
+            return;
+        }
+
+        Map<String, String> request = new java.util.LinkedHashMap<>();
+        String npcId;
+        String name;
+        String resume = form.getOrDefault("resume", "").trim().toLowerCase(java.util.Locale.ROOT);
+        if (!resume.isEmpty()) {
+            var last = agentPages.npcLastProvision(agentId, resume);
+            if (last.isEmpty()) {
+                Http.redirect(exchange, withError("/npcs", agentId, null,
+                        "Rien à reprendre pour ce PNJ."));
+                return;
+            }
+            request.putAll(last.get().params());
+            npcId = resume;
+            name = request.getOrDefault("display_name", resume);
+        } else {
+            name = com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.visibleName(form.get("display_name"));
+            if (name.isEmpty() || name.length() > com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.MAX_NAME) {
+                Http.redirect(exchange, withError("/npcs", agentId, null,
+                        "Donnez un nom de 1 à " + com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.MAX_NAME
+                                + " caractères."));
+                return;
+            }
+            if (!agentPages.npcCatalogLoaded(agentId)) {
+                Http.redirect(exchange, withError("/npcs", agentId, null,
+                        "Cliquez d'abord sur « Actualiser les PNJ », puis recommencez."));
+                return;
+            }
+            var free = com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.freeId(name, agentPages.npcTakenIds(agentId));
+            if (free.isEmpty()) {
+                Http.redirect(exchange, withError("/npcs", agentId, null,
+                        "Ce nom ne convient pas : utilisez au moins une lettre ou un chiffre."));
+                return;
+            }
+            npcId = free.get();
+            request.put("display_name", name);
+            String skin = form.getOrDefault("skin_source", "default").trim();
+            if ("url".equals(skin)) {
+                request.put("skin_source", "url");
+                request.put("skin_url", form.getOrDefault("skin_url", "").trim());
+                String problem = com.lodygames.rpgquest.panel.agent.AgentActionCatalog
+                        .mineSkinProblem(request.get("skin_url"));
+                if (problem != null) {
+                    Http.redirect(exchange, withError("/npcs", agentId, null, problem));
+                    return;
+                }
+            } else if ("player".equals(skin)) {
+                request.put("skin_source", "player");
+                request.put("skin_player", form.getOrDefault("skin_player", "").trim());
+            }
+            if ("here".equals(form.getOrDefault("place", "auto").trim())) {
+                for (String k : List.of("world", "x", "y", "z")) {
+                    request.put(k, form.getOrDefault(k, "").trim());
+                }
+            }
+        }
+        request.put("npc_id", npcId);
+        request.put("dialogue_id", com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.dialogueRef(npcId));
+        request.put("request_token", token.isEmpty() ? UUID.randomUUID().toString().replace("-", "") : token);
+        request.put("confirm", "true");
+        var provision = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.citizens.provision", request);
+        if (!provision.valid()) {
+            Http.redirect(exchange, withError("/npcs", agentId, null, provision.error()));
+            return;
+        }
+
+        // 1) + 2) Le dialogue initial, propre à ce PNJ : écrit dans la source s'il n'y est pas, puis
+        // publié — sauf si une publication a déjà réussi (reprise).
+        List<String> queued = new ArrayList<>();
+        if (agentPages.lastPublishOf(agentId, "dialogues", npcId).isEmpty()) {
+            InitialDialogue dialogue = queueInitialDialogue(agentId, npcId, name, session.username());
+            if (dialogue.actionId() == null) {
+                audit.record(session.username(), "npc.create", "npc=" + npcId, "FAILED", dialogue.error(), rid);
+                Http.redirect(exchange, withError("/npcs", agentId, null,
+                        "Le dialogue de départ n'a pas pu être préparé (" + dialogue.error()
+                                + "). Le PNJ n'a pas été créé."));
+                return;
+            }
+            queued.add(dialogue.actionId());
+        }
+        // 3) Le personnage, sa définition, sa liaison et son apparence.
+        String provisionId = agentStore.createAction(agentId, "npc.citizens.provision", provision.params(),
+                session.username());
+        queued.add(provisionId);
+        audit.record(session.username(), "npc.create", "agent=" + agentId + " npc=" + npcId,
+                "PENDING", (resume.isEmpty() ? "création" : "reprise") + " · actions=" + String.join(",", queued), rid);
+        LOG.log(System.Logger.Level.INFO, "event=npc_create rid=" + rid + " npc=" + npcId + " resume="
+                + !resume.isEmpty() + " actions=" + String.join(",", queued) + " by=" + session.username());
+        Http.redirect(exchange, appendContext("/npcs", agentId, null) + "&focus=" + enc(npcId)
+                + "&toast=" + enc(provisionId));
+    }
+
+    /** Issue de la préparation du dialogue initial : l'action de publication, ou la raison de l'échec. */
+    private record InitialDialogue(String actionId, String error) {
+    }
+
+    /**
+     * Écrit le dialogue initial « Salut ! » dans la source s'il n'y est pas, puis demande sa
+     * publication sur le serveur.
+     */
+    private InitialDialogue queueInitialDialogue(String agentId, String npcId, String name, String username) {
+        Optional<ContentWorkspace.ContentFile> source = contentWorkspace.read("dialogues", npcId);
+        if (source.isEmpty()) {
+            ContentWorkspace.WriteResult wr = contentWorkspace.write("dialogues", npcId,
+                    com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.initialDialogueYaml(npcId, name), "");
+            if (!wr.ok()) {
+                return new InitialDialogue(null, wr.message());
+            }
+            source = contentWorkspace.read("dialogues", npcId);
+        }
+        if (source.isEmpty()) {
+            return new InitialDialogue(null, "le dialogue écrit est illisible.");
+        }
+        Map<String, String> publishForm = new java.util.LinkedHashMap<>();
+        publishForm.put("kind", "dialogues");
+        publishForm.put("id", npcId);
+        publishForm.put("expected_dev_sha", "");
+        publishForm.put("expected_source_sha", source.get().sha256());
+        publishForm.put("confirm", "true");
+        var publish = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("content.publish", publishForm);
+        if (!publish.valid()) {
+            return new InitialDialogue(null, publish.error());
+        }
+        PublishEnrichment enriched = enrichPublish(publish.params());
+        return enriched.error() != null ? new InitialDialogue(null, enriched.error())
+                : new InitialDialogue(agentStore.createAction(agentId, "content.publish", enriched.params(), username), null);
+    }
+
+    /**
+     * « Rattacher à RPGQuest » : un personnage du jeu sans fiche reçoit ce qui lui manque, sans être
+     * recréé. L'identifiant vient de son nom en jeu — c'est ce qui retrouve un dialogue
+     * {@code rpgquest:<id>} ou des quêtes déjà écrits pour lui, qui sont donc conservés. Une fiche
+     * existante et libre de ce nom est simplement liée ; une fiche déjà liée à un autre personnage
+     * fait choisir un identifiant voisin.
+     */
+    private void handleNpcAttach(HttpExchange exchange) throws IOException {
+        NpcPost post = npcPost(exchange);
+        if (post == null) {
+            return;
+        }
+        Session session = post.session();
+        String agentId = post.agentId();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        if (!mayQueue(session, "npc.definition.create", "npc.citizens.link")) {
+            forbidden(exchange, session, "/npcs");
+            return;
+        }
+        String digits = post.form().getOrDefault("citizens_id", "").replaceAll("[^0-9]", "");
+        var row = digits.isEmpty() ? Optional.<Map<String, Object>>empty()
+                : agentPages.citizensRowByNumeric(agentId, digits);
+        if (row.isEmpty()) {
+            Http.redirect(exchange, withError("/npcs", agentId, null,
+                    "Ce personnage n'est plus dans la liste : cliquez sur « Actualiser les PNJ »."));
+            return;
+        }
+        Object linked = row.get().get("linkedNpcId");
+        if (linked != null && !String.valueOf(linked).isBlank() && !"null".equals(String.valueOf(linked))) {
+            Http.redirect(exchange, appendContext("/npcs", agentId, null) + "&focus=" + enc(String.valueOf(linked))
+                    + "&ok=" + enc("Ce personnage est déjà rattaché."));
+            return;
+        }
+        // Un rattachement déjà en route pour ce personnage n'est pas réempilé (double clic).
+        boolean pending = agentStore.recentActions(agentId, 50).stream().anyMatch(a -> !a.status().terminal()
+                && "npc.citizens.link".equals(a.type()) && digits.equals(a.params().get("citizens_id")));
+        if (pending) {
+            Http.redirect(exchange, appendContext("/npcs", agentId, null)
+                    + "&ok=" + enc("Le rattachement de ce personnage est déjà en cours."));
+            return;
+        }
+        String rawName = String.valueOf(row.get().getOrDefault("name", ""));
+        String name = MiniText.plain("null".equals(rawName) ? "" : rawName).trim();
+        if (name.isEmpty()) {
+            name = "PNJ " + digits;
+        }
+        var directory = agentPages.npcDirectory(agentId);
+        String npcId = AgentPages.citizensNameToId(name, digits);
+        var existing = directory.find(npcId);
+        boolean definitionExists = existing.map(com.lodygames.rpgquest.panel.npc.NpcView::definitionPresent).orElse(false);
+        boolean boundElsewhere = existing.map(com.lodygames.rpgquest.panel.npc.NpcView::citizensBound).orElse(false);
+        if (boundElsewhere) {
+            java.util.Set<String> taken = new java.util.HashSet<>(agentPages.npcTakenIds(agentId));
+            npcId = com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.freeId(name, taken)
+                    .orElse("citizens_" + digits);
+            definitionExists = false;
+        }
+        List<String> queued = new ArrayList<>();
+        if (!definitionExists) {
+            Map<String, String> def = new java.util.LinkedHashMap<>();
+            def.put("npc_id", npcId);
+            def.put("display_name", name);
+            def.put("enabled", "true");
+            def.put("confirm", "true");
+            // Un dialogue qui porte déjà ce nom est le sien : on le déclare, on n'en crée pas d'autre.
+            // Sinon on lui prépare le même « Salut ! » qu'à un PNJ neuf, s'il en a le droit.
+            boolean hasDialogue = agentPages.dialogueKnown(agentId, npcId);
+            if (!hasDialogue && mayQueue(session, "content.publish")
+                    && permissions.can(session.effective(), Permission.DIALOGUE_WRITE)) {
+                InitialDialogue dialogue = queueInitialDialogue(agentId, npcId, name, session.username());
+                if (dialogue.actionId() != null) {
+                    queued.add(dialogue.actionId());
+                    hasDialogue = true;
+                }
+            }
+            if (hasDialogue) {
+                def.put("dialogue_id", com.lodygames.rpgquest.panel.npc.NpcCreationPlanner.dialogueRef(npcId));
+            }
+            var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.definition.create", def);
+            if (!v.valid()) {
+                Http.redirect(exchange, withError("/npcs", agentId, null, v.error()));
+                return;
+            }
+            queued.add(agentStore.createAction(agentId, "npc.definition.create", v.params(), session.username()));
+        }
+        Map<String, String> link = new java.util.LinkedHashMap<>();
+        link.put("npc_id", npcId);
+        link.put("citizens_id", digits);
+        link.put("confirm", "true");
+        var lv = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.citizens.link", link);
+        if (!lv.valid()) {
+            Http.redirect(exchange, withError("/npcs", agentId, null, lv.error()));
+            return;
+        }
+        String linkId = agentStore.createAction(agentId, "npc.citizens.link", lv.params(), session.username());
+        queued.add(linkId);
+        audit.record(session.username(), "npc.attach", "agent=" + agentId + " npc=" + npcId + " citizens=" + digits,
+                "PENDING", String.join(",", queued), rid);
+        Http.redirect(exchange, appendContext("/npcs", agentId, null) + "&focus=" + enc(npcId) + "&toast=" + enc(linkId));
     }
 
     // ---- Gestion des utilisateurs (issue #50) --------------------------------------------
@@ -4104,7 +4457,7 @@ public final class PanelApp {
             Map<String, String> query = Http.query(exchange);
             boolean saved = "1".equals(query.get("saved"));
             result = switch (kind) {
-                case "quests" -> contentEditor.questPage(ref, slug, saved);
+                case "quests" -> contentEditor.questPage(ref, slug, saved, query.get("giver"));
                 case "stories" -> contentEditor.storyPage(ref, slug, saved);
                 default -> contentEditor.dialoguePage(ref, slug, saved, query.get("npc"));
             };
@@ -4543,6 +4896,7 @@ public final class PanelApp {
         // légitimement vouloir y revenir.
         paths.add("/content/import");
         paths.add("/ai/studio");
+        paths.add("/npcs/diagnostic");
         return java.util.Set.copyOf(paths);
     }
 

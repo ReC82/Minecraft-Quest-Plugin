@@ -29,6 +29,13 @@ import java.util.Locale;
 public record NpcAppearance(Status status, Reason reason, String label, String explanation,
                             String sourceLabel) {
 
+    /**
+     * Apparence par défaut d'un PNJ de type joueur (issue #325) — la même que le plugin
+     * ({@code NpcIdentityService.DEFAULT_SKIN_URL}).
+     */
+    public static final String DEFAULT_SKIN_URL = "https://minesk.in/f534ead9d5a3413e9bb51bce9b211995";
+
+
     /** Les cinq états demandés par l'issue. Aucun ne signifie « probablement ». */
     public enum Status {
         /** RPGQuest connaît la source de l'apparence et sait la reproduire à l'identique. */
@@ -117,52 +124,42 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
         LastAttempt attempt = lastAttempt == null ? LastAttempt.NONE : lastAttempt;
         String source = sourceLabelOf(kind, value);
 
+        // Issue #325 : libellés et explications en français simple, sans mécanisme interne.
         if (!citizensBound) {
-            return new NpcAppearance(Status.NOT_APPLICABLE, Reason.NO_ENTITY, "pas de PNJ en jeu",
-                    "Aucun PNJ Citizens n'est lié à cette fiche : il n'y a pas encore d'apparence "
-                            + "en jeu. Lier ou créer le PNJ d'abord.", source);
+            return new NpcAppearance(Status.NOT_APPLICABLE, Reason.NO_ENTITY, "pas encore en jeu",
+                    "Ce PNJ n'est pas encore dans le monde.", source);
         }
         if (attempt == LastAttempt.FAILED) {
-            return new NpcAppearance(Status.ERROR, Reason.ATTEMPT_FAILED, "erreur",
-                    "La dernière application d'apparence a échoué. Le PNJ garde l'apparence qu'il "
-                            + "avait : rien n'a été remplacé. Voir le détail de l'action, puis réessayer.",
-                    source);
+            return new NpcAppearance(Status.ERROR, Reason.ATTEMPT_FAILED, "non appliquée",
+                    "La dernière apparence n'a pas pu être appliquée. Le PNJ garde la précédente : "
+                            + "réessayez avec un autre lien.", source);
         }
         if (attempt == LastAttempt.PENDING) {
-            return new NpcAppearance(Status.IN_PROGRESS, Reason.ATTEMPT_PENDING, "en cours",
-                    "Une apparence a été demandée et acceptée, mais le relevé Citizens est plus "
-                            + "ancien que cette demande : le panel ne peut pas encore la confirmer. "
-                            + "Rafraîchir le relevé Citizens, puis vérifier en jeu — un client déjà "
-                            + "connecté doit parfois se reconnecter pour voir le changement.",
-                    source);
+            return new NpcAppearance(Status.IN_PROGRESS, Reason.ATTEMPT_PENDING, "demande envoyée",
+                    "Apparence demandée : elle devient visible en jeu après quelques secondes "
+                            + "(parfois après une reconnexion).", source);
         }
         if (type.isEmpty()) {
-            return new NpcAppearance(Status.TO_CONFIGURE, Reason.TYPE_UNKNOWN, "type inconnu",
-                    "Citizens n'a pas indiqué le type de ce PNJ : impossible de dire si la question "
-                            + "du skin le concerne. Rafraîchir le relevé Citizens — le panel préfère "
-                            + "dire « inconnu » plutôt que de supposer.", source);
+            return new NpcAppearance(Status.TO_CONFIGURE, Reason.TYPE_UNKNOWN, "inconnue",
+                    "Actualisez les PNJ pour connaître son apparence.", source);
         }
         if (!"PLAYER".equals(type.toUpperCase(Locale.ROOT))) {
-            return new NpcAppearance(Status.NOT_APPLICABLE, Reason.NON_PLAYER, "non applicable",
-                    "Ce PNJ est de type « " + type + " » : il n'a pas de skin de joueur. Son "
-                            + "apparence est son type d'entité, et elle est connue. Aucune source "
-                            + "de skin n'est à configurer, et un renommage ne risque pas de la changer.",
-                    source);
+            return new NpcAppearance(Status.NOT_APPLICABLE, Reason.NON_PLAYER,
+                    type.toLowerCase(Locale.ROOT).replace('_', ' '),
+                    "Ce PNJ n'a pas la forme d'un joueur : il n'a pas de skin à choisir.", source);
         }
         if (kind.isEmpty()) {
-            // LE cas du Guide. Ne jamais écrire « sans skin » ici : c'est la SOURCE qui manque.
-            return new NpcAppearance(Status.TO_CONFIGURE, Reason.SOURCE_UNKNOWN, "à configurer",
-                    "Ce PNJ est de type joueur et son apparence n'est pas décrite dans RPGQuest. "
-                            + "Elle est probablement bien visible en jeu, mais elle a été posée en "
-                            + "dehors du panel : son origine est inconnue, donc impossible à "
-                            + "reproduire. Conséquence concrète : son renommage est refusé, car il "
-                            + "changerait son visage sans pouvoir le restituer. Définir une "
-                            + "apparence règle les deux points.", source);
+            // Ancien PNJ dont l'apparence a été posée hors du panel. Ce n'est plus un blocage
+            // (#325) : un renommage pose l'apparence par défaut. On le dit, en une phrase.
+            return new NpcAppearance(Status.TO_CONFIGURE, Reason.SOURCE_UNKNOWN, "d'origine",
+                    "Son apparence a été choisie hors de PlugAdmin. Si vous le renommez sans en "
+                            + "choisir une autre, il prendra l'apparence par défaut.", source);
         }
-        return new NpcAppearance(Status.CONFIGURED, Reason.SOURCE_RECORDED, "configurée",
-                "L'apparence de ce PNJ est décrite dans RPGQuest (" + source + ") : elle sera "
-                        + "réappliquée à l'identique avant chaque renommage, et survit aux "
-                        + "redémarrages.", source);
+        boolean isDefault = "URL".equals(kind) && DEFAULT_SKIN_URL.equals(value);
+        return new NpcAppearance(Status.CONFIGURED, Reason.SOURCE_RECORDED,
+                isDefault ? "par défaut" : "personnalisée",
+                isDefault ? "Ce PNJ porte l'apparence par défaut." : "Apparence choisie : " + source + ".",
+                source);
     }
 
     /** Le statut appelle-t-il une action de l'administrateur ? C'est le critère du filtre. */
@@ -180,14 +177,19 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
      * après le clic — ce qui est précisément ce qui s'est passé avec Elias.</p>
      */
     public boolean blocksRename() {
-        return reason == Reason.SOURCE_UNKNOWN || reason == Reason.TYPE_UNKNOWN;
+        return reason == Reason.TYPE_UNKNOWN;
+    }
+
+    /** Un renommage remplacera-t-il l'apparence actuelle par l'apparence par défaut (#325) ? */
+    public boolean renameAppliesDefault() {
+        return reason == Reason.SOURCE_UNKNOWN;
     }
 
     /** Classe Bootstrap de la pastille — rouge seulement quand quelque chose est vraiment cassé. */
     public String badgeClass() {
         return switch (status) {
             case CONFIGURED -> "text-bg-success";
-            case TO_CONFIGURE -> "text-bg-warning";
+            case TO_CONFIGURE -> "text-bg-secondary";
             case IN_PROGRESS -> "text-bg-info";
             case ERROR -> "text-bg-danger";
             case NOT_APPLICABLE -> "text-bg-secondary";
@@ -205,7 +207,7 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
      * signale quand même par sa pastille ; seule la liste de travail reste honnête.</p>
      */
     public String filterCategory() {
-        return reason == Reason.SOURCE_UNKNOWN ? "skin-todo" : "";
+        return status == Status.ERROR ? "todo" : "";
     }
 
     /** Description de la source enregistrée, ou texte vide si RPGQuest n'en connaît aucune. */
@@ -214,7 +216,7 @@ public record NpcAppearance(Status status, Reason reason, String label, String e
             return "";
         }
         return switch (kind) {
-            case "URL" -> "lien MineSkin " + value;
+            case "URL" -> DEFAULT_SKIN_URL.equals(value) ? "apparence par défaut" : "lien MineSkin " + value;
             case "NAME" -> "skin du compte « " + value + " »";
             default -> kind.toLowerCase(Locale.ROOT) + " " + value;
         };

@@ -1455,6 +1455,59 @@
     render();
   }
 
+  /* ---- Fiche PNJ : un seul formulaire ouvert à la fois (#325) ---------------------------- */
+
+  /*
+   * Les formulaires d'une fiche (« Déplacer », « Promenade »…) sont des volets repliables.
+   * Bootstrap ne sait pas les grouper ici (ils sont eux-mêmes dans un volet d'accordéon), donc on
+   * referme les autres volets du même groupe [data-one-form] à l'ouverture de l'un d'eux.
+   */
+  function initOneForm() {
+    document.addEventListener("show.bs.collapse", function (ev) {
+      var el = ev.target;
+      if (!el || !el.classList || !el.classList.contains("npc-form-collapse")) { return; }
+      var group = el.closest("[data-one-form]");
+      if (!group) { return; }
+      var open = group.querySelectorAll(".npc-form-collapse.show, .npc-form-collapse.collapsing");
+      for (var i = 0; i < open.length; i++) {
+        var other = open[i];
+        if (other === el || other.contains(el) || el.contains(other)) { continue; }
+        if (window.bootstrap && window.bootstrap.Collapse) {
+          window.bootstrap.Collapse.getOrCreateInstance(other, { toggle: false }).hide();
+        } else {
+          other.classList.remove("show");
+        }
+      }
+    });
+  }
+
+  /* ---- Champs conditionnels : <select data-switch="k"> montre [data-switch-for="k"] (#325) -- */
+
+  /*
+   * Seul le champ du choix actif est visible ET envoyé : les champs masqués sont désactivés, pour
+   * qu'un « required » invisible ne bloque jamais l'envoi et qu'aucune valeur cachée ne parte.
+   */
+  function initSwitch() {
+    var selects = document.querySelectorAll("select[data-switch]");
+    for (var i = 0; i < selects.length; i++) {
+      (function (sel) {
+        var key = sel.getAttribute("data-switch");
+        var scope = sel.form || document;
+        function apply() {
+          var blocks = scope.querySelectorAll('[data-switch-for="' + cssEsc(key) + '"]');
+          for (var b = 0; b < blocks.length; b++) {
+            var on = blocks[b].getAttribute("data-switch-value") === sel.value;
+            blocks[b].hidden = !on;
+            var fields = blocks[b].querySelectorAll("input, select, textarea");
+            for (var f = 0; f < fields.length; f++) { fields[f].disabled = !on; }
+          }
+        }
+        sel.addEventListener("change", apply);
+        apply();
+      })(selects[i]);
+    }
+  }
+
   /** Exécute un module en isolant sa panne : un module qui échoue n'empêche pas les autres. */
   function run(name, fn) {
     try { fn(); } catch (e) {
@@ -1477,6 +1530,8 @@
     run("initStyleFields", initStyleFields);
     run("initSubmitOnce", initSubmitOnce);
     run("initCharCount", initCharCount);
+    run("initOneForm", initOneForm);
+    run("initSwitch", initSwitch);
     run("initColorPalette", initColorPalette);
     run("initOpsAnnounce", initOpsAnnounce);
     run("initOpsConsole", initOpsConsole);

@@ -191,6 +191,8 @@ class DialogueSourceMergeTest {
     void sourceOnlyDialogueIsSelectableFromNpcForm() throws Exception {
         start();
         writeDialogue("lily_intro", LILY_INTRO_YAML);
+        runNpcList("[{\"id\":\"lily\",\"displayName\":\"Lily\",\"logicalDefinitionPresent\":true,"
+                + "\"citizensBindingPresent\":false,\"enabled\":true,\"state\":\"NOT_LINKED\",\"warnings\":[]}]");
         String npcs = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
         assertTrue(npcs.contains("value=\"rpgquest:lily_intro\""),
                 "dialogue source-only proposé dans le select Dialogue de la fiche PNJ");

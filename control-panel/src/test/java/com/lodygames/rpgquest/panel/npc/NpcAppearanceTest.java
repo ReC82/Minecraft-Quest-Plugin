@@ -32,18 +32,18 @@ class NpcAppearanceTest {
         String text = (a.label() + " " + a.explanation()).toLowerCase(Locale.ROOT);
         assertFalse(text.contains("sans skin"), "ne doit jamais affirmer l'absence de skin");
         assertFalse(text.contains("aucun skin"), "ne doit jamais affirmer l'absence de skin");
-        assertTrue(a.explanation().contains("inconnue"), "doit dire que c'est l'ORIGINE qui manque");
+        assertTrue(a.explanation().contains("hors de PlugAdmin"), "doit dire que c'est l'ORIGINE qui manque");
     }
 
     @Test
-    @DisplayName("Ce même état annonce le refus de renommage AVANT la soumission")
-    void thatStateWarnsAboutTheRenameRefusalBeforeSubmission() {
+    @DisplayName("Issue #325 : ce même état ne bloque plus le renommage, il annonce l'apparence par défaut")
+    void thatStateNoLongerBlocksTheRenameButAnnouncesTheDefaultAppearance() {
         NpcAppearance a = NpcAppearance.of(true, "PLAYER", "", "", LastAttempt.NONE);
 
-        assertTrue(a.blocksRename(), "le serveur refusera : l'écran doit le savoir avant le clic");
-        assertTrue(a.explanation().contains("renommage"), "et doit l'expliquer, pas seulement le coder");
-        assertTrue(a.needsConfiguration());
-        assertEquals("skin-todo", a.filterCategory());
+        assertFalse(a.blocksRename(), "le serveur pose l'apparence par défaut au lieu de refuser");
+        assertTrue(a.renameAppliesDefault());
+        assertTrue(a.explanation().contains("apparence par défaut"), "dit ce qui va se passer");
+        assertEquals("", a.filterCategory(), "ce n'est pas un problème à traiter");
     }
 
     @Test
@@ -56,7 +56,8 @@ class NpcAppearanceTest {
         assertEquals(Reason.SOURCE_RECORDED, a.reason());
         assertFalse(a.blocksRename());
         assertFalse(a.needsConfiguration());
-        assertEquals("", a.filterCategory(), "ne doit plus apparaître dans « à configurer »");
+        assertEquals("", a.filterCategory(), "rien à traiter");
+        assertEquals("personnalisée", a.label());
         assertTrue(a.sourceLabel().contains("https://minesk.in/abcd1234"),
                 "la source exacte est nommée, pas résumée");
     }
@@ -82,8 +83,8 @@ class NpcAppearanceTest {
         assertEquals(Reason.NON_PLAYER, a.reason());
         assertFalse(a.needsConfiguration(), "rien à configurer : ce n'est pas un oubli");
         assertFalse(a.blocksRename(), "son renommage est libre — aucun skin n'en dépend");
-        assertTrue(a.explanation().contains("VILLAGER"), "le type doit être nommé");
-        assertTrue(a.explanation().contains("connue"), "son apparence est connue, pas manquante");
+        assertEquals("villager", a.label(), "le type doit être nommé");
+        assertTrue(a.explanation().contains("pas de skin"), "pas de skin à choisir, ce n'est pas un oubli");
     }
 
     @Test
@@ -95,7 +96,7 @@ class NpcAppearanceTest {
         assertEquals(Reason.TYPE_UNKNOWN, a.reason());
         // SkinPreservationPlanner refuse aussi ce cas : l'écran doit annoncer le même refus.
         assertTrue(a.blocksRename());
-        assertTrue(a.explanation().contains("inconnu") || a.explanation().contains("pas indiqué"));
+        assertTrue(a.explanation().contains("Actualisez"), "dit quoi faire");
         // Mais ce n'est PAS une apparence à décider : un relevé antérieur à #197 ne porte aucun
         // type, et inclure ce cas noierait la liste de travail dans des faux positifs.
         assertEquals("", a.filterCategory(),
@@ -136,7 +137,7 @@ class NpcAppearanceTest {
         assertEquals(Status.ERROR, a.status());
         assertEquals(Reason.ATTEMPT_FAILED, a.reason());
         assertEquals("text-bg-danger", a.badgeClass());
-        assertTrue(a.explanation().contains("rien n'a été remplacé"),
+        assertTrue(a.explanation().contains("garde la précédente"),
                 "un échec ne doit pas laisser craindre une apparence détruite");
     }
 
@@ -166,7 +167,7 @@ class NpcAppearanceTest {
     void everyStatusHasABadgeAndOnlyRealFailuresAreRed() {
         assertEquals("text-bg-success",
                 NpcAppearance.of(true, "PLAYER", "NAME", "Notch", LastAttempt.NONE).badgeClass());
-        assertEquals("text-bg-warning",
+        assertEquals("text-bg-secondary",
                 NpcAppearance.of(true, "PLAYER", "", "", LastAttempt.NONE).badgeClass());
         assertEquals("text-bg-info",
                 NpcAppearance.of(true, "PLAYER", "NAME", "Notch", LastAttempt.PENDING).badgeClass());
@@ -190,5 +191,13 @@ class NpcAppearanceTest {
                 }
             }
         }
+    }
+
+    @Test
+    @DisplayName("Issue #325 : l'apparence par défaut est reconnue et nommée simplement")
+    void theDefaultAppearanceIsRecognised() {
+        NpcAppearance a = NpcAppearance.of(true, "PLAYER", "URL", NpcAppearance.DEFAULT_SKIN_URL, LastAttempt.NONE);
+        assertEquals("par défaut", a.label());
+        assertEquals("apparence par défaut", a.sourceLabel());
     }
 }

@@ -71,11 +71,23 @@ public final class ContentEditorPages {
 
     /** GET {@code /quests/new} ({@code slug == null}) ou {@code /quests/edit/<slug>}. */
     public Result questPage(RefData ref, String slug, boolean saved) {
+        return questPage(ref, slug, saved, null);
+    }
+
+    /**
+     * Idem ; {@code giverPrefill} (issue #325, bouton « Créer une quête qu'il propose » d'une fiche
+     * PNJ) préremplit le champ « PNJ donneur » d'une quête neuve. Ignoré en édition.
+     */
+    public Result questPage(RefData ref, String slug, boolean saved, String giverPrefill) {
         QuestDraft draft;
         String expectedSha = "";
         List<String> sourceProblems = List.of();
         if (slug == null) {
             draft = QuestDraft.blank();
+            String giver = giverPrefill == null ? "" : giverPrefill.trim().toLowerCase(Locale.ROOT);
+            if (NPC_REF.matcher(giver).matches()) {
+                draft.giver = giver;
+            }
         } else {
             Optional<ContentWorkspace.ContentFile> cf = workspace.read("quests", slug);
             if (cf.isEmpty()) {

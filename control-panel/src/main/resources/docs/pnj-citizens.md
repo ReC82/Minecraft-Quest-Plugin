@@ -7,11 +7,67 @@ order: 1
 
 # Créer et configurer un PNJ
 
-RPGQuest **ne fournit ni ne modifie aucune commande Citizens**. On crée et on gère le PNJ avec
-les commandes **Citizens** normales, puis on lui ajoute **un seul** identifiant RPGQuest par
-`/rpgadmin npc tag`. Cet identifiant est la clé qui relie le PNJ au contenu (dialogue, quête).
+## Le parcours simple dans PlugAdmin
 
-Référence complète : `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` dans le dépôt.
+Page **PNJ** → bouton **« Créer un PNJ »**. Trois choses à remplir :
+
+1. **Nom** (48 caractères au plus — le compteur l'affiche pendant la saisie) ;
+2. **Emplacement** : « À côté du Guide, au village » (automatique), ou « À une position précise »
+   (monde + X / Y / Z — la touche F3 en jeu donne votre position) ;
+3. **Apparence** : l'apparence par défaut, ou un lien MineSkin, ou un pseudo Minecraft.
+
+Puis **« Créer le PNJ »**. PlugAdmin crée en une fois tout ce qu'il faut : le personnage dans le jeu,
+sa fiche RPGQuest, son apparence, et **un dialogue à lui** qui dit « Salut ! » (aucune quête n'y est
+proposée). L'identifiant est déduit du nom : « Lucien » donne `lucien` ; un deuxième « Lucien »
+donne `lucien_2`. Un double clic ne crée jamais deux PNJ.
+
+Si quelque chose échoue, la page affiche ce qui est fait, ce qui reste, et un bouton
+**« Reprendre »** qui ne renvoie que l'étape manquante.
+
+Ensuite, cliquez sur le PNJ dans la liste. Sa fiche montre son nom, son apparence, son emplacement,
+et des boutons — un seul formulaire s'ouvre à la fois :
+
+| Bouton | Ce qu'il fait |
+|---|---|
+| **Modifier le nom** | change le nom partout (fiche et jeu) |
+| **Apparence** | lien MineSkin (voir le [catalogue MineSkin](https://mineskin.org/skins)) ou pseudo Minecraft |
+| **Déplacer** | monde, X / Y / Z, direction du regard en mots ; « Sans changement » garde l'orientation |
+| **Promenade** | rayon et amplitude verticale autour de sa position de départ ; quand elle tourne : « Arrêter la promenade et revenir au départ » |
+| **Regarder les joueurs** | la case dit l'état voulu ; portée de 1 à 64 blocs |
+| **Dialogue et quêtes** | « Modifier le dialogue », « Créer une quête qu'il propose » |
+| **Supprimer** | page courte : ce qui part, ce qui reste, les quêtes à corriger d'abord |
+
+**« Actualiser les PNJ »** relit en une fois la liste RPGQuest et les personnages du jeu. Le
+bouton **« Diagnostic »** ouvre la page technique (compteurs, identifiants, messages du serveur).
+
+Un personnage présent en jeu mais inconnu de RPGQuest (créé à la main avec Citizens) apparaît
+« à rattacher » : **« Rattacher à RPGQuest »** lui crée sa fiche et la liaison, sans le recréer.
+Ses dialogues et quêtes déjà écrits sont conservés ; son apparence n'est pas modifiée.
+
+### Apparence par défaut
+
+`https://minesk.in/f534ead9d5a3413e9bb51bce9b211995`. Elle est posée sur un nouveau PNJ si vous
+n'en choisissez pas d'autre, et sur un ancien PNJ de type joueur **quand vous le renommez** si son
+apparence n'avait jamais été enregistrée (avant, ce renommage était refusé). Les anciens PNJ ne
+sont jamais modifiés tant qu'on ne les renomme pas, et les PNJ qui ne sont pas des joueurs
+(villageois…) n'ont pas de skin.
+
+### Peut-on changer l'identifiant d'un PNJ ?
+
+Non. L'identifiant (`lucien`, visible dans « Informations avancées ») est ce que les quêtes et les
+dialogues utilisent pour désigner le PNJ : le changer casserait ces références. Pour en changer
+quand même :
+
+1. créer un nouveau PNJ avec le bon nom (il reçoit un nouvel identifiant) ;
+2. adapter les références à l'ancien identifiant : champ **« PNJ donneur »** des quêtes, objectifs
+   **« Parler à un PNJ »** et **« Remettre des objets à un PNJ »**, dialogues qui ouvrent le sien,
+   et son propre dialogue (`rpgquest:<identifiant>`) à recopier ;
+3. supprimer l'ancien PNJ — la page de suppression liste ce qui le cite encore.
+
+---
+
+Les sections suivantes décrivent le fonctionnement interne et les commandes Citizens en jeu, pour
+les cas que PlugAdmin ne couvre pas.
 
 ## 1. Créer le PNJ Citizens
 
@@ -75,7 +131,7 @@ taguer le PNJ **exactement** avec cet id.
 
 ## 3 bis. Renommer un PNJ (depuis PlugAdmin, chemin recommandé)
 
-Fiche du PNJ → section **Identité** → **« Renommer le PNJ »**. Un seul champ, un seul bouton.
+Fiche du PNJ → **« Modifier le nom »** → **« Enregistrer le nom »**. Un seul champ, un seul bouton.
 
 Il n'y a **qu'un nom à gérer**. PlugAdmin met à jour en une opération la fiche RPGQuest *et* le nom
 affiché au-dessus du PNJ en jeu, puis **relit les deux** et dit lequel a changé. Si une seule couche
@@ -89,9 +145,6 @@ Les **textes de dialogue ne sont pas réécrits**. Un locuteur (`speaker`) peut 
 plusieurs personnages : le renommage **liste** les dialogues qui nomment encore l'ancien nom, et
 c'est à vous de décider lesquels corriger, depuis l'éditeur de dialogues.
 
-> [!NOTE]
-> Le champ « Nom du PNJ » du formulaire **« Modifier »** est en lecture seule, et renvoie ici. Deux
-> champs de nom concurrents, c'est exactement ce qui faisait divergier le catalogue et le jeu.
 
 ## 4. Mettre un skin
 
@@ -102,29 +155,23 @@ Fiche du PNJ → section **Apparence**. L'état y est affiché, et repris sur la
 | État | Ce que cela veut dire | Renommage possible ? |
 |---|---|---|
 | **configurée** | PNJ joueur, et RPGQuest connaît la source de son apparence | oui — elle est réappliquée à l'identique |
-| **à configurer** | PNJ joueur, source **inconnue** de RPGQuest | **non**, voir ci-dessous |
+| **d'origine** | PNJ joueur, source **inconnue** de RPGQuest | oui — il prend l'apparence par défaut (#325) |
 | **en cours** | apparence demandée, pas encore confirmée par un relevé Citizens | — |
 | **erreur** | la dernière tentative a échoué ; le PNJ garde son apparence | — |
 | **non applicable** | PNJ non joueur (villageois, zombie…), ou aucun PNJ Citizens lié | oui |
 
-> [!IMPORTANT]
-> **« Source inconnue » ne veut pas dire « sans skin ».** L'API publique de Citizens ne permet pas
-> de *lire* le skin appliqué à un PNJ. Un PNJ en « à configurer » a très probablement une apparence,
-> bien visible par les joueurs — RPGQuest ignore seulement d'où elle vient, et ne sait donc pas la
-> reproduire. C'est ce qui rend son renommage dangereux : un PNJ de type joueur sans skin explicite
-> **dérive son apparence de son nom**, donc le renommer la changerait sans retour possible.
->
-> Définir une apparence depuis le panel enregistre sa source et lève le blocage. L'avertissement est
-> affiché **avant** la soumission du renommage, avec le bouton pour le faire sur place : le nom saisi
-> n'est pas perdu, et rien n'a été modifié entre-temps.
-
-Le filtre **« Apparence à configurer »**, en haut de la page PNJ, liste les PNJ qui attendent cette
-décision.
+> [!NOTE]
+> **« D'origine » ne veut pas dire « sans skin ».** L'API publique de Citizens ne permet pas de lire
+> le skin appliqué : RPGQuest ignore seulement d'où il vient. Depuis l'issue #325, renommer un tel PNJ
+> lui pose l'apparence par défaut (au lieu de refuser) ; choisissez-lui une apparence avant si vous
+> voulez en garder une autre.
 
 Deux sources, et seulement deux : un **lien MineSkin** (`https://minesk.in/…` — jamais la commande
 `/npc skin --url …`, refusée) ou un **pseudo Minecraft**, que Citizens résout lui-même. Le
-téléchargement est asynchrone : un succès signifie « demande transmise », pas « skin visuellement
-confirmé » — vérifier en jeu, une reconnexion du client peut être nécessaire.
+téléchargement est fait par Citizens : la fiche dit « demande envoyée », pas « appliquée », tant que
+le relevé suivant ne l'a pas confirmé — vérifier en jeu, une reconnexion du client peut être
+nécessaire. Un lien qui ne commence pas par `https://`, ou qui n'est pas un lien MineSkin, est
+refusé avec un message simple.
 
 > [!NOTE]
 > La fiche n'affiche **pas d'image** du skin, volontairement : Citizens ne donne pas accès à la
@@ -239,13 +286,15 @@ sans définition.
 
 ## 10. Supprimer un PNJ (issue #226)
 
-Depuis la fiche d'un PNJ, **Zone de danger → « Supprimer… »** ouvre un aperçu des
-dépendances. Rien ne se supprime depuis la liste : l'aperçu est le seul point de départ.
+Depuis la fiche d'un PNJ, **« Supprimer »** ouvre une page courte (issue #325) : ce qui sera
+supprimé (le personnage en jeu, sa fiche), ce qui est conservé (son dialogue, la progression des
+joueurs), les quêtes qui ont encore besoin de lui — avec un lien vers chacune — puis
+**« Supprimer le PNJ »** (= nettoyage complet D ci-dessous) et **« Annuler »**. Si son dialogue
+n'est utilisé par aucun autre PNJ, la page de résultat propose de le supprimer aussi, par le
+parcours de suppression des dialogues.
 
-L'aperçu montre les **cinq couches**, présentes *et* absentes — définition logique, liaison
-RPGQuest ↔ Citizens, PNJ Citizens physique, dialogue lié, et les quêtes qui citent le PNJ
-(donneur, `TALK_TO_NPC`, `DELIVER_ITEM_TO_NPC`). Puis il propose quatre opérations, de la
-moins à la plus destructrice :
+« Autres choix » et « Détails techniques » (les cinq couches, présentes *et* absentes) sont
+repliés. Les quatre opérations, de la moins à la plus destructrice :
 
 | | Opération | Ce qu'elle fait | Ce qu'elle ne fait pas |
 |---|---|---|---|
@@ -267,12 +316,13 @@ Une opération bloquée **n'a pas de bouton** : il n'y a rien à cliquer.
 
 - **Permission dédiée** : supprimer un PNJ n'est pas accordé par le droit d'écriture.
   Détruire l'entité Citizens exige en plus le droit d'apparition de PNJ.
-- **Confirmation tapée** : il faut retaper l'identifiant du PNJ, et l'identifiant numérique
-  Citizens quand l'opération touche l'entité.
+- **Confirmation tapée** : il faut retaper l'identifiant du PNJ. L'identifiant numérique
+  Citizens attendu voyage avec le formulaire et doit correspondre au relevé au moment de l'envoi
+  (une page périmée est refusée).
 - **Jamais le mauvais Citizens** : le serveur confronte l'identifiant numérique à la
   liaison réelle, puis l'UUID de l'entité, avant de détruire quoi que ce soit.
-- **Aucun dialogue n'est jamais supprimé.** Un dialogue partagé par deux fiches est signalé
-  nommément dans l'aperçu.
+- **Aucun dialogue n'est supprimé avec le PNJ.** Un dialogue partagé est signalé ; un dialogue qui
+  n'est qu'à lui peut ensuite être supprimé par son propre parcours, qui a ses vérifications.
 - **Sans relevé `npc.list`, aucune opération n'est proposée** : une liste de dépendances
   vide ne veut pas dire « aucune dépendance » quand on n'a pas regardé. Rafraîchir le
   catalogue PNJ d'abord.

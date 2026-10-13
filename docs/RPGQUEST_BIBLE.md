@@ -3295,6 +3295,50 @@ Implémentation : `npc.NpcIdentityService` (façade unique), `npc.CitizensNpcBri
 absent). Page docs-site : `npc.html`. Référence complète :
 [docs/NPC_DIALOGUES_QUESTS_GUIDE.md](NPC_DIALOGUES_QUESTS_GUIDE.md) section 1.
 
+### Parcours simple de PlugAdmin (issue #325)
+
+La page **PNJ** de PlugAdmin est le chemin normal ; les commandes Citizens restent pour les cas
+qu'elle ne couvre pas. Le parcours ne montre ni « définition », ni « liaison », ni « registre » :
+ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
+
+-   **« Créer un PNJ »** (nom ≤ 48 caractères, emplacement « à côté du Guide » ou position précise,
+    apparence par défaut / lien MineSkin / pseudo). Une seule demande produit, dans cet ordre :
+    le dialogue initial `dialogues/<id>.yml` écrit dans la source (« Salut ! », un choix « Au
+    revoir », **aucune quête**), sa publication sur DEV (`content.publish`), puis
+    `npc.citizens.provision` avec `npc_id`, `dialogue_id: rpgquest:<id>` et l'apparence. L'id suit
+    la règle `slugify` du plugin, suffixé `_2`, `_3`… s'il est déjà pris (définitions, ids cités,
+    PNJ liés, dialogues source et serveur). Jeton `request_token` par affichage du formulaire :
+    un double clic ou un renvoi ne met rien de plus en file ; le plugin refuse en plus tout id déjà
+    défini. Échec : la page dit ce qui est fait / ce qui reste, et **« Reprendre »** ne renvoie que
+    l'étape manquante (dialogue non réécrit, publication non refaite si déjà réussie).
+-   **« Rattacher à RPGQuest »** (personnage Citizens sans fiche) : `npc.definition.create`
+    (id = nom en jeu normalisé, ce qui retrouve un `rpgquest:<id>` existant) + `npc.citizens.link`,
+    plus le dialogue initial seulement si aucun dialogue de ce nom n'existe. Le personnage n'est
+    jamais recréé, son apparence n'est pas touchée.
+-   **« Actualiser les PNJ »** (`POST /npcs/refresh`) met en file `npc.list` **et**
+    `npc.citizens.list` (jamais en double).
+-   Fiche : un seul formulaire ouvert à la fois. **Déplacer** : direction en mots (nord = 180°,
+    sud = 0°, est = -90°, ouest = 90° ; tête horizontale 0°, haut -30°, bas 30°), « Sans
+    changement » = orientation **gardée** (le plugin ne la remet plus à 0) ; si le PNJ se promène,
+    le centre de sa zone devient la destination. **Promenade** : sans champ d'ancre — le centre est
+    sa position de départ, et une promenade active garde son centre (jamais une position
+    temporaire) ; active, un seul bouton « Arrêter la promenade et revenir au départ »
+    (`enabled=false`, `return_home=true`), retour contrôlé comme un déplacement (sol + deux blocs
+    libres), sinon la promenade est arrêtée et le message dit que le PNJ est resté sur place.
+    **Regarder les joueurs** : la case envoie l'état choisi (`state_form=1` + `state=on`), jamais
+    une bascule ; portée 1 à 64.
+-   **Apparence par défaut** : `https://minesk.in/f534ead9d5a3413e9bb51bce9b211995`
+    (`NpcIdentityService.DEFAULT_SKIN_URL`), enregistrée dans `npc_citizens_skins` comme toute
+    source. Posée sur un nouveau PNJ sans apparence choisie, et au **renommage** d'un PNJ joueur
+    sans source enregistrée (décision `APPLY_DEFAULT_THEN_RENAME` de `SkinPreservationPlanner`,
+    qui remplace l'ancien refus `SKIN_SOURCE_UNKNOWN`). Aucune application en masse ; PNJ non
+    joueurs inchangés ; type indéterminable toujours refusé.
+-   Lien de skin : refus simple s'il ne commence pas par `https://`, puis le format
+    `https://minesk.in/<id>` reste exigé par le panel et le plugin.
+-   « Créer une quête qu'il propose » ouvre `/quests/new?giver=<id>` (champ « PNJ donneur »
+    prérempli).
+-   L'identifiant ne se change pas : voir la FAQ de la page d'aide `pnj-citizens`.
+
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 
 Depuis la V2, un PNJ RPGQuest a une **définition logique** en données :

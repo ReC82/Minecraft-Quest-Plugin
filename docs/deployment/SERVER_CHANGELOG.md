@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-13 - PNJ simplifiés dans PlugAdmin (#325)
+
+### Changement
+
+Plugin : `npc.citizens.provision` accepte l'identifiant choisi par le panel (`npc_id`) et le
+dialogue initial (`dialogue_id`), et pose l'apparence par défaut quand aucune n'est donnée ;
+renommer un PNJ joueur sans apparence enregistrée pose l'apparence par défaut au lieu de refuser ;
+déplacer garde l'orientation si aucune n'est donnée et recentre une promenade active ; « arrêter la
+promenade » peut ramener le PNJ à son point de départ (`return_home`) ; une promenade active garde
+son centre. Panel : refonte de `/npcs` (création en un geste, rattachement, fiche courte,
+`/npcs/diagnostic`, suppression courte).
+
+### Action serveur
+
+- Remplacer le JAR RPGQuest (aucune migration SQL, aucun fichier de configuration) ;
+- déployer le panel (`scripts/plugadmin/deploy.sh`) ;
+- redémarrage du serveur Minecraft requis pour charger le JAR.
+
+### Ne pas altérer
+
+`data.db`, `plugins/RPGQuest/npcs/`, `dialogues/`, `quests/`, les PNJ Citizens existants : aucun
+n'est modifié par le déploiement (l'apparence par défaut n'est posée qu'à la création ou au
+renommage, jamais en masse).
+
+### Rollback
+
+Remettre le JAR et le panel précédents (sauvegardes datées du déploiement). Les dialogues
+`dialogues/<id>.yml` créés entre-temps restent valides pour l'ancien JAR.
+
 ## 2026-08-15 - HubWorldRulesService (règles du monde Hub)
 
 ### Changement

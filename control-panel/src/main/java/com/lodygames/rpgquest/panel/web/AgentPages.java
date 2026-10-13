@@ -5430,14 +5430,25 @@ public final class AgentPages {
         }
         StringBuilder sb = new StringBuilder();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        java.time.Instant horizon = java.time.Instant.now().minus(java.time.Duration.ofDays(2));
-        for (com.lodygames.rpgquest.panel.agent.AgentActionRow row : store.recentActions(agentId, 200)) {
+        java.time.Instant now = java.time.Instant.now();
+        java.time.Instant horizon = now.minus(java.time.Duration.ofDays(2));
+        Optional<Instant> survey = surveyInstant(agentId, "npc.list");
+        List<com.lodygames.rpgquest.panel.agent.AgentActionRow> recent = store.recentActions(agentId, 200);
+        for (com.lodygames.rpgquest.panel.agent.AgentActionRow row : recent) {
             if (!"npc.citizens.provision".equals(row.type())) {
                 continue;
             }
             String npcId = row.params().getOrDefault("npc_id", "");
             if (npcId.isEmpty() || !seen.add(npcId) || linked.contains(npcId)
-                    || (row.createdAt() != null && row.createdAt().isBefore(horizon))) {
+                    || (row.createdAt() != null && row.createdAt().isBefore(horizon))
+                    || deletedAfter(recent, npcId, row.createdAt())) {
+                continue;
+            }
+            Instant finished = row.completedAt() != null ? row.completedAt() : row.createdAt();
+            if (row.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS
+                    && survey.isPresent() && finished != null && survey.get().isAfter(finished)) {
+                // Créé, puis la liste a été relue sans lui : il a été supprimé depuis. Un ancien
+                // succès ne doit jamais laisser croire qu'il existe encore.
                 continue;
             }
             String name = row.params().getOrDefault("display_name", npcId);
@@ -5450,7 +5461,8 @@ public final class AgentPages {
                         .append(" » en cours…</strong> La liste se met à jour toute seule.");
             } else if (row.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS) {
                 sb.append("<strong>« ").append(Http.esc(MiniText.plain(name)))
-                        .append(" » a été créé.</strong> Cliquez sur « Actualiser les PNJ » s'il n'apparaît pas encore.");
+                        .append(" » a été créé</strong> ").append(Http.esc(ActionView.relativeTime(finished, now)))
+                        .append(". Il apparaît dans la liste dès qu'elle est actualisée.");
             } else {
                 sb.append("<strong>La création de « ").append(Http.esc(MiniText.plain(name)))
                         .append(" » n'est pas terminée.</strong>");
@@ -5475,6 +5487,19 @@ public final class AgentPages {
             sb.append("</div></div>");
         }
         return sb.toString();
+    }
+
+    /** Le PNJ a-t-il été supprimé (fiche ou personnage) après cette création ? */
+    private static boolean deletedAfter(List<com.lodygames.rpgquest.panel.agent.AgentActionRow> rows, String npcId,
+                                        Instant created) {
+        for (com.lodygames.rpgquest.panel.agent.AgentActionRow r : rows) {
+            boolean delete = "npc.citizens.delete".equals(r.type()) || "npc.definition.delete".equals(r.type());
+            if (delete && npcId.equalsIgnoreCase(r.params().getOrDefault("npc_id", ""))
+                    && (created == null || r.createdAt() == null || !r.createdAt().isBefore(created))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String step(boolean done, String label) {

@@ -926,6 +926,27 @@ class NpcsCatalogTest {
     }
 
     @Test
+    void anOldCreationSuccessDisappearsOnceTheNpcIsDeleted() throws Exception {
+        startWithContent();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        post("/npcs/create", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID + "&display_name=Test+Claude"
+                + "&place=auto&skin_source=default&request_token=tok1234567890efgh");
+        AgentActionRow provision = pendingOfType("npc.citizens.provision").get(0);
+        store.recordResult(provision.id(), TestConfig.AGENT_ID,
+                com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS, "", "ok", "{}",
+                java.time.Instant.now());
+        assertTrue(get("/npcs?agent=" + TestConfig.AGENT_ID).body().contains("a été créé"),
+                "avant actualisation, le succès est annoncé");
+
+        store.createAction(TestConfig.AGENT_ID, "npc.citizens.delete",
+                Map.of("npc_id", "test_claude", "citizens_id", "9"), TestConfig.OWNER_USERNAME);
+        String after = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+        assertFalse(after.contains("a été créé"), "un PNJ supprimé n'est plus annoncé comme créé");
+        assertFalse(after.contains("Création de « Test Claude »"), "ni comme en cours");
+    }
+
+    @Test
     void aSecondNpcWithTheSameNameGetsTheNextFreeId() throws Exception {
         startWithContent();
         runListWithSuccess("npc.list", NPC_DETAILS);

@@ -273,6 +273,20 @@ public enum AgentActionType {
      * bibliothèque. Aucun bloc modifié, aucun fichier écrasé, l'original et le placement intacts.
      */
     BUILDING_PLACEMENT_CAPTURE("building.placement.capture"),
+    /** Issue #178 — villes : relevé (lecture seule). */
+    CITY_LIST("city.list"),
+    /** Issue #178 — renommer une ville (l'identifiant ne change jamais). */
+    CITY_RENAME("city.rename"),
+    /** Issue #178 — régler la distance de détection (carré horizontal). */
+    CITY_RESIZE("city.resize"),
+    /** Issue #178 — activer / désactiver une ville. */
+    CITY_ACTIVE("city.active"),
+    /** Issue #178 — armer le déplacement du centre : le prochain clic d'outil du joueur désigné. */
+    CITY_MOVE_ARM("city.move.arm"),
+    /** Issue #178 — montrer le périmètre en particules au joueur désigné (~15 s). */
+    CITY_PERIMETER_SHOW("city.perimeter.show"),
+    /** Issue #178 — supprimer une ville et ses découvertes (confirmation explicite). */
+    CITY_DELETE("city.delete"),
     DIALOGUE_LIST("dialogue.list"),
     DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
     DIALOGUE_NODE_CREATE("dialogue.node.create"),

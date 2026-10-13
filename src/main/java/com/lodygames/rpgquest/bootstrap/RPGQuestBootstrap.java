@@ -984,6 +984,7 @@ public final class RPGQuestBootstrap {
                 buildingPlacementService::all, plugin.getLogger(), java.time.Clock.systemUTC()));
         // Issue #246 : capturer une construction posée comme nouveau bâtiment. Lecture seule du
         // monde ; n'écrit que dans la bibliothèque, jamais par-dessus un fichier existant.
+        agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
         agentActions.setBuildingCapture(new com.lodygames.rpgquest.building.BuildingCaptureService(
                 buildingPlacementService, buildingSiteService, buildingLibrary, schematicGateway,
                 new com.lodygames.rpgquest.building.BukkitWorldProbe(), java.time.Clock.systemUTC(),

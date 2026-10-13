@@ -83,6 +83,12 @@ public final class PendingCityRegistry {
         return Optional.of(armed);
     }
 
+    /** Déplacements armés encore valables, pour l'affichage du panel. */
+    public java.util.List<ArmedMove> armedMoves() {
+        Instant now = clock.instant();
+        return moves.values().stream().filter(m -> !now.isAfter(m.expiresAt())).toList();
+    }
+
     public void cancelMove(String playerId) {
         moves.remove(playerId);
     }

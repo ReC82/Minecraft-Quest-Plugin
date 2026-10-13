@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.travel.PortalTeleporter;
 import com.lodygames.rpgquest.travel.WorldPortalEntryGuard;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Set;
 import java.util.UUID;
@@ -36,8 +37,10 @@ import org.bukkit.entity.Player;
  *
  * <p>Un joueur non éligible n'est <strong>pas</strong> téléporté : il reste où il est (au Hub) et
  * reçoit un message qui l'oriente vers le Guide / Jo. Aucune permission de build ou d'admin ne
- * contourne cette règle par accident — seul le bypass explicitement prévu {@code
- * rpgquest.admin.world} (le même que {@link ClaimsWorldRulesListener}) passe outre.</p>
+ * contourne cette règle par accident, et <strong>être OP ne suffit pas</strong> (issues #35/#321) :
+ * seul le mode bypass administrateur activé explicitement ({@link
+ * com.lodygames.rpgquest.permission.AdminBypassMode}, avec le nœud {@code rpgquest.bypass.claimworld}
+ * ou l'ombrelle {@code rpgquest.admin.world}) passe outre.</p>
  *
  * <p>La vérité {@code CLAIM_TIER_1} vit en base : {@link #allowEntry} refuse d'abord le passage
  * immédiat (retourne {@code false}), lance la lecture asynchrone, puis — si le joueur est éligible
@@ -63,14 +66,18 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
     private final Set<UUID> pendingChecks = ConcurrentHashMap.newKeySet();
     private final Set<UUID> cleared = ConcurrentHashMap.newKeySet();
 
+    /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
+    private final AdminBypassMode bypass;
+
     public ClaimWorldAccessGuard(RPGQuestPlugin plugin, ClaimService claimService,
                                   ClaimReturnService returnService, Supplier<ClaimConfig> config,
-                                  PortalTeleporter teleporter) {
+                                  PortalTeleporter teleporter, AdminBypassMode bypass) {
         this.plugin = plugin;
         this.claimService = claimService;
         this.returnService = returnService;
         this.config = config;
         this.teleporter = teleporter;
+        this.bypass = bypass;
     }
 
     @Override
@@ -82,17 +89,15 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
         if (cleared.remove(playerId)) {
             return true; // contrôle réussi tout juste effectué : ce passage-ci est le nôtre.
         }
-        // Issue #200 : nœud dédié OU ombrelle historique. Le correctif #22 est intégralement
-        // préservé — le bypass n'est jamais refusé, et il ne dispense jamais du moyen de repartir.
-        if (RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
-            // Trace explicite (issues #21/#22) : un test « en jeu » d'un compte OP passe par ici et
-            // *contourne* volontairement le contrôle — c'est la cause la plus fréquente d'un « je
-            // peux entrer sans avoir débloqué le claim ». Le parcours d'un vrai nouveau joueur doit
-            // être validé avec un compte NON opéré.
+        // Issues #35/#321 : un OP n'entre plus « par défaut ». Le contournement exige le mode bypass
+        // administrateur activé explicitement (/rpgadmin bypass on, visible en jeu) ET le nœud dédié
+        // OU l'ombrelle historique (#200). Le correctif #22 est intégralement préservé — le bypass
+        // n'est jamais refusé, et il ne dispense jamais du moyen de repartir.
+        if (bypass.allows(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
             plugin.getSLF4JLogger().info(
-                    "[claims-access] {} : entrée dans « {} » via le portail {} AUTORISÉE par le bypass {} "
-                            + "(compte OP ou permission explicite) — contrôle CLAIM_TIER_1 non appliqué.",
-                    player.getName(), portal.destinationWorld(), portal.id(), BYPASS_PERMISSION);
+                    "[claims-access] {} : entrée dans « {} » via le portail {} AUTORISÉE par le mode bypass "
+                            + "administrateur ({}) — contrôle CLAIM_TIER_1 non appliqué.",
+                    player.getName(), portal.destinationWorld(), portal.id(), RpgPermissions.BYPASS_CLAIM_WORLD);
             // Le bypass n'est jamais refusé — mais il ne dispense pas du moyen de repartir
             // (issue #22) : la Pierre de retour est garantie au mieux, sans bloquer le passage.
             ensureReturn(player, false);

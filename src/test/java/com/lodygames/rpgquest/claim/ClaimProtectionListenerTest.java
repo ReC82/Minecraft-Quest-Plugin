@@ -55,6 +55,9 @@ class ClaimProtectionListenerTest {
     Path tempDir;
 
     private ServerMock server;
+    /** Issue #35 : mode bypass explicite, fermé par défaut. */
+    private final com.lodygames.rpgquest.permission.AdminBypassMode bypass =
+            new com.lodygames.rpgquest.permission.AdminBypassMode(() -> com.lodygames.rpgquest.settings.GameSettings.DEFAULTS);
     private RPGQuestPlugin plugin;
     private World world;
     private DatabaseManager database;
@@ -92,7 +95,7 @@ class ClaimProtectionListenerTest {
         claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService,
                 progressionService, variableRepository);
         claimService.start();
-        listener = new ClaimProtectionListener(claimService);
+        listener = new ClaimProtectionListener(claimService, bypass);
 
         owner = addPlayer();
         member = addPlayer();
@@ -178,6 +181,11 @@ class ClaimProtectionListenerTest {
     void blockBreakByABypassingAdminIsAllowed() {
         stranger.setOp(true); // rpgquest.admin.world est "default: op"
         Block block = world.getBlockAt(0, 64, 0);
+        BlockBreakEvent withoutSession = new BlockBreakEvent(block, stranger);
+        listener.onBreak(withoutSession);
+        assertTrue(withoutSession.isCancelled(), "issue #35 : un OP sans session respecte les claims d'autrui");
+
+        bypass.enable(stranger);
         BlockBreakEvent event = new BlockBreakEvent(block, stranger);
 
         listener.onBreak(event);

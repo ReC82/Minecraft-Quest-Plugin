@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.hub;
 
 import com.lodygames.rpgquest.config.HubConfig;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.function.Supplier;
 import org.bukkit.World;
@@ -37,7 +38,9 @@ import org.bukkit.event.world.EntitiesLoadEvent;
  * un PNJ Citizens, jamais concerné (Citizens gère déjà sa propre invulnérabilité). Ceci couvre
  * animaux passifs, mobs décoratifs, villageois et toute autre entité vivante, pas seulement les
  * drops. Bypass {@code rpgquest.admin.hub.combat}, <strong>explicite et distinct</strong> du droit
- * de construire ({@code rpgquest.admin.world}) — jamais accordé implicitement par ce dernier.</p>
+ * de construire ({@code rpgquest.admin.world}) — jamais accordé implicitement par ce dernier. Depuis
+ * l'issue #35, il ne compte <strong>qu'en mode bypass administrateur activé</strong> : son défaut
+ * {@code op} ne laisse plus un OP frapper les entités du Hub sans geste explicite.</p>
  *
  * <p><strong>Spawns de mobs indésirables (issues #121/#155)</strong> : tout spawn (quelle que soit
  * la raison — naturel, génération de chunk, spawner...) d'un mob hostile (tout {@link Monster},
@@ -49,19 +52,24 @@ import org.bukkit.event.world.EntitiesLoadEvent;
  *
  * <p>Bypass ({@code rpgquest.admin.world}) uniquement pour la casse/pose de bloc — jamais pour les
  * dégâts aux joueurs, qui n'ont pas de raison de viser un administrateur dans un monde de spawn
- * paisible.</p>
+ * paisible. Construire est un <em>droit de construction</em> (#27/#200), pas un contournement de
+ * règle de jeu : il ne dépend pas du mode bypass administrateur (#35).</p>
  */
 public final class HubWorldProtectionListener implements Listener {
 
-    private static final String BUILD_BYPASS_PERMISSION = "rpgquest.admin.world";
     private static final String COMBAT_BYPASS_PERMISSION = "rpgquest.admin.hub.combat";
 
     private final Supplier<HubConfig> config;
     private final NpcIdentityService npcIdentityService;
 
-    public HubWorldProtectionListener(Supplier<HubConfig> config, NpcIdentityService npcIdentityService) {
+    /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
+    private final AdminBypassMode bypass;
+
+    public HubWorldProtectionListener(Supplier<HubConfig> config, NpcIdentityService npcIdentityService,
+                                      AdminBypassMode bypass) {
         this.config = config;
         this.npcIdentityService = npcIdentityService;
+        this.bypass = bypass;
     }
 
     // ---- Dégâts aux joueurs (PvP inclus) --------------------------------------------------------
@@ -82,7 +90,7 @@ public final class HubWorldProtectionListener implements Listener {
         // Dégât non causé par un joueur identifiable (environnement, autre mob...) : la protection
         // ne vise que les dégâts provoqués par un joueur — laisser passer.
         Player attacker = resolveAttacker(event);
-        if (attacker != null && !attacker.hasPermission(COMBAT_BYPASS_PERMISSION)) {
+        if (attacker != null && !bypass.allowsExact(attacker, COMBAT_BYPASS_PERMISSION)) {
             event.setCancelled(true);
         }
     }

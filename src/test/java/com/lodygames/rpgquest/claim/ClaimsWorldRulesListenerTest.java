@@ -54,6 +54,9 @@ class ClaimsWorldRulesListenerTest {
     Path tempDir;
 
     private ServerMock server;
+    /** Issue #35 : mode bypass explicite, fermé par défaut. */
+    private final com.lodygames.rpgquest.permission.AdminBypassMode bypass =
+            new com.lodygames.rpgquest.permission.AdminBypassMode(() -> com.lodygames.rpgquest.settings.GameSettings.DEFAULTS);
     private RPGQuestPlugin plugin;
     private DatabaseManager database;
     private PlayerProfileRepository profileRepository;
@@ -87,7 +90,7 @@ class ClaimsWorldRulesListenerTest {
                 progressionService, variableRepository);
         claimService.start();
 
-        listener = new ClaimsWorldRulesListener(plugin, claimService, () -> CLAIMS_CONFIG);
+        listener = new ClaimsWorldRulesListener(plugin, claimService, () -> CLAIMS_CONFIG, bypass);
     }
 
     @AfterEach
@@ -348,11 +351,16 @@ class ClaimsWorldRulesListenerTest {
         PlayerMock admin = addPlayer();
         admin.setOp(true);
         Block block = claimsWorld.getBlockAt(500, 64, 500);
+        BlockBreakEvent withoutSession = new BlockBreakEvent(block, admin);
+        listener.onBreak(withoutSession);
+        assertTrue(withoutSession.isCancelled(), "issue #35 : être OP ne suffit plus, session explicite requise");
+
+        bypass.enable(admin);
         BlockBreakEvent event = new BlockBreakEvent(block, admin);
 
         listener.onBreak(event);
 
-        assertFalse(event.isCancelled(), "l'admin bypass existant (rpgquest.admin.world) doit continuer à fonctionner");
+        assertFalse(event.isCancelled(), "en mode bypass, l'ombrelle rpgquest.admin.world continue de fonctionner");
     }
 
     @Test

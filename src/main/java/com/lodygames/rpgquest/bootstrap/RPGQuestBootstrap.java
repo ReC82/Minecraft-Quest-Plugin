@@ -264,6 +264,13 @@ public final class RPGQuestBootstrap {
     /** Issue #191 : autorisation explicite et temporaire d'altérer waypoints/bornes (jamais via OP seul). */
     private final com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode =
             new com.lodygames.rpgquest.travel.TravelMaintenanceMode();
+    /**
+     * Issue #35 : mode bypass administrateur explicite, seul chemin d'un contournement de règle de jeu
+     * (claims, zones, combat Hub). Réglé dans PlugAdmin (#335), lu à chaque décision.
+     */
+    private final com.lodygames.rpgquest.permission.AdminBypassMode adminBypassMode =
+            new com.lodygames.rpgquest.permission.AdminBypassMode(() -> gameSettingsService == null
+                    ? com.lodygames.rpgquest.settings.GameSettings.DEFAULTS : gameSettingsService.current());
     private PlayerResetService playerResetService;
     /** Issue #131 — service central de rechargement du contenu dans le runtime. */
     private ContentReloadService contentReloadService;
@@ -338,7 +345,7 @@ public final class RPGQuestBootstrap {
         registry.start(modCompatService);
         registry.start(flattenService);
         registry.start(zoneRegistry);
-        registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry, npcIdentityService)));
+        registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry, npcIdentityService, adminBypassMode)));
         registry.start(new PlayerListenerService(plugin, new ZoneWandListener(zoneSelectionService)));
 
         // Issue #213 — emplacements de construction. La base est la source de vérité ; le cache est
@@ -439,7 +446,8 @@ public final class RPGQuestBootstrap {
         registry.start(hubWorldRulesService);
         registry.start(new PlayerListenerService(plugin, hubWorldRulesService.listener()));
         HubWorldProtectionListener hubWorldProtectionListener =
-                new HubWorldProtectionListener(() -> configService.current().hub(), npcIdentityService);
+                new HubWorldProtectionListener(() -> configService.current().hub(), npcIdentityService,
+                        adminBypassMode);
         registry.start(new PlayerListenerService(plugin, hubWorldProtectionListener));
         // Nettoyage ciblé (issues #121/#155) des mobs indésirables déjà présents dans les chunks
         // déjà chargés au démarrage (ex. spawn) — jamais un chargement forcé de tout le monde.
@@ -465,6 +473,7 @@ public final class RPGQuestBootstrap {
         gameSettingsService = new com.lodygames.rpgquest.settings.GameSettingsService(
                 plugin.getDataFolder().toPath(), plugin.getSLF4JLogger());
         registry.start(gameSettingsService);
+        registry.start(new com.lodygames.rpgquest.permission.AdminBypassService(plugin, adminBypassMode));
         registry.start(questMessagesService);
         registry.start(customItemRegistry);
         registry.start(new PlayerListenerService(plugin, new SpiderFangDropListener(customItemRegistry)));
@@ -621,10 +630,11 @@ public final class RPGQuestBootstrap {
                 progressionService, variableRepository);
         registry.start(claimService);
         claimTeleportService = new ClaimTeleportService(plugin, claimService);
-        registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService)));
+        registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService, adminBypassMode)));
         registry.start(new PlayerListenerService(plugin, new ClaimWandListener(claimSelectionService)));
         ClaimsWorldRulesListener claimsWorldRulesListener =
-                new ClaimsWorldRulesListener(plugin, claimService, () -> configService.current().claims());
+                new ClaimsWorldRulesListener(plugin, claimService, () -> configService.current().claims(),
+                        adminBypassMode);
         registry.start(new PlayerListenerService(plugin, claimsWorldRulesListener));
         // Le monde des claims est généralement déjà chargé à ce stade (les mondes se chargent avant
         // les plugins) : WorldLoadEvent ne se déclenchera donc jamais pour lui — purge explicite unique.
@@ -643,7 +653,7 @@ public final class RPGQuestBootstrap {
                 new ClaimReturnService(plugin, customItemRegistry, spawnService::resolve);
         ClaimWorldAccessGuard claimWorldAccessGuard = new ClaimWorldAccessGuard(
                 plugin, claimService, claimReturnService, () -> configService.current().claims(),
-                worldPortalTeleportListener);
+                worldPortalTeleportListener, adminBypassMode);
         // Avertissement de danger avant l'entrée dans le Wild (issue #161, qui couvre la partie B de
         // #26) : générique, sans aucune inspection d'inventaire, avec confirmation explicite et
         // option persistante « ne plus afficher ». Même choix de renderer que les dialogues
@@ -667,7 +677,7 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, new ClaimWorldSafetyListener(
                 plugin, claimService, claimReturnService, () -> configService.current().claims(),
                 () -> spawnService.resolve().or(() -> worldService.find(configService.current().hub().world())
-                        .map(w -> w.getSpawnLocation())))));
+                        .map(w -> w.getSpawnLocation())), adminBypassMode)));
 
         ClaimBorderRenderer claimBorderRenderer = new ClaimBorderRenderer(plugin);
         registry.start(claimBorderRenderer);
@@ -1339,6 +1349,7 @@ public final class RPGQuestBootstrap {
                 travelMaintenanceMode, claimService, contentReloadService, starterToolKitService,
                 buildingSiteService, buildingLibrary, buildingSchematics, plugin);
         rpgAdminCommand.setCities(cityRegistry, cityPendings);
+        rpgAdminCommand.setAdminBypassMode(adminBypassMode);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

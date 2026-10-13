@@ -89,7 +89,8 @@ class RpgPermissionsMatrixTest {
     @Test
     void theLegacyAdminWorldNodeStillGrantsEverythingAndIsTheOpsImplicitBypass() {
         // Constat d'audit (#27, #35, #321) : c'est le seul nœud qui ouvre tout, et plugin.yml le donne
-        // aux OP par défaut. Ce test documente l'état actuel ; le mode bypass explicite (#35) le remplacera.
+        // aux OP par défaut. Depuis #35, ses bypass de règles de jeu ne comptent QUE pendant une session
+        // /rpgadmin bypass on (voir AdminBypassModeTest) ; ses droits d'administration restent entiers.
         PlayerMock p = with(RpgPermissions.LEGACY_ADMIN_WORLD);
         assertTrue(RpgPermissions.canBuildInHub(p, "world_hub"));
         assertTrue(RpgPermissions.hasBypass(p, RpgPermissions.BYPASS_CLAIM_WORLD));

@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.claim;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.config.ClaimConfig;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Arrays;
 import java.util.Collection;
@@ -53,7 +54,7 @@ import org.bukkit.event.world.WorldLoadEvent;
  *       cible un joueur dans ce monde, et aucun n'y entre par portail ou téléportation ;</li>
  *   <li>casse/pose de bloc refusée <strong>hors de tout claim</strong> (le monde des claims n'est
  *       pas une zone de construction libre — seul l'intérieur d'un claim, protégé/géré par {@link
- *       ClaimProtectionListener}, est constructible). Bypass {@code rpgquest.admin.world}.</li>
+ *       ClaimProtectionListener}, est constructible). Bypass : mode bypass administrateur activé (#35).</li>
  * </ul>
  *
  * <p><strong>Volontairement absent</strong> (contrairement au Hub) : aucun verrouillage du
@@ -68,10 +69,15 @@ public final class ClaimsWorldRulesListener implements Listener {
     private final ClaimService claimService;
     private final Supplier<ClaimConfig> config;
 
-    public ClaimsWorldRulesListener(RPGQuestPlugin plugin, ClaimService claimService, Supplier<ClaimConfig> config) {
+    /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
+    private final AdminBypassMode bypass;
+
+    public ClaimsWorldRulesListener(RPGQuestPlugin plugin, ClaimService claimService, Supplier<ClaimConfig> config,
+                                    AdminBypassMode bypass) {
         this.plugin = plugin;
         this.claimService = claimService;
         this.config = config;
+        this.bypass = bypass;
     }
 
     // ---- Zone résidentielle totalement safe (tout dégât joueur annulé, toute cause) -----------
@@ -201,6 +207,6 @@ public final class ClaimsWorldRulesListener implements Listener {
     }
 
     private boolean isBypassing(Player player) {
-        return RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM_WORLD);
+        return bypass.allows(player, RpgPermissions.BYPASS_CLAIM_WORLD);
     }
 }

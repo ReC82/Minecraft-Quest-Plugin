@@ -89,7 +89,7 @@ public final class SettingsPages {
         boolean editable = canWrite && st.known() && !st.pending() && st.problem().isEmpty();
         switch (tab) {
             case "connexion" -> sb.append(connexion(csrf, agentId, st, editable));
-            case "administration" -> sb.append(administration());
+            case "administration" -> sb.append(administration(csrf, agentId, st, editable));
             case "plus" -> sb.append(upcoming());
             default -> sb.append(economie(csrf, agentId, st, editable));
         }
@@ -150,13 +150,43 @@ public final class SettingsPages {
         return sb.append(formClose(editable)).toString();
     }
 
-    private static String administration() {
-        return "<div class=\"card pl-card\"><h2>Mode bypass administrateur</h2>"
-                + "<p>Pas encore disponible. Ce sera un mode que chaque administrateur autorisé active lui-même, "
-                + "pour sa session, toujours désactivé par défaut et visible en jeu (ticket #35).</p>"
-                + "<p class=\"form-text\">Aujourd'hui, un OP contourne encore automatiquement certaines protections, par "
-                + "exemple l'accès au monde Claims (ticket #321). Aucun réglage n'est proposé ici tant que ce mode "
-                + "n'existe pas : un interrupteur ne doit jamais accorder de droit.</p></div>";
+    /**
+     * Issue #35 — réglages GLOBAUX du mode bypass administrateur. Aucun ne l'active pour personne :
+     * chaque administrateur autorisé l'ouvre lui-même en jeu, pour sa session ({@code /rpgadmin bypass on}).
+     */
+    private static String administration(String csrf, String agentId, State st, boolean editable) {
+        StringBuilder sb = new StringBuilder();
+        boolean supported = !st.known() || st.values().containsKey("admin_bypass_available");
+        boolean canEdit = editable && supported;
+        String dis = canEdit ? "" : " disabled";
+        boolean on = !"false".equals(st.value("admin_bypass_available"));
+        String minutes = st.value("admin_bypass_max_minutes").isEmpty() ? "0" : st.value("admin_bypass_max_minutes");
+        sb.append(formOpen(csrf, agentId, "administration"));
+        sb.append("<h2>Mode bypass administrateur</h2>");
+        sb.append("<p class=\"form-text\">Un OP joue comme un joueur normal : les protections (monde Claims, claims, zones, "
+                + "combat dans le Hub) s'appliquent à lui. Pour intervenir, un administrateur autorisé "
+                + "(<code>rpgquest.admin.bypass</code>) active lui-même le mode en jeu avec <code>/rpgadmin bypass on</code>. "
+                + "Il voit alors en permanence « ⚠ MODE ADMIN / BYPASS ACTIF », et le mode se coupe à sa déconnexion, au "
+                + "redémarrage ou avec <code>/rpgadmin bypass off</code>.</p>");
+        if (!supported) {
+            sb.append(Ui.banner("warn", "Le plugin installé sur le serveur ne connaît pas encore ces réglages : "
+                    + "déployez la version qui contient le ticket #35."));
+        }
+        sb.append("<label for=\"set-bypass-on\">Mode bypass sur ce serveur</label>");
+        sb.append("<select class=\"form-select set-input\" id=\"set-bypass-on\" name=\"admin_bypass_available\"").append(dis).append(">")
+                .append("<option value=\"true\"").append(on ? " selected" : "").append(">Proposé aux administrateurs autorisés</option>")
+                .append("<option value=\"false\"").append(on ? "" : " selected").append(">Désactivé pour tout le monde</option></select>");
+        sb.append("<p class=\"form-text\">« Désactivé » coupe aussitôt les sessions en cours (l'administrateur en est "
+                + "prévenu) et empêche d'en ouvrir. « Proposé » n'active le mode pour personne.</p>");
+        sb.append("<label for=\"set-bypass-max\">Durée maximale d'une activation (minutes)</label>");
+        sb.append("<input class=\"form-control set-input\" id=\"set-bypass-max\" name=\"admin_bypass_max_minutes\" type=\"number\" ")
+                .append("min=\"0\" max=\"480\" step=\"1\" required value=\"").append(Http.esc(minutes)).append("\"").append(dis).append(">");
+        sb.append("<p class=\"form-text\">0 = jusqu'à la déconnexion. Sinon le mode se coupe tout seul après ce délai. "
+                + "L'indicateur en jeu n'est pas réglable : il est toujours affiché.</p>");
+        sb.append("<p class=\"form-text\">Aucun réglage de cette page n'accorde un droit. Qui peut activer le mode se règle "
+                + "par les permissions (<code>rpgquest.admin.bypass</code>, par défaut les OP) ; ce que le mode contourne dépend des "
+                + "nœuds de bypass du compte (voir Permissions).</p>");
+        return sb.append(formClose(canEdit)).toString();
     }
 
     private static String upcoming() {

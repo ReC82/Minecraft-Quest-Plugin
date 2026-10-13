@@ -30,9 +30,23 @@ variables du joueur : l'avertissement revient pour lui. Texte : 500 caractères,
 
 ## Administration
 
-Le **mode bypass administrateur** (#35) n'existe pas encore : aucun réglage n'est proposé, et aucun
-réglage de cette page n'accorde un droit. Voir [Permissions](https://github.com/ReC82/Minecraft-Quest-Plugin/blob/main/docs/PERMISSIONS.md)
-pour l'état actuel des droits OP.
+**Mode bypass administrateur** (#35). Un OP joue comme un joueur normal : les protections du monde
+Claims, des claims, des zones et du Hub s'appliquent à lui. Pour intervenir, un administrateur
+autorisé (`rpgquest.admin.bypass`, par défaut les OP) tape lui-même `/rpgadmin bypass on` en jeu ;
+il voit alors en permanence « ⚠ MODE ADMIN / BYPASS ACTIF », et le mode se coupe avec
+`/rpgadmin bypass off`, à sa déconnexion ou au redémarrage.
+
+- **Mode bypass sur ce serveur** : « Proposé aux administrateurs autorisés » (défaut) ou
+  « Désactivé pour tout le monde ». Désactiver coupe aussitôt les sessions en cours (l'administrateur
+  est prévenu) et empêche d'en ouvrir. « Proposé » n'active le mode pour personne.
+- **Durée maximale d'une activation** : 0 (défaut) = jusqu'à la déconnexion ; sinon 1 à 480 minutes,
+  puis le mode se coupe tout seul.
+
+L'indicateur en jeu n'est pas réglable. Aucun réglage de cette page n'accorde un droit : qui peut
+activer le mode se règle par les permissions, et ce qu'il contourne dépend des nœuds de bypass du
+compte. Voir [Permissions](https://github.com/ReC82/Minecraft-Quest-Plugin/blob/main/docs/PERMISSIONS.md).
+Si la rubrique indique que le plugin ne connaît pas ces réglages, la version installée sur le serveur
+est antérieure à #35.
 
 ## Rôles
 

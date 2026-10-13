@@ -51,6 +51,9 @@ class WildWorldSeparationTest {
     Path tempDir;
 
     private ServerMock server;
+    /** Issue #35 : mode bypass explicite, fermé par défaut. */
+    private final com.lodygames.rpgquest.permission.AdminBypassMode bypass =
+            new com.lodygames.rpgquest.permission.AdminBypassMode(() -> com.lodygames.rpgquest.settings.GameSettings.DEFAULTS);
     private RPGQuestPlugin plugin;
     private World hub;
     private World wild;
@@ -73,7 +76,7 @@ class WildWorldSeparationTest {
         // Zone protégée dans "world" (le Hub) uniquement — jamais de zone enregistrée dans "wild".
         registry.create(new ZoneDefinition("hub", "world", -10, 0, -10, 10, 255, 10, ZoneFlags.defaults()));
 
-        listener = new ZoneProtectionListener(registry, npcIdentityService);
+        listener = new ZoneProtectionListener(registry, npcIdentityService, bypass);
     }
 
     @AfterEach

@@ -95,18 +95,46 @@ class SettingsPageTest {
         assertTrue(actions("settings.set").isEmpty());
     }
 
+    private static final String VALUES_35 = "{\"values\":{\"currency_name\":\"LodyCoins\",\"beta_warning_enabled\":\"true\","
+            + "\"beta_warning_text\":\"Bêta !\",\"admin_bypass_available\":\"true\",\"admin_bypass_max_minutes\":\"0\"},"
+            + "\"defaults\":{\"currency_name\":\"LodyCoins\"},\"updatedAt\":\"\",\"updatedBy\":\"\",\"problem\":\"\"}";
+
     @Test
-    void theAdministrationTabOffersNoSwitchForTheBypass() throws Exception {
+    void theAdministrationTabSetsTheGlobalBypassPolicyWithoutGrantingAnything() throws Exception {
+        start();
+        record("settings.get", VALUES_35);
+        String page = get("/settings?tab=administration").body();
+        assertTrue(page.contains("/rpgadmin bypass on"));
+        assertTrue(page.contains("n'accorde un droit"));
+        Map<String, String> form = formFieldsOf(page, "/settings/save");
+        assertEquals("0", form.get("admin_bypass_max_minutes"));
+        form.put("admin_bypass_available", "false");
+        form.put("admin_bypass_max_minutes", "30");
+        assertEquals(303, post("/settings/save", form, null).statusCode());
+        AgentActionRow set = actions("settings.set").get(0);
+        assertEquals("false", set.params().get("admin_bypass_available"));
+        assertEquals("30", set.params().get("admin_bypass_max_minutes"));
+        assertFalse(set.params().keySet().stream().anyMatch(k -> k.contains("player") || k.contains("uuid")),
+                "aucun réglage ne vise un joueur : jamais une activation à distance");
+    }
+
+    @Test
+    void anOutOfRangeDurationIsRefusedBeforeReachingTheServer() throws Exception {
+        start();
+        record("settings.get", VALUES_35);
+        Map<String, String> form = formFieldsOf(get("/settings?tab=administration").body(), "/settings/save");
+        form.put("admin_bypass_max_minutes", "999");
+        assertTrue(post("/settings/save", form, null).headers().firstValue("Location").orElse("").contains("err="));
+        assertTrue(actions("settings.set").isEmpty());
+    }
+
+    @Test
+    void anOlderPluginWithoutTheseSettingsLeavesTheTabReadOnly() throws Exception {
         start();
         record("settings.get", VALUES);
         String page = get("/settings?tab=administration").body();
-        assertTrue(page.contains("Pas encore disponible"));
-        assertFalse(formHtmlSafe(page).contains("bypass"), "aucun interrupteur de bypass");
-    }
-
-    private static String formHtmlSafe(String page) {
-        int i = page.indexOf("action=\"/settings/save\"");
-        return i < 0 ? "" : page.substring(i, page.indexOf("</form>", i));
+        assertTrue(page.contains("ne connaît pas encore ces réglages"));
+        assertFalse(page.contains("data-busy-label=\"Enregistrement…\""), "rien à enregistrer");
     }
 
     // ---- Harnais -------------------------------------------------------------------------------

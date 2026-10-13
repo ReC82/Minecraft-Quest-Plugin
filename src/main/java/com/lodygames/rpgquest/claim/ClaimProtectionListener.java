@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.claim;
 
 import com.lodygames.rpgquest.claim.model.Claim;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.List;
 import java.util.Optional;
@@ -44,7 +45,7 @@ import org.bukkit.inventory.EquipmentSlot;
  * traversant la frontière sont protégés inconditionnellement dès qu'un
  * acteur non membre est en cause.</p>
  *
- * <p>Bypass ({@code rpgquest.admin.world}, même permission que le bypass
+ * <p>Bypass (mode bypass administrateur activé, issue #35, avec {@code rpgquest.bypass.claim} ou {@code rpgquest.admin.world}, même permission que le bypass
  * des zones protégées) : vérifié sur l'acteur direct, jamais sur la
  * victime.</p>
  */
@@ -54,8 +55,12 @@ public final class ClaimProtectionListener implements Listener {
 
     private final ClaimService claimService;
 
-    public ClaimProtectionListener(ClaimService claimService) {
+    /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
+    private final AdminBypassMode bypass;
+
+    public ClaimProtectionListener(ClaimService claimService, AdminBypassMode bypass) {
         this.claimService = claimService;
+        this.bypass = bypass;
     }
 
     // ---- Blocs -------------------------------------------------------------------------------
@@ -213,6 +218,6 @@ public final class ClaimProtectionListener implements Listener {
     private boolean isBypassing(Player player) {
         // Issue #200 : nœud DÉDIÉ au bypass des claims d'autrui. Un builder du Hub ne
         // l'obtient jamais par sa permission de construction.
-        return RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM);
+        return bypass.allows(player, RpgPermissions.BYPASS_CLAIM);
     }
 }

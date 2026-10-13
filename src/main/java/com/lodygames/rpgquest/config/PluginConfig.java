@@ -21,7 +21,8 @@ public record PluginConfig(
         TravelConfig travel,
         StarterToolKitConfig starterToolKit,
         WildConfig wild,
-        NpcHintConfig npcHints
+        NpcHintConfig npcHints,
+        CityConfig cities
 ) {
 
     /**

@@ -50,6 +50,9 @@ quest:
   started-objectives-header: "<green><bold>Quête commencée :</bold></green> <white><quest></white> <gray>— à faire (suivi dans</gray> <white>/quests</white><gray>) :</gray>"
   started-objective: "<yellow> • <objective></yellow> <gray>(x<total>)</gray>"
   objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
+  # Issue #178 (et #69/#209) : quand UN même événement fait progresser plusieurs quêtes (une ville
+  # découverte compte pour deux quêtes), chaque ligne nomme sa quête pour rester lisible.
+  objective-progress-named: "<white><quest></white> <dark_gray>·</dark_gray> <yellow><objective></yellow> <gray><current>/<total></gray>"
   completed-title: "<gold><bold>Quête terminée</bold></gold>"
   completed-subtitle: "<white><quest></white>"
   reward-summary-header: "<gold><bold>Quête terminée :</bold></gold> <white><quest></white> <gray>— récompenses :</gray>"
@@ -70,6 +73,11 @@ quest:
   delivery-already-complete: "<gray>Tu m'as déjà remis tout ce que je t'avais demandé.</gray>"
   delivery-none: "<gray>Je n'attends aucun matériau de ta part.</gray>"
 
+city:
+  # Issue #178 — titre natif plein écran à la PREMIÈRE entrée dans une ville (jamais répété).
+  # <city> = nom affiché actuel de la ville. Durées : config.yml, cities.discovery.title.
+  welcome-title: "<gold>Bienvenue à <city></gold>"
+  welcome-subtitle: "<gray>Nouvelle ville découverte</gray>"
 permission:
   denied: "<red>Permission manquante :</red> <white><permission></white>"
 

@@ -3,7 +3,8 @@ package com.lodygames.rpgquest.quest.model;
 public sealed interface QuestObjective
         permits BreakBlockObjective, PlaceBlockObjective, KillEntityObjective,
                 CollectItemObjective, CraftItemObjective, TalkToNpcObjective, ReachLocationObjective,
-                DeliverItemToNpcObjective, SmeltItemObjective, DiscoverWaypointObjective {
+                DeliverItemToNpcObjective, SmeltItemObjective, DiscoverWaypointObjective,
+                DiscoverCityObjective {
 
     ObjectiveType type();
 
@@ -20,6 +21,7 @@ public sealed interface QuestObjective
             case DeliverItemToNpcObjective o -> o.amount();
             case SmeltItemObjective o -> o.amount();
             case DiscoverWaypointObjective o -> o.amount();
+            case DiscoverCityObjective o -> o.amount();
         };
     }
 
@@ -36,6 +38,9 @@ public sealed interface QuestObjective
             case DeliverItemToNpcObjective o -> "Remettre " + o.material() + " à " + o.npcId();
             case SmeltItemObjective o -> "Cuire " + o.material();
             case DiscoverWaypointObjective o -> "Découvrir " + o.amount() + " waypoint(s)";
+            case DiscoverCityObjective o -> o.specific()
+                    ? "Découvrir " + com.lodygames.rpgquest.city.CityNames.of(o.city())
+                    : "Découvrir " + o.amount() + " ville(s)";
         };
     }
 }

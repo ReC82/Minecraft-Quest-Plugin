@@ -102,6 +102,53 @@ public class ClaimBorderRenderer implements PluginService {
         activeRenders.put(playerId, task);
     }
 
+    /** Nombre maximal de points de contour par passe pour une zone : borne le coût d'une grande ville. */
+    private static final int AREA_MAX_POINTS = 400;
+    private static final long AREA_DURATION_TICKS = 300L; // ~15 s.
+    private static final Particle.DustOptions AREA_DUST = new Particle.DustOptions(Color.fromRGB(255, 170, 40), 1.6f);
+
+    /**
+     * Issue #178 — contour d'une zone rectangulaire quelconque (le carré d'une ville), montré au
+     * seul {@code player} pendant ~15 s, à sa hauteur. Même mécanique que {@link #show} ; les
+     * particules sont forcées pour rester visibles au-delà de la distance d'affichage ordinaire, car
+     * le bord d'une ville est souvent à plus de 32 blocs. Le pas s'élargit avec la taille pour ne
+     * jamais dépasser {@value #AREA_MAX_POINTS} points par passe. Remplace un contour en cours.
+     */
+    public boolean showArea(Player player, String worldName, int minX, int maxX, int minZ, int maxZ) {
+        World world = plugin.getServer().getWorld(worldName);
+        if (world == null || !player.getWorld().equals(world)) {
+            return false;
+        }
+        UUID playerId = player.getUniqueId();
+        BukkitTask previous = activeRenders.remove(playerId);
+        if (previous != null) {
+            previous.cancel();
+        }
+        double length = 2.0 * ((maxX - minX + 1) + (maxZ - minZ + 1));
+        double step = Math.max(PERIMETER_STEP, length / AREA_MAX_POINTS);
+        long[] elapsedTicks = {0L};
+        BukkitTask task = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline() || !player.getWorld().equals(world)) {
+                cancel(playerId);
+                return;
+            }
+            double y = player.getLocation().getY() + 0.2;
+            for (ClaimBorderGeometry.Point p : ClaimBorderGeometry.perimeter(minX, maxX, minZ, maxZ, y, step)) {
+                player.spawnParticle(Particle.DUST, p.x(), p.y(), p.z(), 1, 0, 0, 0, 0, AREA_DUST, true);
+            }
+            for (ClaimBorderGeometry.Point p : ClaimBorderGeometry.cornerColumns(minX, maxX, minZ, maxZ,
+                    y, 6.0, 0.5)) {
+                player.spawnParticle(Particle.END_ROD, p.x(), p.y(), p.z(), 1, 0, 0, 0, 0, null, true);
+            }
+            elapsedTicks[0] += PERIOD_TICKS;
+            if (elapsedTicks[0] >= AREA_DURATION_TICKS) {
+                cancel(playerId);
+            }
+        }, 0L, PERIOD_TICKS);
+        activeRenders.put(playerId, task);
+        return true;
+    }
+
     private void cancel(UUID playerId) {
         BukkitTask task = activeRenders.remove(playerId);
         if (task != null) {

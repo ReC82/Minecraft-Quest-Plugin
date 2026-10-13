@@ -110,6 +110,9 @@ public final class ContentPackMapper {
             // jamais changer silencieusement ce que le joueur doit faire.
             case DiscoverWaypointObjective b ->
                     QuestPackEntry.Objective.discoverWaypoint(b.amount(), b.worlds(), b.countMode().name());
+            case com.lodygames.rpgquest.quest.model.DiscoverCityObjective b ->
+                    QuestPackEntry.Objective.discoverCity(b.specific() ? null : b.amount(), b.city(),
+                            b.countMode().name());
         };
     }
 

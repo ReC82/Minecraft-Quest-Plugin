@@ -462,3 +462,17 @@ npc-hints:
   dialogue-particle: ENCHANT
   # Nombre de particules PAR POINT de la forme. Bornée 1–10 : 1 suffit, la forme fait le reste.
   count: 1
+
+# Villes (issue #178) — découverte d'une ville à la première entrée dans son périmètre.
+# Le périmètre de chaque ville (carré horizontal, 50 blocs par défaut dans chaque direction depuis
+# le centre) se règle par ville dans PlugAdmin, page Villes — pas ici.
+cities:
+  discovery:
+    # Désactiver coupe à la fois l'annonce et l'enregistrement des découvertes.
+    enabled: true
+    # Titre natif « Bienvenue à … » (textes : messages.yml, city.welcome-title / welcome-subtitle).
+    # Durées en ticks (20 = 1 s), bornées : apparition 0–100, affichage 20–200, disparition 0–100.
+    title:
+      fade-in-ticks: 10
+      stay-ticks: 70
+      fade-out-ticks: 20

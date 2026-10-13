@@ -67,7 +67,9 @@ public final class SchemaMigrator {
             new SchemaMigration(31, "building_sites.ai_brief (brief architectural)",
                     SchemaMigrator::applyV31),
             new SchemaMigration(32, "item_travel_cooldowns.remaining_ms (cooldown suspendu hors ligne)",
-                    SchemaMigrator::applyV32));
+                    SchemaMigrator::applyV32),
+            new SchemaMigration(33, "villes : distance de détection + city_discoveries (issue #178)",
+                    SchemaMigrator::applyV33));
 
     private SchemaMigrator() {
     }
@@ -1287,6 +1289,32 @@ public final class SchemaMigrator {
                 statement.execute(dialect.ddl(
                         "ALTER TABLE building_sites ADD COLUMN ai_brief TEXT NOT NULL DEFAULT ''"));
             }
+        }
+    }
+
+    private static void applyV33(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #178 : une ville EST un centre de village (#151). Elle gagne seulement la
+        // demi-largeur de son carré de détection ; les centres existants reçoivent la valeur par
+        // défaut (50), sans changer d'identifiant ni de position.
+        if (!dialect.columnExists(connection, "village_centers", "detection_distance")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(dialect.ddl("ALTER TABLE village_centers "
+                        + "ADD COLUMN detection_distance INTEGER NOT NULL DEFAULT 50"));
+            }
+        }
+        // Une découverte par couple (joueur, ville) : la clé primaire rend la première découverte
+        // unique au niveau de la base, quels que soient les rejeux, morts ou redémarrages.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS city_discoveries (
+                        player_uuid TEXT NOT NULL,
+                        city_id TEXT NOT NULL,
+                        discovered_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, city_id)
+                    )
+                    """));
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_city_discoveries_city ON city_discoveries (city_id)"));
         }
     }
 

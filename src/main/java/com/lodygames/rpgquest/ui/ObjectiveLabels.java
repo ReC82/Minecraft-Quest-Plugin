@@ -70,6 +70,13 @@ public final class ObjectiveLabels {
                             : " (" + String.join(", ", o.worlds()) + ")"))
                     .append(Component.text(o.countMode() == DiscoverWaypointObjective.CountMode.NEW_ONLY
                             ? " — nouvelles découvertes" : " — découvertes déjà acquises incluses"));
+            // Issue #178 : le nom ACTUEL de la ville (jamais son identifiant), et la règle de
+            // comptage toujours énoncée au joueur.
+            case com.lodygames.rpgquest.quest.model.DiscoverCityObjective o -> Component.text(o.specific()
+                            ? "Découvrir la ville " + com.lodygames.rpgquest.city.CityNames.of(o.city())
+                            : "Villes distinctes à découvrir")
+                    .append(Component.text(o.countMode() == DiscoverWaypointObjective.CountMode.NEW_ONLY
+                            ? " — nouvelles découvertes" : " — découvertes déjà acquises incluses"));
         };
     }
 

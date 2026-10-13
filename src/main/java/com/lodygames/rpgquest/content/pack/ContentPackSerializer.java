@@ -111,6 +111,7 @@ public final class ContentPackSerializer {
                     .append("]\n");
         }
         opt(sb, 7, "count-mode", o.countMode() == null ? null : plain(o.countMode()));
+        opt(sb, 7, "city", o.city() == null ? null : id(o.city()));
     }
 
     private static void writeReward(StringBuilder sb, QuestPackEntry.Reward r) {

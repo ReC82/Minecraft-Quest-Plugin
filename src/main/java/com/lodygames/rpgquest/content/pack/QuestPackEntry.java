@@ -56,6 +56,7 @@ public record QuestPackEntry(
      *   <li>{@code TALK_TO_NPC} : {@code npc} ;</li>
      *   <li>{@code REACH_LOCATION} : {@code world} + {@code x}/{@code y}/{@code z} + {@code radius} ;</li>
      *   <li>{@code DISCOVER_WAYPOINT} : {@code amount} + {@code worlds} (optionnel) + {@code countMode}.</li>
+     *   <li>{@code DISCOVER_CITY} (issue #178) : {@code city} OU {@code amount}, + {@code countMode}.</li>
      * </ul>
      *
      * <p>{@code worlds} est distinct de {@code world} (singulier, propre à {@code REACH_LOCATION}) :
@@ -64,10 +65,26 @@ public record QuestPackEntry(
      */
     public record Objective(String type, String material, String entity, String npc, String world,
                             Integer amount, Double x, Double y, Double z, Double radius,
-                            List<String> worlds, String countMode) {
+                            List<String> worlds, String countMode, String city) {
 
         public Objective {
             worlds = worlds == null ? List.of() : List.copyOf(worlds);
+        }
+
+        /** Forme sans ville (tous les types antérieurs à #178). */
+        public Objective(String type, String material, String entity, String npc, String world,
+                         Integer amount, Double x, Double y, Double z, Double radius,
+                         List<String> worlds, String countMode) {
+            this(type, material, entity, npc, world, amount, x, y, z, radius, worlds, countMode, null);
+        }
+
+        /**
+         * Découverte de villes (issue #178) : {@code city} (identifiant stable) pour une ville
+         * précise, sinon {@code amount} villes distinctes. Règle de comptage toujours écrite.
+         */
+        public static Objective discoverCity(Integer amount, String city, String countMode) {
+            return new Objective("DISCOVER_CITY", null, null, null, null, amount,
+                    null, null, null, null, List.of(), countMode, city);
         }
 
         public static Objective countable(String type, String material, int amount) {

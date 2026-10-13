@@ -445,7 +445,9 @@ public final class BukkitAgentActions implements AgentActions {
                     // Issue #185 : la portée et la règle de comptage voyagent avec l'objectif,
                     // sinon le panel afficherait une ligne qui ne dit pas ce que le joueur doit faire.
                     List<String> objectiveWorlds = o instanceof DiscoverWaypointObjective d ? d.worlds() : List.of();
-                    String countMode = o instanceof DiscoverWaypointObjective d ? d.countMode().name() : null;
+                    String countMode = o instanceof DiscoverWaypointObjective d ? d.countMode().name()
+                            : o instanceof com.lodygames.rpgquest.quest.model.DiscoverCityObjective c
+                                    ? c.countMode().name() : null;
                     objectiveDetails.add(new ObjectiveSummary(
                             o.type().name(), objectiveTarget(o), amount, raw, objectiveNpc(o),
                             objectiveWorlds, countMode));
@@ -4119,6 +4121,8 @@ public final class BukkitAgentActions implements AgentActions {
             // Issue #185 : aucune cible unique à nommer (ni matériau, ni entité, ni monde unique) —
             // la portée est la liste « worlds », transportée à part dans le résumé.
             case DiscoverWaypointObjective o -> null;
+            // Issue #178 : la ville précise (identifiant stable) ; null pour « X villes distinctes ».
+            case com.lodygames.rpgquest.quest.model.DiscoverCityObjective o -> o.city();
         };
     }
 

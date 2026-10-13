@@ -270,6 +270,52 @@ village. Le bouton d'une borne (administrée ou auto-générée) ouvre le menu d
 joueur, sans commande ; l'identité d'un centre de village (`id`) est **indépendante du monde** :
 plusieurs centres peuvent coexister dans `world_hub`, distingués par id/nom.
 
+
+### Villes — `/rpgadmin ville` (issue #178)
+
+Une **ville** est un centre de village (#151) : même table `village_centers`, même identifiant, même
+destination du menu de voyage « Villages ». Il n'existe **pas** de second système. La ville ajoute
+une distance de détection et la découverte par les joueurs.
+
+| Commande | Effet | Persistance |
+|---|---|---|
+| `/rpgadmin ville outil` | Donne l'**outil de ville** (pelle en or reconnue par PDC, jamais par son nom). Clic droit sur un bloc : ce bloc devient le **centre** d'une nouvelle ville, puis une enclume demande son nom. Fermer l'enclume annule ; rien n'est écrit avant le clic sur le résultat. | non (l'outil) |
+| `/rpgadmin ville liste` | Liste les villes (nom, identifiant, monde, centre X/Z, distance, état). | non |
+| `/rpgadmin ville deplacer <id>` | Arme un déplacement : le **prochain** clic droit avec l'outil (3 minutes) devient le nouveau centre de cette ville. Même effet que « Préparer le déplacement du centre » dans PlugAdmin. | oui (au clic) |
+| `/rpgadmin ville annuler` | Renonce à une création ou un déplacement en attente. | non |
+
+Permission : `rpgquest.admin.city` (`default: false`), impliquée par l'ombrelle
+`rpgquest.admin.world`. Le nom, la taille, l'activation et la suppression se gèrent dans
+**PlugAdmin › Villes** (`/cities`).
+
+- **Centre** : la colonne du bloc cliqué ; l'altitude enregistrée est la case au-dessus (arrivée
+  du menu de voyage), l'orientation celle du regard. Aucun bloc, aucun PNJ, aucun bâtiment n'est
+  posé.
+- **Identifiant** : dérivé du nom à la création (`ville_port_lily`, suffixe `_2`… si pris), puis
+  **jamais modifié**. Renommer ou déplacer garde l'identifiant, les découvertes et les quêtes.
+- **Périmètre** : **carré horizontal**, jamais un cercle. Avec un centre (cx, cz) et une distance
+  d : X ∈ [cx − d ; cx + d] et Z ∈ [cz − d ; cz + d], même monde, altitude ignorée, coins inclus.
+  Défaut 50 (carré de 101 × 101 blocs), bornes 5 à 500, validées par le panel **et** le plugin.
+- **Découverte** : à la **première** entrée d'un joueur dans une ville **active**, titre natif
+  « Bienvenue à [nom] » et ligne `city_discoveries` (UUID + identifiant). Déclenchée par la marche
+  (changement de bloc X/Z), la téléportation, la connexion (après lecture des découvertes) et la
+  réapparition. Sortir puis revenir, mourir, se reconnecter ou redémarrer ne répète jamais rien.
+  Une ville inactive ne découvre rien. Afficher la page du panel ne découvre rien.
+- **Chevauchement** : une seule ville est retenue par position. C'est celle dont le centre est le
+  plus proche (distance horizontale) ; à égalité, la plus petite distance de détection ; à égalité
+  encore, l'identifiant alphabétique. Un seul titre à la fois. Les autres villes se découvrent en
+  avançant vers leur centre.
+- **Coût** : index par monde et cellules de 64 blocs, reconstruit à chaque mutation ; une
+  vérification ne lit qu'une cellule. Rien n'est calculé quand la tête tourne ou que l'altitude
+  change.
+- **Réglages** : `config.yml` › `cities.discovery` (`enabled`, `title.fade-in-ticks` 0–100,
+  `stay-ticks` 20–200, `fade-out-ticks` 0–100). Textes : `messages.yml` › `city.welcome-title` /
+  `city.welcome-subtitle` (`<city>` = nom actuel).
+- **Persistance** : migration **V33** (colonne `village_centers.detection_distance`, défaut 50 pour
+  les centres existants ; table `city_discoveries`). Supprimer une ville efface ses découvertes dans
+  la même transaction.
+- **Hors lot** : rattachement d'un PNJ central et point d'arrivée distinct du centre (#322).
+
 ### Mondes supplémentaires — `/rpgadmin world`
 Voir section 7 (Mondes) pour le détail complet — non dupliqué ici.
 
@@ -389,6 +435,7 @@ Les 10 types existent **tous** réellement dans le code (`ObjectiveType` enum, e
 | `SMELT_ITEM` | `material` (objet **obtenu** après cuisson), `amount` (> 0) | `SmeltItemObjective` | `FurnaceExtractEvent` (`QuestSmeltListener`, `ignoreCancelled = true`) — **seul** événement de cuisson qui porte un joueur, et il donne la quantité réellement retirée | Global. Progresse de la quantité extraite, plafonnée au reste à faire. Les trois fours vanilla comptent (`FURNACE`, `BLAST_FURNACE`, `SMOKER`), vérifiés explicitement. **Limite connue** : obtenir l'objet autrement (coffre, `/give`, craft, ramassage) ou le laisser sortir par un entonnoir ne progresse jamais — c'est voulu ; et un joueur qui vide le four d'un autre progresse, seule attribution que l'API publique garantisse. |
 | `DELIVER_ITEM_TO_NPC` | `npc` (id logique RPGQuest, comme `TALK_TO_NPC`), `material`, `amount` (> 0) | `DeliverItemToNpcObjective` | **Aucun** — volontairement. Seule l'action de dialogue `DELIVER_QUEST_ITEMS` sur le bon PNJ fait progresser cet objectif (`QuestProgressEngine#deliverTo`) | Global (le PNJ est où il est). Le compteur porte la quantité **déjà remise** : dépôts partiels acquis définitivement, objets remis **consommés**, jamais restitués. Voir « Remise d'objets à un PNJ » plus bas. |
 | `DISCOVER_WAYPOINT` | `amount` (> 0), `worlds` (liste optionnelle ; vide = tous les mondes), `count-mode` (`NEW_ONLY` par défaut, ou `INCLUDE_EXISTING`) | `DiscoverWaypointObjective` | **Aucun** — volontairement. La progression vient de l'abonnement aux **premières** découvertes du système de waypoints (`WaypointService#onFirstDiscovery` → `QuestProgressEngine#handleWaypointDiscovered`), branché une seule fois au bootstrap. Un écouteur de déplacement ou d'interaction recréerait une seconde règle de découverte à côté de celle du système de waypoints. | Filtré par `worlds` quand la liste est renseignée, global sinon. L'identité comptée est l'**id stable** du waypoint : deux waypoints du même biome comptent séparément, renommer ou déplacer un waypoint ne le fait pas compter deux fois. Aucune table supplémentaire — une première découverte est unique par couple (joueur, waypoint) au niveau de la base, donc un reclic ne notifie jamais. **Limite connue, assumée** : en `NEW_ONLY`, un joueur ayant déjà découvert tous les waypoints accessibles ne peut pas valider un nouveau cycle d'une quête répétable ; aucune découverte n'est jamais supprimée ni aucun waypoint débloqué pour y remédier. Utiliser `INCLUDE_EXISTING` si ce cumul est voulu. |
+| `DISCOVER_CITY` | `city` (identifiant stable d'une ville) **ou** `amount` (> 0, villes distinctes), `count-mode` (`NEW_ONLY` par défaut, ou `INCLUDE_EXISTING`) | `DiscoverCityObjective` | **Aucun** — la progression vient de l'abonnement aux **premières** découvertes de ville (`CityDiscoveryService#onFirstDiscovery` → `QuestProgressEngine#handleCityDiscovered`). | Une ville compte une fois par joueur (clé primaire de `city_discoveries`). Avec `city`, `amount` vaut 1 (le parseur refuse une autre valeur) ; sans `city`, `amount` est obligatoire. Le mode cumulatif compte les villes **existantes** déjà découvertes, actives ou non. Voir « Découverte de villes ». |
 | `REACH_LOCATION` | `world`, `x`, `y`, `z`, `radius` (> 0) | `ReachLocationObjective` | `PlayerMoveEvent` (`QuestLocationListener`, `ignoreCancelled = true`, ignore les mouvements qui ne changent pas de bloc) — distance euclidienne comparée à `radius` | **Seul type explicitement lié à un monde précis** — `world` est un simple nom (résolu à l'évaluation, pas au chargement) ; un déplacement dans un autre monde n'est jamais candidat, même avec les mêmes coordonnées. |
 
 Dans tous les cas, la progression n'a lieu que si, au moment de l'événement, la quête est `ACTIVE` pour ce joueur **et** l'objectif appartient à l'étape actuellement active (`QuestProgressEngine#handleCandidates`, couvert par `QuestProgressEngineTest#objectiveEventBeforeAcceptingTheQuestIsIgnored` et `#objectiveOnALaterStepIsIgnoredUntilItsOwnStepIsActive`) — un événement pour une quête non acceptée, abandonnée, terminée, ou pour une étape pas encore atteinte, est silencieusement ignoré.
@@ -427,6 +474,13 @@ Exemples minimaux (champs vérifiés dans le code, valeurs d'illustration) :
   amount: 5
   worlds: [world_hub]        # optionnel ; absent ou vide = tous les mondes
   count-mode: NEW_ONLY       # optionnel ; NEW_ONLY (défaut) ou INCLUDE_EXISTING
+
+- type: DISCOVER_CITY
+  city: ville_port_lily      # une ville précise (identifiant stable, choisi par son nom dans le panel)
+
+- type: DISCOVER_CITY
+  amount: 3                  # ou : 3 villes distinctes au choix du joueur
+  count-mode: INCLUDE_EXISTING
 ```
 
 ### Découverte de waypoints — `DISCOVER_WAYPOINT` (issue #185)
@@ -446,6 +500,27 @@ l'une des deux silencieusement, parce qu'elle change ce que le joueur doit réel
 Le Control Panel expose les trois champs (`amount`, `worlds`, `count-mode`) dans l'éditeur de
 quêtes ; `worlds` se saisit en texte séparé par des virgules et est écrit en liste YAML, chaque
 entrée étant vérifiée contre les mondes réellement relevés et les doublons signalés.
+
+### Découverte de villes — `DISCOVER_CITY` (issue #178)
+
+Deux formes dans un seul type : **ville précise** (`city`) ou **X villes distinctes** (`amount`).
+La règle de prise en compte des villes découvertes **avant** l'acceptation est celle de
+`DISCOVER_WAYPOINT`, toujours explicite et annoncée au joueur dans son journal :
+
+- `NEW_ONLY` (défaut) : seules les villes découvertes après l'acceptation comptent.
+- `INCLUDE_EXISTING` : les villes déjà découvertes comptent aussi, recalculées à l'acceptation, au
+  changement d'étape, au chargement du joueur et à chaque découverte.
+
+Une ville ne compte qu'une fois : sortir puis revenir, la renommer ou redémarrer le serveur ne
+fait jamais monter le compteur, puisque seule une première découverte insérée en base notifie le
+moteur. Quand une même découverte fait progresser plusieurs quêtes, l'action bar préfixe chaque
+ligne du titre de sa quête (`messages.yml` › `quest.objective-progress-named`, #69/#209).
+
+Dans PlugAdmin, l'éditeur propose « Découvrir des villes » : ville choisie par son **nom** dans une
+liste recherchable, quantité pour la forme « X villes », et la règle de comptage expliquée. Une ville
+inconnue est une **erreur** dès que la liste des villes est relevée ; ni ville ni quantité est une
+erreur ; une ville avec une quantité autre que 1 aussi. Le résumé affiche le nom de la ville, jamais
+son identifiant.
 
 ### Remise d'objets à un PNJ — `DELIVER_ITEM_TO_NPC` (issue #123)
 

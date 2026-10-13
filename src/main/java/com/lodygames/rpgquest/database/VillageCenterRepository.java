@@ -17,15 +17,19 @@ import java.util.concurrent.CompletableFuture;
 public final class VillageCenterRepository {
 
     private static final String UPSERT = """
-            INSERT INTO village_centers (id, name, world, x, y, z, yaw, pitch, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO village_centers (id, name, world, x, y, z, yaw, pitch, active, created_at,
+                detection_distance)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
                 name = excluded.name, world = excluded.world, x = excluded.x, y = excluded.y,
-                z = excluded.z, yaw = excluded.yaw, pitch = excluded.pitch, active = excluded.active
+                z = excluded.z, yaw = excluded.yaw, pitch = excluded.pitch, active = excluded.active,
+                detection_distance = excluded.detection_distance
             """;
     private static final String SELECT_ALL = "SELECT * FROM village_centers";
     private static final String DELETE = "DELETE FROM village_centers WHERE id = ?";
     private static final String SET_ACTIVE = "UPDATE village_centers SET active = ? WHERE id = ?";
+    /** Issue #178 : supprimer une ville efface aussi ses découvertes, dans la même transaction. */
+    private static final String DELETE_DISCOVERIES = "DELETE FROM city_discoveries WHERE city_id = ?";
 
     private final DatabaseManager database;
     private final SqlDialect dialect;
@@ -61,17 +65,35 @@ public final class VillageCenterRepository {
                 statement.setFloat(8, center.pitch());
                 statement.setInt(9, center.active() ? 1 : 0);
                 statement.setString(10, center.createdAt().toString());
+                statement.setInt(11, center.detectionDistance());
                 statement.executeUpdate();
                 return null;
             }
         });
     }
 
+    /**
+     * Supprime le centre <strong>et</strong> les découvertes de cette ville (issue #178), dans une
+     * seule transaction : une découverte orpheline ressusciterait si l'identifiant était un jour
+     * réutilisé, et compterait alors pour une ville que le joueur n'a jamais vue.
+     */
     public CompletableFuture<Integer> delete(String id) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(DELETE)) {
+            boolean previous = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try (PreparedStatement discoveries = connection.prepareStatement(DELETE_DISCOVERIES);
+                 PreparedStatement statement = connection.prepareStatement(DELETE)) {
+                discoveries.setString(1, id);
+                discoveries.executeUpdate();
                 statement.setString(1, id);
-                return statement.executeUpdate();
+                int deleted = statement.executeUpdate();
+                connection.commit();
+                return deleted;
+            } catch (SQLException error) {
+                connection.rollback();
+                throw error;
+            } finally {
+                connection.setAutoCommit(previous);
             }
         });
     }
@@ -97,6 +119,7 @@ public final class VillageCenterRepository {
                 resultSet.getFloat("yaw"),
                 resultSet.getFloat("pitch"),
                 resultSet.getInt("active") != 0,
-                Instant.parse(resultSet.getString("created_at")));
+                Instant.parse(resultSet.getString("created_at")),
+                resultSet.getInt("detection_distance"));
     }
 }

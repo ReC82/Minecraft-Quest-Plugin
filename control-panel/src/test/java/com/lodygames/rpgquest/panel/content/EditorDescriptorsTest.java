@@ -18,7 +18,7 @@ class EditorDescriptorsTest {
     /** Types réels du moteur : {@code quest.model.ObjectiveType} / {@code quest.model.RewardType}. */
     private static final Set<String> ENGINE_OBJECTIVES = Set.of(
             "BREAK_BLOCK", "PLACE_BLOCK", "KILL_ENTITY", "COLLECT_ITEM", "CRAFT_ITEM",
-            "TALK_TO_NPC", "REACH_LOCATION", "DELIVER_ITEM_TO_NPC", "SMELT_ITEM", "DISCOVER_WAYPOINT");
+            "TALK_TO_NPC", "REACH_LOCATION", "DELIVER_ITEM_TO_NPC", "SMELT_ITEM", "DISCOVER_WAYPOINT", "DISCOVER_CITY");
     private static final Set<String> ENGINE_REWARDS =
             Set.of("EXPERIENCE", "ITEM", "VARIABLE", "COMMAND", "MONEY");
 
@@ -30,7 +30,7 @@ class EditorDescriptorsTest {
      */
     private static final Set<String> ENGINE_FIELDS = Set.of(
             "entity", "material", "amount", "npc", "world", "x", "y", "z", "radius",
-            "key", "value", "command", "worlds", "count-mode");
+            "key", "value", "command", "worlds", "count-mode", "city");
 
     @Test
     void objectiveKindsMatchTheEngineExactly() {
@@ -98,9 +98,10 @@ class EditorDescriptorsTest {
                 }
                 String src = f.selectSource();
                 // « waypointCountMode » n'est pas un relevé serveur : ce sont les deux valeurs de
-                // l'énumération CountMode du moteur (issue #185), servies telles quelles.
+                // l'énumération CountMode du moteur (issue #185), servies telles quelles. « countMode »
+                // est la même énumération, libellée en français ; « city » est le relevé city.list (#178).
                 assertTrue(Set.of("entity", "material", "icon", "npc", "quest", "world",
-                        "waypointCountMode").contains(src),
+                        "waypointCountMode", "countMode", "city").contains(src),
                         d.kind() + "/" + f.name() + " : source de liste inconnue « " + src + " »");
             }
         }

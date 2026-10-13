@@ -83,7 +83,6 @@ public final class TravelBeaconService implements PluginService {
     private final TravelBeaconRepository repository;
     private final WaypointService waypointService;
     private final ClaimService claimService;
-    private final VillageCenterRepository villageCenterRepository;
     private final Supplier<TravelConfig> travelConfig;
     private final Supplier<String> hubWorld;
     private final WaypointIdentityResolver identityResolver = new WaypointIdentityResolver();
@@ -102,7 +101,9 @@ public final class TravelBeaconService implements PluginService {
      * issue #11 — ne pas la réintroduire ici).
      */
     private final ConcurrentHashMap<UUID, BeaconMenuSession> sessions = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, VillageCenter> villagesById = new ConcurrentHashMap<>();
+    /** Issue #178 : les centres de village sont les villes, tenues par un registre unique. */
+    private final com.lodygames.rpgquest.city.CityRegistry cities;
+    private final boolean ownsCities;
 
     // ---- Appariement Hub (issue #149) : verrou mono-vol + réessai borné, par instance de biome.
     private final Set<String> pairing = ConcurrentHashMap.newKeySet();
@@ -114,11 +115,29 @@ public final class TravelBeaconService implements PluginService {
     public TravelBeaconService(RPGQuestPlugin plugin, TravelBeaconRepository repository, WaypointService waypointService,
                                 ClaimService claimService, VillageCenterRepository villageCenterRepository,
                                 Supplier<TravelConfig> travelConfig, Supplier<String> hubWorld) {
+        this(plugin, repository, waypointService, claimService,
+                new com.lodygames.rpgquest.city.CityRegistry(villageCenterRepository,
+                        task -> plugin.getServer().getScheduler().runTask(plugin, task),
+                        plugin.getSLF4JLogger()),
+                true, travelConfig, hubWorld);
+    }
+
+    /** Issue #178 : registre de villes partagé, chargé par son propriétaire (le bootstrap). */
+    public TravelBeaconService(RPGQuestPlugin plugin, TravelBeaconRepository repository, WaypointService waypointService,
+                                ClaimService claimService, com.lodygames.rpgquest.city.CityRegistry cities,
+                                Supplier<TravelConfig> travelConfig, Supplier<String> hubWorld) {
+        this(plugin, repository, waypointService, claimService, cities, false, travelConfig, hubWorld);
+    }
+
+    private TravelBeaconService(RPGQuestPlugin plugin, TravelBeaconRepository repository, WaypointService waypointService,
+                                ClaimService claimService, com.lodygames.rpgquest.city.CityRegistry cities,
+                                boolean ownsCities, Supplier<TravelConfig> travelConfig, Supplier<String> hubWorld) {
         this.plugin = plugin;
         this.repository = repository;
         this.waypointService = waypointService;
         this.claimService = claimService;
-        this.villageCenterRepository = villageCenterRepository;
+        this.cities = cities;
+        this.ownsCities = ownsCities;
         this.travelConfig = travelConfig;
         this.hubWorld = hubWorld;
         this.logger = plugin.getSLF4JLogger();
@@ -135,15 +154,12 @@ public final class TravelBeaconService implements PluginService {
             logger.error("Impossible de charger les bornes de voyage persistées.", error);
             return null;
         });
-        villageCenterRepository.loadAll().thenAccept(list -> runSync(() -> {
-            for (VillageCenter center : list) {
-                villagesById.put(center.id(), center);
-            }
-            logger.info("Centres de village chargés : {}.", list.size());
-        })).exceptionally(error -> {
-            logger.error("Impossible de charger les centres de village persistés.", error);
-            return null;
-        });
+        if (ownsCities) {
+            cities.load().exceptionally(error -> {
+                logger.error("Impossible de charger les centres de village persistés.", error);
+                return null;
+            });
+        }
     }
 
     @Override
@@ -153,7 +169,9 @@ public final class TravelBeaconService implements PluginService {
         byBiomeInstance.clear();
         protectedBlocks.clear();
         sessions.clear();
-        villagesById.clear();
+        if (ownsCities) {
+            cities.clear();
+        }
         pairing.clear();
         pairRetryNotBefore.clear();
         pairRetryCount.clear();
@@ -799,7 +817,7 @@ public final class TravelBeaconService implements PluginService {
     // ---- Menu : Villages (issue #151) -----------------------------------------------------
 
     void openVillages(Player player, int page) {
-        List<VillageCenter> sorted = villagesById.values().stream()
+        List<VillageCenter> sorted = cities.all().stream()
                 .filter(VillageCenter::active)
                 .sorted(Comparator.comparing(VillageCenter::name))
                 .toList();
@@ -851,7 +869,7 @@ public final class TravelBeaconService implements PluginService {
     }
 
     private void selectVillageAtSlot(Player player, BeaconMenuSession session, int slot) {
-        List<VillageCenter> sorted = villagesById.values().stream()
+        List<VillageCenter> sorted = cities.all().stream()
                 .filter(VillageCenter::active)
                 .sorted(Comparator.comparing(VillageCenter::name))
                 .toList();
@@ -864,7 +882,7 @@ public final class TravelBeaconService implements PluginService {
 
     /** Revalidation stricte (existence + actif) avant tout déplacement. */
     void travelToVillage(Player player, String villageId) {
-        VillageCenter center = villagesById.get(villageId);
+        VillageCenter center = cities.find(villageId).orElse(null);
         if (center == null || !center.active()) {
             player.sendMessage(MM.deserialize("<red>Ce village n'est plus disponible.</red>"));
             return;
@@ -886,39 +904,24 @@ public final class TravelBeaconService implements PluginService {
     /** Crée ou déplace/renomme un centre (même {@code id} = jamais une nouvelle identité). */
     public void setVillage(String id, String name, Location location) {
         World world = location.getWorld();
-        VillageCenter center = new VillageCenter(id, name, world.getName(), location.getX(), location.getY(),
-                location.getZ(), location.getYaw(), location.getPitch(), true, Instant.now());
-        villageCenterRepository.upsert(center).thenRun(() -> runSync(() -> villagesById.put(id, center)))
-                .exceptionally(error -> {
-                    logger.error("Impossible de persister le centre de village {}", id, error);
-                    return null;
-                });
+        cities.upsertAt(id, name, world.getName(), location.getX(), location.getY(), location.getZ(),
+                location.getYaw(), location.getPitch());
     }
 
     public Optional<String> setVillageActive(String id, boolean active) {
-        VillageCenter existing = villagesById.get(id);
-        if (existing == null) {
+        if (cities.find(id).isEmpty()) {
             return Optional.of("Centre de village introuvable : " + id);
         }
-        villageCenterRepository.setActive(id, active).thenRun(() -> runSync(() -> {
-            VillageCenter current = villagesById.get(id);
-            if (current != null) {
-                villagesById.put(id, new VillageCenter(current.id(), current.name(), current.world(), current.x(),
-                        current.y(), current.z(), current.yaw(), current.pitch(), active, current.createdAt()));
-            }
-        })).exceptionally(error -> {
-            logger.error("Impossible de (dés)activer le centre de village {}", id, error);
-            return null;
-        });
+        cities.setActive(id, active);
         return Optional.empty();
     }
 
+    /** Supprime le centre, et avec lui les découvertes de cette ville (issue #178). */
     public Optional<String> removeVillage(String id) {
-        if (!villagesById.containsKey(id)) {
+        if (cities.find(id).isEmpty()) {
             return Optional.of("Centre de village introuvable : " + id);
         }
-        villagesById.remove(id);
-        villageCenterRepository.delete(id).exceptionally(error -> {
+        cities.delete(id).exceptionally(error -> {
             logger.error("Impossible de supprimer le centre de village {}", id, error);
             return null;
         });
@@ -926,7 +929,7 @@ public final class TravelBeaconService implements PluginService {
     }
 
     public List<VillageCenter> villages() {
-        return List.copyOf(villagesById.values());
+        return cities.all();
     }
 
     // ---- Menu : choix du monde (issue #149-suite) -----------------------------------------

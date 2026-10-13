@@ -98,7 +98,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "building", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content");
+            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "building", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content", "ville");
     private static final List<String> TRAVEL_SUBCOMMANDS =
             List.of("beacon", "village", "diagnose", "repair", "restore", "signs", "maintenance");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
@@ -123,6 +123,18 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     /** Issue #213 — l'outil, et une lecture seule pour retrouver un emplacement depuis le jeu. */
     private static final List<String> BUILD_SITE_SUBCOMMANDS = List.of("tool", "list");
+    /** Issue #178 — {@code /rpgadmin ville …}. */
+    private static final List<String> CITY_SUBCOMMANDS = List.of("outil", "liste", "deplacer", "annuler");
+
+    private com.lodygames.rpgquest.city.CityRegistry cities;
+    private com.lodygames.rpgquest.city.PendingCityRegistry cityPendings;
+
+    /** Issue #178 — branché au démarrage, à côté du registre de villes. */
+    public void setCities(com.lodygames.rpgquest.city.CityRegistry cities,
+                          com.lodygames.rpgquest.city.PendingCityRegistry pendings) {
+        this.cities = cities;
+        this.cityPendings = pendings;
+    }
     /** Lot « placement » de #213. La POSE n'est pas ici : elle passe par le Control Panel. */
     private static final List<String> BUILDING_SUBCOMMANDS =
             List.of("list", "reload", "generate");
@@ -254,6 +266,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // resets joueur, l'économie ni les autres opérations d'administration.
         if (args.length > 0 && !args[0].equalsIgnoreCase("npc")
                 && !args[0].equalsIgnoreCase("buildsite")
+                && !args[0].equalsIgnoreCase("ville")
                 && !args[0].equalsIgnoreCase("building")
                 && !RpgPermissions.canRunLegacyAdminBranch(sender)) {
             sender.sendMessage(MM.deserialize(
@@ -324,6 +337,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleNpc(player, args);
         } else if (args[0].equalsIgnoreCase("buildsite")) {
             handleBuildSite(player, args);
+        } else if (args[0].equalsIgnoreCase("ville")) {
+            handleCity(player, args);
         } else if (args[0].equalsIgnoreCase("building")) {
             handleBuilding(player, args);
         } else if (args[0].equalsIgnoreCase("spawn")) {
@@ -2717,6 +2732,77 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
+     * {@code /rpgadmin ville outil|liste|deplacer <id>|annuler} (issue #178), derrière son propre nœud
+     * {@code rpgquest.admin.city}. Pas de création ni de renommage par commande : le centre se
+     * désigne avec l'outil, le nom se tape dans l'enclume, et le reste se règle dans PlugAdmin.
+     */
+    private void handleCity(Player player, String[] args) {
+        if (!RpgPermissions.canManageCities(player)) {
+            player.sendMessage(MM.deserialize("<red>Permission manquante :</red> <white><permission></white>",
+                    Placeholder.unparsed("permission", RpgPermissions.ADMIN_CITY)));
+            return;
+        }
+        if (cities == null) {
+            player.sendMessage(MM.deserialize("<red>Le registre des villes n'est pas disponible.</red>"));
+            return;
+        }
+        String sub = args.length < 2 ? "" : args[1].toLowerCase(Locale.ROOT);
+        String key = player.getUniqueId().toString();
+        switch (sub) {
+            case "outil" -> {
+                player.getInventory().addItem(com.lodygames.rpgquest.city.CityTool.create());
+                player.sendMessage(MM.deserialize("<green>Outil de ville reçu.</green> <gray>Clic droit sur "
+                        + "un bloc : ce bloc devient le centre d'une nouvelle ville, puis donnez-lui un nom.</gray>"));
+            }
+            case "liste" -> {
+                var all = cities.all();
+                if (all.isEmpty()) {
+                    player.sendMessage(MM.deserialize("<gray>Aucune ville. Prenez l'outil avec</gray> "
+                            + "<yellow>/rpgadmin ville outil</yellow><gray>.</gray>"));
+                    return;
+                }
+                player.sendMessage(MM.deserialize("<gold><count> ville(s) :</gold>",
+                        Placeholder.unparsed("count", String.valueOf(all.size()))));
+                for (var city : all) {
+                    player.sendMessage(MM.deserialize(
+                            "<white><name></white> <gray>(<id>) — <world> <x> / <z> — <d> blocs — <state></gray>",
+                            Placeholder.unparsed("name", city.name()), Placeholder.unparsed("id", city.id()),
+                            Placeholder.unparsed("world", city.world()),
+                            Placeholder.unparsed("x", String.valueOf(city.blockX())),
+                            Placeholder.unparsed("z", String.valueOf(city.blockZ())),
+                            Placeholder.unparsed("d", String.valueOf(city.detectionDistance())),
+                            Placeholder.unparsed("state", city.active() ? "active" : "inactive")));
+                }
+            }
+            case "deplacer" -> {
+                if (args.length < 3 || cities.find(args[2]).isEmpty()) {
+                    player.sendMessage(MM.deserialize("<red>Usage :</red> <yellow>/rpgadmin ville deplacer "
+                            + "[identifiant]</yellow> <gray>(voir /rpgadmin ville liste).</gray>"));
+                    return;
+                }
+                var city = cities.find(args[2]).get();
+                cityPendings.armMove(key, city.id(), player.getName());
+                player.sendMessage(MM.deserialize("<gold>Déplacement prêt :</gold> <gray>le prochain clic droit "
+                        + "avec l'outil de ville deviendra le nouveau centre de</gray> <white><name></white>"
+                        + "<gray>. Valable 3 minutes ;</gray> <yellow>/rpgadmin ville annuler</yellow> "
+                        + "<gray>pour renoncer.</gray>", Placeholder.unparsed("name", city.name())));
+            }
+            case "annuler" -> {
+                cityPendings.cancelMove(key);
+                cityPendings.cancelCreate(key);
+                player.sendMessage(MM.deserialize("<gray>Aucun déplacement ni création de ville en attente.</gray>"));
+            }
+            default -> player.sendMessage(MM.deserialize(
+                    "<yellow>/rpgadmin ville outil</yellow> <gray>— recevoir l'outil de ville</gray>"
+                            + "<newline><yellow>/rpgadmin ville liste</yellow> <gray>— lister les villes</gray>"
+                            + "<newline><yellow>/rpgadmin ville deplacer [id]</yellow> <gray>— le prochain clic de "
+                            + "l'outil déplace ce centre</gray>"
+                            + "<newline><yellow>/rpgadmin ville annuler</yellow> <gray>— renoncer</gray>"
+                            + "<newline><gray>Nom, taille, activation, suppression : PlugAdmin › Villes.</gray>"));
+        }
+    }
+
+    /**
      * {@code /rpgadmin buildsite tool|list} (issue #213).
      *
      * <p>Derrière son <strong>propre</strong> nœud {@code rpgquest.admin.buildsite}, pas l'ombrelle
@@ -3147,6 +3233,15 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2 && args[0].equalsIgnoreCase("building")) {
             return BUILDING_SUBCOMMANDS.stream()
                     .filter(c -> c.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("ville")) {
+            return CITY_SUBCOMMANDS.stream()
+                    .filter(c -> c.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("ville") && args[1].equalsIgnoreCase("deplacer")
+                && cities != null) {
+            return cities.all().stream().map(c -> c.id())
+                    .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("buildsite")) {
             return BUILD_SITE_SUBCOMMANDS.stream()

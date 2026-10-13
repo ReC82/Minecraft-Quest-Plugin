@@ -114,6 +114,12 @@ public final class QuestProgressEngine implements PluginService {
      */
     private volatile ToIntBiFunction<UUID, List<String>> discoveredWaypointCounter;
     private final AtomicBoolean missingCounterWarned = new AtomicBoolean();
+    /**
+     * Issue #178 — nombre de villes existantes déjà découvertes par un joueur ({@code cityId} non
+     * nul : 0 ou 1 pour cette ville). Couture branchée au bootstrap sur
+     * {@code city.CityDiscoveryService#discoveredCount}, même discipline que pour les waypoints.
+     */
+    private volatile ToIntBiFunction<UUID, String> discoveredCityCounter;
 
     public QuestProgressEngine(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressRepository repository,
                                 PlayerVariableRepository variableRepository, QuestMessagesService messagesService,
@@ -138,6 +144,11 @@ public final class QuestProgressEngine implements PluginService {
     /** Issue #185 — branché une seule fois au démarrage (voir {@code bootstrap.RPGQuestBootstrap}). */
     public void setDiscoveredWaypointCounter(ToIntBiFunction<UUID, List<String>> counter) {
         this.discoveredWaypointCounter = counter;
+    }
+
+    /** Issue #178 — branché une seule fois au démarrage. */
+    public void setDiscoveredCityCounter(ToIntBiFunction<UUID, String> counter) {
+        this.discoveredCityCounter = counter;
     }
 
     @Override
@@ -240,6 +251,9 @@ public final class QuestProgressEngine implements PluginService {
             // proximité, téléportation, reclic). La progression vient exclusivement de l'abonnement
             // aux PREMIÈRES découvertes réelles, via setDiscoveredWaypointCounter/handleWaypointDiscovered.
             case DISCOVER_WAYPOINT -> null;
+            // Issue #178 : même principe — la progression vient exclusivement des PREMIÈRES
+            // découvertes enregistrées par city.CityDiscoveryService (handleCityDiscovered).
+            case DISCOVER_CITY -> null;
         };
         if (primary == null) {
             return List.of();
@@ -875,16 +889,36 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     /**
+     * Issue #178 — appelé <strong>uniquement</strong> sur une première découverte de ville réellement
+     * insérée en base. Une même ville ne peut donc compter qu'une fois par joueur, quel que soit le
+     * nombre de sorties/rentrées, de renommages ou de redémarrages.
+     */
+    public void handleCityDiscovered(Player player, String cityId) {
+        List<ObjectiveRef> newDiscoveriesOnly = index.discoverCity().stream()
+                .filter(ref -> ref.objective() instanceof com.lodygames.rpgquest.quest.model.DiscoverCityObjective o
+                        && o.countMode() == DiscoverWaypointObjective.CountMode.NEW_ONLY
+                        && o.matches(cityId))
+                .toList();
+        handleCandidates(player, newDiscoveriesOnly);
+        refreshCumulativeDiscoveryObjectives(player);
+    }
+
+    /**
      * Issue #185, mode {@code INCLUDE_EXISTING} : aligne le compteur sur le nombre réel de waypoints
      * déjà découverts par le joueur (filtré par monde). Idempotent et sans effet de bord sur les
      * découvertes elles-mêmes — appelé à l'acceptation, au changement d'étape, au chargement du
      * joueur et à chaque nouvelle découverte.
      */
     public void refreshCumulativeDiscoveryObjectives(Player player) {
-        List<ObjectiveRef> cumulative = index.discoverWaypoint().stream()
+        List<ObjectiveRef> cumulative = new ArrayList<>(index.discoverWaypoint().stream()
                 .filter(ref -> ref.objective() instanceof DiscoverWaypointObjective o
                         && o.countMode() == DiscoverWaypointObjective.CountMode.INCLUDE_EXISTING)
-                .toList();
+                .toList());
+        // Issue #178 : les villes suivent exactement la même règle cumulative.
+        index.discoverCity().stream()
+                .filter(ref -> ref.objective() instanceof com.lodygames.rpgquest.quest.model.DiscoverCityObjective o
+                        && o.countMode() == DiscoverWaypointObjective.CountMode.INCLUDE_EXISTING)
+                .forEach(cumulative::add);
         if (cumulative.isEmpty()) {
             return;
         }
@@ -900,9 +934,10 @@ public final class QuestProgressEngine implements PluginService {
                     || progress.currentStepIndex() != ref.stepIndex()) {
                 continue;
             }
-            DiscoverWaypointObjective objective = (DiscoverWaypointObjective) ref.objective();
-            int required = objective.amount();
-            int total = countDiscoveredWaypoints(playerId, objective.worlds());
+            int required = requiredAmount(ref.objective());
+            int total = ref.objective() instanceof com.lodygames.rpgquest.quest.model.DiscoverCityObjective city
+                    ? countDiscoveredCities(playerId, city.city())
+                    : countDiscoveredWaypoints(playerId, ((DiscoverWaypointObjective) ref.objective()).worlds());
             int updated = Math.min(required, total);
             // Jamais de régression : un waypoint désactivé après coup ne doit pas faire reculer une
             // progression déjà acquise.
@@ -915,6 +950,11 @@ public final class QuestProgressEngine implements PluginService {
         if (changed) {
             notifyChanged(playerId);
         }
+    }
+
+    private int countDiscoveredCities(UUID playerId, String cityId) {
+        ToIntBiFunction<UUID, String> counter = discoveredCityCounter;
+        return counter == null ? 0 : counter.applyAsInt(playerId, cityId);
     }
 
     private int countDiscoveredWaypoints(UUID playerId, List<String> worlds) {
@@ -1043,6 +1083,7 @@ public final class QuestProgressEngine implements PluginService {
             return;
         }
 
+        List<ObjectiveRef> progressing = new ArrayList<>();
         for (ObjectiveRef ref : candidates) {
             ActiveQuestProgress progress = playerActive.get(ref.questId());
             if (progress == null || progress.state() != QuestState.ACTIVE) {
@@ -1051,13 +1092,19 @@ public final class QuestProgressEngine implements PluginService {
             if (progress.currentStepIndex() != ref.stepIndex()) {
                 continue;
             }
-            int required = requiredAmount(ref.objective());
-            if (progress.counter(ref.objectiveIndex()) >= required) {
+            if (progress.counter(ref.objectiveIndex()) >= requiredAmount(ref.objective())) {
                 continue;
             }
-
+            progressing.add(ref);
+        }
+        // Issues #178 / #69 / #209 : un même événement qui fait progresser plusieurs quêtes nomme
+        // chaque quête dans l'action bar, sinon « Découvrir 2 villes 1/2 » deux fois est illisible.
+        boolean named = progressing.stream().map(ObjectiveRef::questId).distinct().count() > 1;
+        for (ObjectiveRef ref : progressing) {
+            ActiveQuestProgress progress = playerActive.get(ref.questId());
+            int required = requiredAmount(ref.objective());
             int updated = Math.min(required, progress.counter(ref.objectiveIndex()) + Math.max(1, step));
-            applyObjectiveCounter(player, ref, progress, updated, required);
+            applyObjectiveCounter(player, ref, progress, updated, required, named);
         }
         notifyChanged(playerId);
     }
@@ -1070,6 +1117,11 @@ public final class QuestProgressEngine implements PluginService {
      */
     private void applyObjectiveCounter(Player player, ObjectiveRef ref, ActiveQuestProgress progress,
                                         int updated, int required) {
+        applyObjectiveCounter(player, ref, progress, updated, required, false);
+    }
+
+    private void applyObjectiveCounter(Player player, ObjectiveRef ref, ActiveQuestProgress progress,
+                                        int updated, int required, boolean named) {
         UUID playerId = player.getUniqueId();
         progress.setCounter(ref.objectiveIndex(), updated);
         repository.setObjectiveProgress(playerId, ref.questId(), ref.stepId(), ref.objectiveIndex(), updated)
@@ -1077,8 +1129,12 @@ public final class QuestProgressEngine implements PluginService {
                     logger.error("Impossible de persister la progression de {} pour {}", ref.questId(), playerId, error);
                     return null;
                 });
-        showObjectiveProgress(player, ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex(),
-                ref.objective(), updated, required);
+        if (named) {
+            showNamedObjectiveProgress(player, ref, updated, required);
+        } else {
+            showObjectiveProgress(player, ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex(),
+                    ref.objective(), updated, required);
+        }
 
         if (updated >= required) {
             questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
@@ -1243,6 +1299,25 @@ public final class QuestProgressEngine implements PluginService {
         player.sendMessage(messagesService.current().format(
                 "quest.reward-summary-header", Placeholder.parsed("quest", quest.title().base())));
         rewardLines.forEach(player::sendMessage);
+    }
+
+    /** Comme {@link #showObjectiveProgress}, préfixé du titre de la quête (plusieurs quêtes concernées). */
+    private void showNamedObjectiveProgress(Player player, ObjectiveRef ref, int current, int total) {
+        if (!player.isOnline()) {
+            return;
+        }
+        String title = questEngine.find(ref.questId()).map(q -> q.title().base()).orElse(ref.questId().getKey());
+        Component message = messagesService.current().format("quest.objective-progress-named",
+                Placeholder.parsed("quest", title),
+                Placeholder.unparsed("objective", describeObjective(ref.objective())),
+                Placeholder.unparsed("current", String.valueOf(current)),
+                Placeholder.unparsed("total", String.valueOf(total)));
+        String key = ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex();
+        if (actionBar != null) {
+            actionBar.objective(player, key, message);
+        } else {
+            player.sendActionBar(message);
+        }
     }
 
     private void showObjectiveProgress(Player player, String key, QuestObjective objective, int current,

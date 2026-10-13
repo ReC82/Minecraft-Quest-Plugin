@@ -48,6 +48,7 @@ public final class QuestObjectiveIndex {
      * déplacement.
      */
     private final List<ObjectiveRef> discoverWaypoint = new ArrayList<>();
+    private final List<ObjectiveRef> discoverCity = new ArrayList<>();
 
     public QuestObjectiveIndex(List<QuestDefinition> quests) {
         for (QuestDefinition quest : quests) {
@@ -74,6 +75,7 @@ public final class QuestObjectiveIndex {
             case DeliverItemToNpcObjective o -> add(deliverToNpc, o.npcId(), ref);
             case SmeltItemObjective o -> add(smeltItem, o.material(), ref);
             case DiscoverWaypointObjective o -> discoverWaypoint.add(ref);
+            case com.lodygames.rpgquest.quest.model.DiscoverCityObjective o -> discoverCity.add(ref);
         }
     }
 
@@ -129,6 +131,11 @@ public final class QuestObjectiveIndex {
         return List.copyOf(discoverWaypoint);
     }
 
+    /** Issue #178 — objectifs {@code DISCOVER_CITY}. */
+    public List<ObjectiveRef> discoverCity() {
+        return List.copyOf(discoverCity);
+    }
+
     public boolean isEmpty(ObjectiveType type) {
         return switch (type) {
             case BREAK_BLOCK -> breakBlock.isEmpty();
@@ -141,6 +148,7 @@ public final class QuestObjectiveIndex {
             case DELIVER_ITEM_TO_NPC -> deliverToNpc.isEmpty();
             case SMELT_ITEM -> smeltItem.isEmpty();
             case DISCOVER_WAYPOINT -> discoverWaypoint.isEmpty();
+            case DISCOVER_CITY -> discoverCity.isEmpty();
         };
     }
 }

@@ -8507,3 +8507,30 @@ fichiers d'épingle supprimés.
 
 Rollback JAR : `scripts/rollback-verygames.sh --latest` (avec une autorisation TLS équivalente tant que
 le certificat est expiré), puis redémarrage contrôlé.
+
+## 2026-10-13 — Villes : définition, administration, découverte et objectif DISCOVER_CITY (#178)
+
+### Changement
+
+Une ville est un centre de village (#151) avec un périmètre carré et une découverte par joueur.
+Outil de ville en jeu, page PlugAdmin « Villes », titre « Bienvenue à … » à la première entrée,
+objectif de quête `DISCOVER_CITY`.
+
+### Action serveur
+
+- Remplacer le JAR RPGQuest **et** redéployer PlugAdmin (deux déploiements).
+- **Migration V33 automatique** au démarrage : colonne `village_centers.detection_distance`
+  (50 pour les centres existants, sans changer leur identifiant ni leur position) et table
+  `city_discoveries`. Aucune donnée existante n'est modifiée.
+- `config.yml` : section `cities:` ajoutée **par le plugin** (`ConfigFileCompleter`) ; ne pas
+  téléverser `config.yml`. `messages.yml` : clés `city.*` et `quest.objective-progress-named`
+  ajoutées par la fusion des clés manquantes.
+- Permission en jeu : `rpgquest.admin.city` (`default: false`, impliquée par
+  `rpgquest.admin.world`).
+- Redémarrage requis (nouveau JAR) ; à faire à 0 joueur.
+- **Ne pas** créer de ville de test dans les mondes existants.
+
+### Rollback
+
+Remettre le JAR et le panel précédents. La colonne et la table V33 restent sans effet pour l'ancien
+JAR (le lanceur de migrations ne rétrograde jamais) ; les centres de village restent lus normalement.

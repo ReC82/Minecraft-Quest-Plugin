@@ -106,6 +106,14 @@ public final class AgentActionExecutor {
                 case BUILDING_PLACEMENT_HISTORY -> buildingHistory(action);
                 case BUILDING_PLACEMENT_CAPTURE_PREVIEW -> buildingCapturePreview(action);
                 case BUILDING_PLACEMENT_CAPTURE -> buildingCapture(action);
+                case CITY_LIST -> cityList(action);
+                case CITY_RENAME -> cityMutation(action, id -> actions.cityRename(id, action.param("name")));
+                case CITY_RESIZE -> cityResize(action);
+                case CITY_ACTIVE -> cityActive(action);
+                case CITY_MOVE_ARM -> cityPlayerAction(action, (id, player) ->
+                        actions.cityArmMove(id, player, trimOrNull(action.param("by"))));
+                case CITY_PERIMETER_SHOW -> cityPlayerAction(action, actions::cityShowPerimeter);
+                case CITY_DELETE -> cityDelete(action);
                 case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
@@ -1349,6 +1357,119 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(view.total()),
                     view.total() + " emplacement(s) de construction.", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Villes (issue #178) ------------------------------------------------------------------
+
+    private static final java.util.regex.Pattern CITY_ID = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,64}");
+    private static final java.util.regex.Pattern PLAYER_NAME = java.util.regex.Pattern.compile("[A-Za-z0-9_]{1,16}");
+
+    private static String cityId(AgentAction action) {
+        String id = trimOrNull(action.param("id"));
+        return id != null && CITY_ID.matcher(id).matches() ? id : null;
+    }
+
+    private CompletableFuture<AgentActionOutcome> cityList(AgentAction action) {
+        return actions.cities().thenApply(view -> {
+            if (!view.available()) {
+                return AgentActionOutcome.failed(action.id(), "Villes indisponibles sur ce serveur.");
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.CitySummary c : view.cities()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", c.id());
+                row.put("name", c.name());
+                row.put("world", c.world());
+                row.put("x", c.x());
+                row.put("y", c.y());
+                row.put("z", c.z());
+                row.put("centerX", c.centerX());
+                row.put("centerZ", c.centerZ());
+                row.put("distance", c.distance());
+                row.put("active", c.active());
+                row.put("createdAt", c.createdAt());
+                row.put("worldLoaded", c.worldLoaded());
+                row.put("minX", c.minX());
+                row.put("maxX", c.maxX());
+                row.put("minZ", c.minZ());
+                row.put("maxZ", c.maxZ());
+                row.put("width", c.width());
+                row.put("discoveries", c.discoveries());
+                row.put("overlaps", c.overlaps());
+                rows.add(row);
+            }
+            List<Map<String, Object>> moves = new ArrayList<>();
+            for (AgentActions.CityPendingMove m : view.pendingMoves()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("player", m.player());
+                row.put("cityId", m.cityId());
+                row.put("requestedBy", m.requestedBy());
+                row.put("expiresAt", m.expiresAt());
+                moves.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("cities", rows);
+            details.put("pendingMoves", moves);
+            details.put("minDistance", view.minDistance());
+            details.put("maxDistance", view.maxDistance());
+            details.put("defaultDistance", view.defaultDistance());
+            details.put("total", rows.size());
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " ville(s).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> cityMutation(AgentAction action,
+            java.util.function.Function<String, CompletableFuture<AgentActions.MutationResult>> call) {
+        String id = cityId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « id » de ville manquant ou invalide."));
+        }
+        return call.apply(id)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> cityResize(AgentAction action) {
+        String raw = trimOrNull(action.param("distance"));
+        int distance;
+        try {
+            distance = raw == null ? -1 : Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            distance = -1;
+        }
+        if (distance < 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « distance » manquant ou non entier (blocs dans chaque direction)."));
+        }
+        int finalDistance = distance;
+        return cityMutation(action, id -> actions.cityResize(id, finalDistance));
+    }
+
+    private CompletableFuture<AgentActionOutcome> cityActive(AgentAction action) {
+        String raw = trimOrNull(action.param("active"));
+        if (!"true".equals(raw) && !"false".equals(raw)) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « active » attendu : true ou false."));
+        }
+        return cityMutation(action, id -> actions.citySetActive(id, Boolean.parseBoolean(raw)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> cityPlayerAction(AgentAction action,
+            java.util.function.BiFunction<String, String, CompletableFuture<AgentActions.MutationResult>> call) {
+        String player = trimOrNull(action.param("player"));
+        if (player == null || !PLAYER_NAME.matcher(player).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « player » manquant ou invalide : pseudo d'un joueur connecté."));
+        }
+        return cityMutation(action, id -> call.apply(id, player));
+    }
+
+    private CompletableFuture<AgentActionOutcome> cityDelete(AgentAction action) {
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Suppression non confirmée : rien n'a été supprimé."));
+        }
+        return cityMutation(action, actions::cityDelete);
     }
 
     private CompletableFuture<AgentActionOutcome> buildingSiteRename(AgentAction action) {

@@ -255,6 +255,11 @@ public final class RPGQuestBootstrap {
     private WaystoneService waystoneService;
     private WaypointService waypointService;
     private TravelBeaconService travelBeaconService;
+    /** Issue #178 — villes. */
+    private com.lodygames.rpgquest.city.CityRegistry cityRegistry;
+    private com.lodygames.rpgquest.city.CityDiscoveryService cityDiscoveryService;
+    private com.lodygames.rpgquest.city.PendingCityRegistry cityPendings;
+    private ClaimBorderRenderer cityBorderRenderer;
     /** Issue #191 : autorisation explicite et temporaire d'altérer waypoints/bornes (jamais via OP seul). */
     private final com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode =
             new com.lodygames.rpgquest.travel.TravelMaintenanceMode();
@@ -743,9 +748,33 @@ public final class RPGQuestBootstrap {
         // support qu'un waypoint) ouvrant un menu graphique vers les waypoints déjà découverts par
         // le joueur. Strictement distinct de waypoint/waystone (aucune fusion d'identité/table) ;
         // aucune génération automatique ici (#149) — placement manuel via /rpgadmin travel beacon set.
+        // Issue #178 — villes : un SEUL registre des centres de village (#151), partagé par le menu
+        // de voyage, la découverte en jeu, l'outil de ville et PlugAdmin.
+        cityRegistry = new com.lodygames.rpgquest.city.CityRegistry(
+                new VillageCenterRepository(databaseService.databaseManager()),
+                task -> plugin.getServer().getScheduler().runTask(plugin, task), plugin.getSLF4JLogger());
+        com.lodygames.rpgquest.city.CityNames.use(cityRegistry);
+        cityRegistry.load().exceptionally(error -> {
+            plugin.getSLF4JLogger().error("Impossible de charger les villes persistées.", error);
+            return null;
+        });
+        cityDiscoveryService = new com.lodygames.rpgquest.city.CityDiscoveryService(plugin, cityRegistry,
+                new com.lodygames.rpgquest.database.CityDiscoveryRepository(databaseService.databaseManager()),
+                questMessagesService, () -> configService.current().cities());
+        cityDiscoveryService.onFirstDiscovery((player, city) ->
+                questProgressEngine.handleCityDiscovered(player, city.id()));
+        cityDiscoveryService.onLoaded(questProgressEngine::refreshCumulativeDiscoveryObjectives);
+        questProgressEngine.setDiscoveredCityCounter(cityDiscoveryService::discoveredCount);
+        registry.start(cityDiscoveryService);
+        registry.start(new PlayerListenerService(plugin, cityDiscoveryService.listener()));
+        cityPendings = new com.lodygames.rpgquest.city.PendingCityRegistry();
+        registry.start(new PlayerListenerService(plugin,
+                new com.lodygames.rpgquest.city.CityToolListener(cityRegistry, cityPendings)));
+        cityBorderRenderer = claimBorderRenderer;
+
         travelBeaconService = new TravelBeaconService(
                 plugin, new TravelBeaconRepository(databaseService.databaseManager()), waypointService,
-                claimService, new VillageCenterRepository(databaseService.databaseManager()),
+                claimService, cityRegistry,
                 () -> configService.current().travel(), () -> configService.current().hub().world());
         registry.start(travelBeaconService);
         registry.start(new PlayerListenerService(plugin, travelBeaconService.listener()));
@@ -955,6 +984,7 @@ public final class RPGQuestBootstrap {
                 buildingPlacementService::all, plugin.getLogger(), java.time.Clock.systemUTC()));
         // Issue #246 : capturer une construction posée comme nouveau bâtiment. Lecture seule du
         // monde ; n'écrit que dans la bibliothèque, jamais par-dessus un fichier existant.
+        agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
         agentActions.setBuildingCapture(new com.lodygames.rpgquest.building.BuildingCaptureService(
                 buildingPlacementService, buildingSiteService, buildingLibrary, schematicGateway,
                 new com.lodygames.rpgquest.building.BukkitWorldProbe(), java.time.Clock.systemUTC(),
@@ -1295,6 +1325,7 @@ public final class RPGQuestBootstrap {
                 questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService,
                 travelMaintenanceMode, claimService, contentReloadService, starterToolKitService,
                 buildingSiteService, buildingLibrary, buildingSchematics, plugin);
+        rpgAdminCommand.setCities(cityRegistry, cityPendings);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

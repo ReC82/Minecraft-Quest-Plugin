@@ -13,6 +13,7 @@ groupes.md
 quetes.md
 content-packs.md
 claims.md
+villes.md
 wild.md
 verygames-deploiement.md
 aws-control-panel-deploiement.md

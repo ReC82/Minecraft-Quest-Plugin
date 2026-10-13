@@ -93,9 +93,15 @@ rewards:                    # optionnel
             mondes. <code>count-mode</code> vaut <code>NEW_ONLY</code> (défaut : seules les découvertes
             faites pendant que l'objectif est actif) ou <code>INCLUDE_EXISTING</code> (les découvertes
             déjà acquises comptent aussi) ; la règle retenue est annoncée au joueur.</td></tr>
+        <tr><td><code>DISCOVER_CITY</code></td><td><code>city</code> <strong>ou</strong> <code>amount</code>, <code>count-mode</code> (optionnel)</td>
+          <td><strong>Découvrir</strong> une ville précise (<code>city</code>, identifiant stable choisi par
+            son nom dans PlugAdmin) ou <code>amount</code> villes distinctes. Seule la première entrée
+            réelle dans une ville active compte (à pied, par téléportation ou à la connexion) ; y revenir,
+            la renommer ou redémarrer ne compte <strong>jamais</strong>. <code>count-mode</code> : même règle
+            que pour les waypoints, annoncée au joueur.</td></tr>
       </tbody>
     </table>
-    <p class="text-body-secondary small">Dix types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
+    <p class="text-body-secondary small">Onze types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
 
     <div class="alert alert-info">
       <p class="mb-2">

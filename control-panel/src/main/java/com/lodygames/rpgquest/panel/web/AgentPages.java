@@ -239,6 +239,10 @@ public final class AgentPages {
         // le défaut corrigé pour le PNJ destinataire de #123.
         o.put("worlds", nz(obj.get("worlds")));
         o.put("countMode", nz(obj.get("count-mode")));
+        // Issue #178 : la ville précise d'un DISCOVER_CITY (identifiant stable), même clé que le relevé.
+        if ("DISCOVER_CITY".equals(kind)) {
+            o.put("target", nz(obj.get("city")));
+        }
         o.put("raw", "");
         return o;
     }
@@ -1517,7 +1521,8 @@ public final class AgentPages {
                 List<Object> structured = asList(st.get("objectiveDetails"));
                 if (!structured.isEmpty()) {
                     for (Object od : structured) {
-                        ObjectiveText.Objective o = ObjectiveText.fromSummary(asMap(od));
+                        ObjectiveText.Objective o = ObjectiveText.fromSummary(asMap(od),
+                                cityDirectory(agentId)::nameOf);
                         sb.append("<li><span class=\"obj-text\">").append(Http.esc(o.label())).append("</span>");
                         if (o.hasTarget()) {
                             sb.append(Ui.rawValue(o.rawTarget()));
@@ -3334,6 +3339,355 @@ public final class AgentPages {
                 + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" "
                 + "type=\"submit\">" + Icons.icon("warning") + "Supprimer l'emplacement"
                 + "</button></div></form></div>";
+    }
+
+    // ---- Villes (issue #178) ---------------------------------------------------------------
+
+    /** Le dernier relevé {@code city.list} réussi ; indisponible sans relevé. */
+    public com.lodygames.rpgquest.panel.city.CityDirectory cityDirectory(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.city.CityDirectory.unavailable();
+        }
+        return latestDetails(agentId, "city.list")
+                .map(com.lodygames.rpgquest.panel.city.CityDirectory::from)
+                .orElseGet(com.lodygames.rpgquest.panel.city.CityDirectory::unavailable);
+    }
+
+    /**
+     * Page {@code /cities} (issue #178). Une ville <strong>est</strong> un centre de village (#151) :
+     * la même fiche sert au menu de voyage « Villages » et à la découverte en jeu.
+     *
+     * <p>Pas de bouton « Créer » : le centre se désigne en jeu avec l'outil de ville, comme un
+     * emplacement de construction. Tout le reste — nom, taille, état, déplacement, suppression — se
+     * fait ici.</p>
+     */
+    public String cities(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("world", "Villes",
+                "Les villes définies en jeu avec l'outil de ville. Un joueur qui entre pour la première "
+                        + "fois dans le carré d'une ville active voit « Bienvenue à … » et la découvre.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canWrite = perms.can(session.effective(), Permission.CITY_WRITE);
+        boolean canDelete = perms.can(session.effective(), Permission.CITY_DELETE);
+
+        sb.append(agentPicker(agentId, "/cities", ""));
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue</span>");
+        sb.append(compactRefresh(session, agentId, "city.list", "Rafraîchir les villes",
+                "btn-outline-primary", "/cities"));
+        if (canWrite) {
+            sb.append(compactRefresh(session, agentId, "player.list", "Joueurs connectés",
+                    "btn-outline-secondary", "/cities"));
+        }
+        sb.append("</div>");
+
+        var directory = cityDirectory(agentId);
+        if (!directory.available()) {
+            sb.append(Ui.empty("world", "Aucun relevé chargé — cliquer sur « Rafraîchir les villes »."));
+            sb.append(cityHowToCard(directory));
+            return sb.toString();
+        }
+        if (directory.cities().isEmpty()) {
+            sb.append(Ui.empty("world", "Aucune ville pour le moment."));
+            sb.append(cityHowToCard(directory));
+            return sb.toString();
+        }
+        for (var move : directory.pendingMoves()) {
+            sb.append(Ui.banner("info", "Déplacement en attente : le prochain clic droit de <strong>"
+                    + Http.esc(move.player()) + "</strong> avec l'outil de ville deviendra le nouveau centre "
+                    + "de <strong>" + Http.esc(directory.nameOf(move.cityId())) + "</strong>. Rafraîchissez "
+                    + "après le clic pour relire le résultat."));
+        }
+
+        String worldFilter = str(q.get("world")).trim();
+        var shown = directory.cities().stream()
+                .filter(c -> worldFilter.isEmpty() || c.world().equals(worldFilter)).toList();
+        sb.append("<p class=\"npc-summary\">").append(directory.cities().size()).append(" ville(s)");
+        long inactive = directory.cities().stream().filter(c -> !c.active()).count();
+        if (inactive > 0) {
+            sb.append(" &middot; ").append(inactive).append(" inactive(s)");
+        }
+        if (!worldFilter.isEmpty()) {
+            sb.append(" &middot; monde : <code>").append(Http.esc(worldFilter)).append("</code>");
+        }
+        sb.append("</p>");
+        if (directory.worlds().size() > 1) {
+            sb.append("<div class=\"btnrow\"><a class=\"btn btn-sm ")
+                    .append(worldFilter.isEmpty() ? "btn-primary" : "btn-outline-secondary")
+                    .append("\" href=\"/cities\">Tous les mondes</a>");
+            for (String world : directory.worlds()) {
+                sb.append("<a class=\"btn btn-sm ")
+                        .append(world.equals(worldFilter) ? "btn-primary" : "btn-outline-secondary")
+                        .append("\" href=\"/cities?world=")
+                        .append(java.net.URLEncoder.encode(world, java.nio.charset.StandardCharsets.UTF_8))
+                        .append("\">").append(Http.esc(world)).append("</a>");
+            }
+            sb.append("</div>");
+        }
+        sb.append(Ui.searchToolbar("cities", "Rechercher une ville (nom, monde, identifiant)…", ""));
+
+        List<String> onlinePlayers = latestDetails(agentId, "player.list")
+                .map(x -> asList(x.get("players"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("name"))).filter(s -> !s.isEmpty()).toList();
+        List<com.lodygames.rpgquest.panel.content.SourceCatalog.QuestSource> sourceQuests = sourceCatalog.quests();
+        sb.append("<div class=\"accordion npc-accordion\" id=\"city-accordion\">");
+        int index = 0;
+        for (var city : shown) {
+            sb.append(cityItem(session, agentId, city, index++, directory, canWrite, canDelete,
+                    onlinePlayers, questsCiting(city.id(), sourceQuests)));
+        }
+        sb.append("</div>");
+        sb.append(cityHowToCard(directory));
+        return sb.toString();
+    }
+
+    /** Quêtes de la source dont un objectif DISCOVER_CITY désigne cette ville précise. */
+    private static List<String> questsCiting(String cityId,
+            List<com.lodygames.rpgquest.panel.content.SourceCatalog.QuestSource> quests) {
+        List<String> out = new ArrayList<>();
+        for (var qs : quests) {
+            boolean cites = qs.draft().steps.stream().flatMap(s -> s.objectives.stream())
+                    .anyMatch(o -> "DISCOVER_CITY".equalsIgnoreCase(str(o.get("type")))
+                            && cityId.equals(str(o.get("city")).trim()));
+            if (cites) {
+                String title = qs.draft().title == null ? "" : MiniText.plain(qs.draft().title).trim();
+                out.add(title.isEmpty() ? qs.plainId() : title + " (" + qs.plainId() + ")");
+            }
+        }
+        return out;
+    }
+
+    private String cityItem(Session session, String agentId, com.lodygames.rpgquest.panel.city.CityView city,
+                            int index, com.lodygames.rpgquest.panel.city.CityDirectory directory,
+                            boolean canWrite, boolean canDelete, List<String> onlinePlayers,
+                            List<String> citingQuests) {
+        String slug = "city-" + index + "-" + city.id().replaceAll("[^a-z0-9_-]", "-");
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"cities\" data-filter-text=\"")
+                .append(Http.esc(city.searchText())).append("\">");
+        sb.append("<h3 class=\"accordion-header\"><button class=\"accordion-button collapsed npc-head\" "
+                + "type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
+                .append("\" aria-expanded=\"false\" aria-controls=\"").append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(Http.esc(city.name()))
+                .append("</span><code class=\"tid npc-id\">").append(Http.esc(city.id())).append("</code>")
+                .append("<span class=\"npc-loc\">").append(Icons.icon("world")).append(Http.esc(city.world()))
+                .append(' ').append(Http.esc(city.centerLabel())).append("</span></span>");
+        sb.append("<span class=\"npc-head-badges\">");
+        sb.append(city.active() ? "<span class=\"badge text-bg-success\">active</span>"
+                : "<span class=\"badge text-bg-secondary\">inactive</span>");
+        sb.append("<span class=\"badge text-bg-light text-dark\">").append(city.distance())
+                .append(" blocs · ").append(Http.esc(city.sizeLabel())).append("</span>");
+        if (!city.overlaps().isEmpty()) {
+            sb.append("<span class=\"badge text-bg-warning\">chevauchement</span>");
+        }
+        if (!city.worldLoaded()) {
+            sb.append("<span class=\"badge text-bg-warning\">monde non chargé</span>");
+        }
+        sb.append("</span></button></h3>");
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" "
+                + "data-bs-parent=\"#city-accordion\"><div class=\"accordion-body npc-detail\">");
+
+        sb.append(detailSection("world", "Ville"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Nom", Http.esc(city.name()));
+        dlRow(sb, "Identifiant", Ui.id(city.id()) + " <span class=\"muted\">— ne change jamais, même "
+                + "après un renommage ou un déplacement</span>");
+        dlRow(sb, "Monde", Http.esc(city.world()));
+        dlRow(sb, "Centre", "<code class=\"tid\">" + Http.esc(city.centerLabel()) + "</code>");
+        dlRow(sb, "Périmètre", "<strong>" + Http.esc(city.ruleSentence()) + "</strong>");
+        dlRow(sb, "Dimensions", Http.esc(city.sizeLabel()) + " <span class=\"muted\">(largeur totale "
+                + "= 2 × " + city.distance() + " + 1, le bloc central compte)</span>");
+        dlRow(sb, "Limites (coins inclus)", "<code class=\"tid\">" + Http.esc(city.boundsLabel()) + "</code>");
+        dlRow(sb, "Altitude", "<span class=\"muted\">ignorée : toute la hauteur du monde compte</span>");
+        dlRow(sb, "État", city.active() ? "Active — découvrable, et proposée dans le menu de voyage « Villages »"
+                : "Inactive — ni découverte, ni menu de voyage");
+        dlRow(sb, "Découvertes", city.discoveries() + " joueur(s)");
+        dlRow(sb, "Créée le", Http.esc(city.createdAtLabel()));
+        if (!city.overlaps().isEmpty()) {
+            List<String> names = city.overlaps().stream().map(directory::nameOf).toList();
+            dlRow(sb, "Chevauche", Http.esc(String.join(", ", names)) + "<br><span class=\"muted\">Dans la "
+                    + "zone commune, c'est la ville dont le centre est le plus proche qui est annoncée et "
+                    + "découverte (à égalité : la plus petite, puis l'identifiant). Un seul titre à la fois.</span>");
+        }
+        if (!citingQuests.isEmpty()) {
+            dlRow(sb, "Quêtes qui la citent", Http.esc(String.join(", ", citingQuests)));
+        }
+        sb.append("</dl>");
+        sb.append(cityPerimeterSvg(city, directory));
+
+        if (canWrite) {
+            sb.append(detailSection("edit", "Modifier"));
+            sb.append(formStart(session, agentId, "city.rename", "/cities", "")
+                    + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(city.id()) + "\">"
+                    + "<div class=\"field\"><label>Nom affiché</label><input type=\"text\" name=\"name\" "
+                    + "minlength=\"2\" maxlength=\"40\" required value=\"" + Http.esc(city.name()) + "\">"
+                    + "<p class=\"field-help\">C'est le nom du titre « Bienvenue à … » et du menu de voyage. "
+                    + "Les découvertes et les quêtes suivent l'identifiant, pas le nom : rien n'est perdu.</p></div>"
+                    + mutationConsent("city.rename", "", null)
+                    + "<div class=\"btnrow\"><button class=\"btn btn-sm\" type=\"submit\">" + Icons.icon("save")
+                    + "Renommer</button></div></form>");
+            sb.append(formStart(session, agentId, "city.resize", "/cities", "")
+                    + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(city.id()) + "\">"
+                    + "<div class=\"field\"><label>Distance de détection (blocs dans chaque direction)</label>"
+                    + "<input type=\"number\" name=\"distance\" required min=\"" + directory.minDistance()
+                    + "\" max=\"" + directory.maxDistance() + "\" value=\"" + city.distance() + "\">"
+                    + "<p class=\"field-help\">La ville s'étend de cette distance vers le nord, le sud, l'est et "
+                    + "l'ouest depuis son centre : c'est un <strong>carré</strong>, pas un cercle, coins compris. "
+                    + "50 donne un carré de 101 × 101 blocs ; 100 donne 201 × 201. Entre "
+                    + directory.minDistance() + " et " + directory.maxDistance() + " (défaut "
+                    + directory.defaultDistance() + ").</p></div>"
+                    + mutationConsent("city.resize", "", null)
+                    + "<div class=\"btnrow\"><button class=\"btn btn-sm\" type=\"submit\">" + Icons.icon("save")
+                    + "Appliquer la taille</button></div></form>");
+            sb.append(formStart(session, agentId, "city.active", "/cities", "")
+                    + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(city.id()) + "\">"
+                    + "<input type=\"hidden\" name=\"active\" value=\"" + !city.active() + "\">"
+                    + mutationConsent("city.active", "", null)
+                    + "<p class=\"field-help\">" + (city.active()
+                            ? "Désactiver : plus aucune découverte ni entrée dans le menu de voyage. Les "
+                                    + "découvertes déjà faites sont conservées et comptent toujours pour les quêtes."
+                            : "Activer : la ville redevient découvrable et apparaît dans le menu « Villages ».")
+                    + "</p><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">"
+                    + (city.active() ? "Désactiver la ville" : "Activer la ville") + "</button></div></form>");
+
+            sb.append(detailSection("target", "En jeu"));
+            sb.append(cityPlayerForm(session, agentId, "city.move.arm", city, onlinePlayers,
+                    "Préparer le déplacement du centre",
+                    "Le joueur choisi (connecté, avec la permission rpgquest.admin.city) reçoit un message ; "
+                            + "son prochain clic droit avec l'outil de ville devient le nouveau centre. Valable "
+                            + "3 minutes. Rafraîchissez ensuite cette page : le nouveau centre et les nouvelles "
+                            + "limites s'affichent ci-dessus."));
+            sb.append(cityPlayerForm(session, agentId, "city.perimeter.show", city, onlinePlayers,
+                    "Montrer le périmètre en jeu",
+                    "Dessine le contour du carré en particules orange (colonnes aux coins) au seul joueur "
+                            + "choisi, pendant 15 secondes. Il doit être dans le monde " + city.world()
+                            + ". Rien n'est modifié."));
+        }
+        if (canDelete) {
+            sb.append(cityDeleteZone(session, agentId, city, citingQuests));
+        }
+        sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
+    private String cityPlayerForm(Session session, String agentId, String type,
+                                  com.lodygames.rpgquest.panel.city.CityView city, List<String> onlinePlayers,
+                                  String button, String help) {
+        StringBuilder sb = new StringBuilder(formStart(session, agentId, type, "/cities", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(city.id())).append("\">");
+        sb.append("<div class=\"field\"><label>Joueur connecté</label>");
+        if (onlinePlayers.isEmpty()) {
+            sb.append("<input type=\"text\" name=\"player\" required maxlength=\"16\" placeholder=\"Pseudo exact\">");
+        } else {
+            sb.append("<select name=\"player\" required>");
+            for (String p : onlinePlayers) {
+                sb.append("<option value=\"").append(Http.esc(p)).append("\">").append(Http.esc(p)).append("</option>");
+            }
+            sb.append("</select>");
+        }
+        sb.append("<p class=\"field-help\">").append(Http.esc(help)).append("</p></div>");
+        sb.append(mutationConsent(type, "", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                .append(Icons.icon("target")).append(Http.esc(button)).append("</button></div></form>");
+        return sb.toString();
+    }
+
+    private String cityDeleteZone(Session session, String agentId, com.lodygames.rpgquest.panel.city.CityView city,
+                                  List<String> citingQuests) {
+        StringBuilder sb = new StringBuilder("<div class=\"danger-zone\"><div class=\"dz-title\">")
+                .append(Icons.icon("warning")).append("Supprimer la ville</div>");
+        sb.append("<p class=\"muted\">Conséquences, toutes définitives :</p><ul class=\"muted\">");
+        sb.append("<li>la ville disparaît de cette page et du menu de voyage « Villages » ;</li>");
+        sb.append("<li><strong>ses ").append(city.discoveries()).append(" découverte(s) sont effacées</strong> : "
+                + "elles ne compteront plus pour aucune quête, et une ville recréée plus tard (même sous ce "
+                + "nom) repartira sans aucune découverte ;</li>");
+        if (citingQuests.isEmpty()) {
+            sb.append("<li>aucune quête de la source ne la cite précisément ;</li>");
+        } else {
+            sb.append("<li>ces quêtes la citent et <strong>ne pourront plus progresser</strong> : ")
+                    .append(Http.esc(String.join(", ", citingQuests))).append(" ;</li>");
+        }
+        sb.append("<li>aucun bloc, aucun PNJ et aucun bâtiment n'est touché.</li></ul>");
+        sb.append("<p class=\"muted\">Pour la retirer temporairement sans rien perdre, préférez "
+                + "<strong>Désactiver la ville</strong>.</p>");
+        sb.append(formStart(session, agentId, "city.delete", "/cities", ""))
+                .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(city.id())).append("\">")
+                .append(confirmBox("Supprimer définitivement « " + city.name() + " » (" + city.id()
+                        + ") et ses découvertes"))
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">")
+                .append(Icons.icon("warning")).append("Supprimer la ville</button></div></form></div>");
+        return sb.toString();
+    }
+
+    /**
+     * Aperçu du carré, sans script (CSP) : la ville, son centre, et les villes du même monde qui la
+     * chevauchent, à l'échelle. Nord en haut (Z croissant vers le bas, comme la carte F3).
+     */
+    private static String cityPerimeterSvg(com.lodygames.rpgquest.panel.city.CityView city,
+                                           com.lodygames.rpgquest.panel.city.CityDirectory directory) {
+        List<com.lodygames.rpgquest.panel.city.CityView> others = city.overlaps().stream()
+                .map(directory::find).flatMap(Optional::stream).toList();
+        int minX = city.minX();
+        int maxX = city.maxX() + 1;
+        int minZ = city.minZ();
+        int maxZ = city.maxZ() + 1;
+        for (var o : others) {
+            minX = Math.min(minX, o.minX());
+            maxX = Math.max(maxX, o.maxX() + 1);
+            minZ = Math.min(minZ, o.minZ());
+            maxZ = Math.max(maxZ, o.maxZ() + 1);
+        }
+        int pad = Math.max(4, (maxX - minX) / 12);
+        minX -= pad;
+        minZ -= pad;
+        maxX += pad;
+        maxZ += pad;
+        int w = maxX - minX;
+        int h = maxZ - minZ;
+        StringBuilder sb = new StringBuilder("<figure class=\"city-map\"><svg viewBox=\"0 0 ")
+                .append(w).append(' ').append(h).append("\" width=\"240\" height=\"")
+                .append(Math.max(60, 240 * h / Math.max(1, w)))
+                .append("\" role=\"img\" aria-label=\"Aperçu du périmètre de ").append(Http.esc(city.name()))
+                .append("\" style=\"background:#f6f8fa;border:1px solid #d0d7de;max-width:100%\">");
+        for (var o : others) {
+            sb.append("<rect x=\"").append(o.minX() - minX).append("\" y=\"").append(o.minZ() - minZ)
+                    .append("\" width=\"").append(o.width()).append("\" height=\"").append(o.width())
+                    .append("\" fill=\"#f0ad4e\" fill-opacity=\"0.25\" stroke=\"#c77c02\" stroke-dasharray=\"3 2\" "
+                            + "vector-effect=\"non-scaling-stroke\"><title>").append(Http.esc(o.name()))
+                    .append("</title></rect>");
+        }
+        sb.append("<rect x=\"").append(city.minX() - minX).append("\" y=\"").append(city.minZ() - minZ)
+                .append("\" width=\"").append(city.width()).append("\" height=\"").append(city.width())
+                .append("\" fill=\"#2da44e\" fill-opacity=\"0.2\" stroke=\"#1a7f37\" stroke-width=\"2\" "
+                        + "vector-effect=\"non-scaling-stroke\"><title>").append(Http.esc(city.name()))
+                .append("</title></rect>");
+        double r = Math.max(1.5, w / 80.0);
+        sb.append("<circle cx=\"").append(city.centerX() - minX + 0.5).append("\" cy=\"")
+                .append(city.centerZ() - minZ + 0.5).append("\" r=\"").append(r).append("\" fill=\"#1a7f37\"/>");
+        sb.append("</svg><figcaption class=\"muted\">").append(Http.esc(city.sizeLabel()))
+                .append(" · nord en haut").append(others.isEmpty() ? "" : " · en orange : villes qui chevauchent")
+                .append("</figcaption></figure>");
+        return sb.toString();
+    }
+
+    private static String cityHowToCard(com.lodygames.rpgquest.panel.city.CityDirectory directory) {
+        return "<section class=\"card\">"
+                + Ui.sectionTitle("docs", "Créer une ville : en jeu, avec l'outil de ville")
+                + "<ol class=\"muted\">"
+                + "<li>En jeu : <code>/rpgadmin ville outil</code> (permission <code>rpgquest.admin.city</code>) "
+                + "pour recevoir la <strong>pelle en or « Outil de ville »</strong>.</li>"
+                + "<li>Se placer au cœur de la future ville et faire <strong>clic droit</strong> sur un bloc : "
+                + "ce bloc devient le centre. Un seul clic, pas de second coin.</li>"
+                + "<li>Taper le nom dans la fenêtre (enclume) puis cliquer le résultat. Fermer la fenêtre annule.</li>"
+                + "<li>Revenir ici et cliquer <strong>Rafraîchir les villes</strong> : la ville est déjà active, "
+                + "avec " + directory.defaultDistance() + " blocs dans chaque direction.</li>"
+                + "</ol>"
+                + "<p class=\"field-help\">Aucun bâtiment ni PNJ n'est posé : le centre est un repère "
+                + "géographique. Il sert aussi de point d'arrivée du menu de voyage « Villages ».</p>"
+                + "</section>";
     }
 
     public String travel(Session session, Map<String, String> q) {
@@ -8246,9 +8600,14 @@ public final class AgentPages {
         }
         boolean questsKnown = questDet.isPresent() || !sourceQuests.isEmpty();
         List<String> worlds = loadedWorldNames(agentId);
+        // Issue #178 : villes du dernier relevé « city.list » (identifiant → nom affiché).
+        var cityDir = cityDirectory(agentId);
+        Map<String, String> cityNames = new java.util.LinkedHashMap<>();
+        cityDir.cities().forEach(c -> cityNames.put(c.id(), c.name()));
         return new com.lodygames.rpgquest.panel.content.RefData(
                 quests, npcs, worlds, questsKnown, npcDet.isPresent(), !worlds.isEmpty(),
-                npcNames, questNames, questOrigins, questPrereqs, itemCatalog(agentId));
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog(agentId),
+                cityNames, cityDir.available());
     }
 
     /**

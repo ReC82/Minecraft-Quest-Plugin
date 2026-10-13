@@ -445,7 +445,9 @@ public final class BukkitAgentActions implements AgentActions {
                     // Issue #185 : la portée et la règle de comptage voyagent avec l'objectif,
                     // sinon le panel afficherait une ligne qui ne dit pas ce que le joueur doit faire.
                     List<String> objectiveWorlds = o instanceof DiscoverWaypointObjective d ? d.worlds() : List.of();
-                    String countMode = o instanceof DiscoverWaypointObjective d ? d.countMode().name() : null;
+                    String countMode = o instanceof DiscoverWaypointObjective d ? d.countMode().name()
+                            : o instanceof com.lodygames.rpgquest.quest.model.DiscoverCityObjective c
+                                    ? c.countMode().name() : null;
                     objectiveDetails.add(new ObjectiveSummary(
                             o.type().name(), objectiveTarget(o), amount, raw, objectiveNpc(o),
                             objectiveWorlds, countMode));
@@ -870,6 +872,173 @@ public final class BukkitAgentActions implements AgentActions {
     /** Issue #246 — dépendance facultative : sans elle, la capture est refusée avec son motif. */
     public void setBuildingCapture(com.lodygames.rpgquest.building.BuildingCaptureService capture) {
         this.buildingCapture = capture;
+    }
+
+    // ---- Villes (issue #178) ------------------------------------------------------------------
+
+    private com.lodygames.rpgquest.city.CityRegistry cityRegistry;
+    private com.lodygames.rpgquest.city.CityDiscoveryService cityDiscovery;
+    private com.lodygames.rpgquest.city.PendingCityRegistry cityPendings;
+    private com.lodygames.rpgquest.claim.ClaimBorderRenderer cityBorderRenderer;
+
+    /** Branché au démarrage : registre, découvertes, gestes en attente et rendu du contour. */
+    public void setCities(com.lodygames.rpgquest.city.CityRegistry registry,
+                          com.lodygames.rpgquest.city.CityDiscoveryService discovery,
+                          com.lodygames.rpgquest.city.PendingCityRegistry pendings,
+                          com.lodygames.rpgquest.claim.ClaimBorderRenderer renderer) {
+        this.cityRegistry = registry;
+        this.cityDiscovery = discovery;
+        this.cityPendings = pendings;
+        this.cityBorderRenderer = renderer;
+    }
+
+    @Override
+    public CompletableFuture<CityCatalogView> cities() {
+        if (cityRegistry == null || cityDiscovery == null) {
+            return AgentActions.super.cities();
+        }
+        return cityDiscovery.discoveriesByCity().thenCompose(counts -> onMain(() -> {
+            var all = cityRegistry.all();
+            List<CitySummary> rows = new ArrayList<>();
+            for (var city : all) {
+                var b = com.lodygames.rpgquest.city.CityPerimeter.bounds(city);
+                List<String> overlaps = all.stream()
+                        .filter(other -> !other.id().equals(city.id())
+                                && com.lodygames.rpgquest.city.CityPerimeter.overlaps(city, other))
+                        .map(other -> other.id()).toList();
+                rows.add(new CitySummary(city.id(), city.name(), city.world(), city.x(), city.y(), city.z(),
+                        city.blockX(), city.blockZ(), city.detectionDistance(), city.active(),
+                        city.createdAt().toString(), plugin.getServer().getWorld(city.world()) != null,
+                        b.minX(), b.maxX(), b.minZ(), b.maxZ(), b.width(),
+                        counts.getOrDefault(city.id(), 0), overlaps));
+            }
+            List<CityPendingMove> moves = new ArrayList<>();
+            for (var m : cityPendings.armedMoves()) {
+                Player p = plugin.getServer().getPlayer(UUID.fromString(m.playerId()));
+                moves.add(new CityPendingMove(p == null ? m.playerId() : p.getName(), m.cityId(),
+                        m.requestedBy() == null ? "" : m.requestedBy(), m.expiresAt().toString()));
+            }
+            return CompletableFuture.completedFuture(new CityCatalogView(true, rows, moves,
+                    com.lodygames.rpgquest.city.CityPerimeter.MIN_DISTANCE,
+                    com.lodygames.rpgquest.city.CityPerimeter.MAX_DISTANCE,
+                    com.lodygames.rpgquest.city.CityPerimeter.DEFAULT_DISTANCE));
+        }));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> cityRename(String id, String name) {
+        if (cityRegistry == null) {
+            return AgentActions.super.cityRename(id, name);
+        }
+        return onMain(() -> cityRegistry.rename(id, name)).thenApply(r -> r.ok()
+                ? new MutationResult(true, "RENAMED", "Ville « " + r.city().id() + " » renommée « "
+                        + r.city().name() + " ». Son identifiant et ses découvertes sont inchangés.",
+                        List.of("name: " + r.city().name()))
+                : MutationResult.of(false, "REFUSED", r.error()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> cityResize(String id, int distance) {
+        if (cityRegistry == null) {
+            return AgentActions.super.cityResize(id, distance);
+        }
+        return onMain(() -> cityRegistry.resize(id, distance)).thenApply(r -> {
+            if (!r.ok()) {
+                return MutationResult.of(false, "REFUSED", r.error());
+            }
+            var b = com.lodygames.rpgquest.city.CityPerimeter.bounds(r.city());
+            return new MutationResult(true, "RESIZED", "« " + r.city().name() + " » s'étend désormais de "
+                    + distance + " blocs dans chaque direction depuis son centre (" + b.width() + " × "
+                    + b.width() + " blocs).", List.of("X " + b.minX() + " … " + b.maxX(),
+                    "Z " + b.minZ() + " … " + b.maxZ()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> citySetActive(String id, boolean active) {
+        if (cityRegistry == null) {
+            return AgentActions.super.citySetActive(id, active);
+        }
+        return onMain(() -> cityRegistry.setActive(id, active)).thenApply(r -> r.ok()
+                ? new MutationResult(true, active ? "ENABLED" : "DISABLED", "« " + r.city().name() + " » "
+                        + (active ? "est active : elle peut de nouveau être découverte et apparaît dans le menu Villages."
+                                : "est inactive : plus de découverte ni d'entrée dans le menu Villages. Les découvertes "
+                                        + "déjà faites sont conservées."), List.of())
+                : MutationResult.of(false, "REFUSED", r.error()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> cityArmMove(String id, String playerName, String requestedBy) {
+        if (cityRegistry == null) {
+            return AgentActions.super.cityArmMove(id, playerName, requestedBy);
+        }
+        return onMain(() -> {
+            var city = cityRegistry.find(id);
+            if (city.isEmpty()) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "NOT_FOUND", "Ville introuvable : " + safe(id)));
+            }
+            Player player = plugin.getServer().getPlayerExact(playerName);
+            if (player == null) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "OFFLINE",
+                        "« " + safe(playerName) + " » n'est pas connecté : le centre se désigne en jeu."));
+            }
+            if (!com.lodygames.rpgquest.permission.RpgPermissions.canManageCities(player)) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "FORBIDDEN",
+                        player.getName() + " n'a pas la permission " + com.lodygames.rpgquest.permission.RpgPermissions.ADMIN_CITY
+                                + " : il ne pourrait pas utiliser l'outil."));
+            }
+            cityPendings.armMove(player.getUniqueId().toString(), id,
+                    requestedBy == null ? "PlugAdmin" : "PlugAdmin:" + requestedBy);
+            player.sendMessage(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize("<gold>PlugAdmin :</gold> <gray>votre prochain clic droit avec "
+                            + "l'outil de ville deviendra le nouveau centre de</gray> <white><name></white><gray>. "
+                            + "Valable 3 minutes.</gray> <yellow>/rpgadmin ville outil</yellow> <gray>si vous ne l'avez pas.</gray>",
+                    net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("name", city.get().name())));
+            return CompletableFuture.completedFuture(new MutationResult(true, "ARMED",
+                    "Déplacement prêt : le prochain clic droit de " + player.getName()
+                            + " avec l'outil de ville déplacera le centre de « " + city.get().name()
+                            + " ». Valable 3 minutes ; rafraîchissez ensuite cette page pour relire le résultat.",
+                    List.of()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> cityShowPerimeter(String id, String playerName) {
+        if (cityRegistry == null || cityBorderRenderer == null) {
+            return AgentActions.super.cityShowPerimeter(id, playerName);
+        }
+        return onMain(() -> {
+            var city = cityRegistry.find(id);
+            if (city.isEmpty()) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "NOT_FOUND", "Ville introuvable : " + safe(id)));
+            }
+            Player player = plugin.getServer().getPlayerExact(playerName);
+            if (player == null) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "OFFLINE",
+                        "« " + safe(playerName) + " » n'est pas connecté."));
+            }
+            var b = com.lodygames.rpgquest.city.CityPerimeter.bounds(city.get());
+            boolean shown = cityBorderRenderer.showArea(player, city.get().world(), b.minX(), b.maxX(), b.minZ(), b.maxZ());
+            if (!shown) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "OTHER_WORLD",
+                        player.getName() + " n'est pas dans le monde " + city.get().world() + " : rien n'est affiché."));
+            }
+            return CompletableFuture.completedFuture(new MutationResult(true, "SHOWN",
+                    "Contour de « " + city.get().name() + " » affiché à " + player.getName()
+                            + " pendant 15 secondes (particules orange, colonnes aux coins). Rien n'est modifié.",
+                    List.of()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> cityDelete(String id) {
+        if (cityRegistry == null) {
+            return AgentActions.super.cityDelete(id);
+        }
+        return onMain(() -> cityRegistry.delete(id)).thenApply(r -> r.ok()
+                ? new MutationResult(true, "DELETED", "Ville « " + r.city().name() + " » (" + r.city().id()
+                        + ") supprimée, avec ses découvertes. Les quêtes qui la citent ne peuvent plus progresser.",
+                        List.of())
+                : MutationResult.of(false, "REFUSED", r.error()));
     }
 
     /**
@@ -4119,6 +4288,8 @@ public final class BukkitAgentActions implements AgentActions {
             // Issue #185 : aucune cible unique à nommer (ni matériau, ni entité, ni monde unique) —
             // la portée est la liste « worlds », transportée à part dans le résumé.
             case DiscoverWaypointObjective o -> null;
+            // Issue #178 : la ville précise (identifiant stable) ; null pour « X villes distinctes ».
+            case com.lodygames.rpgquest.quest.model.DiscoverCityObjective o -> o.city();
         };
     }
 

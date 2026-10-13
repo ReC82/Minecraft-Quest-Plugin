@@ -65,6 +65,11 @@ public final class AgentActionCatalog {
     private static final java.util.Set<String> BUILD_SITE_FACINGS =
             java.util.Set.of("NORTH", "EAST", "SOUTH", "WEST");
     private static final int MAX_BUILD_SITE_NAME = 64;
+    /** Issue #178 — miroir de {@code city.CityPerimeter} côté plugin, qui revalide. */
+    public static final int CITY_MIN_DISTANCE = 5;
+    public static final int CITY_MAX_DISTANCE = 500;
+    private static final java.util.regex.Pattern CITY_ID = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,64}");
+    private static final java.util.regex.Pattern CITY_PLAYER = java.util.regex.Pattern.compile("[A-Za-z0-9_]{1,16}");
     private static final int MAX_BUILD_SITE_DESCRIPTION = 500;
     /**
      * Issue #94 — borne du brief architectural. Doit rester <strong>identique</strong> à
@@ -305,6 +310,18 @@ public final class AgentActionCatalog {
         // un emplacement est défini par une position désignée en jeu, pas saisie dans un écran.
         add("building.site.list", Permission.BUILDING_READ, false, false,
                 "Rafraîchir les emplacements de construction");
+        // Issue #178 — villes. La CRÉATION n'a pas d'action : le centre se désigne en jeu avec
+        // l'outil de ville. Toutes les mutations invalident le relevé, relu automatiquement.
+        add("city.list", Permission.TRAVEL_READ, false, false, "Rafraîchir les villes");
+        addContentWrite("city.rename", Permission.CITY_WRITE, "Renommer une ville", "city.list");
+        addContentWrite("city.resize", Permission.CITY_WRITE, "Régler la taille d'une ville", "city.list");
+        addContentWrite("city.active", Permission.CITY_WRITE, "Activer / désactiver une ville", "city.list");
+        addContentWrite("city.move.arm", Permission.CITY_WRITE,
+                "Préparer le déplacement du centre d'une ville", "city.list");
+        addContentWrite("city.perimeter.show", Permission.CITY_WRITE,
+                "Montrer le périmètre d'une ville en jeu", "city.list");
+        addSensitiveWrite("city.delete", Permission.CITY_DELETE, false,
+                "Supprimer une ville et ses découvertes", "city.list");
         add("travel.catalog", Permission.TRAVEL_READ, false, false,
                 "Rafraîchir le catalogue waypoints/bornes (issue #152)");
         // Issue #156 — rattrapage CIBLÉ d'une instance du Hub restée sans borne. Mutation sensible :
@@ -877,6 +894,52 @@ public final class AgentActionCatalog {
                     params.put("by", by);
                 }
                 params.put("confirm", "true");
+            }
+            // Issue #178 — villes : bornes revalidées par le plugin, refus lisibles ici d'abord.
+            case "city.rename", "city.resize", "city.active", "city.move.arm", "city.perimeter.show",
+                 "city.delete" -> {
+                String id = trim(form.get("id"));
+                if (!CITY_ID.matcher(id).matches()) {
+                    return Validation.fail("Identifiant de ville manquant ou invalide.");
+                }
+                params.put("id", id);
+                switch (type) {
+                    case "city.rename" -> {
+                        String name = trim(form.get("name")).replaceAll("\\s+", " ");
+                        if (name.length() < 2 || name.length() > 40) {
+                            return Validation.fail("Le nom d'une ville fait entre 2 et 40 caractères.");
+                        }
+                        params.put("name", name);
+                    }
+                    case "city.resize" -> {
+                        int distance;
+                        try {
+                            distance = Integer.parseInt(trim(form.get("distance")));
+                        } catch (NumberFormatException e) {
+                            return Validation.fail("La distance doit être un nombre entier de blocs.");
+                        }
+                        if (distance < CITY_MIN_DISTANCE || distance > CITY_MAX_DISTANCE) {
+                            return Validation.fail("Distance hors limites : entre " + CITY_MIN_DISTANCE
+                                    + " et " + CITY_MAX_DISTANCE + " blocs dans chaque direction.");
+                        }
+                        params.put("distance", String.valueOf(distance));
+                    }
+                    case "city.active" -> {
+                        String active = trim(form.get("active"));
+                        if (!"true".equals(active) && !"false".equals(active)) {
+                            return Validation.fail("État attendu : active ou inactive.");
+                        }
+                        params.put("active", active);
+                    }
+                    case "city.move.arm", "city.perimeter.show" -> {
+                        String player = trim(form.get("player"));
+                        if (!CITY_PLAYER.matcher(player).matches()) {
+                            return Validation.fail("Choisissez le pseudo d'un joueur connecté.");
+                        }
+                        params.put("player", player);
+                    }
+                    default -> params.put("confirm", "true");
+                }
             }
             case "building.site.delete" -> {
                 String id = buildSiteId(form);

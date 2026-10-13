@@ -13,5 +13,7 @@ public enum ObjectiveType {
     /** Cuisson réelle d'un objet dans un four (issue #141). */
     SMELT_ITEM,
     /** Première découverte réelle de waypoints distincts (issue #185). */
-    DISCOVER_WAYPOINT
+    DISCOVER_WAYPOINT,
+    /** Issue #178 — découvrir X villes distinctes, ou une ville précise. */
+    DISCOVER_CITY
 }

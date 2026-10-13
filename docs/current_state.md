@@ -6,6 +6,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Villes (#178, 13/10/2026)** — une ville est un centre de village (#151) étendu : centre choisi en
+> jeu avec l'outil de ville (`/rpgadmin ville outil`), nommé à l'enclume ; périmètre **carré**
+> horizontal (défaut 50 blocs dans chaque direction, 5–500, migration V33) ; titre « Bienvenue à … »
+> à la première entrée (marche, téléportation, connexion), découverte persistée par UUID + ID
+> (`city_discoveries`) ; chevauchement : centre le plus proche. Page PlugAdmin **Villes** (`/cities`) :
+> renommage, taille, activation, déplacement armé, contour en jeu, suppression expliquée. Objectif
+> `DISCOVER_CITY` (ville précise ou X villes distinctes, `NEW_ONLY` / `INCLUDE_EXISTING`). PNJ
+> central et arrivée distincte : #322. Validation en jeu : TC-301.
+
 > **Nuit du 12 au 13/10/2026** — changements livrés sur la ligne d'intégration (validation en jeu
 > du propriétaire en attente pour chacun, voir `docs/MANUAL_TEST_PLAN.md`) :
 >

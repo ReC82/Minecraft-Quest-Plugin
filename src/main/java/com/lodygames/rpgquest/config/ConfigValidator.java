@@ -49,10 +49,25 @@ public final class ConfigValidator {
         StarterToolKitConfig starterToolKit = validateStarterToolKit(section);
         WildConfig wild = validateWild(section);
         NpcHintConfig npcHints = validateNpcHints(section);
+        CityConfig cities = validateCities(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
                 backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit,
-                wild, npcHints);
+                wild, npcHints, cities);
+    }
+
+    /** Section {@code cities:} (issue #178) — durées du titre « Bienvenue à … », bornées. */
+    private static CityConfig validateCities(ConfigurationSection section) {
+        ConfigurationSection cities = section.getConfigurationSection("cities");
+        CityConfig defaults = CityConfig.defaults();
+        if (cities == null) {
+            return defaults;
+        }
+        return new CityConfig(
+                cities.getBoolean("discovery.enabled", defaults.discoveryEnabled()),
+                cities.getInt("discovery.title.fade-in-ticks", defaults.fadeInTicks()),
+                cities.getInt("discovery.title.stay-ticks", defaults.stayTicks()),
+                cities.getInt("discovery.title.fade-out-ticks", defaults.fadeOutTicks())).bounded();
     }
 
     /**

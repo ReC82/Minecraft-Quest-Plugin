@@ -499,6 +499,54 @@ public interface AgentActions {
                 List.of("Capture indisponible sur ce serveur."), List.of(), ""));
     }
 
+    // ---- Villes (issue #178) ------------------------------------------------------------------
+
+    /**
+     * Une ville du relevé : fiche, limites calculées du carré (coins inclus), nombre de joueurs
+     * l'ayant découverte et identifiants des villes dont le carré la chevauche.
+     */
+    record CitySummary(String id, String name, String world, double x, double y, double z,
+                       int centerX, int centerZ, int distance, boolean active, String createdAt,
+                       boolean worldLoaded, int minX, int maxX, int minZ, int maxZ, int width,
+                       int discoveries, List<String> overlaps) {
+    }
+
+    /** Un déplacement de centre armé, en attente du clic d'outil du joueur. */
+    record CityPendingMove(String player, String cityId, String requestedBy, String expiresAt) {
+    }
+
+    record CityCatalogView(boolean available, List<CitySummary> cities, List<CityPendingMove> pendingMoves,
+                           int minDistance, int maxDistance, int defaultDistance) {
+    }
+
+    default CompletableFuture<CityCatalogView> cities() {
+        return CompletableFuture.completedFuture(new CityCatalogView(false, List.of(), List.of(), 0, 0, 0));
+    }
+
+    default CompletableFuture<MutationResult> cityRename(String id, String name) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    default CompletableFuture<MutationResult> cityResize(String id, int distance) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    default CompletableFuture<MutationResult> citySetActive(String id, boolean active) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    default CompletableFuture<MutationResult> cityArmMove(String id, String playerName, String requestedBy) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    default CompletableFuture<MutationResult> cityShowPerimeter(String id, String playerName) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    default CompletableFuture<MutationResult> cityDelete(String id) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
     /** Issue #246 — capture la construction posée comme nouveau bâtiment de bibliothèque. */
     default CompletableFuture<MutationResult> buildingCapture(BuildingCaptureRequest request,
                                                               String actor, String token) {

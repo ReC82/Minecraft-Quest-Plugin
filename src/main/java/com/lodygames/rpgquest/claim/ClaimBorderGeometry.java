@@ -33,10 +33,16 @@ final class ClaimBorderGeometry {
      * WorldPortalDebugGeometry}).
      */
     static List<Point> perimeter(Claim claim, double y, double step) {
-        double minX = claim.minX();
-        double minZ = claim.minZ();
-        double maxX = claim.maxX() + 1.0;
-        double maxZ = claim.maxZ() + 1.0;
+        return perimeter(claim.minX(), claim.maxX(), claim.minZ(), claim.maxZ(), y, step);
+    }
+
+    /** Même contour pour un rectangle de blocs inclusifs quelconque (issue #178 : une ville). */
+    static List<Point> perimeter(int blockMinX, int blockMaxX, int blockMinZ, int blockMaxZ, double y,
+                                 double step) {
+        double minX = blockMinX;
+        double minZ = blockMinZ;
+        double maxX = blockMaxX + 1.0;
+        double maxZ = blockMaxZ + 1.0;
 
         List<double[]> edges = List.of(
                 new double[]{minX, minZ, maxX, minZ},
@@ -59,10 +65,15 @@ final class ClaimBorderGeometry {
 
     /** Colonnes verticales aux 4 coins XZ du cuboïde actif, de {@code baseY} à {@code baseY + height}. */
     static List<Point> cornerColumns(Claim claim, double baseY, double height, double step) {
-        double minX = claim.minX();
-        double minZ = claim.minZ();
-        double maxX = claim.maxX() + 1.0;
-        double maxZ = claim.maxZ() + 1.0;
+        return cornerColumns(claim.minX(), claim.maxX(), claim.minZ(), claim.maxZ(), baseY, height, step);
+    }
+
+    static List<Point> cornerColumns(int blockMinX, int blockMaxX, int blockMinZ, int blockMaxZ,
+                                     double baseY, double height, double step) {
+        double minX = blockMinX;
+        double minZ = blockMinZ;
+        double maxX = blockMaxX + 1.0;
+        double maxZ = blockMaxZ + 1.0;
 
         double effectiveStep = Math.max(step, 0.25);
         int samples = Math.max(1, (int) Math.ceil(height / effectiveStep));

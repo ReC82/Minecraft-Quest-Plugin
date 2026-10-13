@@ -1,0 +1,36 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md (TC-301).
+#
+# Objectif DISCOVER_CITY (issue #178) : il faut DÉCOUVRIR des villes
+# distinctes, c'est-à-dire entrer pour la première fois dans le carré d'une
+# ville active (à pied, par téléportation ou à la connexion).
+#
+# Procédure et pièges à vérifier explicitement :
+#   - sortir puis revenir dans une ville déjà découverte ne compte pas ;
+#   - renommer une ville ne la fait pas compter deux fois ;
+#   - une ville inactive ne se découvre pas ;
+#   - deux villes qui se chevauchent : une seule est annoncée à la fois.
+#
+# Forme « X villes distinctes » ici (amount). La forme « ville précise »
+# s'écrit « city: <identifiant> » à la place d'« amount » ; l'identifiant
+# se lit dans PlugAdmin › Villes (l'éditeur de quête le choisit par son nom).
+#
+# « count-mode: NEW_ONLY » : seules les villes découvertes APRÈS l'acceptation
+# comptent ; INCLUDE_EXISTING compterait aussi celles déjà découvertes.
+id: rpgquest:test_discover_city
+title: "<red>[TEST] Découvrir des villes</red>"
+description: "<gray>Quête de test manuel — objectif DISCOVER_CITY. Entre dans deux villes que tu n'as encore jamais découvertes.</gray>"
+category: test
+icon: BELL
+repeatable: true
+
+steps:
+  - id: decouvrir_deux_villes
+    objectives:
+      - type: DISCOVER_CITY
+        amount: 2
+        count-mode: NEW_ONLY
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

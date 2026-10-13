@@ -27,7 +27,8 @@ public final class QuestValidator {
      * d'un relevé serveur. Une valeur hors liste est donc une vraie erreur, pas une incertitude.
      */
     private static final Map<String, List<String>> FIXED_SOURCES = Map.of(
-            "waypointCountMode", List.of("NEW_ONLY", "INCLUDE_EXISTING"));
+            "waypointCountMode", List.of("NEW_ONLY", "INCLUDE_EXISTING"),
+            "countMode", List.of("NEW_ONLY", "INCLUDE_EXISTING"));
 
     private QuestValidator() {
     }
@@ -211,7 +212,13 @@ public final class QuestValidator {
             out.add(Diagnostic.error(ctx, "Type de " + noun + " inconnu « " + kind + " »."));
             return;
         }
+        if ("DISCOVER_CITY".equalsIgnoreCase(kind)) {
+            validateDiscoverCity(out, ctx, row, ref);
+        }
         for (Descriptors.Field f : found.get().fields()) {
+            if ("DISCOVER_CITY".equalsIgnoreCase(kind) && "city".equals(f.name())) {
+                continue; // vérifiée par validateDiscoverCity, avec un message propre aux villes
+            }
             String v = row.get(f.name());
             boolean present = v != null && !v.isBlank();
             if (!present) {
@@ -287,6 +294,36 @@ public final class QuestValidator {
                     // TEXT / TEXTAREA : rien de structurel à vérifier ici
                 }
             }
+        }
+    }
+
+    /**
+     * Issue #178 — les deux formes de {@code DISCOVER_CITY}, et la référence de ville. Une ville
+     * inconnue est une ERREUR dès que le relevé des villes existe : l'objectif ne progresserait
+     * jamais. Sans relevé, on le dit plutôt que de bloquer.
+     */
+    private static void validateDiscoverCity(List<Diagnostic> out, String ctx, Map<String, String> row,
+                                             RefData ref) {
+        String city = row.getOrDefault("city", "").trim();
+        String amount = row.getOrDefault("amount", "").trim();
+        if (city.isEmpty() && amount.isEmpty()) {
+            out.add(Diagnostic.error(ctx, "Découvrir des villes : choisir une ville précise, ou indiquer "
+                    + "un nombre de villes distinctes."));
+            return;
+        }
+        if (!city.isEmpty() && !amount.isEmpty() && !"1".equals(amount)) {
+            out.add(Diagnostic.error(ctx, "Découvrir des villes : avec une ville précise, laisser la quantité "
+                    + "vide (une ville se découvre une fois)."));
+        }
+        if (city.isEmpty()) {
+            return;
+        }
+        if (!ref.sourceKnown("city")) {
+            out.add(Diagnostic.info(ctx, "Impossible de vérifier la ville « " + city + " » : rafraîchir la "
+                    + "page Villes pour charger leur liste."));
+        } else if (!ref.isValueKnown("city", city)) {
+            out.add(Diagnostic.error(ctx, "Ville inconnue « " + city + " » : choisir une ville existante dans "
+                    + "la liste (page Villes)."));
         }
     }
 

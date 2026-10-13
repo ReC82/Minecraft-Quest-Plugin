@@ -171,6 +171,18 @@ public final class RpgPermissions {
                 && (who.hasPermission(ADMIN_BUILD_SITE) || who.hasPermission(LEGACY_ADMIN_WORLD));
     }
 
+    /**
+     * Villes (issue #178) : obtenir l'outil de ville, choisir le centre d'une nouvelle ville ou
+     * déplacer celui d'une ville existante. Aucun bloc n'est modifié.
+     */
+    public static final String ADMIN_CITY = "rpgquest.admin.city";
+
+    /** {@code true} si {@code who} peut définir ou déplacer une ville : son nœud dédié, ou l'ombrelle historique. */
+    public static boolean canManageCities(Permissible who) {
+        return who != null
+                && (who.hasPermission(ADMIN_CITY) || who.hasPermission(LEGACY_ADMIN_WORLD));
+    }
+
     /** {@code true} si {@code who} peut entrer dans {@code /rpgadmin} (sans rien y exécuter). */
     public static boolean canEnterAdminCommand(Permissible who) {
         return who != null && (who.hasPermission(ADMIN_COMMAND) || who.hasPermission(LEGACY_ADMIN_WORLD));

@@ -29,7 +29,17 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
                       boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
                       Map<String, String> npcNames, Map<String, String> questNames,
                       Map<String, String> questOrigins, Map<String, List<String>> questPrereqs,
-                      ItemCatalog itemCatalog) {
+                      ItemCatalog itemCatalog, Map<String, String> cityNames, boolean citiesKnown) {
+
+    /** Forme antérieure à #178 : aucune ville relevée. */
+    public RefData(List<String> quests, List<String> npcs, List<String> worlds,
+                   boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
+                   Map<String, String> npcNames, Map<String, String> questNames,
+                   Map<String, String> questOrigins, Map<String, List<String>> questPrereqs,
+                   ItemCatalog itemCatalog) {
+        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames, questNames,
+                questOrigins, questPrereqs, itemCatalog, Map.of(), false);
+    }
 
     /**
      * Catalogue des matériaux réellement exposés par la version installée (issue #196).
@@ -114,6 +124,9 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
         }
         questPrereqs = Map.copyOf(prereqCopy);
         itemCatalog = itemCatalog == null ? ItemCatalog.empty() : itemCatalog;
+        // Issue #178 : identifiant stable → nom affiché, dans l'ordre du relevé (trié par nom).
+        cityNames = java.util.Collections.unmodifiableMap(
+                new java.util.LinkedHashMap<>(cityNames == null ? Map.of() : cityNames));
     }
 
     /**
@@ -151,7 +164,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             prereqs.putAll(packQuestPrereqs);
         }
         return new RefData(q, n, worlds, true, npcsKnown || !n.isEmpty(), worldsKnown,
-                npcNames, questNames, origins, prereqs, itemCatalog);
+                npcNames, questNames, origins, prereqs, itemCatalog, cityNames, citiesKnown);
     }
 
     public static RefData empty() {
@@ -290,6 +303,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             case "npc" -> npcs;
             case "quest" -> quests;
             case "world" -> worlds;
+            case "city" -> List.copyOf(cityNames.keySet());
             default -> List.of();
         };
     }
@@ -304,6 +318,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             case "npc" -> npcsKnown;
             case "quest" -> questsKnown;
             case "world" -> worldsKnown;
+            case "city" -> citiesKnown;
             // « category » et « icon » : saisie libre légitime (nouvelle catégorie, n'importe quel
             // matériau vanilla) — on ne prétend jamais « connaître » la liste, donc jamais de
             // WARNING sur ces champs (au pire un INFO côté validateur).
@@ -318,6 +333,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             case "npc" -> isNpcKnown(value);
             case "quest" -> isQuestKnown(value);
             case "world" -> isWorldKnown(value);
+            case "city" -> value == null || cityNames.containsKey(value.trim());
             default -> true;
         };
     }
@@ -336,11 +352,23 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
         return itemCatalog.known();
     }
 
+    /** Issue #178 — ajoute (ou remplace) le relevé des villes, sans toucher au reste. */
+    public RefData withCities(Map<String, String> names, boolean known) {
+        return new RefData(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown,
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog, names, known);
+    }
+
+    /** Nom affiché d'une ville connue, sinon l'identifiant. */
+    public String cityLabel(String id) {
+        String s = id == null ? "" : id.trim();
+        return cityNames.getOrDefault(s, s);
+    }
+
     /** Ajoute (ou remplace) le catalogue de matériaux relevé, sans toucher au reste. */
     public RefData withItemCatalog(ItemCatalog catalog) {
         return new RefData(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown,
                 npcNames, questNames, questOrigins, questPrereqs,
-                catalog == null ? ItemCatalog.empty() : catalog);
+                catalog == null ? ItemCatalog.empty() : catalog, cityNames, citiesKnown);
     }
 
     private static boolean contains(List<String> list, String value) {
@@ -357,7 +385,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             }
         }
         return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown,
-                npcNames, questNames, questOrigins, questPrereqs, itemCatalog);
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog, cityNames, citiesKnown);
     }
 
     // ---- listes curées (les plus courantes ; saisie libre toujours possible) ----------------

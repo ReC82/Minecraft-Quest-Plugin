@@ -349,6 +349,35 @@ final class QuestDefinitionParser {
                 }
                 yield (amount != null && mode != null) ? new DiscoverWaypointObjective(amount, worlds, mode) : null;
             }
+            // Issue #178 : « city » (identifiant stable) OU « amount », jamais une supposition. La
+            // règle de comptage est celle de DISCOVER_WAYPOINT, refusée si inconnue. L'existence de
+            // la ville n'est pas vérifiable ici (les villes vivent en base, chargées après les
+            // quêtes) : le panel la vérifie avant d'enregistrer, et une ville absente ne fait
+            // simplement jamais progresser l'objectif.
+            case DISCOVER_CITY -> {
+                String city = section.getString("city");
+                boolean specific = city != null && !city.isBlank();
+                Integer amount = specific ? Integer.valueOf(1) : parsePositiveInt(section, "amount", context, errors);
+                if (specific && section.contains("amount") && section.getInt("amount", 1) != 1) {
+                    errors.add(context + ": « amount » doit valoir 1 (ou être omis) quand « city » désigne une ville précise.");
+                    amount = null;
+                }
+                DiscoverWaypointObjective.CountMode mode = DiscoverWaypointObjective.CountMode.NEW_ONLY;
+                String rawMode = section.getString("count-mode");
+                if (rawMode != null && !rawMode.isBlank()) {
+                    try {
+                        mode = DiscoverWaypointObjective.CountMode.valueOf(
+                                rawMode.trim().toUpperCase(java.util.Locale.ROOT));
+                    } catch (IllegalArgumentException unknown) {
+                        errors.add(context + ": « count-mode » inconnu : " + rawMode
+                                + " (attendu NEW_ONLY ou INCLUDE_EXISTING).");
+                        mode = null;
+                    }
+                }
+                yield (amount != null && mode != null)
+                        ? new com.lodygames.rpgquest.quest.model.DiscoverCityObjective(amount, specific ? city : null, mode)
+                        : null;
+            }
         };
     }
 

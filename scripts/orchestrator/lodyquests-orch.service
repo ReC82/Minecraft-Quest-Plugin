@@ -1,0 +1,25 @@
+[Unit]
+Description=LodyQuests — superviseur des sessions Claude (développement autonome)
+After=network-online.target
+Wants=network-online.target
+# Pas de boucle de relance : au plus 5 redémarrages par heure, puis systemd abandonne.
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /opt/lodyquests-orch/lqorch.py run
+# Relancé seulement après un plantage. Après « lqorch stop », le superviseur sort proprement
+# (code 0) et ne redémarre pas ; un redémarrage manuel refuse aussi de travailler tant que
+# « lqorch resume » n'a pas été demandé.
+Restart=on-failure
+RestartSec=120
+# « systemctl stop » arrête aussi la session Claude en cours (préférer « lqorch stop »).
+KillMode=control-group
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

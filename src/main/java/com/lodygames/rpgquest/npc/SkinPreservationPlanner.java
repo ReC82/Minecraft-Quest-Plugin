@@ -13,10 +13,11 @@ import java.util.Optional;
  * « Skin »). Il est donc impossible de <em>lire</em> le skin en place, et donc de le restituer —
  * sauf si c'est RPGQuest qui l'a posé et enregistré.</p>
  *
- * <p>D'où ces quatre issues, et notamment deux refus assumés : rattacher l'ancien nom écraserait
- * un éventuel skin explicite par une texture dérivée d'un pseudo, ce qui serait un
- * <strong>remplacement silencieux</strong> de l'apparence. Mieux vaut refuser et dire quoi faire
- * que réussir en abîmant.</p>
+ * <p>D'où ces quatre issues. Rattacher l'ancien nom écraserait un éventuel skin explicite par une
+ * texture dérivée d'un pseudo : un remplacement imprévisible. Depuis l'issue #325, un PNJ joueur
+ * sans source connue reçoit donc l'<strong>apparence par défaut</strong>
+ * ({@link NpcIdentityService#DEFAULT_SKIN_URL}), qui est enregistrée et donc stable aux renommages
+ * suivants. Seul un type indéterminable reste refusé.</p>
  *
  * <p>Classe pure : aucun type Citizens, Bukkit ni I/O — entièrement testable.</p>
  */
@@ -30,8 +31,12 @@ public final class SkinPreservationPlanner {
         RENAME_FREELY,
         /** Source connue : la réappliquer d'abord, puis renommer. */
         REAPPLY_RECORDED_THEN_RENAME,
-        /** Type joueur et skin inconnu : refuser plutôt que remplacer en silence. */
-        REFUSE_SKIN_SOURCE_UNKNOWN,
+        /**
+         * Type joueur et skin inconnu : poser l'apparence par défaut (issue #325), l'enregistrer,
+         * puis renommer. Avant #325 c'était un refus — qui bloquait le propriétaire sans lui
+         * proposer d'issue simple.
+         */
+        APPLY_DEFAULT_THEN_RENAME,
         /** Type indéterminable : on ne sait pas si l'apparence est en jeu. */
         REFUSE_TYPE_UNKNOWN
     }
@@ -40,7 +45,7 @@ public final class SkinPreservationPlanner {
     public record Plan(Decision decision, String code, String message) {
 
         public boolean allowsRename() {
-            return decision == Decision.RENAME_FREELY || decision == Decision.REAPPLY_RECORDED_THEN_RENAME;
+            return decision != Decision.REFUSE_TYPE_UNKNOWN;
         }
     }
 
@@ -60,12 +65,8 @@ public final class SkinPreservationPlanner {
                             + "donc pas de son nom.");
         }
         if (!hasRecordedSource) {
-            return new Plan(Decision.REFUSE_SKIN_SOURCE_UNKNOWN, "SKIN_SOURCE_UNKNOWN",
-                    "Renommage refusé : ce PNJ est de type joueur et RPGQuest ne connaît pas son skin "
-                            + "actuel. L'API publique de Citizens n'expose aucun moyen de le lire, donc "
-                            + "le renommer ferait suivre son apparence au nouveau nom, sans possibilité "
-                            + "de la restituer. Appliquer d'abord le skin voulu depuis « Nom en jeu & "
-                            + "apparence » — il sera alors enregistré et conservé aux renommages suivants.");
+            return new Plan(Decision.APPLY_DEFAULT_THEN_RENAME, null,
+                    "Apparence par défaut appliquée : ce PNJ n'avait pas d'apparence enregistrée.");
         }
         return new Plan(Decision.REAPPLY_RECORDED_THEN_RENAME, null,
                 "Skin conservé : la source enregistrée est réappliquée avant le renommage.");

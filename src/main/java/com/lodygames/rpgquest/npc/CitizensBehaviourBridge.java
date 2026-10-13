@@ -233,6 +233,35 @@ final class CitizensBehaviourBridge {
         });
     }
 
+    /**
+     * Issue #325 — recentre une promenade <strong>active</strong> sur {@code anchor}, sans toucher à
+     * la taille de la zone : c'est ce que fait un déplacement explicite du PNJ. Le trajet en cours
+     * est interrompu, sinon le PNJ repartirait vers une destination de l'ancienne zone.
+     */
+    NpcBehaviourOutcome reanchorWander(UUID uuid, Location anchor) {
+        return guarded(() -> {
+            NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+            if (npc == null) {
+                return NpcBehaviourOutcome.fail("CITIZENS_NOT_FOUND", "PNJ Citizens introuvable.");
+            }
+            Waypoints trait = npc.getTraitNullable(Waypoints.class);
+            if (trait == null || !(trait.getCurrentProvider() instanceof WanderWaypointProvider wander)) {
+                return NpcBehaviourOutcome.ok("WANDER_NOT_ACTIVE", "");
+            }
+            if (npc.isSpawned() && npc.getNavigator().isNavigating()) {
+                npc.getNavigator().cancelNavigation();
+            }
+            List<Location> previous = new ArrayList<>(wander.getRegionCentres());
+            if (!previous.isEmpty()) {
+                wander.removeRegionCentres(previous);
+            }
+            wander.addRegionCentre(anchor);
+            CitizensAPI.getNPCRegistry().saveToStore();
+            return NpcBehaviourOutcome.ok("WANDER_REANCHORED",
+                    "Le centre de sa promenade est maintenant sa nouvelle position.");
+        });
+    }
+
     // ------------------------------------------------------------------ Outils
 
     /** Défauts effectifs de la configuration Citizens installée, jamais des constantes recopiées. */

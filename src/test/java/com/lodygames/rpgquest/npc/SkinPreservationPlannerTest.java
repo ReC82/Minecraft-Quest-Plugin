@@ -45,15 +45,14 @@ class SkinPreservationPlannerTest {
     }
 
     @Test
-    void aPlayerNpcWithAnUnknownSkinIsRefusedRatherThanSilentlyReskinned() {
+    void aPlayerNpcWithAnUnknownSkinGetsTheDefaultAppearanceInsteadOfARefusal() {
+        // Issue #325 : le refus bloquait le propriétaire ; l'apparence par défaut, enregistrée,
+        // rend l'issue simple ET stable aux renommages suivants.
         SkinPreservationPlanner.Plan plan = SkinPreservationPlanner.plan(Optional.of(true), false);
 
-        assertEquals(SkinPreservationPlanner.Decision.REFUSE_SKIN_SOURCE_UNKNOWN, plan.decision());
-        assertFalse(plan.allowsRename(), "ne jamais renommer à l'aveugle un PNJ joueur");
-        assertEquals("SKIN_SOURCE_UNKNOWN", plan.code());
-        // Le message doit expliquer la limite ET donner la sortie, sinon le refus est inutilisable.
-        assertTrue(plan.message().contains("n'expose aucun moyen de le lire"), "la limite est expliquée");
-        assertTrue(plan.message().contains("Appliquer d'abord le skin voulu"), "la sortie est donnée");
+        assertEquals(SkinPreservationPlanner.Decision.APPLY_DEFAULT_THEN_RENAME, plan.decision());
+        assertTrue(plan.allowsRename());
+        assertNull(plan.code());
     }
 
     @Test

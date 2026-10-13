@@ -27,6 +27,30 @@ class NpcBehaviourActionTest {
     private static final class Recorder extends StubAgentActions {
         final List<String> lookClose = new ArrayList<>();
         final List<String> wander = new ArrayList<>();
+        final List<String> stops = new ArrayList<>();
+        final List<String> moves = new ArrayList<>();
+        final List<String> provisions = new ArrayList<>();
+
+        @Override
+        public CompletableFuture<MutationResult> citizensWanderStop(String npcId, boolean returnHome) {
+            stops.add(npcId + "|home=" + returnHome);
+            return super.citizensWanderStop(npcId, returnHome);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> citizensRelocate(String npcId, String world, double x, double y,
+                                                                  double z, Float yaw, Float pitch) {
+            moves.add(npcId + "|" + world + "|" + yaw + "|" + pitch);
+            return CompletableFuture.completedFuture(MutationResult.of(true, "MOVED", "fait"));
+        }
+
+        @Override
+        public CompletableFuture<CitizensProvisionResult> citizensProvision(
+                String requestedId, String dialogueId, String displayName, String skinValue,
+                boolean skinByPlayerName, String world, Double x, Double y, Double z, Float yaw, Float pitch) {
+            provisions.add(requestedId + "|" + dialogueId + "|" + displayName + "|" + skinValue);
+            return CompletableFuture.completedFuture(CitizensProvisionResult.reject("TEST", "enregistré"));
+        }
 
         @Override
         public CompletableFuture<MutationResult> citizensLookClose(String npcId, boolean enabled, Double range) {
@@ -248,5 +272,36 @@ class NpcBehaviourActionTest {
                 run("npc.citizens.lookclose", params("npc_id", "andy", "enabled", "false")).status());
         assertEquals(AgentActionOutcome.SUCCESS,
                 run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false")).status());
+    }
+
+    // ---- Issue #325 ------------------------------------------------------------------------
+
+    @Test
+    void stoppingWithReturnHomeAsksToGoBackToTheStart() {
+        run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false", "return_home", "true"));
+        run("npc.citizens.wander", params("npc_id", "andy", "enabled", "false"));
+        assertEquals(List.of("andy|home=true", "andy|home=false"), actions.stops);
+        assertTrue(actions.wander.stream().allMatch(w -> w.contains("|false|null/null/null/null|0x0|")),
+                "arrêter n'enregistre aucune zone");
+    }
+
+    @Test
+    void movingWithoutOrientationKeepsTheCurrentOne() {
+        run("npc.citizens.move", params("npc_id", "andy", "world", "world_hub", "x", "1", "y", "70", "z", "2"));
+        run("npc.citizens.move", params("npc_id", "andy", "world", "world_hub", "x", "1", "y", "70", "z", "2",
+                "yaw", "180"));
+        assertEquals(List.of("andy|world_hub|null|null", "andy|world_hub|180.0|null"), actions.moves,
+                "orientation absente = gardée, jamais remise à 0");
+        assertEquals(AgentActionOutcome.REJECTED, run("npc.citizens.move", params("npc_id", "andy",
+                "world", "world_hub", "x", "1", "y", "70", "z", "2", "yaw", "NaN")).status());
+    }
+
+    @Test
+    void provisionCarriesThePanelChosenIdAndInitialDialogue() {
+        run("npc.citizens.provision", params("display_name", "Lucien", "npc_id", "lucien_2",
+                "dialogue_id", "rpgquest:lucien_2"));
+        assertEquals(List.of("lucien_2|rpgquest:lucien_2|Lucien|null"), actions.provisions);
+        assertEquals(AgentActionOutcome.REJECTED, run("npc.citizens.provision",
+                params("display_name", "Lucien", "npc_id", "Pas Valide!")).status());
     }
 }

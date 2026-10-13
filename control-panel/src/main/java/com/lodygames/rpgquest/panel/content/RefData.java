@@ -185,7 +185,12 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
      */
     public String questLabel(String id) {
         String s = QuestYaml.plainId(id);
+        // Le relevé du serveur range les titres sous l'id complet (« rpgquest:x »), la source sous
+        // l'id nu : les deux formes sont cherchées.
         String name = questNames.get(s);
+        if (name == null || name.isBlank()) {
+            name = questNames.get("rpgquest:" + s);
+        }
         return name == null || name.isBlank() || name.equals(s) ? s : name;
     }
 

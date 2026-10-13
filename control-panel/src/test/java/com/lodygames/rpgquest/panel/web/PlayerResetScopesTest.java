@@ -125,9 +125,11 @@ class PlayerResetScopesTest {
 
         String page = fiche();
 
-        assertTrue(page.contains("Reset progression RPGQuest"), "portée 1 nommée");
-        assertTrue(page.contains("Reset nouveau joueur complet"), "portée 2 nommée");
-        assertTrue(page.contains("inventaire conservé"), "la portée 1 annonce ce qu'elle conserve");
+        // Issue #328 : les deux portées sont nommées par ce qu'elles font, en français simple.
+        assertTrue(page.contains("Remettre à zéro la progression"), "portée 1 nommée");
+        assertTrue(page.contains("Repartir comme un nouveau joueur"), "portée 2 nommée");
+        assertTrue(page.contains("garde l&#39;inventaire") || page.contains("garde l'inventaire"),
+                "la portée 1 annonce ce qu'elle conserve");
         assertTrue(page.contains("vide l&#39;inventaire") || page.contains("vide l'inventaire"),
                 "la portée 2 annonce ce qu'elle vide");
     }
@@ -193,7 +195,7 @@ class PlayerResetScopesTest {
 
     /** La fiche dépliée du joueur de test, telle que le navigateur la reçoit. */
     private String fiche() throws Exception {
-        return get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_LODY).body();
+        return get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_LODY + "&tab=progression").body();
     }
 
     private void seedCatalog() throws Exception {

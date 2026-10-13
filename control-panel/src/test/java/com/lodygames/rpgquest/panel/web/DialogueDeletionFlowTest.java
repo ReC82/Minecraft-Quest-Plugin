@@ -68,7 +68,7 @@ class DialogueDeletionFlowTest {
         start();
         survey(Instant.now());
 
-        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
         assertTrue(page.contains("href=\"/dialogues/delete?slug=help\""), "hors source compris");
         assertTrue(page.contains("Supprimer le dialogue…"), page.substring(0, Math.min(500, page.length())));
     }
@@ -80,7 +80,7 @@ class DialogueDeletionFlowTest {
         String preview = get("/dialogues/delete?slug=help").body();
         assertTrue(preview.contains("Hors source"), preview);
 
-        String form = "_csrf=" + csrf(preview) + "&slug=help&confirm_id=help&expected_sha=";
+        String form = "_csrf=" + csrf(preview) + "&slug=help&confirm_id=help&expected_sha=&confirm_ack=1";
         String result = post("/dialogues/delete", form).body();
         post("/dialogues/delete", form); // double clic
 
@@ -126,7 +126,7 @@ class DialogueDeletionFlowTest {
 
         Files.writeString(file, "id: rpgquest:help\nstart: b\n"); // autre onglet
         String refused = post("/dialogues/delete", "_csrf=" + csrf(preview)
-                + "&slug=help&confirm_id=help&expected_sha=" + sha).body();
+                + "&slug=help&confirm_id=help&confirm_ack=1&expected_sha=" + sha).body();
 
         assertTrue(refused.contains("a changé depuis l"), refused);
         assertTrue(Files.exists(file), "le fichier modifié n'est pas supprimé");

@@ -1247,7 +1247,7 @@
       if (warn) { warn.hidden = true; }
       if (toggle) {
         toggle.hidden = false;
-        toggle.textContent = "Modifier le code MiniMessage";
+        toggle.textContent = "Mode avancé : balises de mise en forme";
       }
       if (initial) {
         textInput.value = initial.text || "";
@@ -1496,7 +1496,9 @@
         function apply() {
           var blocks = scope.querySelectorAll('[data-switch-for="' + cssEsc(key) + '"]');
           for (var b = 0; b < blocks.length; b++) {
-            var on = blocks[b].getAttribute("data-switch-value") === sel.value;
+            // Une ou plusieurs valeurs, séparées par des espaces (issue #332 : trois effets de quête).
+            var on = (" " + (blocks[b].getAttribute("data-switch-value") || "") + " ")
+              .indexOf(" " + sel.value + " ") !== -1 && sel.value !== "";
             blocks[b].hidden = !on;
             var fields = blocks[b].querySelectorAll("input, select, textarea");
             for (var f = 0; f < fields.length; f++) { fields[f].disabled = !on; }
@@ -1506,6 +1508,110 @@
         apply();
       })(selects[i]);
     }
+  }
+
+  // Issue #332 — une liste déroulante filtrée par une recherche (« Chercher une quête… »). Les
+  // options sont retirées puis remises, jamais seulement masquées : iOS ignore « hidden » sur une
+  // option. L'option choisie reste toujours présente.
+  function initSelectFilter() {
+    var inputs = document.querySelectorAll("input[data-select-filter]");
+    for (var i = 0; i < inputs.length; i++) {
+      (function (input) {
+        var sel = document.getElementById(input.getAttribute("data-select-filter"));
+        if (!sel) { return; }
+        var all = [];
+        for (var k = 0; k < sel.options.length; k++) { all.push(sel.options[k]); }
+        input.addEventListener("input", function () {
+          var q = (input.value || "").trim().toLowerCase();
+          var current = sel.value;
+          while (sel.options.length) { sel.remove(0); }
+          for (var m = 0; m < all.length; m++) {
+            var o = all[m];
+            if (!q || !o.value || o.value === current || o.text.toLowerCase().indexOf(q) !== -1) { sel.add(o); }
+          }
+          sel.value = current;
+        });
+      })(inputs[i]);
+    }
+  }
+
+  // Issue #332 — « Modifications non enregistrées » : affiché dès la première saisie, et une
+  // confirmation du navigateur avant de quitter la page sans enregistrer.
+  function initDirtyForms() {
+    var forms = document.querySelectorAll("form[data-dirty-form]");
+    for (var i = 0; i < forms.length; i++) {
+      (function (form) {
+        var dirty = form.getAttribute("data-dirty") === "1";
+        var note = form.querySelector("[data-dirty-note]");
+        function mark() {
+          dirty = true;
+          if (note) { note.hidden = false; }
+        }
+        form.addEventListener("input", mark);
+        form.addEventListener("change", mark);
+        form.addEventListener("submit", function () { dirty = false; });
+        window.addEventListener("beforeunload", function (ev) {
+          if (!dirty) { return; }
+          ev.preventDefault();
+          ev.returnValue = "";
+        });
+      })(forms[i]);
+    }
+  }
+
+  // Issue #332 — l'aperçu d'un dialogue, une réplique à la fois. Sans JavaScript, tout est affiché
+  // et les réponses sont des ancres ; ici, cliquer une réponse montre la réplique suivante.
+  function initDialoguePreview() {
+    var boxes = document.querySelectorAll("[data-dlg-preview]");
+    for (var i = 0; i < boxes.length; i++) {
+      (function (box) {
+        var nodes = box.querySelectorAll("[data-pv-node]");
+        if (!nodes.length) { return; }
+        var restart = box.querySelector("[data-dlg-restart]");
+        var first = nodes[0].getAttribute("data-pv-node");
+        function show(id) {
+          for (var n = 0; n < nodes.length; n++) { nodes[n].hidden = nodes[n].getAttribute("data-pv-node") !== id; }
+          if (restart) { restart.hidden = id === first; }
+        }
+        box.addEventListener("click", function (ev) {
+          var link = ev.target.closest ? ev.target.closest("[data-pv-go]") : null;
+          if (!link || !box.contains(link)) { return; }
+          ev.preventDefault();
+          show(link.getAttribute("data-pv-go"));
+        });
+        if (restart) { restart.addEventListener("click", function () { show(first); }); }
+        box.classList.add("is-stepped");
+        show(first);
+      })(boxes[i]);
+    }
+  }
+
+  // Issue #328 — dates à l'heure locale du navigateur, la date complète en infobulle. Le serveur
+  // écrit l'heure UTC (« … UTC ») ; sans JavaScript, c'est elle qui reste affichée.
+  function initLocalTimes() {
+    var els = document.querySelectorAll("time[data-local-time]");
+    for (var i = 0; i < els.length; i++) {
+      var d = new Date(els[i].getAttribute("datetime"));
+      if (isNaN(d.getTime())) { continue; }
+      var full = d.toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+      els[i].title = full;
+      // Une date relative (« il y a 3 h ») reste relative ; une date absolue passe à l'heure locale.
+      if (!els[i].hasAttribute("data-relative") || /UTC$/.test(els[i].textContent)) { els[i].textContent = full; }
+    }
+  }
+
+  // Issue #328 — revenir d'une fiche joueur vers la liste telle qu'on l'a quittée (recherche,
+  // filtre, tri, page). Simple confort par navigateur : sans stockage, le lien mène à la liste.
+  function initPlayersBack() {
+    var key = "plugadmin.players.list";
+    try {
+      if (document.querySelector("[data-players-list]")) {
+        window.sessionStorage.setItem(key, window.location.pathname + window.location.search);
+      }
+      var back = document.querySelector("a[data-players-back]");
+      var saved = window.sessionStorage.getItem(key);
+      if (back && saved && saved.indexOf("/players") === 0) { back.setAttribute("href", saved); }
+    } catch (e) { /* stockage indisponible : le lien par défaut suffit */ }
   }
 
   /** Exécute un module en isolant sa panne : un module qui échoue n'empêche pas les autres. */
@@ -1532,6 +1638,11 @@
     run("initCharCount", initCharCount);
     run("initOneForm", initOneForm);
     run("initSwitch", initSwitch);
+    run("initSelectFilter", initSelectFilter);
+    run("initDirtyForms", initDirtyForms);
+    run("initDialoguePreview", initDialoguePreview);
+    run("initLocalTimes", initLocalTimes);
+    run("initPlayersBack", initPlayersBack);
     run("initColorPalette", initColorPalette);
     run("initOpsAnnounce", initOpsAnnounce);
     run("initOpsConsole", initOpsConsole);

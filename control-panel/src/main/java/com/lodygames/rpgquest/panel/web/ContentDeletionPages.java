@@ -110,6 +110,129 @@ public final class ContentDeletionPages {
         return sb.toString();
     }
 
+    /** Case à cocher de la page courte de suppression d'un dialogue (issue #332). */
+    public static final String ACK_FIELD = "confirm_ack";
+
+    /**
+     * Issue #332 — la page courte de suppression d'un dialogue : lequel, qui l'utilise, ce qui va
+     * se passer, puis « Supprimer » ou « Annuler ». Les points bloquants mènent droit à la page où
+     * les corriger. Même plan, mêmes garde-fous que l'aperçu complet ({@link #preview}).
+     *
+     * @param title    nom lisible du dialogue (« Dialogue de Lucien »)
+     * @param npcNames nom lisible d'un personnage à partir de son identifiant
+     */
+    public String dialoguePreview(DeletionPlan plan, String title, java.util.function.UnaryOperator<String> npcNames,
+                                  String csrfToken, String errorMessage, String refreshHtml) {
+        StringBuilder sb = new StringBuilder("<div class=\"npc-delete\">");
+        sb.append(Ui.pageHeader("trash", "Supprimer « " + title + " »", "",
+                "<a class=\"btn secondary\" href=\"/dialogues/edit/" + Http.esc(plan.plainId()) + "\">"
+                        + Icons.icon("back") + "Retour au dialogue</a>"));
+        if (errorMessage != null && !errorMessage.isBlank()) {
+            sb.append(Ui.banner("err", Http.esc(errorMessage)));
+        }
+        List<DeletionPlan.Blocker> npcBlockers = plan.blockers().stream()
+                .filter(b -> b.link() != null && b.link().startsWith("/npcs")).toList();
+        List<DeletionPlan.Blocker> others = plan.blockers().stream().filter(b -> !npcBlockers.contains(b)).toList();
+
+        sb.append("<h2 class=\"npc-delete-h\">Personnages qui l'utilisent</h2>");
+        if (npcBlockers.isEmpty()) {
+            sb.append("<p>Aucun personnage n'utilise ce dialogue.</p>");
+        } else {
+            sb.append("<ul class=\"npc-delete-list\">");
+            for (DeletionPlan.Blocker b : npcBlockers) {
+                sb.append("<li>").append(Icons.icon("npc")).append("<a href=\"").append(Http.esc(b.link())).append("\">")
+                        .append(Http.esc(MiniText.plain(npcNames.apply(b.linkLabel())))).append("</a></li>");
+            }
+            sb.append("</ul><p>Il ne peut pas être supprimé tant qu'un personnage l'utilise : sinon, ce "
+                    + "personnage ne répondrait plus quand on lui parle. Donnez-lui d'abord un autre dialogue "
+                    + "(ou supprimez le personnage).</p>");
+        }
+
+        if (!others.isEmpty()) {
+            sb.append("<h2 class=\"npc-delete-h\">À régler d'abord</h2><ul class=\"npc-delete-list\">");
+            for (DeletionPlan.Blocker b : others) {
+                sb.append("<li>").append(Icons.icon("warning")).append("<span>").append(Http.esc(plainBlocker(b)));
+                if (b.link() != null) {
+                    sb.append(" <a href=\"").append(Http.esc(b.link())).append("\">Ouvrir</a>");
+                }
+                sb.append("</span></li>");
+            }
+            sb.append("</ul>");
+            if (refreshHtml != null && !refreshHtml.isBlank()) {
+                sb.append(refreshHtml);
+            }
+        }
+
+        if (plan.deletable()) {
+            sb.append("<h2 class=\"npc-delete-h\">Ce qui va se passer</h2><ul class=\"npc-delete-list\">")
+                    .append("<li>").append(Icons.icon("trash")).append("Le dialogue est supprimé")
+                    .append(plan.runtimePresent() ? ", dans PlugAdmin et dans le jeu." : ".").append("</li>")
+                    .append("</ul><ul class=\"npc-delete-list keep\">")
+                    .append("<li>").append(Icons.icon("check")).append("Les personnages, les quêtes et la progression des joueurs ne changent pas.</li>")
+                    .append("<li>").append(Icons.icon("check")).append("Une copie de sauvegarde est gardée.</li></ul>");
+            if (plan.bundledExample()) {
+                sb.append(Ui.banner("warn", "Ce dialogue est livré avec le plugin : le serveur est prévenu pour "
+                        + "ne pas le recréer au prochain démarrage."));
+            }
+            sb.append("<form method=\"post\" action=\"/dialogues/delete\" class=\"npc-delete-form\" data-submit-once>")
+                    .append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(csrfToken)).append("\">")
+                    .append("<input type=\"hidden\" name=\"slug\" value=\"").append(Http.esc(plan.slug())).append("\">")
+                    .append("<input type=\"hidden\" name=\"").append(CONFIRM_FIELD).append("\" value=\"")
+                    .append(Http.esc(plan.plainId())).append("\">")
+                    .append("<input type=\"hidden\" name=\"").append(EXPECTED_SHA_FIELD).append("\" value=\"")
+                    .append(Http.esc(plan.sourceSha() == null ? "" : plan.sourceSha())).append("\">")
+                    .append("<label class=\"inline\"><input type=\"checkbox\" name=\"").append(ACK_FIELD)
+                    .append("\" value=\"1\" required> Je veux supprimer ce dialogue</label>")
+                    .append("<div class=\"btnrow\"><button class=\"btn btn-danger\" type=\"submit\">")
+                    .append(Icons.icon("trash")).append("Supprimer</button>")
+                    .append("<a class=\"btn secondary\" href=\"/dialogues/edit/").append(Http.esc(plan.plainId()))
+                    .append("\">Annuler</a></div></form>");
+        } else {
+            sb.append("<div class=\"btnrow\"><a class=\"btn secondary\" href=\"/dialogues/edit/")
+                    .append(Http.esc(plan.plainId())).append("\">Annuler</a></div>");
+        }
+        sb.append("<details class=\"npc-more\"><summary>Détails techniques</summary>")
+                .append(preview(plan, csrfToken, null, "").replaceAll("(?s)<h2>Confirmation</h2>.*?</form>", ""))
+                .append("</details>");
+        return sb.append("</div>").toString();
+    }
+
+    /** Le motif d'un blocage, sans nom de fichier ni code interne. */
+    private static String plainBlocker(DeletionPlan.Blocker b) {
+        String r = b.reason();
+        if (r.startsWith("Ouvert par le dialogue") || r.startsWith("Le dialogue source")) {
+            return "Un autre dialogue y renvoie (« " + (b.linkLabel() == null ? "?" : b.linkLabel())
+                    + " ») : retirez ce renvoi d'abord.";
+        }
+        if (r.startsWith("Vérification incomplète")) {
+            return "La liste des dialogues du serveur n'est pas à jour : actualisez-la, puis revenez.";
+        }
+        return r;
+    }
+
+    /** Issue #332 — le résultat, en une phrase, avec le suivi de la suppression côté jeu. */
+    public String dialogueResult(String title, ContentDeletionExecutor.Result result, boolean runtimeQueued,
+                                 String runtimeActionId) {
+        StringBuilder sb = new StringBuilder("<div class=\"npc-delete\">");
+        sb.append(Ui.pageHeader("trash", result.ok() ? "« " + title + " » est supprimé"
+                : "La suppression n'a pas abouti", "", ""));
+        if (!result.ok()) {
+            sb.append(Ui.banner("err", Http.esc(result.message()) + " Rien n'a été supprimé."));
+        } else if (runtimeQueued) {
+            sb.append(Ui.banner("info", "Supprimé de PlugAdmin. Le retrait du jeu est en cours"
+                    + (runtimeActionId == null ? "." : " — <a href=\"/actions/" + Http.esc(runtimeActionId)
+                            + "\">suivre</a>.")));
+        } else {
+            sb.append(Ui.banner("ok", "Supprimé. Il n'était pas dans le jeu."));
+        }
+        sb.append("<div class=\"btnrow\"><a class=\"btn\" href=\"/dialogues\">Revenir aux dialogues</a></div>");
+        if (result.backupDir() != null) {
+            sb.append("<details class=\"npc-more\"><summary>Détails techniques</summary><p>Sauvegarde : <code>")
+                    .append(Http.esc(result.backupDir())).append("</code></p></details>");
+        }
+        return sb.append("</div>").toString();
+    }
+
     /** Page de résultat, après application. */
     public String result(String kind, String slug, ContentDeletionExecutor.Result result,
                          boolean runtimeDeletionQueued) {

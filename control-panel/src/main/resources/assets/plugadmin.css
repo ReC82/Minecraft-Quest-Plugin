@@ -1091,3 +1091,141 @@ details.card.npc-more{padding:12px 16px}
 .btn.secondary.npc-danger{color:var(--err)}
 .btn.secondary.npc-danger:hover{border-color:var(--err)}
 .npc-actions .btn.secondary[aria-expanded="true"]{background:var(--primary-soft,#e8efff);border-color:var(--primary);color:var(--primary)}
+
+/* ---- Dialogues : parcours simple (issue #332) ------------------------------------------- */
+.field-error{display:flex;gap:6px;align-items:flex-start;color:var(--err);font-size:13px;font-weight:600;margin:6px 0}
+.dlg-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.dlg-row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:12px 14px;box-shadow:var(--shadow-s)}
+.dlg-row-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 260px}
+.dlg-row-title{font-weight:700;font-size:14.5px;color:var(--txt);text-decoration:none;overflow-wrap:anywhere}
+.dlg-row-title:hover{color:var(--primary)}
+.dlg-row-who,.dlg-row-sum{font-size:13px;color:var(--txt-2);display:flex;gap:5px;align-items:center;overflow-wrap:anywhere}
+.dlg-row-side{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dlg-chip{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.dlg-chip.tone-ok{background:var(--ok-soft);color:var(--ok)}
+.dlg-chip.tone-warn{background:var(--warn-soft);color:var(--warn)}
+.dlg-chip.tone-err{background:var(--err-soft);color:var(--err)}
+.dlg-chip.tone-info{background:var(--info-soft);color:var(--info)}
+.dlg-chip.tone-neutral{background:var(--surface-3);color:var(--txt-2)}
+.dlg-card{padding:14px 16px;margin:0 0 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.dlg-create{max-width:620px}
+.dlg-create label{display:block;margin:12px 0 4px;font-weight:600}
+.dlg-who{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin:0 0 10px;font-size:14px}
+.dlg-who .bi{margin-right:4px}
+.dlg-link>summary{cursor:pointer;color:var(--primary);font-weight:600;font-size:13px}
+.dlg-inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 4px}
+.dlg-inline .form-select{width:auto;min-width:200px;max-width:100%}
+.dlg-live{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;
+  border-radius:var(--radius-s);padding:10px 14px;margin:0 0 14px;font-size:14px;font-weight:600}
+.dlg-live form{margin:0}
+.dlg-live.tone-ok{background:var(--ok-soft);color:var(--ok)}
+.dlg-live.tone-warn{background:var(--warn-soft);color:var(--warn)}
+.dlg-live.tone-err{background:var(--err-soft);color:var(--err)}
+.dlg-live.tone-info{background:var(--info-soft);color:var(--info)}
+.dlg-live .muted{font-weight:500}
+.dlg-node-h{font-size:16px;font-weight:800;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.dlg-says{font-size:14.5px;background:var(--surface-2);border-radius:var(--radius-s);padding:10px 12px}
+.dlg-replies-h{font-size:13px;font-weight:800;margin:14px 0 6px;color:var(--txt-2)}
+.dlg-replies{list-style:none;padding:0;margin:0 0 10px;display:flex;flex-direction:column;gap:10px}
+.dlg-reply{border:1px solid var(--line);border-left:4px solid var(--primary);border-radius:var(--radius-s);
+  background:var(--surface-2);padding:10px 12px}
+.dlg-reply-text{font-weight:600}
+.dlg-then{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+.dlg-then label,.dlg-quest label,.dlg-entry label{display:block;font-size:12.5px;font-weight:700;color:var(--txt-2);margin:0 0 3px}
+.dlg-quest{margin-top:8px}
+.dlg-qsearch{margin-bottom:6px}
+.dlg-more{margin:10px 0 0}
+.dlg-more>summary{cursor:pointer;color:var(--txt-2);font-weight:600;font-size:13px;padding:2px 0}
+.dlg-more[open]>summary{margin-bottom:6px}
+.dlg-adv-h{font-size:12.5px;font-weight:800;margin:10px 0 4px}
+.dlg-adv-none{font-size:13px;margin:0 0 4px}
+.dlg-entry{border:1px dashed var(--line-2);border-radius:var(--radius-s);padding:8px 10px;margin:0 0 8px;background:var(--surface)}
+.dlg-entry-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px;margin-top:6px}
+.dlg-entry label.inline{display:flex;gap:6px;align-items:center;grid-column:1/-1;font-weight:600;font-size:13px}
+.dlg-rm{margin-top:8px}
+.dlg-noreply{font-size:13px}
+.dlg-addnode{margin:0 0 14px}
+.dlg-settings>summary{color:var(--txt);font-weight:700}
+.dlg-savebar{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:flex-end;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;margin:0 0 16px;box-shadow:var(--shadow)}
+.dlg-savebar .btn{margin:0}
+.dlg-dirty{color:var(--warn);font-weight:700;font-size:13px;margin-right:auto;display:flex;gap:6px;align-items:center}
+.dlg-preview .dlg-pv-node{border-top:1px solid var(--line);padding:10px 0}
+.dlg-preview.is-stepped .dlg-pv-node{border-top:0}
+.dlg-pv-speaker{font-size:12px;font-weight:800;color:var(--txt-2);margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em}
+.dlg-pv-text{font-size:15px;background:var(--surface-2);border-radius:var(--radius-s);padding:10px 12px;margin:0 0 8px}
+.dlg-pv-replies{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
+.dlg-pv-reply{display:inline-block;border:1px solid var(--primary);color:var(--primary);border-radius:999px;padding:4px 12px;
+  font-weight:600;text-decoration:none}
+.dlg-pv-reply:hover{background:var(--primary-soft)}
+.dlg-pv-fx{display:block;font-size:12.5px;color:var(--txt-2);margin:3px 0 0 12px}
+.dlg-pv-nav{margin:0 0 6px}
+.dlg-delete-link{margin:4px 0 6px}
+.dlg-tech{font-size:13px}
+@media(max-width:575.98px){
+  .dlg-then,.dlg-entry-fields{grid-template-columns:1fr}
+  .dlg-row-side{width:100%;justify-content:space-between}
+  .dlg-savebar{padding:8px 10px;gap:6px}
+  .dlg-savebar .dlg-dirty{flex:1 1 100%;margin:0}
+  .dlg-savebar .btn{flex:1 1 0;font-size:13px;padding:8px 6px;min-width:0}
+  .dlg-inline .form-select{min-width:0;flex:1 1 100%}
+}
+
+/* ---- Joueurs : annuaire et fiche (issue #328) ------------------------------------------- */
+.pl-table{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.pl-table th{font-size:12px;font-weight:800;color:var(--txt-2);text-transform:uppercase;letter-spacing:.04em;background:var(--surface-2)}
+.pl-table td,.pl-table th{padding:10px 12px;vertical-align:middle}
+.pl-table tbody tr[data-href]{cursor:pointer}
+.pl-table tbody tr[data-href]:hover{background:var(--primary-soft)}
+.pl-name{font-weight:700;color:var(--txt);text-decoration:none}
+.pl-back{margin:0 0 8px;font-size:14px}
+.pl-back a{text-decoration:none;font-weight:600}
+.pl-head{padding:14px 16px;margin:0 0 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.pl-head-main{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.pl-title{font-size:22px;font-weight:800;margin:0;overflow-wrap:anywhere}
+.pl-chips{display:flex;flex-wrap:wrap;gap:6px}
+.pl-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px 18px;margin:12px 0 0}
+.pl-facts dt{font-size:11.5px;font-weight:700;color:var(--txt-faint);margin:0}
+.pl-facts dd{margin:0;font-size:14px;overflow-wrap:anywhere}
+.pl-uuid code{font-size:12px}
+.pl-uuid .btn{margin:0 0 0 4px;padding:1px 8px}
+.pl-tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin:0 0 14px;-webkit-overflow-scrolling:touch}
+.pl-tabs a{flex:0 0 auto;padding:9px 12px;font-weight:600;font-size:14px;color:var(--txt-2);text-decoration:none;
+  border-bottom:3px solid transparent;min-height:44px;display:flex;align-items:center}
+.pl-tabs a[aria-current="page"]{color:var(--primary);border-bottom-color:var(--primary)}
+.pl-tabs a:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.pl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.pl-card{padding:14px 16px;margin:0 0 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.pl-card h2{font-size:15px;font-weight:800;margin:0 0 8px}
+.pl-card .npc-form-collapse{margin-top:12px}
+.pl-card .npc-formcard{max-width:620px}
+.pl-facts-list{list-style:none;padding:0;margin:0 0 8px}
+.pl-facts-list li{padding:2px 0}
+.pl-feedback{margin-bottom:12px}
+@media(max-width:575.98px){
+  .pl-table thead{display:none}
+  .pl-table,.pl-table tbody,.pl-table tr,.pl-table td{display:block;width:100%}
+  .pl-table tr{border-bottom:1px solid var(--line);padding:8px 4px}
+  .pl-table td{padding:2px 8px;border:0}
+  .pl-table td[data-label="Joueur"]{font-size:15px}
+  .pl-table td[data-label="Monde"]:has(.muted){display:none}
+  .pl-title{font-size:19px}
+  .pl-card .npc-actions .btn{flex:1 1 100%}
+}
+/* Issue #332 : le bouton du mode avancé du texte stylé reste discret (il écrasait l'écran). */
+.sf .sf-toggle,.sf .sf-toggle.btn{background:none;border:0;box-shadow:none;color:var(--txt-2);font-size:12.5px;
+  font-weight:600;padding:2px 0;min-height:0;text-decoration:underline}
+.sf .sf-toggle:hover{color:var(--primary);background:none}
+.dlg-node-h{text-transform:none;letter-spacing:0;color:var(--txt)}
+.dlg-pv-text{background:#1f2733;color:#f4f6fb}
+/* Issue #328 : sur téléphone, la barre du haut ne déborde plus (le rôle prend trop de place). */
+@media(max-width:420px){
+  .topbar-r{gap:8px;min-width:0}
+  .userbox-r{display:none}
+  .userbox-n{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+@media(max-width:575.98px){
+  .npc-filters .pa-chip{white-space:nowrap}
+  .npc-filters .npc-catbar-t{margin-left:0!important;flex-basis:100%}
+}

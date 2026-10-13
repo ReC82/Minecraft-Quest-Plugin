@@ -43,6 +43,10 @@ public final class QuestMessages {
                     key);
             return MISSING_TEMPLATE_FALLBACK;
         }
-        return MM.deserialize(template, placeholders);
+        // Issue #335 : <currency> = nom affiché de la monnaie, réglé dans PlugAdmin.
+        TagResolver[] all = java.util.Arrays.copyOf(placeholders, placeholders.length + 1);
+        all[placeholders.length] = net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed(
+                "currency", com.lodygames.rpgquest.economy.CurrencyName.get());
+        return MM.deserialize(template, all);
     }
 }

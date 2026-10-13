@@ -316,6 +316,10 @@ public final class PanelApp {
         // Issue #332 — dialogues, version simple : une liste, un éditeur, « Enregistrer » puis
         // « Mettre en jeu » par la publication à chaud (#47). L'ancien écran reste en « Détails
         // techniques ».
+        // Issue #335 — paramètres généraux du jeu.
+        route("/settings", this::handleSettings);
+        route("/settings/refresh", this::handleSettingsRefresh);
+        route("/settings/save", this::handleSettingsSave);
         route("/dialogues", this::handleDialogueList);
         route("/dialogues/diagnostic", exchange -> handleBusinessPage(exchange, "/dialogues",
                 "Dialogues — détails techniques", Permission.DIALOGUE_READ, agentPages::dialogues));
@@ -4384,6 +4388,7 @@ public final class PanelApp {
             return;
         }
         Map<String, String> query = Http.query(exchange);
+        agentPages.refreshCurrency(config.agents().defaultAgentId());
         StringBuilder body = new StringBuilder();
         body.append(actionFeedback(query));
         body.append(renderer.render(session, query));
@@ -4480,6 +4485,87 @@ public final class PanelApp {
         String body = ((ContentEditorPages.Result.Html) result).body();
         String title = "quests".equals(kind) ? "Éditeur de quête" : "Éditeur de story";
         Http.html(exchange, 200, renderPage(title, session, base, body));
+    }
+
+    // ================================================================================
+    //  Paramètres généraux (issue #335)
+    // ================================================================================
+
+    private void handleSettings(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.SETTINGS_READ)) {
+            forbidden(exchange, session, "/settings");
+            return;
+        }
+        Map<String, String> query = Http.query(exchange);
+        String agentId = config.agents().defaultAgentId();
+        Http.html(exchange, 200, renderPage("Paramètres généraux", session, "/settings", actionFeedback(query)
+                + SettingsPages.page(session.csrfToken(), agentId == null ? "" : agentId, agentPages.settingsState(agentId),
+                        permissions.can(session.effective(), Permission.SETTINGS_WRITE), query.getOrDefault("tab", ""))));
+    }
+
+    private static String settingsBack(Map<String, String> form) {
+        String tab = form.getOrDefault("tab", "");
+        return "/settings" + (tab.matches("[a-z]{1,20}") ? "?tab=" + tab : "");
+    }
+
+    private void handleSettingsRefresh(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, false);
+        if (post == null) {
+            return;
+        }
+        if (!permissions.can(post.session().effective(), Permission.SETTINGS_READ)) {
+            forbidden(exchange, post.session(), "/settings");
+            return;
+        }
+        String back = settingsBack(post.form());
+        String id = agentStore.hasOpenActionOfType(post.agentId(), "settings.get") ? ""
+                : agentStore.createAction(post.agentId(), "settings.get", Map.of(), post.session().username());
+        Http.redirect(exchange, back + (id.isEmpty() ? "" : (back.contains("?") ? "&" : "?") + "toast=" + enc(id)));
+    }
+
+    /**
+     * Enregistre les paramètres d'une rubrique. Validés ici puis par le plugin, qui écrit, relit et
+     * rend les valeurs réelles. L'auteur part avec la demande (il est inscrit dans settings.yml), et
+     * l'action est journalisée comme toute mutation.
+     */
+    private void handleSettingsSave(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, false);
+        if (post == null) {
+            return;
+        }
+        Session session = post.session();
+        if (!permissions.can(session.effective(), Permission.SETTINGS_WRITE)) {
+            forbidden(exchange, session, "/settings");
+            return;
+        }
+        String back = settingsBack(post.form());
+        String sep = back.contains("?") ? "&" : "?";
+        if (agentStore.hasOpenActionOfType(post.agentId(), "settings.set")) {
+            Http.redirect(exchange, back + sep + "err=" + enc("Un enregistrement est déjà en cours."));
+            return;
+        }
+        Map<String, String> form = new java.util.LinkedHashMap<>();
+        for (String key : com.lodygames.rpgquest.panel.agent.AgentActionCatalog.SETTINGS_KEYS) {
+            if (post.form().containsKey(key)) {
+                form.put(key, post.form().get(key));
+            }
+        }
+        form.put("actor", session.username());
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("settings.set", form);
+        if (!v.valid()) {
+            Http.redirect(exchange, back + sep + "err=" + enc(v.error()));
+            return;
+        }
+        String id = agentStore.createAction(post.agentId(), "settings.set", v.params(), session.username());
+        audit.record(session.username(), "agent.action.create",
+                "agent=" + post.agentId() + " type=settings.set action=" + id, "PENDING",
+                "keys=" + String.join(",", form.keySet()), UUID.randomUUID().toString().substring(0, 8));
+        Http.redirect(exchange, back + sep + "toast=" + enc(id));
     }
 
     // ================================================================================

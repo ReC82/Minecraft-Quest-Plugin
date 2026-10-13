@@ -165,6 +165,8 @@ public final class AgentActionExecutor {
                 case PLAYER_WHITELIST_ADD -> playerWhitelist(action, true);
                 case PLAYER_WHITELIST_REMOVE -> playerWhitelist(action, false);
                 case ECONOMY_BALANCE -> economyBalance(action);
+                case SETTINGS_GET -> settingsOutcome(action, actions.settingsGet());
+                case SETTINGS_SET -> settingsSet(action);
                 case ECONOMY_CREDIT -> economyAdjust(action, true);
                 case ECONOMY_DEBIT -> economyAdjust(action, false);
                 case ECONOMY_DEBTS -> questRewardDebts(action);
@@ -1007,6 +1009,39 @@ public final class AgentActionExecutor {
 
     /** Plafond d'une opération unique — garde-fou de saisie, pas une règle d'équilibrage. */
     private static final long MAX_ECONOMY_AMOUNT = 1_000_000L;
+
+    // ---- Paramètres généraux (issue #335) -----------------------------------------------------
+
+    private CompletableFuture<AgentActionOutcome> settingsSet(AgentAction action) {
+        Map<String, String> changes = new LinkedHashMap<>();
+        for (String key : com.lodygames.rpgquest.settings.GameSettings.KEYS) {
+            String v = action.param(key);
+            if (v != null) {
+                changes.put(key, v);
+            }
+        }
+        if (changes.isEmpty()) {
+            return CompletableFuture.completedFuture(AgentActionOutcome.rejected(action.id(),
+                    "Aucun paramètre à modifier."));
+        }
+        return settingsOutcome(action, actions.settingsSet(changes, trimOrNull(action.param("actor"))));
+    }
+
+    private CompletableFuture<AgentActionOutcome> settingsOutcome(AgentAction action,
+                                                                 CompletableFuture<AgentActions.GameSettingsView> future) {
+        return future.thenApply(view -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("values", view.values());
+            details.put("defaults", view.defaults());
+            details.put("updatedAt", view.updatedAt());
+            details.put("updatedBy", view.updatedBy());
+            details.put("problem", view.problem());
+            return view.ok()
+                    ? AgentActionOutcome.success(action.id(), "OK", view.message(), details)
+                    : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "REFUSED", view.message(),
+                            details, java.time.Instant.now());
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
 
     /** {@code economy.balance} — solde réel et journal récent. Lecture seule. */
     // ---- Pont vers les droits Minecraft (issue #200) -------------------------------------------
@@ -3349,8 +3384,24 @@ public final class AgentActionExecutor {
         if (value == null || value.length() > 256) {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « value » manquant ou trop long."));
         }
-        return withResolvedUuid(action, (uuid, name) ->
-                actions.variableSet(uuid, key, value).thenApply(r -> toOutcome(action, r)));
+        Optional<String> typeProblem = VariableTypes.problem(key, value);
+        if (typeProblem.isPresent()) {
+            return done(AgentActionOutcome.rejected(action.id(), typeProblem.get() + " Rien n'a été écrit."));
+        }
+        // Issue #319 : après l'écriture, la valeur est RELUE ; c'est elle qui est rendue au panel.
+        return withResolvedUuid(action, (uuid, name) -> actions.variableSet(uuid, key, value)
+                .thenCompose(r -> !r.ok() ? done(toOutcome(action, r)) : variables.get(uuid, key).thenApply(read -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("player_uuid", uuid.toString());
+                    details.put("player_name", name);
+                    details.put("key", key);
+                    details.put("present", read.isPresent());
+                    read.ifPresent(v -> details.put("value", v));
+                    details.put("effects", r.effects() == null ? List.of() : r.effects());
+                    String readBack = read.map(v -> key + " = " + v).orElse(key + " absente");
+                    return AgentActionOutcome.success(action.id(), read.orElse(null),
+                            name + " : écrit, puis relu " + readBack + ".", details);
+                })));
     }
 
     private CompletableFuture<AgentActionOutcome> resetConfirm(AgentAction action, ResetScope scope) {

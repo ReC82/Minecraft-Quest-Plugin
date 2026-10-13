@@ -662,7 +662,7 @@ class QuestJournalServiceTest {
 
         var detail = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.DETAIL_ICON_SLOT);
         String joined = String.join("\n", loreText(detail));
-        assertTrue(joined.contains("250 pièce(s)"), () -> "la récompense prévue doit être lisible : " + joined);
+        assertTrue(joined.contains("250 LodyCoins"), () -> "la récompense prévue doit être lisible : " + joined);
     }
 
     private void writeQuests(int count) throws Exception {

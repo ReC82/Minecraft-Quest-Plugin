@@ -254,11 +254,84 @@ class PlayersPageTest {
         return ((Number) body.get("pending")).intValue();
     }
 
+    private AgentStore store;
+
+    /** La fiche elle-même, sans le panneau de notifications commun à toutes les pages. */
+    private static String sheet(String page) {
+        int i = page.indexOf("class=\"card pl-head\"");
+        return i < 0 ? page : page.substring(i);
+    }
+
+    /** Une action déjà terminée, pour un joueur, à une date donnée. */
+    private void done(String type, String player, String status, String message, String details,
+                      java.time.Instant at) {
+        String id = store.createAction(TestConfig.AGENT_ID, type, Map.of("player", player), "owner");
+        store.recordResult(id, TestConfig.AGENT_ID, com.lodygames.rpgquest.panel.agent.AgentActionStatus.valueOf(status),
+                "", message, "{\"action_id\":\"" + id + "\",\"status\":\"" + status + "\",\"details\":" + details + "}", at);
+    }
+
+    // ---- Issue #317 : résultats de reset datés, jamais pris pour une confirmation récente --------
+
+    @Test
+    void theLastKnownResetIsDatedAndBelongsToThisPlayerOnly() throws Exception {
+        start();
+        seedCatalog(CATALOG);
+        java.time.Instant old = java.time.Instant.parse("2026-10-12T08:30:00Z");
+        done("player.resetfull.confirm", UUID_LODY, "SUCCESS", "Reset nouveau joueur complet effectué", "{}", old);
+        String lody = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_LODY + "&tab=progression").body();
+        assertTrue(lody.contains("Dernière remise à zéro connue de cette portée : <time datetime=\"2026-10-12T08:30:00Z\""),
+                "date exacte, à l'heure locale du navigateur");
+        assertTrue(lody.contains("Reset nouveau joueur complet effectué"));
+        assertFalse(lody.contains("pl-feedback"), "un reset d'hier n'est pas présenté comme le résultat du moment");
+        String steve = sheet(get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=progression").body());
+        assertFalse(steve.contains("Reset nouveau joueur complet effectué"), "jamais le résultat d'un autre joueur");
+        assertTrue(steve.contains("Aucune remise à zéro de cette portée connue pour ce joueur."));
+    }
+
+    @Test
+    void aPlayersOwnResultIsFoundEvenIfAnotherPlayerActedLater() throws Exception {
+        start();
+        seedCatalog(CATALOG);
+        java.time.Instant t = java.time.Instant.now().minusSeconds(600);
+        done("player.resetnew.preview", UUID_LODY, "SUCCESS", "Aperçu pour LoDyMcFly", "{\"lines\":[]}", t);
+        done("player.resetnew.preview", UUID_STEVE, "SUCCESS", "Aperçu pour Steve", "{\"lines\":[]}", t.plusSeconds(60));
+        String lody = sheet(get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_LODY + "&tab=progression").body());
+        assertTrue(lody.contains("Aperçu pour LoDyMcFly"));
+        assertFalse(lody.contains("Aperçu pour Steve"));
+        assertTrue(lody.contains("Aperçu du <time"), "l'aperçu porte sa propre date");
+    }
+
+    // ---- Issue #319 : valeur relue, valeur proposée, ancien résultat ----------------------------
+
+    @Test
+    void anAbsentVariableIsNeverShownAsFalseAndTheNewValueStartsEmpty() throws Exception {
+        start();
+        seedCatalog(CATALOG);
+        done("player.variable.get", UUID_STEVE, "SUCCESS", "Steve : CLAIM_TIER_1 absente",
+                "{\"key\":\"CLAIM_TIER_1\",\"present\":false}", java.time.Instant.now());
+        String page = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=outils").body();
+        assertTrue(page.contains("<em>absente</em>"), "absente ≠ false");
+        assertTrue(page.contains("name=\"value\" value=\"\""), "la saisie ne se fait pas passer pour la valeur stockée");
+        done("player.variable.set", UUID_STEVE, "SUCCESS", "écrit, puis relu",
+                "{\"key\":\"CLAIM_TIER_1\",\"present\":true,\"value\":\"false\"}", java.time.Instant.now().plusSeconds(5));
+        String after = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=outils").body();
+        assertTrue(after.contains("<code>CLAIM_TIER_1</code> = <strong>false</strong>"), "valeur relue après écriture");
+    }
+
+    @Test
+    void aValueTheGameWouldMisreadIsRefusedByThePanelToo() {
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("player.variable.set",
+                Map.of("player", UUID_STEVE, "key", "CLAIM_TIER_1", "value", "lasagne", "confirm", "true"));
+        assertFalse(v.valid());
+        assertTrue(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("player.variable.set",
+                Map.of("player", UUID_STEVE, "key", "STARTER_KIT_TIER", "value", "2", "confirm", "true")).valid());
+    }
+
     private void start() throws Exception {
         String db = tmp.resolve("cp.db").toString();
         app = new PanelApp(TestConfig.withAgent(db, "http://127.0.0.1:1/admin/v1"),
                 new InMemoryAuditLog(), new BridgeClient(Duration.ofMillis(300), Duration.ofMillis(400)),
-                new AgentStore(db));
+                store = new AgentStore(db));
         port = app.start();
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         jar.clear();

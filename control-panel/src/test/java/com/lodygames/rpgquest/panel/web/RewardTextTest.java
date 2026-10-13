@@ -125,15 +125,16 @@ class RewardTextTest {
 
         // « 250 pièce(s) » et non « Objet : … ×250 » : un admin doit voir d'un coup d'œil que
         // cette récompense crédite un solde au lieu de remplir un inventaire.
-        assertEquals("250 pièce(s)", r.label());
+        assertEquals("250 LodyCoins", r.label());
         assertNull(r.rawDetail(), "rien à cacher : le libellé EST la donnée");
     }
 
     @Test
     void theLegacyFlatMoneyStringIsAlsoUnderstood() {
         // Chaîne produite par describeRewards d'un plugin antérieur au payload structuré.
-        assertEquals("250 pièce(s)", RewardText.parse("+250 pièce(s)").label());
-        assertEquals("7 pièce(s)", RewardText.parse("7 pièce(s)").label());
+        assertEquals("250 LodyCoins", RewardText.parse("+250 pièce(s)").label());
+        assertEquals("250 LodyCoins", RewardText.parse("+250 LodyCoins").label(), "nouveau format du plugin");
+        assertEquals("7 LodyCoins", RewardText.parse("7 pièce(s)").label());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.command;
 
+import com.lodygames.rpgquest.economy.CurrencyName;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.economy.PayOutcome;
@@ -65,7 +66,7 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
         }
         economyService.balance(player.getUniqueId()).thenAccept(balance -> runOnMainThread(() ->
                 player.sendMessage(MM.deserialize(
-                        "<gold>Solde :</gold> <white><balance> pièce(s)</white>",
+                        "<gold>Solde :</gold> <white><balance> " + CurrencyName.get() + "</white>",
                         Placeholder.unparsed("balance", String.valueOf(balance))))));
     }
 
@@ -159,7 +160,7 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
 
     private void sendAdminResult(CommandSender sender, Player target, String verb, long amount) {
         sender.sendMessage(MM.deserialize(
-                "<green><amount> pièce(s) <verb></green> <white><player></white>",
+                "<green><amount> " + CurrencyName.get() + " <verb></green> <white><player></white>",
                 Placeholder.unparsed("amount", String.valueOf(amount)),
                 Placeholder.unparsed("verb", verb),
                 Placeholder.unparsed("player", target.getName())));
@@ -215,7 +216,7 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
 
     private void sendUsage(CommandSender sender) {
         sender.sendMessage(MM.deserialize("<yellow>/money</yellow> <gray>- affiche ton solde</gray>"));
-        sender.sendMessage(MM.deserialize("<yellow>/money pay <joueur> <montant></yellow> <gray>- envoie des pièces</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/money pay <joueur> <montant></yellow> <gray>- envoie des " + CurrencyName.get() + "</gray>"));
         sender.sendMessage(MM.deserialize(
                 "<yellow>/money admin give|take|set <joueur> <montant></yellow> <gray>- (rpgquest.admin)</gray>"));
     }

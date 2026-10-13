@@ -3347,6 +3347,23 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
     `skinMatchesSource` (vrai / faux / inconnu) ; faux ⇒ la fiche dit « Il ne porte pas son
     apparence en jeu » et propose **Réessayer**.
 
+### Paramètres généraux (issue #335)
+
+-   Fichier `plugins/RPGQuest/settings.yml`, propriété du plugin (`settings.GameSettingsService`) :
+    `economy.currency-name` (défaut `LodyCoins`), `login.beta-warning.enabled` (défaut `true`),
+    `login.beta-warning.text`, `meta.updated-at|by`. Écriture atomique puis relecture ; fichier
+    illisible jamais écrasé (valeurs par défaut + motif affiché). Actions agent `settings.get`,
+    `settings.set` (clés `currency_name`, `beta_warning_enabled`, `beta_warning_text`, `actor`).
+-   Monnaie : `economy.CurrencyName` (affichage seulement) ; placeholder `<currency>` dans tous les
+    messages de `messages.yml`.
+-   Avertissement bêta (#28) : `settings.BetaWarningService`, une fenêtre par connexion (Paper Dialog
+    ou chat, même mécanisme que l'avertissement du Wild), préférence `BETA_WARNING_HIDDEN`.
+-   OP/DEOP (#316) : `player.OperatorNoticeService`, message privé après changement relu ; absent :
+    résumé de l'état final à la connexion (`OP_NOTICE_STATE`). Messages `player.op-*`.
+-   Variables typées (#319) : `web.agent.VariableTypes` (`CLAIM_TIER_<n>`, préférences = `true`/`false` ;
+    `STARTER_KIT_TIER` = entier 1–99). Plan `CLAIM_TIER` entier : `docs/audits/claim-tier-entier.md`.
+-   Droits : matrice `docs/PERMISSIONS.md` (#27).
+
 ### Dialogues dans PlugAdmin (issue #332)
 
 -   `/dialogues` : liste lisible (« Dialogue de Lucien », personnage, état en jeu), « Créer un

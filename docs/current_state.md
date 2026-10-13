@@ -6,6 +6,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Paramètres généraux (#335, 14/10/2026)** — PlugAdmin > Paramètres généraux : nom de la monnaie
+> (LodyCoins, propagé partout), avertissement bêta à la connexion (#28, « OK » / « OK et ne plus
+> afficher »), rubrique Administration sans faux interrupteur (#35 à venir) ; `settings.yml` écrit et
+> relu par le plugin. OP/DEOP : message privé au joueur (#316). Joueurs : résultats de reset datés et
+> par joueur (#317), variables relues et typées (#319, migration `CLAIM_TIER` préparée seulement).
+> Matrice des droits : `docs/PERMISSIONS.md` (#27).
+>
 > **Dialogues et Joueurs simplifiés dans PlugAdmin (#332, #328, 13/10/2026)** — dialogues : liste
 > lisible, éditeur « Le personnage dit… / Le joueur peut répondre… / Ensuite… », proposition de
 > quête par titre, conditions avancées repliées, aller-retour sans perte, « Enregistrer » puis

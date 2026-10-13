@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.economy.merchant;
 
+import com.lodygames.rpgquest.economy.CurrencyName;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.economy.EconomyService;
@@ -175,7 +176,7 @@ public final class MerchantTradeService implements PluginService {
                 : MM.deserialize("<yellow>Vente</yellow> <gray>: clic pour vendre</gray>"));
         lore.add(MM.deserialize("<white>Quantité :</white> <gray><amount></gray>",
                 Placeholder.unparsed("amount", String.valueOf(offer.quantity()))));
-        lore.add(MM.deserialize("<white>Prix :</white> <gold><price> pièce(s)</gold>",
+        lore.add(MM.deserialize("<white>Prix :</white> <gold><price> " + CurrencyName.get() + "</gold>",
                 Placeholder.unparsed("price", String.valueOf(offer.price()))));
         if (offer.requiredPermission() != null) {
             lore.add(MM.deserialize("<gray>Requiert la permission <permission></gray>",

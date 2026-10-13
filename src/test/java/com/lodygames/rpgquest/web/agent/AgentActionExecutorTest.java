@@ -1165,6 +1165,21 @@ class AgentActionExecutorTest {
         assertEquals("true", actions.lastVariableValue);
     }
 
+    @Test
+    void variableSetRefusesAValueTheGameWouldMisreadAndRereadsWhatItWrote() {
+        actions.lastVariableValue = null;
+        AgentActionOutcome lasagne = run(new AgentAction("v3", "player.variable.set",
+                Map.of("player", "Rondoudou9000", "key", "CLAIM_TIER_1", "value", "lasagne")));
+        assertEquals(AgentActionOutcome.REJECTED, lasagne.status(), "issue #319");
+        assertNull(actions.lastVariableValue, "rien n'est écrit");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("v4", "player.variable.set",
+                Map.of("player", "Rondoudou9000", "key", "STARTER_KIT_TIER", "value", "true"))).status());
+        AgentActionOutcome ok = run(new AgentAction("v5", "player.variable.set",
+                Map.of("player", "Rondoudou9000", "key", "STARTER_KIT_TIER", "value", "3")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status(), ok.message());
+        assertTrue(ok.details().containsKey("present"), "la valeur relue accompagne le résultat");
+    }
+
     // ---- content.export (issue #108) --------------------------------------------------
 
     @Test
@@ -2522,7 +2537,7 @@ class AgentActionExecutorTest {
             lastRetryGrant = grantId;
             boolean ok = "PAID".equals(retryCode);
             return CompletableFuture.completedFuture(new QuestRewardRetryView(ok, retryCode,
-                    ok ? "Récompense créditée : 70 pièce(s). Nouveau solde : 70."
+                    ok ? "Récompense créditée : 70 LodyCoins. Nouveau solde : 70."
                             : "Déjà réglée : aucun second crédit.", ok ? 70L : 70L, ok ? 70L : 0L));
         }
 

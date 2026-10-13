@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.web.agent;
 
+import com.lodygames.rpgquest.economy.CurrencyName;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.content.pack.ContentFamily;
@@ -886,6 +887,49 @@ public final class BukkitAgentActions implements AgentActions {
     private com.lodygames.rpgquest.claim.ClaimBorderRenderer cityBorderRenderer;
 
     /** Branché au démarrage : registre, découvertes, gestes en attente et rendu du contour. */
+    private com.lodygames.rpgquest.settings.GameSettingsService gameSettings;
+    private com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices;
+
+    /** Issue #316 — message privé au joueur après un OP/DEOP réel. */
+    public void setOperatorNotices(com.lodygames.rpgquest.player.OperatorNoticeService service) {
+        this.operatorNotices = service;
+    }
+
+    /** Issue #335 — paramètres généraux. */
+    public void setGameSettings(com.lodygames.rpgquest.settings.GameSettingsService service) {
+        this.gameSettings = service;
+    }
+
+    @Override
+    public CompletableFuture<GameSettingsView> settingsGet() {
+        if (gameSettings == null) {
+            return AgentActions.super.settingsGet();
+        }
+        return done(settingsView(true, "Paramètres relus sur le serveur.", gameSettings.current()));
+    }
+
+    @Override
+    public CompletableFuture<GameSettingsView> settingsSet(Map<String, String> changes, String actor) {
+        if (gameSettings == null) {
+            return AgentActions.super.settingsGet();
+        }
+        // Le fichier est minuscule : l'écriture se fait hors du thread principal, jamais sur un événement.
+        return CompletableFuture.supplyAsync(() -> {
+            var saved = gameSettings.update(changes, actor);
+            return settingsView(saved.ok(), saved.message(), saved.settings());
+        });
+    }
+
+    private GameSettingsView settingsView(boolean ok, String message, com.lodygames.rpgquest.settings.GameSettings s) {
+        var d = com.lodygames.rpgquest.settings.GameSettings.DEFAULTS;
+        return new GameSettingsView(ok, message, Map.of("currency_name", s.currencyName(),
+                "beta_warning_enabled", String.valueOf(s.betaWarningEnabled()),
+                "beta_warning_text", s.betaWarningText()),
+                Map.of("currency_name", d.currencyName(), "beta_warning_enabled", String.valueOf(d.betaWarningEnabled()),
+                        "beta_warning_text", d.betaWarningText()),
+                gameSettings.updatedAt(), gameSettings.updatedBy(), gameSettings.loadProblem());
+    }
+
     public void setCities(com.lodygames.rpgquest.city.CityRegistry registry,
                           com.lodygames.rpgquest.city.CityDiscoveryService discovery,
                           com.lodygames.rpgquest.city.PendingCityRegistry pendings,
@@ -4007,8 +4051,14 @@ public final class BukkitAgentActions implements AgentActions {
                 }
                 plugin.getSLF4JLogger().warn("[player-admin] {} est désormais {} (OP Minecraft).",
                         label, op ? "OP" : "non OP");
+                // Issue #316 : le joueur est prévenu en privé, seulement maintenant que l'état relu a changé.
+                String notice = operatorNotices == null ? "Le joueur n'a pas été prévenu (service indisponible)."
+                        : operatorNotices.changed(playerId, !op, op)
+                                == com.lodygames.rpgquest.player.OperatorNoticeService.Delivery.DELIVERED
+                                ? "Message privé envoyé au joueur."
+                                : "Joueur hors ligne : il sera prévenu à sa prochaine connexion.";
                 return done(new MutationResult(true, op ? "OPPED" : "DEOPPED",
-                        label + (op ? " est désormais OP." : " n'est plus OP."),
+                        label + (op ? " est désormais OP. " : " n'est plus OP. ") + notice,
                         List.of("OP Minecraft uniquement : rôle PlugAdmin, droits de construction et "
                                 + "bypass de gameplay sont inchangés.")));
             } catch (RuntimeException e) {
@@ -4362,7 +4412,7 @@ public final class BukkitAgentActions implements AgentActions {
             }
             return economyService.payQuestReward(playerId, grantId).thenApply(receipt -> switch (receipt.status()) {
                 case CREDITED -> new QuestRewardRetryView(true, "PAID",
-                        "Récompense créditée : " + receipt.amount() + " pièce(s). Nouveau solde : "
+                        "Récompense créditée : " + CurrencyName.amount(receipt.amount()) + ". Nouveau solde : "
                                 + receipt.balanceAfter() + ".", receipt.amount(), receipt.balanceAfter());
                 case ALREADY_CREDITED -> new QuestRewardRetryView(false, "ALREADY_PAID",
                         "Déjà réglée : aucun second crédit.", receipt.amount(), receipt.balanceAfter());
@@ -4406,7 +4456,7 @@ public final class BukkitAgentActions implements AgentActions {
                 case ItemReward r -> "+" + r.amount() + "x " + r.material();
                 case VariableReward r -> "variable " + r.key() + " = " + r.value();
                 case CommandReward r -> "commande console : " + truncate(r.command(), 60);
-                case MoneyReward r -> "+" + r.amount() + " pièce(s)";
+                case MoneyReward r -> "+" + CurrencyName.amount(r.amount());
             });
         }
         return out;
@@ -4456,7 +4506,7 @@ public final class BukkitAgentActions implements AgentActions {
                 case CommandReward r -> new RewardSummary("COMMAND", 0, null, null, r.command(),
                         "commande console : " + r.command());
                 case MoneyReward r -> new RewardSummary("MONEY", r.amount(), null, null, null,
-                        "+" + r.amount() + " pièce(s)");
+                        "+" + CurrencyName.amount(r.amount()));
             });
         }
         return out;

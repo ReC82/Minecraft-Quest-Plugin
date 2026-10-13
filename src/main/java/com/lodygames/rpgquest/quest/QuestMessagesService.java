@@ -73,6 +73,11 @@ public final class QuestMessagesService implements PluginService {
                 if (!disk.isSet(entry.getKey())) {
                     disk.set(entry.getKey(), entry.getValue());
                     changed = true;
+                } else if (entry.getValue().equals(upgradeOf(entry.getKey(), disk.getString(entry.getKey())))) {
+                    // Ancien texte par défaut resté tel quel : remplacé par le nouveau. Un texte
+                    // modifié à la main ne correspond à aucun ancien défaut et n'est jamais touché.
+                    disk.set(entry.getKey(), entry.getValue());
+                    changed = true;
                 }
             }
             return changed;
@@ -81,6 +86,26 @@ public final class QuestMessagesService implements PluginService {
             return false;
         }
     }
+
+    /**
+     * Anciens textes par défaut remplacés depuis (issue #335 : « pièce(s) » → nom de la monnaie).
+     * Renvoie le nouveau texte attendu si {@code onDisk} est exactement un ancien défaut, sinon
+     * {@code null}.
+     */
+    static String upgradeOf(String key, String onDisk) {
+        if (onDisk == null) {
+            return null;
+        }
+        String retired = RETIRED_DEFAULTS.get(key);
+        return onDisk.equals(retired) ? onDisk.replace("pièce(s)", "<currency>").replace("en pièces", "en <currency>")
+                : null;
+    }
+
+    private static final Map<String, String> RETIRED_DEFAULTS = Map.of(
+            "quest.reward-money-credited", "<gold>Récompense de</gold> <white><quest></white> <gold>:</gold> "
+                    + "<yellow>+<amount> pièce(s)</yellow> <gray>— solde :</gray> <white><balance></white>",
+            "quest.reward-money-failed", "<red>Ta récompense en pièces n'a pas pu être créditée. Rien n'a été "
+                    + "perdu de ta progression : signale-le à un administrateur.</red>");
 
     public QuestMessages current() {
         return current;

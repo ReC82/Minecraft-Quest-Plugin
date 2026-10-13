@@ -41,6 +41,20 @@ public final class RewardText {
     /** Format produit par {@code BukkitAgentActions.describeRewards} pour une récompense MONEY (#16). */
     private static final Pattern MONEY =
             Pattern.compile("^\\+?\\s*(\\d+)\\s*pièce\\(s\\)$", Pattern.CASE_INSENSITIVE);
+
+    /** Issue #335 — nom affiché de la monnaie, celui des Paramètres généraux du serveur. */
+    private static volatile String currency = "LodyCoins";
+
+    /** Réglé par le panel depuis le dernier relevé des paramètres généraux. */
+    public static void useCurrency(String name) {
+        if (name != null && !name.isBlank()) {
+            currency = name.trim();
+        }
+    }
+
+    public static String currency() {
+        return currency;
+    }
     private static final Pattern VARIABLE = Pattern.compile("^variable\\s+(\\S+)\\s*=\\s*(.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern COMMAND = Pattern.compile("^commande console\\s*:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 
@@ -78,7 +92,7 @@ public final class RewardText {
             }
             // Issue #16 : « pièces » et non « objet ». La distinction compte pour un admin — une
             // récompense monétaire ne remplit pas l'inventaire, elle crédite un solde persistant.
-            case "MONEY" -> new Reward(asLong(summary.get("amount")) + " pièce(s)", null);
+            case "MONEY" -> new Reward(asLong(summary.get("amount")) + " " + currency, null);
             case "COMMAND" -> fromCommand(str(summary.get("command")).trim());
             default -> parse(str(summary.get("raw")));
         };
@@ -113,7 +127,13 @@ public final class RewardText {
         // AVANT le motif ITEM : « 100 pièce(s) » ne doit pas être lu comme un objet nommé.
         m = MONEY.matcher(s);
         if (m.matches()) {
-            return new Reward(m.group(1) + " pièce(s)", null);
+            return new Reward(m.group(1) + " " + currency, null);
+        }
+        // Le plugin écrit désormais « +250 LodyCoins » (le nom configuré).
+        Matcher named = Pattern.compile("^\\+?\\s*(\\d+)\\s*" + Pattern.quote(currency) + "$",
+                Pattern.CASE_INSENSITIVE).matcher(s);
+        if (named.matches()) {
+            return new Reward(named.group(1) + " " + currency, null);
         }
 
         m = ITEM.matcher(s);

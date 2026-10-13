@@ -24,5 +24,6 @@ dialogues-depannage.md
 quetes-depannage.md
 stories-depannage.md
 exploitation-serveur.md
+parametres-generaux.md
 serveur-depannage.md
 contenu-publier-sur-dev.md

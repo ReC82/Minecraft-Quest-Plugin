@@ -2316,13 +2316,28 @@ public final class PanelApp {
             notes.add("PNJ du pack non créés : votre rôle ne permet pas de créer des PNJ (à faire depuis la page des PNJ).");
             return notes;
         }
+        // Les fichiers de la source sont déjà écrits à ce stade : un échec ici doit être DIT sur la
+        // page (le PNJ se crée alors depuis la page des PNJ), jamais faire échouer la réponse.
+        if (agentId == null || agentId.isBlank()) {
+            notes.add("PNJ du pack non créés : aucun agent serveur configuré (à créer depuis la page des PNJ).");
+            return notes;
+        }
         for (Map<String, String> form : creations) {
             var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.definition.create", form);
             if (!v.valid()) {
                 notes.add("PNJ « " + form.get("npc_id") + " » non créé : " + v.error());
                 continue;
             }
-            String id = agentStore.createAction(agentId, "npc.definition.create", v.params(), session.username());
+            String id;
+            try {
+                id = agentStore.createAction(agentId, "npc.definition.create", v.params(), session.username());
+            } catch (IllegalStateException e) {
+                audit.record(session.username(), "content.import.npc", "npc=" + form.get("npc_id"), "FAILED",
+                        e.getMessage(), rid);
+                notes.add("PNJ « " + form.get("npc_id") + " » non créé : l'action n'a pas pu être enregistrée "
+                        + "(à créer depuis la page des PNJ).");
+                continue;
+            }
             audit.record(session.username(), "content.import.npc", "npc=" + form.get("npc_id") + " action=" + id,
                     "OK", "", rid);
             notes.add("PNJ logique « " + form.get("npc_id") + " » : création envoyée au serveur (action " + id.substring(0, 8)

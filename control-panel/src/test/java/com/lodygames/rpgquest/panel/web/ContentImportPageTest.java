@@ -283,15 +283,40 @@ class ContentImportPageTest {
         assertTrue(Files.isRegularFile(contentRoot.resolve("dialogues/julius.yml")));
     }
 
+    /**
+     * Sans agent configuré, la création des PNJ du pack ne peut pas partir : la source est écrite,
+     * et la page le DIT — elle ne doit pas répondre vide (constat du rendu local #211).
+     */
+    @Test
+    void withoutAnAgentTheImportStillAnswersAndSaysTheCharactersAreNotCreated() throws Exception {
+        start(false);
+        login();
+        String lily = com.lodygames.rpgquest.panel.content.StoryKit.lilyPack();
+
+        HttpResponse<String> res = post("/content/import", "pack=" + enc(lily) + "&confirm=true&_csrf="
+                + csrf(get("/content/import").body()));
+
+        assertEquals(200, res.statusCode());
+        assertTrue(res.body().contains("Import enregistré"));
+        assertTrue(res.body().contains("aucun agent serveur configuré"), "le motif doit être affiché");
+        assertTrue(Files.isRegularFile(contentRoot.resolve("stories/lily_souvenirs.yml")));
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     private void start() throws Exception {
+        start(true);
+    }
+
+    private void start(boolean withAgent) throws Exception {
         contentRoot = tmp.resolve("content");
         for (String kind : com.lodygames.rpgquest.panel.content.ContentWorkspace.KINDS) {
             Files.createDirectories(contentRoot.resolve(kind));
         }
         String db = tmp.resolve("cp.db").toString();
-        app = new PanelApp(TestConfig.withContentDir(db, "http://127.0.0.1:1/admin/v1", contentRoot.toString()),
+        app = new PanelApp(withAgent
+                ? TestConfig.withContentDir(db, "http://127.0.0.1:1/admin/v1", contentRoot.toString())
+                : TestConfig.withContentDirNoAgent(db, "http://127.0.0.1:1/admin/v1", contentRoot.toString()),
                 new InMemoryAuditLog(), new BridgeClient(Duration.ofMillis(300), Duration.ofMillis(400)),
                 new AgentStore(db));
         port = app.start();

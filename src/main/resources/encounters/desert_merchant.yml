@@ -1,0 +1,17 @@
+# Modèle de PNJ récurrent (issue #13) — voir forest_bandit.yml et docs/ENCOUNTERS.md.
+# Donneur de quêtes d'exploration, distinct des catalogues d'achat/vente des marchands (#17).
+id: desert_merchant
+display_name: "Marchand égaré"
+description: "Marchand séparé de sa caravane, propose des quêtes de livraison et de recherche."
+npc_id: encounter_merchant
+role: marchand
+family: desert
+biomes:
+  - minecraft:desert
+  - minecraft:badlands
+  - minecraft:eroded_badlands
+  - minecraft:wooded_badlands
+worlds: []
+weight: 10
+max_sites: 0
+enabled: true

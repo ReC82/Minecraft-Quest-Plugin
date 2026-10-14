@@ -22,7 +22,8 @@ public record PluginConfig(
         StarterToolKitConfig starterToolKit,
         WildConfig wild,
         NpcHintConfig npcHints,
-        CityConfig cities
+        CityConfig cities,
+        EncounterConfig encounters
 ) {
 
     /**

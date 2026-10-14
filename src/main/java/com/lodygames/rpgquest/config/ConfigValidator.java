@@ -50,10 +50,32 @@ public final class ConfigValidator {
         WildConfig wild = validateWild(section);
         NpcHintConfig npcHints = validateNpcHints(section);
         CityConfig cities = validateCities(section);
+        EncounterConfig encounters = validateEncounters(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
                 backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit,
-                wild, npcHints, cities);
+                wild, npcHints, cities, encounters);
+    }
+
+    /** Section {@code encounters:} (issue #13) — PNJ récurrents par instance de biome, bornée. */
+    private static EncounterConfig validateEncounters(ConfigurationSection section) {
+        ConfigurationSection encounters = section.getConfigurationSection("encounters");
+        EncounterConfig defaults = EncounterConfig.defaults();
+        if (encounters == null) {
+            return defaults;
+        }
+        List<String> worlds = encounters.getStringList("worlds").stream()
+                .map(String::trim).filter(w -> !w.isEmpty()).distinct().toList();
+        return new EncounterConfig(
+                encounters.getBoolean("enabled", defaults.enabled()),
+                worlds,
+                encounters.getInt("max-per-world", defaults.maxPerWorld()),
+                encounters.getInt("min-distance", defaults.minDistance()),
+                encounters.getInt("max-distance", defaults.maxDistance()),
+                encounters.getInt("candidate-attempts", defaults.candidateAttempts()),
+                encounters.getLong("move-throttle-millis", defaults.moveThrottleMillis()),
+                encounters.getInt("minimum-spacing", defaults.minimumSpacing()),
+                encounters.getInt("waypoint-clearance", defaults.waypointClearance())).bounded();
     }
 
     /** Section {@code cities:} (issue #178) — durées du titre « Bienvenue à … », bornées. */

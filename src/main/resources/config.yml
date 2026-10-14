@@ -476,3 +476,22 @@ cities:
       fade-in-ticks: 10
       stay-ticks: 70
       fade-out-ticks: 20
+
+encounters:
+  # PNJ récurrents par instance de biome (issue #13, voir encounter.EncounterService et
+  # docs/ENCOUNTERS.md). Quand un joueur entre dans une instance de biome — le même découpage que
+  # les waypoints (travel.waypoint.region-size) — et qu'un modèle de plugins/RPGQuest/encounters/
+  # accepte ce biome, UN SEUL PNJ Citizens y apparaît, à distance du joueur, sur un sol sûr. Il est
+  # persistant et partagé par tous ; dialogue et quêtes restent personnels. Génération paresseuse :
+  # rien n'est généré au démarrage, aucun chunk n'est chargé pour cela. Exige Citizens.
+  enabled: true
+  # Mondes autorisés ; vide = le seul travel.wild-world. Le Hub et le monde des claims sont
+  # TOUJOURS exclus, même s'ils sont listés ici.
+  worlds: []
+  max-per-world: 200          # plafond d'occurrences par monde (0 = aucune nouvelle apparition)
+  min-distance: 24            # jamais à moins de ce rayon du joueur (8–128)
+  max-distance: 64            # rayon max de recherche autour du point d'entrée
+  candidate-attempts: 12      # points testés avant d'abandonner et de programmer un nouvel essai
+  move-throttle-millis: 2000  # intervalle min entre deux évaluations pour un même joueur
+  minimum-spacing: 96         # distance minimale entre deux rencontres
+  waypoint-clearance: 12      # distance minimale entre une rencontre et un waypoint

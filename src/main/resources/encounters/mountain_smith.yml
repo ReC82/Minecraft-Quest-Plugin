@@ -1,0 +1,21 @@
+# Modèle de PNJ récurrent (issue #13) — voir forest_bandit.yml et docs/ENCOUNTERS.md.
+id: mountain_smith
+display_name: "Forgeron perdu"
+description: "Forgeron égaré dans les hauteurs, propose des quêtes de minerai et de combustible."
+npc_id: encounter_smith
+role: forgeron
+family: mountain
+biomes:
+  - minecraft:windswept_hills
+  - minecraft:windswept_gravelly_hills
+  - minecraft:windswept_forest
+  - minecraft:meadow
+  - minecraft:grove
+  - minecraft:snowy_slopes
+  - minecraft:jagged_peaks
+  - minecraft:frozen_peaks
+  - minecraft:stony_peaks
+worlds: []
+weight: 10
+max_sites: 0
+enabled: true

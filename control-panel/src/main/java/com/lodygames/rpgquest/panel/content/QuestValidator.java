@@ -166,6 +166,9 @@ public final class QuestValidator {
             if ("MONEY".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
                 moneyRewardWarnings(out, ctx, r.get("amount"));
             }
+            if ("HEART".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
+                heartRewardChecks(out, ctx, r.get("amount"), r.get("key"));
+            }
         }
 
         // --- Variables ---
@@ -186,6 +189,33 @@ public final class QuestValidator {
      * la seule erreur réellement coûteuse ici.
      */
     static final long MONEY_REWARD_WARNING_THRESHOLD = 1_000_000L;
+
+    /** Plafond technique d'une récompense HEART : 512 cœurs = 1024 PV (attribute.maxHealth.max). */
+    static final int HEART_REWARD_MAX = 512;
+    /** Seuil au-delà duquel un nombre de cœurs est signalé, jamais refusé (issue #166). */
+    static final int HEART_REWARD_WARNING_THRESHOLD = 5;
+    private static final Pattern HEART_GRANT_KEY = Pattern.compile("[a-z0-9_.:\\-]{1,128}");
+
+    private static void heartRewardChecks(List<Diagnostic> out, String ctx, String rawAmount, String rawKey) {
+        Long hearts = rawAmount == null || rawAmount.isBlank() ? Long.valueOf(1) : parseLong(rawAmount);
+        if (hearts != null && hearts > HEART_REWARD_MAX) {
+            out.add(Diagnostic.error(ctx, "« Nombre de cœurs » ne peut pas dépasser " + HEART_REWARD_MAX
+                    + " (plafond technique de la vie maximale côté serveur)."));
+        } else if (hearts != null && hearts > HEART_REWARD_WARNING_THRESHOLD) {
+            out.add(Diagnostic.warning(ctx, hearts + " cœurs d'un coup : inhabituel. Rien ne l'interdit — "
+                    + "vérifie seulement qu'il ne s'agit pas d'une faute de frappe."));
+        }
+        String key = rawKey == null ? "" : rawKey.trim();
+        if (!key.isEmpty() && !HEART_GRANT_KEY.matcher(key).matches()) {
+            out.add(Diagnostic.error(ctx, "Clé de droit « " + key + " » invalide : minuscules, chiffres et "
+                    + "« _ . : - » uniquement (128 caractères au plus)."));
+        }
+        out.add(Diagnostic.info(ctx, key.isEmpty()
+                ? "Cœur supplémentaire propre à cette quête : accordé une seule fois par joueur, même si la "
+                        + "quête est répétable."
+                : "Cœur supplémentaire partagé sous la clé « " + key + " » : une seule fois par joueur pour "
+                        + "toutes les quêtes portant cette clé."));
+    }
 
     private static void moneyRewardWarnings(List<Diagnostic> out, String ctx, String rawAmount) {
         out.add(Diagnostic.info(ctx, "Récompense en pièces : crédite le portefeuille persistant du joueur "

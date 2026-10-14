@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.quest.model;
 
-public sealed interface QuestReward permits ExperienceReward, ItemReward, VariableReward, CommandReward, MoneyReward {
+public sealed interface QuestReward permits ExperienceReward, ItemReward, VariableReward, CommandReward, MoneyReward,
+        HeartReward {
 
     RewardType type();
 }

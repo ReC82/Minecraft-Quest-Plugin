@@ -140,7 +140,9 @@ public record QuestPackEntry(
      *   <li>{@code EXPERIENCE} : {@code amount} ;</li>
      *   <li>{@code ITEM} : {@code material} + {@code amount} ;</li>
      *   <li>{@code VARIABLE} : {@code key} + {@code value} ;</li>
-     *   <li>{@code COMMAND} : {@code command} (contenu éditorial, jamais un secret).</li>
+     *   <li>{@code COMMAND} : {@code command} (contenu éditorial, jamais un secret) ;</li>
+     *   <li>{@code MONEY} : {@code amount} ;</li>
+     *   <li>{@code HEART} : {@code amount} (cœurs) + {@code key} facultative (clé de droit).</li>
      * </ul>
      */
     public record Reward(String type, Integer amount, String material, String key, String value, String command) {
@@ -164,6 +166,15 @@ public record QuestPackEntry(
         /** Récompense monétaire (issue #16) : seul {@code amount} est porteur de sens. */
         public static Reward money(int amount) {
             return new Reward("MONEY", amount, null, null, null, null);
+        }
+
+        /**
+         * Cœur(s) de vie maximum (issue #166) : {@code amount} cœurs ; {@code key} = clé de droit
+         * partagée, {@code null} quand le droit est propre à la quête. Aucun nouveau champ : le
+         * format public des packs reste celui de {@code VARIABLE} pour la clé.
+         */
+        public static Reward heart(int hearts, String key) {
+            return new Reward("HEART", hearts, null, key, null, null);
         }
     }
 }

@@ -80,6 +80,8 @@ public final class Icons {
             // Issue #16 : récompense monétaire de quête et outils de monnaie. Glyphe vérifié
             // présent dans la police embarquée (.bi-coin), donc jamais le repli info-circle.
             Map.entry("money", "coin"),
+            // Issue #166 : récompense « Cœur supplémentaire » (.bi-heart-fill vérifié dans la police).
+            Map.entry("heart", "heart-fill"),
             Map.entry("lock", "lock"),
             Map.entry("clock", "clock"));
 

@@ -90,6 +90,7 @@ import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
+import com.lodygames.rpgquest.quest.model.HeartReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
@@ -4644,6 +4645,7 @@ public final class BukkitAgentActions implements AgentActions {
                 case VariableReward r -> "variable " + r.key() + " = " + r.value();
                 case CommandReward r -> "commande console : " + truncate(r.command(), 60);
                 case MoneyReward r -> "+" + CurrencyName.amount(r.amount());
+                case HeartReward r -> heartRewardText(r);
             });
         }
         return out;
@@ -4694,9 +4696,18 @@ public final class BukkitAgentActions implements AgentActions {
                         "commande console : " + r.command());
                 case MoneyReward r -> new RewardSummary("MONEY", r.amount(), null, null, null,
                         "+" + CurrencyName.amount(r.amount()));
+                // target = clé de droit explicite (null = propre à la quête), comme la clé d'une VARIABLE.
+                case HeartReward r -> new RewardSummary("HEART", r.hearts(), r.grantKey(), null, null,
+                        heartRewardText(r));
             });
         }
         return out;
+    }
+
+    /** Issue #166 : « +1 cœur(s) de vie maximum », suivi de la clé de droit si elle est partagée. */
+    private static String heartRewardText(HeartReward reward) {
+        return "+" + reward.hearts() + " cœur(s) de vie maximum"
+                + (reward.grantKey() != null ? " [" + reward.grantKey() + "]" : "");
     }
 
     private static String truncate(String value, int max) {

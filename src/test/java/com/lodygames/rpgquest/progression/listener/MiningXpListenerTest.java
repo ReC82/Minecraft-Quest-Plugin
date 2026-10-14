@@ -62,7 +62,7 @@ class MiningXpListenerTest {
         PlacedBlockRepository placedBlockRepository = new PlacedBlockRepository(database);
 
         ProgressionConfig config = new ProgressionConfig(
-                100L, 1.15, 100, 0.0, 1000, DisplayMode.OFF, true, 50, 15, 5, 4, 10, 100);
+                100L, 1.15, 100, 0.0, 1000, DisplayMode.OFF, true, 50, 15, 5, 4, 10, 100, 0);
         progression = new ProgressionService(plugin, progressionRepository, () -> config, plugin.getSLF4JLogger());
         progression.start();
 

@@ -563,6 +563,21 @@ Champ `giver` (optionnel, racine de la quête) : id logique stable du **PNJ donn
 
 Récompenses (`rewards[].type`, hors périmètre strict de la question mais nécessaires à tout exemple complet) : `EXPERIENCE` (`amount`), `ITEM`, `VARIABLE` (`key`/`value`), `COMMAND` (`command`, liste blanche via `dialogue.allowed-commands` **non requise** ici — seules les actions `RUN_SAFE_COMMAND` de dialogue sont filtrées, une récompense `COMMAND` de quête ne l'est pas, vérifié dans `QUEST_FORMAT.md`/`QuestDefinitionParser`).
 
+**Récompense « Cœur supplémentaire » `HEART` (`amount` facultatif, 1 par défaut, 1 à 512 ; `key`
+facultative — issue #166).** Augmente durablement la vie maximale (1 cœur = 2 PV, affichage natif).
+Droit enregistré par UUID dans `player_heart_grants` (schéma V36, clé primaire
+`(player_uuid, grant_key)`), écrit dans la **même transaction** que la complétion
+(`QuestProgressRepository#completeQuest`). Clé par défaut `quest:<id>` : une quête répétable ne
+donne son cœur qu'une fois ; une `key` partagée (ex. `city:central_city` pour le Stan d'une ville)
+n'en donne qu'un pour toutes les quêtes qui la portent. Application : `health.HeartBonusService`,
+modificateur unique `rpgquest:quest_heart_bonus` (`ADD_NUMBER`) sur `max_health`, recalculé depuis
+la base à la connexion et réappliqué après réapparition (`PlayerPostRespawnEvent`) — jamais
+cumulé, autres sources de vie maximum préservées, base jamais réécrite. Seuls les PV ajoutés sont
+remplis. Plafond gameplay `progression.max-bonus-hearts` (0 = aucun) : au-delà, le droit reste
+acquis et s'active si le plafond monte. Messages `quest.reward-heart-*` (chat, après le commit).
+Le reset joueur conserve les cœurs. Panel : descripteur `HEART` « Cœur supplémentaire » (icône
+cœur), erreur au-delà de 512 ou clé invalide, avertissement au-delà de 5 cœurs.
+
 **Récompense monétaire `MONEY` (`amount`, entier > 0 — issue #16).** Crédite le **portefeuille
 persistant** du joueur (`wallets`, la même source que `/money`, les marchands, le marché et le
 Control Panel). Elle ne donne **aucun objet** : la monnaie RPGQuest est un solde, et aucun objet
@@ -670,7 +685,7 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - **Formulaire guidé** : sections Général / Prérequis / Objectifs / Récompenses /
   Variables (quête) et Général / Chaîne de quêtes (story). Chaque type d'objectif
   (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`,
-  `REACH_LOCATION`, `DELIVER_ITEM_TO_NPC`, `SMELT_ITEM`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`) est décrit par
+  `REACH_LOCATION`, `DELIVER_ITEM_TO_NPC`, `SMELT_ITEM`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`, `HEART`) est décrit par
   **un seul descripteur** (`Descriptors`) qui pilote ensemble libellé, description, champs, aide,
   listes proposées et validation. **Choisir le type n'affiche que les champs pertinents** ; le
   changement est immédiat (JavaScript progressif — `panel.js`) et **efface** les valeurs saisies

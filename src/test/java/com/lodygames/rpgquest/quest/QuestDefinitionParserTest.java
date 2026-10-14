@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
+import com.lodygames.rpgquest.quest.model.HeartReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
@@ -334,6 +335,50 @@ class QuestDefinitionParserTest {
         // L'ORDRE est préservé : il décide de l'ordre d'affichage du résumé de fin de quête.
         assertEquals(List.of(RewardType.EXPERIENCE, RewardType.MONEY, RewardType.ITEM),
                 result.quest().rewards().stream().map(r -> r.type()).toList());
+    }
+
+    // ---- Cœur supplémentaire (issue #166) -------------------------------------------------------
+
+    @Test
+    void aHeartRewardDefaultsToOneHeartOwnedByTheQuest() {
+        QuestDefinitionParser.ParseResult result = parser.parse("heart.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: HEART
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        HeartReward reward = (HeartReward) result.quest().rewards().get(0);
+        assertEquals(1, reward.hearts());
+        assertEquals(RewardType.HEART, reward.type());
+        assertEquals("quest:" + result.quest().id(), reward.effectiveGrantKey(result.quest().id()));
+    }
+
+    @Test
+    void aHeartRewardReadsItsAmountAndSharedGrantKey() {
+        QuestDefinitionParser.ParseResult result = parser.parse("heart.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: HEART
+                    amount: 2
+                    key: city:central_city
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        HeartReward reward = (HeartReward) result.quest().rewards().get(0);
+        assertEquals(2, reward.hearts());
+        assertEquals("city:central_city", reward.effectiveGrantKey(result.quest().id()));
+    }
+
+    @Test
+    void invalidHeartQuantitiesAndKeysAreRefused() {
+        for (String option : new String[] {"amount: 0", "amount: -1", "amount: deux", "amount: 513",
+                "key: \"Central City\"", "key: \"ville/1\""}) {
+            QuestDefinitionParser.ParseResult result = parser.parse("heart.yml", load(minimalQuestWithStepsAnd("""
+                    rewards:
+                      - type: HEART
+                        %s
+                    """.formatted(option))));
+            assertFalse(result.isSuccess(), "« " + option + " » doit être refusé");
+        }
     }
 
     // ---- Remise d'objets à un PNJ (issue #123) -------------------------------------------------

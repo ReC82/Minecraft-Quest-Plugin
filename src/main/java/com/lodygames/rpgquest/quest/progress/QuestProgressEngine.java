@@ -22,7 +22,9 @@ import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
+import com.lodygames.rpgquest.quest.model.HeartReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
+import com.lodygames.rpgquest.health.HeartBonusService;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
@@ -140,6 +142,7 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     private com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar;
+    private @Nullable HeartBonusService heartBonusService;
 
     /**
      * Issue #318 : registre des objets custom, pour connaître l'objet remis par une récompense
@@ -153,6 +156,11 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     /** Issues #69 / #209 — canal partagé de l'action bar, branché au démarrage. */
+    /** Issue #166 : applique les cœurs gagnés ; absent (tests), les droits restent écrits en base. */
+    public void setHeartBonusService(HeartBonusService heartBonusService) {
+        this.heartBonusService = heartBonusService;
+    }
+
     public void setActionBar(com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar) {
         this.actionBar = actionBar;
     }
@@ -1366,11 +1374,24 @@ public final class QuestProgressEngine implements PluginService {
             }
         }
 
+        // Issue #166 : droits aux cœurs de CETTE quête, écrits dans la même transaction que la
+        // complétion — une quête terminée ne peut donc ni perdre son cœur, ni le donner deux fois.
+        List<QuestProgressRepository.HeartGrantRequest> hearts = new ArrayList<>();
+        for (QuestReward reward : quest.rewards()) {
+            if (reward instanceof HeartReward heart) {
+                hearts.add(new QuestProgressRepository.HeartGrantRequest(
+                        heart.effectiveGrantKey(quest.id()), heart.hearts()));
+            }
+        }
+
         // Complétion ET dettes dans la MÊME transaction (voir
-        // QuestProgressRepository#completeQuestWithMoneyDebts) : sans cela, un arrêt brutal entre
+        // QuestProgressRepository#completeQuest) : sans cela, un arrêt brutal entre
         // les deux perd soit la récompense, soit la garantie de ne pas la payer deux fois.
-        repository.completeQuestWithMoneyDebts(playerId, quest.id(), progress.rewardGrantId(), owed)
-                .thenAccept(grantIds -> payRecordedMoneyRewards(playerId, quest, grantIds))
+        repository.completeQuest(playerId, quest.id(), progress.rewardGrantId(), owed, hearts)
+                .thenAccept(completion -> {
+                    payRecordedMoneyRewards(playerId, quest, completion.moneyGrantIds());
+                    applyHeartGrants(playerId, quest, completion.hearts());
+                })
                 .exceptionally(error -> {
                     logger.error("Impossible de persister la fin de quête {} pour {}", quest.id(), playerId, error);
                     // La complétion n'est pas persistée : surtout ne rien annoncer comme payé. Le
@@ -1379,6 +1400,9 @@ public final class QuestProgressEngine implements PluginService {
                         Player online = plugin.getServer().getPlayer(playerId);
                         if (online != null && !owed.isEmpty()) {
                             online.sendMessage(messagesService.current().format("quest.reward-money-failed"));
+                        }
+                        if (online != null && !hearts.isEmpty() && heartBonusService != null) {
+                            heartBonusService.onQuestCompletionFailed(online);
                         }
                     });
                     return null;
@@ -1399,6 +1423,28 @@ public final class QuestProgressEngine implements PluginService {
         for (String grantId : grantIds) {
             payMoneyReward(playerId, quest.title().base(), grantId, true);
         }
+    }
+
+    /**
+     * Applique les droits aux cœurs tout juste écrits (issue #166). Hors ligne entre-temps : rien à
+     * faire, le bonus est recalculé depuis la base à la prochaine connexion.
+     */
+    private void applyHeartGrants(UUID playerId, QuestDefinition quest,
+                                  List<QuestProgressRepository.HeartGrantOutcome> outcomes) {
+        if (outcomes.isEmpty()) {
+            return;
+        }
+        if (heartBonusService == null) {
+            logger.warn("Cœur(s) de la quête {} enregistré(s) pour {} mais aucun service de santé branché : "
+                    + "bonus appliqué à la prochaine connexion.", quest.id(), playerId);
+            return;
+        }
+        runOnMainThread(() -> {
+            Player online = plugin.getServer().getPlayer(playerId);
+            if (online != null) {
+                heartBonusService.onQuestCompleted(online, quest.title().base(), outcomes);
+            }
+        });
     }
 
     // ---- Notifications sobres (Title/ActionBar Adventure, jamais le chat) ----------------------
@@ -1572,6 +1618,9 @@ public final class QuestProgressEngine implements PluginService {
                 // MoneyReward : rien ici. Son crédit est asynchrone ET passe par une dette
                 // durable enregistrée avec la complétion — voir payRecordedMoneyRewards.
                 case MoneyReward r -> { }
+                // HeartReward : idem, le droit est écrit avec la complétion et annoncé après le
+                // commit — voir applyHeartGrants (issue #166).
+                case HeartReward r -> { }
             }
         }
         return lines;

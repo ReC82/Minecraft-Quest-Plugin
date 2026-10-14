@@ -1,0 +1,20 @@
+# QUÊTE DE TEST MANUEL — cœur partagé sous une clé de ville (issue #166, décision « Stan »).
+# Clé « city:test_city » : avec test_heart_city, une seule des deux quêtes accorde un cœur.
+# Voir docs/MANUAL_TEST_PLAN.md, TC-311.
+id: rpgquest:test_heart_city_bis
+title: "<red>[TEST] Cœur de ville (B)</red>"
+description: "<gray>Quête de test manuel — cœur partagé « city:test_city ». Casse 1 bloc de gravier.</gray>"
+category: test
+icon: RED_DYE
+
+steps:
+  - id: break_gravel
+    objectives:
+      - type: BREAK_BLOCK
+        material: GRAVEL
+        amount: 1
+
+rewards:
+  - type: HEART
+    amount: 1
+    key: city:test_city

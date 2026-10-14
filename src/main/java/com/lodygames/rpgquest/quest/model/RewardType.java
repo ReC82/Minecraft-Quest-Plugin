@@ -6,5 +6,7 @@ public enum RewardType {
     VARIABLE,
     COMMAND,
     /** Crédite le portefeuille persistant du joueur (issue #16) — voir {@link MoneyReward}. */
-    MONEY
+    MONEY,
+    /** Cœur(s) de vie maximum permanent(s), une fois par joueur et par clé (issue #166) — voir {@link HeartReward}. */
+    HEART
 }

@@ -11,6 +11,7 @@ import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
+import com.lodygames.rpgquest.quest.model.HeartReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
@@ -775,6 +776,8 @@ public final class QuestJournalService implements QuestJournalUi {
             // infobulle (elle décrit la définition de la quête, pas l'historique du joueur) ; la
             // confirmation du crédit, elle, arrive dans le chat et seulement après la base.
             case MoneyReward r -> Optional.of(Component.text(CurrencyName.amount(r.amount())));
+            // Issue #166 : prévu, une seule fois par joueur et par clé de droit.
+            case HeartReward r -> Optional.of(Component.text("+" + r.hearts() + " ❤ vie maximale"));
         };
     }
 

@@ -168,6 +168,18 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (#138) serait une **seconde source** : décision de gameplay non prise, et **aucune conversion ni
   migration** n'a eu lieu. `TESTER`/`READ_ONLY` lisent sans créer ; `BUILDER`/`CONTENT_EDITOR` n'ont
   aucun accès.
+- **Récompense « Cœur supplémentaire » (issue #166)** — nouveau `RewardType.HEART` (`HeartReward`,
+  `amount` facultatif 1–512, `key` de droit facultative), lu par `QuestDefinitionParser`, éditable
+  dans le panel (descripteur `HEART`), exporté dans les content packs (`amount` + `key`, format
+  inchangé) et décrit par l'agent (`rewardDetails` kind `HEART`). Droit **une fois par joueur et par
+  clé** (`player_heart_grants`, schéma V36), écrit dans la transaction de complétion
+  (`QuestProgressRepository#completeQuest`). Appliqué par `health.HeartBonusService` (modificateur
+  unique `rpgquest:quest_heart_bonus` sur `max_health`, recalculé à la connexion, réappliqué après
+  réapparition, autres sources préservées, seuls les PV ajoutés remplis). Plafond gameplay
+  `progression.max-bonus-hearts` (0 = aucun). Conservé par le reset joueur. La progression « un
+  Stan par ville » (#178) réutilisera la clé `city:<id>` ; l'association ville → Stan dans le panel
+  n'est **pas** livrée par ce lot. Rendu HUD et réapparition réelle : PENDING MANUAL VALIDATION
+  (TC-311).
 - **Récompense monétaire de quête et bourse en jeu (issue #16)** — nouveau `RewardType.MONEY`
   (`MoneyReward`, champ `amount` entier > 0), lu par `QuestDefinitionParser`, éditable depuis
   l'éditeur de quête du panel (descripteur `MONEY`, icône de pièce), exporté dans les content packs

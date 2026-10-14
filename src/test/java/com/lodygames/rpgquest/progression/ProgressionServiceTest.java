@@ -65,7 +65,7 @@ class ProgressionServiceTest {
 
     private ProgressionConfig config(int maxLevel, double globalMirrorRatio, int maxGrantsPerMinute) {
         return new ProgressionConfig(
-                100L, 1.15, maxLevel, globalMirrorRatio, maxGrantsPerMinute, DisplayMode.OFF, true, 50, 15, 5, 4, 10, 100);
+                100L, 1.15, maxLevel, globalMirrorRatio, maxGrantsPerMinute, DisplayMode.OFF, true, 50, 15, 5, 4, 10, 100, 0);
     }
 
     private ProgressionService newService(ProgressionConfig cfg) {

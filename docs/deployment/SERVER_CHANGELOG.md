@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Récompense de quête « Cœur supplémentaire » (#166)
+
+### Changement
+
+Nouveau type de récompense `HEART` : +N cœurs de vie maximum permanents, une fois par joueur et
+par clé de droit (par défaut la quête). Droits en base (`player_heart_grants`, **schéma V36**,
+migration automatique et additive au démarrage). Bonus appliqué par un modificateur
+`rpgquest:quest_heart_bonus` sur `max_health`, recalculé à la connexion. Nouvelle clé
+`progression.max-bonus-hearts: 0` (ajoutée automatiquement par `ConfigFileCompleter`) et
+4 messages `quest.reward-heart-*` (fusionnés automatiquement dans `messages.yml`).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** redéploiement du panel PlugAdmin
+(`scripts/plugadmin/deploy.sh`, nouveau descripteur de récompense). Aucune quête existante n'est
+modifiée : aucun cœur n'est accordé tant qu'aucune quête ne porte de récompense `HEART`.
+
+### Sauvegarde préalable
+
+JAR actuel + `data.db`, faits par `deploy-verygames.sh` (V36 crée une table, ne réécrit rien).
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-311.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer. La table `player_heart_grants` reste (ignorée par
+l'ancien JAR) ; un joueur ayant déjà gagné un cœur garde le modificateur sauvegardé avec son
+profil jusqu'à la réinstallation du JAR #166, qui le recalcule depuis la base.
+
+---
+
 ## 2026-10-14 - Publication de contenu : rechargement cohérent des familles liées (#371)
 
 ### Changement

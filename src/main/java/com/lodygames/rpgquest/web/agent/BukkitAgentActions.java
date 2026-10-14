@@ -920,6 +920,73 @@ public final class BukkitAgentActions implements AgentActions {
         });
     }
 
+    // ---- PNJ récurrents (actions encounter.*, issue #13 étape 2) -------------------------------
+
+    private com.lodygames.rpgquest.encounter.EncounterService encounters;
+
+    public void setEncounters(com.lodygames.rpgquest.encounter.EncounterService service) {
+        this.encounters = service;
+    }
+
+    @Override
+    public CompletableFuture<EncounterCatalogView> encounterCatalog() {
+        if (encounters == null) {
+            return AgentActions.super.encounterCatalog();
+        }
+        // La présence d'un PNJ se lit dans le registre Citizens : API du thread principal.
+        return onMain(() -> done(EncounterCatalogViews.build(encounters, npcIdentityService.citizensAvailable()
+                ? npcIdentityService::citizensExists : null)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> encounterSiteAction(String operation, String siteId) {
+        if (encounters == null) {
+            return AgentActions.super.encounterSiteAction(operation, siteId);
+        }
+        return onMain(() -> {
+            CompletableFuture<com.lodygames.rpgquest.encounter.EncounterService.ActionResult> result =
+                    switch (operation) {
+                        case "retry" -> encounters.retry(siteId);
+                        case "disable" -> encounters.disable(siteId);
+                        case "remove" -> encounters.remove(siteId);
+                        default -> CompletableFuture.completedFuture(
+                                new com.lodygames.rpgquest.encounter.EncounterService.ActionResult(
+                                        false, "UNKNOWN_OPERATION", "Opération inconnue : " + operation));
+                    };
+            return result.thenApply(r -> MutationResult.of(r.ok(), r.code(), r.message()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> encounterTemplatesReload() {
+        if (encounters == null) {
+            return AgentActions.super.encounterTemplatesReload();
+        }
+        // Données pures : la relecture des fichiers se fait hors du thread principal.
+        return CompletableFuture.supplyAsync(() -> {
+            var report = encounters.templates().reload();
+            String message = report.loaded().size() + " modèle(s) chargé(s)"
+                    + (report.hasIssues() ? ", " + report.issues().size() + " fichier(s) rejeté(s)." : ".");
+            return new MutationResult(true, report.hasIssues() ? "LOADED_WITH_ISSUES" : "LOADED", message,
+                    report.issues().stream().map(i -> i.file() + " : " + i.message()).toList());
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> encounterBackoffsClear() {
+        if (encounters == null) {
+            return AgentActions.super.encounterBackoffsClear();
+        }
+        int cleared = encounters.clearBackoffs();
+        return done(MutationResult.of(true, "CLEARED", cleared + " délai(s) d'attente effacé(s) : "
+                + "les instances concernées seront retentées à la prochaine visite."));
+    }
+
+    @Override
+    public Map<UUID, String> encounterCitizens() {
+        return encounters == null ? Map.of() : encounters.citizensSites();
+    }
+
     private GameSettingsView settingsView(boolean ok, String message, com.lodygames.rpgquest.settings.GameSettings s) {
         return new GameSettingsView(ok, message, settingsValues(s),
                 settingsValues(com.lodygames.rpgquest.settings.GameSettings.DEFAULTS),

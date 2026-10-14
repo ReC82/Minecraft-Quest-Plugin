@@ -176,6 +176,12 @@ public final class AgentActionExecutor {
                 case MC_GROUP_SYNC -> mcGroupSync(action);
                 case MC_GROUP_DELETE -> mcGroupDelete(action);
                 case MC_RIGHTS_SYNC -> mcRightsSync(action);
+                case ENCOUNTER_LIST -> encounterList(action);
+                case ENCOUNTER_RETRY -> encounterSiteAction(action, "retry");
+                case ENCOUNTER_DISABLE -> encounterSiteAction(action, "disable");
+                case ENCOUNTER_REMOVE -> encounterSiteAction(action, "remove");
+                case ENCOUNTER_TEMPLATES_RELOAD -> encounterMutation(action, actions.encounterTemplatesReload());
+                case ENCOUNTER_BACKOFFS_CLEAR -> encounterMutation(action, actions.encounterBackoffsClear());
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -1041,6 +1047,107 @@ public final class AgentActionExecutor {
                     : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "REFUSED", view.message(),
                             details, java.time.Instant.now());
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- PNJ récurrents (issue #13 étape 2) ------------------------------------------------------
+
+    private static final java.util.regex.Pattern ENCOUNTER_SITE_ID =
+            java.util.regex.Pattern.compile("enc_[A-Za-z0-9_\\-]{1,160}");
+
+    private static String encounterSiteOf(Map<java.util.UUID, String> sites, String uuid) {
+        if (uuid == null || sites.isEmpty()) {
+            return null;
+        }
+        try {
+            return sites.get(java.util.UUID.fromString(uuid));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private CompletableFuture<AgentActionOutcome> encounterList(AgentAction action) {
+        return actions.encounterCatalog().thenApply(view -> {
+            List<Map<String, Object>> templates = new ArrayList<>();
+            for (AgentActions.EncounterTemplateSummary t : view.templates()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", t.id());
+                row.put("displayName", t.displayName());
+                row.put("npcId", t.npcId());
+                row.put("role", t.role());
+                row.put("family", t.family());
+                row.put("biomes", t.biomes());
+                row.put("worlds", t.worlds());
+                row.put("weight", t.weight());
+                row.put("maxSites", t.maxSites());
+                row.put("enabled", t.enabled());
+                row.put("skinUrl", t.skinUrl());
+                row.put("sites", t.sites());
+                templates.add(row);
+            }
+            List<Map<String, Object>> sites = new ArrayList<>();
+            for (AgentActions.EncounterSiteSummary s : view.sites()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", s.id());
+                row.put("world", s.world());
+                row.put("biomeKey", s.biomeKey());
+                row.put("biomeInstance", s.biomeInstance());
+                row.put("x", s.x());
+                row.put("y", s.y());
+                row.put("z", s.z());
+                row.put("templateId", s.templateId());
+                row.put("npcId", s.npcId());
+                row.put("citizensId", s.citizensId());
+                row.put("citizensUuid", s.citizensUuid());
+                row.put("citizensPresent", s.citizensPresent());
+                row.put("status", s.status());
+                row.put("lastError", s.lastError());
+                row.put("createdAt", s.createdAt());
+                row.put("updatedAt", s.updatedAt());
+                sites.add(row);
+            }
+            List<Map<String, Object>> events = new ArrayList<>();
+            for (AgentActions.EncounterEventSummary e : view.events()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("at", e.at());
+                row.put("world", e.world());
+                row.put("instance", e.instance());
+                row.put("outcome", e.outcome());
+                row.put("detail", e.detail());
+                events.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("enabled", view.enabled());
+            details.put("worlds", view.worlds());
+            details.put("maxPerWorld", view.maxPerWorld());
+            details.put("templates", templates);
+            details.put("issues", view.issues());
+            details.put("sites", sites);
+            details.put("events", events);
+            details.put("generatedAtEpochMs", view.generatedAtEpochMs());
+            if (!view.available()) {
+                return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "UNAVAILABLE",
+                        "PNJ récurrents indisponibles sur ce serveur.", details, java.time.Instant.now());
+            }
+            return AgentActionOutcome.success(action.id(), String.valueOf(sites.size()),
+                    templates.size() + " modèle(s), " + sites.size() + " occurrence(s).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> encounterSiteAction(AgentAction action, String operation) {
+        String siteId = trimOrNull(action.param("siteId"));
+        if (siteId == null || !ENCOUNTER_SITE_ID.matcher(siteId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « siteId » manquant ou invalide."));
+        }
+        return actions.encounterSiteAction(operation, siteId)
+                .thenApply(r -> mutationOutcome(action, r, "siteId", siteId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> encounterMutation(AgentAction action,
+                                                                   CompletableFuture<AgentActions.MutationResult> f) {
+        return f.thenApply(r -> mutationOutcome(action, r, "type", action.type()))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
     /** {@code economy.balance} — solde réel et journal récent. Lecture seule. */
@@ -2420,6 +2527,9 @@ public final class AgentActionExecutor {
 
     private CompletableFuture<AgentActionOutcome> npcCitizensList(AgentAction action) {
         return actions.citizensRoster().thenApply(view -> {
+            // Issue #13 : un PNJ de rencontre n'a pas de liaison classique ; sans cette marque, le
+            // panel le présentait comme un PNJ « non rattaché » à réparer.
+            Map<java.util.UUID, String> encounterSites = actions.encounterCitizens();
             List<Map<String, Object>> rows = new ArrayList<>();
             for (AgentActions.CitizensNpcSummary c : view.citizens()) {
                 Map<String, Object> row = new LinkedHashMap<>();
@@ -2427,6 +2537,7 @@ public final class AgentActionExecutor {
                 row.put("uuid", c.uuid());
                 row.put("name", c.name());
                 row.put("linkedNpcId", c.linkedNpcId());
+                row.put("encounterSiteId", encounterSiteOf(encounterSites, c.uuid()));
                 row.put("availableForBinding", c.availableForBinding());
                 row.put("spawned", c.spawned());
                 // Localisation : copiée explicitement, comme le reste de la ligne. Oublier ces

@@ -1033,6 +1033,7 @@ public final class RPGQuestBootstrap {
         // monde ; n'écrit que dans la bibliothèque, jamais par-dessus un fichier existant.
         agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
         agentActions.setGameSettings(gameSettingsService);
+        agentActions.setEncounters(encounterService);
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
         registry.start(new PlayerListenerService(plugin, operatorNotices));

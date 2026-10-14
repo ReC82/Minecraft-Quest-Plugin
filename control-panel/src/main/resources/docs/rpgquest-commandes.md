@@ -300,6 +300,11 @@ Réserve votre position exacte et votre regard comme emplacement où placer un P
 
 ```
 /rpgadmin npc spot mark [nom]
+```
+
+Pour lister les emplacements :
+
+```
 /rpgadmin npc spot list
 ```
 

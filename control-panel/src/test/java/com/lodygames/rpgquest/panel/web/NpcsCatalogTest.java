@@ -814,6 +814,106 @@ class NpcsCatalogTest {
         assertEquals(2, row.params().size(), "aucun autre paramètre : rien d'autre ne peut bouger");
     }
 
+    // ---- Issue #125 — nom affiché partagé par deux PNJ d'identifiants distincts ---------------
+
+    /** Deux « Robert » : robert_writer (fiche) et iron_specialist (fiche + Citizens), plus un Garde. */
+    private static final String NPC_TWO_ROBERTS = "{"
+            + "\"citizensAvailable\":true,\"total\":3,\"withDefinition\":3,\"withoutDefinition\":0,"
+            + "\"bound\":1,\"withWarnings\":0,"
+            + "\"definedIds\":[\"robert_writer\",\"iron_specialist\",\"guard\"],"
+            + "\"canonicalIds\":[\"robert_writer\",\"iron_specialist\",\"guard\"],\"npcs\":["
+            + "{\"id\":\"robert_writer\",\"displayName\":\"Robert\",\"logicalDefinitionPresent\":true,"
+            + "\"citizensBindingPresent\":false,\"enabled\":true,\"sources\":[\"DEFINITION\"],"
+            + "\"state\":\"NOT_LINKED\",\"warnings\":[]},"
+            + "{\"id\":\"iron_specialist\",\"displayName\":\"<gray>Robert</gray>\",\"logicalDefinitionPresent\":true,"
+            + "\"citizensBindingPresent\":true,\"citizensNumericId\":9,\"bindingCount\":1,\"enabled\":true,"
+            + "\"sources\":[\"DEFINITION\",\"BINDING\"],\"state\":\"LINKED\",\"warnings\":[]},"
+            + "{\"id\":\"guard\",\"displayName\":\"Garde\",\"logicalDefinitionPresent\":true,"
+            + "\"citizensBindingPresent\":false,\"enabled\":true,\"sources\":[\"DEFINITION\"],"
+            + "\"state\":\"NOT_LINKED\",\"warnings\":[]}"
+            + "]}";
+
+    /** Le fragment d'une fiche de la liste, de son ouverture à la suivante. */
+    private static String npcItem(String page, String id) {
+        int at = page.indexOf("data-res-id=\"" + id + "\"");
+        assertTrue(at >= 0, "fiche " + id + " rendue");
+        int next = page.indexOf("data-filter-item=\"npcs\"", at);
+        return page.substring(at, next < 0 ? page.length() : next);
+    }
+
+    @Test
+    void bothCardsOfASharedDisplayNameCarryANonBlockingWarningNamingTheOtherId() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_TWO_ROBERTS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        String writer = npcItem(page, "robert_writer");
+        String iron = npcItem(page, "iron_specialist");
+        assertTrue(writer.contains("nom en double") && iron.contains("nom en double"), "badge sur les deux fiches");
+        assertTrue(writer.contains("Nom affiché utilisé par plusieurs PNJ"), "message explicite");
+        assertTrue(writer.contains("aussi porté par iron_specialist"), "l'autre identifiant est nommé");
+        assertTrue(iron.contains("aussi porté par robert_writer"), "et réciproquement");
+        assertFalse(npcItem(page, "guard").contains("nom en double"), "un nom unique n'est pas signalé");
+        assertTrue(page.contains("data-filter-cat=\"todo\" data-filter-text=\"Robert"),
+                "la fiche est rangée « à vérifier »");
+    }
+
+    @Test
+    void theDiagnosticPageListsTheConflictingIds() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_TWO_ROBERTS);
+        String diag = get("/npcs/diagnostic?agent=" + TestConfig.AGENT_ID).body();
+
+        int at = diag.indexOf("id=\"npc-dup-names\"");
+        assertTrue(at >= 0, "section des noms en double");
+        String section = diag.substring(at, diag.indexOf("</section>", at));
+        assertTrue(section.contains("Nom affiché partagé par plusieurs PNJ"), section);
+        assertTrue(section.contains("robert_writer, iron_specialist"), "les identifiants en conflit");
+        assertTrue(section.contains("DUPLICATE_DISPLAY_NAME"), "code technique en secondaire");
+        assertTrue(section.contains("alert-warning"), "avertissement, pas erreur");
+    }
+
+    @Test
+    void theCreateAndRenameFormsWarnBeforeSavingWhenTheNameIsTaken() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_TWO_ROBERTS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Création : l'index des noms pris accompagne le champ, la note est prête mais cachée.
+        int create = page.indexOf("id=\"npc-new-name\"");
+        String createField = page.substring(create, page.indexOf('>', create));
+        assertTrue(createField.contains("data-name-taken=\""), createField);
+        assertTrue(createField.contains("&quot;robert&quot;:[&quot;robert_writer&quot;,&quot;iron_specialist&quot;]"),
+                createField);
+        assertTrue(page.contains("id=\"npc-new-name-taken\" role=\"status\" hidden"), "note cachée tant qu'on n'a rien saisi");
+
+        // Renommage de robert_writer : son propre nom ne le concerne pas, l'autre Robert si.
+        String writer = npcItem(page, "robert_writer");
+        int rename = writer.indexOf("id=\"npc-robert_writer-name-in\"");
+        String renameField = writer.substring(rename, writer.indexOf('>', rename));
+        assertTrue(renameField.contains("&quot;robert&quot;:[&quot;iron_specialist&quot;]"), renameField);
+        assertTrue(writer.contains("Nom affiché déjà utilisé par : iron_specialist."),
+                "le nom actuel déjà partagé est signalé dès l'ouverture");
+        assertFalse(writer.contains("id=\"npc-robert_writer-name-in-taken\" role=\"status\" hidden"));
+    }
+
+    @Test
+    void aSharedNameIsNeverRefused() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_TWO_ROBERTS);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token
+                + "&type=npc.identity.rename&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=guard&npc_ctx=guard&name=" + URLEncoder.encode("Robert", StandardCharsets.UTF_8)
+                + "&confirm=true");
+
+        assertFalse(res.headers().firstValue("Location").orElse("").contains("err="), "aucun refus");
+        AgentActionRow row = latestOfType("npc.identity.rename");
+        assertEquals("guard", row.params().get("npc_id"));
+        assertEquals("Robert", row.params().get("name"), "le nom partagé est transmis tel quel");
+    }
+
     @Test
     void anEmptyOrOverlongNameIsRefusedWithoutEnqueuingAnything() throws Exception {
         start();

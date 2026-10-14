@@ -107,6 +107,13 @@ public final class DiagnosticHelp {
                 "En jeu, on ne sait pas lequel doit porter les dialogues et les quêtes.",
                 "Retirez l'association en trop : un seul PNJ doit porter cet identifiant.",
                 "pnj-depannage");
+        // Issue #125 : un avertissement, jamais un refus — les identifiants restent distincts.
+        add("DUPLICATE_DISPLAY_NAME", Level.WARNING, "Nom affiché partagé par plusieurs PNJ",
+                "Le nom {name} est porté par plusieurs PNJ, d'identifiants {detail} : seuls ces identifiants les distinguent.",
+                "Dans les listes de PlugAdmin et en jeu, on risque de modifier ou de lier le mauvais PNJ.",
+                "Si ce sont deux personnages différents, donnez-leur des noms distincts (« Modifier le nom »). "
+                        + "Si c'est voulu, vous pouvez garder ce nom : rien n'est bloqué.",
+                "pnj-depannage");
         add("DISABLED", Level.INFO, "Fiche désactivée",
                 "La fiche RPGQuest de {name} est marquée comme inactive.",
                 "Le PNJ est ignoré par RPGQuest tant que sa fiche reste inactive.",

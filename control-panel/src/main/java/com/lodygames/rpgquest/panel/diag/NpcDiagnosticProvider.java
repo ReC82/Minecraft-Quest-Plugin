@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.panel.diag;
 
 import com.lodygames.rpgquest.panel.http.Http;
+import com.lodygames.rpgquest.panel.npc.NpcDisplayNames;
 import com.lodygames.rpgquest.panel.web.MiniText;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -70,6 +71,19 @@ public final class NpcDiagnosticProvider implements DiagnosticProvider {
                 }
                 out.add(DiagnosticEntry.of(code, Domain.PNJ, "npc", id, label, "", msg, sev,
                         "", href, quick, "npc.list", seen));
+            }
+        }
+
+        // #125 : noms affichés partagés. Calculés ici (le moteur n'en dit rien) : une entrée par PNJ
+        // concerné, qui nomme les autres identifiants — c'est leur liste qui lève l'ambiguïté.
+        NpcDisplayNames names = NpcDisplayNames.fromSurvey(DiagnosticContext.list(d.get("npcs")),
+                ctx.details("npc.citizens.list").map(r -> DiagnosticContext.list(r.get("citizens"))).orElse(List.of()));
+        for (NpcDisplayNames.Group g : names.duplicates()) {
+            for (String id : g.ids()) {
+                String all = String.join(", ", g.ids());
+                String href = ctx.hasAgent() ? "/npcs?agent=" + Http.esc(ctx.agentId()) + "&focus=" + Http.esc(id) : "";
+                out.add(DiagnosticEntry.of("DUPLICATE_DISPLAY_NAME", Domain.PNJ, "npc", id, g.name(), all,
+                        "Nom affiché porté par plusieurs PNJ : " + all + ".", "warning", "", href, null, "npc.list", seen));
             }
         }
 

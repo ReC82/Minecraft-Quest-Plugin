@@ -1416,6 +1416,49 @@
    * Aucun maxlength n'est posé ici, et c'est délibéré : maxlength coupe un collage sans rien dire,
    * ce qui est exactement le défaut que ce lot corrige. On avertit, le serveur refuse.
    */
+  /*
+   * Issue #125 — « ce nom est déjà porté par un autre PNJ ». Le champ porte data-name-taken :
+   * l'index { nom comparé : [identifiants] } calculé par le serveur ; data-name-taken-note désigne
+   * la note à montrer. La comparaison est celle du serveur (NpcDisplayNames.key) : balises retirées,
+   * espaces resserrés, minuscules. Un avertissement seulement : le formulaire reste envoyable.
+   */
+  function initNameTaken() {
+    var fields = document.querySelectorAll("input[data-name-taken]");
+    for (var i = 0; i < fields.length; i++) {
+      bindNameTaken(fields[i]);
+    }
+  }
+
+  function nameKey(raw) {
+    return String(raw || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function bindNameTaken(field) {
+    var index;
+    try {
+      index = JSON.parse(field.getAttribute("data-name-taken") || "{}");
+    } catch (e) {
+      return;
+    }
+    var note = document.getElementById(field.getAttribute("data-name-taken-note") || "");
+    if (!note) { return; }
+    var text = note.querySelector(".name-taken-text");
+
+    function render() {
+      var key = nameKey(field.value);
+      var ids = key && Object.prototype.hasOwnProperty.call(index, key) ? index[key] : null;
+      if (ids && ids.length) {
+        if (text) { text.textContent = "Nom affiché déjà utilisé par : " + ids.join(", ") + "."; }
+        note.hidden = false;
+      } else {
+        note.hidden = true;
+      }
+    }
+
+    field.addEventListener("input", render);
+    render();
+  }
+
   function initCharCount() {
     var fields = document.querySelectorAll("textarea[data-charcount], input[data-charcount]");
     for (var i = 0; i < fields.length; i++) {
@@ -1636,6 +1679,7 @@
     run("initStyleFields", initStyleFields);
     run("initSubmitOnce", initSubmitOnce);
     run("initCharCount", initCharCount);
+    run("initNameTaken", initNameTaken);
     run("initOneForm", initOneForm);
     run("initSwitch", initSwitch);
     run("initSelectFilter", initSelectFilter);

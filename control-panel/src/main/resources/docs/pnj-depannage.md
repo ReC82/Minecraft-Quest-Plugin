@@ -178,6 +178,44 @@ La ligne ne montre plus qu'un seul PNJ Citizens.
 
 ---
 
+## Nom affiché partagé par plusieurs PNJ
+
+### Ce que cela signifie
+
+Plusieurs PNJ portent le **même nom affiché** (par exemple deux « Robert ») alors que leurs
+**identifiants techniques sont différents** (`robert_writer`, `iron_specialist`). Les noms sont
+comparés tels qu'ils se lisent : sans mise en forme (`<yellow>…`), sans tenir compte des
+majuscules ni des espaces en trop. Les accents, eux, comptent.
+
+Ce n'est **pas** une erreur : le moteur distingue les deux PNJ par leur identifiant, et rien
+n'est bloqué. À ne pas confondre avec « Fiche RPGQuest en double » ou « Plusieurs PNJ pour le
+même identifiant », qui sont de vraies collisions d'identifiant.
+
+### Pourquoi il faut corriger
+
+Dans PlugAdmin comme en jeu, on choisit un PNJ par son nom : avec deux « Robert », on risque
+de modifier, lier ou supprimer le mauvais.
+
+### Comment corriger
+
+Sur la page **PNJ**, les fiches concernées portent le badge « nom en double » et rappellent les
+identifiants en conflit. Si ce sont deux personnages différents, ouvrez l'un d'eux et utilisez
+**Modifier le nom**. Si le nom commun est voulu, vous pouvez le garder.
+
+À la création et au renommage, PlugAdmin prévient pendant la saisie quand le nom est déjà porté,
+et nomme les PNJ concernés ; l'enregistrement reste possible.
+
+### Vérification
+
+Après « Actualiser les PNJ », le badge disparaît et la section « Noms affichés en double » de
+la page Diagnostic indique que chaque PNJ porte un nom différent.
+
+### Référence technique
+
+`DUPLICATE_DISPLAY_NAME` (calculé par PlugAdmin, pas par le moteur)
+
+---
+
 ## Fiche désactivée
 
 ### Ce que cela signifie

@@ -108,7 +108,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`/rpgadmin story info|start|advance|complete|reset|resetwithquests`) — voir
   [storylines.md](storylines.md) et [ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md).
 - **Dialogues** — graphes de nœuds PNJ (Citizens et entités vanilla), conditions et actions par
-  choix, rendu via Paper Dialog.
+  choix, rendu via Paper Dialog. *(issue #158)* : `entries:` (nœud d'accueil choisi selon l'état
+  réel du joueur — quête active, terminée, disponible — sinon `start`) et `variants:` (répliques
+  alternatives tirées sans répétition immédiate) ; facultatifs, conservés par les éditeurs du panel.
 - **NPC / Citizens** — identité logique RPGQuest découplée du nom affiché de l'entité.
 - **Guide « centre d'aide » + journal du Libraire** *(issue #11)* — le dialogue `guide.yml` est un
   centre d'aide structuré (nœud `help_menu` + un nœud par mécanique : quêtes, journal, Wild, claims,

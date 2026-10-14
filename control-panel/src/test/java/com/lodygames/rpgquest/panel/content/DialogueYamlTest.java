@@ -153,4 +153,60 @@ class DialogueYamlTest {
     void validatorAcceptsACleanSkeleton() {
         assertTrue(DialogueValidator.validate(skeleton()).isEmpty());
     }
+    /** Issue #158 : un réenregistrement depuis le panel ne perd ni « entries » ni « variants ». */
+    @Test
+    void entriesAndVariantsArePreservedAcrossAPanelRewrite() {
+        String engineYaml = """
+                id: rpgquest:help
+                start: idle
+                entries:
+                  - node: thanks
+                    conditions:
+                      - type: QUEST_STATE
+                        quest: rpgquest:help_recolte
+                        state: COMPLETED
+                      - type: QUEST_AVAILABLE
+                        quest: rpgquest:help_recolte
+                        negate: true
+                nodes:
+                  thanks:
+                    speaker: "Help"
+                    text: "Merci pour ton aide."
+                    variants:
+                      - "Je n'ai besoin de rien actuellement."
+                      - "Le Wild est dangereux, dit-on."
+                    choices:
+                      - text: "Au revoir"
+                        actions:
+                          - type: CLOSE
+                  idle:
+                    speaker: "Help"
+                    text: "Belle journée."
+                    choices:
+                      - text: "Au revoir"
+                        actions:
+                          - type: CLOSE
+                """;
+        DialogueYaml.ReadResult read = DialogueYaml.read(engineYaml);
+        assertTrue(read.ok(), () -> "problèmes : " + read.problems());
+        assertEquals(1, read.draft().entries.size());
+        assertEquals("thanks", read.draft().entries.get(0).node);
+        assertEquals(2, read.draft().entries.get(0).conditions.size());
+        assertEquals("true", read.draft().entries.get(0).conditions.get(1).get("negate"));
+        assertEquals(List.of("Je n'ai besoin de rien actuellement.", "Le Wild est dangereux, dit-on."),
+                read.draft().nodes.get(0).variants);
+
+        String rewritten = DialogueYaml.write(read.draft());
+
+        // Même mise en forme que le moteur (DialogueDefinitionWriter) pour ces deux blocs.
+        assertTrue(rewritten.contains(engineYaml.substring(engineYaml.indexOf("entries:"), engineYaml.indexOf("nodes:"))),
+                rewritten);
+        assertTrue(rewritten.contains("""
+                    variants:
+                      - "Je n'ai besoin de rien actuellement."
+                      - "Le Wild est dangereux, dit-on."
+                """), rewritten);
+        assertTrue(DialogueYaml.roundTripProblems(rewritten).isEmpty(),
+                () -> "round-trip : " + DialogueYaml.roundTripProblems(rewritten));
+    }
 }

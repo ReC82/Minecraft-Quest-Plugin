@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.DialogueEntry;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
 import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
@@ -69,18 +70,20 @@ final class DialogueDefinitionParser {
         NamespacedKey id = parseId(section, errors);
         String start = parseStart(section, errors);
         Map<String, DialogueNode> nodes = parseNodes(section, errors);
+        List<DialogueEntry> entries = parseEntries(section, errors);
 
         if (start != null && !nodes.isEmpty() && !nodes.containsKey(start)) {
             errors.add("« start » invalide : le nœud « " + start + " » n'existe pas.");
         }
         validateNextReferences(nodes, errors);
+        validateEntryReferences(entries, nodes, errors);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(m -> new DialogueLoadIssue(fileName, m)).toList());
         }
 
         try {
-            return ParseResult.success(new DialogueDefinition(id, start, nodes));
+            return ParseResult.success(new DialogueDefinition(id, start, nodes, entries));
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new DialogueLoadIssue(fileName, e.getMessage())));
         }
@@ -95,6 +98,51 @@ final class DialogueDefinitionParser {
                 }
             }
         }
+    }
+
+    private void validateEntryReferences(List<DialogueEntry> entries, Map<String, DialogueNode> nodes,
+                                         List<String> errors) {
+        if (nodes.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < entries.size(); i++) {
+            if (!nodes.containsKey(entries.get(i).nodeId())) {
+                errors.add("entries[" + i + "].node référence un nœud inexistant « " + entries.get(i).nodeId() + " ».");
+            }
+        }
+    }
+
+    /**
+     * Issue #158 — {@code entries:} facultatif : liste ordonnée de {@code {node, conditions}}. Mêmes
+     * conditions que les choix (même code de lecture), donc mêmes messages d'erreur.
+     */
+    private List<DialogueEntry> parseEntries(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("entries")) {
+            return List.of();
+        }
+        if (!section.isList("entries")) {
+            errors.add("« entries » doit être une liste de { node, conditions }.");
+            return List.of();
+        }
+        List<DialogueEntry> entries = new ArrayList<>();
+        List<Map<?, ?>> raw = section.getMapList("entries");
+        for (int i = 0; i < raw.size(); i++) {
+            String context = "entries[" + i + "]";
+            ConfigurationSection entrySection = toSection(raw.get(i));
+            String node = entrySection.getString("node");
+            List<DialogueCondition> conditions = parseConditions(entrySection, context, errors);
+            if (node == null || node.isBlank()) {
+                errors.add(context + ": « node » est obligatoire.");
+                continue;
+            }
+            if (conditions.isEmpty()) {
+                // Une entrée sans condition masquerait « start » et toutes les entrées suivantes.
+                errors.add(context + ": « conditions » est obligatoire (sinon, utiliser « start »).");
+                continue;
+            }
+            entries.add(new DialogueEntry(node.trim(), conditions));
+        }
+        return entries;
     }
 
     private NamespacedKey parseId(ConfigurationSection section, List<String> errors) {
@@ -151,16 +199,39 @@ final class DialogueDefinitionParser {
 
         LocalizedText text = parseLocalizedText(section, "text", context, errors);
         List<DialogueChoice> choices = parseChoices(section, context, errors);
+        List<LocalizedText> variants = parseVariants(section, context, errors);
 
         if (speaker == null || speaker.isBlank() || text == null || choices.isEmpty()) {
             return null;
         }
         try {
-            return new DialogueNode(nodeId, speaker, text, choices);
+            return new DialogueNode(nodeId, speaker, text, choices, variants);
         } catch (IllegalArgumentException e) {
             errors.add(context + ": " + e.getMessage());
             return null;
         }
+    }
+
+    /** Issue #158 — {@code variants:} facultatif : liste de répliques alternatives au {@code text}. */
+    private List<LocalizedText> parseVariants(ConfigurationSection section, String context, List<String> errors) {
+        if (!section.isSet("variants")) {
+            return List.of();
+        }
+        if (!section.isList("variants")) {
+            errors.add(context + ": « variants » doit être une liste de textes.");
+            return List.of();
+        }
+        List<LocalizedText> variants = new ArrayList<>();
+        List<?> raw = section.getList("variants", List.of());
+        for (int i = 0; i < raw.size(); i++) {
+            Object value = raw.get(i);
+            if (!(value instanceof String line) || line.isBlank()) {
+                errors.add(context + ".variants[" + i + "] doit être un texte non vide.");
+                continue;
+            }
+            variants.add(LocalizedText.of(line));
+        }
+        return variants;
     }
 
     private List<DialogueChoice> parseChoices(ConfigurationSection nodeSection, String context, List<String> errors) {

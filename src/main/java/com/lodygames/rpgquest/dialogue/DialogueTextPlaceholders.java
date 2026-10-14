@@ -66,7 +66,7 @@ public final class DialogueTextPlaceholders {
             substituted.put(entry.getKey(), resolved);
         }
         return changed
-                ? new DialogueNode(node.id(), node.speaker(), new LocalizedText(substituted), node.choices())
+                ? node.withSpeakerAndText(node.speaker(), new LocalizedText(substituted))
                 : node;
     }
 

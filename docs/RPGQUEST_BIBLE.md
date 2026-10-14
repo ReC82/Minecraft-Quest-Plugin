@@ -3252,6 +3252,71 @@ donc pas vus par le panel. La troncature n'est pas silencieuse — le garde-fou 
 et l'éditeur refuse d'écraser à l'aveugle, ce qu'un test vérifie fichier par fichier — mais ce
 dialogue n'est pas éditable depuis le panel tant que le lecteur ne gère pas cette construction.
 
+### Accueil selon l'état de la quête et répliques variées (issue #158)
+
+Avant #158, un PNJ affichait **toujours** le texte de son nœud `start` : un joueur qui avait terminé
+la quête de Help se voyait encore demander « ramasse 5 bûches de chêne ». Deux clés **facultatives**
+règlent cela sans code spécifique à un PNJ (un fichier sans ces clés se comporte exactement comme
+avant) :
+
+- **`entries:`** (racine du fichier) — liste **ordonnée** de `{ node, conditions }`. À l'ouverture
+  du dialogue (clic sur le PNJ, `OPEN_DIALOGUE`, `/dialogue open`), la **première** entrée dont
+  **toutes** les conditions passent choisit le nœud affiché ; aucune → `start`. Les conditions sont
+  exactement celles des choix (même code, même `negate: true`), évaluées sur la progression
+  **persistée** du joueur : cohérent après reconnexion ou redémarrage. Une entrée sans condition
+  est refusée (elle masquerait `start`) ; une entrée vers un nœud inexistant aussi.
+- **`variants:`** (dans un nœud) — liste de répliques alternatives au `text`. La réplique affichée
+  est tirée au hasard parmi `text` + `variants`, **jamais deux fois de suite la même** pour un même
+  joueur et un même nœud (mémoire volatile : une reconnexion peut répéter une fois). Les choix du
+  nœud ne changent pas. Textes MiniMessage simples, relus et stockés dans le fichier — aucune IA,
+  aucun appel réseau.
+
+Ordre conseillé (le premier qui correspond gagne) : remise d'objets en attente
+(`HAS_PENDING_DELIVERY`) → quête active (`QUEST_STATE ACTIVE`) → quête terminée et non ré-acceptable
+(`QUEST_STATE COMPLETED` + `QUEST_AVAILABLE negate`) → offre (`QUEST_AVAILABLE`) → `start` =
+bavardage neutre pour un joueur qui n'a jamais aidé ce PNJ (quête verrouillée par un prérequis, par
+exemple). Une quête **répétable** redevenue disponible retombe naturellement sur l'offre.
+
+```yaml
+id: rpgquest:help
+start: chatter            # personne d'autre ne correspond : bavardage neutre
+entries:
+  - node: progress
+    conditions:
+      - type: QUEST_STATE
+        quest: rpgquest:help_recolte
+        state: ACTIVE
+  - node: thanks
+    conditions:
+      - type: QUEST_STATE
+        quest: rpgquest:help_recolte
+        state: COMPLETED
+      - type: QUEST_AVAILABLE
+        quest: rpgquest:help_recolte
+        negate: true
+  - node: offer
+    conditions:
+      - type: QUEST_AVAILABLE
+        quest: rpgquest:help_recolte
+nodes:
+  thanks:
+    speaker: "Help"
+    text: "<white>Merci pour ton aide.</white> <gray>Je n'ai besoin de rien actuellement.</gray>"
+    variants:
+      - "<gray>Grâce à toi, mes caisses tiennent debout.</gray>"
+      - "<gray>J'ai entendu dire que le Wild est très dangereux, mais qu'on y trouve plein de ressources intéressantes.</gray>"
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+  # offer / progress / chatter : nœuds ordinaires (offer porte « Commencer (j'accepte) » → START_QUEST)
+```
+
+Le signal « nouveau dialogue » (#12) part du nœud d'accueil réel du joueur ; le catalogue
+`/dialogues` ne marque plus un nœud d'entrée comme « inaccessible ». L'éditeur guidé et
+l'enregistrement depuis `/dialogues/edit` **conservent** `entries` et `variants` (ils ne savent pas
+encore les modifier : édition dans le fichier YAML, publié comme tout contenu).
+
 ### `/dialogue open <joueur> <dialogueId>`
 
 Type : Admin

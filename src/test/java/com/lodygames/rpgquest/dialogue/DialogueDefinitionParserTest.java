@@ -371,6 +371,103 @@ class DialogueDefinitionParserTest {
         assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("choices")));
     }
 
+    // ---- Issue #158 : entrees conditionnelles et variantes -----------------------------------
+
+    private static final String WITH_ENTRIES = """
+            id: rpgquest:help
+            start: idle
+            entries:
+              - node: thanks
+                conditions:
+                  - type: QUEST_STATE
+                    quest: rpgquest:help_recolte
+                    state: COMPLETED
+                  - type: QUEST_AVAILABLE
+                    quest: rpgquest:help_recolte
+                    negate: true
+            nodes:
+              thanks:
+                speaker: "Help"
+                text: "Merci pour ton aide."
+                variants:
+                  - "Je n'ai besoin de rien actuellement."
+                  - "J'ai entendu dire que le Wild est dangereux."
+                choices:
+                  - text: "Au revoir"
+                    actions:
+                      - type: CLOSE
+              idle:
+                speaker: "Help"
+                text: "Belle journée."
+                choices:
+                  - text: "Au revoir"
+                    actions:
+                      - type: CLOSE
+            """;
+
+    @Test
+    void entriesAndVariantsAreParsed() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("help.yml", load(WITH_ENTRIES));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        DialogueDefinition dialogue = result.dialogue();
+        assertEquals(1, dialogue.entries().size());
+        assertEquals("thanks", dialogue.entries().get(0).nodeId());
+        assertEquals(2, dialogue.entries().get(0).conditions().size());
+        assertTrue(dialogue.entries().get(0).conditions().get(1) instanceof NegatedCondition);
+        assertEquals(3, dialogue.nodes().get("thanks").lines().size());
+        assertEquals(1, dialogue.nodes().get("idle").lines().size());
+    }
+
+    @Test
+    void entriesAndVariantsSurviveTheWriterRoundTrip() {
+        DialogueDefinition original = parser.parse("help.yml", load(WITH_ENTRIES)).dialogue();
+        String written = DialogueDefinitionWriter.render(original, List.of("thanks", "idle"));
+
+        DialogueDefinitionParser.ParseResult reparsed = parser.parse("help.yml", load(written));
+
+        assertTrue(reparsed.isSuccess(), () -> "issues: " + reparsed.issues() + "\n" + written);
+        assertEquals(original, reparsed.dialogue(), written);
+        assertEquals(written, DialogueDefinitionWriter.render(reparsed.dialogue(), List.of("thanks", "idle")));
+    }
+
+    @Test
+    void entryTowardsAnUnknownNodeIsRejected() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("help.yml",
+                load(WITH_ENTRIES.replace("- node: thanks", "- node: ghost")));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("ghost")), () -> "" + result.issues());
+    }
+
+    @Test
+    void entryWithoutConditionIsRejected() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("help.yml", load("""
+                id: rpgquest:help
+                start: idle
+                entries:
+                  - node: idle
+                nodes:
+                  idle:
+                    speaker: "Help"
+                    text: "Belle journée."
+                    choices:
+                      - text: "Au revoir"
+                """));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("conditions")), () -> "" + result.issues());
+    }
+
+    @Test
+    void blankVariantIsRejected() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("help.yml",
+                load(WITH_ENTRIES.replace("\"Je n'ai besoin de rien actuellement.\"", "\"  \"")));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("variants[0]")), () -> "" + result.issues());
+    }
+
     private String minimalDialogueWithChoice(String choicesYaml) {
         return """
                 id: rpgquest:test

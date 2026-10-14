@@ -14,9 +14,10 @@ import java.util.Map;
  *
  * <p>La relecture est « best-effort », comme {@link QuestYaml#read} : elle comprend le format
  * canonique <em>et</em> les fichiers écrits à la main (nœuds sous forme de map, choix avec
- * {@code next} / {@code actions} / {@code conditions}). Un fichier qui utilise des constructions non
- * supportées par {@link MiniYaml} (scalaires repliés {@code >}, ancres…) ressort avec
- * {@code problems} non vide — jamais masqué, jamais réécrit à l'aveugle.</p>
+ * {@code next} / {@code actions} / {@code conditions}, textes en scalaires blocs {@code >} /
+ * {@code |} depuis #373). Un fichier qui utilise des constructions non supportées par
+ * {@link MiniYaml} (ancres…) ressort avec {@code problems} non vide — jamais masqué, jamais
+ * réécrit à l'aveugle.</p>
  *
  * <p>Depuis #145, les conditions et les actions d'un choix font partie du modèle relu <em>et</em>
  * émis : réenregistrer un dialogue existant depuis {@code /dialogues/edit} ne les efface plus. Le
@@ -230,10 +231,16 @@ public final class DialogueYaml {
         return s.isBlank() ? "start" : s;
     }
 
-    /** Guillemets doubles, échappe {@code \} et {@code "} (identique au writer du moteur). */
+    /**
+     * Guillemets doubles, échappe {@code \}, {@code "} et les sauts de ligne / tabulations
+     * (identique au writer du moteur, {@code DialogueDefinitionWriter.quote}). Issue #373 : un texte
+     * relu d'un scalaire bloc {@code |} peut contenir des sauts de ligne ; écrits bruts entre
+     * guillemets, ils se seraient repliés en espaces.
+     */
     static String quote(String value) {
         String s = value == null ? "" : value;
-        return '"' + s.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+        return '"' + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+                .replace("\t", "\\t").replace("\r", "\\r") + '"';
     }
 
     private static String str(Object o) {

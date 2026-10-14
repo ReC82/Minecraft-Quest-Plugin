@@ -33,6 +33,9 @@ dependencies {
 
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    // Issue #373 : oracle de test — le moteur lit les dialogues avec SnakeYAML ; MiniYaml doit en
+    // donner exactement la même lecture pour chaque fichier du dépôt. Jamais embarqué dans le panel.
+    testImplementation("org.yaml:snakeyaml:2.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

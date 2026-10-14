@@ -1,6 +1,8 @@
 package com.lodygames.rpgquest.panel.ai;
 
 import com.lodygames.rpgquest.panel.content.ContentPackSchema;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Extrait le document YAML de la réponse brute d'un modèle (issue #146).
@@ -55,9 +57,11 @@ public final class AiYamlExtractor {
         int anchor = text.indexOf(ANCHOR);
         if (anchor >= 0) {
             String cut = text.substring(anchor).trim();
-            return new Extraction(cut, anchor == 0 ? null
-                    : "La réponse comportait du texte avant le document : il a été retiré, le "
-                      + "document lui-même est intact.");
+            String body = withoutTrailingProse(cut);
+            boolean after = !body.equals(cut);
+            return new Extraction(body, anchor == 0 && !after ? null
+                    : "La réponse comportait du texte " + (anchor == 0 ? "après" : after ? "avant et après" : "avant")
+                      + " le document : il a été retiré, le document lui-même est intact.");
         }
 
         // 3. Rien d'identifiable. On ne devine pas : le document est rendu tel quel pour que
@@ -65,6 +69,25 @@ public final class AiYamlExtractor {
         return new Extraction(text.trim(),
                 "La réponse ne contient pas la ligne « " + ANCHOR + " » : ce n'est probablement pas "
                 + "un content pack. Elle est analysée telle quelle pour que l'erreur soit visible.");
+    }
+
+    /**
+     * Retire les phrases de conclusion (« Bonne aventure ! ») : lignes finales en colonne 0 qui ne
+     * sont ni une clé, ni un élément de liste, ni un commentaire. Avant #373, le lecteur YAML les
+     * ignorait en silence — il refuse désormais toute ligne qu'il ne comprend pas.
+     */
+    private static String withoutTrailingProse(String doc) {
+        List<String> lines = new ArrayList<>(List.of(doc.split("\n", -1)));
+        while (!lines.isEmpty()) {
+            String last = lines.get(lines.size() - 1);
+            boolean prose = last.isBlank() || (!last.startsWith(" ") && !last.startsWith("-")
+                    && !last.startsWith("#") && !last.contains(":"));
+            if (!prose) {
+                break;
+            }
+            lines.remove(lines.size() - 1);
+        }
+        return String.join("\n", lines).trim();
     }
 
     /**

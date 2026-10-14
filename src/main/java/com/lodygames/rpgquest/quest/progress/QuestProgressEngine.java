@@ -236,7 +236,7 @@ public final class QuestProgressEngine implements PluginService {
             case PLACE_BLOCK -> new QuestBlockPlaceListener(this);
             case KILL_ENTITY -> new QuestEntityDeathListener(this);
             case COLLECT_ITEM -> new QuestItemPickupListener(this);
-            case CRAFT_ITEM -> new QuestCraftItemListener(this);
+            case CRAFT_ITEM -> new QuestCraftItemListener(this, plugin);
             case TALK_TO_NPC -> new QuestNpcInteractListener(this, npcIdentityService);
             case REACH_LOCATION -> new QuestLocationListener(this);
             // Issue #123 : DELIVER_ITEM_TO_NPC n'écoute AUCUN événement de jeu, volontairement.
@@ -914,7 +914,16 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     void handleCraftItem(Player player, Material material) {
-        handleCandidates(player, index.craftItem(material));
+        handleCraftItem(player, material, 1);
+    }
+
+    /**
+     * Issue #34 : un craft produit souvent plusieurs objets (4 planches par bûche) et un shift-clic
+     * enchaîne plusieurs crafts en un seul événement. La progression avance donc du nombre réel
+     * d'objets fabriqués, calculé par {@link QuestCraftItemListener}, plafonné à la quantité requise.
+     */
+    void handleCraftItem(Player player, Material material, int amount) {
+        handleCandidates(player, index.craftItem(material), amount);
     }
 
     /**

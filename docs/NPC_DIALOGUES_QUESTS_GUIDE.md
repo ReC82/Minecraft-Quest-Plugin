@@ -480,7 +480,11 @@ Déclenché au ramassage de l'objet au sol par le joueur.
   material: DIAMOND_SWORD
   amount: 1
 ```
-Déclenché par la fabrication en table de craft. **Limite connue** : ne
+Déclenché par la fabrication (établi ou grille 2×2 de l'inventaire). La
+progression avance du **nombre d'objets réellement fabriqués** : une bûche
+transformée en 4 planches compte 4, un shift-clic qui enchaîne plusieurs
+crafts compte le total effectivement rangé dans l'inventaire (inventaire
+plein : seulement ce qui a tenu). **Limite connue** : ne
 distingue pas un objet personnalisé RPGQuest d'un objet vanilla du même
 matériau de base.
 

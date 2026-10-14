@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Quêtes : `CRAFT_ITEM` compte la quantité réellement fabriquée (#34)
+
+### Changement
+
+Un craft de 4 planches fait progresser un objectif `CRAFT_ITEM` de 4 (et non plus de 1) ; un
+shift-clic compte le total réellement rangé dans l'inventaire (inventaire plein pris en compte),
+plafonné par les ingrédients et par la quantité requise. Aucun changement de format de quête ni
+de base de données.
+
+### Action serveur
+
+Aucune action manuelle autre que le remplacement du JAR RPGQuest (redémarrage requis). Aucune
+migration.
+
+### Sauvegarde préalable
+
+JAR actuel + `data.db`, faits par `deploy-verygames.sh`.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-015.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer ; aucune donnée à restaurer.
+
+---
+
 ## 2026-10-14 - PlugAdmin : base propre au panel préparée, sans migration (#43)
 
 ### Changement

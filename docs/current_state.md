@@ -11,8 +11,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > brigand/forêt, marchand égaré/désert, forgeron perdu/montagne) : génération paresseuse sans
 > chargement de chunk, sol sûr hors claim, une occurrence par instance (`encounter_sites`, V34),
 > réparation sans doublon, identité `npc_id` servie hors `npc_citizens_bindings`, dialogues
-> d'accueil `rpgquest:encounter_*`. Pas encore : onglet PlugAdmin, skin, quêtes secondaires.
-> Référence : `docs/ENCOUNTERS.md`. Validation en jeu : PENDING (TC-303).
+> d'accueil `rpgquest:encounter_*`. **Étape 2** : page PlugAdmin `/npcs/encounters` (modèles,
+> occurrences par monde, journal) et actions `encounter.*` (retenter/désactiver/retirer une
+> occurrence, relire les modèles, effacer les délais) ; les PNJ de rencontre ne sont plus listés
+> « à rattacher ». Pas encore : édition des modèles depuis le panel, skin, quêtes secondaires.
+> Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu, TC-304 PlugAdmin).
 >
 > **Mode bypass administrateur explicite (#35, corrige #321, 14/10/2026)** — être OP ne contourne
 > plus aucune règle de jeu (accès et règles du monde Claims, claims d'autrui, zones protégées,

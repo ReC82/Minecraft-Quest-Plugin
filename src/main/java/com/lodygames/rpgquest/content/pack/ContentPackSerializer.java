@@ -64,6 +64,9 @@ public final class ContentPackSerializer {
             kv(sb, 3, "icon", plain(q.icon()));
             kv(sb, 3, "repeatable", String.valueOf(q.repeatable()));
             kv(sb, 3, "secret", String.valueOf(q.secret()));
+            if (q.cooldown() != null) {
+                kv(sb, 3, "cooldown", plain(q.cooldown()));
+            }
             if (q.giver() != null) {
                 kv(sb, 3, "giver", id(q.giver()));
             }

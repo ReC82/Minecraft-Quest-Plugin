@@ -158,6 +158,8 @@ public final class ContentPackSchema {
         props.put("icon", typed("string", "Material Minecraft servant d'icône dans le journal (ex. « IRON_SWORD »)."));
         props.put("repeatable", typed("boolean", "La quête peut-elle être refaite une fois terminée ?"));
         props.put("secret", typed("boolean", "Masquée dans le journal tant qu'elle n'est pas découverte."));
+        props.put("cooldown", typed("string", "Quête répétable seulement : délai avant de pouvoir la refaire, "
+                + "compté depuis sa complétion (ex. « 20h », « 30m », « 1d » ; 30 jours maximum)."));
         props.put("giver", ref("logicalId"));
         props.put("prerequisites", arrayOf(ref("questId"),
                 "Quêtes qui doivent être terminées avant de pouvoir accepter celle-ci."));

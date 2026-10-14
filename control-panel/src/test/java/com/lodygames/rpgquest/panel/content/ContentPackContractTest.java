@@ -165,6 +165,18 @@ class ContentPackContractTest {
         assertEquals(1L, ((Number) map(map(def("step").get("properties")).get("objectives")).get("minItems")).longValue());
     }
 
+    /**
+     * Issue #13 : le plugin exporte {@code cooldown} pour une quête renouvelable ; le schéma, fermé
+     * ({@code additionalProperties: false}), doit donc le déclarer, sinon un pack exporté par le
+     * serveur ne serait plus conforme à son propre contrat.
+     */
+    @Test
+    void aRepeatableQuestMayDeclareItsCooldown() {
+        Map<String, Object> cooldown = map(map(def("quest").get("properties")).get("cooldown"));
+        assertEquals("string", cooldown.get("type"));
+        assertEquals(Boolean.FALSE, def("quest").get("additionalProperties"));
+    }
+
     /** Les dépendances existent dans le contrat : un import doit pouvoir les confronter au serveur. */
     @Test
     void dependenciesAreDeclarableForEveryReferencedFamily() {

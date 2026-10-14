@@ -85,6 +85,8 @@ content:
   icon: BOOK                         # Material Bukkit (défaut BOOK)
   repeatable: false
   secret: false                      # true = masquée du joueur ; exportée quand même
+  # cooldown: 20h                    # optionnel (#13), quête répétable seulement : délai avant de la
+  #                                  # refaire (s/m/h/d, 30 j max) ; écrit seulement s'il existe
   giver: guide                       # id de PNJ, optionnel
   prerequisites: [rpgquest:intro]    # optionnel
   steps:                             # >= 1 étape, ordonnées

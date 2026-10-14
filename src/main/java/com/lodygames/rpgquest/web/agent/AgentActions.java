@@ -1069,6 +1069,24 @@ public interface AgentActions {
     }
 
     /**
+     * Issue #13 étape 3 — écrit un modèle déjà validé ({@code create} : échoue s'il existe), puis
+     * relit les modèles. Les effets portent les avertissements (biome inconnu, dialogue absent…).
+     */
+    default CompletableFuture<MutationResult> encounterTemplateSave(
+            com.lodygames.rpgquest.encounter.model.EncounterTemplate template, boolean create) {
+        return encounterSiteAction("template", "");
+    }
+
+    default CompletableFuture<MutationResult> encounterTemplateToggle(String templateId, boolean enabled) {
+        return encounterSiteAction("template", "");
+    }
+
+    /** {@code acknowledgeSites} : l'administrateur accepte que les occurrences existantes restent en place. */
+    default CompletableFuture<MutationResult> encounterTemplateDelete(String templateId, boolean acknowledgeSites) {
+        return encounterSiteAction("template", "");
+    }
+
+    /**
      * Citizens UUID → identifiant d'occurrence, pour les PNJ de rencontre actuellement suivis : le
      * roster Citizens les distingue ainsi des PNJ « non rattachés ». Thread quelconque.
      */

@@ -983,6 +983,102 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> encounterTemplateSave(
+            com.lodygames.rpgquest.encounter.model.EncounterTemplate template, boolean create) {
+        if (encounters == null) {
+            return AgentActions.super.encounterTemplateSave(template, create);
+        }
+        // Écriture disque puis relecture : hors du thread principal, comme « Relire les modèles ».
+        return CompletableFuture.supplyAsync(() -> {
+            com.lodygames.rpgquest.encounter.EncounterTemplateStore.Result r = create
+                    ? encounterTemplateStore().create(template) : encounterTemplateStore().update(template);
+            if (!r.ok()) {
+                return MutationResult.of(false, r.code(), r.message());
+            }
+            encounters.templates().reload();
+            return new MutationResult(true, r.code(), r.message(), encounterTemplateWarnings(template));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> encounterTemplateToggle(String templateId, boolean enabled) {
+        if (encounters == null) {
+            return AgentActions.super.encounterTemplateToggle(templateId, enabled);
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            var current = encounterTemplateStore().find(templateId);
+            if (current.isEmpty()) {
+                return MutationResult.of(false, "NOT_FOUND", "Aucun modèle valide « " + templateId
+                        + " » : corrigez ou recréez le fichier avant de l'activer.");
+            }
+            var t = current.get();
+            if (t.enabled() == enabled) {
+                return MutationResult.of(true, "UNCHANGED", "Modèle « " + templateId + " » déjà "
+                        + (enabled ? "actif." : "désactivé."));
+            }
+            var r = encounterTemplateStore().update(new com.lodygames.rpgquest.encounter.model.EncounterTemplate(
+                    t.id(), t.displayName(), t.description(), t.npcId(), t.role(), t.family(), t.biomes(),
+                    t.worlds(), t.weight(), t.maxSites(), t.skinUrl(), enabled));
+            if (!r.ok()) {
+                return MutationResult.of(false, r.code(), r.message());
+            }
+            encounters.templates().reload();
+            return MutationResult.of(true, enabled ? "ENABLED" : "DISABLED", "Modèle « " + templateId + " » "
+                    + (enabled ? "activé : de nouvelles rencontres pourront apparaître."
+                    : "désactivé : plus aucune nouvelle rencontre ; les occurrences existantes restent en place."));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> encounterTemplateDelete(String templateId, boolean acknowledgeSites) {
+        if (encounters == null) {
+            return AgentActions.super.encounterTemplateDelete(templateId, acknowledgeSites);
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            // Recompté ici, au moment de supprimer : la page a pu être affichée avant une apparition.
+            long sites = encounters.sites().stream().filter(s -> s.templateId().equals(templateId)).count();
+            if (sites > 0 && !acknowledgeSites) {
+                return MutationResult.of(false, "HAS_SITES", "« " + templateId + " » a encore " + sites
+                        + " occurrence(s). Cochez l'accord pour les laisser en place, ou retirez-les d'abord. "
+                        + "Rien n'a été supprimé.");
+            }
+            var r = encounterTemplateStore().delete(templateId,
+                    plugin.getDataFolder().toPath().resolve("encounter-backups"));
+            if (!r.ok()) {
+                return MutationResult.of(false, r.code(), r.message());
+            }
+            encounters.templates().reload();
+            List<String> effects = sites == 0 ? List.of()
+                    : List.of(sites + " occurrence(s) conservée(s) : leur PNJ et leur dialogue restent en place.");
+            return new MutationResult(true, r.code(), r.message(), effects);
+        });
+    }
+
+    private com.lodygames.rpgquest.encounter.EncounterTemplateStore encounterTemplateStore() {
+        return new com.lodygames.rpgquest.encounter.EncounterTemplateStore(encounters.templates().directory());
+    }
+
+    /** Ce qui n'empêche pas d'enregistrer mais mérite d'être dit à l'administrateur. */
+    private List<String> encounterTemplateWarnings(com.lodygames.rpgquest.encounter.model.EncounterTemplate t) {
+        List<String> warnings = new ArrayList<>();
+        List<String> unknown = encounters.templates().unknownBiomes(t);
+        if (!unknown.isEmpty()) {
+            warnings.add("⚠ biome(s) inconnu(s) sur ce serveur, ignoré(s) : " + String.join(", ", unknown));
+        }
+        String dialogue = "rpgquest:" + t.npcId();
+        if (dialogueEngine.dialogues().stream().noneMatch(d -> d.id().toString().equals(dialogue))) {
+            warnings.add("⚠ aucun dialogue « " + dialogue + " » : un clic sur ce PNJ n'ouvrira rien.");
+        }
+        long otherIdentity = encounters.sites().stream()
+                .filter(s -> s.templateId().equals(t.id()) && !s.npcId().equals(t.npcId())).count();
+        if (otherIdentity > 0) {
+            warnings.add("⚠ " + otherIdentity + " occurrence(s) existante(s) gardent leur ancien npc_id ; "
+                    + "seules les nouvelles prendront « " + t.npcId() + " ».");
+        }
+        return List.copyOf(warnings);
+    }
+
+    @Override
     public Map<UUID, String> encounterCitizens() {
         return encounters == null ? Map.of() : encounters.citizensSites();
     }

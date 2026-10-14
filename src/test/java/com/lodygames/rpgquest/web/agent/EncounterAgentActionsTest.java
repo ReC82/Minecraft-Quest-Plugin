@@ -52,7 +52,28 @@ class EncounterAgentActionsTest {
         public Map<UUID, String> encounterCitizens() {
             return Map.of(PRESENT, SITE);
         }
+
+        @Override
+        public CompletableFuture<MutationResult> encounterTemplateSave(EncounterTemplate template, boolean create) {
+            saved.add(template);
+            calls.add((create ? "create:" : "update:") + template.id());
+            return CompletableFuture.completedFuture(MutationResult.of(true, create ? "CREATED" : "UPDATED", "ok"));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> encounterTemplateToggle(String templateId, boolean enabled) {
+            calls.add("toggle:" + templateId + ":" + enabled);
+            return CompletableFuture.completedFuture(MutationResult.of(true, "DISABLED", "ok"));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> encounterTemplateDelete(String templateId, boolean acknowledgeSites) {
+            calls.add("delete:" + templateId + ":" + acknowledgeSites);
+            return CompletableFuture.completedFuture(MutationResult.of(true, "DELETED", "ok"));
+        }
     };
+
+    private final List<EncounterTemplate> saved = new ArrayList<>();
 
     private final AgentActionExecutor executor = new AgentActionExecutor(
             ref -> CompletableFuture.completedFuture(Optional.empty()),
@@ -77,6 +98,57 @@ class EncounterAgentActionsTest {
         assertFalse(AgentActionOutcome.SUCCESS.equals(
                 run("encounter.retry", Map.of("siteId", "enc_../../x")).status()));
         assertEquals(List.of("retry:" + SITE, "disable:" + SITE, "remove:" + SITE), calls);
+    }
+
+    @Test
+    void templateFormIsValidatedByTheFileParser() {
+        AgentActionOutcome created = run("encounter.template.create", Map.of("id", "swamp_alchemist",
+                "display_name", "Alchimiste des marais", "biomes", "swamp, minecraft:mangrove_swamp",
+                "worlds", "wild", "weight", "15", "max_sites", "3", "role", "alchimiste", "enabled", "false"));
+
+        assertEquals(AgentActionOutcome.SUCCESS, created.status(), created.message());
+        assertEquals("swamp_alchemist", created.details().get("templateId"));
+        EncounterTemplate t = saved.get(0);
+        assertEquals("swamp_alchemist", t.npcId(), "npc_id = id par défaut, comme dans un fichier");
+        assertEquals(Set.of("minecraft:swamp", "minecraft:mangrove_swamp"), t.biomes());
+        assertEquals(List.of("wild"), t.worlds());
+        assertEquals(15, t.weight());
+        assertEquals(3, t.maxSites());
+        assertFalse(t.enabled());
+
+        assertEquals(AgentActionOutcome.SUCCESS, run("encounter.template.update", Map.of("id", "swamp_alchemist",
+                "display_name", "Alchimiste", "biomes", "swamp")).status());
+        assertEquals(List.of("create:swamp_alchemist", "update:swamp_alchemist"), calls);
+    }
+
+    @Test
+    void invalidTemplateFormsNeverReachTheServer() {
+        List<Map<String, String>> invalid = List.of(
+                Map.of("id", "x", "display_name", "X"),
+                Map.of("id", "../evil", "display_name", "X", "biomes", "forest"),
+                Map.of("id", "x", "display_name", "<red>X", "biomes", "forest"),
+                Map.of("id", "x", "display_name", "X", "biomes", "forest", "weight", "beaucoup"),
+                Map.of("id", "x", "display_name", "X", "biomes", "forest", "weight", "0"),
+                Map.of("id", "x", "display_name", "X", "biomes", "forest", "skin_url", "http://evil.example/s"),
+                Map.of("id", "x", "display_name", "X", "biomes", "forest", "description", "a\nb"));
+        for (Map<String, String> params : invalid) {
+            AgentActionOutcome outcome = run("encounter.template.create", params);
+            assertFalse(AgentActionOutcome.SUCCESS.equals(outcome.status()), params::toString);
+        }
+        assertTrue(saved.isEmpty());
+    }
+
+    @Test
+    void toggleAndDeleteNeedExplicitParameters() {
+        assertFalse(AgentActionOutcome.SUCCESS.equals(
+                run("encounter.template.toggle", Map.of("id", "forest_bandit")).status()));
+        assertEquals(AgentActionOutcome.SUCCESS,
+                run("encounter.template.toggle", Map.of("id", "forest_bandit", "enabled", "false")).status());
+        assertFalse(AgentActionOutcome.SUCCESS.equals(run("encounter.template.delete", Map.of()).status()));
+        run("encounter.template.delete", Map.of("id", "forest_bandit"));
+        run("encounter.template.delete", Map.of("id", "forest_bandit", "acknowledge_sites", "true"));
+        assertEquals(List.of("toggle:forest_bandit:false", "delete:forest_bandit:false",
+                "delete:forest_bandit:true"), calls, "l'accord sur les occurrences n'est jamais supposé");
     }
 
     @Test

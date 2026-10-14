@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
  *       c = VALUES(c)} (forme supportée par MariaDB 10.11) ;</li>
  *   <li>{@link #ddl(String)} — adapte le <strong>DDL</strong> SQLite canonique des migrations :
  *       {@code TEXT} clé/index/NOT NULL → {@code VARCHAR(191)} ; {@code TEXT} nullable → {@code TEXT} ;
+ *       sauf les textes libres de {@link #FREE_TEXT_COLUMNS}, qui restent {@code TEXT} (issue #354) ;
  *       {@code INTEGER} → {@code BIGINT} (SQLite stocke les entiers en 64 bits, le code fait des
  *       {@code getLong}) ; {@code INTEGER PRIMARY KEY AUTOINCREMENT} → {@code BIGINT NOT NULL
  *       AUTO_INCREMENT PRIMARY KEY} ; {@code BLOB} → {@code LONGBLOB} ; ajout du moteur InnoDB
@@ -36,6 +37,37 @@ public final class MySqlDialect implements SqlDialect {
 
     private static final String TABLE_SUFFIX = " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
     private static final String KEYED_TEXT_TYPE = "VARCHAR(191)";
+
+    /**
+     * Issue #354 — colonnes {@code TEXT NOT NULL} de <strong>texte libre</strong> (descriptions,
+     * messages, chemins de fichiers, valeurs de skin), hors de toute clé et de tout index : elles
+     * restent {@code TEXT} au lieu de {@code VARCHAR(191)}, sinon MariaDB strict refuse toute valeur
+     * de plus de 191 caractères. Toute autre colonne {@code TEXT NOT NULL} reste {@code VARCHAR(191)}
+     * (horodatage, énumération, identifiant) : {@code MySqlDialectTranslationTest} exige que chaque
+     * nouvelle colonne soit classée d'un côté ou de l'autre. Un texte libre ajouté au schéma doit
+     * figurer ici (et, si la table existe déjà en MariaDB, être élargi par une migration).
+     *
+     * <p>{@code defaultLiteral} reproduit le {@code DEFAULT} du DDL canonique ({@code null} = aucun),
+     * pour que l'élargissement des bases existantes (V35) garde la même définition.</p>
+     */
+    static final List<FreeTextColumn> FREE_TEXT_COLUMNS = List.of(
+            new FreeTextColumn("backpack_overflow", "reason", null),
+            new FreeTextColumn("npc_citizens_skins", "source_value", null),
+            new FreeTextColumn("building_placements", "backup_schematic", "''"),
+            new FreeTextColumn("building_sites", "description", "''"),
+            new FreeTextColumn("building_baselines", "schematic", null),
+            new FreeTextColumn("building_placement_history", "detail", "''"),
+            new FreeTextColumn("building_placement_history", "backup_schematic", "''"),
+            new FreeTextColumn("encounter_sites", "last_error", "''"));
+
+    /** Colonne de texte libre {@code NOT NULL} (voir {@link #FREE_TEXT_COLUMNS}). */
+    record FreeTextColumn(String table, String column, String defaultLiteral) {
+
+        String widenDdl() {
+            return "ALTER TABLE " + table + " MODIFY COLUMN " + column + " TEXT NOT NULL"
+                    + (defaultLiteral == null ? "" : " DEFAULT " + defaultLiteral);
+        }
+    }
 
     private static final Pattern INSERT_OR_IGNORE = Pattern.compile("(?i)INSERT\\s+OR\\s+IGNORE\\s+INTO");
     private static final Pattern ON_CONFLICT_DO_UPDATE =
@@ -108,14 +140,14 @@ public final class MySqlDialect implements SqlDialect {
                 out.add(p);
                 continue;
             }
-            out.add(translateColumn(p, keyed));
+            out.add(translateColumn(tableName, p, keyed));
         }
 
         return "CREATE TABLE IF NOT EXISTS " + tableName + " (\n    "
                 + String.join(",\n    ", out) + "\n)" + TABLE_SUFFIX;
     }
 
-    private String translateColumn(String columnDef, Set<String> keyed) {
+    private String translateColumn(String tableName, String columnDef, Set<String> keyed) {
         String[] tokens = columnDef.split("\\s+", 3);
         String name = tokens[0];
         String type = tokens.length > 1 ? tokens[1].toUpperCase(java.util.Locale.ROOT) : "";
@@ -131,13 +163,23 @@ public final class MySqlDialect implements SqlDialect {
             }
             case "BLOB" -> trim(name + " LONGBLOB " + rest);
             case "TEXT" -> {
-                boolean asVarchar = restUpper.contains("NOT NULL")
+                boolean asVarchar = (restUpper.contains("NOT NULL") && !isFreeText(tableName, name))
                         || restUpper.contains("PRIMARY KEY")
                         || keyed.contains(name);
                 yield trim(name + " " + (asVarchar ? KEYED_TEXT_TYPE : "TEXT") + " " + rest);
             }
             default -> columnDef; // laisser tel quel (aucun cas dans le schéma RPGQuest)
         };
+    }
+
+    private static boolean isFreeText(String table, String column) {
+        return FREE_TEXT_COLUMNS.stream()
+                .anyMatch(c -> c.table().equalsIgnoreCase(table) && c.column().equalsIgnoreCase(column));
+    }
+
+    @Override
+    public List<String> freeTextWidenings() {
+        return FREE_TEXT_COLUMNS.stream().map(FreeTextColumn::widenDdl).toList();
     }
 
     // ---- schéma / colonnes ---------------------------------------------------------------

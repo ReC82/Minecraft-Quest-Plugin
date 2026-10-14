@@ -38,6 +38,15 @@ public interface SqlDialect {
         return canonicalSqliteDdl;
     }
 
+    /**
+     * Ordres DDL qui élargissent en texte non borné les colonnes de texte libre qu'une version
+     * antérieure du dialecte avait créées trop courtes (issue #354, migration V35). Idempotents.
+     * Vide pour SQLite, dont {@code TEXT} n'a jamais de longueur maximale.
+     */
+    default List<String> freeTextWidenings() {
+        return List.of();
+    }
+
     /** Requête triviale de vérification de vie de la connexion. */
     default String healthQuery() {
         return "SELECT 1";

@@ -112,21 +112,41 @@ class MariaDbMigrationIntegrationTest {
 
     @Test
     void textLongerThanTargetColumnIsDetectedBeforeAnyWrite() throws Exception {
+        // building_sites.name est un texte court borné (VARCHAR(191) sur MariaDB) : une valeur plus
+        // longue doit arrêter l'outil avant toute écriture.
         Path source = MigrationFixtures.realisticDatabase(dir.resolve("data.db"));
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + source);
-             PreparedStatement insert = connection.prepareStatement(
-                     "INSERT INTO building_sites (id, name, description, world, x, y, z, facing, created_at) "
-                             + "VALUES ('buildsite_1', 'Hutte', ?, 'world', 0, 64, 0, 'NORTH', 'maintenant')")) {
-            insert.setString(1, "x".repeat(400));
-            insert.executeUpdate();
-        }
+        insertBuildingSite(source, "x".repeat(400), "");
 
         MigrationReport report = run(source, MigrationMode.DRY_RUN);
 
         assertEquals(MigrationReport.Status.FAILED, report.status());
-        assertTrue(report.findings().stream().anyMatch(f -> f.scope().equals("building_sites.description")),
+        assertTrue(report.findings().stream().anyMatch(f -> f.scope().equals("building_sites.name")),
                 report.toText());
         assertTrue(report.tables().isEmpty(), "copie non tentée");
+    }
+
+    @Test
+    void longFreeTextDescriptionPassesTheDryRun() throws Exception {
+        // Issue #354 — une description de texte libre est un TEXT sur MariaDB, plus un VARCHAR(191).
+        Path source = MigrationFixtures.realisticDatabase(dir.resolve("data.db"));
+        insertBuildingSite(source, "Hutte", "x".repeat(2_000));
+
+        MigrationReport report = run(source, MigrationMode.DRY_RUN);
+
+        assertEquals(MigrationReport.Status.SUCCESS, report.status(), report.toText());
+        assertTrue(report.findings().stream().noneMatch(f -> f.scope().equals("building_sites.description")),
+                report.toText());
+    }
+
+    private static void insertBuildingSite(Path source, String name, String description) throws SQLException {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + source);
+             PreparedStatement insert = connection.prepareStatement(
+                     "INSERT INTO building_sites (id, name, description, world, x, y, z, facing, created_at) "
+                             + "VALUES ('buildsite_1', ?, ?, 'world', 0, 64, 0, 'NORTH', 'maintenant')")) {
+            insert.setString(1, name);
+            insert.setString(2, description);
+            insert.executeUpdate();
+        }
     }
 
     private long count(String table) throws SQLException {

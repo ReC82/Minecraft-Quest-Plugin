@@ -48,6 +48,37 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - PlugAdmin : base propre au panel préparée, sans migration (#43)
+
+### Changement
+
+Panel uniquement : section « Base propre au panel » sur `/database` — stockage actif
+`control-panel.db` et inventaire en lecture seule, base MariaDB du panel enregistrée **non
+utilisée** (mot de passe chiffré), test de connexion avec contrôle d'isolement, plan de migration
+avec bascule désactivée. Nouvelle table `panel_db_target` dans `control-panel.db` (créée au
+démarrage). Aucune migration, aucun changement de stockage du panel.
+
+### Action serveur
+
+Aucune sur VeryGames (le JAR RPGQuest ne change pas). Redéploiement du panel seul
+(`scripts/plugadmin/deploy.sh`).
+
+### Sauvegarde préalable
+
+Celle du panel faite par `deploy.sh` (`/opt/plugadmin/releases/<horodatage>`).
+
+### Validation
+
+`/database` affiche la section « Base propre au panel », « SQLite — control-panel.db » actif et
+l'inventaire. `PENDING MANUAL VALIDATION` : test de connexion vers une vraie base dédiée au panel
+(propriétaire, ses identifiants).
+
+### Rollback
+
+Redéployer le panel précédent ; la table `panel_db_target` reste inerte.
+
+---
+
 ## 2026-10-14 - Base de données : textes libres en TEXT côté MariaDB, migration V35 (#354)
 
 ### Changement

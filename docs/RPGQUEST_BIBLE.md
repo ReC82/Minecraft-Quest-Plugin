@@ -5503,6 +5503,16 @@ database:
   compte, TLS ; mot de passe chiffré AES-256-GCM dans `control-panel.db`, jamais réaffiché, vide =
   conserver, effacement séparé confirmé), test de connexion en lecture seule borné, assistant de
   migration dont le bouton de bascule est désactivé. Audit sans hôte ni secret.
+- **Base propre au panel (issue #43, même page, section « Base propre au panel »)** : le panel garde
+  ses données d'administration dans `control-panel.db` (SQLite, **stockage actif**, inventaire des
+  tables en lecture seule) et ne touche jamais la base du plugin (jeu lu/modifié via l'agent et le
+  pont). Une base MariaDB **dédiée au panel** peut être enregistrée (mêmes garanties de mot de passe,
+  usage de chiffrement distinct, table `panel_db_target`) avec le badge « enregistrée — non
+  utilisée » ; une base identique à la cible RPGQuest est refusée, un compte partagé signalé. Le test
+  vérifie en plus l'**isolement** : échec si le compte voit une base contenant
+  `rpgquest_schema_migrations`. Plan de migration du panel en 5 étapes, bascule **désactivée**.
+  Audit `database.panelTarget.*`. Frontière de données, prérequis, runbook et rollback :
+  [deployment/PANEL_DATABASE.md](deployment/PANEL_DATABASE.md).
 - Détail complet : [PERSISTENCE.md](PERSISTENCE.md).
 
 ### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 18)

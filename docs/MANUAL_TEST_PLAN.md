@@ -5946,3 +5946,39 @@ publiées ; un joueur de test à 10 cœurs, sans autre bonus de vie. **Durée** 
 Paper (le modificateur est réappliqué après `PlayerPostRespawnEvent`), affichage au-delà de 2
 rangées de cœurs.
 
+
+### TC-312 — Modèle d'histoire et pack « Les souvenirs de Lily » (issue #211, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de la branche `feature/211-lily-story-template`. Sur DEV, `lily` et
+`julius` existent déjà comme PNJ logiques liés à Citizens (#10 et #11) et n'ont pas de dialogue.
+**Durée** : 40 minutes. **Gratuit** (aucun appel IA par PlugAdmin).
+
+1.  Téléphone puis bureau : **Import contenu** → carte « Créer une histoire avec une IA externe ».
+    **Attendu** : les 6 étapes, le bouton **Télécharger un modèle d'histoire** (archive `.zip`), les
+    six liens unitaires, le prompt dans une zone de texte sélectionnable.
+2.  Ouvrir l'archive : `LISEZ-MOI.txt`, deux fiches `.md` (« n'est PAS importable » en tête), deux
+    `.json`, le prompt, le guide (qui liste tous les objectifs, récompenses, actions et conditions).
+3.  (Facultatif, chaîne réelle) Donner fiche Lily + guide + exemple + prompt à une IA externe ;
+    enregistrer sa réponse en `.json` et la déposer. Noter dans le rapport ce que l'IA a produit.
+4.  **Analyser l'exemple Lily**. **Attendu** : 5 quêtes, 1 story, 2 dialogues « nouveau » ; `lily` et
+    `julius` « existe déjà sur le serveur » (réutilisés, non modifiés) ; aperçu : story dans l'ordre
+    repas → fleurs → recette → tarte → Julius, objectifs avec quantités (3 × BREAD…), récompenses.
+    Aucune collision. Rien n'est écrit (vérifier `git status` du dépôt source : inchangé).
+5.  **Enregistrer dans la source** (une seule confirmation). **Attendu** : 8 fichiers écrits ; aucun
+    PNJ créé. Réimporter : tout « inchangé », pas de bouton d'enregistrement.
+6.  Éditeurs habituels : changer la quantité de pain de `rpgquest:lily_repas` (3 → 2) et la première
+    réplique de Lily ; enregistrer, relire. **Attendu** : conservé, story toujours liée.
+7.  **Changements en attente** : publier **uniquement** les 8 fichiers Lily (pas ceux du
+    propriétaire). **Attendu** : « Mis à jour sur DEV, rechargé et confirmé par le moteur ».
+    ⚠️ À partir de là, cliquer sur Lily ouvre le dialogue `rpgquest:lily`.
+8.  En jeu, compte de test : Lily → « Tu as l'air affamée… » → accepter ; remettre pain et pommes
+    (dépôt partiel conservé) → 20 XP une seule fois. Enchaîner fleurs, recette (citrouille, sucre,
+    œufs, blé), tarte (4 charbons, puis reparler à Lily → 40 XP + 2 tartes) ; « Ce Julius… » →
+    accepter. Aucune quête terminée ou verrouillée n'est proposée ; « Pas maintenant » ne démarre rien.
+9.  Aller voir Julius (autre ville) : « Lily m'envoie » → récit → quête terminée (60 XP, variable
+    `LILY_JULIUS_RETROUVE`). Revenir à Lily : « J'ai parlé à Julius » → conclusion ouverte.
+10. Reconnexion : aucune double récompense. Collision : modifier `lily_fleurs` dans la source puis
+    réanalyser → conflit à trancher, rien d'écrasé.
+
+**Non vérifiable par les tests automatisés** : rendu mobile réel, comportement du clic Citizens,
+production d'un pack par une IA externe réelle.

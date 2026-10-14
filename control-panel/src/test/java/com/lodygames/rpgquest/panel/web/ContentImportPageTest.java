@@ -239,15 +239,84 @@ class ContentImportPageTest {
         assertFalse(page.contains("Enregistrer dans la source"));
     }
 
+    /** Issue #211 — le parcours « modèle d'histoire » est visible dès la page vide. */
+    @Test
+    void theEmptyPageOffersTheStoryTemplateAndThePrompt() throws Exception {
+        start();
+        login();
+
+        String page = get("/content/import").body();
+
+        assertTrue(page.contains("Télécharger un modèle d"), "bouton de téléchargement absent");
+        assertTrue(page.contains("href=\"/content/story-kit\""));
+        assertTrue(page.contains("/content/story-kit?file=exemple-pack-lily.json"));
+        assertTrue(page.contains("UNIQUEMENT le fichier JSON"), "prompt prêt à copier absent");
+        assertTrue(page.contains("Analyser l"), "essai en un clic de l'exemple Lily absent");
+    }
+
+    /** Issue #211 — Lily de bout en bout sur la page : aperçu, puis UNE confirmation crée tout. */
+    @Test
+    void theLilyPackIsPreviewedThenImportedInOneConfirmation() throws Exception {
+        start();
+        login();
+        String lily = com.lodygames.rpgquest.panel.content.StoryKit.lilyPack();
+
+        String analysed = post("/content/import", "pack=" + enc(lily) + "&_csrf=" + csrf(get("/content/import").body())).body();
+        assertTrue(analysed.contains("Aperçu de"), "aperçu éditorial absent");
+        assertTrue(analysed.contains("Un repas pour Lily") && analysed.contains("Sur la piste de Julius"));
+        assertTrue(analysed.contains("3 × BREAD"), "objectifs et quantités visibles avant confirmation");
+        assertTrue(analysed.contains("SANS placement"), "le placement à faire doit être dit");
+        assertTrue(analysed.contains("Voir le contenu qui sera enregistré"));
+        try (var files = Files.list(contentRoot.resolve("quests"))) {
+            assertEquals(0, files.count(), "l'analyse n'écrit rien");
+        }
+
+        String page = post("/content/import", "pack=" + enc(lily) + "&confirm=true&_csrf="
+                + csrf(get("/content/import").body())).body();
+
+        assertTrue(page.contains("Import enregistré"));
+        for (String q : new String[] {"lily_repas", "lily_fleurs", "lily_ingredients", "lily_tarte", "lily_julius"}) {
+            assertTrue(Files.isRegularFile(contentRoot.resolve("quests/" + q + ".yml")), q);
+        }
+        assertTrue(Files.isRegularFile(contentRoot.resolve("stories/lily_souvenirs.yml")));
+        assertTrue(Files.isRegularFile(contentRoot.resolve("dialogues/lily.yml")));
+        assertTrue(Files.isRegularFile(contentRoot.resolve("dialogues/julius.yml")));
+    }
+
+    /**
+     * Sans agent configuré, la création des PNJ du pack ne peut pas partir : la source est écrite,
+     * et la page le DIT — elle ne doit pas répondre vide (constat du rendu local #211).
+     */
+    @Test
+    void withoutAnAgentTheImportStillAnswersAndSaysTheCharactersAreNotCreated() throws Exception {
+        start(false);
+        login();
+        String lily = com.lodygames.rpgquest.panel.content.StoryKit.lilyPack();
+
+        HttpResponse<String> res = post("/content/import", "pack=" + enc(lily) + "&confirm=true&_csrf="
+                + csrf(get("/content/import").body()));
+
+        assertEquals(200, res.statusCode());
+        assertTrue(res.body().contains("Import enregistré"));
+        assertTrue(res.body().contains("aucun agent serveur configuré"), "le motif doit être affiché");
+        assertTrue(Files.isRegularFile(contentRoot.resolve("stories/lily_souvenirs.yml")));
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     private void start() throws Exception {
+        start(true);
+    }
+
+    private void start(boolean withAgent) throws Exception {
         contentRoot = tmp.resolve("content");
         for (String kind : com.lodygames.rpgquest.panel.content.ContentWorkspace.KINDS) {
             Files.createDirectories(contentRoot.resolve(kind));
         }
         String db = tmp.resolve("cp.db").toString();
-        app = new PanelApp(TestConfig.withContentDir(db, "http://127.0.0.1:1/admin/v1", contentRoot.toString()),
+        app = new PanelApp(withAgent
+                ? TestConfig.withContentDir(db, "http://127.0.0.1:1/admin/v1", contentRoot.toString())
+                : TestConfig.withContentDirNoAgent(db, "http://127.0.0.1:1/admin/v1", contentRoot.toString()),
                 new InMemoryAuditLog(), new BridgeClient(Duration.ofMillis(300), Duration.ofMillis(400)),
                 new AgentStore(db));
         port = app.start();

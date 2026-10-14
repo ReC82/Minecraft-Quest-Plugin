@@ -113,6 +113,53 @@ jamais dans Git. L'écran n'affiche que sa longueur et une empreinte, de quoi re
 est en place sans en révéler un caractère. Un champ clé laissé vide signifie « ne pas y toucher » ;
 effacer est un bouton distinct.
 
+## Raconter une histoire et la faire écrire par une IA (modèle d'histoire)
+
+Sur **Import contenu**, la carte **« Créer une histoire avec une IA externe »** propose le bouton
+**Télécharger un modèle d'histoire** : une archive `.zip` (un seul téléchargement, aussi sur
+téléphone) qui contient tout ce qu'il faut donner à ChatGPT, Claude ou une autre IA. Chaque fichier
+est aussi téléchargeable seul.
+
+| Fichier | Pour qui | Importable ? |
+|---|---|---|
+| `modele-histoire-lily.md` — fiche narrative remplie (« Les souvenirs de Lily ») | l'auteur et l'IA | **non** |
+| `modele-histoire-vierge.md` — fiche narrative à remplir | l'auteur | **non** |
+| `exemple-pack-lily.json` — 2 personnages, 1 story, 5 quêtes, 2 dialogues | l'IA (modèle de forme) | **oui** |
+| `modele-pack-vierge.json` — squelette valide « À REMPLIR » | l'IA | oui (inutile tel quel) |
+| `prompt-ia.txt` — consigne prête à coller (aussi affichée sur la page) | l'IA | non |
+| `guide-ia-lodyquests.md` — guide pédagogique + contrat **généré** du moteur | l'IA | non |
+
+**La différence est essentielle** : une fiche `.md` est du texte libre pour l'auteur ; **seul un
+fichier `.json`** se dépose dans l'import. Un texte libre n'est jamais importable.
+
+Le parcours :
+
+1. **Télécharger** le modèle.
+2. **Remplir** la fiche vierge avec son histoire (ou garder la fiche Lily pour un essai).
+3. Dans l'IA : joindre la fiche, le guide et l'exemple Lily, puis coller le **prompt**. L'IA rend
+   un seul fichier JSON.
+4. **Déposer** le `.json` dans « 1. Le pack à importer » → **Analyser**. L'**aperçu de l'histoire**
+   montre la story dans l'ordre, chaque quête (donneur, déblocage, objectifs avec quantités,
+   récompenses), les personnages et les dialogues — **avant** toute écriture.
+5. **Enregistrer dans la source** : une seule confirmation crée tout, ou rien.
+6. **Publier sur DEV** depuis **Changements en attente**, puis lier chaque personnage à un PNJ
+   Citizens depuis la page **PNJ**.
+
+Le bouton **Analyser l'exemple Lily** lance directement l'analyse du pack Lily (sans rien écrire),
+pour voir le résultat attendu sans manipuler de fichier.
+
+**Personnages** : un personnage du pack **inconnu du serveur** est créé à la confirmation comme PNJ
+logique, **sans placement** ni liaison Citizens. Un personnage **déjà connu** (par exemple `lily`
+et `julius` sur DEV, déjà liés à Citizens) est **réutilisé tel quel** : l'import ne le modifie
+pas. Son dialogue `rpgquest:<id>` s'y rattache par convention dès la publication — ce qui
+**remplace ce que ce PNJ faisait jusque-là au clic**. Le guide interdit à l'IA d'inventer des
+coordonnées ; un objectif « atteindre une zone » n'est écrit qu'avec de vraies coordonnées.
+
+**La tarte de Lily** : RPGQuest n'a pas de recette personnalisée. Dans l'exemple, Lily cuisine dans
+le récit ; le joueur **remet** les ingrédients puis du charbon, et **reparle** à Lily (objectif
+« parler à »). Pour que le joueur fabrique lui-même la tarte, utiliser `CRAFT_ITEM` `PUMPKIN_PIE`
+(recette vanilla).
+
 ## Faire générer un pack par une IA, à la main
 
 La même page propose trois documents à télécharger. Ils décrivent le format de façon exploitable
@@ -152,12 +199,11 @@ Marche à suivre typique :
 
 - **Import** : l'import écrit dans la **source**, pas sur le serveur Minecraft. Activer le contenu
   importé reste une opération distincte (rechargement ou déploiement).
-- **Familles importables** : quêtes, stories et dialogues. Les **PNJ** font partie du format de pack
-  mais ne sont pas éditables depuis le panel : ils sont listés comme « ignorés », avec leur motif,
-  jamais écrits ni perdus en silence.
-- **Dialogues** : le schéma ne contraint que le squelette d'un dialogue (identifiant, nœud de départ,
-  nœuds, choix). Le vocabulaire complet de ses **actions** et **conditions** n'est pas encore décrit
-  par le contrat : s'en tenir à ce que montre l'exemple complet, ou demander la liste à jour.
+- **Familles importables** : quêtes, stories et dialogues sont écrits dans la source. Un **PNJ
+  logique** inconnu du serveur est créé après l'écriture complète (sans placement) ; un PNJ déjà
+  connu n'est jamais modifié par l'import.
+- **Collisions** : un identifiant existant et différent bloque l'import jusqu'à décision explicite ;
+  réimporter le même pack ne crée rien en double (tout « inchangé »).
 - **Familles** : seules quêtes, stories, dialogues et PNJ logiques sont couverts. Les objets
   personnalisés, recettes et waypoints ne font pas partie du format pour l'instant.
 

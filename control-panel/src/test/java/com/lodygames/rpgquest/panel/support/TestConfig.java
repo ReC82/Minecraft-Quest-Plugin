@@ -42,6 +42,11 @@ public final class TestConfig {
         return build(dbPath, bridgeUrl, false, agentSettings(), contentRepoDir);
     }
 
+    /** Espace de travail contenu SANS agent déclaré (issue #211 : import sans création de PNJ). */
+    public static PanelConfig withContentDirNoAgent(String dbPath, String bridgeUrl, String contentRepoDir) {
+        return build(dbPath, bridgeUrl, false, AgentSettings.none(), contentRepoDir);
+    }
+
     private static AgentSettings agentSettings() {
         return new AgentSettings(
                 List.of(new AgentIdentity(AGENT_ID, "dev", AGENT_TOKEN)),

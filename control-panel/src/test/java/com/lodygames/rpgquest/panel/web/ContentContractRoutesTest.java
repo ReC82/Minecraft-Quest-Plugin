@@ -137,6 +137,27 @@ class ContentContractRoutesTest {
         assertTrue(page.contains("Contrat de contenu"), "titre de section absent");
     }
 
+    /** Issue #211 — le modèle d'histoire : archive, fichier unitaire, liste blanche. */
+    @Test
+    void theStoryKitIsServedAsAnArchiveOrFileByFile() throws Exception {
+        start();
+        assertEquals(303, get("/content/story-kit").statusCode(), "session exigée");
+        login();
+
+        HttpResponse<String> zip = get("/content/story-kit");
+        assertEquals(200, zip.statusCode());
+        assertTrue(zip.headers().firstValue("Content-Disposition").orElse("")
+                .contains("modele-histoire-lodyquests.zip"));
+
+        HttpResponse<String> json = get("/content/story-kit?file=exemple-pack-lily.json");
+        assertEquals(200, json.statusCode());
+        assertTrue(json.headers().firstValue("Content-Disposition").orElse("").contains("exemple-pack-lily.json"));
+        assertTrue(json.body().contains("\"lodyquests-content-pack\""));
+
+        assertTrue(get("/content/story-kit?file=guide-ia-lodyquests.md").body().contains("DELIVER_ITEM_TO_NPC"));
+        assertEquals(404, get("/content/story-kit?file=..%2Fpanel.properties").statusCode());
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     private void start() throws Exception {

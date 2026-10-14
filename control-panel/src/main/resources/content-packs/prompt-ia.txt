@@ -1,0 +1,19 @@
+Tu vas produire un fichier de contenu pour le serveur Minecraft RPGQuest (format « lodyquests-content-pack »).
+
+Pièces jointes :
+1. une FICHE NARRATIVE (fichier .md) écrite par l'auteur, en français courant : c'est l'histoire à adapter ;
+2. le GUIDE « guide-ia-lodyquests.md » : il décrit le format, les règles et TOUTES les capacités réellement disponibles ;
+3. l'EXEMPLE « exemple-pack-lily.json » : un pack complet et valide, à prendre comme modèle de forme.
+
+Ta tâche :
+- Lis la fiche narrative et le guide en entier avant d'écrire quoi que ce soit.
+- Complète toutes les définitions nécessaires (personnages, story, quêtes, dialogues, liens) en respectant STRICTEMENT le format du guide et les capacités qu'il énumère.
+- Ne crée AUCUN type d'objectif, de récompense, d'action, de condition ou de matériau qui n'est pas listé dans le guide. Pas de recette personnalisée, pas de mécanique inventée.
+- N'invente jamais de coordonnées ni de lieu précis. N'associe jamais un personnage à un PNJ existant sauf si la fiche donne son identifiant exact.
+- Respecte la checklist finale du guide (identifiants, références, dialogues, déblocages).
+- Si une information manque ou si un souhait de la fiche est impossible avec les capacités disponibles : n'invente pas, choisis l'option la plus simple et la plus honnête décrite dans le guide, et écris le point dans « metadata.notes » (ex. « À VALIDER : position de Julius inconnue »).
+
+Réponse attendue :
+- Retourne UNIQUEMENT le fichier JSON importable, complet, en un seul bloc.
+- Aucun texte d'explication avant ou après, aucun commentaire dans le JSON (le JSON n'en accepte pas).
+- Le fichier commence par { et se termine par }.

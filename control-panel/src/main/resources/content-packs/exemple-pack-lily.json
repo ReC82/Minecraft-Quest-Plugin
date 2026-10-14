@@ -1,0 +1,345 @@
+{
+  "format": "lodyquests-content-pack",
+  "schemaVersion": 1,
+  "metadata": {
+    "title": "Les souvenirs de Lily",
+    "author": "exemple de référence RPGQuest",
+    "generator": "écrit à la main à partir de modele-histoire-lily.md (issue #211)",
+    "notes": "Quantités et récompenses modestes, modifiables dans les éditeurs après import. Lily (village central) et Julius (autre ville) ne sont PAS placés par l'import : les lier ensuite à un PNJ Citizens depuis la page des PNJ.",
+    "synopsis": "Pendant la bataille contre les monstres et les zombies, Lily et ses parents ont fui ; Lily a perdu leur trace. Elle est seule au village central. Le joueur l'aide à se nourrir, lui apporte des fleurs et les ingrédients d'une vieille recette de tarte de sa mère. En partageant la tarte, Lily se souvient de Julius, le meilleur ami de son père, qui aurait survécu et vivrait dans une autre ville, près de l'ancien village. Le joueur va parler à Julius pour suivre la piste des parents — sans conclusion définitive sur leur sort.",
+    "placements": "Lily : village central (PNJ Citizens à lier). Julius : une autre ville, près de l'ancien village (PNJ Citizens à lier). Aucune coordonnée n'est fournie par ce pack."
+  },
+  "content": {
+    "quests": [
+      {
+        "id": "rpgquest:lily_repas",
+        "title": "Un repas pour Lily",
+        "description": "Lily n'a rien mangé depuis sa fuite. Apporte-lui du pain et des pommes.",
+        "category": "lily",
+        "icon": "BREAD",
+        "repeatable": false,
+        "secret": false,
+        "giver": "lily",
+        "steps": [
+          {
+            "id": "nourrir",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "BREAD", "amount": 3 },
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "APPLE", "amount": 4 }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 20 }
+        ]
+      },
+      {
+        "id": "rpgquest:lily_fleurs",
+        "title": "Des fleurs pour Lily",
+        "description": "Le jardin de sa mère était plein de coquelicots et de pissenlits. Lily aimerait en avoir près d'elle.",
+        "category": "lily",
+        "icon": "POPPY",
+        "repeatable": false,
+        "secret": false,
+        "giver": "lily",
+        "prerequisites": ["rpgquest:lily_repas"],
+        "steps": [
+          {
+            "id": "fleurs",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "POPPY", "amount": 3 },
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "DANDELION", "amount": 3 }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 25 }
+        ]
+      },
+      {
+        "id": "rpgquest:lily_ingredients",
+        "title": "La vieille recette",
+        "description": "Lily a gardé la recette de tarte à la citrouille de sa mère. Réunis les ingrédients et apporte-les-lui.",
+        "category": "lily",
+        "icon": "PUMPKIN",
+        "repeatable": false,
+        "secret": false,
+        "giver": "lily",
+        "prerequisites": ["rpgquest:lily_fleurs"],
+        "steps": [
+          {
+            "id": "ingredients",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "PUMPKIN", "amount": 1 },
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "SUGAR", "amount": 2 },
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "EGG", "amount": 2 },
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "WHEAT", "amount": 3 }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 40 }
+        ]
+      },
+      {
+        "id": "rpgquest:lily_tarte",
+        "title": "La tarte de maman",
+        "description": "Lily a tout ce qu'il faut, sauf de quoi chauffer son four de fortune. Apporte-lui du charbon, puis reviens goûter la tarte avec elle.",
+        "category": "lily",
+        "icon": "PUMPKIN_PIE",
+        "repeatable": false,
+        "secret": false,
+        "giver": "lily",
+        "prerequisites": ["rpgquest:lily_ingredients"],
+        "steps": [
+          {
+            "id": "four",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "lily", "material": "COAL", "amount": 4 }
+            ]
+          },
+          {
+            "id": "gouter",
+            "objectives": [
+              { "type": "TALK_TO_NPC", "npc": "lily" }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 40 },
+          { "type": "ITEM", "material": "PUMPKIN_PIE", "amount": 2 }
+        ]
+      },
+      {
+        "id": "rpgquest:lily_julius",
+        "title": "Sur la piste de Julius",
+        "description": "Julius, le meilleur ami du père de Lily, aurait survécu. Il vivrait dans une autre ville, près de l'ancien village. Va lui parler.",
+        "category": "lily",
+        "icon": "WRITABLE_BOOK",
+        "repeatable": false,
+        "secret": false,
+        "giver": "lily",
+        "prerequisites": ["rpgquest:lily_tarte"],
+        "steps": [
+          {
+            "id": "parler_julius",
+            "objectives": [
+              { "type": "TALK_TO_NPC", "npc": "julius" }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 60 },
+          { "type": "VARIABLE", "key": "LILY_JULIUS_RETROUVE", "value": "true" }
+        ]
+      }
+    ],
+    "stories": [
+      {
+        "id": "lily_souvenirs",
+        "name": "Les souvenirs de Lily",
+        "secret": false,
+        "quests": [
+          "rpgquest:lily_repas",
+          "rpgquest:lily_fleurs",
+          "rpgquest:lily_ingredients",
+          "rpgquest:lily_tarte",
+          "rpgquest:lily_julius"
+        ]
+      }
+    ],
+    "dialogues": [
+      {
+        "id": "rpgquest:lily",
+        "start": "accueil",
+        "nodes": {
+          "accueil": {
+            "speaker": "Lily",
+            "text": "Oh… bonjour. Je m'appelle Lily. Pendant la bataille contre les monstres, j'ai fui avec mes parents… et je les ai perdus. Je suis seule ici, maintenant.",
+            "choices": [
+              { "text": "Tu as l'air affamée. Je peux t'aider ?",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_repas" } ],
+                "next": "offre_repas" },
+              { "text": "Tu vas mieux ? Je peux faire autre chose ?",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_fleurs" } ],
+                "next": "offre_fleurs" },
+              { "text": "Tu parlais d'une recette de ta mère…",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_ingredients" } ],
+                "next": "offre_ingredients" },
+              { "text": "Et cette tarte, on la prépare ?",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_tarte" } ],
+                "next": "offre_tarte" },
+              { "text": "Ce Julius dont tu te souviens…",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_julius" } ],
+                "next": "offre_julius" },
+              { "text": "Je t'apporte ce que tu m'as demandé",
+                "conditions": [ { "type": "HAS_PENDING_DELIVERY" } ],
+                "next": "remise" },
+              { "text": "Le four est chaud ? Goûtons la tarte.",
+                "conditions": [
+                  { "type": "QUEST_STATE", "quest": "rpgquest:lily_tarte", "state": "ACTIVE" },
+                  { "type": "HAS_PENDING_DELIVERY", "negate": true } ],
+                "next": "gouter" },
+              { "text": "Je cherche toujours Julius.",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:lily_julius", "state": "ACTIVE" } ],
+                "next": "rappel_julius" },
+              { "text": "J'ai parlé à Julius.",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:lily_julius", "state": "COMPLETED" } ],
+                "next": "conclusion" },
+              { "text": "Au revoir, Lily",
+                "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "offre_repas": {
+            "speaker": "Lily",
+            "text": "Je n'ai rien mangé depuis des jours… Trois pains et quatre pommes, ce serait déjà beaucoup.",
+            "choices": [
+              { "text": "Commencer la quête : Un repas pour Lily",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_repas" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:lily_repas" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant", "next": "plus_tard" }
+            ]
+          },
+          "offre_fleurs": {
+            "speaker": "Lily",
+            "text": "Merci pour le repas. Maman avait un jardin plein de coquelicots et de pissenlits… Trois de chaque, pour ne pas oublier ses couleurs ?",
+            "choices": [
+              { "text": "Commencer la quête : Des fleurs pour Lily",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_fleurs" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:lily_fleurs" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant", "next": "plus_tard" }
+            ]
+          },
+          "offre_ingredients": {
+            "speaker": "Lily",
+            "text": "J'ai gardé la recette de tarte à la citrouille de maman. Il me faudrait une citrouille, deux sucres, deux œufs et trois blés pour la pâte.",
+            "choices": [
+              { "text": "Commencer la quête : La vieille recette",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_ingredients" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:lily_ingredients" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant", "next": "plus_tard" }
+            ]
+          },
+          "offre_tarte": {
+            "speaker": "Lily",
+            "text": "Tout est prêt, sauf le four : il me faudrait quatre charbons pour le chauffer. Ensuite, on la goûtera ensemble !",
+            "choices": [
+              { "text": "Commencer la quête : La tarte de maman",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_tarte" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:lily_tarte" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant", "next": "plus_tard" }
+            ]
+          },
+          "offre_julius": {
+            "speaker": "Lily",
+            "text": "Julius était le meilleur ami de papa. On dit qu'il a survécu et qu'il vit dans une autre ville, près de notre ancien village. Lui saura peut-être où sont mes parents.",
+            "choices": [
+              { "text": "Commencer la quête : Sur la piste de Julius",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:lily_julius" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:lily_julius" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant", "next": "plus_tard" }
+            ]
+          },
+          "plus_tard": {
+            "speaker": "Lily",
+            "text": "D'accord… Je serai là. Je n'ai nulle part où aller, de toute façon.",
+            "choices": [
+              { "text": "À bientôt", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "remise": {
+            "speaker": "Lily",
+            "text": "Tu as pensé à moi ?<newline>%delivery_status%",
+            "choices": [
+              { "text": "Donner ce que j'ai",
+                "actions": [ { "type": "DELIVER_QUEST_ITEMS" } ],
+                "next": "apres_remise" },
+              { "text": "Plus tard", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "apres_remise": {
+            "speaker": "Lily",
+            "text": "%delivery_status%",
+            "choices": [
+              { "text": "Donner encore",
+                "conditions": [ { "type": "HAS_PENDING_DELIVERY" } ],
+                "actions": [ { "type": "DELIVER_QUEST_ITEMS" } ],
+                "next": "apres_remise" },
+              { "text": "Retour", "next": "accueil" }
+            ]
+          },
+          "gouter": {
+            "speaker": "Lily",
+            "text": "Elle a exactement le goût de celle de maman… Attends. Je me souviens : papa parlait souvent de Julius, son meilleur ami. S'il a survécu, il sait peut-être quelque chose !",
+            "choices": [
+              { "text": "Parle-moi de Julius", "next": "accueil" },
+              { "text": "À bientôt", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "rappel_julius": {
+            "speaker": "Lily",
+            "text": "Julius vit dans une autre ville, près de notre ancien village. Je t'en prie, va lui parler.",
+            "choices": [
+              { "text": "J'y vais", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "conclusion": {
+            "speaker": "Lily",
+            "text": "Julius est vivant… et il a vu mes parents partir pendant la bataille ! Ce n'est pas encore une réponse, mais c'est une piste. Merci d'être resté avec moi.",
+            "choices": [
+              { "text": "On les retrouvera, Lily", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          }
+        }
+      },
+      {
+        "id": "rpgquest:julius",
+        "start": "accueil",
+        "nodes": {
+          "accueil": {
+            "speaker": "Julius",
+            "text": "Hm ? Je ne crois pas te connaître, voyageur. Les temps sont durs, depuis la bataille.",
+            "choices": [
+              { "text": "Lily m'envoie. Elle cherche ses parents.",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:lily_julius", "state": "NOT_STARTED", "negate": true } ],
+                "next": "recit" },
+              { "text": "Bonne journée", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "recit": {
+            "speaker": "Julius",
+            "text": "Lily ? La fille de mon vieil ami ? Elle est vivante ! Pendant la bataille, j'ai vu ses parents fuir vers les collines, au-delà de l'ancien village. Je ne sais pas ce qu'ils sont devenus ensuite.",
+            "choices": [
+              { "text": "C'est déjà un espoir", "next": "suite" }
+            ]
+          },
+          "suite": {
+            "speaker": "Julius",
+            "text": "Dis à Lily que je n'ai jamais cessé de penser à eux. Si tu veux m'aider à suivre leur trace, reviens me voir un jour.",
+            "choices": [
+              { "text": "Je reviendrai", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          }
+        }
+      }
+    ],
+    "npcs": [
+      {
+        "id": "lily",
+        "displayName": "Lily",
+        "description": "Jeune fille seule au village central, séparée de ses parents pendant la bataille. Placement : village central — à lier à un PNJ Citizens depuis la page des PNJ (l'import ne place rien).",
+        "dialogue": "rpgquest:lily",
+        "role": "quest_giver",
+        "enabled": true
+      },
+      {
+        "id": "julius",
+        "displayName": "Julius",
+        "description": "Meilleur ami du père de Lily, survivant de la bataille. Placement : une autre ville, près de l'ancien village — à lier à un PNJ Citizens depuis la page des PNJ (l'import ne place rien).",
+        "dialogue": "rpgquest:julius",
+        "role": "guide",
+        "enabled": true
+      }
+    ]
+  }
+}

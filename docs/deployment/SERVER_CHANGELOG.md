@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - PlugAdmin : modèle d'histoire pour IA externe et pack Lily (#211)
+
+### Changement
+
+Page **Import contenu** : bouton « Télécharger un modèle d'histoire » (`/content/story-kit`),
+prompt prêt à copier, essai « Analyser l'exemple Lily » et aperçu éditorial avant confirmation.
+Panel uniquement : aucun changement du plugin.
+
+### Action serveur
+
+Redéploiement du panel PlugAdmin (`scripts/plugadmin/deploy.sh`). **Aucun JAR, aucune donnée.**
+Le pack Lily n'est ni importé ni publié par ce déploiement. S'il l'est plus tard, les dialogues
+`rpgquest:lily` et `rpgquest:julius` se rattachent aux PNJ `lily` (Citizens #10) et `julius`
+(Citizens #11) déjà présents sur DEV et remplacent leur comportement actuel au clic.
+
+### Sauvegarde préalable
+
+Gérée par `deploy.sh` (`/opt/plugadmin/releases/<horodatage>/`).
+
+### Validation
+
+Voir le rapport `docs/claude-reports/` de #211. `PENDING MANUAL VALIDATION` : TC-312.
+
+### Rollback
+
+Réinstaller la release précédente du panel (`/opt/plugadmin/releases/`).
+
+---
+
 ## 2026-10-14 - Récompense de quête « Cœur supplémentaire » (#166)
 
 ### Changement

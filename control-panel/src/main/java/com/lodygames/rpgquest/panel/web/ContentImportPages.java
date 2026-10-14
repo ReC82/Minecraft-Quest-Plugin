@@ -2,8 +2,10 @@ package com.lodygames.rpgquest.panel.web;
 
 import com.lodygames.rpgquest.panel.content.ContentPackImport;
 import com.lodygames.rpgquest.panel.content.ContentPackSchema;
+import com.lodygames.rpgquest.panel.content.ContentPackSummary;
 import com.lodygames.rpgquest.panel.content.ContentWorkspace;
 import com.lodygames.rpgquest.panel.content.Diagnostic;
+import com.lodygames.rpgquest.panel.content.StoryKit;
 import com.lodygames.rpgquest.panel.content.TextDiff;
 import com.lodygames.rpgquest.panel.http.Http;
 import java.util.List;
@@ -66,12 +68,61 @@ public final class ContentImportPages {
         for (String note : notes == null ? List.<String>of() : notes) {
             sb.append(Ui.banner("info", Http.esc(note)));
         }
+        sb.append(storyKitCard(analysis == null && applied == null));
         sb.append(uploadCard(packYaml, analysis == null));
         if (analysis != null) {
             sb.append(analysisCard(analysis, packYaml, decisions));
         }
         sb.append(aboutCard());
         return sb.toString();
+    }
+
+    // ---- Modèle d'histoire (issue #211) ---------------------------------------------------------
+
+    /**
+     * Le parcours « télécharger le modèle → le faire compléter par une IA → importer ». Ouvert sur
+     * la page vide, replié dès qu'une analyse est affichée pour ne pas la repousser hors écran sur
+     * téléphone. Aucun JavaScript : le prompt est dans une zone de texte à sélectionner.
+     */
+    private static String storyKitCard(boolean open) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\"><details")
+                .append(open ? " open" : "").append("><summary>")
+                .append(Ui.sectionTitle("docs", "Créer une histoire avec une IA externe"))
+                .append("</summary>");
+        sb.append("<ol class=\"muted\">"
+                + "<li><strong>Télécharger</strong> le modèle d'histoire ci-dessous.</li>"
+                + "<li><strong>Faire compléter</strong> la fiche narrative par une IA (ChatGPT, Claude…) "
+                + "avec le guide, l'exemple et le prompt.</li>"
+                + "<li><strong>Déposer</strong> le fichier <code>.json</code> rendu par l'IA dans « 1. Le pack "
+                + "à importer ».</li>"
+                + "<li><strong>Vérifier</strong> l'analyse et l'aperçu : quêtes, objectifs, récompenses, "
+                + "dialogues, personnages et liens.</li>"
+                + "<li><strong>Confirmer</strong> l'import en source (une seule confirmation).</li>"
+                + "<li><strong>Publier sur DEV</strong> depuis <a href=\"/content/pending\">Changements en "
+                + "attente</a>, puis lier les personnages à un PNJ Citizens.</li></ol>");
+        sb.append("<p class=\"muted\">Seul un fichier <code>.json</code> est importable : les fiches "
+                + "<code>.md</code> sont écrites pour l'auteur et pour l'IA, jamais pour l'import. "
+                + "Aucun dépôt ne publie quoi que ce soit.</p>");
+        sb.append("<div class=\"btnrow\"><a class=\"btn\" href=\"/content/story-kit\">")
+                .append(Icons.icon("export")).append("Télécharger un modèle d'histoire</a></div>");
+        sb.append("<p class=\"muted\">Le modèle (.zip) contient tous les fichiers suivants, aussi "
+                + "téléchargeables un par un :</p><ul class=\"muted\">");
+        for (StoryKit.KitFile f : StoryKit.FILES) {
+            sb.append("<li><a href=\"/content/story-kit?file=").append(Http.esc(f.name())).append("\">")
+                    .append(Http.esc(f.label())).append("</a> <code>").append(Http.esc(f.name()))
+                    .append("</code> — ").append(Http.esc(f.role())).append("</li>");
+        }
+        sb.append("</ul>");
+        sb.append("<div class=\"field full\"><label for=\"f-story-prompt\">Prompt prêt à copier</label>"
+                + "<textarea id=\"f-story-prompt\" rows=\"6\" readonly spellcheck=\"false\">")
+                .append(Http.esc(StoryKit.prompt())).append("</textarea></div>");
+        sb.append("<form method=\"post\" action=\"/content/import\" class=\"actform\">%CSRF%"
+                + "<input type=\"hidden\" name=\"pack\" value=\"").append(Http.esc(StoryKit.lilyPack()))
+                .append("\"><div class=\"btnrow\"><button class=\"btn secondary\" type=\"submit\">")
+                .append(Icons.icon("check")).append("Analyser l'exemple Lily</button></div>"
+                        + "<p class=\"field-help\">Lance seulement l'analyse du pack Lily : rien n'est "
+                        + "enregistré sans la confirmation de l'étape 3.</p></form>");
+        return sb.append("</details></section>").toString();
     }
 
     // ---- Dépôt ---------------------------------------------------------------------------------
@@ -132,6 +183,7 @@ public final class ContentImportPages {
         if (!a.dependencies().isEmpty()) {
             sb.append(dependencies(a));
         }
+        sb.append(editorialPreview(a, packYaml));
 
         for (ContentPackImport.Element e : a.elements()) {
             sb.append(element(e, decisions));
@@ -139,6 +191,91 @@ public final class ContentImportPages {
 
         sb.append(confirmForm(a, packYaml, decisions));
         return sb.append("</section>").toString();
+    }
+
+    /**
+     * Aperçu éditorial (issue #211) : la story dans l'ordre, chaque quête avec son donneur, ses
+     * déblocages, ses objectifs et ses récompenses, puis les personnages et ce qu'il reste à faire
+     * pour eux. Ce qui manque est dit, jamais remplacé en silence.
+     */
+    private static String editorialPreview(ContentPackImport.Analysis a, String packYaml) {
+        ContentPackSummary.Summary s = ContentPackSummary.of(packYaml);
+        if (s.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<details open><summary class=\"muted\"><strong>Aperçu de "
+                + "l'histoire</strong> — story, quêtes, objectifs, récompenses, personnages</summary>");
+        for (ContentPackSummary.Story story : s.stories()) {
+            sb.append("<p><strong>Story « ").append(Http.esc(story.name())).append(" »</strong> <code>")
+                    .append(Http.esc(story.id())).append("</code> — ").append(story.questIds().size())
+                    .append(" quête(s), dans cet ordre :</p><ol>");
+            for (String id : story.questIds()) {
+                ContentPackSummary.Quest q = s.quests().get(id);
+                sb.append("<li>").append(q == null
+                        ? "<code>" + Http.esc(id) + "</code> <span class=\"badge text-bg-warning\">absente du "
+                          + "pack</span>"
+                        : quest(q)).append("</li>");
+            }
+            sb.append("</ol>");
+        }
+        List<ContentPackSummary.Quest> alone = s.standaloneQuests();
+        if (!alone.isEmpty()) {
+            sb.append("<p><strong>Quêtes hors story</strong></p><ul>");
+            alone.forEach(q -> sb.append("<li>").append(quest(q)).append("</li>"));
+            sb.append("</ul>");
+        }
+        if (!s.npcs().isEmpty()) {
+            sb.append("<p><strong>Personnages</strong></p><ul>");
+            for (ContentPackSummary.Npc n : s.npcs()) {
+                sb.append("<li><strong>").append(Http.esc(n.name())).append("</strong> <code>")
+                        .append(Http.esc(n.id())).append("</code> — dialogue <code>")
+                        .append(Http.esc(n.dialogue().isEmpty() ? "rpgquest:" + n.id() : n.dialogue()))
+                        .append("</code>. ").append(Http.esc(npcFate(a, n.id()))).append("</li>");
+            }
+            sb.append("</ul>");
+        }
+        if (!s.dialogues().isEmpty()) {
+            sb.append("<p><strong>Dialogues</strong></p><ul>");
+            for (ContentPackSummary.Dialogue d : s.dialogues()) {
+                sb.append("<li><code>").append(Http.esc(d.id())).append("</code> — ").append(d.nodes())
+                        .append(" nœud(s)").append(d.startsQuests().isEmpty() ? ""
+                                : ", propose : " + Http.esc(String.join(", ", d.startsQuests())))
+                        .append("</li>");
+            }
+            sb.append("</ul>");
+        }
+        return sb.append("</details>").toString();
+    }
+
+    private static String quest(ContentPackSummary.Quest q) {
+        StringBuilder sb = new StringBuilder("<strong>").append(Http.esc(q.title())).append("</strong> <code>")
+                .append(Http.esc(q.id())).append("</code>");
+        if (!q.giver().isEmpty()) {
+            sb.append(" — proposée par <code>").append(Http.esc(q.giver())).append("</code>");
+        }
+        if (!q.prerequisites().isEmpty()) {
+            sb.append(" — après ").append(Http.esc(String.join(", ", q.prerequisites())));
+        }
+        sb.append("<ul class=\"muted\">");
+        q.objectives().forEach(o -> sb.append("<li>").append(Http.esc(o)).append("</li>"));
+        q.rewards().forEach(r -> sb.append("<li>Récompense — ").append(Http.esc(r)).append("</li>"));
+        return sb.append("</ul>").toString();
+    }
+
+    /** Ce que l'import fera de ce personnage, et ce qui restera à faire en jeu. */
+    private static String npcFate(ContentPackImport.Analysis a, String id) {
+        ContentPackImport.Status status = a.elements().stream()
+                .filter(e -> "npcs".equals(e.family()) && id.equalsIgnoreCase(e.id()))
+                .map(ContentPackImport.Element::status).findFirst().orElse(null);
+        if (status == ContentPackImport.Status.SKIPPED) {
+            return "Existe déjà sur le serveur : réutilisé tel quel (aucune modification). Son dialogue "
+                    + "s'y rattache une fois publié ; vérifier sur la page PNJ qu'il est bien placé.";
+        }
+        if (status == ContentPackImport.Status.NEW) {
+            return "Personnage logique créé à la confirmation, SANS placement : à lier ensuite à un PNJ "
+                    + "Citizens depuis la page PNJ (aucune coordonnée n'est importée).";
+        }
+        return "Inexploitable : voir le détail ci-dessous.";
     }
 
     private static String dependencies(ContentPackImport.Analysis a) {
@@ -191,6 +328,9 @@ public final class ContentImportPages {
         }
         if (!e.diff().isEmpty()) {
             sb.append(diff(e.diff()));
+        } else if (e.writes() && e.yaml() != null && !"npcs".equals(e.family())) {
+            sb.append("<details><summary class=\"muted\">Voir le contenu qui sera enregistré</summary>"
+                    + "<div class=\"codeblock\"><pre>").append(Http.esc(e.yaml())).append("</pre></div></details>");
         }
         return sb.append("</div>").toString();
     }
@@ -313,9 +453,10 @@ public final class ContentImportPages {
                 + "<li><strong>Le contenu est ré-émis</strong> dans sa forme canonique par les "
                 + "mêmes écrivains que les éditeurs — ce n'est jamais le fichier brut qui est "
                 + "copié, et ce qui est enregistré est relisible par le serveur.</li>"
-                + "<li><strong>Familles supportées</strong> : quêtes, stories, dialogues. Les PNJ "
-                + "font partie du format mais ne sont pas éditables depuis le panel : ils sont "
-                + "listés comme laissés de côté, avec leur motif.</li>"
+                + "<li><strong>Familles supportées</strong> : quêtes, stories et dialogues sont "
+                + "écrits dans la source ; un PNJ logique inconnu du serveur y est créé après "
+                + "l'écriture, sans placement ni liaison Citizens. Un PNJ déjà connu n'est pas "
+                + "modifié.</li>"
                 + "<li><strong>L'import n'active rien.</strong> Il écrit dans la source ; le "
                 + "déploiement vers le serveur Minecraft reste une opération distincte.</li>"
                 + "</ul>"

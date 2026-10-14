@@ -25,6 +25,7 @@ import com.lodygames.rpgquest.panel.config.Target;
 import com.lodygames.rpgquest.panel.content.ContentPackImport;
 import com.lodygames.rpgquest.panel.content.ContentPackSchema;
 import com.lodygames.rpgquest.panel.content.ContentPackTemplates;
+import com.lodygames.rpgquest.panel.content.StoryKit;
 import com.lodygames.rpgquest.panel.content.ContentWorkspace;
 import com.lodygames.rpgquest.panel.content.RefData;
 import com.lodygames.rpgquest.panel.docs.DocLibrary;
@@ -377,6 +378,8 @@ public final class PanelApp {
         route("/content/schema.json", this::handleContentSchema);
         route("/content/template", this::handleContentTemplate);
         route("/content/contract.md", this::handleContentContractDoc);
+        // Issue #211 — modèle d'histoire pour une IA externe (archive ou fichier de la liste blanche).
+        route("/content/story-kit", this::handleStoryKit);
         route("/docs", this::handleDocs);
         // Issue #95 — exploitation serveur. /ops rend la page ; les deux endpoints JSON
         // alimentent la console et le suivi d'opération sans rechargement complet.
@@ -2313,13 +2316,28 @@ public final class PanelApp {
             notes.add("PNJ du pack non créés : votre rôle ne permet pas de créer des PNJ (à faire depuis la page des PNJ).");
             return notes;
         }
+        // Les fichiers de la source sont déjà écrits à ce stade : un échec ici doit être DIT sur la
+        // page (le PNJ se crée alors depuis la page des PNJ), jamais faire échouer la réponse.
+        if (agentId == null || agentId.isBlank()) {
+            notes.add("PNJ du pack non créés : aucun agent serveur configuré (à créer depuis la page des PNJ).");
+            return notes;
+        }
         for (Map<String, String> form : creations) {
             var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.definition.create", form);
             if (!v.valid()) {
                 notes.add("PNJ « " + form.get("npc_id") + " » non créé : " + v.error());
                 continue;
             }
-            String id = agentStore.createAction(agentId, "npc.definition.create", v.params(), session.username());
+            String id;
+            try {
+                id = agentStore.createAction(agentId, "npc.definition.create", v.params(), session.username());
+            } catch (IllegalStateException e) {
+                audit.record(session.username(), "content.import.npc", "npc=" + form.get("npc_id"), "FAILED",
+                        e.getMessage(), rid);
+                notes.add("PNJ « " + form.get("npc_id") + " » non créé : l'action n'a pas pu être enregistrée "
+                        + "(à créer depuis la page des PNJ).");
+                continue;
+            }
             audit.record(session.username(), "content.import.npc", "npc=" + form.get("npc_id") + " action=" + id,
                     "OK", "", rid);
             notes.add("PNJ logique « " + form.get("npc_id") + " » : création envoyée au serveur (action " + id.substring(0, 8)
@@ -2456,6 +2474,43 @@ public final class PanelApp {
         serveGeneratedContract(exchange, "content.contract.download",
                 "lodyquests-content-contract.md", "text/markdown",
                 ContentPackTemplates.aiDocumentation());
+    }
+
+    /**
+     * Le modèle d'histoire (issue #211) : sans paramètre, l'archive complète ; avec {@code file=},
+     * un seul fichier de la liste blanche {@link StoryKit#FILES}. Lecture pure, comme le contrat ;
+     * ouvert à qui peut importer OU exporter, puisque c'est l'outil de la page d'import.
+     */
+    private void handleStoryKit(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.CONTENT_IMPORT)
+                && !permissions.can(session.effective(), Permission.CONTENT_EXPORT)) {
+            forbidden(exchange, session, "/content/import");
+            return;
+        }
+        String name = Http.query(exchange).getOrDefault("file", "").trim();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        if (name.isEmpty()) {
+            byte[] zip = StoryKit.zip();
+            audit.record(session.username(), "content.storykit.download", "bytes=" + zip.length, "OK",
+                    StoryKit.ZIP_NAME, rid);
+            Http.attachment(exchange, StoryKit.ZIP_NAME, "application/zip", zip);
+            return;
+        }
+        Optional<StoryKit.KitFile> file = StoryKit.file(name);
+        if (file.isEmpty()) {
+            Http.html(exchange, 404, Layout.bare("Introuvable",
+                    "<h1>Fichier inconnu</h1><p class=\"muted\">Ce fichier ne fait pas partie du modèle "
+                            + "d'histoire.</p>"));
+            return;
+        }
+        byte[] bytes = StoryKit.content(name).orElseThrow().getBytes(StandardCharsets.UTF_8);
+        audit.record(session.username(), "content.storykit.download", "bytes=" + bytes.length, "OK", name, rid);
+        Http.attachment(exchange, name, file.get().contentType(), bytes);
     }
 
     /**

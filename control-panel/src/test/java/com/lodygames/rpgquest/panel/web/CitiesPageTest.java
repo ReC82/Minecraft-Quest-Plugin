@@ -159,6 +159,62 @@ class CitiesPageTest {
         assertEquals(0, count("city.perimeter.show"), "pseudo invalide : refusé");
     }
 
+    /** Issue #322 : Port-Lily a un PNJ central sorti de la ville et une arrivée distincte. */
+    private static final String CITIES_WITH_ANCHORS = CITIES
+            .replace("\"overlaps\":[\"ville_faubourg\"]}", "\"overlaps\":[\"ville_faubourg\"],"
+                    + "\"centralNpcId\":\"guide\",\"npcDisplayName\":\"Guide du Hub\",\"npcStatus\":\"OUTSIDE\","
+                    + "\"npcSeverity\":\"WARNING\",\"npcMessage\":\"« guide » a quitté la ville : il est à 61 blocs "
+                    + "du centre\",\"npcWorld\":\"world_hub\",\"npcX\":161.2,\"npcY\":70,\"npcZ\":-20.0,"
+                    + "\"npcLive\":false,\"npcDistance\":61,\"arrivalWorld\":\"world_hub\",\"arrivalX\":110.5,"
+                    + "\"arrivalY\":71,\"arrivalZ\":-10.5,\"arrivalYaw\":90.0,\"arrivalPitch\":0.0,"
+                    + "\"arrivalStatus\":\"SET\",\"arrivalSeverity\":\"OK\",\"arrivalMessage\":\"ok\"}");
+
+    @Test
+    void theCentralNpcDiagnosticAndTheDistinctArrivalAreShown() throws Exception {
+        start();
+        seed("city.list", CITIES_WITH_ANCHORS);
+        seed("npc.list", "{\"npcs\":[{\"id\":\"guide\",\"displayName\":\"Guide du Hub\","
+                + "\"logicalDefinitionPresent\":true},{\"id\":\"julius\",\"displayName\":\"Julius\","
+                + "\"logicalDefinitionPresent\":true},{\"id\":\"fantome\",\"logicalDefinitionPresent\":false}]}");
+        String page = get("/cities?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("PNJ central et arrivée"));
+        assertTrue(page.contains("Guide du Hub (guide)"), "nom affiché + identifiant stable");
+        assertTrue(page.contains("a quitté la ville"), "diagnostic du plugin relayé tel quel");
+        assertTrue(page.contains("X 161 · Y 70 · Z -20 (dernière position enregistrée)"),
+                "position relue, marquée comme non chargée");
+        assertTrue(page.contains("X 110 · Y 71 · Z -11 · regard 90°"), "arrivée distincte affichée");
+        assertTrue(page.contains("Revenir à l&#39;arrivée au centre") || page.contains("Revenir à l'arrivée au centre"));
+        assertTrue(page.contains("<datalist id=\"dl-city-npc\">"), "sélecteur recherchable");
+        assertTrue(page.contains("value=\"julius\" label=\"Julius\""));
+        assertFalse(page.contains("value=\"fantome\""), "un id cité sans définition n'est pas proposé");
+        // La ville sans PNJ ni arrivée garde le comportement de #178.
+        assertTrue(page.contains("Centre de la ville (par défaut)"));
+    }
+
+    @Test
+    void linkingUnlinkingAndArrivalActionsAreQueuedAndValidated() throws Exception {
+        start();
+        seed("city.list", CITIES);
+        String token = csrf(get("/cities?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=city.npc.link&return=/cities&id=ville_port_lily&npc=" + enc("Guide du Hub")
+                + "&confirm=true");
+        assertEquals(0, count("city.npc.link"), "un nom affiché n'est pas une identité : refusé");
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=city.npc.link&return=/cities&id=ville_port_lily&npc=guide&confirm=true");
+        assertEquals("guide", queued("city.npc.link").params().get("npc"));
+
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=city.arrival.set&return=/cities&id=ville_port_lily&player=Lody&confirm=true");
+        AgentActionRow arrival = queued("city.arrival.set");
+        assertEquals("Lody", arrival.params().get("player"));
+        assertEquals("ville_port_lily", arrival.params().get("id"));
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=city.arrival.clear&return=/cities&id=ville_port_lily&confirm=true");
+        assertEquals("ville_port_lily", queued("city.arrival.clear").params().get("id"));
+    }
+
     @Test
     void theQuestEditorOffersCitiesByNameAndTheTwoForms() throws Exception {
         start();

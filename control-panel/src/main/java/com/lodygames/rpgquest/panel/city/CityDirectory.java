@@ -44,7 +44,8 @@ public record CityDirectory(List<CityView> cities, List<PendingMove> pendingMove
                     bool(m.get("worldLoaded")), integer(m.get("minX")), integer(m.get("maxX")),
                     integer(m.get("minZ")), integer(m.get("maxZ")), integer(m.get("width")),
                     integer(m.get("discoveries")),
-                    list(m.get("overlaps")).stream().map(CityDirectory::str).filter(s -> !s.isEmpty()).toList()));
+                    list(m.get("overlaps")).stream().map(CityDirectory::str).filter(s -> !s.isEmpty()).toList(),
+                    anchors(m)));
         }
         List<PendingMove> moves = new ArrayList<>();
         for (Object raw : list(details.get("pendingMoves"))) {
@@ -54,6 +55,27 @@ public record CityDirectory(List<CityView> cities, List<PendingMove> pendingMove
         }
         return new CityDirectory(out, moves, true, orDefault(details.get("minDistance"), 5),
                 orDefault(details.get("maxDistance"), 500), orDefault(details.get("defaultDistance"), 50));
+    }
+
+    /** Issue #322 — clés absentes (plugin antérieur) = aucun PNJ, arrivée au centre. */
+    private static CityView.Anchors anchors(Map<String, Object> m) {
+        return new CityView.Anchors(str(m.get("centralNpcId")), str(m.get("npcDisplayName")),
+                orText(m.get("npcStatus"), "NONE"), orText(m.get("npcSeverity"), "INFO"), str(m.get("npcMessage")),
+                str(m.get("npcWorld")), nullableDbl(m.get("npcX")), nullableDbl(m.get("npcY")),
+                nullableDbl(m.get("npcZ")), bool(m.get("npcLive")), orDefault(m.get("npcDistance"), -1),
+                str(m.get("arrivalWorld")), nullableDbl(m.get("arrivalX")), nullableDbl(m.get("arrivalY")),
+                nullableDbl(m.get("arrivalZ")), nullableDbl(m.get("arrivalYaw")), nullableDbl(m.get("arrivalPitch")),
+                orText(m.get("arrivalStatus"), "CENTER"), orText(m.get("arrivalSeverity"), "INFO"),
+                str(m.get("arrivalMessage")));
+    }
+
+    private static String orText(Object o, String fallback) {
+        String s = str(o);
+        return s.isEmpty() ? fallback : s;
+    }
+
+    private static Double nullableDbl(Object o) {
+        return o == null ? null : dbl(o);
     }
 
     public Optional<CityView> find(String id) {

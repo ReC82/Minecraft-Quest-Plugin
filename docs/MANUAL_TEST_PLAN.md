@@ -6007,3 +6007,37 @@ défini et lié à Citizens (ex. `guide`), un compte administrateur connecté en
 9. Cas réels attendus par le ticket : ville centrale du Hub avec `guide`, ville de Julius avec
    `julius`, arrivées relevées sur place.
 
+
+### TC-314 — Catalogues de quêtes secondaires des PNJ récurrents (issue #369, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel #369 déployés ; deux comptes joueurs sans mode admin ; au moins deux
+occurrences du Brigand des bois (`forest_bandit`) dans des forêts différentes. **Durée** : 30 minutes.
+
+1.  PlugAdmin → Quêtes → **Catalogues de quêtes** → « Actualiser » : `encounter_side_quests` est
+    listé avec ses 3 quêtes, titre, « recharge 20 h », « Attribué à : aucun modèle ».
+2.  **Nouveau catalogue** `bandit_contracts` : ajouter 5 quêtes en tapant un **titre** dans la
+    liste (dont au moins 3 renouvelables), régler un poids, enregistrer → la page relue montre les
+    5 quêtes dans l'ordre choisi. Changer le numéro d'ordre d'une ligne, cocher « retirer » sur une
+    autre, enregistrer → ordre et retrait visibles. « Dupliquer » → copie pré-remplie.
+3.  PNJ → PNJ récurrents → `forest_bandit` → Modifier → **Catalogues de quêtes** =
+    `bandit_contracts` → l'enregistrement signale « le dialogue … n'a aucune action
+    OFFER_CATALOG_QUEST ». Dialogues → `encounter_bandit` : ajouter à l'accueil un choix « Du
+    travail ? » avec l'action **Proposer une quête du catalogue** (catalogue vide), publier.
+    L'avertissement disparaît de la page Catalogues après « Actualiser ». Aucune occurrence n'est
+    recréée.
+4.  Joueur A → Brigand n°1 → « Du travail ? » : écran « J'aurais une tâche pour toi : … » avec
+    Commencer / Plus tard / Refuser. Journal `/quests` : **rien** de nouveau. Fermer, rouvrir,
+    se reconnecter, aller voir le Brigand n°2 → **même** quête proposée.
+5.  « Refuser » → rien dans le journal. « Plus tard » → retour à l'accueil. « Commencer » → une
+    seule quête dans le journal (double-clic rapide : toujours une seule).
+6.  Reparler : « Termine d'abord … ». Joueur B, même Brigand : sa propre proposition, sa quête à lui.
+7.  Joueur A termine la quête (récompense une seule fois) puis « Du travail ? » : une **autre**
+    quête ; la quête terminée n'est plus proposée pendant sa recharge (redémarrage DEV compris).
+8.  Désactiver toutes les quêtes restantes du catalogue (ou les terminer) → « Rien pour le moment.
+    Repasse d'ici … ».
+9.  Supprimer une quête référencée (ou la retirer de la source) : la page Catalogues la marque
+    « quête absente » ; en jeu, aucune erreur ; une progression déjà acceptée n'est pas effacée.
+10. Supprimer `bandit_contracts` depuis la page : refusé sans la case « Retirer aussi le catalogue
+    de ces modèles » ; avec la case, `forest_bandit` n'a plus de catalogue, la sauvegarde est dans
+    `plugins/RPGQuest/quest-catalog-backups/`.
+11. Téléphone (ou fenêtre étroite) : la page Catalogues reste lisible sans défilement horizontal.

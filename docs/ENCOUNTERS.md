@@ -35,6 +35,7 @@ Un fichier par modèle. Trois exemples sont copiés au premier démarrage, jamai
 | `max_sites` | non (0) | plafond d'occurrences du modèle ; 0 = pas de plafond propre |
 | `skin_url` | non | lien MineSkin `https://minesk.in/…` de l'apparence ; absent = apparence par défaut |
 | `enabled` | non (`true`) | `false` = plus aucune nouvelle occurrence |
+| `quest_catalogs` | non (vide) | catalogues de quêtes proposés par `OFFER_CATALOG_QUEST` (issue #369, voir plus bas) |
 
 Livrés : `forest_bandit` (forêts → `encounter_bandit`), `desert_merchant` (désert et badlands →
 `encounter_merchant`), `mountain_smith` (collines, prairies, pics → `encounter_smith`), chacun
@@ -200,6 +201,109 @@ Fichiers : `quests/encounter_*.yml` (seedés s'ils manquent, `BUNDLED_EXAMPLES`)
 `dialogues/encounter_*.yml` (fichiers existants sur le serveur : à remplacer explicitement au
 déploiement, `--also`).
 
+## Catalogues de quêtes secondaires (issue #369)
+
+Un modèle n'est plus limité à la quête écrite dans son dialogue : il peut proposer les quêtes d'un
+ou plusieurs **catalogues**, tirées au sort pour chaque joueur.
+
+### Fichiers — `plugins/RPGQuest/quest-catalogs/*.yml`
+
+Un fichier par catalogue. Un catalogue ne **copie** aucune quête : il référence des quêtes
+existantes, qui gardent leurs objectifs, prérequis, récompenses et `cooldown:`.
+
+```yaml
+id: bandit_contracts            # [a-z0-9._-], = nom du fichier
+display_name: "Contrats du brigand"
+description: "Facultatif, pour les administrateurs"
+enabled: true                   # false = ne propose plus rien (les quêtes acceptées continuent)
+avoid_recent: 1                 # 0–10 : dernières quêtes terminées écartées tant qu'une autre est possible
+entries:                        # ordre d'affichage ; une quête au plus une fois ; 100 au plus
+  - quest: rpgquest:encounter_bandit_spiders   # sans « : » = rpgquest:…
+    weight: 10                  # 1–1000, poids relatif du tirage (défaut 10)
+    enabled: true               # false = gardée dans la liste, jamais tirée
+```
+
+Exemple livré une fois : `encounter_side_quests.yml` (les trois quêtes de rencontre), rattaché à
+**aucun** modèle. Un fichier invalide est rejeté seul ; un `id` présent dans deux fichiers est
+rejeté dans les deux.
+
+### Attribution — champ `quest_catalogs` du modèle
+
+```yaml
+# encounters/forest_bandit.yml
+quest_catalogs: [bandit_contracts]
+```
+
+Absent = aucun catalogue (comportement antérieur inchangé). Plusieurs modèles peuvent partager un
+catalogue ; plusieurs catalogues sur un même modèle sont fusionnés (une quête partagée garde son
+plus fort poids). Le champ est lu à chaque conversation : **toutes** les rencontres du modèle,
+existantes comprises, l'appliquent aussitôt, sans être recréées.
+
+### Dialogue — action `OFFER_CATALOG_QUEST`
+
+```yaml
+- text: "Du travail ?"
+  actions:
+    - type: OFFER_CATALOG_QUEST   # catalog: <id> facultatif ; absent = catalogues des modèles du PNJ
+```
+
+L'action affiche un écran généré (le locuteur est celui du nœud de départ du dialogue) :
+
+| Situation du joueur | Écran | Boutons |
+|---|---|---|
+| une quête est proposable | « J'aurais une tâche pour toi : *titre* », description, cadence de renouvellement | **Commencer (j'accepte)** · **Plus tard** (retour à l'accueil) · **Refuser** (rien n'est attribué) |
+| une quête du catalogue est en cours | « Termine d'abord *titre* » | Retour · Au revoir |
+| rien de possible | « Rien pour le moment. Repasse d'ici 3 h 20 min. » (ou sans délai si aucune ne reviendra) | Retour · Au revoir |
+| PNJ sans catalogue actif | « Je n'ai aucun travail à confier pour l'instant. » | Retour · Au revoir |
+
+Règles du tirage (`CatalogOfferSelector`, fonction pure) :
+
+- **Éligibilité** : la règle d'acceptation du moteur (`QuestProgressEngine#availability`) —
+  prérequis, état, non répétable déjà faite, `cooldown:` en cours. Une quête absente (supprimée,
+  non publiée) n'est simplement jamais proposée : ni erreur, ni progression touchée.
+- **Une à la fois** : tant qu'une quête des catalogues du PNJ est en cours, il la rappelle.
+- **Anti-répétition** : les `avoid_recent` quêtes terminées le plus récemment sont écartées tant
+  qu'une autre est possible.
+- **Stabilité sans stockage** : tirage pondéré déterministe, graine = (joueur, `npc_id`, date de
+  la dernière complétion d'une quête de ces catalogues). Fermer/rouvrir, changer d'occurrence du
+  même modèle, se reconnecter ou redémarrer le serveur redonne **la même** offre ; seule une
+  quête terminée fait tourner la sélection. Retirer ou ajouter une *autre* quête ne change pas
+  l'offre (sauf si la nouvelle l'emporte au tirage). Aucune migration, aucune table.
+- **Acceptation** : « Commencer » accepte exactement la quête affichée, via `accept` du moteur
+  (anti-double-clic, revérification). Une offre devenue impossible entre-temps répond « Cette
+  proposition n'est plus disponible ». Récompenses et délai restent ceux de la quête.
+- Progression et offre sont propres à chaque joueur ; le PNJ est commun.
+- Limite connue : abandonner une quête **renouvelable déjà terminée puis reprise** efface sa date
+  de complétion (la ligne repasse `ABANDONED`) ; la graine revient alors à la complétion
+  précédente et l'offre peut changer. Aucun gain possible : l'abandon ne rapporte rien.
+
+### PlugAdmin — Quêtes › **Catalogues de quêtes** (`/quests/catalogs`)
+
+Lecture : `quest.catalog.list` (`NPC_READ`). Pour chaque catalogue : état, quêtes proposables /
+total, modèles qui l'utilisent, entrées (titre, identifiant, catégorie, étapes, recharge ou « une
+seule fois », poids, état) et contrôles : quête absente, quête non renouvelable, catalogue vide ou
+désactivé, attribué à aucun modèle. Contrôles transverses en tête de page : modèle référençant un
+catalogue inconnu, modèle avec catalogues dont le dialogue n'a pas d'`OFFER_CATALOG_QUEST`,
+modèle actif sans catalogue.
+
+| Action | Permission | Effet |
+|---|---|---|
+| `quest.catalog.create` | `QUEST_CONTENT_WRITE` | crée `quest-catalogs/<id>.yml` ; refusé si l'id existe |
+| `quest.catalog.update` | `QUEST_CONTENT_WRITE` | réécrit le fichier (atomique), relu avant succès |
+| `quest.catalog.delete` | `QUEST_CONTENT_WRITE`, confirmation | copie dans `quest-catalog-backups/<date>-<fichier>` puis supprime ; refusé s'il est attribué, sauf case « Retirer aussi le catalogue de ces modèles » (`detach=true`) |
+
+Formulaire : une ligne par quête (numéro d'ordre, quête cherchée par **titre ou identifiant** dans
+la liste proposée, poids, active, retirer) et trois lignes vides pour en ajouter ; *Dupliquer*
+pré-remplit un nouveau catalogue. Comme pour les modèles, le panel n'envoie jamais de YAML : le
+plugin valide avec le parseur des fichiers. Effet immédiat en jeu, sans publication. Le formulaire
+des modèles (`/npcs/encounters`) a un champ **Catalogues de quêtes** (identifiants séparés par des
+virgules) ; à l'enregistrement, un catalogue inconnu ou un dialogue sans offre est signalé.
+
+Non fait dans ce lot : mode « choix parmi N », conditions de monde/biome/niveau par entrée,
+protection de la suppression d'une **quête** encore référencée par un catalogue (elle devient
+« quête absente », signalée, sans erreur en jeu), et les dialogues livrés `encounter_*.yml`
+restent sur leur quête fixe — l'administrateur choisit quand basculer un PNJ sur un catalogue.
+
 ## Journal du joueur (étape 5)
 
 Le journal `/quests` (ou l'item Journal des quêtes) montre les quêtes de rencontre sans nouvel
@@ -241,4 +345,4 @@ created_at, updated_at), index unique `(world, biome_instance)`. Additive, autom
 ## Validation en jeu
 
 `PENDING MANUAL VALIDATION` — `docs/MANUAL_TEST_PLAN.md`, TC-303 (jeu), TC-304 (PlugAdmin),
-TC-305 (modèles/apparence) et TC-306 (quêtes secondaires renouvelables).
+TC-305 (modèles/apparence), TC-306 (quêtes secondaires renouvelables) et TC-314 (catalogues, #369).

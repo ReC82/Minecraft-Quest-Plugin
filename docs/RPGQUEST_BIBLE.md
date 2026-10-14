@@ -2957,6 +2957,9 @@ départ si le joueur y a droit, voir « Kit d'outils en bois » ci-dessous) ;
 `DELIVER_QUEST_ITEMS` (`npc` **optionnel** — remet en une fois tous les
 objets utiles aux objectifs `DELIVER_ITEM_TO_NPC` de ce PNJ, issue #123 ;
 voir « Remise d'objets à un PNJ » en section 3) ;
+`OFFER_CATALOG_QUEST` (`catalog` **optionnel** — propose la quête tirée des
+catalogues du PNJ, avec Commencer / Plus tard / Refuser, issue #369 ; voir
+« Catalogues de quêtes secondaires » en section PNJ récurrents) ;
 `CLOSE`. `OPEN_DIALOGUE`/`CLOSE` prennent le pas sur `next`.
 
 **PNJ implicite** (issue #123) : `DELIVER_QUEST_ITEMS` et la condition
@@ -3244,6 +3247,7 @@ côté moteur fait échouer la suite jusqu'à ce que quelqu'un décide quoi en f
 | `OPEN_DIALOGUE` (`dialogue`), `OPEN_MERCHANT` (`merchant`) | `NO_MAIN_CLAIM`, `HAS_MAIN_CLAIM` |
 | `GIVE_STARTER_KIT`, `CLOSE` (aucun champ) | `LACKS_CUSTOM_ITEM` (`item`) |
 | `DELIVER_QUEST_ITEMS` (`npc` facultatif) | `HAS_PENDING_DELIVERY` (`npc` facultatif) |
+| `OFFER_CATALOG_QUEST` (`catalog` facultatif) — offre d'un catalogue (#369) | |
 | | `HAS_INVENTORY_SPACE` (`slots` facultatif, 1–36) |
 | | `QUEST_AVAILABLE` (`quest`) — quête acceptable maintenant (#13) |
 
@@ -3570,6 +3574,19 @@ seulement, 30 j max), compté depuis la complétion ; refus `ON_COOLDOWN` avec l
 pouvoir refaire une quête renouvelable (voir `/quests` ci-dessus) ; l'export en content pack
 transporte `cooldown` (schéma panel mis à jour). Test : TC-307 (`PENDING MANUAL VALIDATION`).
 
+
+**Catalogues de quêtes secondaires (issue #369).** `plugins/RPGQuest/quest-catalogs/*.yml` (`id`,
+`display_name`, `description`, `enabled`, `avoid_recent`, `entries[]` = `quest`, `weight`,
+`enabled`) : listes ordonnées de **références** vers des quêtes existantes, jamais des copies.
+Un modèle les reçoit par `quest_catalogs: [..]` ; son dialogue les propose par l'action
+`OFFER_CATALOG_QUEST` (`catalog` facultatif). Offre par joueur stable sans stockage (tirage
+pondéré, graine = dernière complétion d'une quête de ces catalogues), une quête à la fois,
+anti-répétition `avoid_recent`, règles d'acceptation du moteur (prérequis, `cooldown:`), rien
+attribué avant « Commencer (j'accepte) ». PlugAdmin → Quêtes → **Catalogues de quêtes**
+(`/quests/catalogs`) : actions `quest.catalog.list` (`NPC_READ`), `create|update`
+(`QUEST_CONTENT_WRITE`), `delete` (`QUEST_CONTENT_WRITE`, confirmation, sauvegarde
+`quest-catalog-backups/`, dissociation explicite des modèles). Aucune migration. Référence :
+[ENCOUNTERS.md](ENCOUNTERS.md) § « Catalogues de quêtes secondaires ».
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 
 Depuis la V2, un PNJ RPGQuest a une **définition logique** en données :

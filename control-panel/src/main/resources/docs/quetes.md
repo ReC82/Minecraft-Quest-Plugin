@@ -152,3 +152,22 @@ Chaque entrée porte un badge quand les deux ne coïncident pas :
 « Source uniquement » **n'est pas une erreur** : c'est le fonctionnement normal du flux
 « créer → enregistrer → utiliser ». La création dans l'éditeur et l'activation en jeu restent
 **deux étapes séparées** — enregistrer ne redémarre jamais Minecraft.
+
+## Catalogues de quêtes secondaires (PNJ récurrents)
+
+Bouton **Catalogues de quêtes** en haut de la page Quêtes (`/quests/catalogs`). Un catalogue est
+une liste de quêtes **existantes** qu'un PNJ récurrent (brigand, marchand égaré…) peut proposer :
+il ne copie rien, chaque quête garde ses objectifs, ses récompenses et son délai.
+
+1. **Nouveau catalogue** : un identifiant (nom du fichier), un nom, puis une ligne par quête —
+   tapez quelques lettres du **titre** ou de l'identifiant et choisissez dans la liste. Le numéro
+   règle l'ordre, le poids la fréquence du tirage, « active » permet de garder une quête en
+   réserve, « retirer » l'enlève à l'enregistrement.
+2. **Attribuer** : PNJ → PNJ récurrents → modèle → Modifier → champ « Catalogues de quêtes ».
+3. **Dialogue** : dans le dialogue du PNJ, un choix avec l'action « Proposer une quête du
+   catalogue ». Sans elle, le catalogue n'est jamais proposé (la page le signale).
+
+En jeu, chaque joueur reçoit **sa** proposition, la même tant qu'il n'a pas terminé une quête du
+catalogue ; rien n'est inscrit dans son journal avant « Commencer (j'accepte) ». Les contrôles
+affichés (quête absente, catalogue vide, modèle sans dialogue adapté…) ne bloquent rien : ils
+disent ce qui ne sera pas proposé. Un enregistrement est en jeu aussitôt, sans publication.

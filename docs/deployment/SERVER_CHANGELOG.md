@@ -71,6 +71,9 @@ JAR actuel + `data.db`, faits par `deploy-verygames.sh` (V36 crée une table, ne
 
 ### Validation
 
+Déploiement DEV effectué le 2026-10-14 (merge `26f039b`) : JAR distant retéléchargé, SHA-256
+`07c5165a…` identique au local ; backup `rpgquest-20261014T161015Z-predeploy.jar` ; redémarrage
+RCON, plugin actif, 24 quêtes chargées sans erreur ; panel déployé (`DEPLOYED` = `26f039b`).
 `PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-311.
 
 ### Rollback

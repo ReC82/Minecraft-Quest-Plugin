@@ -146,7 +146,8 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     (DDL des migrations), + `upsert`, `insertOrIgnore`, `autoIncrementPrimaryKey`, `columnExists`.
     `SqliteDialect` : `rewrite`/`ddl` = **identité**. `MySqlDialect` : `INSERT OR IGNORE` →
     `INSERT IGNORE` ; `ON CONFLICT … DO UPDATE SET c = excluded.c` → `ON DUPLICATE KEY UPDATE
-    c = VALUES(c)` ; `TEXT` clé/index/`NOT NULL` → `VARCHAR(191)` ; `INTEGER` → `BIGINT` ;
+    c = VALUES(c)` ; `TEXT` clé/index/`NOT NULL` → `VARCHAR(191)`, sauf les textes libres
+    `NOT NULL` de `FREE_TEXT_COLUMNS` → `TEXT` (#354, V35) ; `INTEGER` → `BIGINT` ;
     `AUTOINCREMENT` → `AUTO_INCREMENT` ; `BLOB` → `LONGBLOB` ; InnoDB + `utf8mb4_bin` ;
     `CREATE INDEX IF NOT EXISTS` → `ALTER TABLE … ADD INDEX IF NOT EXISTS`. Chaque repository fait
     `dialect = database.dialect()` au constructeur — aucune conditionnelle de moteur dans le code.

@@ -170,8 +170,9 @@ public final class DbTargetPages {
                 + "--target-mysql cible.properties</code>. Le résultat doit être SUCCESS.");
         step(sb, "5. Comparaisons", "manual", "Lire le rapport du dry-run : chaque table « OK » (mêmes "
                 + "comptages, mêmes empreintes logiques), séquences OK, « Source SQLite inchangée : OK ».");
-        step(sb, "6. Bloquants connus", "blocked", "#354 : textes libres traduits en VARCHAR(191) côté MariaDB "
-                + "(une description de 490 caractères existe en DEV). NO-GO tant qu'il n'est pas corrigé.");
+        step(sb, "6. Bloquants connus", "done", "Aucun connu. #354 (textes libres limités à 191 caractères "
+                + "côté MariaDB) est corrigé par le schéma V35 : la copie de data.db doit venir d'un plugin en "
+                + "V35 ou plus récent, comme l'outil.");
         sb.append("</ul>");
         sb.append("<p><button class=\"btn\" type=\"button\" disabled title=\"Désactivé : aucune autorisation "
                 + "de bascule\">").append(Icons.icon("admin")).append("7. Basculer le serveur sur MariaDB</button> "

@@ -97,9 +97,9 @@ database:
 | **`SqliteDatabaseEngine`** | fichier `data.db`, `PRAGMA foreign_keys = ON`, `PRAGMA user_version`, **connexion unique réutilisée** — **comportement inchangé** |
 | **`MySqlDatabaseEngine`** | driver *MariaDB Connector/J* + pool *HikariCP* ; `start()` construit le pool et vérifie la connexion (`SELECT VERSION()`) ; échec propre si injoignable / mot de passe absent ; `connectionInitSql` = `time_zone='+00:00'`, `sql_mode` strict |
 | **`DatabaseEngineFactory`** | **unique** point de choix du moteur (`create(settings, dataFolder)`) |
-| **`SqlDialect`** (interface) | `rewrite(sql)` (DML repositories), `ddl(sql)` (DDL migrations), + `upsert(...)`, `insertOrIgnore(...)`, `autoIncrementPrimaryKey(...)`, `columnExists(...)`, `healthQuery()` |
+| **`SqlDialect`** (interface) | `rewrite(sql)` (DML repositories), `ddl(sql)` (DDL migrations), + `upsert(...)`, `insertOrIgnore(...)`, `autoIncrementPrimaryKey(...)`, `columnExists(...)`, `healthQuery()`, `freeTextWidenings()` (V35, #354) |
 | **`SqliteDialect`** | `rewrite`/`ddl` = **identité** (aucun changement de SQL possible sur SQLite) |
-| **`MySqlDialect`** | `INSERT OR IGNORE` → `INSERT IGNORE` ; `ON CONFLICT (…) DO UPDATE SET c = excluded.c` → `ON DUPLICATE KEY UPDATE c = VALUES(c)` ; `TEXT` clé/index/`NOT NULL` → `VARCHAR(191)`, `TEXT` nullable → `TEXT` ; `INTEGER` → `BIGINT` ; `… AUTOINCREMENT` → `BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY` ; `BLOB` → `LONGBLOB` ; `… ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin` ; `CREATE INDEX IF NOT EXISTS` → `ALTER TABLE … ADD INDEX IF NOT EXISTS` ; `columnExists` via `information_schema.columns` |
+| **`MySqlDialect`** | `INSERT OR IGNORE` → `INSERT IGNORE` ; `ON CONFLICT (…) DO UPDATE SET c = excluded.c` → `ON DUPLICATE KEY UPDATE c = VALUES(c)` ; `TEXT` clé/index/`NOT NULL` → `VARCHAR(191)`, `TEXT` nullable → `TEXT`, textes libres `NOT NULL` de `FREE_TEXT_COLUMNS` → `TEXT` (#354) ; `INTEGER` → `BIGINT` ; `… AUTOINCREMENT` → `BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY` ; `BLOB` → `LONGBLOB` ; `… ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin` ; `CREATE INDEX IF NOT EXISTS` → `ALTER TABLE … ADD INDEX IF NOT EXISTS` ; `columnExists` via `information_schema.columns` |
 | **`SchemaHistory`** (interface) | version de schéma appliquée : `currentVersion` / `recordApplied` |
 | **`PragmaUserVersionHistory`** | SQLite natif (`PRAGMA user_version`) — **inchangé**, aucune table, aucune migration rejouée sur `data.db` existant |
 | **`MigrationTableHistory`** | table portable `rpgquest_schema_migrations(version, name, applied_at)` — utilisée par MariaDB |
@@ -249,6 +249,7 @@ Serveur cible et **validé** : `10.11.6-MariaDB` (Debian 12). Driver : **MariaDB
 |---|---|
 | Types texte de clé / index / `NOT NULL` | `TEXT` → `VARCHAR(191)` (indexable en `utf8mb4`, largement au-dessus des identifiants RPGQuest ≤ 128) |
 | Types texte libres nullables | `TEXT` conservé (`variable_value`, `progress_data`, `context`, `detail`, `reason`, timestamps nullables) |
+| Textes libres `NOT NULL` (#354) | `TEXT` conservé, `DEFAULT ''` compris (MariaDB ≥ 10.2) : liste explicite `MySqlDialect.FREE_TEXT_COLUMNS` (`building_sites.description`, `building_placement_history.detail`/`backup_schematic`, `building_placements.backup_schematic`, `building_baselines.schematic`, `encounter_sites.last_error`, `backpack_overflow.reason`, `npc_citizens_skins.source_value`). `MySqlDialectTranslationTest` balaie le catalogue réel : toute nouvelle colonne `TEXT NOT NULL` hors clé doit être classée « libre » ou « courte », et aucune colonne indexée ne peut être `TEXT`. Les bases MariaDB créées avant V35 sont élargies par la migration **V35** (`ALTER TABLE … MODIFY COLUMN … TEXT`, idempotent ; aucune instruction sur SQLite) |
 | Entiers | `INTEGER` → `BIGINT` (SQLite stocke déjà en 64 bits, le code fait des `getLong`) |
 | Auto-increment | `INTEGER PRIMARY KEY AUTOINCREMENT` → `BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY` |
 | Booléens | colonne entière (`allow_public_redstone`) + coercition JDBC `setBoolean`/`getBoolean` (identique SQLite) |
@@ -294,8 +295,9 @@ empreinte logique** de chaque table, séquences `AUTOINCREMENT` alignées (ident
 réattribué). Deux méthodes de dialecte ajoutées pour cela : `SqlDialect#nextAutoIncrement` /
 `#raiseAutoIncrement` (SQLite : `sqlite_sequence` ; MariaDB : `AUTO_INCREMENT`).
 
-**Constat bloquant de l'audit** : `MySqlDialect` traduit tout `TEXT NOT NULL` d'un `CREATE TABLE` en
-`VARCHAR(191)`, y compris des textes libres (`building_sites.description`, 490 caractères sur la
-copie DEV). L'outil le détecte avant toute écriture (FAILED) ; correction de schéma MariaDB à faire
-avant toute bascule (#354). Runbook, go/no-go, rollback et checklist :
+**Constat de l'audit, corrigé par #354** : `MySqlDialect` traduisait tout `TEXT NOT NULL` d'un
+`CREATE TABLE` en `VARCHAR(191)`, y compris des textes libres (`building_sites.description`, 490
+caractères sur la copie DEV) ; l'outil le détectait avant toute écriture (FAILED). Depuis le schéma
+V35, ces textes libres sont des `TEXT` et le dry-run de la copie DEV est SUCCESS. Runbook, go/no-go,
+rollback et checklist :
 [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).

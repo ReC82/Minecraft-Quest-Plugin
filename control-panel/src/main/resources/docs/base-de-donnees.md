@@ -46,6 +46,10 @@ route du panel n'effectue de bascule, qui exige une autorisation écrite du prop
 
 ## Dépannage
 
+- **Dry-run refusé : « schéma source V34 ≠ schéma de l'outil V35 »** : la copie de `data.db` vient
+  d'un plugin plus ancien que l'outil. Depuis #354 l'outil est en V35 (textes libres en `TEXT` côté
+  MariaDB) : reprendre une copie faite après le démarrage d'un plugin V35, ou porter une seconde
+  copie au schéma courant comme l'indique le runbook.
 - **Échec de connexion : Access denied** : compte ou mot de passe incorrect, ou le compte n'a pas le
   droit d'accès depuis l'adresse d'AWS.
 - **Délai dépassé / connexion refusée** : hôte ou port erroné, pare-feu, ou serveur arrêté.

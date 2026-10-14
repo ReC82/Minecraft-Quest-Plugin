@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 34;
+    public static final int CURRENT_VERSION = 35;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -71,7 +71,9 @@ public final class SchemaMigrator {
             new SchemaMigration(33, "villes : distance de détection + city_discoveries (issue #178)",
                     SchemaMigrator::applyV33),
             new SchemaMigration(34, "encounter_sites (PNJ récurrents par instance de biome, issue #13)",
-                    SchemaMigrator::applyV34));
+                    SchemaMigrator::applyV34),
+            new SchemaMigration(35, "textes libres en TEXT sur MariaDB (issue #354)",
+                    SchemaMigrator::applyV35));
 
     private SchemaMigrator() {
     }
@@ -1362,6 +1364,18 @@ public final class SchemaMigrator {
             try (Statement statement = connection.createStatement()) {
                 statement.execute(dialect.ddl(
                         "ALTER TABLE item_travel_cooldowns ADD COLUMN remaining_ms INTEGER"));
+            }
+        }
+    }
+
+    private static void applyV35(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #354 — jusqu'à V34, MySqlDialect traduisait TOUT « TEXT NOT NULL » en VARCHAR(191),
+        // textes libres compris (une description de 490 caractères était refusée par MariaDB
+        // strict). Le dialecte les crée désormais en TEXT ; cette étape élargit les bases MariaDB
+        // déjà créées (MODIFY idempotent, aucune donnée réécrite). SQLite : aucune instruction.
+        try (Statement statement = connection.createStatement()) {
+            for (String ddl : dialect.freeTextWidenings()) {
+                statement.execute(ddl);
             }
         }
     }

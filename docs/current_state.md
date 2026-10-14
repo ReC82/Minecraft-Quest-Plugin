@@ -1741,8 +1741,10 @@ connexion cassée. Détail : [PERSISTENCE.md](PERSISTENCE.md).
 `dry-run` / `migrate --commit` ; cible non vide ou non dédiée refusée ; copie transactionnelle ;
 validation par comptage + empreinte logique par table ; séquences `AUTOINCREMENT` alignées ; rapport
 sans hôte ni secret. Répété sur copies isolées (cible SQLite et MariaDB 10.11 jetable locale).
-**Bascule non faite, non autorisée.** NO-GO actuel : `MySqlDialect` met des textes libres
-`NOT NULL` en `VARCHAR(191)` (`building_sites.description` 490 car. en DEV, #354). Runbook :
+**Bascule non faite, non autorisée.** Constat de l'audit corrigé (#354, schéma **V35**) : les
+textes libres `NOT NULL` (`building_sites.description` 490 car. en DEV…) sont des `TEXT` côté
+MariaDB, V35 élargit les bases MariaDB déjà créées (SQLite : aucune instruction) ; dry-run de la
+copie DEV vers MariaDB 10.11 jetable : SUCCESS, 39/39 tables. Runbook :
 [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
 Le heartbeat du plugin porte `database.engine` / `schema_version` ; la page PlugAdmin `/database`
 (propriétaire) l'affiche, enregistre la cible MariaDB (mot de passe chiffré, `SecretBox` +

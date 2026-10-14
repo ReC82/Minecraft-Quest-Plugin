@@ -154,6 +154,146 @@ class MySqlDialectTranslationTest {
 
     @Test
     void everyRealMigrationTranslatesToPlausibleMariaDbDdl() throws Exception {
+        for (java.util.Map.Entry<Integer, java.util.List<String>> entry : realMigrationDdl().entrySet()) {
+            for (String sql : entry.getValue()) {
+                String upper = sql.toUpperCase(java.util.Locale.ROOT);
+                if (upper.startsWith("CREATE TABLE")) {
+                    assertTrue(sql.contains("ENGINE=InnoDB"), "V" + entry.getKey() + " : " + sql);
+                    assertFalse(upper.matches("(?s).*\\bTEXT\\s+PRIMARY\\s+KEY\\b.*"),
+                            "V" + entry.getKey() + " : TEXT en clé -> " + sql);
+                    assertFalse(upper.contains("AUTOINCREMENT"), "V" + entry.getKey() + " : " + sql);
+                    assertFalse(upper.contains("\"") || sql.contains("[["), "V" + entry.getKey());
+                } else if (upper.startsWith("CREATE INDEX") || upper.startsWith("CREATE UNIQUE INDEX")) {
+                    org.junit.jupiter.api.Assertions.fail("index non traduit V" + entry.getKey() + " : " + sql);
+                }
+            }
+        }
+    }
+
+    // ---- textes libres (issue #354) ------------------------------------------------------
+
+    @Test
+    void freeTextNotNullColumnStaysTextWithItsDefault() {
+        String mysql = dialect.ddl("""
+                CREATE TABLE IF NOT EXISTS building_sites (
+                    id TEXT PRIMARY KEY,
+                    description TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                )
+                """);
+        assertTrue(mysql.contains("description TEXT NOT NULL DEFAULT ''"), mysql);
+        assertTrue(mysql.contains("created_at VARCHAR(191) NOT NULL"), "texte court -> VARCHAR : " + mysql);
+        assertTrue(mysql.contains("id VARCHAR(191) PRIMARY KEY"), mysql);
+    }
+
+    @Test
+    void freeTextWideningsReproduceTheCanonicalDefinition() {
+        java.util.List<String> widenings = dialect.freeTextWidenings();
+        assertEquals(MySqlDialect.FREE_TEXT_COLUMNS.size(), widenings.size());
+        assertTrue(widenings.contains(
+                "ALTER TABLE building_sites MODIFY COLUMN description TEXT NOT NULL DEFAULT ''"), widenings.toString());
+        assertTrue(widenings.contains(
+                "ALTER TABLE backpack_overflow MODIFY COLUMN reason TEXT NOT NULL"), widenings.toString());
+        assertTrue(new SqliteDialect().freeTextWidenings().isEmpty(), "SQLite : aucune instruction");
+    }
+
+    /**
+     * Balayage du catalogue réel : chaque texte libre déclaré existe, est {@code NOT NULL} hors clé,
+     * et sort en {@code TEXT} avec le même {@code DEFAULT} que le DDL canonique ; aucune colonne
+     * indexée n'est {@code TEXT} (MariaDB refuserait l'index) ; et toute autre colonne
+     * {@code VARCHAR(191)} hors clé est un texte court <em>connu</em> — une nouvelle colonne
+     * {@code TEXT NOT NULL} oblige ainsi à choisir son camp ({@link MySqlDialect#FREE_TEXT_COLUMNS}
+     * ou {@link #SHORT_TEXT_COLUMNS}).
+     */
+    @Test
+    void everyNotNullTextColumnOfTheCatalogueIsClassified() throws Exception {
+        java.util.Map<String, String> columnTypes = new java.util.TreeMap<>();
+        java.util.Set<String> keyedOrIndexed = new java.util.TreeSet<>();
+        java.util.regex.Pattern addIndex = java.util.regex.Pattern.compile(
+                "(?i)^ALTER TABLE (\\S+) ADD (?:UNIQUE )?INDEX IF NOT EXISTS \\S+ \\((.*)\\)$");
+        for (java.util.List<String> statements : realMigrationDdl().values()) {
+            for (String sql : statements) {
+                java.util.regex.Matcher index = addIndex.matcher(sql);
+                if (index.matches()) {
+                    for (String column : index.group(2).split(",")) {
+                        keyedOrIndexed.add(index.group(1) + "." + column.trim());
+                    }
+                }
+                if (!sql.startsWith("CREATE TABLE")) {
+                    continue;
+                }
+                String table = sql.split("\\s+")[5];
+                for (String line : sql.split("\n")) {
+                    String def = line.trim().replaceAll(",$", "");
+                    String upper = def.toUpperCase(java.util.Locale.ROOT);
+                    if (upper.startsWith("PRIMARY KEY") || upper.startsWith("FOREIGN KEY")
+                            || upper.startsWith("UNIQUE")) {
+                        int open = def.indexOf('(');
+                        for (String column : def.substring(open + 1, def.indexOf(')', open)).split(",")) {
+                            keyedOrIndexed.add(table + "." + column.trim());
+                        }
+                    } else if (upper.contains(" VARCHAR(191)") || upper.matches("\\S+ TEXT\\b.*")) {
+                        String column = def.split("\\s+")[0];
+                        columnTypes.put(table + "." + column, def.substring(column.length()).trim());
+                        if (upper.contains(" PRIMARY KEY")) {
+                            keyedOrIndexed.add(table + "." + column);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (MySqlDialect.FreeTextColumn free : MySqlDialect.FREE_TEXT_COLUMNS) {
+            String key = free.table() + "." + free.column();
+            assertTrue(columnTypes.containsKey(key), "texte libre absent du catalogue : " + key);
+            assertFalse(keyedOrIndexed.contains(key), "un texte libre ne peut pas être indexé : " + key);
+            String expected = "TEXT NOT NULL" + (free.defaultLiteral() == null ? "" : " DEFAULT " + free.defaultLiteral());
+            assertEquals(expected, columnTypes.get(key), key);
+        }
+        java.util.List<String> unclassified = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, String> column : columnTypes.entrySet()) {
+            boolean varchar = column.getValue().startsWith("VARCHAR(191)");
+            if (keyedOrIndexed.contains(column.getKey())) {
+                assertTrue(varchar, "colonne indexée en TEXT, index refusé par MariaDB : " + column);
+            } else if (varchar && !SHORT_TEXT_COLUMNS.contains(column.getKey())) {
+                unclassified.add(column.getKey());
+            }
+        }
+        assertEquals(java.util.List.of(), unclassified, "TEXT NOT NULL non classé (texte court ou libre ?)");
+    }
+
+    /** Textes {@code NOT NULL} courts et bornés hors clé : horodatages, énumérations, identifiants. */
+    private static final java.util.Set<String> SHORT_TEXT_COLUMNS = java.util.Set.of(
+            "backpack_audit.created_at", "backpack_audit.event_type", "backpack_overflow.created_at",
+            "backpacks.updated_at", "building_baselines.captured_at", "building_baselines.captured_by",
+            "building_baselines.world", "building_placement_history.actor",
+            "building_placement_history.building_id", "building_placement_history.happened_at",
+            "building_placement_history.operation", "building_placement_history.schematic_sha256",
+            "building_placement_history.world", "building_placements.building_id",
+            "building_placements.placed_at", "building_placements.placed_by", "building_site_ids.created_at",
+            "building_sites.created_at", "building_sites.created_by", "building_sites.facing",
+            "building_sites.name", "building_sites.status", "city_discoveries.discovered_at",
+            "claims.created_at", "claims.world", "dialogue_node_reads.read_at", "encounter_sites.biome_key",
+            "encounter_sites.citizens_uuid", "encounter_sites.created_at", "encounter_sites.npc_id",
+            "encounter_sites.status", "encounter_sites.template_id", "encounter_sites.updated_at",
+            "item_travel_cooldowns.expires_at", "market_listings.created_at",
+            "npc_citizens_bindings.created_at", "npc_citizens_bindings.npc_id",
+            "npc_citizens_skins.source_kind", "npc_citizens_skins.updated_at", "npc_ids.created_at",
+            "player_entitlements.granted_at", "player_entitlements.tier", "player_profiles.created_at",
+            "player_profiles.last_name", "player_profiles.updated_at", "player_skills.updated_at",
+            "portal_cooldowns.expires_at", "quest_progress.state", "quest_progress.updated_at",
+            "quest_reward_grants.created_at", "resource_nodes.type_id", "store_deliveries_processed.outcome",
+            "store_deliveries_processed.processed_at", "story_progress.state", "story_progress.updated_at",
+            "transactions.created_at", "transactions.type", "travel_beacons.created_at",
+            "travel_beacons.facing", "travel_beacons.world", "village_centers.created_at",
+            "village_centers.name", "village_centers.world", "wallets.updated_at",
+            "waypoint_discoveries.discovered_at", "waypoints.biome_key", "waypoints.created_at",
+            "waypoints.facing", "waystone_discoveries.discovered_at", "waystones.created_at", "waystones.name",
+            "xp_grants.created_at");
+
+    /** DDL MariaDB produit par chaque migration réelle (version → instructions exécutées). */
+    private java.util.Map<Integer, java.util.List<String>> realMigrationDdl() throws Exception {
+        java.util.Map<Integer, java.util.List<String>> byVersion = new java.util.TreeMap<>();
         java.util.List<String> produced = new java.util.ArrayList<>();
         // Connexion factice (proxy) : capture Statement.execute(String), répond "colonne absente"
         // à PRAGMA/information_schema (pour V14/V15) et ignore le reste.
@@ -184,19 +324,9 @@ class MySqlDialectTranslationTest {
         for (SchemaMigration migration : SchemaMigrator.ALL) {
             produced.clear();
             migration.step().apply(connection, dialect);
-            for (String sql : produced) {
-                String upper = sql.toUpperCase(java.util.Locale.ROOT);
-                if (upper.startsWith("CREATE TABLE")) {
-                    assertTrue(sql.contains("ENGINE=InnoDB"), "V" + migration.version() + " : " + sql);
-                    assertFalse(upper.matches("(?s).*\\bTEXT\\s+PRIMARY\\s+KEY\\b.*"),
-                            "V" + migration.version() + " : TEXT en clé -> " + sql);
-                    assertFalse(upper.contains("AUTOINCREMENT"), "V" + migration.version() + " : " + sql);
-                    assertFalse(upper.contains("\"") || sql.contains("[["), "V" + migration.version());
-                } else if (upper.startsWith("CREATE INDEX") || upper.startsWith("CREATE UNIQUE INDEX")) {
-                    org.junit.jupiter.api.Assertions.fail("index non traduit V" + migration.version() + " : " + sql);
-                }
-            }
+            byVersion.put(migration.version(), new java.util.ArrayList<>(produced));
         }
+        return byVersion;
     }
 
     private static Object emptyResultSet() {

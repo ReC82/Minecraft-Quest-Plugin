@@ -6,6 +6,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Noms affichés en double entre PNJ (#125, 14/10/2026)** — PlugAdmin seul : badge « nom en
+> double » + avertissement citant l'autre identifiant sur `/npcs`, section dédiée sur
+> `/npcs/diagnostic`, code `DUPLICATE_DISPLAY_NAME` (warning) sur `/diagnostics`, avertissement en
+> direct dans « Créer un PNJ » / « Modifier le nom ». Non bloquant ; la collision d'identifiant
+> reste bloquante. `NpcDisplayNames` (pur, testé).
+
 > **PNJ récurrents par biome — étape 1 (#13, 14/10/2026)** — un PNJ Citizens de rencontre apparaît
 > dans chaque instance de biome du Wild visitée dont le biome a un modèle (`encounters/*.yml` :
 > brigand/forêt, marchand égaré/désert, forgeron perdu/montagne) : génération paresseuse sans

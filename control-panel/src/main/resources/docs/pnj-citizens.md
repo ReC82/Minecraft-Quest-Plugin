@@ -123,6 +123,14 @@ L'**identifiant canonique** attendu par un contenu donné est celui écrit dans 
 (`giver:`, objectif `TALK_TO_NPC` → `npc:`, convention de dialogue `rpgquest:<id>`). Il faut
 taguer le PNJ **exactement** avec cet id.
 
+> [!NOTE]
+> **Deux PNJ peuvent porter le même nom affiché** (deux « Robert », `robert_writer` et
+> `iron_specialist`) : rien n'est bloqué, mais la page **PNJ** les marque « nom en double », cite
+> l'identifiant de l'autre, et la page **Diagnostic** liste les identifiants en conflit. À la
+> création et au renommage, PlugAdmin prévient pendant la saisie si le nom est déjà porté. Voir
+> [Nom affiché partagé par plusieurs PNJ](/docs/pnj-depannage#nom-affiche-partage-par-plusieurs-pnj).
+> Deux PNJ pour le **même identifiant**, eux, restent une vraie erreur.
+
 > [!WARNING]
 > Un mauvais tag = contenu cassé silencieusement. Si le YAML attend `guard` et que le PNJ est
 > tagué `garde` (ou `Garde`, refusé car majuscule), le dialogue ne s'ouvre pas et l'objectif

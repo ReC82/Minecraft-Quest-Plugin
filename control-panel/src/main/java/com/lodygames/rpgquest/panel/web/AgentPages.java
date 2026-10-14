@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.json.Json;
 import com.lodygames.rpgquest.panel.npc.NpcAppearance;
 import com.lodygames.rpgquest.panel.npc.NpcCreationPlanner;
+import com.lodygames.rpgquest.panel.npc.NpcDisplayNames;
 import com.lodygames.rpgquest.panel.security.Session;
 import com.lodygames.rpgquest.panel.travel.TravelNetworkDiagnostic;
 import java.time.Instant;
@@ -4587,15 +4588,17 @@ public final class AgentPages {
         sb.append("<a class=\"btn secondary sm\" href=\"/npcs/diagnostic\">")
                 .append(Icons.icon("wrench")).append("Diagnostic</a>");
         sb.append("</div>");
-        if (rights.create()) {
-            sb.append("<div class=\"collapse\" id=\"npc-create\"><div class=\"card card-body npc-formcard\">")
-                    .append(npcCreateForm(session, agentId, spawnWorlds)).append("</div></div>");
-        }
 
         Optional<Map<String, Object>> details = latestDetails(agentId, "npc.list");
         Optional<Map<String, Object>> citizensCat = latestDetails(agentId, "npc.citizens.list");
         List<Object> citizensRoster = citizensCat.map(x -> asList(x.get("citizens"))).orElse(List.of());
         List<Object> npcs = details.map(d -> asList(d.get("npcs"))).orElse(List.of());
+        NpcDisplayNames names = NpcDisplayNames.fromSurvey(npcs, citizensRoster);
+
+        if (rights.create()) {
+            sb.append("<div class=\"collapse\" id=\"npc-create\"><div class=\"card card-body npc-formcard\">")
+                    .append(npcCreateForm(session, agentId, spawnWorlds, names)).append("</div></div>");
+        }
 
         // Créations commencées mais pas terminées : ce qui est fait, ce qui reste, et la reprise.
         sb.append(npcPendingCreations(session, agentId, npcs, rights));
@@ -4656,12 +4659,12 @@ public final class AgentPages {
         int toFix = 0;
         int i = 0;
         for (Map<String, Object> n : rows) {
-            NpcCard card = npcCard(agentId, n, citizensRoster);
+            NpcCard card = npcCard(agentId, n, citizensRoster, names);
             if (!card.problems().isEmpty()) {
                 toFix++;
             }
             items.append(renderNpcItem(session, agentId, card, i++, questTitles, giverRef,
-                    spawnWorlds, rights, sourceDialogueSlugs, dialogueHolders));
+                    spawnWorlds, rights, sourceDialogueSlugs, dialogueHolders, names));
         }
         int fci = 0;
         for (Map<String, Object> c : freeCitizens) {
@@ -4725,10 +4728,12 @@ public final class AgentPages {
     /** Tout ce qu'une fiche affiche, calculé une seule fois. */
     private record NpcCard(String id, String name, String nameHtml, String inGameName, boolean hasDefinition,
                            boolean inWorld, boolean enabled, String numeric, Map<String, Object> citizens,
-                           NpcAppearance appearance, Map<String, Object> row, List<NpcProblem> problems) {
+                           NpcAppearance appearance, Map<String, Object> row, List<NpcProblem> problems,
+                           List<String> nameSharedWith) {
     }
 
-    private NpcCard npcCard(String agentId, Map<String, Object> n, List<Object> citizensRoster) {
+    private NpcCard npcCard(String agentId, Map<String, Object> n, List<Object> citizensRoster,
+                            NpcDisplayNames names) {
         String id = str(n.get("id"));
         String slug = npcSlug(id);
         String displayName = cleanNull(str(n.get("displayName")));
@@ -4749,6 +4754,14 @@ public final class AgentPages {
                 && !MiniText.plain(inGame).equals(MiniText.plain(displayName))) {
             problems.add(new NpcProblem("Le nom affiché en jeu est différent : « " + MiniText.plain(inGame)
                     + " ». Enregistrez le nom pour les remettre d'accord.", slug + "-f-name", "Modifier le nom"));
+        }
+        // Issue #125 : un nom partagé n'est pas une erreur, mais il faut le voir avant de choisir
+        // une fiche par son nom. Les identifiants techniques, eux, restent distincts.
+        List<String> nameSharedWith = names.othersSharing(id);
+        if (!nameSharedWith.isEmpty()) {
+            problems.add(new NpcProblem("Nom affiché utilisé par plusieurs PNJ : « " + name + " » est aussi porté par "
+                    + String.join(", ", nameSharedWith) + " (identifiant de celui-ci : " + id + ").",
+                    slug + "-f-name", "Modifier le nom"));
         }
         if (hasDefinition && !inWorld && enabled) {
             problems.add(new NpcProblem("Ce PNJ n'est pas encore dans le monde.", slug + "-f-spawn",
@@ -4783,7 +4796,7 @@ public final class AgentPages {
             }
         }
         return new NpcCard(id, name, nameHtml, inGame, hasDefinition, inWorld, enabled, numeric, c, appearance,
-                n, problems);
+                n, problems, nameSharedWith);
     }
 
     private static String npcSlug(String id) {
@@ -4808,7 +4821,8 @@ public final class AgentPages {
                                  Map<String, String> questTitles,
                                  com.lodygames.rpgquest.panel.content.RefData giverRef,
                                  List<String> spawnWorlds, NpcRights rights,
-                                 Map<String, String> sourceDialogueSlugs, Map<String, Integer> dialogueHolders) {
+                                 Map<String, String> sourceDialogueSlugs, Map<String, Integer> dialogueHolders,
+                                 NpcDisplayNames names) {
         String id = card.id();
         String slug = npcSlug(id);
         String collapseId = slug + "-body";
@@ -4830,6 +4844,10 @@ public final class AgentPages {
         sb.append("</span><span class=\"npc-head-badges\">");
         if (!card.problems().isEmpty()) {
             sb.append("<span class=\"badge text-bg-warning\">").append(Icons.icon("warning")).append("à vérifier</span>");
+        }
+        if (!card.nameSharedWith().isEmpty()) {
+            sb.append("<span class=\"badge text-bg-info\" data-dup-name title=\"Même nom que ")
+                    .append(Http.esc(String.join(", ", card.nameSharedWith()))).append("\">nom en double</span>");
         }
         if (card.hasDefinition() && !card.enabled()) {
             sb.append("<span class=\"badge text-bg-secondary\">désactivé</span>");
@@ -4873,7 +4891,7 @@ public final class AgentPages {
         StringBuilder forms = new StringBuilder();
         if (rights.write() && rights.bind() && (card.hasDefinition() || card.inWorld())) {
             toggles.add(new String[] {slug + "-f-name", "Modifier le nom", "edit"});
-            forms.append(npcFormBox(slug + "-f-name", npcRenameForm(session, agentId, card)));
+            forms.append(npcFormBox(slug + "-f-name", npcRenameForm(session, agentId, card, names)));
         }
         if (rights.bind() && card.inWorld()) {
             toggles.add(new String[] {slug + "-f-skin", "Apparence", "npc"});
@@ -4972,7 +4990,7 @@ public final class AgentPages {
 
     // ---- Modifier le nom ----------------------------------------------------------------------
 
-    private String npcRenameForm(Session session, String agentId, NpcCard card) {
+    private String npcRenameForm(Session session, String agentId, NpcCard card, NpcDisplayNames names) {
         String uid = npcSlug(card.id()) + "-name-in";
         String current = MiniText.plain(card.hasDefinition() ? str(card.row().get("displayName")) : card.inGameName());
         if ("null".equals(current)) {
@@ -4985,8 +5003,10 @@ public final class AgentPages {
         sb.append("<div class=\"input-counter\"><input class=\"form-control\" type=\"text\" id=\"").append(uid)
                 .append("\" name=\"name\" maxlength=\"").append(NpcCreationPlanner.MAX_NAME)
                 .append("\" required autocomplete=\"off\" data-charcount")
+                .append(nameTakenAttrs(uid, names, card.id()))
                 .append(" value=\"").append(Http.esc(current)).append("\">")
                 .append(charCounter(uid, current.length())).append("</div>");
+        sb.append(nameTakenNote(uid, names.holdersOf(current, card.id())));
         if (card.appearance().renameAppliesDefault()) {
             sb.append("<p class=\"form-text\">Il prendra l'apparence par défaut, sauf si vous lui en "
                     + "choisissez une autre avant.</p>");
@@ -4998,6 +5018,34 @@ public final class AgentPages {
                 .append("Enregistrer le nom</button></form>");
         sb.append(npcLastResult(agentId, "npc.identity.rename", card.id()));
         return sb.toString();
+    }
+
+    /**
+     * Issue #125 — l'avertissement « ce nom est déjà porté », avant d'enregistrer. Le champ porte
+     * l'index des noms ({@code nom comparé → identifiants}) ; panel.js ({@code data-name-taken})
+     * compare la saisie et affiche la note. Jamais un refus : deux PNJ peuvent s'appeler pareil.
+     *
+     * @param exceptId le PNJ qu'on renomme — son propre nom ne le concerne pas ; vide à la création
+     */
+    private static String nameTakenAttrs(String fieldId, NpcDisplayNames names, String exceptId) {
+        Map<String, Object> index = new LinkedHashMap<>();
+        names.index().forEach((key, ids) -> {
+            List<String> others = ids.stream().filter(i -> !i.equalsIgnoreCase(exceptId)).toList();
+            if (!others.isEmpty()) {
+                index.put(key, others);
+            }
+        });
+        return " data-name-taken=\"" + Http.esc(Json.write(index)) + "\" data-name-taken-note=\""
+                + fieldId + "-taken\"";
+    }
+
+    /** La note, rendue par le serveur quand le nom actuel est déjà partagé, cachée sinon. */
+    private static String nameTakenNote(String fieldId, List<String> holders) {
+        return "<p class=\"form-text text-warning-emphasis\" id=\"" + fieldId + "-taken\" role=\"status\""
+                + (holders.isEmpty() ? " hidden" : "") + ">" + Icons.icon("warning")
+                + "<span class=\"name-taken-text\">Nom affiché déjà utilisé par : "
+                + Http.esc(String.join(", ", holders)) + ".</span> Vous pouvez enregistrer quand même : "
+                + "les identifiants restent distincts, mais les deux PNJ seront difficiles à distinguer.</p>";
     }
 
     /** Compteur « 0/48 » mis à jour pendant la saisie (composant {@code data-charcount} de panel.js). */
@@ -5565,7 +5613,7 @@ public final class AgentPages {
      * Le formulaire de création : nom, emplacement, apparence. Un jeton de demande unique par
      * affichage fait qu'un double clic ou un renvoi du formulaire ne crée jamais deux PNJ.
      */
-    private String npcCreateForm(Session session, String agentId, List<String> spawnWorlds) {
+    private String npcCreateForm(Session session, String agentId, List<String> spawnWorlds, NpcDisplayNames names) {
         String uid = "npc-new";
         String token = java.util.UUID.randomUUID().toString().replace("-", "");
         StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/npcs/create\" data-submit-once "
@@ -5576,8 +5624,10 @@ public final class AgentPages {
         sb.append("<label for=\"").append(uid).append("-name\">Nom</label>");
         sb.append("<div class=\"input-counter\"><input class=\"form-control\" id=\"").append(uid)
                 .append("-name\" type=\"text\" name=\"display_name\" maxlength=\"").append(NpcCreationPlanner.MAX_NAME)
-                .append("\" required data-charcount placeholder=\"Lucien\">")
+                .append("\" required data-charcount placeholder=\"Lucien\"")
+                .append(nameTakenAttrs(uid + "-name", names, "")).append(">")
                 .append(charCounter(uid + "-name", 0)).append("</div>");
+        sb.append(nameTakenNote(uid + "-name", List.of()));
 
         sb.append("<label for=\"").append(uid).append("-place\">Emplacement</label>");
         sb.append("<select class=\"form-select\" id=\"").append(uid).append("-place\" name=\"place\" data-switch=\"")
@@ -6266,8 +6316,10 @@ public final class AgentPages {
         }
         sb.append("</section>");
 
-        sb.append("<section class=\"card\">").append(Ui.sectionTitle("link", "Rapprochement avec le jeu"));
         List<Object> roster = citizensCat.map(x -> asList(x.get("citizens"))).orElse(List.of());
+        sb.append(npcDuplicateNamesSection(NpcDisplayNames.fromSurvey(asList(d.get("npcs")), roster)));
+
+        sb.append("<section class=\"card\">").append(Ui.sectionTitle("link", "Rapprochement avec le jeu"));
         if (roster.isEmpty()) {
             sb.append("<p class=\"muted\">Aucun personnage Citizens relevé.</p>");
         } else {
@@ -6302,6 +6354,31 @@ public final class AgentPages {
         }
         sb.append("</p></section>");
         return sb.toString();
+    }
+
+    /**
+     * Issue #125 — les noms affichés portés par plusieurs PNJ, avec les identifiants en conflit.
+     * Un avertissement : la collision d'identifiant, elle, arrive du moteur dans « Messages du serveur ».
+     */
+    private static String npcDuplicateNamesSection(NpcDisplayNames names) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\" id=\"npc-dup-names\">")
+                .append(Ui.sectionTitle("npc", "Noms affichés en double"));
+        List<NpcDisplayNames.Group> groups = names.duplicates();
+        if (groups.isEmpty()) {
+            return sb.append("<p class=\"muted\">").append(Icons.icon("check"))
+                    .append("Chaque PNJ porte un nom différent.</p></section>").toString();
+        }
+        for (NpcDisplayNames.Group g : groups) {
+            StringBuilder ids = new StringBuilder();
+            for (String id : g.ids()) {
+                ids.append(Ui.id(id)).append(' ');
+            }
+            sb.append("<p class=\"npc-section\">").append(Icons.icon("npc")).append(Http.esc(g.name()))
+                    .append(" ").append(ids).append("</p>");
+            sb.append(DiagnosticHelp.render("DUPLICATE_DISPLAY_NAME", "warning", "", g.name(),
+                    String.join(", ", g.ids()), ""));
+        }
+        return sb.append("</section>").toString();
     }
 
     private static String npcStateBadge(String state) {

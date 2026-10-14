@@ -158,6 +158,25 @@ class DiagnosticsServiceTest {
     }
 
     @Test
+    void aSharedDisplayNameIsAWarningNamingEveryConflictingId() {
+        AgentStore s = store();
+        snapshot(s, "npc.list", "{\"citizensAvailable\":true,\"npcs\":["
+                + "{\"id\":\"robert_writer\",\"displayName\":\"Robert\",\"logicalDefinitionPresent\":true,\"warnings\":[]},"
+                + "{\"id\":\"iron_specialist\",\"displayName\":\"<gold>Robert</gold>\",\"logicalDefinitionPresent\":true,"
+                + "\"warnings\":[]}]}");
+        List<DiagnosticEntry> dup = service(s).collect(AGENT).entries().stream()
+                .filter(e -> e.code().equals("DUPLICATE_DISPLAY_NAME")).toList();
+
+        assertEquals(2, dup.size(), "une entrée par PNJ concerné");
+        for (DiagnosticEntry e : dup) {
+            assertEquals(Severity.WARNING, e.severity(), "avertissement, jamais une erreur");
+            assertTrue(e.message().contains("robert_writer, iron_specialist"), e.message());
+            assertTrue(e.docHref().contains("pnj-depannage#nom-affiche-partage-par-plusieurs-pnj"), e.docHref());
+        }
+        assertEquals(List.of("robert_writer", "iron_specialist"), dup.stream().map(DiagnosticEntry::resourceId).toList());
+    }
+
+    @Test
     void deduplicatesIdenticalCodePlusResource() {
         AgentStore s = store();
         // même warning répété deux fois sur le même PNJ dans le payload

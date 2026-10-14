@@ -5768,3 +5768,30 @@ id d'occurrence), `EncounterSiteRepositoryTest` (une rencontre par instance, sur
     fichier apparaît en « refusé » avec son motif ; le restaurer et relire.
 8.  Compte sans `NPC_SPAWN_WRITE` : la page s'affiche en lecture seule.
 
+### TC-305 — PNJ récurrents, étape 3 : édition des modèles et apparence (issue #13, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel de l'étape 3 déployés. Compte propriétaire PlugAdmin. Un marais
+(`swamp`) non visité dans le Wild. **Durée** : 20 minutes.
+
+1.  `/npcs/encounters` → « Actualiser » → **Nouveau modèle** : `swamp_alchemist`, « Alchimiste des
+    marais », biomes `swamp` et `mangrove_swamp` (une ligne chacun), actif → créé ; avertissement
+    « aucun dialogue rpgquest:swamp_alchemist ». Après actualisation, le modèle est listé.
+    Sur le serveur, `plugins/RPGQuest/encounters/swamp_alchemist.yml` existe.
+2.  Recréer le même identifiant : refus « existe déjà », le fichier n'a pas changé.
+3.  Biome `pas_un_biome!` ou poids `0` : refus clair, rien d'écrit.
+4.  En jeu, entrer dans un marais jamais visité : un « Alchimiste des marais » apparaît avec
+    l'apparence par défaut (pas le skin d'un joueur inconnu) ; la page indique « apparence par
+    défaut ».
+5.  **Modifier** : coller un lien MineSkin valide dans « Paramètres avancés » → enregistré. Sur
+    l'occurrence du marais : « Gérer » → « Retenter maintenant » (confirmé) → le PNJ prend le
+    nouveau skin ; la page indique « apparence du modèle ». Un lien `https://minesk.in/inexistant0`
+    puis « Retenter » : journal `SKIN_FAILED`, l'apparence précédente reste.
+6.  **Dupliquer** `forest_bandit` : formulaire pré-rempli, identifiant vide ; saisir
+    `forest_bandit_2`, enregistrer → deux modèles forêt.
+7.  **Désactiver le modèle** `swamp_alchemist` : badge « désactivé » ; un nouveau marais ne génère
+    plus rien ; l'alchimiste existant reste en place. Réactiver.
+8.  **Supprimer** `swamp_alchemist` (une occurrence) sans cocher « Laisser ces occurrences » : refus.
+    En cochant les deux cases : supprimé, sauvegarde dans `encounter-backups/`, l'alchimiste reste
+    en jeu. Le retirer depuis « Occurrences » si souhaité.
+9.  Compte sans `NPC_WRITE` : aucun formulaire de modèle ; sans `NPC_DELETE` : pas de « Supprimer ».
+

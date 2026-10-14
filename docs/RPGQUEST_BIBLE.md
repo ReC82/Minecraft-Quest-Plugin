@@ -3414,6 +3414,12 @@ PNJ supprimé à la main est recréé au même endroit, jamais en double. Réfé
 état et dernière erreur, journal récent ; *Retenter*, *Désactiver*, *Retirer* sur une occurrence
 (permission `NPC_SPAWN_WRITE`, confirmation), *Relire les modèles* et *Effacer les délais*
 (`NPC_WRITE`). Actions agent `encounter.list|retry|disable|remove|templates.reload|backoffs.clear`.
+Étape 3 : les modèles se créent, se modifient, se dupliquent, s'activent/désactivent
+(`NPC_WRITE`) et se suppriment (`NPC_DELETE`, confirmation, sauvegarde dans
+`encounter-backups/`, refus s'il reste des occurrences sans accord explicite) depuis cette page —
+actions `encounter.template.create|update|toggle|delete`, validées par le parseur des fichiers. Le
+`skin_url` du modèle (sinon l'apparence par défaut) est posé sur le PNJ à sa création ou
+réparation ; « Retenter » le réapplique à un PNJ présent.
 Quêtes secondaires : étapes suivantes. Tests : `docs/MANUAL_TEST_PLAN.md` TC-303 et TC-304
 (`PENDING MANUAL VALIDATION`).
 

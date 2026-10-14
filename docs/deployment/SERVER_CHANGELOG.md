@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - PNJ récurrents, étape 3 : édition des modèles et apparence (#13)
+
+### Changement
+
+- Plugin : actions agent `encounter.template.create|update|toggle|delete` (fichiers
+  `encounters/*.yml` écrits par le plugin, sauvegarde dans `plugins/RPGQuest/encounter-backups/`
+  avant suppression) ; `encounter.list` porte l'état d'apparence de chaque occurrence.
+- Les PNJ de rencontre reçoivent le `skin_url` de leur modèle (ou l'apparence par défaut) à leur
+  création, réadoption ou réparation ; appel réseau vers `api.mineskin.org` seulement pour un
+  `skin_url` renseigné, comme les PNJ classiques (#325).
+- Panel : formulaires de modèle sur `/npcs/encounters`.
+- Aucune migration, aucune nouvelle clé de configuration.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** redéploiement du panel
+(`scripts/plugadmin/deploy.sh`). Ne pas téléverser `config.yml` ni `encounters/*.yml`, ne pas
+toucher `data.db`. Les PNJ de rencontre déjà apparus gardent leur apparence actuelle jusqu'à un
+« Retenter » depuis la page.
+
+### Sauvegarde préalable
+
+Sauvegarde datée du JAR en place (faite par `deploy-verygames.sh`).
+
+### Validation
+
+TC-305 (`docs/MANUAL_TEST_PLAN.md`).
+
+### Rollback
+
+Remettre le JAR précédent et redéployer le panel précédent. Un modèle modifié depuis le panel
+reste dans son nouvel état (format inchangé, relu par l'ancien JAR) ; un modèle supprimé se
+restaure en recopiant sa sauvegarde de `encounter-backups/` dans `encounters/`.
+
+---
+
 ## 2026-10-14 - PNJ récurrents, étape 2 : administration PlugAdmin (#13)
 
 ### Changement

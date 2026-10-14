@@ -5,9 +5,9 @@ explorée, et proposent des quêtes secondaires d'exploration. Un même **modèl
 égaré, forgeron perdu…) se retrouve dans de nombreuses instances : c'est un type de PNJ
 *récurrent*, jamais un spawn infini.
 
-> Statut : **étapes 1 et 2 livrées** (moteur, modèles, persistance, apparition sûre, réparation ;
-> page PlugAdmin « PNJ récurrents » et actions d'administration). À venir : édition des modèles
-> depuis le panel, apparence (skin), quêtes secondaires renouvelables, onglet Quêtes
+> Statut : **étapes 1 à 3 livrées** (moteur, modèles, persistance, apparition sûre, réparation ;
+> page PlugAdmin « PNJ récurrents » et actions d'administration ; édition des modèles depuis le
+> panel et apparence `skin_url`). À venir : quêtes secondaires renouvelables, onglet Quêtes
 > « Secondaires / Rencontres ».
 
 ## Instance de biome
@@ -33,7 +33,7 @@ Un fichier par modèle. Trois exemples sont copiés au premier démarrage, jamai
 | `worlds` | non (vide) | restreint à certains mondes autorisés |
 | `weight` | non (10) | poids du tirage si plusieurs modèles acceptent le même biome (1–1000) |
 | `max_sites` | non (0) | plafond d'occurrences du modèle ; 0 = pas de plafond propre |
-| `skin_url` | non | lien MineSkin (appliqué à une étape ultérieure) |
+| `skin_url` | non | lien MineSkin `https://minesk.in/…` de l'apparence ; absent = apparence par défaut |
 | `enabled` | non (`true`) | `false` = plus aucune nouvelle occurrence |
 
 Livrés : `forest_bandit` (forêts → `encounter_bandit`), `desert_merchant` (désert et badlands →
@@ -42,7 +42,9 @@ avec un dialogue d'accueil `dialogues/encounter_*.yml`, partagé par toutes ses 
 
 Un fichier invalide est rejeté seul (les autres chargent) ; un biome inconnu du serveur est signalé
 dans les logs. Les modèles sont relus au démarrage, ou à chaud par « Relire les modèles » dans
-PlugAdmin (aucun PNJ déjà apparu n'est touché).
+PlugAdmin (aucun PNJ déjà apparu n'est touché). Ils se créent et se modifient aussi depuis
+PlugAdmin (voir « Édition des modèles ») : le fichier est alors **réécrit** par le plugin
+(commentaires perdus, champs dans un ordre fixe).
 
 ## Apparition
 
@@ -101,7 +103,48 @@ Page `/npcs/encounters`, bouton « PNJ récurrents » de la page PNJ. Elle lit l
 | `encounter.templates.reload` | `NPC_WRITE` | relit `encounters/*.yml` |
 | `encounter.backoffs.clear` | `NPC_WRITE` | efface les délais d'attente après échec |
 
-Chaque action vise **une** occurrence nommée (`enc_…`), jamais un lot. Le roster
+Chaque action vise **une** occurrence nommée (`enc_…`), jamais un lot.
+
+## Édition des modèles — PlugAdmin (étape 3)
+
+Sur `/npcs/encounters`, section **Modèles** : bouton **Nouveau modèle**, et pour chaque modèle
+« Gérer » → **Désactiver / Activer le modèle**, **Modifier**, **Dupliquer** (formulaire pré-rempli,
+nouvel identifiant à saisir), **Supprimer**. Champs courants : identifiant (fixe après création :
+c'est le nom du fichier), nom affiché, `npc_id`, rôle, famille, biomes (un par ligne ou séparés par
+des virgules ; `forest` = `minecraft:forest`), actif. Repliés sous « Paramètres avancés » :
+description, mondes, poids, plafond d'occurrences, lien MineSkin.
+
+| Action | Permission | Effet |
+|---|---|---|
+| `encounter.template.create` | `NPC_WRITE` | crée `encounters/<id>.yml` ; refusé si l'id existe déjà (dans n'importe quel fichier) |
+| `encounter.template.update` | `NPC_WRITE` | réécrit le fichier du modèle (atomique) |
+| `encounter.template.toggle` | `NPC_WRITE` | `enabled: true/false` ; désactivé = plus aucune nouvelle occurrence, les existantes restent |
+| `encounter.template.delete` | `NPC_DELETE`, confirmation | copie dans `plugins/RPGQuest/encounter-backups/<date>-<fichier>` puis supprime le fichier |
+
+- Le panel n'envoie jamais de YAML : les champs sont validés par **le même parseur que les
+  fichiers** (`EncounterTemplateParser`), le plugin produit le texte, l'écrit, le relit, puis
+  recharge les modèles — effet immédiat pour les **prochaines** apparitions.
+- Avertissements renvoyés (sans bloquer) : biome inconnu du serveur, dialogue
+  `rpgquest:<npc_id>` absent, occurrences existantes qui gardent un ancien `npc_id`.
+- **Ce qui ne change pas** pour les PNJ déjà apparus : leur position, leur identité (`npc_id`
+  enregistré à l'apparition) et leur nom. Le nom et l'apparence du modèle s'appliquent à la
+  prochaine création ou réparation ; « Retenter » sur un PNJ présent réapplique l'apparence.
+- Supprimer un modèle qui a encore des occurrences est **refusé** sauf accord explicite (case
+  « Laisser ces occurrences en place ») : elles gardent alors leur PNJ et leur dialogue mais ne
+  sont plus rattachées à un modèle chargé. Pour les faire disparaître, les « Retirer » d'abord.
+
+## Apparence (étape 3)
+
+À chaque création, réadoption ou réparation d'un PNJ de rencontre de type joueur, RPGQuest pose
+la texture du `skin_url` du modèle, résolue par `MineSkinResolver` (API publique MineSkin,
+asynchrone, mise en cache) puis appliquée sur le thread principal, seulement si l'occurrence
+désigne encore ce PNJ. Sans `skin_url`, l'**apparence par défaut** embarquée est posée sans aucun
+appel réseau — sinon Citizens donnerait au PNJ le skin du compte Minecraft qui porte son nom.
+Un échec (lien inconnu, MineSkin injoignable) est journalisé `SKIN_FAILED`, jamais remplacé par
+une autre apparence. La colonne « PNJ en jeu » de la page affiche l'état depuis le démarrage du
+serveur : *apparence du modèle*, *apparence par défaut*, *en cours*, *en échec : motif* (vide =
+rien tenté depuis le démarrage). Les PNJ apparus avant l'étape 3 gardent leur apparence actuelle
+jusqu'à un « Retenter » ou une réparation. Le roster
 `npc.citizens.list` porte `encounterSiteId` : un PNJ de rencontre n'apparaît plus parmi les PNJ
 « à rattacher » de la page PNJ, ni comme `CITIZENS_ONLY` dans les diagnostics.
 

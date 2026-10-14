@@ -253,7 +253,13 @@ public enum Permission {
      * Issue #335 — modifier les paramètres généraux. Réservée au propriétaire et aux
      * administrateurs : ces réglages s'appliquent à tous les joueurs.
      */
-    SETTINGS_WRITE;
+    SETTINGS_WRITE,
+    /**
+     * Issue #42 — configurer la base MariaDB cible d'une future migration (hôte, compte, mot de
+     * passe chiffré) et tester la connexion. Réservée au propriétaire par défaut : c'est un accès
+     * à l'infrastructure. Ne permet aucune migration ni bascule (aucune route ne le fait).
+     */
+    DATABASE_CONFIGURE;
 
     /**
      * Permission portant ce nom, ou vide si le nom est inconnu. Utilisé à la lecture d'un groupe en

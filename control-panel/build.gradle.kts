@@ -23,8 +23,13 @@ repositories {
 //   - JSON         : codec maison (panel.json.Json)
 //   - Persistance panel (audit log, futurs users/roles) : control-panel.db,
 //     SQLite, TOTALEMENT séparée de data.db et de store.db.
+//
+// Exception unique et délibérée (issue #42) : le pilote MariaDB, pour TESTER la connexion à la base
+// cible d'une future migration (page /database, session en lecture seule, métadonnées seulement).
+// Le panel n'ouvre toujours ni data.db ni aucune donnée métier du plugin.
 dependencies {
     implementation("org.xerial:sqlite-jdbc:3.53.2.1")
+    implementation("org.mariadb.jdbc:mariadb-java-client:3.4.1")
 
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")

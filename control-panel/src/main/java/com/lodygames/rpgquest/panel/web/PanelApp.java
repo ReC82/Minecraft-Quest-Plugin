@@ -99,6 +99,10 @@ public final class PanelApp {
     private final com.lodygames.rpgquest.panel.ai.AiProviderRegistry aiProviders =
             new com.lodygames.rpgquest.panel.ai.AiProviderRegistry();
     private final com.lodygames.rpgquest.panel.ai.AiSettingsStore aiSettings;
+    /** Issue #42 — base MariaDB cible d'une future migration (mot de passe chiffré au repos). */
+    private final com.lodygames.rpgquest.panel.dbtarget.DbTargetStore dbTarget;
+    private com.lodygames.rpgquest.panel.dbtarget.DbConnectionTester dbTester =
+            new com.lodygames.rpgquest.panel.dbtarget.MariaDbConnectionTester();
     private final com.lodygames.rpgquest.panel.ai.AiContentStudio aiStudio;
     /** Issue #94 — atelier de plans de bâtiment, distinct de l'atelier de contenu. */
     private final com.lodygames.rpgquest.panel.ai.AiBuildingStudio aiBuildingStudio;
@@ -164,6 +168,11 @@ public final class PanelApp {
         // Issue #146 : les réglages d'IA vivent dans la base du panel — hors dépôt Git, en mode 600,
         // lisible par le seul compte du service. C'est le stockage serveur exigé pour une clé API.
         this.aiSettings = new com.lodygames.rpgquest.panel.ai.AiSettingsStore(config.panelDbPath());
+        // Issue #42 : clé de chiffrement dérivée de RPGQUEST_PANEL_SECRET (environnement), jamais
+        // stockée à côté du chiffré.
+        this.dbTarget = new com.lodygames.rpgquest.panel.dbtarget.DbTargetStore(config.panelDbPath(),
+                new com.lodygames.rpgquest.panel.dbtarget.SecretBox(config.sessionSecret(),
+                        "db-migration-target-password"));
         this.aiStudio = new com.lodygames.rpgquest.panel.ai.AiContentStudio(aiProviders, aiSettings);
         // Issue #94 — même registre de fournisseurs et mêmes réglages que l'atelier de contenu :
         // une seule clé API à gérer, un seul endroit où elle vit.
@@ -322,6 +331,7 @@ public final class PanelApp {
         // techniques ».
         // Issue #335 — paramètres généraux du jeu.
         route("/settings", this::handleSettings);
+        route("/database", this::handleDatabaseTarget);
         route("/settings/refresh", this::handleSettingsRefresh);
         route("/settings/save", this::handleSettingsSave);
         route("/dialogues", this::handleDialogueList);
@@ -2041,6 +2051,114 @@ public final class PanelApp {
         LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent="
                 + agentId + " type=" + type + " action=" + id + " by=" + session.username());
         return new Queued(id, null);
+    }
+
+    /** Tests : remplace le testeur de connexion réel (aucun serveur MariaDB requis). */
+    public void useDbConnectionTester(com.lodygames.rpgquest.panel.dbtarget.DbConnectionTester tester) {
+        this.dbTester = tester;
+    }
+
+    /**
+     * Issue #42 — base MariaDB cible : paramètres, mot de passe chiffré, test de connexion en lecture
+     * seule et assistant de migration. Préparation uniquement : aucune route ne migre ni ne bascule.
+     */
+    private void handleDatabaseTarget(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.DATABASE_CONFIGURE)) {
+            forbidden(exchange, session, "/database");
+            return;
+        }
+        if (!"/database".equals(exchange.getRequestURI().getPath())) {
+            // le contexte HTTP capte aussi /database/… : aucune sous-route n'existe, en particulier
+            // aucune route de migration ou de bascule
+            Http.html(exchange, 404, Layout.bare("Introuvable", "<h1>Page introuvable</h1>"));
+            return;
+        }
+        String notice = null;
+        String error = null;
+        com.lodygames.rpgquest.panel.dbtarget.DbConnectionTester.Result testResult = null;
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Map<String, String> f = Http.formBody(exchange);
+            if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
+                Http.html(exchange, 403, Layout.bare("CSRF",
+                        "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                return;
+            }
+            String rid = UUID.randomUUID().toString().substring(0, 8);
+            String action = f.getOrDefault("_action", "save");
+            if ("clear".equals(action)) {
+                if (!"on".equals(f.get("confirm"))) {
+                    error = "Effacement non confirmé : cocher la case de confirmation.";
+                } else {
+                    dbTarget.clearPassword(session.username());
+                    // L'audit dit QUE le secret a été effacé, jamais ce qu'il valait.
+                    audit.record(session.username(), "database.target.clearPassword", "target=migration",
+                            "OK", "mot de passe effacé", rid);
+                    notice = "Mot de passe effacé.";
+                }
+            } else {
+                String host = f.getOrDefault("host", "").trim();
+                String port = f.getOrDefault("port", "3306").trim();
+                String database = f.getOrDefault("database", "").trim();
+                String username = f.getOrDefault("username", "").trim();
+                String ssl = f.getOrDefault("sslMode", "disable").trim();
+                String password = f.getOrDefault("password", "");
+                error = com.lodygames.rpgquest.panel.dbtarget.DbTargetSettings.validate(host, port, database,
+                        username, ssl);
+                if (error == null) {
+                    dbTarget.save(host, Integer.parseInt(port), database, username, ssl, password,
+                            session.username());
+                    // Ni hôte ni secret dans l'audit : la base, le mode TLS et le fait qu'un mot de
+                    // passe a été remplacé suffisent à tracer le geste.
+                    audit.record(session.username(), "database.target.save", "database=" + database
+                                    + " ssl=" + ssl + " passwordReplaced=" + !password.isEmpty(),
+                            "OK", "cible enregistrée", rid);
+                    notice = "Cible enregistrée.";
+                    if ("test".equals(action)) {
+                        testResult = dbTarget.test(dbTester);
+                        audit.record(session.username(), "database.target.test", "database=" + database,
+                                testResult.ok() ? "OK" : "FAILED", testResult.ok() ? "connexion réussie"
+                                        : "échec de connexion", rid);
+                        notice = null;
+                    }
+                }
+            }
+        }
+
+        boolean canWrite = permissions.can(session.effective(), Permission.DATABASE_CONFIGURE);
+        String body = com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.render(dbTarget.get(),
+                activeBackend(), canWrite, notice, error, testResult);
+        Http.html(exchange, 200, renderPage("Base de données", session, "/database", body,
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /** Backend réellement actif, lu dans le dernier heartbeat de l'agent par défaut (issue #42). */
+    private com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.ActiveBackend activeBackend() {
+        String agentId = config.agents().defaultAgentId();
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.ActiveBackend.unknown("aucun agent configuré");
+        }
+        Optional<HeartbeatRecord> hb = agentStore.latestHeartbeat(agentId);
+        if (hb.isEmpty()) {
+            return com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.ActiveBackend.unknown("aucun heartbeat reçu");
+        }
+        String age = AgentLiveness.ageHuman(hb.get().receivedAt(), Instant.now());
+        try {
+            Object database = com.lodygames.rpgquest.panel.json.Json.parseObject(hb.get().rawJson()).get("database");
+            if (database instanceof Map<?, ?> map && map.get("engine") instanceof String engine) {
+                int version = map.get("schema_version") instanceof Number n ? n.intValue() : 0;
+                return new com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.ActiveBackend(engine, version, age);
+            }
+        } catch (RuntimeException e) {
+            // heartbeat illisible ou tronqué : backend présenté comme inconnu
+        }
+        return com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.ActiveBackend.unknown(
+                "heartbeat " + age + " sans information de base (plugin antérieur à #42)");
     }
 
     /**

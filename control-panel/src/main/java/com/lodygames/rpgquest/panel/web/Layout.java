@@ -82,6 +82,7 @@ public final class Layout {
                 new NavGroup("Administration", List.of(
                         new NavItem("Utilisateurs", "/users", "users", Permission.USER_MANAGE, true),
                         new NavItem("Groupes", "/groups", "users", Permission.USER_MANAGE, true),
+                        new NavItem("Base de données", "/database", "server", Permission.DATABASE_CONFIGURE, true),
                         new NavItem("Développement", "/dev", "dev", Permission.DEV_MODULE, false))));
     }
 

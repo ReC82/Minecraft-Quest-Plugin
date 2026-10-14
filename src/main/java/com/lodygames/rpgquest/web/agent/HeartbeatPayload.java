@@ -39,6 +39,11 @@ public final class HeartbeatPayload {
         plugin.put("name", health.pluginName());
         plugin.put("version", health.pluginVersion());
 
+        // Issue #42 : backend actif réel, sans hôte ni compte.
+        Map<String, Object> database = new LinkedHashMap<>();
+        database.put("engine", health.databaseEngine());
+        database.put("schema_version", health.databaseSchemaVersion());
+
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("protocol", AgentConfig.PROTOCOL);
         root.put("agent_id", config.agentId());
@@ -47,6 +52,7 @@ public final class HeartbeatPayload {
         root.put("plugin", plugin);
         root.put("server", server);
         root.put("worlds", worlds);
+        root.put("database", database);
         root.put("generated_at", Instant.now().toString());
         return root;
     }

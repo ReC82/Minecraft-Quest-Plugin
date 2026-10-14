@@ -10,6 +10,7 @@ citizens-commandes.md
 joueurs-admin.md
 joueurs-reset.md
 groupes.md
+base-de-donnees.md
 quetes.md
 content-packs.md
 claims.md

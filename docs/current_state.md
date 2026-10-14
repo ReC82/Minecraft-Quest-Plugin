@@ -1744,6 +1744,10 @@ sans hôte ni secret. Répété sur copies isolées (cible SQLite et MariaDB 10.
 **Bascule non faite, non autorisée.** NO-GO actuel : `MySqlDialect` met des textes libres
 `NOT NULL` en `VARCHAR(191)` (`building_sites.description` 490 car. en DEV, #354). Runbook :
 [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
+Le heartbeat du plugin porte `database.engine` / `schema_version` ; la page PlugAdmin `/database`
+(propriétaire) l'affiche, enregistre la cible MariaDB (mot de passe chiffré, `SecretBox` +
+`DbTargetStore`, table `db_migration_target`), la teste en lecture seule (`MariaDbConnectionTester`)
+et présente l'assistant sans bascule.
 
 **Backend actif en production** : **SQLite** (`data.db`) — comportement **strictement inchangé**
 (DDL/DML passés par des dialectes-identité). Migrations via `SchemaMigrator.ALL` (version courante :

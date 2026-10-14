@@ -539,7 +539,8 @@ public final class RPGQuestBootstrap {
 
         // Bridge d'administration HTTP (issue #37) — désactivé sauf RPGQUEST_WEB_ADMIN_ENABLED=true
         // + RPGQUEST_WEB_ADMIN_TOKEN (env, jamais config.yml). Seule voie d'intégration du Control Panel.
-        HealthSource healthSource = new BukkitHealthSource(plugin, worldService, () -> configService.current());
+        HealthSource healthSource = new BukkitHealthSource(plugin, worldService, () -> configService.current(),
+                databaseService.databaseManager());
         registry.start(new WebAdminServer(healthSource, plugin.getSLF4JLogger()));
 
         // Agent sortant PlugAdmin (issue #51) — RPGQuest/VeryGames initie une connexion HTTPS

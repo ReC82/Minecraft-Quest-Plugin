@@ -673,6 +673,35 @@ class ContentPublishPageTest {
         assertTrue(page.contains("Restaurer la version précédente"));
     }
 
+    /**
+     * Issue #371 : un refus BROKEN_REFERENCES nomme dans la fiche la référence fautive exacte, la
+     * famille à publier, et laisse « Republier » disponible — sans jamais afficher « Synchronisé ».
+     */
+    @Test
+    void aBrokenReferenceRefusalShowsTheExactCulpritAndTheRequiredFamily() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        seed("content.dev.state", devState(fileEntry("quests", "test_publish_quest", sha(QUEST_YAML)),
+                "[]"));
+        seedResult("content.publish",
+                "{\"ok\":false,\"code\":\"RELOAD_FAILED\",\"kind\":\"quests\","
+                        + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\"" + sha(QUEST_YAML) + "\","
+                        + "\"runtimeConfirmed\":false,\"reloadCode\":\"BROKEN_REFERENCES\","
+                        + "\"referenceErrors\":[\"Quête « rpgquest:test_publish_quest » : PNJ <b>inconnu</b>\"],"
+                        + "\"requiredFamilies\":[\"npcs\"],\"autoIncludedFamilies\":[],"
+                        + "\"preexistingReferenceErrors\":[\"Quête « rpgquest:ancienne » : PNJ donneur inconnu\"],"
+                        + "\"verifiedAt\":\"2026-10-14T00:00:00Z\"}");
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Références introuvables"), page);
+        assertTrue(page.contains("PNJ &lt;b&gt;inconnu&lt;/b&gt;"), "la référence est échappée");
+        assertTrue(page.contains("Publiez aussi : PNJ"));
+        assertTrue(page.contains("déjà cassée(s) ailleurs (non bloquant)"));
+        assertTrue(page.contains("Republier sur DEV"), "l'action guidée reste proposée");
+        assertFalse(page.contains(">Synchronisé<"));
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     /** Un relevé {@code content.dev.state} : fichiers DEV + identifiants chargés pour les quêtes. */

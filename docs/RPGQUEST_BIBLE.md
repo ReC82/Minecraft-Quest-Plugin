@@ -3359,6 +3359,15 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
     (id = nom en jeu normalisé, ce qui retrouve un `rpgquest:<id>` existant) + `npc.citizens.link`,
     plus le dialogue initial seulement si aucun dialogue de ce nom n'existe. Le personnage n'est
     jamais recréé, son apparence n'est pas touchée.
+-   **Noms affichés en double** (issue #125) : deux entrées de la liste (fiche ou personnage
+    rattaché) qui se lisent pareil — balises retirées, espaces resserrés, casse ignorée, accents
+    comptés — portent le badge « nom en double » et un avertissement « Nom affiché utilisé par
+    plusieurs PNJ » qui cite l'autre identifiant (fiche rangée « à vérifier »). `/npcs/diagnostic`
+    (section « Noms affichés en double ») et `/diagnostics` (code `DUPLICATE_DISPLAY_NAME`,
+    sévérité *warning*, calculé par PlugAdmin) listent les identifiants en conflit. Les formulaires
+    « Créer un PNJ » et « Modifier le nom » préviennent pendant la saisie (`data-name-taken`,
+    panel.js) ; **jamais un refus**. Une collision d'identifiant reste bloquante (suffixe `_2` à la
+    création, refus du plugin, `DUPLICATE_DEFINITION` / `DUPLICATE_BINDING`).
 -   **« Actualiser les PNJ »** (`POST /npcs/refresh`) met en file `npc.list` **et**
     `npc.citizens.list` (jamais en double).
 -   Fiche : un seul formulaire ouvert à la fois. **Déplacer** : direction en mots (nord = 180°,

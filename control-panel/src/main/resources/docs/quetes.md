@@ -38,6 +38,12 @@ Deux familles :
   objet** : aucun objet d'inventaire n'est jamais compté comme de la monnaie. Le montant est une
   décision d'équilibrage — rien ne le plafonne côté serveur, l'éditeur se contente d'avertir
   au-delà d'un million.
+- Une récompense **« Cœur supplémentaire »** (`HEART`, issue #166) ajoute durablement des cœurs
+  de vie maximum (1 par défaut). Elle n'est accordée qu'**une fois par joueur et par clé de
+  droit** : laisser la clé vide la rend propre à la quête (même répétable) ; une même clé sur
+  plusieurs quêtes (ex. `city:central_city`) n'accorde qu'un cœur pour elles toutes. Les cœurs
+  survivent à la mort, à la reconnexion, au redémarrage **et au reset joueur**. Au-delà de 5 cœurs
+  d'un coup, l'éditeur avertit ; au-delà de 512, il refuse.
 - **Un montant saisi dans l'éditeur n'agit pas tout seul** : la quête doit être *publiée* sur le
   serveur, puis *rechargée* (voir « Rechargement du contenu »). Tant qu'elle n'est que dans la
   source, le joueur ne sera pas payé — et aucune erreur ne s'affichera en jeu.

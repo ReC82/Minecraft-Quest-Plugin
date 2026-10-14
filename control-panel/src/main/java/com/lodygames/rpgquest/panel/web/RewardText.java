@@ -94,6 +94,13 @@ public final class RewardText {
             // récompense monétaire ne remplit pas l'inventaire, elle crédite un solde persistant.
             case "MONEY" -> new Reward(asLong(summary.get("amount")) + " " + currency, null);
             case "COMMAND" -> fromCommand(str(summary.get("command")).trim());
+            // Issue #166 : la clé de droit n'est montrée qu'en détail, et seulement si elle est partagée.
+            case "HEART" -> {
+                long hearts = Math.max(1, asLong(summary.get("amount")));
+                String key = str(summary.get("target")).trim();
+                yield new Reward("+" + hearts + (hearts > 1 ? " cœurs" : " cœur") + " de vie maximum",
+                        key.isEmpty() ? null : "clé de droit " + key);
+            }
             default -> parse(str(summary.get("raw")));
         };
     }

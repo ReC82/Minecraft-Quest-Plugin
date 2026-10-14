@@ -144,4 +144,15 @@ class RewardTextTest {
         // Et l'inverse reste vrai : un objet reste un objet.
         assertTrue(RewardText.parse("+3x IRON_INGOT").label().startsWith("Objet"));
     }
+
+    @Test
+    void structuredHeartRewardShowsHeartsAndOnlyASharedKeyAsDetail() {
+        RewardText.Reward own = RewardText.fromSummary(summary("HEART", 1L, null, null, null));
+        assertEquals("+1 cœur de vie maximum", own.label());
+        assertNull(own.rawDetail());
+
+        RewardText.Reward shared = RewardText.fromSummary(summary("HEART", 2L, "city:central_city", null, null));
+        assertEquals("+2 cœurs de vie maximum", shared.label());
+        assertEquals("clé de droit city:central_city", shared.rawDetail());
+    }
 }

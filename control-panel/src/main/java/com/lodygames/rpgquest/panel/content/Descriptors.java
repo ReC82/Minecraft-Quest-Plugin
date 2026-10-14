@@ -205,7 +205,21 @@ public final class Descriptors {
                     List.of(Field.integer("amount", "Montant en pièces",
                             "Nombre de pièces créditées (entier > 0). Le montant est une décision "
                                     + "d'équilibrage : rien ne le plafonne côté serveur, un montant "
-                                    + "inhabituellement élevé est seulement signalé."))));
+                                    + "inhabituellement élevé est seulement signalé."))),
+            // Issue #166 : vie maximale permanente, une fois par joueur et par clé de droit.
+            new Descriptor("HEART", "Cœur supplémentaire", "heart",
+                    "Augmente durablement la vie maximale du joueur (1 cœur = 2 PV), sans resource pack. "
+                            + "Ce n'est ni une guérison ni une absorption : seuls les PV ajoutés sont "
+                            + "remplis. Le cœur est enregistré par joueur et ne s'obtient qu'UNE fois par "
+                            + "clé de droit — même si la quête est répétable, rejouée ou si le PNJ change "
+                            + "de nom. Conservé après mort, reconnexion et redémarrage.",
+                    List.of(Field.optionalInteger("amount", "Nombre de cœurs",
+                                    "Cœurs ajoutés à la vie maximale (entier de 1 à 512 ; 1 par défaut)."),
+                            Field.text("key", "Clé de droit (facultative)",
+                                    "Laisser vide : le cœur est propre à cette quête. Une même clé sur "
+                                            + "plusieurs quêtes (ex. city:central_city) n'accorde qu'UN "
+                                            + "cœur au total pour elles toutes. Minuscules, chiffres, "
+                                            + "« _ . : - ».", false))));
 
     // ---- Actions de dialogue (calquées sur dialogue.model.ActionType) -----------------------
 

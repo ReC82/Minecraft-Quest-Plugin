@@ -269,4 +269,65 @@ class ContentYamlRoundTripTest {
         q.rewards.add(obj("MONEY", "amount", amount));
         return q;
     }
+
+    // ---- Cœur supplémentaire (issue #166) -----------------------------------------------------
+
+    private static final RefData HEART_REF = new RefData(java.util.List.of(), java.util.List.of(),
+            java.util.List.of("world"), true, true, true);
+
+    private static QuestDraft validQuestWithHeart(String... kv) {
+        QuestDraft q = QuestDraft.blank();
+        q.id = "tc166_heart";
+        q.title = "Quête du cœur";
+        q.description = "Description.";
+        q.steps.get(0).objectives.get(0).put("entity", "ZOMBIE");
+        q.steps.get(0).objectives.get(0).put("amount", "1");
+        q.rewards.add(obj("HEART", kv));
+        return q;
+    }
+
+    @Test
+    void aHeartRewardWithASharedKeySurvivesTheWriteReadRoundTrip() {
+        QuestDraft q = validQuestWithHeart("amount", "2", "key", "city:central_city");
+        q.rewards.add(0, obj("EXPERIENCE", "amount", "10"));
+
+        String yaml = QuestYaml.write(q);
+        assertTrue(yaml.contains("type: HEART"), () -> yaml);
+        assertTrue(yaml.contains("amount: 2"), () -> yaml);
+        assertTrue(yaml.contains("city:central_city"), () -> yaml);
+        assertTrue(QuestYaml.roundTripProblems(yaml).isEmpty(), () -> QuestYaml.roundTripProblems(yaml) + "\n" + yaml);
+
+        QuestYaml.ReadResult r = QuestYaml.read(yaml);
+        assertEquals(java.util.List.of("EXPERIENCE", "HEART"), r.draft().rewards.stream().map(m -> m.get("kind")).toList());
+        assertEquals("2", r.draft().rewards.get(1).get("amount"));
+        assertEquals("city:central_city", r.draft().rewards.get(1).get("key"));
+    }
+
+    @Test
+    void aHeartRewardWithoutAmountNorKeyIsValidAndWritesNoEmptyField() {
+        QuestDraft q = validQuestWithHeart();
+        String yaml = QuestYaml.write(q);
+        assertTrue(yaml.contains("type: HEART"), () -> yaml);
+        assertTrue(!yaml.contains("key:"), () -> yaml);
+        assertTrue(QuestValidator.validate(q, HEART_REF).stream().noneMatch(d -> d.level() == Diagnostic.Level.ERROR),
+                () -> QuestValidator.validate(q, HEART_REF).toString());
+    }
+
+    @Test
+    void invalidHeartQuantitiesAndKeysAreRefusedByTheBackend() {
+        for (String amount : new String[] {"0", "-1", "abc", "1.5", "513"}) {
+            QuestDraft q = validQuestWithHeart("amount", amount);
+            assertTrue(QuestValidator.validate(q, HEART_REF).stream().anyMatch(d -> d.level() == Diagnostic.Level.ERROR),
+                    "nombre de cœurs « " + amount + " » doit être refusé");
+        }
+        for (String key : new String[] {"Central City", "ville/1", "É"}) {
+            QuestDraft q = validQuestWithHeart("key", key);
+            assertTrue(QuestValidator.validate(q, HEART_REF).stream().anyMatch(d -> d.level() == Diagnostic.Level.ERROR),
+                    "clé « " + key + " » doit être refusée");
+        }
+        QuestDraft many = validQuestWithHeart("amount", "6");
+        var diags = QuestValidator.validate(many, HEART_REF);
+        assertTrue(diags.stream().anyMatch(d -> d.level() == Diagnostic.Level.WARNING), diags::toString);
+        assertTrue(diags.stream().noneMatch(d -> d.level() == Diagnostic.Level.ERROR), diags::toString);
+    }
 }

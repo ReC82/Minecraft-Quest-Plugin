@@ -66,6 +66,11 @@ Remplacement du JAR **et** redéploiement de PlugAdmin (rubrique Administration)
 de base, aucune donnée joueur modifiée, aucun fichier à déposer. Aucun groupe LuckPerms à modifier :
 un OP garde `rpgquest.admin.bypass` par défaut.
 
+**Effectué le 2026-10-14 ~02:01** depuis `507e4ee` (CI verte) : PlugAdmin redéployé (rubrique
+Administration vérifiée), JAR SHA-256 `ecf23010…cace5774` (2645270 o, retéléchargé, identique),
+sauvegarde `rpgquest-20261014T000115Z-predeploy.jar` ; redémarrage RCON à 0 joueur ; `settings.get`
+relu avec les nouvelles clés.
+
 ### Sauvegarde préalable
 
 JAR actuel (procédure habituelle du script de déploiement).

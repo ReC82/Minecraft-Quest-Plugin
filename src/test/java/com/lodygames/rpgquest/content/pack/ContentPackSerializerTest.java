@@ -88,6 +88,19 @@ class ContentPackSerializerTest {
     }
 
     @Test
+    void cooldownIsWrittenOnlyWhenTheQuestHasOne() {
+        QuestPackEntry withDelay = new QuestPackEntry("rpgquest:encounter_demo", PackText.of("Démo"),
+                PackText.of("d"), "encounter", "BOOK", true, false, null, List.of(),
+                List.of(new QuestPackEntry.Step("s", List.of(QuestPackEntry.Objective.talk("guide")))),
+                List.of(), Map.of(), "20h");
+        String yaml = ContentPackSerializer.toYaml(pack(List.of(withDelay), List.of(), List.of(), List.of()));
+        assertTrue(yaml.contains("      secret: false\n      cooldown: 20h\n"), yaml);
+
+        String without = ContentPackSerializer.toYaml(pack(List.of(quest("rpgquest:a", "A")), List.of(), List.of(), List.of()));
+        assertFalse(without.contains("cooldown"), without);
+    }
+
+    @Test
     void localizedTextTableFormIsEmittedWhenMultipleLocales() {
         QuestPackEntry q = new QuestPackEntry("rpgquest:loc",
                 new PackText(Map.of("default", "Bonjour", "en", "Hello")), PackText.of("d"), "tutorial", "BOOK",

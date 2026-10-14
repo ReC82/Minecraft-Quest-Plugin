@@ -31,6 +31,7 @@ import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.bukkit.Material;
@@ -124,6 +125,22 @@ class ContentPackMapperTest {
         assertEquals("true", e.rewards().get(1).value());
         assertEquals("COMMAND", e.rewards().get(2).type());
         assertEquals("say gg", e.rewards().get(2).command());
+    }
+
+    @Test
+    void questCooldownTravelsInTheYamlSyntaxWithoutRounding() {
+        assertNull(ContentPackMapper.cooldown(Duration.ZERO));
+        assertNull(ContentPackMapper.cooldown(null));
+        assertEquals("20h", ContentPackMapper.cooldown(Duration.ofHours(20)));
+        assertEquals("1d", ContentPackMapper.cooldown(Duration.ofDays(1)));
+        assertEquals("90m", ContentPackMapper.cooldown(Duration.ofMinutes(90)));
+        assertEquals("61s", ContentPackMapper.cooldown(Duration.ofSeconds(61)));
+
+        QuestDefinition def = new QuestDefinition(key("rpgquest:encounter_demo"), LocalizedText.of("Démo"),
+                LocalizedText.of("d"), "encounter", Material.BOOK, true, false, List.of(),
+                List.of(new QuestStep("s1", List.of(new TalkToNpcObjective("guide")))), List.of(), Map.of(),
+                "encounter_bandit", Duration.ofHours(20));
+        assertEquals("20h", ContentPackMapper.toQuestEntry(def).cooldown());
     }
 
     @Test

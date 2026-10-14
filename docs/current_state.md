@@ -21,9 +21,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > modèle (`quests/encounter_*.yml`, catégorie `encounter`), offerte par le dialogue seulement si
 > acceptable (condition `QUEST_AVAILABLE`), démarrée uniquement par « Commencer (j'accepte) » ; nouveau champ de
 > quête `cooldown:` (anti-farm, 20 h ici, refus `ON_COOLDOWN` avec temps restant) ; PlugAdmin
-> `/quests` filtre « Secondaires / Rencontres » et champ délai dans l'éditeur. Pas encore : journal
-> joueur des rencontres. Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu,
-> TC-304/TC-305 PlugAdmin, TC-306 quêtes secondaires).
+> `/quests` filtre « Secondaires / Rencontres » et champ délai dans l'éditeur. **Étape 5** : le
+> journal `/quests` étiquette les quêtes de rencontre et affiche le temps restant avant de refaire
+> une quête renouvelable ; le content pack exporte `cooldown`. Pas fait : registre des PNJ croisés
+> par joueur. Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu,
+> TC-304/TC-305 PlugAdmin, TC-306 quêtes secondaires, TC-307 journal).
 >
 > **Mode bypass administrateur explicite (#35, corrige #321, 14/10/2026)** — être OP ne contourne
 > plus aucune règle de jeu (accès et règles du monde Claims, claims d'autrui, zones protégées,

@@ -665,6 +665,45 @@ class QuestJournalServiceTest {
         assertTrue(joined.contains("250 LodyCoins"), () -> "la récompense prévue doit être lisible : " + joined);
     }
 
+    // ---- Issue #13 : quêtes de rencontre renouvelables ------------------------------------------
+
+    @Test
+    void aCompletedEncounterQuestShowsItsTagAndTheRemainingCooldown() throws Exception {
+        Files.writeString(questsDir.resolve("encounter_demo.yml"), questYaml("rpgquest:encounter_demo", "Rencontre démo")
+                .replace("category: test", "category: encounter\nrepeatable: true\ncooldown: 20h"));
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        setState(player, new NamespacedKey("rpgquest", "encounter_demo"), QuestState.COMPLETED);
+
+        showAndAwait(player, JournalTab.COMPLETED);
+        var icon = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.CONTENT_SLOTS[0]);
+        assertNotNull(icon);
+        String joined = String.join("\n", loreText(icon));
+        assertTrue(joined.contains("Rencontre — quête secondaire"), joined);
+        assertTrue(joined.contains("À refaire dans 20 h") || joined.contains("À refaire dans 19 h"), joined);
+        assertFalse(joined.contains("Peut être refaite"), joined);
+    }
+
+    @Test
+    void aCompletedRepeatableQuestWithoutDelayIsAnnouncedAsAvailableAgain() throws Exception {
+        Files.writeString(questsDir.resolve("again.yml"), questYaml("rpgquest:again", "Encore")
+                .replace("category: test", "category: test\nrepeatable: true"));
+        writeQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        setState(player, new NamespacedKey("rpgquest", "again"), QuestState.COMPLETED);
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.COMPLETED);
+
+        showAndAwait(player, JournalTab.COMPLETED);
+        var inventory = player.getOpenInventory().getTopInventory();
+        // Tri par titre : « Encore » avant « Quête 0 ».
+        String repeatable = String.join("\n", loreText(inventory.getItem(QuestJournalService.CONTENT_SLOTS[0])));
+        String oneShot = String.join("\n", loreText(inventory.getItem(QuestJournalService.CONTENT_SLOTS[1])));
+        assertTrue(repeatable.contains("Peut être refaite"), repeatable);
+        assertFalse(repeatable.contains("Rencontre"), repeatable);
+        assertFalse(oneShot.contains("refaire") || oneShot.contains("refaite"), oneShot);
+    }
+
     private void writeQuests(int count) throws Exception {
         for (int i = 0; i < count; i++) {
             Files.writeString(questsDir.resolve("quest_" + i + ".yml"),

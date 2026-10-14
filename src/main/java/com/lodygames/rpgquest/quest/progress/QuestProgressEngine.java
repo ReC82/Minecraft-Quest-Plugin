@@ -654,6 +654,29 @@ public final class QuestProgressEngine implements PluginService {
         });
     }
 
+    /**
+     * Issue #13 — temps restant avant de pouvoir refaire chaque quête terminée encore en recharge,
+     * pour le journal du joueur. Mêmes règles que {@link #availability} ({@link #remainingCooldown}) :
+     * une quête absente de la table est disponible (délai écoulé, aucun délai, ou pas terminée).
+     */
+    public CompletableFuture<Map<NamespacedKey, Duration>> remainingCooldowns(UUID playerId) {
+        return repository.findAll(playerId).thenApply(records -> {
+            Instant now = Instant.now();
+            Map<NamespacedKey, Duration> remaining = new LinkedHashMap<>();
+            for (QuestProgressRecord record : records) {
+                if (record.state() != QuestState.COMPLETED) {
+                    continue;
+                }
+                questEngine.find(record.questId())
+                        .filter(QuestDefinition::repeatable)
+                        .map(quest -> remainingCooldown(quest, record.updatedAt(), now))
+                        .filter(left -> !left.isZero())
+                        .ifPresent(left -> remaining.put(record.questId(), left));
+            }
+            return remaining;
+        });
+    }
+
     public Optional<QuestStepProgressView> activeStepView(UUID playerId, NamespacedKey questId) {
         Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
         if (playerActive == null) {

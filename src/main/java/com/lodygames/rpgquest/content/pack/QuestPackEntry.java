@@ -15,6 +15,8 @@ import java.util.Map;
  *   <li>{@code prerequisites} : ids de quêtes ({@code namespace:clé}) — relations préservées.</li>
  *   <li>{@code giver} : id de PNJ logique, ou {@code null}.</li>
  *   <li>{@code variables} : table {@code clé -> valeur} (chaînes), jamais des variables joueur.</li>
+ *   <li>{@code cooldown} (issue #13) : délai avant de pouvoir refaire une quête répétable, dans la
+ *       syntaxe du champ YAML ({@code 20h}, {@code 30m}, {@code 90s}…), ou {@code null} sans délai.</li>
  * </ul>
  */
 public record QuestPackEntry(
@@ -29,13 +31,22 @@ public record QuestPackEntry(
         List<String> prerequisites,
         List<Step> steps,
         List<Reward> rewards,
-        Map<String, String> variables) {
+        Map<String, String> variables,
+        String cooldown) {
 
     public QuestPackEntry {
         prerequisites = List.copyOf(prerequisites);
         steps = List.copyOf(steps);
         rewards = List.copyOf(rewards);
         variables = Map.copyOf(variables);
+    }
+
+    /** Forme sans délai de recharge (toutes les quêtes antérieures à #13). */
+    public QuestPackEntry(String id, PackText title, PackText description, String category, String icon,
+                          boolean repeatable, boolean secret, String giver, List<String> prerequisites,
+                          List<Step> steps, List<Reward> rewards, Map<String, String> variables) {
+        this(id, title, description, category, icon, repeatable, secret, giver, prerequisites, steps, rewards,
+                variables, null);
     }
 
     /** Étape ordonnée : un id + au moins un objectif. */

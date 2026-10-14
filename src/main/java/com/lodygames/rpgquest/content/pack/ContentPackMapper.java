@@ -48,6 +48,7 @@ import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.bukkit.NamespacedKey;
@@ -92,7 +93,30 @@ public final class ContentPackMapper {
                 q.prerequisites().stream().map(NamespacedKey::toString).toList(),
                 steps,
                 rewards,
-                q.variables());
+                q.variables(),
+                cooldown(q.cooldown()));
+    }
+
+    /**
+     * Délai écrit dans la syntaxe du champ YAML {@code cooldown:} (issue #13) : la plus grande unité
+     * qui divise exactement ({@code 20h}, {@code 90m}, {@code 45s}), {@code null} sans délai. Jamais
+     * d'arrondi : le délai relu par {@code QuestDefinitionParser} est strictement le même.
+     */
+    static String cooldown(Duration cooldown) {
+        if (cooldown == null || cooldown.isZero() || cooldown.isNegative()) {
+            return null;
+        }
+        long seconds = cooldown.toSeconds();
+        if (seconds % 86400 == 0) {
+            return seconds / 86400 + "d";
+        }
+        if (seconds % 3600 == 0) {
+            return seconds / 3600 + "h";
+        }
+        if (seconds % 60 == 0) {
+            return seconds / 60 + "m";
+        }
+        return seconds + "s";
     }
 
     private static QuestPackEntry.Objective toObjective(QuestObjective o) {

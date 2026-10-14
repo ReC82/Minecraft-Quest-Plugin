@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - PNJ récurrents, étape 5 : journal des quêtes de rencontre (#13)
+
+### Changement
+
+- Journal `/quests` : étiquette « Rencontre — quête secondaire » sur les quêtes `encounter` ;
+  pour une quête répétable terminée, « À refaire dans … » pendant son `cooldown:` puis « Peut être
+  refaite » ; cadence « Renouvelable : toutes les … » en vue détail. Lecture seule de
+  `quest_progress`, une requête asynchrone de plus à l'ouverture du journal.
+- Content pack : l'export transporte `cooldown` ; le schéma du panel le déclare.
+- Aucune migration, aucune nouvelle clé de `config.yml` ni de `messages.yml`, aucun fichier de
+  contenu modifié.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) et redéploiement du panel
+(`scripts/plugadmin/deploy.sh`, schéma de pack). Aucun `--also`. Ne pas téléverser `config.yml`,
+ne pas toucher `data.db`.
+
+### Sauvegarde préalable
+
+Sauvegarde datée du JAR en place (faite par `deploy-verygames.sh`).
+
+### Validation
+
+TC-307 (`docs/MANUAL_TEST_PLAN.md`).
+
+### Rollback
+
+Remettre le JAR précédent (`rollback-verygames.sh --latest`) et redémarrer : seules les lignes du
+journal disparaissent. Aucune donnée à restaurer.
+
+---
+
 ## 2026-10-14 - PNJ récurrents, étape 4 : quêtes secondaires renouvelables (#13)
 
 ### Changement

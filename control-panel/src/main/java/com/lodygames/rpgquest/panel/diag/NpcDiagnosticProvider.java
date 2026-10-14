@@ -86,6 +86,11 @@ public final class NpcDiagnosticProvider implements DiagnosticProvider {
                 if (!linked.isBlank() && !"null".equals(linked)) {
                     continue;
                 }
+                // Issue #13 : un PNJ récurrent est géré par RPGQuest sans liaison classique.
+                String encounter = DiagnosticContext.str(cz.get("encounterSiteId"));
+                if (!encounter.isBlank() && !"null".equals(encounter)) {
+                    continue;
+                }
                 String num = DiagnosticContext.str(cz.get("numericId"));
                 String czName = DiagnosticContext.str(cz.get("name"));
                 String czLabel = czName.isBlank() || "null".equals(czName)

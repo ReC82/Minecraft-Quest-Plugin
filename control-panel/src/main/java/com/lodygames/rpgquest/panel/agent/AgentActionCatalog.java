@@ -61,6 +61,8 @@ public final class AgentActionCatalog {
      * Le tiret est accepté parce qu'une coordonnée de région est signée.
      */
     private static final Pattern WAYPOINT_ID = Pattern.compile("wp_[A-Za-z0-9_\\-]{1,120}");
+    /** Occurrence de PNJ récurrent (issue #13) : {@code enc_<monde>_<biome>_<rx>_<rz>}. */
+    private static final Pattern ENCOUNTER_SITE_ID = Pattern.compile("enc_[A-Za-z0-9_\\-]{1,160}");
     /** Identifiant de bâtiment de bibliothèque — même forme que le reste du contenu du projet. */
     private static final Pattern BUILDING_ID = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
     /** Les quatre orientations cardinales, miroir de {@code Facing} côté plugin. */
@@ -356,6 +358,20 @@ public final class AgentActionCatalog {
         addSensitiveWrite("travel.beacon.pair", Permission.TRAVEL_PAIR_WRITE, false,
                 "Apparier une borne à une instance du Hub", "travel.catalog");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
+        // Issue #13 — PNJ récurrents. Retenter / désactiver / retirer créent ou détruisent un PNJ
+        // Citizens réel : sensibles, avec la permission de spawn. Relire les modèles et effacer
+        // les délais ne touchent à aucun PNJ déjà en place.
+        add("encounter.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ récurrents");
+        addSensitiveWrite("encounter.retry", Permission.NPC_SPAWN_WRITE, false,
+                "Retenter l'apparition d'un PNJ récurrent", "encounter.list", "npc.citizens.list");
+        addSensitiveWrite("encounter.disable", Permission.NPC_SPAWN_WRITE, false,
+                "Désactiver un PNJ récurrent", "encounter.list", "npc.citizens.list");
+        addSensitiveWrite("encounter.remove", Permission.NPC_SPAWN_WRITE, false,
+                "Retirer un PNJ récurrent", "encounter.list", "npc.citizens.list");
+        addContentWrite("encounter.templates.reload", Permission.NPC_WRITE,
+                "Relire les modèles de PNJ récurrents", "encounter.list");
+        addContentWrite("encounter.backoffs.clear", Permission.NPC_WRITE,
+                "Effacer les délais d'attente des PNJ récurrents", "encounter.list");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         add("mob.list", Permission.MOB_READ, false, false,
                 "Rafraîchir le catalogue des profils de mob spécial/boss (issue #169)");
@@ -913,6 +929,14 @@ public final class AgentActionCatalog {
                 }
                 params.put("id", id);
                 params.put("facing", facing);
+            }
+            case "encounter.retry", "encounter.disable", "encounter.remove" -> {
+                // Issue #13 : une seule occurrence, désignée par son identifiant — jamais un lot.
+                String siteId = trim(form.get("siteId"));
+                if (!ENCOUNTER_SITE_ID.matcher(siteId).matches()) {
+                    return Validation.fail("Identifiant de PNJ récurrent manquant ou invalide.");
+                }
+                params.put("siteId", siteId);
             }
             case "travel.beacon.pair" -> {
                 // Issue #156 : l'instance visée est désignée par SON waypoint, jamais par des

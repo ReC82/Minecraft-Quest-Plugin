@@ -289,6 +289,10 @@ public final class PanelApp {
         route("/npcs/attach", this::handleNpcAttach);
         route("/npcs/diagnostic", exchange -> handleBusinessPage(exchange, "/npcs", "Diagnostic des PNJ",
                 Permission.NPC_READ, agentPages::npcDiagnostic));
+        // Issue #13 — PNJ récurrents. Lecture gardée par NPC_READ ; les actions passent par
+        // /agents/action, donc par le catalogue et NPC_SPAWN_WRITE / NPC_WRITE.
+        route("/npcs/encounters", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ récurrents",
+                Permission.NPC_READ, agentPages::npcEncounters));
         // Issue #213 — emplacements de construction. Lecture gardée par BUILDING_READ ; les
         // mutations passent par /agents/action, donc par le catalogue et ses propres permissions.
         route("/buildings/sites", exchange -> handleBusinessPage(exchange, "/buildings/sites",
@@ -5437,6 +5441,7 @@ public final class PanelApp {
         paths.add("/content/import");
         paths.add("/ai/studio");
         paths.add("/npcs/diagnostic");
+        paths.add("/npcs/encounters");
         return java.util.Set.copyOf(paths);
     }
 

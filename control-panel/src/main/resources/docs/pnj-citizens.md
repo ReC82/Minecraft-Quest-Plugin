@@ -211,6 +211,15 @@ mémorisé par Citizens et persiste.
 
 ## 5. Déplacer / repositionner
 
+**Recommandé : les emplacements (issue #381).** En jeu, placez-vous à l'endroit voulu, tournez-vous
+dans la direction que le PNJ doit regarder et tapez `/rpgadmin npc spot mark Nom de l'emplacement`.
+Puis PlugAdmin → PNJ → **Emplacements** → « Actualiser » : choisissez le PNJ, cochez la
+confirmation et cliquez « Placer / téléporter ici ». C'est la même entité qui est déplacée (jamais
+une copie) ; son ancien emplacement est libéré, ses dialogues, quêtes et skin ne changent pas. Un
+emplacement occupé ne se supprime pas (« Libérer » d'abord) ; un PNJ récurrent ne se place pas ici.
+
+Par les commandes Citizens :
+
 - `/npc move` : déplace le PNJ sélectionné vers votre position (validez avec `/npc move` à
   nouveau, ou `/npc move --stop` pour annuler selon la config).
 - `/npc tp` : vous téléporte au PNJ. `/npc tphere` : amène le PNJ à vous.

@@ -88,6 +88,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > sûr vérifié), retour au centre possible. Actions `city.npc.link`, `city.arrival.set`,
 > `city.arrival.clear`. Validation en jeu : TC-313.
 
+> **Emplacements de PNJ (#381, 15/10/2026)** — `/rpgadmin npc spot mark [nom]` réserve une position
+> exacte (regard compris) ; migration **V38** (`npc_spots`, `npc_spot_ids`). Page PlugAdmin
+> `/npcs/spots` : états constatés libre / occupé / conflit / inaccessible, placement d'un PNJ
+> (déplacement de la même entité Citizens ou apparition, réservation compensée en cas d'échec),
+> orientation, renommage, libération, suppression protégée, capture de la position d'un PNJ.
+> Actions `npc.spot.list|place|orient|rename|release|delete|capture`. Validation en jeu : TC-315.
+
 > **Nuit du 12 au 13/10/2026** — changements livrés sur la ligne d'intégration (validation en jeu
 > du propriétaire en attente pour chacun, voir `docs/MANUAL_TEST_PLAN.md`) :
 >

@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Emplacements de PNJ réservés en jeu, placement depuis PlugAdmin (#381)
+
+### Changement
+
+Commande `/rpgadmin npc spot mark|list` (nœud `rpgquest.admin.npc.spot`, inclus dans
+`rpgquest.admin.npc`), actions agent `npc.spot.*` et page PlugAdmin PNJ › Emplacements
+(`/npcs/spots`) pour placer, déplacer, orienter et libérer des PNJ sur des positions réservées.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du panel. Migration **V38 automatique** au
+démarrage : deux tables neuves (`npc_spots`, `npc_spot_ids`), aucune table existante modifiée.
+Aucun PNJ n'est déplacé tant qu'un administrateur ne clique pas « Placer ». Aucune configuration ni
+contenu à modifier. Redémarrage requis (nouveau JAR).
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release panel).
+
+### Validation
+
+Après redémarrage : schéma 38, log « N emplacement(s) de PNJ chargé(s) », `/npcs/spots` →
+« Actualiser » sans erreur. En jeu : TC-315 (`PENDING MANUAL VALIDATION`).
+
+### Rollback
+
+Réinstaller le JAR sauvegardé (`scripts/rollback-verygames.sh --latest`) et le panel
+(`scripts/plugadmin/rollback.sh app`). L'ancien JAR ignore les tables V38 (il ne redescend jamais de
+version) ; les PNJ restent là où ils ont été placés.
+
+---
+
 ## 2026-10-14 - Catalogues de quêtes secondaires des PNJ récurrents (#369)
 
 ### Changement

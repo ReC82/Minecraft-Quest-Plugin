@@ -6041,3 +6041,34 @@ occurrences du Brigand des bois (`forest_bandit`) dans des forêts différentes.
     de ces modèles » ; avec la case, `forest_bandit` n'a plus de catalogue, la sauvegarde est dans
     `plugins/RPGQuest/quest-catalog-backups/`.
 11. Téléphone (ou fenêtre étroite) : la page Catalogues reste lisible sans défilement horizontal.
+
+### TC-315 — Emplacements de PNJ : réserver en jeu, placer et déplacer depuis PlugAdmin (issue #381, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel #381 déployés (schéma V38) ; un compte avec `rpgquest.admin.npc.spot`
+(ou `rpgquest.admin.npc`) ; un **PNJ de test** existant (ne pas utiliser le Guide ni un PNJ de
+quête important), par ex. créé depuis PlugAdmin → PNJ → Créer un PNJ (`test_spot`). **Durée** :
+20 minutes.
+
+1.  En jeu, au point A (sol plat, deux blocs d'air), regarder vers le nord :
+    `/rpgadmin npc spot mark Test A` → message « Emplacement de PNJ réservé … npcspot_000n ».
+    Retaper la même commande sur le même bloc → « Un emplacement existe déjà sur ce bloc ».
+2.  Au point B (si possible dans un autre monde autorisé aux PNJ), regarder vers l'est :
+    `/rpgadmin npc spot mark Test B`. `/rpgadmin npc spot list` montre A et B « libre ».
+3.  PlugAdmin → PNJ → **Emplacements** → « Actualiser » : A et B listés, état *libre*, position et
+    regard (« nord », « est ») conformes.
+4.  Sur A : choisir `test_spot`, cocher la confirmation, « Placer / téléporter ici » → le PNJ est
+    en A, tourné vers le nord ; A passe *occupé*.
+5.  Sur B : placer `test_spot` → le PNJ est en B ; A redevient *libre* ; en jeu il n'existe **qu'un
+    seul** `test_spot` (même numéro Citizens qu'avant : `/npc select` ou la page PNJ).
+6.  Parler au PNJ : son dialogue, son skin et ses quêtes sont inchangés. Redémarrer le serveur DEV :
+    B est toujours *occupé* par `test_spot`, toujours au même endroit.
+7.  Refus : placer un autre PNJ sur B → « Emplacement occupé » ; réserver un emplacement dans une
+    parcelle de joueur puis y placer → « parcelle d'un joueur » ; réserver dans le vide/l'eau →
+    avertissement en jeu, placement refusé « ne laisse pas assez de place ».
+8.  « Orienter » B vers le sud → le PNJ se tourne. « Renommer » B → nouveau nom visible.
+9.  Supprimer B tant qu'occupé : le bouton n'est pas proposé ; « Libérer » (le PNJ ne bouge pas),
+    puis « Supprimer l'emplacement » avec confirmation → B disparaît, le PNJ reste en place.
+10. « Réserver la position actuelle d'un PNJ » (`test_spot`) → nouvel emplacement *occupé* à sa
+    position. Déplacer le PNJ à la main (`/npc tphere`) puis « Actualiser » → état *conflit*
+    « n'est plus à sa place » ; « Replacer ici » le ramène.
+11. Téléphone (ou fenêtre étroite) : la page reste lisible sans défilement horizontal.

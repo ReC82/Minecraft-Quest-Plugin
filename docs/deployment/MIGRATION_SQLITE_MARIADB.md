@@ -36,26 +36,30 @@ elle-même n'est jamais ouverte en écriture).
 
 Aucune transformation de **valeur** : l'outil copie chaque valeur telle quelle, les différences de
 types sont portées par le schéma que crée le dialecte `MySqlDialect` (`INTEGER` → `BIGINT`,
-`BLOB` → `LONGBLOB`, `TEXT` clé/`NOT NULL` → `VARCHAR(191)`, `utf8mb4_bin`). Les seuls ajustements
+`BLOB` → `LONGBLOB`, `TEXT` clé/`NOT NULL` → `VARCHAR(191)` sauf textes libres → `TEXT`, `utf8mb4_bin`). Les seuls ajustements
 sont **structurels** : séquences `AUTOINCREMENT` et contrôle des contraintes que MariaDB applique
 plus strictement que SQLite (longueur, type réel, collation PAD SPACE).
 
-### ⚠️ Constat bloquant (NO-GO actuel)
+### Constat bloquant de l'audit — corrigé (#354, schéma V35)
 
-`MySqlDialect` traduit **tout** `TEXT NOT NULL` déclaré dans un `CREATE TABLE` en `VARCHAR(191)`.
-Or des colonnes de **texte libre** sont déclarées ainsi — `building_sites.description` contient
-déjà **490 caractères** sur la copie DEV. Le dry-run MariaDB s'arrête donc en pré-contrôle :
+Jusqu'au schéma V34, `MySqlDialect` traduisait **tout** `TEXT NOT NULL` déclaré dans un
+`CREATE TABLE` en `VARCHAR(191)`, textes libres compris — `building_sites.description` contenait
+déjà **490 caractères** sur la copie DEV. Le dry-run MariaDB s'arrêtait donc en pré-contrôle :
 
 ```
 [CRITICAL] building_sites.description — valeur de 490 caractères, la colonne cible est VARCHAR(191) :
 elle serait refusée (mode strict). Correction de schéma nécessaire avant migration
 ```
 
-Ce n'est pas un défaut de l'outil : c'est exactement ce qu'il doit attraper. Le même défaut
-toucherait le plugin lui-même s'il tournait sur MariaDB (description > 191 caractères refusée à
-l'écriture). Correction de schéma MariaDB à décider et faire **avant** toute migration réelle —
-ticket dédié **#354**. En attendant, la répétition sur MariaDB d'une copie
-DEV n'est concluante qu'avec cette colonne tronquée dans une copie jetable (essai technique, §5).
+Correction (#354) : les textes libres `NOT NULL` hors clé (liste explicite
+`MySqlDialect.FREE_TEXT_COLUMNS` : descriptions, messages, chemins de schématiques, valeur de skin)
+sont créés en `TEXT` ; la migration **V35** élargit les bases MariaDB déjà créées (aucune
+instruction sur SQLite). Les autres `TEXT NOT NULL` (horodatages, énumérations, identifiants, noms
+bornés) restent `VARCHAR(191)` et le contrôle de longueur de l'outil continue de les surveiller.
+
+Conséquence pour la procédure : l'outil est en V35, la copie de `data.db` doit donc venir d'un
+plugin **V35 ou plus récent** (démarré une fois sur SQLite puis arrêté), sinon le pré-contrôle
+`schéma source` refuse la source.
 
 ---
 
@@ -166,6 +170,14 @@ VeryGames 10.11.6) — voir le rapport de session #42 :
 | `dry-run` → MariaDB, copie jetable avec cette colonne tronquée | SUCCESS — 39/39 tables identiques |
 | `migrate --commit` → MariaDB jetable, puis seconde exécution | SUCCESS puis **refus** (cible non vide), rien dupliqué ; `AUTO_INCREMENT` alignés |
 
+Après la correction #354 (14/10/2026, même MariaDB 10.11.14 jetable, mode strict
+`STRICT_TRANS_TABLES`) — voir le rapport de session #354 :
+
+| Essai | Résultat |
+|---|---|
+| `audit` copie DEV portée en V35 | SUCCESS — 39 tables, source inchangée |
+| `dry-run` → MariaDB, copie DEV **non tronquée** (description de 490 caractères) | **SUCCESS** — 39/39 tables identiques, 8 séquences OK, aucune troncature |
+
 ---
 
 ## 4. Exécution réelle — runbook FUTUR (non autorisé sans consigne explicite)
@@ -173,7 +185,7 @@ VeryGames 10.11.6) — voir le rapport de session #42 :
 ### Prérequis go/no-go (tous obligatoires)
 
 - [ ] Autorisation **écrite** du propriétaire pour la date et la cible.
-- [ ] Constat bloquant §1 corrigé (#354, schéma MariaDB des textes libres) et revalidé.
+- [x] Constat bloquant §1 corrigé (#354, schéma V35 : textes libres en `TEXT`) et revalidé par un dry-run SUCCESS sur copie DEV.
 - [ ] Base MariaDB **dédiée et vide**, compte dédié limité à cette base (privilèges §VERYGAMES).
 - [ ] Plugin de la version à déployer validé une fois sur une base MariaDB **de test** (démarrage, heartbeat,
       création de données).

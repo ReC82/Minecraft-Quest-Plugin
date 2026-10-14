@@ -5495,8 +5495,9 @@ database:
   `ssl-mode` — une clé `password` est refusée. Source en lecture seule, cible non vide refusée,
   validation par comptage + empreinte logique de chaque table, rapport `.txt`/`.json` sans hôte ni
   secret, codes de sortie `0` SUCCESS / `2` FAILED / `1` usage. **Bascule réelle non faite et non
-  autorisée** sans consigne du propriétaire ; constat bloquant ouvert (textes libres en
-  `VARCHAR(191)` côté MariaDB, #354). Runbook : [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
+  autorisée** sans consigne du propriétaire ; le constat bloquant de l'audit (textes libres en
+  `VARCHAR(191)` côté MariaDB) est corrigé par le schéma V35 (#354) : la copie de `data.db` doit
+  venir d'un plugin V35 ou plus récent. Runbook : [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
 - **PlugAdmin > Base de données** (`/database`, permission `DATABASE_CONFIGURE`, propriétaire) :
   backend actif réel (champ `database.engine` du heartbeat), base MariaDB cible (hôte, port, base,
   compte, TLS ; mot de passe chiffré AES-256-GCM dans `control-panel.db`, jamais réaffiché, vide =

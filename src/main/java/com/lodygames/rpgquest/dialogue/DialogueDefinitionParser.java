@@ -22,6 +22,7 @@ import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
+import com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
@@ -454,6 +455,17 @@ final class DialogueDefinitionParser {
             // dialogue courant (convention id de dialogue = id de PNJ), ce qui garde la donnée
             // générique et réutilisable telle quelle pour un autre PNJ.
             case DELIVER_QUEST_ITEMS -> new DeliverQuestItemsAction(section.getString("npc"));
+            // Issue #369 : « catalog » optionnel — absent, les catalogues des modèles de PNJ
+            // récurrents qui portent ce dialogue (même convention que DELIVER_QUEST_ITEMS).
+            case OFFER_CATALOG_QUEST -> {
+                String catalog = section.getString("catalog");
+                if (catalog != null && !com.lodygames.rpgquest.encounter.model.EncounterTemplate.ID_PATTERN
+                        .matcher(catalog.trim()).matches()) {
+                    errors.add(context + ": « catalog » invalide : \"" + catalog + "\".");
+                    yield null;
+                }
+                yield new OfferCatalogQuestAction(catalog == null || catalog.isBlank() ? null : catalog.trim());
+            }
             case CLOSE -> new CloseAction();
         };
     }

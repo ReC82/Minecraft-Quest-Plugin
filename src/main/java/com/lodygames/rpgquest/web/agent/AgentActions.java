@@ -1084,7 +1084,7 @@ public interface AgentActions {
     /** Un modèle {@code encounters/<id>.yml} chargé, avec son nombre d'occurrences actuelles. */
     record EncounterTemplateSummary(String id, String displayName, String npcId, String role, String family,
                                     List<String> biomes, List<String> worlds, int weight, int maxSites,
-                                    boolean enabled, String skinUrl, int sites) {
+                                    boolean enabled, String skinUrl, int sites, List<String> questCatalogs) {
     }
 
     /**
@@ -1144,6 +1144,50 @@ public interface AgentActions {
     /** {@code acknowledgeSites} : l'administrateur accepte que les occurrences existantes restent en place. */
     default CompletableFuture<MutationResult> encounterTemplateDelete(String templateId, boolean acknowledgeSites) {
         return encounterSiteAction("template", "");
+    }
+
+    // ---- Catalogues de quêtes secondaires (actions quest.catalog.*, issue #369) -----------------
+
+    /**
+     * Une entrée de catalogue, enrichie de la quête qu'elle référence ({@code exists == false} :
+     * quête absente — l'entrée est gardée, jamais proposée).
+     */
+    record QuestCatalogEntryView(String questId, int weight, boolean enabled, boolean exists, String title,
+                                 String category, boolean repeatable, String cooldown, int steps) {
+    }
+
+    /** {@code usedBy} : modèles de PNJ récurrents qui référencent ce catalogue. */
+    record QuestCatalogSummary(String id, String displayName, String description, boolean enabled, int avoidRecent,
+                               List<QuestCatalogEntryView> entries, List<String> usedBy, List<String> warnings) {
+    }
+
+    /** Une quête chargée, pour la recherche par titre ou identifiant. */
+    record QuestRef(String id, String title, String category) {
+    }
+
+    /** {@code warnings} : contrôles transverses (modèle → catalogue inconnu, dialogue sans offre…). */
+    record QuestCatalogListView(boolean available, List<QuestCatalogSummary> catalogs, Map<String, String> issues,
+                                List<QuestRef> quests, List<String> warnings, long generatedAtEpochMs) {
+    }
+
+    default CompletableFuture<QuestCatalogListView> questCatalogList() {
+        return CompletableFuture.completedFuture(new QuestCatalogListView(false, List.of(), Map.of(), List.of(),
+                List.of(), System.currentTimeMillis()));
+    }
+
+    /** Écrit un catalogue déjà validé ({@code create} : échoue s'il existe), puis relit les catalogues. */
+    default CompletableFuture<MutationResult> questCatalogSave(
+            com.lodygames.rpgquest.encounter.catalog.QuestCatalog catalog, boolean create) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogues de quêtes indisponibles sur ce serveur."));
+    }
+
+    /**
+     * Supprime un catalogue (sauvegarde d'abord). Refusé s'il est référencé par un modèle, sauf
+     * {@code detach} : la référence est alors retirée de ces modèles. Aucune progression touchée.
+     */
+    default CompletableFuture<MutationResult> questCatalogDelete(String catalogId, boolean detach) {
+        return questCatalogSave(null, false);
     }
 
     /**

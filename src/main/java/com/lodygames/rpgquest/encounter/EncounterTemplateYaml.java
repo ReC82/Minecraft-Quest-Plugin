@@ -40,6 +40,9 @@ public final class EncounterTemplateYaml {
             sb.append("skin_url: ").append(quote(t.skinUrl())).append('\n');
         }
         sb.append("enabled: ").append(t.enabled()).append('\n');
+        if (!t.questCatalogs().isEmpty()) {
+            list(sb, "quest_catalogs", t.questCatalogs());
+        }
         return sb.toString();
     }
 

@@ -190,6 +190,10 @@ public final class AgentActionExecutor {
                 case ENCOUNTER_TEMPLATE_UPDATE -> encounterTemplateSave(action, false);
                 case ENCOUNTER_TEMPLATE_TOGGLE -> encounterTemplateToggle(action);
                 case ENCOUNTER_TEMPLATE_DELETE -> encounterTemplateDelete(action);
+                case QUEST_CATALOG_LIST -> questCatalogList(action);
+                case QUEST_CATALOG_CREATE -> questCatalogSave(action, true);
+                case QUEST_CATALOG_UPDATE -> questCatalogSave(action, false);
+                case QUEST_CATALOG_DELETE -> questCatalogDelete(action);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -1190,6 +1194,7 @@ public final class AgentActionExecutor {
         }
         section.set("biomes", splitList(action.param("biomes")));
         section.set("worlds", splitList(action.param("worlds")));
+        section.set("quest_catalogs", splitList(action.param("quest_catalogs")));
         for (String key : List.of("weight", "max_sites")) {
             String value = trimOrNull(action.param(key));
             if (value != null) {
@@ -1234,6 +1239,112 @@ public final class AgentActionExecutor {
         String id = trimOrNull(action.param("id"));
         return id != null && com.lodygames.rpgquest.encounter.model.EncounterTemplate.ID_PATTERN.matcher(id).matches()
                 ? id : null;
+    }
+
+    // ---- Catalogues de quêtes secondaires (issue #369) -----------------------------------------
+
+    private CompletableFuture<AgentActionOutcome> questCatalogList(AgentAction action) {
+        return actions.questCatalogList().thenApply(view -> {
+            List<Map<String, Object>> catalogs = new ArrayList<>();
+            for (AgentActions.QuestCatalogSummary c : view.catalogs()) {
+                List<Map<String, Object>> entries = new ArrayList<>();
+                for (AgentActions.QuestCatalogEntryView e : c.entries()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("quest", e.questId());
+                    row.put("weight", e.weight());
+                    row.put("enabled", e.enabled());
+                    row.put("exists", e.exists());
+                    row.put("title", e.title());
+                    row.put("category", e.category());
+                    row.put("repeatable", e.repeatable());
+                    row.put("cooldown", e.cooldown());
+                    row.put("steps", e.steps());
+                    entries.add(row);
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", c.id());
+                row.put("displayName", c.displayName());
+                row.put("description", c.description());
+                row.put("enabled", c.enabled());
+                row.put("avoidRecent", c.avoidRecent());
+                row.put("entries", entries);
+                row.put("usedBy", c.usedBy());
+                row.put("warnings", c.warnings());
+                catalogs.add(row);
+            }
+            List<Map<String, Object>> quests = new ArrayList<>();
+            for (AgentActions.QuestRef q : view.quests()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", q.id());
+                row.put("title", q.title());
+                row.put("category", q.category());
+                quests.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("catalogs", catalogs);
+            details.put("issues", view.issues());
+            details.put("quests", quests);
+            details.put("warnings", view.warnings());
+            details.put("generatedAtEpochMs", view.generatedAtEpochMs());
+            if (!view.available()) {
+                return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "UNAVAILABLE",
+                        "Catalogues de quêtes indisponibles sur ce serveur.", details, java.time.Instant.now());
+            }
+            return AgentActionOutcome.success(action.id(), String.valueOf(catalogs.size()),
+                    catalogs.size() + " catalogue(s).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * Champs du formulaire → section YAML en mémoire → {@code QuestCatalogParser} : les règles du
+     * fichier, sans copie. {@code entries} : {@code quête|poids|on/off} séparés par des virgules,
+     * dans l'ordre voulu.
+     */
+    private CompletableFuture<AgentActionOutcome> questCatalogSave(AgentAction action, boolean create) {
+        org.bukkit.configuration.MemoryConfiguration section = new org.bukkit.configuration.MemoryConfiguration();
+        for (String key : List.of("id", "display_name", "description")) {
+            String value = trimOrNull(action.param(key));
+            if (value != null) {
+                section.set(key, value);
+            }
+        }
+        String avoid = trimOrNull(action.param("avoid_recent"));
+        if (avoid != null) {
+            section.set("avoid_recent", parseIntOrRaw(avoid));
+        }
+        section.set("enabled", !"false".equalsIgnoreCase(trimOrNull(action.param("enabled"))));
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (String raw : splitList(action.param("entries"))) {
+            String[] parts = raw.split("\\|", -1);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("quest", parts[0].trim());
+            if (parts.length > 1 && !parts[1].isBlank()) {
+                entry.put("weight", parseIntOrRaw(parts[1].trim()));
+            }
+            entry.put("enabled", !(parts.length > 2 && "off".equalsIgnoreCase(parts[2].trim())));
+            entries.add(entry);
+        }
+        section.set("entries", entries);
+        var parsed = new com.lodygames.rpgquest.encounter.catalog.QuestCatalogParser().parse("formulaire", section);
+        if (!parsed.isSuccess()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Catalogue refusé : " + String.join(" ",
+                    parsed.issues().stream().map(com.lodygames.rpgquest.encounter.EncounterLoadIssue::message).toList())));
+        }
+        return actions.questCatalogSave(parsed.catalog(), create)
+                .thenApply(r -> mutationOutcome(action, r, "catalogId", parsed.catalog().id()))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> questCatalogDelete(AgentAction action) {
+        String id = encounterTemplateId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « id » manquant ou invalide."));
+        }
+        boolean detach = "true".equals(trimOrNull(action.param("detach")));
+        return actions.questCatalogDelete(id, detach)
+                .thenApply(r -> mutationOutcome(action, r, "catalogId", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
     /** Entier si possible ; sinon la chaîne brute, que le parseur refusera avec un message clair. */

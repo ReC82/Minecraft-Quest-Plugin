@@ -688,6 +688,23 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     /**
+     * Issue #369 — date de la dernière complétion de chaque quête actuellement {@code COMPLETED}
+     * pour ce joueur ({@code updated_at} de la ligne, comme le délai de {@link #availability}).
+     * Lecture asynchrone, aucune écriture.
+     */
+    public CompletableFuture<Map<NamespacedKey, Instant>> completionTimes(UUID playerId) {
+        return repository.findAll(playerId).thenApply(records -> {
+            Map<NamespacedKey, Instant> completed = new LinkedHashMap<>();
+            for (QuestProgressRecord record : records) {
+                if (record.state() == QuestState.COMPLETED && record.updatedAt() != null) {
+                    completed.put(record.questId(), record.updatedAt());
+                }
+            }
+            return completed;
+        });
+    }
+
+    /**
      * Issue #13 — temps restant avant de pouvoir refaire chaque quête terminée encore en recharge,
      * pour le journal du joueur. Mêmes règles que {@link #availability} ({@link #remainingCooldown}) :
      * une quête absente de la table est disponible (délai écoulé, aucun délai, ou pas terminée).

@@ -18,7 +18,8 @@ import org.bukkit.configuration.ConfigurationSection;
  * <p>Champs : {@code id} et {@code display_name} et {@code biomes} obligatoires ; {@code npc_id}
  * (défaut : {@code id}), {@code description}, {@code role}, {@code family}, {@code worlds},
  * {@code weight} (défaut 10), {@code max_sites} (défaut 0 = sans plafond propre),
- * {@code skin_url}, {@code enabled} (défaut {@code true}) facultatifs. Un biome sans espace de noms
+ * {@code skin_url}, {@code enabled} (défaut {@code true}), {@code quest_catalogs} (issue #369)
+ * facultatifs. Un biome sans espace de noms
  * est lu comme {@code minecraft:…}. L'existence réelle des biomes est vérifiée au chargement par le
  * moteur, pas ici : ce parseur ne connaît pas le serveur.</p>
  */
@@ -44,13 +45,14 @@ public final class EncounterTemplateParser {
         int maxSites = parseInt(section, "max_sites", 0, 0, 100_000, errors);
         String skinUrl = parseSkin(section, errors);
         boolean enabled = parseEnabled(section, errors);
+        List<String> questCatalogs = parseQuestCatalogs(section, errors);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(m -> new EncounterLoadIssue(fileName, m)).toList());
         }
         try {
             return ParseResult.success(new EncounterTemplate(id, displayName, description, npcId, role, family,
-                    biomes, worlds, weight, maxSites, skinUrl, enabled));
+                    biomes, worlds, weight, maxSites, skinUrl, enabled, questCatalogs));
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new EncounterLoadIssue(fileName, e.getMessage())));
         }
@@ -151,6 +153,27 @@ public final class EncounterTemplateParser {
             }
         }
         return worlds;
+    }
+
+    /** Issue #369 — identifiants de catalogues ; leur existence est vérifiée à l'usage, pas ici. */
+    private List<String> parseQuestCatalogs(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("quest_catalogs")) {
+            return List.of();
+        }
+        if (!section.isList("quest_catalogs")) {
+            errors.add("« quest_catalogs » doit être une liste d'identifiants de catalogues.");
+            return List.of();
+        }
+        List<String> catalogs = new ArrayList<>();
+        for (String raw : section.getStringList("quest_catalogs")) {
+            String id = raw == null ? "" : raw.trim();
+            if (!EncounterTemplate.ID_PATTERN.matcher(id).matches()) {
+                errors.add("« quest_catalogs » : identifiant de catalogue invalide « " + raw + " ».");
+            } else if (!catalogs.contains(id)) {
+                catalogs.add(id);
+            }
+        }
+        return catalogs;
     }
 
     private int parseInt(ConfigurationSection section, String field, int fallback, int min, int max,

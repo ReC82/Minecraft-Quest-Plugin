@@ -202,6 +202,8 @@ public final class ContentPackMapper {
             case OpenMerchantAction a -> DialoguePackEntry.Action.openMerchant(a.merchantId().toString());
             case GiveStarterKitAction ignored -> DialoguePackEntry.Action.giveStarterKit();
             case DeliverQuestItemsAction a -> DialoguePackEntry.Action.deliverQuestItems(a.npcId());
+            case com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction a ->
+                    DialoguePackEntry.Action.offerCatalogQuest(a.catalogId());
             case CloseAction ignored -> DialoguePackEntry.Action.close();
         };
     }

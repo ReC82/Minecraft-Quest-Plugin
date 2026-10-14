@@ -25,10 +25,12 @@ import java.util.regex.Pattern;
  * @param weight      poids du tirage quand plusieurs modèles conviennent à un même biome
  * @param maxSites    plafond d'occurrences de ce modèle ; {@code 0} = sans plafond propre
  * @param skinUrl     lien MineSkin de l'apparence, ou {@code null}
+ * @param questCatalogs catalogues de quêtes secondaires proposés par les PNJ de ce modèle (issue
+ *                    #369), dans l'ordre ; vide = aucun catalogue, le dialogue reste seul maître
  */
 public record EncounterTemplate(String id, String displayName, String description, String npcId, String role,
                                 String family, Set<String> biomes, List<String> worlds, int weight,
-                                int maxSites, String skinUrl, boolean enabled) {
+                                int maxSites, String skinUrl, boolean enabled, List<String> questCatalogs) {
 
     public static final Pattern ID_PATTERN = Pattern.compile("[a-z0-9._-]{1,64}");
     public static final int MAX_WEIGHT = 1000;
@@ -54,6 +56,27 @@ public record EncounterTemplate(String id, String displayName, String descriptio
         }
         biomes = Set.copyOf(biomes);
         worlds = worlds == null ? List.of() : List.copyOf(worlds);
+        questCatalogs = questCatalogs == null ? List.of() : List.copyOf(questCatalogs);
+        for (String catalog : questCatalogs) {
+            if (!ID_PATTERN.matcher(catalog).matches()) {
+                throw new IllegalArgumentException("catalogue de quêtes invalide : « " + catalog + " » (modèle « "
+                        + id + " »).");
+            }
+        }
+    }
+
+    /** Modèle sans catalogue de quêtes (forme antérieure à l'issue #369). */
+    public EncounterTemplate(String id, String displayName, String description, String npcId, String role,
+                             String family, Set<String> biomes, List<String> worlds, int weight,
+                             int maxSites, String skinUrl, boolean enabled) {
+        this(id, displayName, description, npcId, role, family, biomes, worlds, weight, maxSites, skinUrl, enabled,
+                List.of());
+    }
+
+    /** Même modèle, actif ou non — les autres champs, catalogues compris, sont conservés. */
+    public EncounterTemplate withEnabled(boolean value) {
+        return new EncounterTemplate(id, displayName, description, npcId, role, family, biomes, worlds, weight,
+                maxSites, skinUrl, value, questCatalogs);
     }
 
     /** Ce modèle peut-il apparaître dans {@code world} (déjà reconnu comme autorisé globalement) ? */

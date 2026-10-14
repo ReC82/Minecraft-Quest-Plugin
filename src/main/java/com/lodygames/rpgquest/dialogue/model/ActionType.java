@@ -13,5 +13,7 @@ public enum ActionType {
     GIVE_STARTER_KIT,
     /** Remise groupée des objets attendus par ce PNJ (issue #123). */
     DELIVER_QUEST_ITEMS,
+    /** Offre de la quête tirée du catalogue de ce PNJ (issue #369). */
+    OFFER_CATALOG_QUEST,
     CLOSE
 }

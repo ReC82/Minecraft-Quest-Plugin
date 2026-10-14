@@ -259,6 +259,7 @@ public final class RPGQuestBootstrap {
     private WaypointService waypointService;
     private com.lodygames.rpgquest.encounter.YamlEncounterEngine encounterEngine;
     private com.lodygames.rpgquest.encounter.EncounterService encounterService;
+    private com.lodygames.rpgquest.encounter.catalog.YamlQuestCatalogEngine questCatalogEngine;
     private TravelBeaconService travelBeaconService;
     /** Issue #178 — villes. */
     private com.lodygames.rpgquest.city.CityRegistry cityRegistry;
@@ -786,6 +787,10 @@ public final class RPGQuestBootstrap {
                     return key != null && org.bukkit.Registry.BIOME.get(key) != null;
                 });
         registry.start(encounterEngine);
+        // Issue #369 : catalogues de quêtes secondaires, attribués aux modèles par quest_catalogs.
+        questCatalogEngine = new com.lodygames.rpgquest.encounter.catalog.YamlQuestCatalogEngine(
+                plugin.getDataFolder().toPath().resolve("quest-catalogs"), plugin.getSLF4JLogger());
+        registry.start(questCatalogEngine);
         encounterService = new com.lodygames.rpgquest.encounter.EncounterService(plugin,
                 new com.lodygames.rpgquest.database.EncounterSiteRepository(databaseService.databaseManager()),
                 encounterEngine, npcIdentityService, new WaypointIdentityResolver(), new WaypointGenerationPlanner(),
@@ -868,6 +873,9 @@ public final class RPGQuestBootstrap {
                 claimService, customItemRegistry, starterToolKitService);
         registry.start(dialogueSessionEngine);
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
+        // Issue #369 : OFFER_CATALOG_QUEST — offre stable par joueur, tirée des catalogues du PNJ.
+        dialogueSessionEngine.setCatalogOffers(new com.lodygames.rpgquest.encounter.catalog.CatalogOfferService(
+                questCatalogEngine, encounterEngine::templates, questEngine, questProgressEngine));
         // Issue #24 : le Garde peut renseigner l'état RÉEL du Wild (jour/nuit + météo globale) sur
         // demande du joueur, via %wild_conditions% dans dialogues/guard.yml. Lecture seule — ni
         // l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés.
@@ -1049,6 +1057,7 @@ public final class RPGQuestBootstrap {
         agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
         agentActions.setGameSettings(gameSettingsService);
         agentActions.setEncounters(encounterService);
+        agentActions.setQuestCatalogs(questCatalogEngine);
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
         registry.start(new PlayerListenerService(plugin, operatorNotices));

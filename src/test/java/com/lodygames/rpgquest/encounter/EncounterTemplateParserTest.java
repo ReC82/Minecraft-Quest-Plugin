@@ -43,6 +43,35 @@ class EncounterTemplateParserTest {
         assertNull(t.skinUrl());
     }
 
+    /** Issue #369 — catalogues de quêtes attribués au modèle, conservés par le rendu YAML. */
+    @Test
+    void questCatalogsAreReadAndRenderedBack() {
+        var result = parser.parse("a.yml", yaml("""
+                id: forest_bandit
+                display_name: "Brigand des bois"
+                biomes: [forest]
+                quest_catalogs: [bandit_contracts, " shared ", bandit_contracts]
+                """));
+        assertTrue(result.isSuccess(), () -> result.issues().toString());
+        assertEquals(List.of("bandit_contracts", "shared"), result.template().questCatalogs());
+
+        var reparsed = parser.parse("b.yml", yaml(EncounterTemplateYaml.render(result.template())));
+        assertEquals(result.template(), reparsed.template());
+        assertEquals(List.of(), parser.parse("c.yml", yaml("""
+                id: x
+                display_name: "X"
+                biomes: [forest]
+                """)).template().questCatalogs(), "absent = aucun catalogue (modèles existants inchangés)");
+        assertFalse(parser.parse("d.yml", yaml("""
+                id: x
+                display_name: "X"
+                biomes: [forest]
+                quest_catalogs: ["Pas Valide"]
+                """)).isSuccess());
+        assertTrue(result.template().withEnabled(false).questCatalogs().contains("shared"),
+                "désactiver un modèle garde ses catalogues");
+    }
+
     @Test
     void everyFieldIsRead() {
         var result = parser.parse("a.yml", yaml("""

@@ -40,7 +40,7 @@ final class EncounterCatalogViews {
         List<AgentActions.EncounterTemplateSummary> templateRows = templates.stream()
                 .map(t -> new AgentActions.EncounterTemplateSummary(t.id(), t.displayName(), t.npcId(), t.role(),
                         t.family(), t.biomes().stream().sorted().toList(), t.worlds(), t.weight(), t.maxSites(),
-                        t.enabled(), t.skinUrl(), sitesByTemplate.getOrDefault(t.id(), 0)))
+                        t.enabled(), t.skinUrl(), sitesByTemplate.getOrDefault(t.id(), 0), t.questCatalogs()))
                 .toList();
         Map<String, String> issueRows = new LinkedHashMap<>();
         issues.forEach(i -> issueRows.put(i.file(), i.message()));

@@ -215,6 +215,7 @@ public final class ContentPackSerializer {
         opt(sb, 9, "value", a.value() == null ? null : quote(a.value()));
         opt(sb, 9, "command", a.command() == null ? null : quote(a.command()));
         opt(sb, 9, "npc", a.npc() == null ? null : id(a.npc()));
+        opt(sb, 9, "catalog", a.catalog() == null ? null : id(a.catalog()));
     }
 
     private static void writeCondition(StringBuilder sb, DialoguePackEntry.Condition c) {

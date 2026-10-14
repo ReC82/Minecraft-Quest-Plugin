@@ -1019,9 +1019,7 @@ public final class BukkitAgentActions implements AgentActions {
                 return MutationResult.of(true, "UNCHANGED", "Modèle « " + templateId + " » déjà "
                         + (enabled ? "actif." : "désactivé."));
             }
-            var r = encounterTemplateStore().update(new com.lodygames.rpgquest.encounter.model.EncounterTemplate(
-                    t.id(), t.displayName(), t.description(), t.npcId(), t.role(), t.family(), t.biomes(),
-                    t.worlds(), t.weight(), t.maxSites(), t.skinUrl(), enabled));
+            var r = encounterTemplateStore().update(t.withEnabled(enabled));
             if (!r.ok()) {
                 return MutationResult.of(false, r.code(), r.message());
             }
@@ -1072,6 +1070,16 @@ public final class BukkitAgentActions implements AgentActions {
         if (dialogueEngine.dialogues().stream().noneMatch(d -> d.id().toString().equals(dialogue))) {
             warnings.add("⚠ aucun dialogue « " + dialogue + " » : un clic sur ce PNJ n'ouvrira rien.");
         }
+        // Issue #369 : un catalogue inconnu est ignoré en jeu, un dialogue sans offre ne le montrera pas.
+        for (String catalog : t.questCatalogs()) {
+            if (questCatalogs != null && questCatalogs.find(catalog).isEmpty()) {
+                warnings.add("⚠ catalogue de quêtes inconnu « " + catalog + " » : ignoré tant qu'il n'existe pas.");
+            }
+        }
+        if (!t.questCatalogs().isEmpty() && !dialogueOffersCatalog(t.npcId())) {
+            warnings.add("⚠ le dialogue « " + dialogue + " » n'a aucune action OFFER_CATALOG_QUEST : "
+                    + "les catalogues ne seront pas proposés.");
+        }
         long otherIdentity = encounters.sites().stream()
                 .filter(s -> s.templateId().equals(t.id()) && !s.npcId().equals(t.npcId())).count();
         if (otherIdentity > 0) {
@@ -1079,6 +1087,95 @@ public final class BukkitAgentActions implements AgentActions {
                     + "seules les nouvelles prendront « " + t.npcId() + " ».");
         }
         return List.copyOf(warnings);
+    }
+
+    // ---- Catalogues de quêtes secondaires (issue #369) -----------------------------------------
+
+    private com.lodygames.rpgquest.encounter.catalog.YamlQuestCatalogEngine questCatalogs;
+
+    public void setQuestCatalogs(com.lodygames.rpgquest.encounter.catalog.YamlQuestCatalogEngine engine) {
+        this.questCatalogs = engine;
+    }
+
+    @Override
+    public CompletableFuture<QuestCatalogListView> questCatalogList() {
+        if (questCatalogs == null || encounters == null) {
+            return AgentActions.super.questCatalogList();
+        }
+        return CompletableFuture.supplyAsync(() -> QuestCatalogViews.build(questCatalogs.catalogs(),
+                questCatalogs.lastReport().issues(), questEngine.quests(), encounters.templates().templates(),
+                this::dialogueOffersCatalog));
+    }
+
+    private boolean dialogueOffersCatalog(String npcId) {
+        String dialogue = "rpgquest:" + npcId;
+        return dialogueEngine.dialogues().stream()
+                .filter(d -> d.id().toString().equals(dialogue))
+                .flatMap(d -> d.nodes().values().stream())
+                .flatMap(n -> n.choices().stream())
+                .flatMap(c -> c.actions().stream())
+                .anyMatch(a -> a instanceof com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction);
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> questCatalogSave(
+            com.lodygames.rpgquest.encounter.catalog.QuestCatalog catalog, boolean create) {
+        if (questCatalogs == null || catalog == null) {
+            return AgentActions.super.questCatalogSave(catalog, create);
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            var store = new com.lodygames.rpgquest.encounter.catalog.QuestCatalogStore(questCatalogs.directory());
+            var r = create ? store.create(catalog) : store.update(catalog);
+            if (!r.ok()) {
+                return MutationResult.of(false, r.code(), r.message());
+            }
+            questCatalogs.reload();
+            List<String> warnings = new ArrayList<>();
+            for (var entry : catalog.entries()) {
+                NamespacedKey key = NamespacedKey.fromString(entry.questId());
+                if (key == null || questEngine.find(key).isEmpty()) {
+                    warnings.add("⚠ quête absente « " + entry.questId() + " » : gardée, jamais proposée.");
+                }
+            }
+            return new MutationResult(true, r.code(), r.message(), List.copyOf(warnings));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> questCatalogDelete(String catalogId, boolean detach) {
+        if (questCatalogs == null || encounters == null) {
+            return AgentActions.super.questCatalogDelete(catalogId, detach);
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            var users = encounters.templates().templates().stream()
+                    .filter(t -> t.questCatalogs().contains(catalogId)).toList();
+            if (!users.isEmpty() && !detach) {
+                return MutationResult.of(false, "IN_USE", "Catalogue « " + catalogId + " » attribué à : "
+                        + users.stream().map(com.lodygames.rpgquest.encounter.model.EncounterTemplate::id)
+                                .collect(java.util.stream.Collectors.joining(", "))
+                        + ". Cochez « Retirer aussi le catalogue de ces modèles » pour confirmer.");
+            }
+            List<String> effects = new ArrayList<>();
+            for (var t : users) {
+                List<String> remaining = t.questCatalogs().stream().filter(c -> !c.equals(catalogId)).toList();
+                var r = encounterTemplateStore().update(new com.lodygames.rpgquest.encounter.model.EncounterTemplate(
+                        t.id(), t.displayName(), t.description(), t.npcId(), t.role(), t.family(), t.biomes(),
+                        t.worlds(), t.weight(), t.maxSites(), t.skinUrl(), t.enabled(), remaining));
+                if (!r.ok()) {
+                    encounters.templates().reload();
+                    return MutationResult.of(false, r.code(), "Dissociation de « " + t.id() + " » impossible : "
+                            + r.message() + " Catalogue conservé.");
+                }
+                effects.add("retiré du modèle « " + t.id() + " »");
+            }
+            if (!users.isEmpty()) {
+                encounters.templates().reload();
+            }
+            var r = new com.lodygames.rpgquest.encounter.catalog.QuestCatalogStore(questCatalogs.directory())
+                    .delete(catalogId, plugin.getDataFolder().toPath().resolve("quest-catalog-backups"));
+            questCatalogs.reload();
+            return new MutationResult(r.ok(), r.code(), r.message(), List.copyOf(effects));
+        });
     }
 
     @Override
@@ -3405,6 +3502,9 @@ public final class BukkitAgentActions implements AgentActions {
                     new DialogueCatalog.Action("GIVE_STARTER_KIT", null, null, "GIVE_STARTER_KIT");
             case DeliverQuestItemsAction x -> new DialogueCatalog.Action("DELIVER_QUEST_ITEMS", x.npcId(), null,
                     x.npcId() == null ? "DELIVER_QUEST_ITEMS (PNJ du dialogue)" : "DELIVER_QUEST_ITEMS " + x.npcId());
+            case com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction x -> new DialogueCatalog.Action(
+                    "OFFER_CATALOG_QUEST", x.catalogId(), null, x.catalogId() == null
+                    ? "OFFER_CATALOG_QUEST (catalogues du PNJ)" : "OFFER_CATALOG_QUEST " + x.catalogId());
             case CloseAction ignored -> new DialogueCatalog.Action("CLOSE", null, null, "CLOSE");
         };
     }

@@ -448,7 +448,22 @@ public enum AgentActionType {
     /** Issue #13 — relit {@code encounters/*.yml}. Ne touche à aucun PNJ déjà apparu. */
     ENCOUNTER_TEMPLATES_RELOAD("encounter.templates.reload"),
     /** Issue #13 — efface les délais d'attente : les instances en échec seront retentées à la prochaine visite. */
-    ENCOUNTER_BACKOFFS_CLEAR("encounter.backoffs.clear");
+    ENCOUNTER_BACKOFFS_CLEAR("encounter.backoffs.clear"),
+    /**
+     * Issue #13 (étape 3) — crée un modèle {@code encounters/<id>.yml} à partir de champs validés
+     * (jamais de YAML brut), puis relit les modèles. Échoue si l'id existe déjà.
+     */
+    ENCOUNTER_TEMPLATE_CREATE("encounter.template.create"),
+    /** Issue #13 — remplace un modèle existant. Les occurrences déjà apparues gardent leur PNJ et leur identité. */
+    ENCOUNTER_TEMPLATE_UPDATE("encounter.template.update"),
+    /** Issue #13 — active ou désactive un modèle (plus aucune nouvelle occurrence), sans toucher aux existantes. */
+    ENCOUNTER_TEMPLATE_TOGGLE("encounter.template.toggle"),
+    /**
+     * Issue #13 — supprime un modèle après sauvegarde dans {@code encounter-backups/}. Refusé s'il a
+     * encore des occurrences, sauf accord explicite ({@code acknowledge_sites=true}) : elles restent
+     * alors en place, avec leur PNJ et leur dialogue.
+     */
+    ENCOUNTER_TEMPLATE_DELETE("encounter.template.delete");
 
     private final String wire;
 

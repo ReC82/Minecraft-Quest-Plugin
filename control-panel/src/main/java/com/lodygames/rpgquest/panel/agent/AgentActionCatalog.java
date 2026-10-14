@@ -63,6 +63,9 @@ public final class AgentActionCatalog {
     private static final Pattern WAYPOINT_ID = Pattern.compile("wp_[A-Za-z0-9_\\-]{1,120}");
     /** Occurrence de PNJ récurrent (issue #13) : {@code enc_<monde>_<biome>_<rx>_<rz>}. */
     private static final Pattern ENCOUNTER_SITE_ID = Pattern.compile("enc_[A-Za-z0-9_\\-]{1,160}");
+    /** Clé de biome d'un modèle de PNJ récurrent : {@code forest} ou {@code minecraft:forest}. */
+    private static final Pattern ENCOUNTER_BIOME = Pattern.compile("([a-z0-9._-]{1,64}:)?[a-z0-9._/-]{1,128}");
+    private static final Pattern ENCOUNTER_WORLD = Pattern.compile("[A-Za-z0-9._-]{1,64}");
     /** Identifiant de bâtiment de bibliothèque — même forme que le reste du contenu du projet. */
     private static final Pattern BUILDING_ID = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
     /** Les quatre orientations cardinales, miroir de {@code Facing} côté plugin. */
@@ -372,6 +375,16 @@ public final class AgentActionCatalog {
                 "Relire les modèles de PNJ récurrents", "encounter.list");
         addContentWrite("encounter.backoffs.clear", Permission.NPC_WRITE,
                 "Effacer les délais d'attente des PNJ récurrents", "encounter.list");
+        // Étape 3 : édition des modèles. Créer, modifier, (dés)activer ne touchent à aucun PNJ en
+        // place — écriture de contenu. Supprimer efface un fichier (sauvegardé) : NPC_DELETE, sensible.
+        addContentWrite("encounter.template.create", Permission.NPC_WRITE,
+                "Créer un modèle de PNJ récurrent", "encounter.list");
+        addContentWrite("encounter.template.update", Permission.NPC_WRITE,
+                "Modifier un modèle de PNJ récurrent", "encounter.list");
+        addContentWrite("encounter.template.toggle", Permission.NPC_WRITE,
+                "Activer ou désactiver un modèle de PNJ récurrent", "encounter.list");
+        addSensitiveWrite("encounter.template.delete", Permission.NPC_DELETE, false,
+                "Supprimer un modèle de PNJ récurrent", "encounter.list");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         add("mob.list", Permission.MOB_READ, false, false,
                 "Rafraîchir le catalogue des profils de mob spécial/boss (issue #169)");
@@ -929,6 +942,26 @@ public final class AgentActionCatalog {
                 }
                 params.put("id", id);
                 params.put("facing", facing);
+            }
+            case "encounter.template.create", "encounter.template.update" -> {
+                // Issue #13 étape 3 : contrôle de forme seulement ; le serveur revalide avec le
+                // parseur des fichiers, qui reste la seule autorité.
+                String error = encounterTemplateParams(form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "encounter.template.toggle", "encounter.template.delete" -> {
+                String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(id).matches()) {
+                    return Validation.fail("Identifiant de modèle manquant ou invalide.");
+                }
+                params.put("id", id);
+                if (type.endsWith("toggle")) {
+                    params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+                } else if ("true".equals(trim(form.get("acknowledge_sites")))) {
+                    params.put("acknowledge_sites", "true");
+                }
             }
             case "encounter.retry", "encounter.disable", "encounter.remove" -> {
                 // Issue #13 : une seule occurrence, désignée par son identifiant — jamais un lot.
@@ -2204,6 +2237,82 @@ public final class AgentActionCatalog {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /**
+     * Issue #13 étape 3 — champs d'un modèle de PNJ récurrent : contrôle de forme, puis listes
+     * (biomes, mondes) normalisées en CSV quel que soit le séparateur saisi (virgule, espace, ligne).
+     *
+     * @return message d'erreur, ou {@code null} si le formulaire peut partir
+     */
+    private static String encounterTemplateParams(Map<String, String> form, Map<String, String> params) {
+        String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+        if (!NPC_ID.matcher(id).matches()) {
+            return "Identifiant de modèle manquant ou invalide (minuscules, chiffres, « . _ - »).";
+        }
+        params.put("id", id);
+        String displayName = trim(form.get("display_name"));
+        if (displayName.isEmpty() || displayName.length() > 64 || displayName.indexOf('<') >= 0
+                || displayName.indexOf('\n') >= 0) {
+            return "Nom affiché obligatoire : texte simple de 64 caractères au plus, sans balise.";
+        }
+        params.put("display_name", displayName);
+        String description = trim(form.get("description"));
+        if (description.length() > 256 || description.indexOf('\n') >= 0) {
+            return "Description trop longue (256 caractères) ou sur plusieurs lignes.";
+        }
+        String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+        if (!npcId.isEmpty() && !NPC_ID.matcher(npcId).matches()) {
+            return "Identité de PNJ (npc_id) invalide.";
+        }
+        for (String label : List.of("role", "family")) {
+            String value = trim(form.get(label)).toLowerCase(java.util.Locale.ROOT);
+            if (!value.isEmpty() && !NPC_ROLE.matcher(value).matches()) {
+                return "« " + label + " » invalide (minuscules, chiffres, « _ - », 32 au plus).";
+            }
+            if (!value.isEmpty()) {
+                params.put(label, value);
+            }
+        }
+        List<String> biomes = splitWords(form.get("biomes")).stream()
+                .map(v -> v.toLowerCase(java.util.Locale.ROOT)).toList();
+        if (biomes.isEmpty() || !biomes.stream().allMatch(b -> ENCOUNTER_BIOME.matcher(b).matches())) {
+            return "Biomes : au moins un, sous la forme « forest » ou « minecraft:forest ».";
+        }
+        List<String> worlds = splitWords(form.get("worlds"));
+        if (!worlds.stream().allMatch(w -> ENCOUNTER_WORLD.matcher(w).matches())) {
+            return "Mondes : noms de mondes séparés par des virgules (vide = tous les mondes autorisés).";
+        }
+        for (String key : List.of("weight", "max_sites")) {
+            String value = trim(form.get(key));
+            if (!value.isEmpty() && !value.matches("\\d{1,6}")) {
+                return "« " + key + " » doit être un entier positif.";
+            }
+            if (!value.isEmpty()) {
+                params.put(key, value);
+            }
+        }
+        String skin = trim(form.get("skin_url"));
+        if (!skin.isEmpty() && !skin.startsWith("https://minesk.in/")) {
+            return "Apparence : lien MineSkin attendu (https://minesk.in/…).";
+        }
+        if (!description.isEmpty()) {
+            params.put("description", description);
+        }
+        if (!npcId.isEmpty()) {
+            params.put("npc_id", npcId);
+        }
+        params.put("biomes", String.join(",", biomes));
+        params.put("worlds", String.join(",", worlds));
+        if (!skin.isEmpty()) {
+            params.put("skin_url", skin);
+        }
+        params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+        return null;
+    }
+
+    private static List<String> splitWords(String raw) {
+        return java.util.Arrays.stream(trim(raw).split("[,\\s]+")).filter(v -> !v.isBlank()).toList();
     }
 
     /** Copie une liste texte virgule (formulaire : une valeur par ligne, jointe côté page en CSV) si non vide. */

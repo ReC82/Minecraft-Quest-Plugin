@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.web.agent;
 import com.lodygames.rpgquest.content.pack.ContentFamily;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import com.lodygames.rpgquest.dialogue.model.ActionType;
+import com.lodygames.rpgquest.encounter.EncounterTemplateParser;
 import com.lodygames.rpgquest.player.PlayerResetService.ResetScope;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import java.util.ArrayList;
@@ -182,6 +183,10 @@ public final class AgentActionExecutor {
                 case ENCOUNTER_REMOVE -> encounterSiteAction(action, "remove");
                 case ENCOUNTER_TEMPLATES_RELOAD -> encounterMutation(action, actions.encounterTemplatesReload());
                 case ENCOUNTER_BACKOFFS_CLEAR -> encounterMutation(action, actions.encounterBackoffsClear());
+                case ENCOUNTER_TEMPLATE_CREATE -> encounterTemplateSave(action, true);
+                case ENCOUNTER_TEMPLATE_UPDATE -> encounterTemplateSave(action, false);
+                case ENCOUNTER_TEMPLATE_TOGGLE -> encounterTemplateToggle(action);
+                case ENCOUNTER_TEMPLATE_DELETE -> encounterTemplateDelete(action);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -1103,6 +1108,7 @@ public final class AgentActionExecutor {
                 row.put("lastError", s.lastError());
                 row.put("createdAt", s.createdAt());
                 row.put("updatedAt", s.updatedAt());
+                row.put("appearance", s.appearance());
                 sites.add(row);
             }
             List<Map<String, Object>> events = new ArrayList<>();
@@ -1148,6 +1154,88 @@ public final class AgentActionExecutor {
                                                                    CompletableFuture<AgentActions.MutationResult> f) {
         return f.thenApply(r -> mutationOutcome(action, r, "type", action.type()))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Modèles de PNJ récurrents (issue #13 étape 3) ----------------------------------------
+
+    private static final int MAX_ENCOUNTER_DESCRIPTION = 256;
+
+    /**
+     * Les champs du formulaire sont rangés dans une section YAML en mémoire puis validés par
+     * {@link EncounterTemplateParser} — exactement les règles du chargement d'un fichier : un modèle
+     * accepté ici est un modèle que le serveur relira, et aucune règle n'est dupliquée.
+     */
+    private CompletableFuture<AgentActionOutcome> encounterTemplateSave(AgentAction action, boolean create) {
+        String description = trimOrNull(action.param("description"));
+        if (description != null && (description.length() > MAX_ENCOUNTER_DESCRIPTION || description.indexOf('\n') >= 0)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « description » trop long (" + MAX_ENCOUNTER_DESCRIPTION + " max) ou multi-ligne."));
+        }
+        org.bukkit.configuration.MemoryConfiguration section = new org.bukkit.configuration.MemoryConfiguration();
+        for (String key : List.of("id", "display_name", "npc_id", "role", "family", "skin_url")) {
+            String value = trimOrNull(action.param(key));
+            if (value != null) {
+                section.set(key, value);
+            }
+        }
+        if (description != null) {
+            section.set("description", description);
+        }
+        section.set("biomes", splitList(action.param("biomes")));
+        section.set("worlds", splitList(action.param("worlds")));
+        for (String key : List.of("weight", "max_sites")) {
+            String value = trimOrNull(action.param(key));
+            if (value != null) {
+                section.set(key, parseIntOrRaw(value));
+            }
+        }
+        section.set("enabled", !"false".equalsIgnoreCase(trimOrNull(action.param("enabled"))));
+        EncounterTemplateParser.ParseResult parsed = new EncounterTemplateParser().parse("formulaire", section);
+        if (!parsed.isSuccess()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Modèle refusé : " + String.join(" ",
+                    parsed.issues().stream().map(com.lodygames.rpgquest.encounter.EncounterLoadIssue::message).toList())));
+        }
+        return actions.encounterTemplateSave(parsed.template(), create)
+                .thenApply(r -> mutationOutcome(action, r, "templateId", parsed.template().id()))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> encounterTemplateToggle(AgentAction action) {
+        String id = encounterTemplateId(action);
+        String enabled = trimOrNull(action.param("enabled"));
+        if (id == null || !("true".equals(enabled) || "false".equals(enabled))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « id » et « enabled » (true/false) obligatoires."));
+        }
+        return actions.encounterTemplateToggle(id, Boolean.parseBoolean(enabled))
+                .thenApply(r -> mutationOutcome(action, r, "templateId", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> encounterTemplateDelete(AgentAction action) {
+        String id = encounterTemplateId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « id » manquant ou invalide."));
+        }
+        boolean acknowledge = "true".equals(trimOrNull(action.param("acknowledge_sites")));
+        return actions.encounterTemplateDelete(id, acknowledge)
+                .thenApply(r -> mutationOutcome(action, r, "templateId", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static String encounterTemplateId(AgentAction action) {
+        String id = trimOrNull(action.param("id"));
+        return id != null && com.lodygames.rpgquest.encounter.model.EncounterTemplate.ID_PATTERN.matcher(id).matches()
+                ? id : null;
+    }
+
+    /** Entier si possible ; sinon la chaîne brute, que le parseur refusera avec un message clair. */
+    private static Object parseIntOrRaw(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return value;
+        }
     }
 
     /** {@code economy.balance} — solde réel et journal récent. Lecture seule. */

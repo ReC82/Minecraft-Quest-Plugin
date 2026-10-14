@@ -84,6 +84,11 @@ public final class YamlEncounterEngine implements PluginService {
         return lastReport;
     }
 
+    /** Biomes du modèle inconnus de ce serveur (faute de frappe ou datapack absent), triés. */
+    public List<String> unknownBiomes(EncounterTemplate template) {
+        return template.biomes().stream().filter(knownBiome.negate()).sorted().toList();
+    }
+
     public Optional<EncounterTemplate> find(String id) {
         return templates.stream().filter(t -> t.id().equals(id)).findFirst();
     }

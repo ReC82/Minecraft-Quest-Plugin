@@ -14,8 +14,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > d'accueil `rpgquest:encounter_*`. **Étape 2** : page PlugAdmin `/npcs/encounters` (modèles,
 > occurrences par monde, journal) et actions `encounter.*` (retenter/désactiver/retirer une
 > occurrence, relire les modèles, effacer les délais) ; les PNJ de rencontre ne sont plus listés
-> « à rattacher ». Pas encore : édition des modèles depuis le panel, skin, quêtes secondaires.
-> Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu, TC-304 PlugAdmin).
+> « à rattacher ». **Étape 3** : création / modification / duplication / activation / suppression
+> des modèles depuis `/npcs/encounters` (`encounter.template.*`, validées par le parseur des
+> fichiers, sauvegarde avant suppression) ; apparence `skin_url` (ou par défaut) posée à la création
+> ou réparation, état affiché par occurrence. Pas encore : quêtes secondaires renouvelables.
+> Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu, TC-304/TC-305 PlugAdmin).
 >
 > **Mode bypass administrateur explicite (#35, corrige #321, 14/10/2026)** — être OP ne contourne
 > plus aucune règle de jeu (accès et règles du monde Claims, claims d'autrui, zones protégées,

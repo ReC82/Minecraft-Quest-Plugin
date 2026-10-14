@@ -1031,12 +1031,14 @@ public interface AgentActions {
 
     /**
      * Une occurrence persistée. {@code citizensPresent} : l'entité Citizens enregistrée existe-t-elle
-     * encore dans le registre Citizens ({@code null} = inconnu, Citizens absent).
+     * encore dans le registre Citizens ({@code null} = inconnu, Citizens absent). {@code appearance} :
+     * état de l'apparence depuis le démarrage ({@code EncounterService#appearanceOf}), {@code null}
+     * si rien n'a été tenté.
      */
     record EncounterSiteSummary(String id, String world, String biomeKey, String biomeInstance, int x, int y, int z,
                                 String templateId, String npcId, int citizensId, String citizensUuid,
                                 Boolean citizensPresent, String status, String lastError, String createdAt,
-                                String updatedAt) {
+                                String updatedAt, String appearance) {
     }
 
     record EncounterEventSummary(String at, String world, String instance, String outcome, String detail) {
@@ -1066,6 +1068,24 @@ public interface AgentActions {
 
     default CompletableFuture<MutationResult> encounterBackoffsClear() {
         return encounterSiteAction("backoffs", "");
+    }
+
+    /**
+     * Issue #13 étape 3 — écrit un modèle déjà validé ({@code create} : échoue s'il existe), puis
+     * relit les modèles. Les effets portent les avertissements (biome inconnu, dialogue absent…).
+     */
+    default CompletableFuture<MutationResult> encounterTemplateSave(
+            com.lodygames.rpgquest.encounter.model.EncounterTemplate template, boolean create) {
+        return encounterSiteAction("template", "");
+    }
+
+    default CompletableFuture<MutationResult> encounterTemplateToggle(String templateId, boolean enabled) {
+        return encounterSiteAction("template", "");
+    }
+
+    /** {@code acknowledgeSites} : l'administrateur accepte que les occurrences existantes restent en place. */
+    default CompletableFuture<MutationResult> encounterTemplateDelete(String templateId, boolean acknowledgeSites) {
+        return encounterSiteAction("template", "");
     }
 
     /**

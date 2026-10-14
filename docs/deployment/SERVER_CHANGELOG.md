@@ -48,6 +48,47 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Base de données : textes libres en TEXT côté MariaDB, migration V35 (#354)
+
+### Changement
+
+- Plugin : `MySqlDialect` crée les textes libres `NOT NULL` (descriptions, messages, chemins de
+  schématiques, valeur de skin) en `TEXT` au lieu de `VARCHAR(191)`. Migration **V35** : élargit ces
+  colonnes sur une base MariaDB existante ; **sur SQLite elle n'exécute aucune instruction** (seul
+  `user_version` passe à 35). Le serveur reste sur SQLite, aucune bascule.
+- Panel : l'assistant de `/database` n'affiche plus #354 comme bloquant ; fiche d'aide complétée.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) et redéploiement du panel. Ne pas téléverser
+`config.yml`, ne pas toucher `data.db`, ne pas modifier `database.type`.
+
+### Sauvegarde préalable
+
+JAR précédent sauvegardé par `deploy-verygames.sh` :
+`~/.local/share/rpgquest/verygames-backups/rpgquest-20261014T073059Z-predeploy.jar` (2 805 604 o,
+= `747ae18`, #42). Panel précédent : `/opt/plugadmin/releases/20261014-094510`.
+
+### Déploiement (effectué le 2026-10-14)
+
+- Merge `048e0f2` de `chore/257-ci-github-actions` (PR #358). JAR 2 808 014 o, SHA-256
+  `d8eca3ef83f47dffbe8ec50b81244fc10099f559eb1887f7b0d8cb98b9aaa9cc` — JAR distant retéléchargé,
+  SHA identique. Redémarrage RCON à 0 joueur, RPGQuest vert dans `/plugins`.
+- Panel `scripts/plugadmin/deploy.sh` : `DEPLOYED` = `048e0f2`, `/health` 200 (le « KO » du script
+  est la course connue au redémarrage), `/database` → 303 `/login`.
+
+### Validation
+
+Aucune validation en jeu nécessaire (aucun changement de gameplay). `PENDING MANUAL VALIDATION` :
+PlugAdmin > Base de données, étape 6 « Bloquants connus » affichée « fait ».
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; `scripts/plugadmin/rollback.sh app`.
+Un JAR plus ancien démarre sans erreur sur une base en V35 (le runner n'applique que les versions
+supérieures, il ne refuse pas une base plus récente) ; V35 n'ayant rien modifié sur SQLite, aucun
+retour de données n'est nécessaire.
+
 ## 2026-10-14 - Base de données : backend actif dans le heartbeat + page PlugAdmin /database (#42)
 
 ### Changement

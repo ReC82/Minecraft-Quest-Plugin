@@ -152,6 +152,48 @@ final class CitizensNpcBridge {
     }
 
     /**
+     * Issue #13 — même création, avec une marque persistante Citizens ({@code data().setPersistent})
+     * qui survit au redémarrage : elle permet de <strong>réadopter</strong> ce PNJ si RPGQuest n'a
+     * pas eu le temps d'enregistrer son UUID (arrêt brutal), au lieu d'en créer un second.
+     */
+    Optional<CitizensNpc> createAndSpawnMarked(String name, Location location, String markKey, String markValue) {
+        NPC npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, name);
+        try {
+            npc.data().setPersistent(markKey, markValue);
+            boolean spawned = npc.spawn(location, SpawnReason.CREATE);
+            if (!spawned || !npc.isSpawned()) {
+                npc.destroy();
+                return Optional.empty();
+            }
+            CitizensAPI.getNPCRegistry().saveToStore();
+            return Optional.of(toSummary(npc));
+        } catch (RuntimeException e) {
+            safeDestroy(npc);
+            throw e;
+        }
+    }
+
+    /**
+     * PNJ du registre portant la marque {@code markKey = markValue}, sans jamais parcourir les
+     * entités du monde ni charger de chunk. Thread principal.
+     */
+    List<CitizensNpc> findMarked(String markKey, String markValue) {
+        List<CitizensNpc> out = new ArrayList<>();
+        for (NPC npc : CitizensAPI.getNPCRegistry()) {
+            Object mark = npc.data().get(markKey);
+            if (mark != null && markValue.equals(mark.toString())) {
+                out.add(toSummary(npc));
+            }
+        }
+        return out;
+    }
+
+    /** Le PNJ existe-t-il encore dans le registre Citizens ? Thread principal. */
+    boolean exists(UUID uuid) {
+        return CitizensAPI.getNPCRegistry().getByUniqueId(uuid) != null;
+    }
+
+    /**
      * Détruit définitivement un PNJ Citizens — <strong>réservé au rollback</strong> d'une création
      * qui vient d'échouer. La double clé ({@code uuid} + {@code numericId}) garantit qu'on ne
      * détruit que le PNJ visé, jamais un homonyme. Thread principal obligatoire.

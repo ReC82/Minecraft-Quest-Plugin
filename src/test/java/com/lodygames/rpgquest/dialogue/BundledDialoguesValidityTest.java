@@ -29,7 +29,8 @@ import org.junit.jupiter.api.Test;
 class BundledDialoguesValidityTest {
 
     private static final List<String> BUNDLED =
-            List.of("guard.yml", "guide.yml", "jo.yml", "libraire.yml", "merchant.yml");
+            List.of("guard.yml", "guide.yml", "jo.yml", "libraire.yml", "merchant.yml",
+                    "encounter_bandit.yml", "encounter_merchant.yml", "encounter_smith.yml");
 
     private final DialogueLoader loader = new DialogueLoader(List.of("give", "xp", "customitem", "claim"));
 

@@ -1,0 +1,24 @@
+# Dialogue des PNJ récurrents « Forgeron perdu » (issue #13). Partagé par TOUTES les occurrences de ce
+# modèle (id = npc_id du modèle, convention du projet) : le PNJ est commun, la conversation et les
+# quêtes restent propres à chaque joueur. Les quêtes secondaires renouvelables s'ajoutent ici.
+id: rpgquest:encounter_smith
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Forgeron perdu"
+    text: "<white>Ces montagnes regorgent de minerai, mais j'y ai égaré mes outils… Quel froid !</white>"
+    choices:
+      - text: "Qui es-tu ?"
+        next: who
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
+  who:
+    speaker: "Forgeron perdu"
+    text: "<gray>Un voyageur, comme toi. On me croise un peu partout dans ce genre de contrée.</gray> <white>Reviens me voir : j'aurai bientôt de l'ouvrage pour toi.</white>"
+    choices:
+      - text: "À bientôt"
+        actions:
+          - type: CLOSE

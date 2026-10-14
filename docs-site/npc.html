@@ -275,6 +275,27 @@ id: rpgquest:libraire</code></pre>
   </section>
 
   <section class="my-5">
+    <h2 class="h4">PNJ récurrents par biome (issue #13)</h2>
+    <p>
+      Des PNJ de rencontre (Brigand des bois, Marchand égaré, Forgeron perdu…) apparaissent seuls
+      dans le Wild, <strong>un par instance de biome</strong>, quand un joueur y entre : sol sûr,
+      hors claim, à distance du joueur. Ils sont persistants, partagés par tous, recréés au même
+      endroit s'ils sont supprimés, jamais en double. Jamais dans le Hub ni le monde des claims.
+    </p>
+    <ul class="text-body-secondary">
+      <li>Modèles : <code>plugins/RPGQuest/encounters/*.yml</code> (<code>id</code>,
+        <code>display_name</code>, <code>biomes</code>, <code>npc_id</code>, <code>worlds</code>,
+        <code>weight</code>, <code>max_sites</code>, <code>enabled</code>).</li>
+      <li>Dialogue commun à toutes les occurrences : <code>rpgquest:&lt;npc_id&gt;</code>.</li>
+      <li>Réglages : section <code>encounters:</code> de <code>config.yml</code>.</li>
+      <li>Ces PNJ ne se lient pas avec <code>/rpgadmin npc tag</code> : leur identité vient du
+        registre des rencontres.</li>
+    </ul>
+    <p class="text-body-secondary small">Référence complète : <code>docs/ENCOUNTERS.md</code>.
+      Onglet PlugAdmin « PNJ récurrents » et quêtes secondaires : étapes suivantes.</p>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Limites connues</h2>
     <ul class="text-body-secondary">
       <li>Aucune liste globale des PNJ identifiés — il faut viser physiquement l'entité.</li>

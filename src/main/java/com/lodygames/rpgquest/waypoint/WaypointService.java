@@ -838,6 +838,14 @@ public final class WaypointService implements PluginService {
         }
     }
 
+    /**
+     * Lecture seule pour les autres systèmes (issue #13, PNJ récurrents) : un waypoint existe-t-il à
+     * moins de {@code radius} blocs de (x, z) ? Ne génère, ne déplace et ne protège rien.
+     */
+    public boolean hasWaypointWithin(String world, int x, int z, int radius) {
+        return violatesSpacing(world, x, z, radius);
+    }
+
     boolean violatesSpacing(String world, int x, int z, int minSpacing) {
         if (minSpacing <= 0) {
             return false;

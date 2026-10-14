@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 33;
+    public static final int CURRENT_VERSION = 34;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -69,7 +69,9 @@ public final class SchemaMigrator {
             new SchemaMigration(32, "item_travel_cooldowns.remaining_ms (cooldown suspendu hors ligne)",
                     SchemaMigrator::applyV32),
             new SchemaMigration(33, "villes : distance de détection + city_discoveries (issue #178)",
-                    SchemaMigrator::applyV33));
+                    SchemaMigrator::applyV33),
+            new SchemaMigration(34, "encounter_sites (PNJ récurrents par instance de biome, issue #13)",
+                    SchemaMigrator::applyV34));
 
     private SchemaMigrator() {
     }
@@ -1315,6 +1317,40 @@ public final class SchemaMigrator {
                     """));
             statement.execute(dialect.ddl(
                     "CREATE INDEX IF NOT EXISTS idx_city_discoveries_city ON city_discoveries (city_id)"));
+        }
+    }
+
+    private static void applyV34(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #13 — occurrences de PNJ récurrents. Table strictement séparée de waypoints : une
+        // instance de biome peut porter un waypoint ET une rencontre, sans que l'une dépende de
+        // l'autre. L'index unique (world, biome_instance) garantit au plus une rencontre par
+        // instance, même si deux joueurs y entrent au même moment (INSERT OR IGNORE). citizens_uuid
+        // vide = aucune entité Citizens pour l'instant ; elle est remplacée, jamais multipliée.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS encounter_sites (
+                        id TEXT PRIMARY KEY,
+                        world TEXT NOT NULL,
+                        biome_instance TEXT NOT NULL,
+                        biome_key TEXT NOT NULL,
+                        region_x INTEGER NOT NULL,
+                        region_z INTEGER NOT NULL,
+                        template_id TEXT NOT NULL,
+                        npc_id TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        citizens_uuid TEXT NOT NULL DEFAULT '',
+                        citizens_id INTEGER NOT NULL DEFAULT -1,
+                        status TEXT NOT NULL DEFAULT 'ACTIVE',
+                        last_error TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """));
+            statement.execute(dialect.ddl(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_encounter_sites_instance "
+                            + "ON encounter_sites (world, biome_instance)"));
         }
     }
 

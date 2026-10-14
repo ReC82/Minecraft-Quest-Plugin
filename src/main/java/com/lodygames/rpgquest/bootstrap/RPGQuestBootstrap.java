@@ -255,6 +255,8 @@ public final class RPGQuestBootstrap {
     private ItemTravelService itemTravelService;
     private WaystoneService waystoneService;
     private WaypointService waypointService;
+    private com.lodygames.rpgquest.encounter.YamlEncounterEngine encounterEngine;
+    private com.lodygames.rpgquest.encounter.EncounterService encounterService;
     private TravelBeaconService travelBeaconService;
     /** Issue #178 — villes. */
     private com.lodygames.rpgquest.city.CityRegistry cityRegistry;
@@ -762,6 +764,33 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, waypointService.listener()));
         registry.start(new PlayerListenerService(plugin, waypointService.protectionListener(travelMaintenanceMode)));
 
+        // PNJ récurrents par instance de biome (issue #13) : même découpage du monde que les
+        // waypoints, états indépendants. Génération paresseuse à l'entrée d'un joueur dans une
+        // instance, jamais au démarrage ; aucune liaison npc_citizens_bindings — l'identité des PNJ
+        // de rencontre est servie à NpcIdentityService par le registre des occurrences.
+        encounterEngine = new com.lodygames.rpgquest.encounter.YamlEncounterEngine(
+                plugin.getDataFolder().toPath().resolve("encounters"), plugin.getSLF4JLogger(),
+                biome -> {
+                    org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(biome);
+                    return key != null && org.bukkit.Registry.BIOME.get(key) != null;
+                });
+        registry.start(encounterEngine);
+        encounterService = new com.lodygames.rpgquest.encounter.EncounterService(plugin,
+                new com.lodygames.rpgquest.database.EncounterSiteRepository(databaseService.databaseManager()),
+                encounterEngine, npcIdentityService, new WaypointIdentityResolver(), new WaypointGenerationPlanner(),
+                (world, x, y, z) -> claimService.claimAt(world.getName(), x, y, z).isEmpty(),
+                waypointService::hasWaypointWithin,
+                () -> configService.current().encounters(),
+                () -> configService.current().travel().waypoint().regionSize(),
+                () -> configService.current().travel().wildWorld(),
+                () -> java.util.stream.Stream.of(configService.current().hub().world(),
+                                configService.current().claims().world())
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+        npcIdentityService.useEncounterIdentity(encounterService::npcIdOf);
+        registry.start(encounterService);
+        registry.start(new PlayerListenerService(plugin, encounterService.listener()));
+
         // Réseau de voyage (issues #132/#150) : borne physique (bouton bois + bloc diamant, même
         // support qu'un waypoint) ouvrant un menu graphique vers les waypoints déjà découverts par
         // le joueur. Strictement distinct de waypoint/waystone (aucune fusion d'identité/table) ;
@@ -1236,6 +1265,11 @@ public final class RPGQuestBootstrap {
 
     public WaypointService waypointService() {
         return waypointService;
+    }
+
+    /** Issue #13 — PNJ récurrents par instance de biome. */
+    public com.lodygames.rpgquest.encounter.EncounterService encounterService() {
+        return encounterService;
     }
 
     public WorldService worldService() {

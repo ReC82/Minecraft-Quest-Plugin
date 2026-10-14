@@ -3397,6 +3397,21 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
     Actions et garde-fous inchangés (raisons, confirmations, permissions, audit) ; expulser,
     renvoyer au Hub et donner un objet ne sont proposés qu'à un joueur connecté.
 
+### PNJ récurrents par biome — `encounters/*.yml` (issue #13, étape 1)
+
+Des PNJ de rencontre apparaissent seuls dans le Wild, **un par instance de biome** (découpage des
+waypoints), quand un joueur y entre : sol sûr, hors claim, à 24–64 blocs du joueur, jamais au
+démarrage ni en chargeant des chunks. Un modèle par fichier sous `plugins/RPGQuest/encounters/`
+(`id`, `display_name`, `biomes`, `npc_id`, `worlds`, `weight`, `max_sites`, `enabled`…) ; trois
+modèles livrés (`forest_bandit`, `desert_merchant`, `mountain_smith`) avec leurs dialogues
+`rpgquest:encounter_*`. Réglages : section `encounters:` de `config.yml` (`enabled`, `worlds` —
+vide = Wild ; Hub et claims toujours exclus —, `max-per-world`, distances, espacements).
+Persistance : table `encounter_sites` (migration V34), une ligne par instance. Les PNJ ne sont pas
+liés par `npc_citizens_bindings` : leur identité (`npc_id` du modèle) vient de ce registre, et un
+PNJ supprimé à la main est recréé au même endroit, jamais en double. Référence complète :
+[ENCOUNTERS.md](ENCOUNTERS.md). Onglet PlugAdmin « PNJ récurrents » et quêtes secondaires : étapes
+suivantes. Test : `docs/MANUAL_TEST_PLAN.md` TC-303 (`PENDING MANUAL VALIDATION`).
+
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 
 Depuis la V2, un PNJ RPGQuest a une **définition logique** en données :

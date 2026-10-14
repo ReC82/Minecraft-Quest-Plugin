@@ -66,6 +66,13 @@ public final class NpcIdentityService {
      */
     private final @Nullable CitizensBehaviourBridge behaviourBridge;
     private final Map<UUID, String> citizensCache = new ConcurrentHashMap<>();
+    /**
+     * Issue #13 — identité des PNJ récurrents. Ils ne passent pas par {@code npc_citizens_bindings}
+     * (un {@code npc_id} n'y est lié qu'à un seul PNJ Citizens, alors qu'un brigand existe dans
+     * chaque forêt) : leur registre propre répond ici, après les liaisons classiques, qui gardent
+     * toujours la priorité.
+     */
+    private volatile java.util.function.Function<UUID, Optional<String>> encounterIdentity = uuid -> Optional.empty();
 
     public NpcIdentityService(RPGQuestPlugin plugin, NpcIdRepository sequenceRepository,
                                NpcBindingRepository citizensBindingRepository) {
@@ -107,10 +114,21 @@ public final class NpcIdentityService {
         if (citizensBridge != null) {
             Optional<UUID> citizensUuid = citizensBridge.citizensUniqueId(entity);
             if (citizensUuid.isPresent()) {
-                return Optional.ofNullable(citizensCache.get(citizensUuid.get()));
+                String bound = citizensCache.get(citizensUuid.get());
+                return bound != null ? Optional.of(bound) : encounterIdentity.apply(citizensUuid.get());
             }
         }
         return Optional.ofNullable(entity.getPersistentDataContainer().get(idKey, PersistentDataType.STRING));
+    }
+
+    /** Branche le registre des PNJ récurrents (issue #13) ; sans lui, ils ne portent aucune identité. */
+    public void useEncounterIdentity(java.util.function.Function<UUID, Optional<String>> resolver) {
+        this.encounterIdentity = resolver == null ? uuid -> Optional.empty() : resolver;
+    }
+
+    /** UUID Citizens stable de l'entité, ou vide si ce n'est pas un PNJ Citizens. */
+    public Optional<UUID> citizensUniqueId(Entity entity) {
+        return citizensBridge == null ? Optional.empty() : citizensBridge.citizensUniqueId(entity);
     }
 
     /** Id numérique Citizens de l'entité, pour affichage admin uniquement (jamais utilisé comme clé). */
@@ -456,6 +474,27 @@ public final class NpcIdentityService {
      */
     public Optional<CitizensNpc> createCitizensNpc(String name, Location location) {
         return citizensBridge == null ? Optional.empty() : citizensBridge.createAndSpawn(name, location);
+    }
+
+    /**
+     * Issue #13 — crée un PNJ récurrent marqué {@code markKey = markValue} (voir
+     * {@link CitizensNpcBridge#createAndSpawnMarked}). Thread principal. Aucune liaison
+     * {@code npc_citizens_bindings} : son identité vient du registre des rencontres.
+     */
+    public Optional<CitizensNpc> createMarkedCitizensNpc(String name, Location location, String markKey,
+                                                         String markValue) {
+        return citizensBridge == null ? Optional.empty()
+                : citizensBridge.createAndSpawnMarked(name, location, markKey, markValue);
+    }
+
+    /** PNJ Citizens portant cette marque (registre seul, aucun scan du monde). Thread principal. */
+    public List<CitizensNpc> findMarkedCitizensNpcs(String markKey, String markValue) {
+        return citizensBridge == null ? List.of() : citizensBridge.findMarked(markKey, markValue);
+    }
+
+    /** Le PNJ Citizens existe-t-il encore ? {@code false} si Citizens est absent. Thread principal. */
+    public boolean citizensExists(UUID citizensUuid) {
+        return citizensBridge != null && citizensBridge.exists(citizensUuid);
     }
 
     /**

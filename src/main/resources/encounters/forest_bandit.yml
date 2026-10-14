@@ -1,0 +1,21 @@
+# Modèle de PNJ récurrent (issue #13) — livré une fois au premier démarrage, jamais réécrit ensuite.
+# Format complet : docs/ENCOUNTERS.md. Un PNJ de ce modèle peut apparaître dans CHAQUE instance de
+# biome forestier explorée (au plus un par instance) ; tous partagent le dialogue
+# rpgquest:<npc_id> et donc les mêmes quêtes. Ce n'est pas un mob : il ne combat pas.
+id: forest_bandit
+display_name: "Brigand des bois"
+description: "Hors-la-loi caché dans les forêts, propose des quêtes de cache et de butin."
+npc_id: encounter_bandit
+role: brigand
+family: forest
+biomes:
+  - minecraft:forest
+  - minecraft:birch_forest
+  - minecraft:old_growth_birch_forest
+  - minecraft:flower_forest
+  - minecraft:dark_forest
+# Vide = tous les mondes autorisés par encounters.worlds (par défaut le seul travel.wild-world).
+worlds: []
+weight: 10
+max_sites: 0
+enabled: true

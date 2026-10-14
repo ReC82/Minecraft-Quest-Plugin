@@ -41,6 +41,29 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void encountersDefaultToTheWildWorldAndAreBounded() throws Exception {
+        EncounterConfig defaults = ConfigValidator.validate(load("")).encounters();
+        assertTrue(defaults.enabled());
+        assertTrue(defaults.worlds().isEmpty(), "vide = le seul travel.wild-world");
+
+        EncounterConfig wild = ConfigValidator.validate(load("""
+                encounters:
+                  enabled: false
+                  worlds: [wild, " wild2 ", wild]
+                  min-distance: 1
+                  max-distance: 9999
+                  candidate-attempts: 500
+                  move-throttle-millis: 1
+                """)).encounters();
+        assertFalse(wild.enabled());
+        assertEquals(List.of("wild", "wild2"), wild.worlds());
+        assertEquals(8, wild.minDistance(), "jamais au pied du joueur");
+        assertEquals(160, wild.maxDistance());
+        assertEquals(32, wild.candidateAttempts());
+        assertEquals(250L, wild.moveThrottleMillis());
+    }
+
+    @Test
     void dialogueRendererDefaultsToPaperDialogWhenSectionIsMissing() throws Exception {
         PluginConfig config = ConfigValidator.validate(load(""));
 

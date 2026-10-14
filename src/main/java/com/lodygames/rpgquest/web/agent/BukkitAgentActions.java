@@ -1184,8 +1184,11 @@ public final class BukkitAgentActions implements AgentActions {
         if (assigned == com.lodygames.rpgquest.npc.spot.NpcSpotService.AssignOutcome.ALREADY_ASSIGNED) {
             return done("");
         }
+        // Ancien emplacement pris entre-temps : on libère au moins le nouveau, où le PNJ n'est pas.
         CompletableFuture<?> undo = previous.isPresent()
-                ? npcSpots.assign(previous.get().id(), npcId)
+                ? npcSpots.assign(previous.get().id(), npcId).thenCompose(back ->
+                back == com.lodygames.rpgquest.npc.spot.NpcSpotService.AssignOutcome.ASSIGNED
+                        ? done((Object) back) : npcSpots.release(spot.id()).thenApply(r -> (Object) r))
                 : npcSpots.release(spot.id());
         return undo.handle((ignored, error) -> {
             if (error != null) {

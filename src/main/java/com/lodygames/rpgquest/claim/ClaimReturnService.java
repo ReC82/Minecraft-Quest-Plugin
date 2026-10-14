@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.claim;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
@@ -108,15 +109,14 @@ public final class ClaimReturnService {
             return Outcome.UNAVAILABLE;
         }
         ItemStack stone = created.get();
-        if (!dropIfInventoryFull && player.getInventory().firstEmpty() < 0) {
-            return Outcome.NO_ROOM; // rien n'est remis : l'appelant décide quoi faire.
-        }
-        boolean dropped = false;
-        for (ItemStack leftover : player.getInventory().addItem(stone).values()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), leftover);
-            dropped = true;
-        }
-        if (dropped) {
+        // Issue #318 : capacité réelle (service commun), et remise tout-ou-rien.
+        if (!ItemDelivery.deliver(player, stone).delivered()) {
+            if (!dropIfInventoryFull) {
+                return Outcome.NO_ROOM; // rien n'est remis : l'appelant décide quoi faire.
+            }
+            // Seule exception assumée au « jamais au sol » : le joueur est DÉJÀ dans le monde des
+            // claims, et sans Pierre il n'a aucun moyen sûr d'en sortir. Le message le dit.
+            player.getWorld().dropItemNaturally(player.getLocation(), stone);
             // Issue #22 : l'objet tombait déjà au sol, mais le message annonçait « tu reçois » —
             // un joueur à l'inventaire plein cherchait donc un objet absent de ses poches.
             plugin.getSLF4JLogger().info(

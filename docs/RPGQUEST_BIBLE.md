@@ -624,7 +624,7 @@ d'inventaire n'est jamais compté comme de l'argent.
 - **Hors périmètre à ce jour** (décisions de gameplay non prises) : monnaie physique et conversion
   solde ↔ objet, perte à la mort, prix, règles d'échange.
 
-**Feedback de remise** (`QuestProgressEngine#turnIn`) : un Title/Subtitle bref (`quest.completed-title`/`-subtitle`, `messages.yml`) annonce la fin, puis un résumé est envoyé dans le chat (`quest.reward-summary-header` + une ligne par récompense **réellement accordée** — `quest.reward-line-experience`/`-item`/`-special`). `VARIABLE` n'a pas de ligne (état interne, pas une récompense visible du joueur) ; `COMMAND` affiche une ligne générique (« Récompense spéciale ») car le contenu d'une commande arbitraire n'est pas inspectable — jamais de nom d'objet inventé. Une quête sans `rewards` n'envoie aucun résumé chat. Le journal (`QuestJournalService`) continue d'afficher les récompenses **prévues** dans le lore de chaque quête, y compris avant complétion.
+**Feedback de remise** (`QuestProgressEngine#turnIn`) : un Title/Subtitle bref (`quest.completed-title`/`-subtitle`, `messages.yml`) annonce la fin, puis un résumé est envoyé dans le chat (`quest.reward-summary-header` + une ligne par récompense **réellement accordée** — `quest.reward-line-experience`/`-item`/`-special`). `VARIABLE` n'a pas de ligne (état interne, pas une récompense visible du joueur) ; `COMMAND` affiche une ligne générique (« Récompense spéciale ») car le contenu d'une commande arbitraire n'est pas inspectable — jamais de nom d'objet inventé. Une quête sans `rewards` n'envoie aucun résumé chat. **Inventaire plein (#318)** : la remise n'a lieu que si **toutes** les récompenses d'objets (`ITEM` et `COMMAND customitem give`) tiennent — sinon rien n'est accordé (ni XP, ni monnaie, ni variable) ; voir « Remise sécurisée des objets » au chapitre 9. Le journal (`QuestJournalService`) continue d'afficher les récompenses **prévues** dans le lore de chaque quête, y compris avant complétion.
 
 `MONEY` n'a **pas** de ligne dans ce résumé synchrone, et pour une raison précise : son crédit est
 asynchrone. Une ligne construite à cet instant annoncerait un gain avant d'avoir la moindre preuve
@@ -4638,6 +4638,38 @@ rarity: RARE             # COMMON | UNCOMMON | RARE | EPIC | LEGENDARY
 stackable: false
 ```
 
+**Remise sécurisée des objets (issue #318)** — `item.delivery.ItemDelivery` est l'unique chemin par
+lequel RPGQuest *remet* un objet à un joueur (dialogues `GIVE_ITEM` et `customitem give`,
+récompenses de quête `ITEM` / `COMMAND customitem give`, `/customitem give`, action « donner un
+objet » du panel, marchand, marché, `/backpack recover`, Rune de rappel, Pierre de retour) :
+
+- **capacité réelle** : l'ajout est simulé sur une copie de l'inventaire principal (36 cases) —
+  piles partielles *identiques* (`isSimilar`, donc PDC/métadonnées compris), puis cases vides,
+  `max-stack-size` respecté. Deux objets custom non empilables comptent pour deux cases ; un objet
+  custom ne s'empile jamais sur son matériau vanilla ;
+- **tout ou rien** : si tout ne tient pas, l'inventaire n'est pas touché — jamais de remise
+  partielle, **jamais d'objet jeté au sol**, et le joueur lit « Ton inventaire est plein. Libère
+  N emplacement(s) puis réessaie — rien n'a été remis ni perdu. » ;
+- **aucun faux succès** : « Vous avez reçu », un nœud « voici ton objet », une variable « déjà
+  donné », une quête terminée ou un débit n'arrivent qu'**après** une remise effective.
+
+Conséquences par flux : un **choix de dialogue** vérifie *avant sa première action* que tout ce
+qu'il remet tient (`GIVE_ITEM`, `RUN_SAFE_COMMAND customitem give …`, récompenses d'objets d'un
+`TURN_IN_QUEST`) — sinon **aucune** action du choix ne s'exécute et le dialogue se ferme ; le
+joueur reparle au PNJ une fois la place faite. Une **quête** dont les objectifs sont remplis mais
+dont les récompenses ne tiennent pas passe `READY_TO_TURN_IN` (« Prête à remettre » au journal,
+persisté) sans rien accorder, prévient une fois (`quest.reward-inventory-full`), puis se termine
+d'elle-même dès qu'il y a de la place (fermeture d'inventaire, objet jeté, reconnexion) ; une
+remise *demandée* (`TURN_IN_QUEST`, `/quest complete`, panel, `/rpgadmin story advance|complete`)
+est refusée sans rien changer (`quest.turn-in-inventory-full`, résultat `INVENTORY_FULL`). Le
+**marchand** vérifie la place avant de débiter et **rembourse** si l'objet ne tient plus au
+retour du débit. **Seule exception assumée** : la *restitution* d'un bien déjà acquis dont la
+transaction est irréversible (objet de marché payé ou offre annulée, entrée de `/backpack recover`
+déjà réclamée, objet d'une vente marchand non créditée) et la Pierre de retour à l'**arrivée**
+dans le monde des claims (#22) peuvent, en dernier recours, tomber aux pieds du joueur — avec un
+message qui le dit et une trace `[remise]` / `[claims-retour]` dans la console. Les drops de
+gameplay (butin, ressources) ne sont pas des remises et ne changent pas.
+
 Les recettes (façonnées `SHAPED` ou sans forme `SHAPELESS`) sont des fichiers YAML séparés dans `plugins/RPGQuest/recipes/*.yml` (trois exemples : `forest_blade_recipe`, `refined_crystal_recipe`, `miner_pickaxe_recipe`), enregistrées comme vraies recettes Bukkit au démarrage. Un ingrédient `custom-item:` est vérifié par PersistentDataContainer à chaque préparation de fabrication (clic simple, shift-clic, recette automatique). Format complet : [RECIPE_FORMAT.md](../RECIPE_FORMAT.md).
 
 ### `/customitem give <joueur> <id> [quantité]`
@@ -4645,7 +4677,7 @@ Type : Admin — Permission : `rpgquest.admin`
 But : donner un objet personnalisé à un joueur en ligne.
 Syntaxe : `/customitem give <joueur> <id> [quantité]`
 Exemple : `/customitem give Notch rpgquest:forest_blade 1`
-Effet : ajoute l'objet à l'inventaire (surplus lâché au sol si l'inventaire est plein) ; message au joueur cible s'il diffère de l'exécutant.
+Effet : ajoute l'objet à l'inventaire **seulement s'il y tient entièrement** (#318) ; sinon rien n'est donné ni jeté au sol, le joueur cible lit « Ton inventaire est plein… » et l'exécutant (s'il diffère) « Rien donné : l'inventaire de … est plein ». Message « Vous avez reçu » au joueur cible (s'il diffère de l'exécutant) uniquement après une remise effective.
 Persistance : non (objet créé à la volée depuis la définition YAML).
 À savoir : `id` accepte soit un id namespacé complet (`rpgquest:forest_blade`), soit juste le nom court (préfixé automatiquement par `rpgquest:`) ; échoue si le joueur est hors-ligne, l'id inconnu, ou la quantité hors de `[1, max-stack-size effectif]`.
 
@@ -4883,7 +4915,7 @@ Vérifié dans `BackpackCommand.java`. Détail complet : [docs/BACKPACKS.md](BAC
 | Commande | Type | Permission | Effet | Persistance |
 |---|---|---|---|---|
 | `/backpack` | Joueur | `rpgquest.backpack` | Ouvre le backpack (palier selon l'avantage détenu, ou `SMALL` via `rpgquest.backpack.free` en secours) ; « Tu n'as accès à aucun backpack pour l'instant » si aucun accès. | non (ouverture) |
-| `/backpack recover [numéro]` | Joueur | `rpgquest.backpack` | Sans numéro : liste la boîte de récupération (surplus après réduction de taille). Avec un numéro : réclame l'entrée (dépose au sol si l'inventaire est plein). | oui — dépile l'entrée réclamée |
+| `/backpack recover [numéro]` | Joueur | `rpgquest.backpack` | Sans numéro : liste la boîte de récupération (surplus après réduction de taille). Avec un numéro : réclame l'entrée — refusée sans rien réclamer si son contenu ne tient pas dans l'inventaire (#318) ; dépôt au sol seulement si l'inventaire a été rempli pendant la réclamation. | oui — dépile l'entrée réclamée |
 | `/backpack admin grant <joueur> <taille>` | Admin | `rpgquest.admin` | Accorde un palier (`SMALL`/`MEDIUM`/`LARGE`) via `EntitlementService`, redimensionne immédiatement en conservant le contenu. | oui |
 | `/backpack admin revoke <joueur>` | Admin | `rpgquest.admin` | Retire l'avantage explicite, retombe sur la taille effective restante (ex. `rpgquest.backpack.free`). | oui |
 

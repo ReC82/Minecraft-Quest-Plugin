@@ -2595,6 +2595,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private void sendStoryAdvanceReport(CommandSender sender, String targetName, StoryService.StoryAdvanceReport r) {
         switch (r.outcome()) {
             case UNKNOWN_STORY -> sender.sendMessage(unknownStory(r.storyId()));
+            case INVENTORY_FULL -> sender.sendMessage(MM.deserialize(
+                    "<red>Rien n'a bougé :</red> <gray>les récompenses de</gray> <white><q></white> <gray>ne tiennent "
+                            + "pas dans l'inventaire de</gray> <white><p></white><gray>.</gray>",
+                    Placeholder.unparsed("q", String.valueOf(r.completedQuestId())), Placeholder.unparsed("p", targetName)));
             case UNKNOWN_CURRENT_QUEST -> sender.sendMessage(MM.deserialize(
                     "<red>La story <id> référence, à l'étape <n>, une quête inconnue :</red> <white><q></white>",
                     Placeholder.unparsed("id", r.storyId()), Placeholder.unparsed("n", String.valueOf(r.stepNumber())),

@@ -1,11 +1,12 @@
 package com.lodygames.rpgquest.command;
 
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.CustomItemGiveCommands;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.item.model.ItemAttributeSpec;
 import com.lodygames.rpgquest.item.model.ItemEnchantmentSpec;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -30,7 +31,6 @@ public final class CustomItemCommand implements CommandExecutor, TabCompleter {
 
     private static final String ADMIN_PERMISSION = "rpgquest.admin";
     private static final String ITEM_PERMISSION = "rpgquest.item";
-    private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("give", "list", "inspect");
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
@@ -107,8 +107,20 @@ public final class CustomItemCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        Map<Integer, ItemStack> leftover = target.getInventory().addItem(stack.get());
-        leftover.values().forEach(item -> target.getWorld().dropItemNaturally(target.getLocation(), item));
+        // Issue #318 : jamais de reste jeté au sol avec un « Vous avez reçu » — c'est ainsi qu'une
+        // Pierre de retour remise par Jo finissait par terre. Tout ou rien, et le dire.
+        ItemDelivery.Result delivery = ItemDelivery.deliver(target, stack.get());
+        if (!delivery.delivered()) {
+            target.sendMessage(ItemDelivery.inventoryFullMessage(delivery.missingSlots()));
+            if (!target.equals(sender)) {
+                sender.sendMessage(MM.deserialize(
+                        "<red>Rien donné :</red> <gray>l'inventaire de</gray> <white><player></white> "
+                                + "<gray>est plein (<slots> emplacement(s) manquant(s)).</gray>",
+                        Placeholder.unparsed("player", target.getName()),
+                        Placeholder.unparsed("slots", String.valueOf(delivery.missingSlots()))));
+            }
+            return;
+        }
 
         sender.sendMessage(MM.deserialize(
                 "<green>Donné</green> <white><amount>x <id></white> <green>à</green> <white><player></white>",
@@ -210,7 +222,7 @@ public final class CustomItemCommand implements CommandExecutor, TabCompleter {
     }
 
     private @Nullable NamespacedKey resolveId(String raw) {
-        return raw.contains(":") ? NamespacedKey.fromString(raw) : new NamespacedKey(DEFAULT_NAMESPACE, raw);
+        return CustomItemGiveCommands.resolveId(raw);
     }
 
     private boolean hasPermission(CommandSender sender, String permission) {

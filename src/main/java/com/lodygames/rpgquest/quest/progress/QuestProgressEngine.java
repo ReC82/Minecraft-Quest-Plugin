@@ -8,6 +8,9 @@ import com.lodygames.rpgquest.database.QuestProgressRepository;
 import com.lodygames.rpgquest.economy.QuestRewardDue;
 import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import com.lodygames.rpgquest.economy.QuestRewardReceipt;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.CustomItemGiveCommands;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestLoadReport;
 import com.lodygames.rpgquest.quest.QuestMessages;
@@ -54,6 +57,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 /**
@@ -136,6 +140,17 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     private com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar;
+
+    /**
+     * Issue #318 : registre des objets custom, pour connaître l'objet remis par une récompense
+     * {@code COMMAND} {@code customitem give} et vérifier la place AVANT la complétion. Absent
+     * (tests) = seules les récompenses {@code ITEM} sont vérifiées.
+     */
+    private volatile YamlCustomItemRegistry customItemRegistry;
+
+    public void setCustomItemRegistry(YamlCustomItemRegistry customItemRegistry) {
+        this.customItemRegistry = customItemRegistry;
+    }
 
     /** Issues #69 / #209 — canal partagé de l'action bar, branché au démarrage. */
     public void setActionBar(com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar) {
@@ -303,7 +318,12 @@ public final class QuestProgressEngine implements PluginService {
                         // dès le chargement, sans instantané stocké.
                         Player online = plugin.getServer().getPlayer(playerId);
                         if (online != null) {
-                            runOnMainThread(() -> refreshCumulativeDiscoveryObjectives(online));
+                            runOnMainThread(() -> {
+                                refreshCumulativeDiscoveryObjectives(online);
+                                // Issue #318 : une remise restée en attente de place (avant une
+                                // reconnexion ou un redémarrage) est retentée dès le retour.
+                                retryAwaitingTurnIns(online);
+                            });
                         }
                     });
         }).exceptionally(error -> {
@@ -545,8 +565,8 @@ public final class QuestProgressEngine implements PluginService {
             if (cached.state() == QuestState.COMPLETED) {
                 return CompletableFuture.completedFuture(CompleteOutcome.ALREADY_COMPLETED);
             }
-            turnIn(player, quest, cached);
-            return CompletableFuture.completedFuture(CompleteOutcome.COMPLETED);
+            return CompletableFuture.completedFuture(
+                    turnIn(player, quest, cached, "quest.turn-in-inventory-full") ? CompleteOutcome.COMPLETED : CompleteOutcome.INVENTORY_FULL);
         }
 
         return repository.find(playerId, questId).thenCompose(record -> {
@@ -557,8 +577,13 @@ public final class QuestProgressEngine implements PluginService {
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 ActiveQuestProgress progress = new ActiveQuestProgress(questId, quest.steps().size() - 1, QuestState.ACTIVE);
                 playerActive.put(questId, progress);
-                turnIn(player, quest, progress);
-                result.complete(CompleteOutcome.COMPLETED);
+                if (turnIn(player, quest, progress, "quest.turn-in-inventory-full")) {
+                    result.complete(CompleteOutcome.COMPLETED);
+                } else {
+                    // Issue #318 : refus pour inventaire plein — aucune progression fictive ne reste.
+                    playerActive.remove(questId, progress);
+                    result.complete(CompleteOutcome.INVENTORY_FULL);
+                }
             });
             return result;
         });
@@ -1229,14 +1254,97 @@ public final class QuestProgressEngine implements PluginService {
             // complétion du dernier objectif de l'étape précédente, déjà signalée à l'instant par
             // showObjectiveProgress (ActionBar) — un second message ferait doublon.
             notifyChanged(playerId);
-        } else {
-            turnIn(player, quest, progress);
+        } else if (!turnIn(player, quest, progress, "quest.reward-inventory-full")) {
+            awaitRoomForRewards(playerId, quest, progress);
         }
     }
 
-    private void turnIn(Player player, QuestDefinition quest, ActiveQuestProgress progress) {
-        if (progress.state() == QuestState.COMPLETED) {
+    /**
+     * Issue #318 : objectifs remplis mais récompenses qui ne tiennent pas dans l'inventaire. La
+     * quête passe {@code READY_TO_TURN_IN} (persisté : elle survit à une reconnexion ou un
+     * redémarrage), n'accorde rien, et {@link #retryAwaitingTurnIns} la termine dès qu'il y a de
+     * la place. Aucune récompense n'est jetée au sol ni perdue.
+     */
+    private void awaitRoomForRewards(UUID playerId, QuestDefinition quest, ActiveQuestProgress progress) {
+        if (progress.state() != QuestState.ACTIVE) {
             return;
+        }
+        progress.setState(QuestState.READY_TO_TURN_IN);
+        String stepId = quest.steps().get(progress.currentStepIndex()).id();
+        repository.upsertState(playerId, quest.id(), QuestState.READY_TO_TURN_IN, stepId).exceptionally(error -> {
+            logger.error("Impossible de persister l'attente de remise de {} pour {}", quest.id(), playerId, error);
+            return null;
+        });
+        notifyChanged(playerId);
+    }
+
+    /**
+     * Retente, en silence, la remise des quêtes en attente de place ({@code READY_TO_TURN_IN}) du
+     * joueur. Appelé après qu'il a pu libérer de la place (inventaire fermé, objet jeté) et au
+     * chargement de sa progression. Coût nul s'il n'a aucune quête en attente.
+     */
+    public void retryAwaitingTurnIns(Player player) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(player.getUniqueId());
+        if (playerActive == null || !player.isOnline()) {
+            return;
+        }
+        for (ActiveQuestProgress progress : List.copyOf(playerActive.values())) {
+            if (progress.state() == QuestState.READY_TO_TURN_IN) {
+                questEngine.find(progress.questId()).ifPresent(quest -> turnIn(player, quest, progress, null));
+            }
+        }
+    }
+
+    void retryAwaitingTurnInsNextTick(Player player) {
+        if (hasAwaitingTurnIn(player.getUniqueId())) {
+            runOnMainThread(() -> retryAwaitingTurnIns(player));
+        }
+    }
+
+    private boolean hasAwaitingTurnIn(UUID playerId) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        return playerActive != null && playerActive.values().stream()
+                .anyMatch(progress -> progress.state() == QuestState.READY_TO_TURN_IN);
+    }
+
+    /** Objets qu'accorderait la remise de {@code questId} (vide si quête inconnue). */
+    public List<ItemStack> rewardItems(NamespacedKey questId) {
+        return questEngine.find(questId).map(this::rewardItems).orElse(List.of());
+    }
+
+    /** Objets qu'accorderait la remise de {@code quest} : récompenses ITEM et {@code customitem give}. */
+    List<ItemStack> rewardItems(QuestDefinition quest) {
+        List<ItemStack> items = new ArrayList<>();
+        for (QuestReward reward : quest.rewards()) {
+            if (reward instanceof ItemReward item) {
+                items.add(new ItemStack(item.material(), item.amount()));
+            } else if (reward instanceof CommandReward command) {
+                CustomItemGiveCommands.itemFor(command.command(), customItemRegistry).ifPresent(items::add);
+            }
+        }
+        return items;
+    }
+
+    /**
+     * @param refusalMessageKey message d'un refus faute de place ; {@code null} pour une reprise
+     *     automatique : le joueur a déjà été prévenu, inutile de le répéter à chaque fermeture
+     *     d'inventaire.
+     * @return {@code false} si rien n'a été remis faute de place (aucun état modifié)
+     */
+    private boolean turnIn(Player player, QuestDefinition quest, ActiveQuestProgress progress,
+                           @Nullable String refusalMessageKey) {
+        if (progress.state() == QuestState.COMPLETED) {
+            return true;
+        }
+        // Issue #318 : place vérifiée AVANT toute bascule d'état, dette ou récompense — tout ou rien.
+        int missingSlots = ItemDelivery.missingSlots(player.getInventory(), rewardItems(quest));
+        if (missingSlots > 0) {
+            if (refusalMessageKey != null && player.isOnline()) {
+                player.sendMessage(messagesService.current().format(refusalMessageKey,
+                        Placeholder.parsed("quest", quest.title().base()),
+                        Placeholder.unparsed("slots", String.valueOf(missingSlots))));
+            }
+            return false;
         }
         // Bascule mémoire immédiate et synchrone : garde anti double-remise.
         progress.setState(QuestState.READY_TO_TURN_IN);
@@ -1279,6 +1387,7 @@ public final class QuestProgressEngine implements PluginService {
         List<Component> rewardLines = grantRewards(player, quest);
         showQuestCompleted(player, quest, rewardLines);
         notifyChanged(playerId);
+        return true;
     }
 
     /**
@@ -1439,9 +1548,12 @@ public final class QuestProgressEngine implements PluginService {
                             Placeholder.unparsed("amount", String.valueOf(r.amount()))));
                 }
                 case ItemReward r -> {
-                    ItemStack stack = new ItemStack(r.material(), r.amount());
-                    player.getInventory().addItem(stack).values()
-                            .forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+                    // Place vérifiée par turnIn juste avant : la remise ne peut pas être refusée ici.
+                    if (!ItemDelivery.deliver(player, new ItemStack(r.material(), r.amount())).delivered()) {
+                        logger.error("Récompense {}x {} de {} non remise à {} malgré la vérification de place",
+                                r.amount(), r.material(), quest.id(), player.getUniqueId());
+                        continue;
+                    }
                     lines.add(messagesService.current().format("quest.reward-line-item",
                             Placeholder.unparsed("amount", String.valueOf(r.amount())),
                             Placeholder.unparsed("item", r.material().toString())));

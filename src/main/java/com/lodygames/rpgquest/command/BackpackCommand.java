@@ -5,7 +5,9 @@ import com.lodygames.rpgquest.backpack.ItemArraySerializer;
 import com.lodygames.rpgquest.backpack.model.BackpackSize;
 import com.lodygames.rpgquest.database.BackpackRepository;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -16,6 +18,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -35,11 +38,14 @@ public final class BackpackCommand implements CommandExecutor, TabCompleter {
     private static final List<String> ADMIN_SUBCOMMANDS = List.of("grant", "revoke");
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
+    private final Plugin plugin;
     private final BackpackService backpackService;
     private final EntitlementService entitlementService;
     private final Logger logger;
 
-    public BackpackCommand(BackpackService backpackService, EntitlementService entitlementService, Logger logger) {
+    public BackpackCommand(Plugin plugin, BackpackService backpackService, EntitlementService entitlementService,
+                           Logger logger) {
+        this.plugin = plugin;
         this.backpackService = backpackService;
         this.entitlementService = entitlementService;
         this.logger = logger;
@@ -124,50 +130,64 @@ public final class BackpackCommand implements CommandExecutor, TabCompleter {
         });
     }
 
+    /**
+     * Issue #318 : la place est vérifiée sur le thread principal AVANT de marquer l'entrée
+     * réclamée — refus = entrée intacte, réclamable plus tard. Jamais d'accès à l'inventaire
+     * depuis un thread de base de données.
+     */
     private void claimOverflow(Player player, long entryNumber) {
-        backpackService.unclaimedOverflow(player.getUniqueId()).thenAccept(entries -> {
+        backpackService.unclaimedOverflow(player.getUniqueId()).thenAccept(entries -> runOnMainThread(() -> {
             int index = (int) entryNumber - 1;
             if (index < 0 || index >= entries.size()) {
                 player.sendMessage(MM.deserialize("<red>Numéro invalide.</red>"));
                 return;
             }
             BackpackRepository.OverflowEntry entry = entries.get(index);
-            backpackService.claimOverflow(entry.id()).thenAccept(claimed -> {
+            List<ItemStack> items = readEntry(player, entry);
+            if (items == null) {
+                return;
+            }
+            int missingSlots = ItemDelivery.missingSlots(player.getInventory(), items);
+            if (missingSlots > 0) {
+                player.sendMessage(ItemDelivery.inventoryFullMessage(missingSlots));
+                return;
+            }
+            backpackService.claimOverflow(entry.id()).thenAccept(claimed -> runOnMainThread(() -> {
                 if (!claimed) {
                     player.sendMessage(MM.deserialize("<red>Cette entrée a déjà été réclamée.</red>"));
                     return;
                 }
-                deliverAndNotify(player, entry);
-            });
-        }).exceptionally(error -> {
+                deliverAndNotify(player, items);
+            }));
+        })).exceptionally(error -> {
             logger.error("Échec de la réclamation pour {}.", player.getUniqueId(), error);
             return null;
         });
     }
 
-    private void deliverAndNotify(Player player, BackpackRepository.OverflowEntry entry) {
-        ItemStack[] items;
+    private @Nullable List<ItemStack> readEntry(Player player, BackpackRepository.OverflowEntry entry) {
         try {
-            items = ItemArraySerializer.deserialize(entry.contents());
+            return Arrays.stream(ItemArraySerializer.deserialize(entry.contents()))
+                    .filter(item -> item != null && !item.getType().isAir())
+                    .toList();
         } catch (IOException e) {
             logger.error("Entrée de récupération illisible pour {} (id={}).", player.getUniqueId(), entry.id(), e);
             player.sendMessage(MM.deserialize("<red>Cette entrée est illisible, contacte un administrateur.</red>"));
-            return;
+            return null;
         }
-        int delivered = 0;
-        for (ItemStack item : items) {
-            if (item == null || item.getType().isAir()) {
-                continue;
-            }
-            delivered++;
-            var leftover = player.getInventory().addItem(item);
-            for (ItemStack overflowItem : leftover.values()) {
-                player.getWorld().dropItemNaturally(player.getLocation(), overflowItem);
-            }
+    }
+
+    /** L'entrée est déjà marquée réclamée : restitution garantie (voir {@link ItemDelivery#restoreOrDrop}). */
+    private void deliverAndNotify(Player player, List<ItemStack> items) {
+        ItemDelivery.Result result = ItemDelivery.restoreOrDrop(player, items, logger, "surplus de sac à dos");
+        if (result.delivered()) {
+            player.sendMessage(MM.deserialize("<green><count> objet(s) récupéré(s).</green>",
+                    Placeholder.unparsed("count", String.valueOf(items.size()))));
         }
-        player.sendMessage(MM.deserialize(
-                "<green><count> objet(s) récupéré(s)</green> <gray>(déposés au sol si l'inventaire était plein).</gray>",
-                Placeholder.unparsed("count", String.valueOf(delivered))));
+    }
+
+    private void runOnMainThread(Runnable task) {
+        plugin.getServer().getScheduler().runTask(plugin, task);
     }
 
     // ---- Admin ----------------------------------------------------------------------------

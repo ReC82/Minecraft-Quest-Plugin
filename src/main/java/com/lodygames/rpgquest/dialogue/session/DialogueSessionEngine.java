@@ -40,6 +40,8 @@ import com.lodygames.rpgquest.dialogue.render.DialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.VisibleChoice;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.CustomItemGiveCommands;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.StarterToolKitService;
 import com.lodygames.rpgquest.quest.progress.AcceptOutcome;
@@ -302,6 +304,15 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     }
 
     private void executeActionsAndTransition(Player player, DialogueDefinition dialogue, DialogueChoice choice) {
+        // Issue #318 : tout ce que le choix remet doit tenir AVANT la première action. Sinon une
+        // variable « déjà donné », une quête ou le nœud « voici ton objet » avançaient alors que
+        // l'objet finissait au sol. Refus = aucune action du choix, le joueur peut réessayer.
+        int missingSlots = ItemDelivery.missingSlots(player.getInventory(), itemsDeliveredBy(choice));
+        if (missingSlots > 0) {
+            closeSession(player);
+            player.sendMessage(ItemDelivery.inventoryFullMessage(missingSlots));
+            return;
+        }
         for (DialogueAction action : choice.actions()) {
             if (action instanceof CloseAction) {
                 closeSession(player);
@@ -374,9 +385,29 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     }
 
     private void giveItem(Player player, Material material, int amount) {
-        ItemStack stack = new ItemStack(material, amount);
-        player.getInventory().addItem(stack).values()
-                .forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+        ItemDelivery.Result delivery = ItemDelivery.deliver(player, new ItemStack(material, amount));
+        if (!delivery.delivered()) {
+            player.sendMessage(ItemDelivery.inventoryFullMessage(delivery.missingSlots()));
+        }
+    }
+
+    /**
+     * Objets que remettraient les actions de {@code choice} : {@code GIVE_ITEM}, les
+     * {@code RUN_SAFE_COMMAND} de la forme {@code customitem give %player% <id> [n]}, et les
+     * récompenses d'objets d'un {@code TURN_IN_QUEST}.
+     */
+    List<ItemStack> itemsDeliveredBy(DialogueChoice choice) {
+        List<ItemStack> items = new ArrayList<>();
+        for (DialogueAction action : choice.actions()) {
+            if (action instanceof GiveItemAction give) {
+                items.add(new ItemStack(give.material(), give.amount()));
+            } else if (action instanceof RunSafeCommandAction command) {
+                CustomItemGiveCommands.itemFor(command.command(), customItemRegistry).ifPresent(items::add);
+            } else if (action instanceof TurnInQuestAction turnIn) {
+                items.addAll(questProgressEngine.rewardItems(turnIn.questId()));
+            }
+        }
+        return items;
     }
 
     private void runSafeCommand(Player player, String commandTemplate) {

@@ -237,6 +237,8 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                         "quest.not-repeatable", Placeholder.parsed("quest", questName)));
                 case UNKNOWN_QUEST -> player.sendMessage(messages().format(
                         "quest.unknown", Placeholder.parsed("quest", questName)));
+                // Le moteur a déjà prévenu le joueur (quest.turn-in-inventory-full).
+                case INVENTORY_FULL -> { }
             }
         }));
     }

@@ -117,7 +117,7 @@ nodes:
         <tr><td><code>START_QUEST</code></td><td><code>quest</code></td><td>Accepte la quête pour le joueur (équivalent <code>/quest accept</code>).</td></tr>
         <tr><td><code>ADVANCE_QUEST</code></td><td><code>quest</code></td><td>Satisfait immédiatement tous les objectifs de l'étape courante.</td></tr>
         <tr><td><code>TURN_IN_QUEST</code></td><td><code>quest</code></td><td>Force la remise/complétion de la quête (récompenses accordées).</td></tr>
-        <tr><td><code>GIVE_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Donne l'objet au joueur.</td></tr>
+        <tr><td><code>GIVE_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Donne l'objet au joueur — seulement s'il tient (#318) : un choix dont les objets (<code>GIVE_ITEM</code>, <code>customitem give</code>, récompenses d'un <code>TURN_IN_QUEST</code>) ne tiennent pas est refusé <strong>en entier</strong> (aucune action, rien au sol, message « inventaire plein »).</td></tr>
         <tr><td><code>TAKE_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Retire l'objet de l'inventaire.</td></tr>
         <tr><td><code>SET_VARIABLE</code></td><td><code>key</code>, <code>value</code></td><td>Écrit une variable joueur persistante.</td></tr>
         <tr><td><code>RUN_SAFE_COMMAND</code></td><td><code>command</code></td><td>Exécute une commande console — nom de commande vérifié au <strong>chargement</strong> contre <code>config.yml</code> → <code>dialogue.allowed-commands</code>.</td></tr>

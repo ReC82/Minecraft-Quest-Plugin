@@ -63,6 +63,12 @@ quest:
   reward-line-special: "<yellow> + Récompense spéciale</yellow>"
   reward-money-credited: "<gold>Récompense de</gold> <white><quest></white> <gold>:</gold> <yellow>+<amount> <currency></yellow> <gray>— solde :</gray> <white><balance></white>"
   reward-money-failed: "<red>Ta récompense en <currency> n'a pas pu être créditée. Rien n'a été perdu de ta progression : signale-le à un administrateur.</red>"
+  # Issue #318 : récompenses d'objets qui ne tiennent pas dans l'inventaire. Rien n'est accordé ni
+  # jeté au sol : la quête attend (journal « Prête à remettre ») et se termine d'elle-même dès que
+  # le joueur a libéré <slots> emplacement(s). turn-in-inventory-full : remise demandée (PNJ,
+  # commande) refusée pour la même raison — la quête reste en cours, il suffit de réessayer.
+  reward-inventory-full: "<red>Inventaire plein :</red> <white><quest></white> <gray>est terminée, mais ses récompenses ne tiennent pas. Libère <white><slots></white> emplacement(s) : rien n'est perdu, la remise se fera dès qu'il y aura de la place.</gray>"
+  turn-in-inventory-full: "<red>Inventaire plein :</red> <gray>les récompenses de</gray> <white><quest></white> <gray>ne tiennent pas. Libère <white><slots></white> emplacement(s) puis réessaie — rien n'a été remis ni perdu.</gray>"
 
   # Remise d'objets à un PNJ (issue #123, DELIVER_ITEM_TO_NPC). Envoyés dans le CHAT, jamais en
   # ActionBar : une remise groupée touche plusieurs objectifs d'un coup et autant de messages

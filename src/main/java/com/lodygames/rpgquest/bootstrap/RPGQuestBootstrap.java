@@ -527,6 +527,7 @@ public final class RPGQuestBootstrap {
         // plus effacée par l'XP de combat du même kill, envoyée au tick suivant.
         var actionBarFeedback = new com.lodygames.rpgquest.feedback.ActionBarFeedback();
         questProgressEngine.setActionBar(actionBarFeedback);
+        questProgressEngine.setCustomItemRegistry(customItemRegistry);
         progressionService.setActionBar(actionBarFeedback);
 
         webSnapshotWriter = new WebSnapshotWriter(
@@ -1363,7 +1364,7 @@ public final class RPGQuestBootstrap {
             skills.setTabCompleter(skillsCommand);
         }
 
-        BackpackCommand backpackCommand = new BackpackCommand(backpackService, entitlementService, plugin.getSLF4JLogger());
+        BackpackCommand backpackCommand = new BackpackCommand(plugin, backpackService, entitlementService, plugin.getSLF4JLogger());
         var backpack = plugin.getCommand("backpack");
         if (backpack != null) {
             backpack.setExecutor(backpackCommand);

@@ -6,6 +6,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **PNJ récurrents par biome — étape 1 (#13, 14/10/2026)** — un PNJ Citizens de rencontre apparaît
+> dans chaque instance de biome du Wild visitée dont le biome a un modèle (`encounters/*.yml` :
+> brigand/forêt, marchand égaré/désert, forgeron perdu/montagne) : génération paresseuse sans
+> chargement de chunk, sol sûr hors claim, une occurrence par instance (`encounter_sites`, V34),
+> réparation sans doublon, identité `npc_id` servie hors `npc_citizens_bindings`, dialogues
+> d'accueil `rpgquest:encounter_*`. Pas encore : onglet PlugAdmin, skin, quêtes secondaires.
+> Référence : `docs/ENCOUNTERS.md`. Validation en jeu : PENDING (TC-303).
+>
 > **Mode bypass administrateur explicite (#35, corrige #321, 14/10/2026)** — être OP ne contourne
 > plus aucune règle de jeu (accès et règles du monde Claims, claims d'autrui, zones protégées,
 > combat au Hub). `/rpgadmin bypass on|off|status` (permission `rpgquest.admin.bypass`, défaut OP) ouvre

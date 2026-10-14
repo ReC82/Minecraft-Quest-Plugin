@@ -197,6 +197,15 @@ rewards:                    # optionnel
       d'afficher les récompenses <em>prévues</em> pour n'importe quelle quête, même non commencée.
     </p>
     <p class="text-body-secondary">
+      <strong>Inventaire plein (issue #318)</strong> : la remise n'a lieu que si <strong>toutes</strong>
+      les récompenses d'objets (<code>ITEM</code> et <code>COMMAND customitem give</code>) tiennent dans
+      l'inventaire — rien n'est jamais jeté au sol ni accordé à moitié. Objectifs remplis mais pas
+      de place : la quête passe « Prête à remettre » (<code>READY_TO_TURN_IN</code>), le joueur est
+      prévenu une fois, et elle se termine d'elle-même dès qu'il a libéré de la place (inventaire
+      fermé, objet jeté, reconnexion). Une remise demandée à un PNJ (<code>TURN_IN_QUEST</code>) ou
+      par l'administration est simplement refusée, quête inchangée, à retenter.
+    </p>
+    <p class="text-body-secondary">
       Une récompense <code>MONEY</code> ne figure pas dans ce résumé : son crédit est
       <strong>asynchrone</strong>, et une ligne écrite à cet instant annoncerait un gain avant toute
       preuve qu'il a eu lieu. Son message arrive donc <strong>séparément</strong>, un court instant

@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Remise sécurisée commune des objets — inventaire plein (#318)
+
+### Changement
+
+Plus aucun objet *remis* par RPGQuest n'est jeté au sol quand l'inventaire est plein : dialogues
+(`GIVE_ITEM`, `customitem give`), récompenses de quête, `/customitem give`, panel, marchand,
+marché, `/backpack recover`. La remise est tout-ou-rien ; un refus ne fait avancer ni variable, ni
+quête, ni débit. Une quête aux objectifs remplis sans place pour ses récompenses passe
+`READY_TO_TURN_IN` (état déjà existant) et se termine dès qu'il y a de la place. Nouveaux messages
+`quest.reward-inventory-full` et `quest.turn-in-inventory-full` dans `messages.yml`, ajoutés
+automatiquement au fichier serveur par la fusion des clés manquantes. Aucun changement de schéma.
+
+### Action serveur
+
+Aucune action manuelle autre que le remplacement du JAR RPGQuest (redémarrage requis). Aucune
+migration. Ne pas téléverser `messages.yml` (les clés manquantes sont fusionnées au démarrage).
+
+### Sauvegarde préalable
+
+JAR actuel + `data.db`, faits par `deploy-verygames.sh`.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-308.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer. Une quête restée `READY_TO_TURN_IN` reste lisible par
+l'ancien JAR (« Prête à remettre » au journal) mais ne s'y termine plus d'elle-même : la faire
+terminer par `/quest complete` ou le panel.
+
+---
+
 ## 2026-10-14 - Quêtes : `CRAFT_ITEM` compte la quantité réellement fabriquée (#34)
 
 ### Changement

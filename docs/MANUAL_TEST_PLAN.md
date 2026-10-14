@@ -5862,3 +5862,32 @@ par un compte joueur sans mode admin). **Durée** : 10 minutes.
 5.  Ouvrir le journal d'un **second** joueur : aucune recharge héritée du premier.
 6.  PlugAdmin → export d'un content pack contenant `encounter_bandit_spiders` : la quête porte
     `cooldown: 20h` ; réimporter ce pack → aucun diagnostic sur `cooldown`.
+
+
+### TC-308 — Remise sécurisée commune : inventaire plein, jamais au sol, jamais de faux succès (issue #318, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #318 déployé ; un compte joueur **sans** mode admin, `CLAIM_TIER_1=true`, sans
+Pierre de retour ; de quoi remplir les 36 cases (ex. stacks de terre). **Durée** : 15 minutes.
+
+1.  Inventaire **plein** → Jo → « Obtenir une Pierre de retour » : le dialogue se ferme, message
+    « Ton inventaire est plein. Libère 1 emplacement(s) puis réessaie — rien n'a été remis ni
+    perdu. ». **Aucune** Pierre au sol, **aucun** « Vous avez reçu ».
+2.  Libérer une case, reparler à Jo → la Pierre arrive dans l'inventaire, « Vous avez reçu 1x
+    rpgquest:pierre_retour ». Le choix disparaît ensuite (une seule Pierre).
+3.  Acte de Jo, inventaire plein puis place libérée : comportement #72/#85 inchangé (nœud
+    « inventaire plein », puis remise d'un seul acte).
+4.  Quête à récompense `ITEM` (ex. une quête de rencontre) terminée **inventaire plein** : message
+    « Inventaire plein : … est terminée, mais ses récompenses ne tiennent pas… » ; journal
+    `/quests` → « Prête à remettre » ; ni XP, ni pièces, ni objet. Jeter un objet (Q) → la quête se
+    termine aussitôt, récompenses complètes **une seule fois** (XP, objet, monnaie).
+5.  Même cas, quête « Prête à remettre » : se déconnecter / reconnecter (ou redémarrage DEV) →
+    toujours « Prête à remettre », rien perdu ; faire de la place → la quête se termine.
+6.  Marchand, inventaire plein : achat refusé **sans débit** (solde inchangé). Une case libre :
+    achat normal.
+7.  PlugAdmin → joueur → « Donner un objet » à un joueur inventaire plein : résultat
+    `INVENTORY_FULL` « Rien donné… », rien au sol ; idem « Compléter la quête » → `INVENTORY_FULL`.
+8.  `/customitem give <joueur> rpgquest:refined_crystal 16` avec une pile partielle de 15 cristaux et
+    aucune case vide → refusé (16 ne tiennent pas) ; avec `1` → empilé sur la pile existante.
+9.  Non-régression : kit de départ (Rune) à la première connexion, Pierre de retour reçue à
+    l'arrivée dans le monde des claims (au sol **uniquement** si inventaire plein, message « tombée
+    à tes pieds » — exception volontaire #22), butin des monstres toujours au sol.

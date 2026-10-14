@@ -136,6 +136,16 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   l'inventaire plein ; `player.StarterKitListener` ne marque plus jamais la Rune distribuée si
   `addItem` échoue (inventaire plein à la première connexion), pour réessayer à la connexion
   suivante au lieu de perdre l'objet pour toujours.
+  **Remise sécurisée commune (#318)** : `item.delivery.ItemDelivery` est le seul chemin de remise
+  d'objets au joueur (capacité réelle simulée, PDC/empilement compris ; tout ou rien ; jamais au
+  sol ; succès annoncé seulement après remise). Branché sur `CustomItemCommand`, `DialogueSessionEngine`
+  (contrôle préalable du choix entier, `customitem give` lu par `CustomItemGiveCommands`),
+  `QuestProgressEngine` (attente `READY_TO_TURN_IN` persistée + reprise à la fermeture
+  d'inventaire / au drop / à la connexion ; `CompleteOutcome.INVENTORY_FULL`), `StoryService`
+  (`INVENTORY_FULL` = la story n'avance pas), `BukkitAgentActions`, `MerchantTradeService`
+  (contrôle avant débit, remboursement), `MarketService`, `BackpackCommand`, `ClaimReturnService`,
+  `StarterKitListener`, `HubRescueFallbackService`. Restitution d'un bien déjà acquis : au sol en
+  dernier recours seulement (`ItemDelivery#restoreOrDrop`, message + log).
 - **Claims** — terrains protégés créés par les joueurs eux-mêmes, confiance par UUID ; monde
   résidentiel `claims` réellement pacifique (tout dégât joueur annulé, tout mob hostile empêché et
   nettoyé, Nether bloqué en sortie) ; frontière visualisée par particules (propriétaire uniquement,

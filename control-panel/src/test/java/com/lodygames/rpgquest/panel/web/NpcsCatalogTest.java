@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
@@ -1032,6 +1033,44 @@ class NpcsCatalogTest {
         assertEquals("enc_wild_forest_3_-2", pendingOfType("encounter.disable").get(0).params().get("siteId"));
         assertEquals(303, post("/agents/action", base + "&type=encounter.templates.reload").statusCode());
         assertEquals(1, pendingOfType("encounter.templates.reload").size());
+    }
+
+    @Test
+    void encounterListsAreCompactGridsWithBiomeSummaryAndFullWidthManagePanel() throws Exception {
+        // Issue #360 : plus de tableau à 8 colonnes — une ligne de grille par modèle, biomes résumés,
+        // panneau « Gérer » hors cellule (pleine largeur) ; filtre seulement pour une longue liste.
+        start();
+        runListWithSuccess("encounter.list", ENCOUNTER_DETAILS);
+        String page = get("/npcs/encounters?agent=" + TestConfig.AGENT_ID).body();
+        String models = page.substring(page.indexOf("enc-tpl-list"), page.indexOf("Occurrences par monde"));
+        assertFalse(models.contains("<table"), "les modèles ne sont plus un tableau");
+        assertTrue(models.contains("class=\"enc-row\"") && models.contains("Forêts — 1 biome</summary>"));
+        assertTrue(models.contains("<div class=\"collapse enc-panel\" id=\"enc-tpl-0\">"),
+                "le panneau Gérer est un enfant de la ligne, pas d'une cellule");
+        assertTrue(models.contains("<span class=\"badge text-bg-success\">actif</span>"), "colonne Statut");
+        assertTrue(page.contains("class=\"enc-list enc-sites\"") && !page.contains("<th>Occurrence</th>"));
+        assertFalse(page.contains("data-filter-input=\"enc-tpl-list\""), "pas de filtre pour un seul modèle");
+
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i < AgentPages.ENCOUNTER_FILTER_THRESHOLD; i++) {
+            many.append(i == 0 ? "" : ",").append("{\"id\":\"tpl_").append(i).append("\",\"displayName\":\"M")
+                    .append(i).append("\",\"npcId\":\"n\",\"biomes\":[\"minecraft:desert\"],\"worlds\":[],"
+                            + "\"weight\":10,\"maxSites\":0,\"enabled\":true,\"sites\":0}");
+        }
+        runListWithSuccess("encounter.list", ENCOUNTER_DETAILS.replaceFirst("\"templates\":\\[\\{.*?\"sites\":2\\}\\]",
+                "\"templates\":[" + many + "]"));
+        String longList = get("/npcs/encounters?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(longList.contains("data-filter-input=\"enc-tpl-list\""), "filtre pour une longue liste");
+        assertTrue(longList.contains("data-filter-item=\"enc-tpl-list\" data-filter-text=\"m7 tpl_7 n"));
+    }
+
+    @Test
+    void biomeFamilySummaryIsReadable() {
+        assertEquals("<span class=\"badge text-bg-warning\">aucun</span>", AgentPages.encounterBiomes("", List.of()));
+        assertTrue(AgentPages.encounterBiomes("forest", List.of("forest", "grove")).contains("Forêts — 2 biomes"));
+        assertTrue(AgentPages.encounterBiomes("", List.of("desert")).contains("<summary>1 biome</summary>"));
+        assertEquals("Marais", AgentPages.familyLabel("swamp"));
+        assertEquals("Volcans", AgentPages.familyLabel("volcans"));
     }
 
     @Test

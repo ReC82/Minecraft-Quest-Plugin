@@ -5877,38 +5877,104 @@ public final class AgentPages {
         if (templates.isEmpty()) {
             return sb.append("<p class=\"muted\">Aucun modèle chargé.</p></section>").toString();
         }
-        sb.append(Ui.tableOpen("Modèle", "PNJ", "Rôle / famille", "Biomes", "Mondes", "Poids", "Occurrences",
-                "Actions"));
+        // Issue #360 : liste en grille plutôt qu'un tableau à 8 colonnes — le panneau « Gérer » se déplie
+        // sur toute la largeur sous sa ligne au lieu d'allonger une cellule étroite, et chaque ligne
+        // devient une carte sur petit écran.
+        if (templates.size() >= ENCOUNTER_FILTER_THRESHOLD) {
+            sb.append(encounterFilter("enc-tpl-list", "Filtrer les modèles (nom, PNJ, biome…)"));
+        }
+        sb.append("<div class=\"enc-list enc-tpl\" id=\"enc-tpl-list\"><div class=\"enc-head\" aria-hidden=\"true\">"
+                + "<span>Modèle</span><span>PNJ</span><span>Rôle / famille</span><span>Biomes</span>"
+                + "<span>Mondes</span><span>Poids</span><span title=\"Occurrences\">Apparus</span><span>Statut</span><span></span></div>");
         int i = 0;
         for (Object o : templates) {
             Map<String, Object> t = asMap(o);
             boolean enabled = Boolean.TRUE.equals(t.get("enabled"));
             String max = "0".equals(str(t.get("maxSites"))) ? "" : " / " + str(t.get("maxSites"));
             List<String> worlds = asList(t.get("worlds")).stream().map(AgentPages::str).toList();
-            sb.append("<tr><td>").append(MiniText.html(str(t.get("displayName")))).append("<br>")
-                    .append(Ui.id(str(t.get("id"))))
-                    .append(enabled ? "" : " <span class=\"badge text-bg-secondary\">désactivé</span>")
-                    .append(cleanNull(str(t.get("skinUrl"))).isEmpty() ? ""
-                            : " <span class=\"badge text-bg-info\">apparence</span>")
-                    .append("</td><td>").append(Ui.id(str(t.get("npcId"))))
-                    .append("</td><td>").append(Http.esc(cleanNull(str(t.get("role")))))
-                    .append(cleanNull(str(t.get("family"))).isEmpty() ? "" : " · " + Http.esc(str(t.get("family"))))
-                    .append("</td><td><small>").append(Http.esc(String.join(", ",
-                            asList(t.get("biomes")).stream().map(b -> str(b).replace("minecraft:", "")).toList())))
-                    .append("</small></td><td>").append(worlds.isEmpty() ? "tous" : Http.esc(String.join(", ", worlds)))
-                    .append("</td><td>").append(Http.esc(str(t.get("weight"))))
-                    .append("</td><td>").append(Http.esc(str(t.get("sites")) + max)).append("</td><td>")
-                    .append(canWrite || canDelete ? encounterTemplateActions(session, agentId, t, canWrite, canDelete, i++)
+            List<String> biomes = asList(t.get("biomes")).stream().map(b -> str(b).replace("minecraft:", "")).toList();
+            String family = cleanNull(str(t.get("family")));
+            String role = cleanNull(str(t.get("role")));
+            String target = "enc-tpl-" + i++;
+            sb.append("<div class=\"enc-row\" data-filter-item=\"enc-tpl-list\" data-filter-text=\"")
+                    .append(Http.esc(String.join(" ",
+                            str(t.get("displayName")), str(t.get("id")), str(t.get("npcId")), role, family,
+                            String.join(" ", biomes)).toLowerCase(java.util.Locale.ROOT))).append("\">")
+                    .append(encounterCell("Modèle", "enc-main", MiniText.html(str(t.get("displayName"))) + " "
+                            + Ui.id(str(t.get("id"))) + (cleanNull(str(t.get("skinUrl"))).isEmpty() ? ""
+                            : " <span class=\"badge text-bg-info\">apparence</span>")))
+                    .append(encounterCell("PNJ", "", Ui.id(str(t.get("npcId")))))
+                    .append(encounterCell("Rôle / famille", "", Http.esc(role)
+                            + (family.isEmpty() ? "" : (role.isEmpty() ? "" : " · ") + Http.esc(family))))
+                    .append(encounterCell("Biomes", "enc-wide", encounterBiomes(family, biomes)))
+                    .append(encounterCell("Mondes", "", worlds.isEmpty() ? "tous" : Http.esc(String.join(", ", worlds))))
+                    .append(encounterCell("Poids", "", Http.esc(str(t.get("weight")))))
+                    .append(encounterCell("Occurrences", "", Http.esc(str(t.get("sites")) + max)))
+                    .append(encounterCell("Statut", "", enabled ? "<span class=\"badge text-bg-success\">actif</span>"
+                            : "<span class=\"badge text-bg-secondary\">désactivé</span>"))
+                    .append("<div class=\"enc-c enc-act\">")
+                    .append(canWrite || canDelete ? actionToggle(target, "Gérer", "wrench", "btn-outline-secondary")
                             : "<span class=\"muted\">lecture seule</span>")
-                    .append("</td></tr>");
+                    .append("</div>");
+            if (canWrite || canDelete) {
+                sb.append("<div class=\"collapse enc-panel\" id=\"").append(target).append("\">")
+                        .append(encounterTemplateActions(session, agentId, t, canWrite, canDelete, target))
+                        .append("</div>");
+            }
+            sb.append("</div>");
         }
-        return sb.append(Ui.tableClose()).append("</section>").toString();
+        return sb.append("</div></section>").toString();
+    }
+
+    /** À partir de ce nombre d'éléments, une liste de PNJ récurrents reçoit un champ de filtre. */
+    static final int ENCOUNTER_FILTER_THRESHOLD = 8;
+
+    private static String encounterFilter(String listId, String placeholder) {
+        return "<input class=\"form-control enc-filter\" type=\"search\" data-filter-input=\"" + listId
+                + "\" placeholder=\"" + Http.esc(placeholder) + "\" aria-label=\"" + Http.esc(placeholder) + "\">";
+    }
+
+    /** Une cellule de la grille : l'étiquette n'est affichée qu'en vue carte (petit écran). */
+    private static String encounterCell(String label, String cls, String html) {
+        return "<div class=\"enc-c" + (cls.isEmpty() ? "" : " " + cls) + "\"><span class=\"enc-k\">"
+                + Http.esc(label) + "</span>" + html + "</div>";
+    }
+
+    /** Résumé « Forêts — 5 biomes », détail replié : une longue liste ne gonfle plus la ligne. */
+    static String encounterBiomes(String family, List<String> biomes) {
+        if (biomes.isEmpty()) {
+            return "<span class=\"badge text-bg-warning\">aucun</span>";
+        }
+        String count = biomes.size() + (biomes.size() > 1 ? " biomes" : " biome");
+        String label = family.isEmpty() ? count : familyLabel(family) + " — " + count;
+        return "<details class=\"enc-biomes\"><summary>" + Http.esc(label) + "</summary><small>"
+                + Http.esc(String.join(", ", biomes)) + "</small></details>";
+    }
+
+    /** Libellé lisible d'une famille de biomes ; une famille inconnue est affichée telle quelle. */
+    static String familyLabel(String family) {
+        String key = family.trim().toLowerCase(java.util.Locale.ROOT);
+        return switch (key) {
+            case "forest", "forêt", "foret", "forests", "forêts" -> "Forêts";
+            case "desert", "désert", "deserts", "déserts" -> "Déserts";
+            case "mountain", "mountains", "montagne", "montagnes" -> "Montagnes";
+            case "swamp", "swamps", "marais" -> "Marais";
+            case "plains", "plaine", "plaines" -> "Plaines";
+            case "jungle", "jungles" -> "Jungles";
+            case "taiga", "taïga", "taigas" -> "Taïgas";
+            case "snow", "snowy", "neige", "enneigé" -> "Terres enneigées";
+            case "ocean", "oceans", "océan", "océans" -> "Océans";
+            case "savanna", "savane", "savanes" -> "Savanes";
+            case "badlands", "mesa" -> "Badlands";
+            case "beach", "plage", "plages" -> "Plages";
+            case "cave", "caves", "grotte", "grottes" -> "Grottes";
+            default -> Character.toUpperCase(family.trim().charAt(0)) + family.trim().substring(1);
+        };
     }
 
     private String encounterTemplateActions(Session session, String agentId, Map<String, Object> t, boolean canWrite,
-                                            boolean canDelete, int index) {
+                                            boolean canDelete, String target) {
         String id = str(t.get("id"));
-        String target = "enc-tpl-" + index;
         StringBuilder inner = new StringBuilder();
         if (canWrite) {
             boolean enabled = Boolean.TRUE.equals(t.get("enabled"));
@@ -5945,8 +6011,7 @@ public final class AgentPages {
                     .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">"
                             + "Supprimer</button></div></form></details>");
         }
-        return actionToggle(target, "Gérer", "wrench", "btn-outline-secondary")
-                + "<div class=\"collapse mt-2\" id=\"" + target + "\">" + inner + "</div>";
+        return inner.toString();
     }
 
     /**
@@ -6026,20 +6091,27 @@ public final class AgentPages {
             byWorld.computeIfAbsent(str(s.get("world")), w -> new ArrayList<>()).add(s);
         }
         int i = 0;
+        int worldIndex = 0;
         for (Map.Entry<String, List<Map<String, Object>>> world : byWorld.entrySet()) {
             sb.append("<h3 class=\"h6 mt-3\">").append(Http.esc(worldLabel(world.getKey()))).append(" — ")
                     .append(world.getValue().size()).append("</h3>");
-            sb.append(Ui.tableOpen("Occurrence", "Modèle", "Position", "PNJ en jeu", "État", "Actions"));
-            for (Map<String, Object> s : world.getValue()) {
-                sb.append(encounterSiteRow(session, agentId, s, canSpawn, i++));
+            String listId = "enc-sites-" + worldIndex++;
+            if (world.getValue().size() >= ENCOUNTER_FILTER_THRESHOLD) {
+                sb.append(encounterFilter(listId, "Filtrer les occurrences (identifiant, modèle, biome…)"));
             }
-            sb.append(Ui.tableClose());
+            sb.append("<div class=\"enc-list enc-sites\" id=\"").append(listId).append("\">")
+                    .append("<div class=\"enc-head\" aria-hidden=\"true\"><span>Occurrence</span><span>Modèle</span>"
+                            + "<span>Position</span><span>PNJ en jeu</span><span>État</span><span></span></div>");
+            for (Map<String, Object> s : world.getValue()) {
+                sb.append(encounterSiteRow(session, agentId, s, canSpawn, i++, listId));
+            }
+            sb.append("</div>");
         }
         return sb.append("</section>").toString();
     }
 
     private String encounterSiteRow(Session session, String agentId, Map<String, Object> s, boolean canSpawn,
-                                    int index) {
+                                    int index, String listId) {
         String id = str(s.get("id"));
         String pos = str(s.get("x")) + " " + str(s.get("y")) + " " + str(s.get("z"));
         boolean active = "ACTIVE".equals(str(s.get("status")));
@@ -6052,35 +6124,39 @@ public final class AgentPages {
                         : "<span class=\"badge text-bg-secondary\">inconnu</span>");
         citizens += encounterAppearance(cleanNull(str(s.get("appearance"))));
         String error = cleanNull(str(s.get("lastError")));
-        StringBuilder sb = new StringBuilder("<tr><td>").append(Ui.id(id)).append("<br><small class=\"muted\">")
-                .append(Http.esc(str(s.get("biomeKey")).replace("minecraft:", ""))).append("</small></td><td>")
-                .append(Ui.id(str(s.get("templateId")))).append("</td><td><code>").append(Http.esc(pos))
-                .append("</code><br><small class=\"muted\">Localiser : <code>/tp @s ").append(Http.esc(pos))
-                .append("</code></small></td><td>").append(citizens).append("</td><td>")
-                .append(active ? "<span class=\"badge text-bg-success\">active</span>"
-                        : "<span class=\"badge text-bg-secondary\">désactivée</span>");
-        if (!error.isEmpty()) {
-            sb.append("<br><small class=\"text-danger-emphasis\">").append(Http.esc(error)).append("</small>");
-        }
-        sb.append("</td><td>");
+        String biome = str(s.get("biomeKey")).replace("minecraft:", "");
+        StringBuilder sb = new StringBuilder("<div class=\"enc-row\" data-filter-item=\"").append(listId)
+                .append("\" data-filter-text=\"")
+                .append(Http.esc(String.join(" ", id, str(s.get("templateId")), biome).toLowerCase(java.util.Locale.ROOT)))
+                .append("\">")
+                .append(encounterCell("Occurrence", "enc-main", Ui.id(id) + "<br><small class=\"muted\">"
+                        + Http.esc(biome) + "</small>"))
+                .append(encounterCell("Modèle", "", Ui.id(str(s.get("templateId")))))
+                .append(encounterCell("Position", "", "<code>" + Http.esc(pos) + "</code><br><small class=\"muted\">"
+                        + "Localiser : <code>/tp @s " + Http.esc(pos) + "</code></small>"))
+                .append(encounterCell("PNJ en jeu", "", citizens))
+                .append(encounterCell("État", "", (active ? "<span class=\"badge text-bg-success\">active</span>"
+                        : "<span class=\"badge text-bg-secondary\">désactivée</span>")
+                        + (error.isEmpty() ? "" : "<br><small class=\"text-danger-emphasis\">" + Http.esc(error)
+                        + "</small>")))
+                .append("<div class=\"enc-c enc-act\">");
         if (!canSpawn) {
-            sb.append("<span class=\"muted\">lecture seule</span>");
-        } else {
-            String target = "enc-act-" + index;
-            sb.append(actionToggle(target, "Gérer", "wrench", "btn-outline-secondary"))
-                    .append("<div class=\"collapse mt-2\" id=\"").append(target).append("\">")
-                    .append(encounterSiteForm(session, agentId, "encounter.retry", id,
-                            active ? "Retenter maintenant" : "Réactiver",
-                            "Retenter l'apparition de " + id, "btn-outline-primary"));
-            if (active) {
-                sb.append(encounterSiteForm(session, agentId, "encounter.disable", id, "Désactiver",
-                        "Désactiver " + id + " (son PNJ est retiré)", "btn-outline-warning"));
-            }
-            sb.append(encounterSiteForm(session, agentId, "encounter.remove", id, "Retirer",
-                    "Retirer " + id + " : PNJ et occurrence supprimés, la zone pourra en accueillir une nouvelle",
-                    "btn-outline-danger")).append("</div>");
+            return sb.append("<span class=\"muted\">lecture seule</span></div></div>").toString();
         }
-        return sb.append("</td></tr>").toString();
+        String target = "enc-act-" + index;
+        sb.append(actionToggle(target, "Gérer", "wrench", "btn-outline-secondary")).append("</div>")
+                .append("<div class=\"collapse enc-panel\" id=\"").append(target).append("\"><div class=\"enc-site-acts\">")
+                .append(encounterSiteForm(session, agentId, "encounter.retry", id,
+                        active ? "Retenter maintenant" : "Réactiver",
+                        "Retenter l'apparition de " + id, "btn-outline-primary"));
+        if (active) {
+            sb.append(encounterSiteForm(session, agentId, "encounter.disable", id, "Désactiver",
+                    "Désactiver " + id + " (son PNJ est retiré)", "btn-outline-warning"));
+        }
+        sb.append(encounterSiteForm(session, agentId, "encounter.remove", id, "Retirer",
+                "Retirer " + id + " : PNJ et occurrence supprimés, la zone pourra en accueillir une nouvelle",
+                "btn-outline-danger"));
+        return sb.append("</div></div></div>").toString();
     }
 
     /** État de l'apparence relevé par le serveur depuis son démarrage (vide = rien tenté depuis). */

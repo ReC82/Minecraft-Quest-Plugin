@@ -87,12 +87,21 @@ Page `/npcs/encounters`, bouton « PNJ récurrents » de la page PNJ. Elle lit l
 - **Vue d'ensemble** : apparitions activées ou non, mondes réellement concernés (Hub et claims
   retirés), plafond par monde, nombre de modèles et d'occurrences, fichiers de modèle refusés au
   dernier chargement avec leur motif ;
-- **Modèles** : nom, `npc_id`, rôle/famille, biomes, mondes, poids, occurrences / plafond ;
+- **Modèles** : nom, `npc_id`, rôle/famille, biomes, mondes, poids, occurrences / plafond, statut
+  (actif / désactivé). Une ligne compacte par modèle ; les biomes sont résumés par famille
+  (« Forêts — 5 biomes », liste complète en dépliant le résumé) ;
 - **Occurrences par monde** : identifiant, biome, position (avec la commande `/tp @s x y z` pour
   la localiser), PNJ Citizens (`présent`, `disparu` = enregistré mais absent du registre Citizens,
   `inconnu` = Citizens indisponible), état, dernière erreur ;
 - **Journal récent** : créations, échecs, réparations, désactivations — en mémoire, vidé au
   redémarrage.
+
+Affichage (#360) : modèles et occurrences sont des listes en grille, pas des tableaux. Le panneau
+« Gérer » se déplie sur toute la largeur sous sa ligne. Quand la zone de contenu fait moins de
+820 px (mobile, fenêtre étroite), chaque ligne devient une carte avec ses libellés, sans défilement
+horizontal. À partir de 8 modèles (ou 8 occurrences dans un monde), un champ de filtre (nom,
+identifiant, PNJ, biome) apparaît au-dessus de la liste. À l'impression, la barre latérale et les
+actions sont masquées.
 
 | Action | Permission | Effet |
 |---|---|---|

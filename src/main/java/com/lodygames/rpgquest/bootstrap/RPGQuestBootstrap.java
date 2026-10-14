@@ -950,7 +950,11 @@ public final class RPGQuestBootstrap {
                     if (families.contains(com.lodygames.rpgquest.content.reload.ReloadFamily.QUESTS)) {
                         questProgressEngine.afterExternalReload();
                     }
-                });
+                },
+                // Issue #371 : les PNJ de rencontre (#13) n'ont pas de fichier npcs/ mais sont de
+                // vraies identités — sans eux, chaque quête de rencontre « cassait » tout reload.
+                () -> encounterEngine.templates().stream()
+                        .map(com.lodygames.rpgquest.encounter.model.EncounterTemplate::npcId).toList());
 
         // Issue #47 — publication de contenu depuis le Control Panel, SANS rebuild ni redémarrage.
         //

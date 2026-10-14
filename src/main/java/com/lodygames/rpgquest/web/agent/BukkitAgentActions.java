@@ -4099,8 +4099,10 @@ public final class BukkitAgentActions implements AgentActions {
         // Le rechargement permute des ensembles lus par des listeners du thread principal :
         // on l'exécute donc SUR le thread principal, comme toute mutation d'état de jeu.
         return onMain(() -> {
+            // #371 : appliquer inclut d'office les familles liées — l'administrateur n'a pas à
+            // deviner qu'une quête citant un PNJ neuf exige aussi de recharger les PNJ.
             ContentReloadService.ReloadResult result = apply
-                    ? contentReloadService.reload(requested)
+                    ? contentReloadService.reloadWithDependencies(requested)
                     : contentReloadService.preview(requested);
             List<ContentReloadFamilyView> familyViews = new ArrayList<>();
             for (ContentReloadService.FamilyOutcome outcome : result.families()) {
@@ -4195,7 +4197,10 @@ public final class BukkitAgentActions implements AgentActions {
                 o.devShaBefore(), o.devShaAfter(), o.sourceSha(), o.created(), o.backupPath(),
                 o.reloadApplied(), o.reloadCode(), o.reloadMessage(),
                 o.loadedCount(), o.issueCount(), o.runtimeConfirmed(), o.runtimeHash(),
-                o.verifiedAt() == null ? "" : o.verifiedAt().toString());
+                o.verifiedAt() == null ? "" : o.verifiedAt().toString(),
+                o.reloadDetail().referenceErrors(), o.reloadDetail().preexistingReferenceErrors(),
+                o.reloadDetail().families(), o.reloadDetail().autoIncludedFamilies(),
+                o.reloadDetail().suggestedFamilies());
     }
 
     private static ContentPublishResultView refusedPublish(String code, String message,

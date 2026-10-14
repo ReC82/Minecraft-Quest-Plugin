@@ -6236,6 +6236,8 @@ public final class AgentPages {
         if (existing) {
             sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"").append(p)
                     .append("remove\" value=\"true\"> retirer</label>");
+        } else {
+            sb.append("<span aria-hidden=\"true\"></span>");
         }
         return sb.append("</div>").toString();
     }

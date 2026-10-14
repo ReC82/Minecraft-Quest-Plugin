@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.database;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -56,5 +57,50 @@ public final class SqliteDialect implements SqlDialect {
     @Override
     public String autoIncrementPrimaryKey(String name) {
         return name + " INTEGER PRIMARY KEY AUTOINCREMENT";
+    }
+
+    @Override
+    public long nextAutoIncrement(Connection connection, String table) throws SQLException {
+        if (!sequenceTableExists(connection)) {
+            return 1L;
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT seq FROM sqlite_sequence WHERE name = ?")) {
+            statement.setString(1, table);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getLong(1) + 1 : 1L;
+            }
+        }
+    }
+
+    @Override
+    public void raiseAutoIncrement(Connection connection, String table, long next) throws SQLException {
+        if (nextAutoIncrement(connection, table) >= next) {
+            return;
+        }
+        // sqlite_sequence n'existe qu'après la création d'une table AUTOINCREMENT : toute table
+        // RPGQuest concernée en a déjà créé une, sinon il n'y a rien à aligner.
+        try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE sqlite_sequence SET seq = ? WHERE name = ?")) {
+            update.setLong(1, next - 1);
+            update.setString(2, table);
+            if (update.executeUpdate() > 0) {
+                return;
+            }
+        }
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)")) {
+            insert.setString(1, table);
+            insert.setLong(2, next - 1);
+            insert.executeUpdate();
+        }
+    }
+
+    private static boolean sequenceTableExists(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(
+                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'")) {
+            return resultSet.next();
+        }
     }
 }

@@ -37,6 +37,14 @@ configurations {
     testRuntimeOnly.get().extendsFrom(compileOnly.get())
 }
 
+// Issue #42 — outil de migration SQLite → MariaDB, exécuté HORS serveur Minecraft. Ses pilotes
+// JDBC et son pool sont empaquetés dans son propre JAR autonome (tâche dbMigrationToolJar), jamais
+// dans le JAR du plugin, qui continue de les recevoir du LibraryLoader de Paper (plugin.yml).
+val dbMigrationTool: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     compileOnly("net.citizensnpcs:citizensapi:2.0.43-SNAPSHOT")
@@ -123,6 +131,12 @@ dependencies {
     testImplementation("org.xerial:sqlite-jdbc:3.53.2.1")
     compileOnly("com.zaxxer:HikariCP:5.1.0")
     testRuntimeOnly("org.mariadb.jdbc:mariadb-java-client:3.4.1")
+
+    // Mêmes versions que plugin.yml (libraries:) : l'outil parle aux bases exactement comme le plugin.
+    dbMigrationTool("org.xerial:sqlite-jdbc:3.53.2.1")
+    dbMigrationTool("org.mariadb.jdbc:mariadb-java-client:3.4.1")
+    dbMigrationTool("com.zaxxer:HikariCP:5.1.0")
+    dbMigrationTool("org.slf4j:slf4j-nop:2.0.17") // journal SLF4J des pilotes : silencieux en CLI
 }
 
 tasks {
@@ -150,6 +164,51 @@ tasks {
             zip.resolveSibling(zip.name + ".sha1").writeText(sha1)
             logger.lifecycle("Resource pack : {} (sha1={})", zip, sha1)
         }
+    }
+
+    // Les deux pilotes JDBC déclarent chacun META-INF/services/java.sql.Driver ; dans un JAR unique,
+    // un seul fichier survivrait et DriverManager ne verrait qu'un pilote. On écrit donc la liste
+    // fusionnée, et l'on écarte celles des dépendances.
+    val dbMigrationToolServices = register("dbMigrationToolServices") {
+        val out = layout.buildDirectory.dir("generated/db-migration-tool")
+        outputs.dir(out)
+        doLast {
+            val file = out.get().file("META-INF/services/java.sql.Driver").asFile
+            file.parentFile.mkdirs()
+            file.writeText("org.sqlite.JDBC\norg.mariadb.jdbc.Driver\n")
+        }
+    }
+
+    register<Jar>("dbMigrationToolJar") {
+        group = "rpgquest"
+        description = "JAR autonome de l'outil de migration SQLite → MariaDB (issue #42), hors serveur."
+        archiveFileName.set("rpgquest-db-migration.jar")
+        destinationDirectory.set(layout.buildDirectory.dir("tools"))
+        manifest {
+            attributes("Main-Class" to "com.lodygames.rpgquest.database.migration.MigrationCli")
+        }
+        // Seule la couche de persistance (sans Bukkit) : l'outil n'a besoin ni des ressources ni du
+        // reste du plugin. WaypointNameCatalog est la seule classe hors du paquet database qu'atteint
+        // le catalogue de migrations (V22/V23, JDK pur, plus sa ressource waypoint-names.txt). Une classe manquante n'arrête pas l'outil
+        // brutalement : SqliteMigrationTool la signale en FAILED (voir le runbook, contrôle du JAR).
+        from(sourceSets.main.get().output.classesDirs) {
+            include("com/lodygames/rpgquest/database/**")
+            include("com/lodygames/rpgquest/waypoint/model/WaypointNameCatalog*.class")
+        }
+        from(sourceSets.main.get().output.resourcesDir!!) {
+            include("waypoint-names.txt") // lu par WaypointNameCatalog
+        }
+        dependsOn(processResources)
+        dependsOn(dbMigrationTool)
+        from(dbMigrationToolServices)
+        from({ dbMigrationTool.map { zipTree(it) } }) {
+            exclude("META-INF/services/java.sql.Driver")
+            exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/MANIFEST.MF",
+                "META-INF/versions/9/module-info.class", "module-info.class")
+        }
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
     }
 
     test {

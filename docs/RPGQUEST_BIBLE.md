@@ -5484,7 +5484,19 @@ database:
   la table `rpgquest_schema_migrations`. **Validé** contre un serveur MariaDB 10.11 (base de test
   VeryGames vide). Si la base est injoignable/mal configurée : refus de démarrage propre et borné.
 - Le code de gameplay ne contient **aucun SQL** et ne teste **jamais** le moteur.
-- **Migration des données `data.db` → MariaDB et bascule de production = issue #42** (non faite).
+- **Migration des données `data.db` → MariaDB (issue #42)** : outil **hors serveur** (jamais une
+  commande en jeu), `./gradlew dbMigrationToolJar` → `build/tools/rpgquest-db-migration.jar` :
+  ```bash
+  java -jar rpgquest-db-migration.jar audit   --sqlite-file data.db [--target-mysql cible.properties]
+  java -jar rpgquest-db-migration.jar dry-run --sqlite-file data.db --target-mysql cible.properties
+  java -jar rpgquest-db-migration.jar migrate --sqlite-file data.db --target-mysql cible.properties --commit
+  ```
+  `cible.properties` : `host`, `port`, `database`, `username`, `password-env` (NOM de variable),
+  `ssl-mode` — une clé `password` est refusée. Source en lecture seule, cible non vide refusée,
+  validation par comptage + empreinte logique de chaque table, rapport `.txt`/`.json` sans hôte ni
+  secret, codes de sortie `0` SUCCESS / `2` FAILED / `1` usage. **Bascule réelle non faite et non
+  autorisée** sans consigne du propriétaire ; constat bloquant ouvert (textes libres en
+  `VARCHAR(191)` côté MariaDB, #354). Runbook : [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
 - Détail complet : [PERSISTENCE.md](PERSISTENCE.md).
 
 ### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 18)

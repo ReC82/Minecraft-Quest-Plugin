@@ -69,6 +69,23 @@ public interface SqlDialect {
      */
     String autoIncrementPrimaryKey(String name);
 
+    /**
+     * Prochaine valeur que le moteur attribuera à la colonne {@code AUTOINCREMENT} de
+     * {@code table} (issue #42 : un identifiant « jamais réutilisé » doit le rester après une
+     * migration de moteur). SQLite : {@code sqlite_sequence.seq + 1} ; MariaDB :
+     * {@code information_schema.tables.AUTO_INCREMENT}. {@code 1} si rien n'a encore été attribué.
+     */
+    long nextAutoIncrement(Connection connection, String table) throws SQLException;
+
+    /**
+     * Garantit que la prochaine valeur auto-incrémentée de {@code table} vaut au moins
+     * {@code next} — jamais de recul. MariaDB : {@code ALTER TABLE … AUTO_INCREMENT}, qui
+     * <strong>valide implicitement</strong> la transaction en cours : à appeler hors transaction.
+     *
+     * @param table nom de table RPGQuest (identifiant contrôlé, jamais une saisie libre)
+     */
+    void raiseAutoIncrement(Connection connection, String table, long next) throws SQLException;
+
     // ---- helpers communs ------------------------------------------------------------------
 
     static String placeholders(int count) {

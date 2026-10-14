@@ -182,6 +182,35 @@ public final class MySqlDialect implements SqlDialect {
         return name + " BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY";
     }
 
+    @Override
+    public long nextAutoIncrement(Connection connection, String table) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT AUTO_INCREMENT FROM information_schema.tables "
+                        + "WHERE table_schema = DATABASE() AND table_name = ?")) {
+            statement.setString(1, table);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return 1L;
+                }
+                long next = resultSet.getLong(1);
+                return resultSet.wasNull() ? 1L : next;
+            }
+        }
+    }
+
+    @Override
+    public void raiseAutoIncrement(Connection connection, String table, long next) throws SQLException {
+        if (!table.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            throw new SQLException("nom de table invalide : " + table);
+        }
+        if (nextAutoIncrement(connection, table) >= next) {
+            return;
+        }
+        try (java.sql.Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE " + table + " AUTO_INCREMENT = " + next);
+        }
+    }
+
     // ---- utilitaires de parsing DDL -------------------------------------------------------
 
     private static List<String> splitTopLevel(String body) {

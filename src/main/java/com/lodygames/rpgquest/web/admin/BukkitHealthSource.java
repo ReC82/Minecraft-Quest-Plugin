@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.web.admin;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.PluginConfig;
+import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.world.WorldService;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,12 +19,25 @@ public final class BukkitHealthSource implements HealthSource {
     private final RPGQuestPlugin plugin;
     private final WorldService worldService;
     private final Supplier<PluginConfig> config;
+    private final DatabaseManager database;
     private final Instant startedAt = Instant.now();
 
-    public BukkitHealthSource(RPGQuestPlugin plugin, WorldService worldService, Supplier<PluginConfig> config) {
+    public BukkitHealthSource(RPGQuestPlugin plugin, WorldService worldService, Supplier<PluginConfig> config,
+                              DatabaseManager database) {
         this.plugin = plugin;
         this.worldService = worldService;
         this.config = config;
+        this.database = database;
+    }
+
+    @Override
+    public String databaseEngine() {
+        return database.engineType().lower();
+    }
+
+    @Override
+    public int databaseSchemaVersion() {
+        return database.expectedSchemaVersion();
     }
 
     @Override

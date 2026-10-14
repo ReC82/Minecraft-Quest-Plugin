@@ -31,6 +31,20 @@ public interface HealthSource {
 
     List<WorldInfo> essentialWorlds();
 
+    /**
+     * Moteur de base de données <strong>réellement actif</strong> ({@code sqlite} / {@code mysql}),
+     * ou {@code unknown} (issue #42 : le Control Panel affiche en permanence le backend actif,
+     * distinct d'une connexion simplement testée). Jamais d'hôte, de compte ni de secret.
+     */
+    default String databaseEngine() {
+        return "unknown";
+    }
+
+    /** Version de schéma attendue par ce build (0 si inconnue). */
+    default int databaseSchemaVersion() {
+        return 0;
+    }
+
     /** Assemble la structure JSON complète renvoyée par la route health. */
     default Map<String, Object> healthPayload() {
         Map<String, Object> plugin = new LinkedHashMap<>();

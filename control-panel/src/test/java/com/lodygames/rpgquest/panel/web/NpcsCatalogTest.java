@@ -1033,6 +1033,44 @@ class NpcsCatalogTest {
     }
 
     @Test
+    void encounterTemplatesCanBeCreatedEditedToggledAndDeletedFromThePage() throws Exception {
+        start();
+        runListWithSuccess("encounter.list", ENCOUNTER_DETAILS);
+        String page = get("/npcs/encounters?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Nouveau modèle") && page.contains("value=\"encounter.template.create\""));
+        assertTrue(page.contains("value=\"encounter.template.update\"") && page.contains("Dupliquer"));
+        assertTrue(page.contains("value=\"encounter.template.toggle\"") && page.contains("Désactiver le modèle"));
+        assertTrue(page.contains("value=\"encounter.template.delete\"") && page.contains("acknowledge_sites"),
+                "le modèle a des occurrences : l'accord explicite est demandé");
+
+        String base = "_csrf=" + csrf(page) + "&agent=" + TestConfig.AGENT_ID + "&return=/npcs/encounters";
+        String form = "&id=swamp_alchemist&display_name=Alchimiste&enabled=true&weight=15"
+                + "&biomes=" + URLEncoder.encode("Swamp\nminecraft:mangrove_swamp, ", StandardCharsets.UTF_8);
+        assertEquals(303, post("/agents/action", base + "&type=encounter.template.create" + form).statusCode());
+        Map<String, String> created = pendingOfType("encounter.template.create").get(0).params();
+        assertEquals("swamp,minecraft:mangrove_swamp", created.get("biomes"), "listes normalisées en CSV");
+        assertEquals("15", created.get("weight"));
+        assertEquals("true", created.get("enabled"));
+
+        HttpResponse<String> noBiome = post("/agents/action", base
+                + "&type=encounter.template.update&id=forest_bandit&display_name=Brigand");
+        assertTrue(noBiome.headers().firstValue("Location").orElse("").contains("err="));
+        HttpResponse<String> badSkin = post("/agents/action", base + "&type=encounter.template.update"
+                + "&id=forest_bandit&display_name=Brigand&biomes=forest&skin_url=http://evil.example/s");
+        assertTrue(badSkin.headers().firstValue("Location").orElse("").contains("err="));
+
+        post("/agents/action", base + "&type=encounter.template.toggle&id=forest_bandit");
+        assertEquals("false", pendingOfType("encounter.template.toggle").get(0).params().get("enabled"));
+
+        HttpResponse<String> noConfirm = post("/agents/action", base + "&type=encounter.template.delete&id=forest_bandit");
+        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "suppression confirmée");
+        post("/agents/action", base + "&type=encounter.template.delete&id=forest_bandit&confirm=true");
+        Map<String, String> deleted = pendingOfType("encounter.template.delete").get(0).params();
+        assertEquals("forest_bandit", deleted.get("id"));
+        assertFalse(deleted.containsKey("acknowledge_sites"), "jamais d'accord implicite");
+    }
+
+    @Test
     void attachingAFreeCitizensNpcCreatesWhatIsMissingWithoutRecreatingIt() throws Exception {
         startWithContent();
         runListWithSuccess("npc.list", NPC_ONLY_GUARD);

@@ -5759,8 +5759,8 @@ public final class AgentPages {
         sb.append("</div>");
         sb.append("<p class=\"muted\">Une rencontre apparaît la première fois qu'un joueur entre dans une zone "
                 + "de biome (même découpage que les waypoints), au plus une par zone. Rien n'est généré au "
-                + "démarrage. Les modèles se modifient dans <code>plugins/RPGQuest/encounters/*.yml</code>, "
-                + "puis « Relire les modèles ».</p>");
+                + "démarrage. Un modèle créé ou modifié ici est pris en compte aussitôt pour les prochaines "
+                + "apparitions ; les PNJ déjà en place ne changent pas.</p>");
 
         Optional<Map<String, Object>> latest = latestDetails(agentId, "encounter.list");
         if (latest.isEmpty()) {
@@ -5772,7 +5772,8 @@ public final class AgentPages {
                     + "(version du plugin trop ancienne ou service arrêté).")).toString();
         }
         sb.append(encounterOverview(agentId, d));
-        sb.append(encounterTemplates(d));
+        sb.append(encounterTemplates(session, agentId, d, canWrite,
+                perms.can(session.effective(), Permission.NPC_DELETE)));
         sb.append(encounterSites(session, agentId, d, canSpawn));
         sb.append(encounterEvents(d));
         return sb.toString();
@@ -5808,13 +5809,23 @@ public final class AgentPages {
         return sb.append("</section>").toString();
     }
 
-    private String encounterTemplates(Map<String, Object> d) {
+    private String encounterTemplates(Session session, String agentId, Map<String, Object> d, boolean canWrite,
+                                      boolean canDelete) {
         StringBuilder sb = new StringBuilder("<section class=\"card\">").append(Ui.sectionTitle("npc", "Modèles"));
+        if (canWrite) {
+            sb.append("<div class=\"npc-catbar\">").append(actionToggle("enc-tpl-new", "Nouveau modèle", "plus",
+                    "btn-outline-primary")).append("</div>")
+                    .append(actionCollapse("enc-tpl-new", "<div class=\"card card-body npc-formcard\">"
+                            + encounterTemplateForm(session, agentId, Map.of(), true, "enc-tpl-new-f")
+                            + "</div>"));
+        }
         List<Object> templates = asList(d.get("templates"));
         if (templates.isEmpty()) {
             return sb.append("<p class=\"muted\">Aucun modèle chargé.</p></section>").toString();
         }
-        sb.append(Ui.tableOpen("Modèle", "PNJ", "Rôle / famille", "Biomes", "Mondes", "Poids", "Occurrences"));
+        sb.append(Ui.tableOpen("Modèle", "PNJ", "Rôle / famille", "Biomes", "Mondes", "Poids", "Occurrences",
+                "Actions"));
+        int i = 0;
         for (Object o : templates) {
             Map<String, Object> t = asMap(o);
             boolean enabled = Boolean.TRUE.equals(t.get("enabled"));
@@ -5823,6 +5834,8 @@ public final class AgentPages {
             sb.append("<tr><td>").append(MiniText.html(str(t.get("displayName")))).append("<br>")
                     .append(Ui.id(str(t.get("id"))))
                     .append(enabled ? "" : " <span class=\"badge text-bg-secondary\">désactivé</span>")
+                    .append(cleanNull(str(t.get("skinUrl"))).isEmpty() ? ""
+                            : " <span class=\"badge text-bg-info\">apparence</span>")
                     .append("</td><td>").append(Ui.id(str(t.get("npcId"))))
                     .append("</td><td>").append(Http.esc(cleanNull(str(t.get("role")))))
                     .append(cleanNull(str(t.get("family"))).isEmpty() ? "" : " · " + Http.esc(str(t.get("family"))))
@@ -5830,9 +5843,119 @@ public final class AgentPages {
                             asList(t.get("biomes")).stream().map(b -> str(b).replace("minecraft:", "")).toList())))
                     .append("</small></td><td>").append(worlds.isEmpty() ? "tous" : Http.esc(String.join(", ", worlds)))
                     .append("</td><td>").append(Http.esc(str(t.get("weight"))))
-                    .append("</td><td>").append(Http.esc(str(t.get("sites")) + max)).append("</td></tr>");
+                    .append("</td><td>").append(Http.esc(str(t.get("sites")) + max)).append("</td><td>")
+                    .append(canWrite || canDelete ? encounterTemplateActions(session, agentId, t, canWrite, canDelete, i++)
+                            : "<span class=\"muted\">lecture seule</span>")
+                    .append("</td></tr>");
         }
         return sb.append(Ui.tableClose()).append("</section>").toString();
+    }
+
+    private String encounterTemplateActions(Session session, String agentId, Map<String, Object> t, boolean canWrite,
+                                            boolean canDelete, int index) {
+        String id = str(t.get("id"));
+        String target = "enc-tpl-" + index;
+        StringBuilder inner = new StringBuilder();
+        if (canWrite) {
+            boolean enabled = Boolean.TRUE.equals(t.get("enabled"));
+            inner.append(formStart(session, agentId, "encounter.template.toggle", "/npcs/encounters", ""))
+                    .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(id)).append("\">")
+                    .append("<input type=\"hidden\" name=\"enabled\" value=\"").append(!enabled).append("\">")
+                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                    .append(enabled ? "Désactiver le modèle" : "Activer le modèle").append("</button></div></form>")
+                    .append("<p class=\"form-text\">Désactivé : plus aucune nouvelle rencontre ; celles déjà "
+                            + "apparues restent en place.</p>");
+            inner.append("<details class=\"npc-registry\"><summary>Modifier</summary>")
+                    .append(encounterTemplateForm(session, agentId, t, false, target + "-e")).append("</details>");
+            Map<String, Object> copy = new LinkedHashMap<>(t);
+            copy.put("id", "");
+            copy.put("displayName", str(t.get("displayName")) + " (copie)");
+            inner.append("<details class=\"npc-registry\"><summary>Dupliquer</summary>")
+                    .append(encounterTemplateForm(session, agentId, copy, true, target + "-d")).append("</details>");
+        }
+        if (canDelete) {
+            int sites = parseIntOr(str(t.get("sites")), 0);
+            inner.append("<details class=\"npc-registry\"><summary>Supprimer</summary>")
+                    .append(formStart(session, agentId, "encounter.template.delete", "/npcs/encounters", ""))
+                    .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(id)).append("\">")
+                    .append("<p class=\"form-text\">Le fichier est sauvegardé dans "
+                            + "<code>plugins/RPGQuest/encounter-backups/</code> avant suppression.</p>");
+            if (sites > 0) {
+                inner.append(Ui.banner("warning", sites + " occurrence(s) de ce modèle existent. Elles resteront "
+                        + "en place avec leur PNJ et leur dialogue ; retirez-les d'abord si elles doivent disparaître."))
+                        .append("<label class=\"inline confirm\"><input type=\"checkbox\" name=\"acknowledge_sites\" "
+                                + "value=\"true\" required> Laisser ces ").append(sites)
+                        .append(" occurrence(s) en place</label>");
+            }
+            inner.append(confirmBox("Supprimer le modèle " + id))
+                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">"
+                            + "Supprimer</button></div></form></details>");
+        }
+        return actionToggle(target, "Gérer", "wrench", "btn-outline-secondary")
+                + "<div class=\"collapse mt-2\" id=\"" + target + "\">" + inner + "</div>";
+    }
+
+    /**
+     * Formulaire d'un modèle de PNJ récurrent. {@code create} : identifiant saisi (vide pour un
+     * nouveau modèle ou une copie) ; sinon l'identifiant est fixe — c'est le nom du fichier.
+     * Les réglages rares (mondes, poids, plafond, apparence, description) sont repliés.
+     */
+    private String encounterTemplateForm(Session session, String agentId, Map<String, Object> t, boolean create,
+                                         String uid) {
+        String id = cleanNull(str(t.get("id")));
+        StringBuilder sb = new StringBuilder(formStart(session, agentId,
+                create ? "encounter.template.create" : "encounter.template.update", "/npcs/encounters", ""));
+        if (create) {
+            sb.append(encounterField(uid, "id", "Identifiant du modèle", id, "swamp_alchemist", 64, true,
+                    "Minuscules, chiffres, « . _ - ». Devient le nom du fichier ; ne change plus ensuite."));
+        } else {
+            sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(id)).append("\">");
+        }
+        sb.append(encounterField(uid, "display_name", "Nom affiché", cleanNull(str(t.get("displayName"))),
+                "Alchimiste des marais", 64, true, "Texte simple, au-dessus du PNJ."));
+        sb.append(encounterField(uid, "npc_id", "Identité du PNJ (npc_id)", cleanNull(str(t.get("npcId"))),
+                "vide = identifiant du modèle", 64, false,
+                "Son dialogue est rpgquest:<npc_id>, partagé par toutes ses rencontres. Une modification ne "
+                        + "s'applique qu'aux nouvelles rencontres."));
+        sb.append(encounterField(uid, "role", "Rôle", cleanNull(str(t.get("role"))), "alchimiste", 32, false, null));
+        sb.append(encounterField(uid, "family", "Famille de biomes", cleanNull(str(t.get("family"))), "swamp", 32,
+                false, "Libellé seulement : ce sont les biomes ci-dessous qui décident."));
+        String biomes = String.join("\n", asList(t.get("biomes")).stream().map(AgentPages::str).toList());
+        sb.append("<label for=\"").append(uid).append("-biomes\">Biomes éligibles</label>")
+                .append("<textarea class=\"form-control\" id=\"").append(uid)
+                .append("-biomes\" name=\"biomes\" rows=\"3\" required placeholder=\"swamp&#10;mangrove_swamp\">")
+                .append(Http.esc(biomes)).append("</textarea><p class=\"form-text\">Un par ligne (ou séparés par "
+                        + "des virgules) ; « forest » vaut « minecraft:forest ».</p>");
+        boolean enabled = !t.containsKey("enabled") || Boolean.TRUE.equals(t.get("enabled"));
+        sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" "
+                + "role=\"switch\" id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
+                .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
+                .append("-en\">Actif (de nouvelles rencontres peuvent apparaître)</label></div>");
+        sb.append("<details class=\"npc-registry\"><summary>Paramètres avancés</summary>");
+        sb.append(encounterField(uid, "description", "Description", cleanNull(str(t.get("description"))), "", 256,
+                false, "Pour les administrateurs, sans effet en jeu."));
+        sb.append(encounterField(uid, "worlds", "Mondes", String.join(", ",
+                        asList(t.get("worlds")).stream().map(AgentPages::str).toList()), "vide = tous", 256, false,
+                "Restreint aux mondes nommés, parmi ceux déjà autorisés (Hub et claims toujours exclus)."));
+        sb.append(encounterField(uid, "weight", "Poids du tirage", cleanNull(str(t.get("weight"))), "10", 4, false,
+                "1 à 1000, quand plusieurs modèles acceptent le même biome."));
+        sb.append(encounterField(uid, "max_sites", "Plafond d'occurrences", cleanNull(str(t.get("maxSites"))), "0",
+                6, false, "0 = pas de plafond propre."));
+        sb.append(encounterField(uid, "skin_url", "Apparence (lien MineSkin)", cleanNull(str(t.get("skinUrl"))),
+                "https://minesk.in/…", 120, false, null));
+        sb.append("</details>");
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm\" type=\"submit\">").append(Icons.icon("save"))
+                .append(create ? "Créer le modèle" : "Enregistrer").append("</button></div></form>");
+        return sb.toString();
+    }
+
+    private static String encounterField(String uid, String name, String label, String value, String placeholder,
+                                         int max, boolean required, String help) {
+        String fid = uid + "-" + name.replace('_', '-');
+        return "<label for=\"" + fid + "\">" + Http.esc(label) + "</label><input class=\"form-control\" type=\"text\" "
+                + "id=\"" + fid + "\" name=\"" + name + "\" maxlength=\"" + max + "\" value=\"" + Http.esc(value)
+                + "\" placeholder=\"" + Http.esc(placeholder) + "\"" + (required ? " required" : "") + ">"
+                + (help == null ? "" : "<p class=\"form-text\">" + Http.esc(help) + "</p>");
     }
 
     private String encounterSites(Session session, String agentId, Map<String, Object> d, boolean canSpawn) {

@@ -38,9 +38,13 @@ class DbTargetStoreTest {
 
         assertTrue(new SecretBox(MASTER + "x", PURPOSE).open(sealed).isEmpty(), "autre secret maître");
         assertTrue(new SecretBox(MASTER, "autre-usage").open(sealed).isEmpty(), "autre usage");
-        char[] chars = sealed.toCharArray();
-        chars[chars.length - 3] = chars[chars.length - 3] == 'A' ? 'B' : 'A';
-        assertTrue(new SecretBox(MASTER, PURPOSE).open(new String(chars)).isEmpty(), "altération détectée");
+        // Altérer un OCTET décodé, pas un caractère Base64 : le dernier caractère avant « == » porte
+        // des bits ignorés au décodage, l'échanger ne modifiait parfois rien (test instable).
+        String prefix = sealed.substring(0, sealed.indexOf(':') + 1);
+        byte[] raw = java.util.Base64.getDecoder().decode(sealed.substring(prefix.length()));
+        raw[raw.length / 2] ^= 0x01;
+        String tampered = prefix + java.util.Base64.getEncoder().encodeToString(raw);
+        assertTrue(new SecretBox(MASTER, PURPOSE).open(tampered).isEmpty(), "altération détectée");
         assertTrue(new SecretBox(MASTER, PURPOSE).open("").isEmpty());
         assertThrows(IllegalArgumentException.class, () -> new SecretBox("court", PURPOSE));
     }

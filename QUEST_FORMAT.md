@@ -27,7 +27,7 @@ steps:
         npc: woodcutter_bob
 
 rewards:
-  - type: EXPERIENCE               # EXPERIENCE | ITEM | VARIABLE | COMMAND | MONEY
+  - type: EXPERIENCE               # EXPERIENCE | ITEM | VARIABLE | COMMAND | MONEY | HEART
     amount: 30
   - type: MONEY                    # crédite le portefeuille persistant (aucun objet donné)
     amount: 100
@@ -40,6 +40,41 @@ rewards:
 variables:
   wood_collected: "0"
 ```
+
+## Récompense `HEART` (cœur supplémentaire)
+
+`HEART` augmente **durablement** la vie maximale du joueur (issue #166) :
+1 cœur = 2 PV, affichage natif, sans resource pack.
+
+```yaml
+rewards:
+  - type: HEART          # 1 cœur, propre à cette quête
+  - type: HEART
+    amount: 2            # facultatif : 1 par défaut, de 1 à 512
+    key: city:central_city   # facultatif : clé de droit partagée
+```
+
+- **Une seule fois par joueur et par clé de droit.** Sans `key`, la clé est
+  `quest:<id de la quête>` : une quête `repeatable: true` n'accorde son cœur
+  qu'au premier passage. Avec une `key` partagée (ex. une ville), toutes les
+  quêtes portant cette clé n'accordent **qu'un** cœur au total — renommer,
+  remplacer ou déplacer le PNJ ne rouvre jamais le droit.
+- **Persistant par UUID** (table `player_heart_grants`, schéma V36), écrit
+  dans la **même transaction** que la complétion : ni perte, ni doublon sur
+  double clic, retry, reconnexion, mort ou redémarrage.
+- **Recalculé, jamais cumulé** : le bonus est un modificateur unique
+  `rpgquest:quest_heart_bonus` (`ADD_NUMBER`) sur `max_health`, recalculé
+  depuis la base à chaque connexion et réappliqué à chaque réapparition. Les
+  autres sources de vie maximum (équipement, effets, autres plugins) ne sont
+  jamais touchées ; la valeur de base reste 20.
+- **Pas une guérison** : seuls les PV nouvellement ajoutés sont remplis.
+- **Plafond gameplay** : `progression.max-bonus-hearts` dans `config.yml`
+  (`0` = aucun, défaut). Un droit gagné au-delà reste acquis et s'active si le
+  plafond est relevé. Plafond technique : `attribute.maxHealth.max` de
+  `spigot.yml` (1024 PV par défaut) — ce n'est pas une garantie de lisibilité
+  du HUD au-delà de quelques rangées de cœurs.
+- **Reset joueur** (`/rpgadmin player reset…`) : les cœurs **sont conservés**,
+  comme le portefeuille — un reset n'est jamais une façon de regagner un droit.
 
 ## Récompense `MONEY`
 

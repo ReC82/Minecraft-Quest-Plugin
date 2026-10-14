@@ -5921,3 +5921,28 @@ Claims ; idéalement une quête active à objectif `BREAK_BLOCK` (ex. pierre). *
 4.  Référence absente (copie de test, jamais sur une quête de joueur) : une quête de test livrant
     à un PNJ inexistant → publication refusée, fiche « Références introuvables » avec le nom exact
     du PNJ, aucun « Synchronisé ».
+
+### TC-311 — Récompense « Cœur supplémentaire » : gain, idempotence, persistance (issue #166, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #166 déployé sur DEV (schéma V36) ; quêtes `docs/manual-tests/rewards/test_heart_*.yml`
+publiées ; un joueur de test à 10 cœurs, sans autre bonus de vie. **Durée** : 15 minutes.
+
+1.  Accepter « [TEST] Cœur, quête répétable », casser 1 terre → message « +1 cœur(s) — vie
+    maximale : 11 cœurs » ; le HUD montre **11 cœurs** (une rangée + 1), le 11e plein, la barre
+    n'est **pas** remplie si le joueur était blessé (seuls 2 PV ajoutés).
+2.  Reprendre la même quête et la refinir → « Tu as déjà reçu le cœur… », toujours 11 cœurs.
+3.  « [TEST] Cœur de ville (A) » → 12 cœurs ; « [TEST] Cœur de ville (B) » → « déjà reçu », 12.
+4.  Se déconnecter / reconnecter → 12 cœurs, ni 13 ni 10. Mourir et réapparaître → 12 cœurs
+    (la vie remonte au nouveau maximum). Redémarrer DEV → 12 cœurs.
+5.  Un second joueur : toujours 10 cœurs.
+6.  Équiper un objet ou un effet qui augmente la vie maximum (ex. Absorption ne compte pas ;
+    utiliser un objet à attribut `max_health`) → il s'ajoute aux 12 cœurs, rien n'est écrasé.
+7.  Panel → éditeur de quête → ajouter « Cœur supplémentaire », clé vide → enregistré ;
+    nombre 0 ou 513 → refusé ; clé « Central City » → refusée ; 6 → avertissement seulement.
+8.  Plafond : `progression.max-bonus-hearts: 1` puis recharger la config, finir une quête cœur
+    → message « plafond … atteint », vie inchangée ; repasser à 0 + reconnexion → cœur actif.
+
+**Non vérifiable par les tests automatisés** : rendu réel du HUD, réapparition réelle du serveur
+Paper (le modificateur est réappliqué après `PlayerPostRespawnEvent`), affichage au-delà de 2
+rangées de cœurs.
+

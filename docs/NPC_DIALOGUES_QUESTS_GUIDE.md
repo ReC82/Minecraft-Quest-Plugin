@@ -396,6 +396,7 @@ requis pour terminer l'étape) ; une quête peut avoir plusieurs étapes
 | `ITEM` | `material`, `amount` | Objet vanilla donné (au sol si inventaire plein). |
 | `VARIABLE` | `key`, `value` | Écrit une variable joueur persistante. |
 | `COMMAND` | `command` | Commande console exécutée à la remise, `%player%` substitué. **Aucune liste blanche** ici (contrairement à `RUN_SAFE_COMMAND` des dialogues) — à utiliser avec prudence. |
+| `HEART` | `amount` (facultatif, 1), `key` (facultative) | Ajoute durablement des **cœurs de vie maximum** (2 PV par cœur). **Une fois par joueur et par clé de droit** (par défaut : la quête). Une clé partagée (`city:central_city`) n'accorde qu'un cœur pour toutes les quêtes qui la portent. Conservé après mort, reconnexion, redémarrage et reset. |
 | `MONEY` | `amount` | Crédite le **portefeuille persistant** du joueur (même solde que `/money`, les marchands et le Control Panel). **Aucun objet donné** : la monnaie est un solde, et aucun objet d'inventaire n'est reconnu comme de l'argent. Crédité **au plus une fois par complétion** ; une quête `repeatable` se paie à chaque reprise. Le message de gain arrive **après** confirmation de la base, un court instant après le résumé. |
 
 **Note indépendante du système de récompenses :** terminer *n'importe

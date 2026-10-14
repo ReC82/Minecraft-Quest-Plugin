@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 37;
+    public static final int CURRENT_VERSION = 38;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -77,7 +77,9 @@ public final class SchemaMigrator {
             new SchemaMigration(36, "player_heart_grants (cœurs de vie maximum, issue #166)",
                     SchemaMigrator::applyV36),
             new SchemaMigration(37, "villes : PNJ central optionnel + point d'arrivée distinct (issue #322)",
-                    SchemaMigrator::applyV37));
+                    SchemaMigrator::applyV37),
+            new SchemaMigration(38, "npc_spots, npc_spot_ids (emplacements de PNJ, issue #381)",
+                    SchemaMigrator::applyV38));
 
     private SchemaMigrator() {
     }
@@ -1427,6 +1429,47 @@ public final class SchemaMigrator {
                             + column[0] + " " + column[1]));
                 }
             }
+        }
+    }
+
+    private static void applyV38(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #381 — emplacements de PNJ réservés en jeu. Une ligne = une position nommée, exacte
+        // (REAL : un PNJ se tient à une position flottante, comme une destination de voyage), avec
+        // son orientation. « npc_id » est l'identité LOGIQUE du PNJ placé là (NULL = libre) : jamais
+        // un nom affiché, jamais un identifiant Citizens, qui se relit depuis npc_citizens_bindings.
+        // Libre = chaîne vide plutôt que NULL : la colonne est indexée, et MariaDB n'indexe un texte
+        // que sous sa forme VARCHAR(191), réservée aux colonnes NOT NULL par MySqlDialect.
+        // Aucune clé étrangère vers la définition : une définition vit dans un fichier YAML, pas en
+        // base, et un emplacement doit survivre à sa suppression pour être réaffecté.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS npc_spots (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        world TEXT NOT NULL,
+                        x REAL NOT NULL,
+                        y REAL NOT NULL,
+                        z REAL NOT NULL,
+                        yaw REAL NOT NULL,
+                        pitch REAL NOT NULL,
+                        radius INTEGER NOT NULL DEFAULT 2,
+                        npc_id TEXT NOT NULL DEFAULT '',
+                        created_by TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """));
+            // Un PNJ n'occupe qu'un emplacement à la fois ; l'index sert la recherche « où est ce
+            // PNJ ? » et la libération de l'ancien emplacement lors d'un déplacement.
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_npc_spots_npc ON npc_spots (npc_id)"));
+            // Allocateur « npcspot_<n> », jamais réutilisé — même procédé que building_site_ids (V28).
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS npc_spot_ids (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL
+                    )
+                    """));
         }
     }
 }

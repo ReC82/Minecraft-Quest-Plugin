@@ -116,6 +116,7 @@ import io.papermc.paper.ban.BanListType;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -920,6 +921,327 @@ public final class BukkitAgentActions implements AgentActions {
         return CompletableFuture.supplyAsync(() -> {
             var saved = gameSettings.update(changes, actor);
             return settingsView(saved.ok(), saved.message(), saved.settings());
+        });
+    }
+
+    // ---- Emplacements de PNJ (actions npc.spot.*, issue #381) ----------------------------------
+
+    private com.lodygames.rpgquest.npc.spot.NpcSpotService npcSpots;
+    private com.lodygames.rpgquest.claim.ClaimService spotClaims;
+
+    /** Facultatif : sans service, toutes les actions npc.spot.* répondent « indisponible ». */
+    public void setNpcSpots(com.lodygames.rpgquest.npc.spot.NpcSpotService service,
+                            com.lodygames.rpgquest.claim.ClaimService claims) {
+        this.npcSpots = service;
+        this.spotClaims = claims;
+    }
+
+    @Override
+    public CompletableFuture<NpcSpotCatalogView> npcSpots() {
+        if (npcSpots == null) {
+            return AgentActions.super.npcSpots();
+        }
+        return npcBindingRepository.loadAll().thenCompose(bindings -> onMain(() -> {
+            Map<String, UUID> uuidByNpc = new HashMap<>();
+            bindings.forEach(b -> uuidByNpc.putIfAbsent(b.npcId(), b.citizensUuid()));
+            List<CitizensNpc> roster = npcIdentityService.citizensAvailable()
+                    ? npcIdentityService.citizensRoster() : List.of();
+            Map<UUID, CitizensNpc> byUuid = new HashMap<>();
+            roster.forEach(n -> byUuid.put(n.uuid(), n));
+            Set<String> allowed = allowedSpawnWorlds.get();
+            List<NpcSpotSummary> rows = new ArrayList<>();
+            for (com.lodygames.rpgquest.npc.spot.NpcSpot spot : npcSpots.all()) {
+                rows.add(spotSummary(spot, uuidByNpc, byUuid, roster, allowed));
+            }
+            Map<String, String> placeable = new java.util.TreeMap<>();
+            Set<String> recurring = recurringNpcIds();
+            for (NpcDefinition definition : npcEngine.definitions()) {
+                if (!recurring.contains(definition.id())) {
+                    placeable.put(definition.id(), definition.displayName());
+                }
+            }
+            List<String> worlds = npcSpots.all().stream().map(com.lodygames.rpgquest.npc.spot.NpcSpot::world)
+                    .distinct().sorted().toList();
+            return done(new NpcSpotCatalogView(true, List.copyOf(rows), worlds, placeable,
+                    System.currentTimeMillis()));
+        }));
+    }
+
+    /** Thread principal : lit le monde et le registre Citizens. */
+    private NpcSpotSummary spotSummary(com.lodygames.rpgquest.npc.spot.NpcSpot spot, Map<String, UUID> uuidByNpc,
+                                       Map<UUID, CitizensNpc> byUuid, List<CitizensNpc> roster,
+                                       Set<String> allowed) {
+        boolean worldUsable = plugin.getServer().getWorld(spot.world()) != null
+                && allowed.stream().anyMatch(w -> w.equalsIgnoreCase(spot.world()));
+        CitizensNpc assigned = spot.free() ? null
+                : Optional.ofNullable(uuidByNpc.get(spot.npcId())).map(byUuid::get).orElse(null);
+        com.lodygames.rpgquest.npc.spot.NpcSpotState.Position position = assigned != null && assigned.hasLocation()
+                ? new com.lodygames.rpgquest.npc.spot.NpcSpotState.Position(assigned.world(), assigned.x(),
+                assigned.y(), assigned.z())
+                : null;
+        boolean otherNearby = roster.stream()
+                .filter(n -> assigned == null || !n.uuid().equals(assigned.uuid()))
+                .anyMatch(n -> standsOn(n, spot));
+        boolean definitionKnown = spot.free() || npcEngine.find(spot.npcId()).isPresent();
+        com.lodygames.rpgquest.npc.spot.NpcSpotState state = com.lodygames.rpgquest.npc.spot.NpcSpotState.classify(
+                spot, worldUsable, definitionKnown, position, otherNearby);
+        String npcName = spot.free() ? null
+                : npcEngine.find(spot.npcId()).map(NpcDefinition::displayName).orElse(null);
+        return new NpcSpotSummary(spot.id(), spot.name(), spot.world(), spot.x(), spot.y(), spot.z(), spot.yaw(),
+                spot.pitch(), spot.radius(), spot.npcId(), npcName, assigned == null ? -1 : assigned.numericId(),
+                state.status().name(), state.message(), spot.createdBy(), spot.createdAt().toString(),
+                spot.updatedAt().toString(), spotNotes(spot));
+    }
+
+    /** Un PNJ (Citizens) se tient-il dans le rayon de cet emplacement ? */
+    private static boolean standsOn(CitizensNpc npc, com.lodygames.rpgquest.npc.spot.NpcSpot spot) {
+        return npc.hasLocation() && spot.world().equals(npc.world())
+                && spot.distanceTo(npc.x(), npc.y(), npc.z()) <= 1.0;
+    }
+
+    /** Dépendances à signaler : jamais bloquantes, toujours dites. */
+    private List<String> spotNotes(com.lodygames.rpgquest.npc.spot.NpcSpot spot) {
+        List<String> notes = new ArrayList<>();
+        if (spotClaims != null) {
+            spotClaims.claimAt(spot.world(), (int) Math.floor(spot.x()), (int) Math.floor(spot.y()),
+                    (int) Math.floor(spot.z())).ifPresent(claim -> notes.add("Dans la parcelle « " + claim.id()
+                    + " » : aucun PNJ n'y sera placé."));
+        }
+        if (!spot.free() && cityRegistry != null) {
+            cityRegistry.all().stream()
+                    .filter(city -> spot.npcId().equals(city.centralNpcId()))
+                    .forEach(city -> notes.add("PNJ central de la ville « " + city.name()
+                            + " » : déplacer le PNJ ne déplace ni le centre ni l'arrivée de la ville."));
+        }
+        return List.copyOf(notes);
+    }
+
+    /** Identifiants logiques des PNJ récurrents (#13) : leur position appartient à leur occurrence. */
+    private Set<String> recurringNpcIds() {
+        if (encounters == null) {
+            return Set.of();
+        }
+        Set<String> ids = new HashSet<>();
+        encounters.sites().forEach(site -> ids.add(site.npcId()));
+        return ids;
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcSpotRename(String id, String name) {
+        if (npcSpots == null) {
+            return AgentActions.super.npcSpotRename(id, name);
+        }
+        return npcSpots.rename(id, name).thenApply(updated -> updated
+                .map(spot -> MutationResult.of(true, "RENAMED", "Emplacement renommé « " + spot.name() + " »."))
+                .orElseGet(() -> MutationResult.of(false, "SPOT_NOT_FOUND", "Emplacement introuvable.")));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcSpotOrient(String id, float yaw, float pitch) {
+        if (npcSpots == null) {
+            return AgentActions.super.npcSpotOrient(id, yaw, pitch);
+        }
+        return npcSpots.orient(id, yaw, pitch).thenCompose(updated -> {
+            if (updated.isEmpty()) {
+                return done(MutationResult.of(false, "SPOT_NOT_FOUND", "Emplacement introuvable."));
+            }
+            com.lodygames.rpgquest.npc.spot.NpcSpot spot = updated.get();
+            String saved = "Orientation enregistrée (regard " + fmt(spot.yaw()) + "°).";
+            if (spot.free()) {
+                return done(MutationResult.of(true, "ORIENTED", saved));
+            }
+            // Un PNJ occupe l'emplacement : il se tourne aussi, par le même chemin vérifié qu'un placement.
+            return citizensRelocate(spot.npcId(), spot.world(), spot.x(), spot.y(), spot.z(), spot.yaw(), spot.pitch())
+                    .thenApply(moved -> moved.ok()
+                            ? new MutationResult(true, "ORIENTED", saved + " « " + spot.npcId() + " » s'est tourné.",
+                            moved.effects())
+                            : MutationResult.of(true, "ORIENTED_NPC_UNCHANGED", saved + " Le PNJ n'a pas pu être "
+                            + "tourné : " + moved.message()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcSpotRelease(String id) {
+        if (npcSpots == null) {
+            return AgentActions.super.npcSpotRelease(id);
+        }
+        String previous = npcSpots.find(id).map(com.lodygames.rpgquest.npc.spot.NpcSpot::npcId).orElse(null);
+        return npcSpots.release(id).thenApply(outcome -> switch (outcome) {
+            case RELEASED -> {
+                plugin.getSLF4JLogger().info("[npc-spot] {} libéré (PNJ {} laissé en place).", id, previous);
+                yield MutationResult.of(true, "RELEASED", "Emplacement libéré. Le PNJ « " + previous
+                        + " » n'a pas bougé.");
+            }
+            case ALREADY_FREE -> MutationResult.of(true, "ALREADY_FREE", "L'emplacement était déjà libre.");
+            case ABSENT -> MutationResult.of(false, "SPOT_NOT_FOUND", "Emplacement introuvable.");
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcSpotDelete(String id) {
+        if (npcSpots == null) {
+            return AgentActions.super.npcSpotDelete(id);
+        }
+        return npcSpots.delete(id).thenApply(outcome -> switch (outcome) {
+            case DELETED -> {
+                plugin.getSLF4JLogger().info("[npc-spot] {} supprimé.", id);
+                yield MutationResult.of(true, "DELETED", "Emplacement supprimé. Aucun PNJ n'a été touché.");
+            }
+            case ABSENT -> MutationResult.of(true, "ABSENT", "Emplacement déjà absent : rien à faire.");
+            case OCCUPIED -> MutationResult.of(false, "SPOT_OCCUPIED",
+                    "Un PNJ occupe cet emplacement : libérez-le d'abord. Rien n'a été supprimé.");
+        });
+    }
+
+    /**
+     * Place un PNJ sur un emplacement. Ordre : contrôles, <strong>réservation</strong> (transaction
+     * base), geste physique (déplacement vérifié de la MÊME entité Citizens, ou apparition si le PNJ
+     * n'existe pas encore en jeu), puis <strong>compensation</strong> de la réservation si le geste
+     * échoue — l'ancien emplacement est rendu au PNJ, qui n'a pas bougé.
+     */
+    @Override
+    public CompletableFuture<MutationResult> npcSpotPlace(String spotId, String npcId) {
+        if (npcSpots == null) {
+            return AgentActions.super.npcSpotPlace(spotId, npcId);
+        }
+        Optional<com.lodygames.rpgquest.npc.spot.NpcSpot> found = npcSpots.find(spotId);
+        if (found.isEmpty()) {
+            return done(MutationResult.of(false, "SPOT_NOT_FOUND", "Emplacement introuvable."));
+        }
+        com.lodygames.rpgquest.npc.spot.NpcSpot spot = found.get();
+        if (npcEngine.find(npcId).isEmpty()) {
+            return done(MutationResult.of(false, "NPC_NOT_FOUND", "Aucun PNJ « " + safe(npcId) + " »."));
+        }
+        if (recurringNpcIds().contains(npcId)) {
+            return done(MutationResult.of(false, "RECURRING_NPC", "« " + npcId + " » est un PNJ récurrent : sa "
+                    + "position appartient à son occurrence (PNJ > PNJ récurrents). Rien n'a bougé."));
+        }
+        if (!spot.free() && !npcId.equals(spot.npcId())) {
+            return done(MutationResult.of(false, "SPOT_OCCUPIED", "Emplacement occupé par « " + spot.npcId()
+                    + " ». Libérez-le ou choisissez un emplacement libre. Rien n'a bougé."));
+        }
+        if (spotClaims != null && spotClaims.claimAt(spot.world(), (int) Math.floor(spot.x()),
+                (int) Math.floor(spot.y()), (int) Math.floor(spot.z())).isPresent()) {
+            return done(MutationResult.of(false, "SPOT_IN_CLAIM", "Cet emplacement est dans la parcelle d'un "
+                    + "joueur : aucun PNJ n'y est placé. Rien n'a bougé."));
+        }
+        Optional<com.lodygames.rpgquest.npc.spot.NpcSpot> previous = npcSpots.assignedTo(npcId)
+                .filter(other -> !other.id().equals(spot.id()));
+        return citizensUuidOf(npcId).thenCompose(uuid -> onMain(() -> {
+            Optional<CitizensNpc> blocker = npcIdentityService.citizensAvailable()
+                    ? npcIdentityService.citizensRoster().stream()
+                    .filter(n -> uuid.isEmpty() || !n.uuid().equals(uuid.get()))
+                    .filter(n -> standsOn(n, spot)).findFirst()
+                    : Optional.empty();
+            if (blocker.isPresent()) {
+                return done(MutationResult.of(false, "SPOT_BLOCKED", "Un autre PNJ (Citizens #"
+                        + blocker.get().numericId() + ", « " + blocker.get().name() + " ») se tient déjà ici. "
+                        + "Rien n'a bougé."));
+            }
+            return npcSpots.assign(spot.id(), npcId).thenCompose(assigned -> switch (assigned) {
+                case ABSENT -> done(MutationResult.of(false, "SPOT_NOT_FOUND", "Emplacement introuvable."));
+                case OCCUPIED -> done(MutationResult.of(false, "SPOT_OCCUPIED",
+                        "Emplacement pris entre-temps par un autre PNJ. Rien n'a bougé."));
+                case ASSIGNED, ALREADY_ASSIGNED -> placePhysically(spot, npcId, uuid.isPresent())
+                        .thenCompose(result -> result.ok()
+                                ? done(placed(result, spot, npcId, previous))
+                                : compensate(spot, npcId, previous, assigned).thenApply(note ->
+                                new MutationResult(false, result.code(), result.message() + note, result.effects())));
+            });
+        }));
+    }
+
+    /** Déplace la même entité si elle existe en jeu, la fait apparaître sinon. */
+    private CompletableFuture<MutationResult> placePhysically(com.lodygames.rpgquest.npc.spot.NpcSpot spot,
+                                                              String npcId, boolean bound) {
+        if (bound) {
+            return citizensRelocate(npcId, spot.world(), spot.x(), spot.y(), spot.z(), spot.yaw(), spot.pitch());
+        }
+        return citizensCreate(npcId, spot.world(), spot.x(), spot.y(), spot.z(), spot.yaw(), spot.pitch())
+                .thenApply(created -> new MutationResult(created.ok(), created.ok() ? "SPAWNED" : created.code(),
+                        created.message(), created.effects()));
+    }
+
+    private MutationResult placed(MutationResult physical, com.lodygames.rpgquest.npc.spot.NpcSpot spot,
+                                  String npcId, Optional<com.lodygames.rpgquest.npc.spot.NpcSpot> previous) {
+        List<String> effects = new ArrayList<>(physical.effects());
+        effects.add("spot:" + spot.id() + "=" + npcId);
+        previous.ifPresent(p -> effects.add("spot:" + p.id() + "=libre"));
+        String from = previous.map(p -> " (emplacement « " + p.name() + " » libéré)").orElse("");
+        plugin.getSLF4JLogger().info("[npc-spot] {} placé sur {} ({}){}.", npcId, spot.id(), physical.code(),
+                previous.map(p -> ", " + p.id() + " libéré").orElse(""));
+        String notes = spotNotes(spot.withNpc(npcId, java.time.Instant.now())).stream()
+                .map(n -> " " + n).collect(java.util.stream.Collectors.joining());
+        return new MutationResult(true, "SPAWNED".equals(physical.code()) ? "PLACED_SPAWNED" : "PLACED",
+                "« " + npcId + " » est sur « " + spot.name() + " »" + from + ". " + physical.message() + notes,
+                List.copyOf(effects));
+    }
+
+    /** Rend la réservation telle qu'elle était avant la tentative. Renvoie une phrase à ajouter au message. */
+    private CompletableFuture<String> compensate(com.lodygames.rpgquest.npc.spot.NpcSpot spot, String npcId,
+                                                 Optional<com.lodygames.rpgquest.npc.spot.NpcSpot> previous,
+                                                 com.lodygames.rpgquest.npc.spot.NpcSpotService.AssignOutcome assigned) {
+        if (assigned == com.lodygames.rpgquest.npc.spot.NpcSpotService.AssignOutcome.ALREADY_ASSIGNED) {
+            return done("");
+        }
+        CompletableFuture<?> undo = previous.isPresent()
+                ? npcSpots.assign(previous.get().id(), npcId)
+                : npcSpots.release(spot.id());
+        return undo.handle((ignored, error) -> {
+            if (error != null) {
+                plugin.getSLF4JLogger().error("[npc-spot] compensation impossible pour {} sur {}", npcId, spot.id(), error);
+                return " La réservation n'a pas pu être annulée : vérifiez la page Emplacements.";
+            }
+            return " Réservation annulée.";
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcSpotCapture(String npcId, String name, String actor) {
+        if (npcSpots == null) {
+            return AgentActions.super.npcSpotCapture(npcId, name, actor);
+        }
+        if (npcEngine.find(npcId).isEmpty()) {
+            return done(MutationResult.of(false, "NPC_NOT_FOUND", "Aucun PNJ « " + safe(npcId) + " »."));
+        }
+        if (recurringNpcIds().contains(npcId)) {
+            return done(MutationResult.of(false, "RECURRING_NPC", "« " + npcId + " » est un PNJ récurrent : sa "
+                    + "position appartient à son occurrence."));
+        }
+        return citizensUuidOf(npcId).thenCompose(uuid -> {
+            if (uuid.isEmpty()) {
+                return done(MutationResult.of(false, "NO_CITIZENS_BINDING", "Ce PNJ n'existe pas encore dans le monde."));
+            }
+            return onMain(() -> {
+                Optional<CitizensNpc> live = npcIdentityService.citizensRoster().stream()
+                        .filter(n -> n.uuid().equals(uuid.get())).filter(CitizensNpc::hasLocation).findFirst();
+                if (live.isEmpty()) {
+                    return done(MutationResult.of(false, "NO_LOCATION",
+                            "Citizens ne connaît pas la position de ce PNJ : rien n'a été réservé."));
+                }
+                CitizensNpc npc = live.get();
+                String label = name == null || name.isBlank() ? npcEngine.find(npcId)
+                        .map(NpcDefinition::displayName).orElse(npcId) : name;
+                return npcSpots.create(npc.world(), npc.x(), npc.y(), npc.z(), npc.yaw(), npc.pitch(), label,
+                        actor, npcId).thenCompose(created -> switch (created.outcome()) {
+                    case INVALID -> done(MutationResult.of(false, "INVALID", created.error()));
+                    case CREATED -> {
+                        plugin.getSLF4JLogger().info("[npc-spot] {} capturé depuis la position de {}.",
+                                created.spot().id(), npcId);
+                        yield done(MutationResult.of(true, "CAPTURED", "Emplacement « " + created.spot().name()
+                                + " » (" + created.spot().id() + ") réservé à la position de « " + npcId
+                                + " », qui l'occupe."));
+                    }
+                    case ALREADY_THERE -> npcSpots.assign(created.spot().id(), npcId).thenApply(a -> switch (a) {
+                        case ASSIGNED, ALREADY_ASSIGNED -> MutationResult.of(true, "ALREADY_THERE",
+                                "Un emplacement existait déjà ici (« " + created.spot().name() + " ») : « " + npcId
+                                        + " » en est l'occupant.");
+                        case OCCUPIED -> MutationResult.of(false, "SPOT_OCCUPIED", "Un emplacement existe déjà ici, "
+                                + "occupé par « " + created.spot().npcId() + " ».");
+                        case ABSENT -> MutationResult.of(false, "SPOT_NOT_FOUND", "Emplacement introuvable.");
+                    });
+                });
+            });
         });
     }
 

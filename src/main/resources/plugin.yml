@@ -94,12 +94,13 @@ permissions:
     description: "Entrer dans /rpgadmin, SANS autoriser aucune branche (issue #200). Chaque sous-commande exige en plus son propre nœud, ou l'ombrelle rpgquest.admin.world. Un compte ne portant que ce nœud peut ouvrir la commande et n'exécuter aucune opération."
     default: false
   rpgquest.admin.npc:
-    description: "Parent de la branche PNJ de /rpgadmin (issue #200) : autorise les trois sous-actions ci-dessous. Ne donne AUCUN droit de construction, aucun bypass de protection, et aucune autre branche de /rpgadmin."
+    description: "Parent de la branche PNJ de /rpgadmin (issue #200) : autorise les quatre sous-actions ci-dessous (tag, untag, info et, depuis #381, spot). Ne donne AUCUN droit de construction, aucun bypass de protection, et aucune autre branche de /rpgadmin."
     default: false
     children:
       rpgquest.admin.npc.tag: true
       rpgquest.admin.npc.untag: true
       rpgquest.admin.npc.info: true
+      rpgquest.admin.npc.spot: true
   rpgquest.admin.npc.tag:
     description: "/rpgadmin npc tag — marque l'entité visée d'un identifiant RPGQuest stable. ATTENTION : ceci ne crée AUCUN PNJ Citizens ; la création passe par le Control Panel (npc.citizens.create) ou par les commandes de Citizens, qui ont leurs propres permissions."
     default: false
@@ -108,6 +109,9 @@ permissions:
     default: false
   rpgquest.admin.npc.info:
     description: "/rpgadmin npc info — lecture seule du marquage de l'entité visée."
+    default: false
+  rpgquest.admin.npc.spot:
+    description: "/rpgadmin npc spot — réserve à votre position un emplacement de PNJ (issue #381) et liste les emplacements. Ne crée ni ne déplace AUCUN PNJ : le placement se fait depuis PlugAdmin > PNJ > Emplacements."
     default: false
   rpgquest.admin.buildsite:
     description: "Emplacements de construction (issue #213) : obtenir l'outil, créer un emplacement d'un clic droit, et lister les emplacements en jeu. Nœud DÉDIÉ, sans rapport avec WorldEdit — l'outil ne sélectionne aucune région et ne modifie aucun bloc. N'accorde aucun droit de construction, aucun bypass de protection et aucune autre branche de /rpgadmin. L'ombrelle rpgquest.admin.world l'implique."

@@ -740,6 +740,52 @@ class AgentActionExecutorTest {
                 "l'identifiant est normalisé avant d'atteindre le service");
     }
 
+    /** #381 : un emplacement de PNJ n'est désigné que par la forme exacte attribuée par le serveur. */
+    @Test
+    void npcSpotActionsRejectAnythingButARealSpotId() {
+        for (String type : new String[] {"npc.spot.rename", "npc.spot.orient", "npc.spot.release",
+                "npc.spot.delete", "npc.spot.place"}) {
+            Map<String, String> base = Map.of("name", "n", "yaw", "90", "npc_id", "guard");
+            assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("x", type, base)).status(), type + " sans id");
+            for (String forged : new String[] {"../etc/passwd", "buildsite_0001", "npcspot_x"}) {
+                Map<String, String> params = new java.util.HashMap<>(base);
+                params.put("spot_id", forged);
+                assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("x", type, params)).status(),
+                        type + " id " + forged);
+            }
+        }
+    }
+
+    @Test
+    void npcSpotPlaceAndOrientDelegateWithNormalisedValues() {
+        assertEquals(AgentActionOutcome.SUCCESS, run(new AgentAction("p", "npc.spot.place",
+                Map.of("spot_id", "NPCSPOT_0002", "npc_id", "guard"))).status());
+        assertEquals("place npcspot_0002 guard", actions.lastNpcSpotCall);
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("p2", "npc.spot.place",
+                Map.of("spot_id", "npcspot_0002", "npc_id", "Bad Id"))).status());
+        assertEquals(AgentActionOutcome.SUCCESS, run(new AgentAction("o", "npc.spot.orient",
+                Map.of("spot_id", "npcspot_0002", "yaw", "-45"))).status());
+        assertEquals("orient npcspot_0002 -45.0 0.0", actions.lastNpcSpotCall);
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("o2", "npc.spot.orient",
+                Map.of("spot_id", "npcspot_0002", "yaw", "NaN"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("o3", "npc.spot.orient",
+                Map.of("spot_id", "npcspot_0002", "yaw", "10", "pitch", "120"))).status());
+    }
+
+    @Test
+    void npcSpotListSerialisesEverythingThePanelReads() {
+        AgentActionOutcome out = run(new AgentAction("l", "npc.spot.list", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, out.status());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = ((List<Map<String, Object>>) out.details().get("spots")).get(0);
+        assertEquals("npcspot_0001", row.get("id"));
+        assertEquals("guard", row.get("npcId"));
+        assertEquals("OCCUPIED", row.get("status"));
+        assertEquals(90.0, row.get("yaw"));
+        assertEquals(7, row.get("citizensId"));
+        assertEquals(Map.of("guard", "Garde"), out.details().get("npcs"));
+    }
+
     /** #284 : retrait d'un bâtiment — identifiant strict, confirmation exigée, refus du service relayé. */
     @Test
     void buildingDefinitionRetireNeedsAStrictIdAndAnExplicitConfirmation() {
@@ -2021,6 +2067,34 @@ class AgentActionExecutorTest {
         public CompletableFuture<MutationResult> buildingSiteDelete(String id) {
             lastBuildSiteDeletedId = id;
             return mutation("delete " + id);
+        }
+
+        String lastNpcSpotCall;
+
+        @Override
+        public CompletableFuture<MutationResult> npcSpotPlace(String spotId, String npcId) {
+            lastNpcSpotCall = "place " + spotId + " " + npcId;
+            return mutation(lastNpcSpotCall);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> npcSpotOrient(String id, float yaw, float pitch) {
+            lastNpcSpotCall = "orient " + id + " " + yaw + " " + pitch;
+            return mutation(lastNpcSpotCall);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> npcSpotDelete(String id) {
+            lastNpcSpotCall = "delete " + id;
+            return mutation(lastNpcSpotCall);
+        }
+
+        @Override
+        public CompletableFuture<NpcSpotCatalogView> npcSpots() {
+            return CompletableFuture.completedFuture(new NpcSpotCatalogView(true, List.of(new NpcSpotSummary(
+                    "npcspot_0001", "Place", "world", 1.5, 64, 2.5, 90f, 0f, 2, "guard", "Garde", 7,
+                    "OCCUPIED", "Occupé.", "Lody", "t", "t", List.of())), List.of("world"),
+                    Map.of("guard", "Garde"), 0L));
         }
 
         @Override

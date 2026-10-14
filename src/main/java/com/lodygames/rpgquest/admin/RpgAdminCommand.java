@@ -48,6 +48,7 @@ import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -138,6 +139,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private com.lodygames.rpgquest.city.CityRegistry cities;
     private com.lodygames.rpgquest.city.PendingCityRegistry cityPendings;
+    private com.lodygames.rpgquest.npc.spot.NpcSpotService npcSpots;
+
+    /** Issue #381 — branché au démarrage : les emplacements de PNJ. */
+    public void setNpcSpots(com.lodygames.rpgquest.npc.spot.NpcSpotService service) {
+        this.npcSpots = service;
+    }
 
     /** Issue #178 — branché au démarrage, à côté du registre de villes. */
     public void setCities(com.lodygames.rpgquest.city.CityRegistry cities,
@@ -150,7 +157,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             List.of("list", "reload", "generate");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
     private static final List<String> MOB_SUBCOMMANDS = List.of("spawn", "list", "inspect", "reload", "metrics");
-    private static final List<String> NPC_SUBCOMMANDS = List.of("tag", "untag", "info");
+    private static final List<String> NPC_SUBCOMMANDS = List.of("tag", "untag", "info", "spot");
+    private static final List<String> NPC_SPOT_SUBCOMMANDS = List.of("mark", "list");
     private static final List<String> SPAWN_SUBCOMMANDS = List.of("set", "tp");
     private static final List<String> WORLD_SUBCOMMANDS = List.of("create", "tp", "list");
     private static final List<String> WORLD_PORTAL_SUBCOMMANDS =
@@ -923,6 +931,11 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     handleNpcInfo(player);
                 }
             }
+            case "spot" -> {
+                if (requireNpcAction(player, RpgPermissions.ADMIN_NPC_SPOT)) {
+                    handleNpcSpot(player, args);
+                }
+            }
             default -> sendNpcUsage(player);
         }
     }
@@ -1033,6 +1046,97 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 "<yellow>/rpgadmin npc tag [id]</yellow> <gray>- identifie l'entité visée (id auto-généré si omis)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc untag</yellow> <gray>- retire l'identifiant de l'entité visée</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc info</yellow> <gray>- affiche l'identifiant de l'entité visée</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc spot mark [nom]</yellow> <gray>- réserve un emplacement "
+                + "de PNJ à votre position et orientation</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc spot list</yellow> <gray>- liste les emplacements de PNJ</gray>"));
+    }
+
+    // ---- Emplacements de PNJ (issue #381) ------------------------------------------------------
+
+    /**
+     * {@code /rpgadmin npc spot mark|list}. La réservation se fait à la position <strong>exacte</strong>
+     * de l'administrateur (pieds + orientation) : aucun outil, aucun clic, donc rien à disputer à la
+     * hache WorldEdit ni à l'outil d'emplacement de construction. Ne crée ni ne déplace aucun PNJ.
+     */
+    private void handleNpcSpot(Player player, String[] args) {
+        if (npcSpots == null) {
+            player.sendMessage(MM.deserialize("<red>Emplacements de PNJ indisponibles sur ce serveur.</red>"));
+            return;
+        }
+        String sub = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "";
+        switch (sub) {
+            case "mark" -> handleNpcSpotMark(player, args);
+            case "list" -> handleNpcSpotList(player);
+            default -> sendNpcUsage(player);
+        }
+    }
+
+    private void handleNpcSpotMark(Player player, String[] args) {
+        String name = args.length >= 4 ? String.join(" ", Arrays.copyOfRange(args, 3, args.length)).trim() : "";
+        String nameError = com.lodygames.rpgquest.npc.spot.NpcSpotService.nameError(name);
+        if (nameError != null) {
+            player.sendMessage(MM.deserialize("<red><msg></red>", Placeholder.unparsed("msg", nameError)));
+            return;
+        }
+        org.bukkit.Location at = player.getLocation();
+        String world = at.getWorld().getName();
+        // Avertissement seulement : la sûreté est revérifiée au moment de placer un PNJ.
+        boolean safe = com.lodygames.rpgquest.npc.NpcPlacementPlanner.isAcceptable(at.getBlockX(), at.getBlockY(),
+                at.getBlockZ(), new com.lodygames.rpgquest.npc.BukkitNpcPlacementProbe(at.getWorld(), java.util.Set.of()));
+        npcSpots.create(world, at.getX(), at.getY(), at.getZ(), at.getYaw(), at.getPitch(), name, player.getName(), null)
+                .thenAccept(result -> runOnMainThread(() -> {
+                    switch (result.outcome()) {
+                        case CREATED -> player.sendMessage(MM.deserialize(
+                                "<green>Emplacement de PNJ réservé :</green> <white><name></white> "
+                                        + "<dark_gray>(<id>)</dark_gray> <gray>— <pos>. Placez un PNJ depuis "
+                                        + "PlugAdmin > PNJ > Emplacements.</gray>",
+                                Placeholder.unparsed("name", result.spot().name()),
+                                Placeholder.unparsed("id", result.spot().id()),
+                                Placeholder.unparsed("pos", spotPosition(result.spot()))));
+                        case ALREADY_THERE -> player.sendMessage(MM.deserialize(
+                                "<yellow>Un emplacement existe déjà sur ce bloc :</yellow> <white><name></white> "
+                                        + "<dark_gray>(<id>)</dark_gray>. <gray>Rien n'a été créé.</gray>",
+                                Placeholder.unparsed("name", result.spot().name()),
+                                Placeholder.unparsed("id", result.spot().id())));
+                        case INVALID -> player.sendMessage(MM.deserialize("<red><msg></red>",
+                                Placeholder.unparsed("msg", result.error())));
+                    }
+                    if (result.created() && !safe) {
+                        player.sendMessage(MM.deserialize("<gold>Attention :</gold> <gray>ici, un PNJ n'a pas de sol "
+                                + "solide ou pas deux blocs d'air libres. Le placement sera refusé tant que "
+                                + "l'endroit n'est pas dégagé.</gray>"));
+                    }
+                }))
+                .exceptionally(error -> {
+                    plugin.getSLF4JLogger().error("Réservation d'un emplacement de PNJ impossible", error);
+                    runOnMainThread(() -> player.sendMessage(MM.deserialize(
+                            "<red>Échec de la réservation (voir la console). Rien n'a été enregistré.</red>")));
+                    return null;
+                });
+    }
+
+    private void handleNpcSpotList(Player player) {
+        List<com.lodygames.rpgquest.npc.spot.NpcSpot> all = npcSpots.all();
+        if (all.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Aucun emplacement de PNJ. "
+                    + "<yellow>/rpgadmin npc spot mark [nom]</yellow> pour en réserver un.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize("<gold>Emplacements de PNJ (<n>) :</gold>",
+                Placeholder.unparsed("n", Integer.toString(all.size()))));
+        for (com.lodygames.rpgquest.npc.spot.NpcSpot spot : all) {
+            player.sendMessage(MM.deserialize("<gray>-</gray> <white><name></white> <dark_gray>(<id>)</dark_gray> "
+                            + "<gray><pos> — <who></gray>",
+                    Placeholder.unparsed("name", spot.name()),
+                    Placeholder.unparsed("id", spot.id()),
+                    Placeholder.unparsed("pos", spotPosition(spot)),
+                    Placeholder.unparsed("who", spot.free() ? "libre" : "PNJ " + spot.npcId())));
+        }
+    }
+
+    private static String spotPosition(com.lodygames.rpgquest.npc.spot.NpcSpot spot) {
+        return String.format(Locale.ROOT, "%s %.1f / %.1f / %.1f, regard %.0f°",
+                spot.world(), spot.x(), spot.y(), spot.z(), spot.yaw());
     }
 
     // ---- Spawn du village central ---------------------------------------------
@@ -3366,6 +3470,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("npc")) {
             return NPC_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("npc") && args[1].equalsIgnoreCase("spot")) {
+            return NPC_SPOT_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("spawn")) {
             return SPAWN_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();

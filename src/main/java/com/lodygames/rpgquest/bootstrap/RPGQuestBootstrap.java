@@ -207,6 +207,7 @@ public final class RPGQuestBootstrap {
      * base.
      */
     private com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService;
+    private com.lodygames.rpgquest.npc.spot.NpcSpotService npcSpotService;
     /** Issue #227 — demandes de création en attente de nom, non persistantes. */
     private com.lodygames.rpgquest.building.PendingBuildingSiteRegistry buildingSitePendings;
     private com.lodygames.rpgquest.building.BuildingLibrary buildingLibrary;
@@ -367,6 +368,17 @@ public final class RPGQuestBootstrap {
                     plugin.getSLF4JLogger().error(
                             "Chargement des emplacements de construction impossible : la page "
                                     + "« Bâtiments » restera vide jusqu'au prochain démarrage.", error);
+                    return null;
+                });
+        // Issue #381 — emplacements de PNJ. Même règle que les emplacements de construction : la
+        // base est la vérité, et un échec de chargement n'empêche pas le serveur de démarrer.
+        npcSpotService = new com.lodygames.rpgquest.npc.spot.NpcSpotService(
+                new com.lodygames.rpgquest.database.NpcSpotRepository(databaseService.databaseManager()));
+        npcSpotService.load()
+                .thenAccept(count -> plugin.getSLF4JLogger().info("{} emplacement(s) de PNJ chargé(s).", count))
+                .exceptionally(error -> {
+                    plugin.getSLF4JLogger().error("Chargement des emplacements de PNJ impossible : la page "
+                            + "« Emplacements PNJ » restera vide jusqu'au prochain démarrage.", error);
                     return null;
                 });
         // Issue #227 — les demandes de création en attente de nom. En mémoire uniquement : une
@@ -1057,6 +1069,7 @@ public final class RPGQuestBootstrap {
         agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
         agentActions.setGameSettings(gameSettingsService);
         agentActions.setEncounters(encounterService);
+        agentActions.setNpcSpots(npcSpotService, claimService);
         agentActions.setQuestCatalogs(questCatalogEngine);
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
@@ -1408,6 +1421,7 @@ public final class RPGQuestBootstrap {
                 travelMaintenanceMode, claimService, contentReloadService, starterToolKitService,
                 buildingSiteService, buildingLibrary, buildingSchematics, plugin);
         rpgAdminCommand.setCities(cityRegistry, cityPendings);
+        rpgAdminCommand.setNpcSpots(npcSpotService);
         rpgAdminCommand.setAdminBypassMode(adminBypassMode);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {

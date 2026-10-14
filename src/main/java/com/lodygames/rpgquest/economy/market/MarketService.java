@@ -7,6 +7,7 @@ import com.lodygames.rpgquest.database.MarketListingRecord;
 import com.lodygames.rpgquest.database.MarketRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.economy.TransactionType;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -161,6 +162,10 @@ public final class MarketService implements PluginService {
             return;
         }
         MarketListingRecord listing = session.pageListings().get(contentIndex);
+        // Issue #318 : place vérifiée AVANT de réserver l'offre ou de débiter, jamais après.
+        if (!hasRoomFor(player, listing.itemData())) {
+            return;
+        }
         if (listing.sellerUuid().equals(player.getUniqueId())) {
             cancelListing(player, listing.id());
         } else {
@@ -307,10 +312,23 @@ public final class MarketService implements PluginService {
         }
     }
 
+    private boolean hasRoomFor(Player player, byte[] itemData) {
+        int missingSlots = ItemDelivery.missingSlots(player.getInventory(), List.of(ItemStack.deserializeBytes(itemData)));
+        if (missingSlots > 0) {
+            player.sendMessage(ItemDelivery.inventoryFullMessage(missingSlots));
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Restitution d'un objet déjà acquis (acheté et payé, offre annulée, mise en vente échouée) :
+     * la transaction est irréversible, donc l'objet au sol vaut mieux que sa perte — voir
+     * {@link ItemDelivery#restoreOrDrop}. La place a été vérifiée au clic ; ce repli ne couvre que
+     * l'inventaire rempli pendant l'aller-retour en base.
+     */
     private void giveItem(Player player, byte[] itemData) {
-        ItemStack stack = ItemStack.deserializeBytes(itemData);
-        player.getInventory().addItem(stack).values()
-                .forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+        ItemDelivery.restoreOrDrop(player, List.of(ItemStack.deserializeBytes(itemData)), logger, "marché");
     }
 
     private void runOnMainThread(Runnable task) {

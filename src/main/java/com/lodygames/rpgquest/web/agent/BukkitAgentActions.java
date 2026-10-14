@@ -48,6 +48,7 @@ import com.lodygames.rpgquest.dialogue.model.TakeItemAction;
 import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.ops.ServerLogBuffer;
 import com.lodygames.rpgquest.ops.ServerOpsService;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
@@ -3495,6 +3496,9 @@ public final class BukkitAgentActions implements AgentActions {
                 case ALREADY_COMPLETED -> MutationResult.of(false, "ALREADY_COMPLETED",
                         "Déjà terminée : " + questId + " — aucune récompense re-créditée.");
                 case UNKNOWN_QUEST -> MutationResult.of(false, "UNKNOWN_QUEST", "Quête inconnue : " + questId);
+                case INVENTORY_FULL -> MutationResult.of(false, "INVENTORY_FULL",
+                        "Non terminée : les récompenses de " + questId + " ne tiennent pas dans l'inventaire de "
+                                + target.getName() + ". Rien n'a été accordé.");
             });
         });
     }
@@ -3534,6 +3538,9 @@ public final class BukkitAgentActions implements AgentActions {
                 case ALREADY_COMPLETED -> MutationResult.of(false, "ALREADY_COMPLETED",
                         "Story " + id + " déjà terminée.");
                 case UNKNOWN_STORY -> MutationResult.of(false, "UNKNOWN_STORY", "Story inconnue : " + safe(id));
+                case INVENTORY_FULL -> MutationResult.of(false, "INVENTORY_FULL",
+                        "Story " + id + " : quête " + r.completedQuestId() + " non terminée, ses récompenses ne "
+                                + "tiennent pas dans l'inventaire de " + target.getName() + ". Rien n'a bougé.");
                 default -> MutationResult.of(false, r.outcome().name(),
                         "Story " + id + " : " + r.outcome().name() + " (voir la console).");
             });
@@ -3588,13 +3595,15 @@ public final class BukkitAgentActions implements AgentActions {
                 return done(MutationResult.of(false, "ITEM_BUILD_FAILED",
                         "Impossible de fabriquer l'objet " + itemId + "."));
             }
-            var leftover = target.getInventory().addItem(stack.get());
-            int dropped = leftover.values().stream().mapToInt(ItemStack::getAmount).sum();
-            if (dropped > 0) {
-                leftover.values().forEach(rest -> target.getWorld().dropItemNaturally(target.getLocation(), rest));
+            // Issue #318 : plus de reste jeté au sol — tout ou rien, et un refus honnête au panel.
+            ItemDelivery.Result delivery = ItemDelivery.deliver(target, stack.get());
+            if (!delivery.delivered()) {
+                target.sendMessage(ItemDelivery.inventoryFullMessage(delivery.missingSlots()));
+                return done(MutationResult.of(false, "INVENTORY_FULL",
+                        "Rien donné : l'inventaire de " + target.getName() + " est plein ("
+                                + delivery.missingSlots() + " emplacement(s) à libérer)."));
             }
-            String msg = amount + "x " + itemId + " donné à " + target.getName()
-                    + (dropped > 0 ? " (" + dropped + " au sol, inventaire plein)" : "");
+            String msg = amount + "x " + itemId + " donné à " + target.getName();
             return done(new MutationResult(true, "GIVEN", msg,
                     List.of(amount + "x « " + displayName + " » (" + itemId + ")")));
         });

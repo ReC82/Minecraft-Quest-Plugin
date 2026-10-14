@@ -4,8 +4,8 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -71,8 +71,7 @@ public final class StarterKitListener implements Listener {
         if (rune.isEmpty()) {
             return; // objet introuvable (config invalide) : jamais marqué distribué, retenté à la prochaine connexion.
         }
-        Map<Integer, ItemStack> leftover = player.getInventory().addItem(rune.get());
-        if (!leftover.isEmpty()) {
+        if (!ItemDelivery.deliver(player, rune.get()).delivered()) {
             // Inventaire plein : jamais marqué distribué (retour joueur 2026-10-04, issue #154) --
             // sans ce garde-fou, la Rune était silencieusement perdue pour toujours dès que
             // l'inventaire était plein à la première connexion, puisque GRANTED_VARIABLE empêche

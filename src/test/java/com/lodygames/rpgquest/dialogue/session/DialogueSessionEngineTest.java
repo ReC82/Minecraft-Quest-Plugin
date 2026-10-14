@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.dialogue.session;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -155,7 +156,7 @@ class DialogueSessionEngineTest {
                         actions:
                           - type: CLOSE
                 """);
-        dialogueEngine = new YamlDialogueEngine(dialoguesDir, plugin.getSLF4JLogger(), List.of("give", "xp"));
+        dialogueEngine = new YamlDialogueEngine(dialoguesDir, plugin.getSLF4JLogger(), List.of("give", "xp", "customitem"));
         dialogueEngine.start();
 
         WalletRepository walletRepository = new WalletRepository(database);
@@ -737,6 +738,88 @@ class DialogueSessionEngineTest {
         int diamonds = player.getInventory().all(Material.DIAMOND).values().stream()
                 .mapToInt(org.bukkit.inventory.ItemStack::getAmount).sum();
         assertEquals(1, diamonds, "un double clic ne donne qu'une fois");
+    }
+
+    // ---- Issue #318 : un choix qui remet un objet est accepté en entier ou refusé en entier ---------
+
+    private static final NamespacedKey STONE_GIFT = new NamespacedKey("rpgquest", "stone_gift");
+
+    private void installStoneGift() throws Exception {
+        Files.writeString(dialoguesDir.resolve("stone_gift.yml"), """
+                id: rpgquest:stone_gift
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "Jo"
+                    text: "Bonjour."
+                    choices:
+                      - text: "Obtenir une Pierre de retour"
+                        actions:
+                          - type: GIVE_ITEM
+                            material: DIAMOND
+                            amount: 1
+                          - type: RUN_SAFE_COMMAND
+                            command: "customitem give %player% rpgquest:pierre_retour 1"
+                          - type: SET_VARIABLE
+                            key: STONE_GIVEN
+                            value: "true"
+                        next: given
+                  given:
+                    speaker: "Jo"
+                    text: "Tiens, la voici."
+                    choices:
+                      - text: "Merci"
+                        actions:
+                          - type: CLOSE
+                """);
+        assertTrue(dialogueEngine.reload().issues().isEmpty(), () -> "stone_gift.yml : " + dialogueEngine.lastReport().issues());
+    }
+
+    private void chooseFirst(PlayerMock player, NamespacedKey dialogueId) throws Exception {
+        sessionEngine.open(player, dialogueId);
+        awaitRendered();
+        int index = renderer.lastVisibleChoices.get(0).index();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, dialogueId, "greeting", index);
+        for (int i = 0; i < 20; i++) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(10);
+        }
+    }
+
+    @Test
+    void aFullInventoryRefusesTheWholeChoiceWithoutDroppingOrAdvancingAnything() throws Exception {
+        installStoneGift();
+        PlayerMock player = addPlayer();
+        // Toutes les cases (armure et seconde main comprises : MockBukkit y range le surplus).
+        org.bukkit.inventory.ItemStack[] full = new org.bukkit.inventory.ItemStack[player.getInventory().getContents().length];
+        java.util.Arrays.fill(full, new org.bukkit.inventory.ItemStack(Material.DIRT, 64));
+        player.getInventory().setContents(full);
+        while (player.nextMessage() != null) {
+            // messages d'accueil éventuels
+        }
+
+        chooseFirst(player, STONE_GIFT);
+
+        assertNull(renderer.lastNode, "le nœud « voici ta Pierre » n'est jamais affiché");
+        assertFalse(player.getInventory().contains(Material.DIAMOND), "aucune remise partielle");
+        assertTrue(player.getWorld().getEntitiesByClass(org.bukkit.entity.Item.class).isEmpty(), "rien au sol");
+        assertTrue(variableRepository.get(player.getUniqueId(), "STONE_GIVEN").get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .isEmpty(), "la variable « déjà donné » n'avance pas");
+        String message = player.nextMessage();
+        assertTrue(message != null && message.contains("inventaire est plein"), () -> "message : " + message);
+    }
+
+    @Test
+    void withRoomTheChoiceRunsNormally() throws Exception {
+        installStoneGift();
+        PlayerMock player = addPlayer();
+
+        chooseFirst(player, STONE_GIFT);
+        awaitRendered();
+
+        assertEquals("given", renderer.lastNode.id());
+        assertTrue(player.getInventory().contains(Material.DIAMOND));
     }
 
     private int currentTopInventorySize(PlayerMock player) {

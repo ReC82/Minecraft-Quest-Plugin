@@ -4,10 +4,10 @@ import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.config.HubConfig;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.spawn.SpawnService;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -90,8 +90,7 @@ public final class HubRescueFallbackService implements PluginService {
     private void restoreRuneOrOfferFallback(Player player) {
         ItemStack rune = customItemRegistry.create(RpgItemKeys.RUNE_RAPPEL, 1).orElse(null);
         if (rune != null) {
-            Map<Integer, ItemStack> leftover = player.getInventory().addItem(rune);
-            if (leftover.isEmpty()) {
+            if (ItemDelivery.deliver(player, rune).delivered()) {
                 return; // restaurée silencieusement : jamais besoin du secours graphique.
             }
         }

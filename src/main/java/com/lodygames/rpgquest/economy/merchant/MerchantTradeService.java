@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.economy.merchant.model.MerchantOffer;
 import com.lodygames.rpgquest.economy.merchant.model.OfferItemKind;
 import com.lodygames.rpgquest.economy.merchant.model.TradeDirection;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
 import java.util.List;
@@ -237,10 +238,24 @@ public final class MerchantTradeService implements PluginService {
         }
     }
 
-    /** Le marchand vend : débit d'abord (atomique côté base), objet donné seulement si le débit a réussi. */
+    /**
+     * Le marchand vend : place vérifiée, puis débit (atomique côté base), objet remis seulement si
+     * le débit a réussi. Issue #318 : un objet qui ne tient plus au retour du débit (inventaire
+     * rempli entre-temps, joueur déconnecté) est <strong>remboursé</strong>, jamais jeté au sol.
+     */
     private void sellToPlayer(Player player, MerchantOffer offer) {
+        ItemStack stack = createOfferStack(offer);
+        if (stack == null) {
+            player.sendMessage(MM.deserialize("<red>Cette offre n'est plus disponible.</red>"));
+            return;
+        }
+        int missingSlots = ItemDelivery.missingSlots(player.getInventory(), List.of(stack));
+        if (missingSlots > 0) {
+            player.sendMessage(ItemDelivery.inventoryFullMessage(missingSlots));
+            return;
+        }
         if (offer.price() == 0) {
-            giveOfferItem(player, offer);
+            deliverOfferItem(player, stack);
             return;
         }
         economyService.debit(player.getUniqueId(), offer.price(), TransactionType.MERCHANT_BUY, describeItem(offer))
@@ -249,7 +264,10 @@ public final class MerchantTradeService implements PluginService {
                         player.sendMessage(MM.deserialize("<red>Fonds insuffisants.</red>"));
                         return;
                     }
-                    giveOfferItem(player, offer);
+                    if (!player.isOnline() || !deliverOfferItem(player, stack)) {
+                        refund(player, offer);
+                        return;
+                    }
                     player.sendMessage(MM.deserialize(
                             "<green>Achat effectué :</green> <white><amount>x <item></white> <gray>(-<price>)</gray>",
                             Placeholder.unparsed("amount", String.valueOf(offer.quantity())),
@@ -259,6 +277,28 @@ public final class MerchantTradeService implements PluginService {
                 .exceptionally(error -> {
                     logger.error("Échec du débit lors d'un achat marchand pour {}", player.getUniqueId(), error);
                     runOnMainThread(() -> player.sendMessage(MM.deserialize("<red>Une erreur est survenue, réessaie.</red>")));
+                    return null;
+                });
+    }
+
+    private boolean deliverOfferItem(Player player, ItemStack stack) {
+        ItemDelivery.Result delivery = ItemDelivery.deliver(player, stack);
+        if (!delivery.delivered()) {
+            player.sendMessage(ItemDelivery.inventoryFullMessage(delivery.missingSlots()));
+        }
+        return delivery.delivered();
+    }
+
+    /** Achat débité mais objet non remis : le prix revient au joueur, une seule fois, avec trace. */
+    private void refund(Player player, MerchantOffer offer) {
+        UUID playerId = player.getUniqueId();
+        economyService.credit(playerId, offer.price(), TransactionType.MERCHANT_SELL, "remboursement:" + describeItem(offer))
+                .thenRun(() -> runOnMainThread(() -> player.sendMessage(MM.deserialize(
+                        "<yellow>Achat annulé et remboursé</yellow> <gray>(+<price>) : l'objet ne tenait pas dans ton inventaire.</gray>",
+                        Placeholder.unparsed("price", String.valueOf(offer.price()))))))
+                .exceptionally(error -> {
+                    logger.error("Remboursement impossible après un achat marchand non remis : {} doit {} à {}",
+                            describeItem(offer), offer.price(), playerId, error);
                     return null;
                 });
     }
@@ -299,19 +339,20 @@ public final class MerchantTradeService implements PluginService {
                 .exceptionally(error -> {
                     logger.error("Échec du crédit après une vente à un marchand pour {} : objet rendu.",
                             player.getUniqueId(), error);
-                    runOnMainThread(() -> giveOfferItem(player, offer));
+                    runOnMainThread(() -> restoreOfferItem(player, offer));
                     return null;
                 });
     }
 
-    private void giveOfferItem(Player player, MerchantOffer offer) {
+    /** Restitution de l'objet du joueur quand le crédit de sa vente a échoué (voir {@link ItemDelivery#restoreOrDrop}). */
+    private void restoreOfferItem(Player player, MerchantOffer offer) {
         ItemStack stack = createOfferStack(offer);
         if (stack == null) {
-            player.sendMessage(MM.deserialize("<red>Cette offre n'est plus disponible.</red>"));
+            logger.error("Objet de l'offre {} introuvable : restitution impossible pour {}",
+                    describeItem(offer), player.getUniqueId());
             return;
         }
-        player.getInventory().addItem(stack).values()
-                .forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+        ItemDelivery.restoreOrDrop(player, List.of(stack), logger, "vente marchand non créditée");
     }
 
     private ItemStack createOfferStack(MerchantOffer offer) {

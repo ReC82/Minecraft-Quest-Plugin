@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -883,6 +884,132 @@ class QuestProgressEngineTest {
             // volontairement vide
         }
         return player;
+    }
+
+    // ---- Issue #318 : récompenses d'objets et inventaire plein — jamais au sol, jamais perdues ----
+
+    private static final NamespacedKey ITEM_QUEST = new NamespacedKey("rpgquest", "item_reward");
+
+    private void writeItemRewardQuest() throws Exception {
+        Files.writeString(questsDir.resolve("item_reward.yml"), """
+                id: rpgquest:item_reward
+                title: "Titre Objet"
+                description: "Description"
+                category: test
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 10
+                  - type: ITEM
+                    material: IRON_INGOT
+                    amount: 3
+                """);
+        engine.reloadQuestDefinitions();
+    }
+
+    /** Toutes les cases, armure et seconde main comprises : MockBukkit, contrairement à Paper, y range le surplus. */
+    private static void fillInventory(PlayerMock player) {
+        ItemStack[] full = new ItemStack[player.getInventory().getContents().length];
+        java.util.Arrays.fill(full, new ItemStack(Material.DIRT, 64));
+        player.getInventory().setContents(full);
+    }
+
+    private static void drainMessages(PlayerMock player) {
+        while (player.nextMessage() != null) {
+            // vide la file
+        }
+    }
+
+    @Test
+    void aQuestCompletedWithAFullInventoryWaitsAndGrantsNothingThenCompletesOnceThereIsRoom() throws Exception {
+        writeItemRewardQuest();
+        PlayerMock player = addPlayer();
+        engine.accept(player, ITEM_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        fillInventory(player);
+        drainMessages(player);
+        int expBefore = player.getTotalExperience();
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        assertEquals(QuestState.READY_TO_TURN_IN, activeState(player, ITEM_QUEST), "en attente de place, persistée");
+        assertEquals(expBefore, player.getTotalExperience(), "aucune récompense partielle");
+        assertFalse(player.getInventory().contains(Material.IRON_INGOT));
+        assertTrue(player.getWorld().getEntitiesByClass(org.bukkit.entity.Item.class).isEmpty(), "rien au sol");
+        String warning = player.nextMessage();
+        assertTrue(warning != null && warning.contains("Inventaire plein"), () -> "message : " + warning);
+
+        engine.retryAwaitingTurnIns(player);
+        assertEquals(QuestState.READY_TO_TURN_IN, activeState(player, ITEM_QUEST), "toujours pas de place");
+        assertNull(player.nextMessage(), "une reprise automatique qui échoue ne répète pas le message");
+
+        player.getInventory().setItem(0, null);
+        engine.retryAwaitingTurnIns(player);
+        engine.retryAwaitingTurnIns(player);
+
+        assertEquals(QuestState.COMPLETED, activeState(player, ITEM_QUEST));
+        assertEquals(3, player.getInventory().all(Material.IRON_INGOT).values().stream().mapToInt(ItemStack::getAmount).sum(),
+                "remise une seule fois malgré deux reprises");
+        assertTrue(player.getTotalExperience() > expBefore);
+    }
+
+    @Test
+    void anAwaitingQuestIsCompletedAfterAReconnection() throws Exception {
+        writeItemRewardQuest();
+        PlayerMock player = addPlayer();
+        engine.accept(player, ITEM_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        fillInventory(player);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        assertEquals(QuestState.READY_TO_TURN_IN, activeState(player, ITEM_QUEST));
+
+        engine.unloadForPlayer(player.getUniqueId());
+        // Deux cases : le plugin chargé peut y glisser la Rune de rappel du kit de départ entre-temps.
+        player.getInventory().setItem(0, null);
+        player.getInventory().setItem(1, null);
+        engine.loadForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        assertEquals(QuestState.COMPLETED, activeState(player, ITEM_QUEST));
+        assertTrue(player.getInventory().contains(Material.IRON_INGOT, 3));
+    }
+
+    @Test
+    void aRequestedTurnInWithAFullInventoryIsRefusedAndLeavesTheQuestUntouched() throws Exception {
+        writeItemRewardQuest();
+        PlayerMock player = addPlayer();
+        engine.accept(player, ITEM_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        fillInventory(player);
+        drainMessages(player);
+
+        assertEquals(CompleteOutcome.INVENTORY_FULL, engine.forceComplete(player, ITEM_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals(QuestState.ACTIVE, activeState(player, ITEM_QUEST), "la quête reste en cours, à retenter");
+        String warning = player.nextMessage();
+        assertTrue(warning != null && warning.contains("réessaie"), () -> "message : " + warning);
+
+        player.getInventory().setItem(0, null);
+        assertEquals(CompleteOutcome.COMPLETED, engine.forceComplete(player, ITEM_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(player.getInventory().contains(Material.IRON_INGOT, 3));
+    }
+
+    @Test
+    void aRefusedTurnInOfANeverStartedQuestLeavesNoFakeProgress() throws Exception {
+        writeItemRewardQuest();
+        PlayerMock player = addPlayer();
+        fillInventory(player);
+
+        var future = engine.forceComplete(player, ITEM_QUEST);
+        long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+        while (!future.isDone() && System.currentTimeMillis() < deadline) {
+            server.getScheduler().performTicks(1); // la remise passe par le thread principal
+            Thread.sleep(10);
+        }
+
+        assertEquals(CompleteOutcome.INVENTORY_FULL, future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(engine.activeStepView(player.getUniqueId(), ITEM_QUEST).isEmpty(), "aucune progression fictive en mémoire");
+        assertTrue(progressRepository.find(player.getUniqueId(), ITEM_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
     }
 
     private PlayerMock addPlayer() throws Exception {

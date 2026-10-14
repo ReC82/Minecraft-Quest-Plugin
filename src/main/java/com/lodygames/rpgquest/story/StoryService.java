@@ -434,7 +434,9 @@ public final class StoryService implements PluginService {
         ALREADY_COMPLETED,
         UNKNOWN_STORY,
         /** La story référence, à sa position courante, un id de quête que le moteur de quête ne connaît pas. */
-        UNKNOWN_CURRENT_QUEST
+        UNKNOWN_CURRENT_QUEST,
+        /** Issue #318 : les récompenses de la quête courante ne tiennent pas dans l'inventaire — rien n'a bougé. */
+        INVENTORY_FULL
     }
 
     /**
@@ -458,6 +460,10 @@ public final class StoryService implements PluginService {
 
         static StoryAdvanceReport unknownCurrentQuest(String id, NamespacedKey quest, int index, int total) {
             return new StoryAdvanceReport(StoryAdvanceOutcome.UNKNOWN_CURRENT_QUEST, id, false, quest, false, null, index + 1, total);
+        }
+
+        static StoryAdvanceReport inventoryFull(String id, NamespacedKey quest, int index, int total) {
+            return new StoryAdvanceReport(StoryAdvanceOutcome.INVENTORY_FULL, id, false, quest, false, null, index + 1, total);
         }
 
         static StoryAdvanceReport advanced(String id, NamespacedKey done, boolean wasDone, boolean started,
@@ -551,6 +557,13 @@ public final class StoryService implements PluginService {
             logger.warn("[admin] story advance « {} » : la quête courante « {} » est inconnue du moteur de quête.",
                     story.id(), currentQuestId);
             result.complete(StoryAdvanceReport.unknownCurrentQuest(story.id(), currentQuestId, index, total));
+            return;
+        }
+        if (complete == CompleteOutcome.INVENTORY_FULL) {
+            // Issue #318 : quête non terminée faute de place — la story ne doit surtout pas avancer.
+            logger.info("[admin] story advance « {} » : quête {} non terminée, inventaire de {} plein.",
+                    story.id(), currentQuestId, player.getUniqueId());
+            result.complete(StoryAdvanceReport.inventoryFull(story.id(), currentQuestId, index, total));
             return;
         }
         boolean questWasAlreadyDone = complete == CompleteOutcome.ALREADY_COMPLETED;
@@ -647,7 +660,7 @@ public final class StoryService implements PluginService {
                     new StoryCompleteReport(StoryCompleteOutcome.UNKNOWN_STORY, storyId, completed, null));
             case ALREADY_COMPLETED -> CompletableFuture.completedFuture(
                     new StoryCompleteReport(StoryCompleteOutcome.ALREADY_COMPLETED, storyId, completed, null));
-            case UNKNOWN_CURRENT_QUEST -> CompletableFuture.completedFuture(
+            case UNKNOWN_CURRENT_QUEST, INVENTORY_FULL -> CompletableFuture.completedFuture(
                     new StoryCompleteReport(StoryCompleteOutcome.BLOCKED, storyId, completed, report.completedQuestId()));
             case ADVANCED -> {
                 completed.add(report.completedQuestId());

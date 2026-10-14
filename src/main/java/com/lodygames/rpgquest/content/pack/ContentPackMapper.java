@@ -186,6 +186,8 @@ public final class ContentPackMapper {
         return switch (inner) {
             case QuestStateCondition c ->
                     DialoguePackEntry.Condition.questState(c.questId().toString(), c.state().name(), negate);
+            case com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition c ->
+                    DialoguePackEntry.Condition.questAvailable(c.questId().toString(), negate);
             case HasItemCondition c -> DialoguePackEntry.Condition.hasItem(c.material().name(), c.amount(), negate);
             case HasPermissionCondition c -> DialoguePackEntry.Condition.hasPermission(c.permission(), negate);
             case VariableEqualsCondition c -> DialoguePackEntry.Condition.variableEquals(c.key(), c.value(), negate);

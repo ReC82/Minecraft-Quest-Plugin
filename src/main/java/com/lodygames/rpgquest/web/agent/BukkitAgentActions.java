@@ -100,6 +100,7 @@ import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.model.VariableReward;
+import com.lodygames.rpgquest.quest.progress.CooldownText;
 import com.lodygames.rpgquest.quest.progress.ObjectiveProgressView;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.quest.progress.QuestStepProgressView;
@@ -463,7 +464,7 @@ public final class BukkitAgentActions implements AgentActions {
                     q.id().toString(), q.title().base(), q.category(), q.repeatable(),
                     q.prerequisites().stream().map(NamespacedKey::toString).toList(),
                     steps, describeRewards(q.rewards()), rewardDetails(q.rewards()),
-                    q.giver(), null));
+                    q.giver(), null, q.cooldown().toSeconds()));
         }
         return out;
     }
@@ -3300,6 +3301,8 @@ public final class BukkitAgentActions implements AgentActions {
         return switch (c) {
             case QuestStateCondition x -> new DialogueCatalog.Condition("QUEST_STATE", x.questId().toString(),
                     x.state().name(), "QUEST_STATE " + x.questId() + " = " + x.state(), false);
+            case com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition x -> new DialogueCatalog.Condition(
+                    "QUEST_AVAILABLE", x.questId().toString(), null, "QUEST_AVAILABLE " + x.questId(), false);
             case HasItemCondition x -> new DialogueCatalog.Condition("HAS_ITEM", x.material().name(),
                     Integer.toString(x.amount()), "HAS_ITEM " + x.amount() + "x " + x.material().name(), false);
             case HasPermissionCondition x -> new DialogueCatalog.Condition("HAS_PERMISSION", x.permission(), null,
@@ -3465,6 +3468,9 @@ public final class BukkitAgentActions implements AgentActions {
                 case MISSING_PREREQUISITES -> new MutationResult(false, "MISSING_PREREQUISITES",
                         "Prérequis manquants — cocher « ignorer les prérequis » pour passer outre.",
                         outcome.missingPrerequisites().stream().map(NamespacedKey::toString).toList());
+                case ON_COOLDOWN -> MutationResult.of(false, "ON_COOLDOWN",
+                        "Quête renouvelable encore en recharge (" + CooldownText.format(outcome.retryAfter())
+                                + ") : " + questId + " — réinitialiser pour passer outre.");
                 case UNKNOWN_QUEST -> MutationResult.of(false, "UNKNOWN_QUEST", "Quête inconnue : " + questId);
             });
         });

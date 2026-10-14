@@ -34,7 +34,7 @@ class DialogueDescriptorsTest {
     /** Réel : {@code dialogue.model.ConditionType}. */
     private static final Set<String> ENGINE_CONDITIONS = Set.of(
             "QUEST_STATE", "HAS_ITEM", "HAS_PERMISSION", "VARIABLE_EQUALS", "NO_MAIN_CLAIM",
-            "HAS_MAIN_CLAIM", "LACKS_CUSTOM_ITEM", "HAS_PENDING_DELIVERY", "HAS_INVENTORY_SPACE");
+            "HAS_MAIN_CLAIM", "LACKS_CUSTOM_ITEM", "HAS_PENDING_DELIVERY", "HAS_INVENTORY_SPACE", "QUEST_AVAILABLE");
 
     /**
      * Clés YAML réellement lues par {@code DialogueDefinitionParser}, relevées cas par cas dans son

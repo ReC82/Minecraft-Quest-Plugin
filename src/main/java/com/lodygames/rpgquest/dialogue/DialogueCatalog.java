@@ -164,12 +164,13 @@ public final class DialogueCatalog {
                     List<ConditionSummary> conds = new ArrayList<>();
                     for (Condition cond : c.conditions()) {
                         conds.add(new ConditionSummary(cond.kind(), cond.target(), cond.value(), cond.raw(), cond.negated()));
-                        if ("QUEST_STATE".equals(cond.kind()) && cond.target() != null) {
+                        if (("QUEST_STATE".equals(cond.kind()) || "QUEST_AVAILABLE".equals(cond.kind()))
+                                && cond.target() != null) {
                             String q = cond.target().toLowerCase(Locale.ROOT);
                             addOnce(referencedQuests, q);
                             if (!quests.isEmpty() && !quests.contains(q)) {
                                 warnings.add(new Warning("QUEST_REF_UNKNOWN", "warning",
-                                        "condition QUEST_STATE du nœud « " + n.id() + " » référence une quête inconnue « " + q + " »."));
+                                        "condition " + cond.kind() + " du nœud « " + n.id() + " » référence une quête inconnue « " + q + " »."));
                             }
                         }
                     }

@@ -83,7 +83,7 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
     }
 
     /**
-     * Condition de choix. {@code type} ∈ {@code QUEST_STATE}, {@code HAS_ITEM},
+     * Condition de choix. {@code type} ∈ {@code QUEST_STATE}, {@code QUEST_AVAILABLE}, {@code HAS_ITEM},
      * {@code HAS_PERMISSION}, {@code VARIABLE_EQUALS}, {@code NO_MAIN_CLAIM}, {@code HAS_MAIN_CLAIM},
      * {@code LACKS_CUSTOM_ITEM}, {@code HAS_PENDING_DELIVERY}, {@code HAS_INVENTORY_SPACE} (nombre
      * d'emplacements libres dans {@code amount}). {@code negate} rend la condition
@@ -95,6 +95,11 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
 
         public static Condition questState(String questId, String state, boolean negate) {
             return new Condition("QUEST_STATE", questId, state, null, null, null, null, null, null, negate, null);
+        }
+
+        /** La quête peut être acceptée maintenant (issue #13). */
+        public static Condition questAvailable(String questId, boolean negate) {
+            return new Condition("QUEST_AVAILABLE", questId, null, null, null, null, null, null, null, negate, null);
         }
 
         public static Condition hasItem(String material, int amount, boolean negate) {

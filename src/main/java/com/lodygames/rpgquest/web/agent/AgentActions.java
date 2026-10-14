@@ -67,7 +67,15 @@ public interface AgentActions {
      */
     record QuestSummary(String id, String title, String category, boolean repeatable,
                         List<String> prerequisites, List<QuestStepSummary> steps, List<String> rewards,
-                        List<RewardSummary> rewardDetails, String giverId, String giverName) {
+                        List<RewardSummary> rewardDetails, String giverId, String giverName,
+                        long cooldownSeconds) {
+
+        /** Sans délai de ré-acceptation (constructeur historique). */
+        QuestSummary(String id, String title, String category, boolean repeatable, List<String> prerequisites,
+                     List<QuestStepSummary> steps, List<String> rewards, List<RewardSummary> rewardDetails,
+                     String giverId, String giverName) {
+            this(id, title, category, repeatable, prerequisites, steps, rewards, rewardDetails, giverId, giverName, 0);
+        }
     }
 
     record QuestStepSummary(String id, List<String> objectives, List<ObjectiveSummary> objectiveDetails) {

@@ -5795,3 +5795,31 @@ id d'occurrence), `EncounterSiteRepositoryTest` (une rencontre par instance, sur
     en jeu. Le retirer depuis « Occurrences » si souhaité.
 9.  Compte sans `NPC_WRITE` : aucun formulaire de modèle ; sans `NPC_DELETE` : pas de « Supprimer ».
 
+### TC-306 — PNJ récurrents, étape 4 : quêtes secondaires renouvelables (issue #13, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR, dialogues `encounter_*.yml` et panel de l'étape 4 déployés. Un Brigand des bois,
+un Marchand égaré et un Forgeron perdu trouvés dans le Wild (`/npcs/encounters` donne leurs
+positions). Un compte joueur sans mode admin. **Durée** : 30 minutes.
+
+1.  Clic droit sur un Brigand des bois → « Du travail ? » → l'offre nomme « Les toiles du
+    sous-bois », son but, l'objectif (6 araignées puis revenir) et la récompense.
+2.  « Plus tard » → retour à l'accueil, `/quest list` : rien de démarré. « Refuser » → fermeture,
+    rien de démarré. L'offre est toujours là au clic suivant.
+3.  « Commencer (j'accepte) » → titre « Quête commencée » ; l'accueil ne propose plus « Du travail ? » mais « Où
+    en est ma tâche ? ».
+4.  Tuer 6 araignées, cliquer sur **un autre** Brigand des bois (autre instance de forêt) → quête
+    terminée, 25 XP + 16 flèches, une seule fois.
+5.  Recliquer : « Encore du travail ? » → « repasse d'ici un jour », aucune offre. `/quest accept
+    rpgquest:encounter_bandit_spiders` → « Rien de nouveau pour l'instant… reviens dans 19 h 59 min ».
+6.  Marchand égaré : « Commencer (j'accepte) », remettre 5 cactus (« J'ai des objets » → « Donner mes objets »),
+    se déconnecter/reconnecter, remettre les 7 restants → quête terminée, 20 XP + 6 pains. Double-clic
+    rapide sur « Donner » : jamais plus de 12 cactus retirés.
+7.  Forgeron perdu : même parcours avec 6 fer brut + 8 charbons → 30 XP + 2 lingots.
+8.  Un second joueur peut accepter la même quête pendant que le premier est en recharge
+    (progression par joueur).
+9.  PlugAdmin `/quests` : puce « Secondaires / Rencontres » → seules les 3 quêtes `encounter_*`,
+    badges « rencontre » et « recharge 20 h », sans alerte « donneur inconnu ». Éditer une quête :
+    le champ « Délai avant de pouvoir la refaire » vaut `20h` ; `vingt heures` → erreur claire.
+10. `/rpgadmin quest reset <joueur> rpgquest:encounter_bandit_spiders` → l'offre réapparaît tout de
+    suite.
+

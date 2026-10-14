@@ -2869,7 +2869,12 @@ l'Acte réutilisé comme visualiseur ou la Pierre de retour, voir
 1 par défaut — vrai si l'inventaire principal a au moins ce nombre
 d'emplacements vides ; issue #85 : Jo ne propose la remise de l'Acte que s'il
 peut réellement le recevoir, et la même condition niée mène au nœud « ton
-inventaire est plein », jamais à un objet jeté au sol).
+inventaire est plein », jamais à un objet jeté au sol), `QUEST_AVAILABLE`
+(`quest` — vrai si le joueur peut accepter la quête **maintenant** : même
+règle que l'acceptation, `QuestProgressEngine#availability` — ni active, ni
+terminée non répétable, prérequis remplis, délai `cooldown:` écoulé ; issue
+#13, sert à n'afficher l'offre d'une quête renouvelable que lorsqu'elle peut
+réellement être prise).
 `negate: true` sur **n'importe quelle** condition inverse son verdict
 (`dialogue.model.NegatedCondition`, double négation refusée au chargement) —
 sert notamment à exprimer « le déblocage n'a *pas* eu lieu » :
@@ -3184,6 +3189,7 @@ côté moteur fait échouer la suite jusqu'à ce que quelqu'un décide quoi en f
 | `GIVE_STARTER_KIT`, `CLOSE` (aucun champ) | `LACKS_CUSTOM_ITEM` (`item`) |
 | `DELIVER_QUEST_ITEMS` (`npc` facultatif) | `HAS_PENDING_DELIVERY` (`npc` facultatif) |
 | | `HAS_INVENTORY_SPACE` (`slots` facultatif, 1–36) |
+| | `QUEST_AVAILABLE` (`quest`) — quête acceptable maintenant (#13) |
 
 `negate: true` inverse n'importe quelle condition : c'est le **seul** champ commun à toutes, et il
 n'a aucun sens sur une action. `state` accepte les **six** états de `QuestState` : `NOT_STARTED`,
@@ -3420,7 +3426,15 @@ PNJ supprimé à la main est recréé au même endroit, jamais en double. Réfé
 actions `encounter.template.create|update|toggle|delete`, validées par le parseur des fichiers. Le
 `skin_url` du modèle (sinon l'apparence par défaut) est posé sur le PNJ à sa création ou
 réparation ; « Retenter » le réapplique à un PNJ présent.
-Quêtes secondaires : étapes suivantes. Tests : `docs/MANUAL_TEST_PLAN.md` TC-303 et TC-304
+Étape 4 : chaque modèle livré donne une quête secondaire **renouvelable** modeste
+(`quests/encounter_bandit_spiders|encounter_merchant_cactus|encounter_smith_ore.yml`, catégorie
+`encounter`, donneur `encounter_*`), proposée par son dialogue uniquement quand elle est acceptable
+(`QUEST_AVAILABLE`) et démarrée seulement par **Commencer (j'accepte)** (sinon **Plus tard** / **Refuser**).
+Anti-farm : nouveau champ de quête `cooldown:` (`20h` ici ; secondes ou `s/m/h/d`, quête répétable
+seulement, 30 j max), compté depuis la complétion ; refus `ON_COOLDOWN` avec le temps restant
+(`messages.yml` `quest.on-cooldown`), aucun schéma modifié. PlugAdmin `/quests` : filtre
+« Secondaires / Rencontres », badges « rencontre »/« recharge », champ délai dans l'éditeur. Détail :
+[ENCOUNTERS.md](ENCOUNTERS.md). Tests : `docs/MANUAL_TEST_PLAN.md` TC-303 à TC-306
 (`PENDING MANUAL VALIDATION`).
 
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)

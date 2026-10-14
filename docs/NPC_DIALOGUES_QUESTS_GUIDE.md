@@ -370,6 +370,7 @@ variables:                         # optionnel, stocké mais jamais lu ailleurs 
 | `category` | oui | Texte libre. |
 | `icon` | non | `BOOK` par défaut. |
 | `repeatable` | non | `false` par défaut. |
+| `cooldown` | non | Quête `repeatable: true` seulement (sinon erreur) : délai minimal entre une complétion et la ré-acceptation — secondes, ou nombre + `s`/`m`/`h`/`d` (`30m`, `20h`, `1d`), 30 jours au plus. Absent = aucun délai. Pendant le délai, l'acceptation est refusée (`ON_COOLDOWN`, message `quest.on-cooldown` avec le temps restant). Issue #13. |
 | `prerequisites` | non | Liste vide par défaut. |
 | `steps` | oui, ≥ 1 | Voir objectifs, section 4. |
 | `rewards` | non | Voir récompenses ci-dessous. |

@@ -301,3 +301,12 @@ caractères sur la copie DEV) ; l'outil le détectait avant toute écriture (FAI
 V35, ces textes libres sont des `TEXT` et le dry-run de la copie DEV est SUCCESS. Runbook, go/no-go,
 rollback et checklist :
 [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
+
+## 14. Base propre au Control Panel (#43)
+
+Le panel PlugAdmin a **sa propre** persistance (`control-panel.db`, SQLite, hôte AWS), distincte de
+celle du plugin : il ne se connecte jamais à `data.db` ni à la base MariaDB RPGQuest, et passe par
+l'agent et le pont pour toute donnée de jeu. Historiques de migration séparés (jamais de
+`rpgquest_schema_migrations` partagée). Une base MariaDB dédiée au panel peut être enregistrée et
+testée (isolement vérifié) depuis `/database`, sans être utilisée. Frontière, inventaire, prérequis
+et runbook : [deployment/PANEL_DATABASE.md](deployment/PANEL_DATABASE.md).

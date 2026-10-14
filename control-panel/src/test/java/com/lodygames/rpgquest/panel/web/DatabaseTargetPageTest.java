@@ -52,6 +52,7 @@ class DatabaseTargetPageTest {
     private InMemoryUserRepository users;
     private AgentStore agents;
     private final List<String> testedPasswords = new ArrayList<>();
+    private final List<String> panelTestedPasswords = new ArrayList<>();
 
     @BeforeEach
     void start() throws Exception {
@@ -68,6 +69,10 @@ class DatabaseTargetPageTest {
                     : DbConnectionTester.Result.failure("Échec de connexion : Access denied for user "
                             + DbConnectionTester.redact("'" + settings.username() + "'@'" + settings.host()
                             + "' (using password: " + password + ")", settings, password));
+        });
+        app.usePanelDbConnectionTester((settings, password) -> {
+            panelTestedPasswords.add(password);
+            return DbConnectionTester.Result.success("Connexion réussie (lecture seule) — isolement vérifié");
         });
         port = app.start();
     }
@@ -208,6 +213,83 @@ class DatabaseTargetPageTest {
         Client owner = login(TestConfig.OWNER_USERNAME, TestConfig.OWNER_PASSWORD);
 
         assertTrue(owner.get("/database").body().contains("plugin antérieur à #42"));
+    }
+
+    // ---- issue #43 : base propre au panel ----------------------------------------------------
+
+    private static final String PANEL_PASSWORD = "Panel-Pw-JAMAIS-AFFICHE-43";
+
+    private String panelForm(String action, String database, String password) {
+        return "&scope=panel&_action=" + action + "&host=db.example.test&port=3306&database=" + database
+                + "&username=rpg_panel&sslMode=verify-full&password=" + enc(password);
+    }
+
+    @Test
+    void panelTargetIsSavedAndTestedSeparatelyFromMigrationTarget() throws Exception {
+        Client owner = login(TestConfig.OWNER_USERNAME, TestConfig.OWNER_PASSWORD);
+        owner.post("/database", "_csrf=" + owner.csrf("/database") + form("save", PASSWORD));
+
+        HttpResponse<String> tested = owner.post("/database", "_csrf=" + owner.csrf("/database")
+                + panelForm("test", "rpgquest_control", PANEL_PASSWORD));
+
+        String body = tested.body();
+        assertTrue(body.contains("isolement vérifié"), body);
+        assertEquals(List.of(PANEL_PASSWORD), panelTestedPasswords, "testeur du panel, mot de passe du panel");
+        assertTrue(testedPasswords.isEmpty(), "le testeur de la cible RPGQuest n'est pas appelé");
+        assertTrue(body.contains("value=\"rpgquest_control\""));
+        assertTrue(body.contains("value=\"rpgquest\""), "la cible RPGQuest est conservée");
+        assertTrue(body.contains("enregistrée — non utilisée"));
+        assertFalse(owner.get("/database").body().contains(PANEL_PASSWORD), "jamais renvoyé au navigateur");
+        assertFalse(new String(Files.readAllBytes(Path.of(db)), StandardCharsets.ISO_8859_1).contains(PANEL_PASSWORD));
+        assertTrue(audit.recent(50).stream().anyMatch(e -> e.action().equals("database.panelTarget.test")
+                && "OK".equals(e.result())));
+        for (AuditEntry entry : audit.recent(50)) {
+            assertFalse((entry.target() + entry.details()).contains(PANEL_PASSWORD));
+        }
+    }
+
+    @Test
+    void panelDatabaseIdenticalToRpgquestTargetIsRefused() throws Exception {
+        Client owner = login(TestConfig.OWNER_USERNAME, TestConfig.OWNER_PASSWORD);
+        owner.post("/database", "_csrf=" + owner.csrf("/database") + form("save", PASSWORD));
+
+        HttpResponse<String> res = owner.post("/database", "_csrf=" + owner.csrf("/database")
+                + panelForm("test", "rpgquest", PANEL_PASSWORD));
+
+        assertTrue(res.body().contains("doit être distincte de la base RPGQuest"), res.body());
+        assertTrue(panelTestedPasswords.isEmpty(), "aucune connexion tentée");
+        assertFalse(res.body().contains("Base du panel enregistrée."));
+    }
+
+    @Test
+    void sharedAccountIsFlaggedAndPanelClearIsSeparate() throws Exception {
+        Client owner = login(TestConfig.OWNER_USERNAME, TestConfig.OWNER_PASSWORD);
+        owner.post("/database", "_csrf=" + owner.csrf("/database") + form("save", PASSWORD));
+        owner.post("/database", "_csrf=" + owner.csrf("/database") + "&scope=panel&_action=save&host=db.example.test"
+                + "&port=3306&database=rpgquest_control&username=rpg_mig&sslMode=disable&password=" + enc(PANEL_PASSWORD));
+
+        assertTrue(owner.get("/database").body().contains("Même compte SQL que la cible RPGQuest"));
+
+        HttpResponse<String> cleared = owner.post("/database", "_csrf=" + owner.csrf("/database")
+                + "&scope=panel&_action=clear&confirm=on");
+        assertTrue(cleared.body().contains("Mot de passe effacé."));
+        assertTrue(audit.recent(50).stream().anyMatch(e -> e.action().equals("database.panelTarget.clearPassword")
+                && e.target().equals("target=panel")));
+        owner.post("/database", "_csrf=" + owner.csrf("/database") + form("test", ""));
+        assertEquals(List.of(PASSWORD), testedPasswords, "le mot de passe de la cible RPGQuest est intact");
+    }
+
+    @Test
+    void panelSectionShowsActiveStorageInventoryAndDisabledSwitch() throws Exception {
+        Client owner = login(TestConfig.OWNER_USERNAME, TestConfig.OWNER_PASSWORD);
+
+        String page = owner.get("/database").body();
+
+        assertTrue(page.contains("SQLite — control-panel.db"), page);
+        assertTrue(page.contains("<code>panel_db_target</code>"), "inventaire de la base active");
+        assertTrue(page.contains("<code>audit_log</code>") || page.contains("<code>agent_heartbeat</code>"));
+        Matcher button = Pattern.compile("<button[^>]*disabled[^>]*>[^<]*(<[^>]+>)*[^<]*Basculer le panel").matcher(page);
+        assertTrue(button.find(), "bascule du panel présente mais désactivée");
     }
 
     // ---- harnais ---------------------------------------------------------------------------

@@ -1751,6 +1751,15 @@ Le heartbeat du plugin porte `database.engine` / `schema_version` ; la page Plug
 `DbTargetStore`, table `db_migration_target`), la teste en lecture seule (`MariaDbConnectionTester`)
 et présente l'assistant sans bascule.
 
+**Base propre au panel (issue #43, préparation uniquement)** : frontière de données documentée
+([deployment/PANEL_DATABASE.md](deployment/PANEL_DATABASE.md)) — `control-panel.db` reste le
+stockage actif du panel, aucune table n'y duplique une donnée de jeu (`agent_heartbeat` = cache non
+autoritatif). Section « Base propre au panel » de `/database` : inventaire en lecture seule
+(`PanelDbInventory`), cible MariaDB du panel (`DbTargetKind.PANEL`, table `panel_db_target`, usage
+de chiffrement distinct) enregistrée **non utilisée**, test d'isolement
+(`MariaDbConnectionTester.forPanel()`), base identique à la cible RPGQuest refusée. Prérequis de
+code d'une vraie migration (historique de migrations du panel, SQL portable) **non réalisés**.
+
 **Backend actif en production** : **SQLite** (`data.db`) — comportement **strictement inchangé**
 (DDL/DML passés par des dialectes-identité). Migrations via `SchemaMigrator.ALL` (version courante :
 **17**). Le mot de passe MySQL n'est jamais dans `config.yml` (`database.mysql.password-env` = nom

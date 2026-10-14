@@ -65,6 +65,44 @@ class DbTargetStoreTest {
         assertEquals("", store.get().lastTestAt());
     }
 
+    /** Issue #43 : la base du panel vit dans sa propre table, avec son propre usage de chiffrement. */
+    @Test
+    void panelTargetIsIndependentFromMigrationTarget() {
+        String db = tmp.resolve("cp.db").toString();
+        DbTargetStore migration = new DbTargetStore(db, new SecretBox(MASTER, DbTargetKind.MIGRATION.secretPurpose()));
+        DbTargetStore panel = new DbTargetStore(db, new SecretBox(MASTER, DbTargetKind.PANEL.secretPurpose()),
+                DbTargetKind.PANEL);
+
+        migration.save("db.example", 3306, "rpgquest", "rpg", "trust", "pw-plugin", "owner");
+        panel.save("db.example", 3306, "rpgquest_control", "rpg_panel", "trust", "pw-panel", "owner");
+        panel.clearPassword("owner");
+
+        assertEquals("rpgquest", migration.get().database());
+        assertEquals("rpgquest_control", panel.get().database());
+        assertEquals(Optional.of("pw-plugin"), migration.password(), "effacer le panel ne touche pas l'autre cible");
+        assertTrue(panel.password().isEmpty());
+
+        // Un chiffré recopié d'une cible à l'autre ne s'ouvre pas : usages distincts.
+        String sealed = new SecretBox(MASTER, DbTargetKind.MIGRATION.secretPurpose()).seal("pw");
+        assertTrue(new SecretBox(MASTER, DbTargetKind.PANEL.secretPurpose()).open(sealed).isEmpty());
+    }
+
+    @Test
+    void panelInventoryListsTablesReadOnly() throws Exception {
+        String db = tmp.resolve("cp.db").toString();
+        new DbTargetStore(db, new SecretBox(MASTER, PURPOSE));
+        new DbTargetStore(db, new SecretBox(MASTER, DbTargetKind.PANEL.secretPurpose()), DbTargetKind.PANEL);
+        long sizeBefore = java.nio.file.Files.size(Path.of(db));
+
+        java.util.List<PanelDbInventory.Table> tables = PanelDbInventory.read(db);
+
+        assertEquals(java.util.List.of(new PanelDbInventory.Table("db_migration_target", 1),
+                new PanelDbInventory.Table("panel_db_target", 1)), tables);
+        assertEquals(sizeBefore, java.nio.file.Files.size(Path.of(db)));
+        assertTrue(PanelDbInventory.read(tmp.resolve("absente.db").toString()).isEmpty(), "jamais créée");
+        assertFalse(java.nio.file.Files.exists(tmp.resolve("absente.db")));
+    }
+
     @Test
     void passwordSealedWithAnotherMasterIsReportedUnreadable() {
         String db = tmp.resolve("cp.db").toString();

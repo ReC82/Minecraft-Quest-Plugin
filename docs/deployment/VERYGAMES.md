@@ -182,8 +182,9 @@ le port `3306`).
    <user>@<host>:3306/<db> (pool 2..10, ssl=disable)` puis `MariaDB/MySQL serveur : 10.11.6-…`.
    `DatabaseManager.healthCheck()` → OK. Historique : `SELECT version, name, applied_at FROM
    rpgquest_schema_migrations ORDER BY version` doit lister V1..V17.
-8. **Ne pas basculer les données de production** avant l'issue #42. `data.db` n'est jamais touché
-   par #41.
+8. **Ne pas basculer les données de production** : l'outil de migration et le runbook existent
+   (#42, [MIGRATION_SQLITE_MARIADB.md](MIGRATION_SQLITE_MARIADB.md)) mais la bascule réelle exige une
+   consigne explicite du propriétaire et la levée du constat bloquant qui y est décrit.
 
 ### Rollback
 

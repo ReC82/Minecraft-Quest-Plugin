@@ -3,8 +3,11 @@
 > **#40** a posé le socle : le moteur SQL est un détail d'infrastructure choisi par configuration.
 > **#41** ajoute le **backend MySQL/MariaDB réel** — driver *MariaDB Connector/J*, pool *HikariCP*,
 > dialecte SQL/DDL MariaDB dans les repositories et les migrations, tests d'intégration contre un
-> serveur MariaDB. SQLite reste le défaut et fonctionne **exactement comme avant**. La **migration
-> des données** `data.db` → MariaDB et la **bascule de production** sont l'**issue #42**.
+> serveur MariaDB. SQLite reste le défaut et fonctionne **exactement comme avant**.
+> **#42** fournit l'**outil de migration contrôlée** `data.db` → MariaDB (audit, dry-run, validation
+> par empreintes, refus d'une cible non vide) et son runbook
+> ([deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md)). La **bascule
+> réelle** n'est **pas** faite et n'est pas autorisée sans consigne explicite du propriétaire.
 
 ---
 
@@ -280,15 +283,19 @@ administrateur global VeryGames.
 serveur MariaDB est journalisée (`MariaDB/MySQL serveur : 10.11.6-MariaDB-…`). Ces éléments sont
 prêts pour un futur affichage par le Control Panel via l'API RPGQuest (hors périmètre #41).
 
-## 13. Reste pour #42 (migration des données + bascule)
+## 13. Migration des données SQLite → MariaDB (#42)
 
-1. **Créer la base RPGQuest de production** sur VeryGames + le compte dédié (§11).
-2. **Exporter** l'état de `data.db` (25 tables) puis l'**importer** dans MariaDB — outil de
-   migration à écrire (lecture SQLite → écriture MariaDB via les repositories ou en bulk), avec
-   contrôle d'intégrité (comptes de lignes, FK, `player_variables` critiques comme `CLAIM_TIER_1`).
-3. **Bascule** : arrêt serveur → `database.type: mysql` + secrets → redémarrage → vérifications
-   (health, version de schéma, parcours joueur) → conservation de `data.db` en sauvegarde.
-4. **Rollback** documenté : re-basculer `database.type: sqlite` (les deux bases coexistent
-   pendant la fenêtre de migration).
-5. Le `SchemaMigrationRunner` gère déjà l'idempotence : si la base MariaDB est pré-remplie par
-   l'outil de migration avec `rpgquest_schema_migrations` à jour, un démarrage ne rejoue rien.
+Outil hors serveur `com.lodygames.rpgquest.database.migration` (`./gradlew dbMigrationToolJar` →
+`build/tools/rpgquest-db-migration.jar`) : `audit` (lecture seule), `dry-run` (transaction toujours
+annulée), `migrate --commit`. Source ouverte en lecture seule (empreinte SHA-256 avant/après),
+cible refusée si elle contient la moindre ligne ou une table étrangère, schéma créé par **le même**
+catalogue `SchemaMigrator.ALL`, copie dans une seule transaction, validation par **comptage et
+empreinte logique** de chaque table, séquences `AUTOINCREMENT` alignées (identifiant jamais
+réattribué). Deux méthodes de dialecte ajoutées pour cela : `SqlDialect#nextAutoIncrement` /
+`#raiseAutoIncrement` (SQLite : `sqlite_sequence` ; MariaDB : `AUTO_INCREMENT`).
+
+**Constat bloquant de l'audit** : `MySqlDialect` traduit tout `TEXT NOT NULL` d'un `CREATE TABLE` en
+`VARCHAR(191)`, y compris des textes libres (`building_sites.description`, 490 caractères sur la
+copie DEV). L'outil le détecte avant toute écriture (FAILED) ; correction de schéma MariaDB à faire
+avant toute bascule (#354). Runbook, go/no-go, rollback et checklist :
+[deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).

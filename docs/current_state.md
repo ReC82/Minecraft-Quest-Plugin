@@ -1733,8 +1733,17 @@ UPDATE`) et le DDL des migrations (`TEXT` clé → `VARCHAR(191)`, `INTEGER` →
 `ALTER TABLE ADD INDEX`). Historique de schéma dans la table portable `rpgquest_schema_migrations`.
 **Validé contre un vrai serveur MariaDB 10.11** (base de test VeryGames vide) : schéma créé depuis
 zéro, historique V1..V17, CRUD/transactions/generated-keys des repos, health, reprise après
-connexion cassée. **Non fait (issue #42)** : migration des données `data.db` → MariaDB et bascule
-de production. Détail : [PERSISTENCE.md](PERSISTENCE.md).
+connexion cassée. Détail : [PERSISTENCE.md](PERSISTENCE.md).
+
+**Outil de migration SQLite → MariaDB (issue #42, préparation uniquement)** : paquet
+`database.migration` (`SqliteSource` lecture seule, `SqliteMigrationTool`, `LogicalChecksum`,
+`MigrationReport`, `MigrationCli`), JAR autonome `./gradlew dbMigrationToolJar`. Modes `audit` /
+`dry-run` / `migrate --commit` ; cible non vide ou non dédiée refusée ; copie transactionnelle ;
+validation par comptage + empreinte logique par table ; séquences `AUTOINCREMENT` alignées ; rapport
+sans hôte ni secret. Répété sur copies isolées (cible SQLite et MariaDB 10.11 jetable locale).
+**Bascule non faite, non autorisée.** NO-GO actuel : `MySqlDialect` met des textes libres
+`NOT NULL` en `VARCHAR(191)` (`building_sites.description` 490 car. en DEV, #354). Runbook :
+[deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
 
 **Backend actif en production** : **SQLite** (`data.db`) — comportement **strictement inchangé**
 (DDL/DML passés par des dialectes-identité). Migrations via `SchemaMigrator.ALL` (version courante :

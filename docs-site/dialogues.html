@@ -93,6 +93,7 @@ nodes:
         <tr><td><code>QUEST_STATE</code></td><td><code>quest</code>, <code>state</code></td>
           <td>Vrai si la quête du joueur est dans l'état donné
             (<code>NOT_STARTED</code>/<code>ACTIVE</code>/<code>READY_TO_TURN_IN</code>/<code>COMPLETED</code>/<code>FAILED</code>/<code>ABANDONED</code>).</td></tr>
+        <tr><td><code>QUEST_AVAILABLE</code></td><td><code>quest</code></td><td>Vraie si le joueur peut accepter la quête maintenant (ni active, prérequis remplis, délai <code>cooldown</code> écoulé) — pour proposer une quête renouvelable (#13).</td></tr>
         <tr><td><code>HAS_ITEM</code></td><td><code>material</code>, <code>amount</code></td>
           <td>Vrai si l'inventaire contient au moins <code>amount</code> de <code>material</code>.</td></tr>
         <tr><td><code>HAS_PERMISSION</code></td><td><code>permission</code></td>

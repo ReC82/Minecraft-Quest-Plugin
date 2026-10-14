@@ -48,6 +48,48 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - PNJ récurrents, étape 4 : quêtes secondaires renouvelables (#13)
+
+### Changement
+
+- Moteur de quêtes : champ optionnel `cooldown:` (quête `repeatable: true`) — délai de
+  ré-acceptation compté depuis la complétion (`updated_at` de `quest_progress`) ; refus
+  `ON_COOLDOWN` avec temps restant. Nouvelle clé `quest.on-cooldown` dans `messages.yml`
+  (ajoutée automatiquement au fichier du serveur, fusion des clés manquantes).
+- Dialogues : condition `QUEST_AVAILABLE` (règle d'acceptation du moteur).
+- Contenu : 3 nouvelles quêtes `quests/encounter_bandit_spiders|encounter_merchant_cactus|
+  encounter_smith_ore.yml` (seedées si absentes) ; dialogues `dialogues/encounter_bandit|merchant|
+  smith.yml` réécrits (offre Commencer (j'accepte) / Plus tard / Refuser, remise d'objets).
+- Panel : `/quests` filtre « Secondaires / Rencontres », badges, champ « Délai » dans l'éditeur.
+- Aucune migration, aucune nouvelle clé de `config.yml`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** des 3 fichiers
+`plugins/RPGQuest/dialogues/encounter_*.yml` (existants sur le serveur : un JAR ne les met jamais à
+jour → `deploy-verygames.sh --also`). Les 3 quêtes peuvent aussi être envoyées par `--also` (sinon
+seedées au démarrage). Redéploiement du panel (`scripts/plugadmin/deploy.sh`). Ne pas téléverser
+`config.yml` ni `messages.yml`, ne pas toucher `data.db`.
+
+### Sauvegarde préalable
+
+Sauvegarde datée du JAR en place (faite par `deploy-verygames.sh`) ; les 3 dialogues remplacés sont
+ceux livrés à l'étape 1 (identiques au commit `03d0772`), récupérables depuis Git.
+
+### Validation
+
+TC-306 (`docs/MANUAL_TEST_PLAN.md`).
+
+### Rollback
+
+Remettre le JAR précédent (`rollback-verygames.sh --latest`) et redémarrer. L'ancien JAR refuse la
+condition `QUEST_AVAILABLE` : remettre aussi les dialogues `encounter_*.yml` de `03d0772`
+(`--also`). L'ancien JAR ignore la clé `cooldown:` (clés inconnues non vérifiées) : les 3 quêtes
+restent chargées, sans délai — les supprimer du serveur si l'anti-farm doit être garanti. Aucune
+donnée joueur à restaurer.
+
+---
+
 ## 2026-10-14 - PNJ récurrents, étape 3 : édition des modèles et apparence (#13)
 
 ### Changement

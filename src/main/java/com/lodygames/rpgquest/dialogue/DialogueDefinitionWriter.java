@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
+import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
 import com.lodygames.rpgquest.dialogue.model.SetVariableAction;
@@ -192,6 +193,10 @@ public final class DialogueDefinitionWriter {
                 line(sb, "type: QUEST_STATE");
                 line(sb, "quest: " + c.questId());
                 line(sb, "state: " + c.state().name());
+            }
+            case QuestAvailableCondition c -> {
+                line(sb, "type: QUEST_AVAILABLE");
+                line(sb, "quest: " + c.questId());
             }
             case HasItemCondition c -> {
                 line(sb, "type: HAS_ITEM");

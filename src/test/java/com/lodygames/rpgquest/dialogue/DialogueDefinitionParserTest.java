@@ -15,6 +15,7 @@ import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import java.io.StringReader;
+import java.util.List;
 import java.util.Set;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -86,6 +87,47 @@ class DialogueDefinitionParserTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("type de condition inconnu")));
+    }
+
+    @Test
+    void questAvailableConditionParsesAndRoundTripsThroughTheWriter() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("available.yml", load(minimalDialogueWithChoice("""
+                      - text: "Du travail ?"
+                        conditions:
+                          - type: QUEST_AVAILABLE
+                            quest: rpgquest:encounter_bandit_spiders
+                          - type: QUEST_AVAILABLE
+                            quest: encounter_bandit_spiders
+                            negate: true
+                        actions:
+                          - type: CLOSE
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var conditions = result.dialogue().nodes().get("greeting").choices().get(0).conditions();
+        org.bukkit.NamespacedKey quest = new org.bukkit.NamespacedKey("rpgquest", "encounter_bandit_spiders");
+        assertEquals(new com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition(quest), conditions.get(0));
+        assertEquals(new com.lodygames.rpgquest.dialogue.model.NegatedCondition(
+                new com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition(quest)), conditions.get(1));
+
+        String yaml = DialogueDefinitionWriter.render(result.dialogue(), List.of("greeting"));
+        DialogueDefinitionParser.ParseResult reread = parser.parse("reread.yml", load(yaml));
+        assertTrue(reread.isSuccess(), () -> "issues: " + reread.issues() + "\n" + yaml);
+        assertEquals(conditions, reread.dialogue().nodes().get("greeting").choices().get(0).conditions());
+    }
+
+    @Test
+    void questAvailableConditionRequiresAQuest() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("available-missing.yml", load(minimalDialogueWithChoice("""
+                      - text: "Du travail ?"
+                        conditions:
+                          - type: QUEST_AVAILABLE
+                        actions:
+                          - type: CLOSE
+                """)));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("quest")));
     }
 
     @Test

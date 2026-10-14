@@ -5,10 +5,10 @@ explorée, et proposent des quêtes secondaires d'exploration. Un même **modèl
 égaré, forgeron perdu…) se retrouve dans de nombreuses instances : c'est un type de PNJ
 *récurrent*, jamais un spawn infini.
 
-> Statut : **étapes 1 à 3 livrées** (moteur, modèles, persistance, apparition sûre, réparation ;
+> Statut : **étapes 1 à 4 livrées** (moteur, modèles, persistance, apparition sûre, réparation ;
 > page PlugAdmin « PNJ récurrents » et actions d'administration ; édition des modèles depuis le
-> panel et apparence `skin_url`). À venir : quêtes secondaires renouvelables, onglet Quêtes
-> « Secondaires / Rencontres ».
+> panel et apparence `skin_url` ; quêtes secondaires renouvelables avec délai anti-farm et filtre
+> PlugAdmin « Secondaires / Rencontres »). À venir : journal joueur des rencontres.
 
 ## Instance de biome
 
@@ -156,6 +156,41 @@ consulte d'abord les liaisons classiques, puis le registre des rencontres. Le cl
 `rpgquest:<npc_id>` comme pour tout PNJ ; dialogue et progression restent personnels à chaque
 joueur, le PNJ physique est partagé. Une occurrence désactivée ne porte plus d'identité.
 
+## Quêtes secondaires renouvelables (étape 4)
+
+Chaque modèle livré donne **une** quête secondaire modeste, partagée par toutes ses occurrences
+(le PNJ est commun, la progression propre à chaque joueur) :
+
+| PNJ (`npc_id`) | Quête | Objectif | Récompense | Délai |
+| --- | --- | --- | --- | --- |
+| Brigand des bois (`encounter_bandit`) | `rpgquest:encounter_bandit_spiders` « Les toiles du sous-bois » | tuer 6 araignées, puis parler à un Brigand des bois | 25 XP + 16 flèches | 20 h |
+| Marchand égaré (`encounter_merchant`) | `rpgquest:encounter_merchant_cactus` « Marchandise du désert » | remettre 12 cactus (plusieurs fois possible) | 20 XP + 6 pains | 20 h |
+| Forgeron perdu (`encounter_smith`) | `rpgquest:encounter_smith_ore` « Du minerai pour la forge » | remettre 6 fer brut + 8 charbons | 30 XP + 2 lingots de fer | 20 h |
+
+Règles :
+
+- **Aucune quête sans acceptation** : le dialogue `encounter_*.yml` montre l'offre (nom, but,
+  objectif, récompense) puis **Commencer (j'accepte)** (seul porteur du `START_QUEST`), **Plus tard** (retour à
+  l'accueil) ou **Refuser** (rien n'est démarré, l'offre reste).
+- L'offre n'est affichée que si la quête est **acceptable maintenant** — condition de dialogue
+  `QUEST_AVAILABLE`, qui réutilise la règle d'acceptation du moteur (`availability`) : ni active,
+  prérequis remplis, délai écoulé.
+- **Anti-farm** : `cooldown: 20h` dans le fichier de quête. La date de complétion est
+  l'`updated_at` de la ligne `COMPLETED` de `quest_progress` (aucune migration). Pendant le délai,
+  le PNJ répond « Encore du travail ? → repasse d'ici un jour » ; une tentative directe
+  (`/quest accept`) répond « Rien de nouveau pour l'instant… reviens dans 3 h 20 min »
+  (`messages.yml` → `quest.on-cooldown`). Un abandon ne déclenche pas de délai (il ne rapporte rien).
+- Remises (`DELIVER_ITEM_TO_NPC`) : moteur #123 (retrait exact, dépôt partiel persistant, anti
+  double-clic), via « J'ai des objets » dans le dialogue.
+- Récompenses payées une fois par complétion (`quest_reward_grants`, occurrence par reprise).
+- PlugAdmin `/quests` : second groupe de filtres **Tous types / Principales / Secondaires /
+  Rencontres** (catégorie `encounter` ou donneur `encounter_*`), badges « rencontre » et
+  « recharge 20 h » ; l'éditeur de quête a un champ « Délai avant de pouvoir la refaire ».
+
+Fichiers : `quests/encounter_*.yml` (seedés s'ils manquent, `BUNDLED_EXAMPLES`) et
+`dialogues/encounter_*.yml` (fichiers existants sur le serveur : à remplacer explicitement au
+déploiement, `--also`).
+
 ## Configuration — `config.yml`, section `encounters`
 
 | Clé | Défaut | Bornes |
@@ -177,4 +212,5 @@ created_at, updated_at), index unique `(world, biome_instance)`. Additive, autom
 
 ## Validation en jeu
 
-`PENDING MANUAL VALIDATION` — `docs/MANUAL_TEST_PLAN.md`, TC-303 (jeu) et TC-304 (PlugAdmin).
+`PENDING MANUAL VALIDATION` — `docs/MANUAL_TEST_PLAN.md`, TC-303 (jeu), TC-304 (PlugAdmin),
+TC-305 (modèles/apparence) et TC-306 (quêtes secondaires renouvelables).

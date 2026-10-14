@@ -61,6 +61,63 @@ class QuestDefinitionParserTest {
         assertEquals("true", quest.variables().get("started"));
     }
 
+    // ---- Issue #13 : délai de ré-acceptation « cooldown: » ------------------------------------
+
+    private QuestDefinitionParser.ParseResult parseCooldown(boolean repeatable, String cooldown) {
+        return parser.parse("cooldown.yml", load("""
+                id: rpgquest:side
+                title: "Quête"
+                description: "Desc"
+                category: encounter
+                repeatable: %s
+                cooldown: %s
+                steps:
+                  - id: s
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: SPIDER
+                        amount: 1
+                """.formatted(repeatable, cooldown)));
+    }
+
+    @Test
+    void cooldownAcceptsSecondsAndUnits() {
+        assertEquals(java.time.Duration.ofHours(20), parseCooldown(true, "20h").quest().cooldown());
+        assertEquals(java.time.Duration.ofMinutes(30), parseCooldown(true, "30m").quest().cooldown());
+        assertEquals(java.time.Duration.ofDays(1), parseCooldown(true, "\"1d\"").quest().cooldown());
+        assertEquals(java.time.Duration.ofSeconds(90), parseCooldown(true, "90").quest().cooldown());
+    }
+
+    @Test
+    void cooldownIsZeroWhenAbsent() {
+        QuestDefinitionParser.ParseResult result = parser.parse("no-cooldown.yml", load(minimalQuestWithSteps("""
+                steps:
+                  - id: step_one
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: SPIDER
+                        amount: 1
+                """)));
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(java.time.Duration.ZERO, result.quest().cooldown());
+    }
+
+    @Test
+    void invalidCooldownsAreRejectedWithAClearMessage() {
+        for (String bad : List.of("abc", "-5", "20x", "h", "31d")) {
+            QuestDefinitionParser.ParseResult result = parseCooldown(true, bad);
+            assertFalse(result.isSuccess(), bad);
+            assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("cooldown")), bad);
+        }
+    }
+
+    @Test
+    void cooldownOnANonRepeatableQuestIsAnError() {
+        QuestDefinitionParser.ParseResult result = parseCooldown(false, "20h");
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("repeatable: true")));
+    }
+
     @Test
     void missingRequiredFieldsAreAllReportedTogether() {
         QuestDefinitionParser.ParseResult result = parser.parse("incomplete.yml", load("""

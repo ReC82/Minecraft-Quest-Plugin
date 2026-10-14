@@ -1,0 +1,30 @@
+# Quête secondaire renouvelable du Brigand des bois (issue #13, étape 4). Donnée par N'IMPORTE
+# QUELLE occurrence du modèle forest_bandit (npc_id encounter_bandit) : la progression est propre
+# à chaque joueur, le PNJ est commun. Modeste par construction — petite récompense, délai de
+# 20 h entre deux complétions (cooldown), acceptation explicite dans dialogues/encounter_bandit.yml.
+id: rpgquest:encounter_bandit_spiders
+title: "<gold>Les toiles du sous-bois</gold>"
+description: "<gray>Les araignées envahissent les caches du Brigand des bois. Élimine-en quelques-unes, puis retourne voir un Brigand des bois.</gray>"
+category: encounter
+icon: STRING
+giver: encounter_bandit
+repeatable: true
+cooldown: 20h
+
+steps:
+  - id: clear_spiders
+    objectives:
+      - type: KILL_ENTITY
+        entity: SPIDER
+        amount: 6
+  - id: report_to_bandit
+    objectives:
+      - type: TALK_TO_NPC
+        npc: encounter_bandit
+
+rewards:
+  - type: EXPERIENCE
+    amount: 25
+  - type: ITEM
+    material: ARROW
+    amount: 16

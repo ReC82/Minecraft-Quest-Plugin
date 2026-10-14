@@ -329,6 +329,10 @@ public final class AgentActionExecutor {
                 row.put("title", q.title());
                 row.put("category", q.category());
                 row.put("repeatable", q.repeatable());
+                // Issue #13 : délai de ré-acceptation d'une quête renouvelable, seulement s'il existe.
+                if (q.cooldownSeconds() > 0) {
+                    row.put("cooldownSeconds", q.cooldownSeconds());
+                }
                 row.put("prerequisites", q.prerequisites());
                 // #75 : PNJ donneur, seulement s'il est déclaré (giver: optionnel dans le YAML).
                 if (q.giverId() != null && !q.giverId().isBlank()) {

@@ -17,8 +17,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > « à rattacher ». **Étape 3** : création / modification / duplication / activation / suppression
 > des modèles depuis `/npcs/encounters` (`encounter.template.*`, validées par le parseur des
 > fichiers, sauvegarde avant suppression) ; apparence `skin_url` (ou par défaut) posée à la création
-> ou réparation, état affiché par occurrence. Pas encore : quêtes secondaires renouvelables.
-> Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu, TC-304/TC-305 PlugAdmin).
+> ou réparation, état affiché par occurrence. **Étape 4** : une quête secondaire renouvelable par
+> modèle (`quests/encounter_*.yml`, catégorie `encounter`), offerte par le dialogue seulement si
+> acceptable (condition `QUEST_AVAILABLE`), démarrée uniquement par « Commencer (j'accepte) » ; nouveau champ de
+> quête `cooldown:` (anti-farm, 20 h ici, refus `ON_COOLDOWN` avec temps restant) ; PlugAdmin
+> `/quests` filtre « Secondaires / Rencontres » et champ délai dans l'éditeur. Pas encore : journal
+> joueur des rencontres. Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu,
+> TC-304/TC-305 PlugAdmin, TC-306 quêtes secondaires).
 >
 > **Mode bypass administrateur explicite (#35, corrige #321, 14/10/2026)** — être OP ne contourne
 > plus aucune règle de jeu (accès et règles du monde Claims, claims d'autrui, zones protégées,

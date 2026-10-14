@@ -287,7 +287,7 @@ public final class Descriptors {
     // ---- Conditions de dialogue (calquées sur dialogue.model.ConditionType) -----------------
 
     /**
-     * Les huit conditions réellement évaluables sur un choix de dialogue. Un choix dont une
+     * Les conditions réellement évaluables sur un choix de dialogue. Un choix dont une
      * condition est fausse n'est pas affiché.
      *
      * <p>{@link #NEGATE} s'applique à <strong>n'importe laquelle</strong> d'entre elles : il n'est
@@ -299,6 +299,12 @@ public final class Descriptors {
                     List.of(QUEST_REF, Field.select("state", "État", "questState",
                             "Un des six états du moteur : NOT_STARTED, ACTIVE, READY_TO_TURN_IN, "
                             + "COMPLETED, FAILED ou ABANDONED.", true))),
+            new Descriptor("QUEST_AVAILABLE", "Quête acceptable maintenant", "book",
+                    "Vraie si le joueur peut accepter la quête tout de suite : ni active, ni terminée "
+                            + "sans être répétable, prérequis remplis et délai de ré-acceptation écoulé. "
+                            + "Pour proposer une quête renouvelable seulement quand elle peut être prise "
+                            + "(issue #13).",
+                    List.of(QUEST_REF)),
             new Descriptor("HAS_ITEM", "Possède un objet", "gift",
                     "Vraie si le joueur possède au moins N exemplaires de l'objet.",
                     List.of(Field.select("material", "Objet", "material",

@@ -30,6 +30,7 @@ import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -361,6 +362,9 @@ public final class QuestProgressEngine implements PluginService {
                         case MISSING_PREREQUISITES:
                             return CompletableFuture.completedFuture(
                                     AcceptOutcome.missingPrerequisites(availability.missingPrerequisites()));
+                        case ON_COOLDOWN:
+                            return CompletableFuture.completedFuture(
+                                    AcceptOutcome.onCooldown(availability.retryAfter()));
                         default:
                             break;
                     }
@@ -425,6 +429,15 @@ public final class QuestProgressEngine implements PluginService {
             if (currentState == QuestState.COMPLETED && !quest.repeatable()) {
                 return CompletableFuture.completedFuture(Availability.of(Availability.Status.NOT_REPEATABLE));
             }
+            // Issue #13 : anti-farm des quêtes renouvelables. La date de complétion est l'updated_at
+            // de la ligne COMPLETED — déjà persistée, aucune colonne ni migration en plus. Un abandon
+            // (ABANDONED) ne déclenche pas de délai : il ne rapporte rien.
+            if (currentState == QuestState.COMPLETED) {
+                Duration remaining = remainingCooldown(quest, existing.get().updatedAt(), Instant.now());
+                if (!remaining.isZero()) {
+                    return CompletableFuture.completedFuture(Availability.onCooldown(remaining));
+                }
+            }
             CompletableFuture<List<NamespacedKey>> missingFuture = ignorePrerequisites
                     ? CompletableFuture.completedFuture(List.of())
                     : checkPrerequisites(playerId, quest);
@@ -434,17 +447,37 @@ public final class QuestProgressEngine implements PluginService {
         });
     }
 
-    /** Disponibilité d'une quête pour un joueur, et la raison précise quand elle ne l'est pas. */
-    public record Availability(Status status, List<NamespacedKey> missingPrerequisites) {
+    /**
+     * Temps restant avant de pouvoir reprendre une quête terminée, {@link Duration#ZERO} si elle
+     * peut l'être tout de suite (pas de délai, date inconnue, ou délai écoulé).
+     */
+    static Duration remainingCooldown(QuestDefinition quest, Instant completedAt, Instant now) {
+        if (quest.cooldown().isZero() || completedAt == null) {
+            return Duration.ZERO;
+        }
+        Duration remaining = Duration.between(now, completedAt.plus(quest.cooldown()));
+        return remaining.isNegative() || remaining.isZero() ? Duration.ZERO : remaining;
+    }
 
-        public enum Status { AVAILABLE, UNKNOWN, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES }
+    /** Disponibilité d'une quête pour un joueur, et la raison précise quand elle ne l'est pas. */
+    public record Availability(Status status, List<NamespacedKey> missingPrerequisites, Duration retryAfter) {
+
+        public enum Status { AVAILABLE, UNKNOWN, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES, ON_COOLDOWN }
 
         public Availability {
             missingPrerequisites = List.copyOf(missingPrerequisites == null ? List.of() : missingPrerequisites);
         }
 
+        public Availability(Status status, List<NamespacedKey> missingPrerequisites) {
+            this(status, missingPrerequisites, null);
+        }
+
         static Availability of(Status status) {
             return new Availability(status, List.of());
+        }
+
+        static Availability onCooldown(Duration retryAfter) {
+            return new Availability(Status.ON_COOLDOWN, List.of(), retryAfter);
         }
 
         public boolean available() {
@@ -1247,6 +1280,22 @@ public final class QuestProgressEngine implements PluginService {
      * même que l'ActionBar de progression et le journal, et la quantité de
      * {@link QuestObjective#requiredAmount}. Les textes vivent dans {@code messages.yml}.</p>
      */
+    /**
+     * Issue #13 : dit au joueur qu'une quête renouvelable n'est pas encore reprenable, et dans
+     * combien de temps. Appelé par les points d'entrée joueur (dialogue, {@code /quest accept}) —
+     * jamais par {@link #accept} lui-même, pour qu'un démarrage admin refusé ne notifie pas le joueur.
+     */
+    public void showCooldown(Player player, NamespacedKey questId, Duration retryAfter) {
+        String questName = questEngine.find(questId).map(q -> q.title().base()).orElse(questId.toString());
+        runOnMainThread(() -> {
+            if (player.isOnline()) {
+                player.sendMessage(messagesService.current().format("quest.on-cooldown",
+                        Placeholder.parsed("quest", questName),
+                        Placeholder.unparsed("time", CooldownText.format(retryAfter))));
+            }
+        });
+    }
+
     private void showQuestStarted(Player player, QuestDefinition quest) {
         if (!player.isOnline()) {
             return;

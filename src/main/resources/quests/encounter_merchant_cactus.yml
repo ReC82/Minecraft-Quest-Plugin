@@ -1,0 +1,27 @@
+# Quête secondaire renouvelable du Marchand égaré (issue #13, étape 4). Donnée par n'importe
+# quelle occurrence du modèle desert_merchant (npc_id encounter_merchant). Remise d'objets au PNJ
+# (DELIVER_ITEM_TO_NPC) : retrait exact, anti double-clic et dépôt partiel gérés par le moteur
+# (#123). Délai de 20 h entre deux complétions.
+id: rpgquest:encounter_merchant_cactus
+title: "<gold>Marchandise du désert</gold>"
+description: "<gray>Le Marchand égaré manque de cactus pour ses teintures. Rapporte-lui-en à n'importe quel Marchand égaré.</gray>"
+category: encounter
+icon: CACTUS
+giver: encounter_merchant
+repeatable: true
+cooldown: 20h
+
+steps:
+  - id: deliver_cactus
+    objectives:
+      - type: DELIVER_ITEM_TO_NPC
+        npc: encounter_merchant
+        material: CACTUS
+        amount: 12
+
+rewards:
+  - type: EXPERIENCE
+    amount: 20
+  - type: ITEM
+    material: BREAD
+    amount: 6

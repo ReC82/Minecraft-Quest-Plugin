@@ -22,6 +22,7 @@ import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
+import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
 import com.lodygames.rpgquest.dialogue.model.SetVariableAction;
@@ -226,6 +227,10 @@ final class DialogueDefinitionParser {
                 NamespacedKey questId = parseQuestRef(section, "quest", context, errors);
                 QuestState state = parseQuestState(section, context, errors);
                 yield (questId != null && state != null) ? new QuestStateCondition(questId, state) : null;
+            }
+            case QUEST_AVAILABLE -> {
+                NamespacedKey questId = parseQuestRef(section, "quest", context, errors);
+                yield questId != null ? new QuestAvailableCondition(questId) : null;
             }
             case HAS_ITEM -> {
                 Material material = parseMaterial(section, context, errors);

@@ -10,5 +10,7 @@ public enum ConditionType {
     LACKS_CUSTOM_ITEM,
     /** Il reste des objets à remettre à ce PNJ (issue #123). */
     HAS_PENDING_DELIVERY,
-    HAS_INVENTORY_SPACE
+    HAS_INVENTORY_SPACE,
+    /** La quête peut être acceptée maintenant (issue #13 — prérequis, état, délai de ré-acceptation). */
+    QUEST_AVAILABLE
 }

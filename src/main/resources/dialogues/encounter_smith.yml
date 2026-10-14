@@ -1,6 +1,13 @@
 # Dialogue des PNJ récurrents « Forgeron perdu » (issue #13). Partagé par TOUTES les occurrences de ce
 # modèle (id = npc_id du modèle, convention du projet) : le PNJ est commun, la conversation et les
-# quêtes restent propres à chaque joueur. Les quêtes secondaires renouvelables s'ajoutent ici.
+# quêtes restent propres à chaque joueur.
+#
+# Étape 4 de #13 : quête secondaire renouvelable rpgquest:encounter_smith_ore.
+#  - L'offre n'apparaît que si la quête est réellement acceptable MAINTENANT (QUEST_AVAILABLE : ni
+#    active, prérequis remplis, délai de ré-acceptation « cooldown: » écoulé).
+#  - Aucune quête sans acceptation : seul le bouton « Commencer (j'accepte) » porte le START_QUEST (préfixe « Commencer » imposé par #238) ; « Plus tard »
+#    et « Refuser » ne démarrent rien.
+#  - Quête terminée et encore en recharge : le PNJ le dit, sans rien proposer.
 id: rpgquest:encounter_smith
 start: greeting
 
@@ -9,16 +16,124 @@ nodes:
     speaker: "Forgeron perdu"
     text: "<white>Ces montagnes regorgent de minerai, mais j'y ai égaré mes outils… Quel froid !</white>"
     choices:
+      - text: "De l'ouvrage ?"
+        conditions:
+          - type: QUEST_AVAILABLE
+            quest: rpgquest:encounter_smith_ore
+        next: offer
+      - text: "Où en est ma tâche ?"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:encounter_smith_ore
+            state: ACTIVE
+        next: in_progress
+      # Remise d'objets (#123) : visible seulement si la quête attend encore des objets de CE PNJ.
+      - text: "J'ai des objets"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
+      - text: "Encore du travail ?"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:encounter_smith_ore
+            state: COMPLETED
+          - type: QUEST_AVAILABLE
+            quest: rpgquest:encounter_smith_ore
+            negate: true
+        next: resting
       - text: "Qui es-tu ?"
         next: who
       - text: "Au revoir"
         actions:
           - type: CLOSE
 
+  offer:
+    speaker: "Forgeron perdu"
+    text: "<white>La quête s'appelle <gold>Du minerai pour la forge</gold>.</white><newline><gray>But : rallumer ma forge de fortune.</gray><newline><gray>Ce qu'il faudra faire : me remettre 6 fer brut et 8 charbons — à moi ou à n'importe quel Forgeron perdu. Tu peux les donner en plusieurs fois.</gray><newline><gray>Récompense modeste : un peu d'expérience et deux lingots. Je n'aurai pas d'autre ouvrage avant demain.</gray>"
+    choices:
+      - text: "Commencer (j'accepte)"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:encounter_smith_ore
+        next: accepted
+      - text: "Plus tard"
+        next: greeting
+      - text: "Refuser"
+        next: refused
+
+  accepted:
+    speaker: "Forgeron perdu"
+    text: "<green>Marché conclu.</green> <gray>Ta tâche est notée dans ton journal de quêtes.</gray>"
+    choices:
+      - text: "En route"
+        actions:
+          - type: CLOSE
+
+  refused:
+    speaker: "Forgeron perdu"
+    text: "<gray>Comme tu voudras. L'offre tient tant que tu ne l'as pas faite.</gray>"
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
+  in_progress:
+    speaker: "Forgeron perdu"
+    text: "<white>La forge attend son minerai.</white> <gray>Remets-moi ce que tu as, même en plusieurs fois.</gray>"
+    choices:
+      - text: "Retour"
+        next: greeting
+
+  resting:
+    speaker: "Forgeron perdu"
+    text: "<gray>Tu m'as déjà bien aidé. Je n'ai rien d'autre pour l'instant — repasse d'ici un jour.</gray>"
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
   who:
     speaker: "Forgeron perdu"
-    text: "<gray>Un voyageur, comme toi. On me croise un peu partout dans ce genre de contrée.</gray> <white>Reviens me voir : j'aurai bientôt de l'ouvrage pour toi.</white>"
+    text: "<gray>Un forgeron, comme d'autres perdus dans ces montagnes. Nous nous passons le mot pour l'ouvrage.</gray>"
     choices:
-      - text: "À bientôt"
+      - text: "Retour"
+        next: greeting
+
+  delivery:
+    speaker: "Forgeron perdu"
+    text: "<white>Voyons ce que tu m'apportes :</white><newline>%delivery_status%"
+    choices:
+      - text: "Donner mes objets"
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_after:
+    speaker: "Forgeron perdu"
+    text: "<white>%delivery_status%</white>"
+    choices:
+      - text: "Donner encore"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Tout est remis"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+            negate: true
+        next: delivery_done
+      - text: "Plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_done:
+    speaker: "Forgeron perdu"
+    text: "<green>Parfait, c'est tout ce qu'il me fallait. Merci, voyageur !</green> <gray>Repasse demain, j'aurai peut-être autre chose.</gray>"
+    choices:
+      - text: "Au revoir"
         actions:
           - type: CLOSE

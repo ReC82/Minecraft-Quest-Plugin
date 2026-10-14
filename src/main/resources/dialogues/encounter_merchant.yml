@@ -1,6 +1,13 @@
 # Dialogue des PNJ récurrents « Marchand égaré » (issue #13). Partagé par TOUTES les occurrences de ce
 # modèle (id = npc_id du modèle, convention du projet) : le PNJ est commun, la conversation et les
-# quêtes restent propres à chaque joueur. Les quêtes secondaires renouvelables s'ajoutent ici.
+# quêtes restent propres à chaque joueur.
+#
+# Étape 4 de #13 : quête secondaire renouvelable rpgquest:encounter_merchant_cactus.
+#  - L'offre n'apparaît que si la quête est réellement acceptable MAINTENANT (QUEST_AVAILABLE : ni
+#    active, prérequis remplis, délai de ré-acceptation « cooldown: » écoulé).
+#  - Aucune quête sans acceptation : seul le bouton « Commencer (j'accepte) » porte le START_QUEST (préfixe « Commencer » imposé par #238) ; « Plus tard »
+#    et « Refuser » ne démarrent rien.
+#  - Quête terminée et encore en recharge : le PNJ le dit, sans rien proposer.
 id: rpgquest:encounter_merchant
 start: greeting
 
@@ -9,16 +16,124 @@ nodes:
     speaker: "Marchand égaré"
     text: "<white>Enfin un visage ! J'ai perdu ma caravane dans ces sables… Tu n'aurais pas croisé des chameaux ?</white>"
     choices:
+      - text: "Je peux aider ?"
+        conditions:
+          - type: QUEST_AVAILABLE
+            quest: rpgquest:encounter_merchant_cactus
+        next: offer
+      - text: "Où en est ma tâche ?"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:encounter_merchant_cactus
+            state: ACTIVE
+        next: in_progress
+      # Remise d'objets (#123) : visible seulement si la quête attend encore des objets de CE PNJ.
+      - text: "J'ai des objets"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
+      - text: "Encore du travail ?"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:encounter_merchant_cactus
+            state: COMPLETED
+          - type: QUEST_AVAILABLE
+            quest: rpgquest:encounter_merchant_cactus
+            negate: true
+        next: resting
       - text: "Qui es-tu ?"
         next: who
       - text: "Au revoir"
         actions:
           - type: CLOSE
 
+  offer:
+    speaker: "Marchand égaré"
+    text: "<white>La quête s'appelle <gold>Marchandise du désert</gold>.</white><newline><gray>But : refaire mon stock de cactus pour mes teintures.</gray><newline><gray>Ce qu'il faudra faire : me remettre 12 cactus — à moi ou à n'importe quel Marchand égaré. Tu peux les donner en plusieurs fois.</gray><newline><gray>Récompense modeste : un peu d'expérience et du pain. Je n'aurai pas d'autre commande avant demain.</gray>"
+    choices:
+      - text: "Commencer (j'accepte)"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:encounter_merchant_cactus
+        next: accepted
+      - text: "Plus tard"
+        next: greeting
+      - text: "Refuser"
+        next: refused
+
+  accepted:
+    speaker: "Marchand égaré"
+    text: "<green>Marché conclu.</green> <gray>Ta tâche est notée dans ton journal de quêtes.</gray>"
+    choices:
+      - text: "En route"
+        actions:
+          - type: CLOSE
+
+  refused:
+    speaker: "Marchand égaré"
+    text: "<gray>Comme tu voudras. L'offre tient tant que tu ne l'as pas faite.</gray>"
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
+  in_progress:
+    speaker: "Marchand égaré"
+    text: "<white>Toujours à la recherche de mes cactus ?</white> <gray>Remets-les-moi quand tu en as, même en plusieurs fois.</gray>"
+    choices:
+      - text: "Retour"
+        next: greeting
+
+  resting:
+    speaker: "Marchand égaré"
+    text: "<gray>Tu m'as déjà bien aidé. Je n'ai rien d'autre pour l'instant — repasse d'ici un jour.</gray>"
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
   who:
     speaker: "Marchand égaré"
-    text: "<gray>Un voyageur, comme toi. On me croise un peu partout dans ce genre de contrée.</gray> <white>Reviens me voir : j'aurai bientôt quelques courses à te confier.</white>"
+    text: "<gray>Un marchand, comme tant d'autres égarés dans ces contrées. Nous nous croisons et nous échangeons nos commandes.</gray>"
     choices:
-      - text: "À bientôt"
+      - text: "Retour"
+        next: greeting
+
+  delivery:
+    speaker: "Marchand égaré"
+    text: "<white>Voyons ce que tu m'apportes :</white><newline>%delivery_status%"
+    choices:
+      - text: "Donner mes objets"
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_after:
+    speaker: "Marchand égaré"
+    text: "<white>%delivery_status%</white>"
+    choices:
+      - text: "Donner encore"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Tout est remis"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+            negate: true
+        next: delivery_done
+      - text: "Plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_done:
+    speaker: "Marchand égaré"
+    text: "<green>Parfait, c'est tout ce qu'il me fallait. Merci, voyageur !</green> <gray>Repasse demain, j'aurai peut-être autre chose.</gray>"
+    choices:
+      - text: "Au revoir"
         actions:
           - type: CLOSE

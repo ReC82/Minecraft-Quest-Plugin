@@ -27,6 +27,7 @@ import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
+import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
 import com.lodygames.rpgquest.dialogue.model.SetVariableAction;
@@ -41,6 +42,7 @@ import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.StarterToolKitService;
+import com.lodygames.rpgquest.quest.progress.AcceptOutcome;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
 import java.util.List;
@@ -331,7 +333,12 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     private void executeAction(Player player, DialogueDefinition dialogue, DialogueAction action) {
         switch (action) {
-            case StartQuestAction a -> questProgressEngine.accept(player, a.questId()).exceptionally(error -> {
+            case StartQuestAction a -> questProgressEngine.accept(player, a.questId()).thenAccept(outcome -> {
+                // Issue #13 : une quête renouvelable encore en recharge ne doit pas échouer en silence.
+                if (outcome.result() == AcceptOutcome.Result.ON_COOLDOWN) {
+                    questProgressEngine.showCooldown(player, a.questId(), outcome.retryAfter());
+                }
+            }).exceptionally(error -> {
                 logger.error("Échec de START_QUEST {} pour {}", a.questId(), player.getUniqueId(), error);
                 return null;
             });
@@ -386,6 +393,10 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         return switch (condition) {
             case QuestStateCondition c -> questProgressEngine.stateOf(player.getUniqueId(), c.questId())
                     .thenApply(state -> state == c.state());
+            // Issue #13 : la règle d'acceptation elle-même (QuestProgressEngine.availability), jamais
+            // une copie — une offre affichée est donc une offre réellement acceptable.
+            case QuestAvailableCondition c -> questProgressEngine.availability(player.getUniqueId(), c.questId(), false)
+                    .thenApply(QuestProgressEngine.Availability::available);
             case HasItemCondition c -> CompletableFuture.completedFuture(
                     player.getInventory().containsAtLeast(new ItemStack(c.material()), c.amount()));
             case HasPermissionCondition c -> CompletableFuture.completedFuture(player.hasPermission(c.permission()));

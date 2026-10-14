@@ -5081,6 +5081,11 @@ public final class PanelApp {
                 removeEntry(draft, i, j, kind, k);
             }
             default -> {
+                if (parsed.createdNodes().isEmpty() && com.lodygames.rpgquest.panel.content.DialogueYaml.write(draft)
+                        .equals(com.lodygames.rpgquest.panel.content.DialogueYaml.write(original.draft()))) {
+                    keepUnchangedDialogue(exchange, post, slug, file.get().sha256(), "save_publish".equals(op));
+                    return;
+                }
                 saveDialogue(exchange, post, ctx, slug, expectedSha, draft, parsed.createdNodes(), comments,
                         "save_publish".equals(op));
                 return;
@@ -5123,6 +5128,23 @@ public final class PanelApp {
                 return;
             }
         }
+    }
+
+    /**
+     * Issue #373 : « Enregistrer » sans aucune modification ne réécrit pas le fichier. Il garde ainsi
+     * ses commentaires et sa mise en forme (scalaires {@code >}…), et son empreinte ne bouge pas :
+     * l'état « À jour en jeu » reste vrai. « Enregistrer et mettre en jeu » publie la version
+     * existante telle quelle.
+     */
+    private void keepUnchangedDialogue(HttpExchange exchange, NpcPost post, String slug, String sha,
+                                       boolean publish) throws IOException {
+        String dest = "/dialogues/edit/" + slug + "?ok=" + enc("Aucune modification : le dialogue est resté tel quel.");
+        if (publish && dialogueRights(post.session()).publish()) {
+            String queued = queueDialoguePublish(post.session(), post.agentId(), slug, sha);
+            dest = "/dialogues/edit/" + slug + (queued.startsWith("!") ? "?err=" + enc(queued.substring(1))
+                    : "?toast=" + enc(queued));
+        }
+        Http.redirect(exchange, dest);
     }
 
     private void saveDialogue(HttpExchange exchange, NpcPost post, DialoguePages.Ctx ctx, String slug,

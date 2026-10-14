@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.audit.InMemoryAuditLog;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
 import com.lodygames.rpgquest.panel.content.ContentWorkspace;
+import com.lodygames.rpgquest.panel.content.DialogueDraft;
 import com.lodygames.rpgquest.panel.content.DialogueYaml;
 import com.lodygames.rpgquest.panel.support.TestConfig;
 import java.net.URI;
@@ -232,10 +233,56 @@ class DialogueEditorTest {
         assertTrue(page.contains("Inverser : seulement si ce n'est pas le cas"));
         assertTrue(page.contains("Conditions et autres effets (3)"), "deux conditions et un don de pain");
 
-        assertEquals(303, post("/dialogues/save", formFields(page), "save").statusCode());
-        String expected = DialogueYaml.write(DialogueYaml.read(COMPLEX).draft());
-        assertEquals(expected, Files.readString(content.resolve("dialogues/sage.yml")),
+        Map<String, String> f = formFields(page);
+        f.put("n1_text", "Il était une fois, au marais…");
+        assertEquals(303, post("/dialogues/save", f, "save").statusCode());
+        DialogueDraft expected = DialogueYaml.read(COMPLEX).draft();
+        expected.nodes.get(1).text = "Il était une fois, au marais…";
+        assertEquals(DialogueYaml.write(expected), Files.readString(content.resolve("dialogues/sage.yml")),
                 "conditions, effets, ordre et fermeture conservés");
+    }
+
+    /** Issue #373 : enregistrer sans rien changer n'écrit rien — commentaires et mise en forme restent. */
+    @Test
+    void savingWithoutAnyChangeLeavesTheFileUntouched() throws Exception {
+        start();
+        Files.writeString(content.resolve("dialogues/sage.yml"), COMPLEX);
+        HttpResponse<String> res = post("/dialogues/save", formFields(get("/dialogues/edit/sage").body()), "save");
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").contains("ok="), "« aucune modification » est dit");
+        assertEquals(COMPLEX, Files.readString(content.resolve("dialogues/sage.yml")));
+    }
+
+    /**
+     * Issue #373 : le VRAI dialogue du Garde (scalaires {@code text: >}, commentaires, 22 répliques).
+     * L'éditeur n'en montrait que deux, et l'enregistrement sans changement était refusé.
+     */
+    @Test
+    void theRealGuardDialogueOpensWholeAndSavesUnchanged() throws Exception {
+        Path source = Path.of("..", "src", "main", "resources", "dialogues", "guard.yml");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(source), "guard.yml introuvable");
+        start();
+        String original = Files.readString(source);
+        Files.writeString(content.resolve("dialogues/guard.yml"), original);
+        String page = get("/dialogues/edit/guard").body();
+        assertFalse(page.contains("Réplique introuvable"), "toutes les suites sont résolues");
+        assertFalse(page.contains("lecture seule"), "le fichier est éditable");
+        Map<String, String> f = formFields(page);
+        assertEquals("22", f.get("n_count"), "les 22 répliques sont dans le formulaire");
+        assertTrue(page.contains("Le Garde — Palier 5"), "une réplique écrite en « text: > » s'affiche");
+
+        HttpResponse<String> res = post("/dialogues/save", f, "save");
+        assertEquals(303, res.statusCode(), "aucune erreur à l'enregistrement sans changement");
+        assertEquals(original, Files.readString(content.resolve("dialogues/guard.yml")), "fichier intact, commentaires compris");
+
+        // Une vraie modification : le fichier est réécrit sans rien perdre d'autre.
+        f.put("n0_text", "<white>Bienvenue, voyageur.</white>");
+        assertEquals(303, post("/dialogues/save", f, "save").statusCode());
+        DialogueDraft after = DialogueYaml.read(Files.readString(content.resolve("dialogues/guard.yml"))).draft();
+        DialogueDraft before = DialogueYaml.read(original).draft();
+        before.nodes.get(0).text = "<white>Bienvenue, voyageur.</white>";
+        assertEquals(DialogueYaml.write(before), DialogueYaml.write(after));
+        assertEquals(22, after.nodes.size());
     }
 
     @Test

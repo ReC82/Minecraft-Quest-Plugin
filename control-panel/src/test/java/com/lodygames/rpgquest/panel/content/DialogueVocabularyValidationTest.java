@@ -137,11 +137,10 @@ class DialogueVocabularyValidationTest {
                         conditions:
                           - type: QUEST_STATE
                             quest: rpgquest:test
-                            state: """ + state + """
-
+                            state: %s
                         actions:
                           - type: CLOSE
-                """)).isEmpty(), "l'état réel « " + state + " » doit être accepté");
+                """.formatted(state))).isEmpty(), "l'état réel « " + state + " » doit être accepté");
         }
     }
 
@@ -225,11 +224,10 @@ class DialogueVocabularyValidationTest {
                       - text: "Sauf si…"
                         conditions:
                           - type: NO_MAIN_CLAIM
-                            negate: """ + value + """
-
+                            negate: %s
                         actions:
                           - type: CLOSE
-                """)).isEmpty(), "« " + value + " » doit être accepté");
+                """.formatted(value))).isEmpty(), "« " + value + " » doit être accepté");
         }
     }
 

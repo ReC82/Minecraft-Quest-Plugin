@@ -48,8 +48,10 @@ Sous chaque réponse, **Conditions et autres effets** (replié) :
 
 Tout ce qu'un dialogue contient est conservé quand vous l'enregistrez depuis PlugAdmin, même ce que
 l'éditeur ne sait pas nommer. Seules les notes écrites à la main dans le fichier (lignes `#`) ne
-sont pas gardées ; l'éditeur le signale. Un fichier qu'il ne sait pas relire entièrement s'ouvre en
-lecture seule, avec la raison.
+sont pas gardées ; l'éditeur le signale. **Enregistrer sans avoir rien changé ne réécrit pas le
+fichier** : notes et mise en forme restent telles quelles. Les textes écrits sur plusieurs lignes
+(`text: >` ou `text: |`) sont relus comme le serveur les lit. Un fichier qu'il ne sait pas relire
+entièrement s'ouvre en lecture seule, avec la raison — jamais avec des répliques en moins.
 
 ## Supprimer un dialogue
 

@@ -5823,3 +5823,20 @@ positions). Un compte joueur sans mode admin. **Durée** : 30 minutes.
 10. `/rpgadmin quest reset <joueur> rpgquest:encounter_bandit_spiders` → l'offre réapparaît tout de
     suite.
 
+
+### TC-307 — PNJ récurrents, étape 5 : journal des quêtes de rencontre (issue #13, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR de l'étape 5 déployé, TC-306 jouable (au moins une quête `encounter_*` terminée
+par un compte joueur sans mode admin). **Durée** : 10 minutes.
+
+1.  Juste après avoir terminé « Les toiles du sous-bois », `/quests` → onglet « Quêtes terminées » :
+    l'icône porte « Rencontre — quête secondaire » et « À refaire dans 19 h 59 min » (≈ 20 h).
+2.  Clic gauche sur l'icône → vue détail : mêmes lignes + « Renouvelable : toutes les 20 h ».
+3.  Une quête terminée **non** répétable (ex. tutoriel) : aucune ligne « refaire / refaite ».
+4.  `/rpgadmin quest reset <joueur> rpgquest:encounter_bandit_spiders` puis la terminer à nouveau
+    (ou attendre la fin du délai) : tant que la ligne n'est pas en recharge, « Peut être refaite
+    auprès d'un PNJ de rencontre » s'affiche ; accepter à nouveau → la quête passe dans « Quêtes
+    en cours » avec l'étiquette « Rencontre ».
+5.  Ouvrir le journal d'un **second** joueur : aucune recharge héritée du premier.
+6.  PlugAdmin → export d'un content pack contenant `encounter_bandit_spiders` : la quête porte
+    `cooldown: 20h` ; réimporter ce pack → aucun diagnostic sur `cooldown`.

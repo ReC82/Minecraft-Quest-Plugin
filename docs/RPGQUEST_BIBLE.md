@@ -399,6 +399,7 @@ But : ouvrir le journal paginé. **Deux onglets** : « Quêtes en cours » (`ACT
 Ouverture : `/quests`, **ou** un clic droit sur l'item `rpgquest:journal_quetes` remis par le Libraire (même GUI, `QuestJournalService`). L'item est reconnu par son identité RPGQuest/PDC, jamais par son nom/lore ; il ne peut pas être dupliqué (garde `LACKS_CUSTOM_ITEM` sur le dialogue du Libraire) ni perdu (`SoulboundItemService`).
 Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : clic gauche = détail, clic droit = suivi/bossbar). Aucune interaction ne permet de retirer ou dupliquer un item de la GUI (tout clic/drag sur un `JournalInventoryHolder` est annulé). Aucun paramètre.
 Persistance : le suivi (quête « trackée ») persiste (`player_variables`), pas la simple ouverture du menu.
+Quêtes renouvelables (issue #13) : une quête de rencontre (catégorie `encounter` ou donneur `encounter_*`) porte la ligne « Rencontre — quête secondaire » ; une quête **terminée et répétable** affiche « À refaire dans 19 h 40 min » tant que son `cooldown:` court, puis « Peut être refaite » (« … auprès d'un PNJ de rencontre » pour une rencontre) ; la vue détail ajoute la cadence « Renouvelable : toutes les 20 h ». Même calcul que le refus `ON_COOLDOWN` (`QuestProgressEngine#remainingCooldowns`, une lecture asynchrone). Si cette lecture échoue, aucune de ces lignes n'est affichée : le journal ne promet jamais une quête disponible à tort.
 Bouton « Fermer » (slot `CLOSE_SLOT`/`DETAIL_CLOSE_SLOT`) : la fermeture est différée d'un tick serveur (`QuestJournalService#closeNextTick`) plutôt qu'appelée directement dans le gestionnaire de `InventoryClickEvent` — fermer une fenêtre pendant le traitement de son propre clic annulé pouvait laisser le client avec une fenêtre visuellement toujours ouverte (paquet de resynchronisation du clic annulé arrivant après le paquet de fermeture).
 
 **Bossbar de suivi (`ui.TrackedQuestDisplay`)** — retour joueur 2026-10-04 (issue #157) : le gabarit
@@ -3436,6 +3437,9 @@ seulement, 30 j max), compté depuis la complétion ; refus `ON_COOLDOWN` avec l
 « Secondaires / Rencontres », badges « rencontre »/« recharge », champ délai dans l'éditeur. Détail :
 [ENCOUNTERS.md](ENCOUNTERS.md). Tests : `docs/MANUAL_TEST_PLAN.md` TC-303 à TC-306
 (`PENDING MANUAL VALIDATION`).
+Étape 5 : le journal `/quests` signale les quêtes de rencontre et le temps restant avant de
+pouvoir refaire une quête renouvelable (voir `/quests` ci-dessus) ; l'export en content pack
+transporte `cooldown` (schéma panel mis à jour). Test : TC-307 (`PENDING MANUAL VALIDATION`).
 
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 

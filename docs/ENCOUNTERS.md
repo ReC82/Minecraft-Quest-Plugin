@@ -191,6 +191,25 @@ Fichiers : `quests/encounter_*.yml` (seedés s'ils manquent, `BUNDLED_EXAMPLES`)
 `dialogues/encounter_*.yml` (fichiers existants sur le serveur : à remplacer explicitement au
 déploiement, `--also`).
 
+## Journal du joueur (étape 5)
+
+Le journal `/quests` (ou l'item Journal des quêtes) montre les quêtes de rencontre sans nouvel
+onglet ni nouvelle table :
+
+- toute quête de rencontre (catégorie `encounter` ou donneur `encounter_*`, même règle que le
+  panel) porte la ligne **« Rencontre — quête secondaire »** ;
+- dans **Quêtes terminées**, une quête répétable affiche **« À refaire dans 19 h 40 min »** pendant
+  son `cooldown:`, puis **« Peut être refaite auprès d'un PNJ de rencontre »** ; la vue détail
+  ajoute **« Renouvelable : toutes les 20 h »** ;
+- le temps restant vient de `QuestProgressEngine#remainingCooldowns` (une lecture asynchrone de
+  `quest_progress`, mêmes règles que le refus `ON_COOLDOWN`). En cas d'erreur de lecture, ces
+  lignes sont omises plutôt que d'annoncer une quête disponible à tort ;
+- une quête reprise repasse dans **Quêtes en cours** (état `ACTIVE`), comme toute quête.
+
+Non fait volontairement : un registre des PNJ de rencontre « croisés » par joueur (il faudrait
+une nouvelle table — décision de schéma non prise). Le content pack exporte désormais `cooldown`
+(`20h`, sans arrondi) et le schéma du panel le déclare.
+
 ## Configuration — `config.yml`, section `encounters`
 
 | Clé | Défaut | Bornes |

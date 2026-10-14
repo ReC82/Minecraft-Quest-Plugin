@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Base de données : backend actif dans le heartbeat + page PlugAdmin /database (#42)
+
+### Changement
+
+- Plugin : le heartbeat de l'agent porte `database: {engine, schema_version}` (moteur réellement
+  actif, sans hôte, compte ni secret). Aucune migration, aucune nouvelle clé de configuration,
+  **aucun changement de backend** : le serveur reste sur SQLite.
+- Panel : page **Base de données** (propriétaire) — backend actif, base MariaDB cible avec mot de
+  passe chiffré (AES-256-GCM, clé dérivée de `RPGQUEST_PANEL_SECRET`), test de connexion en lecture
+  seule, assistant de migration sans bascule. Nouvelle table `db_migration_target` dans
+  `control-panel.db` (créée au démarrage). Pilote MariaDB ajouté au panel.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) et redéploiement du panel
+(`scripts/plugadmin/deploy.sh`). Ne pas téléverser `config.yml`, ne pas toucher `data.db`, ne pas
+modifier `database.type`.
+
+### Sauvegarde préalable
+
+Sauvegarde datée du JAR en place (faite par `deploy-verygames.sh`) ; sauvegarde du panel faite par
+`deploy.sh`.
+
+### Validation
+
+`/database` affiche « SQLite (data.db) » une fois le nouveau heartbeat reçu ; enregistrer une cible
+puis vérifier que le mot de passe n'est jamais réaffiché. `PENDING MANUAL VALIDATION` pour un test de
+connexion vers une vraie base VeryGames (à faire par le propriétaire, avec ses identifiants).
+
+### Rollback
+
+Redéployer le JAR et le panel précédents. La table `db_migration_target` reste inerte pour une
+version antérieure du panel.
+
+---
+
 ## 2026-10-14 - PNJ récurrents, étape 5 : journal des quêtes de rencontre (#13)
 
 ### Changement

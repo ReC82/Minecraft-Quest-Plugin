@@ -138,6 +138,13 @@ les identifiants copiés sont explicites et l'outil n'abaisse jamais une séquen
 
 ## 3. Ce qui est autorisé aujourd'hui : répétition sur copie isolée
 
+**PlugAdmin > Base de données** (`/database`, propriétaire) affiche en permanence le backend
+**réellement actif** (heartbeat du plugin), enregistre la base MariaDB cible (mot de passe chiffré,
+jamais réaffiché, champ vide = conserver, effacement séparé et confirmé), **teste la connexion** en
+lecture seule et déroule l'assistant (état / cible / test / simulation / comparaisons / bloquants) ;
+le bouton de bascule y est **désactivé** et aucune route ne l'effectue. Fiche :
+`control-panel/src/main/resources/docs/base-de-donnees.md`.
+
 - Copier une **sauvegarde** de `data.db` (jamais le fichier du serveur en service) dans un dossier
   de travail, `chmod a-w`.
 - Si son schéma est plus ancien que l'outil : en faire une **seconde copie** et la porter au schéma

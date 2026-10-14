@@ -5497,6 +5497,11 @@ database:
   secret, codes de sortie `0` SUCCESS / `2` FAILED / `1` usage. **Bascule réelle non faite et non
   autorisée** sans consigne du propriétaire ; constat bloquant ouvert (textes libres en
   `VARCHAR(191)` côté MariaDB, #354). Runbook : [deployment/MIGRATION_SQLITE_MARIADB.md](deployment/MIGRATION_SQLITE_MARIADB.md).
+- **PlugAdmin > Base de données** (`/database`, permission `DATABASE_CONFIGURE`, propriétaire) :
+  backend actif réel (champ `database.engine` du heartbeat), base MariaDB cible (hôte, port, base,
+  compte, TLS ; mot de passe chiffré AES-256-GCM dans `control-panel.db`, jamais réaffiché, vide =
+  conserver, effacement séparé confirmé), test de connexion en lecture seule borné, assistant de
+  migration dont le bouton de bascule est désactivé. Audit sans hôte ni secret.
 - Détail complet : [PERSISTENCE.md](PERSISTENCE.md).
 
 ### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 18)

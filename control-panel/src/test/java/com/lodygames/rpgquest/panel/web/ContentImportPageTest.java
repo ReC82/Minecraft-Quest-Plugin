@@ -239,6 +239,50 @@ class ContentImportPageTest {
         assertFalse(page.contains("Enregistrer dans la source"));
     }
 
+    /** Issue #211 — le parcours « modèle d'histoire » est visible dès la page vide. */
+    @Test
+    void theEmptyPageOffersTheStoryTemplateAndThePrompt() throws Exception {
+        start();
+        login();
+
+        String page = get("/content/import").body();
+
+        assertTrue(page.contains("Télécharger un modèle d"), "bouton de téléchargement absent");
+        assertTrue(page.contains("href=\"/content/story-kit\""));
+        assertTrue(page.contains("/content/story-kit?file=exemple-pack-lily.json"));
+        assertTrue(page.contains("UNIQUEMENT le fichier JSON"), "prompt prêt à copier absent");
+        assertTrue(page.contains("Analyser l"), "essai en un clic de l'exemple Lily absent");
+    }
+
+    /** Issue #211 — Lily de bout en bout sur la page : aperçu, puis UNE confirmation crée tout. */
+    @Test
+    void theLilyPackIsPreviewedThenImportedInOneConfirmation() throws Exception {
+        start();
+        login();
+        String lily = com.lodygames.rpgquest.panel.content.StoryKit.lilyPack();
+
+        String analysed = post("/content/import", "pack=" + enc(lily) + "&_csrf=" + csrf(get("/content/import").body())).body();
+        assertTrue(analysed.contains("Aperçu de"), "aperçu éditorial absent");
+        assertTrue(analysed.contains("Un repas pour Lily") && analysed.contains("Sur la piste de Julius"));
+        assertTrue(analysed.contains("3 × BREAD"), "objectifs et quantités visibles avant confirmation");
+        assertTrue(analysed.contains("SANS placement"), "le placement à faire doit être dit");
+        assertTrue(analysed.contains("Voir le contenu qui sera enregistré"));
+        try (var files = Files.list(contentRoot.resolve("quests"))) {
+            assertEquals(0, files.count(), "l'analyse n'écrit rien");
+        }
+
+        String page = post("/content/import", "pack=" + enc(lily) + "&confirm=true&_csrf="
+                + csrf(get("/content/import").body())).body();
+
+        assertTrue(page.contains("Import enregistré"));
+        for (String q : new String[] {"lily_repas", "lily_fleurs", "lily_ingredients", "lily_tarte", "lily_julius"}) {
+            assertTrue(Files.isRegularFile(contentRoot.resolve("quests/" + q + ".yml")), q);
+        }
+        assertTrue(Files.isRegularFile(contentRoot.resolve("stories/lily_souvenirs.yml")));
+        assertTrue(Files.isRegularFile(contentRoot.resolve("dialogues/lily.yml")));
+        assertTrue(Files.isRegularFile(contentRoot.resolve("dialogues/julius.yml")));
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     private void start() throws Exception {

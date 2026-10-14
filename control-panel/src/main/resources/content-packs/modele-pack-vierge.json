@@ -1,0 +1,152 @@
+{
+  "format": "lodyquests-content-pack",
+  "schemaVersion": 1,
+  "metadata": {
+    "title": "À REMPLIR : titre de l'histoire",
+    "author": "À REMPLIR",
+    "generator": "À REMPLIR : nom de l'IA ou de l'outil",
+    "notes": "À REMPLIR : tout ce qui reste à valider par l'auteur (positions inconnues, choix d'équilibrage…).",
+    "synopsis": "À REMPLIR : le récit original, résumé.",
+    "placements": "À REMPLIR : où doit se trouver chaque personnage (sans coordonnées inventées)."
+  },
+  "content": {
+    "quests": [
+      {
+        "id": "rpgquest:mon_histoire_quete_1",
+        "title": "À REMPLIR : titre de la quête 1",
+        "description": "À REMPLIR : ce que le joueur doit faire.",
+        "category": "mon_histoire",
+        "icon": "BOOK",
+        "repeatable": false,
+        "secret": false,
+        "giver": "mon_personnage",
+        "steps": [
+          {
+            "id": "remise",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "mon_personnage", "material": "BREAD", "amount": 3 }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 20 }
+        ]
+      },
+      {
+        "id": "rpgquest:mon_histoire_quete_2",
+        "title": "À REMPLIR : titre de la quête 2",
+        "description": "À REMPLIR : ce que le joueur doit faire.",
+        "category": "mon_histoire",
+        "icon": "BOOK",
+        "repeatable": false,
+        "secret": false,
+        "giver": "mon_personnage",
+        "prerequisites": ["rpgquest:mon_histoire_quete_1"],
+        "steps": [
+          {
+            "id": "parler",
+            "objectives": [
+              { "type": "TALK_TO_NPC", "npc": "mon_personnage" }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 30 }
+        ]
+      }
+    ],
+    "stories": [
+      {
+        "id": "mon_histoire",
+        "name": "À REMPLIR : nom de la story",
+        "secret": false,
+        "quests": ["rpgquest:mon_histoire_quete_1", "rpgquest:mon_histoire_quete_2"]
+      }
+    ],
+    "dialogues": [
+      {
+        "id": "rpgquest:mon_personnage",
+        "start": "accueil",
+        "nodes": {
+          "accueil": {
+            "speaker": "À REMPLIR : nom",
+            "text": "À REMPLIR : première réplique du personnage.",
+            "choices": [
+              { "text": "À REMPLIR : demander de l'aide (quête 1)",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:mon_histoire_quete_1" } ],
+                "next": "offre_1" },
+              { "text": "À REMPLIR : la suite (quête 2)",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:mon_histoire_quete_2" } ],
+                "next": "offre_2" },
+              { "text": "Je t'apporte ce que tu m'as demandé",
+                "conditions": [ { "type": "HAS_PENDING_DELIVERY" } ],
+                "next": "remise" },
+              { "text": "À REMPLIR : après la dernière quête",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:mon_histoire_quete_2", "state": "COMPLETED" } ],
+                "next": "conclusion" },
+              { "text": "Au revoir", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "offre_1": {
+            "speaker": "À REMPLIR : nom",
+            "text": "À REMPLIR : le personnage explique la quête 1 et les quantités.",
+            "choices": [
+              { "text": "Commencer la quête : À REMPLIR",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:mon_histoire_quete_1" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:mon_histoire_quete_1" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "offre_2": {
+            "speaker": "À REMPLIR : nom",
+            "text": "À REMPLIR : le personnage explique la quête 2.",
+            "choices": [
+              { "text": "Commencer la quête : À REMPLIR",
+                "conditions": [ { "type": "QUEST_AVAILABLE", "quest": "rpgquest:mon_histoire_quete_2" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:mon_histoire_quete_2" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "remise": {
+            "speaker": "À REMPLIR : nom",
+            "text": "Voyons ce que tu m'apportes :<newline>%delivery_status%",
+            "choices": [
+              { "text": "Donner mes objets",
+                "actions": [ { "type": "DELIVER_QUEST_ITEMS" } ],
+                "next": "apres_remise" },
+              { "text": "Plus tard", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "apres_remise": {
+            "speaker": "À REMPLIR : nom",
+            "text": "%delivery_status%",
+            "choices": [
+              { "text": "Donner encore",
+                "conditions": [ { "type": "HAS_PENDING_DELIVERY" } ],
+                "actions": [ { "type": "DELIVER_QUEST_ITEMS" } ],
+                "next": "apres_remise" },
+              { "text": "Retour", "next": "accueil" }
+            ]
+          },
+          "conclusion": {
+            "speaker": "À REMPLIR : nom",
+            "text": "À REMPLIR : réplique de fin d'histoire.",
+            "choices": [
+              { "text": "Au revoir", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          }
+        }
+      }
+    ],
+    "npcs": [
+      {
+        "id": "mon_personnage",
+        "displayName": "À REMPLIR : nom affiché",
+        "description": "À REMPLIR : qui est ce personnage. Placement : à lier à un PNJ Citizens après l'import.",
+        "dialogue": "rpgquest:mon_personnage",
+        "role": "quest_giver",
+        "enabled": true
+      }
+    ]
+  }
+}

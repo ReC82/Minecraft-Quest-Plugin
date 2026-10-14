@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
+import com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
@@ -208,6 +209,12 @@ public final class DialogueDefinitionWriter {
                     // Jamais écrit quand il est déduit du dialogue : réécrire un id implicite
                     // figerait le destinataire et casserait la réutilisation du même dialogue.
                     line(sb, "npc: " + quote(a.npcId()));
+                }
+            }
+            case OfferCatalogQuestAction a -> {
+                line(sb, "type: OFFER_CATALOG_QUEST");
+                if (a.catalogId() != null) {
+                    line(sb, "catalog: " + a.catalogId());
                 }
             }
             case CloseAction ignored -> line(sb, "type: CLOSE");

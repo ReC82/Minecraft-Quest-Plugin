@@ -313,6 +313,9 @@ public final class PanelApp {
         // /agents/action, donc par le catalogue et NPC_SPAWN_WRITE / NPC_WRITE.
         route("/npcs/encounters", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ récurrents",
                 Permission.NPC_READ, agentPages::npcEncounters));
+        // Issue #369 — catalogues de quêtes secondaires, attribués aux modèles de PNJ récurrents.
+        route("/quests/catalogs", exchange -> handleBusinessPage(exchange, "/quests", "Catalogues de quêtes",
+                Permission.NPC_READ, agentPages::questCatalogs));
         // Issue #213 — emplacements de construction. Lecture gardée par BUILDING_READ ; les
         // mutations passent par /agents/action, donc par le catalogue et ses propres permissions.
         route("/buildings/sites", exchange -> handleBusinessPage(exchange, "/buildings/sites",
@@ -5686,6 +5689,7 @@ public final class PanelApp {
         paths.add("/ai/studio");
         paths.add("/npcs/diagnostic");
         paths.add("/npcs/encounters");
+        paths.add("/quests/catalogs");
         return java.util.Set.copyOf(paths);
     }
 

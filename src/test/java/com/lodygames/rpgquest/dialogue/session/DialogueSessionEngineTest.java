@@ -1182,6 +1182,173 @@ class DialogueSessionEngineTest {
                 sessionEngine.reachableNodes(player, dialogue).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
+    // ---- Issue #369 : offre de quête tirée d'un catalogue ---------------------------------------
+
+    private static final NamespacedKey BANDIT = new NamespacedKey("rpgquest", "encounter_bandit");
+
+    /** Deux quêtes renouvelables (20 h), un catalogue qui les référence, un modèle et un dialogue qui l'offrent. */
+    private void installCatalogContent(boolean repeatable) throws Exception {
+        for (String id : List.of("cat_a", "cat_b")) {
+            Files.writeString(questsDir.resolve(id + ".yml"), """
+                    id: rpgquest:%s
+                    title: "<gold>Quête %s</gold>"
+                    description: "But de %s"
+                    category: encounter
+                    repeatable: %s
+                    cooldown: 20h
+                    steps:
+                      - id: only
+                        objectives:
+                          - type: KILL_ENTITY
+                            entity: SPIDER
+                            amount: 1
+                    """.formatted(id, id, id, repeatable));
+        }
+        questEngine.reload();
+        Path catalogs = tempDir.resolve("quest-catalogs");
+        Files.createDirectories(catalogs);
+        Files.writeString(catalogs.resolve("bandit.yml"), """
+                id: bandit
+                display_name: "Contrats"
+                entries:
+                  - quest: rpgquest:cat_a
+                  - quest: rpgquest:cat_b
+                """);
+        var catalogEngine = new com.lodygames.rpgquest.encounter.catalog.YamlQuestCatalogEngine(
+                catalogs, plugin.getSLF4JLogger());
+        catalogEngine.reload();
+        var template = new com.lodygames.rpgquest.encounter.model.EncounterTemplate("forest_bandit", "Brigand", null,
+                "encounter_bandit", null, null, java.util.Set.of("minecraft:forest"), List.of(), 10, 0, null, true,
+                List.of("bandit"));
+        sessionEngine.setCatalogOffers(new com.lodygames.rpgquest.encounter.catalog.CatalogOfferService(
+                catalogEngine, () -> List.of(template), questEngine, questProgressEngine));
+        Files.writeString(dialoguesDir.resolve("encounter_bandit.yml"), """
+                id: rpgquest:encounter_bandit
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "Brigand des bois"
+                    text: "Hé."
+                    choices:
+                      - text: "Du travail ?"
+                        actions:
+                          - type: OFFER_CATALOG_QUEST
+                """);
+        assertTrue(dialogueEngine.reload().issues().isEmpty(), () -> "bandit : " + dialogueEngine.lastReport().issues());
+    }
+
+    /** Ouvre le dialogue du brigand puis clique « Du travail ? » : renvoie le nœud d'offre affiché. */
+    private DialogueNode askForWork(PlayerMock player) throws Exception {
+        renderer.lastNode = null;
+        sessionEngine.open(player, BANDIT);
+        awaitRendered();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, BANDIT, "greeting", 0);
+        awaitRendered();
+        return renderer.lastNode;
+    }
+
+    private String offeredQuest(DialogueNode node) {
+        assertEquals(CatalogOfferNodes.OFFER, node.id(), () -> "nœud inattendu : " + node.text().base());
+        return node.text().base().contains("cat_a") ? "rpgquest:cat_a" : "rpgquest:cat_b";
+    }
+
+    private void settle() throws InterruptedException {
+        for (int i = 0; i < 30; i++) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(10);
+        }
+    }
+
+    @Test
+    void theCatalogOfferIsStableAndAttributesNothingBeforeAcceptance() throws Exception {
+        installCatalogContent(true);
+        PlayerMock player = addPlayer();
+
+        String first = offeredQuest(askForWork(player));
+        assertEquals(List.of("Commencer (j'accepte)", "Plus tard", "Refuser"),
+                renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList());
+        for (int i = 0; i < 3; i++) {
+            assertEquals(first, offeredQuest(askForWork(player)), "fermer/rouvrir ne relance pas le tirage");
+        }
+        for (String id : List.of("cat_a", "cat_b")) {
+            assertEquals(QuestState.NOT_STARTED, questProgressEngine.stateOf(player.getUniqueId(),
+                    new NamespacedKey("rpgquest", id)).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void refusingAttributesNothingAndAcceptingStartsExactlyTheShownQuestOnce() throws Exception {
+        installCatalogContent(true);
+        PlayerMock player = addPlayer();
+        NamespacedKey shown = NamespacedKey.fromString(offeredQuest(askForWork(player)));
+
+        sessionEngine.onChoiceSelected(player, BANDIT, CatalogOfferNodes.OFFER, 2);
+        settle();
+        assertEquals(QuestState.NOT_STARTED,
+                questProgressEngine.stateOf(player.getUniqueId(), shown).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        askForWork(player);
+        sessionEngine.onChoiceSelected(player, BANDIT, CatalogOfferNodes.OFFER, 0);
+        sessionEngine.onChoiceSelected(player, BANDIT, CatalogOfferNodes.OFFER, 0);
+        settle();
+        assertEquals(QuestState.ACTIVE,
+                questProgressEngine.stateOf(player.getUniqueId(), shown).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        DialogueNode next = askForWork(player);
+        assertEquals(CatalogOfferNodes.ACTIVE, next.id(), "une seule quête du catalogue à la fois");
+        assertTrue(next.text().base().contains(shown.getKey()));
+    }
+
+    @Test
+    void aCompletedQuestOnCooldownIsNotOfferedAgainAndAnEmptyCatalogSaysSo() throws Exception {
+        installCatalogContent(true);
+        PlayerMock player = addPlayer();
+        NamespacedKey first = NamespacedKey.fromString(offeredQuest(askForWork(player)));
+        sessionEngine.onChoiceSelected(player, BANDIT, CatalogOfferNodes.OFFER, 0);
+        settle();
+        questProgressEngine.forceComplete(player, first).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        settle();
+
+        NamespacedKey second = NamespacedKey.fromString(offeredQuest(askForWork(player)));
+        assertFalse(first.equals(second), "la quête en recharge est exclue du tirage");
+        sessionEngine.onChoiceSelected(player, BANDIT, CatalogOfferNodes.OFFER, 0);
+        settle();
+        questProgressEngine.forceComplete(player, second).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        settle();
+
+        DialogueNode nothing = askForWork(player);
+        assertEquals(CatalogOfferNodes.NOTHING, nothing.id());
+        assertTrue(nothing.text().base().contains("Repasse d'ici"), nothing.text().base());
+    }
+
+    @Test
+    void twoPlayersHaveIndependentOffersAndProgress() throws Exception {
+        installCatalogContent(true);
+        PlayerMock alice = addPlayer();
+        PlayerMock bob = addPlayer();
+
+        NamespacedKey aliceQuest = NamespacedKey.fromString(offeredQuest(askForWork(alice)));
+        sessionEngine.onChoiceSelected(alice, BANDIT, CatalogOfferNodes.OFFER, 0);
+        settle();
+
+        DialogueNode bobNode = askForWork(bob);
+        assertEquals(CatalogOfferNodes.OFFER, bobNode.id(), "la quête d'Alice ne bloque pas Bob");
+        assertEquals(QuestState.NOT_STARTED,
+                questProgressEngine.stateOf(bob.getUniqueId(), aliceQuest).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void aNpcWithoutCatalogExplainsThereIsNothingAndNeverCrashes() throws Exception {
+        installCatalogContent(true);
+        sessionEngine.setCatalogOffers(new com.lodygames.rpgquest.encounter.catalog.CatalogOfferService(
+                new com.lodygames.rpgquest.encounter.catalog.YamlQuestCatalogEngine(tempDir.resolve("none"),
+                        plugin.getSLF4JLogger()), List::of, questEngine, questProgressEngine));
+        PlayerMock player = addPlayer();
+
+        assertEquals(CatalogOfferNodes.NOTHING, askForWork(player).id());
+    }
+
     private static final class RecordingRenderer implements DialogueRenderer {
         private volatile DialogueNode lastNode;
         private volatile List<VisibleChoice> lastVisibleChoices;

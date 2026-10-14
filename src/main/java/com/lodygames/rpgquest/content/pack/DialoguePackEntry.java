@@ -35,10 +35,24 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
      * Action de choix. {@code type} ∈ {@code START_QUEST}, {@code ADVANCE_QUEST},
      * {@code TURN_IN_QUEST}, {@code GIVE_ITEM}, {@code TAKE_ITEM}, {@code SET_VARIABLE},
      * {@code RUN_SAFE_COMMAND}, {@code OPEN_DIALOGUE}, {@code OPEN_MERCHANT}, {@code GIVE_STARTER_KIT},
-     * {@code DELIVER_QUEST_ITEMS}, {@code CLOSE}.
+     * {@code DELIVER_QUEST_ITEMS}, {@code OFFER_CATALOG_QUEST}, {@code CLOSE}.
      */
     public record Action(String type, String quest, String dialogue, String merchant, String material,
-                         Integer amount, String key, String value, String command, String npc) {
+                         Integer amount, String key, String value, String command, String npc, String catalog) {
+
+        /** Action sans catalogue : toutes sauf {@code OFFER_CATALOG_QUEST}. */
+        public Action(String type, String quest, String dialogue, String merchant, String material,
+                      Integer amount, String key, String value, String command, String npc) {
+            this(type, quest, dialogue, merchant, material, amount, key, value, command, npc, null);
+        }
+
+        /**
+         * Offre de quête de catalogue (issue #369). {@code catalog} {@code null} = les catalogues des
+         * modèles de PNJ récurrents qui portent le dialogue ; l'export préserve cette absence.
+         */
+        public static Action offerCatalogQuest(String catalog) {
+            return new Action("OFFER_CATALOG_QUEST", null, null, null, null, null, null, null, null, null, catalog);
+        }
 
         public static Action quest(String type, String questId) {
             return new Action(type, questId, null, null, null, null, null, null, null, null);

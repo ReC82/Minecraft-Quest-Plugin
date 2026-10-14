@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Catalogues de quêtes secondaires des PNJ récurrents (#369)
+
+### Changement
+
+Catalogues `plugins/RPGQuest/quest-catalogs/*.yml` (références pondérées vers des quêtes
+existantes), champ `quest_catalogs` des modèles `encounters/*.yml`, action de dialogue
+`OFFER_CATALOG_QUEST`, actions agent `quest.catalog.list|create|update|delete` et page PlugAdmin
+Quêtes › Catalogues de quêtes (`/quests/catalogs`).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du panel. **Aucune migration** (schéma
+inchangé). Au premier démarrage, le dossier `quest-catalogs/` est créé avec l'exemple
+`encounter_side_quests.yml`, rattaché à aucun modèle : aucun PNJ ne change de comportement tant
+qu'un administrateur n'a pas attribué un catalogue **et** ajouté `OFFER_CATALOG_QUEST` au dialogue.
+Les modèles et dialogues existants ne sont pas réécrits. Redémarrage requis (nouveau JAR).
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release panel).
+
+### Validation
+
+Après redémarrage : `/quests/catalogs` → « Actualiser » liste `encounter_side_quests` (3 quêtes
+proposables). En jeu : TC-314 (`PENDING MANUAL VALIDATION`).
+
+### Rollback
+
+Réinstaller le JAR sauvegardé (`scripts/rollback-verygames.sh --latest`) et le panel
+(`scripts/plugadmin/rollback.sh app`). L'ancien JAR ignore `quest-catalogs/` et le champ
+`quest_catalogs` ; un dialogue contenant `OFFER_CATALOG_QUEST` serait en revanche **refusé** au
+chargement par l'ancien JAR (type d'action inconnu) : retirer cette action avant un rollback.
+
+---
+
 ## 2026-10-14 - Villes : PNJ central optionnel et point d'arrivée distinct (#322)
 
 ### Changement

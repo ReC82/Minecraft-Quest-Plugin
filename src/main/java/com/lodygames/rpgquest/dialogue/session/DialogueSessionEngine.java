@@ -26,6 +26,7 @@ import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
+import com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
@@ -40,6 +41,8 @@ import com.lodygames.rpgquest.dialogue.render.DialogueChoiceHandler;
 import com.lodygames.rpgquest.dialogue.render.DialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.VisibleChoice;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
+import com.lodygames.rpgquest.encounter.catalog.CatalogOfferSelector;
+import com.lodygames.rpgquest.encounter.catalog.CatalogOfferService;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.delivery.CustomItemGiveCommands;
 import com.lodygames.rpgquest.item.delivery.ItemDelivery;
@@ -100,6 +103,10 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private volatile DialogueTextPlaceholders placeholders = DialogueTextPlaceholders.none();
     /** Issue #12 — notifie le service de signal visuel qu'un nœud vient d'être affiché. */
     private volatile NodePresentedListener nodePresented;
+    /** Issue #369 — offres de quêtes de catalogue ; {@code null} tant que rien n'est câblé. */
+    private volatile CatalogOfferService catalogOffers;
+    /** Issue #369 — quête réellement montrée dans l'offre en cours, par joueur : c'est elle, et elle seule, que « Commencer » accepte. */
+    private final Map<UUID, NamespacedKey> shownOffers = new ConcurrentHashMap<>();
 
     public DialogueSessionEngine(RPGQuestPlugin plugin, YamlDialogueEngine dialogueEngine,
                                   QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository,
@@ -134,6 +141,11 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         this.placeholders = placeholders;
     }
 
+    /** Issue #369 — câblé par le bootstrap quand les PNJ récurrents et leurs catalogues existent. */
+    public void setCatalogOffers(CatalogOfferService catalogOffers) {
+        this.catalogOffers = catalogOffers;
+    }
+
     @Override
     public void start() {
         // Rien à démarrer : le chargement des définitions est un service séparé (YamlDialogueEngine), déjà démarré avant celui-ci.
@@ -142,11 +154,13 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     @Override
     public void stop() {
         sessions.clear();
+        shownOffers.clear();
         lineRotation.clear();
     }
 
     public void unloadForPlayer(UUID playerId) {
         sessions.remove(playerId);
+        shownOffers.remove(playerId);
         lineRotation.forget(playerId);
     }
 
@@ -311,6 +325,10 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             return;
         }
         DialogueDefinition dialogue = dialogueOpt.get();
+        if (CatalogOfferNodes.isOfferNode(nodeId) && !dialogue.nodes().containsKey(nodeId)) {
+            onCatalogOfferChoice(player, dialogue, nodeId, choiceIndex);
+            return;
+        }
         DialogueNode node = dialogue.nodes().get(nodeId);
         if (node == null || choiceIndex < 0 || choiceIndex >= node.choices().size()) {
             return;
@@ -365,6 +383,10 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                 merchantTradeService.openShop(player, openMerchant.merchantId());
                 return;
             }
+            if (action instanceof OfferCatalogQuestAction offer) {
+                presentCatalogOffer(player, dialogue, offer);
+                return;
+            }
             executeAction(player, dialogue, action);
         }
 
@@ -377,7 +399,90 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     private void closeSession(Player player) {
         sessions.remove(player.getUniqueId());
+        shownOffers.remove(player.getUniqueId());
         player.closeDialog();
+    }
+
+    // ---- Offres de catalogue (issue #369) ------------------------------------------------------
+
+    /**
+     * Calcule l'offre du catalogue (lecture seule) puis affiche un nœud synthétique : offre, tâche
+     * en cours ou « rien pour le moment ». Le locuteur est celui du nœud d'accueil du dialogue.
+     */
+    private void presentCatalogOffer(Player player, DialogueDefinition dialogue, OfferCatalogQuestAction action) {
+        CatalogOfferService service = catalogOffers;
+        String speaker = dialogue.nodes().get(dialogue.startNodeId()).speaker();
+        if (service == null) {
+            showOfferNode(player, dialogue, CatalogOfferNodes.unavailable(speaker), null);
+            return;
+        }
+        String npcId = DialogueNpcResolution.resolve(null, dialogue.id());
+        service.offerFor(player.getUniqueId(), npcId, action.catalogId()).whenComplete((offer, error) -> {
+            if (error != null) {
+                logger.error("Échec du calcul de l'offre de catalogue pour {} ({})", player.getUniqueId(),
+                        dialogue.id(), error);
+                runOnMainThread(() -> showOfferNode(player, dialogue, CatalogOfferNodes.unavailable(speaker), null));
+                return;
+            }
+            NamespacedKey offered = offer.decision().kind() == CatalogOfferSelector.Kind.OFFER && offer.quest() != null
+                    ? offer.quest().id() : null;
+            runOnMainThread(() -> showOfferNode(player, dialogue, CatalogOfferNodes.forOffer(speaker, offer), offered));
+        });
+    }
+
+    private void showOfferNode(Player player, DialogueDefinition dialogue, DialogueNode node, NamespacedKey offered) {
+        if (!player.isOnline()) {
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        sessions.put(playerId, new DialogueSession(dialogue.id(), node.id()));
+        if (offered != null) {
+            shownOffers.put(playerId, offered);
+        } else {
+            shownOffers.remove(playerId);
+        }
+        List<VisibleChoice> visible = new ArrayList<>();
+        for (int i = 0; i < node.choices().size(); i++) {
+            visible.add(new VisibleChoice(i, node.choices().get(i).text().base()));
+        }
+        renderer.render(player, dialogue, node, visible);
+    }
+
+    private void onCatalogOfferChoice(Player player, DialogueDefinition dialogue, String nodeId, int choiceIndex) {
+        UUID playerId = player.getUniqueId();
+        switch (CatalogOfferNodes.choiceOf(nodeId, choiceIndex)) {
+            case ACCEPT -> {
+                NamespacedKey questId = shownOffers.remove(playerId);
+                if (questId == null || !choosing.add(playerId)) {
+                    return;
+                }
+                closeSession(player);
+                // Le moteur revérifie tout (état, prérequis, délai) : une offre périmée est refusée
+                // proprement, jamais attribuée deux fois (putIfAbsent + anti-double-clic).
+                questProgressEngine.accept(player, questId).whenComplete((outcome, error) -> runOnMainThread(() -> {
+                    choosing.remove(playerId);
+                    if (error != null) {
+                        logger.error("Échec de l'acceptation de {} (catalogue) pour {}", questId, playerId, error);
+                        return;
+                    }
+                    switch (outcome.result()) {
+                        case ACCEPTED -> { }
+                        case ON_COOLDOWN -> questProgressEngine.showCooldown(player, questId, outcome.retryAfter());
+                        default -> player.sendMessage(MM.deserialize(CatalogOfferNodes.STALE_OFFER));
+                    }
+                }));
+            }
+            case LATER -> open(player, dialogue.id());
+            case REFUSE -> {
+                closeSession(player);
+                player.sendMessage(MM.deserialize(CatalogOfferNodes.REFUSED));
+            }
+            case BACK -> open(player, dialogue.id());
+            case CLOSE -> closeSession(player);
+            case NONE -> {
+                // Clic hors des choix connus : ignoré.
+            }
+        }
     }
 
     private void executeAction(Player player, DialogueDefinition dialogue, DialogueAction action) {
@@ -415,6 +520,9 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             }
             case OpenMerchantAction ignored -> {
                 // Géré par l'appelant (fermeture de la session, ouverture de la vitrine) : jamais atteint ici.
+            }
+            case OfferCatalogQuestAction ignored -> {
+                // Géré par l'appelant (nœud d'offre synthétique) : jamais atteint ici.
             }
             case CloseAction ignored -> {
                 // Géré par l'appelant (transition, arrêt anticipé) : jamais atteint ici.

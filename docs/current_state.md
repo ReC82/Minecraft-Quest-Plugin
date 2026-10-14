@@ -12,6 +12,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > direct dans « Créer un PNJ » / « Modifier le nom ». Non bloquant ; la collision d'identifiant
 > reste bloquante. `NpcDisplayNames` (pur, testé).
 
+> **Catalogues de quêtes secondaires des PNJ récurrents (#369, 14/10/2026)** — `quest-catalogs/*.yml`
+> (références pondérées vers des quêtes existantes), champ `quest_catalogs` des modèles, action de
+> dialogue `OFFER_CATALOG_QUEST` (offre par joueur stable sans stockage, une quête à la fois,
+> anti-répétition, rien sans acceptation), actions agent `quest.catalog.*`, page PlugAdmin
+> `/quests/catalogs`. Aucune migration. Dialogues livrés `encounter_*` inchangés (quête fixe).
+> Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-314).
+
 > **PNJ récurrents par biome — étape 1 (#13, 14/10/2026)** — un PNJ Citizens de rencontre apparaît
 > dans chaque instance de biome du Wild visitée dont le biome a un modèle (`encounters/*.yml` :
 > brigand/forêt, marchand égaré/désert, forgeron perdu/montagne) : génération paresseuse sans

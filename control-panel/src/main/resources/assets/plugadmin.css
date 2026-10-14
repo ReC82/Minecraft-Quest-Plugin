@@ -1281,3 +1281,15 @@ details.enc-biomes[open] summary{margin-bottom:0}
   .main{padding:0;max-width:none}
   .enc-row,.enc-head{break-inside:avoid}
 }
+/* Issue #369 — catalogues de quêtes : une ligne par quête, en carte sur petit écran (aucun défilement horizontal). */
+.qc-card .qc-title{font-size:1.05rem;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+.qc-entries{padding-left:1.4rem;margin-bottom:.6rem}
+.qc-entries li{margin:.15rem 0;overflow-wrap:anywhere}
+.qc-entries li.qc-off{opacity:.6}
+.qc-warn{margin:.3rem 0 .6rem;padding-left:1.2rem;font-size:.9rem}
+.qc-rows{border:0;padding:0;margin:.6rem 0}
+.qc-rows legend{font-size:.95rem;font-weight:600}
+.qc-row{display:grid;grid-template-columns:5rem minmax(10rem,1fr) 5.5rem auto auto;gap:.4rem;align-items:end;margin:.3rem 0}
+.qc-row label{margin:0;font-size:.8rem}
+@media(max-width:620px){.qc-row{grid-template-columns:4.5rem 1fr;padding:.4rem 0;border-bottom:1px solid var(--bs-border-color,#ddd)}
+.qc-row .qc-quest{grid-column:1/-1;order:-1}}

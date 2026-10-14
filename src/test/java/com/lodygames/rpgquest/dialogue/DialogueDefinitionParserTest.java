@@ -306,6 +306,39 @@ class DialogueDefinitionParserTest {
                 "un id vide ne doit jamais viser un PNJ nommé « » ");
     }
 
+    /** Issue #369 — OFFER_CATALOG_QUEST, catalogue implicite (modèles du PNJ) ou nommé, relu à l'identique. */
+    @Test
+    void offerCatalogQuestActionIsParsedAndWrittenBack() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("offer.yml", load(minimalDialogueWithChoice("""
+                      - text: "Du travail ?"
+                        actions:
+                          - type: OFFER_CATALOG_QUEST
+                      - text: "Contrats"
+                        actions:
+                          - type: OFFER_CATALOG_QUEST
+                            catalog: bandit_contracts
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var choices = result.dialogue().nodes().get("greeting").choices();
+        assertEquals(new com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction(null), choices.get(0).actions().get(0));
+        assertEquals(new com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction("bandit_contracts"),
+                choices.get(1).actions().get(0));
+
+        String yaml = DialogueDefinitionWriter.render(result.dialogue(), List.of("greeting"));
+        DialogueDefinitionParser.ParseResult reparsed = parser.parse("offer2.yml", load(yaml));
+        assertTrue(reparsed.isSuccess(), () -> "issues: " + reparsed.issues());
+        assertEquals(result.dialogue().nodes(), reparsed.dialogue().nodes());
+
+        DialogueDefinitionParser.ParseResult bad = parser.parse("bad.yml", load(minimalDialogueWithChoice("""
+                      - text: "X"
+                        actions:
+                          - type: OFFER_CATALOG_QUEST
+                            catalog: "Pas Valide"
+                """)));
+        assertFalse(bad.isSuccess());
+    }
+
     @Test
     void pendingDeliveryConditionIsParsedWithAndWithoutNpc() {
         DialogueDefinitionParser.ParseResult implicit = parser.parse("pending.yml", load(minimalDialogueWithChoice("""

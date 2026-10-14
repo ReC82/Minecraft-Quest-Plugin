@@ -1,0 +1,20 @@
+# Catalogue de quêtes secondaires d'exemple (issue #369) — livré une fois au premier démarrage,
+# jamais réécrit ensuite. Format complet : docs/ENCOUNTERS.md, section « Catalogues de quêtes ».
+# Il ne fait que RÉFÉRENCER des quêtes existantes (objectifs, récompenses et délai restent ceux de
+# chaque fichier de quête). Rattaché à aucun modèle par défaut : l'ajouter à un modèle de PNJ
+# récurrent (quest_catalogs) et poser une action OFFER_CATALOG_QUEST dans son dialogue.
+id: encounter_side_quests
+display_name: "Quêtes de rencontre"
+description: "Les trois quêtes renouvelables livrées avec les PNJ récurrents."
+enabled: true
+avoid_recent: 1
+entries:
+  - quest: rpgquest:encounter_bandit_spiders
+    weight: 10
+    enabled: true
+  - quest: rpgquest:encounter_merchant_cactus
+    weight: 10
+    enabled: true
+  - quest: rpgquest:encounter_smith_ore
+    weight: 10
+    enabled: true

@@ -469,7 +469,21 @@ public enum AgentActionType {
      * encore des occurrences, sauf accord explicite ({@code acknowledge_sites=true}) : elles restent
      * alors en place, avec leur PNJ et leur dialogue.
      */
-    ENCOUNTER_TEMPLATE_DELETE("encounter.template.delete");
+    ENCOUNTER_TEMPLATE_DELETE("encounter.template.delete"),
+    /**
+     * Issue #369 — catalogues de quêtes secondaires : entrées enrichies (titre, délai, existence),
+     * modèles qui les utilisent, contrôles de validité, et liste des quêtes pour la recherche.
+     */
+    QUEST_CATALOG_LIST("quest.catalog.list"),
+    /** Issue #369 — crée {@code quest-catalogs/<id>.yml} à partir de champs validés ; échoue si l'id existe. */
+    QUEST_CATALOG_CREATE("quest.catalog.create"),
+    /** Issue #369 — remplace un catalogue existant. Aucune progression de joueur n'est touchée. */
+    QUEST_CATALOG_UPDATE("quest.catalog.update"),
+    /**
+     * Issue #369 — supprime un catalogue après sauvegarde dans {@code quest-catalog-backups/}. Refusé
+     * s'il est attribué à un modèle, sauf {@code detach=true} (la référence est retirée des modèles).
+     */
+    QUEST_CATALOG_DELETE("quest.catalog.delete");
 
     private final String wire;
 

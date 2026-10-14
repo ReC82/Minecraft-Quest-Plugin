@@ -5906,3 +5906,18 @@ Claims ; idéalement une quête active à objectif `BREAK_BLOCK` (ex. pierre). *
     affiché, XP créditée, objectif `BREAK_BLOCK` +1 ; récolter une culture mûre → XP agriculture.
 6.  Non-régression Wild : nœud de ressource récolté normalement (drop, bloc épuisé).
 
+### TC-310 — Publication d'une quête citant un PNJ : rechargement cohérent (issue #371, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #371 déployé sur DEV ; quête `rpgquest:test_lucien_artisanat` déjà sur DEV
+(badge « Publié, non chargé ») ; PNJ `lucien` défini. **Durée** : 10 minutes.
+
+1.  PlugAdmin → Quêtes → « Les travaux de Lucien » → **Republier sur DEV** → résultat
+    « Synchronisé », « Chargée par le moteur : oui ». Le fichier n'est **pas** réécrit (même SHA
+    `3bb0eff…`, aucune sauvegarde créée).
+2.  Si un encadré « référence(s) déjà cassée(s) ailleurs » apparaît : il est replié, non bloquant,
+    et nomme les quêtes concernées.
+3.  En jeu : parler à Lucien, accepter la quête, fabriquer 12 planches de chêne, cuire 3 pommes de
+    terre, livrer les 3 pommes de terre cuites à Lucien → récompenses 25 XP + 50 LodyCoins.
+4.  Référence absente (copie de test, jamais sur une quête de joueur) : une quête de test livrant
+    à un PNJ inexistant → publication refusée, fiche « Références introuvables » avec le nom exact
+    du PNJ, aucun « Synchronisé ».

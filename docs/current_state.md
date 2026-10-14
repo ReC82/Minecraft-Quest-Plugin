@@ -216,7 +216,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `content.reload.ContentReloadService`, seul point qui permute un ensemble actif : dry-run de
   chaque famille, **annulation totale** sur la moindre erreur de contenu (l'ancien runtime valide
   est conservé — un `reload()` nu faisait *disparaître en silence* une définition devenue
-  invalide), validation des **références croisées** sur le graphe candidat avec désignation du
+  invalide), validation des **références croisées** sur le graphe candidat (depuis #371 : seules
+  les cassures *nouvelles* bloquent, les PNJ de rencontre sont des identités valides, les
+  objectifs `TALK_TO_NPC`/`DELIVER_ITEM_TO_NPC` sont vérifiés, et publication + « Recharger en
+  jeu » rechargent d'office les familles liées en une opération) avec désignation du
   **contenu lié** à recharger conjointement, application dans l'ordre de dépendance, puis relecture
   avec **empreinte** et durée. Six familles (objets, PNJ, quêtes, stories, dialogues, profils de
   mobs). `/rpgadmin content preview|reload` et `/rpgadmin mob reload` **délèguent** au même service,

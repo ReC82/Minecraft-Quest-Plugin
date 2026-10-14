@@ -1,0 +1,24 @@
+# Dialogue des PNJ récurrents « Brigand des bois » (issue #13). Partagé par TOUTES les occurrences de ce
+# modèle (id = npc_id du modèle, convention du projet) : le PNJ est commun, la conversation et les
+# quêtes restent propres à chaque joueur. Les quêtes secondaires renouvelables s'ajoutent ici.
+id: rpgquest:encounter_bandit
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Brigand des bois"
+    text: "<white>Hé, doucement… Je ne te veux pas de mal. Les bois sont pleins de secrets pour qui sait chercher.</white>"
+    choices:
+      - text: "Qui es-tu ?"
+        next: who
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
+  who:
+    speaker: "Brigand des bois"
+    text: "<gray>Un voyageur, comme toi. On me croise un peu partout dans ce genre de contrée.</gray> <white>Reviens me voir : j'aurai bientôt du travail pour quelqu'un de discret.</white>"
+    choices:
+      - text: "À bientôt"
+        actions:
+          - type: CLOSE

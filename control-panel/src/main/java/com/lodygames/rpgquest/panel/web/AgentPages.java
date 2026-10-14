@@ -6046,7 +6046,8 @@ public final class AgentPages {
         surveyAge(agentId, "npc.spot.list").ifPresent(age ->
                 sb.append("<p class=\"form-text\">Relevé : ").append(Http.esc(age)).append("</p>"));
         Map<String, String> npcs = new java.util.TreeMap<>();
-        asMap(d.get("npcs")).forEach((id, name) -> npcs.put(id, str(name)));
+        // Noms affichés en MiniMessage côté plugin : texte brut dans les listes de choix.
+        asMap(d.get("npcs")).forEach((id, name) -> npcs.put(id, MiniText.plain(str(name))));
         List<Map<String, Object>> spots = asList(d.get("spots")).stream().map(AgentPages::asMap).toList();
         sb.append(spotOverview(spots));
         sb.append(spotFilters(agentId, q, spots));
@@ -6155,7 +6156,7 @@ public final class AgentPages {
         String name = str(sp.get("name"));
         String status = str(sp.get("status"));
         String npcId = cleanNull(str(sp.get("npcId")));
-        String npcName = cleanNull(str(sp.get("npcName")));
+        String npcName = MiniText.plain(cleanNull(str(sp.get("npcName"))));
         int citizensId = intOr(sp.get("citizensId"), -1);
         String pos = coord(sp.get("x")) + " " + coord(sp.get("y")) + " " + coord(sp.get("z"));
         String npcHtml = npcId.isEmpty() ? "<span class=\"muted\">aucun</span>"

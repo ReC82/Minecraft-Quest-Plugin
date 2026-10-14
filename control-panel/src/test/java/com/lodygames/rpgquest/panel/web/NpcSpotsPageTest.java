@@ -42,7 +42,7 @@ class NpcSpotsPageTest {
 
     /** Relevé réaliste : un emplacement occupé, un libre, un en conflit dans un autre monde. */
     private static final String SPOTS = "{\"available\":true,\"worlds\":[\"world\",\"hub\"],"
-            + "\"npcs\":{\"guard\":\"Garde\",\"test_npc\":\"PNJ de test\"},"
+            + "\"npcs\":{\"guard\":\"<yellow>Garde</yellow>\",\"test_npc\":\"PNJ de test\"},"
             + "\"spots\":["
             + "{\"id\":\"npcspot_0001\",\"name\":\"Porte nord\",\"world\":\"world\",\"x\":10.5,\"y\":64,"
             + "\"z\":-3.5,\"yaw\":180,\"pitch\":0,\"radius\":2,\"npcId\":\"guard\",\"npcName\":\"Garde\","
@@ -114,7 +114,8 @@ class NpcSpotsPageTest {
         String free = page.substring(page.indexOf("id=\"spot-npcspot_0002\""), page.indexOf("id=\"spot-npcspot_0003\""));
         assertTrue(free.contains("value=\"npc.spot.delete\""));
         assertFalse(free.contains("value=\"npc.spot.release\""));
-        assertTrue(free.contains("<option value=\"guard\">Garde (guard)</option>"), "PNJ plaçables proposés");
+        assertTrue(free.contains("<option value=\"guard\">Garde (guard)</option>"),
+                "PNJ plaçables proposés, nom MiniMessage rendu en texte brut");
     }
 
     @Test

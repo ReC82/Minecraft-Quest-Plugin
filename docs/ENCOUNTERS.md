@@ -5,9 +5,10 @@ explorée, et proposent des quêtes secondaires d'exploration. Un même **modèl
 égaré, forgeron perdu…) se retrouve dans de nombreuses instances : c'est un type de PNJ
 *récurrent*, jamais un spawn infini.
 
-> Statut : **étape 1 livrée** (moteur, modèles, persistance, apparition sûre, réparation).
-> À venir : onglet PlugAdmin « PNJ récurrents » et actions *Localiser / Retenter / Désactiver*,
-> apparence (skin), quêtes secondaires renouvelables, onglet Quêtes « Secondaires / Rencontres ».
+> Statut : **étapes 1 et 2 livrées** (moteur, modèles, persistance, apparition sûre, réparation ;
+> page PlugAdmin « PNJ récurrents » et actions d'administration). À venir : édition des modèles
+> depuis le panel, apparence (skin), quêtes secondaires renouvelables, onglet Quêtes
+> « Secondaires / Rencontres ».
 
 ## Instance de biome
 
@@ -40,7 +41,8 @@ Livrés : `forest_bandit` (forêts → `encounter_bandit`), `desert_merchant` (d
 avec un dialogue d'accueil `dialogues/encounter_*.yml`, partagé par toutes ses occurrences.
 
 Un fichier invalide est rejeté seul (les autres chargent) ; un biome inconnu du serveur est signalé
-dans les logs. Les modèles sont relus au démarrage (rechargement à chaud : étape PlugAdmin).
+dans les logs. Les modèles sont relus au démarrage, ou à chaud par « Relire les modèles » dans
+PlugAdmin (aucun PNJ déjà apparu n'est touché).
 
 ## Apparition
 
@@ -73,7 +75,35 @@ redémarrage), journalisé `NO_SAFE_SPOT`. Rien n'est généré au démarrage.
   apparitions et réparations sans retirer les PNJ déjà présents.
 - Une occurrence désactivée par un administrateur perd son PNJ et ne génère plus rien ; une
   occurrence retirée libère l'instance (nouvelle rencontre possible à la visite suivante). Ces
-  actions existent dans le service (`retry`, `disable`, `remove`) et seront exposées dans PlugAdmin.
+  actions sont exposées dans PlugAdmin (voir ci-dessous).
+
+## Administration — PlugAdmin « PNJ récurrents » (étape 2)
+
+Page `/npcs/encounters`, bouton « PNJ récurrents » de la page PNJ. Elle lit l'action agent
+`encounter.list` (bouton « Actualiser ») :
+
+- **Vue d'ensemble** : apparitions activées ou non, mondes réellement concernés (Hub et claims
+  retirés), plafond par monde, nombre de modèles et d'occurrences, fichiers de modèle refusés au
+  dernier chargement avec leur motif ;
+- **Modèles** : nom, `npc_id`, rôle/famille, biomes, mondes, poids, occurrences / plafond ;
+- **Occurrences par monde** : identifiant, biome, position (avec la commande `/tp @s x y z` pour
+  la localiser), PNJ Citizens (`présent`, `disparu` = enregistré mais absent du registre Citizens,
+  `inconnu` = Citizens indisponible), état, dernière erreur ;
+- **Journal récent** : créations, échecs, réparations, désactivations — en mémoire, vidé au
+  redémarrage.
+
+| Action | Permission | Effet |
+|---|---|---|
+| `encounter.list` | `NPC_READ` | lecture seule |
+| `encounter.retry` | `NPC_SPAWN_WRITE`, confirmation | réactive l'occurrence, efface son délai, fait apparaître le PNJ si sa zone est chargée |
+| `encounter.disable` | `NPC_SPAWN_WRITE`, confirmation | retire le PNJ, l'instance ne génère plus rien |
+| `encounter.remove` | `NPC_SPAWN_WRITE`, confirmation | retire PNJ et occurrence ; la zone pourra en accueillir une nouvelle |
+| `encounter.templates.reload` | `NPC_WRITE` | relit `encounters/*.yml` |
+| `encounter.backoffs.clear` | `NPC_WRITE` | efface les délais d'attente après échec |
+
+Chaque action vise **une** occurrence nommée (`enc_…`), jamais un lot. Le roster
+`npc.citizens.list` porte `encounterSiteId` : un PNJ de rencontre n'apparaît plus parmi les PNJ
+« à rattacher » de la page PNJ, ni comme `CITIZENS_ONLY` dans les diagnostics.
 
 ## Identité, dialogue, quêtes
 
@@ -104,4 +134,4 @@ created_at, updated_at), index unique `(world, biome_instance)`. Additive, autom
 
 ## Validation en jeu
 
-`PENDING MANUAL VALIDATION` — `docs/MANUAL_TEST_PLAN.md`, TC-303.
+`PENDING MANUAL VALIDATION` — `docs/MANUAL_TEST_PLAN.md`, TC-303 (jeu) et TC-304 (PlugAdmin).

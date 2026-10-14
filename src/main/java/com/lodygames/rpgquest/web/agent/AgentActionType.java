@@ -430,7 +430,25 @@ public enum AgentActionType {
      * l'état voulu. Ne touche jamais un nœud posé directement sur l'utilisateur, ni une
      * appartenance à un groupe externe.
      */
-    MC_RIGHTS_SYNC("mc.rights.sync");
+    MC_RIGHTS_SYNC("mc.rights.sync"),
+    /**
+     * Issue #13 (étape 2) — PNJ récurrents : modèles chargés, erreurs de chargement, occurrences
+     * par monde (position, PNJ Citizens, état, dernière erreur) et événements récents. Lecture seule.
+     */
+    ENCOUNTER_LIST("encounter.list"),
+    /** Issue #13 — réactive une occurrence et la matérialise si sa zone est chargée. Cette occurrence seule. */
+    ENCOUNTER_RETRY("encounter.retry"),
+    /** Issue #13 — désactive une occurrence : son PNJ est retiré, l'instance ne génère plus rien. */
+    ENCOUNTER_DISABLE("encounter.disable"),
+    /**
+     * Issue #13 — retire une occurrence (PNJ + ligne). L'instance pourra accueillir une nouvelle
+     * rencontre à la prochaine visite ; les quêtes déjà acceptées ne sont pas touchées.
+     */
+    ENCOUNTER_REMOVE("encounter.remove"),
+    /** Issue #13 — relit {@code encounters/*.yml}. Ne touche à aucun PNJ déjà apparu. */
+    ENCOUNTER_TEMPLATES_RELOAD("encounter.templates.reload"),
+    /** Issue #13 — efface les délais d'attente : les instances en échec seront retentées à la prochaine visite. */
+    ENCOUNTER_BACKOFFS_CLEAR("encounter.backoffs.clear");
 
     private final String wire;
 

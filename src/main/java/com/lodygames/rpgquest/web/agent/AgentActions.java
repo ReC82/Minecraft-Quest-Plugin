@@ -1021,6 +1021,61 @@ public interface AgentActions {
         return settingsGet();
     }
 
+    // ---- PNJ récurrents (actions encounter.*, issue #13 étape 2) -------------------------------
+
+    /** Un modèle {@code encounters/<id>.yml} chargé, avec son nombre d'occurrences actuelles. */
+    record EncounterTemplateSummary(String id, String displayName, String npcId, String role, String family,
+                                    List<String> biomes, List<String> worlds, int weight, int maxSites,
+                                    boolean enabled, String skinUrl, int sites) {
+    }
+
+    /**
+     * Une occurrence persistée. {@code citizensPresent} : l'entité Citizens enregistrée existe-t-elle
+     * encore dans le registre Citizens ({@code null} = inconnu, Citizens absent).
+     */
+    record EncounterSiteSummary(String id, String world, String biomeKey, String biomeInstance, int x, int y, int z,
+                                String templateId, String npcId, int citizensId, String citizensUuid,
+                                Boolean citizensPresent, String status, String lastError, String createdAt,
+                                String updatedAt) {
+    }
+
+    record EncounterEventSummary(String at, String world, String instance, String outcome, String detail) {
+    }
+
+    /** {@code issues} : fichier → motif, pour chaque modèle rejeté au dernier chargement. */
+    record EncounterCatalogView(boolean available, boolean enabled, List<String> worlds, int maxPerWorld,
+                                List<EncounterTemplateSummary> templates, Map<String, String> issues,
+                                List<EncounterSiteSummary> sites, List<EncounterEventSummary> events,
+                                long generatedAtEpochMs) {
+    }
+
+    default CompletableFuture<EncounterCatalogView> encounterCatalog() {
+        return CompletableFuture.completedFuture(new EncounterCatalogView(false, false, List.of(), 0, List.of(),
+                Map.of(), List.of(), List.of(), System.currentTimeMillis()));
+    }
+
+    /** {@code operation} : {@code retry}, {@code disable} ou {@code remove}, sur la seule occurrence nommée. */
+    default CompletableFuture<MutationResult> encounterSiteAction(String operation, String siteId) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "PNJ récurrents indisponibles sur ce serveur."));
+    }
+
+    default CompletableFuture<MutationResult> encounterTemplatesReload() {
+        return encounterSiteAction("reload", "");
+    }
+
+    default CompletableFuture<MutationResult> encounterBackoffsClear() {
+        return encounterSiteAction("backoffs", "");
+    }
+
+    /**
+     * Citizens UUID → identifiant d'occurrence, pour les PNJ de rencontre actuellement suivis : le
+     * roster Citizens les distingue ainsi des PNJ « non rattachés ». Thread quelconque.
+     */
+    default Map<UUID, String> encounterCitizens() {
+        return Map.of();
+    }
+
     default CompletableFuture<MutationResult> citizensWanderStop(String npcId, boolean returnHome) {
         return citizensWander(npcId, false, null, null, null, null, 0, 0, false);
     }

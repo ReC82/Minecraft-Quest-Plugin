@@ -3409,8 +3409,13 @@ vide = Wild ; Hub et claims toujours exclus —, `max-per-world`, distances, esp
 Persistance : table `encounter_sites` (migration V34), une ligne par instance. Les PNJ ne sont pas
 liés par `npc_citizens_bindings` : leur identité (`npc_id` du modèle) vient de ce registre, et un
 PNJ supprimé à la main est recréé au même endroit, jamais en double. Référence complète :
-[ENCOUNTERS.md](ENCOUNTERS.md). Onglet PlugAdmin « PNJ récurrents » et quêtes secondaires : étapes
-suivantes. Test : `docs/MANUAL_TEST_PLAN.md` TC-303 (`PENDING MANUAL VALIDATION`).
+[ENCOUNTERS.md](ENCOUNTERS.md). Administration (étape 2) : PlugAdmin → PNJ → « PNJ récurrents »
+(`/npcs/encounters`) — modèles, occurrences par monde avec position, PNJ Citizens présent/disparu,
+état et dernière erreur, journal récent ; *Retenter*, *Désactiver*, *Retirer* sur une occurrence
+(permission `NPC_SPAWN_WRITE`, confirmation), *Relire les modèles* et *Effacer les délais*
+(`NPC_WRITE`). Actions agent `encounter.list|retry|disable|remove|templates.reload|backoffs.clear`.
+Quêtes secondaires : étapes suivantes. Tests : `docs/MANUAL_TEST_PLAN.md` TC-303 et TC-304
+(`PENDING MANUAL VALIDATION`).
 
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 

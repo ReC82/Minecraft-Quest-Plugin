@@ -4528,7 +4528,9 @@ public final class AgentPages {
                     + "data-bs-target=\"#npc-create\" aria-expanded=\"false\" aria-controls=\"npc-create\">")
                     .append(Icons.icon("plus")).append("Créer un PNJ</button>");
         }
-        sb.append("<a class=\"btn secondary sm ms-auto\" href=\"/npcs/diagnostic\">")
+        sb.append("<a class=\"btn secondary sm ms-auto\" href=\"/npcs/encounters\">")
+                .append(Icons.icon("travel")).append("PNJ récurrents</a>");
+        sb.append("<a class=\"btn secondary sm\" href=\"/npcs/diagnostic\">")
                 .append(Icons.icon("wrench")).append("Diagnostic</a>");
         sb.append("</div>");
         if (rights.create()) {
@@ -4557,7 +4559,9 @@ public final class AgentPages {
         for (Object o : citizensRoster) {
             Map<String, Object> c = asMap(o);
             String linked = cleanNull(str(c.get("linkedNpcId")));
-            if (linked.isEmpty()) {
+            // Issue #13 : un PNJ récurrent n'a pas de liaison classique, mais il est géré par
+            // RPGQuest — il se trouve sur la page « PNJ récurrents », pas dans les PNJ à rattacher.
+            if (linked.isEmpty() && cleanNull(str(c.get("encounterSiteId"))).isEmpty()) {
                 freeCitizens.add(c);
             }
         }
@@ -5727,6 +5731,208 @@ public final class AgentPages {
      * registre des identifiants, le rapprochement avec les PNJ du jeu et les messages bruts du
      * moteur. Utile pour comprendre un problème signalé « à vérifier », pas pour l'usage courant.
      */
+    // ================================================================================
+    //  PNJ récurrents — issue #13 étape 2 : modèles, occurrences par monde, journal récent.
+    //  Lecture via encounter.list ; chaque action vise UNE occurrence nommée, jamais un lot.
+    // ================================================================================
+
+    public String npcEncounters(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("npc", "PNJ récurrents",
+                "Les personnages qui apparaissent d'eux-mêmes dans les biomes explorés.",
+                "<a class=\"btn secondary\" href=\"/npcs\">" + Icons.icon("back") + "Retour aux PNJ</a>"));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canSpawn = perms.can(session.effective(), Permission.NPC_SPAWN_WRITE);
+        boolean canWrite = perms.can(session.effective(), Permission.NPC_WRITE);
+        sb.append(agentPicker(agentId, "/npcs/encounters", ""));
+        sb.append("<div class=\"npc-catbar\">")
+                .append(compactRefresh(session, agentId, "encounter.list", "Actualiser", "btn-outline-primary",
+                        "/npcs/encounters"));
+        if (canWrite) {
+            sb.append(compactAction(session, agentId, "encounter.templates.reload", "Relire les modèles"))
+                    .append(compactAction(session, agentId, "encounter.backoffs.clear", "Effacer les délais"));
+        }
+        sb.append("</div>");
+        sb.append("<p class=\"muted\">Une rencontre apparaît la première fois qu'un joueur entre dans une zone "
+                + "de biome (même découpage que les waypoints), au plus une par zone. Rien n'est généré au "
+                + "démarrage. Les modèles se modifient dans <code>plugins/RPGQuest/encounters/*.yml</code>, "
+                + "puis « Relire les modèles ».</p>");
+
+        Optional<Map<String, Object>> latest = latestDetails(agentId, "encounter.list");
+        if (latest.isEmpty()) {
+            return sb.append(Ui.empty("npc", "Rien n'a encore été relevé : cliquez sur « Actualiser ».")).toString();
+        }
+        Map<String, Object> d = latest.get();
+        if (!Boolean.TRUE.equals(d.get("available"))) {
+            return sb.append(Ui.banner("warning", "Le serveur de jeu ne propose pas les PNJ récurrents "
+                    + "(version du plugin trop ancienne ou service arrêté).")).toString();
+        }
+        sb.append(encounterOverview(agentId, d));
+        sb.append(encounterTemplates(d));
+        sb.append(encounterSites(session, agentId, d, canSpawn));
+        sb.append(encounterEvents(d));
+        return sb.toString();
+    }
+
+    private String compactAction(Session session, String agentId, String type, String label) {
+        return formStart(session, agentId, type, "/npcs/encounters", "").replace("class=\"actform\"",
+                "class=\"d-inline\"") + "<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">"
+                + Http.esc(label) + "</button></form>";
+    }
+
+    private String encounterOverview(String agentId, Map<String, Object> d) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">")
+                .append(Ui.sectionTitle("diagnostics", "Vue d'ensemble")).append("<dl class=\"npc-dl\">");
+        boolean enabled = Boolean.TRUE.equals(d.get("enabled"));
+        dlRow(sb, "Apparitions", enabled ? "activées"
+                : "<span class=\"badge text-bg-warning\">désactivées</span> (<code>encounters.enabled</code>)");
+        List<String> worlds = asList(d.get("worlds")).stream().map(AgentPages::str).toList();
+        dlRow(sb, "Mondes concernés", worlds.isEmpty() ? "<span class=\"badge text-bg-warning\">aucun</span>"
+                : Http.esc(String.join(", ", worlds.stream().map(AgentPages::worldLabel).toList())));
+        dlRow(sb, "Plafond par monde", Http.esc(str(d.get("maxPerWorld"))));
+        dlRow(sb, "Modèles chargés", Http.esc(String.valueOf(asList(d.get("templates")).size())));
+        dlRow(sb, "Occurrences", Http.esc(String.valueOf(asList(d.get("sites")).size())));
+        surveyAge(agentId, "encounter.list").ifPresent(age -> dlRow(sb, "Relevé", Http.esc(age)));
+        sb.append("</dl>");
+        Map<String, Object> issues = asMap(d.get("issues"));
+        if (!issues.isEmpty()) {
+            StringBuilder list = new StringBuilder("Fichier(s) de modèle refusé(s) au dernier chargement :<ul>");
+            issues.forEach((file, msg) -> list.append("<li><code>").append(Http.esc(file)).append("</code> : ")
+                    .append(Http.esc(str(msg))).append("</li>"));
+            sb.append(Ui.banner("warning", list.append("</ul>").toString()));
+        }
+        return sb.append("</section>").toString();
+    }
+
+    private String encounterTemplates(Map<String, Object> d) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">").append(Ui.sectionTitle("npc", "Modèles"));
+        List<Object> templates = asList(d.get("templates"));
+        if (templates.isEmpty()) {
+            return sb.append("<p class=\"muted\">Aucun modèle chargé.</p></section>").toString();
+        }
+        sb.append(Ui.tableOpen("Modèle", "PNJ", "Rôle / famille", "Biomes", "Mondes", "Poids", "Occurrences"));
+        for (Object o : templates) {
+            Map<String, Object> t = asMap(o);
+            boolean enabled = Boolean.TRUE.equals(t.get("enabled"));
+            String max = "0".equals(str(t.get("maxSites"))) ? "" : " / " + str(t.get("maxSites"));
+            List<String> worlds = asList(t.get("worlds")).stream().map(AgentPages::str).toList();
+            sb.append("<tr><td>").append(MiniText.html(str(t.get("displayName")))).append("<br>")
+                    .append(Ui.id(str(t.get("id"))))
+                    .append(enabled ? "" : " <span class=\"badge text-bg-secondary\">désactivé</span>")
+                    .append("</td><td>").append(Ui.id(str(t.get("npcId"))))
+                    .append("</td><td>").append(Http.esc(cleanNull(str(t.get("role")))))
+                    .append(cleanNull(str(t.get("family"))).isEmpty() ? "" : " · " + Http.esc(str(t.get("family"))))
+                    .append("</td><td><small>").append(Http.esc(String.join(", ",
+                            asList(t.get("biomes")).stream().map(b -> str(b).replace("minecraft:", "")).toList())))
+                    .append("</small></td><td>").append(worlds.isEmpty() ? "tous" : Http.esc(String.join(", ", worlds)))
+                    .append("</td><td>").append(Http.esc(str(t.get("weight"))))
+                    .append("</td><td>").append(Http.esc(str(t.get("sites")) + max)).append("</td></tr>");
+        }
+        return sb.append(Ui.tableClose()).append("</section>").toString();
+    }
+
+    private String encounterSites(Session session, String agentId, Map<String, Object> d, boolean canSpawn) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">")
+                .append(Ui.sectionTitle("travel", "Occurrences par monde"));
+        List<Object> sites = asList(d.get("sites"));
+        if (sites.isEmpty()) {
+            return sb.append("<p class=\"muted\">Aucune rencontre n'est encore apparue : elles naissent quand un "
+                    + "joueur explore une nouvelle zone de biome.</p></section>").toString();
+        }
+        Map<String, List<Map<String, Object>>> byWorld = new java.util.TreeMap<>();
+        for (Object o : sites) {
+            Map<String, Object> s = asMap(o);
+            byWorld.computeIfAbsent(str(s.get("world")), w -> new ArrayList<>()).add(s);
+        }
+        int i = 0;
+        for (Map.Entry<String, List<Map<String, Object>>> world : byWorld.entrySet()) {
+            sb.append("<h3 class=\"h6 mt-3\">").append(Http.esc(worldLabel(world.getKey()))).append(" — ")
+                    .append(world.getValue().size()).append("</h3>");
+            sb.append(Ui.tableOpen("Occurrence", "Modèle", "Position", "PNJ en jeu", "État", "Actions"));
+            for (Map<String, Object> s : world.getValue()) {
+                sb.append(encounterSiteRow(session, agentId, s, canSpawn, i++));
+            }
+            sb.append(Ui.tableClose());
+        }
+        return sb.append("</section>").toString();
+    }
+
+    private String encounterSiteRow(Session session, String agentId, Map<String, Object> s, boolean canSpawn,
+                                    int index) {
+        String id = str(s.get("id"));
+        String pos = str(s.get("x")) + " " + str(s.get("y")) + " " + str(s.get("z"));
+        boolean active = "ACTIVE".equals(str(s.get("status")));
+        Object present = s.get("citizensPresent");
+        String citizens = cleanNull(str(s.get("citizensUuid"))).isEmpty()
+                ? "<span class=\"badge text-bg-warning\">aucun</span>"
+                : "#" + Http.esc(str(s.get("citizensId"))) + " " + (Boolean.TRUE.equals(present)
+                        ? "<span class=\"badge text-bg-success\">présent</span>"
+                        : Boolean.FALSE.equals(present) ? "<span class=\"badge text-bg-danger\">disparu</span>"
+                        : "<span class=\"badge text-bg-secondary\">inconnu</span>");
+        String error = cleanNull(str(s.get("lastError")));
+        StringBuilder sb = new StringBuilder("<tr><td>").append(Ui.id(id)).append("<br><small class=\"muted\">")
+                .append(Http.esc(str(s.get("biomeKey")).replace("minecraft:", ""))).append("</small></td><td>")
+                .append(Ui.id(str(s.get("templateId")))).append("</td><td><code>").append(Http.esc(pos))
+                .append("</code><br><small class=\"muted\">Localiser : <code>/tp @s ").append(Http.esc(pos))
+                .append("</code></small></td><td>").append(citizens).append("</td><td>")
+                .append(active ? "<span class=\"badge text-bg-success\">active</span>"
+                        : "<span class=\"badge text-bg-secondary\">désactivée</span>");
+        if (!error.isEmpty()) {
+            sb.append("<br><small class=\"text-danger-emphasis\">").append(Http.esc(error)).append("</small>");
+        }
+        sb.append("</td><td>");
+        if (!canSpawn) {
+            sb.append("<span class=\"muted\">lecture seule</span>");
+        } else {
+            String target = "enc-act-" + index;
+            sb.append(actionToggle(target, "Gérer", "wrench", "btn-outline-secondary"))
+                    .append("<div class=\"collapse mt-2\" id=\"").append(target).append("\">")
+                    .append(encounterSiteForm(session, agentId, "encounter.retry", id,
+                            active ? "Retenter maintenant" : "Réactiver",
+                            "Retenter l'apparition de " + id, "btn-outline-primary"));
+            if (active) {
+                sb.append(encounterSiteForm(session, agentId, "encounter.disable", id, "Désactiver",
+                        "Désactiver " + id + " (son PNJ est retiré)", "btn-outline-warning"));
+            }
+            sb.append(encounterSiteForm(session, agentId, "encounter.remove", id, "Retirer",
+                    "Retirer " + id + " : PNJ et occurrence supprimés, la zone pourra en accueillir une nouvelle",
+                    "btn-outline-danger")).append("</div>");
+        }
+        return sb.append("</td></tr>").toString();
+    }
+
+    private String encounterSiteForm(Session session, String agentId, String type, String siteId, String label,
+                                     String confirm, String btnClass) {
+        return formStart(session, agentId, type, "/npcs/encounters", "")
+                + "<input type=\"hidden\" name=\"siteId\" value=\"" + Http.esc(siteId) + "\">"
+                + confirmBox(confirm)
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm " + btnClass + "\" type=\"submit\">"
+                + Http.esc(label) + "</button></div></form>";
+    }
+
+    private String encounterEvents(Map<String, Object> d) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">")
+                .append(Ui.sectionTitle("diagnostics", "Journal récent"));
+        List<Object> events = asList(d.get("events"));
+        if (events.isEmpty()) {
+            return sb.append("<p class=\"muted\">Aucun événement depuis le dernier démarrage du serveur.</p></section>")
+                    .toString();
+        }
+        sb.append("<p class=\"muted\">En mémoire seulement : vidé à chaque redémarrage du serveur.</p>");
+        sb.append(Ui.tableOpen("Quand", "Monde", "Résultat", "Détail"));
+        for (Object o : events) {
+            Map<String, Object> e = asMap(o);
+            sb.append("<tr><td><small>").append(Http.esc(str(e.get("at")))).append("</small></td><td>")
+                    .append(Http.esc(str(e.get("world")))).append("</td><td>").append(Ui.badge(str(e.get("outcome"))))
+                    .append("</td><td><small>").append(Http.esc(str(e.get("detail")))).append("</small></td></tr>");
+        }
+        return sb.append(Ui.tableClose()).append("</section>").toString();
+    }
+
     public String npcDiagnostic(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
@@ -5799,9 +6005,13 @@ public final class AgentPages {
             for (Object o : roster) {
                 Map<String, Object> c = asMap(o);
                 String linked = cleanNull(str(c.get("linkedNpcId")));
+                String encounter = cleanNull(str(c.get("encounterSiteId")));
                 sb.append("<tr><td>#").append(Http.esc(str(c.get("numericId")))).append("</td><td>")
                         .append(MiniText.html(cleanName(c.get("name")))).append("</td><td>")
-                        .append(linked.isEmpty() ? "<span class=\"badge text-bg-warning\">aucune</span>" : Ui.id(linked))
+                        .append(!linked.isEmpty() ? Ui.id(linked)
+                                : !encounter.isEmpty() ? "<span class=\"badge text-bg-info\">PNJ récurrent</span> "
+                                        + Ui.id(encounter)
+                                : "<span class=\"badge text-bg-warning\">aucune</span>")
                         .append("</td><td>").append(Boolean.TRUE.equals(c.get("spawned")) ? "oui" : "non")
                         .append("</td></tr>");
             }

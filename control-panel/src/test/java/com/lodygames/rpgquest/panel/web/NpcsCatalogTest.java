@@ -973,6 +973,65 @@ class NpcsCatalogTest {
         assertNull(AgentActionCatalog.mineSkinProblem("https://minesk.in/f534ead9d5a3413e9bb51bce9b211995"));
     }
 
+    // Issue #13 — encounter.list : un modèle, deux occurrences (une présente, une désactivée), un
+    // fichier refusé, un événement.
+    private static final String ENCOUNTER_DETAILS = "{\"available\":true,\"enabled\":true,\"worlds\":[\"wild\"],"
+            + "\"maxPerWorld\":200,\"templates\":[{\"id\":\"forest_bandit\",\"displayName\":\"Brigand des bois\","
+            + "\"npcId\":\"encounter_bandit\",\"role\":\"brigand\",\"family\":\"forêt\","
+            + "\"biomes\":[\"minecraft:forest\"],\"worlds\":[],\"weight\":10,\"maxSites\":0,\"enabled\":true,"
+            + "\"skinUrl\":null,\"sites\":2}],\"issues\":{\"broken.yml\":\"biome manquant\"},"
+            + "\"sites\":[{\"id\":\"enc_wild_forest_3_-2\",\"world\":\"wild\",\"biomeKey\":\"minecraft:forest\","
+            + "\"biomeInstance\":\"i\",\"x\":10,\"y\":70,\"z\":-20,\"templateId\":\"forest_bandit\","
+            + "\"npcId\":\"encounter_bandit\",\"citizensId\":5,\"citizensUuid\":\"5e081a06-6596-47a3-b769-aef5fcd9e676\","
+            + "\"citizensPresent\":true,\"status\":\"ACTIVE\",\"lastError\":\"\",\"createdAt\":\"t\",\"updatedAt\":\"t\"},"
+            + "{\"id\":\"enc_wild_forest_4_-2\",\"world\":\"wild\",\"biomeKey\":\"minecraft:forest\","
+            + "\"biomeInstance\":\"j\",\"x\":300,\"y\":66,\"z\":-20,\"templateId\":\"forest_bandit\","
+            + "\"npcId\":\"encounter_bandit\",\"citizensId\":-1,\"citizensUuid\":null,\"citizensPresent\":false,"
+            + "\"status\":\"DISABLED\",\"lastError\":\"aucun sol sûr\",\"createdAt\":\"t\",\"updatedAt\":\"t\"}],"
+            + "\"events\":[{\"at\":\"2026-10-14T01:00:00Z\",\"world\":\"wild\",\"instance\":\"i\","
+            + "\"outcome\":\"CREATED\",\"detail\":\"enc_wild_forest_3_-2\"}],\"generatedAtEpochMs\":1}";
+
+    @Test
+    void encounterNpcIsNotOfferedForAttachment() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_ONLY_GUARD);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_STAN.replace("\"linkedNpcId\":null",
+                "\"linkedNpcId\":null,\"encounterSiteId\":\"enc_wild_forest_3_-2\""));
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+        assertFalse(page.contains("Rattacher à RPGQuest</button>"), "un PNJ récurrent n'est pas « à rattacher »");
+        assertTrue(page.contains("href=\"/npcs/encounters\""));
+        String diag = get("/npcs/diagnostic?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(diag.contains("PNJ récurrent"));
+    }
+
+    @Test
+    void encountersPageListsTemplatesSitesAndValidatesSiteActions() throws Exception {
+        start();
+        String empty = get("/npcs/encounters?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(empty.contains("encore été relevé"));
+        runListWithSuccess("encounter.list", ENCOUNTER_DETAILS);
+        String page = get("/npcs/encounters?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Brigand des bois") && page.contains("forest_bandit"));
+        assertTrue(page.contains("broken.yml") && page.contains("biome manquant"), "fichier refusé visible");
+        assertTrue(page.contains("enc_wild_forest_3_-2") && page.contains("/tp @s 10 70 -20"));
+        assertTrue(page.contains("présent") && page.contains("désactivée") && page.contains("aucun sol sûr"));
+        assertTrue(page.contains("CREATED"));
+        assertTrue(page.contains("value=\"encounter.remove\"") && page.contains("value=\"encounter.retry\""));
+
+        String token = csrf(page);
+        String base = "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID + "&return=/npcs/encounters";
+        HttpResponse<String> noConfirm = post("/agents/action", base + "&type=encounter.remove&siteId=enc_wild_forest_3_-2");
+        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "confirmation obligatoire");
+        HttpResponse<String> badId = post("/agents/action", base + "&type=encounter.remove&siteId=wp_wild_1&confirm=true");
+        assertTrue(badId.headers().firstValue("Location").orElse("").contains("err="), "jamais un waypoint");
+        HttpResponse<String> ok = post("/agents/action", base + "&type=encounter.disable&siteId=enc_wild_forest_3_-2&confirm=true");
+        assertEquals(303, ok.statusCode());
+        assertTrue(ok.headers().firstValue("Location").orElse("").startsWith("/npcs/encounters"));
+        assertEquals("enc_wild_forest_3_-2", pendingOfType("encounter.disable").get(0).params().get("siteId"));
+        assertEquals(303, post("/agents/action", base + "&type=encounter.templates.reload").statusCode());
+        assertEquals(1, pendingOfType("encounter.templates.reload").size());
+    }
+
     @Test
     void attachingAFreeCitizensNpcCreatesWhatIsMissingWithoutRecreatingIt() throws Exception {
         startWithContent();

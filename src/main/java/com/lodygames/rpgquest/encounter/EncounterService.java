@@ -17,7 +17,9 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -160,6 +162,13 @@ public final class EncounterService implements PluginService {
         return site == null || !site.active() ? Optional.empty() : Optional.of(site.npcId());
     }
 
+    /** Citizens UUID → occurrence, pour toutes les occurrences qui ont un PNJ. Thread quelconque. */
+    public Map<UUID, String> citizensSites() {
+        Map<UUID, String> out = new HashMap<>();
+        byCitizens.forEach((uuid, site) -> out.put(uuid, site.id()));
+        return out;
+    }
+
     // ---- Lecture (panel, commandes) -------------------------------------------------------------
 
     public List<EncounterSite> sites() {
@@ -180,6 +189,23 @@ public final class EncounterService implements PluginService {
 
     public YamlEncounterEngine templates() {
         return templates;
+    }
+
+    /** Configuration en vigueur (bornée), pour l'affichage. */
+    public EncounterConfig config() {
+        return config.get();
+    }
+
+    /**
+     * Mondes où des rencontres peuvent réellement apparaître : la liste configurée (ou le seul Wild
+     * si elle est vide), Hub et claims retirés — exactement la politique appliquée à la génération.
+     */
+    public List<String> effectiveWorlds() {
+        EncounterConfig cfg = config.get();
+        List<String> candidates = cfg.worlds().isEmpty() ? List.of(wildWorld.get()) : cfg.worlds();
+        return candidates.stream()
+                .filter(w -> EncounterWorldPolicy.allowed(w, cfg.worlds(), wildWorld.get(), forbiddenWorlds.get()))
+                .toList();
     }
 
     // ---- Cycle de vie joueur -------------------------------------------------------------------

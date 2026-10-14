@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - PNJ récurrents, étape 2 : administration PlugAdmin (#13)
+
+### Changement
+
+- Plugin : nouvelles actions agent `encounter.list`, `encounter.retry`, `encounter.disable`,
+  `encounter.remove`, `encounter.templates.reload`, `encounter.backoffs.clear` ; le roster
+  `npc.citizens.list` signale les PNJ de rencontre (`encounterSiteId`).
+- Panel : page `/npcs/encounters` « PNJ récurrents ».
+- Aucune migration, aucune nouvelle configuration, aucun nouveau fichier de contenu.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** redéploiement du panel
+(`scripts/plugadmin/deploy.sh`) — deux déploiements distincts. Ne pas téléverser `config.yml`,
+ne pas toucher `encounters/*.yml` ni `data.db`.
+
+### Sauvegarde préalable
+
+Sauvegarde datée du JAR en place (faite par `deploy-verygames.sh`).
+
+### Validation
+
+Panel → PNJ → « PNJ récurrents » → « Actualiser » : modèles et occurrences affichés (TC-304).
+
+### Rollback
+
+Remettre le JAR précédent (sauvegarde `*-predeploy.jar`) et redéployer le panel précédent.
+Aucune donnée à restaurer : rien n'est écrit en base par ces actions en dehors de
+`encounter_sites` (statut / suppression d'une occurrence demandée explicitement).
+
+---
+
 ## 2026-10-14 - PNJ récurrents par biome, étape 1 (#13)
 
 ### Changement

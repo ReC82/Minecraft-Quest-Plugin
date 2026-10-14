@@ -5744,3 +5744,27 @@ livrés, doublons), `EncounterTemplateSelectorTest` (biome, monde, désactivatio
 pondéré déterministe), `EncounterWorldPolicyTest` (Wild par défaut, Hub/claims toujours exclus,
 id d'occurrence), `EncounterSiteRepositoryTest` (une rencontre par instance, survie au redémarrage),
 `ConfigValidatorTest` (section `encounters`, bornes), `BundledDialoguesValidityTest`.
+
+### TC-304 — PNJ récurrents, étape 2 : page PlugAdmin et actions d'administration (issue #13, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel de l'étape 2 de #13 déployés ; au moins une rencontre apparue (TC-303
+étapes 1 et 5). Compte propriétaire PlugAdmin. **Durée** : 15 minutes.
+
+1.  PlugAdmin → PNJ : le bouton « PNJ récurrents » est présent ; après « Actualiser les PNJ », aucun
+    Brigand / Marchand / Forgeron n'apparaît parmi les PNJ « à rattacher ».
+2.  « PNJ récurrents » → « Actualiser » : vue d'ensemble (apparitions activées, monde `wild`),
+    trois modèles avec leur nombre d'occurrences, occurrences du Wild avec position, PNJ
+    « présent », état « active ».
+3.  En jeu, `/tp @s x y z` copié depuis la page : le PNJ est là.
+4.  « Gérer » → « Désactiver » sans cocher la case : refus. Avec la case : le PNJ disparaît en jeu ;
+    après actualisation l'occurrence est « désactivée », journal `DISABLED`. Revenir dans la zone :
+    aucun PNJ ne réapparaît.
+5.  « Réactiver » (confirmé) : le PNJ réapparaît au même endroit si la zone est chargée (sinon à la
+    prochaine visite), une seule fois (`/npc list`).
+6.  « Retirer » (confirmé) sur une occurrence : PNJ et ligne disparaissent ; en ressortant puis
+    revenant dans la zone, une **nouvelle** rencontre peut apparaître.
+7.  Modifier `weight` d'un modèle sur le serveur puis « Relire les modèles » : nouvelle valeur
+    affichée, aucun PNJ existant touché. Casser un modèle (supprimer `biomes`) puis relire : le
+    fichier apparaît en « refusé » avec son motif ; le restaurer et relire.
+8.  Compte sans `NPC_SPAWN_WRITE` : la page s'affiche en lecture seule.
+

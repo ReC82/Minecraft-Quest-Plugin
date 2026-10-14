@@ -14,6 +14,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -171,7 +172,7 @@ public final class ClaimsWorldRulesListener implements Listener {
 
     // ---- Construction hors de tout claim ------------------------------------------------------
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onBreak(BlockBreakEvent event) {
         if (isClaimsWorld(event.getBlock().getWorld()) && !isBypassing(event.getPlayer())
                 && claimAt(event.getBlock().getWorld(), event.getBlock().getX(), event.getBlock().getY(), event.getBlock().getZ()).isEmpty()) {
@@ -179,7 +180,7 @@ public final class ClaimsWorldRulesListener implements Listener {
         }
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onPlace(BlockPlaceEvent event) {
         if (isClaimsWorld(event.getBlockPlaced().getWorld()) && !isBypassing(event.getPlayer())
                 && claimAt(event.getBlockPlaced().getWorld(), event.getBlockPlaced().getX(),

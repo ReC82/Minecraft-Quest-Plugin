@@ -10,6 +10,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 
@@ -24,6 +25,9 @@ import org.bukkit.event.block.BlockBreakEvent;
  * bloc peut légitimement être re-miné après avoir repoussé (nœud de
  * ressource, {@code resource.ResourceNodeService}), donc la position seule
  * ne peut pas servir de clé de déduplication.</p>
+ *
+ * <p>Priorité HIGHEST (issue #91) : passe après toutes les protections (claims, hub, zones, LOW)
+ * pour ne jamais créditer une casse qu'elles ont refusée.</p>
  */
 public final class MiningXpListener implements Listener {
 
@@ -38,7 +42,7 @@ public final class MiningXpListener implements Listener {
         this.config = config;
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onBreak(BlockBreakEvent event) {
         ProgressionConfig current = config.get();
         if (event.isCancelled() || current.miningBlockXp() <= 0) {

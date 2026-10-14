@@ -5891,3 +5891,18 @@ Pierre de retour ; de quoi remplir les 36 cases (ex. stacks de terre). **Durée*
 9.  Non-régression : kit de départ (Rune) à la première connexion, Pierre de retour reçue à
     l'arrivée dans le monde des claims (au sol **uniquement** si inventaire plein, message « tombée
     à tes pieds » — exception volontaire #22), butin des monstres toujours au sol.
+
+### TC-309 — Casse refusée hors claim : ni XP ni progrès de quête (issue #91, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #91 déployé ; un compte joueur **sans** mode admin, avec un claim dans le monde
+Claims ; idéalement une quête active à objectif `BREAK_BLOCK` (ex. pierre). **Durée** : 5 minutes.
+
+1.  Monde Claims, **hors** de tout claim : tenter de casser de la pierre → bloc intact, **aucun**
+    overlay « +XP », XP de minage inchangée (`/skills`), compteur de quête inchangé.
+2.  Même essai dans le claim d'un autre joueur (non trusté) → même résultat.
+3.  Hub (sans mode admin) : tenter de casser un bloc → intact, aucun « +XP ».
+4.  Hors claim, tenter de poser un bloc → refusé, objectif `PLACE_BLOCK` inchangé.
+5.  Non-régression, dans **son** claim : casser de la pierre naturelle → bloc cassé, « +XP »
+    affiché, XP créditée, objectif `BREAK_BLOCK` +1 ; récolter une culture mûre → XP agriculture.
+6.  Non-régression Wild : nœud de ressource récolté normalement (drop, bloc épuisé).
+

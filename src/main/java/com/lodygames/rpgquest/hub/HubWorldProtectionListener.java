@@ -13,6 +13,7 @@ import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
@@ -112,14 +113,14 @@ public final class HubWorldProtectionListener implements Listener {
 
     // ---- Blocs -----------------------------------------------------------------------------------
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onBreak(BlockBreakEvent event) {
         if (isHub(event.getBlock().getWorld()) && !isBypassingBuild(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onPlace(BlockPlaceEvent event) {
         if (isHub(event.getBlockPlaced().getWorld()) && !isBypassingBuild(event.getPlayer())) {
             event.setCancelled(true);

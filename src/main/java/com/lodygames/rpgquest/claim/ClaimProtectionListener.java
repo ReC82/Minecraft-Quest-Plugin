@@ -64,13 +64,15 @@ public final class ClaimProtectionListener implements Listener {
     }
 
     // ---- Blocs -------------------------------------------------------------------------------
+    // Issue #91 : LOW, comme toutes les protections de casse/pose, pour annuler AVANT les effets de
+    // jeu (XP en HIGHEST, quêtes et positions posées en MONITOR) — voir BlockEventPriorityContractTest.
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onBreak(BlockBreakEvent event) {
         protect(event.getBlock().getLocation(), event.getPlayer(), event::setCancelled);
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onPlace(BlockPlaceEvent event) {
         protect(event.getBlock().getLocation(), event.getPlayer(), event::setCancelled);
     }

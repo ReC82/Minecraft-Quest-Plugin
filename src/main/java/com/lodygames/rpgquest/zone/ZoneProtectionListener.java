@@ -190,12 +190,12 @@ public final class ZoneProtectionListener implements Listener {
 
     // ---- Blocs -------------------------------------------------------------------------------
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onBreak(BlockBreakEvent event) {
         applyBlockFlag(event.getBlock().getLocation(), event.getPlayer(), ZoneFlags::allowBlockBreak, event::setCancelled);
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onPlace(BlockPlaceEvent event) {
         applyBlockFlag(event.getBlock().getLocation(), event.getPlayer(), ZoneFlags::allowBlockPlace, event::setCancelled);
     }

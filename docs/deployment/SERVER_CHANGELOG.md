@@ -48,6 +48,36 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Claims : aucune XP ni progrès de quête sur une casse refusée (#91)
+
+### Changement
+
+Une casse ou une pose de bloc refusée par une protection (hors de tout claim dans le monde Claims,
+claim d'un autre joueur, Hub, zone protégée) n'affiche plus « +XP » et ne crédite plus rien. Cause :
+protections et XP écoutaient tous en priorité `NORMAL`, l'ordre d'enregistrement décidait (XP
+enregistrée avant les claims). Désormais : protections en `LOW`, XP minage/agriculture en
+`HIGHEST`, objectifs `BREAK_BLOCK`/`PLACE_BLOCK` et suivi des blocs posés en `MONITOR`. Effet de
+bord voulu : une pose refusée n'est plus marquée « posée par un joueur ». Aucun changement de
+schéma ni de configuration.
+
+### Action serveur
+
+Aucune action manuelle autre que le remplacement du JAR RPGQuest (redémarrage requis).
+
+### Sauvegarde préalable
+
+JAR actuel + `data.db`, faits par `deploy-verygames.sh`.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-309.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer ; aucune donnée à reprendre.
+
+---
+
 ## 2026-10-14 - Remise sécurisée commune des objets — inventaire plein (#318)
 
 ### Changement

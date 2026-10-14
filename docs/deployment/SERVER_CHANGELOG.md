@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - PNJ récurrents par biome, étape 1 (#13)
+
+### Changement
+
+- Nouveau système : un PNJ Citizens de rencontre apparaît dans chaque instance de biome du Wild
+  visitée dont le biome a un modèle (forêts → Brigand des bois, désert/badlands → Marchand égaré,
+  collines/pics → Forgeron perdu). Persistant, unique par instance, réparé s'il est supprimé.
+- Nouveau dossier `plugins/RPGQuest/encounters/` (3 modèles copiés au premier démarrage).
+- Nouvelle section `encounters:` dans `config.yml` (ajoutée par le complément automatique de
+  configuration, défaut : activé, Wild seulement).
+- Migration **V34** automatique : table `encounter_sites`.
+- Nouveaux dialogues `dialogues/encounter_bandit.yml`, `encounter_merchant.yml`,
+  `encounter_smith.yml` (publiés par le pipeline de contenu PlugAdmin).
+
+### Action serveur
+
+Remplacement du JAR + publication des trois dialogues. Redémarrage requis. Migration de base
+automatique et additive. Aucun fichier à éditer à la main ; ne pas téléverser `config.yml`.
+
+### Sauvegarde préalable
+
+JAR + `data.db` (procédure habituelle du script de déploiement).
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : `docs/MANUAL_TEST_PLAN.md` TC-303.
+
+### Rollback
+
+Remettre le JAR précédent et redémarrer. La table `encounter_sites` est ignorée par l'ancienne
+version ; les PNJ Citizens déjà créés **restent** (sans dialogue) : les retirer avec `/npc remove`
+si le retour arrière est définitif (ils portent la donnée Citizens `rpgquest-encounter`).
+
+---
+
 ## 2026-10-14 - Mode bypass administrateur explicite (#35, #321)
 
 ### Changement

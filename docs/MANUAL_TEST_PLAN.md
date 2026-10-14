@@ -5712,3 +5712,35 @@ seulement, retrait PlugAdmin, durée maximale, permission perdue, indicateur, d�
 `false`/`TRUE`/`oui`/`1` refusés, OP éligible accepté, nœud sans session, session sans nœud,
 retrait PlugAdmin), listeners claims/zones/Hub (OP sans session bloqué), `GameSettingsTest`,
 `SettingsPageTest` (rubrique Administration).
+
+### TC-303 — PNJ récurrents par instance de biome, étape 1 : apparition, unicité, réparation (issue #13, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR de l'étape 1 de #13 ; Citizens actif ; dialogues `encounter_bandit`,
+`encounter_merchant`, `encounter_smith` publiés sur DEV ; `plugins/RPGQuest/encounters/` contient
+les trois modèles livrés (copiés au premier démarrage). Compte OP du propriétaire, mode bypass OFF.
+**Durée** : 25 minutes. Garder la console ouverte (`[PNJ récurrents]`).
+
+1.  Dans le Wild, marcher jusqu'à entrer dans une **forêt** non encore visitée. **Attendu** : sous
+    quelques secondes, console `[PNJ récurrents] CREATED … (forest_bandit)` puis `SPAWNED …` ; un PNJ
+    « Brigand des bois » se tient à 24–64 blocs du point d'entrée, sur un sol praticable (pas dans
+    un arbre, pas dans l'eau), et regarde le joueur qui s'approche.
+2.  Clic droit sur le Brigand → dialogue d'accueil (« Qui es-tu ? » / « Au revoir »). Aucune quête
+    ajoutée au journal.
+3.  Ressortir de la forêt puis y revenir, se déconnecter/reconnecter : **toujours un seul** Brigand,
+    au même endroit.
+4.  Redémarrer DEV, revenir : même PNJ, même position, aucun second PNJ (vérifier `/npc list` :
+    une seule entrée « Brigand des bois » pour cette forêt).
+5.  Aller dans une **seconde forêt éloignée** (> 300 blocs) : un **autre** Brigand y apparaît.
+6.  Désert (Marchand égaré) et montagne/collines (Forgeron perdu) : même comportement.
+7.  Plaine, océan, Hub, monde des claims : **aucune** rencontre.
+8.  Sélectionner un Brigand et le supprimer avec Citizens (`/npc remove`) puis sortir/rentrer dans
+    l'instance (ou recharger la zone) : **un seul** Brigand réapparaît au même endroit, console
+    `REPAIRED`.
+9.  Performances : se déplacer en elytra/au galop sur plusieurs biomes, aucun lag notable ; aucune
+    génération de rencontre au démarrage du serveur.
+
+**Couverture automatisée** : `EncounterTemplateParserTest` (format, défauts, erreurs, modèles
+livrés, doublons), `EncounterTemplateSelectorTest` (biome, monde, désactivation, plafond, tirage
+pondéré déterministe), `EncounterWorldPolicyTest` (Wild par défaut, Hub/claims toujours exclus,
+id d'occurrence), `EncounterSiteRepositoryTest` (une rencontre par instance, survie au redémarrage),
+`ConfigValidatorTest` (section `encounters`, bornes), `BundledDialoguesValidityTest`.

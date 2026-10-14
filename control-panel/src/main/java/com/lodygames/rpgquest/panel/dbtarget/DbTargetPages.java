@@ -156,7 +156,7 @@ public final class DbTargetPages {
     private static String wizardCard(DbTargetSettings s, ActiveBackend backend) {
         StringBuilder sb = new StringBuilder("<section class=\"card\">");
         sb.append(Ui.sectionTitle("docs", "Assistant de migration SQLite → MariaDB"));
-        sb.append("<ol class=\"steps\">");
+        sb.append("<ul class=\"list-unstyled steps\">");
         step(sb, "1. État", backend.known() ? "done" : "todo",
                 "Backend actif : " + Http.esc(backend.label()) + (backend.known()
                         ? ", schéma V" + backend.schemaVersion() + "." : " (heartbeat absent ou plugin ancien)."));
@@ -172,7 +172,7 @@ public final class DbTargetPages {
                 + "comptages, mêmes empreintes logiques), séquences OK, « Source SQLite inchangée : OK ».");
         step(sb, "6. Bloquants connus", "blocked", "#354 : textes libres traduits en VARCHAR(191) côté MariaDB "
                 + "(une description de 490 caractères existe en DEV). NO-GO tant qu'il n'est pas corrigé.");
-        sb.append("</ol>");
+        sb.append("</ul>");
         sb.append("<p><button class=\"btn\" type=\"button\" disabled title=\"Désactivé : aucune autorisation "
                 + "de bascule\">").append(Icons.icon("admin")).append("7. Basculer le serveur sur MariaDB</button> "
                 + "<span class=\"muted\">Désactivé — la bascule exige une autorisation écrite du propriétaire et "

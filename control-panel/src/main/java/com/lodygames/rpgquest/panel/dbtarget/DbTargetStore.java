@@ -11,8 +11,9 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Enregistrement, dans {@code control-panel.db}, des paramètres de la base MariaDB cible d'une
- * future migration (issue #42). Une seule cible (ligne {@code id = 1}).
+ * Enregistrement, dans {@code control-panel.db}, des paramètres d'une base MariaDB : la cible d'une
+ * future migration RPGQuest (issue #42) ou la base propre au panel (issue #43), chacune dans sa
+ * table ({@link DbTargetKind}). Une seule cible par table (ligne {@code id = 1}).
  *
  * <p>Le mot de passe est stocké <strong>chiffré</strong> ({@link SecretBox}, AES-256-GCM, clé
  * dérivée de {@code RPGQUEST_PANEL_SECRET} qui n'est jamais dans la base). Règles :</p>
@@ -29,7 +30,7 @@ import java.util.Optional;
 public final class DbTargetStore {
 
     private static final String CREATE = """
-            CREATE TABLE IF NOT EXISTS db_migration_target (
+            CREATE TABLE IF NOT EXISTS %s (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 host TEXT NOT NULL DEFAULT '',
                 port INTEGER NOT NULL DEFAULT 3306,
@@ -46,22 +47,32 @@ public final class DbTargetStore {
             """;
 
     private final String jdbcUrl;
+    private final String table;
     private final SecretBox box;
 
+    /** Cible de migration RPGQuest (issue #42). */
     public DbTargetStore(String dbPath, SecretBox box) {
+        this(dbPath, box, DbTargetKind.MIGRATION);
+    }
+
+    /**
+     * @param box chiffreur dont l'usage doit être {@link DbTargetKind#secretPurpose()} de {@code kind}
+     */
+    public DbTargetStore(String dbPath, SecretBox box, DbTargetKind kind) {
         this.jdbcUrl = "jdbc:sqlite:" + dbPath;
+        this.table = kind.table();
         this.box = box;
         try (Connection c = connect(); Statement st = c.createStatement()) {
-            st.execute(CREATE);
-            st.execute("INSERT OR IGNORE INTO db_migration_target (id) VALUES (1)");
+            st.execute(CREATE.formatted(table));
+            st.execute("INSERT OR IGNORE INTO " + table + " (id) VALUES (1)");
         } catch (SQLException e) {
-            throw new IllegalStateException("Impossible d'initialiser db_migration_target dans " + dbPath, e);
+            throw new IllegalStateException("Impossible d'initialiser " + table + " dans " + dbPath, e);
         }
     }
 
     public DbTargetSettings get() {
         String sql = "SELECT host, port, database_name, username, ssl_mode, password_sealed, updated_at, "
-                + "updated_by, last_test_at, last_test_ok, last_test_summary FROM db_migration_target WHERE id = 1";
+                + "updated_by, last_test_at, last_test_ok, last_test_summary FROM " + table + " WHERE id = 1";
         try (Connection c = connect(); Statement st = c.createStatement(); ResultSet rs = st.executeQuery(sql)) {
             if (!rs.next()) {
                 return DbTargetSettings.empty();
@@ -90,7 +101,7 @@ public final class DbTargetStore {
                 || !database.equals(before.database()) || !username.equals(before.username())
                 || !sslMode.equalsIgnoreCase(before.sslMode());
         boolean replacePassword = newPassword != null && !newPassword.isEmpty();
-        String sql = "UPDATE db_migration_target SET host = ?, port = ?, database_name = ?, username = ?, "
+        String sql = "UPDATE " + table + " SET host = ?, port = ?, database_name = ?, username = ?, "
                 + "ssl_mode = ?, updated_at = ?, updated_by = ?"
                 + (replacePassword ? ", password_sealed = ?" : "")
                 + (targetChanged || replacePassword ? ", last_test_at = '', last_test_ok = 0, last_test_summary = ''" : "")
@@ -108,13 +119,13 @@ public final class DbTargetStore {
             }
             ps.executeUpdate();
         } catch (SQLException e) {
-            throw new IllegalStateException("Impossible d'enregistrer la cible de migration", e);
+            throw new IllegalStateException("Impossible d'enregistrer la cible " + table, e);
         }
     }
 
     /** Efface le mot de passe (action explicite, distincte de l'enregistrement). */
     public void clearPassword(String actor) {
-        update("UPDATE db_migration_target SET password_sealed = '', updated_at = ?, updated_by = ?, "
+        update("UPDATE " + table + " SET password_sealed = '', updated_at = ?, updated_by = ?, "
                 + "last_test_at = '', last_test_ok = 0, last_test_summary = '' WHERE id = 1",
                 Instant.now().toString(), actor == null ? "" : actor);
     }
@@ -122,7 +133,7 @@ public final class DbTargetStore {
     /** Mot de passe déchiffré — réservé au testeur de connexion ; vide si absent ou illisible. */
     Optional<String> password() {
         try (Connection c = connect(); Statement st = c.createStatement();
-             ResultSet rs = st.executeQuery("SELECT password_sealed FROM db_migration_target WHERE id = 1")) {
+             ResultSet rs = st.executeQuery("SELECT password_sealed FROM " + table + " WHERE id = 1")) {
             return rs.next() ? box.open(rs.getString(1)) : Optional.empty();
         } catch (SQLException e) {
             return Optional.empty();
@@ -143,7 +154,7 @@ public final class DbTargetStore {
         } else {
             result = tester.test(settings, password.get());
         }
-        update("UPDATE db_migration_target SET last_test_at = ?, last_test_ok = ?, last_test_summary = ? WHERE id = 1",
+        update("UPDATE " + table + " SET last_test_at = ?, last_test_ok = ?, last_test_summary = ? WHERE id = 1",
                 Instant.now().toString(), result.ok() ? "1" : "0", result.summary());
         return result;
     }
@@ -155,7 +166,7 @@ public final class DbTargetStore {
             }
             ps.executeUpdate();
         } catch (SQLException e) {
-            throw new IllegalStateException("Impossible de mettre à jour la cible de migration", e);
+            throw new IllegalStateException("Impossible de mettre à jour la cible " + table, e);
         }
     }
 

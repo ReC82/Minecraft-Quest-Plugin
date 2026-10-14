@@ -103,6 +103,10 @@ public final class PanelApp {
     private final com.lodygames.rpgquest.panel.dbtarget.DbTargetStore dbTarget;
     private com.lodygames.rpgquest.panel.dbtarget.DbConnectionTester dbTester =
             new com.lodygames.rpgquest.panel.dbtarget.MariaDbConnectionTester();
+    /** Issue #43 — base MariaDB propre au panel : enregistrée et testée, jamais utilisée. */
+    private final com.lodygames.rpgquest.panel.dbtarget.DbTargetStore panelDbTarget;
+    private com.lodygames.rpgquest.panel.dbtarget.DbConnectionTester panelDbTester =
+            com.lodygames.rpgquest.panel.dbtarget.MariaDbConnectionTester.forPanel();
     private final com.lodygames.rpgquest.panel.ai.AiContentStudio aiStudio;
     /** Issue #94 — atelier de plans de bâtiment, distinct de l'atelier de contenu. */
     private final com.lodygames.rpgquest.panel.ai.AiBuildingStudio aiBuildingStudio;
@@ -172,7 +176,13 @@ public final class PanelApp {
         // stockée à côté du chiffré.
         this.dbTarget = new com.lodygames.rpgquest.panel.dbtarget.DbTargetStore(config.panelDbPath(),
                 new com.lodygames.rpgquest.panel.dbtarget.SecretBox(config.sessionSecret(),
-                        "db-migration-target-password"));
+                        com.lodygames.rpgquest.panel.dbtarget.DbTargetKind.MIGRATION.secretPurpose()));
+        // Issue #43 : même secret maître, usage distinct — un chiffré d'une cible ne s'ouvre pas
+        // pour l'autre.
+        this.panelDbTarget = new com.lodygames.rpgquest.panel.dbtarget.DbTargetStore(config.panelDbPath(),
+                new com.lodygames.rpgquest.panel.dbtarget.SecretBox(config.sessionSecret(),
+                        com.lodygames.rpgquest.panel.dbtarget.DbTargetKind.PANEL.secretPurpose()),
+                com.lodygames.rpgquest.panel.dbtarget.DbTargetKind.PANEL);
         this.aiStudio = new com.lodygames.rpgquest.panel.ai.AiContentStudio(aiProviders, aiSettings);
         // Issue #94 — même registre de fournisseurs et mêmes réglages que l'atelier de contenu :
         // une seule clé API à gérer, un seul endroit où elle vit.
@@ -2058,9 +2068,16 @@ public final class PanelApp {
         this.dbTester = tester;
     }
 
+    /** Tests : remplace le testeur réel de la base du panel (issue #43). */
+    public void usePanelDbConnectionTester(com.lodygames.rpgquest.panel.dbtarget.DbConnectionTester tester) {
+        this.panelDbTester = tester;
+    }
+
     /**
      * Issue #42 — base MariaDB cible : paramètres, mot de passe chiffré, test de connexion en lecture
-     * seule et assistant de migration. Préparation uniquement : aucune route ne migre ni ne bascule.
+     * seule et assistant de migration. Issue #43 — mêmes gestes pour la base propre au panel
+     * (champ {@code scope=panel}), avec test d'isolement. Préparation uniquement : aucune route ne
+     * migre ni ne bascule.
      */
     private void handleDatabaseTarget(HttpExchange exchange) throws IOException {
         Optional<Session> maybe = requireSession(exchange);
@@ -2081,6 +2098,8 @@ public final class PanelApp {
         String notice = null;
         String error = null;
         com.lodygames.rpgquest.panel.dbtarget.DbConnectionTester.Result testResult = null;
+        com.lodygames.rpgquest.panel.dbtarget.DbTargetKind kind =
+                com.lodygames.rpgquest.panel.dbtarget.DbTargetKind.MIGRATION;
 
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             Map<String, String> f = Http.formBody(exchange);
@@ -2091,13 +2110,20 @@ public final class PanelApp {
             }
             String rid = UUID.randomUUID().toString().substring(0, 8);
             String action = f.getOrDefault("_action", "save");
+            boolean panelScope = "panel".equals(f.get("scope"));
+            if (panelScope) {
+                kind = com.lodygames.rpgquest.panel.dbtarget.DbTargetKind.PANEL;
+            }
+            com.lodygames.rpgquest.panel.dbtarget.DbTargetStore store = panelScope ? panelDbTarget : dbTarget;
+            String auditPrefix = panelScope ? "database.panelTarget." : "database.target.";
+            String noun = panelScope ? "Base du panel" : "Cible";
             if ("clear".equals(action)) {
                 if (!"on".equals(f.get("confirm"))) {
                     error = "Effacement non confirmé : cocher la case de confirmation.";
                 } else {
-                    dbTarget.clearPassword(session.username());
+                    store.clearPassword(session.username());
                     // L'audit dit QUE le secret a été effacé, jamais ce qu'il valait.
-                    audit.record(session.username(), "database.target.clearPassword", "target=migration",
+                    audit.record(session.username(), auditPrefix + "clearPassword", "target=" + kind.auditLabel(),
                             "OK", "mot de passe effacé", rid);
                     notice = "Mot de passe effacé.";
                 }
@@ -2111,17 +2137,27 @@ public final class PanelApp {
                 error = com.lodygames.rpgquest.panel.dbtarget.DbTargetSettings.validate(host, port, database,
                         username, ssl);
                 if (error == null) {
-                    dbTarget.save(host, Integer.parseInt(port), database, username, ssl, password,
+                    // Issue #43 : la base du panel ne peut pas être celle de RPGQuest (et inversement).
+                    com.lodygames.rpgquest.panel.dbtarget.DbTargetSettings other =
+                            (panelScope ? dbTarget : panelDbTarget).get();
+                    if (other.configured() && other.host().equalsIgnoreCase(host)
+                            && String.valueOf(other.port()).equals(port) && other.database().equals(database)) {
+                        error = "Base refusée : la base du panel doit être distincte de la base RPGQuest "
+                                + "(même hôte, port et nom de base que l'autre cible).";
+                    }
+                }
+                if (error == null) {
+                    store.save(host, Integer.parseInt(port), database, username, ssl, password,
                             session.username());
                     // Ni hôte ni secret dans l'audit : la base, le mode TLS et le fait qu'un mot de
                     // passe a été remplacé suffisent à tracer le geste.
-                    audit.record(session.username(), "database.target.save", "database=" + database
+                    audit.record(session.username(), auditPrefix + "save", "database=" + database
                                     + " ssl=" + ssl + " passwordReplaced=" + !password.isEmpty(),
-                            "OK", "cible enregistrée", rid);
-                    notice = "Cible enregistrée.";
+                            "OK", noun.toLowerCase(java.util.Locale.ROOT) + " enregistrée", rid);
+                    notice = noun + " enregistrée.";
                     if ("test".equals(action)) {
-                        testResult = dbTarget.test(dbTester);
-                        audit.record(session.username(), "database.target.test", "database=" + database,
+                        testResult = store.test(panelScope ? panelDbTester : dbTester);
+                        audit.record(session.username(), auditPrefix + "test", "database=" + database,
                                 testResult.ok() ? "OK" : "FAILED", testResult.ok() ? "connexion réussie"
                                         : "échec de connexion", rid);
                         notice = null;
@@ -2132,9 +2168,22 @@ public final class PanelApp {
 
         boolean canWrite = permissions.can(session.effective(), Permission.DATABASE_CONFIGURE);
         String body = com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.render(dbTarget.get(),
-                activeBackend(), canWrite, notice, error, testResult);
+                panelDbSection(), activeBackend(), canWrite, notice, error, kind, testResult);
         Http.html(exchange, 200, renderPage("Base de données", session, "/database", body,
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /** Issue #43 : stockage actif du panel, cible MariaDB du panel et avertissement de partage de compte. */
+    private com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.PanelSection panelDbSection() {
+        com.lodygames.rpgquest.panel.dbtarget.DbTargetSettings panel = panelDbTarget.get();
+        com.lodygames.rpgquest.panel.dbtarget.DbTargetSettings migration = dbTarget.get();
+        String warning = panel.configured() && migration.configured()
+                && panel.username().equals(migration.username())
+                ? "Même compte SQL que la cible RPGQuest : utiliser un compte dédié au panel, sans droit sur "
+                        + "la base du plugin."
+                : null;
+        return new com.lodygames.rpgquest.panel.dbtarget.DbTargetPages.PanelSection(panel,
+                com.lodygames.rpgquest.panel.dbtarget.PanelDbInventory.read(config.panelDbPath()), warning);
     }
 
     /** Backend réellement actif, lu dans le dernier heartbeat de l'agent par défaut (issue #42). */

@@ -1,7 +1,7 @@
 ---
 title: Base de données (cible MariaDB)
 category: Administration
-tags: [base de données, mariadb, mysql, sqlite, migration, mot de passe, connexion, bascule]
+tags: [base de données, mariadb, mysql, sqlite, migration, mot de passe, connexion, bascule, panel, isolement]
 order: 0
 ---
 
@@ -43,6 +43,22 @@ testée.
 `rpgquest-db-migration.jar` sur une copie de `data.db` (runbook
 `docs/deployment/MIGRATION_SQLITE_MARIADB.md`). Le bouton « Basculer » est **désactivé** : aucune
 route du panel n'effectue de bascule, qui exige une autorisation écrite du propriétaire.
+
+## Base propre au panel
+
+La section du bas concerne la base **du panel lui-même** (issue #43), pas celle du jeu.
+
+- **Stockage actif** : toujours « SQLite — control-panel.db ». L'inventaire (lecture seule) liste ses
+  tables : comptes, groupes, audit, file d'actions de l'agent, brouillons, réglages. Aucune donnée de
+  jeu n'y est la référence : le panel lit et modifie le jeu via l'agent, jamais en SQL.
+- **Base MariaDB du panel** : badge « enregistrée — non utilisée ». Mêmes règles de mot de passe que
+  ci-dessus (chiffré, jamais réaffiché, vide = conserver, effacement confirmé). Utiliser une base
+  **et** un compte dédiés : une base identique à la cible RPGQuest est refusée, un compte identique
+  est signalé.
+- **Tester la connexion** vérifie aussi l'**isolement** : le test échoue si le compte voit une base
+  RPGQuest (« Isolement non respecté »). Retirer alors à ce compte tout droit sur la base du jeu.
+- **Basculer le panel sur MariaDB** est désactivé : le panel continue sur `control-panel.db`. Plan,
+  prérequis et rollback : `docs/deployment/PANEL_DATABASE.md`.
 
 ## Dépannage
 

@@ -10,3 +10,4 @@ printf '#!/bin/sh\nexec /usr/bin/python3 /opt/lodyquests-orch/lqorch.py "$@"\n' 
 sudo chmod 0755 /usr/local/bin/lqorch
 sudo systemctl daemon-reload
 echo "Installé. État : lqorch status — démarrer : sudo systemctl start lodyquests-orch"
+echo "Superviseur déjà actif : « lqorch reload » applique le nouveau code entre deux sessions."

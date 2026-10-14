@@ -164,6 +164,8 @@ jobs:
         run: shellcheck -x scripts/lib/validation.sh scripts/dev/*.sh scripts/plugadmin/deploy.sh scripts/deploy-verygames.sh
       - name: tests de validation.sh
         run: scripts/dev/test-validation.sh
+      - name: tests du superviseur lqorch (faux claude, état temporaire)
+        run: python3 -W error::ResourceWarning -m unittest scripts/orchestrator/test_lqorch.py
 
   ci-ok:
     # Le statut unique que les scripts de déploiement consultent. Il échoue si UN SEUL job a échoué

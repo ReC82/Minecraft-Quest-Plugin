@@ -7,7 +7,9 @@ lance `claude -p` en mode non interactif avec un contexte reconstruit, surveille
 classe la façon dont elle s'est terminée, et enchaîne.
 
 Commandes :
-  lqorch status            état du superviseur, session en cours, quota
+  lqorch status            état du superviseur, session en cours, plafonds locaux, quota observé
+  lqorch config [set NOM VALEUR | unset NOM]   garde-fous (sessions/jour, budget, seuils de quota…)
+  lqorch reload            relire le code installé, entre deux sessions (sans couper la session)
   lqorch queue             prochains tickets
   lqorch pause | resume    ne plus démarrer / reprendre
   lqorch stop [--now]      arrêter (après la session en cours, ou tout de suite)
@@ -24,6 +26,7 @@ et `gh` utilisent leurs propres identifiants.
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import queue
@@ -49,14 +52,39 @@ WORKDIR = Path(os.environ.get("LQ_WORKDIR", "/srv/rpgquest/wt-orch"))
 CLAUDE = os.environ.get("LQ_CLAUDE", str(Path.home() / ".local/bin/claude"))
 PROMPT_FILE = Path(os.environ.get("LQ_PROMPT", Path(__file__).with_name("session_prompt.md")))
 
-SESSION_MAX_SECONDS = int(os.environ.get("LQ_SESSION_MAX", 4 * 3600))
-SESSION_IDLE_SECONDS = int(os.environ.get("LQ_SESSION_IDLE", 75 * 60))
-MAX_ATTEMPTS = int(os.environ.get("LQ_MAX_ATTEMPTS", 3))
-MAX_SESSIONS_PER_DAY = int(os.environ.get("LQ_MAX_SESSIONS_PER_DAY", 24))
+GH = os.environ.get("LQ_GH", "gh")
+
 POLL_SECONDS = int(os.environ.get("LQ_POLL", 30))
 TRIAGE_EVERY_SECONDS = int(os.environ.get("LQ_TRIAGE_EVERY", 6 * 3600))
 BACKOFF_SCALE = float(os.environ.get("LQ_BACKOFF_SCALE", 1))
 QUOTA_MARGIN_SECONDS = int(os.environ.get("LQ_QUOTA_MARGIN", 120))
+
+# Garde-fous réglables sans toucher au code. Priorité : `lqorch config set` (base d'état) >
+# variable d'environnement > défaut ci-dessous. Relus à chaque tour de boucle : un changement
+# s'applique à la frontière de session suivante, jamais à une session déjà lancée.
+# nom : (variable d'environnement, défaut, minimum, maximum, description)
+SETTINGS = {
+    "max_sessions_per_day": ("LQ_MAX_SESSIONS_PER_DAY", 24, 0, 500,
+                             "Sessions lancées au plus par jour UTC. 0 = sans plafond, accepté seulement si un "
+                             "garde-fou de budget ou de quota fournisseur est actif."),
+    "max_cost_usd_per_day": ("LQ_MAX_COST_USD_PER_DAY", 0.0, 0.0, 10000.0,
+                             "Plafond du coût estimé du jour (total_cost_usd de Claude Code, prix catalogue : "
+                             "une estimation, pas une facture). 0 = désactivé."),
+    "max_five_hour_utilization": ("LQ_MAX_FIVE_HOUR_UTILIZATION", 0.9, 0.05, 1.0,
+                                  "Aucune nouvelle session si la fenêtre fournisseur de 5 h annoncée par Claude Code "
+                                  "atteint ce taux (1 = désactivé)."),
+    "max_seven_day_utilization": ("LQ_MAX_SEVEN_DAY_UTILIZATION", 0.8, 0.05, 1.0,
+                                  "Idem pour la fenêtre de 7 jours ; laisse une marge pour l'usage interactif."),
+    "min_seconds_between_sessions": ("LQ_MIN_GAP", 60, 30, 3600,
+                                     "Écart minimal entre deux démarrages de session (anti-boucle)."),
+    "max_consecutive_failures": ("LQ_MAX_CONSECUTIVE_FAILURES", 4, 1, 50,
+                                 "Disjoncteur : après N sessions consécutives sans rapport, le superviseur se met "
+                                 "en pause (lqorch resume pour réarmer)."),
+    "max_attempts": ("LQ_MAX_ATTEMPTS", 3, 1, 10, "Sessions sans rapport tolérées par ticket avant FAILED."),
+    "session_max_seconds": ("LQ_SESSION_MAX", 4 * 3600, 600, 12 * 3600, "Durée maximale d'une session."),
+    "session_idle_seconds": ("LQ_SESSION_IDLE", 75 * 60, 300, 4 * 3600,
+                             "Session coupée après ce délai sans aucune sortie."),
+}
 
 STATUSES = ("READY", "RUNNING", "TESTING", "BLOCKED", "WAITING_OWNER", "DONE", "FAILED")
 # Pseudo-ticket : une session qui relit le backlog et remplit la file quand elle est vide.
@@ -108,6 +136,43 @@ def ctl_set(con, key, value):
     con.commit()
 
 
+def parse_setting(name, raw):
+    """Valeur typée et bornée, ou ValueError avec un message lisible."""
+    _, default, low, high, _ = SETTINGS[name]
+    try:
+        value = type(default)(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} attend un nombre {'entier' if isinstance(default, int) else 'décimal'}.") from None
+    if not low <= value <= high:
+        raise ValueError(f"{name} doit être compris entre {low} et {high}.")
+    return value
+
+
+def setting(con, name):
+    """Rend (valeur, origine). Une valeur invalide est ignorée au profit de la source suivante."""
+    env, default, *_ = SETTINGS[name]
+    for raw, origin in ((ctl_get(con, "cfg." + name, None), "lqorch config"), (os.environ.get(env), f"env {env}")):
+        if raw is not None and raw != "":
+            try:
+                return parse_setting(name, raw), origin
+            except ValueError:
+                continue
+    return default, "défaut du code"
+
+
+def policy_error(values):
+    """Un mode sans plafond de sessions n'est permis que si un autre garde-fou borne la dépense."""
+    if values["max_sessions_per_day"] == 0 and values["max_cost_usd_per_day"] <= 0 \
+            and values["max_five_hour_utilization"] >= 1 and values["max_seven_day_utilization"] >= 1:
+        return ("Sans plafond de sessions, il faut au moins un garde-fou : max_cost_usd_per_day > 0 "
+                "ou un seuil d'utilisation fournisseur < 1.")
+    return ""
+
+
+def settings(con):
+    return {name: setting(con, name)[0] for name in SETTINGS}
+
+
 def event(con, issue, kind, message):
     con.execute("INSERT INTO events(at,issue,kind,message) VALUES(?,?,?,?)", (iso(), issue, kind, message[:2000]))
     con.commit()
@@ -128,7 +193,7 @@ def update_task(con, issue, **fields):
 
 def gh_json(path):
     try:
-        out = subprocess.run(["gh", "api", path], capture_output=True, text=True, timeout=60)
+        out = subprocess.run([GH, "api", path], capture_output=True, text=True, timeout=60)
         return json.loads(out.stdout) if out.returncode == 0 else None
     except (subprocess.SubprocessError, json.JSONDecodeError, OSError):
         return None
@@ -184,10 +249,67 @@ def next_task(con):
 
 # ---------------------------------------------------------------- quota
 
-def wait_for_quota(con):
-    """Respecte la limite du fournisseur : jamais de relance avant la remise à zéro annoncée."""
+def provider_usage(con):
+    """Dernier `rate_limit_info` annoncé par Claude Code, avec son heure d'observation. Ce n'est
+    qu'un instantané pris pendant la dernière session : l'usage interactif du propriétaire depuis
+    n'y figure pas. Aucune autre source (pourcentages de l'interface claude.ai) n'est lue."""
+    raw = ctl_get(con, "provider_usage")
+    if raw:
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+    # Superviseur antérieur à #380 : relire le dernier événement dans le journal le plus récent.
+    last = con.execute("SELECT log_path FROM sessions WHERE log_path IS NOT NULL ORDER BY started_at DESC LIMIT 1").fetchone()
+    path = Path(last["log_path"]) if last else None
+    if not path or not path.exists():
+        return {}
+    info = {}
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if '"rate_limit_event"' in line:
+                try:
+                    info = json.loads(line).get("rate_limit_info") or info
+                except json.JSONDecodeError:
+                    pass
+    return dict(info, observed_at=iso(datetime.fromtimestamp(path.stat().st_mtime, timezone.utc))) if info else {}
+
+
+def next_utc_day():
+    return datetime.fromtimestamp((int(time.time()) // 86400 + 1) * 86400, timezone.utc)
+
+
+def start_blocker(con):
+    """Pourquoi aucune session ne peut démarrer maintenant : (raison, reprise_iso) ou None.
+    Les limites du fournisseur passent avant la politique locale et ne sont jamais contournées."""
+    if ctl_get(con, "mode", "RUNNING") == "PAUSED":
+        return ctl_get(con, "pause_reason") or "Pause demandée (lqorch resume pour reprendre).", ""
     until = ctl_get(con, "quota_until")
-    return bool(until and until > iso())
+    if until and until > iso():
+        return "Limite fournisseur signalée par Claude Code.", until
+    cfg = settings(con)
+    windows = provider_usage(con).get("unifiedWindows") or {}
+    for window, key, label in (("five_hour", "max_five_hour_utilization", "5 h"),
+                               ("seven_day", "max_seven_day_utilization", "7 jours")):
+        win = windows.get(window) or {}
+        util, reset = win.get("utilization"), win.get("resetsAt")
+        if util is not None and reset and reset > time.time() and util >= cfg[key]:
+            return (f"Fenêtre fournisseur {label} à {util:.0%} (seuil {cfg[key]:.0%}).",
+                    iso(datetime.fromtimestamp(int(reset) + QUOTA_MARGIN_SECONDS, timezone.utc)))
+    cap = cfg["max_sessions_per_day"]
+    if policy_error(cfg):
+        cap = SETTINGS["max_sessions_per_day"][1]
+    if cap and sessions_today(con) >= cap:
+        return f"Plafond local de {cap} sessions par jour atteint.", iso(next_utc_day())
+    if cfg["max_cost_usd_per_day"] > 0 and cost_today(con) >= cfg["max_cost_usd_per_day"]:
+        return f"Budget estimé du jour atteint ({cfg['max_cost_usd_per_day']:.2f} USD).", iso(next_utc_day())
+    last = con.execute("SELECT MAX(started_at) m FROM sessions").fetchone()["m"]
+    if last:
+        ready = datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp() \
+            + cfg["min_seconds_between_sessions"]
+        if ready > time.time():
+            return "Écart minimal entre deux sessions.", iso(datetime.fromtimestamp(ready, timezone.utc))
+    return None
 
 
 # ---------------------------------------------------------------- session
@@ -251,6 +373,8 @@ def run_session(con, t):
     env = dict(os.environ, LQ_SESSION_ID=session_id, LQ_STATUS_FILE=str(status_file), LQ_ISSUE=str(t["issue"]))
     cmd = [CLAUDE, "-p", prompt, "--output-format", "stream-json", "--verbose",
            "--dangerously-skip-permissions", "--session-id", session_id]
+    max_seconds = setting(con, "session_max_seconds")[0]
+    idle_seconds = setting(con, "session_idle_seconds")[0]
     started = time.time()
     last_out = time.time()
     result = None
@@ -285,6 +409,8 @@ def run_session(con, t):
                         result = msg
                     elif msg.get("type") == "rate_limit_event":
                         rate_events.append(msg)
+                        ctl_set(con, "provider_usage", json.dumps(
+                            dict(msg.get("rate_limit_info") or {}, observed_at=iso()), ensure_ascii=False))
                 except json.JSONDecodeError:
                     pass
                 try:
@@ -302,10 +428,10 @@ def run_session(con, t):
             reason = ""
             if ctl_get(con, "mode") == "STOP_NOW":
                 reason = "Arrêt immédiat demandé (stop --now)."
-            elif time.time() - started > SESSION_MAX_SECONDS:
-                reason = f"Durée maximale dépassée ({SESSION_MAX_SECONDS // 60} min)."
-            elif time.time() - last_out > SESSION_IDLE_SECONDS:
-                reason = f"Aucune activité depuis {SESSION_IDLE_SECONDS} s."
+            elif time.time() - started > max_seconds:
+                reason = f"Durée maximale dépassée ({max_seconds // 60} min)."
+            elif time.time() - last_out > idle_seconds:
+                reason = f"Aucune activité depuis {idle_seconds} s."
             if reason:
                 killed = reason
                 event(con, t["issue"], "session_kill", reason)
@@ -318,6 +444,8 @@ def run_session(con, t):
                 except ProcessLookupError:
                     pass
                 break
+    reader.join(timeout=10)
+    proc.stdout.close()
     outcome, detail, reset = classify(proc.returncode, result, rate_events, killed)
     report = {}
     if status_file.exists():
@@ -343,6 +471,8 @@ def apply_outcome(con, issue, outcome, detail, reset, report):
         update_task(con, issue, status="READY", attempts=max(0, t["attempts"] - 1),
                     next_action=f"Reprendre après la limite fournisseur ({until}).")
         return
+    if outcome == "STOPPED" or report.get("status") in STATUSES:
+        ctl_set(con, "consecutive_failures", 0)
     if outcome == "STOPPED":
         # Arrêt volontaire : ni échec, ni tentative ; le ticket sera repris tel quel après « resume ».
         update_task(con, issue, status="RUNNING", attempts=max(0, t["attempts"] - 1), not_before="",
@@ -368,9 +498,10 @@ def apply_outcome(con, issue, outcome, detail, reset, report):
                 con.commit()
                 event(con, n, "enqueued", f"Ajouté par la session sur #{issue}")
         return
-    # Pas de rapport exploitable : tentative comptée, délai progressif, abandon après MAX_ATTEMPTS.
+    # Pas de rapport exploitable : tentative comptée, délai progressif, abandon après max_attempts.
+    trip_breaker(con, outcome, detail)
     attempts = t["attempts"]
-    if attempts >= MAX_ATTEMPTS:
+    if attempts >= setting(con, "max_attempts")[0]:
         update_task(con, issue, status="FAILED", blockers=f"{attempts} sessions sans rapport : {outcome} — {detail[:300]}",
                     next_action="Examiner les journaux de session, puis `lqorch add` pour relancer.")
         event(con, issue, "failed", f"Abandon après {attempts} tentatives.")
@@ -379,6 +510,19 @@ def apply_outcome(con, issue, outcome, detail, reset, report):
     update_task(con, issue, status="RUNNING" if outcome in ("TIMEOUT", "COMPLETED") else "READY",
                 not_before=iso(datetime.fromtimestamp(time.time() + delay, timezone.utc)),
                 next_action=f"Reprendre (dernière session : {outcome}).")
+
+
+def trip_breaker(con, outcome, detail):
+    """Compte les sessions consécutives sans rapport, tous tickets confondus ; au seuil, pause
+    globale plutôt qu'une suite de sessions qui échouent toutes (panne, quota mal détecté…)."""
+    failures = int(ctl_get(con, "consecutive_failures", "0") or 0) + 1
+    ctl_set(con, "consecutive_failures", failures)
+    limit = setting(con, "max_consecutive_failures")[0]
+    if failures >= limit:
+        ctl_set(con, "mode", "PAUSED")
+        ctl_set(con, "pause_reason", f"Disjoncteur : {failures} sessions consécutives sans rapport "
+                                     f"(dernière : {outcome} — {detail[:150]}). lqorch resume pour réarmer.")
+        event(con, None, "breaker", f"Pause automatique après {failures} échecs consécutifs.")
 
 
 # ---------------------------------------------------------------- boucle
@@ -401,12 +545,13 @@ def recover_interrupted(con):
         con.commit()
         event(con, s["issue"], "recovered", f"Session {s['id']} interrompue par un redémarrage du superviseur.")
 
+
 def pause_for(con, seconds):
-    """Attente qui rend la main dès qu'un arrêt ou une reprise est demandé."""
+    """Attente qui rend la main dès qu'un arrêt, une reprise ou un rechargement est demandé."""
     end = time.time() + seconds
     start_mode = ctl_get(con, "mode", "RUNNING")
     while time.time() < end:
-        if ctl_get(con, "mode", "RUNNING") != start_mode:
+        if ctl_get(con, "mode", "RUNNING") != start_mode or ctl_get(con, "reload_requested"):
             return
         time.sleep(min(2, max(0.1, end - time.time())))
 
@@ -414,6 +559,26 @@ def pause_for(con, seconds):
 def sessions_today(con):
     day = iso()[:10]
     return con.execute("SELECT COUNT(*) c FROM sessions WHERE started_at LIKE ?", (day + "%",)).fetchone()["c"]
+
+
+def cost_today(con):
+    day = iso()[:10]
+    return con.execute("SELECT COALESCE(SUM(cost_usd),0) s FROM sessions WHERE started_at LIKE ?",
+                       (day + "%",)).fetchone()["s"]
+
+
+def code_version():
+    """Empreinte du fichier exécuté : `status` la compare à celle du superviseur en cours."""
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:12]
+
+
+def reexec(con):
+    """Recharge le code installé dans le même processus (même PID pour systemd). Appelé seulement
+    entre deux sessions ; le verrou est libéré par l'exec (descripteur non hérité) puis repris."""
+    ctl_set(con, "reload_requested", "")
+    event(con, None, "supervisor", "Rechargement du code demandé : ré-exécution entre deux sessions.")
+    con.close()
+    os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), "run"])
 
 
 def supervise():
@@ -434,19 +599,25 @@ def supervise():
     recover_interrupted(con)
     ctl_set(con, "supervisor_pid", os.getpid())
     ctl_set(con, "supervisor_started", iso())
-    event(con, None, "supervisor", "Superviseur démarré.")
+    ctl_set(con, "supervisor_version", code_version())
+    if not ctl_get(con, "provider_usage"):
+        usage = provider_usage(con)
+        if usage:
+            ctl_set(con, "provider_usage", json.dumps(usage, ensure_ascii=False))
+    event(con, None, "supervisor", f"Superviseur démarré (code {code_version()}).")
     while True:
         mode = ctl_get(con, "mode", "RUNNING")
         if mode in ("STOP", "STOP_NOW"):
             event(con, None, "supervisor", "Arrêt demandé : superviseur arrêté.")
             ctl_set(con, "supervisor_pid", "")
             return 0
-        if mode == "PAUSED" or wait_for_quota(con):
+        if ctl_get(con, "reload_requested"):
+            reexec(con)
+        blocker = start_blocker(con)
+        if blocker:
+            reason, until = blocker
+            ctl_set(con, "idle_reason", reason + (f" Reprise au plus tôt : {until}." if until else ""))
             pause_for(con, POLL_SECONDS)
-            continue
-        if sessions_today(con) >= MAX_SESSIONS_PER_DAY:
-            ctl_set(con, "idle_reason", f"Plafond de {MAX_SESSIONS_PER_DAY} sessions par jour atteint.")
-            pause_for(con, 600)
             continue
         t = next_task(con)
         if t is None:
@@ -471,26 +642,68 @@ def supervise():
 
 # ---------------------------------------------------------------- CLI
 
+def local(ts_iso):
+    """Horodatage UTC suivi de l'heure locale de la machine, pour le propriétaire."""
+    dt = datetime.strptime(ts_iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return f"{ts_iso} ({dt.astimezone().strftime('%d/%m %H:%M %Z')})"
+
+
 def cmd_status(con, _):
     mode = ctl_get(con, "mode", "RUNNING")
     pid = ctl_get(con, "supervisor_pid")
     alive = bool(pid) and Path(f"/proc/{pid}").exists()
-    print(f"Mode : {mode} — superviseur {'actif (pid ' + pid + ')' if alive else 'arrêté'}")
-    q = ctl_get(con, "quota_until")
-    if q and q > iso():
-        print(f"Limite fournisseur : reprise après {q}")
-    if ctl_get(con, "idle_reason"):
-        print(f"Inactif : {ctl_get(con, 'idle_reason')}")
+    running = ctl_get(con, "supervisor_version")
+    print(f"Mode : {mode} — superviseur {'actif (pid ' + pid + ', code ' + (running or '?') + ')' if alive else 'arrêté'}")
+    if alive and running != code_version():
+        print(f"  ⚠ code installé ({code_version()}) différent de celui en cours : "
+              + ("« lqorch reload » l'appliquera entre deux sessions." if running else
+                 "superviseur antérieur à #380, sans rechargement : redémarrage unique nécessaire (voir README)."))
+    if ctl_get(con, "reload_requested"):
+        print(f"  Rechargement demandé à {ctl_get(con, 'reload_requested')} : appliqué à la fin de la session en cours.")
     cur = con.execute("SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1").fetchone()
     if cur:
         t = task(con, cur["issue"])
         print(f"Session en cours : #{cur['issue']} {t['title'] if t else ''} — depuis {cur['started_at']}, "
               f"dernière activité {t['last_activity'] if t else '?'} — journal {cur['log_path']}")
+    blocker = start_blocker(con)
+    if blocker:
+        print(f"Prochaine session : bloquée — {blocker[0]}" + (f" Reprise au plus tôt : {local(blocker[1])}." if blocker[1] else ""))
+    else:
+        print("Prochaine session : autorisée" + (" (après la session en cours)." if cur else "."))
+    if ctl_get(con, "idle_reason") and not cur:
+        print(f"Dernier motif d'attente du superviseur : {ctl_get(con, 'idle_reason')}")
+    cfg = {name: setting(con, name) for name in SETTINGS}
+    cap, cap_origin = cfg["max_sessions_per_day"]
+    budget = cfg["max_cost_usd_per_day"][0]
+    print(f"Politique locale (jour UTC, remise à zéro {local(iso(next_utc_day()))}) :")
+    print(f"  sessions aujourd'hui : {sessions_today(con)} / {cap or 'sans plafond'} — origine : {cap_origin}"
+          + (" ⚠ ignoré faute de garde-fou, plafond par défaut appliqué" if policy_error(settings(con)) else ""))
+    print(f"  coût estimé du jour : {cost_today(con):.2f} USD (prix catalogue, pas une facture) / "
+          + (f"{budget:.2f} USD ({cfg['max_cost_usd_per_day'][1]})" if budget > 0 else "pas de plafond"))
+    print(f"  disjoncteur : {ctl_get(con, 'consecutive_failures', '0') or 0} / "
+          f"{cfg['max_consecutive_failures'][0]} sessions consécutives sans rapport")
+    usage = provider_usage(con)
+    q = ctl_get(con, "quota_until")
+    if q and q > iso():
+        print(f"Limite fournisseur atteinte : aucune session avant {local(q)}")
+    if usage:
+        print(f"Fournisseur — dernière valeur annoncée par Claude Code ({usage.get('observed_at', '?')}) :")
+        for window, key, label in (("five_hour", "max_five_hour_utilization", "fenêtre 5 h"),
+                                   ("seven_day", "max_seven_day_utilization", "fenêtre 7 j")):
+            win = (usage.get("unifiedWindows") or {}).get(window)
+            if win and win.get("utilization") is not None:
+                reset = iso(datetime.fromtimestamp(int(win["resetsAt"]), timezone.utc)) if win.get("resetsAt") else "?"
+                print(f"  {label} : {win['utilization']:.0%} (seuil local {cfg[key][0]:.0%}), "
+                      f"remise à zéro {local(reset) if reset != '?' else '?'}")
+        print(f"  statut {usage.get('status', '?')}, dépassement payant : {usage.get('overageStatus', '?')}"
+              + (f" ({usage['overageDisabledReason']})" if usage.get("overageDisabledReason") else ""))
+        print("  Instantané de la dernière session : l'usage interactif depuis n'y figure pas ; "
+              "le quota restant réel n'est pas connu.")
+    else:
+        print("Fournisseur : aucune donnée de quota observée (rien n'est déduit de l'interface claude.ai).")
     counts = con.execute("SELECT status, COUNT(*) c FROM tasks GROUP BY status").fetchall()
     print("Tickets : " + ", ".join(f"{r['status']} {r['c']}" for r in counts))
-    day = con.execute("SELECT COUNT(*) c, COALESCE(SUM(cost_usd),0) s FROM sessions WHERE started_at LIKE ?",
-                      (iso()[:10] + "%",)).fetchone()
-    print(f"Sessions aujourd'hui : {day['c']}")
+    print("Réglages : lqorch config")
 
 
 def cmd_queue(con, _):
@@ -506,10 +719,47 @@ def cmd_queue(con, _):
 def cmd_mode(con, args):
     mode = {"pause": "PAUSED", "resume": "RUNNING", "stop": "STOP_NOW" if getattr(args, "now", False) else "STOP"}[args.cmd]
     ctl_set(con, "mode", mode)
+    if args.cmd == "resume":
+        # Réarme le disjoncteur : c'est une décision du propriétaire, jamais automatique.
+        ctl_set(con, "pause_reason", "")
+        ctl_set(con, "consecutive_failures", 0)
     event(con, None, "control", f"{args.cmd}{' --now' if mode == 'STOP_NOW' else ''}")
     print(f"Mode : {mode}")
     if args.cmd == "resume":
         print("Si le service est arrêté : sudo systemctl start lodyquests-orch")
+
+
+def cmd_config(con, args):
+    if args.action in ("set", "unset"):
+        if args.name not in SETTINGS:
+            print(f"Réglage inconnu. Réglages : {', '.join(SETTINGS)}")
+            return 2
+        if args.action == "set":
+            try:
+                value = parse_setting(args.name, args.value)
+            except (TypeError, ValueError) as exc:
+                print(f"Valeur refusée : {exc}")
+                return 2
+        candidate = settings(con)
+        candidate[args.name] = value if args.action == "set" else SETTINGS[args.name][1]
+        error = policy_error(candidate)
+        if error:
+            print(f"Refusé : {error}")
+            return 2
+        ctl_set(con, "cfg." + args.name, value if args.action == "set" else "")
+        event(con, None, "config", f"{args.action} {args.name}" + (f" = {value}" if args.action == "set" else ""))
+        print("Enregistré ; appliqué par le superviseur avant la prochaine session (aucun redémarrage).")
+    for name, (env, default, low, high, doc) in SETTINGS.items():
+        value, origin = setting(con, name)
+        print(f"{name:<30} {value!s:<8} ({origin}; défaut {default}, bornes {low}–{high})\n    {doc}")
+    return 0
+
+
+def cmd_reload(con, _):
+    ctl_set(con, "reload_requested", iso())
+    event(con, None, "control", "reload")
+    print("Rechargement demandé : le superviseur relira le code installé à la fin de la session en cours "
+          "(ou dans les 2 s s'il est inactif). Aucune session n'est coupée.")
 
 
 def cmd_skip(con, args):
@@ -562,7 +812,7 @@ def cmd_sessions(con, _):
 def main():
     p = argparse.ArgumentParser(prog="lqorch")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("status", "queue", "pause", "resume", "run", "sessions"):
+    for name in ("status", "queue", "pause", "resume", "run", "sessions", "reload"):
         sub.add_parser(name)
     s = sub.add_parser("stop")
     s.add_argument("--now", action="store_true")
@@ -578,14 +828,22 @@ def main():
     s.add_argument("issue", type=int)
     s.add_argument("field")
     s.add_argument("value")
+    s = sub.add_parser("config")
+    s.add_argument("action", nargs="?", choices=("show", "set", "unset"), default="show")
+    s.add_argument("name", nargs="?")
+    s.add_argument("value", nargs="?")
     s = sub.add_parser("log")
     s.add_argument("issue", type=int, nargs="?")
     args = p.parse_args()
     con = db()
     if args.cmd == "run":
         sys.exit(supervise())
-    {"status": cmd_status, "queue": cmd_queue, "pause": cmd_mode, "resume": cmd_mode, "stop": cmd_mode,
-     "skip": cmd_skip, "add": cmd_add, "set": cmd_set, "log": cmd_log, "sessions": cmd_sessions}[args.cmd](con, args)
+    if args.cmd == "config" and args.action != "show" and (not args.name or (args.action == "set") != bool(args.value)):
+        p.error("usage : lqorch config [show | set NOM VALEUR | unset NOM]")
+    code = {"status": cmd_status, "queue": cmd_queue, "pause": cmd_mode, "resume": cmd_mode, "stop": cmd_mode,
+            "skip": cmd_skip, "add": cmd_add, "set": cmd_set, "log": cmd_log, "sessions": cmd_sessions,
+            "config": cmd_config, "reload": cmd_reload}[args.cmd](con, args)
+    sys.exit(code or 0)
 
 
 if __name__ == "__main__":

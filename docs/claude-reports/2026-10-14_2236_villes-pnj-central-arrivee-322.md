@@ -8,8 +8,8 @@
 * Branche Git : `feature/322-ville-pnj-central-arrivee` → PR #393 fusionnée dans `chore/257-ci-github-actions`
 * Commit actuel si disponible : `f7a951e` (merge), déployé : JAR et panel
 * Début de la tâche : 2026-10-14 21:54:44
-* Fin de la tâche : 2026-10-14 22:38:30
-* Durée totale : 00:43:46
+* Fin de la tâche : 2026-10-14 22:36:57
+* Durée totale : 00:42:13
 
 ## Demande
 Ticket #322, suite de #178 :

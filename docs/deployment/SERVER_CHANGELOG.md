@@ -67,6 +67,12 @@ Procédure de retour arrière.
 Remplacement du JAR + publication des trois dialogues. Redémarrage requis. Migration de base
 automatique et additive. Aucun fichier à éditer à la main ; ne pas téléverser `config.yml`.
 
+**Effectué le 2026-10-14 ~02:39** depuis `03d0772` (CI verte) : `deploy-verygames.sh -y --wait-ci
+--allow-no-backup` avec les trois dialogues en `--also` (nouveaux fichiers, aucun écrasement) ;
+JAR SHA-256 `29166ee6…d848c0` (2702691 o, retéléchargé, identique), sauvegarde
+`rpgquest-20261014T003848Z-predeploy.jar` (JAR #342) ; redémarrage RCON à 0 joueur ; RPGQuest et
+Citizens actifs, `encounters/forest_bandit.yml` présent sur le serveur (modèles copiés au démarrage).
+
 ### Sauvegarde préalable
 
 JAR + `data.db` (procédure habituelle du script de déploiement).

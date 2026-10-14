@@ -2525,6 +2525,12 @@ public final class AgentActionExecutor {
         details.put("runtimeConfirmed", view.runtimeConfirmed());
         details.put("runtimeHash", view.runtimeHash());
         details.put("verifiedAt", view.verifiedAt());
+        // #371 : la fiche doit nommer la référence fautive et les familles liées, pas un code nu.
+        details.put("referenceErrors", view.referenceErrors());
+        details.put("preexistingReferenceErrors", view.preexistingReferenceErrors());
+        details.put("reloadedFamilies", view.reloadedFamilies());
+        details.put("autoIncludedFamilies", view.autoIncludedFamilies());
+        details.put("requiredFamilies", view.requiredFamilies());
         if (view.ok()) {
             return AgentActionOutcome.success(action.id(), view.code(), view.message(), details);
         }

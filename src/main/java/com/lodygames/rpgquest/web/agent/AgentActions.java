@@ -249,7 +249,31 @@ public interface AgentActions {
                                     boolean reloadApplied, String reloadCode, String reloadMessage,
                                     int loadedCount, int issueCount,
                                     boolean runtimeConfirmed, String runtimeHash,
-                                    String verifiedAt) {
+                                    String verifiedAt, List<String> referenceErrors,
+                                    List<String> preexistingReferenceErrors, List<String> reloadedFamilies,
+                                    List<String> autoIncludedFamilies, List<String> requiredFamilies) {
+
+        public ContentPublishResultView {
+            referenceErrors = referenceErrors == null ? List.of() : List.copyOf(referenceErrors);
+            preexistingReferenceErrors = preexistingReferenceErrors == null ? List.of()
+                    : List.copyOf(preexistingReferenceErrors);
+            reloadedFamilies = reloadedFamilies == null ? List.of() : List.copyOf(reloadedFamilies);
+            autoIncludedFamilies = autoIncludedFamilies == null ? List.of() : List.copyOf(autoIncludedFamilies);
+            requiredFamilies = requiredFamilies == null ? List.of() : List.copyOf(requiredFamilies);
+        }
+
+        /** Compte rendu sans détail de dépendances (refus amont, doubles de test). */
+        public ContentPublishResultView(boolean ok, String code, String message, String kind, String slug,
+                                        String expectedId, String devShaBefore, String devShaAfter,
+                                        String sourceSha, boolean created, String backupPath,
+                                        boolean reloadApplied, String reloadCode, String reloadMessage,
+                                        int loadedCount, int issueCount, boolean runtimeConfirmed,
+                                        String runtimeHash, String verifiedAt) {
+            this(ok, code, message, kind, slug, expectedId, devShaBefore, devShaAfter, sourceSha, created,
+                    backupPath, reloadApplied, reloadCode, reloadMessage, loadedCount, issueCount,
+                    runtimeConfirmed, runtimeHash, verifiedAt, List.of(), List.of(), List.of(), List.of(),
+                    List.of());
+        }
     }
 
     /**

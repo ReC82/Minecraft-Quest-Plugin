@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Publication de contenu : rechargement cohérent des familles liées (#371)
+
+### Changement
+
+La publication d'une quête depuis PlugAdmin n'échoue plus en `BROKEN_REFERENCES` à cause d'une
+autre quête : seules les références cassées **par le rechargement** bloquent ; celles déjà cassées
+dans le runtime sont signalées sans bloquer. Les `npc_id` des rencontres comptent comme PNJ connus.
+`content.publish` et `content.reload` rechargent d'office les familles liées (ex. PNJ + Quêtes) en
+une opération atomique ; un refus nomme la référence exacte dans la fiche. Panel et plugin
+modifiés ; aucun schéma, aucune configuration.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** redéploiement du panel PlugAdmin
+(`scripts/plugadmin/deploy.sh`).
+
+### Sauvegarde préalable
+
+JAR actuel + `data.db`, faits par `deploy-verygames.sh` ; le panel garde sa version précédente via
+`deploy.sh`.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-310 (republier « Les travaux de Lucien »).
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer ; `scripts/plugadmin/rollback.sh` pour le panel. Aucune
+donnée à reprendre.
+
+---
+
 ## 2026-10-14 - Claims : aucune XP ni progrès de quête sur une casse refusée (#91)
 
 ### Changement

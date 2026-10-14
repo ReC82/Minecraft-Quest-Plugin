@@ -2494,6 +2494,27 @@ familles. À noter : le **chargeur de quêtes valide déjà les prérequis à l'
 une référence intra-famille est attrapée plus tôt (`INVALID_CONTENT`) ; le filet croisé couvre ce
 qu'un chargeur de famille unique ne peut pas voir.
 
+**Rechargement cohérent des dépendances (issue #371).** Trois règles, constatées nécessaires sur DEV
+où *toute* publication de quête échouait en `BROKEN_REFERENCES` :
+
+- **Seules les cassures nouvelles bloquent.** Le contrôle compare le graphe candidat au runtime
+  actuel : une référence **déjà** cassée avant le rechargement est renvoyée en avertissement
+  (`preexistingReferenceErrors`, « référence(s) déjà cassée(s), non bloquante(s) ») — le
+  rechargement ne l'aggrave pas, et la refuser figeait la famille pour toujours.
+- **Les PNJ de rencontre sont des identités valides** : les `npc_id` des modèles `encounters/`
+  (#13) comptent comme PNJ connus, bien qu'ils n'aient pas de fichier `npcs/`. C'était la cause
+  réelle sur DEV (`encounter_bandit`, `encounter_smith`, `encounter_merchant`).
+- **Objectifs PNJ vérifiés** : `TALK_TO_NPC` et `DELIVER_ITEM_TO_NPC` doivent citer un PNJ connu
+  (défini ou de rencontre) — sinon l'étape serait impossible à valider en jeu.
+
+La **publication** (`content.publish`) et le bouton « Recharger en jeu » incluent d'office les
+familles liées (`reloadWithDependencies`) : si la quête cite un PNJ présent sur le disque du serveur
+mais pas encore chargé, PNJ et quêtes sont rechargés **en une seule opération atomique**
+(« Rechargé aussi, car lié : PNJ »). Si la référence manque réellement partout, le refus reste
+non destructif et la fiche **nomme la référence exacte** (« Références introuvables ») et la
+famille à publier ; « Republier sur DEV » d'un fichier identique ne réécrit rien et ne fait que
+recharger. L'aperçu (`content.reload.preview`) reste strict et liste les familles à ajouter.
+
 **Les trois états, enfin distinguables.** Le panel ne distinguait que source/runtime, ce qui confond
 « jamais publié sur VeryGames » et « publié mais pas rechargé » — deux causes dont **une seule** se
 répare par un rechargement. L'aperçu lit le **disque du serveur** et renvoie les identifiants

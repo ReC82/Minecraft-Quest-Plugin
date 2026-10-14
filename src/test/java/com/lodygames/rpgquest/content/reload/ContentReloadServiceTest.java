@@ -514,4 +514,151 @@ class ContentReloadServiceTest {
 
         assertEquals(List.of("rpgquest:alpha", "rpgquest:zeta"), result.families().get(0).ids());
     }
+
+    // ---- Issue #371 : publication de quête refusée BROKEN_REFERENCES ------------------------
+
+    /** La quête de Lucien, telle que publiée depuis PlugAdmin (3 étapes, livraison au PNJ). */
+    private void writeLucienQuest(String npc) throws IOException {
+        Files.writeString(questsDir.resolve("test_lucien_artisanat.yml"), """
+                id: rpgquest:test_lucien_artisanat
+                title: "Les travaux de Lucien"
+                description: "Fabrique, cuis, livre."
+                category: "tutorial"
+                icon: FURNACE
+                repeatable: false
+                secret: true
+                steps:
+                  - id: fabrication
+                    objectives:
+                      - type: CRAFT_ITEM
+                        material: OAK_PLANKS
+                        amount: 12
+                  - id: cuisson
+                    objectives:
+                      - type: SMELT_ITEM
+                        material: BAKED_POTATO
+                        amount: 3
+                  - id: livraison
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: %s
+                        material: BAKED_POTATO
+                        amount: 3
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 25
+                  - type: MONEY
+                    amount: 50
+                """.formatted(npc));
+    }
+
+    @Test
+    void lucienQuestIsLoadedWhenItsNpcExists() throws Exception {
+        writeNpc("lucien.yml", "lucien", null);
+        npcEngine.reload();
+        writeLucienQuest("lucien");
+
+        ContentReloadService.ReloadResult result = service.reloadWithDependencies(Set.of(ReloadFamily.QUESTS));
+
+        assertTrue(result.applied(), () -> result.message() + " " + result.referenceErrors());
+        assertTrue(service.runtimeHas(ReloadFamily.QUESTS, "rpgquest:test_lucien_artisanat"));
+        assertTrue(result.autoIncludedFamilies().isEmpty(), "rien à ajouter : le PNJ est déjà chargé");
+    }
+
+    /**
+     * Le vrai motif du refus observé sur DEV : une AUTRE quête, déjà chargée, citait un donneur
+     * sans définition. Toute publication de quête échouait alors, quelle qu'elle soit.
+     */
+    @Test
+    void aReferenceAlreadyBrokenInTheRuntimeNoLongerBlocksEveryQuestReload() throws Exception {
+        writeQuest("old.yml", "rpgquest:ancienne", null, "pnj_disparu");
+        questEngine.reload(); // chargée au démarrage : le chargeur ne vérifie pas les PNJ
+        writeNpc("lucien.yml", "lucien", null);
+        npcEngine.reload();
+        writeLucienQuest("lucien");
+
+        ContentReloadService.ReloadResult result = service.reloadWithDependencies(Set.of(ReloadFamily.QUESTS));
+
+        assertTrue(result.applied(), () -> result.message() + " " + result.referenceErrors());
+        assertTrue(result.referenceErrors().isEmpty());
+        assertEquals(1, result.preexistingReferenceErrors().size(), result.preexistingReferenceErrors()::toString);
+        assertTrue(result.preexistingReferenceErrors().get(0).contains("pnj_disparu"));
+        assertTrue(result.message().contains("déjà cassée"), result.message());
+        assertTrue(service.runtimeHas(ReloadFamily.QUESTS, "test_lucien_artisanat"));
+    }
+
+    @Test
+    void aGenuinelyMissingNpcIsRefusedExplicitlyWithoutAnyFalseSuccess() throws Exception {
+        writeLucienQuest("lucien"); // aucun PNJ « lucien » nulle part
+        String hashBefore = service.runtimeHash();
+
+        ContentReloadService.ReloadResult result = service.reloadWithDependencies(Set.of(ReloadFamily.QUESTS));
+
+        assertFalse(result.applied());
+        assertEquals("BROKEN_REFERENCES", result.code());
+        assertTrue(result.referenceErrors().stream()
+                        .anyMatch(e -> e.contains("livraison") && e.contains("« lucien »")),
+                result.referenceErrors()::toString);
+        assertTrue(result.suggestedFamilies().isEmpty(), "recharger les PNJ n'y changerait rien");
+        assertTrue(result.message().contains("introuvable"), result.message());
+        assertEquals(hashBefore, service.runtimeHash(), "rien n'a été appliqué");
+        assertTrue(questEngine.quests().isEmpty());
+    }
+
+    @Test
+    void anNpcPresentOnDiskButNotLoadedIsReloadedTogetherAutomatically() throws Exception {
+        writeNpc("lucien.yml", "lucien", null); // déposé, jamais rechargé
+        writeLucienQuest("lucien");
+
+        assertEquals("BROKEN_REFERENCES", service.preview(Set.of(ReloadFamily.QUESTS)).code());
+        ContentReloadService.ReloadResult result = service.reloadWithDependencies(Set.of(ReloadFamily.QUESTS));
+
+        assertTrue(result.applied(), () -> result.message() + " " + result.referenceErrors());
+        assertEquals(List.of(ReloadFamily.NPCS), result.autoIncludedFamilies());
+        assertEquals(List.of(ReloadFamily.NPCS, ReloadFamily.QUESTS), result.familiesInvolved());
+        assertTrue(service.runtimeHas(ReloadFamily.NPCS, "lucien"));
+        assertTrue(service.runtimeHas(ReloadFamily.QUESTS, "test_lucien_artisanat"));
+        assertEquals(1, cacheInvalidations.size(), "une seule opération, pas deux rechargements");
+    }
+
+    @Test
+    void anAutoIncludedFamilyWithAParseErrorAbortsEverything() throws Exception {
+        writeNpc("lucien.yml", "lucien", null);
+        Files.writeString(npcsDir.resolve("casse.yml"), "id: [pas: valide\n");
+        writeLucienQuest("lucien");
+
+        ContentReloadService.ReloadResult result = service.reloadWithDependencies(Set.of(ReloadFamily.QUESTS));
+
+        assertFalse(result.applied());
+        assertEquals("INVALID_CONTENT", result.code());
+        assertTrue(questEngine.quests().isEmpty());
+        assertTrue(npcEngine.definitions().isEmpty());
+    }
+
+    @Test
+    void encounterNpcIdentitiesAreValidReferences() throws Exception {
+        ContentReloadService withEncounters = new ContentReloadService(questEngine, storyRegistry,
+                dialogueEngine, npcEngine, itemRegistry, mobRegistry, NOPLogger.NOP_LOGGER, families -> { },
+                () -> List.of("encounter_bandit"));
+        writeQuest("e.yml", "rpgquest:encounter_bandit_spiders", null, "encounter_bandit");
+
+        ContentReloadService.ReloadResult result = withEncounters.reload(Set.of(ReloadFamily.QUESTS));
+
+        assertTrue(result.applied(), () -> result.message() + " " + result.referenceErrors());
+        assertTrue(result.preexistingReferenceErrors().isEmpty());
+    }
+
+    @Test
+    void republishingTheSameContentIsIdempotent() throws Exception {
+        writeNpc("lucien.yml", "lucien", null);
+        writeLucienQuest("lucien");
+
+        ContentReloadService.ReloadResult first = service.reloadWithDependencies(Set.of(ReloadFamily.QUESTS));
+        ContentReloadService.ReloadResult second = service.reloadWithDependencies(Set.of(ReloadFamily.QUESTS));
+
+        assertTrue(first.applied());
+        assertTrue(second.applied());
+        assertEquals(first.runtimeHash(), second.runtimeHash());
+        assertTrue(second.autoIncludedFamilies().isEmpty(), "les PNJ sont désormais chargés");
+    }
 }

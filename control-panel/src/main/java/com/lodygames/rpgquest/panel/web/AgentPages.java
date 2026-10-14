@@ -8482,6 +8482,7 @@ public final class AgentPages {
                             + Http.esc(str(lastPublish.get().get("code"))));
         }
         sb.append("</dl>");
+        sb.append(publishReloadDiagnostics(lastPublishAttemptOf(agentId, kind, slug)));
 
         if (stale) {
             sb.append("<p class=\"field-help\">").append(Icons.icon("deploy"))
@@ -8726,6 +8727,27 @@ public final class AgentPages {
      * et l'empreinte DEV que nous avions laissée — celle qui permet de distinguer « différent parce
      * que je n'ai pas publié » de « différent parce que quelqu'un d'autre a touché au fichier ».</p>
      */
+    /**
+     * La dernière tentative de publication traitée de cette ressource, <strong>réussie ou non</strong>
+     * (issue #371) : c'est elle qui dit pourquoi le moteur a refusé, alors que
+     * {@link #lastPublishOf} ne retient que les succès, seuls à faire référence pour l'empreinte.
+     */
+    private Optional<Map<String, Object>> lastPublishAttemptOf(String agentId, String kind, String slug) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if ("content.publish".equals(row.type()) && kind.equals(row.params().get("kind"))
+                    && slug.equals(row.params().get("id"))) {
+                Optional<Map<String, Object>> details = detailsOf(row);
+                if (details.isPresent()) {
+                    return details;
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
     public Optional<Map<String, Object>> lastPublishOf(String agentId, String kind, String slug) {
         if (agentId == null || agentId.isBlank()) {
             return Optional.empty();
@@ -9807,6 +9829,52 @@ public final class AgentPages {
             sb.append(">");
         }
         return sb.append("</datalist>").toString();
+    }
+
+    /**
+     * Ce que le dernier rechargement de publication a dit des dépendances (issue #371) : les
+     * références fautives exactes, les familles qu'il faut encore publier, celles rechargées d'office
+     * parce que liées, et les références déjà cassées ailleurs (non bloquantes).
+     */
+    private String publishReloadDiagnostics(Optional<Map<String, Object>> lastPublish) {
+        List<String> errors = stringList(lastPublish, "referenceErrors");
+        List<String> required = stringList(lastPublish, "requiredFamilies");
+        List<String> auto = stringList(lastPublish, "autoIncludedFamilies");
+        List<String> preexisting = stringList(lastPublish, "preexistingReferenceErrors");
+        StringBuilder sb = new StringBuilder();
+        if (!errors.isEmpty()) {
+            sb.append("<div class=\"field-help\"><strong>Références introuvables</strong> — rien n'a été "
+                    + "rechargé :<ul>");
+            errors.forEach(e -> sb.append("<li>").append(Http.esc(e)).append("</li>"));
+            sb.append("</ul>");
+            sb.append(required.isEmpty()
+                    ? "Créez ou publiez d'abord la ressource manquante, puis republiez."
+                    : "Publiez aussi : " + Http.esc(familyLabels(required)) + ", puis republiez.");
+            sb.append("</div>");
+        }
+        if (!auto.isEmpty()) {
+            sb.append("<p class=\"field-help\">Rechargé aussi, car lié : ")
+                    .append(Http.esc(familyLabels(auto))).append(".</p>");
+        }
+        if (!preexisting.isEmpty()) {
+            sb.append("<details class=\"field-help\"><summary>").append(preexisting.size())
+                    .append(" référence(s) déjà cassée(s) ailleurs (non bloquant)</summary><ul>");
+            preexisting.forEach(e -> sb.append("<li>").append(Http.esc(e)).append("</li>"));
+            sb.append("</ul></details>");
+        }
+        return sb.toString();
+    }
+
+    private static String familyLabels(List<String> wires) {
+        return String.join(", ", wires.stream().map(w -> switch (w) {
+            case "items" -> "Objets";
+            case "npcs" -> "PNJ";
+            case "quests" -> "Quêtes";
+            case "stories" -> "Stories";
+            case "dialogues" -> "Dialogues";
+            case "mobs" -> "Mobs spéciaux & boss";
+            default -> w;
+        }).toList());
     }
 
     private List<String> stringList(Optional<Map<String, Object>> details, String key) {

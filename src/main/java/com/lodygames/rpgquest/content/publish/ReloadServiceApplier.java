@@ -21,9 +21,16 @@ public final class ReloadServiceApplier implements ContentApplier {
 
     @Override
     public ApplyResult reload(ReloadFamily family) {
-        ContentReloadService.ReloadResult result = reloadService.reload(Set.of(family));
+        ContentReloadService.ReloadResult result = reloadService.reloadWithDependencies(Set.of(family));
         return new ApplyResult(result.applied(), result.code(), result.message(),
-                result.totalLoaded(), result.totalIssues(), result.runtimeHash());
+                result.totalLoaded(), result.totalIssues(), result.runtimeHash(),
+                new ReloadDetail(result.referenceErrors(), result.preexistingReferenceErrors(),
+                        wires(result.familiesInvolved()), wires(result.autoIncludedFamilies()),
+                        wires(result.suggestedFamilies())));
+    }
+
+    private static List<String> wires(List<ReloadFamily> families) {
+        return families.stream().map(ReloadFamily::wire).toList();
     }
 
     @Override

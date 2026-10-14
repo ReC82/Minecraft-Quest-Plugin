@@ -15,7 +15,11 @@ import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import com.lodygames.rpgquest.npc.YamlNpcEngine;
 import com.lodygames.rpgquest.npc.model.NpcDefinition;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.model.QuestObjective;
+import com.lodygames.rpgquest.quest.model.QuestStep;
+import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.story.StoryRegistry;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +36,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.bukkit.NamespacedKey;
 import org.slf4j.Logger;
 
@@ -115,15 +120,38 @@ public final class ContentReloadService {
      *                       été appliqué) : deux rechargements identiques donnent la même valeur
      * @param durationMillis durée réelle de l'opération
      * @param restartRequired {@code true} si une partie de la demande ne peut pas être prise à chaud
+     * @param preexistingReferenceErrors références <strong>déjà</strong> cassées dans le runtime
+     *                       actuel (issue #371) : signalées, mais non bloquantes — le rechargement ne
+     *                       les aggrave pas, et les refuser figerait la famille pour toujours
+     * @param autoIncludedFamilies familles ajoutées d'office par {@link #reloadWithDependencies}
+     *                       parce que la demande en dépendait (issue #371)
      */
     public record ReloadResult(boolean applied, String code, String message,
                                List<FamilyOutcome> families, List<String> referenceErrors,
                                List<ReloadFamily> suggestedFamilies, String runtimeHash,
-                               long durationMillis, boolean restartRequired) {
+                               long durationMillis, boolean restartRequired,
+                               List<String> preexistingReferenceErrors,
+                               List<ReloadFamily> autoIncludedFamilies) {
         public ReloadResult {
             families = families == null ? List.of() : List.copyOf(families);
             referenceErrors = referenceErrors == null ? List.of() : List.copyOf(referenceErrors);
             suggestedFamilies = suggestedFamilies == null ? List.of() : List.copyOf(suggestedFamilies);
+            preexistingReferenceErrors = preexistingReferenceErrors == null ? List.of()
+                    : List.copyOf(preexistingReferenceErrors);
+            autoIncludedFamilies = autoIncludedFamilies == null ? List.of()
+                    : List.copyOf(autoIncludedFamilies);
+        }
+
+        ReloadResult(boolean applied, String code, String message, List<FamilyOutcome> families,
+                     List<String> referenceErrors, List<ReloadFamily> suggestedFamilies,
+                     String runtimeHash, long durationMillis, boolean restartRequired) {
+            this(applied, code, message, families, referenceErrors, suggestedFamilies, runtimeHash,
+                    durationMillis, restartRequired, List.of(), List.of());
+        }
+
+        /** Les familles réellement visées par l'opération, dans l'ordre d'application. */
+        public List<ReloadFamily> familiesInvolved() {
+            return families.stream().map(FamilyOutcome::family).toList();
         }
 
         public int totalLoaded() {
@@ -145,6 +173,13 @@ public final class ContentReloadService {
     private final YamlCustomItemRegistry itemRegistry;
     private final SpecialMobRegistry mobRegistry;
     private final Logger logger;
+    /**
+     * Identités PNJ portées par autre chose qu'un fichier {@code npcs/} — aujourd'hui les
+     * {@code npc_id} des modèles de rencontre (issue #371). Un PNJ de rencontre est servi à
+     * {@code NpcIdentityService} par {@code EncounterService} : une quête qui le cite comme donneur
+     * est donc valide, même sans définition logique.
+     */
+    private final Supplier<Collection<String>> externalNpcIds;
     /** Invalidation des caches dérivés après application (ex. signal visuel des PNJ, #12). */
     private final Consumer<Set<ReloadFamily>> cacheInvalidator;
 
@@ -154,6 +189,16 @@ public final class ContentReloadService {
                                 YamlDialogueEngine dialogueEngine, YamlNpcEngine npcEngine,
                                 YamlCustomItemRegistry itemRegistry, SpecialMobRegistry mobRegistry,
                                 Logger logger, Consumer<Set<ReloadFamily>> cacheInvalidator) {
+        this(questEngine, storyRegistry, dialogueEngine, npcEngine, itemRegistry, mobRegistry, logger,
+                cacheInvalidator, List::of);
+    }
+
+    public ContentReloadService(YamlQuestEngine questEngine, StoryRegistry storyRegistry,
+                                YamlDialogueEngine dialogueEngine, YamlNpcEngine npcEngine,
+                                YamlCustomItemRegistry itemRegistry, SpecialMobRegistry mobRegistry,
+                                Logger logger, Consumer<Set<ReloadFamily>> cacheInvalidator,
+                                Supplier<Collection<String>> externalNpcIds) {
+        this.externalNpcIds = externalNpcIds == null ? List::of : externalNpcIds;
         this.questEngine = questEngine;
         this.storyRegistry = storyRegistry;
         this.dialogueEngine = dialogueEngine;
@@ -175,6 +220,46 @@ public final class ContentReloadService {
     /** Valide puis applique si — et seulement si — tout est propre. */
     public ReloadResult reload(Set<ReloadFamily> requested) {
         return run(requested, true);
+    }
+
+    /**
+     * Recharge la demande <strong>et les familles dont elle dépend</strong> (issue #371).
+     *
+     * <p>Une publication ne doit pas obliger l'administrateur à deviner qu'une quête qui cite un PNJ
+     * fraîchement déposé exige aussi de recharger les PNJ. On élargit donc la demande avec les
+     * familles suggérées par le contrôle des références — sur des <em>aperçus</em>, qui ne touchent
+     * rien — jusqu'à stabilité, puis on applique le tout en <strong>une seule</strong> opération
+     * atomique. Si l'élargissement ne répare rien, c'est que la référence est réellement absente :
+     * le refus est alors renvoyé tel quel, sans rien appliquer.</p>
+     */
+    public ReloadResult reloadWithDependencies(Set<ReloadFamily> requested) {
+        if (requested == null || requested.isEmpty()) {
+            return reload(requested);
+        }
+        Set<ReloadFamily> families = ReloadFamily.ordered(requested);
+        for (int round = 0; round < ReloadFamily.values().length; round++) {
+            ReloadResult preview = preview(families);
+            if (!"BROKEN_REFERENCES".equals(preview.code())) {
+                break;
+            }
+            Set<ReloadFamily> widened = new LinkedHashSet<>(families);
+            widened.addAll(preview.suggestedFamilies());
+            if (widened.equals(families)) {
+                break; // plus rien à ajouter : la référence manque vraiment
+            }
+            families = ReloadFamily.ordered(widened);
+        }
+        ReloadResult result = reload(families);
+        List<ReloadFamily> added = families.stream().filter(f -> !requested.contains(f)).toList();
+        if (added.isEmpty()) {
+            return result;
+        }
+        return new ReloadResult(result.applied(), result.code(),
+                result.message() + (result.applied() ? " (Rechargé aussi, car lié : "
+                        : " (Familles liées examinées : ") + labels(added) + ".)",
+                result.families(), result.referenceErrors(), result.suggestedFamilies(),
+                result.runtimeHash(), result.durationMillis(), result.restartRequired(),
+                result.preexistingReferenceErrors(), added);
     }
 
     /** Empreinte du runtime courant : identifiants chargés, triés, par famille. */
@@ -278,23 +363,41 @@ public final class ContentReloadService {
                         List.of(), runtimeHash(), elapsed(startedAt), false);
             }
 
-            // 3. Références croisées sur le graphe candidat.
+            // 3. Références croisées sur le graphe candidat. Seules les cassures NOUVELLES
+            //    bloquent (#371) : une référence déjà cassée dans le runtime actuel ne l'est pas
+            //    davantage après rechargement, et la refuser bloquerait la famille indéfiniment —
+            //    toute publication de quête échouait ainsi sur DEV à cause d'une seule quête.
             CrossCheck crossCheck = checkReferences(candidates);
-            if (!crossCheck.errors().isEmpty()) {
+            Set<String> before = new HashSet<>(checkReferences(Map.of()).errors());
+            List<String> preexisting = crossCheck.errors().stream().filter(before::contains).toList();
+            List<String> introduced = crossCheck.errors().stream().filter(e -> !before.contains(e)).toList();
+            if (!introduced.isEmpty()) {
+                Set<ReloadFamily> missing = new LinkedHashSet<>(crossCheck.suggestedFor(introduced));
+                missing.removeAll(families);
                 String message = "Références croisées cassées : rien n'a été rechargé."
-                        + (crossCheck.suggested().isEmpty() ? ""
-                                : " Recharger aussi : " + labels(crossCheck.suggested()) + ".");
-                logger.warn("[content-reload] refusé — {} référence(s) cassée(s).", crossCheck.errors().size());
+                        + (missing.isEmpty()
+                                ? " Ressource(s) introuvable(s) même en rechargeant les familles liées :"
+                                        + " créer ou publier d'abord ce qui manque."
+                                : " Recharger aussi : " + labels(missing) + ".");
+                logger.warn("[content-reload] refusé — {} référence(s) cassée(s).", introduced.size());
                 return new ReloadResult(false, "BROKEN_REFERENCES", message, outcomes,
-                        crossCheck.errors(), List.copyOf(crossCheck.suggested()), runtimeHash(),
-                        elapsed(startedAt), false);
+                        introduced, List.copyOf(missing), runtimeHash(),
+                        elapsed(startedAt), false, preexisting, List.of());
+            }
+            String warning = preexisting.isEmpty() ? ""
+                    : " " + preexisting.size() + " référence(s) déjà cassée(s) avant ce rechargement,"
+                            + " non bloquante(s) : à corriger.";
+            if (!preexisting.isEmpty()) {
+                logger.warn("[content-reload] {} référence(s) déjà cassée(s) dans le runtime : {}",
+                        preexisting.size(), preexisting);
             }
 
             if (!apply) {
                 return new ReloadResult(false, "PREVIEW_OK",
-                        "Aperçu : " + totalOf(outcomes) + " élément(s) valides, aucune référence cassée."
-                                + " Rien n'a été appliqué.",
-                        outcomes, List.of(), List.of(), runtimeHash(), elapsed(startedAt), false);
+                        "Aperçu : " + totalOf(outcomes) + " élément(s) valides, aucune nouvelle"
+                                + " référence cassée. Rien n'a été appliqué." + warning,
+                        outcomes, List.of(), List.of(), runtimeHash(), elapsed(startedAt), false,
+                        preexisting, List.of());
             }
 
             // 4. Application, dans l'ordre de dépendance.
@@ -310,8 +413,8 @@ public final class ContentReloadService {
             logger.info("[content-reload] appliqué : {} — {} élément(s), empreinte {}.",
                     labels(families), totalOf(applied), hash);
             return new ReloadResult(true, "APPLIED",
-                    labels(families) + " rechargé(s) : " + totalOf(applied) + " élément(s) en jeu.",
-                    applied, List.of(), List.of(), hash, elapsed(startedAt), false);
+                    labels(families) + " rechargé(s) : " + totalOf(applied) + " élément(s) en jeu." + warning,
+                    applied, List.of(), List.of(), hash, elapsed(startedAt), false, preexisting, List.of());
         } catch (RuntimeException e) {
             logger.error("[content-reload] échec interne", e);
             return new ReloadResult(false, "ERROR",
@@ -436,7 +539,31 @@ public final class ContentReloadService {
 
     // ---- Références croisées ---------------------------------------------------------------
 
-    private record CrossCheck(List<String> errors, Set<ReloadFamily> suggested) {
+    /**
+     * @param errors      références cassées, une phrase stable par (définition, référence) — c'est
+     *                    ce qui permet de comparer le runtime actuel au graphe candidat
+     * @param familyByError famille qui porte la cible manquante, pour chaque erreur
+     */
+    private record CrossCheck(List<String> errors, Map<String, ReloadFamily> familyByError) {
+
+        Set<ReloadFamily> suggestedFor(Collection<String> subset) {
+            Set<ReloadFamily> out = new LinkedHashSet<>();
+            subset.forEach(error -> out.add(familyByError.get(error)));
+            return ReloadFamily.ordered(out);
+        }
+    }
+
+    /** Accumulateur : chaque erreur est liée à la famille qui devrait porter la cible. */
+    private static final class Findings {
+        private final Map<String, ReloadFamily> byError = new java.util.LinkedHashMap<>();
+
+        void add(String error, ReloadFamily missingIn) {
+            byError.putIfAbsent(error, missingIn);
+        }
+
+        CrossCheck toCheck() {
+            return new CrossCheck(List.copyOf(byError.keySet()), Map.copyOf(byError));
+        }
     }
 
     /**
@@ -464,66 +591,83 @@ public final class ContentReloadService {
         dialogues.forEach(dialogue -> dialogueIds.add(dialogue.id().toString()));
         Set<String> npcIds = new HashSet<>();
         npcs.forEach(npc -> npcIds.add(npc.id()));
+        externalNpcIds.get().forEach(npcIds::add);
 
-        List<String> errors = new ArrayList<>();
-        Set<ReloadFamily> suggested = new LinkedHashSet<>();
+        Findings findings = new Findings();
 
         for (QuestDefinition quest : quests) {
             for (NamespacedKey prerequisite : quest.prerequisites()) {
                 if (!questIds.contains(prerequisite.toString())) {
-                    errors.add("Quête « " + quest.id() + " » : prérequis inconnu « " + prerequisite + " ».");
-                    suggested.add(ReloadFamily.QUESTS);
+                    findings.add("Quête « " + quest.id() + " » : prérequis inconnu « " + prerequisite + " ».",
+                            ReloadFamily.QUESTS);
                 }
             }
             if (quest.giver() != null && !quest.giver().isBlank() && !npcIds.contains(quest.giver())) {
-                errors.add("Quête « " + quest.id() + " » : PNJ donneur inconnu « " + quest.giver() + " ».");
-                suggested.add(ReloadFamily.NPCS);
+                findings.add("Quête « " + quest.id() + " » : PNJ donneur inconnu « " + quest.giver() + " ».",
+                        ReloadFamily.NPCS);
             }
+            collectObjectiveNpcErrors(quest, npcIds, findings);
         }
         for (StoryDefinition story : stories) {
             for (NamespacedKey questId : story.questIds()) {
                 if (!questIds.contains(questId.toString())) {
-                    errors.add("Story « " + story.id() + " » : quête inconnue « " + questId + " ».");
-                    suggested.add(ReloadFamily.QUESTS);
+                    findings.add("Story « " + story.id() + " » : quête inconnue « " + questId + " ».",
+                            ReloadFamily.QUESTS);
                 }
             }
         }
         for (NpcDefinition npc : npcs) {
             if (npc.dialogueId() != null && !npc.dialogueId().isBlank()
                     && !dialogueIds.contains(normalizeKey(npc.dialogueId()))) {
-                errors.add("PNJ « " + npc.id() + " » : dialogue inconnu « " + npc.dialogueId() + " ».");
-                suggested.add(ReloadFamily.DIALOGUES);
+                findings.add("PNJ « " + npc.id() + " » : dialogue inconnu « " + npc.dialogueId() + " ».",
+                        ReloadFamily.DIALOGUES);
             }
         }
         for (DialogueDefinition dialogue : dialogues) {
             for (DialogueNode node : dialogue.nodes().values()) {
                 for (DialogueChoice choice : node.choices()) {
                     for (DialogueAction action : choice.actions()) {
-                        collectActionError(dialogue, node, action, questIds, dialogueIds, errors, suggested);
+                        collectActionError(dialogue, node, action, questIds, dialogueIds, findings);
                     }
                 }
             }
         }
-        return new CrossCheck(List.copyOf(errors), suggested);
+        return findings.toCheck();
+    }
+
+    /**
+     * Objectifs qui désignent un PNJ ({@code TALK_TO_NPC}, {@code DELIVER_ITEM_TO_NPC}, #371) : un
+     * identifiant inconnu rendrait l'étape impossible à valider en jeu, sans aucun signal.
+     */
+    private static void collectObjectiveNpcErrors(QuestDefinition quest, Set<String> npcIds, Findings findings) {
+        for (QuestStep step : quest.steps()) {
+            for (QuestObjective objective : step.objectives()) {
+                String npcId = switch (objective) {
+                    case TalkToNpcObjective talk -> talk.npcId();
+                    case DeliverItemToNpcObjective deliver -> deliver.npcId();
+                    default -> null;
+                };
+                if (npcId != null && !npcIds.contains(npcId)) {
+                    findings.add("Quête « " + quest.id() + " » étape « " + step.id() + " » : "
+                            + objective.type() + " cite un PNJ inconnu « " + npcId + " ».", ReloadFamily.NPCS);
+                }
+            }
+        }
     }
 
     private void collectActionError(DialogueDefinition dialogue, DialogueNode node, DialogueAction action,
-                                    Set<String> questIds, Set<String> dialogueIds,
-                                    List<String> errors, Set<ReloadFamily> suggested) {
+                                    Set<String> questIds, Set<String> dialogueIds, Findings findings) {
         if (action instanceof StartQuestAction start && !questIds.contains(start.questId().toString())) {
-            errors.add("Dialogue « " + dialogue.id() + " » nœud « " + node.id()
-                    + " » : démarre une quête inconnue « " + start.questId() + " ».");
-            suggested.add(ReloadFamily.QUESTS);
+            findings.add("Dialogue « " + dialogue.id() + " » nœud « " + node.id()
+                    + " » : démarre une quête inconnue « " + start.questId() + " ».", ReloadFamily.QUESTS);
         } else if (action instanceof AdvanceQuestAction advance
                 && !questIds.contains(advance.questId().toString())) {
-            errors.add("Dialogue « " + dialogue.id() + " » nœud « " + node.id()
-                    + " » : fait avancer une quête inconnue « " + advance.questId() + " ».");
-            suggested.add(ReloadFamily.QUESTS);
+            findings.add("Dialogue « " + dialogue.id() + " » nœud « " + node.id()
+                    + " » : fait avancer une quête inconnue « " + advance.questId() + " ».", ReloadFamily.QUESTS);
         } else if (action instanceof OpenDialogueAction open
                 && !dialogueIds.contains(open.dialogueId().toString())) {
-            errors.add("Dialogue « " + dialogue.id() + " » nœud « " + node.id()
-                    + " » : ouvre un dialogue inconnu « " + open.dialogueId() + " ».");
-            suggested.add(ReloadFamily.DIALOGUES);
+            findings.add("Dialogue « " + dialogue.id() + " » nœud « " + node.id()
+                    + " » : ouvre un dialogue inconnu « " + open.dialogueId() + " ».", ReloadFamily.DIALOGUES);
         }
     }
 

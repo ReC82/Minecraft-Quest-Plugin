@@ -62,6 +62,8 @@ class ContentPublishServiceTest {
         final List<String> calls = new ArrayList<>();
         final Set<String> loaded = new LinkedHashSet<>();
         boolean reloadFails;
+        /** Si non nul, le rechargement est refusé pour références cassées (issue #371). */
+        ReloadDetail brokenReferences;
         /** Si vrai, le rechargement « réussit » mais n'enregistre pas l'identifiant. */
         boolean reloadIgnoresNewIds;
         Runnable onReload;
@@ -70,6 +72,10 @@ class ContentPublishServiceTest {
             calls.add("reload:" + family.wire());
             if (onReload != null) {
                 onReload.run();
+            }
+            if (brokenReferences != null) {
+                return new ApplyResult(false, "BROKEN_REFERENCES", "Références croisées cassées.",
+                        0, 0, "hash-ko", brokenReferences);
             }
             if (reloadFails) {
                 return new ApplyResult(false, "PARSE_ERROR",
@@ -304,6 +310,24 @@ class ContentPublishServiceTest {
         assertTrue(result.message().contains("écrit sur DEV"), result.message());
         assertTrue(Files.isRegularFile(questFile()), "le fichier est bien là");
         assertEquals(ContentPublishStore.sha256Of(YAML_V1), result.devShaAfter());
+    }
+
+    /** Issue #371 : la référence fautive exacte et la famille requise voyagent jusqu'au panel. */
+    @Test
+    void aBrokenReferenceRefusalNamesTheCulpritAndTheRequiredFamily() {
+        applier.brokenReferences = new ContentApplier.ReloadDetail(
+                List.of("Quête « rpgquest:test_publish_quest » étape « livraison » : DELIVER_ITEM_TO_NPC"
+                        + " cite un PNJ inconnu « lucien »."),
+                List.of(), List.of("npcs", "quests"), List.of("npcs"), List.of());
+
+        ContentPublishService.PublishOutcome result = publish(YAML_V1, "");
+
+        assertFalse(result.ok());
+        assertEquals("RELOAD_FAILED", result.code());
+        assertFalse(result.runtimeConfirmed());
+        assertTrue(result.message().contains("« lucien »"), result.message());
+        assertEquals(List.of("npcs"), result.reloadDetail().autoIncludedFamilies());
+        assertEquals(1, result.reloadDetail().referenceErrors().size());
     }
 
     /**

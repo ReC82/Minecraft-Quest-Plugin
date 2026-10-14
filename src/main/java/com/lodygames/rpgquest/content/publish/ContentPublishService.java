@@ -87,7 +87,23 @@ public final class ContentPublishService {
                                  boolean reloadApplied, String reloadCode, String reloadMessage,
                                  int loadedCount, int issueCount,
                                  boolean runtimeConfirmed, String runtimeHash,
-                                 Instant verifiedAt) {
+                                 Instant verifiedAt, ContentApplier.ReloadDetail reloadDetail) {
+
+        public PublishOutcome {
+            reloadDetail = reloadDetail == null ? ContentApplier.ReloadDetail.EMPTY : reloadDetail;
+        }
+
+        /** Compte rendu sans rechargement (refus amont, conflit, écriture impossible…). */
+        public PublishOutcome(boolean ok, String code, String message, PublishKind kind, String slug,
+                              String expectedId, String devShaBefore, String devShaAfter,
+                              String sourceSha, boolean created, String backupPath,
+                              boolean reloadApplied, String reloadCode, String reloadMessage,
+                              int loadedCount, int issueCount, boolean runtimeConfirmed,
+                              String runtimeHash, Instant verifiedAt) {
+            this(ok, code, message, kind, slug, expectedId, devShaBefore, devShaAfter, sourceSha,
+                    created, backupPath, reloadApplied, reloadCode, reloadMessage, loadedCount,
+                    issueCount, runtimeConfirmed, runtimeHash, verifiedAt, ContentApplier.ReloadDetail.EMPTY);
+        }
 
         /** Le seul état qui autorise le badge « Synchronisé ». */
         public boolean synchronized_() {
@@ -351,7 +367,7 @@ public final class ContentPublishService {
                     kind, slug, id, before, "", "", false, "",
                     reload.applied(), reload.code(), reload.message(),
                     reload.loaded(), reload.issues(), !gone,
-                    reload.runtimeHash(), clock.instant());
+                    reload.runtimeHash(), clock.instant(), reload.detail());
         } finally {
             inFlight.remove(lockKey);
         }
@@ -370,11 +386,12 @@ public final class ContentPublishService {
             return new PublishOutcome(false, "RELOAD_FAILED",
                     "Le fichier est écrit sur DEV, mais le rechargement a échoué ("
                             + reload.code() + ") : " + reload.message()
+                            + culprits(reload.detail())
                             + (backupPath.isEmpty() ? "" : " Sauvegarde : « " + backupPath + " »."),
                     kind, slug, id, before, after, sourceSha, created, backupPath,
                     false, reload.code(), reload.message(),
                     reload.loaded(), reload.issues(), false, reload.runtimeHash(),
-                    clock.instant());
+                    clock.instant(), reload.detail());
         }
         boolean confirmed = applier.runtimeHas(kind.family(), id);
         if (!confirmed) {
@@ -385,7 +402,7 @@ public final class ContentPublishService {
                     kind, slug, id, before, after, sourceSha, created, backupPath,
                     true, reload.code(), reload.message(),
                     reload.loaded(), reload.issues(), false, reload.runtimeHash(),
-                    clock.instant());
+                    clock.instant(), reload.detail());
         }
         return new PublishOutcome(true, successCode,
                 successCode.equals("RESTORED")
@@ -397,13 +414,23 @@ public final class ContentPublishService {
                 kind, slug, id, before, after, sourceSha, created, backupPath,
                 true, reload.code(), reload.message(),
                 reload.loaded(), reload.issues(), true, reload.runtimeHash(),
-                clock.instant());
+                clock.instant(), reload.detail());
     }
 
     private PublishOutcome refused(String code, String message, PublishKind kind, String slug,
                                    Instant now) {
         return new PublishOutcome(false, code, message, kind, slug, slug, "", "", "", false, "",
                 false, "", "", 0, 0, false, applier.runtimeHash(), now);
+    }
+
+    /** Les références fautives, nommées dans le message lui-même (#371) — bornées à trois. */
+    private static String culprits(ContentApplier.ReloadDetail detail) {
+        List<String> errors = detail.referenceErrors();
+        if (errors.isEmpty()) {
+            return "";
+        }
+        String shown = String.join(" ", errors.subList(0, Math.min(3, errors.size())));
+        return " " + shown + (errors.size() > 3 ? " (+" + (errors.size() - 3) + " autre(s))" : "");
     }
 
     /** Accord en genre : « la story est chargée », « le dialogue est chargé ». */

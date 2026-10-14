@@ -171,6 +171,9 @@ public final class AgentPages {
         m.put("title", d.title == null || d.title.isBlank() ? plain : d.title);
         m.put("category", d.category == null ? "" : d.category);
         m.put("repeatable", d.repeatable);
+        if (d.cooldown != null && !d.cooldown.isBlank()) {
+            m.put("cooldown", d.cooldown.trim());
+        }
         m.put("giverId", d.giver == null ? "" : d.giver.trim());
         m.put("giverName", "");
         List<Object> prereq = new ArrayList<>();
@@ -1476,6 +1479,13 @@ public final class AgentPages {
             sb.append(listControls("quests", "Rechercher une quête\u2026",
                     filterBtn("", "Toutes", true) + filterBtn("ok", "Sans alerte", false)
                             + filterBtn("warn", "À vérifier", false)));
+            // Issue #13 : second groupe de puces, combiné en ET avec le premier — les quêtes
+            // secondaires renouvelables des PNJ récurrents (« Rencontres ») d'un côté, le reste de l'autre.
+            sb.append("<div class=\"npc-filters\" data-filter-chips=\"quests\" aria-label=\"Type de quête\">")
+                    .append(filterBtn("", "Tous types", true))
+                    .append(filterBtn("main", "Principales", false))
+                    .append(filterBtn("side", "Secondaires / Rencontres", false))
+                    .append("</div>");
             sb.append("<p class=\"count-note\" data-count-note data-noun=\"qu\u00eate\">" + merged.size() + " qu\u00eate(s)</p>");
             sb.append("<div class=\"accordion npc-accordion\" id=\"quests-accordion\">");
             int qi = 0;
@@ -1507,6 +1517,33 @@ public final class AgentPages {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Issue #13 : quête secondaire de rencontre = catégorie {@code encounter}, ou donneur
+     * {@code encounter_*} (npc_id des modèles de PNJ récurrents de biome).
+     */
+    static boolean isEncounterQuest(String category, String giverId) {
+        String giver = giverId == null ? "" : giverId.toLowerCase(java.util.Locale.ROOT);
+        giver = giver.substring(giver.indexOf(':') + 1);
+        return "encounter".equalsIgnoreCase(category == null ? "" : category.trim()) || giver.startsWith("encounter_");
+    }
+
+    /** Délai de ré-acceptation lisible : relevé serveur ({@code cooldownSeconds}) sinon valeur source. */
+    static String questCooldownLabel(Map<String, Object> qd) {
+        Object seconds = qd.get("cooldownSeconds");
+        if (seconds instanceof Number n && n.longValue() > 0) {
+            long total = n.longValue();
+            if (total < 60) {
+                return total + " s";
+            }
+            long d = total / 86400;
+            long h = (total % 86400) / 3600;
+            long min = (total % 3600) / 60;
+            String out = (d > 0 ? d + " j " : "") + (h > 0 ? h + " h " : "") + (min > 0 ? min + " min" : "");
+            return out.trim();
+        }
+        return str(qd.get("cooldown"));
     }
 
     /**
@@ -1542,7 +1579,9 @@ public final class AgentPages {
                 diags.add(new String[] {"QUEST_PREREQ_UNKNOWN", pid});
             }
         }
-        if (!giverId.isEmpty() && knownNpcKeys != null
+        // Issue #13 : un donneur encounter_* est le npc_id d'un modèle de PNJ récurrent — il n'a pas de
+        // fiche dans npc.list (ses occurrences vivent dans le registre des rencontres), ce n'est pas une panne.
+        if (!giverId.isEmpty() && knownNpcKeys != null && !isEncounterQuest("", giverId)
                 && !knownNpcKeys.contains(giverId.toLowerCase(java.util.Locale.ROOT))) {
             diags.add(new String[] {"QUEST_GIVER_UNKNOWN", giverId});
         }
@@ -1551,8 +1590,10 @@ public final class AgentPages {
         String ftext = Http.esc(id + " " + human + " " + category + " " + giverId + " " + giverName
                 + " " + catalogStateKeywords(state));
         StringBuilder sb = new StringBuilder();
+        boolean encounter = isEncounterQuest(category, giverId);
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"quests\" data-filter-cat=\"")
-                .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext)
+                .append(anyWarn ? "warn" : "ok").append(encounter ? " side" : " main")
+                .append("\" data-filter-text=\"").append(ftext)
                 .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button").append(focused ? "" : " collapsed")
@@ -1592,6 +1633,13 @@ public final class AgentPages {
         if (Boolean.TRUE.equals(qd.get("repeatable"))) {
             sb.append("<span class=\"badge text-bg-secondary\">répétable</span>");
         }
+        String cooldown = questCooldownLabel(qd);
+        if (!cooldown.isEmpty()) {
+            sb.append("<span class=\"badge text-bg-secondary\">recharge ").append(Http.esc(cooldown)).append("</span>");
+        }
+        if (encounter) {
+            sb.append("<span class=\"badge text-bg-info\">rencontre</span>");
+        }
         sb.append(catalogStateBadge(state, "quête"));
         sb.append(anyWarn ? "<span class=\"badge text-bg-warning\">à vérifier</span>"
                 : "<span class=\"badge text-bg-success\">OK</span>");
@@ -1612,6 +1660,12 @@ public final class AgentPages {
                     + " <code class=\"tid\">" + Http.esc(category) + "</code>");
         }
         dlRow(sb, "Répétable", Boolean.TRUE.equals(qd.get("repeatable")) ? "oui" : "non");
+        if (!cooldown.isEmpty()) {
+            dlRow(sb, "Délai avant de la refaire", Http.esc(cooldown));
+        }
+        if (encounter) {
+            dlRow(sb, "Type", "Secondaire — donnée par un PNJ récurrent de biome (rencontre)");
+        }
         sb.append("</dl>");
 
         // ---- DONNEUR ----
@@ -7498,6 +7552,10 @@ public final class AgentPages {
             case "NO_MAIN_CLAIM" -> "sans claim";
             case "HAS_MAIN_CLAIM" -> "a un claim";
             case "HAS_INVENTORY_SPACE" -> value + " place(s) libre(s) dans l'inventaire";
+            case "QUEST_AVAILABLE" -> {
+                String title = questTitles.get(t.toLowerCase(java.util.Locale.ROOT));
+                yield "quête « " + (title != null ? MiniText.plain(title) : MiniText.prettifyId(t)) + " » acceptable";
+            }
             default -> kind;
         };
     }

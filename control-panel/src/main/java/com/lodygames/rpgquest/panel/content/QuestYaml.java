@@ -34,6 +34,9 @@ public final class QuestYaml {
         sb.append("category: ").append(qq(q.category)).append('\n');
         sb.append("icon: ").append(up(q.icon.isBlank() ? "BOOK" : q.icon)).append('\n');
         sb.append("repeatable: ").append(q.repeatable).append('\n');
+        if (q.cooldown != null && !q.cooldown.isBlank()) {
+            sb.append("cooldown: ").append(qq(q.cooldown.trim())).append('\n');
+        }
         if (q.secret) {
             sb.append("secret: true\n");
         }
@@ -199,6 +202,7 @@ public final class QuestYaml {
         d.category = str(m.get("category"));
         d.icon = str(m.get("icon")).isBlank() ? "BOOK" : str(m.get("icon"));
         d.repeatable = bool(m.get("repeatable"));
+        d.cooldown = str(m.get("cooldown"));
         d.secret = bool(m.get("secret"));
         d.giver = str(m.get("giver"));
         for (Object p : asList(m.get("prerequisites"))) {

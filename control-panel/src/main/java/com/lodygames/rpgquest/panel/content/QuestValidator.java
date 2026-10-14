@@ -21,6 +21,8 @@ public final class QuestValidator {
     /** Règle d'id de {@code NamespacedKey} (clé, après un éventuel {@code namespace:}). */
     private static final Pattern KEY = Pattern.compile("[a-z0-9._/-]+");
     private static final Pattern STEP_ID = Pattern.compile("[a-z0-9_-]+");
+    /** Délai {@code cooldown:} accepté par le moteur (secondes, ou nombre + unité s/m/h/d). */
+    private static final Pattern COOLDOWN = Pattern.compile("[0-9]{1,9}[smhd]?");
     private static final Pattern VAR_KEY = Pattern.compile("[A-Za-z0-9_]+");
     /**
      * Sources de liste à vocabulaire FIXE : leurs valeurs viennent d'une énumération du moteur, pas
@@ -66,6 +68,17 @@ public final class QuestValidator {
                     + "de la version installée (Minecraft "
                     + refData.itemCatalog().minecraftVersion() + "). Vérifier l'identifiant : le "
                     + "serveur retombera sur « BOOK » s'il ne le reconnaît pas."));
+        }
+
+        // --- Délai de ré-acceptation (issue #13) : mêmes règles que QuestDefinitionParser ---
+        if (!blank(q.cooldown)) {
+            if (!COOLDOWN.matcher(q.cooldown.trim().toLowerCase(java.util.Locale.ROOT)).matches()) {
+                out.add(Diagnostic.error("cooldown", "Délai « " + q.cooldown.trim() + " » invalide : un nombre "
+                        + "de secondes, ou un nombre suivi de s, m, h ou d (30m, 20h, 1d)."));
+            } else if (!q.repeatable) {
+                out.add(Diagnostic.error("cooldown", "Un délai de ré-acceptation n'a de sens que pour une "
+                        + "quête répétable : cocher « Quête répétable » ou vider le délai."));
+            }
         }
 
         // --- Donneur ---

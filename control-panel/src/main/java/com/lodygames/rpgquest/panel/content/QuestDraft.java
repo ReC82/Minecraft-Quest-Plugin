@@ -36,6 +36,11 @@ public final class QuestDraft {
     public String category = "";
     public String icon = "BOOK";
     public boolean repeatable = false;
+    /**
+     * Délai de ré-acceptation d'une quête répétable (issue #13) : vide = aucun, sinon secondes ou
+     * nombre + unité {@code s/m/h/d} (« 20h »). Format du moteur, validé par {@link QuestValidator}.
+     */
+    public String cooldown = "";
     public boolean secret = false;
     public String giver = "";
     public final List<String> prerequisites = new ArrayList<>();

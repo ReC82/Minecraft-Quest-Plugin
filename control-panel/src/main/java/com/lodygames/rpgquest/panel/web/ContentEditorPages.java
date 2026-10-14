@@ -210,6 +210,7 @@ public final class ContentEditorPages {
         d.category = f.getOrDefault("category", "").trim();
         d.icon = f.getOrDefault("icon", "").trim();
         d.repeatable = isOn(f.get("repeatable"));
+        d.cooldown = f.getOrDefault("cooldown", "").trim();
         d.secret = isOn(f.get("secret"));
         d.giver = f.getOrDefault("giver", "").trim();
         for (String line : lines(f.get("prereq"))) {
@@ -416,7 +417,12 @@ public final class ContentEditorPages {
         sb.append("<div class=\"full\">");
         sb.append(checkbox("repeatable", "Quête répétable", d.repeatable));
         sb.append(checkbox("secret", "Quête secrète (masquée tant que non déclenchée)", d.secret));
-        sb.append("</div></div>");
+        sb.append("</div>");
+        sb.append(text("cooldown", "Délai avant de pouvoir la refaire",
+                "Quête répétable seulement : temps minimal entre une complétion et la suivante, contre le "
+                + "farm (issue #13). Vide = aucun délai. Exemples : 30m, 20h, 1d.",
+                d.cooldown, false, false, null, null));
+        sb.append("</div>");
         sb.append(sectionClose());
 
         // -- Prérequis (issue #163 : sélection recherchable, plus de saisie d'id à la main) --

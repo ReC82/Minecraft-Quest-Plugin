@@ -6,6 +6,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.DialogueEntry;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
@@ -63,6 +64,7 @@ public final class DialogueDefinitionWriter {
         sb.append("# Édition sûre uniquement : chaque écriture est re-parsée et rechargée avant validation.\n");
         sb.append("id: ").append(definition.id().toString()).append('\n');
         sb.append("start: ").append(definition.startNodeId()).append('\n');
+        renderEntries(sb, definition.entries());
         sb.append("nodes:\n");
         for (String nodeId : orderedNodeIds(definition, nodeOrder)) {
             renderNode(sb, definition.nodes().get(nodeId));
@@ -87,9 +89,36 @@ public final class DialogueDefinitionWriter {
         sb.append("  ").append(node.id()).append(":\n");
         sb.append("    speaker: ").append(quote(node.speaker())).append('\n');
         renderText(sb, node.text());
+        if (!node.variants().isEmpty()) {
+            sb.append("    variants:\n");
+            for (LocalizedText variant : node.variants()) {
+                sb.append("      - ").append(quote(variant.base())).append('\n');
+            }
+        }
         sb.append("    choices:\n");
         for (DialogueChoice choice : node.choices()) {
             renderChoice(sb, choice);
+        }
+    }
+
+    /**
+     * Issue #158 — {@code entries:} au niveau racine. Les conditions passent par le même
+     * {@link #renderCondition} que celles d'un choix, puis sont désindentées de 4 espaces (un
+     * choix est imbriqué dans {@code nodes.<id>.choices}, une entrée directement à la racine).
+     */
+    private static void renderEntries(StringBuilder sb, List<DialogueEntry> entries) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        sb.append("entries:\n");
+        for (DialogueEntry entry : entries) {
+            sb.append("  - node: ").append(entry.nodeId()).append('\n');
+            sb.append("    conditions:\n");
+            StringBuilder conditions = new StringBuilder();
+            for (DialogueCondition condition : entry.conditions()) {
+                renderCondition(conditions, condition);
+            }
+            conditions.toString().lines().forEach(l -> sb.append(l.substring(4)).append('\n'));
         }
     }
 

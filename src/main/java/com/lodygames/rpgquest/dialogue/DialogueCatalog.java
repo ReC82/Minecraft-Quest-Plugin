@@ -27,7 +27,15 @@ public final class DialogueCatalog {
     // ---- Entrées (types simples) ------------------------------------------------------------
 
     /** Un dialogue réellement chargé. {@code id} = forme {@code namespace:key} en minuscules. */
-    public record LogicalDialogue(String id, String startNodeId, List<Node> nodes) {
+    public record LogicalDialogue(String id, String startNodeId, List<Node> nodes, List<String> entryNodeIds) {
+
+        public LogicalDialogue {
+            entryNodeIds = entryNodeIds == null ? List.of() : List.copyOf(entryNodeIds);
+        }
+
+        public LogicalDialogue(String id, String startNodeId, List<Node> nodes) {
+            this(id, startNodeId, nodes, List.of());
+        }
     }
 
     public record Node(String id, String speaker, String text, List<Choice> choices) {
@@ -130,7 +138,11 @@ public final class DialogueCatalog {
             for (Node n : d.nodes()) {
                 byId.put(n.id(), n);
             }
+            // Issue #158 : un nœud d'entrée conditionnelle (« entries: ») est atteint sans choix.
             Set<String> reachable = reachableFrom(d.startNodeId(), byId);
+            for (String entry : d.entryNodeIds()) {
+                reachable.addAll(reachableFrom(entry, byId));
+            }
 
             List<Warning> warnings = new ArrayList<>();
             List<String> referencedQuests = new ArrayList<>();

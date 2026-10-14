@@ -110,6 +110,44 @@ nodes:
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Accueil selon la quête et répliques variées (#158)</h2>
+    <p>Deux clés <strong>facultatives</strong> évitent qu'un PNJ redemande une quête déjà terminée :</p>
+    <ul>
+      <li><code>entries:</code> (racine) — liste ordonnée de <code>{ node, conditions }</code>. À l'ouverture,
+        la <strong>première</strong> entrée dont toutes les conditions passent choisit le nœud affiché ;
+        aucune → <code>start</code>. Mêmes conditions que les choix (<code>QUEST_STATE</code>,
+        <code>QUEST_AVAILABLE</code>, <code>HAS_PENDING_DELIVERY</code>…, <code>negate: true</code>), lues
+        sur la progression enregistrée du joueur.</li>
+      <li><code>variants:</code> (dans un nœud) — répliques alternatives au <code>text</code>, tirées au hasard
+        sans répéter deux fois de suite la même au même joueur. Textes écrits à l'avance, aucune IA.</li>
+    </ul>
+    <p>Ordre conseillé : remise en attente → quête active → quête terminée (<code>COMPLETED</code> +
+      <code>QUEST_AVAILABLE</code> <code>negate</code>) → offre (<code>QUEST_AVAILABLE</code>) →
+      <code>start</code> = bavardage neutre. Exemple complet : <code>docs/RPGQUEST_BIBLE.md</code>,
+      section « Accueil selon l'état de la quête ».</p>
+<pre><code>start: chatter
+entries:
+  - node: thanks
+    conditions:
+      - type: QUEST_STATE
+        quest: rpgquest:help_recolte
+        state: COMPLETED
+      - type: QUEST_AVAILABLE
+        quest: rpgquest:help_recolte
+        negate: true
+nodes:
+  thanks:
+    speaker: "Help"
+    text: "Merci pour ton aide. Je n'ai besoin de rien actuellement."
+    variants:
+      - "J'ai entendu dire que le Wild est très dangereux, mais qu'on y trouve plein de ressources."
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE</code></pre>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Actions disponibles</h2>
     <table class="table table-sm align-middle">
       <thead><tr><th>Action</th><th>Champs</th><th>Effet</th></tr></thead>

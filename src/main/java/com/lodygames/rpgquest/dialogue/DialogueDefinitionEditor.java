@@ -111,7 +111,7 @@ public final class DialogueDefinitionEditor {
             if (current == null) {
                 return Edit.fail("UNKNOWN_NODE", "Nœud « " + nodeId + " » introuvable dans ce dialogue.");
             }
-            DialogueNode updated = new DialogueNode(current.id(), s, LocalizedText.of(t), current.choices());
+            DialogueNode updated = current.withSpeakerAndText(s, LocalizedText.of(t));
             return Edit.of(replaceNode(def, updated), null,
                     List.of("nœud « " + nodeId + " » : locuteur + texte mis à jour"));
         });
@@ -142,7 +142,7 @@ public final class DialogueDefinitionEditor {
                     List.of(new DialogueChoice(LocalizedText.of(label), List.of(), List.of(new CloseAction()), null)));
             Map<String, DialogueNode> nodes = new LinkedHashMap<>(def.nodes());
             nodes.put(id, node);
-            return Edit.of(new DialogueDefinition(def.id(), def.startNodeId(), nodes), id,
+            return Edit.of(def.withNodes(nodes), id,
                     List.of("nœud « " + id + " » créé (orphelin — à relier via un choix)"));
         });
     }
@@ -173,7 +173,7 @@ public final class DialogueDefinitionEditor {
                     : new DialogueChoice(LocalizedText.of(text), List.of(), List.of(), next);
             List<DialogueChoice> choices = new ArrayList<>(node.choices());
             choices.add(choice);
-            return Edit.of(replaceNode(def, new DialogueNode(node.id(), node.speaker(), node.text(), choices)), null,
+            return Edit.of(replaceNode(def, node.withChoices(choices)), null,
                     List.of("choix ajouté au nœud « " + nodeId + " » ("
                             + (close ? "ferme le dialogue" : "→ " + next) + ")"));
         });
@@ -256,7 +256,7 @@ public final class DialogueDefinitionEditor {
             if (kept > 0) {
                 effects.add(kept + " propriété(s) avancée(s) du choix conservée(s) à l'identique");
             }
-            return Edit.of(replaceNode(def, new DialogueNode(node.id(), node.speaker(), node.text(), choices)), null,
+            return Edit.of(replaceNode(def, node.withChoices(choices)), null,
                     effects);
         });
     }
@@ -446,7 +446,7 @@ public final class DialogueDefinitionEditor {
             }
             List<DialogueChoice> choices = new ArrayList<>(node.choices());
             choices.remove(choiceIndex);
-            return Edit.of(replaceNode(def, new DialogueNode(node.id(), node.speaker(), node.text(), choices)), null,
+            return Edit.of(replaceNode(def, node.withChoices(choices)), null,
                     List.of("choix #" + choiceIndex + " retiré du nœud « " + nodeId + " »"));
         });
     }
@@ -628,7 +628,7 @@ public final class DialogueDefinitionEditor {
     private static DialogueDefinition replaceNode(DialogueDefinition def, DialogueNode node) {
         Map<String, DialogueNode> nodes = new LinkedHashMap<>(def.nodes());
         nodes.put(node.id(), node);
-        return new DialogueDefinition(def.id(), def.startNodeId(), nodes);
+        return def.withNodes(nodes);
     }
 
     private static NamespacedKey normalizeId(String raw) {

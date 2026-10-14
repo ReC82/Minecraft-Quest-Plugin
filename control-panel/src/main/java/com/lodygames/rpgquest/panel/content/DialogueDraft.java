@@ -43,11 +43,22 @@ public final class DialogueDraft {
         }
     }
 
+    /**
+     * Issue #158 — point d'entrée conditionnel ({@code entries:}) : conservé tel quel, comme les
+     * conditions d'un choix, pour qu'un réenregistrement depuis le panel ne le perde pas.
+     */
+    public static final class Entry {
+        public String node = "";
+        public final List<java.util.Map<String, String>> conditions = new ArrayList<>();
+    }
+
     /** Un nœud du dialogue. */
     public static final class Node {
         public String id = "";
         public String speaker = "";
         public String text = "";
+        /** Issue #158 — répliques alternatives au {@code text} ({@code variants:}), dans l'ordre du fichier. */
+        public final List<String> variants = new ArrayList<>();
         public final List<Choice> choices = new ArrayList<>();
 
         public Node() {
@@ -62,6 +73,8 @@ public final class DialogueDraft {
     public String id = "";
     /** Id du nœud de départ. */
     public String start = "start";
+    /** Issue #158 — entrées conditionnelles évaluées avant {@link #start}, dans l'ordre. */
+    public final List<Entry> entries = new ArrayList<>();
     public final List<Node> nodes = new ArrayList<>();
 
     public static DialogueDraft blank() {

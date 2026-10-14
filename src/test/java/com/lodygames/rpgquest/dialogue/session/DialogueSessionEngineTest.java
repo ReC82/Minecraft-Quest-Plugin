@@ -995,6 +995,193 @@ class DialogueSessionEngineTest {
                 () -> "obtenu : " + renderer.lastNode.text().base());
     }
 
+    // ---- Issue #158 : accueil selon l'etat reel de la quete + repliques variees ---------------
+
+    private static final NamespacedKey HELP_ID = new NamespacedKey("rpgquest", "help");
+
+    private void writeHelpDialogue() throws Exception {
+        Files.writeString(dialoguesDir.resolve("help.yml"), """
+                id: rpgquest:help
+                start: idle
+                entries:
+                  - node: progress
+                    conditions:
+                      - type: QUEST_STATE
+                        quest: rpgquest:first_steps
+                        state: ACTIVE
+                  - node: thanks
+                    conditions:
+                      - type: QUEST_STATE
+                        quest: rpgquest:first_steps
+                        state: COMPLETED
+                      - type: QUEST_AVAILABLE
+                        quest: rpgquest:first_steps
+                        negate: true
+                  - node: offer
+                    conditions:
+                      - type: QUEST_AVAILABLE
+                        quest: rpgquest:first_steps
+                nodes:
+                  offer:
+                    speaker: "Help"
+                    text: "J'ai un petit probleme de stock."
+                    choices:
+                      - text: "Commencer (j'accepte)"
+                        actions:
+                          - type: START_QUEST
+                            quest: rpgquest:first_steps
+                      - text: "Plus tard"
+                        actions:
+                          - type: CLOSE
+                  progress:
+                    speaker: "Help"
+                    text: "Alors, ce bois ?"
+                    choices:
+                      - text: "J'y vais"
+                        actions:
+                          - type: CLOSE
+                  thanks:
+                    speaker: "Help"
+                    text: "Merci pour ton aide."
+                    variants:
+                      - "Grace a toi, mes caisses sont pleines."
+                      - "Je n'ai besoin de rien actuellement."
+                    choices:
+                      - text: "Au revoir"
+                        actions:
+                          - type: CLOSE
+                  idle:
+                    speaker: "Help"
+                    text: "Belle journee."
+                    choices:
+                      - text: "Au revoir"
+                        actions:
+                          - type: CLOSE
+                """);
+        assertTrue(dialogueEngine.reload().issues().isEmpty(), () -> "help.yml : " + dialogueEngine.lastReport().issues());
+    }
+
+    private String openAndGetText(PlayerMock player, NamespacedKey dialogueId) throws Exception {
+        renderer.lastNode = null;
+        sessionEngine.open(player, dialogueId);
+        awaitRendered();
+        return renderer.lastNode.text().base();
+    }
+
+    @Test
+    void entryOffersTheQuestToAPlayerWhoHasNotStartedIt() throws Exception {
+        writeHelpDialogue();
+        PlayerMock player = addPlayer();
+
+        assertEquals("J'ai un petit probleme de stock.", openAndGetText(player, HELP_ID));
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().startsWith("Commencer")));
+    }
+
+    @Test
+    void entryFollowsAnActiveQuest() throws Exception {
+        writeHelpDialogue();
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals("Alors, ce bois ?", openAndGetText(player, HELP_ID));
+        assertEquals("progress", renderer.lastNode.id());
+    }
+
+    @Test
+    void completedQuestNoLongerShowsTheInitialRequestNorAnOffer() throws Exception {
+        writeHelpDialogue();
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        questProgressEngine.forceComplete(player, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(QuestState.COMPLETED,
+                questProgressEngine.stateOf(player.getUniqueId(), QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        openAndGetText(player, HELP_ID);
+
+        // Le bug du ticket : apres la quete terminee, le PNJ redemandait le bois.
+        assertEquals("thanks", renderer.lastNode.id());
+        assertTrue(renderer.lastVisibleChoices.stream().noneMatch(c -> c.label().startsWith("Commencer")));
+    }
+
+    @Test
+    void anotherPlayerKeepsTheOfferWhileTheFirstIsThanked() throws Exception {
+        writeHelpDialogue();
+        PlayerMock done = addPlayer();
+        questProgressEngine.accept(done, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        questProgressEngine.forceComplete(done, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        PlayerMock fresh = addPlayer();
+
+        openAndGetText(done, HELP_ID);
+        assertEquals("thanks", renderer.lastNode.id());
+        openAndGetText(fresh, HELP_ID);
+        assertEquals("offer", renderer.lastNode.id());
+    }
+
+    @Test
+    void variantsRotateWithoutImmediateRepetition() throws Exception {
+        writeHelpDialogue();
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        questProgressEngine.forceComplete(player, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        String previous = null;
+        for (int i = 0; i < 12; i++) {
+            String text = openAndGetText(player, HELP_ID);
+            assertFalse(text.equals(previous), "replique repetee immediatement : " + text);
+            seen.add(text);
+            previous = text;
+        }
+        assertTrue(seen.size() >= 2, () -> "repliques vues : " + seen);
+    }
+
+    @Test
+    void noMatchingEntryFallsBackToStart() throws Exception {
+        Files.writeString(dialoguesDir.resolve("gate.yml"), """
+                id: rpgquest:gate
+                start: idle
+                entries:
+                  - node: vip
+                    conditions:
+                      - type: VARIABLE_EQUALS
+                        key: "VIP"
+                        value: "yes"
+                nodes:
+                  vip:
+                    speaker: "Portier"
+                    text: "Entrez."
+                    choices:
+                      - text: "Merci"
+                        actions:
+                          - type: CLOSE
+                  idle:
+                    speaker: "Portier"
+                    text: "Circulez."
+                    choices:
+                      - text: "Bien"
+                        actions:
+                          - type: CLOSE
+                """);
+        assertTrue(dialogueEngine.reload().issues().isEmpty(), () -> "gate.yml : " + dialogueEngine.lastReport().issues());
+        NamespacedKey gate = new NamespacedKey("rpgquest", "gate");
+        PlayerMock player = addPlayer();
+
+        assertEquals("Circulez.", openAndGetText(player, gate));
+        variableRepository.set(player.getUniqueId(), "VIP", "yes").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals("Entrez.", openAndGetText(player, gate));
+    }
+
+    @Test
+    void reachableNodesStartFromTheActualEntryNode() throws Exception {
+        writeHelpDialogue();
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        DialogueDefinition dialogue = dialogueEngine.find(HELP_ID).orElseThrow();
+
+        assertEquals(java.util.Set.of("progress"),
+                sessionEngine.reachableNodes(player, dialogue).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
     private static final class RecordingRenderer implements DialogueRenderer {
         private volatile DialogueNode lastNode;
         private volatile List<VisibleChoice> lastVisibleChoices;

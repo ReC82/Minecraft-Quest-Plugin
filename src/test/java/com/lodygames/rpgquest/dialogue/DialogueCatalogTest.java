@@ -32,6 +32,21 @@ class DialogueCatalogTest {
         return new Node(id, "Garde", "<white>texte</white>", choices);
     }
 
+    /** Issue #158 : un nœud d'entrée conditionnelle (et sa suite) n'est pas orphelin. */
+    @Test
+    void entryNodesAndTheirSuccessorsAreReachable() {
+        LogicalDialogue d = new LogicalDialogue("rpgquest:guard", "start",
+                List.of(node("start", ""), node("thanks", "after"), node("after", ""), node("orphan", "")),
+                List.of("thanks"));
+        var view = DialogueCatalog.build(List.of(d), List.of(), List.of(), Set.of("guard"), Set.of());
+
+        var byId = view.dialogues().get(0).nodes().stream()
+                .collect(java.util.stream.Collectors.toMap(n -> n.id(), n -> n));
+        assertTrue(byId.get("thanks").reachable());
+        assertTrue(byId.get("after").reachable());
+        assertFalse(byId.get("orphan").reachable());
+    }
+
     @Test
     void reachabilityMarksOrphanNodes() {
         LogicalDialogue d = new LogicalDialogue("rpgquest:guard", "start",

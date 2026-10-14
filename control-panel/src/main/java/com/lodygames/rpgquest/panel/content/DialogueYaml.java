@@ -37,16 +37,29 @@ public final class DialogueYaml {
         sb.append("# L'édition fine (nœuds, choix conditionnels, actions) passera par l'éditeur dédié.\n");
         sb.append("id: ").append(nsId(d.id)).append('\n');
         sb.append("start: ").append(safeId(d.start)).append('\n');
+        if (!d.entries.isEmpty()) {
+            sb.append("entries:\n");
+            for (DialogueDraft.Entry entry : d.entries) {
+                sb.append("  - node: ").append(safeId(entry.node)).append('\n');
+                writeEntries(sb, "    ", "conditions", entry.conditions);
+            }
+        }
         sb.append("nodes:\n");
         for (DialogueDraft.Node node : d.nodes) {
             sb.append("  ").append(safeId(node.id)).append(":\n");
             sb.append("    speaker: ").append(quote(node.speaker)).append('\n');
             sb.append("    text: ").append(quote(node.text)).append('\n');
+            if (!node.variants.isEmpty()) {
+                sb.append("    variants:\n");
+                for (String variant : node.variants) {
+                    sb.append("      - ").append(quote(variant)).append('\n');
+                }
+            }
             sb.append("    choices:\n");
             for (DialogueDraft.Choice choice : node.choices) {
                 sb.append("      - text: ").append(quote(choice.text)).append('\n');
-                writeEntries(sb, "conditions", choice.conditions);
-                writeEntries(sb, "actions", choice.actions);
+                writeEntries(sb, "        ", "conditions", choice.conditions);
+                writeEntries(sb, "        ", "actions", choice.actions);
                 if (choice.next != null && !choice.next.isBlank()) {
                     sb.append("        next: ").append(choice.next.trim()).append('\n');
                 }
@@ -59,15 +72,15 @@ public final class DialogueYaml {
      * {@code conditions:} / {@code actions:} d'un choix, à l'indentation du moteur
      * ({@code DialogueDefinitionWriter}) : le {@code type} porte le tiret, les autres clés suivent.
      */
-    private static void writeEntries(StringBuilder sb, String key, List<Map<String, String>> entries) {
+    private static void writeEntries(StringBuilder sb, String indent, String key, List<Map<String, String>> entries) {
         if (entries.isEmpty()) {
             return;
         }
-        sb.append("        ").append(key).append(":\n");
+        sb.append(indent).append(key).append(":\n");
         for (Map<String, String> entry : entries) {
             boolean first = true;
             for (Map.Entry<String, String> e : entry.entrySet()) {
-                sb.append(first ? "          - " : "            ")
+                sb.append(indent).append(first ? "  - " : "    ")
                         .append(e.getKey()).append(": ").append(entryScalar(e.getKey(), e.getValue())).append('\n');
                 first = false;
             }
@@ -131,6 +144,19 @@ public final class DialogueYaml {
         d.id = plainId(str(m.get("id")));
         d.start = str(m.get("start")).isBlank() ? "start" : str(m.get("start"));
 
+        for (Object raw : asList(m.get("entries"))) {
+            DialogueDraft.Entry entry = new DialogueDraft.Entry();
+            if (!(raw instanceof Map<?, ?> em)) {
+                problems.add("entrée (« entries ») mal formée.");
+                continue;
+            }
+            entry.node = str(em.get("node"));
+            for (Object o : asList(em.get("conditions"))) {
+                entry.conditions.add(readEntry(o, entry.node, "condition d'entrée", problems));
+            }
+            d.entries.add(entry);
+        }
+
         Object nodesRaw = m.get("nodes");
         if (nodesRaw instanceof Map<?, ?> nodesMap) {
             for (Map.Entry<?, ?> e : nodesMap.entrySet()) {
@@ -155,6 +181,13 @@ public final class DialogueYaml {
             node.text = "";
         } else {
             node.text = str(text);
+        }
+        for (Object v : asList(nm.get("variants"))) {
+            if (v instanceof Map<?, ?> || v instanceof List<?>) {
+                problems.add("nœud « " + id + " » : variante non textuelle non prise en charge.");
+                continue;
+            }
+            node.variants.add(str(v));
         }
         for (Object co : asList(nm.get("choices"))) {
             node.choices.add(readChoice(co, id, problems));

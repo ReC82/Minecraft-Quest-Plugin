@@ -14,6 +14,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.DialogueEntry;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
@@ -44,6 +45,7 @@ import com.lodygames.rpgquest.item.delivery.CustomItemGiveCommands;
 import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.StarterToolKitService;
+import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.progress.AcceptOutcome;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
@@ -90,6 +92,9 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
     /** Joueurs dont un choix est en cours d'évaluation (issue #72 : anti-double-clic). */
     private final Set<UUID> choosing = ConcurrentHashMap.newKeySet();
+    /** Issue #158 : dernière réplique montrée par joueur et par nœud (pas de répétition immédiate). */
+    private final DialogueLineRotation lineRotation =
+            new DialogueLineRotation(bound -> java.util.concurrent.ThreadLocalRandom.current().nextInt(bound));
     private volatile DialogueRenderer renderer;
     /** Valeurs dynamiques substituées dans le texte d'un nœud juste avant son rendu (issue #24). */
     private volatile DialogueTextPlaceholders placeholders = DialogueTextPlaceholders.none();
@@ -137,10 +142,12 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     @Override
     public void stop() {
         sessions.clear();
+        lineRotation.clear();
     }
 
     public void unloadForPlayer(UUID playerId) {
         sessions.remove(playerId);
+        lineRotation.forget(playerId);
     }
 
     /** Écouteur de clic sur PNJ (entité nommée) à enregistrer sans condition, comme la connexion des quêtes. */
@@ -168,7 +175,28 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             return;
         }
         DialogueDefinition dialogue = dialogueOpt.get();
-        openNode(player, dialogue, dialogue.startNodeId());
+        entryNode(player, dialogue).thenAccept(nodeId -> openNode(player, dialogue, nodeId))
+                .exceptionally(error -> {
+                    logger.error("Échec de l'ouverture du dialogue {} pour {}", dialogueId, player.getUniqueId(), error);
+                    return null;
+                });
+    }
+
+    /**
+     * Issue #158 — nœud d'accueil réel de ce joueur : la première entrée ({@code entries:}) dont
+     * toutes les conditions passent, sinon {@code start}. Les entrées sont évaluées une à une, dans
+     * l'ordre du fichier, avec le même {@link #evaluateAll} que les choix — un PNJ dont la quête
+     * est terminée accueille donc le joueur selon l'état persisté de sa progression.
+     */
+    CompletableFuture<String> entryNode(Player player, DialogueDefinition dialogue) {
+        CompletableFuture<String> resolved = CompletableFuture.completedFuture(null);
+        for (DialogueEntry entry : dialogue.entries()) {
+            resolved = resolved.thenCompose(found -> found != null
+                    ? CompletableFuture.completedFuture(found)
+                    : evaluateAll(player, dialogue.id(), entry.conditions())
+                            .thenApply(passes -> passes ? entry.nodeId() : null));
+        }
+        return resolved.thenApply(found -> found != null ? found : dialogue.startNodeId());
     }
 
     private void openNode(Player player, DialogueDefinition dialogue, String nodeId) {
@@ -177,7 +205,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             sessions.put(player.getUniqueId(), new DialogueSession(dialogue.id(), node.id()));
             // Substitution juste avant le rendu, sur le thread principal : la valeur affichée est
             // donc lue au plus tard possible (état réel au moment où le joueur voit le texte).
-            renderer.render(player, dialogue, placeholders.apply(player, dialogue.id(), node), visible);
+            renderer.render(player, dialogue, placeholders.apply(player, dialogue.id(), withChosenLine(player, dialogue, node)),
+                    visible);
             // Issue #12 : c'est le SEUL endroit où un nœud est réellement affiché au joueur, donc
             // le seul endroit où « lu » a un sens. Ouvrir un PNJ ne présente que le nœud de
             // départ : les branches non parcourues restent non lues, et donc toujours signalées.
@@ -185,6 +214,13 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                 nodePresented.accept(player, dialogue.id(), node.id());
             }
         }));
+    }
+
+    /** Issue #158 : le nœud tel qu'affiché, avec une réplique tirée parmi {@code text} + {@code variants}. */
+    private DialogueNode withChosenLine(Player player, DialogueDefinition dialogue, DialogueNode node) {
+        List<LocalizedText> lines = node.lines();
+        int index = lineRotation.pick(player.getUniqueId(), dialogue.id() + "#" + node.id(), lines.size());
+        return index == 0 ? node : node.withSpeakerAndText(node.speaker(), lines.get(index));
     }
 
     /**
@@ -213,9 +249,11 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
      */
     public CompletableFuture<java.util.Set<String>> reachableNodes(Player player, DialogueDefinition dialogue) {
         java.util.Set<String> reachable = java.util.concurrent.ConcurrentHashMap.newKeySet();
-        reachable.add(dialogue.startNodeId());
-        return expand(player, dialogue, java.util.List.of(dialogue.startNodeId()), reachable)
-                .thenApply(ignored -> java.util.Set.copyOf(reachable));
+        // Issue #158 : on part du nœud d'accueil réel du joueur (entrée conditionnelle ou start).
+        return entryNode(player, dialogue).thenCompose(first -> {
+            reachable.add(first);
+            return expand(player, dialogue, java.util.List.of(first), reachable);
+        }).thenApply(ignored -> java.util.Set.copyOf(reachable));
     }
 
     /** Une vague du parcours en largeur : évalue les choix visibles des nœuds de la vague. */

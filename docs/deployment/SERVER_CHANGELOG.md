@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Dialogues : accueil selon l'état de la quête et répliques variées (#158)
+
+### Changement
+
+Deux clés YAML facultatives pour les dialogues : `entries:` (nœud d'accueil conditionnel, évalué
+dans l'ordre avant `start`) et `variants:` (répliques alternatives d'un nœud, sans répétition
+immédiate). Un dialogue sans ces clés se comporte exactement comme avant. Le panel PlugAdmin
+conserve ces clés lors d'un réenregistrement depuis `/dialogues/edit`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du panel (`scripts/plugadmin/deploy.sh`). Aucune
+migration, aucune configuration, aucun fichier de contenu modifié par le déploiement. Note : sur
+DEV, le dialogue `help.yml` du ticket a été supprimé par le propriétaire le 13/10/2026 (pierre
+tombale `content-tombstones/dialogues/help.yml`) : rien n'est recréé ; pour lui donner un accueil
+post-quête, publier un dialogue utilisant `entries:` (exemple dans la Bible).
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release panel).
+
+### Validation
+
+Tests ciblés `dialogue.*` + `DialogueYamlTest`. `PENDING MANUAL VALIDATION` : quête terminée →
+réplique de remerciement, plusieurs ouvertures → répliques différentes.
+
+### Rollback
+
+Réinstaller le JAR sauvegardé ; aucun dialogue existant n'utilise encore les nouvelles clés. L'ancien
+JAR **ignore** ces clés (clés inconnues non vérifiées) : un dialogue qui les utilise se recharge,
+mais retrouve l'ancien comportement (toujours `start`, toujours `text`).
+
+---
+
 ## 2026-10-14 - PlugAdmin : modèle d'histoire pour IA externe et pack Lily (#211)
 
 ### Changement

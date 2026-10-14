@@ -3228,7 +3228,8 @@ public final class BukkitAgentActions implements AgentActions {
         List<DialogueCatalog.LogicalDialogue> logical = new ArrayList<>();
         for (DialogueDefinition d : dialogueEngine.dialogues()) {
             logical.add(new DialogueCatalog.LogicalDialogue(
-                    d.id().toString().toLowerCase(Locale.ROOT), d.startNodeId(), orderedNodes(d)));
+                    d.id().toString().toLowerCase(Locale.ROOT), d.startNodeId(), orderedNodes(d),
+                    d.entries().stream().map(e -> e.nodeId()).toList()));
         }
 
         List<DialogueCatalog.LoadIssue> issues = new ArrayList<>();

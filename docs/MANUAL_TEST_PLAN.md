@@ -312,6 +312,27 @@ le résumé de récompenses de TC-014).
     format de quête ou la liste des types change sans que ce pack soit mis
     à jour en conséquence).
 
+### TC-015 — `CRAFT_ITEM` compte la quantité réellement fabriquée (issue #34)
+
+-   **Fonctionnalité testée :** `QuestCraftItemListener` (quantité par
+    type de clic, mesure au tick suivant pour le shift-clic).
+-   **Préconditions :** une quête active avec un objectif
+    `CRAFT_ITEM material: OAK_PLANKS amount: 20` (ex. publiée depuis
+    PlugAdmin), des bûches de chêne.
+-   **Actions et résultats attendus :**
+    1.  1 bûche, clic simple sur le résultat → progression **+4** (4/20).
+    2.  Second craft simple (curseur contenant déjà les planches) → **8/20**.
+    3.  Curseur tenant un autre objet, clic sur le résultat → rien n'est
+        fabriqué, progression inchangée.
+    4.  3 bûches, shift-clic → **+12**.
+    5.  Inventaire plein sauf une pile partielle de planches → shift-clic :
+        seule la quantité rangée est comptée.
+    6.  Objectif à 18/20, shift-clic de 4 bûches → l'objectif passe à 20/20,
+        jamais au-delà, l'étape se termine une seule fois.
+    7.  Déconnexion/reconnexion → le compteur n'est pas recompté.
+-   **Couverture automatisée :** `QuestCraftObjectiveTest`.
+-   **Statut :** `PENDING MANUAL VALIDATION`.
+
 ---
 
 ## 3. Dialogues (`/dialogue`) — étape 5
@@ -4043,6 +4064,7 @@ le résumé de récompenses de TC-014).
 | TC-011 | Prérequis, abandon, admin quêtes | | | |
 | TC-012 | Parcours intégral `crystal_hunt` | | | |
 | TC-013 | Journal de quêtes (`/quests`) | | | |
+| TC-015 | `CRAFT_ITEM` : quantité réellement fabriquée (#34) | | | |
 | TC-020 | Dialogue à distance, branchement conditionnel | | | |
 | TC-021 | PNJ cliquable et actions de dialogue | | | |
 | TC-040 | Registre d'objets (give/list/inspect) | | | |

@@ -623,6 +623,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   comptent, vérifiés explicitement ; une extraction qui sort plusieurs objets avance d'autant, sans
   jamais dépasser la quantité demandée. Obtenir l'objet autrement (coffre, `/give`, craft,
   ramassage) ou le laisser sortir par un entonnoir ne compte jamais.
+- **Fabrication** *(issue #34)* — `CRAFT_ITEM` avance du **nombre réel d'objets fabriqués** : une
+  recette de 4 planches compte 4. Clic simple : un craft si le curseur peut recevoir le résultat ;
+  shift-clic, touche numérique, main secondaire : quantité réellement rangée, mesurée au tick
+  suivant et plafonnée par les ingrédients de la grille (inventaire plein compté exactement) ;
+  clonage créatif : rien. Toujours plafonné à la quantité demandée.
 - **Découverte de waypoints** *(issue #185)* — type d'objectif `DISCOVER_WAYPOINT` (`amount`,
   `worlds` optionnel, `count-mode`). La progression vient de l'abonnement aux **premières**
   découvertes du système de waypoints, branché une seule fois au bootstrap : passer à proximité, se

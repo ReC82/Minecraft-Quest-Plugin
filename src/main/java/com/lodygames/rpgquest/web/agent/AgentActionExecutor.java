@@ -115,6 +115,9 @@ public final class AgentActionExecutor {
                         actions.cityArmMove(id, player, trimOrNull(action.param("by"))));
                 case CITY_PERIMETER_SHOW -> cityPlayerAction(action, actions::cityShowPerimeter);
                 case CITY_DELETE -> cityDelete(action);
+                case CITY_NPC_LINK -> cityLinkNpc(action);
+                case CITY_ARRIVAL_SET -> cityPlayerAction(action, actions::citySetArrival);
+                case CITY_ARRIVAL_CLEAR -> cityMutation(action, actions::cityClearArrival);
                 case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
@@ -1630,6 +1633,7 @@ public final class AgentActionExecutor {
                 row.put("width", c.width());
                 row.put("discoveries", c.discoveries());
                 row.put("overlaps", c.overlaps());
+                putAnchors(row, c.anchors());
                 rows.add(row);
             }
             List<Map<String, Object>> moves = new ArrayList<>();
@@ -1651,6 +1655,50 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " ville(s).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Issue #322 — PNJ central et arrivée, à plat dans la ligne de la ville. */
+    private static void putAnchors(Map<String, Object> row, AgentActions.CityAnchorsView a) {
+        if (a == null) {
+            return;
+        }
+        put(row, "centralNpcId", a.centralNpcId());
+        put(row, "npcDisplayName", a.npcDisplayName());
+        put(row, "npcStatus", a.npcStatus());
+        put(row, "npcSeverity", a.npcSeverity());
+        put(row, "npcMessage", a.npcMessage());
+        put(row, "npcWorld", a.npcWorld());
+        put(row, "npcX", a.npcX());
+        put(row, "npcY", a.npcY());
+        put(row, "npcZ", a.npcZ());
+        put(row, "npcLive", a.npcLive());
+        put(row, "npcDistance", a.npcDistance());
+        put(row, "arrivalWorld", a.arrivalWorld());
+        put(row, "arrivalX", a.arrivalX());
+        put(row, "arrivalY", a.arrivalY());
+        put(row, "arrivalZ", a.arrivalZ());
+        put(row, "arrivalYaw", a.arrivalYaw());
+        put(row, "arrivalPitch", a.arrivalPitch());
+        put(row, "arrivalStatus", a.arrivalStatus());
+        put(row, "arrivalSeverity", a.arrivalSeverity());
+        put(row, "arrivalMessage", a.arrivalMessage());
+    }
+
+    /** Une valeur absente n'est pas écrite : le panel lit « clé absente » comme « inconnu ». */
+    private static void put(Map<String, Object> row, String key, Object value) {
+        if (value != null) {
+            row.put(key, value);
+        }
+    }
+
+    /** {@code city.npc.link} : un npc_id vide ou absent retire le PNJ central. */
+    private CompletableFuture<AgentActionOutcome> cityLinkNpc(AgentAction action) {
+        String npc = trimOrNull(action.param("npc"));
+        if (npc != null && !NPC_ID.matcher(npc).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « npc » invalide : identifiant stable d'un PNJ (minuscules, chiffres, . _ -)."));
+        }
+        return cityMutation(action, id -> actions.cityLinkNpc(id, npc));
     }
 
     private CompletableFuture<AgentActionOutcome> cityMutation(AgentAction action,

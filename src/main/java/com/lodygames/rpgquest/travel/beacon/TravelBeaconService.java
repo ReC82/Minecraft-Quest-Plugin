@@ -887,13 +887,15 @@ public final class TravelBeaconService implements PluginService {
             player.sendMessage(MM.deserialize("<red>Ce village n'est plus disponible.</red>"));
             return;
         }
-        World world = plugin.getServer().getWorld(center.world());
+        // Issue #322 : l'arrivée distincte si elle est définie, sinon le centre (#151/#178).
+        VillageCenter.Arrival target = center.travelTarget();
+        World world = plugin.getServer().getWorld(target.world());
         if (world == null) {
             player.sendMessage(MM.deserialize("<red>Le monde de ce village n'est pas chargé.</red>"));
             return;
         }
         player.closeInventory();
-        player.teleportAsync(new Location(world, center.x(), center.y(), center.z(), center.yaw(), center.pitch()));
+        player.teleportAsync(new Location(world, target.x(), target.y(), target.z(), target.yaw(), target.pitch()));
         player.sendMessage(MM.deserialize(
                 "<gold>Voyage vers</gold> <white><name></white><gray>.</gray>",
                 Placeholder.unparsed("name", center.name())));

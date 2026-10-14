@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.travel.beacon.model.VillageCenter;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,12 +19,17 @@ public final class VillageCenterRepository {
 
     private static final String UPSERT = """
             INSERT INTO village_centers (id, name, world, x, y, z, yaw, pitch, active, created_at,
-                detection_distance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                detection_distance, central_npc_id, arrival_world, arrival_x, arrival_y, arrival_z,
+                arrival_yaw, arrival_pitch)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
                 name = excluded.name, world = excluded.world, x = excluded.x, y = excluded.y,
                 z = excluded.z, yaw = excluded.yaw, pitch = excluded.pitch, active = excluded.active,
-                detection_distance = excluded.detection_distance
+                detection_distance = excluded.detection_distance,
+                central_npc_id = excluded.central_npc_id, arrival_world = excluded.arrival_world,
+                arrival_x = excluded.arrival_x, arrival_y = excluded.arrival_y,
+                arrival_z = excluded.arrival_z, arrival_yaw = excluded.arrival_yaw,
+                arrival_pitch = excluded.arrival_pitch
             """;
     private static final String SELECT_ALL = "SELECT * FROM village_centers";
     private static final String DELETE = "DELETE FROM village_centers WHERE id = ?";
@@ -66,6 +72,21 @@ public final class VillageCenterRepository {
                 statement.setInt(9, center.active() ? 1 : 0);
                 statement.setString(10, center.createdAt().toString());
                 statement.setInt(11, center.detectionDistance());
+                statement.setString(12, center.hasCentralNpc() ? center.centralNpcId() : null);
+                VillageCenter.Arrival arrival = center.arrival();
+                if (arrival == null) {
+                    statement.setNull(13, Types.VARCHAR);
+                    for (int i = 14; i <= 18; i++) {
+                        statement.setNull(i, Types.DOUBLE);
+                    }
+                } else {
+                    statement.setString(13, arrival.world());
+                    statement.setDouble(14, arrival.x());
+                    statement.setDouble(15, arrival.y());
+                    statement.setDouble(16, arrival.z());
+                    statement.setDouble(17, arrival.yaw());
+                    statement.setDouble(18, arrival.pitch());
+                }
                 statement.executeUpdate();
                 return null;
             }
@@ -120,6 +141,19 @@ public final class VillageCenterRepository {
                 resultSet.getFloat("pitch"),
                 resultSet.getInt("active") != 0,
                 Instant.parse(resultSet.getString("created_at")),
-                resultSet.getInt("detection_distance"));
+                resultSet.getInt("detection_distance"),
+                resultSet.getString("central_npc_id"),
+                arrival(resultSet));
+    }
+
+    /** Issue #322 : une arrivée n'existe que complète (monde présent) ; sinon le voyage vise le centre. */
+    private static VillageCenter.Arrival arrival(ResultSet resultSet) throws SQLException {
+        String world = resultSet.getString("arrival_world");
+        if (world == null || world.isBlank()) {
+            return null;
+        }
+        return new VillageCenter.Arrival(world, resultSet.getDouble("arrival_x"),
+                resultSet.getDouble("arrival_y"), resultSet.getDouble("arrival_z"),
+                resultSet.getFloat("arrival_yaw"), resultSet.getFloat("arrival_pitch"));
     }
 }

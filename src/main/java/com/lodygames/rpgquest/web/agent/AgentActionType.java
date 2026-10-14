@@ -287,6 +287,12 @@ public enum AgentActionType {
     CITY_PERIMETER_SHOW("city.perimeter.show"),
     /** Issue #178 — supprimer une ville et ses découvertes (confirmation explicite). */
     CITY_DELETE("city.delete"),
+    /** Issue #322 — associer (ou retirer) le PNJ central d'une ville par son npc_id. */
+    CITY_NPC_LINK("city.npc.link"),
+    /** Issue #322 — l'arrivée de voyage devient la position actuelle d'un joueur connecté. */
+    CITY_ARRIVAL_SET("city.arrival.set"),
+    /** Issue #322 — revenir à l'arrivée au centre. */
+    CITY_ARRIVAL_CLEAR("city.arrival.clear"),
     DIALOGUE_LIST("dialogue.list"),
     DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
     DIALOGUE_NODE_CREATE("dialogue.node.create"),

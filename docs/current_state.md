@@ -74,7 +74,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > - **Claims** : portail Hub → Claims en `CLAIM_HOME` (arrivée dans son claim, sinon point sûr
 >   réparti loin des claims existants, #73/#208) ; aucun lit ni ancre ne fixe la réapparition (#220) ;
 >   Jo ne remet qu'un acte, jamais au sol (`HAS_INVENTORY_SPACE`, #72/#85) ; phantoms et tous les
->   `Enemy` exclus du monde Claims (#295).
+>   `Enemy` exclus du monde Claims (#295) ; une casse/pose refusée (hors claim, claim
+>   d'autrui, Hub, zone protégée) ne donne plus ni XP ni progrès de quête : protections en `LOW`,
+>   XP en `HIGHEST`, quêtes et blocs posés en `MONITOR` (#91).
 > - **Voyage** : cooldown d'objet de retour suspendu hors ligne (V32, #221) ; « Dernier waypoint »
 >   dans la borne (#215).
 > - **Quêtes** : publication à chaud = index et écouteurs reconstruits (SMELT_ITEM, DISCOVER_WAYPOINT,

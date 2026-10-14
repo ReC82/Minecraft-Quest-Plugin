@@ -18,6 +18,9 @@ import java.util.concurrent.TimeUnit;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.inventory.ItemStack;
@@ -133,5 +136,31 @@ class MiningXpListenerTest {
 
         assertEquals(afterFirstBreak, progression.totalXp(player.getUniqueId(), SkillType.MINING),
                 "reposer puis re-casser ne doit ajouter aucune XP supplémentaire");
+    }
+
+    /**
+     * Issue #91 : une protection (claim, hub, zone) qui annule la casse en priorité LOW doit
+     * l'emporter sur l'XP, même enregistrée APRÈS le listener d'XP (l'ordre d'enregistrement du
+     * bootstrap ne compte pas, seule la priorité Bukkit tranche).
+     */
+    @Test
+    void aBreakCancelledByAProtectionRegisteredLaterGrantsNoMiningXp() throws Exception {
+        server.getPluginManager().registerEvents(listener, plugin);
+        server.getPluginManager().registerEvents(new Listener() {
+            @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+            public void refuse(BlockBreakEvent event) {
+                event.setCancelled(true);
+            }
+        }, plugin);
+        Block block = world.getBlockAt(0, 64, 0);
+        block.setType(Material.STONE);
+
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
+        server.getPluginManager().callEvent(event);
+        awaitDatabaseIdle();
+
+        assertTrue(event.isCancelled());
+        assertEquals(0L, progression.totalXp(player.getUniqueId(), SkillType.MINING),
+                "une casse refusée par une protection ne doit créditer aucune XP");
     }
 }

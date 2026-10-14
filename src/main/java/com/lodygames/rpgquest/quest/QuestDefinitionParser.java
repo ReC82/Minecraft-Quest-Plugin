@@ -22,6 +22,7 @@ import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.RewardType;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -57,6 +58,7 @@ final class QuestDefinitionParser {
         String giver = parseGiver(section, errors);
         Material icon = parseIcon(section, errors);
         boolean repeatable = parseRepeatable(section, errors);
+        Duration cooldown = parseCooldown(section, repeatable, errors);
         boolean secret = parseBoolean(section, "secret", errors);
         List<NamespacedKey> prerequisites = parsePrerequisites(section, id, errors);
         List<QuestStep> steps = parseSteps(section, errors);
@@ -70,7 +72,7 @@ final class QuestDefinitionParser {
         try {
             QuestDefinition quest = new QuestDefinition(
                     id, title, description, category, icon, repeatable, secret, prerequisites, steps, rewards,
-                    variables, giver);
+                    variables, giver, cooldown);
             return ParseResult.success(quest);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new QuestLoadIssue(fileName, e.getMessage())));
@@ -170,6 +172,59 @@ final class QuestDefinitionParser {
 
     private boolean parseRepeatable(ConfigurationSection section, List<String> errors) {
         return parseBoolean(section, "repeatable", errors);
+    }
+
+    /** Plafond du délai de ré-acceptation : au-delà, c'est une quête unique, pas renouvelable. */
+    static final Duration MAX_COOLDOWN = Duration.ofDays(30);
+
+    /**
+     * {@code cooldown:} optionnel (issue #13) : entier de secondes, ou nombre suivi d'une unité
+     * {@code s}, {@code m}, {@code h}, {@code d} ({@code 30m}, {@code 20h}, {@code 1d}). N'a de sens
+     * que pour une quête {@code repeatable: true} — sinon c'est une erreur, pas un réglage ignoré.
+     */
+    private Duration parseCooldown(ConfigurationSection section, boolean repeatable, List<String> errors) {
+        if (!section.isSet("cooldown")) {
+            return Duration.ZERO;
+        }
+        Duration cooldown = parseDuration(String.valueOf(section.get("cooldown")));
+        if (cooldown == null) {
+            errors.add("« cooldown » invalide : \"" + section.get("cooldown")
+                    + "\" (attendu : secondes, ou 30m, 20h, 1d…).");
+            return Duration.ZERO;
+        }
+        if (cooldown.compareTo(MAX_COOLDOWN) > 0) {
+            errors.add("« cooldown » ne peut pas dépasser 30 jours (valeur : " + section.get("cooldown") + ").");
+            return Duration.ZERO;
+        }
+        if (!cooldown.isZero() && !repeatable) {
+            errors.add("« cooldown » n'a de sens que pour une quête « repeatable: true ».");
+            return Duration.ZERO;
+        }
+        return cooldown;
+    }
+
+    /** {@code null} si la valeur n'est pas un délai valide (négatif compris). */
+    static Duration parseDuration(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (value.isEmpty()) {
+            return null;
+        }
+        char unit = value.charAt(value.length() - 1);
+        long factor = switch (unit) {
+            case 's' -> 1;
+            case 'm' -> 60;
+            case 'h' -> 3600;
+            case 'd' -> 86400;
+            default -> Character.isDigit(unit) ? 1 : -1;
+        };
+        if (factor < 0) {
+            return null;
+        }
+        String digits = Character.isDigit(unit) ? value : value.substring(0, value.length() - 1).trim();
+        if (digits.isEmpty() || !digits.chars().allMatch(Character::isDigit) || digits.length() > 9) {
+            return null;
+        }
+        return Duration.ofSeconds(Long.parseLong(digits) * factor);
     }
 
     /** Booléen optionnel, {@code false} par défaut ; une valeur non booléenne est signalée comme erreur. */

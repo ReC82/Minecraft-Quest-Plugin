@@ -130,6 +130,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                     "quest.already-active", Placeholder.parsed("quest", questName)));
             case NOT_REPEATABLE -> player.sendMessage(messages().format(
                     "quest.not-repeatable", Placeholder.parsed("quest", questName)));
+            case ON_COOLDOWN -> progressEngine.showCooldown(player, questId, outcome.retryAfter());
             case MISSING_PREREQUISITES -> player.sendMessage(messages().format(
                     "quest.prerequisites-missing",
                     Placeholder.parsed("quest", questName),

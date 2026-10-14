@@ -1,12 +1,21 @@
 package com.lodygames.rpgquest.quest.progress;
 
+import java.time.Duration;
 import java.util.List;
 import org.bukkit.NamespacedKey;
 
-public record AcceptOutcome(Result result, List<NamespacedKey> missingPrerequisites) {
+/**
+ * Résultat d'une acceptation. {@code retryAfter} n'est renseigné (non nul) que pour
+ * {@link Result#ON_COOLDOWN} : temps restant avant de pouvoir reprendre la quête (issue #13).
+ */
+public record AcceptOutcome(Result result, List<NamespacedKey> missingPrerequisites, Duration retryAfter) {
 
     public enum Result {
-        ACCEPTED, UNKNOWN_QUEST, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES
+        ACCEPTED, UNKNOWN_QUEST, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES, ON_COOLDOWN
+    }
+
+    public AcceptOutcome(Result result, List<NamespacedKey> missingPrerequisites) {
+        this(result, missingPrerequisites, null);
     }
 
     public static AcceptOutcome accepted() {
@@ -27,5 +36,9 @@ public record AcceptOutcome(Result result, List<NamespacedKey> missingPrerequisi
 
     public static AcceptOutcome missingPrerequisites(List<NamespacedKey> missing) {
         return new AcceptOutcome(Result.MISSING_PREREQUISITES, missing);
+    }
+
+    public static AcceptOutcome onCooldown(Duration retryAfter) {
+        return new AcceptOutcome(Result.ON_COOLDOWN, List.of(), retryAfter);
     }
 }

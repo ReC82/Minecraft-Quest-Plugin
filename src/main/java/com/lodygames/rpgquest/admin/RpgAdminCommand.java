@@ -19,6 +19,7 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.progress.CooldownText;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.spawn.SpawnPoint;
 import com.lodygames.rpgquest.spawn.SpawnService;
@@ -2323,6 +2324,11 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                                 + "<gray>— ajouter</gray> <yellow>force</yellow> <gray>pour passer outre.</gray>",
                         Placeholder.unparsed("m", outcome.missingPrerequisites().stream()
                                 .map(NamespacedKey::toString).collect(Collectors.joining(", ")))));
+                case ON_COOLDOWN -> sender.sendMessage(MM.deserialize(
+                        "<yellow>Quête renouvelable encore en recharge pour <p> (<t>) :</yellow> <white><q></white> "
+                                + "<gray>— </gray><yellow>/rpgadmin quest reset</yellow><gray> pour passer outre.</gray>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString()),
+                        Placeholder.unparsed("t", CooldownText.format(outcome.retryAfter()))));
                 case UNKNOWN_QUEST -> sender.sendMessage(unknownQuest(args[3]));
             }
         }));

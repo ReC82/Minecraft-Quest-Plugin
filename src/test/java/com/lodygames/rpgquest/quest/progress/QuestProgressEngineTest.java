@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
@@ -24,6 +25,7 @@ import com.lodygames.rpgquest.economy.QuestRewardReceipt;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
@@ -369,6 +371,64 @@ class QuestProgressEngineTest {
 
         AcceptOutcome secondAccept = engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertEquals(AcceptOutcome.Result.NOT_REPEATABLE, secondAccept.result());
+    }
+
+    // ---- Issue #13 : délai de ré-acceptation des quêtes renouvelables ---------------------
+
+    @Test
+    void repeatableQuestWithCooldownIsRefusedUntilTheDelayHasElapsed() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "cooldown.yml", 1, true, null, "20h");
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        var record = progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(QuestState.COMPLETED, record.orElseThrow().state());
+
+        QuestProgressEngine.Availability availability =
+                engine.availability(player.getUniqueId(), KILL_QUEST_TWO, false).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(QuestProgressEngine.Availability.Status.ON_COOLDOWN, availability.status());
+
+        AcceptOutcome again = engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(AcceptOutcome.Result.ON_COOLDOWN, again.result());
+        assertTrue(again.retryAfter().compareTo(java.time.Duration.ofHours(19)) > 0, "≈ 20 h restantes");
+        assertTrue(again.retryAfter().compareTo(java.time.Duration.ofHours(20)) <= 0);
+        // Refusé = rien d'écrit : la quête reste terminée, aucune progression recréée.
+        assertEquals(QuestState.COMPLETED, progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().state());
+    }
+
+    @Test
+    void repeatableQuestWithoutCooldownCanBeTakenAgainImmediately() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "repeatable.yml", 1, true, null);
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        assertEquals(QuestState.COMPLETED, progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().state());
+
+        AcceptOutcome again = engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(AcceptOutcome.Result.ACCEPTED, again.result());
+    }
+
+    @Test
+    void remainingCooldownIsZeroOnceElapsedOrWithoutDelay() {
+        QuestDefinition withDelay = questEngine.find(KILL_QUEST).orElseThrow();
+        withDelay = new QuestDefinition(withDelay.id(), withDelay.title(), withDelay.description(), withDelay.category(),
+                withDelay.icon(), true, false, List.of(), withDelay.steps(), withDelay.rewards(), Map.of(), null,
+                java.time.Duration.ofHours(2));
+        java.time.Instant completed = java.time.Instant.parse("2026-10-14T10:00:00Z");
+
+        assertEquals(java.time.Duration.ofMinutes(30), QuestProgressEngine.remainingCooldown(
+                withDelay, completed, completed.plus(java.time.Duration.ofMinutes(90))));
+        assertEquals(java.time.Duration.ZERO, QuestProgressEngine.remainingCooldown(
+                withDelay, completed, completed.plus(java.time.Duration.ofHours(2))));
+        assertEquals(java.time.Duration.ZERO, QuestProgressEngine.remainingCooldown(withDelay, null, completed));
+        assertEquals(java.time.Duration.ZERO, QuestProgressEngine.remainingCooldown(
+                questEngine.find(KILL_QUEST).orElseThrow(), completed, completed));
     }
 
     @Test
@@ -818,12 +878,20 @@ class QuestProgressEngineTest {
     }
 
     private void writeKillQuest(NamespacedKey id, String fileName, int amount, boolean repeatable, String prerequisite) throws Exception {
+        writeKillQuest(id, fileName, amount, repeatable, prerequisite, null);
+    }
+
+    private void writeKillQuest(NamespacedKey id, String fileName, int amount, boolean repeatable, String prerequisite,
+                                String cooldown) throws Exception {
         StringBuilder yaml = new StringBuilder();
         yaml.append("id: ").append(id).append('\n');
         yaml.append("title: \"Titre\"\n");
         yaml.append("description: \"Description\"\n");
         yaml.append("category: test\n");
         yaml.append("repeatable: ").append(repeatable).append('\n');
+        if (cooldown != null) {
+            yaml.append("cooldown: ").append(cooldown).append('\n');
+        }
         if (prerequisite != null) {
             yaml.append("prerequisites:\n  - ").append(prerequisite).append('\n');
         }

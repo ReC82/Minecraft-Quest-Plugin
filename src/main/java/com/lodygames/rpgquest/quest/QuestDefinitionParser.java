@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
+import com.lodygames.rpgquest.quest.model.HeartReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
@@ -570,7 +571,32 @@ final class QuestDefinitionParser {
                 Integer amount = parsePositiveInt(section, "amount", context, errors);
                 yield amount != null ? new MoneyReward(amount) : null;
             }
+            case HEART -> parseHeartReward(section, context, errors);
         };
+    }
+
+    /**
+     * {@code HEART} (issue #166) : {@code amount} facultatif (1 cœur par défaut), {@code key}
+     * facultative (droit propre à la quête par défaut). Toute valeur hors bornes est refusée au
+     * chargement plutôt que silencieusement ramenée dans l'intervalle.
+     */
+    private HeartReward parseHeartReward(ConfigurationSection section, String context, List<String> errors) {
+        Integer hearts = section.isSet("amount") ? parsePositiveInt(section, "amount", context, errors) : Integer.valueOf(1);
+        if (hearts == null) {
+            return null;
+        }
+        if (hearts > HeartReward.MAX_HEARTS_PER_REWARD) {
+            errors.add(context + ": « amount » ne peut pas dépasser " + HeartReward.MAX_HEARTS_PER_REWARD
+                    + " cœurs (plafond technique de la vie maximale), valeur trouvée : " + hearts);
+            return null;
+        }
+        String key = section.getString("key");
+        if (key != null && !HeartReward.GRANT_KEY.matcher(key).matches()) {
+            errors.add(context + ": « key » invalide « " + key + " » (attendu : minuscules, chiffres, "
+                    + "« _ . : - », 128 caractères au plus).");
+            return null;
+        }
+        return new HeartReward(hearts, key);
     }
 
     private Map<String, String> parseVariables(ConfigurationSection section, List<String> errors) {

@@ -18,6 +18,12 @@ public record ProgressionConfig(
         int miningBlockXp,
         int farmingHarvestXp,
         int fishingCatchXp,
-        int explorationZoneXp
+        int explorationZoneXp,
+        /**
+         * Plafond gameplay des cœurs supplémentaires gagnés par récompense de quête (issue #166) ;
+         * {@code 0} = aucun plafond. Les droits au-delà restent enregistrés : relever le plafond
+         * les rend effectifs, sans rien rejouer.
+         */
+        int maxBonusHearts
 ) {
 }

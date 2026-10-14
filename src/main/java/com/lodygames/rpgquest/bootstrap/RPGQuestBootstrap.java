@@ -51,6 +51,7 @@ import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.MarketRepository;
 import com.lodygames.rpgquest.database.PortalCooldownRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
+import com.lodygames.rpgquest.database.HeartGrantRepository;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
 import com.lodygames.rpgquest.database.ResourceNodeRepository;
 import com.lodygames.rpgquest.database.StoreDeliveryRepository;
@@ -68,6 +69,7 @@ import com.lodygames.rpgquest.economy.market.MarketService;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
+import com.lodygames.rpgquest.health.HeartBonusService;
 import com.lodygames.rpgquest.hub.HubGuideRegistry;
 import com.lodygames.rpgquest.hub.HubComfortService;
 import com.lodygames.rpgquest.hub.HubRescueFallbackService;
@@ -518,6 +520,13 @@ public final class RPGQuestBootstrap {
                 economyService);
         registry.start(questProgressEngine);
         registry.start(new PlayerListenerService(plugin, questProgressEngine.connectionListener()));
+        // Issue #166 : cœurs de vie maximum gagnés par quête, recalculés depuis la base à chaque
+        // connexion et réappliqués après chaque réapparition.
+        var heartBonusService = new HeartBonusService(plugin,
+                new HeartGrantRepository(databaseService.databaseManager()),
+                questMessagesService, () -> configService.current().progression().maxBonusHearts());
+        questProgressEngine.setHeartBonusService(heartBonusService);
+        registry.start(new PlayerListenerService(plugin, heartBonusService));
 
         ProgressionRepository progressionRepository = new ProgressionRepository(databaseService.databaseManager());
         progressionService = new ProgressionService(

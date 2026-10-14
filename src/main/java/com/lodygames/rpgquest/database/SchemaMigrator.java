@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 35;
+    public static final int CURRENT_VERSION = 36;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -73,7 +73,9 @@ public final class SchemaMigrator {
             new SchemaMigration(34, "encounter_sites (PNJ récurrents par instance de biome, issue #13)",
                     SchemaMigrator::applyV34),
             new SchemaMigration(35, "textes libres en TEXT sur MariaDB (issue #354)",
-                    SchemaMigrator::applyV35));
+                    SchemaMigrator::applyV35),
+            new SchemaMigration(36, "player_heart_grants (cœurs de vie maximum, issue #166)",
+                    SchemaMigrator::applyV36));
 
     private SchemaMigrator() {
     }
@@ -1377,6 +1379,28 @@ public final class SchemaMigrator {
             for (String ddl : dialect.freeTextWidenings()) {
                 statement.execute(ddl);
             }
+        }
+    }
+
+    private static void applyV36(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #166 — droits aux cœurs de vie maximum. Une ligne = un droit accordé, UNE fois par
+        // joueur et par clé stable (quête, ou source partagée comme une ville) : la clé primaire
+        // composite rend le second octroi impossible, même sous deux remises concurrentes
+        // (INSERT OR IGNORE). Le bonus appliqué en jeu est toujours RECALCULÉ depuis cette table ;
+        // aucun total n'est stocké ailleurs. Comme quest_reward_grants, volontairement SANS clé
+        // étrangère vers player_profiles : un profil supprimé puis recréé ne doit pas rouvrir les
+        // droits déjà consommés.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS player_heart_grants (
+                        player_uuid TEXT NOT NULL,
+                        grant_key TEXT NOT NULL,
+                        hearts INTEGER NOT NULL,
+                        quest_id TEXT NOT NULL,
+                        granted_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, grant_key)
+                    )
+                    """));
         }
     }
 }

@@ -131,6 +131,11 @@ progression:
   # XP RPG (piste globale) accordée une seule fois à la fin de chaque quête,
   # en plus de la récompense « experience » vanilla éventuelle de la quête.
   quest-completion-xp: 50
+  # Plafond des cœurs de vie maximum gagnés par récompense de quête « HEART »
+  # (issue #166). 0 = aucun plafond de gameplay (seul le plafond serveur
+  # attribute.maxHealth.max de spigot.yml s'applique, 1024 PV par défaut).
+  # Les cœurs gagnés au-delà restent acquis et s'activent si le plafond monte.
+  max-bonus-hearts: 0
   sources:
     # Montant plat par action ; voir docs/PROGRESSION.md pour le modèle
     # d'équilibrage complet (pourquoi plat, pas par matériau/mob).

@@ -63,6 +63,13 @@ quest:
   reward-line-special: "<yellow> + Récompense spéciale</yellow>"
   reward-money-credited: "<gold>Récompense de</gold> <white><quest></white> <gold>:</gold> <yellow>+<amount> <currency></yellow> <gray>— solde :</gray> <white><balance></white>"
   reward-money-failed: "<red>Ta récompense en <currency> n'a pas pu être créditée. Rien n'a été perdu de ta progression : signale-le à un administrateur.</red>"
+  # Issue #166 : récompense « Cœur supplémentaire ». Envoyés APRÈS l'écriture du droit en base,
+  # comme le crédit monétaire. <hearts> = cœurs gagnés, <total> = vie maximale en cœurs après
+  # application (toutes sources : équipement, effets, autres plugins compris).
+  reward-heart-granted: "<red>❤</red> <gold>Récompense de</gold> <white><quest></white> <gold>:</gold> <red>+<hearts> cœur(s)</red> <gray>— vie maximale :</gray> <white><total> cœurs</white>"
+  reward-heart-already: "<gray>Tu as déjà reçu le cœur de</gray> <white><quest></white><gray> : il ne s'obtient qu'une fois.</gray>"
+  reward-heart-capped: "<gold>Cœur de</gold> <white><quest></white> <gold>acquis</gold><gray>, mais le plafond de <cap> cœurs supplémentaires est atteint : il s'activera si le plafond est relevé.</gray>"
+  reward-heart-failed: "<red>Ton cœur supplémentaire n'a pas pu être enregistré. Signale-le à un administrateur.</red>"
   # Issue #318 : récompenses d'objets qui ne tiennent pas dans l'inventaire. Rien n'est accordé ni
   # jeté au sol : la quête attend (journal « Prête à remettre ») et se termine d'elle-même dès que
   # le joueur a libéré <slots> emplacement(s). turn-in-inventory-full : remise demandée (PNJ,

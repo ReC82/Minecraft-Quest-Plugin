@@ -526,10 +526,13 @@ public final class ConfigValidator {
         int farmingHarvestXp = nonNegativeInt(progression, "sources.farming-harvest-xp", 4);
         int fishingCatchXp = nonNegativeInt(progression, "sources.fishing-catch-xp", 10);
         int explorationZoneXp = nonNegativeInt(progression, "sources.exploration-zone-xp", 100);
+        // Issue #166 : plafond GAMEPLAY des cœurs gagnés par quête (0 = aucun plafond). Le plafond
+        // technique, lui, reste celui du serveur (attribute.maxHealth.max de spigot.yml).
+        int maxBonusHearts = nonNegativeInt(progression, "max-bonus-hearts", 0);
 
         return new ProgressionConfig(baseXp, growthFactor, maxLevel, globalMirrorRatio, maxGrantsPerMinute,
                 displayMode, keepVanillaXp, questCompletionXp, combatKillXp, miningBlockXp, farmingHarvestXp,
-                fishingCatchXp, explorationZoneXp);
+                fishingCatchXp, explorationZoneXp, maxBonusHearts);
     }
 
     private static int nonNegativeInt(ConfigurationSection section, String key, int defaultValue)
@@ -543,7 +546,7 @@ public final class ConfigValidator {
     }
 
     private static ProgressionConfig defaultProgression() {
-        return new ProgressionConfig(100L, 1.15, 100, 0.5, 60, DisplayMode.ACTION_BAR, true, 50, 15, 5, 4, 10, 100);
+        return new ProgressionConfig(100L, 1.15, 100, 0.5, 60, DisplayMode.ACTION_BAR, true, 50, 15, 5, 4, 10, 100, 0);
     }
 
     private static BackpackConfig validateBackpacks(ConfigurationSection section) throws ConfigValidationException {

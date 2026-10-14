@@ -831,6 +831,28 @@ class SchemaMigratorTest {
         }
     }
 
+    @Test
+    void heartGrantsAreUniquePerPlayerAndGrantKey() throws Exception {
+        // Issue #166 : la clé primaire (player_uuid, grant_key) est la garantie « un cœur par
+        // joueur et par source » — un second INSERT OR IGNORE ne change rien, même sous une autre quête.
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + tempDir.resolve("schema-heart-grants.db"))) {
+            SchemaMigrator.migrate(connection);
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                String insert = "INSERT OR IGNORE INTO player_heart_grants "
+                        + "(player_uuid, grant_key, hearts, quest_id, granted_at) VALUES ";
+                assertEquals(1, statement.executeUpdate(insert + "('p1', 'city:a', 1, 'rpgquest:q1', 't')"));
+                assertEquals(0, statement.executeUpdate(insert + "('p1', 'city:a', 1, 'rpgquest:q2', 't')"));
+                assertEquals(1, statement.executeUpdate(insert + "('p2', 'city:a', 1, 'rpgquest:q1', 't')"));
+                try (ResultSet rs = statement.executeQuery("SELECT COUNT(*) FROM player_heart_grants")) {
+                    rs.next();
+                    assertEquals(2, rs.getInt(1));
+                }
+            }
+        }
+    }
+
     private int userVersion(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {

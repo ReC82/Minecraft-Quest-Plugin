@@ -62,7 +62,9 @@ import org.bukkit.inventory.PlayerInventory;
  * générées, les blocs construits (le claim disparaît en tant que donnée de protection, la zone
  * physique reste). L'économie, les backpacks/entitlements et les annonces de marché sont
  * <strong>conservés volontairement</strong> (hors parcours d'onboarding, réinitialisables via leurs
- * propres commandes admin si besoin).</p>
+ * propres commandes admin si besoin). Les cœurs de vie maximum gagnés par quête
+ * ({@code player_heart_grants}, issue #166) sont conservés pour la même raison : un reset ne doit
+ * jamais permettre de regagner un droit déjà consommé.</p>
  *
  * <p><strong>Inventaire</strong> : selon la portée, soit seuls les objets personnalisés RPGQuest
  * (identifiés par PDC via {@link YamlCustomItemRegistry}, jamais par matériau) sont retirés, soit

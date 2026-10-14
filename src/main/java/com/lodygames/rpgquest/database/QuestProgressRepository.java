@@ -198,11 +198,42 @@ public final class QuestProgressRepository {
      */
     public CompletableFuture<List<String>> completeQuestWithMoneyDebts(
             UUID playerUuid, NamespacedKey questId, String completionToken, List<Long> amounts) {
+        return completeQuest(playerUuid, questId, completionToken, amounts, List.of())
+                .thenApply(QuestCompletion::moneyGrantIds);
+    }
+
+    /** Droit à un cœur que la complétion doit accorder (issue #166). */
+    public record HeartGrantRequest(String grantKey, int hearts) {
+    }
+
+    /**
+     * Sort d'un droit à un cœur dans une complétion.
+     *
+     * @param granted    {@code true} si le droit vient d'être accordé, {@code false} s'il l'était déjà
+     * @param totalAfter total des cœurs accordés au joueur après cette complétion
+     */
+    public record HeartGrantOutcome(String grantKey, int hearts, boolean granted, int totalAfter) {
+    }
+
+    /** Ce que la complétion a réellement écrit. */
+    public record QuestCompletion(List<String> moneyGrantIds, List<HeartGrantOutcome> hearts) {
+    }
+
+    /**
+     * {@link #completeQuestWithMoneyDebts} étendu aux droits aux cœurs (issue #166) : complétion,
+     * dettes monétaires <strong>et</strong> droits aux cœurs dans la même transaction. Un droit
+     * déjà détenu (quête répétable, clé partagée avec une autre quête, remise rejouée) n'est pas
+     * réécrit et revient avec {@code granted = false}.
+     */
+    public CompletableFuture<QuestCompletion> completeQuest(UUID playerUuid, NamespacedKey questId,
+                                                            String completionToken, List<Long> amounts,
+                                                            List<HeartGrantRequest> hearts) {
         if (completionToken == null || completionToken.isBlank()) {
             return CompletableFuture.failedFuture(new IllegalArgumentException(
                     "« completionToken » est obligatoire : c'est la racine de l'identité de paiement."));
         }
         List<Long> owed = List.copyOf(amounts);
+        List<HeartGrantRequest> heartRequests = List.copyOf(hearts);
         return database.execute(connection -> {
             boolean previousAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
@@ -219,8 +250,15 @@ public final class QuestProgressRepository {
                         grantIds.add(grantId);
                     }
                 }
+                List<HeartGrantOutcome> heartOutcomes = new ArrayList<>();
+                for (HeartGrantRequest request : heartRequests) {
+                    boolean granted = HeartGrantRepository.insertGrant(connection, dialect, playerUuid,
+                            request.grantKey(), request.hearts(), questId.toString());
+                    heartOutcomes.add(new HeartGrantOutcome(request.grantKey(), request.hearts(), granted,
+                            HeartGrantRepository.totalHearts(connection, playerUuid)));
+                }
                 connection.commit();
-                return grantIds;
+                return new QuestCompletion(grantIds, heartOutcomes);
             } catch (SQLException | RuntimeException e) {
                 connection.rollback();
                 throw e;

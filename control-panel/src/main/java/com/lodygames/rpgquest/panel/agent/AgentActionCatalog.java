@@ -392,6 +392,16 @@ public final class AgentActionCatalog {
                 "Activer ou désactiver un modèle de PNJ récurrent", "encounter.list");
         addSensitiveWrite("encounter.template.delete", Permission.NPC_DELETE, false,
                 "Supprimer un modèle de PNJ récurrent", "encounter.list");
+        // Issue #369 — catalogues de quêtes secondaires. Ils ne référencent que des quêtes
+        // existantes : écriture de contenu de quêtes. Supprimer efface un fichier (sauvegardé) et
+        // peut dissocier des modèles : sensible, avec confirmation.
+        add("quest.catalog.list", Permission.NPC_READ, false, false, "Rafraîchir les catalogues de quêtes");
+        addContentWrite("quest.catalog.create", Permission.QUEST_CONTENT_WRITE,
+                "Créer un catalogue de quêtes secondaires", "quest.catalog.list");
+        addContentWrite("quest.catalog.update", Permission.QUEST_CONTENT_WRITE,
+                "Modifier un catalogue de quêtes secondaires", "quest.catalog.list");
+        addSensitiveWrite("quest.catalog.delete", Permission.QUEST_CONTENT_WRITE, false,
+                "Supprimer un catalogue de quêtes secondaires", "quest.catalog.list", "encounter.list");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         add("mob.list", Permission.MOB_READ, false, false,
                 "Rafraîchir le catalogue des profils de mob spécial/boss (issue #169)");
@@ -968,6 +978,23 @@ public final class AgentActionCatalog {
                     params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
                 } else if ("true".equals(trim(form.get("acknowledge_sites")))) {
                     params.put("acknowledge_sites", "true");
+                }
+            }
+            case "quest.catalog.create", "quest.catalog.update" -> {
+                // Issue #369 : contrôle de forme ; le serveur revalide avec le parseur des fichiers.
+                String error = questCatalogParams(form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "quest.catalog.delete" -> {
+                String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(id).matches()) {
+                    return Validation.fail("Identifiant de catalogue manquant ou invalide.");
+                }
+                params.put("id", id);
+                if ("true".equals(trim(form.get("detach")))) {
+                    params.put("detach", "true");
                 }
             }
             case "encounter.retry", "encounter.disable", "encounter.remove" -> {
@@ -2328,7 +2355,90 @@ public final class AgentActionCatalog {
         if (!skin.isEmpty()) {
             params.put("skin_url", skin);
         }
+        List<String> catalogs = splitWords(form.get("quest_catalogs")).stream()
+                .map(v -> v.toLowerCase(java.util.Locale.ROOT)).toList();
+        if (!catalogs.stream().allMatch(c -> NPC_ID.matcher(c).matches())) {
+            return "Catalogues de quêtes : identifiants séparés par des virgules.";
+        }
+        params.put("quest_catalogs", String.join(",", catalogs));
         params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+        return null;
+    }
+
+    private static final java.util.regex.Pattern QUEST_REF =
+            java.util.regex.Pattern.compile("([a-z0-9._-]{1,64}:)?[a-z0-9._/-]{1,128}");
+
+    /**
+     * Issue #369 — champs d'un catalogue. Les lignes d'entrées arrivent numérotées
+     * ({@code entry_<n>_quest}, {@code _weight}, {@code _enabled}, {@code _order}, {@code _remove}) ;
+     * elles sont triées par ordre saisi puis par position, les lignes vides ou retirées ignorées,
+     * et transmises en {@code quête|poids|on/off} séparés par des virgules.
+     *
+     * @return message d'erreur, ou {@code null} si le formulaire peut partir
+     */
+    static String questCatalogParams(Map<String, String> form, Map<String, String> params) {
+        String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+        if (!NPC_ID.matcher(id).matches()) {
+            return "Identifiant de catalogue manquant ou invalide (minuscules, chiffres, « . _ - »).";
+        }
+        params.put("id", id);
+        String displayName = trim(form.get("display_name"));
+        if (displayName.isEmpty() || displayName.length() > 64 || displayName.indexOf('<') >= 0
+                || displayName.indexOf('\n') >= 0) {
+            return "Nom obligatoire : texte simple de 64 caractères au plus, sans balise.";
+        }
+        params.put("display_name", displayName);
+        String description = trim(form.get("description"));
+        if (description.length() > 256 || description.indexOf('\n') >= 0) {
+            return "Description trop longue (256 caractères) ou sur plusieurs lignes.";
+        }
+        if (!description.isEmpty()) {
+            params.put("description", description);
+        }
+        String avoid = trim(form.get("avoid_recent"));
+        if (!avoid.isEmpty() && !avoid.matches("\\d{1,2}")) {
+            return "« Éviter les dernières quêtes » doit être un entier entre 0 et 10.";
+        }
+        if (!avoid.isEmpty()) {
+            params.put("avoid_recent", avoid);
+        }
+        params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+
+        record Row(int order, int position, String value) {
+        }
+        List<Row> rows = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int n = 0; n < 200; n++) {
+            String prefix = "entry_" + n + "_";
+            if (!form.containsKey(prefix + "quest")) {
+                continue;
+            }
+            String quest = trim(form.get(prefix + "quest")).toLowerCase(java.util.Locale.ROOT);
+            // « Titre — rpgquest:id » (choix dans la liste de recherche) : seul l'identifiant compte.
+            int dash = quest.lastIndexOf(' ');
+            if (dash >= 0) {
+                quest = quest.substring(dash + 1);
+            }
+            if (quest.isEmpty() || "true".equals(trim(form.get(prefix + "remove")))) {
+                continue;
+            }
+            if (!QUEST_REF.matcher(quest).matches()) {
+                return "Quête invalide « " + quest + " » : choisissez-la dans la liste (titre ou identifiant).";
+            }
+            if (!seen.add(quest.contains(":") ? quest : "rpgquest:" + quest)) {
+                return "La quête « " + quest + " » figure deux fois dans le catalogue.";
+            }
+            String weight = trim(form.get(prefix + "weight"));
+            if (!weight.isEmpty() && !weight.matches("\\d{1,4}")) {
+                return "Poids invalide pour « " + quest + " » : entier de 1 à 1000.";
+            }
+            String order = trim(form.get(prefix + "order"));
+            int orderValue = order.matches("-?\\d{1,4}") ? Integer.parseInt(order) : n;
+            String enabled = "true".equals(trim(form.get(prefix + "enabled"))) ? "on" : "off";
+            rows.add(new Row(orderValue, n, quest + "|" + weight + "|" + enabled));
+        }
+        rows.sort(java.util.Comparator.comparingInt(Row::order).thenComparingInt(Row::position));
+        params.put("entries", String.join(",", rows.stream().map(Row::value).toList()));
         return null;
     }
 

@@ -1192,6 +1192,7 @@ class NpcsCatalogTest {
         assertEquals("swamp,minecraft:mangrove_swamp", created.get("biomes"), "listes normalisées en CSV");
         assertEquals("15", created.get("weight"));
         assertEquals("true", created.get("enabled"));
+        assertEquals("", created.get("quest_catalogs"), "aucun catalogue saisi");
 
         HttpResponse<String> noBiome = post("/agents/action", base
                 + "&type=encounter.template.update&id=forest_bandit&display_name=Brigand");
@@ -1209,6 +1210,57 @@ class NpcsCatalogTest {
         Map<String, String> deleted = pendingOfType("encounter.template.delete").get(0).params();
         assertEquals("forest_bandit", deleted.get("id"));
         assertFalse(deleted.containsKey("acknowledge_sites"), "jamais d'accord implicite");
+    }
+
+    private static final String QUEST_CATALOG_DETAILS = "{\"available\":true,\"catalogs\":[{\"id\":\"bandit\","
+            + "\"displayName\":\"Contrats du brigand\",\"description\":null,\"enabled\":true,\"avoidRecent\":1,"
+            + "\"entries\":[{\"quest\":\"rpgquest:encounter_bandit_spiders\",\"weight\":10,\"enabled\":true,"
+            + "\"exists\":true,\"title\":\"Les toiles du sous-bois\",\"category\":\"encounter\",\"repeatable\":true,"
+            + "\"cooldown\":\"20 h\",\"steps\":2},{\"quest\":\"rpgquest:ghost\",\"weight\":5,\"enabled\":true,"
+            + "\"exists\":false,\"title\":null,\"category\":null,\"repeatable\":false,\"cooldown\":null,\"steps\":0}],"
+            + "\"usedBy\":[\"forest_bandit\"],\"warnings\":[\"⚠ Quête absente « rpgquest:ghost »\"]}],"
+            + "\"issues\":{\"broken.yml\":\"id manquant\"},\"quests\":[{\"id\":\"rpgquest:encounter_bandit_spiders\","
+            + "\"title\":\"Les toiles du sous-bois\",\"category\":\"encounter\"}],"
+            + "\"warnings\":[\"⚠ Le modèle « forest_bandit » a des catalogues, mais le dialogue n'a aucune action\"],"
+            + "\"generatedAtEpochMs\":1}";
+
+    /** Issue #369 — page Quêtes › Catalogues : lecture, contrôles visibles, formulaires validés côté panel. */
+    @Test
+    void questCatalogsCanBeListedCreatedEditedAndDeletedFromThePage() throws Exception {
+        start();
+        assertTrue(get("/quests/catalogs?agent=" + TestConfig.AGENT_ID).body().contains("encore été relevé"));
+        runListWithSuccess("quest.catalog.list", QUEST_CATALOG_DETAILS);
+        String page = get("/quests/catalogs?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Contrats du brigand") && page.contains("Les toiles du sous-bois"));
+        assertTrue(page.contains("recharge 20 h") && page.contains("quête absente"), "entrées enrichies");
+        assertTrue(page.contains("broken.yml") && page.contains("aucune action"), "contrôles visibles");
+        assertTrue(page.contains("<datalist id=\"qc-quests\">") && page.contains("list=\"qc-quests\""),
+                "recherche par titre ou identifiant");
+        assertTrue(page.contains("value=\"quest.catalog.create\"") && page.contains("value=\"quest.catalog.update\"")
+                && page.contains("Dupliquer") && page.contains("name=\"detach\""));
+        assertFalse(page.contains("<table"), "aucun tableau large : lisible sur mobile");
+
+        String base = "_csrf=" + csrf(page) + "&agent=" + TestConfig.AGENT_ID + "&return=/quests/catalogs";
+        String form = "&id=bandit&display_name=Contrats&enabled=true&avoid_recent=2"
+                + "&entry_0_order=20&entry_0_quest=rpgquest:a&entry_0_weight=5&entry_0_enabled=true"
+                + "&entry_1_order=10&entry_1_quest=b&entry_1_weight=&entry_1_enabled=true"
+                + "&entry_2_order=30&entry_2_quest=rpgquest:c&entry_2_weight=3&entry_2_remove=true"
+                + "&entry_3_order=40&entry_3_quest=&entry_3_weight=10&entry_3_enabled=true"
+                + "&entry_4_order=50&entry_4_quest=rpgquest:d&entry_4_weight=7";
+        assertEquals(303, post("/agents/action", base + "&type=quest.catalog.update" + form).statusCode());
+        Map<String, String> updated = pendingOfType("quest.catalog.update").get(0).params();
+        assertEquals("b||on,rpgquest:a|5|on,rpgquest:d|7|off", updated.get("entries"),
+                "triées par numéro, ligne retirée et ligne vide ignorées, case décochée = désactivée");
+        assertEquals("2", updated.get("avoid_recent"));
+
+        HttpResponse<String> dup = post("/agents/action", base + "&type=quest.catalog.create&id=x&display_name=X"
+                + "&entry_0_quest=rpgquest:a&entry_1_quest=a");
+        assertTrue(dup.headers().firstValue("Location").orElse("").contains("err="), "doublon refusé");
+
+        HttpResponse<String> noConfirm = post("/agents/action", base + "&type=quest.catalog.delete&id=bandit");
+        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "suppression confirmée");
+        post("/agents/action", base + "&type=quest.catalog.delete&id=bandit&confirm=true&detach=true");
+        assertEquals("true", pendingOfType("quest.catalog.delete").get(0).params().get("detach"));
     }
 
     @Test

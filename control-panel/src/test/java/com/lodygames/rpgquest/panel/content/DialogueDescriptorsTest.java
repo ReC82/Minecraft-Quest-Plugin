@@ -29,7 +29,7 @@ class DialogueDescriptorsTest {
     private static final Set<String> ENGINE_ACTIONS = Set.of(
             "START_QUEST", "ADVANCE_QUEST", "TURN_IN_QUEST", "GIVE_ITEM", "TAKE_ITEM",
             "SET_VARIABLE", "RUN_SAFE_COMMAND", "OPEN_DIALOGUE", "OPEN_MERCHANT",
-            "GIVE_STARTER_KIT", "DELIVER_QUEST_ITEMS", "CLOSE");
+            "GIVE_STARTER_KIT", "DELIVER_QUEST_ITEMS", "OFFER_CATALOG_QUEST", "CLOSE");
 
     /** Réel : {@code dialogue.model.ConditionType}. */
     private static final Set<String> ENGINE_CONDITIONS = Set.of(
@@ -42,7 +42,7 @@ class DialogueDescriptorsTest {
      */
     private static final Set<String> ENGINE_FIELDS = Set.of(
             "quest", "material", "amount", "key", "value", "command", "dialogue", "merchant",
-            "npc", "permission", "item", "state", "negate", "slots");
+            "npc", "permission", "item", "state", "negate", "slots", "catalog");
 
     /**
      * États de quête acceptés par {@code parseQuestState} : {@code quest.model.QuestState}, qui en

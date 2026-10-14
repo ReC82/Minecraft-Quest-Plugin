@@ -229,7 +229,7 @@ public final class Descriptors {
             "Nombre d'exemplaires (entier > 0).");
 
     /**
-     * Les douze actions réellement exécutables par un choix de dialogue (issue #146, phase 2).
+     * Les treize actions réellement exécutables par un choix de dialogue (issue #146, phase 2).
      *
      * <p><strong>Pourquoi ce catalogue existe.</strong> Jusqu'ici ce vocabulaire ne vivait que dans
      * l'énumération {@code ActionType} du plugin et dans son parseur : le Control Panel ne pouvait ni
@@ -295,6 +295,16 @@ public final class Descriptors {
                             "Facultatif : vide = le PNJ porteur du dialogue, par la convention "
                                     + "« identifiant de dialogue = identifiant de PNJ ». Laisser vide "
                                     + "rend la branche réutilisable telle quelle.", false))),
+            new Descriptor("OFFER_CATALOG_QUEST", "Proposer une quête du catalogue", "book",
+                    "Présente la quête que le catalogue de ce PNJ réserve au joueur : titre, but, délai, "
+                            + "puis « Commencer (j'accepte) », « Plus tard » ou « Refuser ». Rien n'est "
+                            + "attribué avant l'acceptation ; la proposition reste la même jusqu'à la "
+                            + "prochaine quête terminée. Une tâche en cours est rappelée, et « Rien pour le "
+                            + "moment » s'affiche quand aucune quête n'est possible (issue #369).",
+                    List.of(Field.text("catalog", "Catalogue",
+                            "Facultatif : vide = les catalogues (quest_catalogs) des modèles de PNJ "
+                                    + "récurrents qui portent ce dialogue. Laisser vide rend la branche "
+                                    + "réutilisable telle quelle.", false))),
             new Descriptor("CLOSE", "Fermer le dialogue", "check",
                     "Ferme la fenêtre. Aucun paramètre.", List.of()));
 

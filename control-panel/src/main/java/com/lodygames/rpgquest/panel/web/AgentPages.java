@@ -4700,7 +4700,9 @@ public final class AgentPages {
                     + "data-bs-target=\"#npc-create\" aria-expanded=\"false\" aria-controls=\"npc-create\">")
                     .append(Icons.icon("plus")).append("Créer un PNJ</button>");
         }
-        sb.append("<a class=\"btn secondary sm ms-auto\" href=\"/npcs/encounters\">")
+        sb.append("<a class=\"btn secondary sm ms-auto\" href=\"/npcs/spots\">")
+                .append(Icons.icon("travel")).append("Emplacements</a>");
+        sb.append("<a class=\"btn secondary sm\" href=\"/npcs/encounters\">")
                 .append(Icons.icon("travel")).append("PNJ récurrents</a>");
         sb.append("<a class=\"btn secondary sm\" href=\"/npcs/diagnostic\">")
                 .append(Icons.icon("wrench")).append("Diagnostic</a>");
@@ -6000,6 +6002,284 @@ public final class AgentPages {
         sb.append(encounterSites(session, agentId, d, canSpawn));
         sb.append(encounterEvents(d));
         return sb.toString();
+    }
+
+    // ================================================================================
+    //  Emplacements de PNJ — issue #381. Réservés en jeu (/rpgadmin npc spot mark),
+    //  lus via npc.spot.list ; placer / déplacer / orienter / libérer / supprimer passent
+    //  chacun par UNE action nommée, jamais par des coordonnées tapées.
+    // ================================================================================
+
+    private static final String SPOT_PAGE = "/npcs/spots";
+
+    public String npcSpots(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("npc", "Emplacements PNJ",
+                "Les positions réservées en jeu, où placer et déplacer les PNJ sans taper de coordonnées.",
+                "<a class=\"btn secondary\" href=\"/npcs\">" + Icons.icon("back") + "Retour aux PNJ</a>"));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canSpawn = perms.can(session.effective(), Permission.NPC_SPAWN_WRITE);
+        boolean canDelete = perms.can(session.effective(), Permission.NPC_DELETE);
+        sb.append(agentPicker(agentId, SPOT_PAGE, ""));
+        sb.append("<div class=\"npc-catbar\">")
+                .append(compactRefresh(session, agentId, "npc.spot.list", "Actualiser", "btn-outline-primary",
+                        SPOT_PAGE))
+                .append("</div>");
+        sb.append("<p class=\"muted\">Pour réserver un emplacement, placez-vous à l'endroit voulu en jeu, tournez-vous "
+                + "dans la direction que le PNJ doit regarder, puis tapez <code>/rpgadmin npc spot mark Nom de "
+                + "l'emplacement</code> (permission <code>rpgquest.admin.npc.spot</code>). Il apparaît ici après "
+                + "« Actualiser ». Placer un PNJ le déplace s'il existe déjà en jeu — la même entité, jamais une "
+                + "copie — ou le fait apparaître sinon ; ses dialogues, quêtes et apparence ne changent pas.</p>");
+        Optional<Map<String, Object>> latest = latestDetails(agentId, "npc.spot.list");
+        if (latest.isEmpty()) {
+            return sb.append(Ui.empty("npc", "Rien n'a encore été relevé : cliquez sur « Actualiser ».")).toString();
+        }
+        Map<String, Object> d = latest.get();
+        if (!Boolean.TRUE.equals(d.get("available"))) {
+            return sb.append(Ui.banner("warning", "Le serveur de jeu ne propose pas les emplacements de PNJ "
+                    + "(version du plugin trop ancienne ou service arrêté).")).toString();
+        }
+        surveyAge(agentId, "npc.spot.list").ifPresent(age ->
+                sb.append("<p class=\"form-text\">Relevé : ").append(Http.esc(age)).append("</p>"));
+        Map<String, String> npcs = new java.util.TreeMap<>();
+        asMap(d.get("npcs")).forEach((id, name) -> npcs.put(id, str(name)));
+        List<Map<String, Object>> spots = asList(d.get("spots")).stream().map(AgentPages::asMap).toList();
+        sb.append(spotOverview(spots));
+        sb.append(spotFilters(agentId, q, spots));
+        List<Map<String, Object>> shown = spotFilter(spots, q);
+        String preselect = cleanNull(q.getOrDefault("npc", "")).toLowerCase(java.util.Locale.ROOT);
+        sb.append(spotList(session, agentId, shown, npcs, canSpawn, canDelete, preselect, spots.size()));
+        if (canSpawn) {
+            sb.append(spotCaptureForm(session, agentId, npcs, preselect));
+        }
+        return sb.toString();
+    }
+
+    private static final java.util.List<String> SPOT_STATUSES = java.util.List.of("FREE", "OCCUPIED", "CONFLICT",
+            "INACCESSIBLE");
+
+    private static String spotStatusLabel(String status) {
+        return switch (status) {
+            case "FREE" -> "libre";
+            case "OCCUPIED" -> "occupé";
+            case "CONFLICT" -> "conflit";
+            case "INACCESSIBLE" -> "inaccessible";
+            default -> status.toLowerCase(java.util.Locale.ROOT);
+        };
+    }
+
+    private static String spotStatusBadge(String status) {
+        String tone = switch (status) {
+            case "FREE" -> "text-bg-success";
+            case "OCCUPIED" -> "text-bg-primary";
+            case "CONFLICT" -> "text-bg-warning";
+            default -> "text-bg-secondary";
+        };
+        return "<span class=\"badge " + tone + "\">" + Http.esc(spotStatusLabel(status)) + "</span>";
+    }
+
+    private static String spotOverview(List<Map<String, Object>> spots) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        SPOT_STATUSES.forEach(st -> counts.put(st, 0));
+        spots.forEach(sp -> counts.merge(str(sp.get("status")), 1, Integer::sum));
+        StringBuilder sb = new StringBuilder("<p>").append(spots.size()).append(" emplacement(s) : ");
+        List<String> parts = new ArrayList<>();
+        counts.forEach((st, n) -> parts.add(spotStatusBadge(st) + " " + n));
+        return sb.append(String.join(" · ", parts)).append("</p>").toString();
+    }
+
+    /** Filtres GET (monde, état, recherche) : aucune écriture, simple lecture du relevé. */
+    private static String spotFilters(String agentId, Map<String, String> q, List<Map<String, Object>> spots) {
+        String world = cleanNull(q.getOrDefault("world", ""));
+        String status = cleanNull(q.getOrDefault("status", ""));
+        String text = cleanNull(q.getOrDefault("q", ""));
+        StringBuilder sb = new StringBuilder("<form method=\"get\" action=\"").append(SPOT_PAGE)
+                .append("\" class=\"spot-filters form-grid3\">")
+                .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">")
+                .append("<div><label for=\"spot-q\">Recherche</label><input class=\"form-control\" id=\"spot-q\" "
+                        + "type=\"search\" name=\"q\" value=\"").append(Http.esc(text))
+                .append("\" placeholder=\"nom, identifiant, PNJ…\"></div>")
+                .append("<div><label for=\"spot-world\">Monde</label><select class=\"form-select\" id=\"spot-world\" "
+                        + "name=\"world\"><option value=\"\">Tous</option>");
+        spots.stream().map(sp -> str(sp.get("world"))).distinct().sorted().forEach(w -> sb.append("<option value=\"")
+                .append(Http.esc(w)).append("\"").append(w.equals(world) ? " selected" : "").append(">")
+                .append(Http.esc(worldLabel(w))).append("</option>"));
+        sb.append("</select></div><div><label for=\"spot-status\">État</label><select class=\"form-select\" "
+                + "id=\"spot-status\" name=\"status\"><option value=\"\">Tous</option>");
+        SPOT_STATUSES.forEach(st -> sb.append("<option value=\"").append(st).append("\"")
+                .append(st.equals(status) ? " selected" : "").append(">").append(Http.esc(spotStatusLabel(st)))
+                .append("</option>"));
+        return sb.append("</select></div><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" "
+                + "type=\"submit\">Filtrer</button></div></form>").toString();
+    }
+
+    static List<Map<String, Object>> spotFilter(List<Map<String, Object>> spots, Map<String, String> q) {
+        String world = cleanNull(q.getOrDefault("world", ""));
+        String status = cleanNull(q.getOrDefault("status", ""));
+        String text = cleanNull(q.getOrDefault("q", "")).trim().toLowerCase(java.util.Locale.ROOT);
+        return spots.stream()
+                .filter(sp -> world.isEmpty() || world.equals(str(sp.get("world"))))
+                .filter(sp -> status.isEmpty() || status.equals(str(sp.get("status"))))
+                .filter(sp -> text.isEmpty() || String.join(" ", str(sp.get("id")), str(sp.get("name")),
+                                cleanNull(str(sp.get("npcId"))), cleanNull(str(sp.get("npcName"))))
+                        .toLowerCase(java.util.Locale.ROOT).contains(text))
+                .toList();
+    }
+
+    private String spotList(Session session, String agentId, List<Map<String, Object>> shown, Map<String, String> npcs,
+                            boolean canSpawn, boolean canDelete, String preselect, int total) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">")
+                .append(Ui.sectionTitle("travel", "Emplacements"));
+        if (total == 0) {
+            return sb.append("<p class=\"muted\">Aucun emplacement réservé pour l'instant.</p></section>").toString();
+        }
+        if (shown.isEmpty()) {
+            return sb.append("<p class=\"muted\">Aucun emplacement ne correspond aux filtres.</p></section>").toString();
+        }
+        sb.append("<div class=\"enc-list spot-list\"><div class=\"enc-head\" aria-hidden=\"true\"><span>Emplacement</span>"
+                + "<span>Position</span><span>PNJ</span><span>État</span><span></span></div>");
+        int i = 0;
+        for (Map<String, Object> sp : shown) {
+            sb.append(spotRow(session, agentId, sp, npcs, canSpawn, canDelete, preselect, i++));
+        }
+        return sb.append("</div></section>").toString();
+    }
+
+    private String spotRow(Session session, String agentId, Map<String, Object> sp, Map<String, String> npcs,
+                           boolean canSpawn, boolean canDelete, String preselect, int index) {
+        String id = str(sp.get("id"));
+        String name = str(sp.get("name"));
+        String status = str(sp.get("status"));
+        String npcId = cleanNull(str(sp.get("npcId")));
+        String npcName = cleanNull(str(sp.get("npcName")));
+        int citizensId = intOr(sp.get("citizensId"), -1);
+        String pos = coord(sp.get("x")) + " " + coord(sp.get("y")) + " " + coord(sp.get("z"));
+        String npcHtml = npcId.isEmpty() ? "<span class=\"muted\">aucun</span>"
+                : (npcName.isEmpty() ? "" : Http.esc(npcName) + "<br>") + Ui.id(npcId)
+                + (citizensId >= 0 ? " <small class=\"muted\">Citizens #" + citizensId + "</small>" : "");
+        StringBuilder notes = new StringBuilder();
+        for (Object n : asList(sp.get("notes"))) {
+            notes.append("<br><small class=\"text-warning-emphasis\">").append(Http.esc(str(n))).append("</small>");
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"enc-row\" id=\"spot-").append(Http.esc(id)).append("\">")
+                .append(encounterCell("Emplacement", "enc-main", "<strong>" + Http.esc(name) + "</strong><br>"
+                        + Ui.id(id) + "<br><small class=\"muted\">par " + Http.esc(cleanNull(str(sp.get("createdBy"))))
+                        + "</small>"))
+                .append(encounterCell("Position", "", Http.esc(worldLabel(str(sp.get("world")))) + "<br><code>"
+                        + Http.esc(pos) + "</code><br><small class=\"muted\">regard " + Http.esc(directionLabel(sp.get("yaw")))
+                        + " · <code>/tp @s " + Http.esc(pos) + "</code></small>"))
+                .append(encounterCell("PNJ", "", npcHtml))
+                .append(encounterCell("État", "", spotStatusBadge(status) + "<br><small class=\"muted\">"
+                        + Http.esc(str(sp.get("statusMessage"))) + "</small>" + notes))
+                .append("<div class=\"enc-c enc-act\">");
+        if (!canSpawn && !canDelete) {
+            return sb.append("<span class=\"muted\">lecture seule</span></div></div>").toString();
+        }
+        String target = "spot-act-" + index;
+        sb.append(actionToggle(target, "Gérer", "wrench", "btn-outline-secondary")).append("</div>")
+                .append("<div class=\"collapse enc-panel\" id=\"").append(target).append("\"><div class=\"enc-site-acts\">");
+        if (canSpawn) {
+            sb.append(spotPlaceForm(session, agentId, id, name, npcId, npcs, preselect));
+            sb.append(spotRenameForm(session, agentId, id, name));
+            sb.append(spotOrientForm(session, agentId, id));
+            if (!npcId.isEmpty()) {
+                sb.append(spotIdForm(session, agentId, "npc.spot.release", id, "Libérer (le PNJ ne bouge pas)",
+                        "btn-outline-secondary", null));
+            }
+        }
+        if (canDelete && npcId.isEmpty()) {
+            sb.append(spotIdForm(session, agentId, "npc.spot.delete", id, "Supprimer l'emplacement",
+                    "btn-outline-danger", "Supprimer « " + name + " » (aucun PNJ n'est touché)"));
+        }
+        return sb.append("</div></div></div>").toString();
+    }
+
+    private String spotPlaceForm(Session session, String agentId, String id, String name, String occupant,
+                                 Map<String, String> npcs, String preselect) {
+        String uid = "spot-place-" + id;
+        String chosen = !occupant.isEmpty() ? occupant : preselect;
+        StringBuilder sb = new StringBuilder(formStart(session, agentId, "npc.spot.place", SPOT_PAGE, "")
+                .replaceFirst("<form ", "<form data-submit-once "))
+                .append("<input type=\"hidden\" name=\"spot_id\" value=\"").append(Http.esc(id)).append("\">")
+                .append("<label for=\"").append(uid).append("\">PNJ à placer ici</label>")
+                .append("<select class=\"form-select\" id=\"").append(uid).append("\" name=\"npc_id\" required>")
+                .append("<option value=\"\">— choisir —</option>");
+        npcs.forEach((npcId, label) -> sb.append("<option value=\"").append(Http.esc(npcId)).append("\"")
+                .append(npcId.equals(chosen) ? " selected" : "").append(">").append(Http.esc(label)).append(" (")
+                .append(Http.esc(npcId)).append(")</option>"));
+        return sb.append("</select>")
+                .append(confirmBox("Placer le PNJ choisi sur « " + name + " » : déplacé s'il existe en jeu, créé sinon"))
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
+                .append(Icons.icon("travel")).append(occupant.isEmpty() ? "Placer / téléporter ici" : "Replacer ici")
+                .append("</button></div></form>").toString();
+    }
+
+    private String spotRenameForm(Session session, String agentId, String id, String name) {
+        String uid = "spot-name-" + id;
+        return formStart(session, agentId, "npc.spot.rename", SPOT_PAGE, "")
+                + "<input type=\"hidden\" name=\"spot_id\" value=\"" + Http.esc(id) + "\">"
+                + "<label for=\"" + uid + "\">Nom</label><input class=\"form-control\" id=\"" + uid
+                + "\" name=\"name\" required maxlength=\"" + AgentActionCatalog.MAX_NPC_SPOT_NAME + "\" value=\""
+                + Http.esc(name) + "\"><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                + "type=\"submit\">Renommer</button></div></form>";
+    }
+
+    private String spotOrientForm(Session session, String agentId, String id) {
+        String uid = "spot-facing-" + id;
+        return formStart(session, agentId, "npc.spot.orient", SPOT_PAGE, "")
+                + "<input type=\"hidden\" name=\"spot_id\" value=\"" + Http.esc(id) + "\">"
+                + "<label for=\"" + uid + "\">Regarde vers</label><select class=\"form-select\" id=\"" + uid
+                + "\" name=\"facing\" required><option value=\"\">— choisir —</option>"
+                + "<option value=\"north\">Le nord</option><option value=\"south\">Le sud</option>"
+                + "<option value=\"east\">L'est</option><option value=\"west\">L'ouest</option></select>"
+                + "<small class=\"form-text\">Le PNJ qui occupe l'emplacement se tourne aussi.</small>"
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">"
+                + "Orienter</button></div></form>";
+    }
+
+    private String spotIdForm(Session session, String agentId, String type, String id, String label, String btnClass,
+                              String confirm) {
+        return formStart(session, agentId, type, SPOT_PAGE, "")
+                + "<input type=\"hidden\" name=\"spot_id\" value=\"" + Http.esc(id) + "\">"
+                + (confirm == null ? "" : confirmBox(confirm))
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm " + btnClass + "\" type=\"submit\">"
+                + Http.esc(label) + "</button></div></form>";
+    }
+
+    private String spotCaptureForm(Session session, String agentId, Map<String, String> npcs, String preselect) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">")
+                .append(Ui.sectionTitle("plus", "Réserver la position actuelle d'un PNJ"))
+                .append("<p class=\"muted\">Le PNJ ne bouge pas : sa position et son orientation actuelles deviennent "
+                        + "un emplacement qu'il occupe, réutilisable ensuite pour le replacer ou en placer un autre.</p>")
+                .append(formStart(session, agentId, "npc.spot.capture", SPOT_PAGE, ""))
+                .append("<div class=\"form-grid2\"><div><label for=\"spot-cap-npc\">PNJ</label>")
+                .append("<select class=\"form-select\" id=\"spot-cap-npc\" name=\"npc_id\" required>")
+                .append("<option value=\"\">— choisir —</option>");
+        npcs.forEach((npcId, label) -> sb.append("<option value=\"").append(Http.esc(npcId)).append("\"")
+                .append(npcId.equals(preselect) ? " selected" : "").append(">").append(Http.esc(label)).append(" (")
+                .append(Http.esc(npcId)).append(")</option>"));
+        return sb.append("</select></div><div><label for=\"spot-cap-name\">Nom (facultatif)</label>")
+                .append("<input class=\"form-control\" id=\"spot-cap-name\" name=\"name\" maxlength=\"")
+                .append(AgentActionCatalog.MAX_NPC_SPOT_NAME).append("\" placeholder=\"nom du PNJ par défaut\"></div></div>")
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                .append("Réserver sa position</button></div></form></section>").toString();
+    }
+
+    /** Regard Minecraft (yaw) en mots : 0 = sud, 90 = ouest, 180 = nord, −90 = est. */
+    static String directionLabel(Object yawValue) {
+        double yaw;
+        try {
+            yaw = Double.parseDouble(str(yawValue));
+        } catch (NumberFormatException e) {
+            return "inconnu";
+        }
+        double normalized = ((yaw % 360) + 360) % 360;
+        String[] names = {"sud", "sud-ouest", "ouest", "nord-ouest", "nord", "nord-est", "est", "sud-est"};
+        return names[(int) Math.round(normalized / 45.0) % 8] + " (" + Math.round(yaw) + "°)";
     }
 
     // ================================================================================

@@ -39,6 +39,10 @@ public final class AgentActionCatalog {
     private static final Pattern REQUEST_TOKEN = Pattern.compile("[A-Za-z0-9_-]{8,64}");
     /** Issue #213 : exactement la forme que le serveur attribue à un emplacement. */
     private static final Pattern BUILD_SITE_ID = Pattern.compile("buildsite_[0-9]{1,12}");
+    /** Issue #381 : exactement la forme que le serveur attribue à un emplacement de PNJ. */
+    private static final Pattern NPC_SPOT_ID = Pattern.compile("npcspot_[0-9]{1,12}");
+    /** Miroir de {@code NpcSpot.MAX_NAME_LENGTH} côté plugin, qui revalide. */
+    public static final int MAX_NPC_SPOT_NAME = 64;
     /** Issue #47 — les seules familles publiables, miroir de {@code content.publish.PublishKind}. */
     private static final java.util.List<String> PUBLISHABLE_KINDS =
             java.util.List.of("quests", "stories", "dialogues");
@@ -264,6 +268,15 @@ public final class AgentActionCatalog {
             return "";
         }
         return SHA256.matcher(clean).matches() ? clean : null;
+    }
+
+    private static String npcSpotId(Map<String, String> form) {
+        String raw = trim(form.get("spot_id"));
+        if (raw.isEmpty()) {
+            raw = trim(form.get("id"));
+        }
+        String id = raw.toLowerCase(java.util.Locale.ROOT);
+        return NPC_SPOT_ID.matcher(id).matches() ? id : null;
     }
 
     private static String buildSiteId(Map<String, String> form) {
@@ -564,6 +577,23 @@ public final class AgentActionCatalog {
                 List.of(Permission.NPC_WRITE, Permission.NPC_BIND_WRITE),
                 "Créer un PNJ (définition + apparition + liaison + skin)",
                 "npc.list", "npc.citizens.list");
+        // Issue #381 — emplacements de PNJ. La réservation se fait EN JEU (/rpgadmin npc spot mark) :
+        // aucune action ne crée un emplacement depuis des coordonnées tapées. Placer déplace ou fait
+        // apparaître une entité réelle : sensible, avec confirmation. Supprimer retire un repère
+        // (jamais un PNJ) : permission de suppression, avec confirmation.
+        add("npc.spot.list", Permission.NPC_READ, false, false, "Rafraîchir les emplacements de PNJ");
+        addContentWrite("npc.spot.rename", Permission.NPC_SPAWN_WRITE, "Renommer un emplacement de PNJ",
+                "npc.spot.list");
+        addContentWrite("npc.spot.orient", Permission.NPC_SPAWN_WRITE,
+                "Corriger l'orientation d'un emplacement de PNJ", "npc.spot.list", "npc.citizens.list");
+        addContentWrite("npc.spot.release", Permission.NPC_SPAWN_WRITE, "Libérer un emplacement de PNJ",
+                "npc.spot.list");
+        addContentWrite("npc.spot.capture", Permission.NPC_SPAWN_WRITE,
+                "Réserver la position actuelle d'un PNJ", "npc.spot.list");
+        addSensitiveWrite("npc.spot.place", Permission.NPC_SPAWN_WRITE, false,
+                "Placer un PNJ sur un emplacement", "npc.spot.list", "npc.citizens.list", "npc.list");
+        addSensitiveWrite("npc.spot.delete", Permission.NPC_DELETE, false,
+                "Supprimer un emplacement de PNJ", "npc.spot.list");
         // Déplacer un PNJ existant relève du même droit que le faire apparaître : NPC_SPAWN_WRITE.
         // Aucun droit nouveau, aucune permission élargie.
         addSensitiveWrite("npc.citizens.move", Permission.NPC_SPAWN_WRITE, false,
@@ -1087,6 +1117,81 @@ public final class AgentActionCatalog {
                         params.put("player", player);
                     }
                     default -> params.put("confirm", "true");
+                }
+            }
+            case "npc.spot.rename" -> {
+                String id = npcSpotId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                String name = trim(form.get("name"));
+                if (name.isEmpty()) {
+                    return Validation.fail("Un emplacement garde toujours un nom.");
+                }
+                if (name.length() > MAX_NPC_SPOT_NAME) {
+                    return Validation.fail("Nom trop long (" + MAX_NPC_SPOT_NAME + " caractères au plus).");
+                }
+                params.put("spot_id", id);
+                params.put("name", name);
+            }
+            case "npc.spot.orient" -> {
+                String id = npcSpotId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                // Direction en mots (comme le déplacement d'un PNJ, #325) ; un angle saisi l'emporte.
+                String rawYaw = trim(form.get("yaw"));
+                if (rawYaw.isEmpty()) {
+                    rawYaw = switch (trim(form.get("facing"))) {
+                        case "south" -> "0";
+                        case "west" -> "90";
+                        case "north" -> "180";
+                        case "east" -> "-90";
+                        default -> "";
+                    };
+                }
+                Double yaw = finite(rawYaw);
+                if (yaw == null || Math.abs(yaw) > 360) {
+                    return Validation.fail("Choisissez une direction, ou un angle entre −360 et 360.");
+                }
+                params.put("spot_id", id);
+                params.put("yaw", trimNumber(yaw));
+            }
+            case "npc.spot.release", "npc.spot.delete" -> {
+                String id = npcSpotId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                params.put("spot_id", id);
+            }
+            case "npc.spot.place" -> {
+                String id = npcSpotId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Choisissez le PNJ à placer.");
+                }
+                params.put("spot_id", id);
+                params.put("npc_id", npcId);
+            }
+            case "npc.spot.capture" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Choisissez le PNJ dont la position sera réservée.");
+                }
+                String name = trim(form.get("name"));
+                if (name.length() > MAX_NPC_SPOT_NAME) {
+                    return Validation.fail("Nom trop long (" + MAX_NPC_SPOT_NAME + " caractères au plus).");
+                }
+                params.put("npc_id", npcId);
+                if (!name.isEmpty()) {
+                    params.put("name", name);
+                }
+                String by = trim(form.get("by"));
+                if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
+                    params.put("by", by);
                 }
             }
             case "building.site.delete" -> {

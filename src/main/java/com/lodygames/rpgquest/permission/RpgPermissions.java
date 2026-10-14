@@ -147,6 +147,13 @@ public final class RpgPermissions {
     public static final String ADMIN_NPC_INFO = "rpgquest.admin.npc.info";
 
     /**
+     * Réserver et lister les emplacements de PNJ en jeu ({@code /rpgadmin npc spot}, issue #381).
+     * Ne crée ni ne déplace aucun PNJ : le placement passe par le Control Panel, avec ses propres
+     * permissions.
+     */
+    public static final String ADMIN_NPC_SPOT = "rpgquest.admin.npc.spot";
+
+    /**
      * Emplacements de construction (issue #213) : obtenir l'outil, créer un emplacement d'un clic,
      * et lister les emplacements depuis le jeu.
      *

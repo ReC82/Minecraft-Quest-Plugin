@@ -605,6 +605,72 @@ public interface AgentActions {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
     }
 
+    // ---- Emplacements de PNJ (issue #381) --------------------------------------------------------
+
+    /**
+     * Un emplacement de PNJ tel que le panel l'affiche. {@code status} est l'état CONSTATÉ
+     * ({@code FREE}, {@code OCCUPIED}, {@code INACCESSIBLE}, {@code CONFLICT}), jamais stocké.
+     * {@code npcId}, {@code npcName} et {@code citizensId} sont {@code null} / {@code -1} quand
+     * l'emplacement est libre ou le PNJ absent du monde. {@code notes} : dépendances à connaître
+     * (ville dont ce PNJ est le PNJ central, emplacement dans une parcelle…), jamais bloquantes ici.
+     */
+    record NpcSpotSummary(String id, String name, String world, double x, double y, double z, float yaw,
+                          float pitch, int radius, String npcId, String npcName, int citizensId,
+                          String status, String statusMessage, String createdBy, String createdAt,
+                          String updatedAt, List<String> notes) {
+    }
+
+    /**
+     * {@code npcs} : PNJ logiques plaçables (id → nom affiché), pour les listes de choix du panel.
+     * Les PNJ récurrents (#13) en sont exclus : leur position appartient à leur occurrence.
+     */
+    record NpcSpotCatalogView(boolean available, List<NpcSpotSummary> spots, List<String> worlds,
+                              Map<String, String> npcs, long generatedAtEpochMs) {
+    }
+
+    default CompletableFuture<NpcSpotCatalogView> npcSpots() {
+        return CompletableFuture.completedFuture(
+                new NpcSpotCatalogView(false, List.of(), List.of(), Map.of(), System.currentTimeMillis()));
+    }
+
+    default CompletableFuture<MutationResult> npcSpotRename(String id, String name) {
+        return npcSpotUnavailable();
+    }
+
+    /** Corrige l'orientation d'un emplacement ; si un PNJ l'occupe, il se tourne aussi. */
+    default CompletableFuture<MutationResult> npcSpotOrient(String id, float yaw, float pitch) {
+        return npcSpotUnavailable();
+    }
+
+    /** Libère l'emplacement sans toucher au PNJ physique. */
+    default CompletableFuture<MutationResult> npcSpotRelease(String id) {
+        return npcSpotUnavailable();
+    }
+
+    /** Supprime un emplacement libre ; refusé s'il est occupé. */
+    default CompletableFuture<MutationResult> npcSpotDelete(String id) {
+        return npcSpotUnavailable();
+    }
+
+    /**
+     * Place un PNJ sur un emplacement : le déplace s'il existe déjà en jeu (même entité Citizens,
+     * jamais un doublon), le fait apparaître sinon. Réservation, puis geste physique, puis
+     * compensation de la réservation si le geste échoue.
+     */
+    default CompletableFuture<MutationResult> npcSpotPlace(String spotId, String npcId) {
+        return npcSpotUnavailable();
+    }
+
+    /** Réserve un emplacement à la position actuelle d'un PNJ, qui en devient l'occupant. */
+    default CompletableFuture<MutationResult> npcSpotCapture(String npcId, String name, String actor) {
+        return npcSpotUnavailable();
+    }
+
+    private static CompletableFuture<MutationResult> npcSpotUnavailable() {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Emplacements de PNJ indisponibles sur ce serveur (plugin trop ancien ?)."));
+    }
+
     /** Issue #246 — capture la construction posée comme nouveau bâtiment de bibliothèque. */
     default CompletableFuture<MutationResult> buildingCapture(BuildingCaptureRequest request,
                                                               String actor, String token) {

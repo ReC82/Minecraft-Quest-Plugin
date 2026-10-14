@@ -126,6 +126,13 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
                 case NPC_CITIZENS_PROVISION -> npcCitizensProvision(action);
                 case NPC_CITIZENS_MOVE -> npcCitizensMove(action);
+                case NPC_SPOT_LIST -> npcSpotList(action);
+                case NPC_SPOT_RENAME -> npcSpotRename(action);
+                case NPC_SPOT_ORIENT -> npcSpotOrient(action);
+                case NPC_SPOT_RELEASE -> npcSpotSimple(action, actions::npcSpotRelease);
+                case NPC_SPOT_DELETE -> npcSpotSimple(action, actions::npcSpotDelete);
+                case NPC_SPOT_PLACE -> npcSpotPlace(action);
+                case NPC_SPOT_CAPTURE -> npcSpotCapture(action);
                 case NPC_CITIZENS_RENAME -> npcCitizensRename(action);
                 case NPC_IDENTITY_RENAME -> npcIdentityRename(action);
                 case NPC_CITIZENS_SKIN -> npcCitizensSkin(action);
@@ -3147,6 +3154,132 @@ public final class AgentActionExecutor {
                     byPlayerName ? "Paramètre « skin_player » manquant." : "Paramètre « skin_url » manquant."));
         }
         return actions.citizensSkin(npcId, value, byPlayerName)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Emplacements de PNJ (issue #381) -------------------------------------------------------
+
+    /** Identifiant d'emplacement de PNJ : exactement la forme que le serveur attribue. */
+    private static final Pattern NPC_SPOT_ID = Pattern.compile("npcspot_[0-9]{1,12}");
+    private static final int MAX_NPC_SPOT_NAME = com.lodygames.rpgquest.npc.spot.NpcSpot.MAX_NAME_LENGTH;
+
+    private CompletableFuture<AgentActionOutcome> npcSpotList(AgentAction action) {
+        return actions.npcSpots().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.NpcSpotSummary s : view.spots()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", s.id());
+                row.put("name", s.name());
+                row.put("world", s.world());
+                row.put("x", s.x());
+                row.put("y", s.y());
+                row.put("z", s.z());
+                row.put("yaw", (double) s.yaw());
+                row.put("pitch", (double) s.pitch());
+                row.put("radius", s.radius());
+                row.put("npcId", s.npcId() == null ? "" : s.npcId());
+                row.put("npcName", s.npcName() == null ? "" : s.npcName());
+                row.put("citizensId", s.citizensId());
+                row.put("status", s.status());
+                row.put("statusMessage", s.statusMessage());
+                row.put("createdBy", s.createdBy());
+                row.put("createdAt", s.createdAt());
+                row.put("updatedAt", s.updatedAt());
+                row.put("notes", s.notes());
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("spots", rows);
+            details.put("worlds", view.worlds());
+            details.put("npcs", view.npcs());
+            details.put("generatedAt", view.generatedAtEpochMs());
+            return AgentActionOutcome.success(action.id(), Integer.toString(rows.size()),
+                    rows.size() + " emplacement(s) de PNJ.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static String npcSpotId(AgentAction action) {
+        String raw = trimOrNull(firstNonBlank(action.param("spot_id"), action.param("id")));
+        if (raw == null) {
+            return null;
+        }
+        String id = raw.toLowerCase(java.util.Locale.ROOT);
+        return NPC_SPOT_ID.matcher(id).matches() ? id : null;
+    }
+
+    private static final String SPOT_ID_HINT = "Paramètre « spot_id » manquant ou invalide (forme « npcspot_0001 »).";
+
+    private CompletableFuture<AgentActionOutcome> npcSpotRename(AgentAction action) {
+        String id = npcSpotId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(), SPOT_ID_HINT));
+        }
+        String name = trimOrNull(action.param("name"));
+        if (name == null || name.length() > MAX_NPC_SPOT_NAME) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « name » vide ou trop long (" + MAX_NPC_SPOT_NAME + " caractères au plus)."));
+        }
+        return actions.npcSpotRename(id, name)
+                .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> npcSpotOrient(AgentAction action) {
+        String id = npcSpotId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(), SPOT_ID_HINT));
+        }
+        Double yaw = parseFinite(action.param("yaw"));
+        boolean pitchGiven = action.param("pitch") != null && !action.param("pitch").isBlank();
+        Double pitch = pitchGiven ? parseFinite(action.param("pitch")) : Double.valueOf(0);
+        if (yaw == null || pitch == null || Math.abs(yaw) > 360 || Math.abs(pitch) > 90) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « yaw » (−360 à 360) ou « pitch » (−90 à 90) manquant ou invalide."));
+        }
+        return actions.npcSpotOrient(id, yaw.floatValue(), pitch.floatValue())
+                .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> npcSpotSimple(
+            AgentAction action, java.util.function.Function<String, CompletableFuture<AgentActions.MutationResult>> op) {
+        String id = npcSpotId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(), SPOT_ID_HINT));
+        }
+        return op.apply(id)
+                .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> npcSpotPlace(AgentAction action) {
+        String id = npcSpotId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(), SPOT_ID_HINT));
+        }
+        String npcId = trimOrNull(action.param("npc_id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        return actions.npcSpotPlace(id, npcId)
+                .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> npcSpotCapture(AgentAction action) {
+        String npcId = trimOrNull(action.param("npc_id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String name = trimOrNull(action.param("name"));
+        if (name != null && name.length() > MAX_NPC_SPOT_NAME) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Nom trop long (" + MAX_NPC_SPOT_NAME + " caractères au plus)."));
+        }
+        String by = trimOrNull(action.param("by"));
+        return actions.npcSpotCapture(npcId, name, by == null ? "panel" : by)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }

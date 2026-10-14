@@ -224,6 +224,8 @@ Voir aussi section 5 (NPC/Citizens) pour le mécanisme complet. Page docs-site :
 | `/rpgadmin npc tag [id]` | Identifie l'entité visée (portée 6 blocs) d'un id stable, **indépendant de son nom affiché**. Id auto-généré (`npc_<n>`) si omis ; refusé si l'entité est déjà identifiée (utiliser `untag` d'abord). | oui — SQLite (`npc_ids`, migration V11 ; `npc_citizens_bindings`, migration V12, si c'est un PNJ Citizens) |
 | `/rpgadmin npc untag` | Retire l'identifiant de l'entité visée. | oui |
 | `/rpgadmin npc info` | Affiche l'identifiant courant de l'entité visée (+ suffixe « Citizens NPC #n » si applicable). | non |
+| `/rpgadmin npc spot mark [nom]` | Réserve un **emplacement de PNJ** (issue #381) à votre position exacte et orientation (regard). Ne crée ni ne déplace aucun PNJ ; un même bloc n'a qu'un emplacement (le second `mark` renvoie l'existant) ; avertit si l'endroit n'a pas de sol solide ou deux blocs d'air. Permission `rpgquest.admin.npc.spot` (incluse dans `rpgquest.admin.npc`). | oui — SQLite (`npc_spots`, `npc_spot_ids`, migration V38) |
+| `/rpgadmin npc spot list` | Liste les emplacements de PNJ (id, nom, position, regard, PNJ affecté ou « libre »). | non |
 
 À savoir : id valide = minuscules/chiffres/`.`/`_`/`-` uniquement. « Aucune entité visée à portée » si le rayon (`ray trace`, 6 blocs) ne touche rien.
 
@@ -3536,6 +3538,33 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
     à la fois. Après une action, retour sur le même joueur et le même onglet (`focus=tab-…`).
     Actions et garde-fous inchangés (raisons, confirmations, permissions, audit) ; expulser,
     renvoyer au Hub et donner un objet ne sont proposés qu'à un joueur connecté.
+
+### Emplacements de PNJ — `/rpgadmin npc spot` + PlugAdmin → PNJ → Emplacements (issue #381)
+
+Un emplacement est une position **exacte** (monde, X/Y/Z, regard et inclinaison) réservée en jeu
+par `/rpgadmin npc spot mark [nom]`, avec auteur, date et un rayon de sécurité (2 blocs). Identité
+stable `npcspot_<n>` (jamais réattribuée) : renommer l'emplacement, le PNJ ou une ville ne le rend
+jamais invalide. Persistance : tables `npc_spots` et `npc_spot_ids` (migration V38) ; `npc_id`
+désigne le PNJ **logique** affecté (vide = libre), un PNJ n'occupant qu'un emplacement à la fois.
+
+Page PlugAdmin `/npcs/spots` (lien « Emplacements » sur la page PNJ, `?npc=<id>` présélectionne un
+PNJ) : état **constaté** à chaque relevé — *libre*, *occupé* (le PNJ affecté se tient dans le
+rayon), *conflit* (PNJ affecté absent du monde, déplacé ailleurs, définition supprimée, ou autre PNJ
+debout sur un emplacement libre), *inaccessible* (monde non chargé ou hors `npc` spawn-worlds) —,
+filtres monde/état/recherche, dépendances signalées (PNJ central d'une ville #322, parcelle).
+Actions agent :
+
+| Action | Effet | Permission panel |
+|---|---|---|
+| `npc.spot.list` | Relevé des emplacements + PNJ plaçables (PNJ récurrents exclus). | `NPC_READ` |
+| `npc.spot.place` | Place un PNJ : **déplace la même entité Citizens** s'il existe en jeu (destination revérifiée : monde autorisé, sol solide + 2 blocs d'air, sans liquide), le fait apparaître sinon. Refus : emplacement occupé par un autre PNJ, autre PNJ debout sur place, parcelle de joueur, PNJ récurrent. Réservation d'abord (transaction), puis geste physique, puis **annulation de la réservation** si le geste échoue (le PNJ n'a pas bougé). L'ancien emplacement du PNJ est libéré. Ville : ni son centre ni son arrivée ne bougent. | `NPC_SPAWN_WRITE`, confirmation |
+| `npc.spot.orient` | Corrige le regard (en mots : nord/sud/est/ouest) ; le PNJ qui occupe l'emplacement se tourne aussi. | `NPC_SPAWN_WRITE` |
+| `npc.spot.rename` | Renomme (64 caractères max). | `NPC_SPAWN_WRITE` |
+| `npc.spot.release` | Libère l'emplacement ; le PNJ ne bouge pas. | `NPC_SPAWN_WRITE` |
+| `npc.spot.capture` | Réserve la position actuelle d'un PNJ comme emplacement qu'il occupe. | `NPC_SPAWN_WRITE` |
+| `npc.spot.delete` | Supprime un emplacement **libre** (refus s'il est occupé : le libérer d'abord). Aucun PNJ touché. | `NPC_DELETE`, confirmation |
+
+Journal serveur : lignes `[npc-spot]` pour chaque placement, libération, capture et suppression.
 
 ### PNJ récurrents par biome — `encounters/*.yml` (issue #13, étape 1)
 

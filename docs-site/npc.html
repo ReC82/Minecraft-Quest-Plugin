@@ -120,6 +120,8 @@
         <tr><td><code>/rpgadmin npc tag &lt;id&gt;</code></td><td>Identifie le PNJ visé avec l'id choisi (minuscules, chiffres, <code>. _ -</code>).</td></tr>
         <tr><td><code>/rpgadmin npc untag</code></td><td>Retire l'identifiant (le PNJ Citizens lui-même n'est jamais supprimé).</td></tr>
         <tr><td><code>/rpgadmin npc info</code></td><td>Affiche l'id actuel — pour un PNJ Citizens, ajoute <code>(Citizens NPC #n)</code>.</td></tr>
+        <tr><td><code>/rpgadmin npc spot mark [nom]</code></td><td>Réserve un emplacement de PNJ à votre position et orientation exactes (permission <code>rpgquest.admin.npc.spot</code>). Aucun PNJ n'est créé ni déplacé.</td></tr>
+        <tr><td><code>/rpgadmin npc spot list</code></td><td>Liste les emplacements de PNJ et le PNJ affecté à chacun.</td></tr>
       </tbody>
     </table>
     <p class="text-body-secondary small">
@@ -272,6 +274,26 @@ id: rpgquest:libraire</code></pre>
       (<code>npc: jean_guide</code>) ou de dialogue (<code>id: rpgquest:jean_guide</code>) — voir
       <a href="dialogues.html">Dialogues</a> et <a href="quests.html">Quêtes</a>.
     </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Emplacements de PNJ (issue #381)</h2>
+    <p class="text-body-secondary">
+      Pour décider <strong>en jeu</strong> où se tiendra un PNJ, placez-vous à l'endroit voulu, tournez-vous
+      dans la direction qu'il doit regarder et tapez <code>/rpgadmin npc spot mark Porte nord</code>. Ensuite,
+      dans PlugAdmin → PNJ → <strong>Emplacements</strong> : choisissez le PNJ dans la liste et cliquez
+      « Placer / téléporter ici ». S'il existe déjà en jeu, c'est la même entité qui est déplacée (jamais
+      une copie) ; sinon il apparaît. Dialogues, quêtes et apparence ne changent pas.
+    </p>
+    <ul class="text-body-secondary small">
+      <li>États : <em>libre</em>, <em>occupé</em>, <em>conflit</em> (PNJ absent ou déplacé ailleurs, ou autre PNJ
+        sur place), <em>inaccessible</em> (monde non chargé ou n'acceptant pas de PNJ).</li>
+      <li>Déplacer un PNJ de A vers B libère A automatiquement. Un emplacement occupé ne se supprime pas :
+        « Libérer » d'abord (le PNJ ne bouge pas).</li>
+      <li>Refusé : destination sans sol solide ou sans deux blocs d'air, parcelle de joueur, autre PNJ sur
+        place, PNJ récurrent (sa position appartient à son occurrence).</li>
+      <li>« Réserver la position actuelle d'un PNJ » transforme l'endroit où il se tient en emplacement.</li>
+    </ul>
   </section>
 
   <section class="my-5">

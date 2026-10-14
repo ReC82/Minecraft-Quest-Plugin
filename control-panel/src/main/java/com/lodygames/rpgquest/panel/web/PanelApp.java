@@ -313,6 +313,10 @@ public final class PanelApp {
         // /agents/action, donc par le catalogue et NPC_SPAWN_WRITE / NPC_WRITE.
         route("/npcs/encounters", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ récurrents",
                 Permission.NPC_READ, agentPages::npcEncounters));
+        // Issue #381 — emplacements de PNJ. Même garde que les PNJ récurrents : lecture NPC_READ,
+        // actions par /agents/action et le catalogue.
+        route("/npcs/spots", exchange -> handleBusinessPage(exchange, "/npcs", "Emplacements PNJ",
+                Permission.NPC_READ, agentPages::npcSpots));
         // Issue #369 — catalogues de quêtes secondaires, attribués aux modèles de PNJ récurrents.
         route("/quests/catalogs", exchange -> handleBusinessPage(exchange, "/quests", "Catalogues de quêtes",
                 Permission.NPC_READ, agentPages::questCatalogs));
@@ -5360,9 +5364,9 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, null, "Agent inconnu."));
             return;
         }
-        if ("building.definition.retire".equals(type)) {
-            // #284 : l'auteur du retrait est noté par le plugin dans l'archive — c'est la session,
-            // jamais un champ du formulaire.
+        if ("building.definition.retire".equals(type) || "npc.spot.capture".equals(type)) {
+            // #284 : l'auteur du retrait est noté par le plugin dans l'archive ; #381 : l'auteur d'un
+            // emplacement capturé. C'est la session, jamais un champ du formulaire.
             form.put("by", session.username());
         }
         com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Validation v =
@@ -5689,6 +5693,7 @@ public final class PanelApp {
         paths.add("/ai/studio");
         paths.add("/npcs/diagnostic");
         paths.add("/npcs/encounters");
+        paths.add("/npcs/spots");
         paths.add("/quests/catalogs");
         return java.util.Set.copyOf(paths);
     }

@@ -26,6 +26,7 @@ ou sa sélection).
 | Voir le profil d'un joueur | `/rpgquest profile <joueur>` |
 | Associer un PNJ visé à RPGQuest | `/rpgadmin npc tag <id>` |
 | Retirer l'identifiant d'un PNJ | `/rpgadmin npc untag` |
+| Réserver un emplacement de PNJ ici | `/rpgadmin npc spot mark <nom>` |
 | Démarrer une quête pour un joueur | `/rpgadmin quest start <joueur> <quête>` |
 | Terminer une quête (récompenses incluses) | `/rpgadmin quest complete <joueur> <quête>` |
 | Rendre une quête rejouable | `/rpgadmin quest reset <joueur> <quête>` |
@@ -289,6 +290,30 @@ Affiche l'identifiant RPGQuest de l'entité visée.
 
 `Identifiant : guard` (+ `(Citizens NPC #n)` le cas échéant), ou « Cette entité n'est pas
 identifiée. »
+
+### Réserver un emplacement de PNJ — `/rpgadmin npc spot`
+
+Réserve votre position exacte et votre regard comme emplacement où placer un PNJ depuis PlugAdmin
+(PNJ → Emplacements). Ne crée ni ne déplace aucun PNJ. Permission `rpgquest.admin.npc.spot`.
+
+**Syntaxe**
+
+```
+/rpgadmin npc spot mark [nom]
+```
+
+Pour lister les emplacements :
+
+```
+/rpgadmin npc spot list
+```
+
+**Résultat attendu**
+
+`Emplacement de PNJ réservé : Porte nord (npcspot_0001) — world 10.5 / 64.0 / -3.5, regard 180°`.
+Sur un bloc déjà réservé : « Un emplacement existe déjà sur ce bloc », rien n'est créé. Si l'endroit
+n'a pas de sol solide ou pas deux blocs d'air, un avertissement s'affiche : le placement y sera
+refusé.
 
 ---
 

@@ -3993,8 +3993,9 @@ signale le dépassement** (`Http.formBody(exchange, max)`) : le lecteur historiq
 à 64 Kio, ce qui aurait importé un pack amputé de ses derniers éléments sans que personne ne le voie.
 
 **Familles importables** : quêtes, stories et dialogues — exactement celles que `ContentWorkspace`
-sait écrire. Les **PNJ** font partie du format mais ne sont pas éditables depuis le panel : ils sont
-rapportés `SKIPPED` **avec leur motif**, jamais ignorés en silence.
+sait écrire. Depuis #211, un **PNJ logique** du pack inconnu du serveur est créé après l'écriture
+complète par l'action `npc.definition.create` (sans placement ni Citizens) ; un PNJ déjà connu est
+rapporté `SKIPPED` **avec son motif** et n'est jamais modifié.
 
 **L'import n'active rien** : il écrit dans la source (le dépôt AWS). Le contenu n'arrive sur le
 serveur Minecraft que par un rechargement ou un déploiement, comme pour l'éditeur guidé.
@@ -4005,6 +4006,32 @@ serveur Minecraft que par un rechargement ou un déploiement, comme pour l'édit
 > L'export écrit désormais `quests` ; l'import accepte **les deux** orthographes, pour que les packs
 > déjà exportés restent importables, et refuse qu'elles soient renseignées ensemble. Le schéma, les
 > gabarits et le contrat rédigé de #110 ont été alignés.
+
+### Modèle d'histoire pour IA externe — `/content/story-kit` (issue #211)
+
+Sur **Import contenu**, la carte « Créer une histoire avec une IA externe » donne le parcours
+**télécharger → faire compléter par une IA → déposer le JSON → vérifier l'aperçu → confirmer en
+source → publier sur DEV**. Aucun appel IA n'est fait par PlugAdmin ; aucun dépôt ne publie.
+
+| Route | Contenu |
+|---|---|
+| `GET /content/story-kit` | archive `modele-histoire-lodyquests.zip` (LISEZ-MOI + les six fichiers) |
+| `GET /content/story-kit?file=<nom>` | un fichier de la liste blanche `StoryKit.FILES` ; tout autre nom → 404 |
+
+Fichiers (ressources `control-panel/src/main/resources/content-packs/`) : fiche narrative Lily et
+fiche vierge (`.md`, **non importables**), `exemple-pack-lily.json` (2 personnages `lily`/`julius`,
+story `lily_souvenirs`, 5 quêtes `rpgquest:lily_*`, dialogues `rpgquest:lily`/`rpgquest:julius`),
+`modele-pack-vierge.json`, `prompt-ia.txt` et `guide-ia-lodyquests.md` (partie pédagogique fixe +
+contrat **généré** par `ContentPackTemplates.aiDocumentation()`). Permission `CONTENT_IMPORT` ou
+`CONTENT_EXPORT`, lecture pure, audit `content.storykit.download`.
+
+L'analyse affiche désormais un **aperçu éditorial** (`ContentPackSummary`) : story dans l'ordre,
+quêtes avec donneur, déblocage, objectifs, quantités et récompenses, personnages (créé sans
+placement / déjà présent et réutilisé) et dialogues (quêtes proposées), plus le YAML exact qui sera
+écrit pour chaque élément nouveau. Un personnage déjà connu du serveur n'est jamais modifié ; son
+dialogue `rpgquest:<id>` s'y rattache par convention à la publication. Le pack Tom (3 quêtes) reste
+le test minimal de non-régression ; Lily (5 quêtes) est le test d'acceptation
+(`LilyContentPackTest`, `LilyStoryPackEngineTest` côté moteur).
 
 ### Contrat de contenu machine-readable (issue #110, phase 1)
 

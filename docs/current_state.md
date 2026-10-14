@@ -618,6 +618,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Sans relevé `npc.list`, **aucune** opération n'est proposée. Limites : asynchrone (le verdict se lit
   dans le journal d'actions), aucune suppression de dialogue depuis le panel, et plusieurs liaisons
   Citizens sur un même id ne sont traitées que pour celle affichée.
+- **Modèle d'histoire pour IA externe** *(issue #211)* — sur `/content/import`, bouton
+  « Télécharger un modèle d'histoire » (`/content/story-kit`, archive ou fichier par fichier) :
+  fiches narratives Lily et vierge (non importables), pack JSON Lily (2 personnages, story de
+  5 quêtes, 2 dialogues) et pack vierge, prompt prêt à copier, guide autonome pour l'IA (partie fixe
+  + contrat généré). Bouton « Analyser l'exemple Lily ». L'analyse affiche un aperçu éditorial
+  (story ordonnée, objectifs, quantités, récompenses, personnages et placement à faire). Parcours
+  en jeu `PENDING MANUAL VALIDATION` (TC-312).
 - **Import sécurisé d'un content pack** *(issue #109, phase 2)* — `/content/import`, permission
   dédiée `CONTENT_IMPORT`, CSRF, audit. Le pack est analysé, validé par les validateurs réels et
   comparé à la source ; **rien n'est écrit avant la confirmation**. Un identifiant déjà présent et

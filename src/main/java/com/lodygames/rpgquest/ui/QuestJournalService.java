@@ -21,6 +21,7 @@ import com.lodygames.rpgquest.quest.model.VariableReward;
 import com.lodygames.rpgquest.quest.progress.ObjectiveProgressView;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.quest.progress.QuestStepProgressView;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -277,8 +278,13 @@ public final class QuestJournalService implements QuestJournalUi {
 
     void showList(Player player, JournalTab tab, int requestedPage) {
         UUID playerId = player.getUniqueId();
-        questProgressEngine.allStates(playerId).thenAcceptBoth(readBalance(playerId),
-                (states, balance) -> runOnMainThread(() -> {
+        CompletableFuture<Map<NamespacedKey, QuestState>> statesFuture = questProgressEngine.allStates(playerId);
+        CompletableFuture<Map<NamespacedKey, Duration>> cooldownsFuture = readCooldowns(playerId);
+        CompletableFuture<Optional<Long>> balanceFuture = readBalance(playerId);
+        CompletableFuture.allOf(statesFuture, cooldownsFuture, balanceFuture).thenRun(() -> runOnMainThread(() -> {
+            Map<NamespacedKey, QuestState> states = statesFuture.join();
+            Map<NamespacedKey, Duration> cooldowns = cooldownsFuture.join();
+            Optional<Long> balance = balanceFuture.join();
             List<QuestDefinition> matching = questEngine.quests().stream()
                     .filter(quest -> tabMatches(tab, states.getOrDefault(quest.id(), QuestState.NOT_STARTED)))
                     .sorted(Comparator.comparing(quest -> quest.title().base(), String.CASE_INSENSITIVE_ORDER))
@@ -298,7 +304,8 @@ public final class QuestJournalService implements QuestJournalUi {
                 QuestDefinition quest = pageItems.get(i);
                 QuestState state = states.getOrDefault(quest.id(), QuestState.NOT_STARTED);
                 boolean tracked = quest.id().equals(trackedByPlayer.get(playerId));
-                inventory.setItem(CONTENT_SLOTS[i], buildIcon(playerId, quest, state, tracked, false));
+                inventory.setItem(CONTENT_SLOTS[i],
+                        buildIcon(playerId, quest, state, cooldownOf(cooldowns, quest.id()), tracked, false));
             }
             // openInventory AVANT d'enregistrer la session : quand il remplace un menu déjà ouvert,
             // il déclenche un InventoryCloseEvent SYNCHRONE pour l'ancien inventaire, que
@@ -348,6 +355,24 @@ public final class QuestJournalService implements QuestJournalUi {
                     logger.error("Impossible de lire le solde de {} pour le journal", playerId, error);
                     return Optional.empty();
                 });
+    }
+
+    /**
+     * Temps restant des quêtes renouvelables en recharge (issue #13). Comme la bourse, une erreur de
+     * lecture ne fait pas échouer le journal : elle rend {@code null} (voir {@link #cooldownOf}) et la
+     * ligne de recharge disparaît, plutôt que d'annoncer à tort une quête disponible.
+     */
+    private CompletableFuture<Map<NamespacedKey, Duration>> readCooldowns(UUID playerId) {
+        return questProgressEngine.remainingCooldowns(playerId)
+                .exceptionally(error -> {
+                    logger.error("Impossible de lire les délais de recharge de {} pour le journal", playerId, error);
+                    return null;
+                });
+    }
+
+    /** Recharge d'une quête : {@code null} si la lecture a échoué, {@link Duration#ZERO} si aucune. */
+    private static Duration cooldownOf(Map<NamespacedKey, Duration> cooldowns, NamespacedKey questId) {
+        return cooldowns == null ? null : cooldowns.getOrDefault(questId, Duration.ZERO);
     }
 
     /**
@@ -409,8 +434,12 @@ public final class QuestJournalService implements QuestJournalUi {
             return;
         }
 
-        questProgressEngine.allStates(playerId).thenAcceptBoth(readBalance(playerId),
-                (states, balance) -> runOnMainThread(() -> {
+        CompletableFuture<Map<NamespacedKey, QuestState>> statesFuture = questProgressEngine.allStates(playerId);
+        CompletableFuture<Map<NamespacedKey, Duration>> cooldownsFuture = readCooldowns(playerId);
+        CompletableFuture<Optional<Long>> balanceFuture = readBalance(playerId);
+        CompletableFuture.allOf(statesFuture, cooldownsFuture, balanceFuture).thenRun(() -> runOnMainThread(() -> {
+            Map<NamespacedKey, QuestState> states = statesFuture.join();
+            Optional<Long> balance = balanceFuture.join();
             QuestDefinition quest = questOpt.get();
             QuestState state = states.getOrDefault(questId, QuestState.NOT_STARTED);
             boolean tracked = questId.equals(trackedByPlayer.get(playerId));
@@ -420,7 +449,8 @@ public final class QuestJournalService implements QuestJournalUi {
             holder.bind(inventory);
 
             inventory.setItem(DETAIL_BALANCE_SLOT, balanceIcon(balance));
-            inventory.setItem(DETAIL_ICON_SLOT, buildIcon(playerId, quest, state, tracked, true));
+            inventory.setItem(DETAIL_ICON_SLOT,
+                    buildIcon(playerId, quest, state, cooldownOf(cooldownsFuture.join(), questId), tracked, true));
             inventory.setItem(DETAIL_BACK_SLOT, navIcon(Material.ARROW, "« Retour"));
             inventory.setItem(DETAIL_TRACK_SLOT, trackToggleIcon(tracked));
             inventory.setItem(DETAIL_CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
@@ -540,14 +570,14 @@ public final class QuestJournalService implements QuestJournalUi {
      * est une épée affichait « Quand dans la main principale : … dégâts d'attaque », information
      * parasite qui n'a rien à voir avec la quête.</p>
      */
-    private ItemStack buildIcon(UUID playerId, QuestDefinition quest, QuestState state, boolean tracked,
-                                boolean detailed) {
+    private ItemStack buildIcon(UUID playerId, QuestDefinition quest, QuestState state, Duration cooldown,
+                                boolean tracked, boolean detailed) {
         ItemStack stack = new ItemStack(quest.icon());
         ItemMeta meta = stack.getItemMeta();
         meta.displayName(buildTitle(quest, state, tracked));
         meta.lore(detailed
-                ? buildDetailedLore(playerId, quest, state)
-                : buildCompactLore(playerId, quest, state, tracked));
+                ? buildDetailedLore(playerId, quest, state, cooldown)
+                : buildCompactLore(playerId, quest, state, cooldown, tracked));
         meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ADDITIONAL_TOOLTIP,
                 ItemFlag.HIDE_ENCHANTS, ItemFlag.HIDE_UNBREAKABLE);
         stack.setItemMeta(meta);
@@ -577,9 +607,10 @@ public final class QuestJournalService implements QuestJournalUi {
      * donnée interne, illisible pour un joueur, et elle occupait une ligne entière.</p>
      */
     private List<Component> buildCompactLore(UUID playerId, QuestDefinition quest, QuestState state,
-                                             boolean tracked) {
+                                             Duration cooldown, boolean tracked) {
         List<Component> lore = new ArrayList<>();
         lore.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
+        addReplayLines(lore, quest, state, cooldown);
 
         QuestStepProgressView stepView = stepViewFor(playerId, quest, state);
         List<QuestObjective> objectives = objectivesOf(quest, stepView.stepId());
@@ -633,13 +664,16 @@ public final class QuestJournalService implements QuestJournalUi {
     }
 
     /** Infobulle de <strong>détails</strong> : tout ce qui a été retiré de la liste. */
-    private List<Component> buildDetailedLore(UUID playerId, QuestDefinition quest, QuestState state) {
+    private List<Component> buildDetailedLore(UUID playerId, QuestDefinition quest, QuestState state,
+                                              Duration cooldown) {
         List<Component> lore = new ArrayList<>();
         lore.add(MM.deserialize("<gray><description></gray>", Placeholder.parsed("description", quest.description().base())));
         lore.add(Component.empty());
         lore.add(MM.deserialize("<white>Catégorie :</white> <gray><category></gray>",
                 Placeholder.unparsed("category", quest.category())));
         lore.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
+        addReplayLines(lore, quest, state, cooldown);
+        JournalReplayText.cadenceLine(quest).map(MM::deserialize).ifPresent(lore::add);
 
         QuestStepProgressView stepView = stepViewFor(playerId, quest, state);
         List<QuestObjective> objectives = objectivesOf(quest, stepView.stepId());
@@ -675,6 +709,18 @@ public final class QuestJournalService implements QuestJournalUi {
             }
         }
         return lore;
+    }
+
+    /**
+     * Issue #13 : étiquette « Rencontre » et, pour une quête renouvelable terminée, quand la refaire.
+     * {@code cooldown} vaut {@link Duration#ZERO} quand la lecture des délais a réussi sans trouver
+     * de recharge, {@code null} quand elle a échoué : dans ce cas rien n'est promis au joueur.
+     */
+    private void addReplayLines(List<Component> lore, QuestDefinition quest, QuestState state, Duration cooldown) {
+        JournalReplayText.encounterTag(quest).map(MM::deserialize).ifPresent(lore::add);
+        if (cooldown != null) {
+            JournalReplayText.replayLine(quest, state, cooldown).map(MM::deserialize).ifPresent(lore::add);
+        }
     }
 
     private String stateLabel(QuestState state) {

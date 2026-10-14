@@ -400,6 +400,26 @@ class QuestProgressEngineTest {
     }
 
     @Test
+    void remainingCooldownsListsOnlyCompletedQuestsStillRecharging() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "cooldown.yml", 1, true, null, "20h");
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+        assertTrue(engine.remainingCooldowns(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+
+        engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(engine.remainingCooldowns(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(),
+                "une quête en cours n'est pas en recharge");
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        Map<NamespacedKey, java.time.Duration> cooldowns =
+                engine.remainingCooldowns(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(java.util.Set.of(KILL_QUEST_TWO), cooldowns.keySet());
+        assertTrue(cooldowns.get(KILL_QUEST_TWO).compareTo(java.time.Duration.ofHours(19)) > 0);
+        assertTrue(engine.remainingCooldowns(addPlayer().getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(),
+                "la recharge d'un joueur ne touche pas les autres");
+    }
+
+    @Test
     void repeatableQuestWithoutCooldownCanBeTakenAgainImmediately() throws Exception {
         writeKillQuest(KILL_QUEST_TWO, "repeatable.yml", 1, true, null);
         engine.reloadQuestDefinitions();

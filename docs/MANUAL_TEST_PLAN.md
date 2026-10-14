@@ -5982,3 +5982,28 @@ rangées de cœurs.
 
 **Non vérifiable par les tests automatisés** : rendu mobile réel, comportement du clic Citizens,
 production d'un pack par une IA externe réelle.
+
+### TC-313 — Villes : PNJ central et point d'arrivée distinct (issue #322, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel du lot #322 (migration V37). Une ville existante (TC-301), un PNJ
+défini et lié à Citizens (ex. `guide`), un compte administrateur connecté en jeu.
+**Durée** : 10 minutes.
+
+1. PlugAdmin › Villes : **Rafraîchir les villes** puis **PNJ**. Ouvrir la ville : la section
+   « PNJ central et arrivée » indique « Aucun » et « Centre de la ville (par défaut) ».
+2. Taper `gui` dans « PNJ central » : la liste propose le Guide (nom et identifiant). Enregistrer.
+   Après rafraîchissement : badge « PNJ … », position relue du PNJ, message « est dans la ville, à
+   N bloc(s) du centre » (ou « a quitté la ville » s'il est au-delà de la distance).
+3. S'éloigner du PNJ jusqu'à ce que son chunk soit déchargé, rafraîchir : « dernière position
+   enregistrée ». Le centre et les limites de la ville n'ont pas changé.
+4. En jeu, se placer à l'entrée de la ville, debout, regard vers la place. Panel : **Relever
+   l'arrivée sur ce joueur**. Le résultat donne les coordonnées ; la fiche affiche « Arrivée du
+   voyage » avec le regard.
+5. Essayer depuis un autre monde, puis en nageant : refus lisibles (« monde de la ville », « liquide »).
+6. Ouvrir le menu de voyage › Villages › la ville : arrivée au point relevé, avec l'orientation
+   relevée (pas au centre).
+7. **Revenir à l'arrivée au centre** → le voyage arrive de nouveau au centre.
+8. Vider « PNJ central » et enregistrer : « Aucun ». Les découvertes de la ville sont inchangées.
+9. Cas réels attendus par le ticket : ville centrale du Hub avec `guide`, ville de Julius avec
+   `julius`, arrivées relevées sur place.
+

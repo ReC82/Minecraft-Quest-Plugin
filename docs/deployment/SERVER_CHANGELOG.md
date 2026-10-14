@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-14 - Villes : PNJ central optionnel et point d'arrivée distinct (#322)
+
+### Changement
+
+Une ville (`village_centers`) peut désormais référencer un PNJ central par son identifiant stable
+(diagnostic de position relu en direct, la ville ne suit jamais le PNJ) et un point d'arrivée de
+voyage distinct de son centre. Nouvelles actions agent `city.npc.link`, `city.arrival.set`,
+`city.arrival.clear` ; section « PNJ central et arrivée » de la page PlugAdmin `/cities`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du panel. Migration **V37 automatique** au
+démarrage : sept colonnes facultatives (NULL) ajoutées à `village_centers` ; aucune ville existante
+ne change de comportement. Aucune configuration ni contenu à modifier. Redémarrage requis.
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release panel).
+
+### Validation
+
+Après redémarrage : schéma 37, `/cities` → « Rafraîchir les villes » sans erreur. En jeu : TC-313
+(`PENDING MANUAL VALIDATION`).
+
+### Rollback
+
+Réinstaller le JAR sauvegardé (`scripts/rollback-verygames.sh --latest`) et le panel
+(`scripts/plugadmin/rollback.sh app`). L'ancien JAR ignore les colonnes V37 : les villes gardent
+leur centre, l'arrivée distincte et le PNJ central sont simplement inutilisés.
+
+---
+
 ## 2026-10-14 - Dialogues : accueil selon l'état de la quête et répliques variées (#158)
 
 ### Changement

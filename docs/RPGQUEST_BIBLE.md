@@ -315,7 +315,26 @@ Permission : `rpgquest.admin.city` (`default: false`), impliquée par l'ombrelle
 - **Persistance** : migration **V33** (colonne `village_centers.detection_distance`, défaut 50 pour
   les centres existants ; table `city_discoveries`). Supprimer une ville efface ses découvertes dans
   la même transaction.
-- **Hors lot** : rattachement d'un PNJ central et point d'arrivée distinct du centre (#322).
+- **PNJ central et arrivée (issue #322)** — deux réglages facultatifs de la même fiche, depuis
+  **PlugAdmin › Villes** :
+  - **PNJ central** : un PNJ associé par son **identifiant stable** (`guide`, `julius`…), choisi
+    dans une liste recherchable (nom affiché ou identifiant). Seul l'identifiant est enregistré ;
+    sa position est relue à chaque relevé dans le registre Citizens, sans charger de chunk.
+    **La ville ne suit jamais son PNJ** : le centre de détection reste celui choisi avec l'outil.
+    Le relevé dit l'état : dans la ville (à N blocs du centre), *a quitté la ville*, autre monde,
+    non chargé (dernière position enregistrée), non lié à Citizens, PNJ Citizens supprimé,
+    définition supprimée, ou Citizens absent. Aucun centre fictif n'est jamais calculé.
+  - **Point d'arrivée** : position **et orientation** où arrive le menu de voyage « Villages »,
+    distinctes du centre. Relevée sur un joueur connecté (« Relever l'arrivée sur ce joueur »),
+    refusée hors du monde de la ville ou si l'emplacement n'est pas sûr (sol plein sous les pieds,
+    deux blocs libres, ni liquide ni portail). Sans arrivée, le voyage arrive au centre comme
+    avant. Une arrivée hors du périmètre est signalée (la ville se découvre en y entrant).
+    Déplacer le centre dans le même monde garde l'arrivée ; changer de monde l'efface.
+  - Actions agent : `city.npc.link` (`npc` vide = retirer), `city.arrival.set` (`player`),
+    `city.arrival.clear`, permission panel `CITY_WRITE`.
+  - Persistance : migration **V37**, colonnes facultatives de `village_centers`
+    (`central_npc_id`, `arrival_world`, `arrival_x/y/z`, `arrival_yaw`, `arrival_pitch`), NULL
+    pour les villes existantes : comportement inchangé.
 
 ### Mondes supplémentaires — `/rpgadmin world`
 Voir section 7 (Mondes) pour le détail complet — non dupliqué ici.

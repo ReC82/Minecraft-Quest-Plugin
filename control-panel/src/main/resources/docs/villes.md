@@ -1,7 +1,7 @@
 ---
 title: Villes
 category: Réseau de voyage
-tags: [ville, villes, centre, perimetre, decouverte, bienvenue, outil, DISCOVER_CITY]
+tags: [ville, villes, centre, perimetre, decouverte, bienvenue, outil, DISCOVER_CITY, pnj, arrivee]
 order: 2
 ---
 
@@ -48,6 +48,22 @@ Actions disponibles :
 | **Préparer le déplacement du centre** | Le joueur choisi (connecté, avec la permission) a 3 minutes pour cliquer avec l'outil au nouvel endroit. Rafraîchissez ensuite : le nouveau centre et les limites s'affichent. Équivalent en jeu : `/rpgadmin ville deplacer <id>`. |
 | **Montrer le périmètre en jeu** | Contour en particules orange, avec des colonnes aux coins, montré au seul joueur choisi pendant 15 s. Rien n'est modifié. |
 | **Supprimer la ville** | Définitif : supprime la ville **et ses découvertes**. Les quêtes qui la citent ne progressent plus. Préférez la désactivation. |
+
+### PNJ central et point d'arrivée
+
+La section **PNJ central et arrivée** de chaque fiche règle deux choses facultatives :
+
+- **PNJ central** : choisissez un PNJ dans la liste (recherche par nom ou identifiant ; cliquez
+  **PNJ** dans la barre du haut si la liste est vide), puis **Enregistrer le PNJ central**. Videz
+  le champ pour le retirer. Seul l'identifiant est enregistré : le PNJ peut être renommé sans
+  casser le lien.
+  **La ville ne suit pas son PNJ.** Si le PNJ bouge, n'est pas chargé ou est supprimé, le centre
+  ne change pas ; la fiche le signale (« a quitté la ville », « dernière position enregistrée »,
+  « PNJ Citizens supprimé »…). À vous de déplacer le centre, de remettre le PNJ ou de le retirer.
+- **Arrivée du voyage** : par défaut, le menu « Villages » arrive au centre. **Relever l'arrivée
+  sur ce joueur** prend la position et le regard du joueur choisi : il doit être connecté, dans
+  le monde de la ville, debout sur un sol plein. **Revenir à l'arrivée au centre** annule.
+  Le centre et le périmètre ne changent pas.
 
 Droits PlugAdmin : lecture avec *Réseau de voyage* (`TRAVEL_READ`), modifications avec
 `CITY_WRITE`, suppression avec `CITY_DELETE` (rôles Propriétaire et Administrateur).

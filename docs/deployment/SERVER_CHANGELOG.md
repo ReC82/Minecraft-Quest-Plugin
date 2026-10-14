@@ -71,7 +71,9 @@ JAR actuel + `data.db`, faits par `deploy-verygames.sh`.
 
 ### Validation
 
-`PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-308.
+Déploiement DEV effectué le 2026-10-14 (merge `c560879`) : JAR distant retéléchargé, SHA-256
+`26a86b17…` identique au local ; backup `rpgquest-20261014T121046Z-predeploy.jar` ; redémarrage RCON,
+plugin actif. `PENDING MANUAL VALIDATION` : `MANUAL_TEST_PLAN.md` TC-308.
 
 ### Rollback
 

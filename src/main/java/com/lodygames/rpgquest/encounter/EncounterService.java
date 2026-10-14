@@ -7,6 +7,7 @@ import com.lodygames.rpgquest.database.EncounterSiteRepository;
 import com.lodygames.rpgquest.encounter.model.EncounterSite;
 import com.lodygames.rpgquest.encounter.model.EncounterTemplate;
 import com.lodygames.rpgquest.npc.CitizensNpc;
+import com.lodygames.rpgquest.npc.MineSkinResolver;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.travel.RandomSafeLocationFinder;
 import com.lodygames.rpgquest.waypoint.WaypointGenerationPlanner;
@@ -89,6 +90,8 @@ public final class EncounterService implements PluginService {
     private final Supplier<String> wildWorld;
     private final Supplier<Set<String>> forbiddenWorlds;
     private final EncounterTemplateSelector selector = new EncounterTemplateSelector();
+    /** Même résolveur que les PNJ classiques (#325) : appel réseau asynchrone, textures en cache. */
+    private final MineSkinResolver skins = new MineSkinResolver();
     private final Logger logger;
 
     private final ConcurrentHashMap<String, EncounterSite> byId = new ConcurrentHashMap<>();
@@ -101,6 +104,8 @@ public final class EncounterService implements PluginService {
     private final ConcurrentHashMap<UUID, String> lastInstanceByPlayer = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Long> lastCheckByPlayer = new ConcurrentHashMap<>();
     private final Deque<Event> recentEvents = new ArrayDeque<>();
+    /** Occurrence → état de son apparence depuis le démarrage (en mémoire, comme le journal). */
+    private final ConcurrentHashMap<String, String> appearance = new ConcurrentHashMap<>();
     private volatile boolean loaded;
 
     public EncounterService(RPGQuestPlugin plugin, EncounterSiteRepository repository, YamlEncounterEngine templates,
@@ -148,6 +153,7 @@ public final class EncounterService implements PluginService {
         retryCount.clear();
         lastInstanceByPlayer.clear();
         lastCheckByPlayer.clear();
+        appearance.clear();
     }
 
     public Listener listener() {
@@ -179,6 +185,14 @@ public final class EncounterService implements PluginService {
 
     public Optional<EncounterSite> site(String id) {
         return Optional.ofNullable(byId.get(id));
+    }
+
+    /**
+     * État de l'apparence d'une occurrence depuis le démarrage : {@code APPLIED}, {@code DEFAULT},
+     * {@code PENDING}, {@code NOT_PLAYER}, {@code FAILED : motif}, ou vide si rien n'a été tenté.
+     */
+    public Optional<String> appearanceOf(String siteId) {
+        return Optional.ofNullable(appearance.get(siteId));
     }
 
     public List<Event> recentEvents() {
@@ -402,6 +416,7 @@ public final class EncounterService implements PluginService {
             retryCount.remove(key);
             retryNotBefore.remove(key);
             record(site.world(), site.biomeInstance(), outcome, site.id() + " → Citizens #" + created.numericId());
+            applyAppearance(updated);
         } catch (RuntimeException error) {
             busy.remove(key);
             scheduleRetry(key);
@@ -421,6 +436,53 @@ public final class EncounterService implements PluginService {
             npcs.destroyCitizensNpc(marked.get(i).numericId(), marked.get(i).uuid());
         }
         return Optional.of(marked.get(0));
+    }
+
+    /**
+     * Pose l'apparence du modèle ({@code skin_url}) sur le PNJ de l'occurrence ; sans lien,
+     * l'apparence par défaut embarquée (aucun appel réseau) — un PNJ joueur sans skin explicite
+     * prendrait sinon celui du compte Minecraft qui porte son nom. Le lien est résolu en tâche de
+     * fond ; la texture est posée sur le thread principal, seulement si l'occurrence désigne encore
+     * ce PNJ. Un échec est journalisé, jamais remplacé en silence par une autre apparence.
+     */
+    private void applyAppearance(EncounterSite site) {
+        UUID citizens = site.citizensUuid();
+        if (citizens == null) {
+            return;
+        }
+        if (!npcs.citizensIsPlayerType(citizens).orElse(false)) {
+            appearance.put(site.id(), "NOT_PLAYER");
+            return;
+        }
+        String url = templates.find(site.templateId()).map(EncounterTemplate::skinUrl)
+                .orElse(null);
+        String source = url == null ? NpcIdentityService.DEFAULT_SKIN_URL : url;
+        appearance.put(site.id(), "PENDING");
+        skins.resolve(source).thenAccept(resolution -> runSync(() -> {
+            EncounterSite now = byId.get(site.id());
+            if (now == null || !citizens.equals(now.citizensUuid()) || !npcs.citizensExists(citizens)) {
+                appearance.remove(site.id());
+                return;
+            }
+            if (!resolution.ok()) {
+                appearanceFailed(site, resolution.failure().message());
+                return;
+            }
+            var applied = npcs.applyCitizensSkinTexture(citizens, source, resolution.texture());
+            if (applied.ok()) {
+                appearance.put(site.id(), url == null ? "DEFAULT" : "APPLIED");
+            } else {
+                appearanceFailed(site, applied.message());
+            }
+        })).exceptionally(error -> {
+            appearanceFailed(site, error.getClass().getSimpleName());
+            return null;
+        });
+    }
+
+    private void appearanceFailed(EncounterSite site, String reason) {
+        appearance.put(site.id(), "FAILED : " + reason);
+        record(site.world(), site.biomeInstance(), "SKIN_FAILED", site.id() + " : " + reason);
     }
 
     private void fail(EncounterSite site, String reason) {
@@ -448,11 +510,18 @@ public final class EncounterService implements PluginService {
         index(active);
         return repository.updateStatus(siteId, EncounterSite.Status.ACTIVE, active.updatedAt())
                 .thenCompose(ignored -> supplySync(() -> {
-                    ensurePresent(byId.getOrDefault(siteId, active));
+                    EncounterSite before = byId.getOrDefault(siteId, active);
+                    boolean alreadyThere = before.hasCitizens() && npcs.citizensExists(before.citizensUuid());
+                    ensurePresent(before);
                     EncounterSite now = byId.get(siteId);
                     boolean present = now != null && now.hasCitizens() && npcs.citizensExists(now.citizensUuid());
+                    if (alreadyThere && now != null) {
+                        // PNJ déjà en place : « Retenter » sert alors à reposer l'apparence du modèle
+                        // (skin_url modifié depuis l'apparition).
+                        applyAppearance(now);
+                    }
                     return new ActionResult(true, present ? "PRESENT" : "PENDING", present
-                            ? "PNJ présent pour " + siteId + "."
+                            ? "PNJ présent pour " + siteId + (alreadyThere ? " ; apparence du modèle réappliquée." : ".")
                             : "Réactivée ; le PNJ apparaîtra au prochain chargement de sa zone.");
                 }));
     }

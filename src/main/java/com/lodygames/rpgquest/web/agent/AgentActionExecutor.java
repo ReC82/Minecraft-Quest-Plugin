@@ -1108,6 +1108,7 @@ public final class AgentActionExecutor {
                 row.put("lastError", s.lastError());
                 row.put("createdAt", s.createdAt());
                 row.put("updatedAt", s.updatedAt());
+                row.put("appearance", s.appearance());
                 sites.add(row);
             }
             List<Map<String, Object>> events = new ArrayList<>();

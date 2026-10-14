@@ -182,6 +182,8 @@ class EncounterAgentActionsTest {
         assertEquals(Boolean.TRUE, sites.get(0).get("citizensPresent"));
         assertEquals(Boolean.FALSE, sites.get(1).get("citizensPresent"), "PNJ enregistré mais disparu");
         assertEquals("DISABLED", sites.get(1).get("status"));
+        assertEquals("APPLIED", sites.get(0).get("appearance"));
+        assertNull(sites.get(1).get("appearance"), "rien tenté : null, pas « échec »");
         assertEquals(Map.of("bad.yml", "biome manquant"), outcome.details().get("issues"));
         assertEquals(List.of("wild"), outcome.details().get("worlds"));
         List<Map<String, Object>> events = (List<Map<String, Object>>) outcome.details().get("events");
@@ -192,7 +194,7 @@ class EncounterAgentActionsTest {
     void citizensPresenceIsUnknownWithoutCitizens() {
         EncounterSite site = site(SITE, PRESENT, EncounterSite.Status.ACTIVE);
         AgentActions.EncounterCatalogView view = EncounterCatalogViews.build(EncounterConfig.defaults(),
-                List.of("wild"), List.of(), List.of(), List.of(site), List.of(), null);
+                List.of("wild"), List.of(), List.of(), List.of(site), List.of(), null, id -> null);
         assertNull(view.sites().get(0).citizensPresent(), "inconnu, pas « absent »");
     }
 
@@ -230,7 +232,8 @@ class EncounterAgentActionsTest {
         List<EncounterService.Event> events = List.of(
                 new EncounterService.Event(Instant.parse("2026-10-14T01:00:00Z"), "wild", "x", "CREATED", SITE));
         return EncounterCatalogViews.build(EncounterConfig.defaults(), List.of("wild"), List.of(bandit),
-                List.of(new EncounterLoadIssue("bad.yml", "biome manquant")), sites, events, PRESENT::equals);
+                List.of(new EncounterLoadIssue("bad.yml", "biome manquant")), sites, events, PRESENT::equals,
+                id -> SITE.equals(id) ? "APPLIED" : null);
     }
 
     private static EncounterSite site(String id, UUID citizens, EncounterSite.Status status) {

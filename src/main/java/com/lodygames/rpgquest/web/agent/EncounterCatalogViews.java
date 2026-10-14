@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -25,13 +26,15 @@ final class EncounterCatalogViews {
     /** @param citizensExists vrai si l'entité Citizens existe encore ; {@code null} = Citizens absent. */
     static AgentActions.EncounterCatalogView build(EncounterService service, Predicate<UUID> citizensExists) {
         return build(service.config(), service.effectiveWorlds(), service.templates().templates(),
-                service.templates().lastReport().issues(), service.sites(), service.recentEvents(), citizensExists);
+                service.templates().lastReport().issues(), service.sites(), service.recentEvents(), citizensExists,
+                id -> service.appearanceOf(id).orElse(null));
     }
 
     static AgentActions.EncounterCatalogView build(EncounterConfig config, List<String> worlds,
                                                    List<EncounterTemplate> templates, List<EncounterLoadIssue> issues,
                                                    List<EncounterSite> sites, List<EncounterService.Event> events,
-                                                   Predicate<UUID> citizensExists) {
+                                                   Predicate<UUID> citizensExists,
+                                                   Function<String, String> appearance) {
         Map<String, Integer> sitesByTemplate = new HashMap<>();
         sites.forEach(s -> sitesByTemplate.merge(s.templateId(), 1, Integer::sum));
         List<AgentActions.EncounterTemplateSummary> templateRows = templates.stream()
@@ -42,7 +45,7 @@ final class EncounterCatalogViews {
         Map<String, String> issueRows = new LinkedHashMap<>();
         issues.forEach(i -> issueRows.put(i.file(), i.message()));
         List<AgentActions.EncounterSiteSummary> siteRows = sites.stream()
-                .map(s -> siteSummary(s, citizensExists))
+                .map(s -> siteSummary(s, citizensExists, appearance.apply(s.id())))
                 .toList();
         // Déjà du plus récent au plus ancien (EncounterService#record).
         List<AgentActions.EncounterEventSummary> eventRows = events.stream()
@@ -53,12 +56,13 @@ final class EncounterCatalogViews {
                 templateRows, issueRows, siteRows, eventRows, System.currentTimeMillis());
     }
 
-    private static AgentActions.EncounterSiteSummary siteSummary(EncounterSite s, Predicate<UUID> citizensExists) {
+    private static AgentActions.EncounterSiteSummary siteSummary(EncounterSite s, Predicate<UUID> citizensExists,
+                                                                 String appearance) {
         Boolean present = !s.hasCitizens() ? Boolean.FALSE
                 : citizensExists == null ? null : citizensExists.test(s.citizensUuid());
         return new AgentActions.EncounterSiteSummary(s.id(), s.world(), s.biomeKey(), s.biomeInstance(),
                 s.x(), s.y(), s.z(), s.templateId(), s.npcId(), s.citizensId(),
                 s.hasCitizens() ? s.citizensUuid().toString() : null, present, s.status().name(), s.lastError(),
-                String.valueOf(s.createdAt()), String.valueOf(s.updatedAt()));
+                String.valueOf(s.createdAt()), String.valueOf(s.updatedAt()), appearance);
     }
 }

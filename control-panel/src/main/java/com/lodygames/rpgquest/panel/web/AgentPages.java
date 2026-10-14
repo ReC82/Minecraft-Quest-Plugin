@@ -5996,6 +5996,7 @@ public final class AgentPages {
                         ? "<span class=\"badge text-bg-success\">présent</span>"
                         : Boolean.FALSE.equals(present) ? "<span class=\"badge text-bg-danger\">disparu</span>"
                         : "<span class=\"badge text-bg-secondary\">inconnu</span>");
+        citizens += encounterAppearance(cleanNull(str(s.get("appearance"))));
         String error = cleanNull(str(s.get("lastError")));
         StringBuilder sb = new StringBuilder("<tr><td>").append(Ui.id(id)).append("<br><small class=\"muted\">")
                 .append(Http.esc(str(s.get("biomeKey")).replace("minecraft:", ""))).append("</small></td><td>")
@@ -6026,6 +6027,22 @@ public final class AgentPages {
                     "btn-outline-danger")).append("</div>");
         }
         return sb.append("</td></tr>").toString();
+    }
+
+    /** État de l'apparence relevé par le serveur depuis son démarrage (vide = rien tenté depuis). */
+    private static String encounterAppearance(String state) {
+        if (state.isEmpty()) {
+            return "";
+        }
+        String label = switch (state) {
+            case "APPLIED" -> "apparence du modèle";
+            case "DEFAULT" -> "apparence par défaut";
+            case "PENDING" -> "apparence en cours";
+            case "NOT_PLAYER" -> "pas de skin (PNJ non joueur)";
+            default -> state.startsWith("FAILED") ? "apparence en échec" + state.substring("FAILED".length()) : state;
+        };
+        return "<br><small class=\"" + (state.startsWith("FAILED") ? "text-danger-emphasis" : "muted") + "\">"
+                + Http.esc(label) + "</small>";
     }
 
     private String encounterSiteForm(Session session, String agentId, String type, String siteId, String label,

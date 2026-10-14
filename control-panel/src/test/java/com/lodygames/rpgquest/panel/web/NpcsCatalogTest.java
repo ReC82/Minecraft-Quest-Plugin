@@ -983,7 +983,8 @@ class NpcsCatalogTest {
             + "\"sites\":[{\"id\":\"enc_wild_forest_3_-2\",\"world\":\"wild\",\"biomeKey\":\"minecraft:forest\","
             + "\"biomeInstance\":\"i\",\"x\":10,\"y\":70,\"z\":-20,\"templateId\":\"forest_bandit\","
             + "\"npcId\":\"encounter_bandit\",\"citizensId\":5,\"citizensUuid\":\"5e081a06-6596-47a3-b769-aef5fcd9e676\","
-            + "\"citizensPresent\":true,\"status\":\"ACTIVE\",\"lastError\":\"\",\"createdAt\":\"t\",\"updatedAt\":\"t\"},"
+            + "\"citizensPresent\":true,\"status\":\"ACTIVE\",\"lastError\":\"\",\"createdAt\":\"t\",\"updatedAt\":\"t\","
+            + "\"appearance\":\"FAILED : MineSkin ne répond pas\"},"
             + "{\"id\":\"enc_wild_forest_4_-2\",\"world\":\"wild\",\"biomeKey\":\"minecraft:forest\","
             + "\"biomeInstance\":\"j\",\"x\":300,\"y\":66,\"z\":-20,\"templateId\":\"forest_bandit\","
             + "\"npcId\":\"encounter_bandit\",\"citizensId\":-1,\"citizensUuid\":null,\"citizensPresent\":false,"
@@ -1016,6 +1017,7 @@ class NpcsCatalogTest {
         assertTrue(page.contains("enc_wild_forest_3_-2") && page.contains("/tp @s 10 70 -20"));
         assertTrue(page.contains("présent") && page.contains("désactivée") && page.contains("aucun sol sûr"));
         assertTrue(page.contains("CREATED"));
+        assertTrue(page.contains("apparence en échec : MineSkin ne répond pas"), "état de l'apparence visible");
         assertTrue(page.contains("value=\"encounter.remove\"") && page.contains("value=\"encounter.retry\""));
 
         String token = csrf(page);

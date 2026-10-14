@@ -1,6 +1,13 @@
 # Dialogue des PNJ récurrents « Brigand des bois » (issue #13). Partagé par TOUTES les occurrences de ce
 # modèle (id = npc_id du modèle, convention du projet) : le PNJ est commun, la conversation et les
-# quêtes restent propres à chaque joueur. Les quêtes secondaires renouvelables s'ajoutent ici.
+# quêtes restent propres à chaque joueur.
+#
+# Étape 4 de #13 : quête secondaire renouvelable rpgquest:encounter_bandit_spiders.
+#  - L'offre n'apparaît que si la quête est réellement acceptable MAINTENANT (QUEST_AVAILABLE : ni
+#    active, prérequis remplis, délai de ré-acceptation « cooldown: » écoulé).
+#  - Aucune quête sans acceptation : seul le bouton « Commencer (j'accepte) » porte le START_QUEST (préfixe « Commencer » imposé par #238) ; « Plus tard »
+#    et « Refuser » ne démarrent rien.
+#  - Quête terminée et encore en recharge : le PNJ le dit, sans rien proposer.
 id: rpgquest:encounter_bandit
 start: greeting
 
@@ -9,16 +16,80 @@ nodes:
     speaker: "Brigand des bois"
     text: "<white>Hé, doucement… Je ne te veux pas de mal. Les bois sont pleins de secrets pour qui sait chercher.</white>"
     choices:
+      - text: "Du travail ?"
+        conditions:
+          - type: QUEST_AVAILABLE
+            quest: rpgquest:encounter_bandit_spiders
+        next: offer
+      - text: "Où en est ma tâche ?"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:encounter_bandit_spiders
+            state: ACTIVE
+        next: in_progress
+      - text: "Encore du travail ?"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:encounter_bandit_spiders
+            state: COMPLETED
+          - type: QUEST_AVAILABLE
+            quest: rpgquest:encounter_bandit_spiders
+            negate: true
+        next: resting
       - text: "Qui es-tu ?"
         next: who
       - text: "Au revoir"
         actions:
           - type: CLOSE
 
-  who:
+  offer:
     speaker: "Brigand des bois"
-    text: "<gray>Un voyageur, comme toi. On me croise un peu partout dans ce genre de contrée.</gray> <white>Reviens me voir : j'aurai bientôt du travail pour quelqu'un de discret.</white>"
+    text: "<white>La quête s'appelle <gold>Les toiles du sous-bois</gold>.</white><newline><gray>But : chasser les araignées qui s'installent dans nos caches.</gray><newline><gray>Ce qu'il faudra faire : éliminer 6 araignées, puis revenir parler à un Brigand des bois — n'importe lequel.</gray><newline><gray>Récompense modeste : un peu d'expérience et des flèches. Je n'aurai pas d'autre travail avant demain.</gray>"
     choices:
-      - text: "À bientôt"
+      - text: "Commencer (j'accepte)"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:encounter_bandit_spiders
+        next: accepted
+      - text: "Plus tard"
+        next: greeting
+      - text: "Refuser"
+        next: refused
+
+  accepted:
+    speaker: "Brigand des bois"
+    text: "<green>Marché conclu.</green> <gray>Ta tâche est notée dans ton journal de quêtes.</gray>"
+    choices:
+      - text: "En route"
         actions:
           - type: CLOSE
+
+  refused:
+    speaker: "Brigand des bois"
+    text: "<gray>Comme tu voudras. L'offre tient tant que tu ne l'as pas faite.</gray>"
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
+  in_progress:
+    speaker: "Brigand des bois"
+    text: "<white>Les araignées ne vont pas se chasser toutes seules.</white> <gray>Six suffiront ; reviens ensuite me parler, à moi ou à un autre Brigand des bois.</gray>"
+    choices:
+      - text: "Retour"
+        next: greeting
+
+  resting:
+    speaker: "Brigand des bois"
+    text: "<gray>Tu m'as déjà bien aidé. Je n'ai rien d'autre pour l'instant — repasse d'ici un jour.</gray>"
+    choices:
+      - text: "Au revoir"
+        actions:
+          - type: CLOSE
+
+  who:
+    speaker: "Brigand des bois"
+    text: "<gray>Un voyageur, comme toi. On me croise un peu partout dans ce genre de contrée — un brigand des bois en vaut un autre, et nous nous racontons tout.</gray>"
+    choices:
+      - text: "Retour"
+        next: greeting

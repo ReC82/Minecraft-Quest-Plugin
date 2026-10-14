@@ -34,6 +34,50 @@ class BundledQuestsValidityTest {
         assertTrue(report.issues().isEmpty(), () -> "problèmes de chargement : " + report.issues());
     }
 
+    /**
+     * Issue #13, étape 4 : chaque PNJ récurrent de biome (npc_id {@code encounter_*}) donne une quête
+     * secondaire modeste, renouvelable avec délai (anti-farm), et son dialogue ne la démarre QUE depuis
+     * un bouton « Commencer (j'accepte) » affiché sous {@code QUEST_AVAILABLE} — jamais sans acceptation explicite.
+     */
+    @Test
+    void encounterQuestsAreRenewableWithCooldownAndOnlyStartedFromAnExplicitAccept() {
+        Map<NamespacedKey, QuestDefinition> byId = loader.loadDirectory(BUNDLED_QUESTS_DIR).loaded().stream()
+                .collect(Collectors.toMap(QuestDefinition::id, q -> q));
+        Map<String, String> questByGiver = Map.of(
+                "encounter_bandit", "encounter_bandit_spiders",
+                "encounter_merchant", "encounter_merchant_cactus",
+                "encounter_smith", "encounter_smith_ore");
+
+        questByGiver.forEach((giver, questKey) -> {
+            QuestDefinition quest = byId.get(new NamespacedKey("rpgquest", questKey));
+            assertTrue(quest != null, () -> "quête manquante : " + questKey);
+            assertEquals(giver, quest.giver());
+            assertEquals("encounter", quest.category());
+            assertTrue(quest.repeatable(), () -> questKey + " doit être renouvelable");
+            assertTrue(quest.cooldown().compareTo(java.time.Duration.ofHours(1)) >= 0,
+                    () -> questKey + " doit avoir un délai anti-farm");
+            assertTrue(quest.prerequisites().isEmpty(), () -> questKey + " : aucune chaîne, quête secondaire");
+
+            org.bukkit.configuration.file.YamlConfiguration dialogue = org.bukkit.configuration.file.YamlConfiguration
+                    .loadConfiguration(Path.of("src", "main", "resources", "dialogues", giver + ".yml").toFile());
+            org.bukkit.configuration.ConfigurationSection nodes = dialogue.getConfigurationSection("nodes");
+            int starts = 0;
+            for (String nodeId : nodes.getKeys(false)) {
+                for (Map<?, ?> choice : nodes.getMapList(nodeId + ".choices")) {
+                    Object actions = choice.get("actions");
+                    if (actions != null && actions.toString().contains("START_QUEST")) {
+                        starts++;
+                        assertEquals("Commencer (j'accepte)", choice.get("text"), giver + " : START_QUEST hors du bouton d'acceptation");
+                        assertTrue(actions.toString().contains("rpgquest:" + questKey));
+                    }
+                }
+            }
+            assertEquals(1, starts, giver + " : un seul point de démarrage");
+            assertTrue(nodes.getMapList("greeting.choices").toString().contains("QUEST_AVAILABLE"),
+                    giver + " : l'offre doit être conditionnée par QUEST_AVAILABLE");
+        });
+    }
+
     @Test
     void guardTierChainHasFiveSequentialQuests() {
         Map<NamespacedKey, QuestDefinition> byId = loader.loadDirectory(BUNDLED_QUESTS_DIR).loaded().stream()

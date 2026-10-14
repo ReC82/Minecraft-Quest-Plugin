@@ -22,7 +22,9 @@ public final class YamlQuestEngine implements QuestEngine {
             {"premiers_pas.yml", "first_steps.yml", "woodcutters_request.yml", "crystal_hunt.yml",
                     "guard_tier1.yml", "guard_tier2.yml", "guard_tier3.yml", "guard_tier4.yml", "guard_tier5.yml",
                     // Issue #218 : quêtes de montée aux paliers 2 à 5 du kit de départ.
-                    "kit_tier2.yml", "kit_tier3.yml", "kit_tier4.yml", "kit_tier5.yml"};
+                    "kit_tier2.yml", "kit_tier3.yml", "kit_tier4.yml", "kit_tier5.yml",
+                    // Issue #13 : quêtes secondaires renouvelables des PNJ récurrents de biome.
+                    "encounter_bandit_spiders.yml", "encounter_merchant_cactus.yml", "encounter_smith_ore.yml"};
 
     private final Path questsDirectory;
     private final Logger logger;

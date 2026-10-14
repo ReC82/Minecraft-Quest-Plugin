@@ -1,0 +1,31 @@
+# Quête secondaire renouvelable du Forgeron perdu (issue #13, étape 4). Donnée par n'importe
+# quelle occurrence du modèle mountain_smith (npc_id encounter_smith). Remise d'objets au PNJ
+# (DELIVER_ITEM_TO_NPC, #123). Récompense volontairement inférieure à la valeur de la remise :
+# la quête ne doit pas devenir une forge gratuite. Délai de 20 h entre deux complétions.
+id: rpgquest:encounter_smith_ore
+title: "<gold>Du minerai pour la forge</gold>"
+description: "<gray>Le Forgeron perdu a besoin de fer brut et de charbon. Rapporte-les à n'importe quel Forgeron perdu.</gray>"
+category: encounter
+icon: RAW_IRON
+giver: encounter_smith
+repeatable: true
+cooldown: 20h
+
+steps:
+  - id: deliver_ore
+    objectives:
+      - type: DELIVER_ITEM_TO_NPC
+        npc: encounter_smith
+        material: RAW_IRON
+        amount: 6
+      - type: DELIVER_ITEM_TO_NPC
+        npc: encounter_smith
+        material: COAL
+        amount: 8
+
+rewards:
+  - type: EXPERIENCE
+    amount: 30
+  - type: ITEM
+    material: IRON_INGOT
+    amount: 2

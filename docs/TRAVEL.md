@@ -596,7 +596,9 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
       monde** : plusieurs centres peuvent coexister dans `world_hub`, distingués par `id`/nom.
       Arrivée à la position **et orientation exactes** enregistrées par l'administrateur (même
       confiance qu'un spawn — `spawn.SpawnService`) ; centre désactivé/supprimé entre l'ouverture
-      du menu et le clic → revalidation stricte, aucune téléportation.
+      du menu et le clic → revalidation stricte, aucune téléportation. Depuis #322, une ville peut
+      avoir un **point d'arrivée distinct** de son centre de détection (`VillageCenter#travelTarget`) :
+      c'est lui que vise le menu ; sans arrivée, c'est le centre.
   - **Choix du monde** (`Kind.WORLDS`, issue #149-suite) : étape intermédiaire entre la racine et la
     liste des waypoints — `world_hub` (Hub) et `travel.wild-world` (Wild) ont **toujours** leur
     propre page, même à 0 découverte ; tout autre monde est **extensible**, affiché uniquement dès

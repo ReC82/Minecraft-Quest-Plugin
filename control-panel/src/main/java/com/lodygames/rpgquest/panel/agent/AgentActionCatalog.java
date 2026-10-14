@@ -352,6 +352,13 @@ public final class AgentActionCatalog {
                 "Montrer le périmètre d'une ville en jeu", "city.list");
         addSensitiveWrite("city.delete", Permission.CITY_DELETE, false,
                 "Supprimer une ville et ses découvertes", "city.list");
+        // Issue #322 — PNJ central (par identité stable) et arrivée relevée sur un joueur connecté.
+        addContentWrite("city.npc.link", Permission.CITY_WRITE,
+                "Associer / retirer le PNJ central d'une ville", "city.list");
+        addContentWrite("city.arrival.set", Permission.CITY_WRITE,
+                "Relever le point d'arrivée d'une ville sur un joueur", "city.list");
+        addContentWrite("city.arrival.clear", Permission.CITY_WRITE,
+                "Revenir à l'arrivée au centre d'une ville", "city.list");
         add("travel.catalog", Permission.TRAVEL_READ, false, false,
                 "Rafraîchir le catalogue waypoints/bornes (issue #152)");
         // Issue #156 — rattrapage CIBLÉ d'une instance du Hub restée sans borne. Mutation sensible :
@@ -997,7 +1004,7 @@ public final class AgentActionCatalog {
             }
             // Issue #178 — villes : bornes revalidées par le plugin, refus lisibles ici d'abord.
             case "city.rename", "city.resize", "city.active", "city.move.arm", "city.perimeter.show",
-                 "city.delete" -> {
+                 "city.delete", "city.npc.link", "city.arrival.set", "city.arrival.clear" -> {
                 String id = trim(form.get("id"));
                 if (!CITY_ID.matcher(id).matches()) {
                     return Validation.fail("Identifiant de ville manquant ou invalide.");
@@ -1031,7 +1038,21 @@ public final class AgentActionCatalog {
                         }
                         params.put("active", active);
                     }
-                    case "city.move.arm", "city.perimeter.show" -> {
+                    case "city.npc.link" -> {
+                        // Vide = retirer le PNJ central. Sinon l'identité stable, jamais le nom affiché.
+                        String npc = trim(form.get("npc"));
+                        if (!npc.isEmpty() && !NPC_ID.matcher(npc).matches()) {
+                            return Validation.fail("Choisissez un PNJ de la liste (identifiant stable, "
+                                    + "minuscules, chiffres, . _ -), ou laissez vide pour le retirer.");
+                        }
+                        if (!npc.isEmpty()) {
+                            params.put("npc", npc);
+                        }
+                    }
+                    case "city.arrival.clear" -> {
+                        // L'identifiant suffit.
+                    }
+                    case "city.move.arm", "city.perimeter.show", "city.arrival.set" -> {
                         String player = trim(form.get("player"));
                         if (!CITY_PLAYER.matcher(player).matches()) {
                             return Validation.fail("Choisissez le pseudo d'un joueur connecté.");

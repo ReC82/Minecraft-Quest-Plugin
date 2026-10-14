@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 36;
+    public static final int CURRENT_VERSION = 37;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -75,7 +75,9 @@ public final class SchemaMigrator {
             new SchemaMigration(35, "textes libres en TEXT sur MariaDB (issue #354)",
                     SchemaMigrator::applyV35),
             new SchemaMigration(36, "player_heart_grants (cœurs de vie maximum, issue #166)",
-                    SchemaMigrator::applyV36));
+                    SchemaMigrator::applyV36),
+            new SchemaMigration(37, "villes : PNJ central optionnel + point d'arrivée distinct (issue #322)",
+                    SchemaMigrator::applyV37));
 
     private SchemaMigrator() {
     }
@@ -1401,6 +1403,30 @@ public final class SchemaMigrator {
                         PRIMARY KEY (player_uuid, grant_key)
                     )
                     """));
+        }
+    }
+
+    private static void applyV37(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #322 — la ville (#178) reste UNE ligne de village_centers. Elle gagne deux
+        // informations facultatives, toutes NULL pour les villes existantes (comportement inchangé) :
+        // l'identité stable d'un PNJ central (npc_id logique, jamais un nom affiché ni une position
+        // copiée) et un point d'arrivée de voyage distinct du centre de détection. Sans arrivée, le
+        // menu « Villages » continue d'arriver au centre.
+        String[][] columns = {
+                {"central_npc_id", "TEXT"},
+                {"arrival_world", "TEXT"},
+                {"arrival_x", "REAL"},
+                {"arrival_y", "REAL"},
+                {"arrival_z", "REAL"},
+                {"arrival_yaw", "REAL"},
+                {"arrival_pitch", "REAL"}};
+        for (String[] column : columns) {
+            if (!dialect.columnExists(connection, "village_centers", column[0])) {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute(dialect.ddl("ALTER TABLE village_centers ADD COLUMN "
+                            + column[0] + " " + column[1]));
+                }
+            }
         }
     }
 }

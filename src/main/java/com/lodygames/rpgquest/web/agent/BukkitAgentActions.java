@@ -1115,7 +1115,12 @@ public final class BukkitAgentActions implements AgentActions {
         if (cityRegistry == null || cityDiscovery == null) {
             return AgentActions.super.cities();
         }
-        return cityDiscovery.discoveriesByCity().thenCompose(counts -> onMain(() -> {
+        CompletableFuture<List<NpcBindingRepository.Binding>> bindingsFuture = npcBindingRepository == null
+                ? CompletableFuture.completedFuture(List.of()) : npcBindingRepository.loadAll();
+        return cityDiscovery.discoveriesByCity().thenCombine(bindingsFuture, (counts, bindings) -> Map.entry(counts, bindings))
+                .thenCompose(loaded -> onMain(() -> {
+            var counts = loaded.getKey();
+            List<CitizensNpc> roster = npcIdentityService == null ? List.of() : npcIdentityService.citizensRoster();
             var all = cityRegistry.all();
             List<CitySummary> rows = new ArrayList<>();
             for (var city : all) {
@@ -1128,7 +1133,8 @@ public final class BukkitAgentActions implements AgentActions {
                         city.blockX(), city.blockZ(), city.detectionDistance(), city.active(),
                         city.createdAt().toString(), plugin.getServer().getWorld(city.world()) != null,
                         b.minX(), b.maxX(), b.minZ(), b.maxZ(), b.width(),
-                        counts.getOrDefault(city.id(), 0), overlaps));
+                        counts.getOrDefault(city.id(), 0), overlaps,
+                        cityAnchors(city, loaded.getValue(), roster)));
             }
             List<CityPendingMove> moves = new ArrayList<>();
             for (var m : cityPendings.armedMoves()) {
@@ -1141,6 +1147,114 @@ public final class BukkitAgentActions implements AgentActions {
                     com.lodygames.rpgquest.city.CityPerimeter.MAX_DISTANCE,
                     com.lodygames.rpgquest.city.CityPerimeter.DEFAULT_DISTANCE));
         }));
+    }
+
+    /**
+     * Issue #322 — PNJ central relu en direct (définition, liaison Citizens, position du registre
+     * Citizens sans charger de chunk) et point d'arrivée. Thread principal.
+     */
+    private CityAnchorsView cityAnchors(com.lodygames.rpgquest.travel.beacon.model.VillageCenter city,
+                                        List<NpcBindingRepository.Binding> bindings, List<CitizensNpc> roster) {
+        String npcId = city.centralNpcId();
+        var definition = city.hasCentralNpc() && npcEngine != null ? npcEngine.find(npcId) : Optional.<NpcDefinition>empty();
+        Optional<UUID> citizensUuid = city.hasCentralNpc()
+                ? bindings.stream().filter(b -> b.npcId().equals(npcId))
+                        .map(NpcBindingRepository.Binding::citizensUuid).findFirst()
+                : Optional.empty();
+        CitizensNpc npc = citizensUuid.flatMap(uuid -> roster.stream()
+                .filter(n -> n.uuid().equals(uuid)).findFirst()).orElse(null);
+        var status = com.lodygames.rpgquest.city.CityAnchors.npc(city, definition.isPresent(),
+                npcIdentityService != null && npcIdentityService.citizensAvailable(), citizensUuid.isPresent(), npc);
+        var arrivalStatus = com.lodygames.rpgquest.city.CityAnchors.arrival(city);
+        var arrival = city.arrival();
+        return new CityAnchorsView(city.hasCentralNpc() ? npcId : null,
+                definition.map(NpcDefinition::displayName).orElse(null),
+                status.code(), status.severity().name(), status.message(), status.world(),
+                status.x(), status.y(), status.z(), status.live(), status.distance(),
+                arrival == null ? null : arrival.world(), arrival == null ? null : arrival.x(),
+                arrival == null ? null : arrival.y(), arrival == null ? null : arrival.z(),
+                arrival == null ? null : arrival.yaw(), arrival == null ? null : arrival.pitch(),
+                arrivalStatus.code(), arrivalStatus.severity().name(), arrivalStatus.message());
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> cityLinkNpc(String id, String npcId) {
+        if (cityRegistry == null) {
+            return AgentActions.super.cityLinkNpc(id, npcId);
+        }
+        return onMain(() -> {
+            if (npcId != null && (npcEngine == null || npcEngine.find(npcId).isEmpty())) {
+                return done(MutationResult.of(false, "UNKNOWN_NPC", "Aucun PNJ « " + safe(npcId)
+                        + " » : choisissez un PNJ existant (identifiant stable, pas le nom affiché)."));
+            }
+            return cityRegistry.linkNpc(id, npcId).thenApply(r -> {
+                if (!r.ok()) {
+                    return MutationResult.of(false, "REFUSED", r.error());
+                }
+                return npcId == null
+                        ? new MutationResult(true, "UNLINKED", "« " + r.city().name() + " » n'a plus de PNJ central. "
+                                + "Son centre et ses découvertes sont inchangés.", List.of())
+                        : new MutationResult(true, "LINKED", "« " + npcId + " » est le PNJ central de « "
+                                + r.city().name() + " ». Le centre de détection ne change pas : rafraîchissez "
+                                + "pour relire la position du PNJ.", List.of("npc: " + npcId));
+            });
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> citySetArrival(String id, String playerName) {
+        if (cityRegistry == null) {
+            return AgentActions.super.citySetArrival(id, playerName);
+        }
+        return onMain(() -> {
+            var city = cityRegistry.find(id);
+            if (city.isEmpty()) {
+                return done(MutationResult.of(false, "NOT_FOUND", "Ville introuvable : " + safe(id)));
+            }
+            Player player = plugin.getServer().getPlayerExact(playerName);
+            if (player == null) {
+                return done(MutationResult.of(false, "OFFLINE", "« " + safe(playerName)
+                        + " » n'est pas connecté : l'arrivée est relevée à sa position en jeu."));
+            }
+            org.bukkit.Location here = player.getLocation();
+            if (!here.getWorld().getName().equals(city.get().world())) {
+                return done(MutationResult.of(false, "OTHER_WORLD", player.getName() + " est dans "
+                        + here.getWorld().getName() + " : l'arrivée doit être dans le monde de la ville ("
+                        + city.get().world() + ")."));
+            }
+            String unsafe = com.lodygames.rpgquest.city.CityAnchors.unsafeArrival(
+                    new BukkitNpcPlacementProbe(here.getWorld(), java.util.Set.of()),
+                    here.getBlockX(), here.getBlockY(), here.getBlockZ());
+            if (unsafe != null) {
+                return done(MutationResult.of(false, "UNSAFE", "Position de " + player.getName()
+                        + " refusée comme arrivée : " + unsafe + ". Placez-vous debout sur un sol plein."));
+            }
+            var arrival = new com.lodygames.rpgquest.travel.beacon.model.VillageCenter.Arrival(
+                    here.getWorld().getName(), here.getBlockX() + 0.5, here.getY(), here.getBlockZ() + 0.5,
+                    here.getYaw(), here.getPitch());
+            return cityRegistry.setArrival(id, arrival).thenApply(r -> {
+                if (!r.ok()) {
+                    return MutationResult.of(false, "REFUSED", r.error());
+                }
+                var status = com.lodygames.rpgquest.city.CityAnchors.arrival(r.city());
+                return new MutationResult(true, "ARRIVAL_SET", "Arrivée de « " + r.city().name()
+                        + " » relevée sur " + player.getName() + " : " + arrival.world() + " "
+                        + here.getBlockX() + " " + here.getBlockY() + " " + here.getBlockZ() + ". "
+                        + status.message(), List.of("yaw: " + Math.round(arrival.yaw()),
+                        "pitch: " + Math.round(arrival.pitch())));
+            });
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> cityClearArrival(String id) {
+        if (cityRegistry == null) {
+            return AgentActions.super.cityClearArrival(id);
+        }
+        return onMain(() -> cityRegistry.clearArrival(id)).thenApply(r -> r.ok()
+                ? new MutationResult(true, "ARRIVAL_CLEARED", "« " + r.city().name()
+                        + " » : le menu « Villages » arrive de nouveau au centre de la ville.", List.of())
+                : MutationResult.of(false, "REFUSED", r.error()));
     }
 
     @Override

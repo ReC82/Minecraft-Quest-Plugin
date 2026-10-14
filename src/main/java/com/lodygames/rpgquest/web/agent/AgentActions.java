@@ -540,7 +540,18 @@ public interface AgentActions {
     record CitySummary(String id, String name, String world, double x, double y, double z,
                        int centerX, int centerZ, int distance, boolean active, String createdAt,
                        boolean worldLoaded, int minX, int maxX, int minZ, int maxZ, int width,
-                       int discoveries, List<String> overlaps) {
+                       int discoveries, List<String> overlaps, CityAnchorsView anchors) {
+    }
+
+    /**
+     * Issue #322 — PNJ central (identité, état relu en direct) et point d'arrivée de voyage.
+     * {@code npcX/npcY/npcZ} et {@code arrival*} sont {@code null} quand ils n'existent pas.
+     */
+    record CityAnchorsView(String centralNpcId, String npcDisplayName, String npcStatus, String npcSeverity,
+                           String npcMessage, String npcWorld, Double npcX, Double npcY, Double npcZ,
+                           boolean npcLive, int npcDistance, String arrivalWorld, Double arrivalX,
+                           Double arrivalY, Double arrivalZ, Float arrivalYaw, Float arrivalPitch,
+                           String arrivalStatus, String arrivalSeverity, String arrivalMessage) {
     }
 
     /** Un déplacement de centre armé, en attente du clic d'outil du joueur. */
@@ -576,6 +587,21 @@ public interface AgentActions {
     }
 
     default CompletableFuture<MutationResult> cityDelete(String id) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    /** Issue #322 — associe un PNJ central par son npc_id, ou le retire ({@code npcId} vide). */
+    default CompletableFuture<MutationResult> cityLinkNpc(String id, String npcId) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    /** Issue #322 — l'arrivée de voyage devient la position actuelle (et l'orientation) d'un joueur connecté. */
+    default CompletableFuture<MutationResult> citySetArrival(String id, String playerName) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
+    }
+
+    /** Issue #322 — retour à l'arrivée au centre. */
+    default CompletableFuture<MutationResult> cityClearArrival(String id) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED", "Villes indisponibles."));
     }
 

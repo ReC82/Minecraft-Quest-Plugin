@@ -34,6 +34,9 @@ import org.slf4j.Logger;
  */
 public final class CityRegistry {
 
+    /** Forme d'un npc_id logique, la même que celle des actions PNJ de l'agent. */
+    private static final java.util.regex.Pattern NPC_ID = java.util.regex.Pattern.compile("[a-z0-9._-]{1,64}");
+
     private final VillageCenterRepository repository;
     private final Executor mainThread;
     private final Logger logger;
@@ -180,6 +183,40 @@ public final class CityRegistry {
 
     public CompletableFuture<Result> setActive(String id, boolean active) {
         return mutate(id, city -> city.withActive(active));
+    }
+
+    /**
+     * Issue #322 — associe un PNJ central par son identité stable, ou le retire ({@code null} ou
+     * vide). Seul l'identifiant est enregistré : la position du PNJ est toujours relue en direct, et
+     * l'appelant vérifie que la définition existe.
+     */
+    public CompletableFuture<Result> linkNpc(String id, String npcId) {
+        String normalized = npcId == null || npcId.isBlank() ? null : npcId.trim();
+        if (normalized != null && !NPC_ID.matcher(normalized).matches()) {
+            return CompletableFuture.completedFuture(Result.refused("Identifiant de PNJ invalide : " + npcId));
+        }
+        return mutate(id, city -> city.withCentralNpc(normalized));
+    }
+
+    /**
+     * Issue #322 — fixe le point d'arrivée de voyage. Il doit être dans le monde de la ville : une
+     * arrivée ailleurs ferait voyager vers une ville sans jamais y entrer.
+     */
+    public CompletableFuture<Result> setArrival(String id, VillageCenter.Arrival arrival) {
+        VillageCenter existing = byId.get(id);
+        if (existing == null) {
+            return CompletableFuture.completedFuture(Result.refused("Ville introuvable : " + id));
+        }
+        if (arrival == null || !existing.world().equals(arrival.world())) {
+            return CompletableFuture.completedFuture(Result.refused("L'arrivée doit être dans le monde de la ville ("
+                    + existing.world() + ")" + (arrival == null ? "." : ", pas dans " + arrival.world() + ".")));
+        }
+        return mutate(id, city -> city.withArrival(arrival));
+    }
+
+    /** Issue #322 — revient à l'arrivée au centre. */
+    public CompletableFuture<Result> clearArrival(String id) {
+        return mutate(id, city -> city.withArrival(null));
     }
 
     /** Supprime la ville et ses découvertes (voir {@link VillageCenterRepository#delete}). */

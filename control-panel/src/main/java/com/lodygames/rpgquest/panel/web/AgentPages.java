@@ -3560,6 +3560,7 @@ public final class AgentPages {
         if (canWrite) {
             sb.append(compactRefresh(session, agentId, "player.list", "Joueurs connectés",
                     "btn-outline-secondary", "/cities"));
+            sb.append(compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/cities"));
         }
         sb.append("</div>");
 
@@ -3612,11 +3613,15 @@ public final class AgentPages {
                 .map(x -> asList(x.get("players"))).orElse(List.of())
                 .stream().map(o -> str(asMap(o).get("name"))).filter(s -> !s.isEmpty()).toList();
         List<com.lodygames.rpgquest.panel.content.SourceCatalog.QuestSource> sourceQuests = sourceCatalog.quests();
+        Map<String, String> npcChoices = cityNpcChoices(agentId);
+        if (canWrite) {
+            sb.append(cityNpcDatalist(npcChoices));
+        }
         sb.append("<div class=\"accordion npc-accordion\" id=\"city-accordion\">");
         int index = 0;
         for (var city : shown) {
             sb.append(cityItem(session, agentId, city, index++, directory, canWrite, canDelete,
-                    onlinePlayers, questsCiting(city.id(), sourceQuests)));
+                    onlinePlayers, questsCiting(city.id(), sourceQuests), npcChoices));
         }
         sb.append("</div>");
         sb.append(cityHowToCard(directory));
@@ -3642,7 +3647,7 @@ public final class AgentPages {
     private String cityItem(Session session, String agentId, com.lodygames.rpgquest.panel.city.CityView city,
                             int index, com.lodygames.rpgquest.panel.city.CityDirectory directory,
                             boolean canWrite, boolean canDelete, List<String> onlinePlayers,
-                            List<String> citingQuests) {
+                            List<String> citingQuests, Map<String, String> npcChoices) {
         String slug = "city-" + index + "-" + city.id().replaceAll("[^a-z0-9_-]", "-");
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"cities\" data-filter-text=\"")
@@ -3664,6 +3669,14 @@ public final class AgentPages {
         }
         if (!city.worldLoaded()) {
             sb.append("<span class=\"badge text-bg-warning\">monde non chargé</span>");
+        }
+        var anchors = city.anchors();
+        if (anchors.hasCentralNpc()) {
+            sb.append("<span class=\"badge ").append(severityBadge(anchors.npcSeverity())).append("\">PNJ ")
+                    .append(Http.esc(anchors.npcLabel())).append("</span>");
+        }
+        if (anchors.hasArrival()) {
+            sb.append("<span class=\"badge text-bg-light text-dark\">arrivée distincte</span>");
         }
         sb.append("</span></button></h3>");
         sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" "
@@ -3696,6 +3709,7 @@ public final class AgentPages {
         }
         sb.append("</dl>");
         sb.append(cityPerimeterSvg(city, directory));
+        sb.append(cityAnchorsSection(session, agentId, city, canWrite, onlinePlayers, npcChoices));
 
         if (canWrite) {
             sb.append(detailSection("edit", "Modifier"));
@@ -3749,6 +3763,106 @@ public final class AgentPages {
             sb.append(cityDeleteZone(session, agentId, city, citingQuests));
         }
         sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
+    /**
+     * Issue #322 — PNJ définis connus du dernier relevé {@code npc.list} (identifiant → nom affiché).
+     * Sans relevé, la carte vide : le champ reste une saisie libre et l'aide le dit.
+     */
+    private Map<String, String> cityNpcChoices(String agentId) {
+        Map<String, String> out = new java.util.TreeMap<>();
+        latestDetails(agentId, "npc.list").ifPresent(d -> {
+            for (Object o : asList(d.get("npcs"))) {
+                Map<String, Object> m = asMap(o);
+                String id = str(m.get("id"));
+                if (!id.isEmpty() && !"false".equals(str(m.get("logicalDefinitionPresent")))) {
+                    out.put(id, str(m.get("displayName")));
+                }
+            }
+        });
+        return out;
+    }
+
+    private static String cityNpcDatalist(Map<String, String> npcChoices) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"dl-city-npc\">");
+        npcChoices.forEach((id, name) -> {
+            sb.append("<option value=\"").append(Http.esc(id)).append("\"");
+            if (!name.isEmpty() && !name.equals(id)) {
+                sb.append(" label=\"").append(Http.esc(MiniText.plain(name))).append("\"");
+            }
+            sb.append(">");
+        });
+        return sb.append("</datalist>").toString();
+    }
+
+    private static String severityBadge(String severity) {
+        return switch (severity) {
+            case "OK" -> "text-bg-success";
+            case "WARNING" -> "text-bg-warning";
+            case "ERROR" -> "text-bg-danger";
+            default -> "text-bg-light text-dark";
+        };
+    }
+
+    private static String severityBanner(String severity) {
+        return switch (severity) {
+            case "OK" -> "success";
+            case "WARNING" -> "warn";
+            case "ERROR" -> "error";
+            default -> "info";
+        };
+    }
+
+    /**
+     * Issue #322 — PNJ central (identité stable, état relu par le plugin) et point d'arrivée du menu
+     * « Villages ». La ville ne suit jamais son PNJ : le diagnostic dit où il est, l'admin décide.
+     */
+    private String cityAnchorsSection(Session session, String agentId,
+                                      com.lodygames.rpgquest.panel.city.CityView city, boolean canWrite,
+                                      List<String> onlinePlayers, Map<String, String> npcChoices) {
+        var a = city.anchors();
+        StringBuilder sb = new StringBuilder(detailSection("users", "PNJ central et arrivée"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "PNJ central", Http.esc(MiniText.plain(a.npcLabel())));
+        if (a.hasCentralNpc() && !a.npcPositionLabel().isEmpty()) {
+            dlRow(sb, "Position du PNJ", "<code class=\"tid\">" + Http.esc(a.npcPositionLabel()) + "</code>");
+        }
+        dlRow(sb, "Arrivée du voyage", "<code class=\"tid\">" + Http.esc(a.arrivalLabel()) + "</code>");
+        sb.append("</dl>");
+        if (a.hasCentralNpc() && !a.npcMessage().isEmpty()) {
+            sb.append(Ui.banner(severityBanner(a.npcSeverity()), Http.esc(a.npcMessage())));
+        }
+        if (!a.arrivalMessage().isEmpty() && !"SET".equals(a.arrivalStatus())) {
+            sb.append(Ui.banner(severityBanner(a.arrivalSeverity()), Http.esc(a.arrivalMessage())));
+        }
+        if (!canWrite) {
+            return sb.toString();
+        }
+        String help = npcChoices.isEmpty()
+                ? "Aucun relevé des PNJ : saisissez l'identifiant stable (ex. <code>guide</code>) ou "
+                        + "rafraîchissez la page PNJ pour obtenir une liste recherchable."
+                : "Recherchez par identifiant ou par nom. Seul l'identifiant stable est enregistré : le PNJ "
+                        + "peut être renommé sans casser le lien. Le centre de détection ne change pas.";
+        sb.append(formStart(session, agentId, "city.npc.link", "/cities", "")
+                + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(city.id()) + "\">"
+                + catalogCombo("city-npc-" + city.id().replaceAll("[^A-Za-z0-9_-]", "-"), "npc", "npc",
+                        "PNJ central (laisser vide pour le retirer)", a.centralNpcId(), "dl-city-npc", false, help)
+                + mutationConsent("city.npc.link", "", null)
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm\" type=\"submit\">" + Icons.icon("save")
+                + "Enregistrer le PNJ central</button></div></form>");
+        sb.append(cityPlayerForm(session, agentId, "city.arrival.set", city, onlinePlayers,
+                "Relever l'arrivée sur ce joueur",
+                "L'arrivée du menu « Villages » devient la position et l'orientation actuelles du joueur choisi "
+                        + "(connecté, dans le monde " + city.world() + ", debout sur un sol plein : sinon c'est "
+                        + "refusé). Le centre de détection et le périmètre ne changent pas."));
+        if (a.hasArrival()) {
+            sb.append(formStart(session, agentId, "city.arrival.clear", "/cities", "")
+                    + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(city.id()) + "\">"
+                    + mutationConsent("city.arrival.clear", "", null)
+                    + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">"
+                    + "Revenir à l'arrivée au centre</button></div></form>");
+        }
         return sb.toString();
     }
 

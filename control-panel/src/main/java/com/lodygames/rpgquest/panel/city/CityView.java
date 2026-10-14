@@ -10,10 +10,62 @@ import java.util.Locale;
 public record CityView(String id, String name, String world, double x, double y, double z,
                        int centerX, int centerZ, int distance, boolean active, String createdAt,
                        boolean worldLoaded, int minX, int maxX, int minZ, int maxZ, int width,
-                       int discoveries, List<String> overlaps) {
+                       int discoveries, List<String> overlaps, Anchors anchors) {
+
+    /**
+     * Issue #322 — PNJ central et point d'arrivée, tels que relus par le plugin. Les positions sont
+     * {@code null} quand le plugin n'en connaît aucune : le panel n'en invente jamais.
+     */
+    public record Anchors(String centralNpcId, String npcDisplayName, String npcStatus, String npcSeverity,
+                          String npcMessage, String npcWorld, Double npcX, Double npcY, Double npcZ,
+                          boolean npcLive, int npcDistance, String arrivalWorld, Double arrivalX,
+                          Double arrivalY, Double arrivalZ, Double arrivalYaw, Double arrivalPitch,
+                          String arrivalStatus, String arrivalSeverity, String arrivalMessage) {
+
+        /** Relevé d'un plugin antérieur à #322 : aucun PNJ, arrivée au centre. */
+        public static Anchors none() {
+            return new Anchors("", "", "NONE", "INFO", "", "", null, null, null, false, -1, "", null, null,
+                    null, null, null, "CENTER", "INFO", "");
+        }
+
+        public boolean hasCentralNpc() {
+            return centralNpcId != null && !centralNpcId.isEmpty();
+        }
+
+        public boolean hasArrival() {
+            return arrivalWorld != null && !arrivalWorld.isEmpty() && arrivalX != null && arrivalZ != null;
+        }
+
+        public String npcLabel() {
+            if (!hasCentralNpc()) {
+                return "Aucun";
+            }
+            return npcDisplayName == null || npcDisplayName.isEmpty() || npcDisplayName.equals(centralNpcId)
+                    ? centralNpcId : npcDisplayName + " (" + centralNpcId + ")";
+        }
+
+        /** Position relue du PNJ, ou vide si inconnue. */
+        public String npcPositionLabel() {
+            if (npcX == null || npcZ == null) {
+                return "";
+            }
+            return npcWorld + " · X " + (int) Math.floor(npcX) + " · Y " + (int) Math.floor(npcY == null ? 0 : npcY)
+                    + " · Z " + (int) Math.floor(npcZ) + (npcLive ? "" : " (dernière position enregistrée)");
+        }
+
+        public String arrivalLabel() {
+            if (!hasArrival()) {
+                return "Centre de la ville (par défaut)";
+            }
+            return arrivalWorld + " · X " + (int) Math.floor(arrivalX) + " · Y "
+                    + (int) Math.floor(arrivalY == null ? 0 : arrivalY) + " · Z " + (int) Math.floor(arrivalZ)
+                    + " · regard " + Math.round(arrivalYaw == null ? 0 : arrivalYaw) + "°";
+        }
+    }
 
     public CityView {
         overlaps = List.copyOf(overlaps == null ? List.of() : overlaps);
+        anchors = anchors == null ? Anchors.none() : anchors;
     }
 
     /** La phrase demandée par le ticket, avec la distance réelle. */
@@ -38,6 +90,7 @@ public record CityView(String id, String name, String world, double x, double y,
     }
 
     public String searchText() {
-        return (name + " " + id + " " + world).toLowerCase(Locale.ROOT);
+        return (name + " " + id + " " + world + " " + anchors.centralNpcId() + " " + anchors.npcDisplayName())
+                .toLowerCase(Locale.ROOT);
     }
 }

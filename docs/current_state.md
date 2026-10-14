@@ -71,8 +71,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > à la première entrée (marche, téléportation, connexion), découverte persistée par UUID + ID
 > (`city_discoveries`) ; chevauchement : centre le plus proche. Page PlugAdmin **Villes** (`/cities`) :
 > renommage, taille, activation, déplacement armé, contour en jeu, suppression expliquée. Objectif
-> `DISCOVER_CITY` (ville précise ou X villes distinctes, `NEW_ONLY` / `INCLUDE_EXISTING`). PNJ
-> central et arrivée distincte : #322. Validation en jeu : TC-301.
+> `DISCOVER_CITY` (ville précise ou X villes distinctes, `NEW_ONLY` / `INCLUDE_EXISTING`).
+> Validation en jeu : TC-301.
+>
+> **PNJ central et arrivée distincte (#322, 14/10/2026)** — même fiche `village_centers`, migration
+> **V37** (colonnes NULL par défaut) : PNJ central facultatif par identifiant stable, diagnostic
+> relu en direct (dans la ville, sorti, autre monde, non chargé, non lié, supprimé — la ville ne
+> suit jamais son PNJ) ; point d'arrivée du menu « Villages » relevé sur un joueur connecté (sol
+> sûr vérifié), retour au centre possible. Actions `city.npc.link`, `city.arrival.set`,
+> `city.arrival.clear`. Validation en jeu : TC-313.
 
 > **Nuit du 12 au 13/10/2026** — changements livrés sur la ligne d'intégration (validation en jeu
 > du propriétaire en attente pour chacun, voir `docs/MANUAL_TEST_PLAN.md`) :

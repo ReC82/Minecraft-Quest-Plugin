@@ -184,4 +184,75 @@ class DialogueFormTest {
         assertEquals("Bonjour voyageur.", DialogueForm.excerpt(d.nodes.get(0).text, 40));
         assertTrue(DialogueForm.unreachable(d).isEmpty());
     }
+
+    // ---- Issue #430 : « Proposer une quête au hasard dans une liste » -----------------------
+
+    private static final String CATALOG = """
+            id: rpgquest:brigand
+            start: hello
+            nodes:
+              hello:
+                speaker: "Brigand"
+                text: "Salut."
+                choices:
+                  - text: "Du travail ?"
+                    actions:
+                      - type: OFFER_CATALOG_QUEST
+                  - text: "Autre liste"
+                    actions:
+                      - type: SET_VARIABLE
+                        key: "vu"
+                        value: "1"
+                      - type: OFFER_CATALOG_QUEST
+                        catalog: brigands
+                  - text: "Écrit à la main"
+                    actions:
+                      - type: OFFER_CATALOG_QUEST
+                        catalog: ""
+                  - text: "Commencer"
+                    actions:
+                      - type: START_QUEST
+                        quest: rpgquest:spiders
+                    next: hello
+            """;
+
+    @Test
+    void aCatalogOfferIsReadAsTheSimpleChoiceAndComesBackIdentical() {
+        DialogueYaml.ReadResult r = DialogueYaml.read(CATALOG);
+        assertTrue(r.ok(), r.problems().toString());
+        DialogueDraft d = r.draft();
+        DialogueForm.Reply none = DialogueForm.reply(d.nodes.get(0).choices.get(0));
+        assertEquals(DialogueForm.CATALOG_ACTION, none.questAction());
+        assertEquals("", none.catalogId(), "vide = les listes du PNJ récurrent");
+        DialogueForm.Reply named = DialogueForm.reply(d.nodes.get(0).choices.get(1));
+        assertEquals("brigands", named.catalogId());
+        assertEquals(1, named.otherEffects().size(), "la variable reste un autre effet");
+        DialogueForm.Reply blank = DialogueForm.reply(d.nodes.get(0).choices.get(2));
+        assertEquals("", blank.questAction(), "un catalog écrit vide reste tel quel dans les autres effets");
+        assertEquals(DialogueYaml.write(d), roundTrip(d), "rien ne bouge sans modification");
+    }
+
+    @Test
+    void switchingAPreciseQuestToAListKeepsItsPlaceAndDropsTheQuest() {
+        DialogueDraft d = DialogueYaml.read(CATALOG).draft();
+        Map<String, String> f = new java.util.LinkedHashMap<>(DialogueForm.fields(d));
+        f.put(DialogueForm.reply(0, 3, "qa"), DialogueForm.CATALOG_ACTION);
+        f.put(DialogueForm.reply(0, 3, "qcat"), "brigands");
+        DialogueDraft.Choice c = DialogueForm.parse(f).draft().nodes.get(0).choices.get(3);
+        assertEquals(1, c.actions.size());
+        assertEquals(Map.of("type", "OFFER_CATALOG_QUEST", "catalog", "brigands"), c.actions.get(0));
+        assertEquals("hello", c.next, "la suite ne change pas");
+
+        f.put(DialogueForm.reply(0, 3, "qcat"), "");
+        c = DialogueForm.parse(f).draft().nodes.get(0).choices.get(3);
+        assertEquals(Map.of("type", "OFFER_CATALOG_QUEST"), c.actions.get(0), "liste vide = pas de clé catalog");
+
+        // Et retour : la quête précise revient, sans clé catalogue héritée.
+        Map<String, String> g = new java.util.LinkedHashMap<>(DialogueForm.fields(d));
+        g.put(DialogueForm.reply(0, 1, "qa"), "START_QUEST");
+        g.put(DialogueForm.reply(0, 1, "qid"), "rpgquest:spiders");
+        DialogueDraft.Choice back = DialogueForm.parse(g).draft().nodes.get(0).choices.get(1);
+        assertEquals("SET_VARIABLE", back.actions.get(0).get("type"));
+        assertEquals(Map.of("type", "START_QUEST", "quest", "rpgquest:spiders"), back.actions.get(1));
+    }
 }

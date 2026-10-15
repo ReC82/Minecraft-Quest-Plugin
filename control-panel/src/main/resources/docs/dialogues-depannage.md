@@ -234,7 +234,7 @@ La page **Dialogues** montre **deux origines fusionnées** :
 |---|---|---|
 | *(aucun)* | Le dialogue est dans la source **et** chargé par le serveur. | Rien. |
 | **Source uniquement** | Enregistré dans la source (par ex. tout juste créé) mais **pas encore chargé en jeu**. | Il est sélectionnable sur une fiche PNJ dès maintenant. Pour le rendre actif en jeu : recharger le contenu RPGQuest côté serveur, puis « Rafraîchir ». |
-| **Hors source** | Chargé par le serveur mais **introuvable** dans la source éditable (fichier absent, renommé, ou source non montée sur PlugAdmin). | Vérifier le fichier dans le dépôt ; si c'est normal, aucune action. |
+| **Hors source** | Chargé par le serveur mais **introuvable** dans la source éditable (fichier absent, renommé, ou source non montée sur PlugAdmin). | Pour le modifier : ouvrir le dialogue → « Rendre ce dialogue modifiable » (copie identique, sans effet en jeu, #430). Sinon, aucune action. |
 
 « Source uniquement » **n'est pas une erreur**. Si une fiche PNJ pointe vers un dialogue « Source
 uniquement », l'alerte « Dialogue déclaré mais absent » devient une simple **info** (« rechargement

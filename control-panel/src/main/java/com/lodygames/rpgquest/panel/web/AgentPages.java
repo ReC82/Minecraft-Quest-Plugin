@@ -6594,7 +6594,7 @@ public final class AgentPages {
                         asList(t.get("questCatalogs")).stream().map(AgentPages::str).toList()),
                 "bandit_contracts, quetes_communes", 256, false,
                 "Identifiants des catalogues proposés par ces PNJ (page Quêtes › Catalogues), séparés par des "
-                        + "virgules. Leur dialogue doit contenir l'action « Proposer une quête du catalogue ». "
+                        + "virgules. Dans leur dialogue, une réponse doit « Proposer une quête au hasard dans une liste ». "
                         + "S'applique aussitôt à toutes les rencontres, existantes comprises."));
         boolean enabled = !t.containsKey("enabled") || Boolean.TRUE.equals(t.get("enabled"));
         sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" "
@@ -7213,8 +7213,26 @@ public final class AgentPages {
                 serverKeys.add(key.isEmpty() ? dialoguePlainKey(str(m.get("key"))) : key);
             }
         }
+        // #430 : les listes de quêtes et les modèles de PNJ récurrents, depuis le relevé des catalogues.
+        List<DialoguePages.Catalog> catalogs = new ArrayList<>();
+        List<DialoguePages.Model> models = new ArrayList<>();
+        Optional<Map<String, Object>> catDet = agentId == null ? Optional.empty()
+                : latestDetails(agentId, "quest.catalog.list");
+        QuestCatalogPages.Survey survey = catDet.map(QuestCatalogPages::parse).orElse(null);
+        if (survey != null && survey.available()) {
+            for (QuestCatalogPages.Catalog c : survey.catalogs()) {
+                catalogs.add(new DialoguePages.Catalog(c.id(), c.name(), c.enabled(),
+                        c.entries().stream().filter(QuestCatalogPages.Entry::offered)
+                                .map(QuestCatalogPages.Entry::quest).toList(), c.usedBy()));
+            }
+            for (QuestCatalogPages.Template t : survey.templates() == null ? List.<QuestCatalogPages.Template>of()
+                    : survey.templates()) {
+                models.add(new DialoguePages.Model(t.id(), t.name(), t.npcId(), t.enabled(), t.catalogs()));
+            }
+        }
         return new DialoguePages.Ctx(agentId == null ? "" : agentId, List.copyOf(npcs), List.copyOf(quests),
-                java.util.Set.copyOf(serverKeys), npcDet.isPresent(), slug -> dialogueLive(agentId, slug));
+                java.util.Set.copyOf(serverKeys), npcDet.isPresent(), slug -> dialogueLive(agentId, slug),
+                List.copyOf(catalogs), List.copyOf(models), survey != null && survey.available());
     }
 
     /**

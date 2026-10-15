@@ -18,8 +18,9 @@ joueur peut choisir.
 3. **Le joueur peut répondre…** : une ligne par réponse. Pour chacune :
    - **Ensuite…** : soit le personnage répond (une autre réplique, ou « Une nouvelle réplique… »),
      soit la conversation se termine ;
-   - **Et aussi…** : *Proposer une quête*, *Faire avancer une quête* ou *Rendre une quête*
-     (qui donne ses récompenses). La quête se choisit par son titre, avec une recherche.
+   - **Et aussi…** : *Proposer une quête précise*, *Proposer une quête au hasard dans une liste*,
+     *Faire avancer une quête* ou *Rendre une quête* (qui donne ses récompenses). La quête se
+     choisit par son titre, avec une recherche ; la liste, par son nom.
 4. **Enregistrer** garde vos modifications dans PlugAdmin.
 5. **Mettre en jeu** les envoie au serveur. Le bandeau en haut dit où vous en êtes :
 
@@ -37,6 +38,36 @@ joueur peut choisir.
 
 **Aperçu de la conversation** rejoue le dialogue : cliquez une réponse pour voir la suite. Une quête
 proposée y est indiquée. Rien n'est donné ni démarré pour de vrai.
+
+## Proposer une quête au hasard dans une liste
+
+Pour un **PNJ récurrent** (Brigand des bois…) qui a une liste de quêtes (**Quêtes → Catalogues de
+quêtes**) : sur la réponse « Du travail ? », **Et aussi… → Proposer une quête au hasard dans une
+liste**, puis **Quelle liste ?**. « Les listes de ce PNJ récurrent » (le choix par défaut) prend
+celles qui sont associées au PNJ sur la fiche du catalogue. Le personnage présente lui-même la
+quête tirée (titre, but, délai), rappelle une tâche en cours ou dit qu'il n'a rien pour le moment ;
+rien n'est donné avant « Commencer (j'accepte) ». Une liste désactivée, vide, introuvable, ou un
+PNJ sans liste est signalé sous le choix.
+
+**À vérifier** : quand un PNJ a une liste, l'éditeur liste en haut les passages qui citent encore
+**une quête précise** de cette liste — conditions « Quête acceptable maintenant » ou « État d'une
+quête », effet « Démarrer une quête », texte qui nomme la quête, entrée d'accueil. Le jeu ne sait
+pas tester « la quête tirée dans la liste » : à vous de décider, passage par passage, s'il faut
+retirer la condition ou réécrire le texte. **Rien n'est modifié automatiquement**, et rien ne
+change en jeu avant « Mettre en jeu ».
+
+Depuis la fiche d'un catalogue, **Configurer le dialogue de ce PNJ** ouvre directement le dialogue
+de chaque PNJ récurrent. L'en-tête du dialogue nomme ces PNJ récurrents et leurs listes.
+
+## Un dialogue qui n'existe que sur le serveur
+
+Un dialogue livré avec le plugin ou déposé à la main (« Hors source ») s'affiche en lecture
+seule. Pour le modifier : **Rendre ce dialogue modifiable → Lire le dialogue sur le serveur**,
+rechargez la page, vérifiez le fichier lu, puis **Copier dans PlugAdmin pour le modifier**. La
+copie est **identique octet pour octet** (même empreinte) : rien ne se perd, et **rien ne change
+en jeu** — le serveur garde son fichier tant que vous ne mettez pas une nouvelle version en jeu.
+Si PlugAdmin a déjà un dialogue de ce nom, ou si le fichier a changé sur le serveur depuis la
+lecture, rien n'est copié.
 
 ## Conditions et autres effets
 

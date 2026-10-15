@@ -1128,6 +1128,14 @@ details.card.npc-more{padding:12px 16px}
 .dlg-create label{display:block;margin:12px 0 4px;font-weight:600}
 .dlg-who{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin:0 0 10px;font-size:14px}
 .dlg-who .bi{margin-right:4px}
+/* #430 : PNJ récurrents du dialogue, copie depuis le serveur, cohérence avec une liste de quêtes */
+.dlg-model{overflow-wrap:anywhere}
+.dlg-warn{color:#8a5a0c;overflow-wrap:anywhere}
+.dlg-warn .ic,.dlg-warn .bi{margin-right:4px}
+.dlg-import pre{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12.5px}
+.dlg-coherence{border-color:#e0b252}
+.dlg-coherence-list{margin:6px 0 8px;padding-left:20px}
+.dlg-coherence-list li{margin:3px 0;overflow-wrap:anywhere}
 .dlg-link>summary{cursor:pointer;color:var(--primary);font-weight:600;font-size:13px}
 .dlg-inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 4px}
 .dlg-inline .form-select{width:auto;min-width:200px;max-width:100%}

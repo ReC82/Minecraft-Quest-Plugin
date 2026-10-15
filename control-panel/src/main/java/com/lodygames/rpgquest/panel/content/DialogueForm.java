@@ -37,6 +37,13 @@ public final class DialogueForm {
     /** Les trois effets de quête proposés directement sous une réponse, dans l'ordre du menu. */
     public static final List<String> QUEST_ACTIONS = List.of("START_QUEST", "ADVANCE_QUEST", "TURN_IN_QUEST");
 
+    /**
+     * Issue #430 — « Proposer une quête au hasard dans une liste » : l'action {@code OFFER_CATALOG_QUEST}
+     * de #369, rangée dans le même menu que les trois effets de quête. Son paramètre est un catalogue
+     * ({@code catalog}, facultatif), jamais une quête.
+     */
+    public static final String CATALOG_ACTION = "OFFER_CATALOG_QUEST";
+
     private static final Pattern KEY = Pattern.compile("[a-z][a-z0-9_]{0,31}");
     private static final Pattern NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");
     private static final int MAX_NODES = 200;
@@ -52,8 +59,10 @@ public final class DialogueForm {
      * Une réponse découpée pour l'éditeur.
      *
      * @param next         id de la réplique suivante, ou {@link #END}
-     * @param questAction  {@code START_QUEST} / {@code ADVANCE_QUEST} / {@code TURN_IN_QUEST}, ou vide
+     * @param questAction  {@code START_QUEST} / {@code ADVANCE_QUEST} / {@code TURN_IN_QUEST} /
+     *                     {@link #CATALOG_ACTION}, ou vide
      * @param questId      quête de cet effet, ou vide
+     * @param catalogId    catalogue de {@link #CATALOG_ACTION} ; vide = ceux des modèles de PNJ
      * @param questPos     position de cet effet dans la liste d'origine, {@code -1} s'il n'y en a pas
      * @param closePos     position de la fermeture dans la liste d'origine, {@code -1} sans fermeture
      * @param wasEnd       la réponse terminait déjà la conversation
@@ -61,7 +70,8 @@ public final class DialogueForm {
      * @param conditions   conditions, dans l'ordre du fichier
      * @param otherEffects autres effets (ni la quête ci-dessus, ni la fermeture), dans l'ordre
      */
-    public record Reply(String text, String next, String questAction, String questId, int questPos,
+    public record Reply(String text, String next, String questAction, String questId, String catalogId,
+                        int questPos,
                         int closePos, boolean wasEnd, String originalNext,
                         List<Map<String, String>> conditions, List<Map<String, String>> otherEffects) {
     }
@@ -75,7 +85,8 @@ public final class DialogueForm {
             String type = a.getOrDefault("type", "").toUpperCase(Locale.ROOT);
             if (closePos < 0 && "CLOSE".equals(type) && a.size() == 1) {
                 closePos = i;
-            } else if (questPos < 0 && QUEST_ACTIONS.contains(type) && isPlainQuestAction(a)) {
+            } else if (questPos < 0 && (QUEST_ACTIONS.contains(type) && isPlainQuestAction(a)
+                    || CATALOG_ACTION.equals(type) && isPlainCatalogAction(a))) {
                 questPos = i;
             } else {
                 others.add(a);
@@ -85,7 +96,8 @@ public final class DialogueForm {
         boolean ends = next.isEmpty();
         String questAction = questPos < 0 ? "" : c.actions.get(questPos).get("type").toUpperCase(Locale.ROOT);
         String questId = questPos < 0 ? "" : c.actions.get(questPos).getOrDefault("quest", "");
-        return new Reply(c.text, ends ? END : next, questAction, questId, questPos, closePos, ends, next,
+        String catalogId = questPos < 0 ? "" : c.actions.get(questPos).getOrDefault("catalog", "");
+        return new Reply(c.text, ends ? END : next, questAction, questId, catalogId, questPos, closePos, ends, next,
                 List.copyOf(c.conditions), List.copyOf(others));
     }
 
@@ -97,6 +109,19 @@ public final class DialogueForm {
             }
         }
         return a.containsKey("quest");
+    }
+
+    /**
+     * {@code type} + {@code catalog} facultatif. Un {@code catalog} écrit vide n'est pas représentable
+     * (le menu l'omettrait) : l'entrée reste alors dans « autres effets », telle quelle.
+     */
+    private static boolean isPlainCatalogAction(Map<String, String> a) {
+        for (Map.Entry<String, String> kv : a.entrySet()) {
+            if ("catalog".equals(kv.getKey()) ? kv.getValue().isBlank() : !"type".equals(kv.getKey())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ---- noms de champs : uniques, partagés par la page et par parse() -------------------
@@ -132,6 +157,7 @@ public final class DialogueForm {
                 f.put(reply(i, j, "next"), r.next());
                 f.put(reply(i, j, "qa"), r.questAction());
                 f.put(reply(i, j, "qid"), r.questId());
+                f.put(reply(i, j, "qcat"), r.catalogId());
                 f.put(reply(i, j, "qpos"), String.valueOf(r.questPos()));
                 f.put(reply(i, j, "cpos"), String.valueOf(r.closePos()));
                 f.put(reply(i, j, "wend"), r.wasEnd() ? "1" : "0");
@@ -227,6 +253,13 @@ public final class DialogueForm {
             quest = new LinkedHashMap<>();
             quest.put("type", qa);
             quest.put("quest", qid);
+        } else if (CATALOG_ACTION.equals(qa)) {
+            quest = new LinkedHashMap<>();
+            quest.put("type", qa);
+            String catalog = get(form, reply(i, j, "qcat"));
+            if (!catalog.isEmpty()) {
+                quest.put("catalog", catalog);
+            }
         }
 
         boolean ends = END.equals(next) || next.isEmpty();

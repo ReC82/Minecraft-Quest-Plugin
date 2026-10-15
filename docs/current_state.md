@@ -139,7 +139,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   prive|public`, pages `/joueurs` et `/confidentialite` (#52–#57). **Hébergé sur AWS** depuis le
 >   15/10 (#52 : `lodyquests-portal.service`, `/health`, `scripts/web-portal/`), sans pseudo publié
 >   (`player-data-public=false`) ni boutique ; `web-export` désactivé sur DEV et pas encore acheminé
->   vers AWS (#421). Comptes (#53) et événements (#57) : conçus, non réalisés.
+>   vers AWS (#421). Comptes (#53) faits, désactivés ; moteur d'événements (#57) conçu, non réalisé.
+>   Statistiques (#54) : saisons et événements de classement définis dans `statistics.yml` (absent
+>   par défaut), calculés sur les fenêtres du journal `xp_grants`, figés à leur fin (migration
+>   **V39** : `stat_period_archives`, `stat_period_results`), exclusions par UUID, opérations
+>   `admin_grant` jamais comptées ; contrat `statistics.metrics` + `rank` dans l'instantané.
 >   Confidentialité (#55) : profils **privés par défaut** (`web-export.profile-visibility-default`,
 >   accord par `/profile web public`), liste blanche des champs dans l'API, politique d'âge
 >   configurable fermée par défaut (`accounts.*`), registre des données `docs/PRIVACY.md` ;

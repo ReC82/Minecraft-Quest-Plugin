@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Statistiques : saisons, événements et exclusions de classement (#54)
+
+### Changement
+
+Plugin : modèle de statistiques lifetime / saison / événement. Nouveau fichier facultatif
+`plugins/RPGQuest/statistics.yml` (saisons, événements, exclusions par UUID) ; les classements de
+période sont lus dans le journal `xp_grants` et figés à la fin de chaque période. L'instantané web
+gagne `statistics.metrics`, un `rank` par ligne, et le contenu de `season` / `events`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest. **Migration automatique V39** au démarrage (deux tables
+`stat_period_archives`, `stat_period_results` et un index sur `xp_grants` ; aucune donnée existante
+modifiée). Aucune clé de `config.yml`. Ne **pas** créer `statistics.yml` sans décision du
+propriétaire : absent, rien ne change.
+
+### Sauvegarde préalable
+
+JAR, `data.db` et `config.yml` datés par `scripts/deploy-verygames.sh`.
+
+### Validation
+
+Console au démarrage : migration V39 appliquée, puis `Statistiques : 0 période(s) chargée(s)
+depuis statistics.yml.` absent, ou aucune ligne si le fichier n'existe pas. Saison de test et
+archivage en jeu : `PENDING MANUAL VALIDATION` (procédure dans le rapport #54).
+
+### Rollback
+
+JAR précédent seul : les deux tables et l'index V39 restent, inutilisés ; l'ancien JAR ignore une
+base de version supérieure (`SchemaMigrationRunner` n'applique que les versions manquantes). Pas de
+restauration de `data.db` nécessaire.
+
 ## 2026-10-15 - Portail : comptes joueurs et commande /lien (#53)
 
 ### Changement

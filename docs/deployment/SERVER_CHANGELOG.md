@@ -76,6 +76,12 @@ portail conservée par `scripts/web-portal/deploy.sh`.
 
 Tests automatisés plugin et web-api ; TC-325 — PENDING MANUAL VALIDATION.
 
+**Effectué le 15/10/2026** : portail redéployé (`901d31e`, release précédente
+`/opt/lodyquests-portal/releases/20261015-192216`, `/health` UP, `/confidentialite` vérifiée en
+HTTPS) ; JAR `901d31e` transféré sur DEV (3 034 812 o, sauvegarde
+`rpgquest-20261015T180409Z-predeploy.jar`), DEV redémarré par RCON et de retour en ligne,
+RPGQuest actif dans `/plugins`.
+
 ### Rollback
 
 Réinstaller le JAR précédent (la clé ajoutée est ignorée par un ancien JAR) ;

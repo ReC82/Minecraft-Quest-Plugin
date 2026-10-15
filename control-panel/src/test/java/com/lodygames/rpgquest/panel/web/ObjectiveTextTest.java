@@ -154,4 +154,57 @@ class ObjectiveTextTest {
         assertTrue(o.label().contains("Épée en diamant"), o.label());
         assertFalse(o.hasTarget());
     }
+
+    // ---- quest.player.status (issue #79) -------------------------------------------------------
+
+    private static Map<String, Object> statusRow(String kind, String target, int current, int required,
+                                                 String state) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("description", "Casser OAK_LOG");
+        m.put("current", current);
+        m.put("required", required);
+        m.put("state", state);
+        if (kind != null) {
+            m.put("kind", kind);
+            m.put("target", target);
+            m.put("amount", required);
+            m.put("raw", "Casser OAK_LOG (x" + required + ")");
+        }
+        return m;
+    }
+
+    @Test
+    void statusRowPrefersTheStructureOverTheLegacyDescription() {
+        ObjectiveText.Objective o = ObjectiveText.fromStatus(statusRow("BREAK_BLOCK", "OAK_LOG", 4, 20, "IN_PROGRESS"),
+                id -> id);
+        assertEquals("Casser Bûche de chêne (x20)", o.label());
+        assertEquals("OAK_LOG", o.rawTarget());
+    }
+
+    @Test
+    void statusRowFromALegacyAgentFallsBackToTheHumanizedDescription() {
+        ObjectiveText.Objective o = ObjectiveText.fromStatus(statusRow(null, null, 4, 20, null), id -> id);
+        assertTrue(o.label().contains("Bûche de chêne"), o.label());
+        assertFalse(o.hasTarget());
+    }
+
+    @Test
+    void questPlayerRowShowsLabelProgressTechnicalIdAndDoneBadge() {
+        Map<String, Object> quest = new LinkedHashMap<>();
+        quest.put("questId", "rpgquest:woodcutters_request");
+        quest.put("title", "La commande du bûcheron");
+        quest.put("state", "ACTIVE");
+        quest.put("currentStepId", "chop");
+        quest.put("objectives", List.of(
+                statusRow("BREAK_BLOCK", "OAK_LOG", 4, 20, "IN_PROGRESS"),
+                statusRow("TALK_TO_NPC", "woodcutter_bob", 1, 1, "COMPLETED")));
+
+        String html = AgentPages.renderQuestPlayerRow(quest, id -> id);
+
+        assertTrue(html.contains("Casser Bûche de chêne (x20)"), html);
+        assertTrue(html.contains("OAK_LOG"), "identifiant technique en second : " + html);
+        assertTrue(html.contains("4/20"), html);
+        assertTrue(html.contains("Parler à Woodcutter Bob"), html);
+        assertEquals(1, html.split(">fait<", -1).length - 1, "seul l'objectif terminé porte le badge : " + html);
+    }
 }

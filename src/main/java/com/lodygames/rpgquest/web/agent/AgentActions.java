@@ -145,7 +145,31 @@ public interface AgentActions {
                             String currentStepId, List<ObjectiveState> objectives) {
     }
 
-    record ObjectiveState(String description, int current, int required) {
+    /**
+     * Progression d'un objectif de l'étape courante d'un joueur ({@code quest.player.status}).
+     *
+     * <p>Issue #79 : {@code detail} porte le type / la cible / la quantité structurés (même forme
+     * que {@code quest.list}, #78) pour que le panel n'ait plus à reparser {@code description}.
+     * {@code description} reste émis pendant la transition, pour un panel non migré.</p>
+     *
+     * @param detail objectif structuré, {@code null} si la définition n'a pas pu être rapprochée
+     *               de la progression (quête rechargée entre-temps) — le panel retombe alors sur
+     *               {@code description}
+     */
+    record ObjectiveState(String description, int current, int required, ObjectiveSummary detail) {
+
+        /** Sans structure (constructeur historique). */
+        ObjectiveState(String description, int current, int required) {
+            this(description, current, required, null);
+        }
+
+        /** {@code COMPLETED} / {@code IN_PROGRESS} / {@code NOT_STARTED}, déduit des compteurs. */
+        String state() {
+            if (current >= required) {
+                return "COMPLETED";
+            }
+            return current > 0 ? "IN_PROGRESS" : "NOT_STARTED";
+        }
     }
 
     CompletableFuture<List<QuestPlayerState>> questStatus(UUID playerId);

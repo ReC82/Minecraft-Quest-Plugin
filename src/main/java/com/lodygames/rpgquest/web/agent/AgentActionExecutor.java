@@ -383,20 +383,28 @@ public final class AgentActionExecutor {
         List<Map<String, Object>> out = new ArrayList<>();
         for (AgentActions.ObjectiveSummary o : objectives) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("kind", o.kind());
-            m.put("target", o.target());
-            m.put("amount", o.amount());
-            m.put("raw", o.raw());
-            // Issue #123 : jamais omis quand il est présent — le panel ne peut pas deviner le PNJ
-            // destinataire d'une remise, et un libellé sans lui serait ambigu.
-            m.put("npc", o.npc());
-            // Issue #185 : la portée (mondes) et la règle de comptage font partie de ce que le
-            // joueur doit faire — les omettre produirait un libellé incomplet côté panel.
-            m.put("worlds", o.worlds());
-            m.put("countMode", o.countMode());
+            putObjectiveStructure(m, o);
             out.add(m);
         }
         return out;
+    }
+
+    /**
+     * Champs structurés d'un objectif, communs à {@code quest.list} (#78) et
+     * {@code quest.player.status} (#79) : une seule forme à lire côté panel.
+     */
+    private static void putObjectiveStructure(Map<String, Object> m, AgentActions.ObjectiveSummary o) {
+        m.put("kind", o.kind());
+        m.put("target", o.target());
+        m.put("amount", o.amount());
+        m.put("raw", o.raw());
+        // Issue #123 : jamais omis quand il est présent — le panel ne peut pas deviner le PNJ
+        // destinataire d'une remise, et un libellé sans lui serait ambigu.
+        m.put("npc", o.npc());
+        // Issue #185 : la portée (mondes) et la règle de comptage font partie de ce que le
+        // joueur doit faire — les omettre produirait un libellé incomplet côté panel.
+        m.put("worlds", o.worlds());
+        m.put("countMode", o.countMode());
     }
 
     /** Récompenses structurées (#78) en lignes JSON — {@code command} jamais tronquée. */
@@ -3775,9 +3783,13 @@ public final class AgentActionExecutor {
                 List<Map<String, Object>> objectives = new ArrayList<>();
                 for (AgentActions.ObjectiveState o : q.objectives()) {
                     Map<String, Object> obj = new LinkedHashMap<>();
-                    obj.put("description", o.description());
+                    obj.put("description", o.description()); // legacy (chaîne) — compat panel non migré
                     obj.put("current", o.current());
                     obj.put("required", o.required());
+                    obj.put("state", o.state()); // #79
+                    if (o.detail() != null) {
+                        putObjectiveStructure(obj, o.detail()); // #79 : structuré, à privilégier
+                    }
                     objectives.add(obj);
                 }
                 row.put("objectives", objectives);

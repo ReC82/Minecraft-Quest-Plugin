@@ -233,7 +233,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `player.variable.get` | `player` \| `player_uuid` ; `key` | `PlayerVariableRepository#get` | `present`, `value` |
 | `player.list` | — | `Server#getOnlinePlayers` | `players[]` (uuid, name, world, x/y/z) |
 | `quest.list` | — | `YamlQuestEngine#quests` | `quests[]` — voir **Payload `quest.list`** ci-dessous |
-| `quest.player.status` | `player` | `QuestProgressEngine#allStates` / `activeStepView` | `quests[]` (state, étape, objectifs current/required) |
+| `quest.player.status` | `player` | `QuestProgressEngine#allStates` / `activeStepView` | `quests[]` (state, étape, objectifs current/required **+ structure** #79) — voir **Payload `quest.player.status`** ci-dessous |
 | `story.list` | — | `StoryService#stories` | `stories[]` (id, titre, quêtes ordonnées) |
 | `story.player.status` | `player` | `StoryService#info` | `stories[]` (state, étape courante/total, quête courante) |
 | `item.list` | — | `YamlCustomItemRegistry#items` | `items[]` (id, displayName, type) |
@@ -289,6 +289,28 @@ Le panel privilégie les champs structurés (`ObjectiveText` / `RewardText.fromS
 sur les chaînes legacy (`MinecraftNames.humanizeTokens` / `RewardText.parse`) tant que l'agent
 d'une cible n'a pas été redéployé. Les champs legacy sont **dépréciés** : à retirer une fois tous
 les agents à jour.
+
+### Payload `quest.player.status` (structuré — issue #79, tranche 1)
+
+Chaque entrée de `quests[]` : `questId`, `title`, `state` (`NOT_STARTED`, `ACTIVE`,
+`READY_TO_TURN_IN`, `COMPLETED`…), `currentStepId` (`null` hors quête en cours) et `objectives[]`
+(étape courante seulement). Chaque objectif :
+
+| Champ | Type | Détail |
+|---|---|---|
+| `description` | `string` | **legacy** — chaîne formatée par le moteur (`"Tuer SPIDER"`). Conservée pendant la transition pour un panel non migré. |
+| `current` / `required` | `int` | progression / quantité requise. |
+| `state` | `string` | `COMPLETED` (`current >= required`), `IN_PROGRESS` (`current > 0`) ou `NOT_STARTED`. |
+| `kind`, `target`, `amount`, `raw`, `npc`, `worlds`, `countMode` | — | **structuré** : exactement la forme de `steps[].objectiveDetails` de `quest.list` (même helper `putObjectiveStructure`). |
+
+Les champs structurés sont **absents** (jamais inventés) si la progression ne peut pas être
+rapprochée de la définition (étape introuvable ou nombre d'objectifs différent après un rechargement
+de quête) ; le panel retombe alors sur `description`.
+
+**Compatibilité pendant la transition** : le panel (`ObjectiveText.fromStatus`) lit `kind` en
+priorité et humanise `description` quand `kind` manque — un agent non redéployé reste donc lisible.
+Le retrait de `description` ici, et de `steps[].objectives` / `rewards` dans `quest.list`, est
+**hors tranche 1** : il n'aura lieu qu'après confirmation que tous les agents ciblés sont migrés.
 
 ### Payload `npc.list` (catalogue PNJ — V2 déclarative, issues #66 / #75)
 

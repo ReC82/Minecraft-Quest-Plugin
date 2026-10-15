@@ -6140,3 +6140,14 @@ d'essai, supprimée ensuite.
 5.  Renommer un waypoint loin de tout joueur → effet « panneaux réécrits à son prochain
     chargement » ; s'y rendre : panneaux à jour.
 6.  Redémarrer le serveur → les noms renommés sont conservés.
+
+### TC-320 — PlugAdmin : progression structurée d'un joueur sur `/quests` (issue #79, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR + panel #79 déployés ; un joueur avec une quête en cours (ex. une quête de
+casse ou de remise). **Durée** : 5 minutes.
+
+1.  `/quests` → sélectionner le joueur dans « État des quêtes d'un joueur » → « Rafraîchir ».
+2.  La quête en cours affiche chaque objectif en français (« Casser Bûche de chêne (x20) »),
+    l'identifiant technique en second (`OAK_LOG`), puis la progression `4/20`.
+3.  Terminer un objectif en jeu, rafraîchir : la ligne porte le badge vert « fait ».
+4.  Une remise à un PNJ affiche l'objet **et** le PNJ (« Rapporter … à … »).

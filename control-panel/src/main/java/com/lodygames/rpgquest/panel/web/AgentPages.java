@@ -1504,8 +1504,9 @@ public final class AgentPages {
         // Les actions admin s'ex\u00e9cutent contre le runtime : on ne propose que les qu\u00eates r\u00e9ellement
         // charg\u00e9es par le serveur (une qu\u00eate \u00ab source uniquement \u00bb \u00e9chouerait c\u00f4t\u00e9 agent).
         List<String> questIds = runtimeQuests.stream().map(o -> str(asMap(o).get("id"))).toList();
+        java.util.function.Function<String, String> cityNames = cityDirectory(agentId)::nameOf;
         sb.append(playerStatusSection(session, agentId, player, "/quests", "quest.player.status", "quests",
-                this::renderQuestPlayerRow, questCtx.focus()));
+                r -> renderQuestPlayerRow(r, cityNames), questCtx.focus()));
 
         if (!player.isEmpty()) {
             // Issue #241 : sélecteur GÉNÉRIQUE, pour agir sur une autre quête que celle ouverte. Il
@@ -1784,7 +1785,8 @@ public final class AgentPages {
         return sb.toString();
     }
 
-    private String renderQuestPlayerRow(Map<String, Object> r) {
+    static String renderQuestPlayerRow(Map<String, Object> r,
+                                       java.util.function.Function<String, String> cityNames) {
         StringBuilder sb = new StringBuilder();
         sb.append("<tr><td><div class=\"entity-name\" style=\"font-size:13.5px\">")
                 .append(MiniText.html(str(r.get("title")))).append("</div>")
@@ -1802,9 +1804,18 @@ public final class AgentPages {
                 if (i > 0) {
                     sb.append("<br>");
                 }
-                sb.append(Http.esc(MinecraftNames.humanizeTokens(str(ob.get("description"))))).append(" — <strong>")
+                // Issue #79 : libellé tiré de la structure (FR), l'identifiant technique en second.
+                ObjectiveText.Objective o = ObjectiveText.fromStatus(ob, cityNames);
+                sb.append(Http.esc(o.label()));
+                if (o.hasTarget()) {
+                    sb.append(Ui.rawValue(o.rawTarget()));
+                }
+                sb.append(" — <strong>")
                         .append(Http.esc(str(ob.get("current")))).append("/").append(Http.esc(str(ob.get("required"))))
                         .append("</strong>");
+                if ("COMPLETED".equals(str(ob.get("state")))) {
+                    sb.append(" <span class=\"badge text-bg-success\">fait</span>");
+                }
             }
         } else {
             sb.append("—");

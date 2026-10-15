@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - `quest.player.status` structuré (#79, tranche 1)
+
+### Changement
+
+L'action agent `quest.player.status` ajoute à chaque objectif de l'étape courante `state`
+(`COMPLETED` / `IN_PROGRESS` / `NOT_STARTED`) et la structure `kind`, `target`, `amount`, `raw`,
+`npc`, `worlds`, `countMode` (forme de `quest.list`). `description` est conservée. Le panel lit la
+structure en priorité (libellé FR + id technique) et retombe sur `description` sinon.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du panel. Ordre indifférent : chaque côté reste
+compatible avec l'autre version. Aucune migration, aucune configuration. Redémarrage Minecraft
+requis pour charger le JAR.
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release panel).
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : TC-320.
+
+### Rollback
+
+Réinstaller le JAR et la release panel précédents ; aucune donnée à reprendre.
+
+---
+
 ## 2026-10-15 - Renommer un waypoint depuis PlugAdmin (#134)
 
 ### Changement

@@ -297,7 +297,8 @@ ligne par catalogue (nom, nombre de quêtes, « Proposé par … » ou « Aucun 
 état : Prêt / Aucun PNJ / À corriger / Ne propose rien / En pause) ; seuls les vrais problèmes
 (fichier illisible, PNJ pointant vers une liste disparue) remontent en tête. Fiche
 (`?focus=<id>`) : quêtes par **titre** (étapes, « une seule fois » ou délai), « PNJ qui proposent
-ces quêtes » — un PNJ dont le dialogue n'a pas `OFFER_CATALOG_QUEST` est signalé « ne sait pas
+ces quêtes » (avec « Configurer le dialogue de ce PNJ », #430, même pour un dialogue présent
+seulement sur DEV) — un PNJ dont le dialogue n'a pas `OFFER_CATALOG_QUEST` est signalé « ne sait pas
 encore proposer » avec le lien vers son dialogue ; identifiant, fréquences (`weight`, part
 indicative) et anti-répétition dans **Réglages avancés**. Écrans séparés : **Modifier**
 (`mode=edit` : nom, monter/descendre/retirer, « Ajouter une quête » = recherche + cases, choix

@@ -6230,3 +6230,26 @@ sont pas. **Ne publier que des fichiers Lily**, jamais ceux du propriétaire en 
     la quête de test n'est **pas** restée sur DEV. Supprimer ensuite la quête de test de la source.
 7.  Téléphone (≈ 390 px) : vue pack lisible, boutons utilisables au doigt.
 8.  Puis TC-312 étapes 8 à 10 (parcours en jeu de Lily et Julius).
+
+### TC-324 — Dialogue d'un PNJ récurrent : copie depuis DEV et quête au hasard dans une liste (issue #430, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de #430. **Ne pas republier le dialogue réel du brigand** pour ce test :
+utiliser un dialogue et un modèle de **test**, ou s'arrêter avant « Mettre en jeu ».
+
+1.  Quêtes → Catalogues de quêtes → fiche « Quêtes des brigands des bois » : chaque PNJ a
+    **Configurer le dialogue de ce PNJ** ; le lien ouvre le dialogue `encounter_bandit`.
+2.  L'en-tête dit « PNJ récurrent : Brigand des bois — liste : Quêtes des brigands des bois », et
+    plus « Aucun personnage n'utilise ce dialogue ».
+3.  Dialogue Hors source : encadré **Rendre ce dialogue modifiable** → « Lire le dialogue sur le
+    serveur » → recharger : nombre de lignes, empreinte, « Voir le fichier lu » (fichier complet).
+4.  « Copier dans PlugAdmin pour le modifier » → l'éditeur s'ouvre modifiable ; après actualisation, le
+    bandeau dit « À jour en jeu » (même fichier) ; **en jeu, le brigand parle exactement comme avant**.
+5.  Encadré « Ce PNJ a une liste de quêtes… » : il cite les réponses « Du travail ? », « Où en est ma
+    tâche ? », « Encore du travail ? », l'effet « Démarrer une quête » et le texte de l'offre.
+6.  Sur « Commencer (j'accepte) » ou « Du travail ? » : Et aussi… → **Proposer une quête au hasard
+    dans une liste** → « Quelle liste ? » montre les listes par nom (une liste désactivée est
+    marquée) ; l'aperçu dit « propose une quête au hasard dans la liste … ». Ne pas enregistrer sur
+    le vrai dialogue (ou le faire sur une copie de test, puis la supprimer).
+7.  Sur un PNJ récurrent **de test** : faire le passage complet, enregistrer, mettre en jeu, parler
+    au PNJ → offre tirée de la liste, « Commencer (j'accepte) », suivi de la tâche, retour.
+8.  Téléphone (≈ 390 px) : encadrés lisibles, aucun défilement horizontal.

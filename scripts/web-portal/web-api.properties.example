@@ -21,9 +21,14 @@ snapshot-max-age-seconds=120
 # pas validé les règles et réactivé l'export. Ne passer à true que sur sa décision écrite.
 player-data-public=false
 
-# COMPTES JOUEURS (#53, pas encore réalisés) — politique d'âge (#55, docs/PRIVACY.md). Aucune ligne
-# accounts.age-threshold.* = comptes FERMÉS. Les seuils sont une décision du propriétaire après
-# revue juridique ; les lignes ci-dessous ne montrent que le format.
+# COMPTES JOUEURS (#53) — désactivés : aucune base accounts.db n'est ouverte, /compte annonce
+# « pas encore ouverts ». Même à true, ils restent fermés sans ligne accounts.age-threshold.*
+# (politique d'âge #55, docs/PRIVACY.md) : deux décisions du propriétaire, après revue juridique.
+accounts-enabled=false
+#accounts-database-file=accounts.db
+#accounts-session-ttl-hours=168
+#accounts-link-code-ttl-minutes=10
+# Les seuils ci-dessous ne montrent que le format.
 #accounts.age-threshold.BE=<âge>
 #accounts.below-threshold=parental-consent
 #accounts.unknown-region=refuse

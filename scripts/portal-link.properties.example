@@ -1,0 +1,26 @@
+# =============================================================================
+# RPGQuest — liaison compte du portail ↔ compte Minecraft (issue #53) — EXEMPLE, SANS SECRET
+# =============================================================================
+#
+# Le fichier RÉEL vit SUR LE SERVEUR MINECRAFT, hors dépôt Git :
+#
+#     plugins/RPGQuest/portal-link.properties
+#
+# Lu au démarrage par com.lodygames.rpgquest.web.link.PortalLinkConfigLoader. Sans lui, ou sans
+# "enabled=true" + base-url + token, « /lien » répond « pas activée » et ne contacte rien.
+# Les variables RPGQUEST_PORTAL_LINK_ENABLED / _BASE_URL / _TOKEN le surchargent si l'hébergeur
+# permet d'en définir.
+#
+# Transfert VeryGames (après avoir remplacé le jeton) :
+#   scripts/deploy-verygames.sh --also scripts/portal-link.properties:RPGQuest/portal-link.properties
+# puis redémarrage du serveur (le fichier n'est lu qu'au démarrage).
+#
+# Le portail doit avoir accounts-enabled=true ET le MÊME jeton dans
+# /etc/lodyquests-portal/portal.env (RPGQUEST_PORTAL_LINK_TOKEN). Voir docs/deployment/WEB_PORTAL_AWS.md.
+
+enabled=false
+# HTTPS obligatoire (http accepté seulement vers 127.0.0.1/localhost, pour les essais locaux).
+base-url=https://lodyquests.lodylands.com
+token=REMPLACER_PAR_LE_JETON_DE_LIAISON
+#connect-timeout-ms=5000
+#request-timeout-ms=10000

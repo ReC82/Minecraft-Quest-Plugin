@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.webapi;
 
 import com.lodygames.rpgquest.webapi.api.AnnouncementsHandler;
 import com.lodygames.rpgquest.webapi.api.CatalogHandler;
+import com.lodygames.rpgquest.webapi.api.HealthHandler;
 import com.lodygames.rpgquest.webapi.api.LeaderboardsHandler;
 import com.lodygames.rpgquest.webapi.api.NotFoundHandler;
 import com.lodygames.rpgquest.webapi.api.PlayersHandler;
@@ -16,6 +17,7 @@ import com.lodygames.rpgquest.webapi.site.LeaderboardsPageHandler;
 import com.lodygames.rpgquest.webapi.site.PlayersPageHandler;
 import com.lodygames.rpgquest.webapi.site.PrivacyPageHandler;
 import com.lodygames.rpgquest.webapi.site.StatusPageHandler;
+import com.lodygames.rpgquest.webapi.site.UnpublishedPageHandler;
 import com.lodygames.rpgquest.webapi.site.WikiPageHandler;
 import com.lodygames.rpgquest.webapi.store.AckDeliveryHandler;
 import com.lodygames.rpgquest.webapi.store.CheckoutHandler;
@@ -41,6 +43,10 @@ import java.util.concurrent.TimeUnit;
  * journalisation, validation). Les routes boutique (mission étape 22)
  * suivent le même schéma, à l'exception de {@code /store/webhook} qui n'est
  * pas authentifié par jeton mais par signature (voir {@link WebhookHandler}).
+ *
+ * <p>Hébergement public (#52) : les routes boutique ne sont enregistrées que si
+ * {@code store-enabled=true} ({@code storeService} vaut alors non nul), et les pages à pseudos ne
+ * lisent l'instantané que si {@code player-data-public=true}.</p>
  */
 public final class HttpServerBootstrap {
 
@@ -62,13 +68,18 @@ public final class HttpServerBootstrap {
     }
 
     public void start() throws IOException {
-        server = HttpServer.create(new InetSocketAddress(config.port()), 0);
+        server = HttpServer.create(new InetSocketAddress(config.bindAddress(), config.port()), 0);
         server.setExecutor(requestExecutor);
 
         RequestPipeline pipeline = new RequestPipeline(
                 new RateLimiter(config.rateLimitPerMinute()),
                 new AuthFilter(config.authToken()),
-                new AccessLogger(java.util.logging.Logger.getLogger("RPGQuest-WebApi")));
+                new AccessLogger(java.util.logging.Logger.getLogger("RPGQuest-WebApi")),
+                config.trustProxyHeaders());
+        boolean storeEnabled = config.storeEnabled() && storeService != null;
+
+        server.createContext("/health", pipeline.wrap(false,
+                new HealthHandler(snapshotStore, config.playerDataPublic(), storeEnabled)));
 
         // API authentifiée (mission point 3, 5).
         server.createContext("/api/status", pipeline.wrap(true, new StatusHandler(snapshotStore)));
@@ -78,6 +89,30 @@ public final class HttpServerBootstrap {
         server.createContext("/api/announcements", pipeline.wrap(true, new AnnouncementsHandler(snapshotStore)));
         server.createContext("/api/profiles", pipeline.wrap(true, new ProfilesHandler(snapshotStore)));
 
+        server.createContext("/api/", pipeline.wrap(true, new NotFoundHandler()));
+
+        // Portail public (mission point 8) : jamais authentifié, jamais de connexion joueur (point 11).
+        server.createContext("/status", pipeline.wrap(false, new StatusPageHandler(snapshotStore, config.siteTitle())));
+        server.createContext("/wiki", pipeline.wrap(false, new WikiPageHandler(snapshotStore, config.siteTitle())));
+        if (config.playerDataPublic()) {
+            server.createContext("/leaderboards", pipeline.wrap(false, new LeaderboardsPageHandler(snapshotStore, config.siteTitle())));
+            server.createContext("/joueurs", pipeline.wrap(false, new PlayersPageHandler(snapshotStore, config.siteTitle())));
+        } else {
+            server.createContext("/leaderboards", pipeline.wrap(false, new UnpublishedPageHandler(config.siteTitle(), "Classements")));
+            server.createContext("/joueurs", pipeline.wrap(false, new UnpublishedPageHandler(config.siteTitle(), "Joueurs")));
+        }
+        server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle())));
+
+        if (storeEnabled) {
+            registerStore(pipeline);
+        }
+
+        server.createContext("/", pipeline.wrap(false, new HomePageHandler(snapshotStore, config.siteTitle())));
+
+        server.start();
+    }
+
+    private void registerStore(RequestPipeline pipeline) {
         // API boutique authentifiée (mission étape 22, points 5, 8, 11) : sondage de livraisons,
         // accusé de réception, historique admin, remboursement.
         server.createContext("/api/store/deliveries/pending", pipeline.wrap(true, new PendingDeliveriesHandler(storeService)));
@@ -85,25 +120,12 @@ public final class HttpServerBootstrap {
         server.createContext("/api/store/orders", pipeline.wrap(true, new OrdersHistoryHandler(storeService)));
         server.createContext("/api/store/orders/", pipeline.wrap(true, new RefundHandler(storeService)));
 
-        server.createContext("/api/", pipeline.wrap(true, new NotFoundHandler()));
-
-        // Portail public (mission point 8) : jamais authentifié, jamais de connexion joueur (point 11).
-        server.createContext("/status", pipeline.wrap(false, new StatusPageHandler(snapshotStore, config.siteTitle())));
-        server.createContext("/leaderboards", pipeline.wrap(false, new LeaderboardsPageHandler(snapshotStore, config.siteTitle())));
-        server.createContext("/wiki", pipeline.wrap(false, new WikiPageHandler(snapshotStore, config.siteTitle())));
-        server.createContext("/joueurs", pipeline.wrap(false, new PlayersPageHandler(snapshotStore, config.siteTitle())));
-        server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle())));
-
         // Boutique publique (mission étape 22, point 8) : /store/webhook n'est pas authentifié par
         // jeton (requiresAuth=false) — sa propre vérification de signature en tient lieu.
         server.createContext("/store/checkout", pipeline.wrap(false, new CheckoutHandler(storeService, config.siteTitle())));
         server.createContext("/store/pay/", pipeline.wrap(false, new PayFlowHandler(storeService, config.siteTitle())));
         server.createContext("/store/webhook", pipeline.wrap(false, new WebhookHandler(storeService)));
         server.createContext("/store", pipeline.wrap(false, new StorePageHandler(storeService, config.siteTitle())));
-
-        server.createContext("/", pipeline.wrap(false, new HomePageHandler(snapshotStore, config.siteTitle())));
-
-        server.start();
     }
 
     public void stop() {

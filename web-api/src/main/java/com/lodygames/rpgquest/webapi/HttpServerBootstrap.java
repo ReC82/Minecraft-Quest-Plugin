@@ -1,5 +1,8 @@
 package com.lodygames.rpgquest.webapi;
 
+import com.lodygames.rpgquest.webapi.account.AccountPagesHandler;
+import com.lodygames.rpgquest.webapi.account.AccountService;
+import com.lodygames.rpgquest.webapi.account.LinkConfirmHandler;
 import com.lodygames.rpgquest.webapi.api.AnnouncementsHandler;
 import com.lodygames.rpgquest.webapi.api.CatalogHandler;
 import com.lodygames.rpgquest.webapi.api.HealthHandler;
@@ -53,6 +56,7 @@ public final class HttpServerBootstrap {
     private final WebApiConfig config;
     private final SnapshotStore snapshotStore;
     private final StoreService storeService;
+    private final AccountService accountService;
     private final ExecutorService requestExecutor = Executors.newFixedThreadPool(8, runnable -> {
         Thread thread = new Thread(runnable, "RPGQuest-WebApi");
         thread.setDaemon(true);
@@ -62,9 +66,16 @@ public final class HttpServerBootstrap {
     private HttpServer server;
 
     public HttpServerBootstrap(WebApiConfig config, SnapshotStore snapshotStore, StoreService storeService) {
+        this(config, snapshotStore, storeService, null);
+    }
+
+    /** {@code accountService} nul : comptes joueurs désactivés (#53), {@code /compte} l'annonce. */
+    public HttpServerBootstrap(WebApiConfig config, SnapshotStore snapshotStore, StoreService storeService,
+            AccountService accountService) {
         this.config = config;
         this.snapshotStore = snapshotStore;
         this.storeService = storeService;
+        this.accountService = accountService;
     }
 
     public void start() throws IOException {
@@ -89,6 +100,13 @@ public final class HttpServerBootstrap {
         server.createContext("/api/announcements", pipeline.wrap(true, new AnnouncementsHandler(snapshotStore)));
         server.createContext("/api/profiles", pipeline.wrap(true, new ProfilesHandler(snapshotStore, config.playerDataPublic())));
 
+        // #53 : preuve de liaison venue du serveur Minecraft — jeton DÉDIÉ vérifié par le handler,
+        // jamais le jeton général ci-dessus (d'où requiresAuth=false au niveau du pipeline).
+        if (accountService != null) {
+            server.createContext("/api/link/confirm", pipeline.wrap(false,
+                    new LinkConfirmHandler(accountService, config.accounts().linkToken())));
+        }
+
         server.createContext("/api/", pipeline.wrap(true, new NotFoundHandler()));
 
         // Portail public (mission point 8) : jamais authentifié, jamais de connexion joueur (point 11).
@@ -104,6 +122,11 @@ public final class HttpServerBootstrap {
         server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle(),
                 config.playerDataPublic(), config.agePolicy())));
 
+        // #53 : comptes joueurs, strictement distincts de PlugAdmin (aucun rôle, aucune permission).
+        server.createContext("/compte", pipeline.wrap(false, accountService != null
+                ? new AccountPagesHandler(accountService, config.accounts(), config.siteTitle(), config.publicBaseUrl())
+                : this::accountsClosedPage));
+
         if (storeEnabled) {
             registerStore(pipeline);
         }
@@ -111,6 +134,15 @@ public final class HttpServerBootstrap {
         server.createContext("/", pipeline.wrap(false, new HomePageHandler(snapshotStore, config.siteTitle())));
 
         server.start();
+    }
+
+    private int accountsClosedPage(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        com.lodygames.rpgquest.webapi.http.HttpResponses.sendHtml(exchange, 200,
+                com.lodygames.rpgquest.webapi.site.PageLayout.render(config.siteTitle(), "Mon compte", true,
+                        "<p>Les comptes du portail ne sont <strong>pas encore ouverts</strong>. Ils ouvriront quand "
+                                + "les règles de confidentialité et d'âge auront été validées.</p>"
+                                + "<p><a href=\"/confidentialite\">En savoir plus</a></p>"));
+        return 200;
     }
 
     private void registerStore(RequestPipeline pipeline) {

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi;
 
+import com.lodygames.rpgquest.webapi.account.AccountSettings;
 import com.lodygames.rpgquest.webapi.privacy.AgePolicy;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,12 +20,15 @@ public final class WebApiConfigLoader {
     public static final String CONFIG_PATH_ENV = "RPGQUEST_WEB_API_CONFIG";
     public static final String TOKEN_ENV = "RPGQUEST_WEB_API_TOKEN";
     public static final String WEBHOOK_SECRET_ENV = "RPGQUEST_STORE_WEBHOOK_SECRET";
+    /** Jeton dédié à {@code POST /api/link/confirm} (#53), jamais le jeton général de l'API. */
+    public static final String LINK_TOKEN_ENV = "RPGQUEST_PORTAL_LINK_TOKEN";
 
     private WebApiConfigLoader() {
     }
 
     public static WebApiConfig load() throws IOException {
-        return load(resolveConfigPath(), System.getenv(TOKEN_ENV), System.getenv(WEBHOOK_SECRET_ENV));
+        return load(resolveConfigPath(), System.getenv(TOKEN_ENV), System.getenv(WEBHOOK_SECRET_ENV),
+                System.getenv(LINK_TOKEN_ENV));
     }
 
     static Path resolveConfigPath() {
@@ -33,6 +37,11 @@ public final class WebApiConfigLoader {
     }
 
     public static WebApiConfig load(Path propertiesFile, String tokenFromEnv, String webhookSecretFromEnv) throws IOException {
+        return load(propertiesFile, tokenFromEnv, webhookSecretFromEnv, null);
+    }
+
+    public static WebApiConfig load(Path propertiesFile, String tokenFromEnv, String webhookSecretFromEnv,
+            String linkTokenFromEnv) throws IOException {
         Properties properties = new Properties();
         if (Files.exists(propertiesFile)) {
             try (var in = Files.newInputStream(propertiesFile)) {
@@ -56,7 +65,27 @@ public final class WebApiConfigLoader {
 
         return new WebApiConfig(port, snapshotFile, snapshotMaxAgeSeconds, tokenFromEnv, rateLimitPerMinute, siteTitle,
                 productsFile, storeDatabaseFile, webhookSecretFromEnv, publicBaseUrl, bindAddress, storeEnabled,
-                playerDataPublic, trustProxyHeaders, AgePolicy.fromProperties(properties));
+                playerDataPublic, trustProxyHeaders, AgePolicy.fromProperties(properties),
+                accountSettings(properties, publicBaseUrl, linkTokenFromEnv));
+    }
+
+    /** Comptes joueurs (#53) : clés {@code accounts-*}, toutes facultatives, désactivés par défaut. */
+    private static AccountSettings accountSettings(Properties properties, String publicBaseUrl, String linkToken) {
+        int sessionHours = parseInt(properties, "accounts-session-ttl-hours", 168);
+        int codeMinutes = parseInt(properties, "accounts-link-code-ttl-minutes", 10);
+        if (sessionHours < 1 || sessionHours > 720) {
+            throw new IllegalStateException("« accounts-session-ttl-hours » doit être compris entre 1 et 720.");
+        }
+        if (codeMinutes < 2 || codeMinutes > 30) {
+            throw new IllegalStateException("« accounts-link-code-ttl-minutes » doit être compris entre 2 et 30.");
+        }
+        return new AccountSettings(
+                parseBoolean(properties, "accounts-enabled", false),
+                Path.of(properties.getProperty("accounts-database-file", "accounts.db")),
+                java.time.Duration.ofHours(sessionHours),
+                java.time.Duration.ofMinutes(codeMinutes),
+                linkToken,
+                publicBaseUrl.startsWith("https://"));
     }
 
     private static int parseInt(Properties properties, String key, int defaultValue) {

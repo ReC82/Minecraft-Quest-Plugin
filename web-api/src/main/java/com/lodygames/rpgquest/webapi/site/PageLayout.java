@@ -25,11 +25,15 @@ public final class PageLayout {
                 table { border-collapse: collapse; width: 100%%; margin-top: 1rem; }
                 th, td { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid #333; }
                 .note { color: #9aa3ad; font-size: .9rem; }
+                .notice { background:#1e4a2a; padding: .5rem 1rem; border-radius: .25rem; }
+                .code { background:#1c2230; padding: .5rem 1rem; border-radius: .25rem; }
+                .code code { font-size: 1.6rem; letter-spacing: .1rem; }
+                input, select, button { font-size: 1rem; padding: .4rem; max-width: 100%%; }
                 @media (max-width: 600px) { nav a { display: inline-block; margin: 0 .75rem .5rem 0; } }
                 </style>
                 </head>
                 <body>
-                <nav><a href="/">Accueil</a><a href="/status">Statut</a><a href="/leaderboards">Classements</a><a href="/joueurs">Joueurs</a><a href="/wiki">Wiki</a><a href="/confidentialite">Confidentialité</a></nav>
+                <nav><a href="/">Accueil</a><a href="/status">Statut</a><a href="/leaderboards">Classements</a><a href="/joueurs">Joueurs</a><a href="/wiki">Wiki</a><a href="/confidentialite">Confidentialité</a><a href="/compte">Mon compte</a></nav>
                 <h1>%s</h1>
                 %s
                 %s

@@ -166,6 +166,11 @@ import com.lodygames.rpgquest.web.agent.AgentConfigLoader;
 import com.lodygames.rpgquest.web.agent.BukkitPlayerDirectory;
 import com.lodygames.rpgquest.web.agent.HeartbeatPayload;
 import com.lodygames.rpgquest.web.agent.PlugAdminAgent;
+import com.lodygames.rpgquest.web.link.LinkAttemptGuard;
+import com.lodygames.rpgquest.web.link.LinkCommand;
+import com.lodygames.rpgquest.web.link.PortalLinkClient;
+import com.lodygames.rpgquest.web.link.PortalLinkConfig;
+import com.lodygames.rpgquest.web.link.PortalLinkConfigLoader;
 import com.lodygames.rpgquest.world.WorldService;
 import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
@@ -1428,6 +1433,20 @@ public final class RPGQuestBootstrap {
         if (store != null) {
             store.setExecutor(storeCommand);
             store.setTabCompleter(storeCommand);
+        }
+
+        // Issue #53 : « /lien <code> » prouve au portail que le joueur contrôle ce compte Minecraft.
+        // Inerte tant que plugins/RPGQuest/portal-link.properties (hors Git) ne l'active pas.
+        PortalLinkConfig portalLinkConfig = new PortalLinkConfigLoader(plugin.getDataFolder().toPath(),
+                plugin.getSLF4JLogger()).load();
+        LinkCommand linkCommand = new LinkCommand(portalLinkConfig,
+                portalLinkConfig.enabled() ? new PortalLinkClient(portalLinkConfig) : null,
+                new LinkAttemptGuard(java.time.Duration.ofSeconds(5), java.time.Clock.systemUTC()),
+                plugin.getSLF4JLogger());
+        var lien = plugin.getCommand("lien");
+        if (lien != null) {
+            lien.setExecutor(linkCommand);
+            lien.setTabCompleter(linkCommand);
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(

@@ -1254,7 +1254,7 @@ class NpcsCatalogTest {
                 "association sans action de dialogue : dit, avec le chemin pour réparer");
         assertFalse(sheet.contains("quest.catalog.create") || sheet.contains("quest.catalog.delete")
                 || sheet.contains("name=\"entry_"), "ni duplication ni suppression ni ligne de saisie dans la fiche");
-        assertTrue(sheet.contains("mode=copy") && sheet.contains("mode=delete") && sheet.contains("Réglages avancés"));
+        assertTrue(sheet.contains("mode=copy") && sheet.contains("mode=delete") && sheet.contains("Informations techniques"));
         assertFalse(sheet.contains("<table"), "aucun tableau large : lisible sur mobile");
 
         String edit = get("/quests/catalogs" + agent + "&focus=bandit&mode=edit").body();
@@ -1297,12 +1297,33 @@ class NpcsCatalogTest {
         assertTrue(created.headers().firstValue("Location").orElse("").contains("focus=quetes_de_la_foret"),
                 "ouvre la fiche du catalogue créé");
 
+        HttpResponse<String> equal = post("/agents/action", base + "&type=quest.catalog.create&id=eq&display_name=Eq"
+                + "&pick_mode=equal&equal_weight=7&avoid_recent=more&avoid_more=4"
+                + "&entry_0_quest=rpgquest:a&entry_0_weight=20&entry_0_enabled=true"
+                + "&entry_1_quest=rpgquest:b&entry_1_weight=5&entry_1_enabled=true");
+        assertFalse(equal.headers().firstValue("Location").orElse("").contains("err="));
+        Map<String, String> eq = createdCatalog("eq");
+        assertEquals("rpgquest:a|7|on,rpgquest:b|7|on", eq.get("entries"), "même chance : le poids commun partout");
+        assertEquals("4", eq.get("avoid_recent"), "« éviter plus longtemps » : le nombre choisi");
+
+        post("/agents/action", base + "&type=quest.catalog.create&id=wt&display_name=Wt&pick_mode=weighted"
+                + "&avoid_recent=0&entry_0_quest=rpgquest:a&entry_0_weight=20&entry_0_enabled=true"
+                + "&entry_1_quest=rpgquest:b&entry_1_weight=10&entry_1_weight_exact=13&entry_1_enabled=true");
+        Map<String, String> wt = createdCatalog("wt");
+        assertEquals("rpgquest:a|20|on,rpgquest:b|13|on", wt.get("entries"), "fréquence par quête, valeur exacte experte");
+        assertEquals("0", wt.get("avoid_recent"));
+
         HttpResponse<String> dup = post("/agents/action", base + "&type=quest.catalog.create&id=x&display_name=X"
                 + "&entry_0_quest=rpgquest:a&entry_1_quest=a");
         assertTrue(dup.headers().firstValue("Location").orElse("").contains("err="), "doublon refusé");
 
         HttpResponse<String> noConfirm = post("/agents/action", base + "&type=quest.catalog.delete&id=bandit");
         assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "suppression confirmée");
+    }
+
+    private Map<String, String> createdCatalog(String id) {
+        return pendingOfType("quest.catalog.create").stream().map(AgentActionRow::params)
+                .filter(p -> id.equals(p.get("id"))).findFirst().orElseThrow();
     }
 
     private static String matchGroup(String html, String regex) {

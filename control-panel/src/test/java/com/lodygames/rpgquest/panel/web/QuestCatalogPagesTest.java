@@ -63,8 +63,73 @@ class QuestCatalogPagesTest {
 
     @Test
     void theAvoidSettingIsSaidInPlainWords() {
-        assertTrue(QuestCatalogPages.avoidText(0).startsWith("Aucune"));
-        assertTrue(QuestCatalogPages.avoidText(3).contains("les 3 dernières quêtes terminées"));
+        assertTrue(QuestCatalogPages.avoidText(0).startsWith("Répétitions autorisées"));
+        assertTrue(QuestCatalogPages.avoidText(3).contains("les 3 dernières quêtes finies"));
+    }
+
+    @Test
+    void frequenciesHaveSimpleNamesAndOddWeightsAreShownAsTheyAre() {
+        assertEquals("Rare", QuestCatalogPages.frequencyLabel(5));
+        assertEquals("Normale", QuestCatalogPages.frequencyLabel(10));
+        assertEquals("Souvent", QuestCatalogPages.frequencyLabel(20));
+        assertEquals("Personnalisée (7)", QuestCatalogPages.frequencyLabel(7));
+    }
+
+    /** Retour propriétaire #414 : l'ordre n'est pas un ordre de proposition, le hasard est une question claire. */
+    @Test
+    void theFormSaysTheOrderOnlySortsAndAsksHowToPickTheNextQuest() {
+        QuestCatalogPages.Entry a = new QuestCatalogPages.Entry("rpgquest:a", 10, true, true, "A", true, "", 1);
+        QuestCatalogPages.Entry b = new QuestCatalogPages.Entry("rpgquest:b", 10, true, true, "B", true, "", 1);
+        String page = QuestCatalogPages.edit(CTX, survey(), catalog(true, List.of(a, b), List.of()), false);
+        assertTrue(page.contains("proposées au hasard") && page.contains("sert seulement à les ranger"));
+        assertTrue(page.contains("Comment choisir la prochaine quête ?") && page.contains("data-qc-count=\"many\""));
+        assertTrue(page.contains("value=\"equal\" checked"), "poids égaux : « même chance pour toutes »");
+        assertTrue(page.contains("name=\"equal_weight\" value=\"10\""));
+        assertTrue(page.contains("Peut-on proposer deux fois de suite la même quête ?")
+                && page.contains("id=\"qc-avoid-recent-1\" name=\"avoid_recent\" value=\"1\" checked"));
+        assertTrue(page.contains("Autoriser les PNJ à utiliser cette liste"));
+        int technical = page.indexOf("Informations techniques");
+        assertTrue(technical > page.indexOf("Comment choisir"), "identifiant et options expertes repliés en bas");
+        assertTrue(page.indexOf("data-qc-move") > 0 && page.indexOf("qc-adv qc-item-adv") < page.indexOf("data-qc-move"),
+                "monter / descendre seulement dans les options expertes");
+        assertFalse(page.contains("<label for=\"qc-avoid\">Anti-répétition"), "plus de grille technique");
+    }
+
+    @Test
+    void unevenWeightsOpenInSomeMoreOftenModeWithTheirValuesUntouched() {
+        QuestCatalogPages.Entry often = new QuestCatalogPages.Entry("rpgquest:a", 20, true, true, "A", true, "", 1);
+        QuestCatalogPages.Entry odd = new QuestCatalogPages.Entry("rpgquest:b", 7, true, true, "B", true, "", 1);
+        QuestCatalogPages.Catalog c = new QuestCatalogPages.Catalog("c", "Contrats", "", true, 3,
+                List.of(often, odd), List.of(), List.of());
+        String page = QuestCatalogPages.edit(CTX, survey(), c, false);
+        assertTrue(page.contains("value=\"weighted\" checked"));
+        assertTrue(page.contains("<option value=\"20\" selected>Souvent</option>"));
+        assertTrue(page.contains("<option value=\"7\" selected>Personnalisée (7)</option>"),
+                "jamais arrondi à un niveau simple sans action de l'utilisateur");
+        assertTrue(page.contains("value=\"more\" checked") && page.contains("<option value=\"3\" selected>3</option>"),
+                "anti-répétition 3 conservée en réglage avancé");
+
+        String sheet = QuestCatalogPages.detail(CTX, survey(), c);
+        assertTrue(sheet.contains("certaines plus souvent") && sheet.contains("Souvent · environ 74 %")
+                && sheet.contains("Personnalisée (7) · environ 26 %"));
+        assertTrue(sheet.contains("Les PNJ peuvent utiliser cette liste : <strong>oui"));
+    }
+
+    @Test
+    void theChoiceAdaptsToOneQuestOrNone() {
+        QuestCatalogPages.Entry a = new QuestCatalogPages.Entry("rpgquest:a", 7, true, true, "A", true, "", 1);
+        QuestCatalogPages.Catalog one = catalog(true, List.of(a), List.of());
+        assertTrue(QuestCatalogPages.detail(CTX, survey(), one).contains("Une seule quête : c'est toujours elle"));
+        String edit = QuestCatalogPages.edit(CTX, survey(), one, false);
+        assertTrue(edit.contains("data-qc-count=\"one\"") && edit.contains("name=\"equal_weight\" value=\"7\""),
+                "une seule quête : son poids est gardé");
+        assertTrue(QuestCatalogPages.create(CTX, survey()).contains("data-qc-count=\"none\""));
+        assertTrue(QuestCatalogPages.detail(CTX, survey(), catalog(true, List.of(), List.of()))
+                .contains("Rien à choisir"));
+    }
+
+    private static QuestCatalogPages.Survey survey() {
+        return new QuestCatalogPages.Survey(true, List.of(), Map.of(), List.of(), List.of(), List.of());
     }
 
     private static QuestCatalogPages.Catalog catalog(boolean enabled, List<QuestCatalogPages.Entry> entries,

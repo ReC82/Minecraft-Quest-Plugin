@@ -1659,7 +1659,9 @@
 
   // Issue #414 — formulaire de catalogue de quêtes. Sans JavaScript tout fonctionne (cases à cocher,
   // ordre d'origine) ; ici : monter / descendre une quête, compteur des quêtes cochées et résumé
-  // de ce qui sera enregistré, recalculé à chaque changement.
+  // de ce qui sera enregistré, recalculé à chaque changement. Retour propriétaire : le nombre de
+  // quêtes adapte la question « Comment choisir la prochaine quête ? » (data-qc-count) et, en mode
+  // « certaines plus souvent », chaque quête affiche sa part approximative.
   function initQuestCatalogs() {
     var form = document.querySelector("form[data-qc-form]");
     if (!form) { return; }
@@ -1696,8 +1698,45 @@
 
     function plural(n, one, many) { return n + " " + (n > 1 ? many : one); }
 
+    function weightOf(row) {
+      var exact = row.querySelector("[data-qc-exact]");
+      if (exact && exact.value.trim()) { return parseInt(exact.value, 10) || 0; }
+      var sel = row.querySelector("[data-qc-weight]");
+      return sel ? parseInt(sel.value, 10) || 0 : 0;
+    }
+
+    function chances(rows) {
+      var weighted = form.querySelector("input[name=pick_mode][value=weighted]:checked");
+      var counted = [];
+      var total = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var on = rows[i].querySelector("[data-qc-enabled]");
+        if (on && !on.checked) { continue; }
+        var w = weightOf(rows[i]);
+        counted.push([rows[i], w]);
+        total += w;
+      }
+      var all = form.querySelectorAll("[data-qc-pct]");
+      for (var a = 0; a < all.length; a++) { all[a].textContent = ""; }
+      if (!weighted || counted.length < 2 || total <= 0) { return; }
+      for (var c = 0; c < counted.length; c++) {
+        var pct = counted[c][0].querySelector("[data-qc-pct]");
+        if (pct) { pct.textContent = "environ " + Math.round(100 * counted[c][1] / total) + " %"; }
+      }
+    }
+
     function refresh() {
       var picked = form.querySelectorAll("[data-qc-cand]:checked").length;
+      var rows = [];
+      var itemRows = form.querySelectorAll("[data-qc-item]");
+      for (var r = 0; r < itemRows.length; r++) {
+        var gone = itemRows[r].querySelector("[data-qc-remove]");
+        if (!gone || !gone.checked) { rows.push(itemRows[r]); }
+      }
+      var cands = form.querySelectorAll("[data-qc-cand]:checked");
+      for (var k = 0; k < cands.length; k++) { rows.push(cands[k].closest(".qc-cand")); }
+      form.setAttribute("data-qc-count", rows.length === 0 ? "none" : rows.length === 1 ? "one" : "many");
+      chances(rows);
       if (count) {
         count.textContent = picked ? plural(picked, "quête cochée sera ajoutée", "quêtes cochées seront ajoutées")
           + " à l'enregistrement." : "Coche les quêtes à ajouter.";
@@ -1721,12 +1760,18 @@
         if (removed) { parts.push(plural(removed, "retirée", "retirées")); }
         text += " (" + parts.join(", ") + ")";
       }
+      if (kept + picked > 1) {
+        text += form.querySelector("input[name=pick_mode][value=weighted]:checked")
+          ? ", choisies au hasard (certaines plus souvent)" : ", choisies au hasard (même chance pour toutes)";
+      }
       text += npcs.length ? ", proposées par " + npcs.join(", ") + "." : ". Aucun PNJ ne les proposera pour l'instant.";
       summary.textContent = text;
     }
 
     form.addEventListener("change", refresh);
-    form.addEventListener("input", function (ev) { if (ev.target === nameInput) { refresh(); } });
+    form.addEventListener("input", function (ev) {
+      if (ev.target === nameInput || ev.target.hasAttribute("data-qc-exact")) { refresh(); }
+    });
     refresh();
   }
 

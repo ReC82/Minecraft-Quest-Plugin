@@ -6197,4 +6197,14 @@ Prérequis : JAR et PlugAdmin issus de #414 sur DEV. Ne supprimer **que** des ca
 5.  Dupliquer → « Créer la copie » → nouvelle fiche, mêmes quêtes, aucun PNJ.
 6.  Supprimer la copie (confirmation obligatoire) → elle disparaît de l'accueil.
 7.  Téléphone (≈ 390 px) : aucun défilement horizontal, boutons utilisables au doigt.
+8.  (Correctif de validation) Fiche de « Quêtes des brigands des bois » (1 quête) : « Une seule
+    quête : c'est toujours elle qui est proposée ». Rien n'évoque un ordre de proposition.
+9.  Sur un catalogue de **test** à 2 quêtes : Modifier → la liste dit « au hasard … sert seulement à
+    les ranger » ; « Comment choisir la prochaine quête ? » est sur « même chance pour toutes ».
+10. Choisir « certaines plus souvent » → un menu Rare / Normale / Souvent apparaît à côté de chaque
+    quête avec une part (« environ 67 % ») ; mettre l'une sur Souvent, enregistrer → la fiche
+    affiche « Souvent · environ 67 % » et « Normale · environ 33 % ».
+11. « Peut-on proposer deux fois de suite la même quête ? » → « Autoriser les répétitions »,
+    enregistrer → la fiche le dit. Identifiant et note ne sont visibles qu'en ouvrant
+    « Informations techniques » / « Notes ».
 

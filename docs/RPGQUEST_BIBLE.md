@@ -3657,7 +3657,13 @@ accueil (liste + « Créer un catalogue »), fiche lisible, écrans séparés Mo
 Supprimer, ajout de quêtes par recherche, choix des **PNJ qui proposent ces quêtes**
 (`assign_templates=true` + `templates` sur `create|update` : fixe exactement les modèles, après
 l'écriture du catalogue), identifiant calculé depuis le nom, réglages avancés repliés, formulaire
-construit sur un relevé dépassé refusé (`based_on`). Aucune migration. Référence :
+construit sur un relevé dépassé refusé (`based_on`). Aucune migration. **Retour propriétaire
+(#414, 15/10)** : l'ordre de la liste ne change pas le tirage (dit tel quel) ; question
+« Comment choisir la prochaine quête ? » = `pick_mode=equal` (un poids commun `equal_weight`, celui
+du catalogue s'il était déjà uniforme) ou `weighted` (Rare 5 / Normale 10 / Souvent 20 par quête,
+`entry_<n>_weight_exact` en expert) ; « Peut-on proposer deux fois de suite la même quête ? » =
+`avoid_recent` 1 / 0 / `more` + `avoid_more` (2–10). Traduction faite par le panel vers les champs
+existants : aucun champ nouveau côté plugin, aucun poids modifié sans action de l'utilisateur. Référence :
 [ENCOUNTERS.md](ENCOUNTERS.md) § « Catalogues de quêtes secondaires ».
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 

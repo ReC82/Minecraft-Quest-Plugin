@@ -24,7 +24,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > catalogue (`assign_templates` / `templates` sur `quest.catalog.create|update`, liste `templates`
 > dans `quest.catalog.list`), identifiant calculé depuis le nom, garde-fou `based_on`. Moteur,
 > règles de sélection et permissions inchangés. Aucune migration. Validation visuelle : PENDING
-> (TC-321).
+> (TC-321). Correctif de validation (15/10) : hasard expliqué (« l'ordre sert seulement à
+> ranger »), question « Comment choisir la prochaine quête ? » (même chance / certaines plus
+> souvent : Rare 5, Normale 10, Souvent 20, valeurs existantes conservées), question des
+> répétitions, notes et informations techniques repliées — panel seulement (TC-321 étapes 8-11).
 
 > **PNJ récurrents par biome — étape 1 (#13, 14/10/2026)** — un PNJ Citizens de rencontre apparaît
 > dans chaque instance de biome du Wild visitée dont le biome a un modèle (`encounters/*.yml` :

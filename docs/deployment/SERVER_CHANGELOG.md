@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - PlugAdmin : zones de texte pleine largeur, barre du haut sans débordement (#425)
+
+### Changement
+
+Mise en page partagée de PlugAdmin (`plugadmin.css`) : les zones multilignes (`textarea`) ne
+sont plus bornées à 460px et suivent la largeur de leur champ (Import contenu, Quêtes, Dialogues,
+Stories…) ; colonnes de `.form-grid` en `minmax(0,1fr)` ; aperçus de code bornés en largeur
+(défilement interne) et, sur l'import, en hauteur ; zone « Contenu du pack » en monospace ; barre
+du haut sans défilement horizontal à 390px. Aucun changement du plugin ni du moteur d'import.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft : redéploiement de PlugAdmin seulement. Aucune migration, aucun
+fichier de configuration ni de contenu modifié.
+
+### Sauvegarde préalable
+
+Version précédente du panel conservée par `scripts/plugadmin/deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Déploiement
+
+`scripts/plugadmin/deploy.sh --wait-ci` après CI verte.
+
+### Validation
+
+`plugadmin.css` servi contenant la règle `textarea{min-height:80px;resize:vertical;max-width:100%}` ;
+validation visuelle du propriétaire sur `/content/import` (exemple Lily) — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Réinstaller la version précédente depuis `/opt/plugadmin/releases/` et redémarrer `plugadmin.service`.
+
+---
+
 ## 2026-10-15 - Publication d'un pack en une seule opération, tout ou rien (#427)
 
 ### Changement

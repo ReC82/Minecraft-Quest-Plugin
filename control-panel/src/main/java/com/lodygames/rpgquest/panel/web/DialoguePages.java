@@ -1,8 +1,10 @@
 package com.lodygames.rpgquest.panel.web;
 
 import com.lodygames.rpgquest.panel.content.Descriptors;
+import com.lodygames.rpgquest.panel.content.DialogueCatalogCoherence;
 import com.lodygames.rpgquest.panel.content.DialogueDraft;
 import com.lodygames.rpgquest.panel.content.DialogueForm;
+import com.lodygames.rpgquest.panel.content.DialogueServerCopy;
 import com.lodygames.rpgquest.panel.content.DialogueYaml;
 import com.lodygames.rpgquest.panel.http.Http;
 import java.time.Instant;
@@ -70,7 +72,58 @@ public final class DialoguePages {
 
     /** Tout ce que les pages affichent, préparé par l'appelant. */
     public record Ctx(String agentId, List<Npc> npcs, List<Quest> quests, Set<String> serverKeys,
-                      boolean npcsSurveyed, java.util.function.Function<String, LiveState> live) {
+                      boolean npcsSurveyed, java.util.function.Function<String, LiveState> live,
+                      List<Catalog> catalogs, List<Model> models, boolean catalogsSurveyed) {
+
+        /** Sans catalogues relevés (écrans qui n'en ont pas besoin, versions antérieures à #430). */
+        public Ctx(String agentId, List<Npc> npcs, List<Quest> quests, Set<String> serverKeys,
+                   boolean npcsSurveyed, java.util.function.Function<String, LiveState> live) {
+            this(agentId, npcs, quests, serverKeys, npcsSurveyed, live, List.of(), List.of(), false);
+        }
+
+        /** Modèles de PNJ récurrents dont les apparitions disent ce dialogue (npc_id = dialogue). */
+        List<Model> models(String key) {
+            List<Model> out = new ArrayList<>();
+            for (Model m : models) {
+                if (key.equals(DialogueYaml.plainId(m.npcId()))) {
+                    out.add(m);
+                }
+            }
+            return out;
+        }
+
+        /** Catalogues des modèles qui portent ce dialogue, sans doublon, dans l'ordre. */
+        List<String> modelCatalogs(String key) {
+            List<String> out = new ArrayList<>();
+            for (Model m : models(key)) {
+                for (String c : m.catalogs()) {
+                    if (!out.contains(c)) {
+                        out.add(c);
+                    }
+                }
+            }
+            return out;
+        }
+
+        Catalog catalog(String id) {
+            for (Catalog c : catalogs) {
+                if (c.id().equals(id)) {
+                    return c;
+                }
+            }
+            return null;
+        }
+
+        String catalogName(String id) {
+            Catalog c = catalog(id);
+            return c == null || c.name().isBlank() ? MiniText.prettifyId(id) : MiniText.plain(c.name());
+        }
+
+        Map<String, List<String>> catalogQuests() {
+            Map<String, List<String>> out = new LinkedHashMap<>();
+            catalogs.forEach(c -> out.put(c.id(), c.quests()));
+            return out;
+        }
 
         List<Npc> users(String key) {
             List<Npc> out = new ArrayList<>();
@@ -93,6 +146,19 @@ public final class DialoguePages {
         }
     }
 
+    /**
+     * Issue #430 — une liste de quêtes (catalogue #369), désignée par son nom.
+     *
+     * @param quests quêtes de la liste réellement proposables (activées et existantes)
+     * @param usedBy modèles de PNJ récurrents qui la portent
+     */
+    public record Catalog(String id, String name, boolean enabled, List<String> quests, List<String> usedBy) {
+    }
+
+    /** Issue #430 — un modèle de PNJ récurrent (#13) : ses apparitions disent le dialogue {@code npcId}. */
+    public record Model(String id, String name, String npcId, boolean enabled, List<String> catalogs) {
+    }
+
     /** Ce que la session peut faire. */
     public record Rights(boolean write, boolean publish, boolean delete) {
     }
@@ -110,10 +176,18 @@ public final class DialoguePages {
      * @param errors      messages par emplacement ({@link #nodeKey} / {@link #replyKey}, ou « dialogue »)
      * @param dirty       le formulaire porte des modifications non enregistrées
      * @param hasComments le fichier contient des notes « # » que l'enregistrement ne garde pas
+     * @param serverCopy  issue #430 — pour un dialogue présent seulement sur le serveur : où en est
+     *                    sa copie vers la source ; {@code null} sinon
      */
     public record Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
                           String notice, String noticeTone, Map<String, List<String>> errors,
-                          boolean dirty, boolean hasComments) {
+                          boolean dirty, boolean hasComments, DialogueServerCopy serverCopy) {
+
+        public Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
+                       String notice, String noticeTone, Map<String, List<String>> errors,
+                       boolean dirty, boolean hasComments) {
+            this(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments, null);
+        }
     }
 
     private DialoguePages() {
@@ -201,11 +275,14 @@ public final class DialoguePages {
         for (DialogueDraft.Node n : d.nodes) {
             for (DialogueDraft.Choice c : n.choices) {
                 for (Map<String, String> a : c.actions) {
+                    String t = null;
                     if ("START_QUEST".equalsIgnoreCase(a.getOrDefault("type", ""))) {
-                        String t = "« " + MiniText.plain(ctx.questTitle(a.getOrDefault("quest", ""))) + " »";
-                        if (!offers.contains(t)) {
-                            offers.add(t);
-                        }
+                        t = "« " + MiniText.plain(ctx.questTitle(a.getOrDefault("quest", ""))) + " »";
+                    } else if (DialogueForm.CATALOG_ACTION.equalsIgnoreCase(a.getOrDefault("type", ""))) {
+                        t = "une quête au hasard dans une liste";
+                    }
+                    if (t != null && !offers.contains(t)) {
+                        offers.add(t);
                     }
                 }
             }
@@ -332,6 +409,9 @@ public final class DialoguePages {
 
         sb.append(who(csrf, ctx, rights, e.slug(), users));
         sb.append(liveBar(csrf, ctx, rights, e));
+        if (e.serverCopy() != null) {
+            sb.append(serverCopy(csrf, ctx, rights, e.slug(), e.serverCopy()));
+        }
 
         if (!e.notice().isEmpty()) {
             sb.append(Ui.banner(e.noticeTone(), Http.esc(e.notice())));
@@ -344,6 +424,8 @@ public final class DialoguePages {
             sb.append("<p class=\"field-error\" role=\"alert\">").append(Icons.icon("warning"))
                     .append(Http.esc(msg)).append("</p>");
         }
+
+        sb.append(coherence(ctx, d, e.slug()));
 
         sb.append("<form method=\"post\" action=\"/dialogues/save\" class=\"dlg-editor\" novalidate")
                 .append(e.dirty() ? " data-dirty=\"1\"" : "").append(" data-dirty-form>");
@@ -400,11 +482,33 @@ public final class DialoguePages {
     /** « Qui parle ? » : le ou les personnages qui utilisent ce dialogue, et le moyen d'en associer un. */
     private static String who(String csrf, Ctx ctx, Rights rights, String slug, List<Npc> users) {
         StringBuilder sb = new StringBuilder("<div class=\"dlg-who\">");
-        if (users.isEmpty()) {
+        List<Model> models = ctx.models(slug);
+        if (users.isEmpty() && models.isEmpty()) {
             sb.append("<span class=\"muted\">").append(ctx.npcsSurveyed()
-                    ? "Aucun personnage n'utilise ce dialogue."
+                    ? "Aucun personnage n'utilise ce dialogue." + (ctx.catalogsSurveyed() ? ""
+                            : " (Les PNJ récurrents ne sont pas encore relus : « Actualiser » sur Catalogues de quêtes.)")
                     : "Personnages non relus : « Actualiser » sur la liste des dialogues.").append("</span>");
-        } else {
+        } else if (users.isEmpty()) {
+            sb.append("<span class=\"muted\">Aucun personnage fixe : seulement des PNJ récurrents.</span>");
+        }
+        for (Model m : models) {
+            // #430 : un modèle de rencontre n'est pas un personnage déjà placé ; on dit ce qu'il est.
+            sb.append("<span class=\"dlg-model\">").append(Icons.icon("npc")).append("PNJ récurrent : <a href=\"/npcs/encounters\">")
+                    .append(Http.esc(m.name().isBlank() ? m.id() : MiniText.plain(m.name()))).append("</a>")
+                    .append(m.enabled() ? "" : " <span class=\"muted\">(n'apparaît plus)</span>");
+            if (m.catalogs().isEmpty()) {
+                sb.append(" <span class=\"muted\">— aucune liste de quêtes</span>");
+            } else {
+                sb.append(" — liste").append(m.catalogs().size() > 1 ? "s" : "").append(" : ");
+                for (int k = 0; k < m.catalogs().size(); k++) {
+                    String c = m.catalogs().get(k);
+                    sb.append(k == 0 ? "" : ", ").append("<a href=\"").append(Http.esc(catalogUrl(ctx, c))).append("\">")
+                            .append(Http.esc(ctx.catalogName(c))).append("</a>");
+                }
+            }
+            sb.append("</span>");
+        }
+        if (!users.isEmpty()) {
             sb.append("<span>").append(Icons.icon("npc")).append("Personnage : ");
             for (int k = 0; k < users.size(); k++) {
                 Npc n = users.get(k);
@@ -467,7 +571,7 @@ public final class DialoguePages {
             }
             case SERVER_ONLY -> {
                 tone = "info";
-                text = "Ce dialogue n'existe que sur le serveur : il ne se modifie pas ici.";
+                text = "Ce dialogue n'existe que sur le serveur : copiez-le dans PlugAdmin pour le modifier.";
             }
             default -> {
                 tone = "info";
@@ -560,7 +664,8 @@ public final class DialoguePages {
                                     Map<String, String> f, boolean editable, Map<String, List<String>> errors) {
         DialogueForm.Reply r = DialogueForm.reply(c);
         String base = "dlg-n" + i + "-c" + j;
-        StringBuilder sb = new StringBuilder("<li class=\"dlg-reply\">");
+        StringBuilder sb = new StringBuilder("<li class=\"dlg-reply\" id=\"r-").append(Http.esc(nodeIdOf(d, i)))
+                .append("-c").append(j).append("\">");
         for (String msg : errors.getOrDefault(replyKey(i, j), List.of())) {
             sb.append("<p class=\"field-error\" role=\"alert\">").append(Icons.icon("warning"))
                     .append(Http.esc(msg)).append("</p>");
@@ -601,7 +706,8 @@ public final class DialoguePages {
                 .append(DialogueForm.reply(i, j, "qa")).append("\" data-switch=\"").append(base).append("-q\"")
                 .append(dis).append(">");
         sb.append(option("", r.questAction(), "Rien de plus"));
-        sb.append(option("START_QUEST", r.questAction(), "Proposer une quête"));
+        sb.append(option("START_QUEST", r.questAction(), "Proposer une quête précise"));
+        sb.append(option(DialogueForm.CATALOG_ACTION, r.questAction(), "Proposer une quête au hasard dans une liste"));
         sb.append(option("ADVANCE_QUEST", r.questAction(), "Faire avancer une quête"));
         sb.append(option("TURN_IN_QUEST", r.questAction(), "Rendre une quête (donne les récompenses)"));
         sb.append("</select></div></div>");
@@ -609,7 +715,13 @@ public final class DialoguePages {
         sb.append("<div class=\"dlg-quest\" data-switch-for=\"").append(base).append("-q\" data-switch-value=\"START_QUEST ADVANCE_QUEST TURN_IN_QUEST\"")
                 .append(r.questAction().isEmpty() ? " hidden" : "").append(">");
         sb.append(questPicker(ctx, base + "-qid", DialogueForm.reply(i, j, "qid"), r.questId(), editable,
-                r.questAction().isEmpty()));
+                !DialogueForm.QUEST_ACTIONS.contains(r.questAction())));
+        sb.append("</div>");
+        boolean catalogOn = DialogueForm.CATALOG_ACTION.equals(r.questAction());
+        sb.append("<div class=\"dlg-quest\" data-switch-for=\"").append(base).append("-q\" data-switch-value=\"")
+                .append(DialogueForm.CATALOG_ACTION).append("\"").append(catalogOn ? "" : " hidden").append(">");
+        sb.append(catalogPicker(ctx, d.id, base + "-qcat", DialogueForm.reply(i, j, "qcat"), r.catalogId(), editable,
+                !catalogOn));
         sb.append("</div>");
 
         sb.append(advanced(ctx, d, i, j, r, f, editable));
@@ -657,6 +769,198 @@ public final class DialoguePages {
             sb.append("<p class=\"form-text\"><a href=\"/quests/new\" target=\"_blank\" rel=\"noopener\">Créer une quête</a></p>");
         }
         return sb.toString();
+    }
+
+    private static String nodeIdOf(DialogueDraft d, int i) {
+        return i >= 0 && i < d.nodes.size() ? d.nodes.get(i).id : "";
+    }
+
+    /** La fiche d'un catalogue (#414). */
+    static String catalogUrl(Ctx ctx, String catalogId) {
+        return QuestCatalogPages.PAGE + "?agent=" + java.net.URLEncoder.encode(ctx.agentId(),
+                java.nio.charset.StandardCharsets.UTF_8) + "&focus=" + java.net.URLEncoder.encode(catalogId,
+                java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** « la liste « X » » ou, sans liste nommée, celles du PNJ récurrent. */
+    private static String catalogPhrase(Ctx ctx, String dialogueId, String catalogId) {
+        if (!catalogId.isBlank()) {
+            return "la liste « " + ctx.catalogName(catalogId) + " »";
+        }
+        List<String> own = ctx.modelCatalogs(DialogueYaml.plainId(dialogueId));
+        if (own.isEmpty()) {
+            return "les listes du PNJ récurrent (aucune pour l'instant)";
+        }
+        List<String> names = new ArrayList<>();
+        own.forEach(c -> names.add("« " + ctx.catalogName(c) + " »"));
+        return (own.size() > 1 ? "les listes " : "la liste ") + String.join(", ", names);
+    }
+
+    /**
+     * Issue #430 — « Quelle liste ? » : les catalogues par leur nom. Vide = les listes des modèles
+     * de PNJ récurrents qui disent ce dialogue (le défaut du moteur, réutilisable tel quel).
+     */
+    private static String catalogPicker(Ctx ctx, String dialogueId, String id, String name, String selected,
+                                        boolean editable, boolean disabled) {
+        String key = DialogueYaml.plainId(dialogueId);
+        List<String> own = ctx.modelCatalogs(key);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<label for=\"").append(id).append("\">Quelle liste ?</label>");
+        sb.append("<select class=\"form-select\" id=\"").append(id).append("\" name=\"").append(name).append("\"")
+                .append(disabled || !editable ? " disabled" : "").append(">");
+        sb.append(option("", selected, own.isEmpty() ? "Les listes de ce PNJ récurrent (aucune pour l'instant)"
+                : "Les listes de ce PNJ récurrent : " + String.join(", ", own.stream().map(ctx::catalogName).toList())));
+        boolean found = selected.isEmpty();
+        List<Catalog> sorted = new ArrayList<>(ctx.catalogs());
+        sorted.sort((a, b) -> ctx.catalogName(a.id()).compareToIgnoreCase(ctx.catalogName(b.id())));
+        for (Catalog c : sorted) {
+            found |= c.id().equals(selected);
+            sb.append(option(c.id(), selected, ctx.catalogName(c.id()) + (c.enabled() ? "" : " (désactivée)")));
+        }
+        if (!found) {
+            sb.append(option(selected, selected, MiniText.prettifyId(selected) + " (introuvable)"));
+        }
+        sb.append("</select>");
+        // Les avertissements de la liste choisie : ce qui ferait que le PNJ n'a rien à proposer.
+        List<String> warnings = new ArrayList<>();
+        List<String> targets = selected.isEmpty() ? own : List.of(selected);
+        if (!ctx.catalogsSurveyed()) {
+            warnings.add("Les listes de quêtes n'ont pas encore été relues : « Actualiser » sur Catalogues de quêtes.");
+        } else if (ctx.catalogs().isEmpty()) {
+            warnings.add("Aucune liste de quêtes n'existe encore : créez-en une dans Catalogues de quêtes.");
+        } else if (selected.isEmpty() && ctx.models(key).isEmpty()) {
+            warnings.add("Aucun PNJ récurrent ne dit ce dialogue : choisissez une liste précise.");
+        } else if (selected.isEmpty() && own.isEmpty()) {
+            warnings.add("Ce PNJ récurrent n'a aucune liste : choisissez-en une ici, ou associez-en une à ce PNJ.");
+        }
+        for (String t : targets) {
+            Catalog c = ctx.catalog(t);
+            if (c == null) {
+                if (ctx.catalogsSurveyed()) {
+                    warnings.add("La liste « " + MiniText.prettifyId(t) + " » n'existe pas sur le serveur.");
+                }
+            } else if (!c.enabled()) {
+                warnings.add("La liste « " + ctx.catalogName(t) + " » est désactivée : le PNJ dira qu'il n'a rien.");
+            } else if (c.quests().isEmpty()) {
+                warnings.add("La liste « " + ctx.catalogName(t) + " » ne contient aucune quête proposable.");
+            } else if (!selected.isEmpty() && !ctx.models(key).isEmpty()
+                    && ctx.models(key).stream().noneMatch(m -> m.catalogs().contains(t))) {
+                warnings.add("Cette liste n'est associée à aucun des PNJ récurrents de ce dialogue : elle sera "
+                        + "quand même proposée, mais n'apparaîtra pas sur leur fiche.");
+            }
+        }
+        for (String w : warnings) {
+            sb.append("<p class=\"form-text dlg-warn\">").append(Icons.icon("warning")).append(Http.esc(w)).append("</p>");
+        }
+        sb.append("<p class=\"form-text\">Le personnage présente lui-même la quête tirée (titre, but, délai), "
+                + "rappelle une tâche en cours ou dit qu'il n'a rien pour le moment. Rien n'est donné avant "
+                + "« Commencer (j'accepte) ».");
+        if (!selected.isEmpty() && ctx.catalog(selected) != null) {
+            sb.append(" <a href=\"").append(Http.esc(catalogUrl(ctx, selected))).append("\">Voir la liste</a>");
+        }
+        sb.append("</p>");
+        return sb.toString();
+    }
+
+    /**
+     * Issue #430 — ce qui reste lié à une quête précise alors que ce PNJ propose (ou a) une liste.
+     * Signalé, jamais corrigé à la place de l'auteur.
+     */
+    private static String coherence(Ctx ctx, DialogueDraft d, String slug) {
+        DialogueCatalogCoherence.Report report = DialogueCatalogCoherence.analyse(d, ctx.modelCatalogs(slug),
+                ctx.catalogQuests(), q -> MiniText.plain(ctx.questTitle(q)));
+        if (report.empty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<section class=\"card dlg-card dlg-coherence\" id=\"dlg-coherence\">");
+        sb.append("<h2 class=\"dlg-node-h\">").append(Icons.icon("warning")).append(report.offersCatalog()
+                ? "À vérifier : ces passages parlent d'une quête précise"
+                : "Ce PNJ a une liste de quêtes, mais ce dialogue propose des quêtes précises").append("</h2>");
+        sb.append("<p class=\"form-text\">").append(report.offersCatalog()
+                ? "Ce dialogue propose une quête au hasard dans une liste. Les passages ci-dessous citent une quête "
+                        + "de cette liste en particulier : si une autre est tirée, ils deviennent faux (mauvais texte, "
+                        + "réponse cachée, quête en double)."
+                : "Pour faire passer ce PNJ à sa liste : sur la réponse qui propose la quête, choisissez « Proposer "
+                        + "une quête au hasard dans une liste ». Revoyez ensuite les passages ci-dessous, qui citent "
+                        + "une quête de la liste en particulier.")
+                .append("</p><ul class=\"dlg-coherence-list\">");
+        for (DialogueCatalogCoherence.Finding f : report.findings()) {
+            int number = DialogueForm.number(d, f.nodeId());
+            String where = (number == 1 ? "Début" : "Réplique " + number);
+            String anchor = "#r-" + f.nodeId();
+            if (f.choice() >= 0) {
+                DialogueDraft.Node n = d.nodes.stream().filter(x -> x.id.equals(f.nodeId())).findFirst().orElse(null);
+                String text = n == null || f.choice() >= n.choices.size() ? "" : n.choices.get(f.choice()).text;
+                where += ", réponse « " + DialogueForm.excerpt(MiniText.plain(text), 40) + " »";
+                anchor += "-c" + f.choice();
+            }
+            sb.append("<li><a href=\"").append(Http.esc(anchor)).append("\">").append(Http.esc(where)).append("</a> : ")
+                    .append(Http.esc(f.what())).append(" (« ").append(Http.esc(MiniText.plain(ctx.questTitle(f.quest()))))
+                    .append(" »).</li>");
+        }
+        sb.append("</ul><p class=\"form-text\">Le jeu ne sait pas encore tester « la quête tirée dans la liste » : "
+                + "une condition ne peut viser qu'une quête précise. Le plus simple est souvent de laisser la réponse "
+                + "« travail » toujours visible (le PNJ dit lui-même s'il n'a rien) et d'écrire des textes qui ne "
+                + "nomment pas une quête. Rien n'est modifié tant que vous n'enregistrez pas.</p>");
+        return sb.append("</section>").toString();
+    }
+
+    /**
+     * Issue #430 — « Copier dans PlugAdmin pour modifier » : un dialogue présent seulement sur le
+     * serveur, lu par {@code content.dev.read} (#47) et copié octet pour octet dans la source.
+     */
+    private static String serverCopy(String csrf, Ctx ctx, Rights rights, String slug, DialogueServerCopy copy) {
+        StringBuilder sb = new StringBuilder("<section class=\"card dlg-card dlg-import\" id=\"dlg-import\">");
+        sb.append("<h2 class=\"dlg-node-h\">").append(Icons.icon("copy")).append("Rendre ce dialogue modifiable</h2>");
+        sb.append("<p class=\"form-text\">PlugAdmin n'a pas encore ce dialogue : il vient du serveur. On peut le "
+                + "copier ici <strong>tel quel</strong>, sans rien perdre. La copie ne change rien en jeu : le serveur "
+                + "garde son fichier tant que vous ne mettez pas une nouvelle version en jeu.</p>");
+        if (!rights.write()) {
+            sb.append("<p class=\"form-text\">Vous n'avez pas le droit de modifier les dialogues.</p>");
+            return sb.append("</section>").toString();
+        }
+        String readButton = "<form method=\"post\" action=\"/dialogues/import\" data-submit-once>" + hidden("_csrf", csrf)
+                + hidden("agent", ctx.agentId()) + hidden("slug", slug) + hidden("_op", "read")
+                + "<button class=\"btn secondary sm\" type=\"submit\" data-busy-label=\"Lecture…\">{label}</button></form>";
+        switch (copy.status()) {
+            case NOT_READ -> sb.append("<p>Étape 1 : lire le fichier sur le serveur.</p>")
+                    .append(readButton.replace("{label}", Icons.icon("eye") + "Lire le dialogue sur le serveur"));
+            case PENDING -> sb.append("<p role=\"status\">Lecture en cours sur le serveur… Rechargez la page "
+                    + "dans un instant.</p>");
+            case ABSENT -> sb.append("<p class=\"field-error\">Le serveur n'a plus ce fichier : il a peut-être été "
+                    + "retiré. Actualisez la liste des dialogues.</p>")
+                    .append(readButton.replace("{label}", "Relire"));
+            case TOO_LARGE -> sb.append("<p class=\"field-error\">Ce fichier est trop gros pour être lu depuis "
+                    + "PlugAdmin. Il faut le copier à la main dans le dépôt.</p>");
+            case CORRUPT -> sb.append("<p class=\"field-error\">Le contenu reçu ne correspond pas à son empreinte : "
+                    + "rien n'est copié. Relisez-le.</p>").append(readButton.replace("{label}", "Relire"));
+            case STALE -> sb.append("<p class=\"field-error\">Le fichier a changé sur le serveur depuis la lecture : "
+                    + "relisez-le avant de le copier.</p>").append(readButton.replace("{label}", "Relire"));
+            case READY -> {
+                long lines = copy.text().lines().count();
+                sb.append("<p>").append(Icons.icon("check")).append("Lu sur le serveur : ").append(lines)
+                        .append(lines > 1 ? " lignes" : " ligne").append(", empreinte <code>")
+                        .append(Http.esc(copy.shortSha())).append("</code>. La copie sera identique, octet pour octet.</p>");
+                if (!copy.editableAfterCopy()) {
+                    sb.append("<p class=\"dlg-warn\">").append(Icons.icon("warning"))
+                            .append(Http.esc("Attention : l'éditeur simple ne sait pas relire ce dialogue sans perte ("
+                                    + String.join(" ; ", copy.editorIssues()) + "). Il sera copié quand même, mais "
+                                    + "restera en lecture seule ici : il faudra le modifier à la main."))
+                            .append("</p>");
+                }
+                sb.append("<details class=\"dlg-more\"><summary>Voir le fichier lu</summary><div class=\"codeblock\"><pre>")
+                        .append(Http.esc(copy.text())).append("</pre></div></details>");
+                sb.append("<form method=\"post\" action=\"/dialogues/import\" data-submit-once>")
+                        .append(hidden("_csrf", csrf)).append(hidden("agent", ctx.agentId())).append(hidden("slug", slug))
+                        .append(hidden("_op", "import")).append(hidden("expected_dev_sha", copy.devSha()))
+                        .append("<div class=\"btnrow\"><button class=\"btn sm\" type=\"submit\" data-busy-label=\"Copie…\">")
+                        .append(Icons.icon("save")).append("Copier dans PlugAdmin pour le modifier</button></div></form>");
+                sb.append(readButton.replace("{label}", "Relire"));
+            }
+            default -> {
+            }
+        }
+        return sb.append("</section>").toString();
     }
 
     /** Conditions et autres effets d'une réponse — repliés, en français. */
@@ -919,6 +1223,8 @@ public final class DialoguePages {
                     String t = a.getOrDefault("type", "").toUpperCase(Locale.ROOT);
                     switch (t) {
                         case "START_QUEST" -> notes.add("📜 propose la quête « " + MiniText.plain(ctx.questTitle(a.getOrDefault("quest", ""))) + " »");
+                        case DialogueForm.CATALOG_ACTION -> notes.add("🎲 propose une quête au hasard dans "
+                                + catalogPhrase(ctx, d.id, a.getOrDefault("catalog", "")));
                         case "ADVANCE_QUEST" -> notes.add("fait avancer « " + MiniText.plain(ctx.questTitle(a.getOrDefault("quest", ""))) + " »");
                         case "TURN_IN_QUEST" -> notes.add("rend « " + MiniText.plain(ctx.questTitle(a.getOrDefault("quest", ""))) + " »");
                         case "CLOSE", "" -> {

@@ -19,6 +19,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > `/quests/catalogs`. Aucune migration. Dialogues livrés `encounter_*` inchangés (quête fixe).
 > Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-314).
 
+> **Dialogues des PNJ récurrents dans PlugAdmin (#430, 15/10/2026)** — copie d'un dialogue
+> « Hors source » de DEV vers la source, octet pour octet et vérifiée par empreinte
+> (`content.dev.read` + `content.dev.state`, `POST /dialogues/import`, sans effet en jeu) ; menu
+> « Et aussi… » : quête précise ou « quête au hasard dans une liste » (`OFFER_CATALOG_QUEST`,
+> liste par nom) ; encadré « À vérifier » des références à une quête précise d'une liste du PNJ
+> (`DialogueCatalogCoherence`, jamais de réécriture) ; liens catalogue ↔ dialogue des modèles.
+> Panel seulement. Validation : PENDING (TC-324).
+
 > **Catalogues de quêtes — parcours PlugAdmin refondu (#414, 15/10/2026)** — accueil + fiche +
 > écrans Modifier / Dupliquer / Supprimer (`QuestCatalogPages`), choix des PNJ récurrents depuis le
 > catalogue (`assign_templates` / `templates` sur `quest.catalog.create|update`, liste `templates`

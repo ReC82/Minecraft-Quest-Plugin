@@ -3692,6 +3692,22 @@ du catalogue s'il était déjà uniforme) ou `weighted` (Rare 5 / Normale 10 / S
 `avoid_recent` 1 / 0 / `more` + `avoid_more` (2–10). Traduction faite par le panel vers les champs
 existants : aucun champ nouveau côté plugin, aucun poids modifié sans action de l'utilisateur. Référence :
 [ENCOUNTERS.md](ENCOUNTERS.md) § « Catalogues de quêtes secondaires ».
+
+**Dialogues des PNJ récurrents dans PlugAdmin (issue #430).** (1) Un dialogue « Hors source »
+(présent seulement sur DEV) se copie dans la source depuis son éditeur : « Rendre ce dialogue
+modifiable » → lecture par `content.dev.read` (#47, `CONTENT_READ`) → « Copier dans PlugAdmin pour
+le modifier » (`POST /dialogues/import`, `DIALOGUE_WRITE`). Écrit **octet pour octet** si
+l'empreinte SHA-256 du texte reçu égale celle annoncée, la valeur vue par l'administrateur
+(`expected_dev_sha`) et celle du dernier `content.dev.state` ; refusé si la source a déjà ce
+dialogue (jamais d'écrasement). DEV n'est pas touché ; audit `dialogues.content.import`.
+(2) Éditeur simple, « Et aussi… » : *Proposer une quête précise* (`START_QUEST`) ou *Proposer une
+quête au hasard dans une liste* (`OFFER_CATALOG_QUEST`, `catalog` choisi par nom ; vide = listes
+des modèles), avec avertissements (liste désactivée, vide, introuvable, PNJ sans liste).
+(3) Encadré « À vérifier » : conditions, effets, textes, variantes et entrées #158 qui citent une
+quête précise d'une liste du PNJ — signalés, jamais réécrits (le moteur n'a pas de condition « quête
+tirée »). (4) En-tête du dialogue : PNJ récurrents (modèles dont `npc_id` = dialogue) et leurs
+listes, liées à la fiche catalogue ; fiche catalogue : « Configurer le dialogue de ce PNJ ».
+Panel seulement, aucune migration, aucun changement du plugin.
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 
 Depuis la V2, un PNJ RPGQuest a une **définition logique** en données :

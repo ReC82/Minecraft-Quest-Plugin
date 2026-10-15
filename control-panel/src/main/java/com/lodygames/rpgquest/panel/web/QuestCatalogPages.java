@@ -408,6 +408,12 @@ final class QuestCatalogPages {
                 } else if (t != null) {
                     sb.append(chip("ok", "Prêt"));
                 }
+                if (t != null && !t.npcId().isBlank()) {
+                    // #430 : le chemin direct vers le dialogue de ce modèle, même s'il n'existe que sur DEV.
+                    sb.append("<a class=\"btn secondary sm qc-npc-dlg\" href=\"/dialogues/edit/")
+                            .append(Http.esc(t.npcId())).append("\">").append(Icons.icon("dialogues"))
+                            .append("Configurer le dialogue de ce PNJ</a>");
+                }
                 sb.append("</li>");
             }
             sb.append("</ul>");
@@ -427,7 +433,8 @@ final class QuestCatalogPages {
     private static String cannotOffer(Template t) {
         return "<span class=\"qc-npc-warn\">" + Icons.icon("warning") + "<span>Ce PNJ ne sait pas encore proposer "
                 + "les quêtes de cette liste. <a href=\"/dialogues/edit/" + Http.esc(t.npcId()) + "\">Ouvrir son "
-                + "dialogue</a> et ajouter une réponse avec l'action « Proposer une quête du catalogue ».</span></span>";
+                + "dialogue</a> et, sur la réponse qui propose du travail, choisir « Proposer une quête au hasard "
+                + "dans une liste ».</span></span>";
     }
 
     /** « Comment la prochaine quête est choisie », en mots simples, adapté au nombre de quêtes. */
@@ -739,7 +746,7 @@ final class QuestCatalogPages {
                 sb.append("<span class=\"qc-npc-warn is-short\">").append(Icons.icon("warning"))
                         .append("<span>Ne sait pas encore proposer ces quêtes : <a href=\"/dialogues/edit/")
                         .append(Http.esc(t.npcId())).append("\">son dialogue</a> doit avoir l'action « Proposer "
-                                + "une quête du catalogue ».</span></span>");
+                                + "une quête au hasard dans une liste ».</span></span>");
             }
             sb.append("</div>");
         }

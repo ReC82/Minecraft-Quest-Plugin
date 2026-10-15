@@ -362,6 +362,7 @@ public final class PanelApp {
         route("/dialogues/publish", this::handleDialoguePublish);
         route("/dialogues/refresh", this::handleDialogueRefresh);
         route("/dialogues/link", this::handleDialogueLink);
+        route("/dialogues/import", this::handleDialogueImport);
         route("/content/export", this::handleContentExport);
         route("/content/export/download", this::handleContentExportDownload);
         // Issue #110 — contrat de contenu machine-readable. Trois téléchargements en lecture pure,
@@ -5010,6 +5011,10 @@ public final class PanelApp {
             types.add("quest.list");
             types.add("content.dev.state");
         }
+        if (permissions.can(post.session().effective(), Permission.NPC_READ)) {
+            // #430 : les listes de quêtes et les PNJ récurrents qui disent ces dialogues.
+            types.add("quest.catalog.list");
+        }
         for (String type : types) {
             if (!agentStore.hasOpenActionOfType(post.agentId(), type)) {
                 String id = agentStore.createAction(post.agentId(), type, Map.of(), post.session().username());
@@ -5070,7 +5075,73 @@ public final class PanelApp {
             return null;
         }
         return new DialoguePages.Editing(slug, draft, "", "Ce dialogue n'existe que sur le serveur (il vient du "
-                + "plugin ou a été déposé à la main) : il s'affiche en lecture seule.", notice, "ok", Map.of(), false, false);
+                + "plugin ou a été déposé à la main) : il s'affiche en lecture seule. Pour le modifier, copiez-le "
+                + "d'abord dans PlugAdmin (ci-dessus).", notice, "ok", Map.of(), false, false,
+                dialogueServerCopy(ctx.agentId(), slug));
+    }
+
+    /** Issue #430 — où en est la copie possible d'un dialogue présent seulement sur DEV. */
+    private com.lodygames.rpgquest.panel.content.DialogueServerCopy dialogueServerCopy(String agentId, String slug) {
+        boolean pending = agentStore.recentActions(agentId, 200).stream()
+                .anyMatch(a -> "content.dev.read".equals(a.type()) && !a.status().terminal()
+                        && "dialogues".equals(a.params().get("kind")) && slug.equals(a.params().get("id")));
+        return com.lodygames.rpgquest.panel.content.DialogueServerCopy.of(
+                agentPages.devFileRead(agentId, "dialogues", slug), pending,
+                agentPages.devContentIndex(agentId).devSha("dialogues", slug));
+    }
+
+    /**
+     * Issue #430 — « Rendre ce dialogue modifiable » : {@code read} demande au serveur le fichier
+     * ({@code content.dev.read}, #47) ; {@code import} l'écrit dans la source, octet pour octet,
+     * seulement s'il est intègre, toujours celui que l'administrateur a vu, et absent de la source
+     * (jamais d'écrasement). DEV n'est pas touché : rien ne change en jeu.
+     */
+    private void handleDialogueImport(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, true);
+        if (post == null) {
+            return;
+        }
+        Map<String, String> form = post.form();
+        String slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(form.getOrDefault("slug", ""));
+        String back = "/dialogues/edit/" + slug;
+        if (!slug.matches("[a-z0-9][a-z0-9_-]{0,63}")) {
+            Http.redirect(exchange, "/dialogues?err=" + enc("Ce dialogue est introuvable."));
+            return;
+        }
+        if (!permissions.can(post.session().effective(), Permission.CONTENT_READ)) {
+            forbidden(exchange, post.session(), back);
+            return;
+        }
+        if (contentWorkspace.exists("dialogues", slug)) {
+            Http.redirect(exchange, back + "?err=" + enc("PlugAdmin a déjà un dialogue « " + slug + " » : rien n'a "
+                    + "été copié, pour ne pas l'écraser."));
+            return;
+        }
+        if ("read".equals(form.get("_op"))) {
+            String id = agentStore.createAction(post.agentId(), "content.dev.read",
+                    Map.of("kind", "dialogues", "id", slug), post.session().username());
+            Http.redirect(exchange, back + "?toast=" + enc(id));
+            return;
+        }
+        var copy = dialogueServerCopy(post.agentId(), slug);
+        String expected = form.getOrDefault("expected_dev_sha", "").trim();
+        if (!copy.ready() || expected.isEmpty() || !expected.equals(copy.devSha())) {
+            Http.redirect(exchange, back + "?err=" + enc("Rien n'a été copié : le fichier du serveur a changé ou n'est "
+                    + "pas lisible. Relisez-le, vérifiez-le, puis recommencez."));
+            return;
+        }
+        ContentWorkspace.WriteResult wr = contentWorkspace.write("dialogues", slug, copy.text(), null);
+        if (!wr.ok()) {
+            Http.redirect(exchange, back + "?err=" + enc("Rien n'a été copié : " + wr.message()));
+            return;
+        }
+        audit.record(post.session().username(), "dialogues.content.import", back, "OK", "sha=" + wr.sha256(),
+                UUID.randomUUID().toString().substring(0, 8));
+        if (!agentStore.hasOpenActionOfType(post.agentId(), "content.dev.state")) {
+            agentStore.createAction(post.agentId(), "content.dev.state", Map.of(), post.session().username());
+        }
+        Http.redirect(exchange, back + "?ok=" + enc("Copié dans PlugAdmin, identique au fichier du serveur. Rien n'a "
+                + "changé en jeu : vos modifications n'y arriveront qu'avec « Mettre en jeu »."));
     }
 
     /**

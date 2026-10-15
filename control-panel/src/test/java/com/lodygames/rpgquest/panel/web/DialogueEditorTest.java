@@ -388,6 +388,156 @@ class DialogueEditorTest {
         assertFalse(Files.exists(content.resolve("dialogues/sage.yml")));
     }
 
+    // ---- Issue #430 : dialogue présent seulement sur le serveur, listes de quêtes -----------
+
+    private static final String BANDIT_SURVEY = "{\"dialogues\":[{\"id\":\"rpgquest:brigand_test\","
+            + "\"startNodeId\":\"hello\",\"nodes\":[{\"id\":\"hello\",\"speaker\":\"Brigand\",\"text\":\"Salut.\","
+            + "\"choices\":[{\"text\":\"Du travail ?\",\"nextNodeId\":null,\"actions\":[{\"type\":\"START_QUEST\","
+            + "\"quest\":\"rpgquest:herbes\"}],\"conditions\":[]}]}]}]}";
+
+    private static final String BANDIT_DEV = "# Dialogue jetable de test (#430) — commentaire conservé\n"
+            + "id: rpgquest:brigand_test\nstart: hello\nentries:\n  - node: hello\n    conditions:\n"
+            + "      - type: QUEST_STATE\n        quest: rpgquest:herbes\n        state: COMPLETED\nnodes:\n  hello:\n"
+            + "    speaker: \"Brigand\"\n    text: \"Salut. Herbes du marais, ça te dit ?\"\n    variants:\n"
+            + "      - \"Encore toi.\"\n    choices:\n      - text: \"Du travail ?\"\n        conditions:\n"
+            + "          - type: QUEST_AVAILABLE\n            quest: rpgquest:herbes\n        actions:\n"
+            + "          - type: START_QUEST\n            quest: rpgquest:herbes\n          - type: CLOSE\n";
+
+    private static final String CATALOG_SURVEY = "{\"available\":true,\"catalogs\":[{\"id\":\"brigands\","
+            + "\"displayName\":\"Quêtes des brigands\",\"description\":\"\",\"enabled\":true,\"avoidRecent\":1,"
+            + "\"entries\":[{\"quest\":\"rpgquest:herbes\",\"weight\":10,\"enabled\":true,\"exists\":true,"
+            + "\"title\":\"Herbes du marais\"},{\"quest\":\"rpgquest:pain\",\"weight\":10,\"enabled\":true,"
+            + "\"exists\":true,\"title\":\"Le pain de Lucien\"}],\"usedBy\":[\"forest_test\"],\"warnings\":[]},"
+            + "{\"id\":\"vieille\",\"displayName\":\"Vieille liste\",\"enabled\":false,\"entries\":[],"
+            + "\"usedBy\":[],\"warnings\":[]}],"
+            + "\"issues\":{},\"quests\":[],\"warnings\":[],\"templates\":[{\"id\":\"forest_test\","
+            + "\"displayName\":\"Brigand de test\",\"npcId\":\"brigand_test\",\"enabled\":true,"
+            + "\"questCatalogs\":[\"brigands\"],\"offersCatalog\":false}]}";
+
+    private void recordDevRead(String slug, String text) {
+        // L'agent répond à la lecture demandée par la page, s'il y en a une ; sinon à une nouvelle.
+        String id = actions("content.dev.read").stream().filter(a -> !a.status().terminal()).map(AgentActionRow::id)
+                .findFirst().orElseGet(() -> store.createAction(TestConfig.AGENT_ID, "content.dev.read",
+                        Map.of("kind", "dialogues", "id", slug), "owner"));
+        String sha = sha256(text);
+        String details = "{\"kind\":\"dialogues\",\"slug\":\"" + slug + "\",\"present\":true,\"tooLarge\":false,"
+                + "\"sha256\":\"" + sha + "\",\"text\":" + json(text) + "}";
+        store.recordResult(id, TestConfig.AGENT_ID, AgentActionStatus.SUCCESS, "present", "ok",
+                "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"details\":" + details + "}", Instant.now());
+    }
+
+    private static String sha256(String text) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String json(String text) {
+        return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
+    }
+
+    @Test
+    void aServerOnlyDialogueIsCopiedByteForByteWithoutTouchingTheGame() throws Exception {
+        start();
+        survey(BANDIT_SURVEY);
+        record("quest.catalog.list", CATALOG_SURVEY);
+        String page = get("/dialogues/edit/brigand_test").body();
+        assertTrue(page.contains("Rendre ce dialogue modifiable"), "la copie est proposée");
+        assertTrue(page.contains("PNJ récurrent : "), "le modèle de rencontre est nommé");
+        assertTrue(page.contains("Brigand de test"));
+        assertFalse(page.contains("Aucun personnage n'utilise ce dialogue"), "le vrai usage est dit");
+        assertFalse(page.contains("Copier dans PlugAdmin pour le modifier"), "pas avant la lecture");
+
+        Map<String, String> read = formFieldsOf(page, "/dialogues/import");
+        assertEquals("read", read.get("_op"));
+        assertEquals(303, post("/dialogues/import", read, null).statusCode());
+        assertEquals(1, actions("content.dev.read").size(), "une lecture du fichier DEV, rien d'autre");
+        assertEquals("brigand_test", actions("content.dev.read").get(0).params().get("id"));
+
+        recordDevRead("brigand_test", BANDIT_DEV);
+        String ready = get("/dialogues/edit/brigand_test").body();
+        assertTrue(ready.contains("Copier dans PlugAdmin pour le modifier"), ready);
+        assertTrue(ready.contains(sha256(BANDIT_DEV).substring(0, 12)), "l'empreinte est montrée");
+        int at = ready.indexOf("value=\"import\"");
+        Map<String, String> copy = formFieldsOf(ready.substring(ready.lastIndexOf("<form", at)), "/dialogues/import");
+        HttpResponse<String> done = post("/dialogues/import", copy, null);
+        assertEquals(303, done.statusCode());
+        assertEquals(BANDIT_DEV, Files.readString(content.resolve("dialogues/brigand_test.yml")),
+                "octet pour octet : commentaire, entrées, variantes, conditions et actions");
+        assertTrue(actions("content.publish").isEmpty(), "rien n'est publié");
+        assertTrue(actions("content.publish.batch").isEmpty(), "rien n'est publié");
+
+        String editable = get("/dialogues/edit/brigand_test").body();
+        assertFalse(editable.contains("Rendre ce dialogue modifiable"));
+        assertTrue(formHtml(editable).contains("name=\"n0_c0_qa\""), "l'éditeur simple s'ouvre");
+        assertFalse(formHtml(editable).contains("name=\"n0_c0_qa\" data-switch=\"dlg-n0-c0-q\" disabled"),
+                "modifiable");
+        assertTrue(editable.contains("À vérifier") || editable.contains("Ce PNJ a une liste de quêtes"),
+                "les passages liés à la quête précise sont signalés");
+
+        // Une seconde copie n'écrase jamais la source.
+        Files.writeString(content.resolve("dialogues/brigand_test.yml"), "id: rpgquest:brigand_test\n# modifié\n");
+        HttpResponse<String> again = post("/dialogues/import", copy, null);
+        assertTrue(again.headers().firstValue("Location").orElse("").contains("err="));
+        assertEquals("id: rpgquest:brigand_test\n# modifié\n",
+                Files.readString(content.resolve("dialogues/brigand_test.yml")), "aucun écrasement");
+    }
+
+    @Test
+    void aCopyIsRefusedWhenTheServerFileChangedSinceItWasShown() throws Exception {
+        start();
+        survey(BANDIT_SURVEY);
+        recordDevRead("brigand_test", BANDIT_DEV);
+        String ready = get("/dialogues/edit/brigand_test").body();
+        int at = ready.indexOf("value=\"import\"");
+        Map<String, String> copy = formFieldsOf(ready.substring(ready.lastIndexOf("<form", at)), "/dialogues/import");
+        recordDevRead("brigand_test", BANDIT_DEV + "# changé sur DEV\n");
+        HttpResponse<String> refused = post("/dialogues/import", copy, null);
+        assertTrue(refused.headers().firstValue("Location").orElse("").contains("err="));
+        assertFalse(Files.exists(content.resolve("dialogues/brigand_test.yml")), "rien n'est écrit");
+    }
+
+    @Test
+    void aReplyCanOfferAPreciseQuestOrOneFromAListChosenByName() throws Exception {
+        start();
+        record("quest.catalog.list", CATALOG_SURVEY.replace("brigand_test", "lucien"));
+        String page = get("/dialogues/edit/lucien").body();
+        assertTrue(page.contains(">Proposer une quête précise</option>"));
+        assertTrue(page.contains(">Proposer une quête au hasard dans une liste</option>"));
+        assertTrue(page.contains(">Quêtes des brigands</option>"), "les listes par leur nom");
+        assertTrue(page.contains(">Vieille liste (désactivée)</option>"));
+        assertFalse(formHtml(page).contains(">brigands</option>"), "pas d'identifiant brut");
+
+        Map<String, String> f = formFields(page);
+        f.put("n0_c0_qa", "OFFER_CATALOG_QUEST");
+        f.put("n0_c0_qcat", "brigands");
+        assertEquals(303, post("/dialogues/save", f, "save").statusCode());
+        String yaml = Files.readString(content.resolve("dialogues/lucien.yml"));
+        assertTrue(yaml.contains("type: OFFER_CATALOG_QUEST"), yaml);
+        assertTrue(yaml.contains("catalog: brigands"), yaml);
+        assertTrue(yaml.indexOf("OFFER_CATALOG_QUEST") < yaml.indexOf("type: CLOSE"), yaml);
+        String after = get("/dialogues/edit/lucien").body();
+        assertTrue(after.contains("propose une quête au hasard dans la liste « Quêtes des brigands »"), "aperçu");
+        assertTrue(actions("content.publish").isEmpty(), "« Enregistrer » ne met pas en jeu");
+
+        f = formFields(after);
+        f.put("n0_c0_qcat", "vieille");
+        post("/dialogues/save", f, "save");
+        assertTrue(get("/dialogues/edit/lucien").body().contains("est désactivée"), "liste inactive signalée");
+    }
+
+    @Test
+    void theCatalogPageLeadsToTheDialogueOfEachRecurringNpc() throws Exception {
+        start();
+        record("quest.catalog.list", CATALOG_SURVEY);
+        String page = get("/quests/catalogs?agent=" + TestConfig.AGENT_ID + "&focus=brigands").body();
+        assertTrue(page.contains("href=\"/dialogues/edit/brigand_test\""), page.length() + "");
+        assertTrue(page.contains("Configurer le dialogue de ce PNJ"));
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     private void start() throws Exception {

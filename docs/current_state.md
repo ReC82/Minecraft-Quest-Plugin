@@ -783,6 +783,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   l'écriture SQL), réécrit le texte des panneaux si les chunks sont chargés, sinon au prochain
   `ChunkLoadEvent` ; id, position et découvertes inchangés. Aucune migration. Activation /
   désactivation restent à faire (#134).
+- **Page « Voyages » de PlugAdmin** *(issue #412, 2026-10-15)* — `/travel` refondue (rendu
+  `TravelPages`) : onglets **Lieux** (recherche, filtre Village / Monde sauvage / Autres, tri,
+  pagination, bouton Renommer), **Bornes**, **À vérifier** (lieux du Village sans borne, bornes en
+  anomalie, pose ciblée) et **Avancé** (diagnostic #156/#236 inchangé + tableaux techniques).
+  Renommage #134 dans une fiche de lieu pleine largeur, refus panel d'un nom déjà pris ou
+  inchangé, fraîcheur du relevé signalée au-delà de 60 min. Panel uniquement, aucune migration.
 - **Filtre des instances du Hub** *(issue #236, 2026-10-11)* — retour utilisateur pendant TC-275
   (« dommage qu'on ne puisse pas filtrer pour n'afficher que les instances sans borne »). La liste
   « Instances connues du Hub » se filtre par état (**Toutes / Avec borne / Sans borne**) et par

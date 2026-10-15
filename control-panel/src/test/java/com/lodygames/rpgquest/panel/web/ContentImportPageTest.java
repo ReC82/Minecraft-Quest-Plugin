@@ -267,6 +267,10 @@ class ContentImportPageTest {
         assertTrue(analysed.contains("3 × BREAD"), "objectifs et quantités visibles avant confirmation");
         assertTrue(analysed.contains("SANS placement"), "le placement à faire doit être dit");
         assertTrue(analysed.contains("Voir le contenu qui sera enregistré"));
+        // #425 : le pack se saisit dans une zone de code (pleine largeur, monospace) et les
+        // aperçus YAML sont bornés en hauteur pour ne pas étirer la page.
+        assertTrue(analysed.contains("<textarea id=\"f-pack\" class=\"code-input\""), "zone de code du pack");
+        assertTrue(analysed.contains("<div class=\"codeblock bounded\"><pre>"), "aperçu YAML borné");
         try (var files = Files.list(contentRoot.resolve("quests"))) {
             assertEquals(0, files.count(), "l'analyse n'écrit rien");
         }

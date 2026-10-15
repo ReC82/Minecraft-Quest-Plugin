@@ -146,7 +146,8 @@ public final class Layout {
         }
 
         String envChip = shell.envLabel() == null ? ""
-                : "<span class=\"env-chip\">" + Http.esc(shell.envLabel()) + "</span>";
+                : "<span class=\"env-chip\" title=\"" + Http.esc(shell.envLabel()) + "\">"
+                        + Http.esc(shell.envLabel()) + "</span>";
         String statusChip = shell.serverState() == null ? "" : serverChip(shell.serverState());
         String userBox = shell.username() == null ? ""
                 : "<div class=\"userbox\"><span class=\"userbox-n\">" + Http.esc(shell.username()) + "</span>"

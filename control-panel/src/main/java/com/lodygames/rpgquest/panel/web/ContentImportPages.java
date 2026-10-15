@@ -140,7 +140,7 @@ public final class ContentImportPages {
                 + "application/json,text/yaml\"><p class=\"field-help\">Un fichier déposé remplace le texte "
                 + "collé ci-dessous.</p></div>");
         sb.append("<div class=\"field full\"><label for=\"f-pack\">Contenu du pack</label>");
-        sb.append("<textarea id=\"f-pack\" name=\"pack\" rows=\"").append(expanded ? 14 : 6)
+        sb.append("<textarea id=\"f-pack\" class=\"code-input\" name=\"pack\" rows=\"").append(expanded ? 14 : 6)
                 .append("\" spellcheck=\"false\" placeholder=\"format: ")
                 .append(Http.esc(ContentPackSchema.FORMAT)).append("&#10;schemaVersion: ")
                 .append(ContentPackSchema.SCHEMA_VERSION).append("&#10;content:&#10;  quests: []\">")
@@ -339,7 +339,7 @@ public final class ContentImportPages {
             sb.append(diff(e.diff()));
         } else if (e.writes() && e.yaml() != null && !"npcs".equals(e.family())) {
             sb.append("<details><summary class=\"muted\">Voir le contenu qui sera enregistré</summary>"
-                    + "<div class=\"codeblock\"><pre>").append(Http.esc(e.yaml())).append("</pre></div></details>");
+                    + "<div class=\"codeblock bounded\"><pre>").append(Http.esc(e.yaml())).append("</pre></div></details>");
         }
         return sb.append("</div>").toString();
     }
@@ -368,7 +368,7 @@ public final class ContentImportPages {
         long changed = lines.stream().filter(l -> l.kind() != ' ').count();
         StringBuilder sb = new StringBuilder("<details><summary class=\"muted\">Voir le diff (")
                 .append(changed).append(" ligne(s) changée(s))</summary>");
-        sb.append("<div class=\"codeblock diff\"><pre>");
+        sb.append("<div class=\"codeblock diff bounded\"><pre>");
         for (TextDiff.Line l : lines) {
             String cls = l.kind() == '+' ? "di-add" : (l.kind() == '-' ? "di-del" : "di-ctx");
             sb.append("<span class=\"").append(cls).append("\">").append(l.kind()).append(' ')

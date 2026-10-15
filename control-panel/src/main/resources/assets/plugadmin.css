@@ -213,10 +213,19 @@ label{display:block;color:var(--txt-2);font-size:12.5px;font-weight:600;margin:1
 input[type=text],input[type=password],input[type=number],input[type=search],input[list],select,textarea{
   width:100%;max-width:460px;padding:9px 11px;background:var(--surface);border:1px solid var(--line-2);
   border-radius:9px;color:var(--txt);font:inherit}
-textarea{min-height:80px;resize:vertical}
+/* #425 : la borne de 460px ne vaut que pour les saisies d'une ligne (identifiants, nombres,
+   listes). Une zone multiligne (texte, prompt, pack JSON/YAML) suit toute la largeur de son champ :
+   c'était la cause commune des zones étriquées à la moitié de la carte sur ordinateur. */
+textarea{min-height:80px;resize:vertical;max-width:100%}
+/* Zone de saisie de code (pack JSON/YAML) : monospace, indentation et lignes conservées ; une
+   ligne trop longue défile dans la zone, jamais dans la page. */
+textarea.code-input{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre;
+  overflow-wrap:normal;overflow-x:auto}
 input:focus,select:focus,textarea:focus{outline:2px solid rgba(47,109,246,.35);border-color:var(--primary)}
 input:disabled,select:disabled,textarea:disabled{background:var(--surface-3);color:var(--txt-faint);cursor:not-allowed}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}
+/* minmax(0,1fr) et non 1fr (= minmax(auto,1fr)) : un contenu long (code, URL) ne peut pas
+   élargir une colonne au-delà de la carte (#425). */
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 22px}
 .form-grid .full{grid-column:1/-1}
 .field{min-width:0}
 .field label{margin-top:12px}
@@ -261,7 +270,9 @@ label.inline.confirm{color:var(--warn);font-weight:600}
   color:var(--txt-2);flex:1 1 80px}
 .coord-row label.coord input{width:100%}
 /* ---- diff / aperçu code ---- */
-.codeblock{position:relative;margin:12px 0}
+/* min-width:0 : dans une grille ou un flex, l'aperçu reste à la largeur du parent et c'est le
+   <pre> qui défile, pas la page (#425). */
+.codeblock{position:relative;margin:12px 0;min-width:0;max-width:100%}
 .codeblock pre{margin:0;background:#0f1729;border:1px solid #1e2b45;border-radius:10px;
   padding:14px 16px;overflow-x:auto;color:#dbe4f3;font-size:12.5px;line-height:1.55;white-space:pre}
 .diff pre{background:#0f1729}
@@ -269,7 +280,7 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 /* ---- issue #47 : diff source ↔ DEV ---- */
 /* Hauteur bornée : un diff long ne doit pas repousser le reste de la fiche hors de l'écran.
    La largeur reste gérée par overflow-x de .codeblock pre, donc lisible sur téléphone. */
-.diff.diff-publish pre{max-height:50vh;overflow-y:auto}
+.diff.diff-publish pre,.codeblock.bounded pre{max-height:50vh;overflow-y:auto}
 .diff .di-gap{color:#64748b}
 /* Gouttière de numéros de ligne : sélectionnable mais discrète, et elle ne bouge pas quand on
    fait défiler horizontalement puisqu'elle fait partie de la ligne. */
@@ -378,6 +389,10 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 details{margin:10px 0;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:var(--surface)}
 summary{cursor:pointer;color:var(--txt-2);font-weight:600}
 details[open] summary{margin-bottom:8px}
+/* #425 : un titre de section placé dans un <summary> reste sur la ligne du triangle (il
+   formait une ligne vide « ▶ » au-dessus du titre). */
+summary>.section-title{display:inline;margin:0}
+summary>.section-title .ic{margin-right:6px;vertical-align:-2px}
 ol,ul{margin:6px 0;padding-left:20px}
 /* ---- centre de documentation (#49) ---- */
 .doc-search{display:flex;gap:8px;margin:14px 0 22px}
@@ -1224,6 +1239,14 @@ details.card.npc-more{padding:12px 16px}
   .topbar-r{gap:8px;min-width:0}
   .userbox-r{display:none}
   .userbox-n{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* #425 : avec la pastille d'environnement (« RPGQuest DEV ») et l'état du serveur, la barre
+     dépassait encore de 20 à 130px. Le logo « PA » suffit ; la pastille se raccourcit au besoin
+     (libellé complet en infobulle) au lieu de pousser la page en défilement horizontal. */
+  .topbar{gap:8px;padding:0 12px}
+  .brand-t{display:none}
+  .brand{min-width:0;flex:0 1 auto}
+  .env-chip{min-width:0;margin-left:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .topbar-r,.burger{flex:none}
 }
 @media(max-width:575.98px){
   .npc-filters .pa-chip{white-space:nowrap}

@@ -28,7 +28,8 @@ web-export:
   enabled: false          # désactivé par défaut : aucun fichier écrit tant que false
   output-dir: web-export
   interval-seconds: 30
-  include-connected-players: false   # liste nominative des joueurs en ligne
+  include-connected-players: false   # liste nominative des joueurs en ligne (visibles seulement)
+  profile-visibility-default: private # #55 : sans « /profile web public », personne n'est publié
   leaderboard-size: 10
   leaderboard-skills: []             # vide = toutes les pistes (voir docs/PROGRESSION.md)
   announcements: []                  # [{title: "...", body: "..."}, ...]
@@ -87,10 +88,13 @@ Clés d'hébergement public (#52), toutes à défaut **sûr** :
 |---|---|---|
 | `bind-address` | `127.0.0.1` | interface d'écoute ; `0.0.0.0` pour un accès direct sans proxy |
 | `store-enabled` | `false` | n'enregistre les routes boutique (`/store*`, `/api/store/*`) et n'ouvre `store.db` que si `true` |
-| `player-data-public` | `false` | `/joueurs` et `/leaderboards` affichent « pas encore publiée » sans lire l'instantané (#55) |
+| `player-data-public` | `false` | `/joueurs` et `/leaderboards` affichent « pas encore publiée » sans lire l'instantané, et `/api/players`, `/api/leaderboards`, `/api/profiles` ne renvoient aucun pseudo (#55) |
+| `accounts.age-threshold.<PAYS>` | aucune | seuil d'âge par pays desservi (code ISO à deux lettres) pour les futurs comptes (#53) ; **aucune ligne = comptes fermés**. Voir [PRIVACY.md](PRIVACY.md) |
+| `accounts.below-threshold` | `parental-consent` | sous le seuil : `parental-consent` ou `refuse` (jamais « autorisé ») |
+| `accounts.unknown-region` | `refuse` | pays inconnu ou non desservi : `refuse` ou `parental-consent` |
 | `trust-proxy-headers` | `false` | lit l'IP du visiteur dans `X-Real-IP` — seulement pour une connexion venue de la boucle locale (nginx sur la même machine) — pour que la limite de fréquence reste par visiteur |
 
-Une valeur booléenne autre que `true`/`false` arrête le démarrage avec un message clair.
+Une valeur booléenne autre que `true`/`false`, un pays qui n'est pas un code à deux lettres ou un âge hors 1–25 arrête le démarrage avec un message clair.
 
 **Le jeton d'authentification n'est jamais lu depuis ce fichier** —
 uniquement depuis la variable d'environnement `RPGQUEST_WEB_API_TOKEN`, pour
@@ -135,6 +139,10 @@ numérique, piste de classement inconnue...) renvoie `400`.
 | `GET /api/catalog` | catalogue public d'objets (id, nom en texte brut, rareté) |
 | `GET /api/announcements` | actualités/annonces configurées |
 | `GET /api/profiles` | profils publics limités et `statistics` par portée (instantané v2, #54/#56 — voir [WEB_PORTAL.md](WEB_PORTAL.md)) |
+
+Les trois routes à pseudos passent par une liste blanche (`privacy.PublicPlayerData`, #55) : seuls
+`name`, `skills`, `questsCompleted`, `totalXp` et `value` en sortent ; tout autre champ de
+l'instantané est ignoré.
 
 Toute route inconnue sous `/api/` renvoie `404` (toujours après vérification
 du jeton).

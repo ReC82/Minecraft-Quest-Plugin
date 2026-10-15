@@ -7,8 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.WebExportConfig;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.PlayerProfileRepository;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
+import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 /**
  * Vérifie que la génération du snapshot (mission étape 21, point 4 : jamais
@@ -63,7 +67,8 @@ class WebSnapshotWriterTest {
 
     private WebExportConfig config(boolean enabled) {
         return new WebExportConfig(enabled, "web-export", 5, true, 5, List.of(SkillType.GLOBAL),
-                List.of(new WebExportConfig.Announcement("Café ☕ 日本語 🎮", "corps")));
+                List.of(new WebExportConfig.Announcement("Café ☕ 日本語 🎮", "corps")),
+                PublicProfilePolicy.Visibility.PRIVATE);
     }
 
     private Path snapshotFile() {
@@ -99,6 +104,39 @@ class WebSnapshotWriterTest {
         assertTrue(content.contains("\"catalog\""));
         assertTrue(content.contains("\"announcements\""));
         assertTrue(content.contains("Café ☕ 日本語 🎮"));
+    }
+
+    @Test
+    void connectedPlayersListOnlyNamesPlayersWhoMadeTheirProfilePublic() throws Exception {
+        PlayerMock shy = server.addPlayer("Timide");
+        PlayerMock proud = server.addPlayer("Fier");
+        PlayerVariableRepository variables = new PlayerVariableRepository(database);
+        new PlayerProfileRepository(database).findOrCreate(proud.getUniqueId(), "Fier").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        variables.set(proud.getUniqueId(), PublicProfilePolicy.HIDDEN_KEY, PublicProfilePolicy.PUBLIC_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        WebSnapshotWriter writer = new WebSnapshotWriter(
+                plugin, tempDir, progressionRepository, customItemRegistry, () -> config(true), plugin.getSLF4JLogger());
+        writer.setVariables(variables);
+        writer.start();
+        writer.triggerNow();
+        String content = awaitFile(snapshotFile());
+        writer.stop();
+
+        assertTrue(content.contains("\"players\":[\"Fier\"]"), content);
+        assertFalse(content.contains(shy.getName()), "un joueur sans accord n'est jamais nommé");
+    }
+
+    @Test
+    void withoutPreferencesNoConnectedPlayerIsNamed() throws Exception {
+        server.addPlayer("Anonyme");
+        WebSnapshotWriter writer = new WebSnapshotWriter(
+                plugin, tempDir, progressionRepository, customItemRegistry, () -> config(true), plugin.getSLF4JLogger());
+        writer.start();
+        writer.triggerNow();
+        String content = awaitFile(snapshotFile());
+        writer.stop();
+
+        assertTrue(content.contains("\"players\":[]"), content);
     }
 
     @Test

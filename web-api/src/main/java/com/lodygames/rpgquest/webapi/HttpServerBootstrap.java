@@ -83,11 +83,11 @@ public final class HttpServerBootstrap {
 
         // API authentifiée (mission point 3, 5).
         server.createContext("/api/status", pipeline.wrap(true, new StatusHandler(snapshotStore)));
-        server.createContext("/api/players", pipeline.wrap(true, new PlayersHandler(snapshotStore)));
-        server.createContext("/api/leaderboards", pipeline.wrap(true, new LeaderboardsHandler(snapshotStore)));
+        server.createContext("/api/players", pipeline.wrap(true, new PlayersHandler(snapshotStore, config.playerDataPublic())));
+        server.createContext("/api/leaderboards", pipeline.wrap(true, new LeaderboardsHandler(snapshotStore, config.playerDataPublic())));
         server.createContext("/api/catalog", pipeline.wrap(true, new CatalogHandler(snapshotStore)));
         server.createContext("/api/announcements", pipeline.wrap(true, new AnnouncementsHandler(snapshotStore)));
-        server.createContext("/api/profiles", pipeline.wrap(true, new ProfilesHandler(snapshotStore)));
+        server.createContext("/api/profiles", pipeline.wrap(true, new ProfilesHandler(snapshotStore, config.playerDataPublic())));
 
         server.createContext("/api/", pipeline.wrap(true, new NotFoundHandler()));
 
@@ -101,7 +101,8 @@ public final class HttpServerBootstrap {
             server.createContext("/leaderboards", pipeline.wrap(false, new UnpublishedPageHandler(config.siteTitle(), "Classements")));
             server.createContext("/joueurs", pipeline.wrap(false, new UnpublishedPageHandler(config.siteTitle(), "Joueurs")));
         }
-        server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle())));
+        server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle(),
+                config.playerDataPublic(), config.agePolicy())));
 
         if (storeEnabled) {
             registerStore(pipeline);

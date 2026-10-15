@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.config.WebExportConfig;
 import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -77,6 +78,16 @@ public final class WebSnapshotWriter implements PluginService {
         this.questStatistics = questStatistics;
     }
 
+    private com.lodygames.rpgquest.database.PlayerVariableRepository variables;
+
+    /**
+     * Issue #55 — choix « /profile web » des joueurs connectés. Sans elle, la liste nominative des
+     * connectés n'est jamais exportée (seul le nombre l'est).
+     */
+    public void setVariables(com.lodygames.rpgquest.database.PlayerVariableRepository variables) {
+        this.variables = variables;
+    }
+
     private BukkitTask task;
     private volatile long lastWriteMillis = Long.MIN_VALUE;
     private volatile boolean writeInProgress = false;
@@ -143,18 +154,21 @@ public final class WebSnapshotWriter implements PluginService {
 
         int playerCount = Bukkit.getOnlinePlayers().size();
         int maxPlayers = Bukkit.getMaxPlayers();
-        List<String> playerNames = current.includeConnectedPlayers()
-                ? Bukkit.getOnlinePlayers().stream().map(Player::getName).toList()
-                : List.of();
+        CompletableFuture<List<String>> playerNames = current.includeConnectedPlayers()
+                ? visibleNames(List.copyOf(Bukkit.getOnlinePlayers()), current.profileVisibilityDefault())
+                : CompletableFuture.completedFuture(List.of());
         List<Map<String, Object>> catalog = buildCatalog();
 
         CompletableFuture<List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row>> questRows =
                 questStatistics == null ? CompletableFuture.completedFuture(List.of())
-                        : questStatistics.topCompleted(current.leaderboardSize());
+                        : questStatistics.topCompleted(current.leaderboardSize(), current.profileVisibilityDefault());
         gatherLeaderboards(current)
-                .thenCombine(questRows, (leaderboards, quests) -> {
+                .thenCombine(playerNames, (leaderboards, names) -> Map.entry(leaderboards, names))
+                .thenCombine(questRows, (boardsAndNames, quests) -> {
+                    var leaderboards = boardsAndNames.getKey();
+                    var names = boardsAndNames.getValue();
                     Map<String, Object> snapshot =
-                            buildSnapshot(current, playerCount, maxPlayers, playerNames, catalog, leaderboards);
+                            buildSnapshot(current, playerCount, maxPlayers, names, catalog, leaderboards);
                     snapshot.put("statistics", statistics(leaderboards, quests));
                     snapshot.put("profiles", profiles(leaderboards, quests));
                     return snapshot;
@@ -181,10 +195,36 @@ public final class WebSnapshotWriter implements PluginService {
         Map<SkillType, List<ProgressionRepository.LeaderboardRow>> result = new EnumMap<>(SkillType.class);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (SkillType skill : current.leaderboardSkills()) {
-            futures.add(progressionRepository.topPlayers(skill, current.leaderboardSize())
+            futures.add(progressionRepository.topPlayers(skill, current.leaderboardSize(), current.profileVisibilityDefault())
                     .thenAccept(rows -> result.put(skill, rows)));
         }
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).thenApply(ignored -> result);
+    }
+
+    /**
+     * Pseudos des connectés dont le profil web est visible (#55), dans l'ordre reçu. Noms et UUID
+     * sont lus sur le thread principal par l'appelant ; seules les lectures de préférences sont
+     * asynchrones. Sans dépôt de variables, aucun nom n'est exporté.
+     */
+    private CompletableFuture<List<String>> visibleNames(List<? extends Player> online,
+                                                         PublicProfilePolicy.Visibility visibility) {
+        if (variables == null) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        List<String> names = online.stream().map(Player::getName).toList();
+        List<CompletableFuture<Boolean>> visible = online.stream()
+                .map(player -> variables.get(player.getUniqueId(), PublicProfilePolicy.HIDDEN_KEY)
+                        .thenApply(choice -> PublicProfilePolicy.isVisible(choice, visibility)))
+                .toList();
+        return CompletableFuture.allOf(visible.toArray(CompletableFuture[]::new)).thenApply(ignored -> {
+            List<String> result = new ArrayList<>();
+            for (int i = 0; i < names.size(); i++) {
+                if (visible.get(i).join()) {
+                    result.add(names.get(i));
+                }
+            }
+            return result;
+        });
     }
 
     private List<Map<String, Object>> buildCatalog() {

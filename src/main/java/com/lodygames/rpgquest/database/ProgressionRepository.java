@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.database;
 
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -32,13 +33,6 @@ public final class ProgressionRepository {
             "UPDATE player_skills SET total_xp = ?, updated_at = ? WHERE player_uuid = ? AND skill = ?";
     private static final String INSERT_GRANT =
             "INSERT OR IGNORE INTO xp_grants (player_uuid, skill, event_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)";
-    private static final String SELECT_TOP_PLAYERS =
-            "SELECT p.last_name AS name, s.total_xp AS total_xp "
-                    + "FROM player_skills s JOIN player_profiles p ON p.uuid = s.player_uuid "
-                    + "WHERE s.skill = ? AND s.total_xp > 0 "
-                    // #55 : un joueur qui a masqué son profil web n'apparaît dans aucun classement.
-                    + "AND " + com.lodygames.rpgquest.player.PublicProfilePolicy.notHidden("p") + " "
-                    + "ORDER BY s.total_xp DESC LIMIT ?";
 
     private final DatabaseManager database;
     private final SqlDialect dialect;
@@ -163,12 +157,18 @@ public final class ProgressionRepository {
      * Classement en lecture seule des {@code limit} joueurs avec le plus d'XP totale sur
      * {@code skill} (nom d'affichage = dernier pseudo connu, ex-aequo à 0 exclus). Utilisé
      * uniquement par l'export web périodique (mission étape 21, point 4) — jamais interrogé
-     * depuis un chemin de jeu synchrone.
+     * depuis un chemin de jeu synchrone. #55 : seuls les joueurs dont le profil web est visible
+     * selon {@code visibility} y figurent.
      */
-    public CompletableFuture<List<LeaderboardRow>> topPlayers(SkillType skill, int limit) {
+    public CompletableFuture<List<LeaderboardRow>> topPlayers(SkillType skill, int limit,
+                                                              PublicProfilePolicy.Visibility visibility) {
+        String sql = "SELECT p.last_name AS name, s.total_xp AS total_xp "
+                + "FROM player_skills s JOIN player_profiles p ON p.uuid = s.player_uuid "
+                + "WHERE s.skill = ? AND s.total_xp > 0 AND " + PublicProfilePolicy.visible("p", visibility) + " "
+                + "ORDER BY s.total_xp DESC LIMIT ?";
         return database.execute(connection -> {
             List<LeaderboardRow> rows = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement(SELECT_TOP_PLAYERS)) {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, skill.name());
                 statement.setInt(2, limit);
                 try (ResultSet resultSet = statement.executeQuery()) {

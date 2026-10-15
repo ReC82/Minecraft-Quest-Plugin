@@ -16,23 +16,21 @@ import java.util.concurrent.CompletableFuture;
  */
 public final class QuestStatisticsRepository {
 
-    private static final String SELECT_TOP_COMPLETED =
-            "SELECT p.last_name AS name, COUNT(*) AS completed "
-                    + "FROM quest_progress q JOIN player_profiles p ON p.uuid = q.player_uuid "
-                    + "WHERE q.state = 'COMPLETED' AND " + PublicProfilePolicy.notHidden("p") + " "
-                    + "GROUP BY p.uuid, p.last_name ORDER BY completed DESC, p.last_name ASC LIMIT ?";
-
     private final DatabaseManager database;
 
     public QuestStatisticsRepository(DatabaseManager database) {
         this.database = database;
     }
 
-    /** Les joueurs (non masqués) ayant terminé le plus de quêtes. */
-    public CompletableFuture<List<Row>> topCompleted(int limit) {
+    /** Les joueurs au profil web visible (#55) ayant terminé le plus de quêtes. */
+    public CompletableFuture<List<Row>> topCompleted(int limit, PublicProfilePolicy.Visibility visibility) {
+        String sql = "SELECT p.last_name AS name, COUNT(*) AS completed "
+                + "FROM quest_progress q JOIN player_profiles p ON p.uuid = q.player_uuid "
+                + "WHERE q.state = 'COMPLETED' AND " + PublicProfilePolicy.visible("p", visibility) + " "
+                + "GROUP BY p.uuid, p.last_name ORDER BY completed DESC, p.last_name ASC LIMIT ?";
         return database.execute(connection -> {
             List<Row> rows = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement(SELECT_TOP_COMPLETED)) {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setInt(1, limit);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     while (resultSet.next()) {

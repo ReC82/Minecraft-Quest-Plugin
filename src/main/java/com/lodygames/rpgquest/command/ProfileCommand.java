@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.command;
 
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.util.List;
@@ -27,6 +28,8 @@ public final class ProfileCommand implements CommandExecutor {
     private final ProgressionService progression;
 
     private com.lodygames.rpgquest.database.PlayerVariableRepository variables;
+    private java.util.function.Supplier<PublicProfilePolicy.Visibility> visibilityDefault =
+            () -> PublicProfilePolicy.Visibility.PRIVATE;
 
     public ProfileCommand(ProgressionService progression) {
         this.progression = progression;
@@ -35,6 +38,11 @@ public final class ProfileCommand implements CommandExecutor {
     /** Issue #55 — sans elle, « /profile web » répond que le réglage est indisponible. */
     public void setVariables(com.lodygames.rpgquest.database.PlayerVariableRepository variables) {
         this.variables = variables;
+    }
+
+    /** Issue #55 — {@code web-export.profile-visibility-default}, relu à chaque commande (reload). */
+    public void setVisibilityDefault(java.util.function.Supplier<PublicProfilePolicy.Visibility> visibilityDefault) {
+        this.visibilityDefault = visibilityDefault;
     }
 
     @Override
@@ -73,26 +81,31 @@ public final class ProfileCommand implements CommandExecutor {
             player.sendMessage(MM.deserialize("<red>Ce réglage n'est pas disponible sur ce serveur.</red>"));
             return true;
         }
-        String key = com.lodygames.rpgquest.player.PublicProfilePolicy.HIDDEN_KEY;
+        String key = PublicProfilePolicy.HIDDEN_KEY;
         switch (choice.toLowerCase(java.util.Locale.ROOT)) {
-            case "prive", "privé", "private" -> variables.set(player.getUniqueId(), key,
-                            com.lodygames.rpgquest.player.PublicProfilePolicy.HIDDEN_VALUE)
+            case "prive", "privé", "private" -> variables.set(player.getUniqueId(), key, PublicProfilePolicy.HIDDEN_VALUE)
                     .thenRun(() -> player.sendMessage(MM.deserialize("<green>Profil web masqué.</green> <gray>Tu "
                             + "n'apparaîtras plus dans les classements ni les profils publics du portail, dès sa "
                             + "prochaine mise à jour.</gray>")));
-            case "public" -> variables.set(player.getUniqueId(), key, "false")
+            case "public" -> variables.set(player.getUniqueId(), key, PublicProfilePolicy.PUBLIC_VALUE)
                     .thenRun(() -> player.sendMessage(MM.deserialize("<green>Profil web public.</green> <gray>Ton "
-                            + "pseudo et tes classements peuvent apparaître sur le portail.</gray>")));
+                            + "pseudo, l'XP de tes pistes et tes quêtes terminées peuvent apparaître sur le portail. "
+                            + "« /profile web prive » pour revenir en arrière.</gray>")));
             default -> variables.get(player.getUniqueId(), key).thenAccept(value -> {
-                boolean hidden = value.map(com.lodygames.rpgquest.player.PublicProfilePolicy.HIDDEN_VALUE::equals)
-                        .orElse(false);
-                player.sendMessage(MM.deserialize(hidden
-                        ? "<gray>Ton profil web est</gray> <yellow>masqué</yellow><gray>. « /profile web public » pour le montrer.</gray>"
-                        : "<gray>Ton profil web est</gray> <yellow>public</yellow> <gray>(pseudo, XP des pistes, quêtes terminées). "
-                                + "« /profile web prive » pour le masquer.</gray>"));
+                boolean visible = PublicProfilePolicy.isVisible(value, visibilityDefault.get());
+                player.sendMessage(MM.deserialize(statusMessage(visible, value.isEmpty())));
             });
         }
         return true;
+    }
+
+    static String statusMessage(boolean visible, boolean neverChosen) {
+        String origin = neverChosen ? " <dark_gray>(réglage par défaut du serveur)</dark_gray>" : "";
+        return visible
+                ? "<gray>Ton profil web est</gray> <yellow>public</yellow>" + origin + " <gray>(pseudo, XP des pistes, "
+                        + "quêtes terminées). « /profile web prive » pour le masquer.</gray>"
+                : "<gray>Ton profil web est</gray> <yellow>masqué</yellow>" + origin + "<gray>. « /profile web public » "
+                        + "pour le montrer.</gray>";
     }
 
     static String label(SkillType skill) {

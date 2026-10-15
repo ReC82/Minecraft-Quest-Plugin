@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi;
 
+import com.lodygames.rpgquest.webapi.privacy.AgePolicy;
 import java.nio.file.Path;
 
 /**
@@ -14,6 +15,9 @@ import java.nio.file.Path;
  * {@code playerDataPublic} masque pseudos, profils et classements tant que le propriétaire n'a pas
  * validé la confidentialité (#55), et {@code trustProxyHeaders} fait lire l'IP du visiteur dans
  * {@code X-Real-IP} posé par le proxy local, pour que la limite de fréquence reste par visiteur.</p>
+ *
+ * <p>{@code agePolicy} (#55) : politique d'âge des futurs comptes joueurs (#53), fermée tant que le
+ * propriétaire n'a configuré aucune région.</p>
  */
 public record WebApiConfig(
         int port,
@@ -29,8 +33,19 @@ public record WebApiConfig(
         String bindAddress,
         boolean storeEnabled,
         boolean playerDataPublic,
-        boolean trustProxyHeaders
+        boolean trustProxyHeaders,
+        AgePolicy agePolicy
 ) {
+
+    /** Sans politique d'âge explicite : comptes fermés. */
+    public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,
+            int rateLimitPerMinute, String siteTitle, Path productsFile, Path storeDatabaseFile,
+            String webhookSecret, String publicBaseUrl, String bindAddress, boolean storeEnabled,
+            boolean playerDataPublic, boolean trustProxyHeaders) {
+        this(port, snapshotFile, snapshotMaxAgeSeconds, authToken, rateLimitPerMinute, siteTitle, productsFile,
+                storeDatabaseFile, webhookSecret, publicBaseUrl, bindAddress, storeEnabled, playerDataPublic,
+                trustProxyHeaders, AgePolicy.closed());
+    }
 
     /** Configuration historique (avant #52) : toutes interfaces, boutique et données joueurs actives. */
     public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,

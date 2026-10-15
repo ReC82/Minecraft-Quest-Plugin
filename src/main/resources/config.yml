@@ -173,6 +173,12 @@ web-export:
   # Inclut la liste nominative des joueurs connectés dans le snapshot, en
   # plus du simple nombre. false par défaut (vie privée).
   include-connected-players: false
+  # Visibilité sur le portail d'un joueur qui n'a jamais tapé « /profile web »
+  # (issue #55). private (par défaut) : seuls les joueurs ayant tapé
+  # « /profile web public » apparaissent (classements, profils, connectés).
+  # public : tout le monde, sauf ceux ayant tapé « /profile web prive ».
+  # Ne passer à public qu'après décision du propriétaire (docs/PRIVACY.md).
+  profile-visibility-default: private
   leaderboard-size: 10
   # Vide = toutes les pistes de progression (voir docs/PROGRESSION.md).
   leaderboard-skills: []

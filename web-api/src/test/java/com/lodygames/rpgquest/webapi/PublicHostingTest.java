@@ -88,6 +88,7 @@ class PublicHostingTest {
         assertFalse(config.storeEnabled());
         assertFalse(config.playerDataPublic());
         assertFalse(config.trustProxyHeaders());
+        assertFalse(config.agePolicy().accountsOpen(), "#55 : aucun compte sans politique d'âge configurée");
     }
 
     @Test
@@ -126,6 +127,20 @@ class PublicHostingTest {
             assertFalse(response.body().contains("Alice"), path + " publie un pseudo : " + response.body());
         }
         assertTrue(get("/joueurs", null).body().contains("pas encore publiée"));
+    }
+
+    @Test
+    void theTokenApiPublishesNoPseudonymEitherWhilePlayerDataIsPrivate() throws Exception {
+        startWithDefaults(60);
+        writeSnapshotWithAlice();
+
+        for (String path : List.of("/api/profiles", "/api/players", "/api/leaderboards")) {
+            HttpResponse<String> response = client.send(HttpRequest.newBuilder(
+                            URI.create("http://127.0.0.1:" + port + path))
+                    .header("Authorization", "Bearer " + TOKEN).GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, response.statusCode(), path);
+            assertFalse(response.body().contains("Alice"), path + " publie un pseudo : " + response.body());
+        }
     }
 
     @Test

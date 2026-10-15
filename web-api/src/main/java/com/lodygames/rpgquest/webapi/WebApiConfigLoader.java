@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi;
 
+import com.lodygames.rpgquest.webapi.privacy.AgePolicy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -55,7 +56,7 @@ public final class WebApiConfigLoader {
 
         return new WebApiConfig(port, snapshotFile, snapshotMaxAgeSeconds, tokenFromEnv, rateLimitPerMinute, siteTitle,
                 productsFile, storeDatabaseFile, webhookSecretFromEnv, publicBaseUrl, bindAddress, storeEnabled,
-                playerDataPublic, trustProxyHeaders);
+                playerDataPublic, trustProxyHeaders, AgePolicy.fromProperties(properties));
     }
 
     private static int parseInt(Properties properties, String key, int defaultValue) {

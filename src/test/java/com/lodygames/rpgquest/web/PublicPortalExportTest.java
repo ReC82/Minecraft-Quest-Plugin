@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import com.lodygames.rpgquest.player.PublicProfilePolicy.Visibility;
+import java.util.Optional;
 import org.bukkit.NamespacedKey;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +35,8 @@ import org.junit.jupiter.api.io.TempDir;
 class PublicPortalExportTest {
 
     private static final long TIMEOUT = 5;
+    private static final Visibility PUBLIC = Visibility.PUBLIC;
+    private static final Visibility PRIVATE = Visibility.PRIVATE;
 
     @TempDir
     Path tempDir;
@@ -78,7 +82,7 @@ class PublicPortalExportTest {
 
     @Test
     void questsCompletedCountsOnlyCompletedQuests() throws Exception {
-        var rows = questStatistics.topCompleted(10).get(TIMEOUT, TimeUnit.SECONDS);
+        var rows = questStatistics.topCompleted(10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS);
 
         assertEquals(List.of(new QuestStatisticsRepository.Row("Alice", 2), new QuestStatisticsRepository.Row("Bob", 1)), rows);
     }
@@ -87,8 +91,8 @@ class PublicPortalExportTest {
     void aHiddenPlayerDisappearsFromEveryBoard() throws Exception {
         variables.set(bob, PublicProfilePolicy.HIDDEN_KEY, PublicProfilePolicy.HIDDEN_VALUE).get(TIMEOUT, TimeUnit.SECONDS);
 
-        var xp = progression.topPlayers(SkillType.GLOBAL, 10).get(TIMEOUT, TimeUnit.SECONDS);
-        var questRows = questStatistics.topCompleted(10).get(TIMEOUT, TimeUnit.SECONDS);
+        var xp = progression.topPlayers(SkillType.GLOBAL, 10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS);
+        var questRows = questStatistics.topCompleted(10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS);
 
         assertEquals(List.of("Alice"), xp.stream().map(ProgressionRepository.LeaderboardRow::name).toList());
         assertEquals(List.of("Alice"), questRows.stream().map(QuestStatisticsRepository.Row::name).toList());
@@ -99,16 +103,16 @@ class PublicPortalExportTest {
         variables.set(bob, PublicProfilePolicy.HIDDEN_KEY, PublicProfilePolicy.HIDDEN_VALUE).get(TIMEOUT, TimeUnit.SECONDS);
         variables.set(bob, PublicProfilePolicy.HIDDEN_KEY, "false").get(TIMEOUT, TimeUnit.SECONDS);
 
-        assertEquals(2, progression.topPlayers(SkillType.GLOBAL, 10).get(TIMEOUT, TimeUnit.SECONDS).size());
+        assertEquals(2, progression.topPlayers(SkillType.GLOBAL, 10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS).size());
     }
 
     @Test
     void statisticsExposeTheLifetimeScopeAndKeepSeasonAndEventsEmpty() throws Exception {
         Map<SkillType, List<ProgressionRepository.LeaderboardRow>> boards = new EnumMap<>(SkillType.class);
-        boards.put(SkillType.GLOBAL, progression.topPlayers(SkillType.GLOBAL, 10).get(TIMEOUT, TimeUnit.SECONDS));
+        boards.put(SkillType.GLOBAL, progression.topPlayers(SkillType.GLOBAL, 10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS));
 
         Map<String, Object> statistics = WebSnapshotWriter.statistics(boards,
-                questStatistics.topCompleted(10).get(TIMEOUT, TimeUnit.SECONDS));
+                questStatistics.topCompleted(10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS));
 
         assertEquals(List.of("lifetime"), statistics.get("scopes"));
         @SuppressWarnings("unchecked")
@@ -124,9 +128,9 @@ class PublicPortalExportTest {
     @Test
     void profilesCarryOnlyWhatTheBoardsSayAndNeverAnUuid() throws Exception {
         Map<SkillType, List<ProgressionRepository.LeaderboardRow>> boards = new EnumMap<>(SkillType.class);
-        boards.put(SkillType.GLOBAL, progression.topPlayers(SkillType.GLOBAL, 10).get(TIMEOUT, TimeUnit.SECONDS));
+        boards.put(SkillType.GLOBAL, progression.topPlayers(SkillType.GLOBAL, 10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS));
 
-        var result = WebSnapshotWriter.profiles(boards, questStatistics.topCompleted(10).get(TIMEOUT, TimeUnit.SECONDS));
+        var result = WebSnapshotWriter.profiles(boards, questStatistics.topCompleted(10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS));
 
         assertEquals(2, result.size());
         Map<String, Object> alicesProfile = result.get(0);
@@ -135,5 +139,33 @@ class PublicPortalExportTest {
         assertEquals(2L, alicesProfile.get("questsCompleted"));
         assertFalse(result.toString().contains(alice.toString()), "jamais d'UUID dans l'export public");
         assertTrue(alicesProfile.keySet().stream().allMatch(k -> List.of("name", "skills", "questsCompleted").contains(k)));
+    }
+
+    @Test
+    void privateByDefaultPublishesNobodyWithoutExplicitConsent() throws Exception {
+        assertEquals(List.of(), progression.topPlayers(SkillType.GLOBAL, 10, PRIVATE).get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(List.of(), questStatistics.topCompleted(10, PRIVATE).get(TIMEOUT, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void privateByDefaultPublishesOnlyPlayersWhoOptedIn() throws Exception {
+        variables.set(bob, PublicProfilePolicy.HIDDEN_KEY, PublicProfilePolicy.PUBLIC_VALUE).get(TIMEOUT, TimeUnit.SECONDS);
+        variables.set(alice, PublicProfilePolicy.HIDDEN_KEY, PublicProfilePolicy.HIDDEN_VALUE).get(TIMEOUT, TimeUnit.SECONDS);
+
+        var xp = progression.topPlayers(SkillType.GLOBAL, 10, PRIVATE).get(TIMEOUT, TimeUnit.SECONDS);
+        var questRows = questStatistics.topCompleted(10, PRIVATE).get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(List.of("Bob"), xp.stream().map(ProgressionRepository.LeaderboardRow::name).toList());
+        assertEquals(List.of("Bob"), questRows.stream().map(QuestStatisticsRepository.Row::name).toList());
+    }
+
+    @Test
+    void anExplicitChoiceAlwaysWinsOverTheServerDefault() {
+        assertFalse(PublicProfilePolicy.isVisible(Optional.of(PublicProfilePolicy.HIDDEN_VALUE), PUBLIC));
+        assertTrue(PublicProfilePolicy.isVisible(Optional.of(PublicProfilePolicy.PUBLIC_VALUE), PRIVATE));
+        assertFalse(PublicProfilePolicy.isVisible(Optional.empty(), PRIVATE));
+        assertTrue(PublicProfilePolicy.isVisible(Optional.empty(), PUBLIC));
+        assertFalse(PublicProfilePolicy.isVisible(Optional.of("n'importe quoi"), PRIVATE),
+                "une valeur inconnue suit le réglage par défaut, jamais plus permissive");
     }
 }

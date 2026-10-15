@@ -379,6 +379,8 @@ class ConfigValidatorTest {
         assertEquals(10, webExport.leaderboardSize());
         assertEquals(com.lodygames.rpgquest.progression.model.SkillType.values().length, webExport.leaderboardSkills().size());
         assertTrue(webExport.announcements().isEmpty());
+        assertEquals(com.lodygames.rpgquest.player.PublicProfilePolicy.Visibility.PRIVATE,
+                webExport.profileVisibilityDefault(), "#55 : rien de public sans accord explicite");
     }
 
     @Test
@@ -390,6 +392,7 @@ class ConfigValidatorTest {
                   interval-seconds: 60
                   include-connected-players: true
                   leaderboard-size: 5
+                  profile-visibility-default: Public
                   leaderboard-skills:
                     - combat
                     - mining
@@ -409,6 +412,18 @@ class ConfigValidatorTest {
                 com.lodygames.rpgquest.progression.model.SkillType.MINING), webExport.leaderboardSkills());
         assertEquals(1, webExport.announcements().size());
         assertEquals("Maintenance", webExport.announcements().get(0).title());
+        assertEquals(com.lodygames.rpgquest.player.PublicProfilePolicy.Visibility.PUBLIC,
+                webExport.profileVisibilityDefault());
+    }
+
+    @Test
+    void rejectsUnknownProfileVisibilityDefault() {
+        ConfigurationSection section = load("""
+                web-export:
+                  profile-visibility-default: everyone
+                """);
+
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
     }
 
     @Test

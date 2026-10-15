@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.webapi.json.Json;
@@ -288,7 +289,10 @@ class HttpServerBootstrapTest {
 
         assertEquals(200, page.statusCode());
         assertTrue(page.body().contains("/profile web prive"));
+        assertTrue(page.body().contains("/profile web public"));
+        assertTrue(page.body().contains("privé"), "le réglage par défaut est annoncé");
         assertTrue(page.body().contains("UUID"));
+        assertTrue(page.body().contains("ni compte"), "sans politique d'âge, les comptes sont annoncés fermés");
     }
 
     @Test
@@ -299,6 +303,29 @@ class HttpServerBootstrapTest {
         HttpResponse<String> response = get("/api/profiles", TOKEN);
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("\"profiles\":[]"), response.body());
+    }
+
+    @Test
+    void theProfilesApiDropsEveryFieldOutsideTheWhitelist() throws Exception {
+        writeSnapshot(Json.write(Map.of(
+                "schemaVersion", 2,
+                "generatedAt", Instant.now().toString(),
+                "server", Map.of("online", true, "playerCount", 1, "maxPlayers", 20),
+                "players", List.of("Alice"),
+                "leaderboards", Map.of("GLOBAL", List.of(Map.of("name", "Alice", "totalXp", 500, "uuid", "u-1"))),
+                "statistics", Map.of("scopes", List.of("lifetime"), "lifetime", Map.of("QUESTS_COMPLETED",
+                        List.of(Map.of("name", "Alice", "value", 2, "ip", "203.0.113.9")))),
+                "profiles", List.of(Map.of("name", "Alice", "skills", Map.of("GLOBAL", 500), "questsCompleted", 2,
+                        "uuid", "u-1", "email", "alice@example.org", "age", 12)))));
+        startServer(120, 60);
+
+        for (String path : List.of("/api/profiles", "/api/leaderboards", "/api/players")) {
+            String body = get(path, TOKEN).body();
+            assertTrue(body.contains("Alice"), path + " : " + body);
+            for (String secret : List.of("u-1", "alice@example.org", "\"age\"", "203.0.113.9")) {
+                assertFalse(body.contains(secret), path + " laisse passer " + secret + " : " + body);
+            }
+        }
     }
 
     @Test

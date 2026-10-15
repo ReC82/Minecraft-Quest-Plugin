@@ -6257,3 +6257,24 @@ utiliser un dialogue et un modèle de **test**, ou s'arrêter avant « Mettre en
 7.  Sur un PNJ récurrent **de test** : faire le passage complet, enregistrer, mettre en jeu, parler
     au PNJ → offre tirée de la liste, « Commencer (j'accepte) », suivi de la tâche, retour.
 8.  Téléphone (≈ 390 px) : encadrés lisibles, aucun défilement horizontal.
+
+### TC-325 — Profils web privés par défaut et page Confidentialité (issue #55, PENDING MANUAL VALIDATION)
+
+Prérequis : plugin et portail issus de #55. Aucune donnée de joueur n'est modifiée par ce test,
+sauf le réglage `/profile web` du testeur lui-même.
+
+1.  Navigateur : https://lodyquests.lodylands.com/confidentialite. **Attendu** : « aucun pseudo
+    n'est publié sur ce site », « Par défaut, ton profil est privé », les commandes
+    `/profile web public` et `/profile web prive`, « ni compte, ni connexion, ni paiement ».
+2.  Navigateur : `/joueurs` et `/leaderboards` → « pas encore publiée », aucun pseudo.
+3.  Serveur DEV : `plugins/RPGQuest/config.yml` contient `web-export.profile-visibility-default:
+    private` (ajouté par le compléteur au démarrage, aucune autre clé modifiée).
+4.  En jeu, avec un joueur qui n'a jamais utilisé la commande : `/profile web`. **Attendu** :
+    « Ton profil web est masqué (réglage par défaut du serveur) ».
+5.  `/profile web public` → « Profil web public… « /profile web prive » pour revenir en arrière » ;
+    `/profile web` → « public », sans la mention « réglage par défaut ».
+6.  `/profile web prive` → « Profil web masqué » ; `/profile web` → « masqué ».
+7.  (Seulement quand le propriétaire activera l'export, après sa décision #55) : seul un joueur
+    ayant tapé `/profile web public` figure dans `snapshot.json` (classements, `profiles`,
+    `players`).
+

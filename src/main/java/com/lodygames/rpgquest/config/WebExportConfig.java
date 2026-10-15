@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.config;
 
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.util.List;
 
@@ -10,6 +11,9 @@ import java.util.List;
  * séparé lit ce fichier depuis le disque, jamais la base SQLite directement
  * (mission point 2). Voir {@link com.lodygames.rpgquest.web.WebSnapshotWriter} et
  * docs/WEB_API.md.
+ *
+ * <p>{@code profileVisibilityDefault} (#55) : visibilité d'un joueur qui n'a jamais tapé
+ * {@code /profile web} — {@code PRIVATE} par défaut, rien n'est publié sans accord explicite.</p>
  */
 public record WebExportConfig(
         boolean enabled,
@@ -18,7 +22,8 @@ public record WebExportConfig(
         boolean includeConnectedPlayers,
         int leaderboardSize,
         List<SkillType> leaderboardSkills,
-        List<Announcement> announcements
+        List<Announcement> announcements,
+        PublicProfilePolicy.Visibility profileVisibilityDefault
 ) {
     public record Announcement(String title, String body) {
     }

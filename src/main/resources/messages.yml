@@ -49,8 +49,12 @@ quest:
   # lignes partent dans le CHAT au démarrage, pour que le joueur sache immédiatement QUOI FAIRE —
   # c'est l'exception assumée à la règle « jamais le chat » ci-dessus, et elle ne concerne que le
   # démarrage (rare). Le libellé d'un objectif est le même que partout ailleurs (journal, ActionBar).
+  # Issue #70 : mêmes lignes au passage à l'étape suivante (step-advanced-header) ; un objectif
+  # binaire (parler à un PNJ, atteindre un lieu) n'affiche pas de quantité (started-objective-single).
   started-objectives-header: "<green><bold>Quête commencée :</bold></green> <white><quest></white> <gray>— à faire (suivi dans</gray> <white>/quests</white><gray>) :</gray>"
   started-objective: "<yellow> • <objective></yellow> <gray>(x<total>)</gray>"
+  started-objective-single: "<yellow> • <objective></yellow>"
+  step-advanced-header: "<gold><bold>Étape suivante :</bold></gold> <white><quest></white> <gray>— à faire maintenant (suivi dans</gray> <white>/quests</white><gray>) :</gray>"
   objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
   # Issue #178 (et #69/#209) : quand UN même événement fait progresser plusieurs quêtes (une ville
   # découverte compte pour deux quêtes), chaque ligne nomme sa quête pour rester lisible.

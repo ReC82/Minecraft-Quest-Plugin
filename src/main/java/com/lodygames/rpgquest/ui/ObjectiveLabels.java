@@ -11,6 +11,8 @@ import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
 import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
+import java.util.Optional;
+import java.util.function.Function;
 import net.kyori.adventure.text.Component;
 
 /**
@@ -81,10 +83,29 @@ public final class ObjectiveLabels {
     }
 
     /**
+     * Issue #70 — comme {@link #targetName(QuestObjective)}, mais nomme le PNJ concerné quand
+     * {@code npcNames} connaît son <strong>nom affiché</strong> (texte brut, jamais l'identifiant
+     * logique) : « Parler à Garde » au lieu de « Parler au PNJ ». Sans nom connu, le libellé
+     * générique reste inchangé — un identifiant interne n'est jamais montré au joueur.
+     */
+    public static Component targetName(QuestObjective objective, Function<String, Optional<String>> npcNames) {
+        return switch (objective) {
+            case TalkToNpcObjective o -> npcNames.apply(o.npcId())
+                    .<Component>map(name -> Component.text("Parler à " + name))
+                    .orElseGet(() -> targetName(objective));
+            case DeliverItemToNpcObjective o -> npcNames.apply(o.npcId())
+                    .<Component>map(name -> Component.translatable(o.material())
+                            .append(Component.text(" (à remettre à " + name + ")")))
+                    .orElseGet(() -> targetName(objective));
+            default -> targetName(objective);
+        };
+    }
+
+    /**
      * {@code true} si l'objectif se compte (un compteur {@code n/total} a du sens). Les objectifs
      * binaires — parler à un PNJ, atteindre un lieu — n'affichent pas « 0/1 », qui serait du bruit.
      */
-    static boolean isCountable(QuestObjective objective) {
+    public static boolean isCountable(QuestObjective objective) {
         return !(objective instanceof TalkToNpcObjective || objective instanceof ReachLocationObjective);
     }
 }

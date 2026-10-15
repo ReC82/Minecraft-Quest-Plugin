@@ -550,6 +550,11 @@ public final class RPGQuestBootstrap {
         var actionBarFeedback = new com.lodygames.rpgquest.feedback.ActionBarFeedback();
         questProgressEngine.setActionBar(actionBarFeedback);
         questProgressEngine.setCustomItemRegistry(customItemRegistry);
+        // Issue #70 : « Parler à Garde » plutôt que « Parler au PNJ » dans l'annonce des objectifs.
+        // Le nom affiché est du MiniMessage : seules ses balises sont retirées, jamais l'id montré.
+        questProgressEngine.setNpcNameResolver(npcId -> npcEngine.find(npcId)
+                .map(def -> net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().stripTags(def.displayName()))
+                .filter(name -> !name.isBlank()));
         progressionService.setActionBar(actionBarFeedback);
 
         webSnapshotWriter = new WebSnapshotWriter(

@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
@@ -640,6 +641,94 @@ class QuestProgressEngineTest {
         assertFalse(objective.contains("WHEAT_SEEDS"),
                 () -> "l'identifiant brut ne doit plus apparaître : " + objective);
         assertTrue(objective.contains("4"), () -> "la quantité est attendue : " + objective);
+    }
+
+    // ---- Issue #70 : chaque transition d'étape annonce la prochaine action ----------------------
+
+    @Test
+    void advancingToTheNextStepAnnouncesItsObjectivesInChat() throws Exception {
+        NamespacedKey twoSteps = new NamespacedKey("rpgquest", "two_steps_announce");
+        writeTwoStepKillQuest(twoSteps, "two_steps_announce.yml");
+        engine.reloadQuestDefinitions();
+        PlayerMock player = quietPlayer();
+        engine.accept(player, twoSteps).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        while (player.nextMessage() != null) {
+            // annonce de démarrage, déjà couverte plus haut
+        }
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // termine step_one
+        server.getScheduler().performTicks(2);
+
+        String header = player.nextMessage();
+        assertNotNull(header, "le passage d'étape doit dire quoi faire ensuite");
+        assertTrue(header.contains("Étape suivante"), () -> "en-tête d'étape attendu : " + header);
+        assertTrue(header.contains("Titre"), () -> "le nom de la quête est attendu : " + header);
+        String objective = player.nextMessage();
+        assertNotNull(objective, "l'objectif de la nouvelle étape doit être annoncé");
+        assertTrue(objective.contains("entity.minecraft.skeleton"),
+                () -> "l'objectif de step_two (et non step_one) est attendu : " + objective);
+        assertTrue(objective.contains("1"), () -> "la quantité est attendue : " + objective);
+        assertNull(player.nextMessage());
+    }
+
+    @Test
+    void talkToNpcObjectiveNamesTheNpcAndShowsNoQuantity() throws Exception {
+        NamespacedKey talk = new NamespacedKey("rpgquest", "talk_announce");
+        Files.writeString(questsDir.resolve("talk_announce.yml"), """
+                id: rpgquest:talk_announce
+                title: "Parlote"
+                description: "Aller voir le garde."
+                category: test
+                icon: STONE
+                steps:
+                  - id: s1
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                  - id: s2
+                    objectives:
+                      - type: TALK_TO_NPC
+                        npc: guard
+                """);
+        engine.reloadQuestDefinitions();
+        engine.setNpcNameResolver(id -> "guard".equals(id) ? Optional.of("Garde") : Optional.empty());
+        PlayerMock player = quietPlayer();
+        engine.accept(player, talk).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        while (player.nextMessage() != null) {
+            // annonce de démarrage
+        }
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        server.getScheduler().performTicks(2);
+
+        player.nextMessage(); // en-tête
+        String objective = player.nextMessage();
+        assertNotNull(objective);
+        assertTrue(objective.contains("Parler à Garde"), () -> "le PNJ cible doit être nommé : " + objective);
+        assertFalse(objective.contains("guard"), () -> "l'identifiant logique ne doit pas apparaître : " + objective);
+        assertFalse(objective.contains("x1"), () -> "pas de quantité pour un objectif binaire : " + objective);
+    }
+
+    @Test
+    void finishingTheLastStepDoesNotAnnounceANextStep() throws Exception {
+        PlayerMock player = quietPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS); // une seule étape
+        server.getScheduler().performTicks(2);
+        while (player.nextMessage() != null) {
+            // annonce de démarrage
+        }
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        server.getScheduler().performTicks(2);
+
+        for (String message = player.nextMessage(); message != null; message = player.nextMessage()) {
+            String m = message;
+            assertFalse(m.contains("Étape suivante"), () -> "aucune étape après la dernière : " + m);
+        }
     }
 
     @Test

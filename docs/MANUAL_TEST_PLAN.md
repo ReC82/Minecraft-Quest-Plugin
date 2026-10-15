@@ -2476,7 +2476,8 @@ le résumé de récompenses de TC-014).
         test (voir 3). Enregistrer.
     2.  Panel `/quests/new` → créer `tc12_verrouillee` avec **`tc12_dispo` en prérequis** et le
         même PNJ donneur. Enregistrer.
-    3.  En jeu, sur un PNJ de test : `/rpgadmin npc tag tc12_pnj`. Puis créer un dialogue
+    3.  En jeu, sur un PNJ de test : `/rpgadmin npc tag tc12_pnj --force` (id encore référencé
+        nulle part, #66). Puis créer un dialogue
         `tc12_pnj` depuis `/dialogues` avec un nœud de départ et **au moins une branche**.
     4.  Déployer le contenu et redémarrer (les quêtes et dialogues ne se rechargent pas à chaud).
 
@@ -6088,3 +6089,19 @@ quête important), par ex. créé depuis PlugAdmin → PNJ → Créer un PNJ (`t
 4.  Terminer la dernière étape : **aucun** « Étape suivante », seulement le Title de fin et le
     résumé des récompenses.
 5.  `/quests` : le journal montre bien l'étape annoncée.
+
+### TC-317 — `/rpgadmin npc tag` : id validé et autocomplété (issue #66, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #66 déployé ; compte avec `rpgquest.admin.npc.tag` ; une entité (ou un PNJ
+Citizens) **non identifiée** à moins de 6 blocs. **Durée** : 5 minutes.
+
+1.  Taper `/rpgadmin npc tag ` puis Tab : la liste propose les ids connus, dont `guard` (et
+    `guide`, `jo`, `libraire`…). `/rpgadmin npc tag gu` + Tab ne garde que `guard`, `guide`.
+2.  En regardant l'entité : `/rpgadmin npc tag garde` → **refus** « ID inconnu : garde … Vouliez-vous
+    dire guard ? » et rappel de `--force`. `/rpgadmin npc info` : l'entité n'est **pas** identifiée.
+3.  `/rpgadmin npc tag zzz_inconnu` → refus **sans** suggestion.
+4.  `/rpgadmin npc tag guard` → « Entité identifiée : guard — nom affiché : <nom> (Citizens NPC #n) ».
+    Clic droit : le dialogue du Garde s'ouvre. `untag` ensuite si l'entité n'était qu'un essai.
+5.  Sur une autre entité : `/rpgadmin npc tag essai_force --force` → identifiée, avec l'avertissement
+    orange « Id hors registre (--force) ». `untag` pour nettoyer.
+6.  `/rpgadmin npc tag` (sans id) → id auto-généré `npc_<n>`, comportement inchangé.

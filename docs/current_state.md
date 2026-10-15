@@ -197,6 +197,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (#138) serait une **seconde source** : décision de gameplay non prise, et **aucune conversion ni
   migration** n'a eu lieu. `TESTER`/`READ_ONLY` lisent sans créer ; `BUILDER`/`CONTENT_EDITOR` n'ont
   aucun accès.
+- **`/rpgadmin npc tag` validé et autocomplété (issue #66)** — un id explicite doit figurer dans le
+  registre canonique de `NpcCatalog` (définitions `npcs/`, puis ids cités par dialogues, `giver:`,
+  `TALK_TO_NPC`, `DELIVER_ITEM_TO_NPC`), extrait par `NpcCatalogSources` — la même source que
+  `npc.list`. Sinon refus avec suggestion (`garde` → `guard`, `NpcTagIdPolicy`) ; `--force` pose un
+  id nouveau avec avertissement. Tab-complétion de l'id et de `--force` ; le succès affiche id et nom
+  affiché. Validation en jeu : TC-317 (`PENDING MANUAL VALIDATION`).
 - **Guidage vers l'étape suivante (issue #70, tranche 1)** — au passage d'une étape à la suivante,
   le chat annonce les objectifs de la nouvelle étape (`quest.step-advanced-header`), avec les
   quantités, et nomme le PNJ cible des objectifs `TALK_TO_NPC` / `DELIVER_ITEM_TO_NPC` par son nom
@@ -1175,7 +1181,8 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   dialogue associé, quêtes données/référencées, **ids canoniques** connus (préparation #66) et
   **anomalies de configuration** (id référencé sans PNJ tagué, tag orphelin avec suggestion
   `garde`→`guard`, doublon de liaison…). Aucune lecture du monde : position, monde et PNJ Citizens
-  *non tagués* sont hors périmètre de cette V1. `/rpgadmin npc tag` (#66) reste inchangé.
+  *non tagués* sont hors périmètre de cette V1. Depuis #66, `/rpgadmin npc tag <id>` valide l'id sur ce même
+  registre canonique (refus + suggestion, `--force` pour un id nouveau) et l'autocomplète.
 - **Système PNJ V2 déclarative** *(branche `feat/control-panel-admin-tools`)* — introduit une
   vraie **définition logique** de PNJ RPGQuest, indépendante de Citizens et du monde : un fichier
   par PNJ sous `plugins/RPGQuest/npcs/*.yml` (`YamlNpcEngine`, `NpcDefinition` : `id`,
@@ -1189,7 +1196,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   préservant commentaires et format). Page `/npcs` : deux blocs (Définition RPGQuest / Binding
   Citizens), création + édition limitée (jamais l'id) + attribution de quête. **Non fait**
   (délibérément) : spawn / binding Citizens depuis le web, éditeur de dialogues, câblage
-  `/rpgadmin npc tag` (#66), enrichissement live (position/monde, PNJ Citizens non tagués).
+  `/rpgadmin npc tag` (#66, fait depuis), enrichissement live (position/monde, PNJ Citizens non tagués).
 - **Liaison définition ↔ PNJ Citizens existant** *(branche `feat/control-panel-admin-tools`,
   issue #81 phase 1)* — nouvelles actions agent `npc.citizens.list` (lecture du registre Citizens
   sur le thread principal — `numericId`, `uuid`, `name`, `linkedNpcId`, `availableForBinding`,
@@ -1216,7 +1223,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `NOT_LINKED` — preview (id, nom, « aucun Citizens lié »), monde en liste déroulante (mondes
   chargés du heartbeat), coordonnées à saisir (jamais devinées), confirmation obligatoire. **Non
   fait** (chantiers séparés) : suppression générale d'un PNJ Citizens, rebind/déplacement, choix
-  de position depuis une carte, téléportation admin, câblage `/rpgadmin npc tag` (#66).
+  de position depuis une carte, téléportation admin, câblage `/rpgadmin npc tag` (#66, fait depuis).
 - **Page `/dialogues` V1** *(branche `feat/control-panel-admin-tools`)* — lecture structurée des
   dialogues à embranchements + bases d'un futur éditeur. Nouvelle action agent `dialogue.list`
   (lecture, permission dédiée `DIALOGUE_READ`) : `DialogueCatalog` (pur, sans Bukkit) dérive

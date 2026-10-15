@@ -221,7 +221,7 @@ Voir aussi section 5 (NPC/Citizens) pour le mécanisme complet. Page docs-site :
 
 | Commande | Effet | Persistance |
 |---|---|---|
-| `/rpgadmin npc tag [id]` | Identifie l'entité visée (portée 6 blocs) d'un id stable, **indépendant de son nom affiché**. Id auto-généré (`npc_<n>`) si omis ; refusé si l'entité est déjà identifiée (utiliser `untag` d'abord). | oui — SQLite (`npc_ids`, migration V11 ; `npc_citizens_bindings`, migration V12, si c'est un PNJ Citizens) |
+| `/rpgadmin npc tag [id] [--force]` | Identifie l'entité visée (portée 6 blocs) d'un id stable, **indépendant de son nom affiché**. Id auto-généré (`npc_<n>`) si omis ; refusé si l'entité est déjà identifiée (utiliser `untag` d'abord). Depuis #66, un id explicite doit figurer dans le **registre canonique** (même source que le catalogue `/npcs` du panel : définitions `npcs/*.yml`, puis ids référencés par un dialogue `rpgquest:<id>`, un `giver:`, un `TALK_TO_NPC` ou un `DELIVER_ITEM_TO_NPC`) : sinon refus avec suggestion proche (`ID inconnu : garde … Vouliez-vous dire guard ?`). `--force` accepte un id volontairement nouveau (avertissement). Tab-complétion de l'id sur ce registre ; le succès affiche l'id **et** le nom affiché. | oui — SQLite (`npc_ids`, migration V11 ; `npc_citizens_bindings`, migration V12, si c'est un PNJ Citizens) |
 | `/rpgadmin npc untag` | Retire l'identifiant de l'entité visée. | oui |
 | `/rpgadmin npc info` | Affiche l'identifiant courant de l'entité visée (+ suffixe « Citizens NPC #n » si applicable). | non |
 | `/rpgadmin npc spot mark [nom]` | Réserve un **emplacement de PNJ** (issue #381) à votre position exacte et orientation (regard). Ne crée ni ne déplace aucun PNJ ; un même bloc n'a qu'un emplacement (le second `mark` renvoie l'existant) ; avertit si l'endroit n'a pas de sol solide ou deux blocs d'air. Permission `rpgquest.admin.npc.spot` (incluse dans `rpgquest.admin.npc`). | oui — SQLite (`npc_spots`, `npc_spot_ids`, migration V38) |
@@ -3651,7 +3651,8 @@ lier (`npc.citizens.create`, issue #81 phase 2 — nom = `displayName`, monde de
 la liste blanche RPGQuest, position bornée, rollback du PNJ créé si la liaison
 échoue). Actions agent `npc.definition.create` / `npc.definition.update` /
 `quest.giver.set` / `npc.citizens.link` / `npc.citizens.create`, jamais de YAML
-brut ni de commande console. Le câblage de `/rpgadmin npc tag` (#66), la
+brut ni de commande console. `/rpgadmin npc tag` valide et
+autocomplète l'id sur le même registre canonique (#66). La
 suppression générale d'un PNJ Citizens et le rebind d'un binding existant ne
 sont **pas** encore faits.
 

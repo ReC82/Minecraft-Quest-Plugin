@@ -68,6 +68,7 @@ import com.lodygames.rpgquest.npc.CitizensNpc;
 import com.lodygames.rpgquest.npc.CitizensSpawnCoordinator;
 import com.lodygames.rpgquest.npc.CitizensSpawnPlanner;
 import com.lodygames.rpgquest.npc.NpcCatalog;
+import com.lodygames.rpgquest.npc.NpcCatalogSources;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.BukkitNpcPlacementProbe;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
@@ -574,55 +575,9 @@ public final class BukkitAgentActions implements AgentActions {
         // Extraction Bukkit -> types simples, puis dérivation pure par NpcCatalog. Aucune lecture du
         // monde (position / PNJ Citizens non tagués = hors périmètre V1). Le seul accès disque est
         // le SELECT des liaisons Citizens, déjà asynchrone.
-        List<NpcCatalog.DialogueLink> dialogueLinks = new ArrayList<>();
-        for (DialogueDefinition d : dialogueEngine.dialogues()) {
-            if (!DEFAULT_NAMESPACE.equals(d.id().getNamespace())) {
-                continue;
-            }
-            int choiceCount = 0;
-            List<String> starts = new ArrayList<>();
-            for (DialogueNode node : d.nodes().values()) {
-                choiceCount += node.choices().size();
-                node.choices().forEach(choice -> choice.actions().stream()
-                        .filter(a -> a instanceof StartQuestAction)
-                        .map(a -> ((StartQuestAction) a).questId().toString())
-                        .forEach(q -> {
-                            if (!starts.contains(q)) {
-                                starts.add(q);
-                            }
-                        }));
-            }
-            dialogueLinks.add(new NpcCatalog.DialogueLink(d.id().getKey(), d.id().toString(),
-                    d.nodes().size(), choiceCount, List.copyOf(starts), d.startNode().speaker()));
-        }
-
-        List<NpcCatalog.QuestLink> questLinks = new ArrayList<>();
-        for (QuestDefinition q : questEngine.quests()) {
-            List<String> talk = new ArrayList<>();
-            // Issue #226 : les remises comptent aussi. Un PNJ destinataire d'un
-            // DELIVER_ITEM_TO_NPC n'apparaissait dans aucune colonne du catalogue, donc le
-            // supprimer rendait la quête infinissable sans qu'aucun écran ne l'ait annoncé.
-            List<String> deliver = new ArrayList<>();
-            for (QuestStep step : q.steps()) {
-                for (QuestObjective objective : step.objectives()) {
-                    if (objective instanceof TalkToNpcObjective t && !talk.contains(t.npcId())) {
-                        talk.add(t.npcId());
-                    }
-                    if (objective instanceof DeliverItemToNpcObjective d
-                            && !deliver.contains(d.npcId())) {
-                        deliver.add(d.npcId());
-                    }
-                }
-            }
-            questLinks.add(new NpcCatalog.QuestLink(q.id().toString(), q.giver(), List.copyOf(talk),
-                    List.copyOf(deliver)));
-        }
-
-        List<NpcCatalog.LogicalDefinition> defs = new ArrayList<>();
-        for (NpcDefinition d : npcEngine.definitions()) {
-            defs.add(new NpcCatalog.LogicalDefinition(d.id(), d.displayName(), d.description(),
-                    d.dialogueId(), d.role(), d.enabled()));
-        }
+        List<NpcCatalog.DialogueLink> dialogueLinks = NpcCatalogSources.dialogueLinks(dialogueEngine.dialogues());
+        List<NpcCatalog.QuestLink> questLinks = NpcCatalogSources.questLinks(questEngine.quests());
+        List<NpcCatalog.LogicalDefinition> defs = NpcCatalogSources.definitions(npcEngine.definitions());
 
         boolean citizensAvailable = npcIdentityService.citizensAvailable();
         return npcBindingRepository.loadAll().thenApply(bindings -> {

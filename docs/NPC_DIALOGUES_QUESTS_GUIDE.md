@@ -57,7 +57,8 @@ que vous regardez directement, à 6 blocs maximum**.
 | Commande | Effet |
 |---|---|
 | `/rpgadmin npc tag` | Identifie le PNJ visé avec un id **auto-généré** (`npc_<n>`, séquentiel, jamais réutilisé). |
-| `/rpgadmin npc tag <id>` | Identifie le PNJ visé avec l'id **de votre choix** (minuscules, chiffres, `.` `_` `-` uniquement). |
+| `/rpgadmin npc tag <id>` | Identifie le PNJ visé avec un id **connu** (minuscules, chiffres, `.` `_` `-` uniquement) — proposé par tab-complétion. Un id ni défini (`npcs/`), ni référencé par un dialogue ou une quête est **refusé** avec une suggestion (`garde` → « Vouliez-vous dire guard ? »), issue #66. |
+| `/rpgadmin npc tag <id> --force` | Pose quand même un id hors registre (id volontairement nouveau, debug) — un avertissement rappelle qu'aucun contenu ne le référence encore. |
 | `/rpgadmin npc untag` | Retire l'identifiant du PNJ visé (le PNJ Citizens lui-même n'est jamais supprimé, seul le mapping RPGQuest l'est). |
 | `/rpgadmin npc info` | Affiche l'identifiant actuel du PNJ visé — pour un PNJ Citizens, affiche en plus son id numérique entre parenthèses, ex. `guide (Citizens NPC #3)`. |
 

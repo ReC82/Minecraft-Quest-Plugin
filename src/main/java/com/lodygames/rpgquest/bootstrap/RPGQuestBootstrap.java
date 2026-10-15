@@ -90,6 +90,7 @@ import com.lodygames.rpgquest.mob.ability.SplitOnHitAbilityListener;
 import com.lodygames.rpgquest.mob.ability.StrongerExplosionAbilityListener;
 import com.lodygames.rpgquest.mob.ability.SummonOnDamageAbilityListener;
 import com.lodygames.rpgquest.mod.ModCompatService;
+import com.lodygames.rpgquest.npc.NpcCatalogSources;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.npc.QuestGiverStore;
@@ -1427,6 +1428,8 @@ public final class RPGQuestBootstrap {
                 buildingSiteService, buildingLibrary, buildingSchematics, plugin);
         rpgAdminCommand.setCities(cityRegistry, cityPendings);
         rpgAdminCommand.setNpcSpots(npcSpotService);
+        rpgAdminCommand.setNpcCanonicalIds(() -> NpcCatalogSources.canonicalIds(
+                npcEngine.definitions(), dialogueEngine.dialogues(), questEngine.quests()));
         rpgAdminCommand.setAdminBypassMode(adminBypassMode);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {

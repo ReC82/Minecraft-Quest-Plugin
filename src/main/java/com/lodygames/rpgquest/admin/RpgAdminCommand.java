@@ -16,6 +16,7 @@ import com.lodygames.rpgquest.mob.model.MobAbility;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.npc.NpcTagIdPolicy;
 import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
@@ -140,6 +141,14 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private com.lodygames.rpgquest.city.CityRegistry cities;
     private com.lodygames.rpgquest.city.PendingCityRegistry cityPendings;
     private com.lodygames.rpgquest.npc.spot.NpcSpotService npcSpots;
+
+    /** Issue #66 — registre canonique des ids PNJ, relu à chaque appel (suit les rechargements). */
+    private java.util.function.Supplier<List<String>> npcCanonicalIds = List::of;
+
+    /** Issue #66 — branché au démarrage : la même source que le catalogue du Control Panel. */
+    public void setNpcCanonicalIds(java.util.function.Supplier<List<String>> supplier) {
+        this.npcCanonicalIds = supplier;
+    }
 
     /** Issue #381 — branché au démarrage : les emplacements de PNJ. */
     public void setNpcSpots(com.lodygames.rpgquest.npc.spot.NpcSpotService service) {
@@ -946,6 +955,11 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
      * dérivé du nom affiché de l'entité (c'est cette dérivation, côté dialogue, qui provoquait
      * autrefois une IllegalArgumentException au clic sur une entité renommée avec une majuscule).
      * Sans id explicite, un identifiant {@code npc_<n>} est généré automatiquement.
+     *
+     * <p>Issue #66 : un id explicite absent du registre canonique (ni défini, ni référencé par un
+     * dialogue ou une quête) est refusé avec une suggestion proche — taguer « garde » au lieu de
+     * « guard » donnait un PNJ apparemment identifié dont aucun dialogue ne se déclenchait.
+     * {@code --force} l'accepte quand même, pour un id volontairement nouveau.</p>
      */
     private void handleNpcTag(Player player, String[] args) {
         Entity target = targetEntity(player);
@@ -962,9 +976,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        String requestedId = null;
-        if (args.length >= 3) {
-            requestedId = args[2].toLowerCase(Locale.ROOT);
+        boolean force = Arrays.stream(args).skip(2).anyMatch(NpcTagIdPolicy.FORCE_FLAG::equalsIgnoreCase);
+        String requestedId = Arrays.stream(args).skip(2)
+                .filter(a -> !a.equalsIgnoreCase(NpcTagIdPolicy.FORCE_FLAG))
+                .findFirst().map(a -> a.toLowerCase(Locale.ROOT)).orElse(null);
+        boolean forcedUnknown = false;
+        if (requestedId != null) {
             if (!NpcIdentityService.isValidId(requestedId)) {
                 player.sendMessage(MM.deserialize(
                         "<red>Identifiant invalide :</red> <white><id></white> "
@@ -972,16 +989,47 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         Placeholder.unparsed("id", requestedId)));
                 return;
             }
+            NpcTagIdPolicy.Verdict verdict = NpcTagIdPolicy.evaluate(requestedId, npcCanonicalIds.get(), force);
+            if (!verdict.accepted()) {
+                sendUnknownNpcId(player, requestedId, verdict.suggestion());
+                return;
+            }
+            forcedUnknown = !verdict.known();
         }
 
+        String displayName = target.getName();
+        boolean warnForced = forcedUnknown;
         npcIdentityService.tag(target, requestedId)
-                .thenAccept(result -> runOnMainThread(() -> player.sendMessage(MM.deserialize(
-                        "<green>Entité identifiée :</green> <white><id></white>" + citizensSuffix(target),
-                        Placeholder.unparsed("id", result.npcId())))))
+                .thenAccept(result -> runOnMainThread(() -> {
+                    player.sendMessage(MM.deserialize(
+                            "<green>Entité identifiée :</green> <white><id></white> <gray>— nom affiché :</gray> "
+                                    + "<white><name></white>" + citizensSuffix(target),
+                            Placeholder.unparsed("id", result.npcId()),
+                            Placeholder.unparsed("name", displayName)));
+                    if (warnForced) {
+                        player.sendMessage(MM.deserialize(
+                                "<gold>Id hors registre (--force) :</gold> <gray>aucun dialogue ni quête ne le "
+                                        + "référence encore.</gray>"));
+                    }
+                }))
                 .exceptionally(error -> {
                     runOnMainThread(() -> player.sendMessage(MM.deserialize("<red>Échec de l'identification (voir la console).</red>")));
                     return null;
                 });
+    }
+
+    private void sendUnknownNpcId(Player player, String id, @Nullable String suggestion) {
+        String hint = suggestion == null
+                ? "<gray>Aucun id proche. Voir les ids connus par tab-complétion.</gray>"
+                : "<gray>Vouliez-vous dire</gray> <yellow><suggestion></yellow> <gray>?</gray>";
+        player.sendMessage(MM.deserialize(
+                "<red>ID inconnu :</red> <white><id></white> <gray>— ni défini (npcs/), ni référencé par un "
+                        + "dialogue ou une quête.</gray> " + hint,
+                Placeholder.unparsed("id", id),
+                Placeholder.unparsed("suggestion", suggestion == null ? "" : suggestion)));
+        player.sendMessage(MM.deserialize(
+                "<dark_gray>Id volontairement nouveau :</dark_gray> <yellow>/rpgadmin npc tag <id> --force</yellow>",
+                Placeholder.unparsed("id", id)));
     }
 
     private void handleNpcUntag(Player player) {
@@ -1043,7 +1091,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private void sendNpcUsage(CommandSender sender) {
         sender.sendMessage(MM.deserialize(
-                "<yellow>/rpgadmin npc tag [id]</yellow> <gray>- identifie l'entité visée (id auto-généré si omis)</gray>"));
+                "<yellow>/rpgadmin npc tag [id] [--force]</yellow> <gray>- identifie l'entité visée avec un id connu "
+                        + "(id auto-généré si omis, --force pour un id hors registre)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc untag</yellow> <gray>- retire l'identifiant de l'entité visée</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc info</yellow> <gray>- affiche l'identifiant de l'entité visée</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc spot mark [nom]</yellow> <gray>- réserve un emplacement "
@@ -3470,6 +3519,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("npc")) {
             return NPC_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("npc") && args[1].equalsIgnoreCase("tag")) {
+            return NpcTagIdPolicy.complete(args[2], npcCanonicalIds.get());
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("npc") && args[1].equalsIgnoreCase("tag")) {
+            return NpcTagIdPolicy.FORCE_FLAG.startsWith(args[3].toLowerCase(Locale.ROOT))
+                    ? List.of(NpcTagIdPolicy.FORCE_FLAG) : List.of();
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("npc") && args[1].equalsIgnoreCase("spot")) {
             return NPC_SPOT_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();

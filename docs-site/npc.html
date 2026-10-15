@@ -117,7 +117,8 @@
       <thead><tr><th>Commande</th><th>Effet</th></tr></thead>
       <tbody>
         <tr><td><code>/rpgadmin npc tag</code></td><td>Identifie le PNJ visé avec un id auto-généré (<code>npc_&lt;n&gt;</code>).</td></tr>
-        <tr><td><code>/rpgadmin npc tag &lt;id&gt;</code></td><td>Identifie le PNJ visé avec l'id choisi (minuscules, chiffres, <code>. _ -</code>).</td></tr>
+        <tr><td><code>/rpgadmin npc tag &lt;id&gt;</code></td><td>Identifie le PNJ visé avec un id <strong>connu</strong> (minuscules, chiffres, <code>. _ -</code>), proposé par la touche Tab. Un id qui n'est ni défini (<code>npcs/</code>), ni cité par un dialogue ou une quête est refusé avec une suggestion : <code>garde</code> → « Vouliez-vous dire <code>guard</code> ? ».</td></tr>
+        <tr><td><code>/rpgadmin npc tag &lt;id&gt; --force</code></td><td>Pose quand même un id hors registre (id volontairement nouveau). Un avertissement le signale.</td></tr>
         <tr><td><code>/rpgadmin npc untag</code></td><td>Retire l'identifiant (le PNJ Citizens lui-même n'est jamais supprimé).</td></tr>
         <tr><td><code>/rpgadmin npc info</code></td><td>Affiche l'id actuel — pour un PNJ Citizens, ajoute <code>(Citizens NPC #n)</code>.</td></tr>
         <tr><td><code>/rpgadmin npc spot mark [nom]</code></td><td>Réserve un emplacement de PNJ à votre position et orientation exactes (permission <code>rpgquest.admin.npc.spot</code>). Aucun PNJ n'est créé ni déplacé.</td></tr>
@@ -203,6 +204,9 @@ id: rpgquest:libraire</code></pre>
         <strong>Attribuer un id RPGQuest stable.</strong> Regardez le PNJ directement (à 6 blocs
         maximum, voir la commande <code>/rpgadmin npc</code> ci-dessus), puis :
         <pre class="rpgq-code"><code>/rpgadmin npc tag jean_guide</code></pre>
+        L'id doit déjà exister côté RPGQuest (fiche PNJ créée dans PlugAdmin <code>/npcs</code>, ou
+        cité par un dialogue / une quête) : sinon la commande le refuse et propose l'id connu le
+        plus proche. Pour un id volontairement nouveau, ajoutez <code>--force</code>.
       </li>
       <li>
         <strong>Vérifier l'association</strong>, toujours en regardant le PNJ :
@@ -264,6 +268,7 @@ id: rpgquest:libraire</code></pre>
 /npc skin Notch
 
 # 5. Regarder le PNJ, puis lui attribuer un id RPGQuest stable
+#    (id connu : Tab pour la liste ; --force si jean_guide n'existe encore nulle part)
 /rpgadmin npc tag jean_guide
 
 # 6. Vérifier l'association (toujours en regardant le PNJ)

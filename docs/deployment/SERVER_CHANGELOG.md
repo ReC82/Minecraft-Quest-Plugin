@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - `/rpgadmin npc tag` : id validé et autocomplété (#66)
+
+### Changement
+
+`/rpgadmin npc tag <id>` refuse un id absent du registre canonique des PNJ (définitions `npcs/`,
+ids cités par dialogues et quêtes) et suggère l'id proche (`garde` → `guard`) ; `--force` pose un
+id volontairement nouveau. Tab-complétion des ids connus. Les identifications déjà posées ne
+sont pas touchées.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement. Aucune migration, aucune clé de configuration, aucun
+contenu à modifier. Redémarrage requis (nouveau JAR).
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`).
+
+### Validation
+
+En jeu : TC-317 (`PENDING MANUAL VALIDATION`).
+
+### Rollback
+
+Remettre le JAR sauvegardé par le script et redémarrer — aucune donnée n'a changé de forme.
+
+---
+
 ## 2026-10-15 - Annonce des objectifs au passage d'étape (#70)
 
 ### Changement

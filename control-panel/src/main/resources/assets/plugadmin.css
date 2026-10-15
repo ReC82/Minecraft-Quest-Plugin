@@ -1313,7 +1313,8 @@ details.enc-biomes[open] summary{margin-bottom:0}
 .qc-actions .btn{margin-top:0}
 .qc-desc{margin:0 0 12px}
 .qc-card{padding:14px 16px;margin:0 0 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
-.qc-card>h2{font-size:16px;font-weight:800;margin:0 0 10px;display:flex;gap:8px;align-items:center}
+.qc-card>h2,.qc-zone h2{font-size:16px;font-weight:800;margin:0 0 10px;display:flex;gap:8px;align-items:center;
+  text-transform:none;letter-spacing:0;color:var(--txt)}
 .qc-card>h2 .ic{font-size:17px;color:var(--txt-2)}
 .qc-count{font-size:12px;font-weight:700;background:var(--surface-3);border-radius:999px;padding:1px 8px;color:var(--txt-2)}
 .qc-step{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;
@@ -1349,7 +1350,7 @@ details.enc-biomes[open] summary{margin-bottom:0}
 .qc-cand,.qc-pick{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}
 .qc-cand:last-child{border-bottom:0}
 .qc-cand input,.qc-pick input{width:20px;height:20px;flex:none;margin:0}
-.qc-cand label,.qc-pick label{flex:1 1 200px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;cursor:pointer;margin:0;min-width:0}
+.qc-cand label,.qc-pick label{font-weight:400;flex:1 1 200px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;cursor:pointer;margin:0;min-width:0}
 .qc-cand:has(input:checked),.qc-pick:has(input:checked){background:var(--primary-soft)}
 .qc-picks{border:1px solid var(--line);border-radius:var(--radius-s);overflow:hidden}
 .qc-pick:last-child{border-bottom:0}
@@ -1360,6 +1361,7 @@ details.enc-biomes[open] summary{margin-bottom:0}
 .qc-npc-warn{flex:1 1 100%;display:flex;gap:6px;align-items:flex-start;font-size:13px;color:#8a5a0c;
   background:var(--warn-soft);border-radius:var(--radius-s);padding:6px 10px}
 .qc-npc-warn .ic{flex:none;margin-top:2px}
+.qc-npc-warn.is-short{font-size:12.5px;padding:4px 8px;margin-left:30px}
 .qc-advanced>summary{cursor:pointer;font-weight:700;color:var(--txt-2)}
 .qc-advanced[open]>summary{margin-bottom:10px}
 .qc-facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0 0 8px;font-size:13.5px}
@@ -1379,6 +1381,7 @@ details.enc-biomes[open] summary{margin-bottom:0}
 .qc-adv-grid label:not(.inline),.qc-lbl{display:block;font-weight:700;font-size:13px;margin:0 0 4px}
 .qc-summary:not(:empty){border:1px solid #cfe0ff;background:var(--primary-soft);color:var(--txt);border-radius:var(--radius);
   padding:12px 14px;margin:0 0 14px;font-size:14px}
+.qc-savebar .btn{justify-content:center}
 .qc-savebar .qc-live-note{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--txt-2);margin-right:auto}
 .qc-savebar .dlg-dirty:not([hidden])+.qc-live-note{margin-right:0}
 .qc-short{max-width:640px}
@@ -1388,7 +1391,7 @@ details.enc-biomes[open] summary{margin-bottom:0}
 .qc-danger{border-color:#f0bcbc}
 .qc-conseq{padding-left:18px}
 .qc-zone{margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
-.qc-zone h2{font-size:13px;font-weight:800;color:var(--txt-2);margin:0 0 8px}
+.qc-zone h2{font-size:13px;color:var(--txt-2);margin:0 0 8px}
 .qc-zone-row{display:flex;flex-wrap:wrap;gap:8px}
 @media(max-width:575.98px){
   .qc-row-side{width:100%;justify-content:space-between}

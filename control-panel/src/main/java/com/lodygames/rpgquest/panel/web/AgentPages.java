@@ -6336,7 +6336,7 @@ public final class AgentPages {
         boolean canWrite = perms.can(session.effective(), Permission.QUEST_CONTENT_WRITE);
         Optional<AgentActionRow> surveyRow = store.latestSuccessfulActionOfType(agentId, "quest.catalog.list");
         Optional<Map<String, Object>> latest = surveyRow.flatMap(this::detailsOf);
-        String refresh = compactRefresh(session, agentId, "quest.catalog.list", "Actualiser", "btn-outline-primary",
+        String refresh = compactRefresh(session, agentId, "quest.catalog.list", "Actualiser", "secondary sm",
                 QuestCatalogPages.PAGE);
         StringBuilder sb = new StringBuilder(agentPicker(agentId, QuestCatalogPages.PAGE, ""));
         if (latest.isEmpty()) {

@@ -401,9 +401,9 @@ final class QuestCatalogPages {
 
     /** L'association seule ne suffit pas : on le dit, avec le chemin pour réparer. */
     private static String cannotOffer(Template t) {
-        return "<span class=\"qc-npc-warn\">" + Icons.icon("warning") + "Ce PNJ ne sait pas encore proposer les "
-                + "quêtes de cette liste. <a href=\"/dialogues/edit/" + Http.esc(t.npcId()) + "\">Ouvrir son "
-                + "dialogue</a> et ajouter une réponse avec l'action « Proposer une quête du catalogue ».</span>";
+        return "<span class=\"qc-npc-warn\">" + Icons.icon("warning") + "<span>Ce PNJ ne sait pas encore proposer "
+                + "les quêtes de cette liste. <a href=\"/dialogues/edit/" + Http.esc(t.npcId()) + "\">Ouvrir son "
+                + "dialogue</a> et ajouter une réponse avec l'action « Proposer une quête du catalogue ».</span></span>";
     }
 
     private static String advancedFacts(Catalog c) {
@@ -634,7 +634,11 @@ final class QuestCatalogPages {
             }
             sb.append("<span class=\"qc-adv\">").append(Ui.id(t.id())).append("</span></label>");
             if (!t.offersCatalog()) {
-                sb.append(cannotOffer(t));
+                // Version courte dans la liste de choix : la fiche donne la procédure complète.
+                sb.append("<span class=\"qc-npc-warn is-short\">").append(Icons.icon("warning"))
+                        .append("<span>Ne sait pas encore proposer ces quêtes : <a href=\"/dialogues/edit/")
+                        .append(Http.esc(t.npcId())).append("\">son dialogue</a> doit avoir l'action « Proposer "
+                                + "une quête du catalogue ».</span></span>");
             }
             sb.append("</div>");
         }

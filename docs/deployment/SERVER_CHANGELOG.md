@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Annonce des objectifs au passage d'étape (#70)
+
+### Changement
+
+Au passage d'une étape de quête à la suivante, le chat annonce les objectifs de la nouvelle étape
+(quantités, PNJ cible nommé par son nom affiché). Deux clés `messages.yml` :
+`quest.step-advanced-header` et `quest.started-objective-single`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement. Les deux clés sont ajoutées **automatiquement** au
+`messages.yml` du serveur au démarrage (fusion des clés manquantes) — ne pas téléverser
+`messages.yml`. Aucune migration de base, aucun contenu à modifier. Redémarrage requis (nouveau JAR).
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`).
+
+### Validation
+
+En jeu : TC-316 (`PENDING MANUAL VALIDATION`).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest`. Les deux clés ajoutées restent dans `messages.yml`, sans
+effet sur l'ancien JAR.
+
+---
+
 ## 2026-10-15 - Emplacements de PNJ réservés en jeu, placement depuis PlugAdmin (#381)
 
 ### Changement

@@ -1,0 +1,146 @@
+package com.lodygames.rpgquest.stats;
+
+import com.lodygames.rpgquest.bootstrap.PluginService;
+import com.lodygames.rpgquest.database.StatisticsRepository;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import org.bukkit.Bukkit;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.scheduler.BukkitTask;
+import org.slf4j.Logger;
+
+/**
+ * Saisons et événements de classement (issue #54).
+ *
+ * <p>Toutes les minutes, hors du thread principal : relit {@code statistics.yml} s'il a changé,
+ * puis fige chaque période terminée et pas encore archivée ({@link StatisticsRepository#archive},
+ * idempotent). L'archivage ne dépend pas de l'export web : une saison se termine et se fige même
+ * quand {@code web-export.enabled} est faux.</p>
+ *
+ * <p>Fichier absent = aucune période, rien d'autre ne change. Fichier invalide = aucune période
+ * (jamais un fichier appliqué à moitié), erreurs dans le journal.</p>
+ */
+public final class StatisticsService implements PluginService {
+
+    private static final long INTERVAL_TICKS = 20L * 60;
+
+    private final Plugin plugin;
+    private final Path file;
+    private final StatisticsRepository repository;
+    private final Logger logger;
+    private final Clock clock;
+
+    private volatile StatisticsDefinition definition = StatisticsDefinition.EMPTY;
+    private volatile Set<String> archived = Set.of();
+    private long loadedModified = Long.MIN_VALUE;
+    private BukkitTask task;
+
+    public StatisticsService(Plugin plugin, Path file, StatisticsRepository repository, Logger logger) {
+        this(plugin, file, repository, logger, Clock.systemUTC());
+    }
+
+    StatisticsService(Plugin plugin, Path file, StatisticsRepository repository, Logger logger, Clock clock) {
+        this.plugin = plugin;
+        this.file = file;
+        this.repository = repository;
+        this.logger = logger;
+        this.clock = clock;
+    }
+
+    @Override
+    public void start() {
+        task = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> refresh().join(), 1L, INTERVAL_TICKS);
+    }
+
+    @Override
+    public void stop() {
+        if (task != null) {
+            task.cancel();
+            task = null;
+        }
+    }
+
+    public StatisticsDefinition definition() {
+        return definition;
+    }
+
+    public boolean isArchived(String periodId) {
+        return archived.contains(periodId);
+    }
+
+    public Instant now() {
+        return clock.instant();
+    }
+
+    /** Relit le fichier si besoin et archive les périodes terminées. Jamais sur le thread principal. */
+    CompletableFuture<Void> refresh() {
+        reloadIfChanged();
+        StatisticsDefinition current = definition;
+        Instant now = clock.instant();
+        return repository.archivedPeriodIds().thenCompose(done -> {
+            List<CompletableFuture<Void>> pending = new ArrayList<>();
+            Set<String> nowArchived = new HashSet<>(done);
+            for (StatPeriod period : current.periods()) {
+                if (period.status(now) == StatPeriod.Status.ENDED && !done.contains(period.id())) {
+                    pending.add(repository.archive(period, current.excludedXpReasons(), now).thenAccept(created -> {
+                        synchronized (nowArchived) {
+                            nowArchived.add(period.id());
+                        }
+                        if (created) {
+                            logger.info("Statistiques : {} « {} » terminée, classement figé.",
+                                    period.scope().wireName(), period.id());
+                        }
+                    }));
+                }
+            }
+            return CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
+                    .thenRun(() -> archived = Set.copyOf(nowArchived));
+        }).exceptionally(error -> {
+            logger.warn("Statistiques : archivage des périodes impossible, nouvel essai à la prochaine minute.", error);
+            return null;
+        });
+    }
+
+    private void reloadIfChanged() {
+        long modified;
+        try {
+            modified = Files.exists(file) ? Files.getLastModifiedTime(file).toMillis() : -1L;
+        } catch (IOException e) {
+            logger.warn("Statistiques : lecture de {} impossible.", file, e);
+            return;
+        }
+        if (modified == loadedModified) {
+            return;
+        }
+        loadedModified = modified;
+        if (modified < 0) {
+            definition = StatisticsDefinition.EMPTY;
+            return;
+        }
+        YamlConfiguration yaml = new YamlConfiguration();
+        try {
+            yaml.loadFromString(Files.readString(file));
+        } catch (IOException | InvalidConfigurationException e) {
+            logger.warn("Statistiques : {} illisible, aucune saison ni aucun événement publié.", file, e);
+            definition = StatisticsDefinition.EMPTY;
+            return;
+        }
+        StatisticsDefinitionLoader.Result result = StatisticsDefinitionLoader.load(yaml);
+        for (String error : result.errors()) {
+            logger.warn("Statistiques : {} — {}", file.getFileName(), error);
+        }
+        definition = result.definition();
+        logger.info("Statistiques : {} période(s) chargée(s) depuis {}{}.", result.definition().periods().size(),
+                file.getFileName(), result.valid() ? "" : " (fichier invalide ignoré)");
+    }
+}

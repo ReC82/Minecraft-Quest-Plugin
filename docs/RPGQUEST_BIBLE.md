@@ -115,6 +115,14 @@ Fichiers : service `lodyquests-portal.service` (utilisateur `lodyquests-web`, `1
 Résultat attendu : `curl -s http://127.0.0.1:8092/health` → `{"status":"UP",…,"playerDataPublic":false,"store":false}`.
 À savoir : aucun pseudo publié tant que `player-data-public=false` (décision #55) ; aucune boutique ; aucune écriture SQL. Comptes joueurs fermés tant qu'aucune clé `accounts.age-threshold.<PAYS>` n'est configurée (politique d'âge, #55). Confidentialité et registre des données : [PRIVACY.md](PRIVACY.md). Détail : [WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).
 
+### Saisons, événements et exclusions de classement — `statistics.yml` (issue #54)
+Type : fichier de configuration (serveur Minecraft, `plugins/RPGQuest/statistics.yml`) — Page docs-site : aucune.
+But : définir les saisons (une à la fois) et les événements (chevauchements permis) dont le plugin calcule et exporte les classements, et exclure des comptes de test ou des tricheurs des classements publics.
+Contenu : `seasons:` / `events:` (`id`, `name`, `start`, `end` avec fuseau obligatoire, `metrics` parmi `RPG_XP_<PISTE>`), `excluded-xp-reasons` (défaut `[admin_grant]`), `exclusions:` (`player` = UUID, `scopes` = `*`, `lifetime` ou des id de périodes).
+Persistance : valeurs lues dans le journal `xp_grants` sur la fenêtre de la période ; à la fin, classement figé dans `stat_period_archives` / `stat_period_results` (migration V39), même si `web-export` est désactivé.
+Résultat attendu : console `Statistiques : N période(s) chargée(s) depuis statistics.yml.` (relu toutes les minutes s'il change, sans redémarrage) ; à la fin d'une période, `… terminée, classement figé.`
+À savoir : absent = aucune période ; invalide = **aucune** période appliquée, erreurs en console, plugin démarré normalement. `QUESTS_COMPLETED` n'est disponible qu'en lifetime (pas d'historique horodaté). Les exclusions s'appliquent aussi aux archives. Détail et exemple : [WEB_PORTAL.md §4](WEB_PORTAL.md#4-modèle-de-statistiques-54--fait).
+
 ---
 
 ## 2. Administration RPGQuest (`/rpgadmin`)

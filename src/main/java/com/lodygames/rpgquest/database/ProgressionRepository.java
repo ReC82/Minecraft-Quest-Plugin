@@ -162,15 +162,28 @@ public final class ProgressionRepository {
      */
     public CompletableFuture<List<LeaderboardRow>> topPlayers(SkillType skill, int limit,
                                                               PublicProfilePolicy.Visibility visibility) {
+        return topPlayers(skill, limit, visibility, List.of());
+    }
+
+    /**
+     * Même classement, sans les joueurs {@code excluded} (exclusions de modération de
+     * {@code statistics.yml}, issue #54). Les ex-aequo sont départagés par pseudo puis UUID : deux
+     * exports successifs donnent toujours le même ordre.
+     */
+    public CompletableFuture<List<LeaderboardRow>> topPlayers(SkillType skill, int limit,
+                                                              PublicProfilePolicy.Visibility visibility,
+                                                              java.util.Collection<UUID> excluded) {
         String sql = "SELECT p.last_name AS name, s.total_xp AS total_xp "
                 + "FROM player_skills s JOIN player_profiles p ON p.uuid = s.player_uuid "
-                + "WHERE s.skill = ? AND s.total_xp > 0 AND " + PublicProfilePolicy.visible("p", visibility) + " "
-                + "ORDER BY s.total_xp DESC LIMIT ?";
+                + "WHERE s.skill = ? AND s.total_xp > 0 AND " + PublicProfilePolicy.visible("p", visibility)
+                + StatisticsRepository.notIn("p.uuid", excluded.size()) + " "
+                + "ORDER BY s.total_xp DESC, p.last_name ASC, p.uuid ASC LIMIT ?";
         return database.execute(connection -> {
             List<LeaderboardRow> rows = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, skill.name());
-                statement.setInt(2, limit);
+                int index = StatisticsRepository.bindUuids(statement, 2, excluded);
+                statement.setInt(index, limit);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     while (resultSet.next()) {
                         rows.add(new LeaderboardRow(resultSet.getString("name"), resultSet.getLong("total_xp")));

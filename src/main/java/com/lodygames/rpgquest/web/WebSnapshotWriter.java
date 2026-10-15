@@ -3,10 +3,16 @@ package com.lodygames.rpgquest.web;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.config.WebExportConfig;
 import com.lodygames.rpgquest.database.ProgressionRepository;
+import com.lodygames.rpgquest.database.StatisticsRepository;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
+import com.lodygames.rpgquest.stats.StatMetric;
+import com.lodygames.rpgquest.stats.StatPeriod;
+import com.lodygames.rpgquest.stats.StatScope;
+import com.lodygames.rpgquest.stats.StatisticsDefinition;
+import com.lodygames.rpgquest.stats.StatisticsService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -19,6 +25,8 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -67,7 +75,9 @@ public final class WebSnapshotWriter implements PluginService {
     /**
      * Version du format de l'instantané. 2 (#54/#56) : ajoute {@code statistics} (portées
      * {@code lifetime}/{@code season}/{@code events}) et {@code profiles}. Les clés de la version 1
-     * sont inchangées : un portail plus ancien continue de fonctionner.
+     * sont inchangées : un portail plus ancien continue de fonctionner. Les ajouts suivants de #54
+     * ({@code statistics.metrics}, {@code rank}, contenu de {@code season}/{@code events}) sont
+     * additifs et ne changent pas la version.
      */
     static final int SCHEMA_VERSION = 2;
 
@@ -79,6 +89,18 @@ public final class WebSnapshotWriter implements PluginService {
     }
 
     private com.lodygames.rpgquest.database.PlayerVariableRepository variables;
+
+    private StatisticsService statisticsService;
+    private StatisticsRepository statisticsRepository;
+
+    /**
+     * Issue #54 — saisons, événements et exclusions de {@code statistics.yml}. Sans eux, seule la
+     * portée {@code lifetime} est exportée, sans exclusion.
+     */
+    public void setStatistics(StatisticsService service, StatisticsRepository repository) {
+        this.statisticsService = service;
+        this.statisticsRepository = repository;
+    }
 
     /**
      * Issue #55 — choix « /profile web » des joueurs connectés. Sans elle, la liste nominative des
@@ -159,17 +181,23 @@ public final class WebSnapshotWriter implements PluginService {
                 : CompletableFuture.completedFuture(List.of());
         List<Map<String, Object>> catalog = buildCatalog();
 
+        StatisticsDefinition stats = statisticsService == null ? StatisticsDefinition.EMPTY : statisticsService.definition();
+        Set<UUID> lifetimeExcluded = stats.excludedFrom(StatScope.LIFETIME.wireName());
         CompletableFuture<List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row>> questRows =
                 questStatistics == null ? CompletableFuture.completedFuture(List.of())
-                        : questStatistics.topCompleted(current.leaderboardSize(), current.profileVisibilityDefault());
-        gatherLeaderboards(current)
+                        : questStatistics.topCompleted(current.leaderboardSize(), current.profileVisibilityDefault(),
+                        lifetimeExcluded);
+        CompletableFuture<PeriodBoards> periods = gatherPeriods(current, stats);
+        gatherLeaderboards(current, lifetimeExcluded)
                 .thenCombine(playerNames, (leaderboards, names) -> Map.entry(leaderboards, names))
-                .thenCombine(questRows, (boardsAndNames, quests) -> {
-                    var leaderboards = boardsAndNames.getKey();
-                    var names = boardsAndNames.getValue();
+                .thenCombine(questRows, (boardsAndNames, quests) -> Map.entry(boardsAndNames, quests))
+                .thenCombine(periods, (gathered, periodBoards) -> {
+                    var leaderboards = gathered.getKey().getKey();
+                    var names = gathered.getKey().getValue();
+                    var quests = gathered.getValue();
                     Map<String, Object> snapshot =
                             buildSnapshot(current, playerCount, maxPlayers, names, catalog, leaderboards);
-                    snapshot.put("statistics", statistics(leaderboards, quests));
+                    snapshot.put("statistics", statistics(leaderboards, quests, periodBoards));
                     snapshot.put("profiles", profiles(leaderboards, quests));
                     return snapshot;
                 })
@@ -191,14 +219,71 @@ public final class WebSnapshotWriter implements PluginService {
     }
 
     private CompletableFuture<Map<SkillType, List<ProgressionRepository.LeaderboardRow>>> gatherLeaderboards(
-            WebExportConfig current) {
-        Map<SkillType, List<ProgressionRepository.LeaderboardRow>> result = new EnumMap<>(SkillType.class);
+            WebExportConfig current, Set<UUID> excluded) {
+        Map<SkillType, List<ProgressionRepository.LeaderboardRow>> result =
+                java.util.Collections.synchronizedMap(new EnumMap<>(SkillType.class));
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (SkillType skill : current.leaderboardSkills()) {
-            futures.add(progressionRepository.topPlayers(skill, current.leaderboardSize(), current.profileVisibilityDefault())
+            futures.add(progressionRepository.topPlayers(skill, current.leaderboardSize(),
+                            current.profileVisibilityDefault(), excluded)
                     .thenAccept(rows -> result.put(skill, rows)));
         }
-        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).thenApply(ignored -> result);
+        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                .thenApply(ignored -> new EnumMap<>(result));
+    }
+
+    /** Classements d'une saison ou d'un événement, tels qu'exportés. */
+    record PeriodBoard(StatPeriod period, String status, Map<String, List<StatisticsRepository.RankedRow>> boards) {
+    }
+
+    /** La saison montrée (ou {@code null}) et tous les événements définis. */
+    record PeriodBoards(PeriodBoard season, List<PeriodBoard> events) {
+        static final PeriodBoards NONE = new PeriodBoards(null, List.of());
+    }
+
+    private CompletableFuture<PeriodBoards> gatherPeriods(WebExportConfig current, StatisticsDefinition stats) {
+        if (statisticsService == null || statisticsRepository == null) {
+            return CompletableFuture.completedFuture(PeriodBoards.NONE);
+        }
+        Instant now = statisticsService.now();
+        CompletableFuture<PeriodBoard> season = stats.currentSeason(now)
+                .map(period -> periodBoard(current, stats, period, now))
+                .orElse(CompletableFuture.completedFuture(null));
+        List<CompletableFuture<PeriodBoard>> events = stats.events().stream()
+                .map(period -> periodBoard(current, stats, period, now)).toList();
+        return season.thenCombine(CompletableFuture.allOf(events.toArray(CompletableFuture[]::new)),
+                (seasonBoard, ignored) -> new PeriodBoards(seasonBoard,
+                        events.stream().map(CompletableFuture::join).toList()));
+    }
+
+    /**
+     * Une période programmée n'a pas encore de classement ; une période archivée se lit dans son
+     * archive figée ; sinon le classement est calculé sur la fenêtre du journal.
+     */
+    private CompletableFuture<PeriodBoard> periodBoard(WebExportConfig current, StatisticsDefinition stats,
+                                                       StatPeriod period, Instant now) {
+        StatPeriod.Status status = period.status(now);
+        boolean archived = statisticsService.isArchived(period.id());
+        String wireStatus = archived ? "ARCHIVED" : status.name();
+        Set<UUID> excluded = stats.excludedFrom(period.id());
+        Map<String, List<StatisticsRepository.RankedRow>> boards =
+                java.util.Collections.synchronizedMap(new LinkedHashMap<>());
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (String metricId : period.metrics()) {
+            StatMetric metric = StatMetric.find(metricId).orElseThrow();
+            boards.put(metricId, List.of());
+            if (status == StatPeriod.Status.SCHEDULED) {
+                continue;
+            }
+            CompletableFuture<List<StatisticsRepository.RankedRow>> rows = archived
+                    ? statisticsRepository.archivedTop(period.id(), metric, current.leaderboardSize(),
+                    current.profileVisibilityDefault(), excluded)
+                    : statisticsRepository.liveTop(period, metric, current.leaderboardSize(),
+                    current.profileVisibilityDefault(), excluded, stats.excludedXpReasons());
+            futures.add(rows.thenAccept(list -> boards.put(metricId, list)));
+        }
+        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                .thenApply(ignored -> new PeriodBoard(period, wireStatus, new LinkedHashMap<>(boards)));
     }
 
     /**
@@ -281,34 +366,71 @@ public final class WebSnapshotWriter implements PluginService {
         return root;
     }
 
-    /**
-     * Statistiques par portée (#54). Aujourd'hui seule {@code lifetime} est alimentée, depuis les
-     * sources de vérité existantes (XP des pistes, quêtes terminées) ; {@code season} et
-     * {@code events} sont présents et vides, pour que le format ne change pas le jour où ils le
-     * seront. Aucune valeur n'est inventée.
-     */
+    /** Statistiques sans saison ni événement (aucun {@code statistics.yml}). */
     static Map<String, Object> statistics(Map<SkillType, List<ProgressionRepository.LeaderboardRow>> leaderboards,
                                           List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row> quests) {
+        return statistics(leaderboards, quests, PeriodBoards.NONE);
+    }
+
+    /**
+     * Statistiques par portée (#54) : le contrat lu par le portail. {@code metrics} décrit chaque
+     * métrique (agrégation, sens, portées calculables) ; {@code lifetime} vient des sources de
+     * vérité (XP des pistes, quêtes terminées) ; {@code season} et {@code events} des fenêtres du
+     * journal d'XP ou de leur archive figée. Chaque ligne porte un rang (ex-aequo au même rang).
+     * Aucune valeur n'est inventée, aucun UUID n'est écrit.
+     */
+    static Map<String, Object> statistics(Map<SkillType, List<ProgressionRepository.LeaderboardRow>> leaderboards,
+                                          List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row> quests,
+                                          PeriodBoards periods) {
         Map<String, Object> lifetime = new LinkedHashMap<>();
         for (Map.Entry<SkillType, List<ProgressionRepository.LeaderboardRow>> entry : leaderboards.entrySet()) {
-            List<Map<String, Object>> rows = new ArrayList<>();
-            for (ProgressionRepository.LeaderboardRow row : entry.getValue()) {
-                rows.add(metricRow(row.name(), row.totalXp()));
-            }
-            lifetime.put("RPG_XP_" + entry.getKey().name(), rows);
+            lifetime.put(StatMetric.xpMetricId(entry.getKey()), rankedRows(StatisticsRepository.rank(
+                    entry.getValue().stream().map(ProgressionRepository.LeaderboardRow::name).toList(),
+                    entry.getValue().stream().map(ProgressionRepository.LeaderboardRow::totalXp).toList())));
         }
-        List<Map<String, Object>> questBoard = new ArrayList<>();
-        for (var row : quests) {
-            questBoard.add(metricRow(row.name(), row.completed()));
-        }
-        lifetime.put("QUESTS_COMPLETED", questBoard);
+        lifetime.put(StatMetric.QUESTS_COMPLETED, rankedRows(StatisticsRepository.rank(
+                quests.stream().map(com.lodygames.rpgquest.database.QuestStatisticsRepository.Row::name).toList(),
+                quests.stream().map(com.lodygames.rpgquest.database.QuestStatisticsRepository.Row::completed).toList())));
 
+        List<String> scopes = new ArrayList<>(List.of(StatScope.LIFETIME.wireName()));
+        if (periods.season() != null) {
+            scopes.add(StatScope.SEASON.wireName());
+        }
+        if (!periods.events().isEmpty()) {
+            scopes.add(StatScope.EVENT.wireName());
+        }
         Map<String, Object> statistics = new LinkedHashMap<>();
-        statistics.put("scopes", List.of("lifetime"));
+        statistics.put("scopes", scopes);
+        statistics.put("metrics", StatMetric.catalog().stream().map(StatMetric::describe).toList());
         statistics.put("lifetime", lifetime);
-        statistics.put("season", null);
-        statistics.put("events", List.of());
+        statistics.put("season", periods.season() == null ? null : period(periods.season()));
+        statistics.put("events", periods.events().stream().map(WebSnapshotWriter::period).toList());
         return statistics;
+    }
+
+    private static Map<String, Object> period(PeriodBoard board) {
+        Map<String, Object> period = new LinkedHashMap<>();
+        period.put("id", board.period().id());
+        period.put("name", board.period().name());
+        period.put("start", board.period().start().toString());
+        period.put("end", board.period().end().toString());
+        period.put("status", board.status());
+        Map<String, Object> boards = new LinkedHashMap<>();
+        for (Map.Entry<String, List<StatisticsRepository.RankedRow>> entry : board.boards().entrySet()) {
+            boards.put(entry.getKey(), rankedRows(entry.getValue()));
+        }
+        period.put("leaderboards", boards);
+        return period;
+    }
+
+    private static List<Map<String, Object>> rankedRows(List<StatisticsRepository.RankedRow> rows) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (StatisticsRepository.RankedRow row : rows) {
+            Map<String, Object> map = metricRow(row.name(), row.value());
+            map.put("rank", row.rank());
+            result.add(map);
+        }
+        return result;
     }
 
     private static Map<String, Object> metricRow(String name, long value) {

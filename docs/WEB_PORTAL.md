@@ -1,7 +1,7 @@
 # Portail communautaire RPGQuest (issues #52 à #57)
 
 Document de cadrage et d'état. Il décrit ce qui **existe dans le code** et ce qui est **conçu mais
-pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : 15/10/2026 (#53, comptes joueurs et liaison Minecraft).
+pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : 15/10/2026 (#54, modèle de statistiques lifetime / saison / événement).
 
 ## 1. Cadrage (#52)
 
@@ -27,7 +27,8 @@ pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : 15/10/
   (`accounts-enabled=false`) tant que le propriétaire n'a pas tranché #55 ;
 - pas de MySQL : la bascule #42 **n'est pas présumée faite**. Tout fonctionne sur l'instantané
   produit depuis SQLite ; le jour où la base change, seul l'exporteur change ;
-- pas de saisons ni d'événements actifs (le format les prévoit, le moteur est conçu en §6).
+- pas de saison ni d'événement définis : le modèle et le calcul existent (§4, `statistics.yml`), aucun
+  fichier n'est installé sur DEV ; le moteur d'événements complet (#57) est conçu en §6.
 
 ### Feuille de route, dans l'ordre des dépendances
 
@@ -43,7 +44,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **attend la décision** du propriétaire (#55) ; seuls les joueurs ayant tapé `/profile web public` seraient publiés |
 | 5 | V1 publique : actualités, profils, premiers classements | #56 | pages faites ; actualités éditables et publication à faire après 3 et 4 |
 | 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | **fait**, désactivé (`accounts-enabled=false`) ; export et suppression de compte à faire avant ouverture ; validation navigateur + jeu à faire |
-| 7 | Saisons, puis moteur d'événements | #54, #57 | conçus (§4, §6), non réalisés |
+| 7 | Saisons et événements de classement, puis moteur d'événements | #54, #57 | modèle **fait** (§4 : fenêtres du journal d'XP, archivage figé, exclusions, `statistics.yml`) ; moteur #57 conçu (§6), non réalisé |
 | 8 | Entitlements : récompenses remises par le plugin | #422 | à spécifier, après #53 et #57 |
 | — | Premium (VIP, pass, boutique) | — | **hors périmètre** : après cadrage juridique et règles Minecraft ; `store-enabled=false` |
 
@@ -108,44 +109,136 @@ sur le compte, l'unicité de l'UUID restant). La liaison fournira l'identité de
 
 ## 3. Instantané — format v2 (#54, #56) — fait
 
-`schemaVersion: 2` ajoute deux clés ; toutes les clés de la v1 sont inchangées.
+`schemaVersion: 2` ajoute deux clés ; toutes les clés de la v1 sont inchangées. Les ajouts de #54
+(`metrics`, `rank`, contenu de `season` et `events`) sont additifs : la version ne change pas.
 
 ```json
 "statistics": {
-  "scopes": ["lifetime"],
+  "scopes": ["lifetime", "season", "event"],
+  "metrics": [
+    {"id": "RPG_XP_COMBAT", "aggregation": "SUM", "order": "DESC", "scopes": ["lifetime", "season", "event"]},
+    {"id": "QUESTS_COMPLETED", "aggregation": "SUM", "order": "DESC", "scopes": ["lifetime"]}
+  ],
   "lifetime": {
-    "RPG_XP_GLOBAL":   [{"name": "Alice", "value": 4500}],
-    "QUESTS_COMPLETED":[{"name": "Alice", "value": 12}]
+    "RPG_XP_GLOBAL":   [{"name": "Alice", "value": 4500, "rank": 1}],
+    "QUESTS_COMPLETED":[{"name": "Alice", "value": 12, "rank": 1}]
   },
-  "season": null,
-  "events": []
+  "season": {
+    "id": "season_01", "name": "Saison 1",
+    "start": "2026-11-01T00:00:00Z", "end": "2027-02-01T00:00:00Z",
+    "status": "ACTIVE",
+    "leaderboards": {"RPG_XP_GLOBAL": [{"name": "Alice", "value": 300, "rank": 1}]}
+  },
+  "events": [
+    {"id": "zombie_weekend_2026_11", "name": "Week-end des zombies",
+     "start": "2026-11-07T18:00:00Z", "end": "2026-11-09T22:00:00Z",
+     "status": "SCHEDULED", "leaderboards": {"RPG_XP_COMBAT": []}}
+  ]
 },
 "profiles": [
   {"name": "Alice", "skills": {"GLOBAL": 4500}, "questsCompleted": 12}
 ]
 ```
 
-## 4. Modèle de statistiques (#54)
+`season` vaut `null` et `events` `[]` tant qu'aucun `statistics.yml` n'existe. `status` :
+`SCHEDULED` (pas encore commencée, classements vides), `ACTIVE`, `ENDED` (terminée, pas encore
+figée), `ARCHIVED` (figée). Côté portail, `privacy.PublicPlayerData` relaie ces clés par liste
+blanche ; aucune page ne les affiche encore (#56).
+
+## 4. Modèle de statistiques (#54) — fait
 
 Une statistique = **(métrique, portée, joueur) → valeur**, calculée **depuis une source de vérité
-existante**, jamais depuis un compteur parallèle.
+existante**, jamais depuis un compteur parallèle. Le portail n'en calcule aucune : il affiche ce que
+le plugin exporte.
 
-| Métrique | Source de vérité | Portée disponible |
+### Métriques — `stats.StatMetric`
+
+Chaque métrique déclare son agrégation (`SUM`, ou `MAX` pour un futur meilleur score), son sens de
+classement (`DESC`, ou `ASC` pour un futur chrono) et les portées **réellement calculables** avec
+sa source. Ajouter une métrique = une entrée du catalogue et sa requête, sans migration.
+
+| Métrique | Source de vérité | Portées |
 | --- | --- | --- |
-| `RPG_XP_<PISTE>` | `player_skills.total_xp` (XP RPG, #183 — pas les niveaux vanilla) | lifetime |
-| `QUESTS_COMPLETED` | `quest_progress.state = COMPLETED` | lifetime |
-| kills par espèce, blocs minés, temps de jeu… | à créer dans le plugin (événements) | — |
+| `RPG_XP_<PISTE>` (`GLOBAL`, `COMBAT`, `MINING`, `FARMING`, `FISHING`, `EXPLORATION`) | lifetime : `player_skills.total_xp` ; fenêtres : `xp_grants` (journal horodaté, dédupliqué par action de jeu) | lifetime, season, event |
+| `QUESTS_COMPLETED` | `quest_progress.state = COMPLETED` (dernier état seulement, pas d'historique) | lifetime |
+| kills par espèce, blocs minés, temps de jeu, boss… | à créer : un journal d'événements de jeu horodaté côté plugin, écrit **une fois** et partagé quêtes/classements | — |
 
-Portées :
+L'XP RPG (#183) n'est ni le niveau vanilla ni une statistique Minecraft. Une métrique sans journal
+horodaté est refusée sur une saison ou un événement (`statistics.yml` invalide) : on ne publie pas
+une valeur approximative.
 
-- `lifetime` : depuis toujours. Seule alimentée aujourd'hui ;
-- `season` : une période nommée `[début, fin)`. Les valeurs de saison se calculeront **par
-  différence** de deux relevés `lifetime` (début et fin), sans nouvelle table de gameplay ;
-- `events` : même principe, sur la fenêtre et le filtre d'un événement (§6).
+### Portées
 
-Les métriques absentes du tableau n'existent pas encore : elles demandent un journal d'événements
-côté plugin (kills, minage…), qui doit être écrit **une fois** et servir aussi bien aux quêtes
-qu'aux classements.
+- `lifetime` : depuis toujours, depuis les totaux existants ;
+- `season` : une fenêtre `[début, fin)` en UTC. **Une seule saison à la fois** (chevauchement refusé
+  au chargement). La valeur d'un joueur = somme de ses octrois `xp_grants` dans la fenêtre ;
+- `event` : même calcul, sur la fenêtre de l'événement. Les événements **peuvent se chevaucher** :
+  la même action compte dans chacun, sans compteur dédié.
+
+### Cohérence et idempotence
+
+- **Pas de double comptage** : `xp_grants` est dédupliqué par (joueur, piste, id d'action de jeu) ;
+  un retry ou une reconnexion ne crée pas de seconde ligne, donc pas de second point de classement ;
+- **Opérations admin exclues** : les octrois de raison `admin_grant` (`/skills admin grant`) ne comptent
+  jamais dans une saison ou un événement (`excluded-xp-reasons`) ; `/skills admin set` n'écrit pas
+  dans le journal. Le `lifetime`, lui, lit les totaux : un compte de test s'en retire par une
+  **exclusion** (ci-dessous) ;
+- **Exclusions de modération** : par UUID (jamais par pseudo), pour toutes les portées (`*`), le
+  `lifetime` ou une période. Appliquées **à la lecture**, y compris sur les archives : un tricheur
+  découvert après coup disparaît aussi des classements figés ;
+- **Bornes horaires** : dates obligatoirement avec fuseau (`Z` ou `+01:00`), à la seconde entière,
+  fin exclue. Un octroi à `fin` exacte appartient à la période suivante ;
+- **Égalités** : rang « compétition » (1, 1, 3) ; ordre d'affichage des ex-aequo par pseudo puis UUID,
+  stable d'un export à l'autre ;
+- **Confidentialité** : la visibilité `/profile web` (#55) s'applique à toutes les portées.
+
+### Archivage — `stats.StatisticsService`
+
+Toutes les minutes, hors du thread principal, le plugin relit `statistics.yml` s'il a changé et
+**fige** chaque période terminée (`stat_period_archives`, `stat_period_results`, migration V39).
+L'archivage est idempotent (clé primaire sur la période, même transaction que les résultats), ne
+dépend pas de `web-export.enabled`, et survit à un reset de joueur ou à une modification ultérieure
+de la définition. Un serveur arrêté à la fin d'une période l'archive au démarrage suivant : seuls
+les octrois horodatés dans la fenêtre comptent, l'archive est donc la même.
+
+### Performance
+
+Une fenêtre se lit par l'index `idx_xp_grants_skill_created (skill, created_at)` (V39) : un export
+ne balaie jamais tout le journal. Test automatisé : 50 000 octrois, 500 joueurs, top 10 calculé
+largement sous 2 s sur SQLite. Une période archivée se lit dans ses résultats figés.
+
+### Fichier `plugins/RPGQuest/statistics.yml`
+
+Absent par défaut (aucune saison, aucun événement, aucune exclusion). Invalide → **aucune** période
+appliquée et erreurs dans la console, le plugin démarre normalement. Exemple :
+
+```yaml
+seasons:
+  - id: season_01                 # minuscules, chiffres, _ (64 max) ; unique saisons + événements
+    name: "Saison 1"
+    start: "2026-11-01T00:00:00+01:00"
+    end: "2027-02-01T00:00:00+01:00"
+    metrics: [RPG_XP_GLOBAL, RPG_XP_COMBAT, RPG_XP_MINING]
+events:
+  - id: zombie_weekend_2026_11
+    name: "Week-end des zombies"
+    start: "2026-11-07T18:00:00Z"
+    end: "2026-11-09T22:00:00Z"
+    metrics: [RPG_XP_COMBAT]
+excluded-xp-reasons: [admin_grant]  # défaut si la clé est absente
+exclusions:
+  - player: 00000000-0000-0000-0000-000000000000   # UUID du compte de test
+    scopes: ["*"]                                   # *, lifetime, ou des id de périodes
+```
+
+### Hors périmètre, prévu
+
+- **Plusieurs serveurs** : `xp_grants` n'a pas de colonne serveur ; le jour venu, une colonne
+  `server_id` et un filtre dans la fenêtre suffisent, le format exporté ne change pas ;
+- **Position personnelle** hors top N et `GET /players/{uuid}/stats` : demandent l'identité du
+  joueur connecté (#53) ; même requête de fenêtre, filtrée sur un joueur ;
+- **Guildes**, récompenses de classement, anti-triche complet : #57 / #422 ;
+- **Gestion en jeu des exclusions** (commande ou PlugAdmin) : aujourd'hui, édition du fichier.
 
 ## 5. Confidentialité et mineurs (#55)
 
@@ -179,8 +272,7 @@ Un événement est **une définition déclarative** (YAML, comme les quêtes), j
 ```yaml
 id: zombie_weekend
 name: "Week-end des zombies"
-metric: ENTITY_KILL          # une métrique du §4
-filter: {entity: ZOMBIE}
+metric: RPG_XP_COMBAT        # une métrique du §4 (ENTITY_KILL + filtre attendra son journal)
 ranking: HIGHEST_TOTAL       # HIGHEST_TOTAL | FIRST_TO_REACH | COMMUNITY_GOAL
 start: 2026-11-07T18:00:00Z
 end: 2026-11-09T22:00:00Z

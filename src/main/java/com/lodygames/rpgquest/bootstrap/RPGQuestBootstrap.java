@@ -571,6 +571,12 @@ public final class RPGQuestBootstrap {
                 new com.lodygames.rpgquest.database.QuestStatisticsRepository(databaseService.databaseManager()));
         // Issue #55 : la liste des connectés respecte « /profile web » comme les classements.
         webSnapshotWriter.setVariables(variableRepository);
+        // Issue #54 : saisons et événements (statistics.yml), figés à leur fin même sans export web.
+        var statisticsRepository = new com.lodygames.rpgquest.database.StatisticsRepository(databaseService.databaseManager());
+        var statisticsService = new com.lodygames.rpgquest.stats.StatisticsService(plugin,
+                plugin.getDataFolder().toPath().resolve("statistics.yml"), statisticsRepository, plugin.getSLF4JLogger());
+        registry.start(statisticsService);
+        webSnapshotWriter.setStatistics(statisticsService, statisticsRepository);
         registry.start(webSnapshotWriter);
 
         // Bridge d'administration HTTP (issue #37) — désactivé sauf RPGQUEST_WEB_ADMIN_ENABLED=true

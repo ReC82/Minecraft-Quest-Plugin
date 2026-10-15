@@ -291,7 +291,8 @@ class MySqlDialectTranslationTest {
             "village_centers.name", "village_centers.world", "wallets.updated_at",
             "waypoint_discoveries.discovered_at", "waypoints.biome_key", "waypoints.created_at",
             "waypoints.facing", "waystone_discoveries.discovered_at", "waystones.created_at", "waystones.name",
-            "xp_grants.created_at");
+            "xp_grants.created_at", "stat_period_archives.scope", "stat_period_archives.start_at",
+            "stat_period_archives.end_at", "stat_period_archives.frozen_at");
 
     /** DDL MariaDB produit par chaque migration réelle (version → instructions exécutées). */
     private java.util.Map<Integer, java.util.List<String>> realMigrationDdl() throws Exception {

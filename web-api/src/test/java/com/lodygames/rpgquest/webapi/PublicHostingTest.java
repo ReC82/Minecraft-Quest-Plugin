@@ -150,4 +150,16 @@ class PublicHostingTest {
         assertEquals(200, get("/", "203.0.113.2").statusCode(), "un autre visiteur garde son propre quota");
         assertEquals(200, get("/", "pas-une-ip").statusCode(), "en-tête invalide : repli sur l'adresse du proxy");
     }
+
+    @Test
+    void headRequestGetsHeadersWithoutBody() throws Exception {
+        startWithDefaults(60);
+
+        HttpResponse<String> response = client.send(HttpRequest.newBuilder(
+                        URI.create("http://127.0.0.1:" + port + "/health"))
+                .method("HEAD", HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode());
+        assertEquals("", response.body());
+    }
 }

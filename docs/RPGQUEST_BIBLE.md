@@ -113,7 +113,7 @@ But : héberger le site public https://lodyquests.lodylands.com (module `web-api
 Commandes : `sudo scripts/web-portal/install.sh` (installation idempotente, `--tls` pour certbot), `scripts/web-portal/deploy.sh` (mise à jour du code, retour automatique si `/health` échoue), `scripts/web-portal/rollback.sh app|nginx-off|disable|full`.
 Fichiers : service `lodyquests-portal.service` (utilisateur `lodyquests-web`, `127.0.0.1:8092`, `MemoryMax=256M`), configuration `/etc/lodyquests-portal/web-api.properties`, secrets `/etc/lodyquests-portal/portal.env` (hors Git).
 Résultat attendu : `curl -s http://127.0.0.1:8092/health` → `{"status":"UP",…,"playerDataPublic":false,"store":false}`.
-À savoir : aucun pseudo publié tant que `player-data-public=false` (décision #55) ; aucune boutique ; aucune écriture SQL. Détail : [WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).
+À savoir : aucun pseudo publié tant que `player-data-public=false` (décision #55) ; aucune boutique ; aucune écriture SQL. Comptes joueurs fermés tant qu'aucune clé `accounts.age-threshold.<PAYS>` n'est configurée (politique d'âge, #55). Confidentialité et registre des données : [PRIVACY.md](PRIVACY.md). Détail : [WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).
 
 ---
 
@@ -5251,7 +5251,7 @@ Un marchand n'a **aucun lien direct à une entité PNJ** — il ne s'ouvre que v
 | Commande | Type | Permission | Effet |
 |---|---|---|---|
 | `/profile` | Joueur | `rpgquest.progression` | Une ligne par piste (`Global, Combat, Minage, Agriculture, Pêche, Exploration`) — niveau uniquement. |
-| `/profile web [public\|prive]` | Joueur | `rpgquest.progression` | Visibilité sur le portail web (#55) : sans argument, affiche le réglage ; `prive` retire le joueur de tous les classements et profils publics dès l'export suivant (variable `WEB_PROFILE_HIDDEN`, persistante par UUID) ; `public` annule. Voir [WEB_PORTAL.md](WEB_PORTAL.md). |
+| `/profile web [public\|prive]` | Joueur | `rpgquest.progression` | Visibilité sur le portail web (#55) : sans argument, affiche le réglage (et s'il vient du défaut du serveur) ; `public` = accord explicite, le joueur peut apparaître dans les classements, profils et la liste des connectés ; `prive` l'en retire dès l'export suivant (variable `WEB_PROFILE_HIDDEN`, persistante par UUID). Sans choix, `web-export.profile-visibility-default` s'applique : `private` par défaut, personne n'est publié. Voir [PRIVACY.md](PRIVACY.md). |
 | `/skills` | Joueur | `rpgquest.progression` | Détail par compétence : niveau + XP dans le niveau courant/XP requise pour le suivant (ou « niveau maximal »). |
 | `/skills admin grant\|set <joueur> <compétence> <montant>` | Admin | `rpgquest.admin` | `grant` passe par le pipeline normal (dédup + mirroir `GLOBAL`) ; `set` fixe l'XP totale directement, sans dédup ni mirroir. |
 

@@ -37,9 +37,9 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | --- | --- | --- | --- |
 | 0 | Socle d'hébergement AWS : service, nginx, `/health`, déploiement, rollback | #52 | **fait** — en ligne en HTTPS depuis le 15/10 (certificat Let's Encrypt ECDSA, échéance 13/01/2027, renouvellement automatique certbot) |
 | 1 | Instantané v2 : statistiques par portée, profils publics | #54, #56 | **fait** |
-| 2 | Retrait du profil par le joueur, page confidentialité | #55 | **fait** (socle) ; politique, mineurs et visibilité par défaut **à décider** par le propriétaire |
+| 2 | Confidentialité : profils privés par défaut, liste blanche, politique d'âge configurable, registre des données | #55 | **fait** (garde-fous, [PRIVACY.md](PRIVACY.md)) ; pays, seuils d'âge, durées de conservation et textes juridiques **à décider** par le propriétaire après revue juridique |
 | 3 | Acheminer l'instantané du serveur Minecraft vers AWS | #421 | **à faire** — sans lui, le portail reste en mode dégradé |
-| 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **bloqué** par la décision #55 |
+| 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **attend la décision** du propriétaire (#55) ; seuls les joueurs ayant tapé `/profile web public` seraient publiés |
 | 5 | V1 publique : actualités, profils, premiers classements | #56 | pages faites ; actualités éditables et publication à faire après 3 et 4 |
 | 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | conçu (§2), non réalisé |
 | 7 | Saisons, puis moteur d'événements | #54, #57 | conçus (§4, §6), non réalisés |
@@ -108,23 +108,28 @@ qu'aux classements.
 
 ## 5. Confidentialité et mineurs (#55)
 
+Registre complet des données, règles d'âge et décisions à prendre : [PRIVACY.md](PRIVACY.md).
+
 Fait :
 
 - l'instantané ne contient **ni UUID, ni IP, ni position, ni inventaire, ni date de connexion** ;
-- un joueur se retire du portail en jeu : `/profile web prive` (variable persistante
-  `WEB_PROFILE_HIDDEN`, par UUID). Il disparaît de **tous** les classements et profils dès l'export
-  suivant — le filtre est appliqué dans les requêtes SQL d'export (`player.PublicProfilePolicy`),
-  donc aucune donnée le concernant n'atteint l'instantané. `/profile web public` annule,
-  `/profile web` affiche le réglage ;
+- profils **privés par défaut** (`web-export.profile-visibility-default: private`) : un joueur
+  n'apparaît dans les classements, les profils et la liste des connectés qu'après
+  `/profile web public`. `/profile web prive` le retire dès l'export suivant ; `/profile web`
+  affiche le réglage. Le filtre est appliqué dans les requêtes SQL d'export
+  (`player.PublicProfilePolicy`) : aucune donnée d'un joueur non visible n'atteint l'instantané ;
+- côté portail, une **liste blanche** (`privacy.PublicPlayerData`) ne laisse sortir de l'API que
+  `name`, `skills`, `questsCompleted`, `totalXp`, `value` ; aucun pseudo tant que
+  `player-data-public=false` ;
+- **politique d'âge configurable** (`privacy.AgePolicy`, clés `accounts.*`) : sans pays configuré,
+  aucun compte ne peut s'ouvrir ; statut de consentement parental représentable
+  (`privacy.ParentalConsentStatus`), compte limité tant qu'il manque ;
 - un pseudo inconnu et un pseudo masqué reçoivent **la même** réponse (« aucun profil public ») ;
-- page `/confidentialite` décrivant exactement ce comportement.
+- page `/confidentialite` décrivant exactement ce comportement et l'état réel de la configuration.
 
-À trancher avant toute ouverture publique (décision du propriétaire, pas du code) :
-
-- profil **visible par défaut** (comportement actuel, hérité des classements existants) ou
-  **masqué par défaut** avec consentement explicite ;
-- âge minimal et consentement parental selon les pays visés ; droits d'accès et d'effacement une
-  fois les comptes ouverts ; durée de conservation des comptes inactifs.
+À trancher avant toute ouverture publique (décision du propriétaire, après revue juridique) : pays
+et seuils d'âge, durées de conservation, prestataire e-mail, textes (confidentialité, conditions,
+information des mineurs, règlements de concours) — liste dans [PRIVACY.md §7](PRIVACY.md).
 
 ## 6. Moteur d'événements et classements temporaires (#57) — conçu, non réalisé
 

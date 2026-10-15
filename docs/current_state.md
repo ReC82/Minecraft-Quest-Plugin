@@ -140,6 +140,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   15/10 (#52 : `lodyquests-portal.service`, `/health`, `scripts/web-portal/`), sans pseudo publié
 >   (`player-data-public=false`) ni boutique ; `web-export` désactivé sur DEV et pas encore acheminé
 >   vers AWS (#421). Comptes (#53) et événements (#57) : conçus, non réalisés.
+>   Confidentialité (#55) : profils **privés par défaut** (`web-export.profile-visibility-default`,
+>   accord par `/profile web public`), liste blanche des champs dans l'API, politique d'âge
+>   configurable fermée par défaut (`accounts.*`), registre des données `docs/PRIVACY.md` ;
+>   décisions juridiques à prendre par le propriétaire.
 > - **Discord** : analyse seulement (`docs/DISCORD_PANEL.md`, #296).
 
 - **Quêtes** — définitions YAML, 10 types d'objectifs, prérequis, récompenses, progression

@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Portail : profils web privés par défaut, liste blanche, politique d'âge (#55)
+
+### Changement
+
+Plugin : nouvelle clé `web-export.profile-visibility-default` (`private` par défaut). Un joueur
+n'est publié dans l'instantané web (classements, profils, liste des connectés) qu'après
+`/profile web public`. La liste des connectés respecte aussi `/profile web prive`. `/profile web`
+indique si le réglage vient du défaut du serveur. Portail (AWS) : liste blanche des champs de
+`/api/profiles|leaderboards|players`, aucun pseudo dans l'API tant que `player-data-public=false`,
+politique d'âge `accounts.*` (comptes fermés sans configuration), page `/confidentialite` à jour.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest seulement. La nouvelle clé est ajoutée par le compléteur de
+`config.yml` au démarrage ; ne pas téléverser `config.yml`. Aucune migration de base. Effet
+visible nul tant que `web-export.enabled=false` (état actuel sur DEV), hors messages de
+`/profile web`. Portail : `scripts/web-portal/deploy.sh` (aucune clé `accounts.*` à ajouter :
+comptes fermés).
+
+### Sauvegarde préalable
+
+JAR, `data.db` et `config.yml` datés par `scripts/deploy-verygames.sh` ; release précédente du
+portail conservée par `scripts/web-portal/deploy.sh`.
+
+### Validation
+
+Tests automatisés plugin et web-api ; TC-325 — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Réinstaller le JAR précédent (la clé ajoutée est ignorée par un ancien JAR) ;
+`scripts/web-portal/rollback.sh app` pour le portail.
+
+---
+
 ## 2026-10-15 - PlugAdmin : la vue pack ne se perd plus après « Vérifier » (#427, correctif de validation)
 
 ### Changement

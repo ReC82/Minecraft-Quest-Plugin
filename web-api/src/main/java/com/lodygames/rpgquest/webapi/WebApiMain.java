@@ -29,29 +29,23 @@ public final class WebApiMain {
         WebApiConfig config = WebApiConfigLoader.load();
         SnapshotStore snapshotStore = new SnapshotStore(config.snapshotFile(), config.snapshotMaxAgeSeconds(), LOGGER);
 
-        ProductCatalog catalog = ProductCatalog.load(config.productsFile());
-        StoreDatabase storeDatabase = new StoreDatabase(config.storeDatabaseFile());
-        try {
-            storeDatabase.initialize().get(STORE_DB_INIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new IOException("Échec d'initialisation de store.db : " + config.storeDatabaseFile(), e);
-        }
-        StoreRepository storeRepository = new StoreRepository(storeDatabase);
-        SandboxPaymentProvider paymentProvider = new SandboxPaymentProvider(config.publicBaseUrl(), config.webhookSecret());
-        StoreService storeService = new StoreService(catalog, storeRepository, paymentProvider, config.webhookSecret());
+        // #52 : la boutique (mission étape 22) n'entre pas dans le portail communautaire V1 — sans
+        // store-enabled=true, ni store.db ni products.json ne sont ouverts.
+        StoreDatabase storeDatabase = config.storeEnabled() ? new StoreDatabase(config.storeDatabaseFile()) : null;
+        StoreService storeService = storeDatabase == null ? null : openStore(config, storeDatabase);
 
         HttpServerBootstrap bootstrap = new HttpServerBootstrap(config, snapshotStore, storeService);
         bootstrap.start();
 
-        LOGGER.info(() -> "RPGQuest web-api démarré sur le port " + config.port()
-                + " (snapshot=" + config.snapshotFile() + ", store=" + config.storeDatabaseFile()
-                + ", produits=" + catalog.all().size() + ").");
+        LOGGER.info(() -> "RPGQuest web-api démarré sur " + config.bindAddress() + ":" + config.port()
+                + " (snapshot=" + config.snapshotFile() + ", boutique=" + (storeService != null ? "active" : "désactivée")
+                + ", données joueurs publiques=" + config.playerDataPublic() + ").");
         if (config.authToken() == null || config.authToken().isBlank()) {
             LOGGER.warning(
                     "Aucun jeton d'authentification configuré (" + WebApiConfigLoader.TOKEN_ENV
                             + ") : toutes les requêtes /api/* seront refusées (401).");
         }
-        if (config.webhookSecret() == null || config.webhookSecret().isBlank()) {
+        if (storeService != null && (config.webhookSecret() == null || config.webhookSecret().isBlank())) {
             LOGGER.warning(
                     "Aucun secret de webhook configuré (" + WebApiConfigLoader.WEBHOOK_SECRET_ENV
                             + ") : /store/webhook refusera toutes les notifications de paiement (401).");
@@ -60,7 +54,22 @@ public final class WebApiMain {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOGGER.info("Arrêt de RPGQuest web-api...");
             bootstrap.stop();
-            storeDatabase.shutdown();
+            if (storeDatabase != null) {
+                storeDatabase.shutdown();
+            }
         }, "RPGQuest-WebApi-Shutdown"));
+    }
+
+    private static StoreService openStore(WebApiConfig config, StoreDatabase storeDatabase) throws IOException {
+        ProductCatalog catalog = ProductCatalog.load(config.productsFile());
+        try {
+            storeDatabase.initialize().get(STORE_DB_INIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IOException("Échec d'initialisation de store.db : " + config.storeDatabaseFile(), e);
+        }
+        StoreRepository storeRepository = new StoreRepository(storeDatabase);
+        SandboxPaymentProvider paymentProvider = new SandboxPaymentProvider(config.publicBaseUrl(), config.webhookSecret());
+        LOGGER.info(() -> "Boutique active : " + catalog.all().size() + " produit(s), store=" + config.storeDatabaseFile());
+        return new StoreService(catalog, storeRepository, paymentProvider, config.webhookSecret());
     }
 }

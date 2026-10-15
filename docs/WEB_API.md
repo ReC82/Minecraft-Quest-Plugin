@@ -81,6 +81,17 @@ pour les clés disponibles : `port`, `snapshot-file`,
 `snapshot-max-age-seconds`, `rate-limit-per-minute`, `site-title`), ou un
 chemin fixé par `RPGQUEST_WEB_API_CONFIG`.
 
+Clés d'hébergement public (#52), toutes à défaut **sûr** :
+
+| Clé | Défaut | Effet |
+|---|---|---|
+| `bind-address` | `127.0.0.1` | interface d'écoute ; `0.0.0.0` pour un accès direct sans proxy |
+| `store-enabled` | `false` | n'enregistre les routes boutique (`/store*`, `/api/store/*`) et n'ouvre `store.db` que si `true` |
+| `player-data-public` | `false` | `/joueurs` et `/leaderboards` affichent « pas encore publiée » sans lire l'instantané (#55) |
+| `trust-proxy-headers` | `false` | lit l'IP du visiteur dans `X-Real-IP` — seulement pour une connexion venue de la boucle locale (nginx sur la même machine) — pour que la limite de fréquence reste par visiteur |
+
+Une valeur booléenne autre que `true`/`false` arrête le démarrage avec un message clair.
+
 **Le jeton d'authentification n'est jamais lu depuis ce fichier** —
 uniquement depuis la variable d'environnement `RPGQUEST_WEB_API_TOKEN`, pour
 qu'il ne puisse jamais finir versionné dans Git par erreur (mission point
@@ -89,6 +100,10 @@ reste utilisable) mais `/api/*` refuse systématiquement (401) — fail-closed,
 jamais un accès ouvert par défaut.
 
 ### Déploiement production
+
+Le portail public **lodyquests.lodylands.com** est hébergé sur l'instance AWS : voir
+[deployment/WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md) (service, nginx, `/health`,
+déploiement, rollback). Principes généraux :
 
 -   Servir le plugin RPGQuest et le processus `web-api` sur des machines/
     comptes distincts si possible ; `web-api` n'a besoin que d'un accès en
@@ -123,6 +138,13 @@ numérique, piste de classement inconnue...) renvoie `400`.
 
 Toute route inconnue sous `/api/` renvoie `404` (toujours après vérification
 du jeton).
+
+## Sonde `GET /health` (pas d'authentification)
+
+`{"status":"UP","snapshot":"MISSING|STALE|FRESH","playerDataPublic":false,"store":false}` —
+toujours `200` tant que le processus sert des requêtes (un instantané absent n'est pas une panne).
+Ni donnée joueur, ni chemin, ni configuration sensible. Les requêtes `HEAD` reçoivent les en-têtes
+sans corps.
 
 ## Site public minimal (`/`, pas d'authentification)
 

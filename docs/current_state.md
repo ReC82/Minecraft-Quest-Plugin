@@ -125,8 +125,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > - **PlugAdmin** : OP/DEOP par une seule case (#210) ; import JSON de packs avec PNJ et retour
 >   arrière (#211) ; badge de notifications par compte, lu/non lu (#293).
 > - **Portail web** : instantané v2 (statistiques par portée, profils publics), `/profile web
->   prive|public`, pages `/joueurs` et `/confidentialite` (#52–#57) — code prêt, **non hébergé**,
->   `web-export` désactivé sur DEV. Comptes (#53) et événements (#57) : conçus, non réalisés.
+>   prive|public`, pages `/joueurs` et `/confidentialite` (#52–#57). **Hébergé sur AWS** depuis le
+>   15/10 (#52 : `lodyquests-portal.service`, `/health`, `scripts/web-portal/`), sans pseudo publié
+>   (`player-data-public=false`) ni boutique ; `web-export` désactivé sur DEV et pas encore acheminé
+>   vers AWS (#421). Comptes (#53) et événements (#57) : conçus, non réalisés.
 > - **Discord** : analyse seulement (`docs/DISCORD_PANEL.md`, #296).
 
 - **Quêtes** — définitions YAML, 10 types d'objectifs, prérequis, récompenses, progression

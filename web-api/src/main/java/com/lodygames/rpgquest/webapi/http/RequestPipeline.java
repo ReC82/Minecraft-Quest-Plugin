@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Enchaîne, pour chaque requête : journalisation, limite de fréquence,
@@ -13,14 +14,29 @@ import java.util.Map;
  */
 public final class RequestPipeline {
 
+    /** Adresse IPv4 ou IPv6 littérale ; tout autre contenu de {@code X-Real-IP} est ignoré. */
+    private static final Pattern FORWARDED_IP = Pattern.compile("[0-9A-Fa-f.:]{2,45}");
+
     private final RateLimiter rateLimiter;
     private final AuthFilter authFilter;
     private final AccessLogger accessLogger;
+    private final boolean trustProxyHeaders;
 
     public RequestPipeline(RateLimiter rateLimiter, AuthFilter authFilter, AccessLogger accessLogger) {
+        this(rateLimiter, authFilter, accessLogger, false);
+    }
+
+    /**
+     * @param trustProxyHeaders lire l'IP du visiteur dans {@code X-Real-IP} — uniquement pour une
+     *                          connexion venue de la boucle locale (le nginx de la même machine) ;
+     *                          un client direct ne peut donc pas usurper une autre IP (#52).
+     */
+    public RequestPipeline(RateLimiter rateLimiter, AuthFilter authFilter, AccessLogger accessLogger,
+            boolean trustProxyHeaders) {
         this.rateLimiter = rateLimiter;
         this.authFilter = authFilter;
         this.accessLogger = accessLogger;
+        this.trustProxyHeaders = trustProxyHeaders;
     }
 
     public HttpHandler wrap(boolean requiresAuth, ApiHandler handler) {
@@ -56,6 +72,15 @@ public final class RequestPipeline {
 
     private String clientIp(HttpExchange exchange) {
         var remote = exchange.getRemoteAddress();
-        return remote == null || remote.getAddress() == null ? "unknown" : remote.getAddress().getHostAddress();
+        if (remote == null || remote.getAddress() == null) {
+            return "unknown";
+        }
+        if (trustProxyHeaders && remote.getAddress().isLoopbackAddress()) {
+            String forwarded = exchange.getRequestHeaders().getFirst("X-Real-IP");
+            if (forwarded != null && FORWARDED_IP.matcher(forwarded.trim()).matches()) {
+                return forwarded.trim();
+            }
+        }
+        return remote.getAddress().getHostAddress();
     }
 }

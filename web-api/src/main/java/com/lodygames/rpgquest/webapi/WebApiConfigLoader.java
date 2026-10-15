@@ -48,8 +48,14 @@ public final class WebApiConfigLoader {
         Path storeDatabaseFile = Path.of(properties.getProperty("store-database-file", "store.db"));
         String publicBaseUrl = properties.getProperty("public-base-url", "http://localhost:" + port);
 
+        String bindAddress = properties.getProperty("bind-address", "127.0.0.1").trim();
+        boolean storeEnabled = parseBoolean(properties, "store-enabled", false);
+        boolean playerDataPublic = parseBoolean(properties, "player-data-public", false);
+        boolean trustProxyHeaders = parseBoolean(properties, "trust-proxy-headers", false);
+
         return new WebApiConfig(port, snapshotFile, snapshotMaxAgeSeconds, tokenFromEnv, rateLimitPerMinute, siteTitle,
-                productsFile, storeDatabaseFile, webhookSecretFromEnv, publicBaseUrl);
+                productsFile, storeDatabaseFile, webhookSecretFromEnv, publicBaseUrl, bindAddress, storeEnabled,
+                playerDataPublic, trustProxyHeaders);
     }
 
     private static int parseInt(Properties properties, String key, int defaultValue) {
@@ -63,6 +69,19 @@ public final class WebApiConfigLoader {
             throw new IllegalStateException(
                     "« " + key + " » doit être un entier dans web-api.properties, valeur trouvée : " + raw);
         }
+    }
+
+    private static boolean parseBoolean(Properties properties, String key, boolean defaultValue) {
+        String raw = properties.getProperty(key);
+        if (raw == null) {
+            return defaultValue;
+        }
+        return switch (raw.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new IllegalStateException(
+                    "« " + key + " » doit valoir true ou false dans web-api.properties, valeur trouvée : " + raw);
+        };
     }
 
     private static long parseLong(Properties properties, String key, long defaultValue) {

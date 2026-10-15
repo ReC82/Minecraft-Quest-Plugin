@@ -1,0 +1,58 @@
+# Portail public LodyQuests — web-api RPGQuest (issue #52)
+#
+# Service systemd DÉDIÉ, strictement séparé de PlugAdmin (autre utilisateur, autre port, aucun
+# secret ni compte partagé). Installé par scripts/web-portal/install.sh en
+# /etc/systemd/system/lodyquests-portal.service. L'app tourne depuis /opt/lodyquests-portal/app
+# (sortie de `./gradlew :web-api:installDist`), jamais depuis un arbre Git.
+#
+# Machine partagée de 3,8 Go : JVM bridée (tas 96 Mo) et plafond mémoire cgroup. Au-delà de
+# MemoryMax, le noyau tue CE service seulement ; systemd le relance (Restart=on-failure).
+
+[Unit]
+Description=LodyQuests - portail public (web-api RPGQuest)
+Documentation=https://github.com/ReC82/Minecraft-Quest-Plugin/issues/52
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lodyquests-web
+Group=lodyquests-web
+WorkingDirectory=/var/lib/lodyquests-portal
+EnvironmentFile=-/etc/lodyquests-portal/portal.env
+Environment=RPGQUEST_WEB_API_CONFIG=/etc/lodyquests-portal/web-api.properties
+Environment="WEB_API_OPTS=-Xms32m -Xmx96m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=64m -XX:ReservedCodeCacheSize=32m -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+ExecStart=/opt/lodyquests-portal/app/bin/web-api
+Restart=on-failure
+RestartSec=5
+# Pas de boucle de redémarrage infinie : 5 échecs en 5 minutes → l'unité reste « failed ».
+StartLimitIntervalSec=300
+StartLimitBurst=5
+TimeoutStopSec=20
+SuccessExitStatus=143 130 SIGTERM
+
+# --- Plafonds de ressources (machine partagée) ---
+MemoryHigh=200M
+MemoryMax=256M
+MemorySwapMax=64M
+TasksMax=64
+CPUQuota=50%
+
+# --- Durcissement (le portail n'écrit que dans /var/lib/lodyquests-portal) ---
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lodyquests-portal
+StateDirectory=lodyquests-portal
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

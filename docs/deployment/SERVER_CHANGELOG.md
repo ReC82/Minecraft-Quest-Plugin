@@ -71,6 +71,11 @@ Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release pane
 
 `PENDING MANUAL VALIDATION` : TC-315 (étapes 0 à 2 et 12 pour l'outil).
 
+### Déploiement effectué (2026-10-15 11:53)
+
+JAR `f9bbe57` transféré sur DEV (SHA-256 distant retéléchargé = local `6cc711f3…f86a`, sauvegarde
+`rpgquest-20261015T095221Z-predeploy.jar`), DEV redémarré (RPGQuest actif) ; panel `f9bbe57` servi.
+
 ### Rollback
 
 Réinstaller le JAR et la release panel précédents ; les emplacements créés restent valides (même

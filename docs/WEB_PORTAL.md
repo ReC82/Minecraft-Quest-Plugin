@@ -28,7 +28,8 @@ pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : 15/10/
 - pas de MySQL : la bascule #42 **n'est pas présumée faite**. Tout fonctionne sur l'instantané
   produit depuis SQLite ; le jour où la base change, seul l'exporteur change ;
 - pas de saison ni d'événement définis : le modèle et le calcul existent (§4, `statistics.yml`), aucun
-  fichier n'est installé sur DEV ; le moteur d'événements complet (#57) est conçu en §6.
+  fichier n'est installé sur DEV ; le moteur d'événements (#57, §6) est réalisé mais aucun événement
+  n'est programmé.
 
 ### Feuille de route, dans l'ordre des dépendances
 
@@ -44,7 +45,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **attend la décision** du propriétaire (#55) ; seuls les joueurs ayant tapé `/profile web public` seraient publiés |
 | 5 | V1 publique : actualités, profils, premiers classements | #56 | **fait** (§8) : actualités en fichiers, classements lifetime / saison / événement, profils, infos & FAQ, SEO de base ; pseudos visibles seulement après 3 et 4 ; édition des actualités depuis PlugAdmin à faire |
 | 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | **fait**, désactivé (`accounts-enabled=false`) ; export et suppression de compte à faire avant ouverture ; validation navigateur + jeu à faire |
-| 7 | Saisons et événements de classement, puis moteur d'événements | #54, #57 | modèle **fait** (§4 : fenêtres du journal d'XP, archivage figé, exclusions, `statistics.yml`) ; moteur #57 conçu (§6), non réalisé |
+| 7 | Saisons et événements de classement, puis moteur d'événements | #54, #57 | modèle **fait** (§4 : fenêtres du journal d'XP, archivage figé, exclusions, `statistics.yml`) ; moteur #57 **fait** (§6 : journal d'activité générique, filtres, règles de classement, objectif commun, cycle de vie audité, récompenses déclaratives) ; back-office PlugAdmin à faire |
 | 8 | Entitlements : récompenses remises par le plugin | #422 | à spécifier, après #53 et #57 |
 | — | Premium (VIP, pass, boutique) | — | **hors périmètre** : après cadrage juridique et règles Minecraft ; `store-enabled=false` |
 
@@ -161,7 +162,9 @@ sa source. Ajouter une métrique = une entrée du catalogue et sa requête, sans
 | --- | --- | --- |
 | `RPG_XP_<PISTE>` (`GLOBAL`, `COMBAT`, `MINING`, `FARMING`, `FISHING`, `EXPLORATION`) | lifetime : `player_skills.total_xp` ; fenêtres : `xp_grants` (journal horodaté, dédupliqué par action de jeu) | lifetime, season, event |
 | `QUESTS_COMPLETED` | `quest_progress.state = COMPLETED` (dernier état seulement, pas d'historique) | lifetime |
-| kills par espèce, blocs minés, temps de jeu, boss… | à créer : un journal d'événements de jeu horodaté côté plugin, écrit **une fois** et partagé quêtes/classements | — |
+| `ENTITY_KILL` (#57) | `stat_activity_log` : mob tué par un joueur, cible = type d'entité, variante = mob spécial ; filtrable `entity` / `special-mob` | season, event |
+| `FISH_CAUGHT` (#57) | `stat_activity_log` : prise de pêche, cible = matériau ; filtrable `item` | season, event |
+| blocs minés, temps de jeu, boss… | même journal (§6) : un type d'action de plus dans `ActivityListener`, aucune migration | — |
 
 L'XP RPG (#183) n'est ni le niveau vanilla ni une statistique Minecraft. Une métrique sans journal
 horodaté est refusée sur une saison ou un événement (`statistics.yml` invalide) : on ne publie pas
@@ -265,32 +268,117 @@ Fait :
 et seuils d'âge, durées de conservation, prestataire e-mail, textes (confidentialité, conditions,
 information des mineurs, règlements de concours) — liste dans [PRIVACY.md §7](PRIVACY.md).
 
-## 6. Moteur d'événements et classements temporaires (#57) — conçu, non réalisé
+## 6. Moteur d'événements et classements temporaires (#57) — fait (plugin + portail)
 
-Un événement est **une définition déclarative** (YAML, comme les quêtes), jamais du code :
+Un événement est **une entrée de `statistics.yml`** (§4), jamais du code : un « Zombie Weekend » ou
+un concours de pêche ne demande ni listener ni migration.
+
+### Journal d'activité générique — `stats.ActivityListener`, `stat_activity_log` (V40)
+
+Un seul listener, pour tous les concours, note chaque action comptable : mob tué
+(`ENTITY_KILL`, cible = `EntityType`, variante = id du mob spécial RPGQuest) et prise de pêche
+(`FISH_CAUGHT`, cible = matériau). Comme `xp_grants`, c'est un **journal**, pas un compteur :
+
+- **idempotent** : `event_key` unique (UUID de l'entité tuée, de l'hameçon) — un événement Bukkit
+  rejoué ou un retry n'insère rien ;
+- **plusieurs événements simultanés** relisent la même ligne, chacun sur sa fenêtre et ses filtres,
+  sans double comptage à l'intérieur d'un événement ;
+- **admin et debug exclus d'office** (contrôle côté plugin, pas d'interface) : créatif, spectateur,
+  mode bypass administrateur actif (#35), mobs de test (`/rpgadmin mob test`), mobs de spawner et
+  descendants de division (mêmes règles anti-farm que l'XP de combat), victimes joueurs (PvP entre
+  comptes) ;
+- `MONITOR` + événements annulés ignorés ; écriture asynchrone, aucun SQL sur le thread principal ;
+- les données n'existent qu'à partir du déploiement de V40 : ces métriques ne sont donc pas
+  proposées en `lifetime`.
+
+### Définition d'un événement
 
 ```yaml
-id: zombie_weekend
-name: "Week-end des zombies"
-metric: RPG_XP_COMBAT        # une métrique du §4 (ENTITY_KILL + filtre attendra son journal)
-ranking: HIGHEST_TOTAL       # HIGHEST_TOTAL | FIRST_TO_REACH | COMMUNITY_GOAL
-start: 2026-11-07T18:00:00Z
-end: 2026-11-09T22:00:00Z
-visibility: PUBLIC
-rewards: []                  # déclaratives, distribuées par les services du plugin
+events:
+  - id: zombie_weekend_2026_11
+    name: "Zombie Weekend"
+    start: "2026-11-07T18:00:00+01:00"
+    end: "2026-11-09T22:00:00+01:00"
+    status: planned              # planned (défaut) | draft | cancelled
+    metrics: [ENTITY_KILL]
+    filter:
+      entity: [ZOMBIE, ZOMBIE_VILLAGER, HUSK]   # ou special-mob: [rpgquest:forest_brute] ; item: [COD] pour la pêche
+    ranking: HIGHEST_TOTAL       # HIGHEST_TOTAL (défaut) | BEST_SINGLE | COMMUNITY_GOAL | LOWEST_TOTAL
+    rewards:                     # déclaratives : rien n'est livré par le moteur
+      - {rank: 1, entitlement: title_zombie_slayer, label: "Titre « Pourfendeur de zombies »"}
+      - {rank: 10, entitlement: badge_zombie_top10, label: "Badge Top 10"}
+      - {threshold: 50, entitlement: badge_zombie_hunter, label: "Badge Chasseur (50 zombies)"}
+  - id: grande_peche
+    name: "La grande pêche"
+    start: "2026-11-14T00:00:00Z"
+    end: "2026-11-21T00:00:00Z"
+    metrics: [FISH_CAUGHT]
+    ranking: COMMUNITY_GOAL
+    goal: 2000                   # total à atteindre ensemble
+    rewards:
+      - {community: true, entitlement: cosmetic_fisher_hat, label: "Chapeau de pêcheur pour tous les participants"}
 ```
 
-Cycle de vie : `DRAFT → SCHEDULED → ACTIVE → ENDED → ARCHIVED`, et `CANCELLED` depuis
-`DRAFT`/`SCHEDULED`/`ACTIVE`. Le classement d'un événement terminé est **figé** (relevé final
-archivé) : il ne bouge plus si des données changent ensuite.
+Validation au chargement (fichier refusé **en entier** à la moindre erreur, comme au §4) : filtre
+accepté seulement si **toutes** les métriques de l'événement savent l'appliquer (un filtre ignoré
+fausserait le classement), valeurs au format Paper (`ZOMBIE`) ou id namespacé ; `goal` positif et
+une seule métrique pour un objectif commun ; `LOWEST_TOTAL` refusé tant qu'aucune métrique n'est un
+chrono (un joueur absent gagnerait avec 0) ; récompense = exactement un critère (`rank`, `threshold`
+ou `community: true`), une clé `entitlement` et un `label`. `ranking`, `filter`, `goal` et
+`rewards` sont réservés aux événements : une saison classe toujours par plus grand total.
 
-Règles :
+### Classements
 
-- le plugin calcule et exporte (`statistics.events`) ; le portail affiche ;
-- les récompenses sont remises **par le plugin**, une seule fois par (événement, joueur, rang), avec
-  la même idempotence que les récompenses de quêtes — jamais par une écriture SQL du portail ;
-- les joueurs masqués (§5) ne sont pas classés publiquement ; s'ils restent éligibles à une
-  récompense, c'est un choix à documenter dans la définition de l'événement.
+| Règle | Calcul | Usage |
+| --- | --- | --- |
+| `HIGHEST_TOTAL` | somme sur la fenêtre, plus grand en tête | « tuer le plus de zombies » |
+| `BEST_SINGLE` | meilleure action unique (`MAX`) | plus gros octroi d'XP |
+| `COMMUNITY_GOAL` | total de **tous** les participants (profils privés compris, aucun pseudo lu) contre `goal`, plus la liste des contributeurs | objectif commun |
+| `LOWEST_TOTAL` | somme, plus petit en tête | réservé aux futures métriques chrono |
+
+Top N, rang « compétition » et ex-aequo déterministes (pseudo puis UUID) : comme au §4. La
+**position personnelle** hors top N attend l'identité du joueur connecté (#53).
+
+### Cycle de vie — `stats.EventLifecycle`
+
+`DRAFT → SCHEDULED → ACTIVE → ENDED → ARCHIVED`, et `CANCELLED`. `DRAFT` et `CANCELLED` sont des
+décisions de l'administrateur (`status:`) ; les autres découlent **de l'horloge** (`[start, end)`) et
+de l'archive — personne ne démarre un événement à la main.
+
+- `DRAFT` : jamais exporté, jamais calculé, jamais archivé ;
+- `CANCELLED` : exporté comme « Annulé », sans classement, jamais archivé ni récompensé (annulé après
+  coup : l'archive reste en base mais n'est plus montrée) ;
+- `ENDED → ARCHIVED` : au plus une minute après la fin, résultats figés (somme ou meilleure action
+  selon la règle) dans `stat_period_results` ; ils ne bougent plus, même si une action tardive est
+  rejouée ensuite ;
+- **audit** : chaque transition observée (`SCHEDULED`, `ACTIVE`, `CANCELLED`, `ARCHIVED`) est notée
+  une seule fois dans `stat_period_audit` (V40) et annoncée en console
+  (`Statistiques : event « id » → ACTIVE.`).
+
+### Export et portail
+
+`statistics.events[]` porte en plus `ranking`, `filter`, `community` (`goal`, `total`, `reached`)
+et `rewards` (`kind`, `value`, `label` — **jamais** la clé `entitlement`). Le portail relaie ces
+clés par liste blanche (`PublicPlayerData`) et affiche sur `/classements?periode=<id>` : statut,
+compte à rebours (avant le début, puis jusqu'à la fin, calculé à l'affichage), règles en français,
+cibles, récompenses annoncées, barre de progression de l'objectif commun, classement live ou figé.
+
+### Récompenses et modération
+
+- le moteur **décrit** les récompenses ; ni le plugin ni le portail ne livrent d'objet. La livraison
+  passera par les entitlements (#422), qui liront l'archive figée (rang, valeur, objectif atteint) ;
+- modérer un score : exclusion par UUID (§4) pour l'événement ou pour tout, appliquée **à la
+  lecture**, archives comprises — aucune correction silencieuse des données de jeu, le fichier fait
+  foi (versionné ou sauvegardé par l'administrateur).
+
+### Restant (hors de cette tranche)
+
+- back-office PlugAdmin : création en brouillon, aperçu, validation, planification, annulation,
+  consultation de l'audit (aujourd'hui : édition de `statistics.yml`) ;
+- inscription préalable, exigence d'un compte lié (#53), environnement/serveur (`server_id`) ;
+- nouvelles actions du journal (blocs minés hors blocs posés, boss, temps de jeu) et métriques chrono ;
+- purge ou agrégation du journal d'activité après archivage (volumétrie à surveiller) ;
+- saisons complètes, pass, guildes, jury humain : hors périmètre du ticket.
 
 ## 7. Exploitation
 

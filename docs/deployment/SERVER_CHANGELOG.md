@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Moteur d'événements et classements temporaires (#57)
+
+### Changement
+
+Plugin : journal d'activité générique (mobs tués, prises de pêche) écrit par un seul listener,
+métriques `ENTITY_KILL` / `FISH_CAUGHT`, et règles d'événement dans `statistics.yml` (`filter`,
+`ranking`, `goal`, `rewards` déclaratives, `status: draft|cancelled`). Transitions de cycle de vie
+auditées. Instantané : `ranking`, `filter`, `community`, `rewards` (libellés) par événement.
+Portail (`web-api`) : règles, compte à rebours, objectif commun et récompenses affichés sur
+`/classements?periode=<id>`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest. **Migration automatique V40** au démarrage (tables
+`stat_activity_log`, `stat_period_audit` et un index ; aucune donnée existante modifiée). Aucune clé
+de `config.yml`. `statistics.yml` reste **absent** sur DEV : aucun événement programmé sans décision
+du propriétaire (le journal d'activité, lui, commence à se remplir dès le démarrage). Portail :
+redéploiement de `web-api` par `scripts/web-portal/` (affichage seulement).
+
+### Sauvegarde préalable
+
+JAR, `data.db` et `config.yml` datés par `scripts/deploy-verygames.sh` ; JAR du portail sauvegardé
+par le script du portail.
+
+### Validation
+
+Console : `Statistiques : …` sans erreur ; aucun message tant que `statistics.yml` est absent.
+Événement de test en jeu (créatif exclu, bypass exclu, objectif commun) : `PENDING MANUAL
+VALIDATION` (procédure dans le rapport #57).
+
+### Rollback
+
+JAR précédent seul : les tables V40 restent, inutilisées (l'ancien JAR n'applique que les versions
+manquantes). Pas de restauration de `data.db` nécessaire. Un `statistics.yml` contenant des clés
+#57 serait refusé en entier par l'ancien JAR (métrique inconnue) : le retirer en cas de rollback.
+
 ## 2026-10-15 - Portail : V1 publique, actualités, classements par portée (#56)
 
 ### Changement

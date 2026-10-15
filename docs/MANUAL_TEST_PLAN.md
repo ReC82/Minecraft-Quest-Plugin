@@ -6105,3 +6105,21 @@ Citizens) **non identifiée** à moins de 6 blocs. **Durée** : 5 minutes.
 5.  Sur une autre entité : `/rpgadmin npc tag essai_force --force` → identifiée, avec l'avertissement
     orange « Id hors registre (--force) ». `untag` pour nettoyer.
 6.  `/rpgadmin npc tag` (sans id) → id auto-généré `npc_<n>`, comportement inchangé.
+
+### TC-318 — PlugAdmin : identifiants d'étape de quête générés (issue #143, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel #143 déployé ; compte `content-editor` ou `owner`. Aucun JAR ni redémarrage
+Minecraft. **Durée** : 5 minutes. Ne **pas** enregistrer sur une quête jouée : utiliser une quête
+d'essai, supprimée ensuite.
+
+1.  `/quests/new` : l'étape 1 affiche `step_1` à côté de son numéro ; aucun champ obligatoire
+    « Identifiant d'étape ». Le bloc replié « Identifiant technique (avancé) » contient le champ.
+2.  « Ajouter une étape » deux fois → `step_2`, `step_3`. Supprimer l'étape 2, ajouter une étape →
+    la nouvelle reçoit `step_4` (jamais un second `step_3`). Monter / descendre : chaque id suit
+    son étape.
+3.  Vider l'id d'une étape dans le bloc avancé puis « Actualiser » → un id `step_<n>` est régénéré.
+4.  Enregistrer la quête d'essai (ses étapes `step_1`…) alors qu'une autre quête a déjà un
+    `step_1` → enregistrement accepté.
+5.  Rouvrir la quête d'essai, renommer `step_1` en `intro` dans le bloc avancé, « Vérifier » →
+    avertissement « L'étape « step_1 » de la version enregistrée n'existe plus… reprendra à
+    l'étape 1 » (ATTENTION, non bloquant). Supprimer ensuite la quête d'essai.

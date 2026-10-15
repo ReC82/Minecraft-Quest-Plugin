@@ -587,6 +587,101 @@ class ContentEditorPagesTest {
 
     // ---- helpers ----------------------------------------------------------------------
 
+    // ---- Issue #143 : identifiants d'étapes générés, locaux à la quête ---------------------
+
+    /** Plus de saisie obligatoire : l'id est affiché, éditable seulement dans le bloc avancé. */
+    @Test
+    void theStepIdIsNoLongerARequiredFieldButAnAdvancedDetail() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+
+        assertTrue(body.contains("<details class=\"step-advanced\"><summary"),
+                "le champ d'id d'étape est replié dans un bloc avancé fermé");
+        assertTrue(body.contains("name=\"step.0.id\" value=\"step_1\""), "id généré, toujours soumis");
+        assertFalse(body.contains("Identifiant d'étape <span aria-hidden=\"true\">*</span>"),
+                "plus de marqueur obligatoire sur l'id d'étape");
+        assertTrue(body.contains("Unique dans cette quête seulement"), "règle d'unicité expliquée");
+    }
+
+    @Test
+    void aBlankStepIdIsGeneratedAndSaved() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        String form = baseQuestForm(token).replace("&step.0.id=step_1", "&step.0.id=") + "&_action=save";
+        assertEquals(303, post("/quests/save", form).statusCode());
+        assertTrue(Files.readString(contentRoot.resolve("quests/test_quest.yml")).contains("id: step_1"));
+    }
+
+    /** Supprimer une étape du milieu puis en ajouter une ne crée jamais de doublon ni ne renumérote. */
+    @Test
+    void addingAStepAfterADeletionNeverDuplicatesOrRenumbers() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        String form = baseQuestForm(token)
+                + "&step.1.id=step_3&obj.1.0.kind=KILL_ENTITY&obj.1.0.entity=ZOMBIE&obj.1.0.amount=1"
+                + "&_action=add_step";
+        String body = post("/quests/save", form).body();
+
+        assertTrue(body.contains("name=\"step.0.id\" value=\"step_1\""));
+        assertTrue(body.contains("name=\"step.1.id\" value=\"step_3\""), "id existant conservé");
+        assertTrue(body.contains("name=\"step.2.id\" value=\"step_4\""), "nouvelle étape = max + 1");
+    }
+
+    @Test
+    void movingAStepKeepsEveryId() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        String form = baseQuestForm(token)
+                + "&step.1.id=step_2&obj.1.0.kind=KILL_ENTITY&obj.1.0.entity=ZOMBIE&obj.1.0.amount=1"
+                + "&_action=mv_step:1:up";
+        String body = post("/quests/save", form).body();
+
+        assertTrue(body.contains("name=\"step.0.id\" value=\"step_2\""), "l'id suit son étape");
+        assertTrue(body.contains("name=\"step.1.id\" value=\"step_1\""));
+    }
+
+    /** Deux quêtes ont chacune leur step_1 : l'unicité est locale à la quête. */
+    @Test
+    void twoQuestsMayBothHaveAStep1() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        assertEquals(303, post("/quests/save", baseQuestForm(token) + "&_action=save").statusCode());
+        String other = baseQuestForm(token).replace("id=test_quest", "id=other_quest") + "&_action=save";
+        assertEquals(303, post("/quests/save", other).statusCode());
+        assertTrue(Files.readString(contentRoot.resolve("quests/other_quest.yml")).contains("id: step_1"));
+    }
+
+    /** Renommer l'id d'une étape enregistrée est permis mais signalé : la progression s'y rattache. */
+    @Test
+    void renamingASavedStepIdWarnsAboutPlayerProgress() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        post("/quests/save", baseQuestForm(token) + "&_action=save");
+        String editBody = get("/quests/edit/test_quest").body();
+
+        String form = baseQuestForm(csrf(editBody)).replace("&step.0.id=step_1", "&step.0.id=intro")
+                + "&slug=test_quest&expectedSha=" + attr(editBody, "expectedSha") + "&_action=validate";
+        String body = post("/quests/save", form).body();
+        assertTrue(body.contains("« step_1 » de la version enregistrée"),
+                "avertissement de progression joueur");
+    }
+
+    /** Un id d'étape supprimée n'est pas réattribué à la prochaine étape ajoutée. */
+    @Test
+    void aDeletedSavedStepIdIsNeverReused() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        String two = baseQuestForm(token)
+                + "&step.1.id=step_2&obj.1.0.kind=KILL_ENTITY&obj.1.0.entity=ZOMBIE&obj.1.0.amount=1";
+        post("/quests/save", two + "&_action=save");
+        String editBody = get("/quests/edit/test_quest").body();
+
+        String form = baseQuestForm(csrf(editBody)) + "&slug=test_quest&expectedSha="
+                + attr(editBody, "expectedSha") + "&_action=add_step";
+        String body = post("/quests/save", form).body();
+        assertTrue(body.contains("name=\"step.1.id\" value=\"step_3\""), "step_2 reste réservé");
+    }
+
     private String baseQuestForm(String csrf) {
         return "id=test_quest&title=" + URLEncoder.encode("Quête d'essai", StandardCharsets.UTF_8)
                 + "&description=" + URLEncoder.encode("Une quête de test.", StandardCharsets.UTF_8)

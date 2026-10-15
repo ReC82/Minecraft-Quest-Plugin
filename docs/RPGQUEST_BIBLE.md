@@ -721,6 +721,21 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
   `formaction=".../save#ancre"`, et `panel.js` restaure explicitement la position au chargement
   (cible du hash via `scrollIntoView` + focus, sinon position mémorisée) — un POST HTML 200
   n'applique pas de façon fiable un fragment de `formaction`.
+- **Identifiants d'étape générés (issue #143)** : l'éditeur ne demande plus d'« Identifiant
+  d'étape ». Il génère `step_1`, `step_2`… et l'affiche à côté du numéro d'étape ; le champ reste
+  modifiable dans le bloc replié **« Identifiant technique (avancé) »** (vide = régénéré). Règles :
+  - **unicité locale à la quête** : le moteur refuse un doublon *dans* une quête
+    (`QuestDefinitionParser`), mais chaque quête a son propre `step_1` — c'est valide et attendu
+    (les quêtes livrées partagent déjà `prove_worth`) ;
+  - **l'id est persisté** dans la progression des joueurs (`quest_progress.progress_data` = étape
+    courante, `quest_objective_progress.step_id` = compteurs) et affiché dans la fiche joueur et
+    les diagnostics. Au chargement, un id introuvable fait reprendre la quête **à l'étape 1,
+    compteurs perdus** ;
+  - donc **jamais de renumérotation** : déplacer ou supprimer une étape ne change pas l'id des
+    autres ; une étape ajoutée reçoit `step_<max + 1>`, sans jamais réutiliser l'id d'une étape de
+    la version enregistrée (même supprimée) ;
+  - renommer ou supprimer l'id d'une étape **déjà enregistrée** reste permis mais « Vérifier » /
+    « Enregistrer » affichent un avertissement (sans effet si aucun joueur n'est à cette étape).
 - **Listes recherchables** : les champs à liste longue (entité, matériau, PNJ, icône, catégorie,
   quête) sont des champs de recherche filtrés (composant local léger `panel.js` `initCombo`,
   aucune dépendance externe, aucun CDN), alimentés par la **bonne source** — la catégorie par une

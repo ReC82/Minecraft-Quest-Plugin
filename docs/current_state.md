@@ -1275,6 +1275,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   module `panel.js`, aucun JS inline). `dialogue.choice.delete` reste gardé.
   **Non fait** (suite de #82) : renommage / déplacement / suppression de nœud, réordonnancement
   des choix, édition des autres types d'actions et de conditions, rendu graphe interactif.
+- **Identifiants d'étape de quête générés (#143)** — `/quests/new` et `/quests/edit/<id>` ne
+  demandent plus d'« Identifiant d'étape » : `step_<n>` est généré (`QuestDraft.nextStepId`,
+  `assignMissingStepIds`), affiché à côté du numéro d'étape, éditable seulement dans le bloc
+  replié « Identifiant technique (avancé) ». Unicité **locale à la quête** (moteur : doublon refusé
+  dans une quête, partagé entre quêtes autorisé). L'id étant persisté dans `quest_progress` /
+  `quest_objective_progress`, il n'est **jamais renuméroté** (déplacer / supprimer conserve les
+  autres ids ; un ajout prend `max + 1` sans réutiliser un id de la version enregistrée), et
+  renommer / supprimer une étape enregistrée produit un avertissement
+  (`QuestValidator.stepIdChanges`). Aucune migration des contenus existants.
 - **Aucune simplification silencieuse à l'enregistrement (#145 / #46)** *(branche
   `feat/control-panel-admin-tools`)* — `/dialogues/edit/<id>` repartait d'un formulaire à trois
   champs et réécrivait le fichier comme un **squelette à un nœud**, détruisant les autres nœuds,

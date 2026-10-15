@@ -65,6 +65,13 @@ rewards:                    # optionnel
       <code>steps</code> sont obligatoires. Une étape peut avoir plusieurs objectifs (tous requis) ;
       une quête peut avoir plusieurs étapes (dans l'ordre).
     </p>
+    <p class="text-body-secondary">
+      L'<code>id</code> d'une étape n'a besoin d'être unique que <strong>dans sa quête</strong> :
+      deux quêtes peuvent chacune avoir un <code>step_1</code>. Il est enregistré dans la progression
+      des joueurs : le renommer sur une quête publiée fait reprendre cette étape à l'étape 1. Dans
+      PlugAdmin, il est généré automatiquement (<code>step_1</code>, <code>step_2</code>…) et ne se
+      modifie que dans « Identifiant technique (avancé) ».
+    </p>
   </section>
 
   <section class="my-5">

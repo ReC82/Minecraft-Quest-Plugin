@@ -107,6 +107,10 @@ valeur brute, il **ne rejoue pas** une progression (pas de récompense, pas d'ef
 - Les ids exacts sont visibles :
   - dans le dépôt : `src/main/resources/quests/*.yml`, `stories/*.yml` (champ `id:`) ;
   - dans le Control Panel : pages **Quêtes** et **Stories** (id copiable sur chaque carte).
+- Un id d'**étape** (`step_1`, `prove_worth`…) n'est unique que **dans sa quête** : deux quêtes
+  peuvent chacune avoir un `step_1`. Il est enregistré dans la progression des joueurs ; le
+  renommer sur une quête publiée fait reprendre cette étape **à l'étape 1** pour les joueurs qui y
+  sont. L'éditeur guidé le génère et ne le renumérote jamais (voir ci-dessous).
 
 ## Depuis le Control Panel
 
@@ -132,6 +136,12 @@ Page **Quêtes** → « Créer une quête », ou « Modifier » sur une carte. P
    et montre le YAML généré + le diff. « Enregistrer dans la source » écrit le fichier
    `src/main/resources/quests/<id>.yml` du dépôt — **aucun déploiement**, le serveur le validera
    à son prochain chargement.
+5. **Identifiant d'étape : rien à saisir.** Chaque étape reçoit `step_1`, `step_2`… (affiché à
+   côté de son numéro). Déplacer ou supprimer une étape ne change pas l'id des autres ; une étape
+   ajoutée prend le numéro suivant, sans jamais reprendre celui d'une étape supprimée. Le bloc
+   replié « Identifiant technique (avancé) » permet de le changer ; sur une quête déjà
+   enregistrée, « Vérifier » prévient alors que les joueurs à cette étape repartiraient de
+   l'étape 1.
 
 ## Catalogue : « source » et « serveur » (badges d'origine)
 

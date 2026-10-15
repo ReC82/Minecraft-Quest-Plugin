@@ -42,6 +42,8 @@ import java.util.regex.Pattern;
 public final class ContentEditorPages {
 
     private static final Pattern STEP_ID_KEY = Pattern.compile("step\\.(\\d+)\\.id");
+    /** Même règle que {@code QuestValidator} / le moteur pour un id d'étape. */
+    private static final Pattern STEP_ID_FORMAT = Pattern.compile("[a-z0-9_-]+");
     private static final Pattern OBJ_KEY = Pattern.compile("obj\\.(\\d+)\\.(\\d+)\\.(.+)");
     private static final Pattern REW_KEY = Pattern.compile("rew\\.(\\d+)\\.(.+)");
     private static final Pattern STORY_Q_KEY = Pattern.compile("q\\.(\\d+)");
@@ -120,14 +122,18 @@ public final class ContentEditorPages {
         String slug = blankToNull(form.get("slug"));
         String expectedSha = form.getOrDefault("expectedSha", "");
         String action = form.getOrDefault("_action", "refresh");
-        applyQuestAction(draft, action);
+        // #143 : l'id d'étape est technique — généré s'il est vide, jamais renuméroté, et jamais
+        // celui d'une étape de la version enregistrée (sa progression ne doit pas s'y raccrocher).
+        List<String> savedStepIds = savedStepIds(slug);
+        draft.assignMissingStepIds(savedStepIds);
+        applyQuestAction(draft, action, savedStepIds);
 
         RefData refPlus = ref == null ? RefData.empty() : ref;
         boolean wantSave = action.equals("save");
         boolean showChecks = wantSave || action.equals("validate");
 
         if (wantSave) {
-            List<Diagnostic> diags = QuestValidator.validate(draft, refPlus);
+            List<Diagnostic> diags = questDiagnostics(draft, refPlus, savedStepIds);
             String yaml = QuestYaml.write(draft);
             // Le formulaire reconstruit toute la quête : si le fichier d'origine contenait quelque
             // chose que la relecture n'a pas su représenter, écrire l'effacerait (#145 / #46).
@@ -148,16 +154,33 @@ public final class ContentEditorPages {
             return new Result.Redirect("/quests/edit/" + targetSlug + "?saved=1");
         }
 
-        List<Diagnostic> diags = showChecks ? QuestValidator.validate(draft, refPlus) : List.of();
+        List<Diagnostic> diags = showChecks ? questDiagnostics(draft, refPlus, savedStepIds) : List.of();
         List<String> rtp = showChecks ? QuestYaml.roundTripProblems(QuestYaml.write(draft)) : null;
         return new Result.Html(renderQuest(refPlus, draft, slug, expectedSha, diags, showChecks, rtp));
     }
 
-    private void applyQuestAction(QuestDraft d, String action) {
+    private static List<Diagnostic> questDiagnostics(QuestDraft d, RefData ref, List<String> savedStepIds) {
+        List<Diagnostic> diags = new ArrayList<>(QuestValidator.validate(d, ref));
+        diags.addAll(QuestValidator.stepIdChanges(d, savedStepIds));
+        return diags;
+    }
+
+    /** Ids d'étape de la version enregistrée ({@code slug == null} = création : aucun). */
+    private List<String> savedStepIds(String slug) {
+        if (slug == null) {
+            return List.of();
+        }
+        return workspace.read("quests", slug)
+                .map(cf -> QuestYaml.read(cf.text()).draft())
+                .map(QuestDraft::stepIds)
+                .orElse(List.of());
+    }
+
+    private void applyQuestAction(QuestDraft d, String action, List<String> savedStepIds) {
         String[] p = action.split(":");
         switch (p[0]) {
             case "add_step" -> {
-                QuestDraft.Step s = new QuestDraft.Step("step_" + (d.steps.size() + 1));
+                QuestDraft.Step s = new QuestDraft.Step(QuestDraft.nextStepId(d.steps, savedStepIds));
                 s.objectives.add(blankRow("KILL_ENTITY"));
                 d.steps.add(s);
             }
@@ -446,7 +469,7 @@ public final class ContentEditorPages {
                         + "Choisir le type d'un objectif n'affiche que les champs pertinents ; rien n'est "
                         + "obligatoire tant qu'on n'a pas cliqué « Vérifier » ou « Enregistrer ».", "sec-objectives"));
         for (int si = 0; si < d.steps.size(); si++) {
-            sb.append(renderStep(ref, d.steps.get(si), si, d.steps.size()));
+            sb.append(renderStep(ref, d, si));
         }
         sb.append("<div class=\"btnrow\">").append(actBtn("btn sm", "add_step", "plus", "Ajouter une étape",
                 Q_SAVE, "step-" + d.steps.size())).append("</div>");
@@ -495,10 +518,18 @@ public final class ContentEditorPages {
         return sb.toString();
     }
 
-    private String renderStep(RefData ref, QuestDraft.Step step, int si, int total) {
+    private String renderStep(RefData ref, QuestDraft d, int si) {
+        QuestDraft.Step step = d.steps.get(si);
+        int total = d.steps.size();
+        // Id invalide ou en double (fichier écrit à la main) : le bloc avancé s'ouvre seul, sinon
+        // l'erreur de « Vérifier » désignerait un champ invisible.
+        boolean idProblem = !STEP_ID_FORMAT.matcher(step.id).matches()
+                || d.stepIds().stream().filter(step.id::equals).count() > 1;
         StringBuilder sb = new StringBuilder("<div class=\"rowitem\" id=\"step-" + si + "\">");
         sb.append("<div class=\"rowitem-h\"><span class=\"grip\">").append(Icons.icon("chevron")).append("</span>");
         sb.append("<span>Étape ").append(si + 1).append("</span>");
+        sb.append(" <code class=\"muted\" title=\"Identifiant technique de l'étape\">").append(Http.esc(step.id))
+                .append("</code>");
         sb.append("<span class=\"rowitem-actions\">");
         if (si > 0) {
             sb.append(iconBtn("mv_step:" + si + ":up", "up", "Monter l'étape", Q_SAVE, "step-" + (si - 1)));
@@ -508,9 +539,18 @@ public final class ContentEditorPages {
         }
         sb.append(iconBtn("del_step:" + si, "trash", "Supprimer l'étape", Q_SAVE, "sec-objectives"));
         sb.append("</span></div>");
+        // #143 : plus de saisie obligatoire. L'id est généré, unique dans CETTE quête seulement, et
+        // ne sert qu'à retrouver la progression des joueurs : on ne l'expose qu'en mode avancé.
+        // Un <details> fermé soumet quand même le champ — aucun JavaScript requis (CSP).
+        sb.append("<details class=\"step-advanced\"").append(idProblem ? " open" : "")
+                .append("><summary class=\"muted\">Identifiant technique (avancé)</summary>");
         sb.append("<div class=\"form-grid\">");
-        sb.append(text("step." + si + ".id", "Identifiant d'étape", "Minuscules, chiffres, « _ - ».", step.id, true, false));
-        sb.append("</div>");
+        sb.append(text("step." + si + ".id", "Identifiant d'étape",
+                "Généré automatiquement, à ne pas toucher en temps normal. Unique dans cette quête seulement : "
+                        + "chaque quête a son propre « step_1 ». Il est enregistré dans la progression des joueurs — "
+                        + "le changer sur une quête publiée fait reprendre cette étape à l'étape 1. "
+                        + "Vide = régénéré. Minuscules, chiffres, « _ - ».", step.id, false, false));
+        sb.append("</div></details>");
         sb.append("<div class=\"rowlist\">");
         for (int oi = 0; oi < step.objectives.size(); oi++) {
             sb.append(renderRow(ref, "obj." + si, step.objectives.get(oi), si, oi, step.objectives.size(),

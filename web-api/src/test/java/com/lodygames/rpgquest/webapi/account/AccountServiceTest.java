@@ -26,6 +26,7 @@ class AccountServiceTest {
 
     private static final AgePolicy BELGIUM_13 = new AgePolicy(Map.of("BE", 13),
             AgePolicy.Outcome.PARENTAL_CONSENT_REQUIRED, AgePolicy.Outcome.REFUSED);
+    private static final String IP = "203.0.113.7";
     private static final UUID ALICE_UUID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID BOB_UUID = UUID.fromString("22222222-2222-2222-2222-222222222222");
 
@@ -55,7 +56,7 @@ class AccountServiceTest {
     }
 
     private String registerAndLogin(String login) throws Exception {
-        assertEquals(RegistrationOutcome.CREATED, service.register(login, "motdepasse-" + login, Optional.of("BE"), 15));
+        assertEquals(RegistrationOutcome.CREATED, service.register(login, "motdepasse-" + login, Optional.of("BE"), 15, IP));
         return store.findAccountByLogin(login).orElseThrow().id();
     }
 
@@ -70,29 +71,43 @@ class AccountServiceTest {
     @Test
     void registrationStaysClosedWithoutRegionOrWhenDisabled() throws Exception {
         assertEquals(RegistrationOutcome.CLOSED,
-                newService(AgePolicy.closed(), true).register("alice", "motdepasse-alice", Optional.of("BE"), 20));
+                newService(AgePolicy.closed(), true).register("alice", "motdepasse-alice", Optional.of("BE"), 20, IP));
         assertEquals(RegistrationOutcome.CLOSED,
-                newService(BELGIUM_13, false).register("alice", "motdepasse-alice", Optional.of("BE"), 20));
+                newService(BELGIUM_13, false).register("alice", "motdepasse-alice", Optional.of("BE"), 20, IP));
     }
 
     @Test
     void registrationValidatesLoginPasswordAndUniqueness() throws Exception {
-        assertEquals(RegistrationOutcome.INVALID_LOGIN, service.register("a", "motdepasse-ok", Optional.of("BE"), 20));
-        assertEquals(RegistrationOutcome.INVALID_LOGIN, service.register("élise", "motdepasse-ok", Optional.of("BE"), 20));
-        assertEquals(RegistrationOutcome.WEAK_PASSWORD, service.register("alice", "court", Optional.of("BE"), 20));
-        assertEquals(RegistrationOutcome.WEAK_PASSWORD, service.register("alice1234567", "ALICE1234567", Optional.of("BE"), 20));
+        assertEquals(RegistrationOutcome.INVALID_LOGIN, service.register("a", "motdepasse-ok", Optional.of("BE"), 20, IP));
+        assertEquals(RegistrationOutcome.INVALID_LOGIN, service.register("élise", "motdepasse-ok", Optional.of("BE"), 20, IP));
+        assertEquals(RegistrationOutcome.WEAK_PASSWORD, service.register("alice", "court", Optional.of("BE"), 20, IP));
+        assertEquals(RegistrationOutcome.WEAK_PASSWORD, service.register("alice1234567", "ALICE1234567", Optional.of("BE"), 20, IP));
         registerAndLogin("alice");
-        assertEquals(RegistrationOutcome.LOGIN_TAKEN, service.register("ALICE", "motdepasse-2", Optional.of("BE"), 20));
+        assertEquals(RegistrationOutcome.LOGIN_TAKEN, service.register("ALICE", "motdepasse-2", Optional.of("BE"), 20, IP));
+    }
+
+    @Test
+    void registrationsArePerAddressLimited() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            service.register("compte" + i, "motdepasse-solide", Optional.of("BE"), 20, "198.51.100.1");
+        }
+        assertEquals(RegistrationOutcome.TOO_MANY,
+                service.register("compte9", "motdepasse-solide", Optional.of("BE"), 20, "198.51.100.1"));
+        assertEquals(RegistrationOutcome.CREATED,
+                service.register("autre", "motdepasse-solide", Optional.of("BE"), 20, "198.51.100.2"));
+        clock.advance(Duration.ofMinutes(61));
+        assertEquals(RegistrationOutcome.CREATED,
+                service.register("compte9", "motdepasse-solide", Optional.of("BE"), 20, "198.51.100.1"));
     }
 
     @Test
     void agePolicyDecidesAndNothingIsKeptFromARefusal() throws Exception {
         assertEquals(RegistrationOutcome.REFUSED_BY_AGE_POLICY,
-                service.register("loin", "motdepasse-loin", Optional.of("US"), 30));
+                service.register("loin", "motdepasse-loin", Optional.of("US"), 30, IP));
         assertTrue(store.findAccountByLogin("loin").isEmpty());
 
         assertEquals(RegistrationOutcome.CREATED_RESTRICTED,
-                service.register("petit", "motdepasse-petit", Optional.of("BE"), 11));
+                service.register("petit", "motdepasse-petit", Optional.of("BE"), 11, IP));
         String petit = store.findAccountByLogin("petit").orElseThrow().id();
         assertEquals(ChallengeOutcome.RESTRICTED, service.createChallenge(petit).outcome());
     }

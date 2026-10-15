@@ -73,7 +73,7 @@ Une saisie de pseudo ou d'UUID ne prouve rien. La liaison se prouve **en jeu**.
 | Exigence (#53) | Réalisation |
 | --- | --- |
 | code aléatoire, court, usage unique | `SecureRandom`, 31⁸ ≈ 8·10¹¹ combinaisons, consommé par `UPDATE … WHERE used_at IS NULL AND expires_at > now` |
-| tentatives limitées | 5 preuves ratées par UUID / 15 min (portail) ; 1 essai en vol et 5 s entre deux essais par joueur (plugin) ; 10 échecs de connexion par IP ou identifiant / 15 min |
+| tentatives limitées | 5 preuves ratées par UUID / 15 min (portail) ; 5 inscriptions par IP / heure ; 1 essai en vol et 5 s entre deux essais par joueur (plugin) ; 10 échecs de connexion par IP ou identifiant / 15 min |
 | aucun secret dans les journaux | le code et les jetons ne sont jamais journalisés ; seules leurs **empreintes** SHA-256 sont stockées ; `PortalLinkConfig.toString()` masque le jeton |
 | un UUID → un seul compte actif | `minecraft_links` : clé primaire sur le compte, `UNIQUE` sur l'UUID ; tentative refusée et journalisée |
 | audit des liaisons/dissociations | table `link_audit` (`LINKED`, `UNLINKED`, `REFUSED_UUID_TAKEN`, `REFUSED_RESTRICTED`) |

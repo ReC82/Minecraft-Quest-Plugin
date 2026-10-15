@@ -105,7 +105,8 @@ public final class AccountPagesHandler implements ApiHandler {
         }
         Optional<String> region = Optional.ofNullable(form.get("pays")).map(String::trim).filter(p -> !p.isEmpty());
         AccountService.RegistrationOutcome outcome = accounts.register(
-                form.getOrDefault("identifiant", "").trim(), form.getOrDefault("motdepasse", ""), region, age);
+                form.getOrDefault("identifiant", "").trim(), form.getOrDefault("motdepasse", ""), region, age,
+                clientKey(exchange));
         return switch (outcome) {
             case CREATED -> redirect(exchange, "/compte?m=inscrit");
             case CREATED_RESTRICTED -> redirect(exchange, "/compte?m=inscrit-limite");
@@ -117,6 +118,7 @@ public final class AccountPagesHandler implements ApiHandler {
             case WEAK_PASSWORD -> showAnonymous(exchange, 400, error("Le mot de passe doit faire au moins "
                     + AccountService.MIN_PASSWORD_LENGTH + " caractères et être différent de l'identifiant."));
             case LOGIN_TAKEN -> showAnonymous(exchange, 409, error("Cet identifiant est déjà pris, choisis-en un autre."));
+            case TOO_MANY -> showAnonymous(exchange, 429, error("Trop d'inscriptions depuis ta connexion. Réessaie plus tard."));
         };
     }
 

@@ -36,7 +36,9 @@ public final class AccountService {
         REFUSED_BY_AGE_POLICY,
         INVALID_LOGIN,
         WEAK_PASSWORD,
-        LOGIN_TAKEN
+        LOGIN_TAKEN,
+        /** Trop d'inscriptions récentes depuis cette adresse. */
+        TOO_MANY
     }
 
     public enum ChallengeOutcome {
@@ -64,6 +66,8 @@ public final class AccountService {
     private final Clock clock;
     private final AttemptLimiter loginFailures;
     private final AttemptLimiter linkFailures;
+    /** Chaque inscription coûte un hachage : bornée par adresse, réussie ou non. */
+    private final AttemptLimiter registrations;
     /** Haché une fois : la vérification d'un identifiant inconnu coûte autant qu'un vrai. */
     private final String decoyHash;
 
@@ -76,6 +80,7 @@ public final class AccountService {
         this.clock = clock;
         this.loginFailures = new AttemptLimiter(10, Duration.ofMinutes(15), clock);
         this.linkFailures = new AttemptLimiter(5, Duration.ofMinutes(15), clock);
+        this.registrations = new AttemptLimiter(5, Duration.ofHours(1), clock);
         this.decoyHash = hasher.hash(SecureTokens.newToken());
     }
 
@@ -88,10 +93,13 @@ public final class AccountService {
         return agePolicy;
     }
 
-    public RegistrationOutcome register(String login, String password, Optional<String> region, int declaredAge)
-            throws SQLException {
+    public RegistrationOutcome register(String login, String password, Optional<String> region, int declaredAge,
+            String clientKey) throws SQLException {
         if (!open()) {
             return RegistrationOutcome.CLOSED;
+        }
+        if (registrations.isBlocked(clientKey)) {
+            return RegistrationOutcome.TOO_MANY;
         }
         if (login == null || !LOGIN.matcher(login).matches()) {
             return RegistrationOutcome.INVALID_LOGIN;
@@ -106,6 +114,7 @@ public final class AccountService {
             // Rien n'est conservé d'une demande refusée.
             return RegistrationOutcome.REFUSED_BY_AGE_POLICY;
         }
+        registrations.recordFailure(clientKey);
         AccountStore.Account account = new AccountStore.Account(UUID.randomUUID().toString(), login,
                 hasher.hash(password), consent.get(), clock.instant());
         if (!store.createAccount(account)) {

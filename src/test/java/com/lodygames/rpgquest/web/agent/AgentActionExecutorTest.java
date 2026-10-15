@@ -1079,6 +1079,33 @@ class AgentActionExecutorTest {
         assertEquals(RONDOUDOU, actions.lastQuestStatusUuid);
     }
 
+    /** Issue #79 : structure par objectif, champ legacy conservé, JSON réel sérialisé. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void questPlayerStatusExposesStructuredObjectivesAndKeepsLegacyDescription() {
+        AgentActionOutcome outcome = run(new AgentAction("q2", "quest.player.status",
+                Map.of("player", "Rondoudou9000")));
+        List<Map<String, Object>> quests = (List<Map<String, Object>>) outcome.details().get("quests");
+        List<Map<String, Object>> objectives = (List<Map<String, Object>>) quests.get(1).get("objectives");
+
+        Map<String, Object> chop = objectives.get(0);
+        assertEquals("Casser OAK_LOG", chop.get("description"));
+        assertEquals(4, chop.get("current"));
+        assertEquals(20, chop.get("required"));
+        assertEquals("IN_PROGRESS", chop.get("state"));
+        assertEquals("BREAK_BLOCK", chop.get("kind"));
+        assertEquals("OAK_LOG", chop.get("target"));
+        assertEquals(20, chop.get("amount"));
+
+        Map<String, Object> talk = objectives.get(1);
+        assertEquals("NOT_STARTED", talk.get("state"));
+        assertFalse(talk.containsKey("kind"), "sans structure connue, aucun champ structuré inventé");
+
+        String json = com.lodygames.rpgquest.web.Json.write(outcome.details());
+        assertTrue(json.contains("\"kind\":\"BREAK_BLOCK\""), json);
+        assertTrue(json.contains("\"description\":\"Casser OAK_LOG\""), json);
+    }
+
     @Test
     void resetPreviewIsReadOnlyAndResolvesPlayer() {
         AgentActionOutcome outcome = run(new AgentAction("r1", "player.resetnew.preview",
@@ -1737,7 +1764,11 @@ class AgentActionExecutorTest {
         public CompletableFuture<List<QuestPlayerState>> questStatus(UUID playerId) {
             lastQuestStatusUuid = playerId;
             return CompletableFuture.completedFuture(List.of(
-                    new QuestPlayerState("rpgquest:crystal_hunt", "La chasse aux cristaux", "NOT_STARTED", null, List.of())));
+                    new QuestPlayerState("rpgquest:crystal_hunt", "La chasse aux cristaux", "NOT_STARTED", null, List.of()),
+                    new QuestPlayerState("rpgquest:woodcutters_request", "La commande du bûcheron", "ACTIVE", "chop",
+                            List.of(new ObjectiveState("Casser OAK_LOG", 4, 20,
+                                            new ObjectiveSummary("BREAK_BLOCK", "OAK_LOG", 20, "Casser OAK_LOG (x20)")),
+                                    new ObjectiveState("Parler à woodcutter_bob", 0, 1)))));
         }
 
         @Override

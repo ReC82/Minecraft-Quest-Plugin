@@ -1159,7 +1159,8 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   impact gameplay si PlugAdmin est down. Voir [control-panel/AGENT.md](control-panel/AGENT.md).
 - **Outillage admin du Control Panel** *(branche `feat/control-panel-admin-tools`)* — l'agent
   expose désormais des **actions métier whitelistées** au-delà de la lecture : `player.list`,
-  `quest.list` / `quest.player.status`, `story.list` / `story.player.status`, `item.list`,
+  `quest.list` / `quest.player.status` (objectifs structurés `kind`/`target`/`amount`/`state` depuis
+  #79, `description` legacy conservée), `story.list` / `story.player.status`, `item.list`,
   `player.resetnew.preview` (lectures) ; `player.item.give`, `quest.start|complete|reset`,
   `story.advance|complete`, `player.variable.set`, `player.resetnew.confirm` (mutations). Chacune
   est adossée à un **service métier existant** via `BukkitAgentActions` (`QuestProgressEngine`,

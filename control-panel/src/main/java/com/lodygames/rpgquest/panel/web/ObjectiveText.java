@@ -97,6 +97,19 @@ public final class ObjectiveText {
     }
 
     /**
+     * Libellé d'une ligne d'objectif du payload {@code quest.player.status} (issue #79) : la
+     * structure ({@code kind}, {@code target}, {@code amount}…) est lue en priorité ; un agent non
+     * migré n'envoie que {@code description}, humanisée comme avant.
+     */
+    public static Objective fromStatus(Map<String, Object> row,
+                                       java.util.function.Function<String, String> cityNames) {
+        if (str(row.get("kind")).isBlank()) {
+            return new Objective(MinecraftNames.humanizeTokens(str(row.get("description"))), null);
+        }
+        return fromSummary(row, cityNames);
+    }
+
+    /**
      * Portée affichée d'un {@code DISCOVER_WAYPOINT} (issue #185). La valeur arrive soit en liste
      * (relevé runtime de l'agent), soit en texte « a, b » (brouillon relu depuis le YAML) : les deux
      * origines doivent produire exactement le même libellé.

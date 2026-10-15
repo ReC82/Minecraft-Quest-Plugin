@@ -449,18 +449,9 @@ public final class BukkitAgentActions implements AgentActions {
                 List<String> objectives = new ArrayList<>();
                 List<ObjectiveSummary> objectiveDetails = new ArrayList<>();
                 for (QuestObjective o : s.objectives()) {
-                    int amount = QuestObjective.requiredAmount(o);
-                    String raw = QuestObjective.describe(o) + " (x" + amount + ")";
-                    objectives.add(raw);
-                    // Issue #185 : la portée et la règle de comptage voyagent avec l'objectif,
-                    // sinon le panel afficherait une ligne qui ne dit pas ce que le joueur doit faire.
-                    List<String> objectiveWorlds = o instanceof DiscoverWaypointObjective d ? d.worlds() : List.of();
-                    String countMode = o instanceof DiscoverWaypointObjective d ? d.countMode().name()
-                            : o instanceof com.lodygames.rpgquest.quest.model.DiscoverCityObjective c
-                                    ? c.countMode().name() : null;
-                    objectiveDetails.add(new ObjectiveSummary(
-                            o.type().name(), objectiveTarget(o), amount, raw, objectiveNpc(o),
-                            objectiveWorlds, countMode));
+                    ObjectiveSummary summary = objectiveSummary(o);
+                    objectives.add(summary.raw());
+                    objectiveDetails.add(summary);
                 }
                 steps.add(new QuestStepSummary(s.id(), objectives, objectiveDetails));
             }
@@ -488,10 +479,7 @@ public final class BukkitAgentActions implements AgentActions {
                     Optional<QuestStepProgressView> view = questProgressEngine.activeStepView(playerId, q.id());
                     if (view.isPresent()) {
                         currentStepId = view.get().stepId();
-                        objectives = new ArrayList<>();
-                        for (ObjectiveProgressView o : view.get().objectives()) {
-                            objectives.add(new ObjectiveState(o.description(), o.current(), o.total()));
-                        }
+                        objectives = objectiveStates(q, view.get());
                     }
                 }
                 out.add(new QuestPlayerState(q.id().toString(), q.title().base(), state.name(),
@@ -5159,6 +5147,41 @@ public final class BukkitAgentActions implements AgentActions {
                 case MoneyReward r -> "+" + CurrencyName.amount(r.amount());
                 case HeartReward r -> heartRewardText(r);
             });
+        }
+        return out;
+    }
+
+    /**
+     * Objectif structuré (#78). Issue #185 : la portée et la règle de comptage voyagent avec
+     * l'objectif, sinon le panel afficherait une ligne qui ne dit pas ce que le joueur doit faire.
+     */
+    private static ObjectiveSummary objectiveSummary(QuestObjective o) {
+        int amount = QuestObjective.requiredAmount(o);
+        String raw = QuestObjective.describe(o) + " (x" + amount + ")";
+        List<String> objectiveWorlds = o instanceof DiscoverWaypointObjective d ? d.worlds() : List.of();
+        String countMode = o instanceof DiscoverWaypointObjective d ? d.countMode().name()
+                : o instanceof com.lodygames.rpgquest.quest.model.DiscoverCityObjective c
+                        ? c.countMode().name() : null;
+        return new ObjectiveSummary(o.type().name(), objectiveTarget(o), amount, raw, objectiveNpc(o),
+                objectiveWorlds, countMode);
+    }
+
+    /**
+     * Issue #79 : progression de l'étape courante, chaque ligne accompagnée de son objectif
+     * structuré. La vue du moteur suit l'ordre des objectifs de l'étape ; si l'étape ou le nombre
+     * d'objectifs ne correspond plus (définition rechargée), la ligne reste sans structure plutôt
+     * que d'être associée au mauvais objectif.
+     */
+    static List<ObjectiveState> objectiveStates(QuestDefinition quest, QuestStepProgressView view) {
+        List<QuestObjective> defined = quest.steps().stream()
+                .filter(step -> step.id().equals(view.stepId()))
+                .findFirst().map(QuestStep::objectives).orElse(List.of());
+        boolean aligned = defined.size() == view.objectives().size();
+        List<ObjectiveState> out = new ArrayList<>();
+        for (int i = 0; i < view.objectives().size(); i++) {
+            ObjectiveProgressView o = view.objectives().get(i);
+            out.add(new ObjectiveState(o.description(), o.current(), o.total(),
+                    aligned ? objectiveSummary(defined.get(i)) : null));
         }
         return out;
     }

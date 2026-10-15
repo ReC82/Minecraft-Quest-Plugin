@@ -70,6 +70,13 @@ Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release pane
 
 `PENDING MANUAL VALIDATION` : TC-319.
 
+### Déploiement effectué (2026-10-15 09:04)
+
+JAR `00b0eb5` transféré sur DEV (SHA-256 distant retéléchargé = local `153a11fc…08c1`, sauvegarde
+`rpgquest-20261015T070331Z-predeploy.jar`) ; panel `00b0eb5` installé et servi. Le serveur DEV
+était **déjà arrêté** (RCON refusé, arrêt de 02:55 non relancé par VeryGames) : le nouveau JAR sera
+chargé au prochain démarrage du service par le propriétaire.
+
 ### Rollback
 
 Réinstaller le JAR précédent et la release panel précédente. Les noms déjà modifiés restent en

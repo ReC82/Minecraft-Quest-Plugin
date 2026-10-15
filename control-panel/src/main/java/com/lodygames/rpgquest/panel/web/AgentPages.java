@@ -8691,9 +8691,8 @@ public final class AgentPages {
         long blocked = mine.stream().filter(r -> !r.selectable()).count();
 
         StringBuilder sb = new StringBuilder();
-        sb.append("<section class=\"card pack-publish\"><div class=\"card-body\">");
-        sb.append("<h2 class=\"h5\">").append(Icons.icon("deploy"))
-                .append("Mettre l'histoire en jeu sur DEV</h2>");
+        sb.append("<section class=\"card pack-publish\">");
+        sb.append(Ui.sectionTitle("deploy", "Mettre l'histoire en jeu sur DEV"));
         sb.append("<p>Ce pack contient <strong>").append(keys.size()).append(" ressource(s)</strong> : ")
                 .append(mine.size()).append(" à mettre en jeu, ").append(upToDate)
                 .append(" déjà à jour sur DEV.</p>");
@@ -8706,7 +8705,7 @@ public final class AgentPages {
                     + " depuis l'analyse (conflit) : ouvrez leur fiche pour comparer avant de"
                     + " publier. Le reste du pack peut être vérifié, mais il manquera ces ressources."));
         }
-        sb.append("</div></section>");
+        sb.append("</section>");
         if (mine.isEmpty()) {
             sb.append(Ui.empty("check", "Tout le pack est déjà à jour et chargé sur DEV."));
             return sb.toString();
@@ -9099,7 +9098,8 @@ public final class AgentPages {
                     + "refusée, <strong>rien ne change en jeu</strong> et les fichiers DEV sont "
                     + "remis comme avant. « Vérifier » fait juger la sélection sans rien mettre en "
                     + "jeu.</p>");
-            sb.append(mutationConsent("content.publish.batch", "", null));
+            sb.append(mutationConsent("content.publish.batch",
+                    "Je confirme : envoyer les ressources cochées sur DEV", null));
             sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
                     + "type=\"submit\" name=\"mode\" value=\"check\">").append(Icons.icon("check"))
                     .append("Vérifier</button>");

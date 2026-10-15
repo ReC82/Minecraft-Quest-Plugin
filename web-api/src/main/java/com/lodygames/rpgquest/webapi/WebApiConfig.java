@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi;
 
+import com.lodygames.rpgquest.webapi.account.AccountSettings;
 import com.lodygames.rpgquest.webapi.privacy.AgePolicy;
 import java.nio.file.Path;
 
@@ -18,6 +19,8 @@ import java.nio.file.Path;
  *
  * <p>{@code agePolicy} (#55) : politique d'âge des futurs comptes joueurs (#53), fermée tant que le
  * propriétaire n'a configuré aucune région.</p>
+ *
+ * <p>{@code accounts} (#53) : comptes joueurs et liaison Minecraft, désactivés par défaut.</p>
  */
 public record WebApiConfig(
         int port,
@@ -34,8 +37,19 @@ public record WebApiConfig(
         boolean storeEnabled,
         boolean playerDataPublic,
         boolean trustProxyHeaders,
-        AgePolicy agePolicy
+        AgePolicy agePolicy,
+        AccountSettings accounts
 ) {
+
+    /** Sans comptes joueurs (#53). */
+    public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,
+            int rateLimitPerMinute, String siteTitle, Path productsFile, Path storeDatabaseFile,
+            String webhookSecret, String publicBaseUrl, String bindAddress, boolean storeEnabled,
+            boolean playerDataPublic, boolean trustProxyHeaders, AgePolicy agePolicy) {
+        this(port, snapshotFile, snapshotMaxAgeSeconds, authToken, rateLimitPerMinute, siteTitle, productsFile,
+                storeDatabaseFile, webhookSecret, publicBaseUrl, bindAddress, storeEnabled, playerDataPublic,
+                trustProxyHeaders, agePolicy, AccountSettings.disabled());
+    }
 
     /** Sans politique d'âge explicite : comptes fermés. */
     public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,

@@ -1,11 +1,15 @@
 package com.lodygames.rpgquest.webapi;
 
+import com.lodygames.rpgquest.webapi.account.AccountService;
+import com.lodygames.rpgquest.webapi.account.AccountStore;
+import com.lodygames.rpgquest.webapi.account.PasswordHasher;
 import com.lodygames.rpgquest.webapi.store.ProductCatalog;
 import com.lodygames.rpgquest.webapi.store.SandboxPaymentProvider;
 import com.lodygames.rpgquest.webapi.store.StoreDatabase;
 import com.lodygames.rpgquest.webapi.store.StoreRepository;
 import com.lodygames.rpgquest.webapi.store.StoreService;
 import java.io.IOException;
+import java.time.Clock;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -34,12 +38,22 @@ public final class WebApiMain {
         StoreDatabase storeDatabase = config.storeEnabled() ? new StoreDatabase(config.storeDatabaseFile()) : null;
         StoreService storeService = storeDatabase == null ? null : openStore(config, storeDatabase);
 
-        HttpServerBootstrap bootstrap = new HttpServerBootstrap(config, snapshotStore, storeService);
+        AccountStore accountStore = config.accounts().enabled() ? openAccounts(config) : null;
+        AccountService accountService = accountStore == null ? null : new AccountService(accountStore,
+                new PasswordHasher(), config.agePolicy(), config.accounts(), Clock.systemUTC());
+
+        HttpServerBootstrap bootstrap = new HttpServerBootstrap(config, snapshotStore, storeService, accountService);
         bootstrap.start();
 
         LOGGER.info(() -> "RPGQuest web-api démarré sur " + config.bindAddress() + ":" + config.port()
                 + " (snapshot=" + config.snapshotFile() + ", boutique=" + (storeService != null ? "active" : "désactivée")
-                + ", données joueurs publiques=" + config.playerDataPublic() + ").");
+                + ", données joueurs publiques=" + config.playerDataPublic()
+                + ", comptes=" + (accountService == null ? "désactivés" : accountService.open() ? "ouverts" : "fermés (aucune région)")
+                + ").");
+        if (accountService != null && (config.accounts().linkToken() == null || config.accounts().linkToken().isBlank())) {
+            LOGGER.warning("Aucun jeton de liaison configuré (" + WebApiConfigLoader.LINK_TOKEN_ENV
+                    + ") : /api/link/confirm refusera toutes les preuves venues du serveur Minecraft (401).");
+        }
         if (config.authToken() == null || config.authToken().isBlank()) {
             LOGGER.warning(
                     "Aucun jeton d'authentification configuré (" + WebApiConfigLoader.TOKEN_ENV
@@ -57,7 +71,22 @@ public final class WebApiMain {
             if (storeDatabase != null) {
                 storeDatabase.shutdown();
             }
+            if (accountStore != null) {
+                try {
+                    accountStore.close();
+                } catch (java.sql.SQLException ignored) {
+                    // fermeture au mieux pendant l'arrêt
+                }
+            }
         }, "RPGQuest-WebApi-Shutdown"));
+    }
+
+    private static AccountStore openAccounts(WebApiConfig config) throws IOException {
+        try {
+            return new AccountStore(config.accounts().databaseFile());
+        } catch (java.sql.SQLException e) {
+            throw new IOException("Échec d'ouverture de la base des comptes : " + config.accounts().databaseFile(), e);
+        }
     }
 
     private static StoreService openStore(WebApiConfig config, StoreDatabase storeDatabase) throws IOException {

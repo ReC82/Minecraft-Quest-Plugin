@@ -93,8 +93,18 @@ printf 'commit=%s\nbranch=%s\ndeployed_at=%s\nvalidation=%s\n' "$COMMIT" \
   "$(git branch --show-current || echo detached)" "$(date -Iseconds)" "$VALIDATION" \
   | sudo tee "$PORTAL_APP_DIR/DEPLOYED" >/dev/null
 
-echo "==> systemctl restart $PORTAL_SERVICE"
-sudo systemctl restart "$PORTAL_SERVICE"
+# #53 : la base des comptes joueurs est copiée service ARRÊTÉ (copie cohérente), jamais écrasée :
+# un fichier daté par déploiement, 10 gardés. Absente tant que accounts-enabled=false.
+echo "==> systemctl stop $PORTAL_SERVICE"
+sudo systemctl stop "$PORTAL_SERVICE"
+if sudo test -f "$PORTAL_STATE_DIR/accounts.db"; then
+  echo "==> sauvegarde des comptes -> $PORTAL_ACCOUNTS_BACKUP_DIR/accounts-$TS.db"
+  sudo install -d -m 0700 -o root -g root "$PORTAL_ACCOUNTS_BACKUP_DIR"
+  sudo cp -a "$PORTAL_STATE_DIR/accounts.db" "$PORTAL_ACCOUNTS_BACKUP_DIR/accounts-$TS.db"
+  sudo bash -c "ls -1 '$PORTAL_ACCOUNTS_BACKUP_DIR'/accounts-*.db | sort -r | tail -n +11 | xargs -r rm -f" || true
+fi
+echo "==> systemctl start $PORTAL_SERVICE"
+sudo systemctl start "$PORTAL_SERVICE"
 echo "==> health local"
 if portal::wait_health; then
   echo "==> rétention : 5 releases max"

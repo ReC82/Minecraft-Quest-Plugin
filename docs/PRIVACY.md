@@ -43,23 +43,26 @@ juridique exacte est une décision du propriétaire après revue.
 | Adresse IP du visiteur | limite de fréquence (en mémoire), journal d'accès du portail (journald) et de nginx | exploitant seulement | mémoire : 1 min ; journaux : **à décider** (proposé : 14 jours) | intérêt légitime (sécurité) | rotation des journaux |
 | Choix `/profile web` | appliquer la préférence | exploitant (base du jeu) | tant que le compte Minecraft existe sur le serveur | nécessaire à l'exécution du choix | modifiable à tout moment en jeu |
 
-### 2.2 Données prévues avec les comptes (#53) — non réalisé
+### 2.2 Données des comptes (#53) — réalisé, désactivé sur l'instance publique
 
-| Donnée | Pourquoi | Qui la voit | Durée proposée | Correction / export / suppression |
+Base dédiée `accounts.db` du portail (ni `data.db`, ni PlugAdmin). Elle n'existe pas tant que
+`accounts-enabled=false`.
+
+| Donnée | Pourquoi | Qui la voit | Durée | Correction / export / suppression |
 | --- | --- | --- | --- | --- |
-| Identifiant interne du compte | clé technique | personne en public | vie du compte | export ; supprimé avec le compte |
-| E-mail (ou identité d'authentification) | connexion, récupération, contact du parent si besoin | le joueur, l'exploitant | vie du compte | modifiable ; export ; supprimé avec le compte |
-| Hachage du mot de passe (Argon2id ou PBKDF2 fort) | connexion | personne | vie du compte | changement de mot de passe ; jamais exporté |
-| UUID Minecraft lié | relier compte ↔ joueur (preuve en jeu, #53) | le joueur, l'exploitant ; **jamais public** | vie de la liaison | dissociation depuis le compte |
-| Dernier pseudo connu | affichage | public **seulement** si le joueur est public | vie de la liaison | suit Minecraft |
-| Région (code pays) | appliquer le seuil d'âge du pays | l'exploitant | vie du compte | modifiable ; **pas** stockée si la région desservie est unique (décision) |
-| Résultat de la vérification d'âge (`ALLOWED`, `PARENTAL_CONSENT_REQUIRED`) | appliquer la politique | l'exploitant | vie du compte | l'âge déclaré **n'est pas conservé**, seul le résultat l'est |
-| Statut de consentement parental + date + moyen | preuve minimale | l'exploitant ; **jamais** les autres joueurs | vie du compte + **à décider** après retrait (proposé : 1 an, preuve) | retrait par le parent ou le joueur |
-| Préférences de confidentialité | appliquer les choix | le joueur | vie du compte | modifiables |
-| Sessions (cookie `HttpOnly`, `Secure`, `SameSite=Lax`) | rester connecté | personne | proposé : 30 jours glissants | déconnexion ; purge à expiration |
-| Codes de liaison en jeu | prouver la possession du compte Minecraft | personne | 10 minutes, usage unique ; **purgés** à expiration | — |
-| Journal de sécurité (connexions, liaisons) | détecter un abus | l'exploitant | proposé : 90 jours | purge automatique |
-| Inscriptions à un événement (#57) | classer, récompenser | public selon le règlement de l'événement | durée de l'événement + archive (à décider) | retrait avant la fin |
+| Identifiant interne du compte (UUID aléatoire) | clé technique | personne en public | vie du compte | supprimé avec le compte |
+| Identifiant de connexion choisi (3–32 caractères ; ni vrai nom ni pseudo conseillés) | connexion | le joueur, l'exploitant | vie du compte | export / suppression : **à réaliser** avant ouverture |
+| Empreinte du mot de passe (PBKDF2-HMAC-SHA256, 600 000 itérations, sel aléatoire) | connexion | personne | vie du compte | jamais exportée |
+| Statut de consentement (`NOT_REQUIRED`, `PENDING`…) | appliquer la politique d'âge | l'exploitant | vie du compte | l'âge et le pays déclarés **ne sont pas conservés**, seul le statut l'est |
+| UUID Minecraft lié | relier compte ↔ joueur (preuve en jeu) | le joueur (indirectement), l'exploitant ; **jamais public** | vie de la liaison | dissociation depuis le compte (mot de passe exigé) |
+| Pseudo Minecraft au moment de la liaison | affichage sur la page du compte | le joueur, l'exploitant | vie de la liaison | dissociation |
+| Sessions : **empreinte** SHA-256 du jeton + jeton anti-CSRF | rester connecté | personne | 7 jours (absolu, `accounts-session-ttl-hours`) ; purge à expiration | déconnexion |
+| Codes de liaison : **empreinte** SHA-256 | prouver la possession du compte Minecraft | personne | 10 minutes, usage unique ; purgés une heure après expiration | un nouveau code annule le précédent |
+| Journal des liaisons (liaison, dissociation, refus ; pseudo, UUID, date) | audit, détection d'abus | le joueur (10 derniers) et l'exploitant | **à décider** (proposé : 1 an) — pas encore de purge automatique | — |
+| Compteurs d'échecs (connexion par IP et identifiant, preuves par UUID) | anti-abus | personne | mémoire seulement, 15 minutes | — |
+
+Aucun e-mail n'est demandé : pas de prestataire choisi, et la récupération de compte pourra se
+faire par une nouvelle preuve en jeu (voir [WEB_PORTAL.md §2](WEB_PORTAL.md)).
 
 ### 2.3 Données à ne pas collecter
 
@@ -99,18 +102,23 @@ Règles du code :
 Vérification d'âge : déclaration simple, sans pièce d'identité, tant qu'aucune obligation plus
 forte n'est identifiée par la revue juridique.
 
-## 4. Droits des joueurs (à réaliser avec #53)
+## 4. Droits des joueurs (#53 : en partie réalisé)
 
-Le compte devra offrir : consultation des données principales, correction, **export** (fichier
-JSON de ses propres données), **suppression** (désactivation immédiate, effacement après le délai
-décidé), **dissociation** Minecraft, gestion et **retrait** des consentements. Les données
+Fait : consultation (page `/compte` : liaison, pseudo, date, 10 dernières opérations),
+**dissociation** Minecraft (mot de passe exigé, journalisée). À réaliser **avant l'ouverture
+publique** : **export** (fichier JSON de ses propres données), **suppression** du compte
+(désactivation immédiate, effacement après le délai décidé), changement de mot de passe, gestion et
+**retrait** des consentements. Les données
 conservées après suppression (sécurité, litige, obligation légale) seront listées ici avec leur
 durée. Avant les comptes, la seule donnée publiable est le pseudo d'un joueur ayant accepté, et
 `/profile web prive` suffit à le retirer.
 
 ## 5. Cookies, analyse d'audience, prestataires
 
-- **Cookies** : aucun aujourd'hui. Avec les comptes : un cookie de session strictement nécessaire.
+- **Cookies** : aucun tant que les comptes sont désactivés. Comptes activés : deux cookies
+  strictement nécessaires, `HttpOnly` et `Secure` — `lq_session` (session, `SameSite=Lax`,
+  7 jours) et `lq_form` (anti-CSRF des formulaires de connexion et d'inscription,
+  `SameSite=Strict`, 2 heures).
   Aucun traceur publicitaire en V1. Un outil d'analyse ne sera ajouté qu'après inventaire et, si
   requis, consentement.
 - **Prestataires** (à compléter et valider avant ouverture) : hébergement AWS (instance du
@@ -122,8 +130,9 @@ durée. Avant les comptes, la seule donnée publiable est le pseudo d'un joueur 
 TLS (Let's Encrypt, nginx) ; écoute locale `127.0.0.1` ; `/api/` fermé par nginx et protégé par
 jeton ; secrets hors Git (`/etc/lodyquests-portal/portal.env`) ; journaux sans secret ; service
 sous utilisateur dédié avec plafond mémoire. **À documenter avant production** : procédure de
-gestion d'incident (fuite, compte compromis), protection des sauvegardes de la future base des
-comptes.
+gestion d'incident (fuite, compte compromis). Base des comptes : copiée à chaque déploiement,
+service arrêté, dans `/opt/lodyquests-portal/backups/` (root, 700, 10 copies) ; mots de passe,
+jetons de session et codes n'y figurent qu'en empreinte.
 
 ## 7. Décisions du propriétaire avant ouverture
 

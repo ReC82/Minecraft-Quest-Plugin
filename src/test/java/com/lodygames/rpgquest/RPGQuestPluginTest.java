@@ -48,6 +48,19 @@ class RPGQuestPluginTest {
     }
 
     @Test
+    void portalLinkCommandIsRegisteredAndInertWithoutItsLocalFile() {
+        // Issue #53 : /lien existe toujours, mais ne contacte rien tant que portal-link.properties manque.
+        var lien = plugin.getCommand("lien");
+        assertNotNull(lien);
+        assertNotNull(lien.getExecutor());
+        var player = server.addPlayer();
+        player.performCommand("lien ABCD2345");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(player.nextComponentMessage()).contains("pas activée"));
+    }
+
+    @Test
     void pluginStartsCleanlyWithNoResourcePackConfigured() {
         // resource-pack.enabled vaut false par défaut (config.yml embarqué) : le plugin doit démarrer
         // et fonctionner normalement (apparence vanilla) sans jamais exiger de resource pack.

@@ -15,7 +15,8 @@ validation CI #257), mais **strictement séparé** de lui.
 | Versions précédentes | `/opt/lodyquests-portal/releases/<AAAAMMJJ-HHMMSS>` (5 gardées) |
 | Données | `/var/lib/lodyquests-portal` (seul dossier inscriptible) |
 | Configuration | `/etc/lodyquests-portal/web-api.properties` (non secrète) |
-| Secrets | `/etc/lodyquests-portal/portal.env` (root:lodyquests-web, 640) — **vide** aujourd'hui |
+| Secrets | `/etc/lodyquests-portal/portal.env` (root:lodyquests-web, 640) — **vide** aujourd'hui (futur : `RPGQUEST_PORTAL_LINK_TOKEN`, #53) |
+| Comptes joueurs (#53) | `accounts-enabled=false` : pas de `accounts.db`. Activés : `/var/lib/lodyquests-portal/accounts.db`, copiée à chaque déploiement (service arrêté) dans `/opt/lodyquests-portal/backups/accounts-<AAAAMMJJ-HHMMSS>.db` (10 gardées) |
 | nginx | `/etc/nginx/sites-available/lodyquests-portal` (+ lien dans `sites-enabled/`) |
 | Journaux | `journalctl -u lodyquests-portal` ; nginx : `/var/log/nginx/lodyquests_portal_*.log` |
 | Mémoire | tas JVM 96 Mo, `MemoryMax=256M` (≈ 30 Mo au repos), `CPUQuota=50%` |
@@ -24,10 +25,13 @@ Les fichiers versionnés correspondants sont dans `scripts/web-portal/`.
 
 ### Séparation d'avec PlugAdmin
 
-Autre utilisateur, autre service, autre port, autre vhost, autres secrets. Le portail n'a **aucun
-compte, aucune session, aucune action d'administration** : il n'affiche que des pages publiques.
+Autre utilisateur, autre service, autre port, autre vhost, autres secrets. Le portail n'a **aucune
+action d'administration**. Ses comptes joueurs (#53, désactivés aujourd'hui) vivent dans sa propre
+base, avec son propre cookie, et ne donnent aucun droit ni sur le jeu ni sur PlugAdmin.
 L'API `/api/*` (jeton `RPGQUEST_WEB_API_TOKEN`) est fermée deux fois : aucun jeton n'est configuré
-(401) et nginx répond 404 sur `/api/` côté public.
+(401) et nginx répond 404 sur `/api/` côté public. Seule exception, `location = /api/link/confirm`
+(POST, jeton dédié `RPGQUEST_PORTAL_LINK_TOKEN`, 401 sans lui, 503 tant que les comptes sont
+fermés) : le serveur Minecraft y envoie la preuve d'un `/lien <code>`.
 
 ### Confidentialité (#55)
 
@@ -72,8 +76,8 @@ scripts/web-portal/deploy.sh                 # jamais sous sudo (gh doit rester 
 ```
 
 Refuse un code `web-api/` non commité ou une CI rouge ; sans CI, lance `:web-api:test` en local
-(ou réutilise le marqueur de `scripts/dev/check.sh`). Sauvegarde l'app courante, installe,
-redémarre, sonde `/health` ; **si `/health` échoue, remet automatiquement la version précédente**.
+(ou réutilise le marqueur de `scripts/dev/check.sh`). Sauvegarde l'app courante, installe, arrête
+le service, copie `accounts.db` s'il existe, redémarre, sonde `/health` ; **si `/health` échoue, remet automatiquement la version précédente**.
 
 ## Revenir en arrière
 
@@ -105,5 +109,27 @@ Depuis un navigateur (`PENDING MANUAL VALIDATION` tant que le propriétaire ne l
 4. sur téléphone : le menu passe à la ligne, aucun défilement horizontal ;
 5. `https://plugadmin.lodylands.com` fonctionne toujours, avec sa propre connexion.
 
-Côté Minecraft : rien à vérifier pour ce lot — le plugin n'est pas modifié et `web-export` reste
+### Comptes et liaison Minecraft (#53) — `PENDING MANUAL VALIDATION`
+
+Aujourd'hui (comptes désactivés) : `https://lodyquests.lodylands.com/compte` affiche « pas encore
+ouverts », sans formulaire ; en jeu, `/lien ABCD2345` répond « La liaison avec le portail n'est pas
+activée sur ce serveur. » ; `curl -s -o /dev/null -w '%{http_code}\n' -X POST
+https://lodyquests.lodylands.com/api/link/confirm` → `401`.
+
+Après activation (WEB_PORTAL.md §2, « Mise en route ») :
+
+1. `/compte` → créer un compte (pays configuré, âge au-dessus du seuil) → message « Compte créé » ;
+   se connecter → « Connecté en tant que … », « Aucun compte Minecraft relié » ;
+2. « Obtenir un code de liaison » → la page affiche `/lien XXXXXXXX` et l'heure limite ;
+3. en jeu : `/lien XXXXXXXX` → « C'est fait : ton compte Minecraft est relié… » ; recharger
+   `/compte` → « Relié à <pseudo> depuis le … » et « liaison avec <pseudo> » dans l'historique ;
+4. retaper le même code (ou depuis un autre joueur) → « Code invalide ou expiré » ; un code
+   attendu plus de 10 minutes → même message ;
+5. un second compte web qui tente de lier le même joueur → « Ton compte Minecraft est déjà relié… » ;
+6. « Délier » avec un mauvais mot de passe → refus ; avec le bon → « délié », ligne
+   « dissociation de <pseudo> » ;
+7. « Se déconnecter », puis bouton Précédent du navigateur → plus connecté ;
+8. `journalctl -u lodyquests-portal` et `latest.log` : aucun code ni jeton.
+
+Côté Minecraft, hors comptes : rien à vérifier pour ce lot — le plugin n'est pas modifié et `web-export` reste
 désactivé. La première vérification en jeu viendra avec #421 (`/health` passant à `FRESH`).

@@ -5257,6 +5257,19 @@ Un marchand n'a **aucun lien direct à une entité PNJ** — il ne s'ouvre que v
 
 Persistance : `player_skills`, `xp_grants` (dédup anti-farm), `player_placed_blocks` (SQLite, migration V8). Détail complet (courbe, anti-farm, sources d'XP) : [docs/PROGRESSION.md](PROGRESSION.md).
 
+### Portail — `/lien` (liaison du compte web, #53)
+
+| Commande | Type | Permission | Effet |
+|---|---|---|---|
+| `/lien <code>` (alias `/link`) | Joueur | `rpgquest.portal.link` (défaut : tous) | Relie le compte Minecraft **de l'émetteur** (son UUID, jamais un argument) au compte du portail qui a affiché ce code sur `/compte`. Réponses : relié / code invalide ou expiré / déjà relié / trop d'essais / portail indisponible — jamais d'information sur le compte web. 5 s entre deux essais. |
+
+Configuration : fichier **hors Git** `plugins/RPGQuest/portal-link.properties` (modèle
+`scripts/portal-link.properties.example` : `enabled`, `base-url` HTTPS, `token` = le
+`RPGQUEST_PORTAL_LINK_TOKEN` du portail), lu au démarrage ; variables `RPGQUEST_PORTAL_LINK_*` en
+surcharge. Absent : `/lien` répond « pas activée » et ne contacte rien. Aucune donnée ajoutée à
+`data.db` : la liaison vit dans la base du portail. Parcours et sécurité :
+[WEB_PORTAL.md §2](WEB_PORTAL.md).
+
 ### Boutique web — `/store`
 
 | Commande | Type | Permission | Effet |

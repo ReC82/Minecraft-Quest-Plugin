@@ -1412,6 +1412,57 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> questCatalogAssign(String catalogId, Set<String> templateIds) {
+        if (questCatalogs == null || encounters == null) {
+            return AgentActions.super.questCatalogAssign(catalogId, templateIds);
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            var templates = encounters.templates().templates();
+            Set<String> known = templates.stream().map(com.lodygames.rpgquest.encounter.model.EncounterTemplate::id)
+                    .collect(java.util.stream.Collectors.toSet());
+            List<String> unknown = templateIds.stream().filter(id -> !known.contains(id)).toList();
+            if (!unknown.isEmpty()) {
+                return MutationResult.of(false, "UNKNOWN_TEMPLATE", "Modèle(s) de PNJ inconnu(s) : "
+                        + String.join(", ", unknown) + ". Actualisez la page.");
+            }
+            List<String> effects = new ArrayList<>();
+            boolean changed = false;
+            for (var t : templates) {
+                boolean wanted = templateIds.contains(t.id());
+                boolean has = t.questCatalogs().contains(catalogId);
+                if (wanted == has) {
+                    continue;
+                }
+                List<String> next = new ArrayList<>(t.questCatalogs());
+                if (wanted) {
+                    next.add(catalogId);
+                } else {
+                    next.remove(catalogId);
+                }
+                var r = encounterTemplateStore().update(new com.lodygames.rpgquest.encounter.model.EncounterTemplate(
+                        t.id(), t.displayName(), t.description(), t.npcId(), t.role(), t.family(), t.biomes(),
+                        t.worlds(), t.weight(), t.maxSites(), t.skinUrl(), t.enabled(), List.copyOf(next)));
+                if (!r.ok()) {
+                    encounters.templates().reload();
+                    return new MutationResult(false, r.code(), "« " + t.id() + " » : " + r.message(),
+                            List.copyOf(effects));
+                }
+                changed = true;
+                effects.add((wanted ? "proposé par « " : "retiré de « ") + t.displayName() + " »");
+                if (wanted && !dialogueOffersCatalog(t.npcId())) {
+                    effects.add("⚠ « " + t.displayName() + " » ne sait pas encore proposer ces quêtes : son "
+                            + "dialogue n'a pas l'action « Proposer une quête du catalogue ».");
+                }
+            }
+            if (changed) {
+                encounters.templates().reload();
+            }
+            return new MutationResult(true, changed ? "ASSIGNED" : "UNCHANGED",
+                    changed ? "PNJ mis à jour." : "PNJ inchangés.", List.copyOf(effects));
+        });
+    }
+
+    @Override
     public CompletableFuture<MutationResult> questCatalogDelete(String catalogId, boolean detach) {
         if (questCatalogs == null || encounters == null) {
             return AgentActions.super.questCatalogDelete(catalogId, detach);

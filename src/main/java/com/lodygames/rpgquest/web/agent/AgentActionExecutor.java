@@ -1315,6 +1315,20 @@ public final class AgentActionExecutor {
             details.put("issues", view.issues());
             details.put("quests", quests);
             details.put("warnings", view.warnings());
+            List<Map<String, Object>> templates = new ArrayList<>();
+            for (AgentActions.QuestCatalogTemplateRef t : view.templates()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", t.id());
+                row.put("displayName", t.displayName());
+                row.put("npcId", t.npcId());
+                row.put("enabled", t.enabled());
+                row.put("questCatalogs", t.questCatalogs());
+                row.put("offersCatalog", t.offersCatalog());
+                templates.add(row);
+            }
+            // Issue #414 : la présence de « templates » annonce au panel que l'action
+            // quest.catalog.create/update sait aussi fixer les modèles (paramètre assign_templates).
+            details.put("templates", templates);
             details.put("generatedAtEpochMs", view.generatedAtEpochMs());
             if (!view.available()) {
                 return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "UNAVAILABLE",
@@ -1360,9 +1374,38 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Catalogue refusé : " + String.join(" ",
                     parsed.issues().stream().map(com.lodygames.rpgquest.encounter.EncounterLoadIssue::message).toList())));
         }
-        return actions.questCatalogSave(parsed.catalog(), create)
-                .thenApply(r -> mutationOutcome(action, r, "catalogId", parsed.catalog().id()))
+        String catalogId = parsed.catalog().id();
+        // Issue #414 : « assign_templates=true » fixe aussi les modèles qui proposent ce catalogue,
+        // APRÈS l'écriture réussie du catalogue — jamais un modèle pointant vers un catalogue refusé.
+        // Absent, les modèles ne sont pas touchés (comportement #369).
+        boolean assign = "true".equals(trimOrNull(action.param("assign_templates")));
+        java.util.Set<String> templateIds = new java.util.LinkedHashSet<>(splitList(action.param("templates")));
+        if (assign && !templateIds.stream().allMatch(t ->
+                com.lodygames.rpgquest.encounter.model.EncounterTemplate.ID_PATTERN.matcher(t).matches())) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « templates » invalide."));
+        }
+        CompletableFuture<AgentActions.MutationResult> saved = actions.questCatalogSave(parsed.catalog(), create);
+        if (assign) {
+            saved = saved.thenCompose(r -> !r.ok() ? CompletableFuture.completedFuture(r)
+                    : actions.questCatalogAssign(catalogId, templateIds).thenApply(a -> combine(r, a)));
+        }
+        return saved.thenApply(r -> mutationOutcome(action, r, "catalogId", catalogId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * Catalogue écrit puis modèles associés : un échec de l'association est rapporté comme tel
+     * (le catalogue, lui, reste enregistré — le message le dit), jamais comme un succès complet.
+     */
+    private static AgentActions.MutationResult combine(AgentActions.MutationResult saved,
+                                                       AgentActions.MutationResult assigned) {
+        List<String> effects = new ArrayList<>(saved.effects());
+        effects.addAll(assigned.effects());
+        if (!assigned.ok()) {
+            return new AgentActions.MutationResult(false, assigned.code(), "Catalogue enregistré, mais PNJ non "
+                    + "modifiés : " + assigned.message(), List.copyOf(effects));
+        }
+        return new AgentActions.MutationResult(true, saved.code(), saved.message(), List.copyOf(effects));
     }
 
     private CompletableFuture<AgentActionOutcome> questCatalogDelete(AgentAction action) {

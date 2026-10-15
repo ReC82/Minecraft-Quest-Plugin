@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import com.lodygames.rpgquest.player.PlayerResetService;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -1255,14 +1256,34 @@ public interface AgentActions {
     record QuestRef(String id, String title, String category) {
     }
 
+    /**
+     * Issue #414 — un modèle de PNJ récurrent, pour choisir depuis un catalogue qui le propose.
+     * {@code offersCatalog} : le dialogue {@code rpgquest:<npcId>} contient une action
+     * {@code OFFER_CATALOG_QUEST} — sans elle, l'association seule ne propose rien en jeu.
+     */
+    record QuestCatalogTemplateRef(String id, String displayName, String npcId, boolean enabled,
+                                   List<String> questCatalogs, boolean offersCatalog) {
+    }
+
     /** {@code warnings} : contrôles transverses (modèle → catalogue inconnu, dialogue sans offre…). */
     record QuestCatalogListView(boolean available, List<QuestCatalogSummary> catalogs, Map<String, String> issues,
-                                List<QuestRef> quests, List<String> warnings, long generatedAtEpochMs) {
+                                List<QuestRef> quests, List<String> warnings, List<QuestCatalogTemplateRef> templates,
+                                long generatedAtEpochMs) {
     }
 
     default CompletableFuture<QuestCatalogListView> questCatalogList() {
         return CompletableFuture.completedFuture(new QuestCatalogListView(false, List.of(), Map.of(), List.of(),
-                List.of(), System.currentTimeMillis()));
+                List.of(), List.of(), System.currentTimeMillis()));
+    }
+
+    /**
+     * Issue #414 — fixe exactement les modèles qui proposent un catalogue : ajouté aux modèles
+     * nommés, retiré des autres. Refusé en entier si un modèle est inconnu ; les autres catalogues
+     * d'un modèle ne sont jamais touchés.
+     */
+    default CompletableFuture<MutationResult> questCatalogAssign(String catalogId, Set<String> templateIds) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogues de quêtes indisponibles sur ce serveur."));
     }
 
     /** Écrit un catalogue déjà validé ({@code create} : échoue s'il existe), puis relit les catalogues. */

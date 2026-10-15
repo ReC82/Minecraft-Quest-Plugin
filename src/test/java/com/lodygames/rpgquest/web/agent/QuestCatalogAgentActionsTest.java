@@ -27,12 +27,20 @@ class QuestCatalogAgentActionsTest {
 
     private final List<QuestCatalog> saved = new ArrayList<>();
     private final List<String> deleted = new ArrayList<>();
+    private final List<String> assigned = new ArrayList<>();
+    private boolean saveOk = true;
 
     private final StubAgentActions actions = new StubAgentActions() {
         @Override
         public CompletableFuture<MutationResult> questCatalogSave(QuestCatalog catalog, boolean create) {
             saved.add(catalog);
-            return CompletableFuture.completedFuture(MutationResult.of(true, create ? "CREATED" : "UPDATED", "ok"));
+            return CompletableFuture.completedFuture(MutationResult.of(saveOk, create ? "CREATED" : "UPDATED", "ok"));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> questCatalogAssign(String catalogId, Set<String> templateIds) {
+            assigned.add(catalogId + ":" + String.join(",", templateIds));
+            return CompletableFuture.completedFuture(MutationResult.of(true, "ASSIGNED", "ok"));
         }
 
         @Override
@@ -60,6 +68,29 @@ class QuestCatalogAgentActionsTest {
                 new QuestCatalog.Entry("rpgquest:spiders", 5, true),
                 new QuestCatalog.Entry("rpgquest:loot", 10, false),
                 new QuestCatalog.Entry("other:x", 10, true))), saved.get(0));
+    }
+
+    /** Issue #414 — les modèles ne sont fixés que sur demande explicite, et après un catalogue écrit. */
+    @Test
+    void templatesAreAssignedOnlyWhenAskedAndAfterASuccessfulSave() {
+        run("quest.catalog.update", Map.of("id", "bandit", "display_name", "C", "entries", "a"));
+        assertTrue(assigned.isEmpty(), "sans assign_templates, les modèles ne sont pas touchés");
+
+        AgentActionOutcome outcome = run("quest.catalog.create", Map.of("id", "forest", "display_name", "Forêt",
+                "entries", "a", "assign_templates", "true", "templates", "forest_bandit,mountain_smith"));
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status(), outcome.message());
+        assertEquals(List.of("forest:forest_bandit,mountain_smith"), assigned);
+
+        run("quest.catalog.update", Map.of("id", "forest", "display_name", "Forêt", "entries", "a",
+                "assign_templates", "true", "templates", ""));
+        assertEquals("forest:", assigned.get(1), "liste vide = retiré de tous les modèles");
+
+        saveOk = false;
+        run("quest.catalog.update", Map.of("id", "forest", "display_name", "Forêt", "entries", "a",
+                "assign_templates", "true", "templates", "forest_bandit"));
+        assertEquals(2, assigned.size(), "catalogue refusé : aucun modèle modifié");
+        assertFalse(AgentActionOutcome.SUCCESS.equals(run("quest.catalog.update", Map.of("id", "forest",
+                "display_name", "F", "assign_templates", "true", "templates", "Bad Id")).status()));
     }
 
     @Test
@@ -103,6 +134,9 @@ class QuestCatalogAgentActionsTest {
         assertTrue(view.warnings().stream().anyMatch(w -> w.contains("OFFER_CATALOG_QUEST")));
         assertTrue(view.warnings().stream().anyMatch(w -> w.contains("desert_merchant")));
         assertEquals("rpgquest:spiders", view.quests().get(0).id());
+        assertEquals(2, view.templates().size(), "modèles listés pour le choix des PNJ (#414)");
+        assertEquals(List.of("bandit", "nope"), view.templates().get(0).questCatalogs());
+        assertFalse(view.templates().get(0).offersCatalog());
     }
 
     private static EncounterTemplate template(String id, String npcId, List<String> catalogs) {

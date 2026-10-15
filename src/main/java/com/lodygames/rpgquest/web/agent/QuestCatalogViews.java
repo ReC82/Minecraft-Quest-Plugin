@@ -69,7 +69,11 @@ final class QuestCatalogViews {
                 .sorted(Comparator.comparing(q -> q.id().toString()))
                 .map(q -> new AgentActions.QuestRef(q.id().toString(), plain(q.title().base()), q.category()))
                 .toList();
-        return new AgentActions.QuestCatalogListView(true, rows, issueRows, refs, warnings,
+        List<AgentActions.QuestCatalogTemplateRef> templateRefs = templates.stream()
+                .map(t -> new AgentActions.QuestCatalogTemplateRef(t.id(), t.displayName(), t.npcId(), t.enabled(),
+                        List.copyOf(t.questCatalogs()), dialogueOffersCatalog.test(t.npcId())))
+                .toList();
+        return new AgentActions.QuestCatalogListView(true, rows, issueRows, refs, warnings, templateRefs,
                 System.currentTimeMillis());
     }
 

@@ -91,6 +91,11 @@ public final class WaypointService implements PluginService {
 
     private final ConcurrentHashMap<UUID, Set<String>> discoveriesByPlayer = new ConcurrentHashMap<>();
 
+    /** Issue #134 : waypoints en cours de renommage (un seul renommage à la fois par waypoint). */
+    private final Set<String> renaming = ConcurrentHashMap.newKeySet();
+    /** Issue #134 : renommés alors que leur chunk n'était pas chargé — panneaux réécrits à son chargement. */
+    private final Set<String> pendingSignRefresh = ConcurrentHashMap.newKeySet();
+
     /** Variable joueur du dernier waypoint activé par son bouton (issue #215). */
     public static final String LAST_WAYPOINT_KEY = "LAST_WAYPOINT";
 
@@ -158,6 +163,8 @@ public final class WaypointService implements PluginService {
     public void stop() {
         byId.clear();
         usedDisplayNames.clear();
+        renaming.clear();
+        pendingSignRefresh.clear();
         byInstance.clear();
         byInteractorBlock.clear();
         protectedBlocks.clear();
@@ -504,6 +511,138 @@ public final class WaypointService implements PluginService {
             processed++;
         }
         return processed;
+    }
+
+    // ---- Renommage administré (issue #134) ----------------------------------------------------
+
+    /**
+     * Issue #134 — issue d'un renommage. {@code signsRefreshed} : panneaux réécrits immédiatement
+     * (chunk chargé) ; sinon ils le seront au prochain chargement du chunk.
+     */
+    public record RenameResult(boolean ok, String code, String message, String previousName,
+                               String newName, boolean signsRefreshed) {
+        static RenameResult refused(String code, String message) {
+            return new RenameResult(false, code, message, null, null, false);
+        }
+    }
+
+    /**
+     * Change le seul <strong>nom d'affichage</strong> d'un waypoint : {@code id}, instance de biome,
+     * position, découvertes joueurs, références de quête et appariement de borne restent
+     * inchangés. Unicité insensible à la casse et aux accents via le même index mémoire que la
+     * génération ({@code usedDisplayNames}), le nouveau nom étant réservé avant l'écriture en base
+     * pour qu'une génération concurrente ne puisse pas le prendre. Un changement de seule casse ou
+     * d'accents du nom actuel est accepté. À appeler sur le thread principal.
+     *
+     * <p>Les panneaux sont réécrits tout de suite si la structure est dans des chunks chargés —
+     * jamais de chargement forcé — sinon au prochain chargement du chunk ({@link #handleChunkLoad}).
+     * Seul leur texte change : une structure abîmée n'est pas reconstruite ici.</p>
+     */
+    public CompletableFuture<RenameResult> rename(String waypointId, String rawName) {
+        String newName = WaypointNameCatalog.cleanDisplayName(rawName);
+        Optional<String> invalid = WaypointNameCatalog.validateDisplayName(newName);
+        if (invalid.isPresent()) {
+            return CompletableFuture.completedFuture(RenameResult.refused("INVALID", invalid.get()));
+        }
+        Waypoint existing = waypointId == null ? null : byId.get(waypointId);
+        if (existing == null) {
+            return CompletableFuture.completedFuture(RenameResult.refused("NOT_FOUND",
+                    "Waypoint introuvable : " + waypointId));
+        }
+        if (existing.displayName().equals(newName)) {
+            return CompletableFuture.completedFuture(RenameResult.refused("UNCHANGED",
+                    "Le waypoint porte déjà ce nom : rien n'a été modifié."));
+        }
+        if (!renaming.add(waypointId)) {
+            return CompletableFuture.completedFuture(RenameResult.refused("BUSY",
+                    "Un renommage de ce waypoint est déjà en cours."));
+        }
+        String oldKey = WaypointNameCatalog.normalize(existing.displayName());
+        String newKey = WaypointNameCatalog.normalize(newName);
+        boolean sameKey = oldKey.equals(newKey);
+        if (!sameKey && !usedDisplayNames.add(newKey)) {
+            renaming.remove(waypointId);
+            return CompletableFuture.completedFuture(RenameResult.refused("DUPLICATE",
+                    "Un autre waypoint porte déjà ce nom (casse et accents ignorés)."));
+        }
+        CompletableFuture<RenameResult> result = new CompletableFuture<>();
+        repository.updateDisplayName(waypointId, newName).whenComplete((updated, error) -> runSync(() -> {
+            renaming.remove(waypointId);
+            if (error != null || !Boolean.TRUE.equals(updated)) {
+                if (!sameKey) {
+                    usedDisplayNames.remove(newKey);
+                }
+                if (error != null) {
+                    logger.error("Impossible de renommer le waypoint {}", waypointId, error);
+                }
+                result.complete(RenameResult.refused("FAILED", error != null
+                        ? "Échec de l'écriture en base : rien n'a été modifié."
+                        : "Waypoint absent de la base : rien n'a été modifié."));
+                return;
+            }
+            Waypoint current = byId.getOrDefault(waypointId, existing);
+            Waypoint renamed = new Waypoint(current.id(), newName, current.world(), current.biomeInstance(),
+                    current.biomeKey(), current.regionX(), current.regionZ(), current.x(), current.y(),
+                    current.z(), current.facing(), current.modelVersion(), current.active(), current.createdAt());
+            if (!sameKey) {
+                usedDisplayNames.remove(oldKey);
+            }
+            index(renamed);
+            boolean refreshed = refreshSignsIfLoaded(renamed);
+            if (!refreshed) {
+                pendingSignRefresh.add(waypointId);
+            }
+            logger.info("[admin] Waypoint « {} » renommé : « {} » -> « {} » (panneaux {}).", waypointId,
+                    existing.displayName(), newName, refreshed ? "réécrits" : "réécrits au chargement du chunk");
+            result.complete(new RenameResult(true, "RENAMED", "Waypoint renommé en « " + newName + " ».",
+                    existing.displayName(), newName, refreshed));
+        }));
+        return result;
+    }
+
+    /** Waypoints renommés dont les panneaux attendent encore le chargement de leur chunk (issue #134). */
+    public Set<String> pendingSignRefresh() {
+        return Set.copyOf(pendingSignRefresh);
+    }
+
+    /**
+     * Chargement d'un chunk : réécrit les panneaux des waypoints renommés pendant qu'il était
+     * déchargé. Coût nul quand aucun renommage n'est en attente (cas normal).
+     */
+    void handleChunkLoad(World world, int chunkX, int chunkZ) {
+        if (pendingSignRefresh.isEmpty()) {
+            return;
+        }
+        for (String id : List.copyOf(pendingSignRefresh)) {
+            Waypoint waypoint = byId.get(id);
+            if (waypoint == null) {
+                pendingSignRefresh.remove(id);
+                continue;
+            }
+            if (waypoint.world().equals(world.getName())
+                    && Math.abs((waypoint.x() >> 4) - chunkX) <= 1 && Math.abs((waypoint.z() >> 4) - chunkZ) <= 1
+                    && refreshSignsIfLoaded(waypoint)) {
+                pendingSignRefresh.remove(id);
+            }
+        }
+    }
+
+    /** Réécrit le texte des panneaux si toute la structure est dans des chunks chargés ; jamais de chargement forcé. */
+    private boolean refreshSignsIfLoaded(Waypoint waypoint) {
+        World world = plugin.getServer().getWorld(waypoint.world());
+        if (world == null) {
+            return false;
+        }
+        for (int dx = -1; dx <= 1; dx += 2) {
+            for (int dz = -1; dz <= 1; dz += 2) {
+                if (!world.isChunkLoaded((waypoint.x() + dx) >> 4, (waypoint.z() + dz) >> 4)) {
+                    return false;
+                }
+            }
+        }
+        modelRegistry.resolveOrCurrent(waypoint.modelVersion()).refreshName(world, waypoint.x(), waypoint.y(),
+                waypoint.z(), parseFacing(waypoint.facing()), waypoint.displayName());
+        return true;
     }
 
     // ---- Intégrité structurelle / réparation sur place (issue #191) --------------------------

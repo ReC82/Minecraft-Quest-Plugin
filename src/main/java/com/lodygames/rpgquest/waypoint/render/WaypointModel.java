@@ -37,6 +37,15 @@ public interface WaypointModel {
      */
     void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName);
 
+    /**
+     * Issue #134 : réécrit <strong>uniquement</strong> le texte des panneaux de nom déjà présents
+     * (renommage). Ne pose, ne retire et ne réoriente aucun bloc : une structure abîmée reste
+     * abîmée, sa restauration relève de {@code WaypointService#restoreInPlace}.
+     *
+     * @return le nombre de panneaux effectivement réécrits
+     */
+    int refreshName(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName);
+
     /** Décalage du bloc <strong>interacteur</strong> (le bouton) : seul un clic sur CE bloc découvre. */
     BlockOffset interactor(BlockFace facing);
 

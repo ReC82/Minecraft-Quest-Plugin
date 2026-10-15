@@ -419,6 +419,11 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> renameWaypoint(String waypointId, String displayName) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<MobCatalogView> mobDefinitions() {
         return CompletableFuture.completedFuture(
                 new MobCatalogView(List.of(), new MobSpawnSettingsView(true, 1.0, null), false, List.of()));

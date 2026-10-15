@@ -36,6 +36,8 @@ public final class WaypointRepository {
     private static final String SELECT_ALL = "SELECT * FROM waypoints";
     private static final String UPDATE_POSITION =
             "UPDATE waypoints SET x = ?, y = ?, z = ?, facing = ? WHERE id = ?";
+    private static final String UPDATE_DISPLAY_NAME =
+            "UPDATE waypoints SET display_name = ? WHERE id = ?";
     private static final String SELECT_BY_INSTANCE = "SELECT * FROM waypoints WHERE world = ? AND biome_instance = ?";
     private static final String INSERT_DISCOVERY = """
             INSERT OR IGNORE INTO waypoint_discoveries (player_uuid, waypoint_id, discovered_at) VALUES (?, ?, ?)
@@ -116,6 +118,23 @@ public final class WaypointRepository {
                 statement.setInt(3, waypoint.z());
                 statement.setString(4, waypoint.facing());
                 statement.setString(5, waypoint.id());
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    /**
+     * Renommage administré (issue #134) : seul {@code display_name} change — id, instance de biome,
+     * position et découvertes joueurs restent intacts. L'index unique
+     * {@code idx_waypoints_display_name} reste le dernier rempart contre un doublon exact.
+     *
+     * @return {@code false} si aucune ligne ne porte cet id
+     */
+    public CompletableFuture<Boolean> updateDisplayName(String waypointId, String displayName) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPDATE_DISPLAY_NAME))) {
+                statement.setString(1, displayName);
+                statement.setString(2, waypointId);
                 return statement.executeUpdate() > 0;
             }
         });

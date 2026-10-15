@@ -87,6 +87,43 @@ public final class WaypointNameCatalog {
         return decomposed.replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
     }
 
+    /** Longueur maximale d'un nom saisi par un administrateur (issue #134) : 4 lignes de panneau. */
+    public static final int MAX_DISPLAY_NAME_LENGTH = 40;
+
+    /**
+     * Lettres (accents compris) et chiffres, puis espaces, apostrophes, tirets et points (issue
+     * #134). Aucun chevron ni balise : le nom est aussi inséré dans des gabarits MiniMessage du menu
+     * de voyage, il ne doit jamais pouvoir y injecter de mise en forme.
+     */
+    private static final java.util.regex.Pattern DISPLAY_NAME =
+            java.util.regex.Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{N} '’.\\-]*");
+
+    /** Espaces de début/fin retirés, espaces intérieurs consécutifs réduits à un seul. */
+    public static String cleanDisplayName(String raw) {
+        return raw == null ? "" : raw.trim().replaceAll("\\s+", " ");
+    }
+
+    /**
+     * Règles d'un nom d'affichage saisi à la main (issue #134), sur un nom déjà passé par
+     * {@link #cleanDisplayName}. L'unicité, elle, dépend de l'état du serveur : voir
+     * {@code WaypointService#rename}.
+     *
+     * @return le motif du refus, ou vide si le nom est acceptable
+     */
+    public static java.util.Optional<String> validateDisplayName(String cleaned) {
+        if (cleaned == null || cleaned.length() < 2) {
+            return java.util.Optional.of("Le nom doit contenir au moins 2 caractères.");
+        }
+        if (cleaned.length() > MAX_DISPLAY_NAME_LENGTH) {
+            return java.util.Optional.of("Le nom ne doit pas dépasser " + MAX_DISPLAY_NAME_LENGTH + " caractères.");
+        }
+        if (!DISPLAY_NAME.matcher(cleaned).matches()) {
+            return java.util.Optional.of("Caractères autorisés : lettres, chiffres, espaces, apostrophes, "
+                    + "tirets et points (commencer par une lettre ou un chiffre).");
+        }
+        return java.util.Optional.empty();
+    }
+
     /**
      * Choisit et <strong>réserve immédiatement</strong> (ajoute à {@code usedNormalized}, qui doit
      * donc déjà contenir toutes les attributions existantes) un nom non encore utilisé, dans un

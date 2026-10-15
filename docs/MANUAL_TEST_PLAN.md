@@ -6160,7 +6160,7 @@ casse ou de remise). **Durée** : 5 minutes.
 3.  Terminer un objectif en jeu, rafraîchir : la ligne porte le badge vert « fait ».
 4.  Une remise à un PNJ affiche l'objet **et** le PNJ (« Rapporter … à … »).
 
-### TC-315 — Catalogues de quêtes : parcours simplifié (issue #414, PENDING MANUAL VALIDATION)
+### TC-321 — Catalogues de quêtes : parcours simplifié (issue #414, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #414 sur DEV. Ne supprimer **que** des catalogues de test.
 

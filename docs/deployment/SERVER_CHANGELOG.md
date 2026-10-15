@@ -71,7 +71,7 @@ Sauvegarde datée du JAR en place (script `deploy-verygames.sh`).
 
 ### Validation
 
-TC-315 (PENDING MANUAL VALIDATION). Rollback : JAR sauvegardé + version précédente du panel ;
+TC-321 (PENDING MANUAL VALIDATION). Rollback : JAR sauvegardé + version précédente du panel ;
 l'ancien plugin ignore simplement les nouveaux paramètres (la page masque alors le choix des PNJ).
 
 ## 2026-10-15 - Outil « Emplacements PNJ » : clic droit sur un bloc (#381, correction)

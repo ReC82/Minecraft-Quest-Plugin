@@ -52,31 +52,94 @@ public final class PublicPlayerData {
         return result;
     }
 
-    /** Statistiques par portée : {@code scopes}, {@code lifetime} (métrique → lignes), {@code season}, {@code events}. */
+    /**
+     * Statistiques par portée (#54) : {@code scopes}, {@code metrics} (contrat des métriques),
+     * {@code lifetime} (métrique → lignes), {@code season} (une période ou {@code null}) et
+     * {@code events} (périodes). Une ligne ne garde que {@code name}, {@code value} et {@code rank}.
+     */
     public static Map<String, Object> statistics(Object raw) {
         Map<String, Object> safe = new LinkedHashMap<>();
         if (!(raw instanceof Map<?, ?> statistics)) {
             return safe;
         }
-        List<String> scopes = new ArrayList<>();
-        for (Object scope : list(statistics.get("scopes"))) {
-            if (scope instanceof String text) {
-                scopes.add(text);
+        safe.put("scopes", strings(statistics.get("scopes")));
+        List<Map<String, Object>> metrics = new ArrayList<>();
+        for (Object item : list(statistics.get("metrics"))) {
+            if (item instanceof Map<?, ?> metric && metric.get("id") instanceof String id) {
+                Map<String, Object> descriptor = new LinkedHashMap<>();
+                descriptor.put("id", id);
+                copyString(metric, descriptor, "aggregation");
+                copyString(metric, descriptor, "order");
+                descriptor.put("scopes", strings(metric.get("scopes")));
+                metrics.add(descriptor);
             }
         }
-        safe.put("scopes", scopes);
-        Map<String, Object> lifetime = new LinkedHashMap<>();
-        if (statistics.get("lifetime") instanceof Map<?, ?> metrics) {
-            for (Map.Entry<?, ?> metric : metrics.entrySet()) {
-                lifetime.put(String.valueOf(metric.getKey()), rankingRows(metric.getValue(), "value"));
+        safe.put("metrics", metrics);
+        safe.put("lifetime", boards(statistics.get("lifetime")));
+        safe.put("season", period(statistics.get("season")));
+        List<Map<String, Object>> events = new ArrayList<>();
+        for (Object item : list(statistics.get("events"))) {
+            Map<String, Object> event = period(item);
+            if (event != null) {
+                events.add(event);
             }
         }
-        safe.put("lifetime", lifetime);
-        // Saisons et événements ne sont pas encore produits (#54/#57) : rien n'est relayé tant
-        // que leur format n'est pas fixé et filtré ici.
-        safe.put("season", null);
-        safe.put("events", List.of());
+        safe.put("events", events);
         return safe;
+    }
+
+    /** Une saison ou un événement : identité, fenêtre, statut et classements, rien d'autre. */
+    private static Map<String, Object> period(Object raw) {
+        if (!(raw instanceof Map<?, ?> period) || !(period.get("id") instanceof String id)) {
+            return null;
+        }
+        Map<String, Object> safe = new LinkedHashMap<>();
+        safe.put("id", id);
+        for (String key : List.of("name", "start", "end", "status")) {
+            copyString(period, safe, key);
+        }
+        safe.put("leaderboards", boards(period.get("leaderboards")));
+        return safe;
+    }
+
+    private static Map<String, Object> boards(Object raw) {
+        Map<String, Object> boards = new LinkedHashMap<>();
+        if (raw instanceof Map<?, ?> metrics) {
+            for (Map.Entry<?, ?> metric : metrics.entrySet()) {
+                boards.put(String.valueOf(metric.getKey()), statRows(metric.getValue()));
+            }
+        }
+        return boards;
+    }
+
+    private static List<Map<String, Object>> statRows(Object raw) {
+        List<Map<String, Object>> rows = rankingRows(raw, "value");
+        List<?> source = list(raw).stream()
+                .filter(item -> item instanceof Map<?, ?> row && row.get("name") instanceof String
+                        && row.get("value") instanceof Number)
+                .toList();
+        for (int i = 0; i < rows.size(); i++) {
+            if (source.get(i) instanceof Map<?, ?> row && row.get("rank") instanceof Number rank) {
+                rows.get(i).put("rank", rank);
+            }
+        }
+        return rows;
+    }
+
+    private static void copyString(Map<?, ?> from, Map<String, Object> to, String key) {
+        if (from.get(key) instanceof String value) {
+            to.put(key, value);
+        }
+    }
+
+    private static List<String> strings(Object raw) {
+        List<String> result = new ArrayList<>();
+        for (Object item : list(raw)) {
+            if (item instanceof String text) {
+                result.add(text);
+            }
+        }
+        return result;
     }
 
     /** Pseudos des connectés : seulement des chaînes. */

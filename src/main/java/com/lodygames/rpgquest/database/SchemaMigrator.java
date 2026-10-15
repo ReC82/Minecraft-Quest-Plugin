@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 38;
+    public static final int CURRENT_VERSION = 39;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -79,7 +79,9 @@ public final class SchemaMigrator {
             new SchemaMigration(37, "villes : PNJ central optionnel + point d'arrivée distinct (issue #322)",
                     SchemaMigrator::applyV37),
             new SchemaMigration(38, "npc_spots, npc_spot_ids (emplacements de PNJ, issue #381)",
-                    SchemaMigrator::applyV38));
+                    SchemaMigrator::applyV38),
+            new SchemaMigration(39, "stat_period_archives, stat_period_results + index xp_grants (issue #54)",
+                    SchemaMigrator::applyV39));
 
     private SchemaMigrator() {
     }
@@ -1470,6 +1472,44 @@ public final class SchemaMigrator {
                         created_at TEXT NOT NULL
                     )
                     """));
+        }
+    }
+
+    private static void applyV39(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #54 — classements de saisons et d'événements. AUCUN compteur de gameplay : la valeur
+        // d'une période se lit dans xp_grants (journal horodaté et dédupliqué) sur sa fenêtre. Ces
+        // deux tables ne servent qu'à FIGER le résultat d'une période terminée, pour qu'il ne bouge
+        // plus ensuite (journal purgé par un reset de joueur, définition modifiée…).
+        // stat_period_archives.period_id en clé primaire rend l'archivage idempotent : un second
+        // archivage de la même période n'insère rien et n'écrit aucun résultat.
+        // Sans clé étrangère vers player_profiles : une archive ne doit pas perdre de lignes parce
+        // qu'un profil est supprimé ; la lecture joint les profils et ignore les orphelins.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS stat_period_archives (
+                        period_id TEXT PRIMARY KEY,
+                        scope TEXT NOT NULL,
+                        start_at TEXT NOT NULL,
+                        end_at TEXT NOT NULL,
+                        frozen_at TEXT NOT NULL
+                    )
+                    """));
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS stat_period_results (
+                        period_id TEXT NOT NULL,
+                        metric TEXT NOT NULL,
+                        player_uuid TEXT NOT NULL,
+                        stat_value INTEGER NOT NULL,
+                        PRIMARY KEY (period_id, metric, player_uuid)
+                    )
+                    """));
+            // Lecture d'une fenêtre : « octrois de cette piste entre deux instants ». Sans cet index,
+            // chaque export balaierait tout le journal. (xp_grants existe depuis V8 ; la garde ne sert
+            // qu'aux bases partielles des tests de migration.)
+            if (dialect.columnExists(connection, "xp_grants", "created_at")) {
+                statement.execute(dialect.ddl(
+                        "CREATE INDEX IF NOT EXISTS idx_xp_grants_skill_created ON xp_grants (skill, created_at)"));
+            }
         }
     }
 }

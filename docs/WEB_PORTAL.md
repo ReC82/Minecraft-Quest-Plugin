@@ -1,7 +1,7 @@
 # Portail communautaire RPGQuest (issues #52 à #57)
 
 Document de cadrage et d'état. Il décrit ce qui **existe dans le code** et ce qui est **conçu mais
-pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : 15/10/2026 (#54, modèle de statistiques lifetime / saison / événement).
+pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : 15/10/2026 (#56, V1 publique : actualités, classements par portée, profils, infos).
 
 ## 1. Cadrage (#52)
 
@@ -42,7 +42,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | 2 | Confidentialité : profils privés par défaut, liste blanche, politique d'âge configurable, registre des données | #55 | **fait** (garde-fous, [PRIVACY.md](PRIVACY.md)) ; pays, seuils d'âge, durées de conservation et textes juridiques **à décider** par le propriétaire après revue juridique |
 | 3 | Acheminer l'instantané du serveur Minecraft vers AWS | #421 | **à faire** — sans lui, le portail reste en mode dégradé |
 | 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **attend la décision** du propriétaire (#55) ; seuls les joueurs ayant tapé `/profile web public` seraient publiés |
-| 5 | V1 publique : actualités, profils, premiers classements | #56 | pages faites ; actualités éditables et publication à faire après 3 et 4 |
+| 5 | V1 publique : actualités, profils, premiers classements | #56 | **fait** (§8) : actualités en fichiers, classements lifetime / saison / événement, profils, infos & FAQ, SEO de base ; pseudos visibles seulement après 3 et 4 ; édition des actualités depuis PlugAdmin à faire |
 | 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | **fait**, désactivé (`accounts-enabled=false`) ; export et suppression de compte à faire avant ouverture ; validation navigateur + jeu à faire |
 | 7 | Saisons et événements de classement, puis moteur d'événements | #54, #57 | modèle **fait** (§4 : fenêtres du journal d'XP, archivage figé, exclusions, `statistics.yml`) ; moteur #57 conçu (§6), non réalisé |
 | 8 | Entitlements : récompenses remises par le plugin | #422 | à spécifier, après #53 et #57 |
@@ -143,7 +143,7 @@ sur le compte, l'unicité de l'UUID restant). La liaison fournira l'identité de
 `season` vaut `null` et `events` `[]` tant qu'aucun `statistics.yml` n'existe. `status` :
 `SCHEDULED` (pas encore commencée, classements vides), `ACTIVE`, `ENDED` (terminée, pas encore
 figée), `ARCHIVED` (figée). Côté portail, `privacy.PublicPlayerData` relaie ces clés par liste
-blanche ; aucune page ne les affiche encore (#56).
+blanche ; `/classements` et l'accueil les affichent (§8).
 
 ## 4. Modèle de statistiques (#54) — fait
 
@@ -303,3 +303,56 @@ Garde-fous en place sur l'instance publique (`/etc/lodyquests-portal/web-api.pro
 `store-enabled=false` (aucune boutique), écoute sur `127.0.0.1` seulement, `/api/` fermé par nginx.
 Le portail lit `snapshot.json` dans `/var/lib/lodyquests-portal/web-export/` ; l'export du plugin
 (`web-export.enabled`) reste désactivé sur DEV et aucun canal ne l'achemine encore (#421).
+
+## 8. V1 publique (#56) — faite
+
+Pages publiques, sans compte, servies par `web-api` (aucun script, aucune ressource externe, une
+seule colonne lisible sur téléphone, zones cliquables de 44 px, focus clavier visible) :
+
+| Page | Contenu | Sans instantané (serveur de jeu arrêté) | `player-data-public=false` |
+| --- | --- | --- | --- |
+| `/` | présentation, statut du serveur, saison et événements (noms et dates), 3 dernières actualités, message du serveur, aperçu de 2 classements (top 3), « Comment rejoindre » | présentation et actualités intactes, statut « Hors ligne » | aperçu remplacé par « ouvriront quand… » ; aucun pseudo |
+| `/actualites`, `/actualites/<slug>` | liste paginée (10 par page), filtre `?categorie=`, article complet | **inchangées** : ne lisent pas l'instantané | inchangées |
+| `/classements` (alias `/leaderboards`) | onglets « Depuis toujours », saison, événements (`?periode=<id>`) ; top 10 par métrique, rang du plugin (ex aequo), statut et dates de la période, date de relevé | « Aucun classement » | « pas encore publiée » |
+| `/joueurs`, `/joueurs/<pseudo>`, `/joueurs?pseudo=` | liste alphabétique paginée (60), recherche, profil : XP par piste, quêtes, rangs « depuis toujours » ; initiale à la place d'un skin (pas de service tiers ni d'UUID) | liste vide | « pas encore publiée » |
+| `/infos` | rejoindre (`server-address`, `minecraft-version`), premiers pas, règles de base, FAQ | inchangée | inchangée |
+| `/robots.txt`, `/sitemap.xml` | pages stables et actualités publiées ; **jamais** de profil ; `/compte` exclu | — | — |
+
+Chaque page a un titre, une description et un lien canonique (`public-base-url`). Les données de
+joueurs passent toutes par la liste blanche `privacy.PublicPlayerData`. Un pseudo inconnu ou masqué,
+un brouillon, une actualité programmée, une période ou une catégorie inconnue → 404 identique.
+Limite de fréquence : celle du portail (nginx 10 req/s, `rate-limit-per-minute` par visiteur).
+
+### Actualités — fichiers `news-dir/<slug>.md`
+
+Indépendantes du jeu et de Git (pas de commit à faire pour publier). Sur l'instance AWS :
+`/var/lib/lodyquests-portal/news/`, propriété de root, lue seulement par le service, relue au plus
+toutes les 30 s (aucun redémarrage). Le nom du fichier est l'adresse : minuscules, chiffres, tirets.
+
+```text
+title: Maintenance du samedi            # 120 caractères au plus
+summary: Le serveur sera fermé 1 heure.  # 300 au plus, affiché dans les listes
+date: 2026-10-18T09:00:00+02:00         # fuseau obligatoire ; date future = programmée
+status: published                       # published | draft (brouillon, jamais visible)
+category: maintenance                   # news | announcement | maintenance | event | release | story
+author: L'équipe LodyQuests             # facultatif
+tags: serveur                           # facultatif, 8 au plus
+---
+Texte. Une ligne vide = nouveau paragraphe. « ## Intertitre », « - liste », **gras**,
+`commande`, [lien](/infos) ou [lien](https://…) — rien d'autre : aucun HTML n'est interprété.
+```
+
+Un fichier invalide (clé inconnue ou manquante, date sans fuseau, trop long, pas en UTF-8…) est
+ignoré seul ; la raison apparaît une fois dans `journalctl -u lodyquests-portal` (« Actualité
+ignorée <fichier> : <raison> »), jamais son contenu. `/health` donne le nombre d'actualités visibles
+(`"news"`). Pas d'image en V1 (aucun service de fichiers statiques). Exemple installé en brouillon :
+`scripts/web-portal/news/bienvenue.md`.
+
+**Évolution prévue** : édition depuis PlugAdmin (back-office existant, sans second système
+d'authentification), qui écrira ces mêmes fichiers.
+
+### Hors V1
+
+API JSON publique (l'API `/api/*` reste à jeton et fermée par nginx), cartes de partage avec
+image, avatar de skin, historique saisonnier des profils, statistiques globales du serveur (pas de
+source agrégée fiable dans l'instantané aujourd'hui), métriques kills/boss (§4, journal à créer).

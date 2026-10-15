@@ -33,5 +33,12 @@ accounts-enabled=false
 #accounts.below-threshold=parental-consent
 #accounts.unknown-region=refuse
 
+# V1 PUBLIQUE (#56) — actualités : un fichier <slug>.md par actualité (format : docs/WEB_PORTAL.md §8),
+# relu toutes les 30 s ; seules celles en « status: published » dont la date est atteinte s'affichent.
+news-dir=news
+# Adresse et version affichées sur /infos ; vides = « communiquée dès l'ouverture au public ».
+server-address=
+minecraft-version=
+
 # Boutique (mission étape 22) : hors périmètre du portail communautaire V1, aucun paiement.
 store-enabled=false

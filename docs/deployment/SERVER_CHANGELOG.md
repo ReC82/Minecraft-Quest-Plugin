@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Portail : V1 publique, actualités, classements par portée (#56)
+
+### Changement
+
+Portail public (instance AWS) : accueil refondu, actualités en fichiers (`/actualites`),
+classements lifetime / saison / événement (`/classements`, alias `/leaderboards`), profils avec
+rangs, page `/infos` (rejoindre, règles, FAQ), `robots.txt` et `sitemap.xml`. Aucun changement du
+plugin ni du serveur Minecraft.
+
+### Action serveur
+
+Serveur Minecraft : **aucune**. Instance AWS : `scripts/web-portal/deploy.sh` (code du portail) et
+création du dossier `/var/lib/lodyquests-portal/news/` (root, 0755) avec le brouillon
+`bienvenue.md` (invisible). Configuration inchangée (`player-data-public=false` conservé) ; clés
+facultatives `news-dir`, `server-address`, `minecraft-version` (défauts : `news`, vide, vide).
+
+### Sauvegarde préalable
+
+Release précédente conservée par `deploy.sh` sous `/opt/lodyquests-portal/releases/<horodatage>`.
+
+### Validation
+
+`/health` → `"news":0` (brouillon seulement) ; parcours navigateur dans
+[WEB_PORTAL_AWS.md § Vérifier](WEB_PORTAL_AWS.md#vérifier) — `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/web-portal/rollback.sh app` ; le dossier `news/` peut rester (ignoré par l'ancienne version).
+
 ## 2026-10-15 - Statistiques : saisons, événements et exclusions de classement (#54)
 
 ### Changement

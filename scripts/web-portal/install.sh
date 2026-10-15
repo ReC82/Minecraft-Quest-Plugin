@@ -74,6 +74,13 @@ fi
 say "arborescence $PORTAL_ROOT, $PORTAL_STATE_DIR, $PORTAL_CONF_DIR"
 run "install -d -m 0755 -o root -g root '$PORTAL_ROOT' '$PORTAL_RELEASES_DIR' '$PORTAL_CONF_DIR'"
 run "install -d -m 0750 -o '$PORTAL_USER' -g '$PORTAL_USER' '$PORTAL_STATE_DIR'"
+# Actualités (#56) : propriété de root, le service ne peut que les lire. Un brouillon d'exemple
+# n'est copié que si le dossier est vide (jamais d'écrasement, jamais publié automatiquement).
+run "install -d -m 0755 -o root -g root '$PORTAL_NEWS_DIR'"
+if [ -z "$(ls -A "$PORTAL_NEWS_DIR" 2>/dev/null)" ]; then
+  say "actualités : brouillon d'exemple -> $PORTAL_NEWS_DIR/bienvenue.md (status: draft, invisible)"
+  run "install -m 0644 -o root -g root '$HERE/news/bienvenue.md' '$PORTAL_NEWS_DIR/bienvenue.md'"
+fi
 
 # --- 3. application ---------------------------------------------------------------
 if [ -d "$PORTAL_APP_DIR" ]; then

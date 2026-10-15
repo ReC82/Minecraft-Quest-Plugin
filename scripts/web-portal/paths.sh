@@ -14,6 +14,8 @@ PORTAL_ROOT="/opt/lodyquests-portal"
 PORTAL_APP_DIR="$PORTAL_ROOT/app"
 PORTAL_RELEASES_DIR="$PORTAL_ROOT/releases"
 PORTAL_STATE_DIR="/var/lib/lodyquests-portal"
+# Actualités (#56) : écrites par l'administrateur (sudo), lues seulement par le service.
+PORTAL_NEWS_DIR="$PORTAL_STATE_DIR/news"
 PORTAL_ACCOUNTS_BACKUP_DIR="$PORTAL_ROOT/backups"
 PORTAL_CONF_DIR="/etc/lodyquests-portal"
 PORTAL_ENV_FILE="$PORTAL_CONF_DIR/portal.env"

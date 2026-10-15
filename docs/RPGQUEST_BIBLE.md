@@ -115,6 +115,14 @@ Fichiers : service `lodyquests-portal.service` (utilisateur `lodyquests-web`, `1
 Résultat attendu : `curl -s http://127.0.0.1:8092/health` → `{"status":"UP",…,"playerDataPublic":false,"store":false}`.
 À savoir : aucun pseudo publié tant que `player-data-public=false` (décision #55) ; aucune boutique ; aucune écriture SQL. Comptes joueurs fermés tant qu'aucune clé `accounts.age-threshold.<PAYS>` n'est configurée (politique d'âge, #55). Confidentialité et registre des données : [PRIVACY.md](PRIVACY.md). Détail : [WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).
 
+### Actualités du portail public — `news-dir` (issue #56)
+Type : fichier de contenu (instance AWS, `/var/lib/lodyquests-portal/news/<slug>.md`, **pas** le serveur Minecraft) — Page docs-site : aucune.
+But : publier nouveautés, annonces, maintenances, événements, notes de version et récits sur https://lodyquests.lodylands.com/actualites, sans dépendre du serveur de jeu ni de Git.
+Contenu : en-tête `title`, `summary`, `date` (fuseau obligatoire), `status` (`published`/`draft`), `category` (`news`, `announcement`, `maintenance`, `event`, `release`, `story`), `author` et `tags` facultatifs, ligne `---`, puis le texte (paragraphes, `## intertitre`, `- liste`, `**gras**`, `` `code` ``, liens `/…` ou `https://…` ; aucun HTML).
+Commandes : `sudo cp x.md /var/lib/lodyquests-portal/news/` ; aucun redémarrage (relu toutes les 30 s).
+Résultat attendu : l'actualité apparaît sur l'accueil et `/actualites` ; `/health` → `"news": N`.
+À savoir : un brouillon ou une date future reste invisible (404) ; un fichier invalide est ignoré seul, raison dans `journalctl -u lodyquests-portal`. Clés `server-address` / `minecraft-version` de `web-api.properties` pour la page `/infos`. Détail : [WEB_PORTAL.md §8](WEB_PORTAL.md#8-v1-publique-56--faite).
+
 ### Saisons, événements et exclusions de classement — `statistics.yml` (issue #54)
 Type : fichier de configuration (serveur Minecraft, `plugins/RPGQuest/statistics.yml`) — Page docs-site : aucune.
 But : définir les saisons (une à la fois) et les événements (chevauchements permis) dont le plugin calcule et exporte les classements, et exclure des comptes de test ou des tricheurs des classements publics.

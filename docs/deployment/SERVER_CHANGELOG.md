@@ -71,6 +71,12 @@ Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release pane
 
 `PENDING MANUAL VALIDATION` : TC-320.
 
+### Déploiement effectué (2026-10-15 09:26)
+
+JAR `5790f1d` transféré sur DEV (SHA-256 distant retéléchargé = local `55297e39…2f9a`, sauvegarde
+`rpgquest-20261015T072557Z-predeploy.jar`) ; panel `5790f1d` installé et servi. Serveur DEV
+**toujours arrêté** (RCON refusé) : le JAR sera chargé au prochain démarrage par le propriétaire.
+
 ### Rollback
 
 Réinstaller le JAR et la release panel précédents ; aucune donnée à reprendre.

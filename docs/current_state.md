@@ -514,6 +514,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`sel_<famille>/<identifiant>`). Chaque refus du moteur est rattaché à sa ressource (fichier +
   motif), les problèmes d'autres fichiers DEV sont listés à part. **Vue « pack »**
   (`/content/pending?pack=…`) ouverte par « Mettre l'histoire en jeu sur DEV » après un import.
+  Elle **survit** à « Vérifier », à la publication, à un refus ou à une erreur de formulaire
+  (`?agent=…&pack=…&pick=…`, sélection soumise restaurée, encadré d'état avec rechargement
+  automatique tant que le serveur n'a pas répondu, compteur « N/M en jeu ») ; « Vérifier » ne
+  demande pas la confirmation, exigée (HTML + serveur) pour la seule mise en jeu ; une ressource
+  publiée dans un lot compte comme publiée pour l'état affiché. Tableau empilé en fiches sous 576 px.
   `INVALID_CONTENT` nomme désormais les erreurs dans son message (plus de « erreurs listées » à vide).
   **Fraîcheur de l'affichage** : si le relevé DEV est antérieur à une publication qui a **confirmé
   le runtime**, c'est le compte rendu de la publication qui fait foi — il a relu le moteur, le relevé

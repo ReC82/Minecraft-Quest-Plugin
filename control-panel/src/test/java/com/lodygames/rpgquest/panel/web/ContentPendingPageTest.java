@@ -451,6 +451,123 @@ class ContentPendingPageTest {
         assertTrue(page.contains("name=\"pack\""), "le pack voyage avec le formulaire");
     }
 
+    /**
+     * Le parcours complet du propriétaire (#427, validation du 15/10) : vue pack → Vérifier SANS
+     * cocher la confirmation → retour sur la MÊME vue pack, sélection intacte, résultat affiché →
+     * Mettre l'histoire en jeu → retour sur la vue pack, tout est en jeu.
+     */
+    @Test
+    void theWholePackJourneyStaysOnThePackView() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+        String pack = "quests/a_publier,stories/une_story";
+        String packUrl = "/content/pending?agent=" + TestConfig.AGENT_ID + "&pack=" + enc(pack);
+
+        // 1) Vérifier : la case de confirmation reste décochée.
+        Map<String, String> check = select(formFields(get(packUrl).body()),
+                List.of("quests/a_publier", "stories/une_story"));
+        check.remove("confirm");
+        check.put("mode", "check");
+        HttpResponse<String> res = post("/content/pending/publish", encode(check));
+
+        assertEquals(303, res.statusCode());
+        String back = res.headers().firstValue("Location").orElse("");
+        assertEquals(1, back.chars().filter(c -> c == '?').count(), "une seule chaîne de requête : " + back);
+        assertTrue(back.contains("&pack=" + enc(pack)), back);
+        assertTrue(back.contains("&pick=" + enc(pack)), back);
+        assertEquals("true", batchRow().params().get("dry_run"));
+
+        // 2) La page de retour : vue pack, cases toujours cochées, vérification en cours.
+        String waiting = get(back).body();
+        assertTrue(waiting.contains("class=\"card pack-publish\""), "toujours la vue pack");
+        assertTrue(checked(waiting, "quests/a_publier") && checked(waiting, "stories/une_story"));
+        assertTrue(waiting.contains("http-equiv=\"refresh\""), "se recharge tant que le serveur n'a pas répondu");
+
+        respond("content.publish.batch", "SUCCESS", "{\"ok\":true,\"code\":\"CHECKED\",\"dryRun\":true,"
+                + "\"filesRestored\":true,\"items\":["
+                + "{\"kind\":\"quests\",\"slug\":\"a_publier\",\"status\":\"CHECKED\",\"problems\":[]},"
+                + "{\"kind\":\"stories\",\"slug\":\"une_story\",\"status\":\"CHECKED\",\"problems\":[]}]}");
+        String verified = get(back).body();
+        assertTrue(verified.contains("Vérification réussie"), verified);
+        assertFalse(verified.contains("http-equiv=\"refresh\""));
+        assertTrue(checked(verified, "quests/a_publier") && checked(verified, "stories/une_story"),
+                "la sélection survit à la vérification");
+        assertTrue(verified.contains("0/2 en jeu"));
+
+        // 3) Mettre l'histoire en jeu, depuis cette même page.
+        Thread.sleep(5);
+        HttpResponse<String> published = post("/content/pending/publish", encode(select(
+                formFields(verified), List.of("quests/a_publier", "stories/une_story"))));
+        String after = published.headers().firstValue("Location").orElse("");
+        assertTrue(after.contains("&pack=" + enc(pack)), after);
+        assertEquals(2, count("content.publish.batch"));
+        respond("content.publish.batch", "SUCCESS", "{\"ok\":true,\"code\":\"PUBLISHED\",\"dryRun\":false,"
+                + "\"verifiedAt\":\"2026-10-15T17:00:00Z\",\"items\":["
+                + "{\"kind\":\"quests\",\"slug\":\"a_publier\",\"status\":\"CREATED\",\"devShaAfter\":\""
+                + sha(Q_PUBLIER) + "\",\"runtimeConfirmed\":true,\"problems\":[]},"
+                + "{\"kind\":\"stories\",\"slug\":\"une_story\",\"status\":\"CREATED\",\"devShaAfter\":\""
+                + sha(S_STORY) + "\",\"runtimeConfirmed\":true,\"problems\":[]}]}");
+
+        String done = get(after).body();
+        assertTrue(done.contains("Histoire mise en jeu"), done);
+        assertTrue(done.contains("2/2 en jeu"), "le lot publié compte comme synchronisé avant même le relevé");
+        assertFalse(done.contains("sel_quests/a_publier"), "plus rien à cocher");
+    }
+
+    /** Publier exige la confirmation, revérifiée côté serveur ; la vue pack et la sélection restent. */
+    @Test
+    void publishingWithoutTheConfirmationPublishesNothingAndKeepsThePack() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+        String pack = "quests/a_publier,stories/une_story";
+        Map<String, String> body = select(formFields(get("/content/pending?agent=" + TestConfig.AGENT_ID
+                + "&pack=" + enc(pack)).body()), List.of("quests/a_publier"));
+        body.remove("confirm");
+        body.put("mode", "publish");
+
+        String back = post("/content/pending/publish", encode(body)).headers().firstValue("Location").orElse("");
+
+        assertEquals(0, count("content.publish.batch"));
+        assertTrue(back.contains("&pack=" + enc(pack)) && back.contains("&pick=" + enc("quests/a_publier")), back);
+        assertTrue(decode(back).contains("Je confirme"), back);
+    }
+
+    /** « Vérifier » échappe à la validation HTML de la case de confirmation ; « Publier » non. */
+    @Test
+    void theCheckButtonDoesNotRequireTheConfirmation() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+
+        String page = get("/content/pending?agent=" + TestConfig.AGENT_ID
+                + "&pack=" + enc("quests/a_publier,stories/une_story")).body();
+
+        assertTrue(page.contains("value=\"check\" formnovalidate"), page);
+        assertFalse(page.contains("value=\"publish\" formnovalidate"));
+        assertTrue(Pattern.compile("name=\"confirm\" value=\"true\" required").matcher(page).find());
+    }
+
+    /** Une ressource volontairement décochée le reste, et la page prévient que le pack est incomplet. */
+    @Test
+    void anUncheckedPackResourceStaysUncheckedAndIsFlagged() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+
+        String page = get("/content/pending?agent=" + TestConfig.AGENT_ID
+                + "&pack=" + enc("quests/a_publier,stories/une_story") + "&pick=" + enc("quests/a_publier")).body();
+
+        assertTrue(checked(page, "quests/a_publier"));
+        assertFalse(checked(page, "stories/une_story"));
+        assertTrue(page.contains("Non cochée(s)"));
+        assertTrue(page.contains("une_story"));
+    }
+
+    @Test
+    void theReturnUrlCarriesOnlyValidatedContext() {
+        assertEquals("/content/pending?agent=dev&pack=quests%2Fa%2Cstories%2Fb&pick=quests%2Fa",
+                PanelApp.pendingReturn("dev", "stories/b,quests/a", "quests/a"));
+        assertEquals("/content/pending?agent=dev", PanelApp.pendingReturn("dev", "quests/../x", "npcs/a"));
+    }
+
     /** Un filtre de pack forgé est ignoré : la page normale s'affiche. */
     @Test
     void aForgedPackFilterIsIgnored() throws Exception {
@@ -571,7 +688,14 @@ class ContentPendingPageTest {
 
     /** Les champs du vrai formulaire de publication groupée, extraits de la page rendue. */
     private Map<String, String> batchFormFields() throws Exception {
-        String page = get("/content/pending?agent=" + TestConfig.AGENT_ID).body();
+        return formFields(get("/content/pending?agent=" + TestConfig.AGENT_ID).body());
+    }
+
+    private static boolean checked(String page, String key) {
+        return Pattern.compile("name=\"sel_" + Pattern.quote(key) + "\" value=\"1\" checked").matcher(page).find();
+    }
+
+    private static Map<String, String> formFields(String page) {
         Matcher forms = Pattern.compile("<form[^>]*action=\"/content/pending/publish\"[^>]*>(.*?)</form>",
                 Pattern.DOTALL).matcher(page);
         if (!forms.find()) {
@@ -606,6 +730,10 @@ class ContentPendingPageTest {
         });
         for (String key : keys) {
             body.put("sel_" + key, "1");
+        }
+        // La case « Je confirme », cochée comme le ferait l'utilisateur qui publie.
+        if (body.containsKey("confirm")) {
+            body.put("confirm", "true");
         }
         return body;
     }

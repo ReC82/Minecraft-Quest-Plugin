@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Catalogues de quêtes : hasard expliqué et réglé simplement (#414, correctif de validation)
+
+### Changement
+
+PlugAdmin « Catalogues de quêtes » : la liste dit que les quêtes sont tirées au hasard (l'ordre
+sert seulement à ranger), question « Comment choisir la prochaine quête ? » (même chance pour
+toutes / certaines plus souvent : Rare 5, Normale 10, Souvent 20), question des répétitions,
+« Autoriser les PNJ à utiliser cette liste », notes et informations techniques repliées. Le panel
+traduit vers les champs existants (`weight`, `avoid_recent`) ; aucun changement du plugin.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft : redéploiement de PlugAdmin seulement. Aucune migration, aucun
+catalogue réécrit au déploiement (les poids changent seulement quand un administrateur enregistre).
+
+### Sauvegarde préalable
+
+Version précédente du panel conservée par `scripts/plugadmin/deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Déploiement
+
+`scripts/plugadmin/deploy.sh --wait-ci` après CI verte.
+
+### Validation
+
+Route `/quests/catalogs` servie ; jar installé contenant le texte « Comment choisir la prochaine
+quête » ; TC-321 étapes 8 à 11.
+
+### Rollback
+
+Réinstaller la version précédente depuis `/opt/plugadmin/releases/` et redémarrer `plugadmin.service`.
+
+---
+
 ## 2026-10-15 - Portail public LodyQuests hébergé sur AWS (#52)
 
 ### Changement

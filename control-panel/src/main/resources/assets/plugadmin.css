@@ -1319,12 +1319,39 @@ details.enc-biomes[open] summary{margin-bottom:0}
 .qc-count{font-size:12px;font-weight:700;background:var(--surface-3);border-radius:999px;padding:1px 8px;color:var(--txt-2)}
 .qc-step{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;
   background:var(--primary-soft);color:var(--primary-d);font-size:12.5px;font-weight:800;flex:none}
-.qc-quests,.qc-items{margin:0 0 6px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;counter-reset:qc}
-.qc-quest,.qc-item{counter-increment:qc;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;
+.qc-quests,.qc-items{margin:0 0 6px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.qc-quest,.qc-item{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;
   border:1px solid var(--line);border-radius:var(--radius-s);background:var(--surface-2);padding:9px 12px}
-.qc-quest::before,.qc-item::before{content:counter(qc);display:inline-flex;align-items:center;justify-content:center;
-  width:22px;height:22px;border-radius:50%;background:var(--surface);border:1px solid var(--line-2);font-size:11.5px;
-  font-weight:700;color:var(--txt-2);flex:none}
+.qc-random{display:flex;gap:6px;align-items:flex-start;margin:0 0 10px}
+.qc-random .ic{flex:none;margin-top:2px}
+.qc-form .qc-freq,.qc-when-none,.qc-when-one,.qc-when-many{display:none}
+.qc-form[data-qc-count=none] .qc-when-none,.qc-form[data-qc-count=one] .qc-when-one,
+.qc-form[data-qc-count=many] .qc-when-many{display:block}
+.qc-form[data-qc-count=many]:has(input[name=pick_mode][value=weighted]:checked) .qc-item .qc-freq,
+.qc-form[data-qc-count=many]:has(input[name=pick_mode][value=weighted]:checked) .qc-cand:has([data-qc-cand]:checked) .qc-freq{
+  display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;font-weight:600;margin:0}
+.qc-freq select{width:auto;min-height:34px}
+.qc-cand .qc-freq{margin-left:30px;flex:1 1 calc(100% - 30px);min-width:0}
+.qc-pct{font-weight:700;color:var(--txt-2)}
+.qc-form:not(:has(input[name=pick_mode][value=weighted]:checked)) .qc-exact{display:none!important}
+.qc-exact{display:inline-flex;gap:6px;align-items:center;margin:0}
+.qc-exact input{width:5.5rem}
+.qc-move{display:inline-flex;gap:6px;align-items:center}
+.qc-move .btn{margin:0;min-height:34px;min-width:38px;justify-content:center}
+.qc-options{border:0;padding:0;margin:0 0 12px;display:flex;flex-direction:column;gap:8px}
+.qc-options legend.qc-lbl{font-size:14.5px;margin:6px 0 6px}
+.qc-opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);
+  border-radius:var(--radius-s);background:var(--surface-2)}
+.qc-opt:has(input:checked){background:var(--primary-soft);border-color:#cfe0ff}
+.qc-opt input[type=radio]{width:20px;height:20px;flex:none;margin:2px 0 0}
+.qc-opt label{display:flex;flex-direction:column;gap:2px;cursor:pointer;margin:0;font-weight:400;min-width:0}
+.qc-opt label .form-text{margin:0}
+.qc-more{margin-top:2px;font-size:13.5px}
+.qc-more>summary{cursor:pointer;color:var(--txt-2);margin-bottom:8px}
+.qc-inline-select{display:inline-block;width:auto;margin:0 4px}
+.qc-more .qc-opt label{display:block;line-height:2.2}
+.qc-allow{font-weight:700;margin:0 0 2px}
+.qc-allowed{margin:8px 0 0;font-size:14px}
 .qc-quest.is-off{opacity:.65}
 .qc-q-title{font-weight:700;color:var(--txt);overflow-wrap:anywhere}
 .qc-q-meta{font-size:12.5px;color:var(--txt-2)}
@@ -1340,7 +1367,7 @@ details.enc-biomes[open] summary{margin-bottom:0}
 .qc-item:has(.qc-rm input:checked) .qc-q-title{text-decoration:line-through;color:var(--txt-2)}
 .qc-item:has(.qc-rm input:checked) .qc-rm-on{display:inline}
 .qc-item:has(.qc-rm input:checked) .qc-rm-off{display:none}
-.qc-item:has(.qc-rm input:checked) [data-qc-move]{visibility:hidden}
+.qc-item:has(.qc-rm input:checked) [data-qc-move],.qc-item:has(.qc-rm input:checked) .qc-freq{visibility:hidden}
 .qc-add{margin-top:10px}
 .qc-add>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;margin:0}
 .qc-add>summary::-webkit-details-marker{display:none}

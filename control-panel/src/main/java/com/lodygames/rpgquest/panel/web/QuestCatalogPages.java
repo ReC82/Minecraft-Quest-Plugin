@@ -17,8 +17,12 @@ import java.util.stream.Collectors;
  *
  * <p>Un écran = une intention : l'accueil liste les catalogues, la fiche se lit, et modifier,
  * dupliquer ou supprimer ouvrent chacun leur propre écran court. Le vocabulaire visible est celui
- * du joueur (« liste de quêtes », « PNJ qui la proposent ») ; identifiants, fréquences de tirage et
- * anti-répétition restent accessibles dans « Réglages avancés ».</p>
+ * du joueur (« liste de quêtes », « PNJ qui la proposent »). Le hasard se règle par une seule
+ * question (« Comment choisir la prochaine quête ? ») traduite vers les poids du moteur ; les
+ * identifiants et les options expertes restent repliés dans « Informations techniques ».</p>
+ *
+ * <p>L'ordre de la liste ne change pas le tirage de #369 (rendez-vous pondéré par identifiant de
+ * quête) : il est présenté comme un simple rangement, jamais comme un ordre de proposition.</p>
  *
  * <p>Aucune règle nouvelle : tout passe par les actions {@code quest.catalog.*} existantes, donc
  * par leur validation côté panel puis côté serveur, et par leurs permissions. Rendu pur (aucun
@@ -32,6 +36,12 @@ final class QuestCatalogPages {
     /** Recherche affichée sur l'accueil à partir de ce nombre de catalogues. */
     static final int SEARCH_THRESHOLD = 6;
     private static final int DEFAULT_WEIGHT = 10;
+    /** Fréquences simples traduites vers les poids du moteur : Souvent/Normale/Normale ≈ 50/25/25 %. */
+    static final int RARE = 5;
+    static final int NORMAL = DEFAULT_WEIGHT;
+    static final int OFTEN = 20;
+    private static final String RANDOM_NOTE = "Les quêtes sont proposées au hasard parmi celles que le joueur "
+            + "peut faire. Leur ordre ici sert seulement à les ranger.";
 
     private QuestCatalogPages() {
     }
@@ -59,6 +69,11 @@ final class QuestCatalogPages {
 
         boolean hasMissing() {
             return entries.stream().anyMatch(e -> !e.exists());
+        }
+
+        /** « Même chance pour toutes » : un seul poids sur toute la liste (une liste de 0 ou 1 quête l'est). */
+        boolean equalChances() {
+            return entries.stream().map(Entry::weight).distinct().count() <= 1;
         }
     }
 
@@ -302,16 +317,21 @@ final class QuestCatalogPages {
         sb.append("</section>");
         sb.append(freshness(ctx));
         if (!c.description().isBlank()) {
-            sb.append("<p class=\"muted qc-desc\">").append(Http.esc(c.description())).append("</p>");
+            sb.append("<p class=\"muted qc-desc\"><strong>Note :</strong> ").append(Http.esc(c.description()))
+                    .append("</p>");
         }
         sb.append(detailProblems(ctx, c));
 
         sb.append("<section class=\"qc-card\"><h2>").append(Icons.icon("quests")).append("Quêtes de la liste <span class=\"qc-count\">")
                 .append(c.entries().size()).append("</span></h2>");
+        boolean weighted = !c.equalChances() && c.entries().size() > 1;
         if (c.entries().isEmpty()) {
             sb.append("<p class=\"muted\">Aucune quête pour l'instant.</p>");
         } else {
-            sb.append("<ol class=\"qc-quests\">");
+            if (c.entries().size() > 1) {
+                sb.append("<p class=\"form-text qc-random\">").append(Icons.icon("info")).append(RANDOM_NOTE).append("</p>");
+            }
+            sb.append("<ul class=\"qc-quests\">");
             for (Entry e : c.entries()) {
                 sb.append("<li class=\"qc-quest").append(e.offered() ? "" : " is-off").append("\"><span class=\"qc-q-title\">")
                         .append(Http.esc(e.label())).append("</span><span class=\"qc-q-meta\">")
@@ -320,10 +340,12 @@ final class QuestCatalogPages {
                     sb.append(chip("err", "Quête introuvable"));
                 } else if (!e.enabled()) {
                     sb.append(chip("neutral", "En pause"));
+                } else if (weighted) {
+                    sb.append(chip("info", frequencyLabel(e.weight())));
                 }
                 sb.append("</li>");
             }
-            sb.append("</ol>");
+            sb.append("</ul>");
         }
         sb.append("</section>");
 
@@ -332,7 +354,8 @@ final class QuestCatalogPages {
         sb.append(usersBlock(ctx, s, c));
         sb.append("</section>");
 
-        sb.append(advancedFacts(c));
+        sb.append(choiceFacts(c));
+        sb.append(technicalFacts(c));
 
         if (ctx.canWrite()) {
             sb.append("<section class=\"qc-zone\"><h2>Autres actions</h2><div class=\"qc-zone-row\">")
@@ -349,7 +372,8 @@ final class QuestCatalogPages {
         StringBuilder sb = new StringBuilder();
         if (!c.enabled()) {
             sb.append(Ui.banner("info", "Ce catalogue est <strong>en pause</strong> : aucun PNJ ne propose ses "
-                    + "quêtes. Pour le réactiver : « Modifier », puis « Réglages avancés »."));
+                    + "quêtes. Pour le réactiver : « Modifier », puis coche « Autoriser les PNJ à utiliser cette "
+                    + "liste »."));
         } else if (c.offeredCount() == 0) {
             sb.append(Ui.banner("err", "Aucune quête ne peut être proposée : "
                     + (c.entries().isEmpty() ? "la liste est vide." : "elles sont toutes en pause ou introuvables.")
@@ -406,28 +430,58 @@ final class QuestCatalogPages {
                 + "dialogue</a> et ajouter une réponse avec l'action « Proposer une quête du catalogue ».</span></span>";
     }
 
-    private static String advancedFacts(Catalog c) {
-        StringBuilder sb = new StringBuilder("<details class=\"qc-card qc-advanced\"><summary>Réglages avancés</summary>");
+    /** « Comment la prochaine quête est choisie », en mots simples, adapté au nombre de quêtes. */
+    private static String choiceFacts(Catalog c) {
+        StringBuilder sb = new StringBuilder("<section class=\"qc-card\" id=\"qc-choice\"><h2>")
+                .append(Icons.icon("info")).append("Comment la prochaine quête est choisie</h2>");
+        List<Entry> offered = c.entries().stream().filter(Entry::offered).toList();
+        if (offered.isEmpty()) {
+            sb.append("<p class=\"muted\">Rien à choisir pour l'instant : aucune quête ne peut être proposée.</p>");
+        } else if (offered.size() == 1) {
+            sb.append("<p>Une seule quête : c'est toujours elle qui est proposée, quand le joueur peut la faire.</p>");
+        } else if (c.equalChances()) {
+            sb.append("<p><strong>Au hasard, même chance pour toutes.</strong> Avec ").append(offered.size())
+                    .append(" quêtes que le joueur peut faire, chacune a environ 1 chance sur ").append(offered.size())
+                    .append(".</p>");
+        } else {
+            long total = offered.stream().mapToLong(Entry::weight).sum();
+            sb.append("<p><strong>Au hasard, certaines plus souvent.</strong></p><ul class=\"qc-weights\">");
+            for (Entry e : offered) {
+                sb.append("<li><span>").append(Http.esc(e.label())).append("</span><span class=\"qc-w\">")
+                        .append(Http.esc(frequencyLabel(e.weight()))).append(" · environ ")
+                        .append(Math.round(100.0 * e.weight() / total)).append(" %</span></li>");
+            }
+            sb.append("</ul>");
+        }
+        if (offered.size() > 1) {
+            sb.append("<p class=\"form-text\">Ces chances valent quand le joueur peut faire toutes les quêtes. Celles "
+                    + "qu'il a déjà finies, qui attendent avant de revenir ou qu'il ne peut pas encore faire sont "
+                    + "mises de côté.</p>");
+            sb.append("<p>").append(Http.esc(avoidText(c.avoidRecent()))).append("</p>");
+            sb.append("<p class=\"form-text\">Chaque joueur a sa propre proposition. Elle ne change pas tant qu'il "
+                    + "n'a pas fini une de ces quêtes : s'il ferme le dialogue et revient, il retrouve la même.</p>");
+        }
+        sb.append("<p class=\"qc-allowed\">Les PNJ peuvent utiliser cette liste : <strong>")
+                .append(c.enabled() ? "oui" : "non, elle est en pause").append("</strong></p>");
+        return sb.append("</section>").toString();
+    }
+
+    /** Identifiant, poids bruts et contrôles du serveur : repliés, pour les administrateurs avancés. */
+    private static String technicalFacts(Catalog c) {
+        StringBuilder sb = new StringBuilder("<details class=\"qc-card qc-advanced\"><summary>Informations techniques"
+                + "</summary>");
         sb.append("<dl class=\"qc-facts\"><dt>Identifiant</dt><dd>").append(Ui.id(c.id()))
                 .append(" <span class=\"form-text\">fichier <code>quest-catalogs/").append(Http.esc(c.id()))
                 .append(".yml</code></span></dd>");
-        sb.append("<dt>Anti-répétition</dt><dd>").append(Http.esc(avoidText(c.avoidRecent()))).append("</dd>");
-        sb.append("<dt>Choix de la quête</dt><dd>Chaque joueur reçoit sa propre proposition, qui ne change pas "
-                + "jusqu'à sa prochaine quête terminée. Seules les quêtes qu'il peut réellement faire sont "
-                + "proposées.</dd></dl>");
-        long total = c.entries().stream().filter(Entry::offered).mapToLong(Entry::weight).sum();
+        sb.append("<dt>Anti-répétition</dt><dd><code>avoid_recent: ").append(c.avoidRecent()).append("</code></dd></dl>");
         if (!c.entries().isEmpty()) {
-            sb.append("<p class=\"qc-adv-h\">Fréquence de proposition</p><p class=\"form-text\">Plus le nombre est "
-                    + "grand, plus la quête sort souvent : 20 sort deux fois plus que 10. La part indiquée vaut "
-                    + "quand toutes les quêtes sont disponibles ; les quêtes déjà faites, en attente ou réservées "
-                    + "sont écartées, donc la part réelle change d'un joueur à l'autre.</p><ul class=\"qc-weights\">");
+            sb.append("<p class=\"qc-adv-h\">Poids de tirage</p><p class=\"form-text\">Rare = ").append(RARE)
+                    .append(", Normale = ").append(NORMAL).append(", Souvent = ").append(OFTEN)
+                    .append(". Une quête de poids 20 sort deux fois plus souvent qu'une quête de poids 10.</p>")
+                    .append("<ul class=\"qc-weights\">");
             for (Entry e : c.entries()) {
                 sb.append("<li><span>").append(Http.esc(e.label())).append(" ").append(Ui.id(e.quest()))
-                        .append("</span><span class=\"qc-w\">").append(e.weight());
-                if (e.offered() && total > 0) {
-                    sb.append(" · environ ").append(Math.round(100.0 * e.weight() / total)).append(" %");
-                }
-                sb.append("</span></li>");
+                        .append("</span><span class=\"qc-w\">").append(e.weight()).append("</span></li>");
             }
             sb.append("</ul>");
         }
@@ -439,10 +493,22 @@ final class QuestCatalogPages {
         return sb.append("</details>").toString();
     }
 
+    /** Nom simple d'un poids ; une valeur hors des trois niveaux est montrée telle quelle, jamais arrondie. */
+    static String frequencyLabel(int weight) {
+        return switch (weight) {
+            case RARE -> "Rare";
+            case NORMAL -> "Normale";
+            case OFTEN -> "Souvent";
+            default -> "Personnalisée (" + weight + ")";
+        };
+    }
+
     static String avoidText(int n) {
-        return n == 0 ? "Aucune : une quête terminée peut être reproposée aussitôt."
-                : "Ne repropose pas " + (n == 1 ? "la dernière quête terminée" : "les " + n + " dernières quêtes terminées")
-                + " par le joueur, tant qu'une autre est possible.";
+        return n == 0 ? "Répétitions autorisées : une quête que le joueur vient de finir peut lui être reproposée "
+                + "tout de suite."
+                : "Pas de répétition : le PNJ évite de reproposer "
+                + (n == 1 ? "la dernière quête finie" : "les " + n + " dernières quêtes finies")
+                + " par le joueur, s'il en a une autre à lui proposer.";
     }
 
     private static String entryMeta(Entry e) {
@@ -468,8 +534,8 @@ final class QuestCatalogPages {
     static String create(Ctx ctx, Survey s) {
         StringBuilder sb = new StringBuilder(backLink(ctx, "", "Tous les catalogues"));
         sb.append("<h1 class=\"qc-title\">Créer un catalogue</h1>");
-        sb.append("<p class=\"qc-lead\">Donne-lui un nom, coche les quêtes, choisis les PNJ qui les proposeront. "
-                + "Tu pourras tout changer ensuite.</p>");
+        sb.append("<p class=\"qc-lead\">Donne-lui un nom, coche les quêtes, choisis les PNJ qui les proposeront, "
+                + "puis comment le hasard choisit. Tu pourras tout changer ensuite.</p>");
         sb.append(freshness(ctx));
         return sb.append(form(ctx, s, null, true)).toString();
     }
@@ -483,8 +549,10 @@ final class QuestCatalogPages {
 
     private static String form(Ctx ctx, Survey s, Catalog c, boolean openAdd) {
         boolean create = c == null;
+        List<Entry> entries = create ? List.of() : c.entries();
         StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"qc-form\" ")
-                .append("data-submit-once data-dirty-form data-qc-form>");
+                .append("data-submit-once data-dirty-form data-qc-form data-qc-count=\"").append(countKey(entries.size()))
+                .append("\">");
         sb.append(hidden("_csrf", ctx.csrf())).append(hidden("agent", ctx.agentId()))
                 .append(hidden("type", create ? "quest.catalog.create" : "quest.catalog.update"))
                 .append(hidden("return", PAGE)).append(hidden("focus", create ? "@id" : c.id()))
@@ -500,11 +568,8 @@ final class QuestCatalogPages {
                 .append(Http.esc(create ? "" : c.name())).append("\" data-qc-name>")
                 .append("<p class=\"form-text\">Visible seulement ici, pas par les joueurs.</p></section>");
 
-        List<Entry> entries = create ? List.of() : c.entries();
         sb.append("<section class=\"qc-card\"><h2><span class=\"qc-step\">2</span>Quêtes de la liste</h2>");
-        if (!entries.isEmpty()) {
-            sb.append("<p class=\"form-text\">L'ordre sert seulement à t'y retrouver.</p>");
-        }
+        sb.append("<p class=\"form-text qc-random\">").append(Icons.icon("info")).append(RANDOM_NOTE).append("</p>");
         sb.append("<ol class=\"qc-items\" data-qc-items>");
         int n = 0;
         for (Entry e : entries) {
@@ -519,7 +584,9 @@ final class QuestCatalogPages {
         sb.append("</section>");
 
         sb.append(npcSection(s, c));
-        sb.append(advancedForm(c));
+        sb.append(choiceForm(c));
+        sb.append(notesForm(c));
+        sb.append(technicalForm(c));
 
         sb.append("<div class=\"qc-summary\" data-qc-summary aria-live=\"polite\"></div>");
         sb.append("<div class=\"dlg-savebar qc-savebar\"><span class=\"dlg-dirty\" data-dirty-note hidden>")
@@ -532,32 +599,60 @@ final class QuestCatalogPages {
         return sb.append("</form>").toString();
     }
 
-    /** Une quête déjà dans la liste : monter, descendre, retirer ; fréquence et pause en avancé. */
+    /**
+     * Une quête déjà dans la liste : « Retirer » seulement, la fréquence quand le mode « certaines
+     * plus souvent » est choisi ; identifiant, pause, rangement et valeur exacte en options expertes.
+     */
     private static String itemRow(int n, Entry e) {
         String p = "entry_" + n + "_";
+        String t = Http.esc(e.label());
         StringBuilder sb = new StringBuilder("<li class=\"qc-item\" data-qc-item>");
         sb.append(hidden(p + "quest", e.quest())).append("<input type=\"hidden\" name=\"").append(p)
                 .append("order\" value=\"").append((n + 1) * 10).append("\" data-qc-order>");
-        sb.append("<div class=\"qc-item-main\"><span class=\"qc-q-title\" data-qc-title>").append(Http.esc(e.label()))
+        sb.append("<div class=\"qc-item-main\"><span class=\"qc-q-title\" data-qc-title>").append(t)
                 .append("</span><span class=\"qc-q-meta\">").append(Http.esc(entryMeta(e))).append("</span>");
         if (!e.exists()) {
             sb.append(chip("err", "Quête introuvable"));
         }
-        sb.append("<div class=\"qc-adv qc-item-adv\"><label>Fréquence <input class=\"form-control form-control-sm\" ")
-                .append("type=\"number\" min=\"1\" max=\"1000\" name=\"").append(p).append("weight\" value=\"")
-                .append(e.weight()).append("\"></label><label class=\"inline\"><input type=\"checkbox\" name=\"")
+        sb.append(frequencySelect(p, e.weight(), e.label()));
+        sb.append("<div class=\"qc-adv qc-item-adv\"><label class=\"inline\"><input type=\"checkbox\" name=\"")
                 .append(p).append("enabled\" value=\"true\"").append(e.enabled() ? " checked" : "")
-                .append("> proposée (décoché = en pause)</label>").append(Ui.id(e.quest())).append("</div></div>");
-        String t = Http.esc(e.label());
-        sb.append("<div class=\"qc-item-btns\">")
-                .append("<button class=\"btn secondary sm\" type=\"button\" data-qc-move=\"up\" aria-label=\"Monter « ")
-                .append(t).append(" »\">").append(Icons.icon("up")).append("</button>")
-                .append("<button class=\"btn secondary sm\" type=\"button\" data-qc-move=\"down\" aria-label=\"Descendre « ")
-                .append(t).append(" »\">").append(Icons.icon("down")).append("</button>")
-                .append("<label class=\"btn secondary sm qc-rm\"><input type=\"checkbox\" name=\"").append(p)
-                .append("remove\" value=\"true\" data-qc-remove><span class=\"qc-rm-off\">Retirer</span>")
+                .append(" data-qc-enabled> proposée (décoché = en pause)</label>")
+                .append("<label class=\"qc-exact\">Valeur exacte <input class=\"form-control form-control-sm\" ")
+                .append("type=\"number\" min=\"1\" max=\"1000\" name=\"").append(p).append("weight_exact\" ")
+                .append("placeholder=\"").append(e.weight()).append("\" data-qc-exact></label>")
+                .append("<span class=\"qc-move\">Ranger <button class=\"btn secondary sm\" type=\"button\" ")
+                .append("data-qc-move=\"up\" aria-label=\"Monter « ").append(t).append(" »\">").append(Icons.icon("up"))
+                .append("</button><button class=\"btn secondary sm\" type=\"button\" data-qc-move=\"down\" ")
+                .append("aria-label=\"Descendre « ").append(t).append(" »\">").append(Icons.icon("down"))
+                .append("</button></span>").append(Ui.id(e.quest())).append("</div></div>");
+        sb.append("<div class=\"qc-item-btns\"><label class=\"btn secondary sm qc-rm\"><input type=\"checkbox\" name=\"")
+                .append(p).append("remove\" value=\"true\" data-qc-remove><span class=\"qc-rm-off\">Retirer</span>")
                 .append("<span class=\"qc-rm-on\">Garder</span></label></div>");
         return sb.append("</li>").toString();
+    }
+
+    /**
+     * Rare / Normale / Souvent. Un poids existant hors de ces niveaux reste une option à part,
+     * sélectionnée : enregistrer sans y toucher ne l'arrondit jamais.
+     */
+    private static String frequencySelect(String prefix, int weight, String label) {
+        StringBuilder sb = new StringBuilder("<label class=\"qc-freq\"><span>Fréquence</span><select class=\"form-select ")
+                .append("form-select-sm\" name=\"").append(prefix).append("weight\" aria-label=\"Fréquence de « ")
+                .append(Http.esc(label)).append(" »\" data-qc-weight>");
+        for (int w : new int[] {RARE, NORMAL, OFTEN}) {
+            sb.append("<option value=\"").append(w).append("\"").append(w == weight ? " selected" : "").append(">")
+                    .append(frequencyLabel(w)).append("</option>");
+        }
+        if (weight != RARE && weight != NORMAL && weight != OFTEN) {
+            sb.append("<option value=\"").append(weight).append("\" selected>").append(frequencyLabel(weight))
+                    .append("</option>");
+        }
+        return sb.append("</select><span class=\"qc-pct\" data-qc-pct></span></label>").toString();
+    }
+
+    private static String countKey(int n) {
+        return n == 0 ? "none" : n == 1 ? "one" : "many";
     }
 
     /**
@@ -595,7 +690,7 @@ final class QuestCatalogPages {
             } else {
                 sb.append("<span class=\"qc-adv\"> ").append(Ui.id(q.id())).append("</span>");
             }
-            sb.append("</label></div>");
+            sb.append("</label>").append(frequencySelect(p, NORMAL, q.label())).append("</div>");
             n++;
         }
         return sb.append("</div></details>").toString();
@@ -604,6 +699,12 @@ final class QuestCatalogPages {
     private static String npcSection(Survey s, Catalog c) {
         StringBuilder sb = new StringBuilder("<section class=\"qc-card\" id=\"qc-npcs\"><h2><span class=\"qc-step\">3")
                 .append("</span>PNJ qui proposent ces quêtes</h2>");
+        boolean enabled = c == null || c.enabled();
+        sb.append("<label class=\"inline qc-allow\"><input type=\"checkbox\" name=\"enabled\" value=\"true\"")
+                .append(enabled ? " checked" : "").append("> Autoriser les PNJ à utiliser cette liste</label>")
+                .append("<p class=\"form-text\">Décoché : la liste est en pause et aucun PNJ ne propose ses quêtes. "
+                        + "Coché, il faut encore que le PNJ soit choisi ci-dessous et que son dialogue sache proposer "
+                        + "une quête de catalogue.</p>");
         if (!s.canAssign()) {
             return sb.append("<p class=\"form-text\">Le plugin du serveur doit être mis à jour pour choisir les PNJ "
                     + "ici. En attendant : <a href=\"/npcs/encounters\">PNJ récurrents</a>, champ « Catalogues de "
@@ -645,14 +746,74 @@ final class QuestCatalogPages {
         return sb.append("</div></section>").toString();
     }
 
-    private static String advancedForm(Catalog c) {
+    /**
+     * « Comment choisir la prochaine quête ? » : deux modes traduits vers les poids du moteur, et la
+     * question des répétitions. Un catalogue aux poids différents s'ouvre en « certaines plus
+     * souvent » avec ses valeurs ; « même chance » réutilise son poids commun s'il en a un.
+     */
+    private static String choiceForm(Catalog c) {
         boolean create = c == null;
+        boolean equal = create || c.equalChances();
+        int equalWeight = !create && equal && !c.entries().isEmpty() ? c.entries().get(0).weight() : NORMAL;
         int avoid = create ? 1 : c.avoidRecent();
-        StringBuilder sb = new StringBuilder("<details class=\"qc-card qc-advanced\"><summary>Réglages avancés</summary>");
-        sb.append("<label class=\"inline qc-adv-switch\"><input type=\"checkbox\" class=\"qc-adv-toggle\"> Afficher la "
-                + "fréquence de chaque quête et les identifiants</label>");
-        sb.append("<div class=\"qc-adv-grid\">");
-        if (create) {
+        StringBuilder sb = new StringBuilder("<section class=\"qc-card qc-choice\" id=\"qc-choice\"><h2>")
+                .append("<span class=\"qc-step\">4</span>Comment choisir la prochaine quête ?</h2>");
+        sb.append(hidden("equal_weight", String.valueOf(equalWeight)));
+        sb.append("<p class=\"muted qc-when-none\">Ajoute d'abord des quêtes à la liste.</p>")
+                .append("<p class=\"qc-when-one\">Une seule quête : c'est toujours elle qui est proposée, quand le "
+                        + "joueur peut la faire. Ajoute d'autres quêtes pour que le hasard choisisse.</p>");
+        sb.append("<div class=\"qc-when-many\"><fieldset class=\"qc-options\"><legend class=\"visually-hidden\">")
+                .append("Comment choisir la prochaine quête ?</legend>");
+        sb.append(option("pick_mode", "equal", equal, "Au hasard, même chance pour toutes",
+                "Recommandé. Exemple : avec 3 quêtes, chacune a environ 1 chance sur 3."));
+        sb.append(option("pick_mode", "weighted", !equal, "Au hasard, certaines plus souvent",
+                "Choisis Rare, Normale ou Souvent à côté de chaque quête, plus haut. Exemple : Souvent, Normale, "
+                        + "Normale = environ 50 %, 25 % et 25 %."));
+        sb.append("</fieldset>");
+        sb.append("<p class=\"form-text\">Ces chances valent quand le joueur peut faire toutes les quêtes. Celles "
+                + "qu'il a déjà finies, qui attendent avant de revenir ou qu'il ne peut pas encore faire sont mises "
+                + "de côté.</p><p class=\"form-text\">Chaque joueur a sa propre proposition. Elle ne change pas tant "
+                + "qu'il n'a pas fini une de ces quêtes : s'il ferme le dialogue et revient, il retrouve la même.</p>");
+        sb.append("<fieldset class=\"qc-options\"><legend class=\"qc-lbl\">Peut-on proposer deux fois de suite la "
+                + "même quête ?</legend>");
+        sb.append(option("avoid_recent", "1", avoid == 1, "Éviter les répétitions",
+                "Recommandé. La quête que le joueur vient de finir n'est pas reproposée tout de suite, s'il en a "
+                        + "une autre à faire."));
+        sb.append(option("avoid_recent", "0", avoid == 0, "Autoriser les répétitions",
+                "La même quête peut revenir juste après."));
+        sb.append("<details class=\"qc-more\"").append(avoid > 1 ? " open" : "").append("><summary>Éviter plus "
+                + "longtemps (réglage avancé)</summary>");
+        sb.append("<div class=\"qc-opt\"><input type=\"radio\" id=\"qc-avoid-more\" name=\"avoid_recent\" ")
+                .append("value=\"more\"").append(avoid > 1 ? " checked" : "").append("><label for=\"qc-avoid-more\">")
+                .append("Ne pas reproposer les <select class=\"form-select form-select-sm qc-inline-select\" ")
+                .append("name=\"avoid_more\" aria-label=\"Nombre de quêtes finies à éviter\">");
+        for (int i = 2; i <= 10; i++) {
+            sb.append("<option value=\"").append(i).append("\"").append(i == Math.max(avoid, 2) ? " selected" : "")
+                    .append(">").append(i).append("</option>");
+        }
+        sb.append("</select> dernières quêtes finies</label></div></details></fieldset></div>");
+        return sb.append("</section>").toString();
+    }
+
+    private static String option(String name, String value, boolean checked, String title, String help) {
+        String fid = "qc-" + name.replace('_', '-') + "-" + value;
+        return "<div class=\"qc-opt\"><input type=\"radio\" id=\"" + fid + "\" name=\"" + name + "\" value=\""
+                + value + "\"" + (checked ? " checked" : "") + "><label for=\"" + fid + "\"><strong>" + Http.esc(title)
+                + "</strong><span class=\"form-text\">" + Http.esc(help) + "</span></label></div>";
+    }
+
+    private static String notesForm(Catalog c) {
+        String description = c == null ? "" : c.description();
+        return "<details class=\"qc-card qc-advanced\"><summary>Notes" + (description.isBlank() ? "" : " (1)")
+                + "</summary><label class=\"qc-lbl\" for=\"qc-desc\">Note pour les administrateurs</label>"
+                + "<input class=\"form-control\" id=\"qc-desc\" name=\"description\" maxlength=\"256\" value=\""
+                + Http.esc(description) + "\"><p class=\"form-text\">Les joueurs ne la voient pas.</p></details>";
+    }
+
+    private static String technicalForm(Catalog c) {
+        StringBuilder sb = new StringBuilder("<details class=\"qc-card qc-advanced\"><summary>Informations techniques"
+                + "</summary><div class=\"qc-adv-grid\">");
+        if (c == null) {
             sb.append("<div><label for=\"qc-id\">Identifiant</label><input class=\"form-control\" id=\"qc-id\" name=\"id\" ")
                     .append("maxlength=\"64\" pattern=\"[a-z0-9._\\-]{1,64}\" placeholder=\"calculé à partir du nom\">")
                     .append("<p class=\"form-text\">Laisse vide : il est calculé à partir du nom. Il ne change plus ensuite.</p></div>");
@@ -660,22 +821,11 @@ final class QuestCatalogPages {
             sb.append("<div><span class=\"qc-lbl\">Identifiant</span><p>").append(Ui.id(c.id()))
                     .append("</p><p class=\"form-text\">Ne change pas : les PNJ s'en servent pour retrouver la liste.</p></div>");
         }
-        sb.append("<div><label for=\"qc-avoid\">Anti-répétition</label><select class=\"form-select\" id=\"qc-avoid\" ")
-                .append("name=\"avoid_recent\">");
-        for (int i = 0; i <= 10; i++) {
-            sb.append("<option value=\"").append(i).append("\"").append(i == avoid ? " selected" : "").append(">")
-                    .append(i == 0 ? "Aucune" : "Éviter " + (i == 1 ? "la dernière quête terminée" : "les " + i + " dernières"))
-                    .append("</option>");
-        }
-        sb.append("</select><p class=\"form-text\">Une quête que le joueur vient de finir n'est pas reproposée tout de "
-                + "suite, si une autre est possible.</p></div>");
-        sb.append("<div><label for=\"qc-desc\">Note pour les administrateurs</label><input class=\"form-control\" ")
-                .append("id=\"qc-desc\" name=\"description\" maxlength=\"256\" value=\"")
-                .append(Http.esc(create ? "" : c.description())).append("\"></div>");
-        boolean enabled = create || c.enabled();
-        sb.append("<div><label class=\"inline\"><input type=\"checkbox\" name=\"enabled\" value=\"true\"")
-                .append(enabled ? " checked" : "").append("> Catalogue actif</label><p class=\"form-text\">Décoché : en "
-                        + "pause, aucun PNJ ne propose ses quêtes.</p></div>");
+        sb.append("<div><label class=\"inline qc-adv-switch\"><input type=\"checkbox\" class=\"qc-adv-toggle\"> ")
+                .append("Options expertes de chaque quête</label><p class=\"form-text\">Identifiant, mise en pause, "
+                        + "rangement de la liste, valeur exacte de la fréquence (Rare = ").append(RARE)
+                .append(", Normale = ").append(NORMAL).append(", Souvent = ").append(OFTEN)
+                .append("). Le rangement ne change pas le hasard.</p></div>");
         return sb.append("</div></details>").toString();
     }
 

@@ -2523,6 +2523,10 @@ public final class AgentActionCatalog {
             params.put("description", description);
         }
         String avoid = trim(form.get("avoid_recent"));
+        if ("more".equals(avoid)) {
+            // #414 : « Éviter plus longtemps » — le nombre vient de la liste dédiée (2 à 10).
+            avoid = trim(form.get("avoid_more"));
+        }
         if (!avoid.isEmpty() && !avoid.matches("\\d{1,2}")) {
             return "« Éviter les dernières quêtes » doit être un entier entre 0 et 10.";
         }
@@ -2530,6 +2534,23 @@ public final class AgentActionCatalog {
             params.put("avoid_recent", avoid);
         }
         params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+
+        // #414 (retour du propriétaire) : « Comment choisir la prochaine quête ? ». Le moteur reste
+        // le tirage pondéré de #369 : « même chance pour toutes » = un seul poids pour toutes les
+        // lignes (celui du catalogue s'il était déjà uniforme, jamais une valeur inventée) ;
+        // « certaines plus souvent » = le poids de chaque ligne, ou sa valeur exacte (expert).
+        // Sans pick_mode (anciens formulaires, duplication), chaque ligne garde son poids saisi.
+        String pickMode = trim(form.get("pick_mode"));
+        if (!pickMode.isEmpty() && !"equal".equals(pickMode) && !"weighted".equals(pickMode)) {
+            return "Mode de choix des quêtes inconnu.";
+        }
+        String equalWeight = trim(form.get("equal_weight"));
+        if (equalWeight.isEmpty()) {
+            equalWeight = "10";
+        }
+        if (!equalWeight.matches("\\d{1,4}")) {
+            return "Poids commun invalide : entier de 1 à 1000.";
+        }
 
         record Row(int order, int position, String value) {
         }
@@ -2557,6 +2578,11 @@ public final class AgentActionCatalog {
                 return "La quête « " + quest + " » figure deux fois dans le catalogue.";
             }
             String weight = trim(form.get(prefix + "weight"));
+            if ("equal".equals(pickMode)) {
+                weight = equalWeight;
+            } else if ("weighted".equals(pickMode) && !trim(form.get(prefix + "weight_exact")).isEmpty()) {
+                weight = trim(form.get(prefix + "weight_exact"));
+            }
             if (!weight.isEmpty() && !weight.matches("\\d{1,4}")) {
                 return "Poids invalide pour « " + quest + " » : entier de 1 à 1000.";
             }

@@ -170,16 +170,29 @@ une liste de quêtes **existantes** qu'un PNJ récurrent (brigand, marchand éga
 il ne copie rien, chaque quête garde ses objectifs, ses récompenses et son délai.
 
 1. **Créer un catalogue** : un nom, puis « Ajouter une quête » — tapez quelques lettres du titre et
-   cochez. L'identifiant est calculé à partir du nom (modifiable dans « Réglages avancés »).
+   cochez. L'identifiant est calculé à partir du nom (modifiable dans « Informations techniques »).
 2. **PNJ qui proposent ces quêtes** : cochez les PNJ récurrents dans le même écran (ou plus tard
    avec « Choisir des PNJ » sur la fiche).
 3. **Dialogue** : dans le dialogue du PNJ, un choix avec l'action « Proposer une quête du
    catalogue ». Sans elle, le PNJ ne propose rien : la fiche l'indique (« ne sait pas encore
    proposer ») avec le lien vers son dialogue.
 
-La fiche d'un catalogue se lit ; **Modifier** permet de monter, descendre ou retirer une quête,
-**Dupliquer** et **Supprimer** ont chacun leur écran. Fréquence de chaque quête, anti-répétition et
-identifiants sont dans **Réglages avancés** (case « Afficher la fréquence de chaque quête »).
+4. **Comment choisir la prochaine quête ?** Les quêtes sont proposées **au hasard** parmi celles
+   que le joueur peut faire ; l'ordre de la liste sert seulement à la ranger.
+   - **Au hasard, même chance pour toutes** (recommandé) : 3 quêtes = environ 1 chance sur 3 chacune.
+   - **Au hasard, certaines plus souvent** : Rare, Normale ou Souvent à côté de chaque quête
+     (Souvent, Normale, Normale = environ 50 %, 25 %, 25 %). Une valeur qui ne tombe sur aucun de
+     ces niveaux reste affichée « Personnalisée (n) » et n'est jamais arrondie toute seule.
+   - **Peut-on proposer deux fois de suite la même quête ?** Éviter les répétitions (recommandé)
+     ou les autoriser ; « Éviter plus longtemps » (2 à 10 dernières quêtes finies) est replié.
+   Ces chances valent quand toutes les quêtes sont possibles pour le joueur : celles déjà finies,
+   en attente ou pas encore accessibles sont mises de côté.
+
+La fiche d'un catalogue se lit ; **Modifier** permet de retirer une quête, **Dupliquer** et
+**Supprimer** ont chacun leur écran. « Autoriser les PNJ à utiliser cette liste » met la liste en
+pause quand la case est décochée. La note pour les administrateurs est dans **Notes** ;
+l'identifiant et les options expertes de chaque quête (pause, rangement, valeur exacte de la
+fréquence : Rare = 5, Normale = 10, Souvent = 20) dans **Informations techniques**.
 
 En jeu, chaque joueur reçoit **sa** proposition, la même tant qu'il n'a pas terminé une quête du
 catalogue ; rien n'est inscrit dans son journal avant « Commencer (j'accepte) ». Les contrôles

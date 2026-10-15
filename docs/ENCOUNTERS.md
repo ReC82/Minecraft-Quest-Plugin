@@ -314,6 +314,19 @@ plugin valide avec le parseur des fichiers. Effet immédiat en jeu, sans publica
 des modèles (`/npcs/encounters`) a un champ **Catalogues de quêtes** (identifiants séparés par des
 virgules) ; à l'enregistrement, un catalogue inconnu ou un dialogue sans offre est signalé.
 
+**Hasard et répétitions (retour propriétaire #414).** L'ordre des entrées n'influe pas sur le
+tirage (rendez-vous pondéré par identifiant de quête) : PlugAdmin le dit (« Leur ordre ici sert
+seulement à les ranger ») et range monter/descendre dans les options expertes. Le formulaire pose
+deux questions traduites par le panel vers les champs existants : **Comment choisir la prochaine
+quête ?** — « Au hasard, même chance pour toutes » (`pick_mode=equal` : toutes les entrées
+reçoivent le poids commun `equal_weight`, celui du catalogue s'il était déjà uniforme, sinon 10) ou
+« Au hasard, certaines plus souvent » (`pick_mode=weighted` : Rare 5 / Normale 10 / Souvent 20 par
+quête, `entry_<n>_weight_exact` pour une valeur précise) ; **Peut-on proposer deux fois de suite
+la même quête ?** — `avoid_recent` 1 (éviter) / 0 (autoriser) / `more` + `avoid_more` 2–10. Un
+catalogue aux poids différents s'ouvre en « certaines plus souvent » ; un poids hors des trois
+niveaux s'affiche « Personnalisée (n) » et est renvoyé tel quel. Sans `pick_mode` (duplication,
+anciens formulaires), chaque entrée garde son poids. Une seule quête : pas de choix de hasard.
+
 Non fait dans ce lot : mode « choix parmi N », conditions de monde/biome/niveau par entrée,
 protection de la suppression d'une **quête** encore référencée par un catalogue (elle devient
 « quête absente », signalée, sans erreur en jeu), et les dialogues livrés `encounter_*.yml`

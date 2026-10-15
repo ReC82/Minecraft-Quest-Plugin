@@ -15,10 +15,15 @@ import com.lodygames.rpgquest.webapi.http.AccessLogger;
 import com.lodygames.rpgquest.webapi.http.AuthFilter;
 import com.lodygames.rpgquest.webapi.http.RateLimiter;
 import com.lodygames.rpgquest.webapi.http.RequestPipeline;
+import com.lodygames.rpgquest.webapi.news.NewsRepository;
 import com.lodygames.rpgquest.webapi.site.HomePageHandler;
+import com.lodygames.rpgquest.webapi.site.InfoPageHandler;
 import com.lodygames.rpgquest.webapi.site.LeaderboardsPageHandler;
+import com.lodygames.rpgquest.webapi.site.NewsPageHandler;
 import com.lodygames.rpgquest.webapi.site.PlayersPageHandler;
 import com.lodygames.rpgquest.webapi.site.PrivacyPageHandler;
+import com.lodygames.rpgquest.webapi.site.SeoHandler;
+import com.lodygames.rpgquest.webapi.site.Site;
 import com.lodygames.rpgquest.webapi.site.StatusPageHandler;
 import com.lodygames.rpgquest.webapi.site.UnpublishedPageHandler;
 import com.lodygames.rpgquest.webapi.site.WikiPageHandler;
@@ -34,6 +39,8 @@ import com.lodygames.rpgquest.webapi.store.WebhookHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -50,6 +57,10 @@ import java.util.concurrent.TimeUnit;
  * <p>Hébergement public (#52) : les routes boutique ne sont enregistrées que si
  * {@code store-enabled=true} ({@code storeService} vaut alors non nul), et les pages à pseudos ne
  * lisent l'instantané que si {@code player-data-public=true}.</p>
+ *
+ * <p>V1 publique (#56) : actualités ({@code /actualites}, lues dans {@code news-dir}, indépendantes de
+ * l'instantané), classements ({@code /classements}, alias {@code /leaderboards}), profils, infos, et
+ * {@code robots.txt} / {@code sitemap.xml}.</p>
  */
 public final class HttpServerBootstrap {
 
@@ -62,6 +73,9 @@ public final class HttpServerBootstrap {
         thread.setDaemon(true);
         return thread;
     });
+
+    /** Relecture du dossier des actualités au plus toutes les 30 s : une publication apparaît vite, sans disque par requête. */
+    static final Duration NEWS_REFRESH = Duration.ofSeconds(30);
 
     private HttpServer server;
 
@@ -88,9 +102,12 @@ public final class HttpServerBootstrap {
                 new AccessLogger(java.util.logging.Logger.getLogger("RPGQuest-WebApi")),
                 config.trustProxyHeaders());
         boolean storeEnabled = config.storeEnabled() && storeService != null;
+        Site site = new Site(config.siteTitle(), config.publicBaseUrl());
+        NewsRepository news = new NewsRepository(config.site().newsDir(), NEWS_REFRESH, Clock.systemUTC(),
+                java.util.logging.Logger.getLogger("RPGQuest-WebApi"));
 
         server.createContext("/health", pipeline.wrap(false,
-                new HealthHandler(snapshotStore, config.playerDataPublic(), storeEnabled)));
+                new HealthHandler(snapshotStore, config.playerDataPublic(), storeEnabled, news)));
 
         // API authentifiée (mission point 3, 5).
         server.createContext("/api/status", pipeline.wrap(true, new StatusHandler(snapshotStore)));
@@ -112,13 +129,19 @@ public final class HttpServerBootstrap {
         // Portail public (mission point 8) : jamais authentifié, jamais de connexion joueur (point 11).
         server.createContext("/status", pipeline.wrap(false, new StatusPageHandler(snapshotStore, config.siteTitle())));
         server.createContext("/wiki", pipeline.wrap(false, new WikiPageHandler(snapshotStore, config.siteTitle())));
-        if (config.playerDataPublic()) {
-            server.createContext("/leaderboards", pipeline.wrap(false, new LeaderboardsPageHandler(snapshotStore, config.siteTitle())));
-            server.createContext("/joueurs", pipeline.wrap(false, new PlayersPageHandler(snapshotStore, config.siteTitle())));
-        } else {
-            server.createContext("/leaderboards", pipeline.wrap(false, new UnpublishedPageHandler(config.siteTitle(), "Classements")));
-            server.createContext("/joueurs", pipeline.wrap(false, new UnpublishedPageHandler(config.siteTitle(), "Joueurs")));
-        }
+        server.createContext("/actualites", pipeline.wrap(false, new NewsPageHandler(news, site)));
+        server.createContext("/infos", pipeline.wrap(false, new InfoPageHandler(site, config.site())));
+        SeoHandler seo = new SeoHandler(news, site);
+        server.createContext("/robots.txt", pipeline.wrap(false, seo));
+        server.createContext("/sitemap.xml", pipeline.wrap(false, seo));
+        var boards = pipeline.wrap(false, config.playerDataPublic()
+                ? new LeaderboardsPageHandler(snapshotStore, site)
+                : new UnpublishedPageHandler(site, "Classements", "/classements"));
+        server.createContext("/classements", boards);
+        server.createContext("/leaderboards", boards);
+        server.createContext("/joueurs", pipeline.wrap(false, config.playerDataPublic()
+                ? new PlayersPageHandler(snapshotStore, site)
+                : new UnpublishedPageHandler(site, "Joueurs", "/joueurs")));
         server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle(),
                 config.playerDataPublic(), config.agePolicy())));
 
@@ -131,7 +154,8 @@ public final class HttpServerBootstrap {
             registerStore(pipeline);
         }
 
-        server.createContext("/", pipeline.wrap(false, new HomePageHandler(snapshotStore, config.siteTitle())));
+        server.createContext("/", pipeline.wrap(false, new HomePageHandler(snapshotStore, news, site,
+                config.playerDataPublic())));
 
         server.start();
     }

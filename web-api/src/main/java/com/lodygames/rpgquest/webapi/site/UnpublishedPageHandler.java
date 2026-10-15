@@ -12,17 +12,19 @@ import java.io.IOException;
  */
 public final class UnpublishedPageHandler implements ApiHandler {
 
-    private final String siteTitle;
+    private final Site site;
     private final String pageTitle;
+    private final String section;
 
-    public UnpublishedPageHandler(String siteTitle, String pageTitle) {
-        this.siteTitle = siteTitle;
+    public UnpublishedPageHandler(Site site, String pageTitle, String section) {
+        this.site = site;
         this.pageTitle = pageTitle;
+        this.section = section;
     }
 
     @Override
     public int handle(HttpExchange exchange) throws IOException {
-        HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, pageTitle, true,
+        HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, new PageMeta("", "", section), pageTitle, true,
                 "<p>Cette page n'est pas encore publiée : les profils et classements des joueurs "
                         + "n'apparaîtront qu'après validation des règles de confidentialité.</p>"
                         + "<p><a href=\"/confidentialite\">En savoir plus</a></p>"));

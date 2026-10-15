@@ -234,7 +234,7 @@ class HttpServerBootstrapTest {
         HttpResponse<String> response = get("/status", null);
 
         assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("hors-ligne"));
+        assertTrue(response.body().contains("Le serveur de jeu ne répond pas"));
     }
 
     // ---- Portail V1 (#54 / #55 / #56) -----------------------------------------------------------

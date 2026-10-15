@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.webapi.api;
 import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
+import com.lodygames.rpgquest.webapi.news.NewsRepository;
 import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -21,11 +22,13 @@ public final class HealthHandler implements ApiHandler {
     private final SnapshotStore store;
     private final boolean playerDataPublic;
     private final boolean storeEnabled;
+    private final NewsRepository news;
 
-    public HealthHandler(SnapshotStore store, boolean playerDataPublic, boolean storeEnabled) {
+    public HealthHandler(SnapshotStore store, boolean playerDataPublic, boolean storeEnabled, NewsRepository news) {
         this.store = store;
         this.playerDataPublic = playerDataPublic;
         this.storeEnabled = storeEnabled;
+        this.news = news;
     }
 
     @Override
@@ -35,6 +38,7 @@ public final class HealthHandler implements ApiHandler {
         body.put("snapshot", snapshotState());
         body.put("playerDataPublic", playerDataPublic);
         body.put("store", storeEnabled);
+        body.put("news", news.published().size());
         HttpResponses.sendJson(exchange, 200, body);
         return 200;
     }

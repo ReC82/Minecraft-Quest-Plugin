@@ -21,12 +21,34 @@ public final class ReloadServiceApplier implements ContentApplier {
 
     @Override
     public ApplyResult reload(ReloadFamily family) {
-        ContentReloadService.ReloadResult result = reloadService.reloadWithDependencies(Set.of(family));
+        return reload(Set.of(family));
+    }
+
+    @Override
+    public ApplyResult reload(Set<ReloadFamily> families) {
+        return view(reloadService.reloadWithDependencies(families));
+    }
+
+    @Override
+    public ApplyResult check(Set<ReloadFamily> families) {
+        return view(reloadService.previewWithDependencies(families));
+    }
+
+    private static ApplyResult view(ContentReloadService.ReloadResult result) {
         return new ApplyResult(result.applied(), result.code(), result.message(),
                 result.totalLoaded(), result.totalIssues(), result.runtimeHash(),
                 new ReloadDetail(result.referenceErrors(), result.preexistingReferenceErrors(),
                         wires(result.familiesInvolved()), wires(result.autoIncludedFamilies()),
-                        wires(result.suggestedFamilies())));
+                        wires(result.suggestedFamilies()), contentIssues(result)));
+    }
+
+    /** Les erreurs du validateur, famille par famille, telles que le moteur les a formulées. */
+    private static List<String> contentIssues(ContentReloadService.ReloadResult result) {
+        return result.families().stream()
+                .filter(outcome -> !outcome.clean())
+                .flatMap(outcome -> outcome.messages().stream()
+                        .map(message -> outcome.family().wire() + "/" + message))
+                .toList();
     }
 
     private static List<String> wires(List<ReloadFamily> families) {

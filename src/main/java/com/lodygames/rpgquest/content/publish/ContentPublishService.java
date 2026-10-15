@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -287,6 +288,428 @@ public final class ContentPublishService {
         }
     }
 
+    // ---- Publication d'un lot (issue #427) --------------------------------------------------
+
+    /** Au-delà, un lot est refusé : un pack d'histoire tient très largement dedans. */
+    public static final int MAX_BATCH_ITEMS = 50;
+
+    /**
+     * Une ressource d'un lot.
+     *
+     * @param expectedDevSha empreinte DEV que l'appelant croyait voir ({@code ""} = absente) ;
+     *                       jamais {@code null} dans un lot — on ne publie pas un pack à l'aveugle
+     */
+    public record BatchItem(PublishKind kind, String slug, String yaml, String expectedDevSha,
+                            String expectedId) {
+    }
+
+    /**
+     * Le sort d'une ressource du lot.
+     *
+     * @param status {@code CREATED}, {@code UPDATED}, {@code UNCHANGED} (fichier identique),
+     *               {@code CONFLICT}, {@code INVALID}, {@code REJECTED_BY_ENGINE},
+     *               {@code NOT_LOADED}, {@code RESTORED} (écrite puis remise en l'état),
+     *               {@code CHECKED} (vérification seule)
+     * @param problems ce que le moteur reproche à <strong>cette</strong> ressource, tel quel
+     */
+    public record BatchItemOutcome(PublishKind kind, String slug, String expectedId, String status,
+                                   boolean created, String devShaBefore, String devShaAfter,
+                                   String sourceSha, String backupPath, boolean runtimeConfirmed,
+                                   List<String> problems) {
+        public BatchItemOutcome {
+            problems = problems == null ? List.of() : List.copyOf(problems);
+        }
+    }
+
+    /**
+     * Le compte rendu d'un lot.
+     *
+     * @param code         {@code PUBLISHED}, {@code ALREADY_PUBLISHED}, {@code CHECKED},
+     *                     {@code REFUSED}, {@code CONFLICT}, {@code BUSY}, {@code BACKUP_FAILED},
+     *                     {@code WRITE_FAILED}, {@code INVALID_CONTENT}, {@code BROKEN_REFERENCES},
+     *                     {@code RUNTIME_MISSING}, {@code ROLLBACK_INCOMPLETE}
+     * @param dryRun       vérification seule : rien n'est resté écrit, rien n'a été rechargé
+     * @param filesRestored vrai si des fichiers écrits ont été remis dans leur état d'avant
+     * @param otherProblems erreurs du moteur qui ne concernent <strong>aucune</strong> ressource du
+     *                     lot (un autre fichier déjà présent sur DEV, une référence cassée…) : elles
+     *                     bloquent quand même, et le dire évite de chercher dans le pack
+     */
+    public record BatchOutcome(boolean ok, String code, String message, boolean dryRun,
+                               boolean filesRestored, List<BatchItemOutcome> items,
+                               List<String> otherProblems, List<String> families,
+                               List<String> autoIncludedFamilies, String reloadCode,
+                               int loadedCount, String runtimeHash, Instant verifiedAt) {
+        public BatchOutcome {
+            items = items == null ? List.of() : List.copyOf(items);
+            otherProblems = otherProblems == null ? List.of() : List.copyOf(otherProblems);
+            families = families == null ? List.of() : List.copyOf(families);
+            autoIncludedFamilies = autoIncludedFamilies == null ? List.of()
+                    : List.copyOf(autoIncludedFamilies);
+        }
+
+        /** Vrai si le moteur voit maintenant chaque ressource du lot. */
+        public boolean synchronized_() {
+            return ok && !dryRun && items.stream().allMatch(BatchItemOutcome::runtimeConfirmed);
+        }
+    }
+
+    /** Une ressource en cours de traitement : ce qu'il faut pour la remettre en l'état. */
+    private static final class Staged {
+        final BatchItem item;
+        final String id;
+        final String sourceSha;
+        final String before;
+        /** Le texte DEV d'avant, en mémoire : c'est lui qu'on repose en cas d'échec. */
+        String original;
+        String backupPath = "";
+        String after;
+        boolean written;
+
+        Staged(BatchItem item, String id, String sourceSha, String before) {
+            this.item = item;
+            this.id = id;
+            this.sourceSha = sourceSha;
+            this.before = before;
+            this.after = before;
+        }
+
+        boolean changes() {
+            return !before.equals(sourceSha);
+        }
+
+        String key() {
+            return item.kind().directory() + "/" + item.slug();
+        }
+    }
+
+    /**
+     * Publie un lot de ressources <strong>comme une seule opération</strong> (issue #427).
+     *
+     * <p>Le défaut corrigé : un pack publié ressource par ressource fait valider au moteur des états
+     * intermédiaires. Une quête dont le prérequis n'est pas encore sur DEV est rejetée
+     * ({@code INVALID_CONTENT}), et le résultat dépend de l'ordre d'envoi — c'est exactement ce qui
+     * est arrivé au pack Lily. Ici, toutes les ressources sont écrites, puis
+     * <strong>un</strong> rechargement de toutes les familles concernées (et de celles dont elles
+     * dépendent, #371) valide l'ensemble complet. L'ordre n'a donc plus d'importance.</p>
+     *
+     * <h2>Tout ou rien</h2>
+     *
+     * <ul>
+     *   <li>contrôles, conflits et verrous <strong>avant</strong> la première écriture : un refus à
+     *       ce stade n'a rien touché ;</li>
+     *   <li>si le moteur refuse l'ensemble, chaque fichier écrit est remis dans son état d'avant
+     *       (texte d'origine, ou retrait s'il était nouveau) — et le runtime, que le refus n'a pas
+     *       touché, reste celui d'avant ;</li>
+     *   <li>si une ressource manque au runtime après rechargement, même retour arrière, suivi d'un
+     *       rechargement qui rétablit l'ensemble d'avant ;</li>
+     *   <li>si un retour arrière échoue, on le <strong>dit</strong>, fichier par fichier, avec la
+     *       sauvegarde : un état à moitié publié n'est jamais présenté comme final.</li>
+     * </ul>
+     *
+     * @param dryRun vérification seule : les fichiers sont écrits, le moteur les juge sans rien
+     *               appliquer, puis ils sont remis en l'état — sans sauvegarde sur disque, puisque
+     *               rien ne doit en rester
+     */
+    public BatchOutcome publishBatch(List<BatchItem> items, boolean dryRun) {
+        Instant now = clock.instant();
+        if (items == null || items.isEmpty()) {
+            return batchRefused("REFUSED", "Aucune ressource dans le lot : rien à publier.",
+                    List.of(), dryRun, now);
+        }
+        if (items.size() > MAX_BATCH_ITEMS) {
+            return batchRefused("REFUSED", "Lot trop grand (" + items.size() + " ressources, "
+                    + MAX_BATCH_ITEMS + " au plus).", List.of(), dryRun, now);
+        }
+
+        // 1. Contrôles statiques : rien n'est lu ni écrit tant que le lot entier n'est pas sain.
+        List<BatchItemOutcome> invalid = new java.util.ArrayList<>();
+        Set<String> seen = new java.util.HashSet<>();
+        for (BatchItem item : items) {
+            String problem = staticProblem(item);
+            if (problem == null && !seen.add(item.kind().directory() + "/" + item.slug())) {
+                problem = "présente deux fois dans le lot.";
+            }
+            if (problem != null) {
+                invalid.add(itemOutcome(item, "INVALID", false, "", "", "", "", false,
+                        List.of(problem)));
+            }
+        }
+        if (!invalid.isEmpty()) {
+            return batchRefused("REFUSED", invalid.size()
+                    + " ressource(s) invalide(s) dans le lot : rien n'a été publié.", invalid,
+                    dryRun, now);
+        }
+
+        // 2. Verrous de TOUTES les ressources, ou d'aucune.
+        List<String> locked = new java.util.ArrayList<>();
+        for (BatchItem item : items) {
+            String key = item.kind().directory() + "/" + item.slug();
+            if (inFlight.putIfAbsent(key, Boolean.TRUE) != null) {
+                locked.forEach(inFlight::remove);
+                return batchRefused("BUSY", "Une publication de « " + key
+                        + " » est déjà en cours : réessayer dans un instant.", List.of(), dryRun, now);
+            }
+            locked.add(key);
+        }
+        try {
+            return publishLocked(items, dryRun, now);
+        } finally {
+            locked.forEach(inFlight::remove);
+        }
+    }
+
+    private BatchOutcome publishLocked(List<BatchItem> items, boolean dryRun, Instant now) {
+        // 3. Conflits : l'état DEV doit être celui que l'appelant a vu, pour CHAQUE ressource.
+        List<Staged> staged = new java.util.ArrayList<>();
+        List<BatchItemOutcome> conflicts = new java.util.ArrayList<>();
+        for (BatchItem item : items) {
+            String before = store.sha256(item.kind(), item.slug());
+            String id = item.expectedId() == null || item.expectedId().isBlank()
+                    ? item.slug() : item.expectedId();
+            Staged one = new Staged(item, id, ContentPublishStore.sha256Of(item.yaml()), before);
+            staged.add(one);
+            if (!item.expectedDevSha().equals(before)) {
+                conflicts.add(itemOutcome(item, "CONFLICT", before.isEmpty(), before, before,
+                        one.sourceSha, "", applier.runtimeHas(item.kind().family(), id),
+                        List.of(item.expectedDevSha().isEmpty()
+                                ? "créée sur DEV depuis votre analyse."
+                                : before.isEmpty() ? "disparue de DEV depuis votre analyse."
+                                        : "modifiée sur DEV depuis votre analyse.")));
+            }
+        }
+        if (!conflicts.isEmpty()) {
+            return batchRefused("CONFLICT", conflicts.size() + " ressource(s) ont changé sur DEV"
+                    + " depuis votre analyse : rien n'a été publié, pour ne rien écraser en"
+                    + " silence. Relancer l'analyse.", conflicts, dryRun, now);
+        }
+
+        Set<com.lodygames.rpgquest.content.reload.ReloadFamily> families =
+                new java.util.LinkedHashSet<>();
+        staged.forEach(one -> families.add(one.item.kind().family()));
+        boolean anyChange = staged.stream().anyMatch(Staged::changes);
+        if (!anyChange && staged.stream()
+                .allMatch(one -> applier.runtimeHas(one.item.kind().family(), one.id))) {
+            return new BatchOutcome(true, dryRun ? "CHECKED" : "ALREADY_PUBLISHED",
+                    "Les " + staged.size() + " ressource(s) sont déjà identiques sur DEV et chargées"
+                            + " par le moteur : rien à faire.",
+                    dryRun, false, outcomes(staged, "UNCHANGED", true, Map.of()), List.of(),
+                    wires(families), List.of(), "ALREADY_LOADED", 0, applier.runtimeHash(), now);
+        }
+
+        // 4. Sauvegardes (publication réelle), textes d'origine en mémoire (toujours).
+        String stamp = ContentPublishStore.stamp(now);
+        for (Staged one : staged) {
+            if (!one.changes() || one.before.isEmpty()) {
+                continue;
+            }
+            one.original = store.read(one.item.kind(), one.item.slug()).orElse(null);
+            if (one.original == null) {
+                return batchRefused("BACKUP_FAILED", "Lecture du fichier DEV « " + one.key()
+                        + " » impossible : rien n'a été publié.", List.of(), dryRun, now);
+            }
+            if (dryRun) {
+                continue;
+            }
+            try {
+                one.backupPath = store.backup(one.item.kind(), one.item.slug(), stamp)
+                        .map(ContentPublishStore.Backup::relativePath).orElse("");
+            } catch (IOException error) {
+                return batchRefused("BACKUP_FAILED", "Sauvegarde de « " + one.key()
+                        + " » impossible, donc rien n'a été publié : " + describe(error), List.of(),
+                        dryRun, now);
+            }
+        }
+
+        // 5. Écritures. Un échec remet en l'état tout ce qui a déjà été écrit.
+        for (Staged one : staged) {
+            if (!one.changes()) {
+                continue;
+            }
+            try {
+                one.after = store.write(one.item.kind(), one.item.slug(), one.item.yaml());
+                one.written = true;
+            } catch (IOException error) {
+                List<String> leftovers = restore(staged);
+                return finish(false, "WRITE_FAILED", "Écriture de « " + one.key()
+                        + " » impossible sur DEV : " + describe(error) + ". " + restoredSentence(leftovers),
+                        staged, dryRun, leftovers, null, now);
+            }
+        }
+
+        // 6. UN verdict du moteur sur l'ensemble complet.
+        ContentApplier.ApplyResult reload = dryRun ? applier.check(families) : applier.reload(families);
+        boolean accepted = dryRun ? isCleanPreview(reload) : reload.applied();
+        if (!accepted) {
+            List<String> leftovers = restore(staged);
+            String code = reload.code() == null || reload.code().isBlank() ? "RELOAD_FAILED"
+                    : reload.code();
+            return finish(false, code, (dryRun ? "Vérification" : "Publication")
+                            + " refusée par le moteur (" + code + ") : rien n'a été mis en jeu, le"
+                            + " contenu en jeu est inchangé. " + restoredSentence(leftovers),
+                    staged, dryRun, leftovers, reload, now);
+        }
+        if (dryRun) {
+            List<String> leftovers = restore(staged);
+            boolean clean = leftovers.isEmpty();
+            return finish(clean, clean ? "CHECKED" : "ROLLBACK_INCOMPLETE",
+                    clean ? "Vérification réussie : les " + staged.size() + " ressource(s) seraient"
+                            + " acceptées ensemble par le moteur. Rien n'a été mis en jeu."
+                            : "Vérification réussie, mais " + restoredSentence(leftovers),
+                    staged, true, leftovers, reload, now);
+        }
+
+        // 7. Preuve : chaque identifiant attendu est-il réellement chargé ?
+        List<Staged> missing = staged.stream()
+                .filter(one -> !applier.runtimeHas(one.item.kind().family(), one.id)).toList();
+        if (!missing.isEmpty()) {
+            List<String> leftovers = restore(staged);
+            ContentApplier.ApplyResult back = applier.reload(families);
+            String names = String.join(", ", missing.stream().map(one -> one.id).toList());
+            return finish(false, "RUNTIME_MISSING", "Rechargé, mais le moteur ne voit pas : " + names
+                            + ". Vérifier que l'identifiant déclaré dans chaque fichier correspond à"
+                            + " son nom. " + restoredSentence(leftovers)
+                            + (back.applied() ? " Contenu d'avant rechargé."
+                                    : " ATTENTION : le rechargement de retour a échoué ("
+                                            + back.code() + ")."),
+                    staged, false, leftovers, reload, now);
+        }
+        return finish(true, "PUBLISHED", "Les " + staged.size() + " ressource(s) sont en jeu sur"
+                        + " DEV, confirmées une à une par le moteur (" + reload.loaded()
+                        + " élément(s) chargés).",
+                staged, false, List.of(), reload, now);
+    }
+
+    /** Un aperçu propre : pas une erreur de contenu, pas une référence cassée. */
+    private static boolean isCleanPreview(ContentApplier.ApplyResult result) {
+        return "PREVIEW_OK".equals(result.code());
+    }
+
+    /**
+     * Remet chaque fichier écrit dans son état d'avant : texte d'origine, ou retrait s'il était
+     * nouveau.
+     *
+     * @return les ressources qu'on n'a pas pu remettre en l'état, avec leur sauvegarde
+     */
+    private List<String> restore(List<Staged> staged) {
+        List<String> leftovers = new java.util.ArrayList<>();
+        for (Staged one : staged) {
+            if (!one.written) {
+                continue;
+            }
+            try {
+                if (one.original == null) {
+                    store.delete(one.item.kind(), one.item.slug());
+                } else {
+                    store.write(one.item.kind(), one.item.slug(), one.original);
+                }
+                one.written = false;
+                one.after = store.sha256(one.item.kind(), one.item.slug());
+            } catch (IOException error) {
+                leftovers.add(one.key() + (one.backupPath.isEmpty() ? ""
+                        : " (sauvegarde « " + one.backupPath + " »)") + " : " + describe(error));
+            }
+        }
+        return leftovers;
+    }
+
+    private static String restoredSentence(List<String> leftovers) {
+        return leftovers.isEmpty()
+                ? "Les fichiers DEV sont remis dans leur état d'avant."
+                : "ATTENTION : " + leftovers.size() + " fichier(s) n'ont pas pu être remis en l'état"
+                        + " — " + String.join(" ; ", leftovers) + ".";
+    }
+
+    private BatchOutcome finish(boolean ok, String code, String message, List<Staged> staged,
+                                boolean dryRun, List<String> leftovers,
+                                ContentApplier.ApplyResult reload, Instant now) {
+        boolean anyWritten = staged.stream().anyMatch(Staged::changes);
+        boolean restored = !ok || dryRun;
+        String finalCode = !leftovers.isEmpty() ? "ROLLBACK_INCOMPLETE" : code;
+        ContentApplier.ReloadDetail detail = reload == null ? ContentApplier.ReloadDetail.EMPTY
+                : reload.detail();
+        Map<String, List<String>> problems = new java.util.LinkedHashMap<>();
+        List<String> others = new java.util.ArrayList<>(detail.referenceErrors());
+        for (String issue : detail.contentIssues()) {
+            Staged owner = staged.stream().filter(one -> issue.startsWith(
+                    one.item.kind().directory() + "/" + one.item.kind().fileName(one.item.slug())))
+                    .findFirst().orElse(null);
+            if (owner == null) {
+                others.add(issue);
+            } else {
+                problems.computeIfAbsent(owner.key(), k -> new java.util.ArrayList<>()).add(issue);
+            }
+        }
+        List<BatchItemOutcome> outcomes = new java.util.ArrayList<>();
+        for (Staged one : staged) {
+            List<String> mine = problems.getOrDefault(one.key(), List.of());
+            boolean loaded = applier.runtimeHas(one.item.kind().family(), one.id);
+            String status;
+            if (ok && !dryRun) {
+                status = !one.changes() ? "UNCHANGED" : one.before.isEmpty() ? "CREATED" : "UPDATED";
+            } else if (!mine.isEmpty()) {
+                status = "REJECTED_BY_ENGINE";
+            } else if (ok) {
+                status = "CHECKED";
+            } else if ("RUNTIME_MISSING".equals(code) && !loaded) {
+                status = "NOT_LOADED";
+            } else {
+                status = one.changes() && anyWritten && restored ? "RESTORED" : "UNCHANGED";
+            }
+            outcomes.add(itemOutcome(one.item, status, one.before.isEmpty(), one.before,
+                    one.written ? one.after : store.sha256(one.item.kind(), one.item.slug()),
+                    one.sourceSha, one.backupPath, ok && !dryRun && loaded, mine));
+        }
+        return new BatchOutcome(ok && leftovers.isEmpty(), finalCode, message, dryRun,
+                restored && anyWritten && leftovers.isEmpty(), outcomes, others,
+                detail.families(), detail.autoIncludedFamilies(),
+                reload == null ? "" : reload.code(), reload == null ? 0 : reload.loaded(),
+                applier.runtimeHash(), clock.instant());
+    }
+
+    private List<BatchItemOutcome> outcomes(List<Staged> staged, String status, boolean confirmed,
+                                            Map<String, List<String>> problems) {
+        return staged.stream().map(one -> itemOutcome(one.item, status, false, one.before,
+                one.before, one.sourceSha, "", confirmed,
+                problems.getOrDefault(one.key(), List.of()))).toList();
+    }
+
+    private static BatchItemOutcome itemOutcome(BatchItem item, String status, boolean created,
+                                                String before, String after, String sourceSha,
+                                                String backupPath, boolean confirmed,
+                                                List<String> problems) {
+        String id = item == null || item.expectedId() == null || item.expectedId().isBlank()
+                ? (item == null ? "" : item.slug()) : item.expectedId();
+        return new BatchItemOutcome(item == null ? null : item.kind(), item == null ? "" : item.slug(),
+                id, status, created, before, after, sourceSha, backupPath, confirmed, problems);
+    }
+
+    /** Le motif de refus d'une ressource avant toute lecture du disque, ou {@code null}. */
+    private String staticProblem(BatchItem item) {
+        if (item == null || item.kind() == null) {
+            return "famille de contenu inconnue.";
+        }
+        if (!PublishKind.validSlug(item.slug()) || store.resolve(item.kind(), item.slug()).isEmpty()) {
+            return "identifiant de ressource invalide.";
+        }
+        if (item.yaml() == null || item.yaml().isBlank()) {
+            return "contenu vide.";
+        }
+        if (item.expectedDevSha() == null) {
+            return "empreinte DEV attendue manquante : relancer l'analyse.";
+        }
+        return null;
+    }
+
+    private BatchOutcome batchRefused(String code, String message, List<BatchItemOutcome> items,
+                                      boolean dryRun, Instant now) {
+        return new BatchOutcome(false, code, message, dryRun, false, items, List.of(), List.of(),
+                List.of(), "", 0, applier.runtimeHash(), now);
+    }
+
+    private static List<String> wires(Set<com.lodygames.rpgquest.content.reload.ReloadFamily> families) {
+        return families.stream().map(com.lodygames.rpgquest.content.reload.ReloadFamily::wire).toList();
+    }
+
     /**
      * Retire une publication.
      *
@@ -423,7 +846,10 @@ public final class ContentPublishService {
                 false, "", "", 0, 0, false, applier.runtimeHash(), now);
     }
 
-    /** Les références fautives, nommées dans le message lui-même (#371) — bornées à trois. */
+    /**
+     * Les références fautives, nommées dans le message lui-même (#371) — bornées à trois. Les
+     * erreurs du validateur sont déjà dans le message du rechargement (#427).
+     */
     private static String culprits(ContentApplier.ReloadDetail detail) {
         List<String> errors = detail.referenceErrors();
         if (errors.isEmpty()) {

@@ -29,12 +29,22 @@ public interface ContentApplier {
      * @param families            familles visées par l'opération (jetons {@code wire})
      * @param autoIncludedFamilies familles ajoutées d'office parce que liées
      * @param suggestedFamilies   familles qu'il faudrait encore recharger/publier
+     * @param contentIssues       erreurs du validateur du moteur, {@code "fichier : motif"}
+     *                            (issue #427) — sans elles, un refus {@code INVALID_CONTENT} ne dit
+     *                            ni quel fichier ni pourquoi
      */
     record ReloadDetail(List<String> referenceErrors, List<String> preexistingReferenceErrors,
                         List<String> families, List<String> autoIncludedFamilies,
-                        List<String> suggestedFamilies) {
+                        List<String> suggestedFamilies, List<String> contentIssues) {
         public static final ReloadDetail EMPTY =
-                new ReloadDetail(List.of(), List.of(), List.of(), List.of(), List.of());
+                new ReloadDetail(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+
+        public ReloadDetail(List<String> referenceErrors, List<String> preexistingReferenceErrors,
+                            List<String> families, List<String> autoIncludedFamilies,
+                            List<String> suggestedFamilies) {
+            this(referenceErrors, preexistingReferenceErrors, families, autoIncludedFamilies,
+                    suggestedFamilies, List.of());
+        }
 
         public ReloadDetail {
             referenceErrors = referenceErrors == null ? List.of() : List.copyOf(referenceErrors);
@@ -43,6 +53,7 @@ public interface ContentApplier {
             families = families == null ? List.of() : List.copyOf(families);
             autoIncludedFamilies = autoIncludedFamilies == null ? List.of() : List.copyOf(autoIncludedFamilies);
             suggestedFamilies = suggestedFamilies == null ? List.of() : List.copyOf(suggestedFamilies);
+            contentIssues = contentIssues == null ? List.of() : List.copyOf(contentIssues);
         }
     }
 
@@ -64,6 +75,19 @@ public interface ContentApplier {
      * opération : publier une quête ne doit jamais exiger de deviner qu'il faut aussi les PNJ.
      */
     ApplyResult reload(ReloadFamily family);
+
+    /**
+     * Recharge plusieurs familles (et leurs dépendances) en <strong>une seule</strong> opération
+     * atomique (issue #427) : c'est ce qui permet de publier un pack dont les ressources se citent
+     * entre elles sans valider un ensemble temporairement incomplet.
+     */
+    ApplyResult reload(java.util.Set<ReloadFamily> families);
+
+    /**
+     * Même verdict que {@link #reload(java.util.Set)}, <strong>sans rien appliquer</strong> : la
+     * vérification préalable d'un pack (issue #427). {@code applied} est toujours faux.
+     */
+    ApplyResult check(java.util.Set<ReloadFamily> families);
 
     /** Le moteur porte-t-il cet identifiant ? Comparaison sur la forme « nue ». */
     boolean runtimeHas(ReloadFamily family, String id);

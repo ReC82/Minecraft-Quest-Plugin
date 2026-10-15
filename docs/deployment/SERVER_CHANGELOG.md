@@ -48,6 +48,48 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Publication d'un pack en une seule opération, tout ou rien (#427)
+
+### Changement
+
+Cause des refus `INVALID_CONTENT` du pack Lily (15/10, 13:31 UTC) établie : quêtes publiées une à
+une, chacune citant en prérequis une quête pas encore publiée. Plugin : nouvelle action agent
+`content.publish.batch` (contrôles et conflits avant écriture, sauvegardes, écriture du lot, un
+seul rechargement de l'ensemble avec les familles liées, vérification de chaque identifiant, remise
+en l'état des fichiers sur refus ; `dry_run=true` pour vérifier sans rien mettre en jeu) ; le
+message `INVALID_CONTENT` nomme les erreurs du validateur ; le motif « prérequis introuvable » dit
+comment corriger. PlugAdmin : « Publier la sélection » envoie un lot unique, bouton « Vérifier »,
+vue « pack » `/content/pending?pack=…` ouverte par « Mettre l'histoire en jeu sur DEV » après un
+import, compte rendu ressource par ressource.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (nouvelle action agent) **et** redéploiement de PlugAdmin. Aucune
+migration de base, aucune configuration, aucun contenu réécrit au déploiement. Redémarrage requis
+pour le JAR.
+
+### Sauvegarde préalable
+
+JAR + `data.db` + configuration sauvegardés par `scripts/deploy-verygames.sh` ; panel par
+`scripts/plugadmin/deploy.sh` (`/opt/plugadmin/releases/`).
+
+### Déploiement
+
+CI verte, puis `scripts/deploy-verygames.sh -y` et `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`content.publish.batch` en `dry_run` sur une ressource déjà à jour ; route `/content/pending?pack=…`
+servie ; TC-323.
+
+### Rollback
+
+Remettre le JAR précédent depuis la sauvegarde horodatée et redémarrer ; panel : version précédente
+depuis `/opt/plugadmin/releases/`. Un panel ancien avec un JAR nouveau (ou l'inverse) reste
+fonctionnel pour la publication unitaire ; seule l'action de lot exige les deux.
+
+---
+
 ## 2026-10-15 - Catalogues de quêtes : hasard expliqué et réglé simplement (#414, correctif de validation)
 
 ### Changement

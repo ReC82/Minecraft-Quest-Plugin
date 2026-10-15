@@ -2770,27 +2770,54 @@ Tri **problèmes d'abord** : conflit, puis publié-non-chargé, puis le reste. F
 par état, et recherche — en **liens GET**, donc l'URL reste partageable et la page ne contient aucun
 JavaScript (la CSP du panel interdit le script inline).
 
-#### La publication groupée n'est pas une opération globale
+#### La publication groupée est UNE opération, tout ou rien (issue #427)
 
-Chaque case cochée produit une action `content.publish` **individuelle**, qui repasse par la
-validation du catalogue puis par l'enrichissement côté serveur — donc par ses propres
-`expected_source_sha` et `expected_dev_sha`, sa propre sauvegarde, son propre rechargement et sa
-propre vérification du runtime. **Aucune protection n'est contournée ni mutualisée.**
+> **Changement de règle (15/10/2026).** Jusqu'à #427, chaque case cochée produisait une action
+> `content.publish` individuelle. Le pack Lily a montré la limite : publiées une à une (ordre
+> alphabétique), quatre quêtes sur cinq ont été refusées `INVALID_CONTENT` parce que chacune citait
+> en **prérequis** une quête pas encore publiée — le chargeur de quêtes rejette un prérequis
+> introuvable. Seule la dernière, qui complétait la chaîne, est passée (et a chargé les cinq).
+
+Désormais, toute la sélection part en **une** action `content.publish.batch` :
+
+1. le panel relit chaque ressource dans la source et revérifie son `expected_source_sha` — une
+   seule ressource périmée refuse **le lot entier**, nommée dans le message ;
+2. le serveur contrôle tout (famille, identifiant, `expected_dev_sha` de **chaque** ressource,
+   verrous) **avant la première écriture** ;
+3. il sauvegarde les fichiers DEV existants (`content-backups/<horodatage>/…`), écrit le lot, puis
+   lance **un seul** rechargement de toutes les familles concernées et de celles dont elles
+   dépendent (#371) — le moteur juge l'**ensemble complet**, l'ordre n'a plus d'importance ;
+4. il vérifie que **chaque** identifiant attendu est chargé.
+
+Si le moteur refuse (contenu invalide, référence cassée) ou si un identifiant manque, **chaque
+fichier écrit est remis dans son état d'avant** (texte d'origine, ou retrait s'il était nouveau) ;
+le runtime, que le refus n'a pas touché, reste celui d'avant. Un retour arrière impossible est
+signalé fichier par fichier (`ROLLBACK_INCOMPLETE`, avec la sauvegarde) — jamais un état à moitié
+publié présenté comme final. Republier un lot identique répond `ALREADY_PUBLISHED` sans rien
+réécrire.
+
+« **Vérifier** » envoie le même lot avec `dry_run=true` : le moteur juge l'ensemble
+(`previewWithDependencies`) puis les fichiers sont remis en l'état, sans sauvegarde sur disque.
 
 | Règle | Comment elle tient |
 |---|---|
-| pas de « publier tout » | chaque ressource est cochée explicitement |
-| un conflit n'entre jamais dans un lot | il exige d'avoir vu la différence, ce qui se fait sur la fiche |
-| une ressource jamais publiée deux fois | la case porte la clé de la ressource comme **nom** de champ, et un formulaire n'a qu'une valeur par nom |
-| succès partiel | une ressource refusée est **nommée** avec son motif, les autres partent |
+| pas de « publier tout » | chaque ressource est cochée explicitement (ou pré-cochée par la vue « pack ») |
+| un conflit n'entre jamais dans un lot | il exige d'avoir vu la différence, ce qui se fait sur la fiche ; côté serveur, une empreinte DEV inattendue refuse le lot |
+| une ressource jamais deux fois | la case porte la clé de la ressource comme **nom** de champ ; le catalogue et le serveur refusent un doublon |
+| diagnostic précis | chaque refus du moteur est rattaché à **sa** ressource (`quests/lily_fleurs.yml : prérequis introuvable … [rpgquest:lily_repas] …`) ; les problèmes d'autres fichiers DEV sont listés à part, « hors de ce lot » |
 
-> **Pourquoi pas de retour arrière global sur échec partiel.** Chaque ressource a sa propre
-> sauvegarde et son propre rechargement. Annuler l'ensemble parce qu'une a échoué défairait des
-> publications qui, elles, ont réussi et ont été confirmées — ce serait plus dangereux que de ne
-> rien annuler.
+**Vue « pack »** : après un import (`/content/import`), le bouton **« Mettre l'histoire en jeu sur
+DEV »** ouvre `/content/pending?pack=quests/…,stories/…,dialogues/…` : seules les ressources du pack,
+déjà cochées, avec « Vérifier » et « Mettre l'histoire en jeu ». Les PNJ réutilisés ne sont pas
+republiés : ce sont des définitions serveur, rechargées avec le lot si une ressource les cite.
 
-« Dernières publications » montre l'issue **réelle** de chacune : `○` en attente, `✓` réussie,
-`✗` refusée avec son motif. Jamais un « publication terminée » global : une demande est asynchrone,
+**Limite assumée** : écriture et rechargement se font sur le thread principal du serveur, fichier
+par fichier ; un arrêt brutal du serveur *pendant* l'opération peut laisser des fichiers écrits sans
+rechargement. Ils sont alors visibles « Publié, non chargé » dans `/content/pending`, et republier le
+lot (même contenu) recharge sans réécrire.
+
+« Dernières publications » montre l'issue **réelle** de chacune — et, pour un lot, le verdict
+d'ensemble puis chaque ressource : `○` en attente, `✓` réussie, `✗` refusée avec son motif. Jamais un « publication terminée » global : une demande est asynchrone,
 et l'annoncer réussie au moment de la soumission serait exactement le raccourci interdit plus haut.
 
 #### Le relevé en retard, et comment l'écran reste honnête

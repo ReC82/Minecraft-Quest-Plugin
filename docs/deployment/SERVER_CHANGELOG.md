@@ -71,7 +71,8 @@ copié sous `/opt/lodyquests-portal/releases/`.
 ### Déploiement
 
 `sudo scripts/web-portal/install.sh` puis `scripts/web-portal/deploy.sh` ; TLS par
-`certbot --nginx -d lodyquests.lodylands.com` une fois le DNS public propagé.
+`certbot --nginx -d lodyquests.lodylands.com` (fait le 15/10 à 14:58 après propagation DNS,
+échéance 13/01/2027 ; un premier essai à 14:46 avait échoué en NXDOMAIN sans rien modifier).
 
 ### Validation
 

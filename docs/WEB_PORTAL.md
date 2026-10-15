@@ -35,7 +35,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 
 | # | Étape | Ticket | État |
 | --- | --- | --- | --- |
-| 0 | Socle d'hébergement AWS : service, nginx, `/health`, déploiement, rollback | #52 | **fait** — en ligne en local ; HTTPS selon le certificat (voir le rapport du 15/10) |
+| 0 | Socle d'hébergement AWS : service, nginx, `/health`, déploiement, rollback | #52 | **fait** — en ligne en HTTPS depuis le 15/10 (certificat Let's Encrypt ECDSA, échéance 13/01/2027, renouvellement automatique certbot) |
 | 1 | Instantané v2 : statistiques par portée, profils publics | #54, #56 | **fait** |
 | 2 | Retrait du profil par le joueur, page confidentialité | #55 | **fait** (socle) ; politique, mineurs et visibilité par défaut **à décider** par le propriétaire |
 | 3 | Acheminer l'instantané du serveur Minecraft vers AWS | #421 | **à faire** — sans lui, le portail reste en mode dégradé |

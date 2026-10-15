@@ -3061,6 +3061,17 @@ secondes et ne dit que le nom. Les objectifs de la **première étape** partent 
 chat (`messages.yml` → `quest.started-objectives-header` / `quest.started-objective`), avec le même
 libellé d'objectif que le journal et l'ActionBar, et un renvoi vers `/quests`.
 
+**2 bis. À chaque passage d'étape aussi (issue #70).** Quand l'étape courante est remplie et qu'il en
+reste une autre, ses objectifs partent dans le chat sous l'en-tête « Étape suivante : <quête> — à
+faire maintenant » (`messages.yml` → `quest.step-advanced-header`), avec les mêmes lignes qu'au
+démarrage : quantité pour un objectif comptable (`quest.started-objective`), aucune quantité pour un
+objectif binaire — parler à un PNJ, atteindre un lieu (`quest.started-objective-single`). Pour
+`TALK_TO_NPC` et `DELIVER_ITEM_TO_NPC`, le PNJ est **nommé** par son `display_name` (balises
+MiniMessage retirées) : « Parler à Garde », « Cristal (à remettre à Garde) ». Sans définition de PNJ
+pour cet id, le libellé générique « Parler au PNJ » est conservé — l'identifiant logique n'est
+jamais montré. Rien n'est annoncé après la dernière étape (le résumé de récompenses s'en charge).
+Les nouvelles clés sont ajoutées automatiquement au `messages.yml` du serveur au démarrage.
+
 **3. La progression du kit est visible sans PlugAdmin ni commande admin.** Le Guide propose
 « Comment améliorer mon kit ? » (nœud `kit_progress`), qui affiche le palier actuel, le palier
 suivant, les matériaux attendus avec **ce qui est déjà remis**, et explique la remise progressive.

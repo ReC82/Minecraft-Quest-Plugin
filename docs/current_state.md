@@ -197,6 +197,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (#138) serait une **seconde source** : décision de gameplay non prise, et **aucune conversion ni
   migration** n'a eu lieu. `TESTER`/`READ_ONLY` lisent sans créer ; `BUILDER`/`CONTENT_EDITOR` n'ont
   aucun accès.
+- **Guidage vers l'étape suivante (issue #70, tranche 1)** — au passage d'une étape à la suivante,
+  le chat annonce les objectifs de la nouvelle étape (`quest.step-advanced-header`), avec les
+  quantités, et nomme le PNJ cible des objectifs `TALK_TO_NPC` / `DELIVER_ITEM_TO_NPC` par son nom
+  affiché (`QuestProgressEngine#setNpcNameResolver`, branché sur les définitions de PNJ). Les
+  objectifs binaires n'affichent plus « (x1) ». Reste hors tranche : textes d'indices dans les
+  dialogues (`crystal_hunt`), validation du parcours `first_steps` → `crystal_hunt` en jeu.
 - **Récompense « Cœur supplémentaire » (issue #166)** — nouveau `RewardType.HEART` (`HeartReward`,
   `amount` facultatif 1–512, `key` de droit facultative), lu par `QuestDefinitionParser`, éditable
   dans le panel (descripteur `HEART`), exporté dans les content packs (`amount` + `key`, format

@@ -6072,3 +6072,19 @@ quête important), par ex. créé depuis PlugAdmin → PNJ → Créer un PNJ (`t
     position. Déplacer le PNJ à la main (`/npc tphere`) puis « Actualiser » → état *conflit*
     « n'est plus à sa place » ; « Replacer ici » le ramène.
 11. Téléphone (ou fenêtre étroite) : la page reste lisible sans défilement horizontal.
+
+### TC-316 — Passage d'étape : la prochaine action est annoncée (issue #70, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #70 déployé ; un joueur de test pouvant démarrer `crystal_hunt` (ou toute quête
+à plusieurs étapes dont une `TALK_TO_NPC`). **Durée** : 10 minutes.
+
+1.  Démarrer la quête : le chat affiche « Quête commencée : … » et les objectifs de la 1ʳᵉ étape,
+    avec quantités (`(x5)`…), noms d'objets/créatures en français.
+2.  Remplir le dernier objectif de l'étape : l'ActionBar affiche le compteur final, puis le chat
+    affiche « Étape suivante : <quête> — à faire maintenant » suivi des objectifs de la nouvelle
+    étape (et non de l'ancienne).
+3.  Si la nouvelle étape est « parler au Garde » : la ligne lit « Parler à Garde », sans « (x1) »
+    ni identifiant technique (`guard`).
+4.  Terminer la dernière étape : **aucun** « Étape suivante », seulement le Title de fin et le
+    résumé des récompenses.
+5.  `/quests` : le journal montre bien l'étape annoncée.

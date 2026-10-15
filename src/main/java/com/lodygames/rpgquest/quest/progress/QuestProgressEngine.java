@@ -48,6 +48,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.ToIntBiFunction;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -127,6 +128,12 @@ public final class QuestProgressEngine implements PluginService {
      * {@code city.CityDiscoveryService#discoveredCount}, même discipline que pour les waypoints.
      */
     private volatile ToIntBiFunction<UUID, String> discoveredCityCounter;
+    /**
+     * Issue #70 — nom affiché (texte brut) d'un PNJ logique, pour annoncer « Parler à Garde » plutôt
+     * que « Parler au PNJ ». Couture branchée au bootstrap sur les définitions de PNJ ; non branchée
+     * (tests), le libellé générique est conservé.
+     */
+    private volatile Function<String, Optional<String>> npcNames = id -> Optional.empty();
 
     public QuestProgressEngine(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressRepository repository,
                                 PlayerVariableRepository variableRepository, QuestMessagesService messagesService,
@@ -150,6 +157,10 @@ public final class QuestProgressEngine implements PluginService {
      * (tests) = seules les récompenses {@code ITEM} sont vérifiées.
      */
     private volatile YamlCustomItemRegistry customItemRegistry;
+
+    public void setNpcNameResolver(Function<String, Optional<String>> npcNames) {
+        this.npcNames = npcNames;
+    }
 
     public void setCustomItemRegistry(YamlCustomItemRegistry customItemRegistry) {
         this.customItemRegistry = customItemRegistry;
@@ -1275,9 +1286,10 @@ public final class QuestProgressEngine implements PluginService {
                 logger.error("Impossible de persister l'avancement d'étape pour {} ({})", quest.id(), playerId, error);
                 return null;
             });
-            // Pas de notification dédiée ici : le passage à l'étape suivante suit toujours la
-            // complétion du dernier objectif de l'étape précédente, déjà signalée à l'instant par
-            // showObjectiveProgress (ActionBar) — un second message ferait doublon.
+            // Issue #70 : l'ActionBar vient de dire « objectif rempli », pas quoi faire ensuite —
+            // le joueur restait sans consigne. La nouvelle étape est donc annoncée dans le chat.
+            QuestStep nextStep = quest.steps().get(nextIndex);
+            runOnMainThread(() -> showStepAdvanced(player, quest, nextStep));
             notifyChanged(playerId);
         } else if (!turnIn(player, quest, progress, "quest.reward-inventory-full")) {
             awaitRoomForRewards(playerId, quest, progress);
@@ -1513,20 +1525,41 @@ public final class QuestProgressEngine implements PluginService {
         if (quest.steps().isEmpty()) {
             return;
         }
-        List<QuestObjective> objectives = quest.steps().get(0).objectives();
-        if (objectives.isEmpty()) {
+        announceObjectives(player, quest, quest.steps().get(0), "quest.started-objectives-header");
+    }
+
+    /**
+     * Issue #70 — au passage à l'étape suivante, dit au joueur <strong>quoi faire maintenant</strong> :
+     * mêmes lignes d'objectifs qu'au démarrage, sous un en-tête « étape suivante ».
+     */
+    private void showStepAdvanced(Player player, QuestDefinition quest, QuestStep step) {
+        // Planifiée au tick suivant : une quête abandonnée entre-temps n'est plus annoncée.
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(player.getUniqueId());
+        if (!player.isOnline() || playerActive == null || !playerActive.containsKey(quest.id())) {
             return;
         }
-        player.sendMessage(messagesService.current().format("quest.started-objectives-header",
+        announceObjectives(player, quest, step, "quest.step-advanced-header");
+    }
+
+    private void announceObjectives(Player player, QuestDefinition quest, QuestStep step, String headerKey) {
+        if (step.objectives().isEmpty()) {
+            return;
+        }
+        player.sendMessage(messagesService.current().format(headerKey,
                 Placeholder.parsed("quest", quest.title().base())));
-        for (QuestObjective objective : objectives) {
+        for (QuestObjective objective : step.objectives()) {
             // Issue #238 : le libellé vient d'ObjectiveLabels, qui rend un composant
             // « translatable » — le client affiche donc « Graines de blé » et non « WHEAT_SEEDS ».
             // Il faut un Placeholder.component et non unparsed : un composant aplati en chaîne
             // perdrait justement la clé de traduction.
-            player.sendMessage(messagesService.current().format("quest.started-objective",
-                    Placeholder.component("objective", ObjectiveLabels.targetName(objective)),
-                    Placeholder.unparsed("total", String.valueOf(requiredAmount(objective)))));
+            Component label = ObjectiveLabels.targetName(objective, npcNames);
+            // Issue #70 : pas de « (x1) » pour un objectif binaire (parler, atteindre un lieu).
+            player.sendMessage(ObjectiveLabels.isCountable(objective)
+                    ? messagesService.current().format("quest.started-objective",
+                            Placeholder.component("objective", label),
+                            Placeholder.unparsed("total", String.valueOf(requiredAmount(objective))))
+                    : messagesService.current().format("quest.started-objective-single",
+                            Placeholder.component("objective", label)));
         }
     }
 

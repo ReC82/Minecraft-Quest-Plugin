@@ -19,6 +19,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > `/quests/catalogs`. Aucune migration. Dialogues livrés `encounter_*` inchangés (quête fixe).
 > Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-314).
 
+> **Catalogues de quêtes — parcours PlugAdmin refondu (#414, 15/10/2026)** — accueil + fiche +
+> écrans Modifier / Dupliquer / Supprimer (`QuestCatalogPages`), choix des PNJ récurrents depuis le
+> catalogue (`assign_templates` / `templates` sur `quest.catalog.create|update`, liste `templates`
+> dans `quest.catalog.list`), identifiant calculé depuis le nom, garde-fou `based_on`. Moteur,
+> règles de sélection et permissions inchangés. Aucune migration. Validation visuelle : PENDING
+> (TC-321).
+
 > **PNJ récurrents par biome — étape 1 (#13, 14/10/2026)** — un PNJ Citizens de rencontre apparaît
 > dans chaque instance de biome du Wild visitée dont le biome a un modèle (`encounters/*.yml` :
 > brigand/forêt, marchand égaré/désert, forgeron perdu/montagne) : génération paresseuse sans

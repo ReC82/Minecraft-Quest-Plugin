@@ -3644,7 +3644,12 @@ anti-répétition `avoid_recent`, règles d'acceptation du moteur (prérequis, `
 attribué avant « Commencer (j'accepte) ». PlugAdmin → Quêtes → **Catalogues de quêtes**
 (`/quests/catalogs`) : actions `quest.catalog.list` (`NPC_READ`), `create|update`
 (`QUEST_CONTENT_WRITE`), `delete` (`QUEST_CONTENT_WRITE`, confirmation, sauvegarde
-`quest-catalog-backups/`, dissociation explicite des modèles). Aucune migration. Référence :
+`quest-catalog-backups/`, dissociation explicite des modèles). **Parcours refondu (#414)** :
+accueil (liste + « Créer un catalogue »), fiche lisible, écrans séparés Modifier / Dupliquer /
+Supprimer, ajout de quêtes par recherche, choix des **PNJ qui proposent ces quêtes**
+(`assign_templates=true` + `templates` sur `create|update` : fixe exactement les modèles, après
+l'écriture du catalogue), identifiant calculé depuis le nom, réglages avancés repliés, formulaire
+construit sur un relevé dépassé refusé (`based_on`). Aucune migration. Référence :
 [ENCOUNTERS.md](ENCOUNTERS.md) § « Catalogues de quêtes secondaires ».
 ### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
 

@@ -2535,7 +2535,8 @@ public final class AgentActionCatalog {
         }
         List<Row> rows = new java.util.ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        for (int n = 0; n < 200; n++) {
+        // 1000 : les lignes « à ajouter » (#414) suivent les quêtes déjà présentes, une par quête du serveur.
+        for (int n = 0; n < 1000; n++) {
             String prefix = "entry_" + n + "_";
             if (!form.containsKey(prefix + "quest")) {
                 continue;
@@ -2566,6 +2567,24 @@ public final class AgentActionCatalog {
         }
         rows.sort(java.util.Comparator.comparingInt(Row::order).thenComparingInt(Row::position));
         params.put("entries", String.join(",", rows.stream().map(Row::value).toList()));
+        // Issue #414 : « PNJ qui proposent ces quêtes ». Une case par modèle ({@code tpl_<id>}, des
+        // noms distincts : le parseur de formulaire ne garde qu'une valeur par clé). Sans
+        // assign_templates, les modèles ne sont pas touchés.
+        if ("true".equals(trim(form.get("assign_templates")))) {
+            List<String> templates = new java.util.ArrayList<>();
+            for (Map.Entry<String, String> e : new java.util.TreeMap<>(form).entrySet()) {
+                if (!e.getKey().startsWith("tpl_") || !"true".equals(trim(e.getValue()))) {
+                    continue;
+                }
+                String template = e.getKey().substring(4).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(template).matches()) {
+                    return "Modèle de PNJ invalide « " + template + " ».";
+                }
+                templates.add(template);
+            }
+            params.put("assign_templates", "true");
+            params.put("templates", String.join(",", templates));
+        }
         return null;
     }
 

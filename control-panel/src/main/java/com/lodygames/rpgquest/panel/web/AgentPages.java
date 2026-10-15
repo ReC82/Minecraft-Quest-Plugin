@@ -6320,243 +6320,109 @@ public final class AgentPages {
     }
 
     // ================================================================================
-    //  Catalogues de quêtes secondaires — issue #369. Lecture via quest.catalog.list ;
+    //  Catalogues de quêtes secondaires — issue #369, parcours refondu par #414 (rendu dans
+    //  QuestCatalogPages). Lecture via quest.catalog.list ;
     //  écriture par quest.catalog.create / update / delete (champs, jamais de YAML).
     // ================================================================================
 
-    private static final String QC_PAGE = "/quests/catalogs";
-    private static final int QC_BLANK_ROWS = 3;
-
     public String questCatalogs(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
-        StringBuilder sb = new StringBuilder();
-        sb.append(Ui.pageHeader("quests", "Catalogues de quêtes",
-                "Listes de quêtes secondaires réutilisables, proposées par les PNJ récurrents.",
-                "<a class=\"btn secondary\" href=\"/quests\">" + Icons.icon("back") + "Retour aux quêtes</a>"
-                        + "<a class=\"btn secondary\" href=\"/npcs/encounters\">" + Icons.icon("npc")
-                        + "PNJ récurrents</a>"));
         if (agent.isEmpty()) {
-            return sb.append(noAgent()).toString();
+            return Ui.pageHeader("book", "Catalogues de quêtes",
+                    "Regroupe plusieurs quêtes et choisis quels PNJ peuvent les proposer aux joueurs.", "")
+                    + noAgent();
         }
         String agentId = agent.get().id();
         boolean canWrite = perms.can(session.effective(), Permission.QUEST_CONTENT_WRITE);
-        sb.append(agentPicker(agentId, QC_PAGE, ""));
-        sb.append("<div class=\"npc-catbar\">")
-                .append(compactRefresh(session, agentId, "quest.catalog.list", "Actualiser", "btn-outline-primary",
-                        QC_PAGE))
-                .append("</div>");
-        sb.append("<p class=\"muted\">Un catalogue ne copie aucune quête : il en référence plusieurs, avec un poids "
-                + "de tirage. Attribuez-le à un modèle de PNJ récurrent (champ « Catalogues de quêtes ») et posez "
-                + "l'action « Proposer une quête du catalogue » dans son dialogue. Chaque joueur reçoit sa propre "
-                + "proposition, stable jusqu'à sa prochaine quête terminée ; rien n'est attribué sans son accord. "
-                + "Une modification enregistrée ici est en jeu aussitôt.</p>");
-        Optional<Map<String, Object>> latest = latestDetails(agentId, "quest.catalog.list");
+        Optional<AgentActionRow> surveyRow = store.latestSuccessfulActionOfType(agentId, "quest.catalog.list");
+        Optional<Map<String, Object>> latest = surveyRow.flatMap(this::detailsOf);
+        String refresh = compactRefresh(session, agentId, "quest.catalog.list", "Actualiser", "secondary sm",
+                QuestCatalogPages.PAGE);
+        StringBuilder sb = new StringBuilder(agentPicker(agentId, QuestCatalogPages.PAGE, ""));
         if (latest.isEmpty()) {
-            return sb.append(Ui.empty("quests", "Rien n'a encore été relevé : cliquez sur « Actualiser ».")).toString();
+            return sb.append(Ui.pageHeader("book", "Catalogues de quêtes",
+                    "Regroupe plusieurs quêtes et choisis quels PNJ peuvent les proposer aux joueurs.", ""))
+                    .append(Ui.empty("quests", "Rien n'a encore été relevé sur le serveur : cliquez sur « Actualiser »."))
+                    .append("<div class=\"npc-catbar\">").append(refresh).append("</div>").toString();
         }
-        Map<String, Object> d = latest.get();
-        if (!Boolean.TRUE.equals(d.get("available"))) {
+        QuestCatalogPages.Survey survey = QuestCatalogPages.parse(latest.get());
+        if (!survey.available()) {
             return sb.append(Ui.banner("warning", "Le serveur de jeu ne propose pas les catalogues de quêtes "
                     + "(version du plugin trop ancienne ou service arrêté).")).toString();
         }
-        surveyAge(agentId, "quest.catalog.list").ifPresent(age ->
-                sb.append("<p class=\"form-text\">Relevé : ").append(Http.esc(age)).append("</p>"));
-        List<String> warnings = asList(d.get("warnings")).stream().map(AgentPages::str).toList();
-        if (!warnings.isEmpty()) {
-            sb.append(Ui.banner("warning", "<ul class=\"mb-0\">" + warnings.stream()
-                    .map(w -> "<li>" + Http.esc(w) + "</li>").collect(java.util.stream.Collectors.joining())
-                    + "</ul>"));
+        Instant surveyedAt = surveyRow.map(r -> r.completedAt() != null ? r.completedAt() : r.createdAt())
+                .orElse(Instant.now());
+        int pending = (int) store.recentActions(agentId, 100).stream()
+                .filter(a -> a.type().startsWith("quest.catalog.") && !"quest.catalog.list".equals(a.type())
+                        && !a.status().terminal()).count();
+        QuestCatalogPages.Ctx ctx = new QuestCatalogPages.Ctx(session.csrfToken(), agentId, canWrite,
+                surveyRow.map(AgentActionRow::id).orElse(""),
+                com.lodygames.rpgquest.panel.agent.AgentLiveness.ageHuman(surveyedAt, Instant.now()),
+                java.time.Duration.between(surveyedAt, Instant.now()).toMinutes() >= QuestCatalogPages.STALE_AFTER_MINUTES,
+                pending, refresh);
+
+        String focus = cleanFocus(q.get("focus"));
+        String mode = q.getOrDefault("mode", "");
+        if (canWrite && "1".equals(q.get("new"))) {
+            return sb.append(QuestCatalogPages.create(ctx, survey)).toString();
         }
-        Map<String, Object> issues = asMap(d.get("issues"));
-        if (!issues.isEmpty()) {
-            StringBuilder list = new StringBuilder("Fichier(s) de catalogue refusé(s) au dernier chargement :<ul>");
-            issues.forEach((file, msg) -> list.append("<li><code>").append(Http.esc(file)).append("</code> : ")
-                    .append(Http.esc(str(msg))).append("</li>"));
-            sb.append(Ui.banner("warning", list.append("</ul>").toString()));
+        if (focus.isEmpty()) {
+            return sb.append(QuestCatalogPages.home(ctx, survey)).toString();
         }
-        sb.append(questCatalogDatalist(d));
+        QuestCatalogPages.Catalog catalog = survey.find(focus);
+        if (catalog == null) {
+            return sb.append(QuestCatalogPages.notFound(ctx, focus)).toString();
+        }
         if (canWrite) {
-            sb.append("<div class=\"npc-catbar\">").append(actionToggle("qc-new", "Nouveau catalogue", "plus",
-                    "btn-outline-primary")).append("</div>")
-                    .append(actionCollapse("qc-new", "<div class=\"card card-body npc-formcard\">"
-                            + questCatalogForm(session, agentId, Map.of(), true, "qc-new-f") + "</div>"));
+            switch (mode) {
+                case "edit" -> {
+                    return sb.append(QuestCatalogPages.edit(ctx, survey, catalog, "1".equals(q.get("add")))).toString();
+                }
+                case "copy" -> {
+                    return sb.append(QuestCatalogPages.duplicate(ctx, catalog)).toString();
+                }
+                case "delete" -> {
+                    return sb.append(QuestCatalogPages.delete(ctx, survey, catalog)).toString();
+                }
+                default -> {
+                }
+            }
         }
-        List<Object> catalogs = asList(d.get("catalogs"));
-        if (catalogs.isEmpty()) {
-            return sb.append(Ui.empty("quests", "Aucun catalogue pour l'instant.")).toString();
-        }
-        int i = 0;
-        for (Object o : catalogs) {
-            sb.append(questCatalogCard(session, agentId, asMap(o), canWrite, "qc-" + i++));
-        }
-        return sb.toString();
+        return sb.append(QuestCatalogPages.detail(ctx, survey, catalog)).toString();
     }
 
-    /** Liste de recherche partagée par tous les formulaires : on tape un titre ou un identifiant. */
-    private static String questCatalogDatalist(Map<String, Object> d) {
-        StringBuilder sb = new StringBuilder("<datalist id=\"qc-quests\">");
-        for (Object o : asList(d.get("quests"))) {
-            Map<String, Object> quest = asMap(o);
-            sb.append("<option value=\"").append(Http.esc(str(quest.get("id")))).append("\">")
-                    .append(Http.esc(cleanNull(str(quest.get("title")))))
-                    .append(cleanNull(str(quest.get("category"))).isEmpty() ? ""
-                            : " (" + Http.esc(str(quest.get("category"))) + ")")
-                    .append("</option>");
-        }
-        return sb.append("</datalist>").toString();
-    }
-
-    private String questCatalogCard(Session session, String agentId, Map<String, Object> c, boolean canWrite,
-                                    String uid) {
-        String id = str(c.get("id"));
-        boolean enabled = Boolean.TRUE.equals(c.get("enabled"));
-        List<Object> entries = asList(c.get("entries"));
-        long active = entries.stream().map(AgentPages::asMap)
-                .filter(e -> Boolean.TRUE.equals(e.get("enabled")) && Boolean.TRUE.equals(e.get("exists"))).count();
-        List<String> usedBy = asList(c.get("usedBy")).stream().map(AgentPages::str).toList();
-        StringBuilder sb = new StringBuilder("<section class=\"card qc-card\" id=\"").append(uid).append("\">");
-        sb.append("<h3 class=\"qc-title\">").append(Http.esc(str(c.get("displayName")))).append(" ")
-                .append(Ui.id(id)).append(" ")
-                .append(enabled ? "<span class=\"badge text-bg-success\">actif</span>"
-                        : "<span class=\"badge text-bg-secondary\">désactivé</span>")
-                .append(" <span class=\"badge text-bg-light\">").append(active).append(" / ").append(entries.size())
-                .append(" quête(s) proposable(s)</span></h3>");
-        String description = cleanNull(str(c.get("description")));
-        if (!description.isEmpty()) {
-            sb.append("<p class=\"muted\">").append(Http.esc(description)).append("</p>");
-        }
-        sb.append("<p class=\"form-text\">Attribué à : ").append(usedBy.isEmpty() ? "aucun modèle"
-                : Http.esc(String.join(", ", usedBy))).append(" — évite les ")
-                .append(Http.esc(str(c.get("avoidRecent")))).append(" dernière(s) quête(s) terminée(s).</p>");
-        List<String> warnings = asList(c.get("warnings")).stream().map(AgentPages::str).toList();
-        if (!warnings.isEmpty()) {
-            sb.append("<ul class=\"qc-warn\">");
-            warnings.forEach(w -> sb.append("<li>").append(Http.esc(w)).append("</li>"));
-            sb.append("</ul>");
-        }
-        sb.append("<ol class=\"qc-entries\">");
-        for (Object o : entries) {
-            Map<String, Object> e = asMap(o);
-            boolean exists = Boolean.TRUE.equals(e.get("exists"));
-            boolean on = Boolean.TRUE.equals(e.get("enabled"));
-            sb.append("<li class=\"").append(on && exists ? "" : "qc-off").append("\"><strong>")
-                    .append(Http.esc(exists ? str(e.get("title")) : "quête absente")).append("</strong> ")
-                    .append(Ui.id(str(e.get("quest"))));
-            List<String> facts = new ArrayList<>();
-            if (exists) {
-                facts.add(cleanNull(str(e.get("category"))));
-                facts.add(str(e.get("steps")) + " étape(s)");
-                facts.add(Boolean.TRUE.equals(e.get("repeatable"))
-                        ? (cleanNull(str(e.get("cooldown"))).isEmpty() ? "renouvelable"
-                                : "recharge " + str(e.get("cooldown")))
-                        : "une seule fois");
-            }
-            facts.add("poids " + str(e.get("weight")));
-            if (!on) {
-                facts.add("désactivée");
-            }
-            sb.append(" <span class=\"form-text\">").append(Http.esc(String.join(" · ",
-                    facts.stream().filter(f -> !f.isBlank()).toList()))).append("</span></li>");
-        }
-        sb.append("</ol>");
-        if (canWrite) {
-            sb.append("<details class=\"npc-registry\"><summary>Modifier</summary>")
-                    .append(questCatalogForm(session, agentId, c, false, uid + "-e")).append("</details>");
-            Map<String, Object> copy = new LinkedHashMap<>(c);
-            copy.put("id", "");
-            copy.put("displayName", str(c.get("displayName")) + " (copie)");
-            sb.append("<details class=\"npc-registry\"><summary>Dupliquer</summary>")
-                    .append(questCatalogForm(session, agentId, copy, true, uid + "-d")).append("</details>");
-            sb.append("<details class=\"npc-registry\"><summary>Supprimer</summary>")
-                    .append(formStart(session, agentId, "quest.catalog.delete", QC_PAGE, ""))
-                    .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(id)).append("\">")
-                    .append("<p class=\"form-text\">Le fichier est sauvegardé dans "
-                            + "<code>plugins/RPGQuest/quest-catalog-backups/</code>. Les quêtes elles-mêmes et la "
-                            + "progression des joueurs ne sont pas touchées : une quête déjà acceptée continue.</p>");
-            if (!usedBy.isEmpty()) {
-                sb.append(Ui.banner("warning", "Attribué à " + Http.esc(String.join(", ", usedBy))
-                        + " : la suppression retire aussi la référence de ces modèles."))
-                        .append("<label class=\"inline confirm\"><input type=\"checkbox\" name=\"detach\" "
-                                + "value=\"true\" required> Retirer aussi le catalogue de ces modèles</label>");
-            }
-            sb.append(confirmBox("Supprimer le catalogue " + id))
-                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">"
-                            + "Supprimer</button></div></form></details>");
-        }
-        return sb.append("</section>").toString();
+    /** Identifiants des catalogues du dernier relevé — pour calculer celui d'un nouveau catalogue (#414). */
+    public java.util.Set<String> questCatalogIds(String agentId) {
+        return latestDetails(agentId, "quest.catalog.list").map(QuestCatalogPages::parse)
+                .map(s -> s.catalogs().stream().map(QuestCatalogPages.Catalog::id)
+                        .collect(java.util.stream.Collectors.toSet()))
+                .orElse(java.util.Set.of());
     }
 
     /**
-     * Formulaire d'un catalogue : champs, puis une ligne par quête (ordre, quête cherchée par titre
-     * ou identifiant, poids, active, retirer) et {@value #QC_BLANK_ROWS} lignes vides pour en ajouter.
+     * Issue #414 — garde-fou contre les modifications perdues : un formulaire de catalogue est
+     * construit sur un relevé ({@code based_on} = identifiant de cette action). Si une autre écriture
+     * sur CE catalogue a été demandée après ce relevé, le formulaire est périmé et rien n'est envoyé.
+     * L'ordre est celui du journal (création puis insertion) : l'horodatage seul, à la seconde, ne
+     * départagerait pas deux actions de la même seconde.
+     *
+     * @return le message de refus, ou {@code null} si l'écriture peut partir
      */
-    private String questCatalogForm(Session session, String agentId, Map<String, Object> c, boolean create,
-                                    String uid) {
-        String id = cleanNull(str(c.get("id")));
-        StringBuilder sb = new StringBuilder(formStart(session, agentId,
-                create ? "quest.catalog.create" : "quest.catalog.update", QC_PAGE, ""));
-        if (create) {
-            sb.append(encounterField(uid, "id", "Identifiant du catalogue", id, "bandit_contracts", 64, true,
-                    "Minuscules, chiffres, « . _ - ». Devient le nom du fichier ; ne change plus ensuite."));
-        } else {
-            sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(id)).append("\">");
+    public String questCatalogConflict(String agentId, String catalogId, String basedOn) {
+        if (basedOn == null || basedOn.isBlank()) {
+            return null;
         }
-        sb.append(encounterField(uid, "display_name", "Nom", cleanNull(str(c.get("displayName"))),
-                "Contrats du brigand", 64, true, null));
-        sb.append(encounterField(uid, "description", "Description", cleanNull(str(c.get("description"))), "", 256,
-                false, "Pour les administrateurs, sans effet en jeu."));
-        sb.append(encounterField(uid, "avoid_recent", "Éviter les dernières quêtes terminées",
-                cleanNull(str(c.get("avoidRecent"))), "1", 2, false,
-                "0 à 10 : ces quêtes ne sont pas reproposées tout de suite tant qu'une autre est possible."));
-        boolean enabled = !c.containsKey("enabled") || Boolean.TRUE.equals(c.get("enabled"));
-        sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" "
-                + "role=\"switch\" id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
-                .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
-                .append("-en\">Actif (propose des quêtes)</label></div>");
-        sb.append("<fieldset class=\"qc-rows\"><legend>Quêtes du catalogue</legend>")
-                .append("<p class=\"form-text\">Tapez un titre ou un identifiant puis choisissez dans la liste. "
-                        + "L'ordre se règle avec le numéro ; « Retirer » enlève la ligne à l'enregistrement.</p>");
-        List<Object> entries = asList(c.get("entries"));
-        int n = 0;
-        for (Object o : entries) {
-            Map<String, Object> e = asMap(o);
-            sb.append(questCatalogRow(uid, n, (n + 1) * 10, str(e.get("quest")), str(e.get("weight")),
-                    Boolean.TRUE.equals(e.get("enabled")), true));
-            n++;
+        for (AgentActionRow a : store.recentActions(agentId, 300)) {
+            if (a.id().equals(basedOn.trim())) {
+                return null;
+            }
+            if (a.type().startsWith("quest.catalog.") && !"quest.catalog.list".equals(a.type())
+                    && catalogId.equals(a.params().get("id"))) {
+                return "Ce catalogue a été modifié depuis l'ouverture de la page (par " + a.createdBy()
+                        + ") : rien n'a été envoyé. Rechargez la page pour repartir de la dernière version.";
+            }
         }
-        for (int k = 0; k < QC_BLANK_ROWS; k++, n++) {
-            sb.append(questCatalogRow(uid, n, (n + 1) * 10, "", "10", true, false));
-        }
-        sb.append("</fieldset>");
-        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm\" type=\"submit\">").append(Icons.icon("save"))
-                .append(create ? "Créer le catalogue" : "Enregistrer").append("</button></div></form>");
-        return sb.toString();
-    }
-
-    private static String questCatalogRow(String uid, int n, int order, String quest, String weight, boolean enabled,
-                                          boolean existing) {
-        String p = "entry_" + n + "_";
-        String fid = uid + "-r" + n;
-        StringBuilder sb = new StringBuilder("<div class=\"qc-row\">");
-        sb.append("<label class=\"qc-order\">N°<input class=\"form-control form-control-sm\" type=\"number\" "
-                + "name=\"").append(p).append("order\" value=\"").append(order).append("\" min=\"0\" max=\"9999\">"
-                + "</label>");
-        sb.append("<label class=\"qc-quest\" for=\"").append(fid).append("-q\"><span class=\"visually-hidden\">"
-                + "Quête</span><input class=\"form-control form-control-sm\" type=\"text\" list=\"qc-quests\" id=\"")
-                .append(fid).append("-q\" name=\"").append(p).append("quest\" value=\"").append(Http.esc(quest))
-                .append("\" placeholder=\"Chercher une quête (titre ou id)\" maxlength=\"200\"></label>");
-        sb.append("<label class=\"qc-weight\">Poids<input class=\"form-control form-control-sm\" type=\"number\" "
-                + "name=\"").append(p).append("weight\" value=\"").append(Http.esc(weight))
-                .append("\" min=\"1\" max=\"1000\"></label>");
-        sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"").append(p)
-                .append("enabled\" value=\"true\"").append(enabled ? " checked" : "").append("> active</label>");
-        if (existing) {
-            sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"").append(p)
-                    .append("remove\" value=\"true\"> retirer</label>");
-        } else {
-            sb.append("<span aria-hidden=\"true\"></span>");
-        }
-        return sb.append("</div>").toString();
+        return null;
     }
 
     private String compactAction(Session session, String agentId, String type, String label) {

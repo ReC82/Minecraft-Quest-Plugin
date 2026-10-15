@@ -6159,3 +6159,21 @@ casse ou de remise). **Durée** : 5 minutes.
     l'identifiant technique en second (`OAK_LOG`), puis la progression `4/20`.
 3.  Terminer un objectif en jeu, rafraîchir : la ligne porte le badge vert « fait ».
 4.  Une remise à un PNJ affiche l'objet **et** le PNJ (« Rapporter … à … »).
+
+### TC-321 — Catalogues de quêtes : parcours simplifié (issue #414, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #414 sur DEV. Ne supprimer **que** des catalogues de test.
+
+1.  PlugAdmin → Quêtes → **Catalogues de quêtes** : la phrase d'explication et le bouton
+    **Créer un catalogue** sont visibles sans défiler (ordinateur et téléphone).
+2.  « Créer un catalogue » → nom « Quêtes de la forêt » → « Ajouter une quête » → taper « toiles »
+    → cocher « Les toiles du sous-bois », puis une autre quête → cocher **Brigand des bois** →
+    le résumé annonce 2 quêtes et le PNJ → « Créer le catalogue ».
+3.  La fiche s'ouvre (après quelques secondes) : 2 quêtes par leur titre, « Brigand des bois »
+    dans « PNJ qui proposent ces quêtes » ; s'il est marqué « ne sait pas encore proposer »,
+    vérifier que le lien ouvre son dialogue — **aucun dialogue n'a été modifié**.
+4.  Modifier → descendre une quête, en retirer une, enregistrer → la fiche reflète le changement.
+5.  Dupliquer → « Créer la copie » → nouvelle fiche, mêmes quêtes, aucun PNJ.
+6.  Supprimer la copie (confirmation obligatoire) → elle disparaît de l'accueil.
+7.  Téléphone (≈ 390 px) : aucun défilement horizontal, boutons utilisables au doigt.
+

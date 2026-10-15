@@ -292,9 +292,24 @@ modèle actif sans catalogue.
 | `quest.catalog.update` | `QUEST_CONTENT_WRITE` | réécrit le fichier (atomique), relu avant succès |
 | `quest.catalog.delete` | `QUEST_CONTENT_WRITE`, confirmation | copie dans `quest-catalog-backups/<date>-<fichier>` puis supprime ; refusé s'il est attribué, sauf case « Retirer aussi le catalogue de ces modèles » (`detach=true`) |
 
-Formulaire : une ligne par quête (numéro d'ordre, quête cherchée par **titre ou identifiant** dans
-la liste proposée, poids, active, retirer) et trois lignes vides pour en ajouter ; *Dupliquer*
-pré-remplit un nouveau catalogue. Comme pour les modèles, le panel n'envoie jamais de YAML : le
+**Parcours refondu (issue #414).** Accueil : courte phrase, bouton **Créer un catalogue**, une
+ligne par catalogue (nom, nombre de quêtes, « Proposé par … » ou « Aucun PNJ pour le moment », un
+état : Prêt / Aucun PNJ / À corriger / Ne propose rien / En pause) ; seuls les vrais problèmes
+(fichier illisible, PNJ pointant vers une liste disparue) remontent en tête. Fiche
+(`?focus=<id>`) : quêtes par **titre** (étapes, « une seule fois » ou délai), « PNJ qui proposent
+ces quêtes » — un PNJ dont le dialogue n'a pas `OFFER_CATALOG_QUEST` est signalé « ne sait pas
+encore proposer » avec le lien vers son dialogue ; identifiant, fréquences (`weight`, part
+indicative) et anti-répétition dans **Réglages avancés**. Écrans séparés : **Modifier**
+(`mode=edit` : nom, monter/descendre/retirer, « Ajouter une quête » = recherche + cases, choix
+des modèles, réglages avancés repliés), **Dupliquer** (`mode=copy` : un nom, mêmes quêtes et
+réglages, aucun PNJ), **Supprimer** (`mode=delete` : conséquences, confirmation). Création
+(`?new=1`) : nom → quêtes → PNJ → résumé ; identifiant calculé à partir du nom (unique), modifiable
+en avancé. Les PNJ choisis partent dans la même action (`assign_templates=true`,
+`templates=a,b` : le plugin ajoute/retire ce catalogue des modèles, après l'écriture réussie du
+catalogue, sans toucher leurs autres catalogues ; modèle inconnu = refus). Un formulaire porte
+l'identifiant du relevé qui l'a construit (`based_on`) : si une autre écriture sur ce catalogue a
+été demandée depuis, le panel refuse et demande de recharger. Plugin antérieur à #414 (relevé sans
+`templates`) : le choix des PNJ est masqué et renvoie vers les modèles. Comme pour les modèles, le panel n'envoie jamais de YAML : le
 plugin valide avec le parseur des fichiers. Effet immédiat en jeu, sans publication. Le formulaire
 des modèles (`/npcs/encounters`) a un champ **Catalogues de quêtes** (identifiants séparés par des
 virgules) ; à l'enregistrement, un catalogue inconnu ou un dialogue sans offre est signalé.

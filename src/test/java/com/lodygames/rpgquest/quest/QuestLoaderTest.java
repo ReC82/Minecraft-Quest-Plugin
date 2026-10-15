@@ -34,6 +34,42 @@ class QuestLoaderTest {
         assertTrue(report.issues().stream().allMatch(i -> i.message().contains("dupliqué")));
     }
 
+    /** Issue #143 : un id d'étape n'est unique que dans sa quête — deux quêtes partagent « step_one ». */
+    @Test
+    void twoQuestsMayReuseTheSameStepId() {
+        Map<String, ConfigurationSection> files = new LinkedHashMap<>();
+        files.put("a.yml", load(quest("rpgquest:first")));
+        files.put("b.yml", load(quest("rpgquest:second")));
+
+        QuestLoadReport report = loader.load(files);
+
+        assertEquals(2, report.loaded().size(), () -> "issues: " + report.issues());
+        assertTrue(report.issues().isEmpty());
+    }
+
+    @Test
+    void aDuplicateStepIdInsideOneQuestIsRejected() {
+        Map<String, ConfigurationSection> files = new LinkedHashMap<>();
+        files.put("dup.yml", load(minimalQuestWithSteps("""
+                steps:
+                  - id: step_1
+                    objectives:
+                      - type: BREAK_BLOCK
+                        material: STONE
+                        amount: 1
+                  - id: step_1
+                    objectives:
+                      - type: BREAK_BLOCK
+                        material: STONE
+                        amount: 2
+                """)));
+
+        QuestLoadReport report = loader.load(files);
+
+        assertEquals(0, report.loaded().size());
+        assertTrue(report.issues().stream().anyMatch(i -> i.message().contains("id d'étape dupliqué")));
+    }
+
     @Test
     void missingPrerequisiteReferenceIsRejected() {
         Map<String, ConfigurationSection> files = new LinkedHashMap<>();

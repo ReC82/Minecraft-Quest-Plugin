@@ -35,6 +35,26 @@ public final class QuestValidator {
     private QuestValidator() {
     }
 
+    /**
+     * Ids d'étape de la version enregistrée qui ont disparu du brouillon (#143) — renommés ou
+     * supprimés. Le moteur retrouve l'étape courante d'un joueur par son id
+     * ({@code quest_progress}, {@code quest_objective_progress}) : un id disparu fait reprendre la
+     * quête à l'étape 1, compteurs perdus, pour tout joueur qui était à cette étape. Simple
+     * avertissement : c'est parfois voulu (quête jamais publiée, refonte assumée).
+     */
+    public static List<Diagnostic> stepIdChanges(QuestDraft q, List<String> savedStepIds) {
+        List<Diagnostic> out = new ArrayList<>();
+        Set<String> now = new LinkedHashSet<>(q.stepIds());
+        for (String old : savedStepIds) {
+            if (!now.contains(old)) {
+                out.add(Diagnostic.warning("steps", "L'étape « " + old + " » de la version enregistrée n'existe "
+                        + "plus (renommée ou supprimée). Un joueur qui a cette quête en cours à cette étape "
+                        + "la reprendra à l'étape 1, sans sa progression. Sans joueur concerné, ignorer."));
+            }
+        }
+        return out;
+    }
+
     public static List<Diagnostic> validate(QuestDraft q, RefData ref) {
         List<Diagnostic> out = new ArrayList<>();
         RefData refData = ref == null ? RefData.empty() : ref;

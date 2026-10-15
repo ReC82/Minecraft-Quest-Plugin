@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.database;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.nio.file.Path;
 import java.util.List;
@@ -57,7 +58,7 @@ class ProgressionRepositoryTest {
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         List<ProgressionRepository.LeaderboardRow> top =
-                repository.topPlayers(SkillType.MINING, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                repository.topPlayers(SkillType.MINING, 10, PublicProfilePolicy.Visibility.PUBLIC).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         assertEquals(3, top.size());
         assertEquals("Bob", top.get(0).name());
@@ -75,7 +76,7 @@ class ProgressionRepositoryTest {
         }
 
         List<ProgressionRepository.LeaderboardRow> top =
-                repository.topPlayers(SkillType.COMBAT, 2).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                repository.topPlayers(SkillType.COMBAT, 2, PublicProfilePolicy.Visibility.PUBLIC).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         assertEquals(2, top.size());
         assertTrue(top.get(0).totalXp() >= top.get(1).totalXp());
@@ -89,7 +90,7 @@ class ProgressionRepositoryTest {
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         List<ProgressionRepository.LeaderboardRow> top =
-                repository.topPlayers(SkillType.FISHING, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                repository.topPlayers(SkillType.FISHING, 10, PublicProfilePolicy.Visibility.PUBLIC).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         assertEquals(1, top.size());
         assertEquals("Scorer", top.get(0).name());
@@ -98,7 +99,7 @@ class ProgressionRepositoryTest {
     @Test
     void topPlayersOnUnusedSkillIsEmpty() throws Exception {
         List<ProgressionRepository.LeaderboardRow> top =
-                repository.topPlayers(SkillType.EXPLORATION, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                repository.topPlayers(SkillType.EXPLORATION, 10, PublicProfilePolicy.Visibility.PUBLIC).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         assertTrue(top.isEmpty());
     }

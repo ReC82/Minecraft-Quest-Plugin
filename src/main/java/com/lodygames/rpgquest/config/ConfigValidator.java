@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.config;
 import com.lodygames.rpgquest.backpack.model.BackpackSize;
 import com.lodygames.rpgquest.database.DatabaseSettings;
 import com.lodygames.rpgquest.database.DatabaseType;
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -666,12 +667,23 @@ public final class ConfigValidator {
             announcements.add(new WebExportConfig.Announcement(titleText, body instanceof String bodyText ? bodyText : ""));
         }
 
+        String rawVisibility = web.getString("profile-visibility-default", "private");
+        PublicProfilePolicy.Visibility profileVisibilityDefault;
+        try {
+            profileVisibilityDefault = PublicProfilePolicy.Visibility.valueOf(rawVisibility.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException(
+                    "« web-export.profile-visibility-default » doit valoir private ou public, valeur trouvée : "
+                            + rawVisibility);
+        }
+
         return new WebExportConfig(enabled, outputDirectory, intervalSeconds, includeConnectedPlayers,
-                leaderboardSize, List.copyOf(leaderboardSkills), List.copyOf(announcements));
+                leaderboardSize, List.copyOf(leaderboardSkills), List.copyOf(announcements), profileVisibilityDefault);
     }
 
     private static WebExportConfig defaultWebExport() {
-        return new WebExportConfig(false, "web-export", 30, false, 10, List.of(SkillType.values()), List.of());
+        return new WebExportConfig(false, "web-export", 30, false, 10, List.of(SkillType.values()), List.of(),
+                PublicProfilePolicy.Visibility.PRIVATE);
     }
 
     private static StoreConfig validateStore(ConfigurationSection section) throws ConfigValidationException {

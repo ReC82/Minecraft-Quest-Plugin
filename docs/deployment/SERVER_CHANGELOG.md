@@ -82,6 +82,16 @@ VALIDATION`).
 JAR précédent (`scripts/deploy-verygames.sh` le garde daté) ; portail :
 `scripts/web-portal/rollback.sh app` ; nginx : restaurer la copie du vhost, `nginx -t`, `reload`.
 
+### Déploiement effectué — 2026-10-15
+
+- nginx (20:24) : bloc `location = /api/link/confirm` ajouté au vhost en service, copie préalable
+  `/opt/lodyquests-portal/releases/nginx-lodyquests-portal.pre-53-20261015-202439.bak`, `nginx -t`
+  OK, `reload`. Vérifié : POST → 401, GET → 403, `/api/status` → 404, PlugAdmin → 200.
+- Portail (20:35) : `e363a03`, `/health` UP ; `/compte` → « pas encore ouverts », sans formulaire.
+- DEV (20:41) : JAR `e363a03` (CI verte), sauvegarde
+  `rpgquest-20261015T184135Z-predeploy.jar` ; redémarrage RCON, serveur revenu en ligne ;
+  `lien` / `link` en console → « Cette commande doit être exécutée par un joueur. »
+
 ---
 
 ## 2026-10-15 - Portail : profils web privés par défaut, liste blanche, politique d'âge (#55)

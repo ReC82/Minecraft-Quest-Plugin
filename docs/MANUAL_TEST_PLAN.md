@@ -6278,3 +6278,32 @@ sauf le réglage `/profile web` du testeur lui-même.
     ayant tapé `/profile web public` figure dans `snapshot.json` (classements, `profiles`,
     `players`).
 
+
+### TC-326 — Comptes du portail et liaison Minecraft par `/lien` (issue #53, PENDING MANUAL VALIDATION)
+
+Prérequis : plugin et portail issus de #53. Aucune donnée de jeu n'est modifiée par ce test.
+
+**A. État livré (comptes désactivés)**
+
+1.  Navigateur : https://lodyquests.lodylands.com/compte (menu « Mon compte »). **Attendu** :
+    « Les comptes du portail ne sont pas encore ouverts », aucun formulaire.
+2.  En jeu : `/lien ABCD2345`. **Attendu** : « La liaison avec le portail n'est pas activée sur ce
+    serveur. » ; `/link` est un alias.
+
+**B. Après ouverture par le propriétaire** (docs/WEB_PORTAL.md §2, « Mise en route » : comptes,
+seuil d'âge, jeton des deux côtés, `portal-link.properties` sur DEV, redémarrages)
+
+3.  `/compte` → créer un compte (pays configuré, âge au-dessus du seuil) → « Compte créé » ; se
+    connecter → « Connecté en tant que … », « Aucun compte Minecraft relié ».
+4.  « Obtenir un code de liaison » → la page montre `/lien XXXXXXXX` et l'heure limite.
+5.  En jeu : `/lien XXXXXXXX` → « C'est fait : ton compte Minecraft est relié à ton compte du
+    portail. » ; recharger `/compte` → « Relié à <pseudo> depuis le … », historique « liaison avec ».
+6.  Retaper le même code, ou un code de plus de 10 minutes → « Code invalide ou expiré. »
+7.  Second compte web, nouveau code tapé par le même joueur → « Ton compte Minecraft est déjà
+    relié à un compte du portail. »
+8.  « Délier » avec un mauvais mot de passe → refus ; avec le bon → « délié », historique
+    « dissociation de <pseudo> ».
+9.  « Se déconnecter » puis Précédent → plus connecté. Âge sous le seuil à l'inscription → compte
+    « limité », pas de bouton de code.
+10. `journalctl -u lodyquests-portal` et `latest.log` du serveur : aucun code ni jeton.
+11. Téléphone (≈ 390 px) : formulaires lisibles, aucun défilement horizontal.

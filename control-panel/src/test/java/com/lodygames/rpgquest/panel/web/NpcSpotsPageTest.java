@@ -70,7 +70,8 @@ class NpcSpotsPageTest {
     void withoutASurveyThePageExplainsHowToReserveAndAsksToRefresh() throws Exception {
         start();
         String page = get("/npcs/spots?agent=" + TestConfig.AGENT_ID).body();
-        assertTrue(page.contains("/rpgadmin npc spot mark"), "la marche à suivre en jeu");
+        assertTrue(page.contains("/rpgadmin npc spot tool"), "la marche à suivre en jeu : l'outil");
+        assertTrue(page.contains("clic droit"), "le marquage se fait par clic, pas par commande");
         assertTrue(page.contains("Aucun relev") || page.contains("Rien n&#39;a encore") || page.contains("Rien n'a encore"));
     }
 

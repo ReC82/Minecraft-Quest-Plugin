@@ -6050,22 +6050,27 @@ occurrences du Brigand des bois (`forest_bandit`) dans des forêts différentes.
 quête important), par ex. créé depuis PlugAdmin → PNJ → Créer un PNJ (`test_spot`). **Durée** :
 20 minutes.
 
-1.  En jeu, au point A (sol plat, deux blocs d'air), regarder vers le nord :
-    `/rpgadmin npc spot mark Test A` → message « Emplacement de PNJ réservé … npcspot_000n ».
-    Retaper la même commande sur le même bloc → « Un emplacement existe déjà sur ce bloc ».
-2.  Au point B (si possible dans un autre monde autorisé aux PNJ), regarder vers l'est :
-    `/rpgadmin npc spot mark Test B`. `/rpgadmin npc spot list` montre A et B « libre ».
-3.  PlugAdmin → PNJ → **Emplacements** → « Actualiser » : A et B listés, état *libre*, position et
-    regard (« nord », « est ») conformes.
+0.  `/rpgadmin npc spot tool` → l'outil « Emplacements PNJ » (porte-armure) arrive dans l'inventaire.
+1.  Outil en main, viser un bloc A (sol plat, deux blocs d'air au-dessus) et faire **clic droit** →
+    « Emplacement PNJ enregistré : Emplacement PNJ n (npcspot_000n) », particules au-dessus du bloc,
+    **aucune commande ni saisie**. Recliquer le même bloc (y compris double-clic rapide) → au plus
+    « Un emplacement existe déjà ici », jamais un second emplacement.
+2.  Clic droit sur un autre bloc B (si possible dans un autre monde autorisé aux PNJ) → second
+    emplacement. Clic gauche avec l'outil, clic droit avec un autre objet (porte-armure ordinaire,
+    hache WorldEdit, outil de construction) → rien n'est créé, le porte-armure ordinaire se pose.
+    Clic droit sur un bloc avec un bloc juste au-dessus, dans l'eau ou dans une parcelle de joueur →
+    « Aucun emplacement créé » avec la raison. Retaper `/rpgadmin npc spot tool` → l'outil est rangé.
+3.  PlugAdmin → PNJ → **Emplacements** → « Actualiser » : A et B listés, état *libre*, nom
+    provisoire ; les **renommer** « Test A » / « Test B ».
 4.  Sur A : choisir `test_spot`, cocher la confirmation, « Placer / téléporter ici » → le PNJ est
-    en A, tourné vers le nord ; A passe *occupé*.
+    en A, tourné vers l'endroit d'où l'administrateur a cliqué ; A passe *occupé*.
 5.  Sur B : placer `test_spot` → le PNJ est en B ; A redevient *libre* ; en jeu il n'existe **qu'un
     seul** `test_spot` (même numéro Citizens qu'avant : `/npc select` ou la page PNJ).
 6.  Parler au PNJ : son dialogue, son skin et ses quêtes sont inchangés. Redémarrer le serveur DEV :
     B est toujours *occupé* par `test_spot`, toujours au même endroit.
-7.  Refus : placer un autre PNJ sur B → « Emplacement occupé » ; réserver un emplacement dans une
-    parcelle de joueur puis y placer → « parcelle d'un joueur » ; réserver dans le vide/l'eau →
-    avertissement en jeu, placement refusé « ne laisse pas assez de place ».
+7.  Refus : placer un autre PNJ sur B → « Emplacement occupé ». Option avancée
+    `/rpgadmin npc spot mark` dans le vide/l'eau → avertissement en jeu, placement refusé « ne laisse
+    pas assez de place ».
 8.  « Orienter » B vers le sud → le PNJ se tourne. « Renommer » B → nouveau nom visible.
 9.  Supprimer B tant qu'occupé : le bouton n'est pas proposé ; « Libérer » (le PNJ ne bouge pas),
     puis « Supprimer l'emplacement » avec confirmation → B disparaît, le PNJ reste en place.
@@ -6073,6 +6078,9 @@ quête important), par ex. créé depuis PlugAdmin → PNJ → Créer un PNJ (`t
     position. Déplacer le PNJ à la main (`/npc tphere`) puis « Actualiser » → état *conflit*
     « n'est plus à sa place » ; « Replacer ici » le ramène.
 11. Téléphone (ou fenêtre étroite) : la page reste lisible sans défilement horizontal.
+12. Se déconnecter / redémarrer le serveur avec l'outil dans l'inventaire : aucun emplacement n'est
+    créé tout seul ; l'outil fonctionne toujours au retour. Un joueur sans `rpgquest.admin.npc.spot`
+    qui tient l'outil → « Permission manquante », rien n'est créé.
 
 ### TC-316 — Passage d'étape : la prochaine action est annoncée (issue #70, PENDING MANUAL VALIDATION)
 

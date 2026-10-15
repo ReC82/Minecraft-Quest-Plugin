@@ -211,10 +211,12 @@ mémorisé par Citizens et persiste.
 
 ## 5. Déplacer / repositionner
 
-**Recommandé : les emplacements (issue #381).** En jeu, placez-vous à l'endroit voulu, tournez-vous
-dans la direction que le PNJ doit regarder et tapez `/rpgadmin npc spot mark Nom de l'emplacement`.
-Puis PlugAdmin → PNJ → **Emplacements** → « Actualiser » : choisissez le PNJ, cochez la
-confirmation et cliquez « Placer / téléporter ici ». C'est la même entité qui est déplacée (jamais
+**Recommandé : les emplacements (issue #381).** En jeu, prenez l'outil « Emplacements PNJ » avec
+`/rpgadmin npc spot tool`, visez le bloc où le PNJ doit se tenir et faites **clic droit** : un
+emplacement est enregistré juste au-dessus (nom provisoire, rien à taper). Retapez la commande pour
+ranger l'outil. Puis PlugAdmin → PNJ → **Emplacements** → « Actualiser » : choisissez le PNJ, cochez la
+confirmation et cliquez « Placer / téléporter ici ». Renommez l'emplacement et corrigez son
+orientation sur la même page. C'est la même entité qui est déplacée (jamais
 une copie) ; son ancien emplacement est libéré, ses dialogues, quêtes et skin ne changent pas. Un
 emplacement occupé ne se supprime pas (« Libérer » d'abord) ; un PNJ récurrent ne se place pas ici.
 

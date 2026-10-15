@@ -1076,6 +1076,14 @@ public final class RPGQuestBootstrap {
         agentActions.setGameSettings(gameSettingsService);
         agentActions.setEncounters(encounterService);
         agentActions.setNpcSpots(npcSpotService, claimService);
+        // Issue #381 (correction du 15/10) — l'outil « Emplacements PNJ » : clic droit = un emplacement.
+        // Enregistré ici parce qu'il refuse les parcelles, donc a besoin du ClaimService.
+        registry.start(new PlayerListenerService(plugin, new com.lodygames.rpgquest.npc.spot.NpcSpotToolListener(
+                npcSpotService, this::rpgWorldWhitelist,
+                (world, x, y, z) -> claimService.claimAt(world, x, y, z)
+                        .map(com.lodygames.rpgquest.claim.model.Claim::id),
+                task -> plugin.getServer().getScheduler().runTask(plugin, task),
+                System::currentTimeMillis, plugin.getLogger())));
         agentActions.setQuestCatalogs(questCatalogEngine);
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);

@@ -156,8 +156,8 @@ public enum AgentActionType {
     NPC_CITIZENS_WANDER("npc.citizens.wander"),
     /**
      * Issue #381 — emplacements de PNJ. Comme pour les emplacements de construction, la
-     * <strong>réservation</strong> n'a pas d'action agent : elle se fait en jeu, à la position de
-     * l'administrateur ({@code /rpgadmin npc spot mark}). {@link #NPC_SPOT_CAPTURE} est l'exception
+     * <strong>réservation</strong> n'a pas d'action agent : elle se fait en jeu, par clic droit avec
+     * l'outil « Emplacements PNJ » ({@code /rpgadmin npc spot tool}). {@link #NPC_SPOT_CAPTURE} est l'exception
      * qui confirme la règle : la position vient du PNJ lui-même, jamais d'un formulaire.
      */
     NPC_SPOT_LIST("npc.spot.list"),

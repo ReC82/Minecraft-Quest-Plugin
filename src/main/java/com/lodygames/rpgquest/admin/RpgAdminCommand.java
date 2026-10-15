@@ -167,7 +167,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
     private static final List<String> MOB_SUBCOMMANDS = List.of("spawn", "list", "inspect", "reload", "metrics");
     private static final List<String> NPC_SUBCOMMANDS = List.of("tag", "untag", "info", "spot");
-    private static final List<String> NPC_SPOT_SUBCOMMANDS = List.of("mark", "list");
+    private static final List<String> NPC_SPOT_SUBCOMMANDS = List.of("tool", "list", "mark");
     private static final List<String> SPAWN_SUBCOMMANDS = List.of("set", "tp");
     private static final List<String> WORLD_SUBCOMMANDS = List.of("create", "tp", "list");
     private static final List<String> WORLD_PORTAL_SUBCOMMANDS =
@@ -1095,17 +1095,20 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         + "(id auto-généré si omis, --force pour un id hors registre)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc untag</yellow> <gray>- retire l'identifiant de l'entité visée</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc info</yellow> <gray>- affiche l'identifiant de l'entité visée</gray>"));
-        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc spot mark [nom]</yellow> <gray>- réserve un emplacement "
-                + "de PNJ à votre position et orientation</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc spot tool</yellow> <gray>- prend ou range l'outil "
+                + "« Emplacements PNJ » (clic droit sur un bloc = un emplacement)</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc spot mark [nom]</yellow> <gray>- avancé : réserve "
+                + "un emplacement à votre position exacte et orientation</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc spot list</yellow> <gray>- liste les emplacements de PNJ</gray>"));
     }
 
     // ---- Emplacements de PNJ (issue #381) ------------------------------------------------------
 
     /**
-     * {@code /rpgadmin npc spot mark|list}. La réservation se fait à la position <strong>exacte</strong>
-     * de l'administrateur (pieds + orientation) : aucun outil, aucun clic, donc rien à disputer à la
-     * hache WorldEdit ni à l'outil d'emplacement de construction. Ne crée ni ne déplace aucun PNJ.
+     * {@code /rpgadmin npc spot tool|list|mark}. Le parcours normal est l'outil « Emplacements PNJ »
+     * ({@code tool}) : clic droit sur un bloc = un emplacement, sans rien taper (correction du
+     * propriétaire, 15/10). {@code mark} reste une option avancée qui réserve la position
+     * <strong>exacte</strong> de l'administrateur (pieds + orientation). Ne crée ni ne déplace aucun PNJ.
      */
     private void handleNpcSpot(Player player, String[] args) {
         if (npcSpots == null) {
@@ -1114,10 +1117,29 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         String sub = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "";
         switch (sub) {
+            case "tool" -> handleNpcSpotTool(player);
             case "mark" -> handleNpcSpotMark(player, args);
             case "list" -> handleNpcSpotList(player);
             default -> sendNpcUsage(player);
         }
+    }
+
+    /** Bascule : donne l'outil s'il n'est pas dans l'inventaire, le range (retire) sinon. */
+    private void handleNpcSpotTool(Player player) {
+        int removed = com.lodygames.rpgquest.npc.spot.NpcSpotTool.removeFrom(player.getInventory());
+        if (removed > 0) {
+            player.sendMessage(MM.deserialize("<gray>Outil « Emplacements PNJ » rangé. "
+                    + "<yellow>/rpgadmin npc spot tool</yellow> pour le reprendre.</gray>"));
+            return;
+        }
+        var leftover = player.getInventory().addItem(com.lodygames.rpgquest.npc.spot.NpcSpotTool.create());
+        if (!leftover.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Inventaire plein : libérez une case pour recevoir l'outil.</red>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize("<green>Outil « Emplacements PNJ » reçu.</green> <gray>Visez un bloc, "
+                + "<white>clic droit</white> : un emplacement est enregistré juste au-dessus. Retapez "
+                + "<yellow>/rpgadmin npc spot tool</yellow> pour le ranger.</gray>"));
     }
 
     private void handleNpcSpotMark(Player player, String[] args) {
@@ -1147,6 +1169,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                                         + "<dark_gray>(<id>)</dark_gray>. <gray>Rien n'a été créé.</gray>",
                                 Placeholder.unparsed("name", result.spot().name()),
                                 Placeholder.unparsed("id", result.spot().id())));
+                        case IN_PROGRESS -> {
+                            // Réservation du même bloc déjà en cours : elle répondra elle-même.
+                        }
                         case INVALID -> player.sendMessage(MM.deserialize("<red><msg></red>",
                                 Placeholder.unparsed("msg", result.error())));
                     }
@@ -1167,8 +1192,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private void handleNpcSpotList(Player player) {
         List<com.lodygames.rpgquest.npc.spot.NpcSpot> all = npcSpots.all();
         if (all.isEmpty()) {
-            player.sendMessage(MM.deserialize("<gray>Aucun emplacement de PNJ. "
-                    + "<yellow>/rpgadmin npc spot mark [nom]</yellow> pour en réserver un.</gray>"));
+            player.sendMessage(MM.deserialize("<gray>Aucun emplacement de PNJ. Prenez l'outil avec "
+                    + "<yellow>/rpgadmin npc spot tool</yellow> et faites clic droit sur un bloc.</gray>"));
             return;
         }
         player.sendMessage(MM.deserialize("<gold>Emplacements de PNJ (<n>) :</gold>",

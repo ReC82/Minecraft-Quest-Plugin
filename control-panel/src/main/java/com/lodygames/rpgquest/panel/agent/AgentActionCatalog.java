@@ -582,7 +582,7 @@ public final class AgentActionCatalog {
                 List.of(Permission.NPC_WRITE, Permission.NPC_BIND_WRITE),
                 "Créer un PNJ (définition + apparition + liaison + skin)",
                 "npc.list", "npc.citizens.list");
-        // Issue #381 — emplacements de PNJ. La réservation se fait EN JEU (/rpgadmin npc spot mark) :
+        // Issue #381 — emplacements de PNJ. La réservation se fait EN JEU (outil « Emplacements PNJ ») :
         // aucune action ne crée un emplacement depuis des coordonnées tapées. Placer déplace ou fait
         // apparaître une entité réelle : sensible, avec confirmation. Supprimer retire un repère
         // (jamais un PNJ) : permission de suppression, avec confirmation.

@@ -121,7 +121,8 @@
         <tr><td><code>/rpgadmin npc tag &lt;id&gt; --force</code></td><td>Pose quand même un id hors registre (id volontairement nouveau). Un avertissement le signale.</td></tr>
         <tr><td><code>/rpgadmin npc untag</code></td><td>Retire l'identifiant (le PNJ Citizens lui-même n'est jamais supprimé).</td></tr>
         <tr><td><code>/rpgadmin npc info</code></td><td>Affiche l'id actuel — pour un PNJ Citizens, ajoute <code>(Citizens NPC #n)</code>.</td></tr>
-        <tr><td><code>/rpgadmin npc spot mark [nom]</code></td><td>Réserve un emplacement de PNJ à votre position et orientation exactes (permission <code>rpgquest.admin.npc.spot</code>). Aucun PNJ n'est créé ni déplacé.</td></tr>
+        <tr><td><code>/rpgadmin npc spot tool</code></td><td>Donne l'outil « Emplacements PNJ » (porte-armure identifié par RPGQuest) ; retaper la commande le range. Avec l'outil : <strong>clic droit sur un bloc</strong> = un emplacement libre juste au-dessus, nom provisoire, aucune saisie (permission <code>rpgquest.admin.npc.spot</code>).</td></tr>
+        <tr><td><code>/rpgadmin npc spot mark [nom]</code></td><td>Option avancée : réserve un emplacement à votre position et orientation exactes. Aucun PNJ n'est créé ni déplacé.</td></tr>
         <tr><td><code>/rpgadmin npc spot list</code></td><td>Liste les emplacements de PNJ et le PNJ affecté à chacun.</td></tr>
       </tbody>
     </table>
@@ -284,9 +285,12 @@ id: rpgquest:libraire</code></pre>
   <section class="my-5">
     <h2 class="h4">Emplacements de PNJ (issue #381)</h2>
     <p class="text-body-secondary">
-      Pour décider <strong>en jeu</strong> où se tiendra un PNJ, placez-vous à l'endroit voulu, tournez-vous
-      dans la direction qu'il doit regarder et tapez <code>/rpgadmin npc spot mark Porte nord</code>. Ensuite,
-      dans PlugAdmin → PNJ → <strong>Emplacements</strong> : choisissez le PNJ dans la liste et cliquez
+      Pour décider <strong>en jeu</strong> où se tiendra un PNJ, prenez l'outil avec
+      <code>/rpgadmin npc spot tool</code>, visez le bloc voulu et faites <strong>clic droit</strong> :
+      l'emplacement est enregistré au-dessus du bloc, tourné vers vous, avec un nom provisoire
+      (« Emplacement PNJ 3 »). Un même bloc n'a qu'un emplacement ; un bloc où un PNJ ne tient pas, un monde
+      sans PNJ ou une parcelle de joueur sont refusés avec la raison. Ensuite,
+      dans PlugAdmin → PNJ → <strong>Emplacements</strong> : renommez-le, choisissez le PNJ dans la liste et cliquez
       « Placer / téléporter ici ». S'il existe déjà en jeu, c'est la même entité qui est déplacée (jamais
       une copie) ; sinon il apparaît. Dialogues, quêtes et apparence ne changent pas.
     </p>

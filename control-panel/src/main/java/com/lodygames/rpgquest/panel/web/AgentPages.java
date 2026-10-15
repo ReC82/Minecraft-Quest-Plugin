@@ -6040,7 +6040,7 @@ public final class AgentPages {
     }
 
     // ================================================================================
-    //  Emplacements de PNJ — issue #381. Réservés en jeu (/rpgadmin npc spot mark),
+    //  Emplacements de PNJ — issue #381. Marqués en jeu (outil « Emplacements PNJ »),
     //  lus via npc.spot.list ; placer / déplacer / orienter / libérer / supprimer passent
     //  chacun par UNE action nommée, jamais par des coordonnées tapées.
     // ================================================================================
@@ -6064,10 +6064,11 @@ public final class AgentPages {
                 .append(compactRefresh(session, agentId, "npc.spot.list", "Actualiser", "btn-outline-primary",
                         SPOT_PAGE))
                 .append("</div>");
-        sb.append("<p class=\"muted\">Pour réserver un emplacement, placez-vous à l'endroit voulu en jeu, tournez-vous "
-                + "dans la direction que le PNJ doit regarder, puis tapez <code>/rpgadmin npc spot mark Nom de "
-                + "l'emplacement</code> (permission <code>rpgquest.admin.npc.spot</code>). Il apparaît ici après "
-                + "« Actualiser ». Placer un PNJ le déplace s'il existe déjà en jeu — la même entité, jamais une "
+        sb.append("<p class=\"muted\">Pour créer un emplacement : en jeu, prenez l'outil avec "
+                + "<code>/rpgadmin npc spot tool</code>, visez le bloc où le PNJ doit se tenir et faites "
+                + "<strong>clic droit</strong> (permission <code>rpgquest.admin.npc.spot</code>). Il apparaît ici "
+                + "après « Actualiser », avec un nom provisoire à renommer ci-dessous. Retapez la commande pour "
+                + "ranger l'outil. Placer un PNJ le déplace s'il existe déjà en jeu — la même entité, jamais une "
                 + "copie — ou le fait apparaître sinon ; ses dialogues, quêtes et apparence ne changent pas.</p>");
         Optional<Map<String, Object>> latest = latestDetails(agentId, "npc.spot.list");
         if (latest.isEmpty()) {

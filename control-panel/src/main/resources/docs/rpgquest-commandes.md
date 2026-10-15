@@ -26,7 +26,7 @@ ou sa sélection).
 | Voir le profil d'un joueur | `/rpgquest profile <joueur>` |
 | Associer un PNJ visé à RPGQuest | `/rpgadmin npc tag <id>` |
 | Retirer l'identifiant d'un PNJ | `/rpgadmin npc untag` |
-| Réserver un emplacement de PNJ ici | `/rpgadmin npc spot mark <nom>` |
+| Prendre / ranger l'outil « Emplacements PNJ » | `/rpgadmin npc spot tool` |
 | Démarrer une quête pour un joueur | `/rpgadmin quest start <joueur> <quête>` |
 | Terminer une quête (récompenses incluses) | `/rpgadmin quest complete <joueur> <quête>` |
 | Rendre une quête rejouable | `/rpgadmin quest reset <joueur> <quête>` |
@@ -291,15 +291,18 @@ Affiche l'identifiant RPGQuest de l'entité visée.
 `Identifiant : guard` (+ `(Citizens NPC #n)` le cas échéant), ou « Cette entité n'est pas
 identifiée. »
 
-### Réserver un emplacement de PNJ — `/rpgadmin npc spot`
+### Emplacements de PNJ — `/rpgadmin npc spot`
 
-Réserve votre position exacte et votre regard comme emplacement où placer un PNJ depuis PlugAdmin
-(PNJ → Emplacements). Ne crée ni ne déplace aucun PNJ. Permission `rpgquest.admin.npc.spot`.
+Donne l'outil « Emplacements PNJ » (un porte-armure identifié par RPGQuest) ; retaper la commande
+le range. Avec l'outil en main, **visez un bloc et faites clic droit** : un emplacement libre est
+enregistré juste au-dessus, avec un nom provisoire (« Emplacement PNJ 3 ») et un PNJ qui vous
+regardera. Aucun nom à taper : renommez-le et placez-y un PNJ depuis PlugAdmin (PNJ →
+Emplacements). Ne crée ni ne déplace aucun PNJ. Permission `rpgquest.admin.npc.spot`.
 
 **Syntaxe**
 
 ```
-/rpgadmin npc spot mark [nom]
+/rpgadmin npc spot tool
 ```
 
 Pour lister les emplacements :
@@ -308,12 +311,19 @@ Pour lister les emplacements :
 /rpgadmin npc spot list
 ```
 
+Option avancée, sans outil : réserver votre position **exacte** et votre regard (nom facultatif) :
+
+```
+/rpgadmin npc spot mark [nom]
+```
+
 **Résultat attendu**
 
-`Emplacement de PNJ réservé : Porte nord (npcspot_0001) — world 10.5 / 64.0 / -3.5, regard 180°`.
-Sur un bloc déjà réservé : « Un emplacement existe déjà sur ce bloc », rien n'est créé. Si l'endroit
-n'a pas de sol solide ou pas deux blocs d'air, un avertissement s'affiche : le placement y sera
-refusé.
+Clic droit avec l'outil : `Emplacement PNJ enregistré : Emplacement PNJ 3 (npcspot_0003) — world
+10.5 / 65.0 / -3.5` et des particules au-dessus du bloc. Même bloc recliqué : « Un emplacement
+existe déjà ici », rien n'est créé. Bloc où un PNJ ne tient pas (pas deux blocs d'air, liquide,
+portail), monde sans PNJ ou parcelle de joueur : « Aucun emplacement créé » avec la raison. Clic
+gauche, ou n'importe quel autre objet en main : rien n'est créé.
 
 ---
 

@@ -65,6 +65,8 @@ public final class AgentActionCatalog {
      * Le tiret est accepté parce qu'une coordonnée de région est signée.
      */
     private static final Pattern WAYPOINT_ID = Pattern.compile("wp_[A-Za-z0-9_\\-]{1,120}");
+    /** Issue #134 — miroir de {@code WaypointNameCatalog#validateDisplayName} côté plugin. */
+    private static final Pattern WAYPOINT_DISPLAY_NAME = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{N} '’.\\-]*");
     /** Occurrence de PNJ récurrent (issue #13) : {@code enc_<monde>_<biome>_<rx>_<rz>}. */
     private static final Pattern ENCOUNTER_SITE_ID = Pattern.compile("enc_[A-Za-z0-9_\\-]{1,160}");
     /** Clé de biome d'un modèle de PNJ récurrent : {@code forest} ou {@code minecraft:forest}. */
@@ -380,6 +382,9 @@ public final class AgentActionCatalog {
         // pour que la borne apparaisse sans « Rafraîchir + F5 ».
         addSensitiveWrite("travel.beacon.pair", Permission.TRAVEL_PAIR_WRITE, false,
                 "Apparier une borne à une instance du Hub", "travel.catalog");
+        // Issue #134 — renommer UN waypoint : réversible (on peut renommer à nouveau), seul le texte
+        // change ; le catalogue est ré-enfilé pour que le nouveau nom s'affiche sans F5.
+        addContentWrite("waypoint.rename", Permission.WAYPOINT_WRITE, "Renommer un waypoint", "travel.catalog");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
         // Issue #13 — PNJ récurrents. Retenter / désactiver / retirer créent ou détruisent un PNJ
         // Citizens réel : sensibles, avec la permission de spawn. Relire les modèles et effacer
@@ -1043,6 +1048,23 @@ public final class AgentActionCatalog {
                     return Validation.fail("Identifiant de waypoint manquant ou invalide.");
                 }
                 params.put("waypointId", waypointId);
+            }
+            case "waypoint.rename" -> {
+                // Issue #134 : mêmes règles que le plugin (qui revalide et seul juge de l'unicité).
+                String waypointId = trim(form.get("waypointId"));
+                if (!WAYPOINT_ID.matcher(waypointId).matches()) {
+                    return Validation.fail("Identifiant de waypoint manquant ou invalide.");
+                }
+                String name = trim(form.get("displayName")).replaceAll("\\s+", " ");
+                if (name.length() < 2 || name.length() > 40) {
+                    return Validation.fail("Le nom d'un waypoint fait entre 2 et 40 caractères.");
+                }
+                if (!WAYPOINT_DISPLAY_NAME.matcher(name).matches()) {
+                    return Validation.fail("Caractères autorisés : lettres, chiffres, espaces, apostrophes, "
+                            + "tirets et points (commencer par une lettre ou un chiffre).");
+                }
+                params.put("waypointId", waypointId);
+                params.put("displayName", name);
             }
             case "building.definition.retire" -> {
                 String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);

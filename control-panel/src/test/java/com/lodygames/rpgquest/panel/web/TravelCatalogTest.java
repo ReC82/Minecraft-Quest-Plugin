@@ -239,6 +239,37 @@ class TravelCatalogTest {
                 "aucun appariement proposé pour une instance déjà équipée");
     }
 
+    /** Issue #134 — chaque waypoint se renomme depuis sa ligne, nom actuel pré-rempli. */
+    @Test
+    void eachWaypointOffersARenameFormPrefilledWithItsCurrentName() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String page = get("/travel?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"waypoint.rename\""), "renommage proposé");
+        assertTrue(page.contains("<summary>Renommer</summary>"), "replié par défaut");
+        assertTrue(page.contains("name=\"displayName\" minlength=\"2\" maxlength=\"40\" required value=\"Forêt du Hub\""),
+                "nom actuel pré-rempli");
+        assertTrue(page.contains("la position et les découvertes ne changent pas"), "portée du geste écrite");
+    }
+
+    /** Issue #134 — la soumission crée l'action avec le nom normalisé, puis revient sur /travel. */
+    @Test
+    void submittingARenameEnqueuesTheActionWithTheCleanedName() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String token = csrf(get("/travel?agent=" + TestConfig.AGENT_ID).body());
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token + "&type=waypoint.rename&agent="
+                + TestConfig.AGENT_ID + "&return=/travel&confirm=true&waypointId=wp_hub_forest_0_0"
+                + "&displayName=" + URLEncoder.encode("  Col   du Vent ", StandardCharsets.UTF_8));
+        assertTrue(res.statusCode() / 100 == 3, "redirection après création : " + res.statusCode());
+        HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertTrue(poll.body().contains("waypoint.rename"), poll.body());
+        assertTrue(poll.body().contains("Col du Vent"), "nom transmis une fois normalisé : " + poll.body());
+    }
+
     /** La confusion à empêcher : chercher des bornes dans le Wild ne donnera jamais rien. */
     @Test
     void theWildSectionSaysItHasNoBeaconsAndCountsDiscoveredWaystones() throws Exception {

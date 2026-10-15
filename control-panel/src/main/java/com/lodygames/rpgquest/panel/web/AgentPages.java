@@ -4061,7 +4061,8 @@ public final class AgentPages {
         List<Object> filteredBeacons = filterTravelRows(beacons, query, worldFilter);
 
         sb.append(Ui.sectionTitle("travel", "Waypoints (" + filteredWaypoints.size() + "/" + waypoints.size() + ")"));
-        sb.append(renderWaypointTable(agentId, query, worldFilter, filteredWaypoints, parsePageParam(q.get("wp"))));
+        sb.append(renderWaypointTable(session, agentId, query, worldFilter, filteredWaypoints,
+                parsePageParam(q.get("wp"))));
 
         sb.append(Ui.sectionTitle("travel", "Bornes (" + filteredBeacons.size() + "/" + beacons.size() + ")"));
         sb.append(renderBeaconTable(agentId, query, worldFilter, filteredBeacons, parsePageParam(q.get("bp"))));
@@ -4560,7 +4561,8 @@ public final class AgentPages {
         return out;
     }
 
-    private String renderWaypointTable(String agentId, String query, String worldFilter, List<Object> rows, int page) {
+    private String renderWaypointTable(Session session, String agentId, String query, String worldFilter,
+                                       List<Object> rows, int page) {
         if (rows.isEmpty()) {
             return Ui.empty("travel", "Aucun waypoint ne correspond.");
         }
@@ -4575,13 +4577,15 @@ public final class AgentPages {
         // maintenant LAQUELLE est associée (son id), jamais seulement oui/non.
         sb.append("<p class=\"muted\">« Borne associée » = la borne liée à ce waypoint pour le "
                 + "voyage retour, pas une découverte par un joueur.</p>");
+        boolean canRename = perms.can(session.effective(), Permission.WAYPOINT_WRITE);
         sb.append(Ui.tableOpen("ID", "Nom", "Monde", "Biome", "Instance", "X", "Y", "Z", "Actif", "Borne associée"));
         for (Object o : pageItems) {
             Map<String, Object> m = asMap(o);
             String pairedBeaconId = str(m.get("pairedBeaconId"));
             boolean paired = !pairedBeaconId.isEmpty() && !"null".equals(pairedBeaconId);
             sb.append("<tr><td><code>").append(Http.esc(str(m.get("id")))).append("</code></td><td>")
-                    .append(Http.esc(str(m.get("displayName")))).append("</td><td>")
+                    .append(Http.esc(str(m.get("displayName"))))
+                    .append(canRename ? waypointRenameForm(session, agentId, m) : "").append("</td><td>")
                     .append(Http.esc(str(m.get("world")))).append("</td><td class=\"muted\">")
                     .append(Http.esc(str(m.get("biomeKey")))).append("</td><td class=\"muted\">")
                     .append(Http.esc(str(m.get("biomeInstance")))).append("</td><td>")
@@ -4596,6 +4600,26 @@ public final class AgentPages {
         sb.append(Ui.tableClose());
         sb.append(travelPager(agentId, query, worldFilter, "wp", clamped, pageCount));
         return sb.toString();
+    }
+
+    /**
+     * Issue #134 — renommer un waypoint depuis sa ligne. Replié par défaut ({@code <details>}, sans
+     * script : la CSP l'interdit) pour que le tableau reste lisible.
+     */
+    private String waypointRenameForm(Session session, String agentId, Map<String, Object> waypoint) {
+        return "<details class=\"wp-rename\"><summary>Renommer</summary>"
+                + formStart(session, agentId, "waypoint.rename", "/travel", "")
+                + "<input type=\"hidden\" name=\"waypointId\" value=\"" + Http.esc(str(waypoint.get("id"))) + "\">"
+                + "<div class=\"field\"><label>Nouveau nom affiché</label><input type=\"text\" "
+                + "name=\"displayName\" minlength=\"2\" maxlength=\"40\" required value=\""
+                + Http.esc(str(waypoint.get("displayName"))) + "\">"
+                + "<p class=\"field-help\">Nom vu par les joueurs (panneaux, menu de voyage, messages). "
+                + "Unique, casse et accents ignorés. L'identifiant, la position et les découvertes ne "
+                + "changent pas. Panneaux réécrits tout de suite si la zone est chargée, sinon dès "
+                + "qu'un joueur s'en approche.</p></div>"
+                + mutationConsent("waypoint.rename", "", null)
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm\" type=\"submit\">" + Icons.icon("save")
+                + "Renommer</button></div></form></details>";
     }
 
     private String renderBeaconTable(String agentId, String query, String worldFilter, List<Object> rows, int page) {

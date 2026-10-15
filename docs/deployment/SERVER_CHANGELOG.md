@@ -48,6 +48,32 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Catalogues de quêtes : parcours PlugAdmin simplifié (#414)
+
+### Changement
+
+Refonte de la page PlugAdmin « Catalogues de quêtes » ; côté plugin, `quest.catalog.list`
+expose les modèles de PNJ récurrents et `quest.catalog.create|update` accepte
+`assign_templates` / `templates` pour associer le catalogue à ses PNJ.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (DEV) + redéploiement de PlugAdmin. Aucune migration, aucun fichier
+de configuration ni de contenu modifié.
+
+### Sauvegarde préalable
+
+Sauvegarde datée du JAR en place (script `deploy-verygames.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh` (JAR) puis `scripts/plugadmin/deploy.sh --wait-ci` (panel).
+
+### Validation
+
+TC-315 (PENDING MANUAL VALIDATION). Rollback : JAR sauvegardé + version précédente du panel ;
+l'ancien plugin ignore simplement les nouveaux paramètres (la page masque alors le choix des PNJ).
+
 ## 2026-10-15 - Outil « Emplacements PNJ » : clic droit sur un bloc (#381, correction)
 
 ### Changement

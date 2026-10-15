@@ -169,13 +169,17 @@ Bouton **Catalogues de quêtes** en haut de la page Quêtes (`/quests/catalogs`)
 une liste de quêtes **existantes** qu'un PNJ récurrent (brigand, marchand égaré…) peut proposer :
 il ne copie rien, chaque quête garde ses objectifs, ses récompenses et son délai.
 
-1. **Nouveau catalogue** : un identifiant (nom du fichier), un nom, puis une ligne par quête —
-   tapez quelques lettres du **titre** ou de l'identifiant et choisissez dans la liste. Le numéro
-   règle l'ordre, le poids la fréquence du tirage, « active » permet de garder une quête en
-   réserve, « retirer » l'enlève à l'enregistrement.
-2. **Attribuer** : PNJ → PNJ récurrents → modèle → Modifier → champ « Catalogues de quêtes ».
+1. **Créer un catalogue** : un nom, puis « Ajouter une quête » — tapez quelques lettres du titre et
+   cochez. L'identifiant est calculé à partir du nom (modifiable dans « Réglages avancés »).
+2. **PNJ qui proposent ces quêtes** : cochez les PNJ récurrents dans le même écran (ou plus tard
+   avec « Choisir des PNJ » sur la fiche).
 3. **Dialogue** : dans le dialogue du PNJ, un choix avec l'action « Proposer une quête du
-   catalogue ». Sans elle, le catalogue n'est jamais proposé (la page le signale).
+   catalogue ». Sans elle, le PNJ ne propose rien : la fiche l'indique (« ne sait pas encore
+   proposer ») avec le lien vers son dialogue.
+
+La fiche d'un catalogue se lit ; **Modifier** permet de monter, descendre ou retirer une quête,
+**Dupliquer** et **Supprimer** ont chacun leur écran. Fréquence de chaque quête, anti-répétition et
+identifiants sont dans **Réglages avancés** (case « Afficher la fréquence de chaque quête »).
 
 En jeu, chaque joueur reçoit **sa** proposition, la même tant qu'il n'a pas terminé une quête du
 catalogue ; rien n'est inscrit dans son journal avant « Commencer (j'accepte) ». Les contrôles

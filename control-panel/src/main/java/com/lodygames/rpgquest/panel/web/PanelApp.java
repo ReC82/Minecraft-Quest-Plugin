@@ -5369,8 +5369,24 @@ public final class PanelApp {
             // emplacement capturé. C'est la session, jamais un champ du formulaire.
             form.put("by", session.username());
         }
+        // Issue #414 : un nouveau catalogue sans identifiant saisi reçoit celui calculé depuis son nom,
+        // distinct des catalogues connus (le plugin refuse de toute façon d'écraser un fichier).
+        if ("quest.catalog.create".equals(type) && form.getOrDefault("id", "").isBlank()) {
+            form.put("id", QuestCatalogPages.idFromName(form.get("display_name"), agentPages.questCatalogIds(agentId)));
+        }
         com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Validation v =
                 com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate(type, form);
+        if (v.valid() && ("quest.catalog.update".equals(type) || "quest.catalog.delete".equals(type))) {
+            String conflict = agentPages.questCatalogConflict(agentId, v.params().getOrDefault("id", ""),
+                    form.get("based_on"));
+            if (conflict != null) {
+                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                        "DENIED", "catalogue modifié depuis l'ouverture du formulaire", rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, conflict)
+                        + "&focus=" + enc(AgentPages.cleanFocus(v.params().get("id"))));
+                return;
+            }
+        }
         if (!v.valid()) {
             audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
                     "DENIED", v.error(), rid);
@@ -5455,7 +5471,8 @@ public final class PanelApp {
                 + " type=" + type + " action=" + id + " by=" + session.username());
         // Issue #241 : la fiche ouverte (« focus ») reste ouverte après l'action. Valeur filtrée :
         // un identifiant de contenu, jamais un fragment d'URL arbitraire.
-        String focus = AgentPages.cleanFocus(form.get("focus"));
+        // « @id » : la fiche de l'objet tout juste créé, dont l'identifiant n'est connu qu'ici (#414).
+        String focus = AgentPages.cleanFocus("@id".equals(form.get("focus")) ? v.params().get("id") : form.get("focus"));
         Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player"))
                 + (focus.isEmpty() ? "" : "&focus=" + enc(focus)) + "&toast=" + enc(id));
     }

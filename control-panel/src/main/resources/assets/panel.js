@@ -1657,6 +1657,79 @@
     } catch (e) { /* stockage indisponible : le lien par défaut suffit */ }
   }
 
+  // Issue #414 — formulaire de catalogue de quêtes. Sans JavaScript tout fonctionne (cases à cocher,
+  // ordre d'origine) ; ici : monter / descendre une quête, compteur des quêtes cochées et résumé
+  // de ce qui sera enregistré, recalculé à chaque changement.
+  function initQuestCatalogs() {
+    var form = document.querySelector("form[data-qc-form]");
+    if (!form) { return; }
+    var list = form.querySelector("[data-qc-items]");
+
+    function renumber() {
+      if (!list) { return; }
+      var items = list.querySelectorAll("[data-qc-item]");
+      for (var i = 0; i < items.length; i++) {
+        var order = items[i].querySelector("[data-qc-order]");
+        if (order) { order.value = String((i + 1) * 10); }
+      }
+    }
+
+    if (list) {
+      list.addEventListener("click", function (ev) {
+        var btn = ev.target.closest ? ev.target.closest("[data-qc-move]") : null;
+        if (!btn || !list.contains(btn)) { return; }
+        var item = btn.closest("[data-qc-item]");
+        if (!item) { return; }
+        var up = btn.getAttribute("data-qc-move") === "up";
+        var other = up ? item.previousElementSibling : item.nextElementSibling;
+        if (!other) { return; }
+        if (up) { list.insertBefore(item, other); } else { list.insertBefore(other, item); }
+        renumber();
+        btn.focus();
+        form.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+
+    var count = form.querySelector("[data-qc-addcount]");
+    var summary = form.querySelector("[data-qc-summary]");
+    var nameInput = form.querySelector("[data-qc-name]");
+
+    function plural(n, one, many) { return n + " " + (n > 1 ? many : one); }
+
+    function refresh() {
+      var picked = form.querySelectorAll("[data-qc-cand]:checked").length;
+      if (count) {
+        count.textContent = picked ? plural(picked, "quête cochée sera ajoutée", "quêtes cochées seront ajoutées")
+          + " à l'enregistrement." : "Coche les quêtes à ajouter.";
+      }
+      if (!summary) { return; }
+      var kept = 0;
+      var items = form.querySelectorAll("[data-qc-item]");
+      for (var i = 0; i < items.length; i++) {
+        var rm = items[i].querySelector("[data-qc-remove]");
+        if (!rm || !rm.checked) { kept++; }
+      }
+      var removed = items.length - kept;
+      var npcs = [];
+      var tpls = form.querySelectorAll("[data-qc-tpl]:checked");
+      for (var t = 0; t < tpls.length; t++) { npcs.push(tpls[t].getAttribute("data-name") || tpls[t].name); }
+      var name = nameInput && nameInput.value.trim() ? "« " + nameInput.value.trim() + " »" : "Ce catalogue";
+      var text = name + " contiendra " + plural(kept + picked, "quête", "quêtes");
+      if (picked || removed) {
+        var parts = [];
+        if (picked) { parts.push(plural(picked, "ajoutée", "ajoutées")); }
+        if (removed) { parts.push(plural(removed, "retirée", "retirées")); }
+        text += " (" + parts.join(", ") + ")";
+      }
+      text += npcs.length ? ", proposées par " + npcs.join(", ") + "." : ". Aucun PNJ ne les proposera pour l'instant.";
+      summary.textContent = text;
+    }
+
+    form.addEventListener("change", refresh);
+    form.addEventListener("input", function (ev) { if (ev.target === nameInput) { refresh(); } });
+    refresh();
+  }
+
   /** Exécute un module en isolant sa panne : un module qui échoue n'empêche pas les autres. */
   function run(name, fn) {
     try { fn(); } catch (e) {
@@ -1687,6 +1760,7 @@
     run("initDialoguePreview", initDialoguePreview);
     run("initLocalTimes", initLocalTimes);
     run("initPlayersBack", initPlayersBack);
+    run("initQuestCatalogs", initQuestCatalogs);
     run("initColorPalette", initColorPalette);
     run("initOpsAnnounce", initOpsAnnounce);
     run("initOpsConsole", initOpsConsole);

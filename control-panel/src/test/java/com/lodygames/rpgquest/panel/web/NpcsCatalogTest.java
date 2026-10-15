@@ -1220,38 +1220,82 @@ class NpcsCatalogTest {
             + "\"exists\":false,\"title\":null,\"category\":null,\"repeatable\":false,\"cooldown\":null,\"steps\":0}],"
             + "\"usedBy\":[\"forest_bandit\"],\"warnings\":[\"⚠ Quête absente « rpgquest:ghost »\"]}],"
             + "\"issues\":{\"broken.yml\":\"id manquant\"},\"quests\":[{\"id\":\"rpgquest:encounter_bandit_spiders\","
-            + "\"title\":\"Les toiles du sous-bois\",\"category\":\"encounter\"}],"
+            + "\"title\":\"Les toiles du sous-bois\",\"category\":\"encounter\"},{\"id\":\"rpgquest:wolf_hunt\","
+            + "\"title\":\"La chasse aux loups\",\"category\":\"encounter\"}],"
             + "\"warnings\":[\"⚠ Le modèle « forest_bandit » a des catalogues, mais le dialogue n'a aucune action\"],"
+            + "\"templates\":[{\"id\":\"forest_bandit\",\"displayName\":\"Brigand de la forêt\",\"npcId\":"
+            + "\"encounter_bandit\",\"enabled\":true,\"questCatalogs\":[\"bandit\"],\"offersCatalog\":false},"
+            + "{\"id\":\"mountain_smith\",\"displayName\":\"Forgeron des montagnes\",\"npcId\":\"encounter_smith\","
+            + "\"enabled\":true,\"questCatalogs\":[\"gone\"],\"offersCatalog\":true}],"
             + "\"generatedAtEpochMs\":1}";
 
-    /** Issue #369 — page Quêtes › Catalogues : lecture, contrôles visibles, formulaires validés côté panel. */
+    /** Issues #369 / #414 — accueil, fiche, écrans d'action séparés, formulaires validés côté panel. */
     @Test
-    void questCatalogsCanBeListedCreatedEditedAndDeletedFromThePage() throws Exception {
+    void questCatalogsReadAsAListThenASheetWithSeparateActionScreens() throws Exception {
         start();
-        assertTrue(get("/quests/catalogs?agent=" + TestConfig.AGENT_ID).body().contains("encore été relevé"));
+        String agent = "?agent=" + TestConfig.AGENT_ID;
+        assertTrue(get("/quests/catalogs" + agent).body().contains("encore été relevé"));
         runListWithSuccess("quest.catalog.list", QUEST_CATALOG_DETAILS);
-        String page = get("/quests/catalogs?agent=" + TestConfig.AGENT_ID).body();
-        assertTrue(page.contains("Contrats du brigand") && page.contains("Les toiles du sous-bois"));
-        assertTrue(page.contains("recharge 20 h") && page.contains("quête absente"), "entrées enrichies");
-        assertTrue(page.contains("broken.yml") && page.contains("aucune action"), "contrôles visibles");
-        assertTrue(page.contains("<datalist id=\"qc-quests\">") && page.contains("list=\"qc-quests\""),
-                "recherche par titre ou identifiant");
-        assertTrue(page.contains("value=\"quest.catalog.create\"") && page.contains("value=\"quest.catalog.update\"")
-                && page.contains("Dupliquer") && page.contains("name=\"detach\""));
-        assertFalse(page.contains("<table"), "aucun tableau large : lisible sur mobile");
 
-        String base = "_csrf=" + csrf(page) + "&agent=" + TestConfig.AGENT_ID + "&return=/quests/catalogs";
-        String form = "&id=bandit&display_name=Contrats&enabled=true&avoid_recent=2"
+        String home = get("/quests/catalogs" + agent).body();
+        assertTrue(home.contains("Créer un catalogue") && home.contains("Contrats du brigand")
+                && home.contains("Proposé par Brigand de la forêt"), "accueil : liste lisible, PNJ par leur nom");
+        assertTrue(home.contains("À corriger"), "quête absente + PNJ incapable de proposer = à corriger");
+        assertTrue(home.contains("broken.yml") && home.contains("Forgeron des montagnes")
+                && home.contains("n'existe plus"), "vrais problèmes seulement : fichier illisible, liste disparue");
+        assertFalse(home.contains("<form method=\"post\" action=\"/agents/action\" class=\"qc-form"),
+                "aucun formulaire ouvert sur l'accueil");
+        assertFalse(home.contains("aucune action"), "les avertissements bruts du serveur ne sont plus en tête");
+
+        String sheet = get("/quests/catalogs" + agent + "&focus=bandit").body();
+        assertTrue(sheet.contains("Les toiles du sous-bois") && sheet.contains("à refaire après 20 h")
+                && sheet.contains("Quête introuvable"), "quêtes par leur titre, problème nommé");
+        assertTrue(sheet.contains("ne sait pas encore proposer") && sheet.contains("/dialogues/edit/encounter_bandit"),
+                "association sans action de dialogue : dit, avec le chemin pour réparer");
+        assertFalse(sheet.contains("quest.catalog.create") || sheet.contains("quest.catalog.delete")
+                || sheet.contains("name=\"entry_"), "ni duplication ni suppression ni ligne de saisie dans la fiche");
+        assertTrue(sheet.contains("mode=copy") && sheet.contains("mode=delete") && sheet.contains("Réglages avancés"));
+        assertFalse(sheet.contains("<table"), "aucun tableau large : lisible sur mobile");
+
+        String edit = get("/quests/catalogs" + agent + "&focus=bandit&mode=edit").body();
+        assertTrue(edit.contains("value=\"quest.catalog.update\"") && edit.contains("name=\"tpl_forest_bandit\" "
+                + "value=\"true\" checked") && edit.contains("name=\"assign_templates\""));
+        assertTrue(edit.contains("La chasse aux loups") && !edit.contains("value=\"rpgquest:encounter_bandit_spiders\" "
+                + "data-qc-cand"), "seules les quêtes absentes de la liste sont proposées à l'ajout");
+        assertEquals(1, count(edit, "data-qc-cand>"), "aucune ligne vide imposée : une case par quête à ajouter");
+        assertTrue(get("/quests/catalogs" + agent + "&new=1").body().contains("value=\"@id\""));
+        String delete = get("/quests/catalogs" + agent + "&focus=bandit&mode=delete").body();
+        assertTrue(delete.contains("name=\"detach\"") && delete.contains("name=\"confirm\"")
+                && delete.contains("Brigand de la forêt"), "suppression : conséquences et confirmation");
+
+        String base = "_csrf=" + csrf(edit) + "&agent=" + TestConfig.AGENT_ID + "&return=/quests/catalogs";
+        String basedOn = matchGroup(edit, "name=\"based_on\" value=\"([0-9a-f-]+)\"");
+        String form = "&id=bandit&display_name=Contrats&enabled=true&avoid_recent=2&focus=bandit&based_on=" + basedOn
                 + "&entry_0_order=20&entry_0_quest=rpgquest:a&entry_0_weight=5&entry_0_enabled=true"
                 + "&entry_1_order=10&entry_1_quest=b&entry_1_weight=&entry_1_enabled=true"
                 + "&entry_2_order=30&entry_2_quest=rpgquest:c&entry_2_weight=3&entry_2_remove=true"
-                + "&entry_3_order=40&entry_3_quest=&entry_3_weight=10&entry_3_enabled=true"
-                + "&entry_4_order=50&entry_4_quest=rpgquest:d&entry_4_weight=7";
-        assertEquals(303, post("/agents/action", base + "&type=quest.catalog.update" + form).statusCode());
+                + "&entry_3_order=5000&entry_3_quest=rpgquest:wolf_hunt&entry_3_enabled=true"
+                + "&entry_4_order=5001&entry_4_enabled=true"
+                + "&assign_templates=true&tpl_forest_bandit=true&tpl_mountain_smith=";
+        HttpResponse<String> saved = post("/agents/action", base + "&type=quest.catalog.update" + form);
+        assertTrue(saved.headers().firstValue("Location").orElse("").contains("focus=bandit"), "retour sur la fiche");
         Map<String, String> updated = pendingOfType("quest.catalog.update").get(0).params();
-        assertEquals("b||on,rpgquest:a|5|on,rpgquest:d|7|off", updated.get("entries"),
-                "triées par numéro, ligne retirée et ligne vide ignorées, case décochée = désactivée");
-        assertEquals("2", updated.get("avoid_recent"));
+        assertEquals("b||on,rpgquest:a|5|on,rpgquest:wolf_hunt||on", updated.get("entries"),
+                "triées par numéro, ligne retirée et case d'ajout décochée ignorées");
+        assertEquals("true", updated.get("assign_templates"));
+        assertEquals("forest_bandit", updated.get("templates"), "seuls les PNJ cochés");
+
+        HttpResponse<String> stale = post("/agents/action", base + "&type=quest.catalog.update" + form);
+        assertTrue(stale.headers().firstValue("Location").orElse("").contains("err="),
+                "un formulaire construit avant la dernière modification est refusé");
+        assertEquals(1, pendingOfType("quest.catalog.update").size());
+
+        HttpResponse<String> created = post("/agents/action", base + "&type=quest.catalog.create&focus=@id"
+                + "&display_name=" + URLEncoder.encode("Quêtes de la forêt", StandardCharsets.UTF_8) + "&entry_0_quest=rpgquest:wolf_hunt&entry_0_enabled=true");
+        assertEquals("quetes_de_la_foret", pendingOfType("quest.catalog.create").get(0).params().get("id"),
+                "identifiant calculé à partir du nom");
+        assertTrue(created.headers().firstValue("Location").orElse("").contains("focus=quetes_de_la_foret"),
+                "ouvre la fiche du catalogue créé");
 
         HttpResponse<String> dup = post("/agents/action", base + "&type=quest.catalog.create&id=x&display_name=X"
                 + "&entry_0_quest=rpgquest:a&entry_1_quest=a");
@@ -1259,8 +1303,12 @@ class NpcsCatalogTest {
 
         HttpResponse<String> noConfirm = post("/agents/action", base + "&type=quest.catalog.delete&id=bandit");
         assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "suppression confirmée");
-        post("/agents/action", base + "&type=quest.catalog.delete&id=bandit&confirm=true&detach=true");
-        assertEquals("true", pendingOfType("quest.catalog.delete").get(0).params().get("detach"));
+    }
+
+    private static String matchGroup(String html, String regex) {
+        Matcher m = Pattern.compile(regex).matcher(html);
+        assertTrue(m.find(), regex);
+        return m.group(1);
     }
 
     @Test

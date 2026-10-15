@@ -7,15 +7,15 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 
 /** Horloge de test avançable à la main. */
-final class MutableClock extends Clock {
+public final class MutableClock extends Clock {
 
     private Instant now;
 
-    MutableClock(Instant start) {
+    public MutableClock(Instant start) {
         this.now = start;
     }
 
-    void advance(Duration duration) {
+    public void advance(Duration duration) {
         now = now.plus(duration);
     }
 

@@ -99,6 +99,19 @@ curl -s -o /dev/null -w '%{http_code}\n' --resolve lodyquests.lodylands.com:80:1
 systemctl show lodyquests-portal -p MemoryCurrent -p ActiveState
 ```
 
+### Publier une actualité (#56)
+
+```bash
+sudo cp ma-nouvelle.md /var/lib/lodyquests-portal/news/        # format : WEB_PORTAL.md §8
+sudo nano /var/lib/lodyquests-portal/news/bienvenue.md         # « status: draft » -> « published »
+curl -s http://127.0.0.1:8092/health                           # "news": nombre d'actualités visibles
+journalctl -u lodyquests-portal --since -5min | grep 'Actualité ignorée'   # fichier refusé ?
+```
+
+Visible en 30 s au plus, sans redémarrage. Retirer : repasser `status: draft` ou supprimer le
+fichier. Adresse et version du serveur sur `/infos` : clés `server-address` et `minecraft-version`
+de `/etc/lodyquests-portal/web-api.properties`, puis `sudo systemctl restart lodyquests-portal`.
+
 Depuis un navigateur (`PENDING MANUAL VALIDATION` tant que le propriétaire ne l'a pas fait) :
 
 1. `https://lodyquests.lodylands.com/` : cadenas valide, page d'accueil LodyQuests, bandeau
@@ -108,6 +121,17 @@ Depuis un navigateur (`PENDING MANUAL VALIDATION` tant que le propriétaire ne l
 3. `https://lodyquests.lodylands.com/store` et `/api/status` : « introuvable » (404) ;
 4. sur téléphone : le menu passe à la ligne, aucun défilement horizontal ;
 5. `https://plugadmin.lodylands.com` fonctionne toujours, avec sa propre connexion.
+
+V1 publique (#56) — `PENDING MANUAL VALIDATION` :
+
+6. `/` : présentation, carte « Le serveur » (« Hors ligne » tant que #421 n'achemine pas
+   l'instantané), « Saison et événements », « Dernières actualités », « Comment rejoindre » ;
+7. `/actualites` : « Aucune actualité publiée » ; après avoir publié `bienvenue.md` (ci-dessus),
+   elle apparaît sur l'accueil et `/actualites/bienvenue` s'ouvre ; repassée en brouillon → 404 ;
+8. `/classements`, `/joueurs` : « pas encore publiée », aucun pseudo ; `/infos` : adresse
+   « communiquée dès l'ouverture » tant que `server-address` est vide ;
+9. sur téléphone : menu sur deux lignes, cartes empilées, aucun défilement horizontal ;
+10. `/robots.txt` et `/sitemap.xml` répondent ; aucun `/joueurs/…` dans le sitemap.
 
 ### Comptes et liaison Minecraft (#53) — `PENDING MANUAL VALIDATION`
 

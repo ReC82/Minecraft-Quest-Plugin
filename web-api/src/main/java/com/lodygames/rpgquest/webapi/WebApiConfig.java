@@ -21,6 +21,8 @@ import java.nio.file.Path;
  * propriétaire n'a configuré aucune région.</p>
  *
  * <p>{@code accounts} (#53) : comptes joueurs et liaison Minecraft, désactivés par défaut.</p>
+ *
+ * <p>{@code site} (#56) : actualités et informations de connexion du portail public.</p>
  */
 public record WebApiConfig(
         int port,
@@ -38,8 +40,19 @@ public record WebApiConfig(
         boolean playerDataPublic,
         boolean trustProxyHeaders,
         AgePolicy agePolicy,
-        AccountSettings accounts
+        AccountSettings accounts,
+        SiteSettings site
 ) {
+
+    /** Sans contenu éditorial explicite (#56) : dossier {@code news} par défaut. */
+    public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,
+            int rateLimitPerMinute, String siteTitle, Path productsFile, Path storeDatabaseFile,
+            String webhookSecret, String publicBaseUrl, String bindAddress, boolean storeEnabled,
+            boolean playerDataPublic, boolean trustProxyHeaders, AgePolicy agePolicy, AccountSettings accounts) {
+        this(port, snapshotFile, snapshotMaxAgeSeconds, authToken, rateLimitPerMinute, siteTitle, productsFile,
+                storeDatabaseFile, webhookSecret, publicBaseUrl, bindAddress, storeEnabled, playerDataPublic,
+                trustProxyHeaders, agePolicy, accounts, SiteSettings.defaults());
+    }
 
     /** Sans comptes joueurs (#53). */
     public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,

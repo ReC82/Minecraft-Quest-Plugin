@@ -66,7 +66,14 @@ public final class WebApiConfigLoader {
         return new WebApiConfig(port, snapshotFile, snapshotMaxAgeSeconds, tokenFromEnv, rateLimitPerMinute, siteTitle,
                 productsFile, storeDatabaseFile, webhookSecretFromEnv, publicBaseUrl, bindAddress, storeEnabled,
                 playerDataPublic, trustProxyHeaders, AgePolicy.fromProperties(properties),
-                accountSettings(properties, publicBaseUrl, linkTokenFromEnv));
+                accountSettings(properties, publicBaseUrl, linkTokenFromEnv), siteSettings(properties));
+    }
+
+    /** Portail public (#56) : clés {@code news-dir}, {@code server-address}, {@code minecraft-version}. */
+    private static SiteSettings siteSettings(Properties properties) {
+        return new SiteSettings(Path.of(properties.getProperty("news-dir", "news").trim()),
+                properties.getProperty("server-address", ""),
+                properties.getProperty("minecraft-version", ""));
     }
 
     /** Comptes joueurs (#53) : clés {@code accounts-*}, toutes facultatives, désactivés par défaut. */

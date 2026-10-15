@@ -6123,3 +6123,20 @@ d'essai, supprimée ensuite.
 5.  Rouvrir la quête d'essai, renommer `step_1` en `intro` dans le bloc avancé, « Vérifier » →
     avertissement « L'étape « step_1 » de la version enregistrée n'existe plus… reprendra à
     l'étape 1 » (ATTENTION, non bloquant). Supprimer ensuite la quête d'essai.
+
+### TC-319 — PlugAdmin : renommer un waypoint (issue #134, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR + panel #134 déployés ; compte `owner` ou `admin`. **Durée** : 10 minutes.
+
+1.  `/travel` → « Rafraîchir ». Dans le tableau « Waypoints », ouvrir « Renommer » sur un waypoint
+    du Wild proche d'un joueur connecté : le nom actuel est pré-rempli.
+2.  Saisir un nouveau nom (ex. `Col du Vent`) → « Renommer » : action réussie, effets « Panneaux
+    réécrits en jeu » ; la page affiche le nouveau nom sans F5.
+3.  En jeu : les deux panneaux affichent le nouveau nom, sans reste de l'ancien ; un clic sur le
+    bouton annonce « Waypoint déjà découvert : Col du Vent » (découverte conservée) ; le menu de
+    voyage montre le nouveau nom.
+4.  Renommer un autre waypoint en `col du vent` → refus `DUPLICATE`, rien de modifié. Essayer
+    `<red>X` → refus côté panel.
+5.  Renommer un waypoint loin de tout joueur → effet « panneaux réécrits à son prochain
+    chargement » ; s'y rendre : panneaux à jour.
+6.  Redémarrer le serveur → les noms renommés sont conservés.

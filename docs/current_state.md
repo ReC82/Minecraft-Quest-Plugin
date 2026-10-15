@@ -768,6 +768,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   dédiée `TRAVEL_PAIR_WRITE`) apparie **une** instance nommée par son waypoint, en réutilisant la
   recherche d'emplacement existante : aucun balayage, aucun backfill, aucune densité ni distance
   modifiée, aucune migration.
+- **Renommer un waypoint depuis `/travel`** *(issue #134, tranche 1, 2026-10-15)* — action agent
+  `waypoint.rename` (permission `WAYPOINT_WRITE`, OWNER + ADMIN) : `WaypointService#rename` change
+  le seul nom d'affichage (unicité casse/accents via l'index mémoire existant, nom réservé avant
+  l'écriture SQL), réécrit le texte des panneaux si les chunks sont chargés, sinon au prochain
+  `ChunkLoadEvent` ; id, position et découvertes inchangés. Aucune migration. Activation /
+  désactivation restent à faire (#134).
 - **Filtre des instances du Hub** *(issue #236, 2026-10-11)* — retour utilisateur pendant TC-275
   (« dommage qu'on ne puisse pas filtrer pour n'afficher que les instances sans borne »). La liste
   « Instances connues du Hub » se filtre par état (**Toutes / Avec borne / Sans borne**) et par

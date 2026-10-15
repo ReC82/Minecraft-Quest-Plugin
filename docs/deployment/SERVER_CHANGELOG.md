@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Renommer un waypoint depuis PlugAdmin (#134)
+
+### Changement
+
+Nouvelle action agent `waypoint.rename` et bloc « Renommer » sur chaque waypoint de `/travel`
+(permission panel `WAYPOINT_WRITE`, OWNER + ADMIN). Seul `waypoints.display_name` change, les
+panneaux sont réécrits (immédiatement si la zone est chargée, sinon au chargement du chunk).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du panel (`scripts/plugadmin/deploy.sh`) : le
+bouton du panel sans le JAR obtient un refus « action inconnue ». Aucune migration (schéma
+inchangé), aucune configuration. Redémarrage Minecraft requis (nouveau JAR).
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release panel).
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : TC-319.
+
+### Rollback
+
+Réinstaller le JAR précédent et la release panel précédente. Les noms déjà modifiés restent en
+base (colonne existante) et restent valides pour l'ancien JAR.
+
+---
+
 ## 2026-10-15 - PlugAdmin : identifiants d'étape de quête générés (#143)
 
 ### Changement

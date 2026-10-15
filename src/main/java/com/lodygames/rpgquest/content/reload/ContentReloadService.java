@@ -236,6 +236,24 @@ public final class ContentReloadService {
         if (requested == null || requested.isEmpty()) {
             return reload(requested);
         }
+        Set<ReloadFamily> families = withDependencies(requested);
+        return explainWidening(reload(families), requested, families);
+    }
+
+    /**
+     * Aperçu de {@link #reloadWithDependencies} : mêmes familles, même verdict, <strong>rien
+     * appliqué</strong> (issue #427). C'est la vérification préalable d'un pack.
+     */
+    public ReloadResult previewWithDependencies(Set<ReloadFamily> requested) {
+        if (requested == null || requested.isEmpty()) {
+            return preview(requested);
+        }
+        Set<ReloadFamily> families = withDependencies(requested);
+        return explainWidening(preview(families), requested, families);
+    }
+
+    /** La demande élargie, sur des aperçus, aux familles dont elle dépend — jusqu'à stabilité. */
+    private Set<ReloadFamily> withDependencies(Set<ReloadFamily> requested) {
         Set<ReloadFamily> families = ReloadFamily.ordered(requested);
         for (int round = 0; round < ReloadFamily.values().length; round++) {
             ReloadResult preview = preview(families);
@@ -249,7 +267,11 @@ public final class ContentReloadService {
             }
             families = ReloadFamily.ordered(widened);
         }
-        ReloadResult result = reload(families);
+        return families;
+    }
+
+    private ReloadResult explainWidening(ReloadResult result, Set<ReloadFamily> requested,
+                                         Set<ReloadFamily> families) {
         List<ReloadFamily> added = families.stream().filter(f -> !requested.contains(f)).toList();
         if (added.isEmpty()) {
             return result;
@@ -355,8 +377,15 @@ public final class ContentReloadService {
             // 2. Une seule erreur de parsing suffit à tout annuler. Appliquer malgré elle
             //    retirerait du runtime la définition fautive — exactement ce qu'il faut éviter.
             if (outcomes.stream().anyMatch(outcome -> !outcome.clean())) {
+                // Issue #427 : le motif est DANS le message. « Corriger les erreurs listées » sans
+                // liste visible laissait l'administrateur sans rien à corriger.
+                List<String> problems = outcomes.stream().filter(outcome -> !outcome.clean())
+                        .flatMap(outcome -> outcome.messages().stream()).toList();
                 String message = "Contenu invalide : rien n'a été rechargé, le runtime précédent est"
-                        + " conservé. Corriger les erreurs listées puis réessayer.";
+                        + " conservé. " + problems.size() + " erreur(s) : "
+                        + String.join(" | ", problems.subList(0, Math.min(3, problems.size())))
+                        + (problems.size() > 3 ? " (+" + (problems.size() - 3) + " autre(s))" : "")
+                        + ".";
                 logger.warn("[content-reload] refusé — {} erreur(s) de contenu sur {} famille(s).",
                         outcomes.stream().mapToInt(FamilyOutcome::issues).sum(), families.size());
                 return new ReloadResult(false, "INVALID_CONTENT", message, outcomes, List.of(),

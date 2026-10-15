@@ -1467,6 +1467,64 @@ class AgentActionExecutorTest {
         assertFalse(actions.lastReloadApply, "l'aperçu ne doit jamais appliquer");
     }
 
+    // ---- Issue #427 — publication d'un lot ------------------------------------------------
+
+    private static Map<String, String> batchParams(boolean withConfirm) {
+        Map<String, String> params = new java.util.HashMap<>();
+        params.put("count", "2");
+        params.put("kind_0", "quests");
+        params.put("id_0", "lily_repas");
+        params.put("yaml_0", "id: rpgquest:lily_repas\n");
+        params.put("expected_dev_sha_0", "");
+        params.put("expected_id_0", "rpgquest:lily_repas");
+        params.put("kind_1", "stories");
+        params.put("id_1", "lily_souvenirs");
+        params.put("yaml_1", "id: lily_souvenirs\n");
+        params.put("expected_dev_sha_1", "");
+        if (withConfirm) {
+            params.put("confirm", "true");
+        }
+        return params;
+    }
+
+    @Test
+    void aBatchCarriesEveryItemInOrderAndReportsEachOne() {
+        AgentActionOutcome outcome = run(new AgentAction("pb1", "content.publish.batch",
+                batchParams(true)));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(2, actions.lastBatch.size());
+        assertEquals("lily_repas", actions.lastBatch.get(0).slug());
+        assertEquals("stories", actions.lastBatch.get(1).kind());
+        assertFalse(actions.lastBatchDryRun);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) outcome.details().get("items");
+        assertEquals(2, items.size());
+        assertEquals("CREATED", items.get(0).get("status"));
+    }
+
+    @Test
+    void aBatchWithoutConfirmationOrWithAMissingItemReachesNothing() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("pb2", "content.publish.batch", batchParams(false))).status());
+        Map<String, String> incomplete = batchParams(true);
+        incomplete.remove("expected_dev_sha_1");
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("pb3", "content.publish.batch", incomplete)).status());
+        assertNull(actions.lastBatch, "rien ne doit atteindre le serveur");
+    }
+
+    @Test
+    void aBatchDryRunNeedsNoConfirmation() {
+        Map<String, String> params = batchParams(false);
+        params.put("dry_run", "true");
+
+        AgentActionOutcome outcome = run(new AgentAction("pb4", "content.publish.batch", params));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertTrue(actions.lastBatchDryRun);
+    }
+
     @Test
     void theFamilyIdsAreCarriedSoThePanelCanTellPublishedFromLoaded() {
         AgentActionOutcome outcome = run(new AgentAction("cr3", "content.reload.preview",
@@ -1886,6 +1944,8 @@ class AgentActionExecutorTest {
         String lastRollbackSiteId;
 
         String lastPublishKind;
+        List<ContentPublishBatchItem> lastBatch;
+        Boolean lastBatchDryRun;
         String lastPublishSlug;
         String lastPublishYaml;
         String lastPublishExpectedSha;
@@ -1910,6 +1970,19 @@ class AgentActionExecutorTest {
                     List.of(new DevContentFile("quests", "test_publish_quest", "abc123", 42L)),
                     java.util.Map.of("quests", List.of("rpgquest:test_publish_quest")),
                     "runtime-hash"));
+        }
+
+        @Override
+        public CompletableFuture<ContentPublishBatchView> contentPublishBatch(
+                List<ContentPublishBatchItem> items, boolean dryRun) {
+            lastBatch = items;
+            lastBatchDryRun = dryRun;
+            return CompletableFuture.completedFuture(new ContentPublishBatchView(true,
+                    dryRun ? "CHECKED" : "PUBLISHED", "ok", dryRun, dryRun,
+                    items.stream().map(i -> new ContentPublishBatchItemView(i.kind(), i.slug(),
+                            i.expectedId(), "CREATED", true, "", "sha", "sha", "", !dryRun,
+                            List.of())).toList(),
+                    List.of(), List.of("quests"), List.of(), "APPLIED", items.size(), "h", "t"));
         }
 
         @Override

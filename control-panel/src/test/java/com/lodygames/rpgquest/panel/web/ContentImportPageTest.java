@@ -284,6 +284,32 @@ class ContentImportPageTest {
     }
 
     /**
+     * Issue #427 — après l'import, UNE action mène à la mise en jeu de tout le pack : la vue
+     * « pack » des changements en attente, avec les 8 ressources publiables (les PNJ réutilisés
+     * n'en font pas partie). Et une ré-analyse « tout inchangé » y mène aussi.
+     */
+    @Test
+    void afterImportOneButtonLeadsToPublishingTheWholePack() throws Exception {
+        start();
+        login();
+        String lily = com.lodygames.rpgquest.panel.content.StoryKit.lilyPack();
+
+        String page = post("/content/import", "pack=" + enc(lily) + "&confirm=true&_csrf="
+                + csrf(get("/content/import").body())).body();
+
+        String expected = "/content/pending?pack=" + enc(String.join(",", "dialogues/julius",
+                "dialogues/lily", "quests/lily_fleurs", "quests/lily_ingredients", "quests/lily_julius",
+                "quests/lily_repas", "quests/lily_tarte", "stories/lily_souvenirs"));
+        assertTrue(page.contains("Mettre l'histoire en jeu sur DEV") || page.contains("Mettre l&#39;histoire en jeu sur DEV"));
+        assertTrue(page.contains(expected), page);
+        assertTrue(page.contains("8 ressource(s)"));
+
+        String again = post("/content/import", "pack=" + enc(lily) + "&_csrf="
+                + csrf(get("/content/import").body())).body();
+        assertTrue(again.contains(expected), "la ré-analyse « déjà en source » y mène aussi");
+    }
+
+    /**
      * Sans agent configuré, la création des PNJ du pack ne peut pas partir : la source est écrite,
      * et la page le DIT — elle ne doit pas répondre vide (constat du rendu local #211).
      */

@@ -6208,3 +6208,25 @@ Prérequis : JAR et PlugAdmin issus de #414 sur DEV. Ne supprimer **que** des ca
     enregistrer → la fiche le dit. Identifiant et note ne sont visibles qu'en ouvrant
     « Informations techniques » / « Notes ».
 
+### TC-323 — Pack d'histoire mis en jeu en une seule action (issue #427, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #427 sur DEV. Les 5 quêtes Lily sont déjà sur DEV et
+chargées (publication du 15/10) ; la story `lily_souvenirs` et les dialogues `lily`, `julius` ne le
+sont pas. **Ne publier que des fichiers Lily**, jamais ceux du propriétaire en cours d'écriture.
+
+1.  **Import contenu** → déposer le pack Lily → Analyser. **Attendu** : tout « inchangé » (déjà en
+    source) et un encadré « Étape suivante » avec **Mettre l'histoire en jeu sur DEV**.
+2.  Cliquer. **Attendu** : `/content/pending` en vue pack — seules les ressources Lily non à jour,
+    déjà cochées ; « N déjà à jour sur DEV » ; aucun fichier du propriétaire.
+3.  Cocher la confirmation → **Vérifier**. **Attendu** : « Vérification d'un lot de N ressource(s) —
+    vérification réussie, rien n'a été mis en jeu ». Lily en jeu n'a toujours pas de dialogue.
+4.  **Mettre l'histoire en jeu**. **Attendu** : « tout est en jeu », chaque ressource « créée et
+    chargée en jeu ». Cliquer sur Lily ouvre son dialogue ; `/stories` liste « Les souvenirs de Lily ».
+5.  Recliquer « Mettre l'histoire en jeu » (relancer l'analyse d'abord). **Attendu** : plus rien à
+    publier, ou « déjà en jeu, rien à faire » — aucun doublon.
+6.  (Diagnostic) Sur une quête de **test** à identifiant jetable : prérequis vers une quête
+    inexistante → publier. **Attendu** : « refusée par le moteur », « Fichier quests/….yml —
+    prérequis introuvable … Publier aussi cette quête, dans le même lot, ou retirer ce prérequis » ;
+    la quête de test n'est **pas** restée sur DEV. Supprimer ensuite la quête de test de la source.
+7.  Téléphone (≈ 390 px) : vue pack lisible, boutons utilisables au doigt.
+8.  Puis TC-312 étapes 8 à 10 (parcours en jeu de Lily et Julius).

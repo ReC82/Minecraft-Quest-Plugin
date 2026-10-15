@@ -124,7 +124,8 @@ public final class QuestLoader {
                     changed = true;
                     allIssues.add(new QuestLoadIssue(pq.fileName(),
                             "prérequis introuvable pour « " + pq.quest().id() + " » : " + missing
-                                    + " (quête absente ou elle-même rejetée)."));
+                                    + " (quête absente ou elle-même rejetée). Publier aussi cette quête, dans le même"
+                                    + " lot, ou retirer ce prérequis."));
                 }
             }
             survivors = stillValid;

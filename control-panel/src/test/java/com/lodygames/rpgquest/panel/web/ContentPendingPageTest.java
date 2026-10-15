@@ -277,9 +277,12 @@ class ContentPendingPageTest {
         assertFalse(fields.containsKey("sel_quests/venue_du_jar"));
     }
 
-    /** Trois sélections produisent trois publications individuelles. */
+    /**
+     * Issue #427 — trois sélections produisent UNE action de lot, jugée d'un bloc par le moteur.
+     * Publier ressource par ressource faisait juger des états intermédiaires (pack Lily).
+     */
     @Test
-    void selectingThreeResourcesQueuesThreeIndividualPublications() throws Exception {
+    void selectingThreeResourcesQueuesOneBatch() throws Exception {
         start();
         seed("content.dev.state", scenarioDevState());
 
@@ -289,24 +292,40 @@ class ContentPendingPageTest {
         assertEquals(303, res.statusCode());
         assertTrue(res.headers().firstValue("Location").orElse("")
                 .startsWith("/content/pending?"), res.headers().firstValue("Location").orElse(""));
-        assertEquals(3, count("content.publish"));
+        assertEquals(0, count("content.publish"), "plus de publications individuelles");
+        assertEquals(1, count("content.publish.batch"));
 
-        // Chacune porte SES paramètres, dont le YAML joint côté serveur.
-        Map<String, AgentActionRow> byId = new LinkedHashMap<>();
-        for (AgentActionRow row : store.recentActions(TestConfig.AGENT_ID, 50)) {
-            if ("content.publish".equals(row.type())) {
-                byId.put(row.params().get("kind") + "/" + row.params().get("id"), row);
-            }
-        }
-        assertEquals(Q_PUBLIER, byId.get("quests/a_publier").params().get("yaml"));
-        assertEquals("", byId.get("quests/a_publier").params().get("expected_dev_sha"));
-        assertEquals(sha("autre contenu sur dev"),
-                byId.get("quests/modifiee").params().get("expected_dev_sha"));
-        assertEquals(S_STORY, byId.get("stories/une_story").params().get("yaml"));
-        assertEquals("true", byId.get("quests/modifiee").params().get("confirm"));
+        // Chaque ressource porte SES paramètres, dont le YAML joint côté serveur, dans l'ordre.
+        AgentActionRow batch = batchRow();
+        Map<String, String> p = batch.params();
+        assertEquals("3", p.get("count"));
+        assertEquals("quests", p.get("kind_0"));
+        assertEquals("a_publier", p.get("id_0"));
+        assertEquals(Q_PUBLIER, p.get("yaml_0"));
+        assertEquals("", p.get("expected_dev_sha_0"));
+        assertEquals(sha("autre contenu sur dev"), p.get("expected_dev_sha_1"));
+        assertEquals(S_STORY, p.get("yaml_2"));
+        assertEquals("true", p.get("confirm"));
+        assertFalse(p.containsKey("dry_run"));
+        assertFalse(p.keySet().stream().anyMatch(k -> k.startsWith("expected_source_sha")),
+                "l'empreinte source est vérifiée par le panel, jamais transmise");
     }
 
-    /** Il n'y a volontairement pas de « publier tout ». */
+    /** « Vérifier » part comme un lot en vérification seule. */
+    @Test
+    void theCheckButtonQueuesADryRun() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+        Map<String, String> body = select(batchFormFields(), List.of("quests/a_publier"));
+        body.put("mode", "check");
+
+        post("/content/pending/publish", encode(body));
+
+        assertEquals(1, count("content.publish.batch"));
+        assertEquals("true", batchRow().params().get("dry_run"));
+    }
+
+    /** Il n'y a volontairement pas de « publier tout » : on publie ce qu'on a coché. */
     @Test
     void thereIsNoPublishEverythingButton() throws Exception {
         start();
@@ -315,8 +334,9 @@ class ContentPendingPageTest {
         String page = get("/content/pending?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("Publier la sélection"));
+        assertTrue(page.contains("Vérifier"));
         assertFalse(page.toLowerCase(java.util.Locale.ROOT).contains("publier tout"));
-        assertTrue(page.contains("pas de bouton"), "et la page le dit");
+        assertTrue(page.contains("rien ne change en jeu"), "la page dit que c'est tout ou rien");
     }
 
     @Test
@@ -329,22 +349,19 @@ class ContentPendingPageTest {
         assertEquals(303, res.statusCode());
         assertTrue(decode(res.headers().firstValue("Location").orElse(""))
                 .contains("Aucune ressource sélectionnée"));
-        assertEquals(0, count("content.publish"));
+        assertEquals(0, count("content.publish.batch"));
     }
 
     /**
-     * Succès partiel : une ressource refusée n'empêche pas les autres.
-     *
-     * <p>Chacune a sa sauvegarde et son rechargement, donc annuler tout le lot parce qu'une a
-     * échoué serait une invention dangereuse.</p>
+     * Une ressource dont la source a changé refuse le LOT entier, et la page la nomme : on ne
+     * publie pas « ce qui passe » d'un pack (#427).
      */
     @Test
-    void oneRefusedResourceDoesNotPreventTheOthersFromBeingQueued() throws Exception {
+    void oneStaleResourceRefusesTheWholeBatchAndIsNamed() throws Exception {
         start();
         seed("content.dev.state", scenarioDevState());
         Map<String, String> fields = new LinkedHashMap<>(batchFormFields());
 
-        // La source de « modifiee » change entre l'affichage et l'envoi : elle doit être refusée.
         Files.writeString(contentRoot.resolve("quests").resolve("modifiee.yml"),
                 Q_MODIFIEE + "# changée entre-temps\n");
 
@@ -353,32 +370,28 @@ class ContentPendingPageTest {
                         "stories/une_story"))));
 
         String location = decode(res.headers().firstValue("Location").orElse(""));
-        assertTrue(location.contains("2 publication(s) demandée(s)"), location);
-        assertTrue(location.contains("1 refusée(s)"), location);
-        assertTrue(location.contains("modifiee"), "la ressource refusée est nommée : " + location);
-        assertEquals(2, count("content.publish"), "les deux autres sont bien parties");
+        assertTrue(location.contains("Rien n'a été publié"), location);
+        assertTrue(location.contains("modifiee"), "la ressource fautive est nommée : " + location);
+        assertEquals(0, count("content.publish.batch"));
     }
 
-    /** Une clé de ressource forgée est refusée, sans empêcher les autres. */
+    /** Une clé de ressource forgée refuse le lot. */
     @Test
     void aForgedResourceKeyIsRefused() throws Exception {
         start();
         seed("content.dev.state", scenarioDevState());
         Map<String, String> fields = new LinkedHashMap<>(batchFormFields());
-        Map<String, String> body = select(fields, List.of("quests/a_publier"));
-        // Clés forgées à la main, avec leurs empreintes.
         for (String forged : List.of("quests/../../etc/passwd", "npcs/truc", "quests/",
                 "/absolu", "quests/MAJUSCULE")) {
+            Map<String, String> body = select(fields, List.of("quests/a_publier"));
             body.put("sel_" + forged, "1");
             body.put("src_" + forged, sha(Q_PUBLIER));
             body.put("dev_" + forged, "");
+
+            post("/content/pending/publish", encode(body));
         }
 
-        HttpResponse<String> res = post("/content/pending/publish", encode(body));
-
-        String location = decode(res.headers().firstValue("Location").orElse(""));
-        assertTrue(location.contains("1 publication(s) demandée(s)"), location);
-        assertEquals(1, count("content.publish"), "seule la ressource légitime est partie");
+        assertEquals(0, count("content.publish.batch"), "aucun lot forgé n'est parti");
     }
 
     /** Une famille hors liste blanche est refusée, même en lot. */
@@ -397,11 +410,11 @@ class ContentPendingPageTest {
 
         post("/content/pending/publish", encode(body));
 
-        assertEquals(0, count("content.publish"));
+        assertEquals(0, count("content.publish.batch"));
     }
 
     /**
-     * Une même ressource ne peut pas être publiée deux fois dans le même lot.
+     * Une même ressource ne peut pas figurer deux fois dans le même lot.
      *
      * <p>Garanti par construction : la case à cocher porte la clé de la ressource comme
      * <strong>nom de champ</strong>, et un formulaire n'a qu'une valeur par nom.</p>
@@ -413,11 +426,67 @@ class ContentPendingPageTest {
         Map<String, String> fields = new LinkedHashMap<>(batchFormFields());
         Map<String, String> body = select(fields, List.of("quests/a_publier"));
 
-        // Même si l'on tente de dupliquer la paire clé/valeur dans le corps.
         String raw = encode(body) + "&sel_quests%2Fa_publier=1&sel_quests%2Fa_publier=1";
         post("/content/pending/publish", raw);
 
-        assertEquals(1, count("content.publish"), "une seule publication pour une seule ressource");
+        assertEquals(1, count("content.publish.batch"));
+        assertEquals("1", batchRow().params().get("count"), "une seule ressource dans le lot");
+    }
+
+    // ---- Vue « pack » (issue #427) -------------------------------------------------------------
+
+    /** La vue pack ne montre que les ressources du pack, déjà cochées, avec un seul bouton. */
+    @Test
+    void thePackViewPreselectsOnlyThePackResources() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+
+        String page = get("/content/pending?agent=" + TestConfig.AGENT_ID
+                + "&pack=" + enc("quests/a_publier,stories/une_story")).body();
+
+        assertTrue(page.contains("Mettre l'histoire en jeu"), page);
+        assertTrue(Pattern.compile("name=\"sel_quests/a_publier\" value=\"1\" checked").matcher(page).find());
+        assertTrue(Pattern.compile("name=\"sel_stories/une_story\" value=\"1\" checked").matcher(page).find());
+        assertFalse(page.contains("sel_quests/modifiee"), "rien d'autre que le pack");
+        assertTrue(page.contains("name=\"pack\""), "le pack voyage avec le formulaire");
+    }
+
+    /** Un filtre de pack forgé est ignoré : la page normale s'affiche. */
+    @Test
+    void aForgedPackFilterIsIgnored() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+
+        String page = get("/content/pending?agent=" + TestConfig.AGENT_ID
+                + "&pack=" + enc("quests/../x,npcs/truc")).body();
+
+        assertFalse(page.contains("Mettre l'histoire en jeu sur DEV"));
+        assertTrue(page.contains("sel_quests/modifiee"));
+    }
+
+    /** Le compte rendu d'un lot refusé dit quoi, où et pourquoi — jamais « erreurs listées » à vide. */
+    @Test
+    void aRefusedBatchExplainsEachProblem() throws Exception {
+        start();
+        seed("content.dev.state", scenarioDevState());
+        submitBatch(List.of("quests/a_publier", "stories/une_story"));
+        respond("content.publish.batch", "REJECTED", "{\"ok\":false,\"code\":\"INVALID_CONTENT\","
+                + "\"message\":\"Publication refusée par le moteur (INVALID_CONTENT) : rien n'a été mis en jeu.\","
+                + "\"dryRun\":false,\"filesRestored\":true,\"items\":["
+                + "{\"kind\":\"quests\",\"slug\":\"a_publier\",\"status\":\"REJECTED_BY_ENGINE\","
+                + "\"problems\":[\"quests/a_publier.yml : prérequis introuvable pour « rpgquest:a_publier »\"]},"
+                + "{\"kind\":\"stories\",\"slug\":\"une_story\",\"status\":\"RESTORED\",\"problems\":[]}],"
+                + "\"otherProblems\":[\"quests/autre.yml : champ « steps » manquant\"]}");
+
+        String page = get("/content/pending?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Publication d&#39;un lot de 2 ressource(s)")
+                || page.contains("Publication d'un lot de 2 ressource(s)"), page);
+        assertTrue(page.contains("refusée par le moteur"));
+        assertTrue(page.contains("Fichier quests/a_publier.yml — prérequis introuvable"));
+        assertTrue(page.contains("remise comme avant"));
+        assertTrue(page.contains("Problèmes hors de ce lot"));
+        assertTrue(page.contains("Fichier quests/autre.yml — champ"));
     }
 
     @Test
@@ -431,7 +500,7 @@ class ContentPendingPageTest {
         HttpResponse<String> res = post("/content/pending/publish", encode(body));
 
         assertEquals(403, res.statusCode());
-        assertEquals(0, count("content.publish"));
+        assertEquals(0, count("content.publish.batch"));
     }
 
     @Test
@@ -603,6 +672,34 @@ class ContentPendingPageTest {
         String id = m.group(1);
         String result = "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"value\":\"ok\","
                 + "\"message\":\"relevé\",\"details\":" + details + "}";
+        client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + id + "/result"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(result)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private AgentActionRow batchRow() {
+        return store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .filter(a -> a.type().equals("content.publish.batch")).findFirst().orElseThrow();
+    }
+
+    /** Livre la dernière action de ce type et lui renvoie un résultat portant ces détails. */
+    private void respond(String type, String status, String details) throws Exception {
+        HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        Matcher m = Pattern.compile(
+                "\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"\\s*,\\s*\"type\"\\s*:\\s*\"" + Pattern.quote(type) + "\"")
+                .matcher(poll.body());
+        if (!m.find()) {
+            throw new IllegalStateException("aucune action " + type + " : " + poll.body());
+        }
+        String id = m.group(1);
+        String result = "{\"action_id\":\"" + id + "\",\"status\":\"" + status + "\",\"value\":null,"
+                + "\"message\":\"lot\",\"details\":" + details + "}";
         client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + id + "/result"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID)

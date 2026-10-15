@@ -147,6 +147,13 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<ContentPublishBatchView> contentPublishBatch(
+            List<ContentPublishBatchItem> items, boolean dryRun) {
+        return CompletableFuture.completedFuture(new ContentPublishBatchView(false, "STUB", "stub",
+                dryRun, false, List.of(), List.of(), List.of(), List.of(), "", 0, "", ""));
+    }
+
+    @Override
     public CompletableFuture<BuildingLibraryView> buildingLibrary() {
         return CompletableFuture.completedFuture(
                 new BuildingLibraryView(List.of(), List.of(), false, "stub"));

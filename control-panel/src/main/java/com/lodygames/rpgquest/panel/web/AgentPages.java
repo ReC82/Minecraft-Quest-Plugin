@@ -8617,6 +8617,12 @@ public final class AgentPages {
         sb.append(recentPublishOutcomes(agentId));
 
         var all = pendingChanges(agentId);
+        // Issue #427 — vue « pack » : les ressources d'un import, publiées ensemble.
+        String pack = cleanPack(q.get("pack"));
+        if (!pack.isEmpty()) {
+            sb.append(packPublishPanel(session, agentId, pack, all, canPublish));
+            return sb.toString();
+        }
         String fKind = q.getOrDefault("kind", "");
         String fState = q.getOrDefault("state", "");
         String search = q.getOrDefault("qs", "");
@@ -8641,7 +8647,71 @@ public final class AgentPages {
                     + "différences d'abord."));
         }
 
-        sb.append(pendingTable(session, agentId, shown, canPublish));
+        sb.append(pendingTable(session, agentId, shown, canPublish, "", false));
+        return sb.toString();
+    }
+
+    /** Au-delà, un filtre de pack est refusé : miroir de la borne d'un lot. */
+    private static final int MAX_PACK_KEYS = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.MAX_PUBLISH_BATCH;
+    private static final java.util.regex.Pattern PACK_KEY =
+            java.util.regex.Pattern.compile("(quests|stories|dialogues)/[a-z0-9][a-z0-9_-]{0,63}");
+
+    /**
+     * Le filtre « pack » (issue #427), nettoyé : des clés {@code famille/id} séparées par des
+     * virgules, chacune revalidée. Vide si la saisie n'en est pas un — jamais un fragment d'URL.
+     */
+    static String cleanPack(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        java.util.Set<String> keys = new java.util.TreeSet<>();
+        for (String part : raw.split(",")) {
+            String key = part.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!PACK_KEY.matcher(key).matches()) {
+                return "";
+            }
+            keys.add(key);
+        }
+        return keys.size() > MAX_PACK_KEYS ? "" : String.join(",", keys);
+    }
+
+    /**
+     * « Mettre l'histoire en jeu » (issue #427) : les ressources d'un pack, pré-cochées, publiées
+     * en <strong>une</strong> opération. L'utilisateur n'a ni à choisir ni à ordonner : le moteur
+     * juge l'ensemble d'un bloc.
+     */
+    private String packPublishPanel(Session session, String agentId, String pack,
+                                    com.lodygames.rpgquest.panel.publish.PendingChanges all,
+                                    boolean canPublish) {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>(List.of(pack.split(",")));
+        var mine = all.rows().stream().filter(r -> keys.contains(r.key())).toList();
+        java.util.Set<String> pending = new java.util.HashSet<>();
+        mine.forEach(r -> pending.add(r.key()));
+        long upToDate = keys.stream().filter(k -> !pending.contains(k)).count();
+        long blocked = mine.stream().filter(r -> !r.selectable()).count();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<section class=\"card pack-publish\">");
+        sb.append(Ui.sectionTitle("deploy", "Mettre l'histoire en jeu sur DEV"));
+        sb.append("<p>Ce pack contient <strong>").append(keys.size()).append(" ressource(s)</strong> : ")
+                .append(mine.size()).append(" à mettre en jeu, ").append(upToDate)
+                .append(" déjà à jour sur DEV.</p>");
+        sb.append("<ol class=\"pack-steps\"><li><strong>Vérifier</strong> : le serveur juge le pack"
+                + " entier, sans rien mettre en jeu.</li><li><strong>Mettre en jeu</strong> : tout"
+                + " est publié et rechargé <em>ensemble</em>. Si une seule ressource est refusée,"
+                + " rien ne change en jeu et chaque problème est expliqué ci-dessus.</li></ol>");
+        if (blocked > 0) {
+            sb.append(Ui.banner("warn", blocked + " ressource(s) du pack ont été modifiées sur DEV"
+                    + " depuis l'analyse (conflit) : ouvrez leur fiche pour comparer avant de"
+                    + " publier. Le reste du pack peut être vérifié, mais il manquera ces ressources."));
+        }
+        sb.append("</section>");
+        if (mine.isEmpty()) {
+            sb.append(Ui.empty("check", "Tout le pack est déjà à jour et chargé sur DEV."));
+            return sb.toString();
+        }
+        sb.append(pendingTable(session, agentId,
+                com.lodygames.rpgquest.panel.publish.PendingChanges.from(mine), canPublish, pack, true));
         return sb.toString();
     }
 
@@ -8657,7 +8727,8 @@ public final class AgentPages {
         List<AgentActionRow> rows = new ArrayList<>();
         for (AgentActionRow row : store.recentActions(agentId, 60)) {
             if ("content.publish".equals(row.type())
-                    || "content.publish.rollback".equals(row.type())) {
+                    || "content.publish.rollback".equals(row.type())
+                    || "content.publish.batch".equals(row.type())) {
                 rows.add(row);
             }
         }
@@ -8673,6 +8744,10 @@ public final class AgentPages {
                 .append(shown.size()).append(")</span></summary>");
         sb.append("<ul class=\"outcome-list\">");
         for (AgentActionRow row : shown) {
+            if ("content.publish.batch".equals(row.type())) {
+                sb.append(batchOutcome(row));
+                continue;
+            }
             String slug = row.params().getOrDefault("id", "?");
             String kind = row.params().getOrDefault("kind", "");
             Optional<Map<String, Object>> details = detailsOf(row);
@@ -8718,6 +8793,136 @@ public final class AgentPages {
                 + "serveur. Rafraîchir « État DEV » pour consolider.</p>");
         sb.append("</details>");
         return sb.toString();
+    }
+
+    /**
+     * L'issue d'un lot (issue #427) : un verdict d'ensemble, puis chaque ressource avec ce que le
+     * moteur lui reproche — quoi, où, pourquoi et comment corriger, en français.
+     */
+    private String batchOutcome(AgentActionRow row) {
+        Optional<Map<String, Object>> details = detailsOf(row);
+        int count = 0;
+        try {
+            count = Integer.parseInt(row.params().getOrDefault("count", "0"));
+        } catch (NumberFormatException ignored) {
+            // compté à 0 : l'affichage reste possible
+        }
+        boolean dryRun = "true".equals(row.params().get("dry_run"));
+        String code = details.map(d -> str(d.get("code"))).orElse("");
+        boolean ok = details.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false);
+        boolean pendingRow = row.resultStatus() == null || row.resultStatus().isBlank();
+
+        String tone = pendingRow ? "muted" : ok ? "di-add" : "di-del";
+        String mark = pendingRow ? "○" : ok ? "✓" : "✗";
+        String verdict = pendingRow ? "en attente du serveur"
+                : switch (code) {
+                    case "PUBLISHED" -> "tout est en jeu";
+                    case "ALREADY_PUBLISHED" -> "déjà en jeu, rien à faire";
+                    case "CHECKED" -> "vérification réussie, rien n'a été mis en jeu";
+                    case "ROLLBACK_INCOMPLETE" -> "ÉCHEC — remise en l'état incomplète, voir ci-dessous";
+                    default -> (dryRun ? "vérification refusée" : "rien n'a été mis en jeu")
+                            + (code.isEmpty() ? "" : " (" + code + ")");
+                };
+        StringBuilder sb = new StringBuilder("<li class=\"batch-outcome\"><span class=\"")
+                .append(tone).append("\">").append(mark).append(' ')
+                .append(dryRun ? "Vérification" : "Publication").append(" d'un lot de ")
+                .append(count).append(" ressource(s) — ").append(Http.esc(verdict)).append("</span>");
+        if (details.isEmpty()) {
+            return sb.append("</li>").toString();
+        }
+        String message = str(details.get().get("message"));
+        if (!message.isEmpty()) {
+            sb.append("<div class=\"field-help\">").append(Http.esc(message)).append("</div>");
+        }
+        sb.append("<ul class=\"outcome-list batch-items\">");
+        for (Map<String, Object> item : listOfMaps(details.get().get("items"))) {
+            String status = str(item.get("status"));
+            boolean good = Set.of("CREATED", "UPDATED", "UNCHANGED", "CHECKED").contains(status) && ok;
+            sb.append("<li><span class=\"").append(good ? "di-add" : status.equals("RESTORED")
+                    || status.equals("UNCHANGED") ? "di-ctx" : "di-del").append("\">")
+                    .append(Http.esc(kindLabel(str(item.get("kind"))))).append(' ')
+                    .append("<strong>").append(Http.esc(str(item.get("slug")))).append("</strong> — ")
+                    .append(Http.esc(batchStatusLabel(status, dryRun))).append("</span>");
+            for (String problem : stringList(item.get("problems"))) {
+                sb.append("<div class=\"field-help\">").append(Http.esc(humanProblem(problem)))
+                        .append("</div>");
+            }
+            sb.append("</li>");
+        }
+        sb.append("</ul>");
+        List<String> others = stringList(details.get().get("otherProblems"));
+        if (!others.isEmpty()) {
+            sb.append("<div class=\"field-help\"><strong>Problèmes hors de ce lot</strong>, qui"
+                    + " bloquent quand même (fichier déjà présent sur DEV, ou référence vers une"
+                    + " ressource absente) :</div><ul class=\"outcome-list\">");
+            for (String other : others) {
+                sb.append("<li class=\"field-help\">").append(Http.esc(humanProblem(other)))
+                        .append("</li>");
+            }
+            sb.append("</ul>");
+        }
+        return sb.append("</li>").toString();
+    }
+
+    private static String batchStatusLabel(String status, boolean dryRun) {
+        return switch (status) {
+            case "CREATED" -> "créée et chargée en jeu";
+            case "UPDATED" -> "mise à jour et chargée en jeu";
+            case "UNCHANGED" -> dryRun ? "identique sur DEV" : "déjà identique sur DEV";
+            case "CHECKED" -> "acceptée par le moteur";
+            case "RESTORED" -> "non publiée (remise comme avant à cause d'une autre ressource)";
+            case "REJECTED_BY_ENGINE" -> "refusée par le moteur";
+            case "NOT_LOADED" -> "absente du moteur après rechargement";
+            case "CONFLICT" -> "modifiée sur DEV depuis l'analyse : ouvrir sa fiche pour comparer";
+            case "INVALID" -> "refusée avant tout envoi";
+            default -> status.isEmpty() ? "?" : status;
+        };
+    }
+
+    private static String kindLabel(String kind) {
+        return switch (kind) {
+            case "quests" -> "Quête";
+            case "stories" -> "Story";
+            case "dialogues" -> "Dialogue";
+            default -> kind;
+        };
+    }
+
+    /**
+     * Un diagnostic du moteur, lisible : {@code "quests/lily_fleurs.yml : motif"} devient
+     * {@code "Fichier quests/lily_fleurs.yml — motif"}. Le motif lui-même est déjà en français.
+     */
+    static String humanProblem(String raw) {
+        int sep = raw.indexOf(" : ");
+        if (sep <= 0) {
+            return raw;
+        }
+        return "Fichier " + raw.substring(0, sep) + " — " + raw.substring(sep + 3);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> listOfMaps(Object raw) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (raw instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> m) {
+                    out.add((Map<String, Object>) m);
+                }
+            }
+        }
+        return out;
+    }
+
+    private static List<String> stringList(Object raw) {
+        List<String> out = new ArrayList<>();
+        if (raw instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null) {
+                    out.add(String.valueOf(o));
+                }
+            }
+        }
+        return out;
     }
 
     /** Filtres : des liens, donc partageables et sans JavaScript. */
@@ -8825,10 +9030,14 @@ public final class AgentPages {
      */
     private String pendingTable(Session session, String agentId,
                                 com.lodygames.rpgquest.panel.publish.PendingChanges shown,
-                                boolean canPublish) {
+                                boolean canPublish, String pack, boolean preselect) {
         StringBuilder sb = new StringBuilder();
         if (canPublish) {
             sb.append("<form method=\"post\" action=\"/content/pending/publish\">");
+            if (!pack.isEmpty()) {
+                sb.append("<input type=\"hidden\" name=\"pack\" value=\"")
+                        .append(Http.esc(pack)).append("\">");
+            }
             sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"")
                     .append(Http.esc(session.csrfToken())).append("\">");
             sb.append("<input type=\"hidden\" name=\"agent\" value=\"")
@@ -8848,7 +9057,8 @@ public final class AgentPages {
                 sb.append("<td>");
                 if (row.selectable()) {
                     sb.append("<input type=\"checkbox\" name=\"sel_").append(Http.esc(row.key()))
-                            .append("\" value=\"1\" aria-label=\"Sélectionner ")
+                            .append("\" value=\"1\"").append(preselect ? " checked" : "")
+                            .append(" aria-label=\"Sélectionner ")
                             .append(Http.esc(row.slug())).append("\">");
                     sb.append("<input type=\"hidden\" name=\"src_").append(Http.esc(row.key()))
                             .append("\" value=\"").append(Http.esc(row.sourceSha())).append("\">");
@@ -8880,15 +9090,23 @@ public final class AgentPages {
         sb.append("</tbody></table></div>");
 
         if (canPublish) {
-            sb.append("<p class=\"field-help\">Cochez les ressources à publier. Chacune est "
-                    + "publiée <strong>individuellement</strong>, avec sa sauvegarde, son "
-                    + "rechargement et sa vérification du runtime : une erreur sur l'une "
-                    + "n'annule pas les autres. Il n'y a volontairement pas de bouton "
-                    + "« tout publier ».</p>");
-            sb.append(mutationConsent("content.publish", "", null));
-            sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" "
-                    + "type=\"submit\">").append(Icons.icon("deploy"))
-                    .append("Publier la sélection</button></div></form>");
+            // Issue #427 : la sélection part en UN lot. Le moteur la juge d'un bloc — l'ordre ne
+            // compte plus, et un refus ne laisse rien à moitié en jeu.
+            sb.append("<p class=\"field-help\">Les ressources cochées sont publiées "
+                    + "<strong>ensemble</strong>, en une seule opération : sauvegardes, un seul "
+                    + "rechargement, puis vérification de chacune par le moteur. Si une seule est "
+                    + "refusée, <strong>rien ne change en jeu</strong> et les fichiers DEV sont "
+                    + "remis comme avant. « Vérifier » fait juger la sélection sans rien mettre en "
+                    + "jeu.</p>");
+            sb.append(mutationConsent("content.publish.batch",
+                    "Je confirme : envoyer les ressources cochées sur DEV", null));
+            sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                    + "type=\"submit\" name=\"mode\" value=\"check\">").append(Icons.icon("check"))
+                    .append("Vérifier</button>");
+            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"submit\" name=\"mode\" "
+                    + "value=\"publish\">").append(Icons.icon("deploy"))
+                    .append(pack.isEmpty() ? "Publier la sélection" : "Mettre l'histoire en jeu")
+                    .append("</button></div></form>");
         } else {
             sb.append("<p class=\"field-help\">Vous n'avez pas le droit de publier sur DEV : "
                     + "cette page reste consultable.</p>");

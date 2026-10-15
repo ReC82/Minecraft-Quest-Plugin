@@ -88,6 +88,18 @@ class ContentPublishServiceTest {
             return new ApplyResult(true, "APPLIED", "rechargé", loaded.size(), 0, "hash-ok");
         }
 
+        @Override public ApplyResult reload(Set<ReloadFamily> families) {
+            return reload(families.iterator().next());
+        }
+
+        @Override public ApplyResult check(Set<ReloadFamily> families) {
+            calls.add("check");
+            if (reloadFails) {
+                return new ApplyResult(false, "INVALID_CONTENT", "un fichier est invalide", 0, 1, "hash-ko");
+            }
+            return new ApplyResult(false, "PREVIEW_OK", "aperçu", loaded.size(), 0, runtimeHash());
+        }
+
         /** Les identifiants que le prochain rechargement « découvrira » sur le disque. */
         final Set<String> pending = new LinkedHashSet<>();
 
@@ -652,5 +664,24 @@ class ContentPublishServiceTest {
         } catch (Exception error) {
             throw new IllegalStateException(error);
         }
+    }
+
+    // ---- Issue #427 — lot : une ressource absente du runtime défait tout ----------------------
+
+    @Test
+    void aBatchWhoseResourceIsNotSeenByTheEngineIsUndoneAndReloadedBack() {
+        applier.reloadIgnoresNewIds = true;
+
+        ContentPublishService.BatchOutcome outcome = service.publishBatch(List.of(
+                new ContentPublishService.BatchItem(PublishKind.QUESTS, "test_publish_quest",
+                        YAML_V1, "", "rpgquest:test_publish_quest")), false);
+
+        assertFalse(outcome.ok());
+        assertEquals("RUNTIME_MISSING", outcome.code());
+        assertEquals("NOT_LOADED", outcome.items().get(0).status());
+        assertFalse(Files.exists(questFile()), "le fichier ajouté est retiré");
+        assertEquals(2, applier.calls.stream().filter(c -> c.startsWith("reload:")).count(),
+                "un rechargement, puis un second qui rétablit l'ensemble d'avant");
+        assertFalse(outcome.synchronized_());
     }
 }

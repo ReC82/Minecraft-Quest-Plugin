@@ -496,12 +496,17 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   les deux empreintes, le chargement par le moteur et la date du dernier relevé. Problèmes d'abord
   (conflit, puis publié-non-chargé). Filtres par famille et par état, recherche, le tout en liens
   `GET` — **aucun JavaScript**, la politique CSP du panel interdisant le script en ligne.
-  **La publication groupée est l'orchestration de publications individuelles**, jamais un chemin
-  parallèle : chaque ressource cochée repasse par la validation du catalogue, la relecture de la
-  source et la revérification d'empreinte. **Aucun bouton « Publier tout »**, un **conflit n'est
-  jamais cochable**, un nom de champ **unique par ressource** (`sel_<famille>/<identifiant>`) rend
-  un doublon impossible dans un même lot, et l'échec d'une ressource **n'annule pas** les autres
-  (succès partiel assumé et affiché ressource par ressource).
+  **La publication groupée est UNE opération tout-ou-rien** (issue #427, remplace l'orchestration
+  de publications individuelles) : la sélection part en une action `content.publish.batch` —
+  contrôles et conflits avant toute écriture, sauvegardes, écriture du lot, **un seul**
+  rechargement de l'ensemble (avec les familles liées, #371), vérification de chaque identifiant ;
+  sur refus, les fichiers sont remis en l'état et le runtime reste inchangé. « Vérifier »
+  (`dry_run=true`) fait juger le lot sans rien laisser en jeu. **Aucun bouton « Publier tout »**,
+  un **conflit n'est jamais cochable**, un nom de champ **unique par ressource**
+  (`sel_<famille>/<identifiant>`). Chaque refus du moteur est rattaché à sa ressource (fichier +
+  motif), les problèmes d'autres fichiers DEV sont listés à part. **Vue « pack »**
+  (`/content/pending?pack=…`) ouverte par « Mettre l'histoire en jeu sur DEV » après un import.
+  `INVALID_CONTENT` nomme désormais les erreurs dans son message (plus de « erreurs listées » à vide).
   **Fraîcheur de l'affichage** : si le relevé DEV est antérieur à une publication qui a **confirmé
   le runtime**, c'est le compte rendu de la publication qui fait foi — il a relu le moteur, le relevé
   non. Un bandeau « Actualisation en cours » le dit. La règle du ticket tient : « Synchronisé » exige

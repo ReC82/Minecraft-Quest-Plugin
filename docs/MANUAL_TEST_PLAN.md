@@ -6218,9 +6218,13 @@ sont pas. **Ne publier que des fichiers Lily**, jamais ceux du propriétaire en 
     source) et un encadré « Étape suivante » avec **Mettre l'histoire en jeu sur DEV**.
 2.  Cliquer. **Attendu** : `/content/pending` en vue pack — seules les ressources Lily non à jour,
     déjà cochées ; « N déjà à jour sur DEV » ; aucun fichier du propriétaire.
-3.  Cocher la confirmation → **Vérifier**. **Attendu** : « Vérification d'un lot de N ressource(s) —
-    vérification réussie, rien n'a été mis en jeu ». Lily en jeu n'a toujours pas de dialogue.
-4.  **Mettre l'histoire en jeu**. **Attendu** : « tout est en jeu », chaque ressource « créée et
+3.  **Sans** cocher la confirmation → **Vérifier**. **Attendu** : on reste sur la **même vue pack**
+    (adresse avec `pack=`), les ressources toujours cochées, « Vérification en cours… » puis
+    « Vérification réussie » ; « Vérification d'un lot de N ressource(s) — vérification réussie,
+    rien n'a été mis en jeu ». Lily en jeu n'a toujours pas de dialogue. (Correctif du 15/10 : la
+    page renvoyait sur la liste générale, cases décochées, et exigeait la confirmation.)
+4.  Cocher « Je confirme » → **Mettre l'histoire en jeu** (sans la case : le navigateur la réclame,
+    rien n'est envoyé). **Attendu** : retour sur la vue pack, « Histoire mise en jeu », « M/M en jeu » ; « tout est en jeu », chaque ressource « créée et
     chargée en jeu ». Cliquer sur Lily ouvre son dialogue ; `/stories` liste « Les souvenirs de Lily ».
 5.  Recliquer « Mettre l'histoire en jeu » (relancer l'analyse d'abord). **Attendu** : plus rien à
     publier, ou « déjà en jeu, rien à faire » — aucun doublon.

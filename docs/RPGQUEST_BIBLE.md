@@ -2811,6 +2811,14 @@ DEV »** ouvre `/content/pending?pack=quests/…,stories/…,dialogues/…` : se
 déjà cochées, avec « Vérifier » et « Mettre l'histoire en jeu ». Les PNJ réutilisés ne sont pas
 republiés : ce sont des définitions serveur, rechargées avec le lot si une ressource les cite.
 
+La vue pack **ne se perd jamais** : après « Vérifier », une publication, un refus ou une erreur de
+formulaire, PlugAdmin revient sur la même adresse (`?agent=…&pack=…&pick=…`), avec la sélection
+soumise toujours cochée et un encadré d'état (« en cours » — la page se recharge seule —,
+« Vérification réussie », « Histoire mise en jeu » ou refus) et le compteur « N/M en jeu ».
+« Vérifier » ne demande **aucune** confirmation (rien n'est mis en jeu) ; la case « Je confirme »
+n'est exigée, côté navigateur et côté serveur, que pour « Mettre l'histoire en jeu ». Une ressource
+volontairement décochée reste décochée, et la page prévient que le pack sera incomplet.
+
 **Limite assumée** : écriture et rechargement se font sur le thread principal du serveur, fichier
 par fichier ; un arrêt brutal du serveur *pendant* l'opération peut laisser des fichiers écrits sans
 rechargement. Ils sont alors visibles « Publié, non chargé » dans `/content/pending`, et republier le

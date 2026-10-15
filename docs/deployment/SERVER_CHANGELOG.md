@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - PlugAdmin : la vue pack ne se perd plus après « Vérifier » (#427, correctif de validation)
+
+### Changement
+
+PlugAdmin seulement. Après « Vérifier », une mise en jeu, un refus ou une erreur de formulaire, la
+page revient sur la même vue pack (`/content/pending?agent=…&pack=…&pick=…`) avec la sélection
+cochée et l'état du dernier lot. Cause : l'adresse de retour contenait deux `?`, le pack devenait
+illisible. « Vérifier » ne demande plus la confirmation (exigée côté serveur pour la seule
+publication). Tableau lisible sur téléphone.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft (JAR inchangé). Redéploiement de PlugAdmin seulement, aucune migration.
+
+### Sauvegarde préalable
+
+Version précédente du panel conservée par `scripts/plugadmin/deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Validation
+
+Tests HTTP du parcours complet, rendu local 1280/390 px. Parcours propriétaire TC-323 — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Réinstaller la release précédente de `/opt/plugadmin/releases/` et redémarrer `plugadmin.service`.
+
+---
+
 ## 2026-10-15 - PlugAdmin : dialogue de PNJ récurrent Hors source modifiable, quête au hasard dans une liste (#430)
 
 ### Changement

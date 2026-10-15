@@ -184,10 +184,10 @@ class StatisticsRepositoryTest {
 
         assertEquals(Set.of("season_01"), statistics.archivedPeriodIds().get(TIMEOUT, TimeUnit.SECONDS));
         assertEquals(List.of(row("Alice", 30, 1)),
-                statistics.archivedTop("season_01", COMBAT, 10, PUBLIC, Set.of()).get(TIMEOUT, TimeUnit.SECONDS));
+                statistics.archivedTop(SEASON_1, COMBAT, 10, PUBLIC, Set.of()).get(TIMEOUT, TimeUnit.SECONDS));
         assertEquals(List.of(row("Alice", 3, 1)),
-                statistics.archivedTop("season_01", GLOBAL, 10, PUBLIC, Set.of()).get(TIMEOUT, TimeUnit.SECONDS));
-        assertEquals(List.of(), statistics.archivedTop("season_01", COMBAT, 10, PUBLIC, Set.of(alice))
+                statistics.archivedTop(SEASON_1, GLOBAL, 10, PUBLIC, Set.of()).get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(List.of(), statistics.archivedTop(SEASON_1, COMBAT, 10, PUBLIC, Set.of(alice))
                 .get(TIMEOUT, TimeUnit.SECONDS), "une exclusion décidée après coup s'applique aussi à l'archive");
     }
 
@@ -199,7 +199,7 @@ class StatisticsRepositoryTest {
 
         assertEquals(List.of(row("Alice", 8, 1)), live(SEASON_2, COMBAT));
         assertEquals(List.of(row("Alice", 30, 1)),
-                statistics.archivedTop("season_01", COMBAT, 10, PUBLIC, Set.of()).get(TIMEOUT, TimeUnit.SECONDS));
+                statistics.archivedTop(SEASON_1, COMBAT, 10, PUBLIC, Set.of()).get(TIMEOUT, TimeUnit.SECONDS));
     }
 
     @Test

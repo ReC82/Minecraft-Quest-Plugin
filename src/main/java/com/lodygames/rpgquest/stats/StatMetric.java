@@ -20,11 +20,17 @@ import java.util.Set;
  * donc seulement {@code lifetime}. Ajouter une métrique = une entrée ici et sa requête, sans
  * migration de schéma.</p>
  *
- * @param xpSkill piste d'XP lue dans {@code xp_grants} pour les fenêtres ; {@code null} si la
- *                métrique n'a pas de journal horodaté
+ * <p>Issue #57 : les métriques d'activité ({@link #ENTITY_KILL}, {@link #FISH_CAUGHT}) se lisent
+ * dans le journal générique {@code stat_activity_log}, alimenté par un seul listener pour tous les
+ * concours. Elles acceptent un filtre de cible ({@code entity: [ZOMBIE]}) ; elles n'existent qu'à
+ * partir de la mise en service du journal, donc seulement sur une saison ou un événement.</p>
+ *
+ * @param xpSkill  piste d'XP lue dans {@code xp_grants} pour les fenêtres ; {@code null} sinon
+ * @param activity action lue dans {@code stat_activity_log} ; {@code null} sinon
+ * @param filters  clé de filtre accepté → colonne du journal d'activité ({@code target}/{@code variant})
  */
 public record StatMetric(String id, Aggregation aggregation, SortOrder order, Set<StatScope> scopes,
-                         SkillType xpSkill) {
+                         SkillType xpSkill, String activity, Map<String, String> filters) {
 
     /** Comment les valeurs d'un joueur se combinent sur une portée. */
     public enum Aggregation {
@@ -41,12 +47,27 @@ public record StatMetric(String id, Aggregation aggregation, SortOrder order, Se
     }
 
     public static final String QUESTS_COMPLETED = "QUESTS_COMPLETED";
+    /** Mob tué par un joueur (issue #57) : cible = type d'entité, variante = mob spécial RPGQuest. */
+    public static final String ENTITY_KILL = "ENTITY_KILL";
+    /** Prise de pêche (issue #57) : cible = matériau de l'objet pêché. */
+    public static final String FISH_CAUGHT = "FISH_CAUGHT";
     private static final String XP_PREFIX = "RPG_XP_";
 
     private static final Map<String, StatMetric> CATALOG = buildCatalog();
 
     public StatMetric {
         scopes = Set.copyOf(scopes);
+        filters = Map.copyOf(filters);
+    }
+
+    /** Métrique sans journal d'activité (XP, quêtes). */
+    public StatMetric(String id, Aggregation aggregation, SortOrder order, Set<StatScope> scopes, SkillType xpSkill) {
+        this(id, aggregation, order, scopes, xpSkill, null, Map.of());
+    }
+
+    /** Vrai si la métrique a un journal horodaté, donc se calcule sur une fenêtre. */
+    public boolean windowed() {
+        return xpSkill != null || activity != null;
     }
 
     public boolean supports(StatScope scope) {
@@ -75,6 +96,11 @@ public record StatMetric(String id, Aggregation aggregation, SortOrder order, Se
         }
         catalog.put(QUESTS_COMPLETED, new StatMetric(QUESTS_COMPLETED, Aggregation.SUM, SortOrder.DESC,
                 EnumSet.of(StatScope.LIFETIME), null));
+        catalog.put(ENTITY_KILL, new StatMetric(ENTITY_KILL, Aggregation.SUM, SortOrder.DESC,
+                EnumSet.of(StatScope.SEASON, StatScope.EVENT), null, ENTITY_KILL,
+                Map.of("entity", "target", "special-mob", "variant")));
+        catalog.put(FISH_CAUGHT, new StatMetric(FISH_CAUGHT, Aggregation.SUM, SortOrder.DESC,
+                EnumSet.of(StatScope.SEASON, StatScope.EVENT), null, FISH_CAUGHT, Map.of("item", "target")));
         return catalog;
     }
 
@@ -91,6 +117,7 @@ public record StatMetric(String id, Aggregation aggregation, SortOrder order, Se
             }
         }
         descriptor.put("scopes", wireScopes);
+        descriptor.put("filters", filters.keySet().stream().sorted().toList());
         return descriptor;
     }
 }

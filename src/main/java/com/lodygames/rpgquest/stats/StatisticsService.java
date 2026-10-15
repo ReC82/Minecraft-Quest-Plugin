@@ -42,6 +42,8 @@ public final class StatisticsService implements PluginService {
 
     private volatile StatisticsDefinition definition = StatisticsDefinition.EMPTY;
     private volatile Set<String> archived = Set.of();
+    /** Transitions déjà notées par ce processus (évite une écriture par minute et par période). */
+    private final Set<String> audited = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private long loadedModified = Long.MIN_VALUE;
     private BukkitTask task;
 
@@ -82,7 +84,10 @@ public final class StatisticsService implements PluginService {
         return clock.instant();
     }
 
-    /** Relit le fichier si besoin et archive les périodes terminées. Jamais sur le thread principal. */
+    /**
+     * Relit le fichier si besoin, note les transitions de cycle de vie (#57) et archive les périodes
+     * terminées. Une période en brouillon ou annulée n'est jamais archivée. Jamais sur le thread principal.
+     */
     CompletableFuture<Void> refresh() {
         reloadIfChanged();
         StatisticsDefinition current = definition;
@@ -91,7 +96,8 @@ public final class StatisticsService implements PluginService {
             List<CompletableFuture<Void>> pending = new ArrayList<>();
             Set<String> nowArchived = new HashSet<>(done);
             for (StatPeriod period : current.periods()) {
-                if (period.status(now) == StatPeriod.Status.ENDED && !done.contains(period.id())) {
+                EventLifecycle state = EventLifecycle.of(period, now, done.contains(period.id()));
+                if (state == EventLifecycle.ENDED) {
                     pending.add(repository.archive(period, current.excludedXpReasons(), now).thenAccept(created -> {
                         synchronized (nowArchived) {
                             nowArchived.add(period.id());
@@ -101,6 +107,8 @@ public final class StatisticsService implements PluginService {
                                     period.scope().wireName(), period.id());
                         }
                     }));
+                } else if (state != EventLifecycle.DRAFT && state != EventLifecycle.ARCHIVED) {
+                    pending.add(audit(period, state, now));
                 }
             }
             return CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
@@ -108,6 +116,20 @@ public final class StatisticsService implements PluginService {
         }).exceptionally(error -> {
             logger.warn("Statistiques : archivage des périodes impossible, nouvel essai à la prochaine minute.", error);
             return null;
+        });
+    }
+
+    /** Une transition n'est notée (et annoncée) qu'une fois, au premier tick qui l'observe. */
+    private CompletableFuture<Void> audit(StatPeriod period, EventLifecycle state, Instant now) {
+        String key = period.id() + "/" + state.name();
+        if (audited.contains(key)) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return repository.recordTransition(period.id(), state, now).thenAccept(created -> {
+            audited.add(key);
+            if (created) {
+                logger.info("Statistiques : {} « {} » → {}.", period.scope().wireName(), period.id(), state.name());
+            }
         });
     }
 

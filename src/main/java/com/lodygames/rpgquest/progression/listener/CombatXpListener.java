@@ -42,7 +42,7 @@ public final class CombatXpListener implements Listener {
         this.progression = progression;
         this.mobService = mobService;
         this.config = config;
-        this.spawnerTagKey = new NamespacedKey(plugin, SPAWNER_TAG_KEY_NAME);
+        this.spawnerTagKey = spawnerTagKey(plugin);
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -78,6 +78,15 @@ public final class CombatXpListener implements Listener {
     }
 
     private boolean isSpawnerOrigin(LivingEntity entity) {
+        return isSpawnerOrigin(entity, spawnerTagKey);
+    }
+
+    /** Clé PDC posée sur les mobs nés d'un spawner (lue aussi par le journal d'activité, #57). */
+    public static NamespacedKey spawnerTagKey(Plugin plugin) {
+        return new NamespacedKey(plugin, SPAWNER_TAG_KEY_NAME);
+    }
+
+    public static boolean isSpawnerOrigin(LivingEntity entity, NamespacedKey spawnerTagKey) {
         Byte tag = entity.getPersistentDataContainer().get(spawnerTagKey, PersistentDataType.BYTE);
         return tag != null && tag == 1;
     }

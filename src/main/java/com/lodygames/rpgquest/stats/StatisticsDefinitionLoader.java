@@ -27,6 +27,14 @@ import org.bukkit.configuration.ConfigurationSection;
 public final class StatisticsDefinitionLoader {
 
     private static final Pattern PERIOD_ID = Pattern.compile("[a-z0-9_]{1,64}");
+    /** Valeur de filtre {@code entity}/{@code item} : un nom d'énumération Paper ({@code ZOMBIE}). */
+    private static final Pattern CONSTANT = Pattern.compile("[A-Z0-9_]{1,64}");
+    /** Valeur de filtre {@code special-mob} : l'id namespacé d'un mob spécial ({@code rpgquest:forest_brute}). */
+    private static final Pattern NAMESPACED = Pattern.compile("[a-z0-9_.-]{1,64}:[a-z0-9_./-]{1,128}");
+    private static final Pattern ENTITLEMENT = Pattern.compile("[a-z0-9_.-]{1,64}");
+    private static final int LABEL_MAX = 120;
+    /** Clés réservées aux événements (issue #57) : une saison classe toujours par plus grand total. */
+    private static final List<String> EVENT_ONLY_KEYS = List.of("ranking", "filter", "goal", "rewards");
 
     private StatisticsDefinitionLoader() {
     }
@@ -82,9 +90,179 @@ public final class StatisticsDefinitionLoader {
                 errors.add(where + " : « start » doit précéder « end ».");
                 continue;
             }
+            StatPeriod.State state = state(entry.get("status"), where, errors);
+            EventRules rules = scope == StatScope.EVENT ? rules(entry, metrics, where, errors)
+                    : seasonRules(entry, where, errors);
+            if (state == null || rules == null) {
+                continue;
+            }
             String name = text(entry.get("name"));
-            periods.add(new StatPeriod(id, scope, name == null ? id : name, start, end, metrics));
+            periods.add(new StatPeriod(id, scope, name == null ? id : name, start, end, metrics, state, rules));
         }
+    }
+
+    private static StatPeriod.State state(Object raw, String where, List<String> errors) {
+        String text = text(raw);
+        if (text == null) {
+            return StatPeriod.State.PLANNED;
+        }
+        try {
+            return StatPeriod.State.valueOf(text.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            errors.add(where + " : « status » vaut planned, draft ou cancelled (pas « " + text + " »).");
+            return null;
+        }
+    }
+
+    private static EventRules seasonRules(Map<?, ?> entry, String where, List<String> errors) {
+        for (String key : EVENT_ONLY_KEYS) {
+            if (entry.containsKey(key)) {
+                errors.add(where + " : « " + key + " » est réservé aux événements (une saison classe par plus grand total).");
+                return null;
+            }
+        }
+        return EventRules.DEFAULT;
+    }
+
+    /** Règles d'un événement (issue #57) ; {@code null} et une erreur au moindre défaut. */
+    private static EventRules rules(Map<?, ?> entry, List<String> metrics, String where, List<String> errors) {
+        int before = errors.size();
+        EventRanking ranking = EventRanking.HIGHEST_TOTAL;
+        String rawRanking = text(entry.get("ranking"));
+        if (rawRanking != null) {
+            try {
+                ranking = EventRanking.valueOf(rawRanking.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                errors.add(where + " : « ranking » inconnu « " + rawRanking
+                        + " » (HIGHEST_TOTAL, LOWEST_TOTAL, BEST_SINGLE ou COMMUNITY_GOAL).");
+                return null;
+            }
+        }
+        if (ranking == EventRanking.LOWEST_TOTAL) {
+            for (String metricId : metrics) {
+                if (StatMetric.find(metricId).orElseThrow().order() != StatMetric.SortOrder.ASC) {
+                    errors.add(where + " : LOWEST_TOTAL demande une métrique où la plus petite valeur gagne (un chrono) ; "
+                            + "« " + metricId + " » n'en est pas une — un joueur absent gagnerait avec 0.");
+                }
+            }
+        }
+        long goal = 0L;
+        if (entry.get("goal") != null) {
+            goal = entry.get("goal") instanceof Number number ? number.longValue() : -1L;
+            if (ranking != EventRanking.COMMUNITY_GOAL) {
+                errors.add(where + " : « goal » n'a de sens qu'avec ranking: COMMUNITY_GOAL.");
+            } else if (goal <= 0) {
+                errors.add(where + " : « goal » doit être un nombre entier positif.");
+            }
+        } else if (ranking == EventRanking.COMMUNITY_GOAL) {
+            errors.add(where + " : un objectif commun demande « goal » (le total à atteindre ensemble).");
+        }
+        if (ranking == EventRanking.COMMUNITY_GOAL && metrics.size() != 1) {
+            errors.add(where + " : un objectif commun porte sur une seule métrique.");
+        }
+        Map<String, Set<String>> filter = filter(entry.get("filter"), metrics, where, errors);
+        List<EventReward> rewards = rewards(entry.get("rewards"), ranking, where, errors);
+        if (errors.size() != before) {
+            return null;
+        }
+        return new EventRules(ranking, filter, goal, rewards);
+    }
+
+    private static Map<String, Set<String>> filter(Object raw, List<String> metrics, String where, List<String> errors) {
+        Map<String, Set<String>> filter = new java.util.LinkedHashMap<>();
+        if (raw == null) {
+            return filter;
+        }
+        if (!(raw instanceof Map<?, ?> map) || map.isEmpty()) {
+            errors.add(where + " : « filter » doit associer une clé (entity, special-mob, item) à des valeurs.");
+            return filter;
+        }
+        for (Map.Entry<?, ?> item : map.entrySet()) {
+            String key = String.valueOf(item.getKey());
+            for (String metricId : metrics) {
+                if (!StatMetric.find(metricId).orElseThrow().filters().containsKey(key)) {
+                    errors.add(where + " : la métrique « " + metricId + " » ne se filtre pas par « " + key
+                            + " » (un filtre ignoré fausserait le classement).");
+                }
+            }
+            List<?> values = item.getValue() instanceof List<?> list ? list : List.of(String.valueOf(item.getValue()));
+            Set<String> accepted = new LinkedHashSet<>();
+            Pattern format = key.equals("special-mob") ? NAMESPACED : CONSTANT;
+            for (Object value : values) {
+                String text = String.valueOf(value).trim();
+                if (format == CONSTANT) {
+                    text = text.toUpperCase(java.util.Locale.ROOT);
+                }
+                if (!format.matcher(text).matches()) {
+                    errors.add(where + " : valeur de filtre « " + value + " » invalide pour « " + key + " »"
+                            + (format == CONSTANT ? " (nom Paper, ex. ZOMBIE ou COD)." : " (id namespacé, ex. rpgquest:forest_brute)."));
+                    continue;
+                }
+                accepted.add(text);
+            }
+            if (values.isEmpty()) {
+                errors.add(where + " : le filtre « " + key + " » ne liste aucune valeur.");
+            }
+            filter.put(key, Set.copyOf(accepted));
+        }
+        return filter;
+    }
+
+    private static List<EventReward> rewards(Object raw, EventRanking ranking, String where, List<String> errors) {
+        List<EventReward> rewards = new ArrayList<>();
+        if (raw == null) {
+            return rewards;
+        }
+        if (!(raw instanceof List<?> list)) {
+            errors.add(where + " : « rewards » doit être une liste.");
+            return rewards;
+        }
+        for (int i = 0; i < list.size(); i++) {
+            String at = where + ".rewards[" + i + "]";
+            if (!(list.get(i) instanceof Map<?, ?> reward)) {
+                errors.add(at + " : chaque récompense est un bloc (rank, threshold ou community).");
+                continue;
+            }
+            List<EventReward.Kind> kinds = new ArrayList<>();
+            if (reward.containsKey("rank")) {
+                kinds.add(EventReward.Kind.RANK);
+            }
+            if (reward.containsKey("threshold")) {
+                kinds.add(EventReward.Kind.THRESHOLD);
+            }
+            if (Boolean.TRUE.equals(reward.get("community"))) {
+                kinds.add(EventReward.Kind.COMMUNITY);
+            }
+            if (kinds.size() != 1) {
+                errors.add(at + " : préciser exactement un critère — rank (top N), threshold (valeur minimale) ou community: true.");
+                continue;
+            }
+            EventReward.Kind kind = kinds.get(0);
+            long value = 0L;
+            if (kind != EventReward.Kind.COMMUNITY) {
+                Object number = reward.get(kind == EventReward.Kind.RANK ? "rank" : "threshold");
+                value = number instanceof Number n ? n.longValue() : 0L;
+                if (value <= 0) {
+                    errors.add(at + " : « " + kind.name().toLowerCase(java.util.Locale.ROOT) + " » doit être un entier positif.");
+                    continue;
+                }
+            } else if (ranking != EventRanking.COMMUNITY_GOAL) {
+                errors.add(at + " : community: true demande ranking: COMMUNITY_GOAL.");
+                continue;
+            }
+            String entitlement = text(reward.get("entitlement"));
+            if (entitlement == null || !ENTITLEMENT.matcher(entitlement).matches()) {
+                errors.add(at + " : « entitlement » obligatoire (minuscules, chiffres, _ . -) : l'avantage à accorder plus tard.");
+                continue;
+            }
+            String label = text(reward.get("label"));
+            if (label == null || label.length() > LABEL_MAX) {
+                errors.add(at + " : « label » obligatoire, " + LABEL_MAX + " caractères au plus (texte montré aux joueurs).");
+                continue;
+            }
+            rewards.add(new EventReward(kind, value, entitlement, label));
+        }
+        return rewards;
     }
 
     private static List<String> metrics(Object raw, StatScope scope, String where, List<String> errors) {

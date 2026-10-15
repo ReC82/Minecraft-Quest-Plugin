@@ -91,4 +91,28 @@ class StatisticsServiceTest {
         assertTrue(service.definition().periods().isEmpty());
         assertEquals(Set.of(), repository.archivedPeriodIds().get(10, TimeUnit.SECONDS));
     }
+
+    @Test
+    void draftAndCancelledEventsAreNeverArchivedAndTransitionsAreAuditedOnce() throws Exception {
+        Path file = tempDir.resolve("statistics.yml");
+        Files.writeString(file, """
+                events:
+                  - {id: done, start: "2026-11-01T00:00:00Z", end: "2026-11-02T00:00:00Z", metrics: [ENTITY_KILL]}
+                  - {id: live, start: "2026-11-10T00:00:00Z", end: "2026-11-20T00:00:00Z", metrics: [ENTITY_KILL]}
+                  - {id: soon, start: "2026-12-01T00:00:00Z", end: "2026-12-02T00:00:00Z", metrics: [ENTITY_KILL]}
+                  - {id: draft, status: draft, start: "2026-11-01T00:00:00Z", end: "2026-11-02T00:00:00Z", metrics: [ENTITY_KILL]}
+                  - {id: called_off, status: cancelled, start: "2026-11-01T00:00:00Z", end: "2026-11-02T00:00:00Z", metrics: [ENTITY_KILL]}
+                """);
+        StatisticsService service = service(file, "2026-11-15T00:00:00Z");
+
+        service.refresh().get(10, TimeUnit.SECONDS);
+        service.refresh().get(10, TimeUnit.SECONDS);
+
+        assertEquals(Set.of("done"), repository.archivedPeriodIds().get(10, TimeUnit.SECONDS));
+        assertEquals(java.util.List.of("ARCHIVED"), repository.auditTrail("done").get(10, TimeUnit.SECONDS));
+        assertEquals(java.util.List.of("ACTIVE"), repository.auditTrail("live").get(10, TimeUnit.SECONDS));
+        assertEquals(java.util.List.of("SCHEDULED"), repository.auditTrail("soon").get(10, TimeUnit.SECONDS));
+        assertEquals(java.util.List.of(), repository.auditTrail("draft").get(10, TimeUnit.SECONDS), "un brouillon n'existe pas encore");
+        assertEquals(java.util.List.of("CANCELLED"), repository.auditTrail("called_off").get(10, TimeUnit.SECONDS));
+    }
 }

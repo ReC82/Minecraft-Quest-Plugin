@@ -197,6 +197,11 @@ class RolePermissionMatrixTest {
     @Test
     void pairingABeaconIsAnAdminWriteWhileReadingTheNetworkIsNot() {
         assertTrue(can(Role.ADMIN, Permission.TRAVEL_PAIR_WRITE));
+        // Issue #134 : renommer un waypoint est une écriture d'administrateur, pas d'observateur.
+        assertTrue(can(Role.ADMIN, Permission.WAYPOINT_WRITE));
+        for (Role r : new Role[] {Role.TESTER, Role.BUILDER, Role.CONTENT_EDITOR, Role.READ_ONLY}) {
+            assertFalse(r.has(Permission.WAYPOINT_WRITE), r + " ne doit pas renommer un waypoint");
+        }
         for (Role r : new Role[] {Role.TESTER, Role.BUILDER, Role.CONTENT_EDITOR, Role.READ_ONLY}) {
             assertFalse(r.has(Permission.TRAVEL_PAIR_WRITE), r + " ne doit pas poser de borne");
         }

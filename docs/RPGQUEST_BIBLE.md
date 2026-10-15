@@ -4715,6 +4715,31 @@ peut n'exister aucun emplacement accessible respectant l'espacement minimal) et 
 distances réellement configurées. Permission dédiée, distincte de `TRAVEL_READ` : consulter le réseau
 n'est pas écrire dans le monde.
 
+#### Action `waypoint.rename` — renommer le nom affiché d'un waypoint (issue #134)
+
+| Action agent | Permission | Paramètres |
+|---|---|---|
+| `waypoint.rename` | `WAYPOINT_WRITE` (OWNER + ADMIN) | `waypointId` (`wp_…`), `displayName` |
+
+Depuis `/travel`, chaque ligne du tableau « Waypoints » porte un bloc replié **Renommer**, nom
+actuel pré-rempli. Règles du nom (contrôlées par le panel **et** revalidées par le plugin) : 2 à 40
+caractères après réduction des espaces ; lettres (accents compris), chiffres, espaces, apostrophes,
+tirets et points, en commençant par une lettre ou un chiffre — jamais de `<` ni de balise
+MiniMessage, le nom étant inséré dans le menu de voyage. Unicité **insensible à la casse et aux
+accents** (même index que la génération) ; changer seulement la casse/les accents de son propre nom
+est permis ; l'ancien nom redevient disponible.
+
+Seul le nom change (`waypoints.display_name`) : **id, instance de biome, position, découvertes
+joueurs, références de quête et borne appariée restent intacts**. Les deux panneaux de nom sont
+réécrits tout de suite si la structure est dans des chunks chargés (texte seul, lignes restantes
+vidées, aucun bloc posé ni chargement forcé) ; sinon au **prochain chargement du chunk**. Ce
+rattrapage est tenu en mémoire : après un redémarrage survenu entre-temps, `/rpgadmin travel signs
+upgrade [monde]` rétablit les panneaux. Codes de retour : `RENAMED`, `INVALID`, `NOT_FOUND`,
+`UNCHANGED`, `DUPLICATE`, `BUSY`, `FAILED` — un refus ne modifie rien. Audit panel :
+`agent.action.create type=waypoint.rename` ; journal serveur : `[admin] Waypoint « … » renommé`.
+Le catalogue `travel.catalog` est ré-enfilé après succès (nouveau nom affiché sans F5).
+Activation/désactivation d'un waypoint : hors de cette tranche.
+
 ---
 
 ## 8. Claims

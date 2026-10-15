@@ -549,6 +549,31 @@ class AgentActionCatalogTest {
         assertFalse(AgentActionCatalog.spec("travel.catalog").orElseThrow().mutation());
     }
 
+    /** Issue #134 — renommer un waypoint : écriture réversible, permission dédiée, nom borné. */
+    @Test
+    void waypointRenameIsAReversibleWriteThatValidatesIdAndName() {
+        AgentActionCatalog.Spec spec = AgentActionCatalog.spec("waypoint.rename").orElseThrow();
+        assertEquals(Permission.WAYPOINT_WRITE, spec.permission());
+        assertTrue(spec.mutation());
+        assertFalse(spec.sensitive(), "on peut renommer à nouveau : aucune confirmation cachée");
+
+        assertFalse(AgentActionCatalog.validate("waypoint.rename",
+                Map.of("waypointId", "beacon_1", "displayName", "Col du Vent")).valid());
+        assertFalse(AgentActionCatalog.validate("waypoint.rename",
+                Map.of("waypointId", "wp_wild_plains_1_2", "displayName", "x")).valid());
+        assertFalse(AgentActionCatalog.validate("waypoint.rename",
+                Map.of("waypointId", "wp_wild_plains_1_2", "displayName", "<red>Piège")).valid(),
+                "aucune balise MiniMessage dans un nom");
+        assertFalse(AgentActionCatalog.validate("waypoint.rename",
+                Map.of("waypointId", "wp_wild_plains_1_2", "displayName", "a".repeat(41))).valid());
+
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("waypoint.rename",
+                Map.of("waypointId", "wp_wild_plains_1_-2", "displayName", "  Clairière   d'Été  "));
+        assertTrue(ok.valid(), ok.toString());
+        assertEquals("Clairière d'Été", ok.params().get("displayName"));
+        assertEquals("wp_wild_plains_1_-2", ok.params().get("waypointId"));
+    }
+
     @Test
     void travelBeaconPairValidatesTheWaypointIdAndRequiresConfirmation() {
         assertFalse(AgentActionCatalog.validate("travel.beacon.pair",

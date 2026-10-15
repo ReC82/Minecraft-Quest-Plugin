@@ -474,6 +474,25 @@ class AgentActionExecutorTest {
                 "le refus doit dire pourquoi : il n'y a peut-être aucun emplacement valable");
     }
 
+    /** Issue #134 — renommage : paramètres obligatoires, délégation, refus restitué avec son code. */
+    @Test
+    void waypointRenameRequiresBothParamsAndReportsADuplicateRefusal() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("wr0", "waypoint.rename", Map.of("waypointId", "wp_a"))).status());
+        assertEquals(null, actions.lastRenamedWaypoint, "aucun appel sans nom");
+
+        AgentActionOutcome ok = run(new AgentAction("wr1", "waypoint.rename",
+                Map.of("waypointId", "wp_a", "displayName", "Col du Vent")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status(), ok.message());
+        assertEquals("wp_a=Col du Vent", actions.lastRenamedWaypoint);
+        assertEquals("wp_a", ok.details().get("waypointId"));
+
+        AgentActionOutcome dup = run(new AgentAction("wr2", "waypoint.rename",
+                Map.of("waypointId", "wp_a", "displayName", "Pris")));
+        assertEquals(AgentActionOutcome.FAILED, dup.status());
+        assertEquals("DUPLICATE", dup.details().get("code"));
+    }
+
     @Test
     void npcDefinitionCreateValidatesIdAndDelegates() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("nd0", "npc.definition.create",
@@ -2483,6 +2502,17 @@ class AgentActionExecutorTest {
 
         String lastPairedWaypointId;
         boolean pairSucceeds = true;
+        String lastRenamedWaypoint;
+
+        @Override
+        public CompletableFuture<MutationResult> renameWaypoint(String waypointId, String displayName) {
+            lastRenamedWaypoint = waypointId + "=" + displayName;
+            if (displayName.equals("Pris")) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "DUPLICATE",
+                        "Un autre waypoint porte déjà ce nom."));
+            }
+            return CompletableFuture.completedFuture(MutationResult.of(true, "RENAMED", "Waypoint renommé."));
+        }
 
         @Override
         public CompletableFuture<MutationResult> pairHubBeacon(String waypointId) {

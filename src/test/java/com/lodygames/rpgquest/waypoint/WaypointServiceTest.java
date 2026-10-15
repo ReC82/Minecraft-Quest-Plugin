@@ -341,6 +341,95 @@ class WaypointServiceTest {
         assertEquals(1, service.upgradeSigns("wild"));
     }
 
+    private WaypointService.RenameResult rename(String id, String name) {
+        java.util.concurrent.CompletableFuture<WaypointService.RenameResult> future = service.rename(id, name);
+        await(future::isDone);
+        return future.join();
+    }
+
+    private String signText(Waypoint wp, BlockFace side) {
+        Sign sign = (Sign) wild.getBlockAt(wp.x() + side.getModX(), wp.y() + 1, wp.z() + side.getModZ()).getState();
+        return String.join(" ", sign.getSide(Side.FRONT).lines().stream()
+                .map(c -> PlainTextComponentSerializer.plainText().serialize(c))
+                .filter(line -> !line.isBlank())
+                .toList());
+    }
+
+    private static BlockFace[] lateralsOf(Waypoint wp) {
+        BlockFace facing = BlockFace.valueOf(wp.facing());
+        return (facing == BlockFace.NORTH || facing == BlockFace.SOUTH)
+                ? new BlockFace[] {BlockFace.EAST, BlockFace.WEST}
+                : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH};
+    }
+
+    /**
+     * Issue #134 : seul le nom change — id, position, découvertes intacts —, les panneaux affichent
+     * le nouveau nom (sans reste de l'ancien) et le renommage survit à un rechargement.
+     */
+    @Test
+    void renameChangesOnlyTheDisplayNameRewritesSignsAndSurvivesReload() throws Exception {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+        PlayerMock player = addPlayer();
+        service.handleJoin(player);
+        assertTrue(repository.recordDiscovery(player.getUniqueId(), wp.id(), java.time.Instant.now())
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        WaypointService.RenameResult result = rename(wp.id(), "  Col   du Vent  ");
+        assertTrue(result.ok(), result.message());
+        assertEquals("RENAMED", result.code());
+        assertEquals(wp.displayName(), result.previousName());
+        assertEquals("Col du Vent", result.newName(), "espaces normalisés");
+        assertTrue(result.signsRefreshed(), "structure dans des chunks chargés : panneaux réécrits");
+        for (BlockFace side : lateralsOf(wp)) {
+            assertEquals("Col du Vent", signText(wp, side), "panneau réécrit côté " + side);
+        }
+
+        Waypoint renamed = service.byId(wp.id()).orElseThrow();
+        assertEquals("Col du Vent", renamed.displayName());
+        assertEquals(wp.x(), renamed.x());
+        assertEquals(wp.biomeInstance(), renamed.biomeInstance());
+        assertEquals(1, service.discoveryCount(wp.id()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(service.pendingSignRefresh().isEmpty());
+
+        service.stop();
+        service = newService(new WaypointModelRegistry(1, new WaypointModelV1()));
+        service.start();
+        await(() -> !service.all().isEmpty());
+        assertEquals("Col du Vent", service.byId(wp.id()).orElseThrow().displayName(), "persisté en base");
+    }
+
+    /** Issue #134 : l'unicité ignore casse et accents ; l'ancien nom est libéré pour un autre waypoint. */
+    @Test
+    void renameRefusesADuplicateIgnoringCaseAndAccentsAndFreesTheOldName() throws Exception {
+        Waypoint a = generateAround(384, 384, Biome.FOREST);
+        Waypoint b = generateAround(1152, 1152, Biome.PLAINS);
+        assertTrue(rename(a.id(), "Clairière Dorée").ok());
+
+        WaypointService.RenameResult dup = rename(b.id(), "clairiere doree");
+        assertFalse(dup.ok());
+        assertEquals("DUPLICATE", dup.code());
+        assertEquals(b.displayName(), service.byId(b.id()).orElseThrow().displayName(), "rien n'a changé");
+
+        String oldNameOfA = a.displayName();
+        WaypointService.RenameResult reuse = rename(b.id(), oldNameOfA);
+        assertTrue(reuse.ok(), "l'ancien nom de A est libéré : " + reuse.message());
+
+        // Changer la seule casse/les accents de SON propre nom reste permis.
+        assertTrue(rename(a.id(), "CLAIRIERE DOREE").ok());
+    }
+
+    /** Issue #134 : refus sans effet — nom invalide (balises), inchangé, waypoint inconnu. */
+    @Test
+    void renameRejectsInvalidUnchangedAndUnknownWithoutSideEffects() {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+        assertEquals("INVALID", rename(wp.id(), "<red>Piège").code());
+        assertEquals("INVALID", rename(wp.id(), "x").code());
+        assertEquals("INVALID", rename(wp.id(), "a".repeat(41)).code());
+        assertEquals("UNCHANGED", rename(wp.id(), wp.displayName()).code());
+        assertEquals("NOT_FOUND", rename("inconnu", "Nom Valide").code());
+        assertEquals(wp.displayName(), service.byId(wp.id()).orElseThrow().displayName());
+    }
+
     @Test
     void twoPlayersEnteringSimultaneouslyNeverCreateTwoWaypoints() throws Exception {
         prepareArea(384, 384, Biome.FOREST, 48);
@@ -641,6 +730,11 @@ class WaypointServiceTest {
 
         @Override
         public void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName) {
+        }
+
+        @Override
+        public int refreshName(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName) {
+            return 0;
         }
 
         @Override

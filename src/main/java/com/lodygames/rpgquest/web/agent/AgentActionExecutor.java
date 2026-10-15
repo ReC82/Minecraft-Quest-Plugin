@@ -151,6 +151,7 @@ public final class AgentActionExecutor {
                 case PLAYER_RESETFULL_PREVIEW -> resetPreview(action, ResetScope.NEW_PLAYER);
                 case TRAVEL_CATALOG -> travelCatalog(action);
                 case TRAVEL_BEACON_PAIR -> travelBeaconPair(action);
+                case WAYPOINT_RENAME -> waypointRename(action);
                 case MOB_LIST -> mobList(action);
                 case MOB_CATALOGS -> mobCatalogs(action);
                 case ITEM_CATALOGS -> itemCatalogs(action);
@@ -535,6 +536,19 @@ public final class AgentActionExecutor {
                 .thenApply(r -> mutationOutcome(action, r, "waypointId", waypointId))
                 .exceptionally(e -> AgentActionOutcome.failed(action.id(),
                         "Échec : " + e.getClass().getSimpleName()));
+    }
+
+    /** Issue #134 — {@code waypoint.rename} : un refus (doublon, nom invalide) est une issue normale. */
+    private CompletableFuture<AgentActionOutcome> waypointRename(AgentAction action) {
+        String waypointId = action.params().getOrDefault("waypointId", "").trim();
+        String displayName = action.params().getOrDefault("displayName", "");
+        if (waypointId.isEmpty() || displayName.isBlank()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « waypointId » et « displayName » obligatoires."));
+        }
+        return actions.renameWaypoint(waypointId, displayName)
+                .thenApply(r -> mutationOutcome(action, r, "waypointId", waypointId))
+                .exceptionally(e -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(e)));
     }
 
     private CompletableFuture<AgentActionOutcome> travelCatalog(AgentAction action) {

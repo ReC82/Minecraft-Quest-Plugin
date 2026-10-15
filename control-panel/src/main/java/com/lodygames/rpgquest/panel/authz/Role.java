@@ -47,7 +47,7 @@ public enum Role {
             Permission.NPC_READ, Permission.TRAVEL_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
             // Issue #156 : débloquer une instance du Hub restée sans borne est un geste
             // d'exploitation ciblé, pas une modification de l'équilibrage du réseau.
-            Permission.TRAVEL_PAIR_WRITE,
+            Permission.TRAVEL_PAIR_WRITE, Permission.WAYPOINT_WRITE,
             // Issue #178 : villes — gestion et suppression, comme les emplacements de construction.
             Permission.CITY_WRITE, Permission.CITY_DELETE,
             Permission.NPC_SPAWN_WRITE, Permission.QUEST_GIVER_WRITE,

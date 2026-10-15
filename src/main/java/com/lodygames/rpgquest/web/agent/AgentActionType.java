@@ -61,6 +61,11 @@ public enum AgentActionType {
      * rattrapage global, aucun seuil de densité ou d'espacement modifié.
      */
     TRAVEL_BEACON_PAIR("travel.beacon.pair"),
+    /**
+     * Issue #134 : renommer le nom d'affichage d'<strong>un</strong> waypoint. Seul le nom change :
+     * id, position, découvertes et références de quête restent intacts.
+     */
+    WAYPOINT_RENAME("waypoint.rename"),
     /** Catalogue des profils de mobs spéciaux/boss + throttle Wild (issue #169) — lecture seule. */
     MOB_LIST("mob.list"),
     /** Issue #172 : catalogues réels du serveur (entités, particules, sons, biomes, mondes). */

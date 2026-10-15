@@ -4326,6 +4326,23 @@ public final class BukkitAgentActions implements AgentActions {
         });
     }
 
+    @Override
+    public CompletableFuture<MutationResult> renameWaypoint(String waypointId, String displayName) {
+        if (waypointId == null || waypointId.isBlank()) {
+            return done(MutationResult.of(false, "INVALID", "Waypoint non précisé."));
+        }
+        return onMain(() -> waypointService.rename(waypointId.trim(), displayName).thenApply(r -> {
+            if (!r.ok()) {
+                return MutationResult.of(false, r.code(), r.message());
+            }
+            return new MutationResult(true, r.code(), r.message(), List.of(
+                    "Ancien nom : « " + r.previousName() + " ».",
+                    r.signsRefreshed() ? "Panneaux réécrits en jeu."
+                            : "Chunk non chargé : panneaux réécrits à son prochain chargement.",
+                    "Identifiant, position et découvertes inchangés."));
+        }));
+    }
+
     private static String instanceKey(String world, String biomeInstance) {
         return world + "#" + biomeInstance;
     }

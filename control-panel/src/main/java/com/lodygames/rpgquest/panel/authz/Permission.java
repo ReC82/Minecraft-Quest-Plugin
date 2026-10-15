@@ -35,6 +35,11 @@ public enum Permission {
      */
     TRAVEL_PAIR_WRITE,
     /**
+     * Administrer un waypoint existant (issue #134) — tranche actuelle : renommer son nom affiché.
+     * Seul le texte change (base + panneaux) : id, position et découvertes restent intacts.
+     */
+    WAYPOINT_WRITE,
+    /**
      * Villes (issue #178) : renommer, régler la distance de détection, activer/désactiver, armer le
      * déplacement du centre et montrer le périmètre en jeu. La lecture de la page Villes relève de
      * {@link #TRAVEL_READ} : une ville est aussi une destination du réseau de voyage.

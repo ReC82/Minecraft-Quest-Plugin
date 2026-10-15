@@ -6,6 +6,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -52,6 +53,12 @@ final class WaypointListener implements Listener {
         if (service.handleInteract(event.getPlayer(), block)) {
             event.setCancelled(true);
         }
+    }
+
+    /** Issue #134 : panneaux d'un waypoint renommé pendant que son chunk était déchargé. */
+    @EventHandler
+    public void onChunkLoad(ChunkLoadEvent event) {
+        service.handleChunkLoad(event.getWorld(), event.getChunk().getX(), event.getChunk().getZ());
     }
 
     @EventHandler

@@ -74,6 +74,27 @@ public final class WaypointModelV1 implements WaypointModel {
     }
 
     @Override
+    public int refreshName(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName) {
+        int rewritten = 0;
+        for (BlockFace side : lateralFaces(cardinal(facing))) {
+            Block block = world.getBlockAt(anchorX + side.getModX(), anchorY + 1, anchorZ + side.getModZ());
+            if (block.getType() != SIGN_MATERIAL) {
+                continue; // panneau absent ou remplacé : jamais reposé ici (voir restoreInPlace).
+            }
+            try {
+                if (block.getState() instanceof Sign sign) {
+                    writeLines(sign, displayName);
+                    sign.update(true, false);
+                    rewritten++;
+                }
+            } catch (RuntimeException ignored) {
+                // BlockState non simulé fidèlement (tests) : texte réel PENDING MANUAL VALIDATION.
+            }
+        }
+        return rewritten;
+    }
+
+    @Override
     public BlockOffset interactor(BlockFace facing) {
         BlockFace f = cardinal(facing);
         return new BlockOffset(f.getModX(), 1, f.getModZ());
@@ -137,15 +158,23 @@ public final class WaypointModelV1 implements WaypointModel {
                 state.setBlockData(data);
             }
             if (state instanceof Sign sign) {
-                List<String> lines = wrapSignLines(displayName);
-                for (int i = 0; i < lines.size() && i < SIGN_MAX_LINES; i++) {
-                    sign.getSide(Side.FRONT).line(i, Component.text(lines.get(i)));
-                }
+                writeLines(sign, displayName);
             }
             state.update(true, false);
         } catch (RuntimeException ignored) {
             // BlockState non simulé fidèlement (tests) : le type OAK_WALL_SIGN suffit à vérifier le
             // placement et la protection ; l'orientation/le texte réels restent PENDING MANUAL VALIDATION.
+        }
+    }
+
+    /**
+     * Écrit le nom sur la face avant et <strong>vide les lignes restantes</strong> : après un
+     * renommage vers un nom plus court (issue #134), aucune ligne de l'ancien nom ne doit subsister.
+     */
+    private static void writeLines(Sign sign, String displayName) {
+        List<String> lines = wrapSignLines(displayName);
+        for (int i = 0; i < SIGN_MAX_LINES; i++) {
+            sign.getSide(Side.FRONT).line(i, Component.text(i < lines.size() ? lines.get(i) : ""));
         }
     }
 

@@ -1690,6 +1690,15 @@ public interface AgentActions {
      */
     CompletableFuture<MutationResult> pairHubBeacon(String waypointId);
 
+    /**
+     * Issue #134 — renomme le nom d'affichage d'un waypoint (voir
+     * {@code waypoint.WaypointService#rename}) : unicité insensible à la casse et aux accents,
+     * panneaux réécrits si le chunk est chargé, sinon à son prochain chargement. Codes :
+     * {@code RENAMED}, {@code INVALID}, {@code NOT_FOUND}, {@code UNCHANGED}, {@code DUPLICATE},
+     * {@code BUSY}, {@code FAILED}.
+     */
+    CompletableFuture<MutationResult> renameWaypoint(String waypointId, String displayName);
+
     // ---- Mobs spéciaux / boss (action {@code mob.list}, issue #169 lot 1) -----------------------
 
     /**

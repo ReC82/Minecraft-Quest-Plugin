@@ -77,6 +77,11 @@ class WaypointModelRegistryTest {
         }
 
         @Override
+        public int refreshName(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName) {
+            return 0;
+        }
+
+        @Override
         public BlockOffset interactor(BlockFace facing) {
             return new BlockOffset(0, 1, 1);
         }

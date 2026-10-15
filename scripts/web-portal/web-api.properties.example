@@ -1,0 +1,25 @@
+# Portail public LodyQuests — configuration NON SECRÈTE du web-api (issue #52).
+# Installée par scripts/web-portal/install.sh en /etc/lodyquests-portal/web-api.properties
+# (jamais écrasée ensuite). Les chemins relatifs partent de /var/lib/lodyquests-portal.
+
+# Écoute locale uniquement : le public passe par nginx (lodyquests.lodylands.com).
+bind-address=127.0.0.1
+port=8092
+public-base-url=https://lodyquests.lodylands.com
+site-title=LodyQuests
+
+# nginx transmet l'IP du visiteur dans X-Real-IP : la limite de fréquence reste par visiteur.
+trust-proxy-headers=true
+rate-limit-per-minute=120
+
+# Instantané exporté par le plugin. web-export est DÉSACTIVÉ côté serveur Minecraft (décision du
+# propriétaire) : le fichier est absent et le portail affiche son mode dégradé, c'est attendu.
+snapshot-file=web-export/snapshot.json
+snapshot-max-age-seconds=120
+
+# CONFIDENTIALITÉ (#55) : aucun pseudo, profil ni classement publié tant que le propriétaire n'a
+# pas validé les règles et réactivé l'export. Ne passer à true que sur sa décision écrite.
+player-data-public=false
+
+# Boutique (mission étape 22) : hors périmètre du portail communautaire V1, aucun paiement.
+store-enabled=false

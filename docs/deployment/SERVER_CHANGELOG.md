@@ -48,6 +48,44 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Portail public LodyQuests hébergé sur AWS (#52)
+
+### Changement
+
+Nouveau service sur l'instance AWS (pas sur le serveur Minecraft) : `lodyquests-portal.service`
+(module `web-api`, `127.0.0.1:8092`) derrière un vhost nginx dédié `lodyquests.lodylands.com`.
+Pages publiques sans pseudo (`player-data-public=false`), sans boutique (`store-enabled=false`),
+`/api/` fermé. Aucun autre site ni service modifié.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft : plugin inchangé, `web-export` reste désactivé, aucune migration.
+Sur AWS : `sudo scripts/web-portal/install.sh` (utilisateur `lodyquests-web`, `/opt`, `/etc`,
+`/var/lib/lodyquests-portal`, unit systemd, vhost nginx après `nginx -t`, reload sans restart).
+
+### Sauvegarde préalable
+
+Aucune version antérieure du portail. `nginx -t` vérifié avant et après ; vhost d'avant certbot
+copié sous `/opt/lodyquests-portal/releases/`.
+
+### Déploiement
+
+`sudo scripts/web-portal/install.sh` puis `scripts/web-portal/deploy.sh` ; TLS par
+`certbot --nginx -d lodyquests.lodylands.com` une fois le DNS public propagé.
+
+### Validation
+
+`curl -s http://127.0.0.1:8092/health` → `"status":"UP"` ; pages 200 via nginx, `/store` et
+`/api/*` 404 ; `plugadmin.lodylands.com/health` toujours 200. Navigateur : voir
+`docs/deployment/WEB_PORTAL_AWS.md` § Vérifier (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+`scripts/web-portal/rollback.sh app` (version précédente) ou `full` (service arrêté et vhost retiré,
+rien supprimé).
+
+---
+
 ## 2026-10-15 - PlugAdmin : page « Voyages » simplifiée (#412)
 
 ### Changement

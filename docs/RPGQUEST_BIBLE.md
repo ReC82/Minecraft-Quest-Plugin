@@ -107,6 +107,14 @@ Type : Console/joueur (Multiverse-Core, plugin externe)
 ### Sauvegardes / rollback
 Voir [VERYGAMES.md § Rollback](deployment/VERYGAMES.md#rollback) pour la liste exacte des fichiers à sauvegarder avant toute opération (ancien JAR, `world_hub/` complet, `saves.yml` **et** `data.db` ensemble — jamais l'un sans l'autre, voir section 17 — fichiers de configuration et `worlds.yml`) et la procédure de restauration pas à pas. Chaque changement nécessitant une action serveur doit en plus avoir une entrée dans [SERVER_CHANGELOG.md](deployment/SERVER_CHANGELOG.md) (sauvegarde préalable, déploiement, validation, rollback spécifiques à ce changement).
 
+### Portail public LodyQuests (AWS, issue #52)
+Type : procédure serveur (instance AWS, **pas** le serveur Minecraft)
+But : héberger le site public https://lodyquests.lodylands.com (module `web-api`), séparé de PlugAdmin.
+Commandes : `sudo scripts/web-portal/install.sh` (installation idempotente, `--tls` pour certbot), `scripts/web-portal/deploy.sh` (mise à jour du code, retour automatique si `/health` échoue), `scripts/web-portal/rollback.sh app|nginx-off|disable|full`.
+Fichiers : service `lodyquests-portal.service` (utilisateur `lodyquests-web`, `127.0.0.1:8092`, `MemoryMax=256M`), configuration `/etc/lodyquests-portal/web-api.properties`, secrets `/etc/lodyquests-portal/portal.env` (hors Git).
+Résultat attendu : `curl -s http://127.0.0.1:8092/health` → `{"status":"UP",…,"playerDataPublic":false,"store":false}`.
+À savoir : aucun pseudo publié tant que `player-data-public=false` (décision #55) ; aucune boutique ; aucune écriture SQL. Détail : [WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).
+
 ---
 
 ## 2. Administration RPGQuest (`/rpgadmin`)

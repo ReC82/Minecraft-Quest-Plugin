@@ -1,7 +1,7 @@
 # Portail communautaire RPGQuest (issues #52 à #57)
 
 Document de cadrage et d'état. Il décrit ce qui **existe dans le code** et ce qui est **conçu mais
-pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : nuit du 12 au 13/10/2026.
+pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : 15/10/2026 (#52, hébergement AWS).
 
 ## 1. Cadrage (#52)
 
@@ -9,8 +9,11 @@ pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : nuit d
 
 - un site **public**, consultable sans compte : actualités, statut, classements, profils publics
   limités, wiki, confidentialité ;
-- **distinct de PlugAdmin** : autre processus (`web-api/`), autre port, aucun compte ni permission
+- **distinct de PlugAdmin** : autre processus (`web-api/`), autre service systemd, autre
+  utilisateur système, autre port, autre vhost nginx, aucun compte, secret ni permission
   d'administration partagés. PlugAdmin administre, le portail montre ;
+- **hébergé sur l'instance AWS** (celle de PlugAdmin), domaine **https://lodyquests.lodylands.com**
+  (décision du propriétaire du 13/10) — exploitation : [deployment/WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md) ;
 - **en lecture seule sur le jeu** : il lit uniquement l'instantané `snapshot.json` exporté par le
   plugin (`web.WebSnapshotWriter`). Il n'ouvre jamais `data.db`, n'écrit jamais dans les données de
   gameplay et ne tient aucune copie faisant autorité d'un solde ou d'une progression ;
@@ -27,14 +30,21 @@ pas encore réalisé**, sans mélanger les deux. Dernière mise à jour : nuit d
 
 ### Feuille de route, dans l'ordre des dépendances
 
-| Étape | Ticket | État |
-| --- | --- | --- |
-| Instantané v2 : statistiques par portée, profils publics | #54, #56 | **fait** (cette nuit) |
-| Retrait du profil par le joueur, page confidentialité | #55 | **fait** (socle) ; politique juridique à valider avant ouverture |
-| Pages `/joueurs`, classements des quêtes, API `/api/profiles` | #56 | **fait** |
-| Comptes joueurs et liaison UUID par code en jeu | #53 | conçu (§2), non réalisé |
-| Saisons, puis moteur d'événements | #54, #57 | conçus (§4, §6), non réalisés |
-| Récompenses d'événement via les services du plugin | #57 | conçu, non réalisé |
+État au 15/10/2026. « Fait » = dans le code et testé automatiquement ; la validation navigateur ou
+en jeu par le propriétaire reste à faire là où c'est indiqué.
+
+| # | Étape | Ticket | État |
+| --- | --- | --- | --- |
+| 0 | Socle d'hébergement AWS : service, nginx, `/health`, déploiement, rollback | #52 | **fait** — en ligne en local ; HTTPS selon le certificat (voir le rapport du 15/10) |
+| 1 | Instantané v2 : statistiques par portée, profils publics | #54, #56 | **fait** |
+| 2 | Retrait du profil par le joueur, page confidentialité | #55 | **fait** (socle) ; politique, mineurs et visibilité par défaut **à décider** par le propriétaire |
+| 3 | Acheminer l'instantané du serveur Minecraft vers AWS | #421 | **à faire** — sans lui, le portail reste en mode dégradé |
+| 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **bloqué** par la décision #55 |
+| 5 | V1 publique : actualités, profils, premiers classements | #56 | pages faites ; actualités éditables et publication à faire après 3 et 4 |
+| 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | conçu (§2), non réalisé |
+| 7 | Saisons, puis moteur d'événements | #54, #57 | conçus (§4, §6), non réalisés |
+| 8 | Entitlements : récompenses remises par le plugin | #422 | à spécifier, après #53 et #57 |
+| — | Premium (VIP, pass, boutique) | — | **hors périmètre** : après cadrage juridique et règles Minecraft ; `store-enabled=false` |
 
 ## 2. Comptes joueurs et liaison au compte Minecraft (#53) — conçu, non réalisé
 
@@ -146,6 +156,11 @@ Règles :
 
 ## 7. Exploitation
 
-Le portail lit `plugins/RPGQuest/<web-export.output-dir>/snapshot.json` : l'export doit être
-activé (`web-export.enabled: true`). Démarrage, configuration et jeton d'API : voir
-[WEB_API.md](WEB_API.md). Aucune nouvelle variable d'environnement n'est introduite par ce lot.
+Hébergement, déploiement, rollback et vérifications : [deployment/WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).
+Configuration du processus et jeton d'API : [WEB_API.md](WEB_API.md).
+
+Garde-fous en place sur l'instance publique (`/etc/lodyquests-portal/web-api.properties`) :
+`player-data-public=false` (aucun pseudo publié, même si un instantané arrivait),
+`store-enabled=false` (aucune boutique), écoute sur `127.0.0.1` seulement, `/api/` fermé par nginx.
+Le portail lit `snapshot.json` dans `/var/lib/lodyquests-portal/web-export/` ; l'export du plugin
+(`web-export.enabled`) reste désactivé sur DEV et aucun canal ne l'achemine encore (#421).

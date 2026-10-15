@@ -44,6 +44,9 @@ public final class AgentActionCatalog {
     /** Miroir de {@code NpcSpot.MAX_NAME_LENGTH} côté plugin, qui revalide. */
     public static final int MAX_NPC_SPOT_NAME = 64;
     /** Issue #47 — les seules familles publiables, miroir de {@code content.publish.PublishKind}. */
+    /** Issue #427 — borne d'un lot, miroir de {@code ContentPublishService.MAX_BATCH_ITEMS}. */
+    public static final int MAX_PUBLISH_BATCH = 50;
+
     private static final java.util.List<String> PUBLISHABLE_KINDS =
             java.util.List.of("quests", "stories", "dialogues");
     /** Identifiant de ressource : aucun séparateur, donc impossible d'en faire un chemin. */
@@ -457,6 +460,12 @@ public final class AgentActionCatalog {
         // impactés sont ré-enfilés pour que l'état se réconcilie sans « Rafraîchir + F5 ».
         addSensitiveWrite("content.publish", Permission.CONTENT_PUBLISH, false,
                 "Publier une ressource de contenu sur DEV",
+                "content.dev.state", "quest.list", "story.list", "dialogue.list");
+        // Issue #427 — un pack (ou toute sélection) publié en UNE opération : un seul rechargement
+        // de l'ensemble, tout ou rien. Même droit que la publication unitaire, dont c'est la forme
+        // groupée ; « dry_run=true » fait juger le lot par le moteur sans rien laisser en jeu.
+        addSensitiveWrite("content.publish.batch", Permission.CONTENT_PUBLISH, false,
+                "Publier un lot de contenu (pack) sur DEV",
                 "content.dev.state", "quest.list", "story.list", "dialogue.list");
         addSensitiveWrite("content.publish.rollback", Permission.CONTENT_ROLLBACK, false,
                 "Défaire une publication de contenu sur DEV",
@@ -1252,6 +1261,48 @@ public final class AgentActionCatalog {
                 // Non transmis à l'agent : vérifié côté panel juste avant d'enfiler l'action, parce
                 // que c'est le panel qui détient la source. Voir PanelApp#enrichPublish.
                 params.put("expected_source_sha", expectedSource);
+                params.put("confirm", "true");
+            }
+            case "content.publish.batch" -> {
+                int count;
+                try {
+                    count = Integer.parseInt(trim(form.get("count")));
+                } catch (NumberFormatException e) {
+                    count = 0;
+                }
+                if (count < 1 || count > MAX_PUBLISH_BATCH) {
+                    return Validation.fail("Lot vide ou trop grand (1 à " + MAX_PUBLISH_BATCH
+                            + " ressources).");
+                }
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                for (int i = 0; i < count; i++) {
+                    Map<String, String> one = new LinkedHashMap<>();
+                    one.put("kind", form.get("kind_" + i));
+                    one.put("id", form.get("id_" + i));
+                    String kind = publishKind(one);
+                    String slug = publishSlug(one);
+                    if (kind == null || slug == null) {
+                        return Validation.fail("Ressource n°" + (i + 1) + " du lot invalide.");
+                    }
+                    if (!seen.add(kind + "/" + slug)) {
+                        return Validation.fail("« " + kind + "/" + slug + " » figure deux fois dans le lot.");
+                    }
+                    String expectedDev = sha(form.get("expected_dev_sha_" + i));
+                    String expectedSource = sha(form.get("expected_source_sha_" + i));
+                    if (expectedDev == null || expectedSource == null || expectedSource.isEmpty()) {
+                        return Validation.fail("Empreintes manquantes pour « " + slug
+                                + " » : relancez l'analyse.");
+                    }
+                    params.put("kind_" + i, kind);
+                    params.put("id_" + i, slug);
+                    params.put("expected_dev_sha_" + i, expectedDev);
+                    // Vérifiée côté panel, jamais transmise : voir PanelApp#enrichPublishBatch.
+                    params.put("expected_source_sha_" + i, expectedSource);
+                }
+                params.put("count", Integer.toString(count));
+                if ("true".equals(trim(form.get("dry_run")))) {
+                    params.put("dry_run", "true");
+                }
                 params.put("confirm", "true");
             }
             case "content.dev.read" -> {

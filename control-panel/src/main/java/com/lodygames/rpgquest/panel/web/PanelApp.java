@@ -5467,8 +5467,9 @@ public final class PanelApp {
         // joint le YAML. Deux raisons, et les deux comptent : le navigateur ne peut donc pas forger
         // le contenu publié, et il n'a jamais besoin de connaître un chemin.
         java.util.Map<String, String> outgoing = v.params();
-        if ("content.publish".equals(type)) {
-            PublishEnrichment enriched = enrichPublish(outgoing);
+        if ("content.publish".equals(type) || "content.publish.batch".equals(type)) {
+            PublishEnrichment enriched = "content.publish".equals(type) ? enrichPublish(outgoing)
+                    : enrichPublishBatch(outgoing);
             if (enriched.error() != null) {
                 audit.record(session.username(), "agent.action.create",
                         "agent=" + agentId + " type=" + type, "DENIED", enriched.error(), rid);
@@ -5554,64 +5555,101 @@ public final class PanelApp {
                     "Aucune ressource sélectionnée : rien n'a été publié."));
             return;
         }
-        // Ordre déterministe : deux soumissions identiques produisent la même séquence d'actions.
+        // Ordre déterministe : deux soumissions identiques produisent la même action. L'ordre ne
+        // décide plus du résultat (#427) : le lot est jugé d'un bloc par le moteur.
         java.util.Collections.sort(selected);
+        boolean dryRun = "check".equals(form.get("mode"));
+        String pack = form.getOrDefault("pack", "").trim();
 
-        int queued = 0;
+        // Issue #427 — UNE action pour toute la sélection. Publier ressource par ressource faisait
+        // juger au moteur des états intermédiaires (une quête dont le prérequis n'était pas encore
+        // publié), d'où les refus INVALID_CONTENT du pack Lily selon l'ordre d'envoi.
+        Map<String, String> batch = new java.util.LinkedHashMap<>();
         java.util.List<String> refused = new java.util.ArrayList<>();
+        int index = 0;
         for (String key : selected) {
             int slash = key.indexOf('/');
             if (slash <= 0 || slash == key.length() - 1) {
                 refused.add(key + " (clé invalide)");
                 continue;
             }
-            String kind = key.substring(0, slash);
-            String slug = key.substring(slash + 1);
-            Map<String, String> one = new java.util.LinkedHashMap<>();
-            one.put("kind", kind);
-            one.put("id", slug);
-            one.put("expected_source_sha", form.getOrDefault("src_" + key, ""));
-            one.put("expected_dev_sha", form.getOrDefault("dev_" + key, ""));
-            one.put("confirm", "true");
-
-            // Exactement la même validation que pour une publication unitaire.
-            var validation = com.lodygames.rpgquest.panel.agent.AgentActionCatalog
-                    .validate("content.publish", one);
-            if (!validation.valid()) {
-                refused.add(slug + " : " + validation.error());
-                continue;
-            }
-            PublishEnrichment enriched = enrichPublish(validation.params());
-            if (enriched.error() != null) {
-                refused.add(slug + " : " + enriched.error());
-                continue;
-            }
-            String id = agentStore.createAction(agentId, "content.publish", enriched.params(),
-                    session.username());
-            audit.record(session.username(), "agent.action.create",
-                    "agent=" + agentId + " type=content.publish action=" + id + " batch=" + rid,
-                    "PENDING", safeParams(enriched.params()), rid);
-            queued++;
+            batch.put("kind_" + index, key.substring(0, slash));
+            batch.put("id_" + index, key.substring(slash + 1));
+            batch.put("expected_source_sha_" + index, form.getOrDefault("src_" + key, ""));
+            batch.put("expected_dev_sha_" + index, form.getOrDefault("dev_" + key, ""));
+            index++;
         }
+        batch.put("count", Integer.toString(index));
+        if (dryRun) {
+            batch.put("dry_run", "true");
+        }
+        batch.put("confirm", "true");
 
-        audit.record(session.username(), "content.pending.publish",
-                "agent=" + agentId + " selected=" + selected.size(),
-                refused.isEmpty() ? "OK" : "PARTIAL",
-                queued + " enfilée(s), " + refused.size() + " refusée(s)", rid);
-        LOG.log(System.Logger.Level.INFO, "event=content_batch_publish rid=" + rid
-                + " agent=" + agentId + " queued=" + queued + " refused=" + refused.size()
-                + " by=" + session.username());
-
-        String message = queued + " publication(s) demandée(s)"
-                + (refused.isEmpty() ? "." : " ; " + refused.size() + " refusée(s) : "
-                        + String.join(" | ", refused.subList(0, Math.min(3, refused.size())))
-                        + (refused.size() > 3 ? " …" : ""));
-        if (queued == 0) {
-            Http.redirect(exchange, withError(returnPath, agentId, null, message));
+        var validation = com.lodygames.rpgquest.panel.agent.AgentActionCatalog
+                .validate("content.publish.batch", batch);
+        PublishEnrichment enriched = !refused.isEmpty()
+                ? new PublishEnrichment(null, String.join(" | ", refused))
+                : !validation.valid() ? new PublishEnrichment(null, validation.error())
+                        : enrichPublishBatch(validation.params());
+        if (enriched.error() != null) {
+            audit.record(session.username(), "content.pending.publish",
+                    "agent=" + agentId + " selected=" + selected.size(), "DENIED", enriched.error(), rid);
+            Http.redirect(exchange, withError(packReturn(returnPath, pack), agentId, null,
+                    "Rien n'a été " + (dryRun ? "vérifié" : "publié") + " : " + enriched.error()));
             return;
         }
-        Http.redirect(exchange, appendContext(returnPath, agentId, null)
+        String id = agentStore.createAction(agentId, "content.publish.batch", enriched.params(),
+                session.username());
+        audit.record(session.username(), "agent.action.create",
+                "agent=" + agentId + " type=content.publish.batch action=" + id + " batch=" + rid,
+                "PENDING", safeParams(enriched.params()), rid);
+        audit.record(session.username(), "content.pending.publish",
+                "agent=" + agentId + " selected=" + selected.size() + (dryRun ? " dry_run" : ""),
+                "OK", "lot de " + index + " ressource(s) enfilé", rid);
+        LOG.log(System.Logger.Level.INFO, "event=content_batch_publish rid=" + rid
+                + " agent=" + agentId + " items=" + index + " dry_run=" + dryRun
+                + " action=" + id + " by=" + session.username());
+
+        String message = (dryRun ? "Vérification" : "Publication") + " de " + index
+                + " ressource(s) demandée(s) en une seule opération : résultat ci-dessous dans"
+                + " quelques secondes.";
+        Http.redirect(exchange, appendContext(packReturn(returnPath, pack), agentId, null)
                 + "&batch=" + enc(message));
+    }
+
+    /** Le retour sur la vue « pack » (#427) si l'on en vient, avec un filtre déjà validé. */
+    private static String packReturn(String returnPath, String pack) {
+        String clean = com.lodygames.rpgquest.panel.web.AgentPages.cleanPack(pack);
+        return clean.isEmpty() ? returnPath : returnPath + "?pack=" + enc(clean);
+    }
+
+    /**
+     * {@link #enrichPublish} pour chaque ressource d'un lot (issue #427) : le YAML est lu par le
+     * panel, l'empreinte source revérifiée. Une seule ressource en défaut refuse le lot entier — on
+     * ne publie pas « ce qui passe » d'un pack.
+     */
+    private PublishEnrichment enrichPublishBatch(java.util.Map<String, String> params) {
+        int count = Integer.parseInt(params.get("count"));
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>(params);
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            java.util.Map<String, String> one = new java.util.LinkedHashMap<>();
+            one.put("kind", params.get("kind_" + i));
+            one.put("id", params.get("id_" + i));
+            one.put("expected_source_sha", params.getOrDefault("expected_source_sha_" + i, ""));
+            PublishEnrichment enriched = enrichPublish(one);
+            out.remove("expected_source_sha_" + i);
+            if (enriched.error() != null) {
+                errors.add(one.get("kind") + "/" + one.get("id") + " : " + enriched.error());
+                continue;
+            }
+            out.put("yaml_" + i, enriched.params().get("yaml"));
+            out.put("expected_id_" + i, enriched.params().get("expected_id"));
+        }
+        if (!errors.isEmpty()) {
+            return new PublishEnrichment(null, String.join(" | ", errors));
+        }
+        return new PublishEnrichment(out, null);
     }
 
     /** Résultat de l'enrichissement d'une publication : des paramètres prêts, ou un refus. */
@@ -5752,7 +5790,10 @@ public final class PanelApp {
     private static String safeParams(Map<String, String> params) {
         StringBuilder sb = new StringBuilder();
         params.forEach((k, val) -> {
-            if (!"value".equals(k)) { // ne jamais recopier une valeur libre dans l'audit
+            if (k.startsWith("yaml")) { // un fichier entier n'a rien à faire dans une ligne d'audit
+                sb.append(sb.isEmpty() ? "" : " ").append(k).append("=<")
+                        .append(val == null ? 0 : val.length()).append(" caractères>");
+            } else if (!"value".equals(k)) { // ne jamais recopier une valeur libre dans l'audit
                 sb.append(sb.isEmpty() ? "" : " ").append(k).append('=').append(val);
             } else {
                 sb.append(sb.isEmpty() ? "" : " ").append("value=<défini>");

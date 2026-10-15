@@ -98,8 +98,8 @@ public final class ContentImportPages {
                 + "<li><strong>Vérifier</strong> l'analyse et l'aperçu : quêtes, objectifs, récompenses, "
                 + "dialogues, personnages et liens.</li>"
                 + "<li><strong>Confirmer</strong> l'import en source (une seule confirmation).</li>"
-                + "<li><strong>Publier sur DEV</strong> depuis <a href=\"/content/pending\">Changements en "
-                + "attente</a>, puis lier les personnages à un PNJ Citizens.</li></ol>");
+                + "<li><strong>Mettre l'histoire en jeu sur DEV</strong> avec le bouton proposé après "
+                + "l'import (tout le pack d'un bloc), puis lier les personnages à un PNJ Citizens.</li></ol>");
         sb.append("<p class=\"muted\">Seul un fichier <code>.json</code> est importable : les fiches "
                 + "<code>.md</code> sont écrites pour l'auteur et pour l'IA, jamais pour l'import. "
                 + "Aucun dépôt ne publie quoi que ce soit.</p>");
@@ -180,6 +180,15 @@ public final class ContentImportPages {
                 .append(a.conflicts()).append(" collision(s) &middot; ")
                 .append(a.invalid()).append(" inexploitable(s)</p>");
 
+        boolean contentInSource = a.elements().stream()
+                .noneMatch(e -> e.writes() && PUBLISHABLE.contains(e.family()));
+        if (contentInSource && a.conflicts() == 0 && a.invalid() == 0) {
+            // Quêtes, story et dialogues déjà en source (ré-analyse après import) : on mène
+            // directement à leur mise en jeu.
+            sb.append(publishPackLink(a.elements().stream()
+                    .filter(e -> e.status() == ContentPackImport.Status.UNCHANGED)
+                    .map(ContentPackImport.Element::key).toList()));
+        }
         if (!a.dependencies().isEmpty()) {
             sb.append(dependencies(a));
         }
@@ -433,7 +442,37 @@ public final class ContentImportPages {
                     .append("</td></tr>");
         }
         sb.append(Ui.tableClose());
+        sb.append(publishPackLink(applied.stream()
+                .filter(o -> o.result() != null && o.result().ok())
+                .map(o -> o.element().key()).toList()));
         return sb.append("</section>").toString();
+    }
+
+    /** Les familles qu'une publication sur DEV sait mettre en jeu (miroir de {@code PublishKind}). */
+    private static final java.util.Set<String> PUBLISHABLE = java.util.Set.of("quests", "stories", "dialogues");
+
+    /**
+     * Issue #427 — l'étape suivante d'un import : mettre <strong>tout le pack</strong> en jeu en
+     * une action, sans cocher ni ordonner quoi que ce soit. Mène à la vue « pack » des
+     * changements en attente, qui vérifie puis publie l'ensemble d'un bloc.
+     */
+    static String publishPackLink(java.util.Collection<String> keys) {
+        java.util.List<String> publishable = keys.stream()
+                .filter(k -> PUBLISHABLE.contains(k.substring(0, Math.max(0, k.indexOf('/')))))
+                .distinct().sorted().toList();
+        if (publishable.isEmpty()) {
+            return "";
+        }
+        String pack = AgentPages.cleanPack(String.join(",", publishable));
+        if (pack.isEmpty()) {
+            return "";
+        }
+        return "<div class=\"pack-next\"><p><strong>Étape suivante :</strong> mettre les "
+                + publishable.size() + " ressource(s) de ce pack en jeu sur DEV, ensemble. Le serveur"
+                + " les vérifie d'un bloc : tout passe, ou rien ne change.</p><div class=\"btnrow\">"
+                + "<a class=\"btn btn-primary\" href=\"/content/pending?pack="
+                + Http.esc(java.net.URLEncoder.encode(pack, java.nio.charset.StandardCharsets.UTF_8))
+                + "\">" + Icons.icon("deploy") + "Mettre l'histoire en jeu sur DEV</a></div></div>";
     }
 
     // ---- À propos ------------------------------------------------------------------------------

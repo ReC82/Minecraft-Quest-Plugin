@@ -48,6 +48,44 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - PlugAdmin : dialogue de PNJ récurrent Hors source modifiable, quête au hasard dans une liste (#430)
+
+### Changement
+
+PlugAdmin seulement. Un dialogue présent seulement sur DEV se copie dans la source de PlugAdmin
+(« Rendre ce dialogue modifiable », lecture `content.dev.read`, copie octet pour octet vérifiée par
+empreinte, jamais d'écrasement, **aucun effet sur DEV**). Éditeur : « Proposer une quête précise » /
+« Proposer une quête au hasard dans une liste » (`OFFER_CATALOG_QUEST`) ; encadré « À vérifier » des
+références à une quête précise ; liens catalogue ↔ dialogue des PNJ récurrents.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft (JAR inchangé). Redéploiement de PlugAdmin seulement. Aucune
+migration. Le dialogue réel `encounter_bandit` n'a été ni copié ni republié par la session.
+
+### Sauvegarde préalable
+
+Version précédente du panel conservée par `scripts/plugadmin/deploy.sh` sous
+`/opt/plugadmin/releases/20261015-181908`.
+
+### Déploiement
+
+`scripts/plugadmin/deploy.sh --wait-ci` après CI verte sur `b3b1f9b` (18:26).
+
+### Validation
+
+Servi : `DEPLOYED` = `b3b1f9b`, classes `DialogueServerCopy` / `DialogueCatalogCoherence` dans le
+JAR du panel, `POST /dialogues/import` enregistré (303 → `/login`, route inconnue = 404).
+Parcours propriétaire TC-324 — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Réinstaller `/opt/plugadmin/releases/20261015-181908` et redémarrer `plugadmin.service`. Une copie
+faite entre-temps reste un fichier `dialogues/<id>.yml` de la source : le supprimer suffit à revenir
+à « Hors source » (DEV n'a jamais changé).
+
+---
+
 ## 2026-10-15 - PlugAdmin : zones de texte pleine largeur, barre du haut sans débordement (#425)
 
 ### Changement

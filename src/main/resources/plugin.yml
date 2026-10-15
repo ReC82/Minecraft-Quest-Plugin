@@ -111,7 +111,7 @@ permissions:
     description: "/rpgadmin npc info — lecture seule du marquage de l'entité visée."
     default: false
   rpgquest.admin.npc.spot:
-    description: "/rpgadmin npc spot — réserve à votre position un emplacement de PNJ (issue #381) et liste les emplacements. Ne crée ni ne déplace AUCUN PNJ : le placement se fait depuis PlugAdmin > PNJ > Emplacements."
+    description: "/rpgadmin npc spot — outil « Emplacements PNJ » (clic droit sur un bloc = un emplacement, issue #381), liste, et marquage avancé à votre position. Ne crée ni ne déplace AUCUN PNJ : le placement se fait depuis PlugAdmin > PNJ > Emplacements."
     default: false
   rpgquest.admin.buildsite:
     description: "Emplacements de construction (issue #213) : obtenir l'outil, créer un emplacement d'un clic droit, et lister les emplacements en jeu. Nœud DÉDIÉ, sans rapport avec WorldEdit — l'outil ne sélectionne aucune région et ne modifie aucun bloc. N'accorde aucun droit de construction, aucun bypass de protection et aucune autre branche de /rpgadmin. L'ombrelle rpgquest.admin.world l'implique."

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -35,6 +36,11 @@ public final class NpcSpotService {
         CREATED,
         /** Un emplacement existait déjà sur ce bloc : c'est lui qui est renvoyé, rien n'est écrit. */
         ALREADY_THERE,
+        /**
+         * Une réservation du même bloc est déjà en cours d'écriture (double clic plus rapide que la
+         * base) : rien n'est écrit, la première suffit.
+         */
+        IN_PROGRESS,
         INVALID
     }
 
@@ -68,6 +74,8 @@ public final class NpcSpotService {
     private final NpcSpotRepository repository;
     private final Clock clock;
     private final Map<String, NpcSpot> spots = new ConcurrentHashMap<>();
+    /** Blocs dont la réservation est en cours d'écriture — garde anti-doublon des clics rapprochés. */
+    private final Set<String> creating = ConcurrentHashMap.newKeySet();
 
     public NpcSpotService(NpcSpotRepository repository) {
         this(repository, Clock.systemUTC());
@@ -128,14 +136,23 @@ public final class NpcSpotService {
             return CompletableFuture.completedFuture(
                     new CreateResult(CreateOutcome.INVALID, null, "Position invalide."));
         }
+        // La garde est posée AVANT de chercher un emplacement existant : le cache est rempli avant
+        // que la garde ne soit levée, donc un second clic voit soit la garde, soit l'emplacement.
+        String blockKey = blockKey(world, x, y, z);
+        if (!creating.add(blockKey)) {
+            return CompletableFuture.completedFuture(new CreateResult(CreateOutcome.IN_PROGRESS, null, null));
+        }
         Optional<NpcSpot> existing = at(world, x, y, z);
         if (existing.isPresent()) {
+            creating.remove(blockKey);
             return CompletableFuture.completedFuture(
                     new CreateResult(CreateOutcome.ALREADY_THERE, existing.get(), null));
         }
         Instant now = clock.instant();
-        return repository.allocateNumber().thenCompose(number -> {
-            NpcSpot spot = new NpcSpot(idFor(number), rawName, world, x, y, z, yaw, pitch,
+        CompletableFuture<CreateResult> result = repository.allocateNumber().thenCompose(number -> {
+            // Sans nom saisi, le numéro distingue les emplacements dans PlugAdmin (« Emplacement PNJ 12 »).
+            String name = rawName == null || rawName.isBlank() ? NpcSpot.DEFAULT_NAME + " " + number : rawName;
+            NpcSpot spot = new NpcSpot(idFor(number), name, world, x, y, z, yaw, pitch,
                     NpcSpot.DEFAULT_RADIUS, null, createdBy, now, now);
             return repository.insert(spot).thenCompose(ignored -> {
                 spots.put(spot.id(), spot);
@@ -146,6 +163,7 @@ public final class NpcSpotService {
                         find(spot.id()).orElse(spot), null));
             });
         });
+        return result.whenComplete((ignored, error) -> creating.remove(blockKey));
     }
 
     /** Renomme. Un nom vide ou trop long est refusé : le panel et la commande valident déjà. */
@@ -249,6 +267,10 @@ public final class NpcSpotService {
             return "Nom trop long (" + NpcSpot.MAX_NAME_LENGTH + " caractères au plus).";
         }
         return null;
+    }
+
+    private static String blockKey(String world, double x, double y, double z) {
+        return world + ':' + (int) Math.floor(x) + ':' + (int) Math.floor(y) + ':' + (int) Math.floor(z);
     }
 
     static String idFor(int number) {

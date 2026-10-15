@@ -96,7 +96,7 @@ class NpcSpotServiceTest {
                 .get(TIMEOUT, TimeUnit.SECONDS);
         assertEquals(NpcSpotService.CreateOutcome.INVALID, refused.outcome());
         assertTrue(service.all().isEmpty(), "rien n'est écrit pour un nom refusé");
-        assertEquals(NpcSpot.DEFAULT_NAME, mark("", 1, 64, 1).name());
+        assertTrue(mark("", 1, 64, 1).name().startsWith(NpcSpot.DEFAULT_NAME + " "), "nom par défaut numéroté");
     }
 
     @Test

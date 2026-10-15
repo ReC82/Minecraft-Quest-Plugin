@@ -1171,6 +1171,8 @@ public final class BukkitAgentActions implements AgentActions {
                 return npcSpots.create(npc.world(), npc.x(), npc.y(), npc.z(), npc.yaw(), npc.pitch(), label,
                         actor, npcId).thenCompose(created -> switch (created.outcome()) {
                     case INVALID -> done(MutationResult.of(false, "INVALID", created.error()));
+                    case IN_PROGRESS -> done(MutationResult.of(false, "IN_PROGRESS",
+                            "Une réservation de ce bloc est déjà en cours : réessayez dans un instant."));
                     case CREATED -> {
                         plugin.getSLF4JLogger().info("[npc-spot] {} capturé depuis la position de {}.",
                                 created.spot().id(), npcId);

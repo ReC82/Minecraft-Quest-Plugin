@@ -70,6 +70,11 @@ Gérée par `deploy-verygames.sh` (JAR + `data.db`).
 
 En jeu : TC-316 (`PENDING MANUAL VALIDATION`).
 
+**Effectué sur DEV le 2026-10-15 ~02:29** : JAR du merge `33e075d` (PR #401), 2 980 763 octets,
+SHA-256 `146c1a7c…` relu sur le serveur après re-téléchargement ; sauvegarde
+`rpgquest-20261015T002852Z-predeploy.jar` (= JAR #381, 2 978 988 octets) ; redémarrage RCON, plugin
+actif. Panel non concerné (inchangé).
+
 ### Rollback
 
 `scripts/rollback-verygames.sh --latest`. Les deux clés ajoutées restent dans `messages.yml`, sans

@@ -294,6 +294,21 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 .pending-table{min-width:720px}
 .pending-table td,.pending-table th{vertical-align:middle;white-space:nowrap}
 .pending-table td:nth-child(3){white-space:normal}
+/* Issue #427 : sur téléphone, chaque ressource devient une fiche empilée — aucune barre horizontale,
+   case et bouton « Ouvrir » assez grands pour le doigt. */
+@media(max-width:575.98px){
+  .tablewrap:has(.pending-table){overflow-x:visible}
+  .pending-table{min-width:0}
+  .pending-table thead{display:none}
+  .pending-table,.pending-table tbody,.pending-table tr,.pending-table td{display:block;width:100%}
+  .pending-table tr{position:relative;border-bottom:1px solid var(--line);padding:10px 4px}
+  .pending-table tr:has(td.pending-pick){padding-left:48px}
+  .pending-table td{padding:2px 4px;border:0;white-space:normal}
+  .pending-table td[data-label]:not([data-label="Ressource"])::before{content:attr(data-label) " : ";color:var(--txt-2);font-size:12.5px}
+  .pending-table td.pending-pick{position:absolute;left:4px;top:8px;width:auto;padding:0}
+  .pending-table td.pending-pick input[type=checkbox]{width:28px;height:28px}
+  .pending-table td.pending-open .btn{min-height:40px;margin-top:4px}
+}
 .outcome-list{list-style:none;padding-left:0;margin:6px 0 0}
 .outcome-list li{padding:3px 0;border-bottom:1px solid #1a2438}
 .outcome-list li:last-child{border-bottom:0}

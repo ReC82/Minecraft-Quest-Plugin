@@ -8635,10 +8635,13 @@ public final class AgentPages {
         sb.append(recentPublishOutcomes(agentId));
 
         var all = pendingChanges(agentId);
+        // Issue #427 — la sélection soumise revient avec la page (Vérifier, refus, erreur) : rien
+        // n'est décoché derrière le dos de l'utilisateur.
+        java.util.Set<String> pick = keySet(cleanPack(q.get("pick")));
         // Issue #427 — vue « pack » : les ressources d'un import, publiées ensemble.
         String pack = cleanPack(q.get("pack"));
         if (!pack.isEmpty()) {
-            sb.append(packPublishPanel(session, agentId, pack, all, canPublish));
+            sb.append(packPublishPanel(session, agentId, pack, pick, all, canPublish));
             return sb.toString();
         }
         String fKind = q.getOrDefault("kind", "");
@@ -8665,8 +8668,14 @@ public final class AgentPages {
                     + "différences d'abord."));
         }
 
-        sb.append(pendingTable(session, agentId, shown, canPublish, "", false));
+        sb.append(pendingTable(session, agentId, shown, canPublish, "", pick));
         return sb.toString();
+    }
+
+    /** Les clés d'un filtre déjà nettoyé par {@link #cleanPack}, dans l'ordre. */
+    private static java.util.Set<String> keySet(String cleaned) {
+        return cleaned.isEmpty() ? java.util.Set.of()
+                : new java.util.LinkedHashSet<>(List.of(cleaned.split(",")));
     }
 
     /** Au-delà, un filtre de pack est refusé : miroir de la borne d'un lot. */
@@ -8699,9 +8708,10 @@ public final class AgentPages {
      * juge l'ensemble d'un bloc.
      */
     private String packPublishPanel(Session session, String agentId, String pack,
+                                    java.util.Set<String> pick,
                                     com.lodygames.rpgquest.panel.publish.PendingChanges all,
                                     boolean canPublish) {
-        java.util.Set<String> keys = new java.util.LinkedHashSet<>(List.of(pack.split(",")));
+        java.util.Set<String> keys = keySet(pack);
         var mine = all.rows().stream().filter(r -> keys.contains(r.key())).toList();
         java.util.Set<String> pending = new java.util.HashSet<>();
         mine.forEach(r -> pending.add(r.key()));
@@ -8713,7 +8723,10 @@ public final class AgentPages {
         sb.append(Ui.sectionTitle("deploy", "Mettre l'histoire en jeu sur DEV"));
         sb.append("<p>Ce pack contient <strong>").append(keys.size()).append(" ressource(s)</strong> : ")
                 .append(mine.size()).append(" à mettre en jeu, ").append(upToDate)
-                .append(" déjà à jour sur DEV.</p>");
+                .append(" déjà à jour sur DEV <span class=\"badge text-bg-")
+                .append(mine.isEmpty() ? "success" : "secondary").append("\">").append(upToDate)
+                .append('/').append(keys.size()).append(" en jeu</span>.</p>");
+        sb.append(packLastBatch(agentId, keys, mine.isEmpty()));
         sb.append("<ol class=\"pack-steps\"><li><strong>Vérifier</strong> : le serveur juge le pack"
                 + " entier, sans rien mettre en jeu.</li><li><strong>Mettre en jeu</strong> : tout"
                 + " est publié et rechargé <em>ensemble</em>. Si une seule ressource est refusée,"
@@ -8728,9 +8741,81 @@ public final class AgentPages {
             sb.append(Ui.empty("check", "Tout le pack est déjà à jour et chargé sur DEV."));
             return sb.toString();
         }
+        // À l'ouverture, tout ce qui reste à mettre en jeu est coché ; ensuite, c'est la sélection
+        // soumise qui revient — y compris une ressource volontairement décochée.
+        java.util.Set<String> checked = new java.util.LinkedHashSet<>();
+        mine.stream().filter(r -> r.selectable() && (pick.isEmpty() || pick.contains(r.key())))
+                .forEach(r -> checked.add(r.key()));
+        List<String> leftOut = mine.stream().filter(r -> r.selectable() && !checked.contains(r.key()))
+                .map(com.lodygames.rpgquest.panel.publish.PendingChanges.Row::slug).toList();
+        if (!leftOut.isEmpty()) {
+            sb.append(Ui.banner("warn", "Non cochée(s) : <strong>" + Http.esc(String.join(", ", leftOut))
+                    + "</strong>. Elles ne seront ni vérifiées ni mises en jeu avec le reste : le pack"
+                    + " sera incomplet. Si une ressource cochée en dépend, le serveur refusera le lot"
+                    + " et dira laquelle manque. Recochez-les pour publier l'histoire entière."));
+        }
         sb.append(pendingTable(session, agentId,
-                com.lodygames.rpgquest.panel.publish.PendingChanges.from(mine), canPublish, pack, true));
+                com.lodygames.rpgquest.panel.publish.PendingChanges.from(mine), canPublish, pack, checked));
         return sb.toString();
+    }
+
+    /**
+     * Où en est le dernier lot de CE pack (issue #427) : en cours, vérifié, mis en jeu ou refusé —
+     * pour que l'étape suivante soit évidente sans relire l'historique. Tant que le serveur n'a pas
+     * répondu, la page se recharge seule (pas de script : la CSP l'interdit).
+     */
+    private String packLastBatch(String agentId, java.util.Set<String> keys, boolean allInGame) {
+        for (AgentActionRow row : store.recentActions(agentId, 60)) {
+            if (!"content.publish.batch".equals(row.type()) || !batchWithin(row, keys)) {
+                continue;
+            }
+            boolean dryRun = "true".equals(row.params().get("dry_run"));
+            if (row.resultStatus() == null || row.resultStatus().isBlank()) {
+                return "<meta http-equiv=\"refresh\" content=\"4\">" + Ui.banner("info",
+                        (dryRun ? "Vérification" : "Mise en jeu") + " en cours sur DEV… Cette page se"
+                                + " met à jour toute seule dans quelques secondes.");
+            }
+            Optional<Map<String, Object>> details = detailsOf(row);
+            boolean ok = details.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false);
+            String count = row.params().getOrDefault("count", "?");
+            if (dryRun && ok) {
+                return Ui.banner("success", "<strong>Vérification réussie</strong> : les " + Http.esc(count)
+                        + " ressource(s) cochées sont acceptées par le serveur. Rien n'a encore été mis"
+                        + " en jeu. Étape suivante : cocher « Je confirme », puis <strong>« Mettre"
+                        + " l'histoire en jeu »</strong>.");
+            }
+            if (ok && !allInGame) {
+                // Un relevé DEV plus récent contredit la mise en jeu : c'est lui qui dit vrai.
+                return Ui.banner("warning", "La dernière mise en jeu de ce pack avait réussi, mais le"
+                        + " relevé DEV plus récent montre encore des ressources à mettre en jeu"
+                        + " (ci-dessous). Vérifier puis mettre en jeu à nouveau.");
+            }
+            if (ok) {
+                return Ui.banner("success", "<strong>Histoire mise en jeu</strong> : " + Http.esc(count)
+                        + " ressource(s) publiées et chargées ensemble. Cliquer « État DEV » pour"
+                        + " consolider le relevé.");
+            }
+            return Ui.banner("warning", (dryRun ? "<strong>Vérification refusée</strong>"
+                    : "<strong>Rien n'a été mis en jeu</strong>") + " : chaque problème est expliqué"
+                    + " dans « Dernières publications » ci-dessus. Corriger, puis vérifier à nouveau.");
+        }
+        return "";
+    }
+
+    /** Le lot ne touche-t-il que des ressources de ce pack ? */
+    private static boolean batchWithin(AgentActionRow row, java.util.Set<String> keys) {
+        int count;
+        try {
+            count = Integer.parseInt(row.params().getOrDefault("count", "0"));
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        for (int i = 0; i < count; i++) {
+            if (!keys.contains(row.params().get("kind_" + i) + "/" + row.params().get("id_" + i))) {
+                return false;
+            }
+        }
+        return count > 0;
     }
 
     /**
@@ -9048,7 +9133,7 @@ public final class AgentPages {
      */
     private String pendingTable(Session session, String agentId,
                                 com.lodygames.rpgquest.panel.publish.PendingChanges shown,
-                                boolean canPublish, String pack, boolean preselect) {
+                                boolean canPublish, String pack, java.util.Set<String> checked) {
         StringBuilder sb = new StringBuilder();
         if (canPublish) {
             sb.append("<form method=\"post\" action=\"/content/pending/publish\">");
@@ -9072,10 +9157,10 @@ public final class AgentPages {
         for (var row : shown.rows()) {
             sb.append("<tr>");
             if (canPublish) {
-                sb.append("<td>");
+                sb.append("<td class=\"pending-pick\">");
                 if (row.selectable()) {
                     sb.append("<input type=\"checkbox\" name=\"sel_").append(Http.esc(row.key()))
-                            .append("\" value=\"1\"").append(preselect ? " checked" : "")
+                            .append("\" value=\"1\"").append(checked.contains(row.key()) ? " checked" : "")
                             .append(" aria-label=\"Sélectionner ")
                             .append(Http.esc(row.slug())).append("\">");
                     sb.append("<input type=\"hidden\" name=\"src_").append(Http.esc(row.key()))
@@ -9087,21 +9172,21 @@ public final class AgentPages {
                 }
                 sb.append("</td>");
             }
-            sb.append("<td>").append(Http.esc(row.kindLabel())).append("</td>");
-            sb.append("<td><strong>").append(Http.esc(row.name())).append("</strong>")
+            sb.append("<td data-label=\"Type\">").append(Http.esc(row.kindLabel())).append("</td>");
+            sb.append("<td data-label=\"Ressource\"><strong>").append(Http.esc(row.name())).append("</strong>")
                     .append(Ui.id(row.slug())).append("</td>");
-            sb.append("<td><span class=\"badge text-bg-")
+            sb.append("<td data-label=\"État\"><span class=\"badge text-bg-")
                     .append(toneClass(row.state().tone())).append("\">")
                     .append(Http.esc(row.state().label())).append("</span></td>");
-            sb.append("<td><code class=\"tid\">").append(Http.esc(row.shortSource()))
+            sb.append("<td data-label=\"Source\"><code class=\"tid\">").append(Http.esc(row.shortSource()))
                     .append("</code></td>");
-            sb.append("<td><code class=\"tid\">").append(Http.esc(row.shortDev()))
+            sb.append("<td data-label=\"DEV\"><code class=\"tid\">").append(Http.esc(row.shortDev()))
                     .append("</code></td>");
-            sb.append("<td>").append(row.runtimeLoaded() ? "oui"
+            sb.append("<td data-label=\"Chargée\">").append(row.runtimeLoaded() ? "oui"
                     : "<span class=\"muted\">non</span>").append("</td>");
-            sb.append("<td class=\"muted\">").append(row.verifiedAt().isEmpty() ? "—"
+            sb.append("<td data-label=\"Dernière vérif.\" class=\"muted\">").append(row.verifiedAt().isEmpty() ? "—"
                     : Http.esc(row.verifiedAt())).append("</td>");
-            sb.append("<td><a class=\"btn btn-sm btn-outline-secondary\" href=\"")
+            sb.append("<td class=\"pending-open\"><a class=\"btn btn-sm btn-outline-secondary\" href=\"")
                     .append(Http.esc(pendingFicheUrl(agentId, row.kind()))).append("\">Ouvrir</a></td>");
             sb.append("</tr>");
         }
@@ -9115,11 +9200,13 @@ public final class AgentPages {
                     + "rechargement, puis vérification de chacune par le moteur. Si une seule est "
                     + "refusée, <strong>rien ne change en jeu</strong> et les fichiers DEV sont "
                     + "remis comme avant. « Vérifier » fait juger la sélection sans rien mettre en "
-                    + "jeu.</p>");
+                    + "jeu et ne demande aucune confirmation.</p>");
             sb.append(mutationConsent("content.publish.batch",
                     "Je confirme : envoyer les ressources cochées sur DEV", null));
+            // « formnovalidate » : vérifier n'exige pas la case de confirmation, qui ne concerne que
+            // la mise en jeu (le serveur la revérifie pour la seule publication).
             sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
-                    + "type=\"submit\" name=\"mode\" value=\"check\">").append(Icons.icon("check"))
+                    + "type=\"submit\" name=\"mode\" value=\"check\" formnovalidate>").append(Icons.icon("check"))
                     .append("Vérifier</button>");
             sb.append("<button class=\"btn btn-sm btn-primary\" type=\"submit\" name=\"mode\" "
                     + "value=\"publish\">").append(Icons.icon("deploy"))
@@ -9486,6 +9573,9 @@ public final class AgentPages {
             return Optional.empty();
         }
         for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (batchPublicationOf(row, kind, slug).isPresent() && row.completedAt() != null) {
+                return Optional.of(row.completedAt());
+            }
             boolean op = "content.publish".equals(row.type())
                     || "content.publish.rollback".equals(row.type());
             if (!op || !kind.equals(row.params().get("kind"))
@@ -9577,6 +9667,11 @@ public final class AgentPages {
             // fichier », alors que c'était NOUS, à la demande de l'utilisateur. Un retour arrière
             // doit laisser « Différent », qui est la vérité : DEV porte volontairement une version
             // antérieure.
+            // Issue #427 : une ressource publiée DANS un lot est une publication comme une autre.
+            Optional<Map<String, Object>> fromBatch = batchPublicationOf(row, kind, slug);
+            if (fromBatch.isPresent()) {
+                return fromBatch;
+            }
             boolean publication = "content.publish".equals(row.type());
             boolean rollback = "content.publish.rollback".equals(row.type());
             if (!publication && !rollback) {
@@ -9590,6 +9685,35 @@ public final class AgentPages {
             // sauvegarde (inexistante) ne doit pas apparaître comme restaurable.
             if (details.isPresent() && Boolean.TRUE.equals(details.get().get("ok"))) {
                 return details;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * La part d'un lot publié (issue #427) qui concerne CETTE ressource, au format d'une
+     * publication individuelle ({@code ok}, {@code code}, {@code devShaAfter},
+     * {@code runtimeConfirmed}, {@code verifiedAt}, {@code backupPath}). Vide pour une simple
+     * vérification, un lot refusé ou une ressource absente du lot : sans cela, une ressource mise
+     * en jeu par « Mettre l'histoire en jeu » restait affichée « à publier » jusqu'au relevé suivant.
+     */
+    private Optional<Map<String, Object>> batchPublicationOf(AgentActionRow row, String kind,
+                                                            String slug) {
+        if (!"content.publish.batch".equals(row.type()) || "true".equals(row.params().get("dry_run"))) {
+            return Optional.empty();
+        }
+        Optional<Map<String, Object>> details = detailsOf(row);
+        if (details.isEmpty() || !Boolean.TRUE.equals(details.get().get("ok"))) {
+            return Optional.empty();
+        }
+        for (Map<String, Object> item : listOfMaps(details.get().get("items"))) {
+            if (kind.equals(str(item.get("kind"))) && slug.equals(str(item.get("slug")))
+                    && Set.of("CREATED", "UPDATED", "UNCHANGED").contains(str(item.get("status")))) {
+                Map<String, Object> view = new java.util.LinkedHashMap<>(item);
+                view.put("ok", true);
+                view.put("code", str(details.get().get("code")));
+                view.put("verifiedAt", str(details.get().get("verifiedAt")));
+                return Optional.of(view);
             }
         }
         return Optional.empty();

@@ -5600,17 +5600,20 @@ public final class PanelApp {
         }
         String rid = UUID.randomUUID().toString().substring(0, 8);
         String agentId = form.getOrDefault("agent", "").trim();
-        String returnPath = "/content/pending";
+        // Issue #427 : le pack d'où l'on vient est conservé à travers TOUTES les redirections
+        // (succès, refus, erreur de formulaire) — perdre la vue pack renvoyait l'utilisateur sur la
+        // liste générale, cases décochées.
+        String pack = form.getOrDefault("pack", "").trim();
 
         if (!permissions.can(session.effective(), Permission.CONTENT_PUBLISH)) {
             audit.record(session.username(), "content.pending.publish", "agent=" + agentId,
                     "DENIED", "permission CONTENT_PUBLISH absente", rid);
-            Http.redirect(exchange, withError(returnPath, agentId, null,
-                    "Vous n'avez pas le droit de publier sur DEV."));
+            Http.redirect(exchange, pendingReturn(agentId, pack, "")
+                    + "&err=" + enc("Vous n'avez pas le droit de publier sur DEV."));
             return;
         }
         if (agentRegistry.byId(agentId).isEmpty()) {
-            Http.redirect(exchange, withError(returnPath, agentId, null, "Agent inconnu."));
+            Http.redirect(exchange, pendingReturn(agentId, pack, "") + "&err=" + enc("Agent inconnu."));
             return;
         }
 
@@ -5621,16 +5624,24 @@ public final class PanelApp {
                 selected.add(entry.getKey().substring("sel_".length()));
             }
         }
+        boolean dryRun = "check".equals(form.get("mode"));
         if (selected.isEmpty()) {
-            Http.redirect(exchange, withError(returnPath, agentId, null,
-                    "Aucune ressource sélectionnée : rien n'a été publié."));
+            Http.redirect(exchange, pendingReturn(agentId, pack, "") + "&err=" + enc(
+                    "Aucune ressource sélectionnée : rien n'a été " + (dryRun ? "vérifié." : "publié.")));
             return;
         }
         // Ordre déterministe : deux soumissions identiques produisent la même action. L'ordre ne
         // décide plus du résultat (#427) : le lot est jugé d'un bloc par le moteur.
         java.util.Collections.sort(selected);
-        boolean dryRun = "check".equals(form.get("mode"));
-        String pack = form.getOrDefault("pack", "").trim();
+        // La sélection revient avec la page : une clé invalide la ferait tomber, jamais l'URL.
+        String pick = com.lodygames.rpgquest.panel.web.AgentPages.cleanPack(String.join(",", selected));
+        // Issue #427 : « Vérifier » n'écrit rien en jeu, donc ne demande aucune confirmation. Seule la
+        // vraie publication exige la case « Je confirme », revérifiée ici et pas seulement en HTML.
+        if (!dryRun && !"true".equals(form.get("confirm"))) {
+            Http.redirect(exchange, pendingReturn(agentId, pack, pick) + "&err=" + enc(
+                    "Cochez « Je confirme » pour mettre en jeu : rien n'a été publié."));
+            return;
+        }
 
         // Issue #427 — UNE action pour toute la sélection. Publier ressource par ressource faisait
         // juger au moteur des états intermédiaires (une quête dont le prérequis n'était pas encore
@@ -5665,7 +5676,7 @@ public final class PanelApp {
         if (enriched.error() != null) {
             audit.record(session.username(), "content.pending.publish",
                     "agent=" + agentId + " selected=" + selected.size(), "DENIED", enriched.error(), rid);
-            Http.redirect(exchange, withError(packReturn(returnPath, pack), agentId, null,
+            Http.redirect(exchange, pendingReturn(agentId, pack, pick) + "&err=" + enc(
                     "Rien n'a été " + (dryRun ? "vérifié" : "publié") + " : " + enriched.error()));
             return;
         }
@@ -5684,14 +5695,26 @@ public final class PanelApp {
         String message = (dryRun ? "Vérification" : "Publication") + " de " + index
                 + " ressource(s) demandée(s) en une seule opération : résultat ci-dessous dans"
                 + " quelques secondes.";
-        Http.redirect(exchange, appendContext(packReturn(returnPath, pack), agentId, null)
-                + "&batch=" + enc(message));
+        Http.redirect(exchange, pendingReturn(agentId, pack, pick) + "&batch=" + enc(message));
     }
 
-    /** Le retour sur la vue « pack » (#427) si l'on en vient, avec un filtre déjà validé. */
-    private static String packReturn(String returnPath, String pack) {
-        String clean = com.lodygames.rpgquest.panel.web.AgentPages.cleanPack(pack);
-        return clean.isEmpty() ? returnPath : returnPath + "?pack=" + enc(clean);
+    /**
+     * Le retour sur « Changements en attente » (issue #427) : l'agent, la vue pack si l'on en vient
+     * et la sélection soumise, chacun revalidé. Une seule chaîne de requête — l'ancien
+     * {@code ?pack=…} suivi d'un second {@code ?agent=…} rendait le pack illisible, d'où le retour
+     * sur la liste générale, cases décochées.
+     */
+    static String pendingReturn(String agentId, String pack, String pick) {
+        StringBuilder url = new StringBuilder("/content/pending?agent=").append(enc(agentId));
+        String cleanPack = com.lodygames.rpgquest.panel.web.AgentPages.cleanPack(pack);
+        if (!cleanPack.isEmpty()) {
+            url.append("&pack=").append(enc(cleanPack));
+        }
+        String cleanPick = com.lodygames.rpgquest.panel.web.AgentPages.cleanPack(pick);
+        if (!cleanPick.isEmpty()) {
+            url.append("&pick=").append(enc(cleanPick));
+        }
+        return url.toString();
     }
 
     /**

@@ -2,7 +2,7 @@
 
 ## Informations
 * Date : 2026-10-15
-* Heure : 09:28
+* Heure : 09:27
 * Sujet : Issue #79 (tranche 1) — `quest.player.status` structuré par objectif
 * Statut : DONE (tranche 1 ; le ticket reste ouvert pour la tranche 2 « retrait legacy »)
 * Branche Git : `feature/79-quest-player-status-structure` (PR #410 fusionnée dans `chore/257-ci-github-actions`, merge `5790f1d`)

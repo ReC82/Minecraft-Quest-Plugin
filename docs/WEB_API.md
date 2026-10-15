@@ -147,6 +147,23 @@ l'instantané est ignoré.
 Toute route inconnue sous `/api/` renvoie `404` (toujours après vérification
 du jeton).
 
+## Comptes joueurs (`/compte`, `/api/link/confirm`, issue #53)
+
+Désactivés par défaut. Clés de `web-api.properties` :
+
+| Clé | Défaut | Rôle |
+| --- | --- | --- |
+| `accounts-enabled` | `false` | ouvre la base `accounts.db` et les formulaires ; sans région d'âge configurée (#55), les comptes restent fermés |
+| `accounts-database-file` | `accounts.db` | base SQLite propre aux comptes (jamais `data.db` ni `store.db`) |
+| `accounts-session-ttl-hours` | `168` | durée absolue d'une session (1–720) |
+| `accounts-link-code-ttl-minutes` | `10` | validité d'un code de liaison (2–30) |
+
+Jeton : `RPGQUEST_PORTAL_LINK_TOKEN` (variable d'environnement uniquement). Il authentifie
+**seulement** `POST /api/link/confirm` — corps `{"code","uuid","name"}`, réponse
+`{"result":"LINKED|INVALID_CODE|UUID_ALREADY_LINKED|ACCOUNT_ALREADY_LINKED|ACCOUNT_RESTRICTED|TOO_MANY_ATTEMPTS"}`,
+401 sans le bon jeton (le jeton général `RPGQUEST_WEB_API_TOKEN` ne l'ouvre pas), 503 si les
+comptes sont fermés. Pages, sécurité et parcours : [WEB_PORTAL.md §2](WEB_PORTAL.md).
+
 ## Sonde `GET /health` (pas d'authentification)
 
 `{"status":"UP","snapshot":"MISSING|STALE|FRESH","playerDataPublic":false,"store":false}` —

@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Portail : comptes joueurs et commande /lien (#53)
+
+### Changement
+
+Plugin : nouvelle commande joueur `/lien <code>` (alias `/link`, permission
+`rpgquest.portal.link`, accordée à tous) qui envoie au portail la preuve de possession du compte
+Minecraft. Inerte sans le fichier hors Git `plugins/RPGQuest/portal-link.properties` : elle répond
+« pas activée » et ne contacte rien. Portail (AWS) : comptes joueurs, sessions, liaison par code,
+route `POST /api/link/confirm` — tout désactivé (`accounts-enabled=false`).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest seulement. Aucune migration de `data.db`, aucune clé de `config.yml`,
+aucun fichier à téléverser (ne **pas** créer `portal-link.properties` tant que le propriétaire n'a
+pas ouvert les comptes). Portail : `scripts/web-portal/deploy.sh` ; bloc nginx
+`location = /api/link/confirm` ajouté au vhost dédié (`nginx -t` puis `reload`).
+
+### Sauvegarde préalable
+
+JAR, `data.db` et `config.yml` datés par `scripts/deploy-verygames.sh` ; release précédente du
+portail conservée par `scripts/web-portal/deploy.sh` ; copie du vhost nginx avant modification.
+
+### Validation
+
+En jeu : `/lien ABCD2345` → « La liaison avec le portail n'est pas activée sur ce serveur. »
+Portail : `/compte` → « pas encore ouverts » ; `POST /api/link/confirm` sans jeton → 401.
+Parcours complet après activation : `docs/deployment/WEB_PORTAL_AWS.md` (`PENDING MANUAL
+VALIDATION`).
+
+### Rollback
+
+JAR précédent (`scripts/deploy-verygames.sh` le garde daté) ; portail :
+`scripts/web-portal/rollback.sh app` ; nginx : restaurer la copie du vhost, `nginx -t`, `reload`.
+
+---
+
 ## 2026-10-15 - Portail : profils web privés par défaut, liste blanche, politique d'âge (#55)
 
 ### Changement

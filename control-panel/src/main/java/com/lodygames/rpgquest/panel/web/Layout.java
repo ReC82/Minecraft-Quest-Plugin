@@ -43,7 +43,7 @@ public final class Layout {
                 new NavGroup("RPGQuest", List.of(
                         new NavItem("Joueurs", "/players", "players", Permission.PLAYERS_READ, true),
                         new NavItem("PNJ", "/npcs", "npc", Permission.NPC_READ, true),
-                        new NavItem("Réseau de voyage", "/travel", "travel", Permission.TRAVEL_READ, true),
+                        new NavItem("Voyages", "/travel", "travel", Permission.TRAVEL_READ, true),
                         // Issue #178 — les villes sont aussi les destinations « Villages » du voyage.
                         new NavItem("Villes", "/cities", "world", Permission.TRAVEL_READ, true),
                         new NavItem("Mobs spéciaux & boss", "/mobs", "mob", Permission.MOB_READ, true),

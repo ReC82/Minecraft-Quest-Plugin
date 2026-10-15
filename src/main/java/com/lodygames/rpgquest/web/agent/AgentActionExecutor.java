@@ -169,6 +169,7 @@ public final class AgentActionExecutor {
                 case CONTENT_DEV_READ -> contentDevRead(action);
                 case CONTENT_PUBLISH -> contentPublish(action);
                 case CONTENT_PUBLISH_ROLLBACK -> contentPublishRollback(action);
+                case CONTENT_PUBLISH_BATCH -> contentPublishBatch(action);
                 case CONTENT_RELOAD -> contentReload(action, true);
                 case PLAYER_OP -> playerOperator(action, true);
                 case PLAYER_DEOP -> playerOperator(action, false);
@@ -2710,6 +2711,91 @@ public final class AgentActionExecutor {
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
+    /** Taille totale maximale des YAML d'un lot : un pack d'histoire en utilise quelques dizaines de Ko. */
+    private static final int PUBLISH_BATCH_YAML_MAX = 768 * 1024;
+
+    /**
+     * {@code content.publish.batch} (issue #427). Paramètres indexés : {@code count}, puis pour
+     * chaque {@code i} de {@code 0} à {@code count-1} : {@code kind_i}, {@code id_i},
+     * {@code yaml_i}, {@code expected_dev_sha_i} (obligatoire, {@code ""} = absente) et
+     * {@code expected_id_i}. Un seul paramètre manquant refuse le lot entier : on ne publie pas
+     * « ce qui est lisible » d'un pack.
+     */
+    private CompletableFuture<AgentActionOutcome> contentPublishBatch(AgentAction action) {
+        boolean dryRun = "true".equals(trimOrNull(action.param("dry_run")));
+        if (!dryRun && !"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour publier un lot."));
+        }
+        int count = parseAmount(action.param("count"), -1);
+        if (count < 1 || count > com.lodygames.rpgquest.content.publish.ContentPublishService.MAX_BATCH_ITEMS) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « count » manquant ou hors bornes (1 à "
+                            + com.lodygames.rpgquest.content.publish.ContentPublishService.MAX_BATCH_ITEMS
+                            + ")."));
+        }
+        List<AgentActions.ContentPublishBatchItem> items = new ArrayList<>();
+        int total = 0;
+        for (int i = 0; i < count; i++) {
+            String kind = trimOrNull(action.param("kind_" + i));
+            String slug = publishSlug(action.param("id_" + i));
+            String yaml = action.param("yaml_" + i);
+            String expectedDevSha = action.param("expected_dev_sha_" + i);
+            if (kind == null || slug == null || yaml == null || yaml.isBlank() || expectedDevSha == null) {
+                return done(AgentActionOutcome.rejected(action.id(),
+                        "Ressource n°" + (i + 1) + " du lot incomplète (kind, id, yaml et "
+                                + "expected_dev_sha obligatoires) : rien n'a été publié."));
+            }
+            total += yaml.length();
+            if (yaml.length() > PUBLISH_YAML_MAX || total > PUBLISH_BATCH_YAML_MAX) {
+                return done(AgentActionOutcome.rejected(action.id(),
+                        "Lot trop volumineux : rien n'a été publié."));
+            }
+            items.add(new AgentActions.ContentPublishBatchItem(kind, slug, yaml,
+                    expectedDevSha.trim(), trimOrNull(action.param("expected_id_" + i))));
+        }
+        return actions.contentPublishBatch(items, dryRun)
+                .thenApply(view -> batchOutcome(action, view))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private AgentActionOutcome batchOutcome(AgentAction action, AgentActions.ContentPublishBatchView view) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (AgentActions.ContentPublishBatchItemView item : view.items()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("kind", item.kind());
+            row.put("slug", item.slug());
+            row.put("expectedId", item.expectedId());
+            row.put("status", item.status());
+            row.put("created", item.created());
+            row.put("devShaBefore", item.devShaBefore());
+            row.put("devShaAfter", item.devShaAfter());
+            row.put("sourceSha", item.sourceSha());
+            row.put("backupPath", item.backupPath());
+            row.put("runtimeConfirmed", item.runtimeConfirmed());
+            row.put("problems", item.problems());
+            items.add(row);
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("ok", view.ok());
+        details.put("code", view.code());
+        details.put("message", view.message());
+        details.put("dryRun", view.dryRun());
+        details.put("filesRestored", view.filesRestored());
+        details.put("items", items);
+        details.put("otherProblems", view.otherProblems());
+        details.put("reloadedFamilies", view.families());
+        details.put("autoIncludedFamilies", view.autoIncludedFamilies());
+        details.put("reloadCode", view.reloadCode());
+        details.put("loadedCount", view.loadedCount());
+        details.put("runtimeHash", view.runtimeHash());
+        details.put("verifiedAt", view.verifiedAt());
+        if (view.ok()) {
+            return AgentActionOutcome.success(action.id(), view.code(), view.message(), details);
+        }
+        return AgentActionOutcome.rejectedWithDetails(action.id(), view.message(), details);
+    }
+
     private CompletableFuture<AgentActionOutcome> contentPublishRollback(AgentAction action) {
         String kind = trimOrNull(action.param("kind"));
         String slug = publishSlug(action);
@@ -2770,7 +2856,10 @@ public final class AgentActionExecutor {
 
     /** L'identifiant de ressource : même forme que le contenu du projet, sans séparateur. */
     private static String publishSlug(AgentAction action) {
-        String raw = firstNonBlank(action.param("id"), action.param("slug"));
+        return publishSlug(firstNonBlank(action.param("id"), action.param("slug")));
+    }
+
+    private static String publishSlug(String raw) {
         if (raw == null) {
             return null;
         }

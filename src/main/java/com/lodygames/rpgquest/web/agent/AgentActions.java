@@ -327,6 +327,44 @@ public interface AgentActions {
                                                                String yaml, String expectedDevSha,
                                                                String expectedId);
 
+    /** Une ressource d'un lot à publier (issue #427). */
+    record ContentPublishBatchItem(String kind, String slug, String yaml, String expectedDevSha,
+                                   String expectedId) {
+    }
+
+    /** Le sort d'une ressource d'un lot, avec ce que le moteur lui reproche. */
+    record ContentPublishBatchItemView(String kind, String slug, String expectedId, String status,
+                                       boolean created, String devShaBefore, String devShaAfter,
+                                       String sourceSha, String backupPath,
+                                       boolean runtimeConfirmed, List<String> problems) {
+        public ContentPublishBatchItemView {
+            problems = problems == null ? List.of() : List.copyOf(problems);
+        }
+    }
+
+    /** Compte rendu d'un lot : tout en jeu, ou rien — et pourquoi. */
+    record ContentPublishBatchView(boolean ok, String code, String message, boolean dryRun,
+                                   boolean filesRestored, List<ContentPublishBatchItemView> items,
+                                   List<String> otherProblems, List<String> families,
+                                   List<String> autoIncludedFamilies, String reloadCode,
+                                   int loadedCount, String runtimeHash, String verifiedAt) {
+        public ContentPublishBatchView {
+            items = items == null ? List.of() : List.copyOf(items);
+            otherProblems = otherProblems == null ? List.of() : List.copyOf(otherProblems);
+            families = families == null ? List.of() : List.copyOf(families);
+            autoIncludedFamilies = autoIncludedFamilies == null ? List.of()
+                    : List.copyOf(autoIncludedFamilies);
+        }
+    }
+
+    /**
+     * Publie un lot en une seule opération (issue #427).
+     *
+     * @param dryRun vérification seule : rien ne reste écrit, rien n'est rechargé
+     */
+    CompletableFuture<ContentPublishBatchView> contentPublishBatch(
+            List<ContentPublishBatchItem> items, boolean dryRun);
+
     /** Défait une publication : restauration si sauvegarde, retrait si la ressource était neuve. */
     CompletableFuture<ContentPublishResultView> contentPublishRollback(String kind, String slug,
                                                                        String backupPath,

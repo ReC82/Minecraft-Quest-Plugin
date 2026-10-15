@@ -4744,6 +4744,38 @@ public final class BukkitAgentActions implements AgentActions {
                 backupPath, expectedId))));
     }
 
+    /**
+     * {@code content.publish.batch} (issue #427). Sur le thread principal, comme la publication
+     * unitaire : l'écriture du lot et son rechargement unique ne doivent pas s'entrelacer avec les
+     * listeners qui lisent les ensembles actifs.
+     */
+    @Override
+    public CompletableFuture<ContentPublishBatchView> contentPublishBatch(
+            List<ContentPublishBatchItem> items, boolean dryRun) {
+        List<com.lodygames.rpgquest.content.publish.ContentPublishService.BatchItem> batch =
+                new ArrayList<>();
+        for (ContentPublishBatchItem item : items == null ? List.<ContentPublishBatchItem>of() : items) {
+            batch.add(new com.lodygames.rpgquest.content.publish.ContentPublishService.BatchItem(
+                    com.lodygames.rpgquest.content.publish.PublishKind.of(item.kind()).orElse(null),
+                    item.slug(), item.yaml(), item.expectedDevSha(), item.expectedId()));
+        }
+        return onMain(() -> done(batchView(contentPublishService.publishBatch(batch, dryRun))));
+    }
+
+    private static ContentPublishBatchView batchView(
+            com.lodygames.rpgquest.content.publish.ContentPublishService.BatchOutcome o) {
+        List<ContentPublishBatchItemView> items = o.items().stream()
+                .map(i -> new ContentPublishBatchItemView(
+                        i.kind() == null ? "" : i.kind().directory(), i.slug(), i.expectedId(),
+                        i.status(), i.created(), i.devShaBefore(), i.devShaAfter(), i.sourceSha(),
+                        i.backupPath(), i.runtimeConfirmed(), i.problems()))
+                .toList();
+        return new ContentPublishBatchView(o.ok(), o.code(), o.message(), o.dryRun(),
+                o.filesRestored(), items, o.otherProblems(), o.families(),
+                o.autoIncludedFamilies(), o.reloadCode(), o.loadedCount(), o.runtimeHash(),
+                o.verifiedAt() == null ? "" : o.verifiedAt().toString());
+    }
+
     private static ContentPublishResultView publishView(
             com.lodygames.rpgquest.content.publish.ContentPublishService.PublishOutcome o) {
         return new ContentPublishResultView(o.ok(), o.code(), o.message(),

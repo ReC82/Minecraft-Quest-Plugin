@@ -376,6 +376,12 @@ public enum AgentActionType {
      */
     CONTENT_PUBLISH_ROLLBACK("content.publish.rollback"),
     /**
+     * Issue #427 — publie un LOT (un pack d'histoire) en une seule opération : toutes les
+     * ressources écrites, un seul rechargement de l'ensemble, tout ou rien. Avec
+     * {@code dry_run=true}, le moteur juge le lot sans rien laisser derrière lui.
+     */
+    CONTENT_PUBLISH_BATCH("content.publish.batch"),
+    /**
      * Issue #131 — rechargement effectif du contenu dans le runtime, après validation. N'applique
      * rien si une famille est invalide ou si une référence croisée serait cassée : l'ancien runtime
      * valide est conservé. Jamais un {@code /reload} Bukkit.

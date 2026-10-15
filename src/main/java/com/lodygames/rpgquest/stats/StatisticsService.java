@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -46,6 +47,7 @@ public final class StatisticsService implements PluginService {
     private final Set<String> audited = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private long loadedModified = Long.MIN_VALUE;
     private BukkitTask task;
+    private volatile boolean stopped;
 
     public StatisticsService(Plugin plugin, Path file, StatisticsRepository repository, Logger logger) {
         this(plugin, file, repository, logger, Clock.systemUTC());
@@ -61,11 +63,32 @@ public final class StatisticsService implements PluginService {
 
     @Override
     public void start() {
-        task = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> refresh().join(), 1L, INTERVAL_TICKS);
+        stopped = false;
+        task = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::tick, 1L, INTERVAL_TICKS);
+    }
+
+    /**
+     * Un tick qui tombe pendant l'arrêt du plugin (base déjà fermée : {@link RejectedExecutionException})
+     * est simplement abandonné : il n'y a plus rien à archiver, le prochain démarrage le fera.
+     */
+    void tick() {
+        if (stopped) {
+            return;
+        }
+        try {
+            refresh().join();
+        } catch (RejectedExecutionException e) {
+            logger.debug("Statistiques : base en cours d'arrêt, tick ignoré.");
+        } catch (java.util.concurrent.CompletionException e) {
+            if (!(e.getCause() instanceof RejectedExecutionException)) {
+                throw e;
+            }
+        }
     }
 
     @Override
     public void stop() {
+        stopped = true;
         if (task != null) {
             task.cancel();
             task = null;

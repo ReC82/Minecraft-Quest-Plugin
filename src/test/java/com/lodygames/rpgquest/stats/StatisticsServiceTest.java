@@ -115,4 +115,18 @@ class StatisticsServiceTest {
         assertEquals(java.util.List.of(), repository.auditTrail("draft").get(10, TimeUnit.SECONDS), "un brouillon n'existe pas encore");
         assertEquals(java.util.List.of("CANCELLED"), repository.auditTrail("called_off").get(10, TimeUnit.SECONDS));
     }
+
+    @Test
+    void aTickDuringShutdownIsSkippedInsteadOfFailing() throws Exception {
+        DatabaseManager closing = new DatabaseManager(tempDir.resolve("closing.db"));
+        closing.initialize().get(10, TimeUnit.SECONDS);
+        StatisticsService service = new StatisticsService(null, tempDir.resolve("statistics.yml"),
+                new StatisticsRepository(closing), LoggerFactory.getLogger("test"),
+                Clock.fixed(Instant.parse("2026-11-15T00:00:00Z"), ZoneOffset.UTC));
+        closing.shutdown();
+
+        service.tick(); // base fermée : RejectedExecutionException avalée, aucune exception
+        service.stop();
+        service.tick(); // service arrêté : rien n'est tenté
+    }
 }

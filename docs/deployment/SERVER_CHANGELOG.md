@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - PlugAdmin : identifiants d'étape de quête générés (#143)
+
+### Changement
+
+Éditeur de quêtes : l'« Identifiant d'étape » n'est plus une saisie obligatoire, il est généré
+(`step_1`, `step_2`…), jamais renuméroté, et modifiable en mode avancé avec un avertissement si
+l'on renomme une étape déjà enregistrée. Panel uniquement : aucun changement du plugin (tests
+seulement), aucune migration, contenus existants inchangés.
+
+### Action serveur
+
+Redéploiement du panel PlugAdmin (`scripts/plugadmin/deploy.sh`). **Aucun JAR, aucune donnée,
+aucun redémarrage Minecraft.**
+
+### Sauvegarde préalable
+
+Gérée par `deploy.sh` (`/opt/plugadmin/releases/<horodatage>/`).
+
+### Validation
+
+Voir le rapport `docs/claude-reports/` de #143. `PENDING MANUAL VALIDATION` : TC-318.
+
+### Rollback
+
+Réinstaller la release précédente du panel (`/opt/plugadmin/releases/`).
+
+---
+
 ## 2026-10-15 - `/rpgadmin npc tag` : id validé et autocomplété (#66)
 
 ### Changement

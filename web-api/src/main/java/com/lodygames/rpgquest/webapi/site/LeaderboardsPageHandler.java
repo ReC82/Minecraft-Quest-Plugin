@@ -10,6 +10,7 @@ import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -126,15 +127,87 @@ public final class LeaderboardsPageHandler implements ApiHandler {
                 .append(Html.escape(StatLabels.status(status))).append(" · du ")
                 .append(Html.escape(StatLabels.dateTime(String.valueOf(period.get("start"))))).append(" au ")
                 .append(Html.escape(StatLabels.dateTime(String.valueOf(period.get("end"))))).append(".</p>");
+        html.append(countdown(status, period, Instant.now()));
+        html.append(rules(period));
+        if ("CANCELLED".equals(status)) {
+            return html.append("<p class=\"note\">Cet événement a été annulé : aucun classement ni aucune récompense.</p>")
+                    .toString();
+        }
         if ("SCHEDULED".equals(status)) {
             return html.append("<p class=\"note\">Pas encore commencé : le classement s'affichera dès le début.</p>")
                     .toString();
         }
+        html.append(community(period));
         Map<String, List<Map<String, Object>>> boards = boards(period.get("leaderboards"));
         if (boards.isEmpty()) {
             return html.append("<p class=\"note\">Aucun classement pour cette période.</p>").toString();
         }
         return html.append(cards(boards)).toString();
+    }
+
+    /** Compte à rebours (#57) : avant le début, puis jusqu'à la fin. */
+    static String countdown(String status, Map<String, Object> period, Instant now) {
+        String left = switch (status) {
+            case "SCHEDULED" -> StatLabels.remaining(String.valueOf(period.get("start")), now);
+            case "ACTIVE" -> StatLabels.remaining(String.valueOf(period.get("end")), now);
+            default -> "";
+        };
+        if (left.isEmpty()) {
+            return "";
+        }
+        return "<p><strong>" + ("SCHEDULED".equals(status) ? "Commence dans " : "Se termine dans ")
+                + Html.escape(left) + "</strong></p>";
+    }
+
+    /** Règles d'un événement (#57) : sens du classement, cibles, récompenses annoncées. */
+    @SuppressWarnings("unchecked")
+    static String rules(Map<String, Object> period) {
+        StringBuilder items = new StringBuilder();
+        String ranking = StatLabels.ranking(period.get("ranking") instanceof String text ? text : null);
+        if (!ranking.isEmpty() && !"HIGHEST_TOTAL".equals(period.get("ranking"))) {
+            items.append("<li>").append(Html.escape(ranking)).append("</li>");
+        }
+        if (period.get("filter") instanceof Map<?, ?> filter) {
+            for (Map.Entry<?, ?> entry : filter.entrySet()) {
+                List<String> values = new ArrayList<>();
+                for (Object value : (List<Object>) entry.getValue()) {
+                    values.add(StatLabels.constant(String.valueOf(value)));
+                }
+                items.append("<li>").append(Html.escape(StatLabels.filter(String.valueOf(entry.getKey())))).append(" : ")
+                        .append(Html.escape(String.join(", ", values))).append("</li>");
+            }
+        }
+        if (period.get("rewards") instanceof List<?> rewards) {
+            for (Object item : rewards) {
+                Map<String, Object> reward = (Map<String, Object>) item;
+                items.append("<li>Récompense ").append(Html.escape(rewardWho(reward))).append(" : ")
+                        .append(Html.escape(String.valueOf(reward.get("label")))).append("</li>");
+            }
+        }
+        return items.isEmpty() ? "" : "<ul>" + items + "</ul>";
+    }
+
+    private static String rewardWho(Map<String, Object> reward) {
+        long value = reward.get("value") instanceof Number number ? number.longValue() : 0L;
+        return switch (String.valueOf(reward.get("kind"))) {
+            case "RANK" -> value == 1 ? "du premier" : "du top " + value;
+            case "THRESHOLD" -> "à partir de " + StatLabels.number(value);
+            default -> "si l'objectif commun est atteint";
+        };
+    }
+
+    /** Barre de progression d'un objectif commun (#57) ; vide pour un autre événement. */
+    static String community(Map<String, Object> period) {
+        if (!(period.get("community") instanceof Map<?, ?> community)
+                || !(community.get("goal") instanceof Number goal) || !(community.get("total") instanceof Number total)) {
+            return "";
+        }
+        long shown = Math.min(total.longValue(), goal.longValue());
+        return "<section class=\"card\"><h2>Objectif commun</h2><p><progress max=\"" + goal.longValue() + "\" value=\""
+                + shown + "\"></progress> " + Html.escape(StatLabels.number(total)) + " / "
+                + Html.escape(StatLabels.number(goal)) + "</p>"
+                + (Boolean.TRUE.equals(community.get("reached")) ? "<p><strong>Objectif atteint, bravo à tous !</strong></p>" : "")
+                + "</section>";
     }
 
     private static String cards(Map<String, List<Map<String, Object>>> boards) {

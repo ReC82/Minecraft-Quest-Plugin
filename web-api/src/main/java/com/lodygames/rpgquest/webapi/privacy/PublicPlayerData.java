@@ -88,15 +88,46 @@ public final class PublicPlayerData {
         return safe;
     }
 
-    /** Une saison ou un événement : identité, fenêtre, statut et classements, rien d'autre. */
+    /**
+     * Une saison ou un événement : identité, fenêtre, statut, règles publiques (#57 : classement,
+     * filtre, objectif commun, libellés de récompense) et classements, rien d'autre.
+     */
     private static Map<String, Object> period(Object raw) {
         if (!(raw instanceof Map<?, ?> period) || !(period.get("id") instanceof String id)) {
             return null;
         }
         Map<String, Object> safe = new LinkedHashMap<>();
         safe.put("id", id);
-        for (String key : List.of("name", "start", "end", "status")) {
+        for (String key : List.of("name", "start", "end", "status", "ranking")) {
             copyString(period, safe, key);
+        }
+        if (period.get("filter") instanceof Map<?, ?> filter) {
+            Map<String, Object> safeFilter = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : filter.entrySet()) {
+                safeFilter.put(String.valueOf(entry.getKey()), strings(entry.getValue()));
+            }
+            safe.put("filter", safeFilter);
+        }
+        if (period.get("community") instanceof Map<?, ?> community && community.get("goal") instanceof Number goal
+                && community.get("total") instanceof Number total) {
+            safe.put("community", Map.of("goal", goal.longValue(), "total", total.longValue(),
+                    "reached", total.longValue() >= goal.longValue()));
+        }
+        List<Map<String, Object>> rewards = new ArrayList<>();
+        for (Object item : list(period.get("rewards"))) {
+            if (item instanceof Map<?, ?> reward && reward.get("kind") instanceof String kind
+                    && reward.get("label") instanceof String label) {
+                Map<String, Object> safeReward = new LinkedHashMap<>();
+                safeReward.put("kind", kind);
+                if (reward.get("value") instanceof Number value) {
+                    safeReward.put("value", value.longValue());
+                }
+                safeReward.put("label", label);
+                rewards.add(safeReward);
+            }
+        }
+        if (!rewards.isEmpty()) {
+            safe.put("rewards", rewards);
         }
         safe.put("leaderboards", boards(period.get("leaderboards")));
         return safe;

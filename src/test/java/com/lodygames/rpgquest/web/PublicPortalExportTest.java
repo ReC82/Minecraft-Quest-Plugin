@@ -123,7 +123,8 @@ class PublicPortalExportTest {
                 lifetime.get("QUESTS_COMPLETED"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> metrics = (List<Map<String, Object>>) statistics.get("metrics");
-        assertEquals(Map.of("id", "QUESTS_COMPLETED", "aggregation", "SUM", "order", "DESC", "scopes", List.of("lifetime")),
+        assertEquals(Map.of("id", "QUESTS_COMPLETED", "aggregation", "SUM", "order", "DESC", "scopes", List.of("lifetime"),
+                        "filters", List.of()),
                 metrics.stream().filter(m -> m.get("id").equals("QUESTS_COMPLETED")).findFirst().orElseThrow(),
                 "le contrat dit au portail quelles portées existent pour chaque métrique");
         assertNull(statistics.get("season"), "aucune saison n'existe : rien d'inventé");
@@ -152,10 +153,34 @@ class PublicPortalExportTest {
 
         assertEquals(List.of("lifetime", "season"), statistics.get("scopes"));
         assertEquals(Map.of("id", "season_01", "name", "Saison 1", "start", "2026-11-01T00:00:00Z",
-                "end", "2026-12-01T00:00:00Z", "status", "ARCHIVED",
+                "end", "2026-12-01T00:00:00Z", "status", "ARCHIVED", "ranking", "HIGHEST_TOTAL",
                 "leaderboards", Map.of("RPG_XP_COMBAT", List.of(Map.of("name", "Alice", "value", 30L, "rank", 1)))),
                 statistics.get("season"));
         assertEquals(List.of(), statistics.get("events"));
+    }
+
+    @Test
+    void eventsPublishTheirRulesCommunityProgressAndRewardLabelsButNeverTheEntitlementKey() {
+        var rules = new com.lodygames.rpgquest.stats.EventRules(com.lodygames.rpgquest.stats.EventRanking.COMMUNITY_GOAL,
+                Map.of("entity", java.util.Set.of("ZOMBIE", "HUSK")), 500,
+                List.of(new com.lodygames.rpgquest.stats.EventReward(com.lodygames.rpgquest.stats.EventReward.Kind.COMMUNITY,
+                        0, "secret_internal_key", "Chapeau pour tous")));
+        var event = new com.lodygames.rpgquest.stats.StatPeriod("zombie_weekend", com.lodygames.rpgquest.stats.StatScope.EVENT,
+                "Zombie Weekend", java.time.Instant.parse("2026-11-07T18:00:00Z"), java.time.Instant.parse("2026-11-09T22:00:00Z"),
+                List.of("ENTITY_KILL"), com.lodygames.rpgquest.stats.StatPeriod.State.PLANNED, rules);
+        var board = new WebSnapshotWriter.PeriodBoard(event, "ACTIVE", Map.of("ENTITY_KILL",
+                List.of(new com.lodygames.rpgquest.database.StatisticsRepository.RankedRow("Alice", 12, 1))), 512L);
+
+        Map<String, Object> statistics = WebSnapshotWriter.statistics(Map.of(), List.of(),
+                new WebSnapshotWriter.PeriodBoards(null, List.of(board)));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> exported = ((List<Map<String, Object>>) statistics.get("events")).get(0);
+        assertEquals("COMMUNITY_GOAL", exported.get("ranking"));
+        assertEquals(Map.of("entity", List.of("HUSK", "ZOMBIE")), exported.get("filter"));
+        assertEquals(Map.of("goal", 500L, "total", 512L, "reached", true), exported.get("community"));
+        assertEquals(List.of(Map.of("kind", "COMMUNITY", "label", "Chapeau pour tous")), exported.get("rewards"));
+        assertFalse(com.lodygames.rpgquest.web.Json.write(statistics).contains("secret_internal_key"));
     }
 
     @Test

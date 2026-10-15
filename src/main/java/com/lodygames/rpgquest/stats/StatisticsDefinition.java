@@ -56,11 +56,13 @@ public record StatisticsDefinition(List<StatPeriod> periods, Map<UUID, Set<Strin
 
     /**
      * La saison à montrer : celle en cours, sinon la dernière terminée, sinon la prochaine. Les
-     * saisons ne se chevauchent jamais (validé au chargement), le choix est donc unique.
+     * saisons ne se chevauchent jamais (validé au chargement), le choix est donc unique. Une saison
+     * en brouillon ou annulée n'est jamais montrée (#57).
      */
     public Optional<StatPeriod> currentSeason(Instant now) {
         List<StatPeriod> seasons = new ArrayList<>(periods.stream()
-                .filter(period -> period.scope() == StatScope.SEASON).toList());
+                .filter(period -> period.scope() == StatScope.SEASON && period.state() == StatPeriod.State.PLANNED)
+                .toList());
         seasons.sort(Comparator.comparing(StatPeriod::start));
         Optional<StatPeriod> active = seasons.stream()
                 .filter(season -> season.status(now) == StatPeriod.Status.ACTIVE).findFirst();

@@ -9,6 +9,9 @@ import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import com.lodygames.rpgquest.stats.StatMetric;
+import com.lodygames.rpgquest.stats.EventLifecycle;
+import com.lodygames.rpgquest.stats.EventReward;
+import com.lodygames.rpgquest.stats.EventRules;
 import com.lodygames.rpgquest.stats.StatPeriod;
 import com.lodygames.rpgquest.stats.StatScope;
 import com.lodygames.rpgquest.stats.StatisticsDefinition;
@@ -233,7 +236,11 @@ public final class WebSnapshotWriter implements PluginService {
     }
 
     /** Classements d'une saison ou d'un événement, tels qu'exportés. */
-    record PeriodBoard(StatPeriod period, String status, Map<String, List<StatisticsRepository.RankedRow>> boards) {
+    record PeriodBoard(StatPeriod period, String status, Map<String, List<StatisticsRepository.RankedRow>> boards,
+                       Long community) {
+        PeriodBoard(StatPeriod period, String status, Map<String, List<StatisticsRepository.RankedRow>> boards) {
+            this(period, status, boards, null);
+        }
     }
 
     /** La saison montrée (ou {@code null}) et tous les événements définis. */
@@ -249,7 +256,9 @@ public final class WebSnapshotWriter implements PluginService {
         CompletableFuture<PeriodBoard> season = stats.currentSeason(now)
                 .map(period -> periodBoard(current, stats, period, now))
                 .orElse(CompletableFuture.completedFuture(null));
+        // Un brouillon (#57) n'est jamais publié.
         List<CompletableFuture<PeriodBoard>> events = stats.events().stream()
+                .filter(period -> period.state() != StatPeriod.State.DRAFT)
                 .map(period -> periodBoard(current, stats, period, now)).toList();
         return season.thenCombine(CompletableFuture.allOf(events.toArray(CompletableFuture[]::new)),
                 (seasonBoard, ignored) -> new PeriodBoards(seasonBoard,
@@ -257,33 +266,41 @@ public final class WebSnapshotWriter implements PluginService {
     }
 
     /**
-     * Une période programmée n'a pas encore de classement ; une période archivée se lit dans son
-     * archive figée ; sinon le classement est calculé sur la fenêtre du journal.
+     * Une période programmée ou annulée n'a pas de classement ; une période archivée se lit dans son
+     * archive figée ; sinon le classement est calculé sur la fenêtre du journal. Un objectif commun
+     * (#57) publie aussi le total de tous les participants.
      */
     private CompletableFuture<PeriodBoard> periodBoard(WebExportConfig current, StatisticsDefinition stats,
                                                        StatPeriod period, Instant now) {
-        StatPeriod.Status status = period.status(now);
         boolean archived = statisticsService.isArchived(period.id());
-        String wireStatus = archived ? "ARCHIVED" : status.name();
+        EventLifecycle state = EventLifecycle.of(period, now, archived);
         Set<UUID> excluded = stats.excludedFrom(period.id());
         Map<String, List<StatisticsRepository.RankedRow>> boards =
                 java.util.Collections.synchronizedMap(new LinkedHashMap<>());
         List<CompletableFuture<Void>> futures = new ArrayList<>();
+        java.util.concurrent.atomic.AtomicReference<Long> community = new java.util.concurrent.atomic.AtomicReference<>();
         for (String metricId : period.metrics()) {
             StatMetric metric = StatMetric.find(metricId).orElseThrow();
             boards.put(metricId, List.of());
-            if (status == StatPeriod.Status.SCHEDULED) {
+            if (!state.hasBoard()) {
                 continue;
             }
             CompletableFuture<List<StatisticsRepository.RankedRow>> rows = archived
-                    ? statisticsRepository.archivedTop(period.id(), metric, current.leaderboardSize(),
+                    ? statisticsRepository.archivedTop(period, metric, current.leaderboardSize(),
                     current.profileVisibilityDefault(), excluded)
                     : statisticsRepository.liveTop(period, metric, current.leaderboardSize(),
                     current.profileVisibilityDefault(), excluded, stats.excludedXpReasons());
             futures.add(rows.thenAccept(list -> boards.put(metricId, list)));
+            if (period.rules().communityGoal()) {
+                CompletableFuture<Long> total = archived
+                        ? statisticsRepository.archivedCommunityTotal(period.id(), metric, excluded)
+                        : statisticsRepository.communityTotal(period, metric, excluded, stats.excludedXpReasons());
+                futures.add(total.thenAccept(community::set));
+            }
         }
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-                .thenApply(ignored -> new PeriodBoard(period, wireStatus, new LinkedHashMap<>(boards)));
+                .thenApply(ignored -> new PeriodBoard(period, state.name(), new LinkedHashMap<>(boards),
+                        period.rules().communityGoal() ? (community.get() == null ? 0L : community.get()) : null));
     }
 
     /**
@@ -415,12 +432,38 @@ public final class WebSnapshotWriter implements PluginService {
         period.put("start", board.period().start().toString());
         period.put("end", board.period().end().toString());
         period.put("status", board.status());
+        rules(period, board);
         Map<String, Object> boards = new LinkedHashMap<>();
         for (Map.Entry<String, List<StatisticsRepository.RankedRow>> entry : board.boards().entrySet()) {
             boards.put(entry.getKey(), rankedRows(entry.getValue()));
         }
         period.put("leaderboards", boards);
         return period;
+    }
+
+    /**
+     * Règles publiques d'un événement (#57) : classement, filtre, objectif commun et récompenses
+     * déclaratives (libellés seulement, jamais la clé d'avantage interne).
+     */
+    private static void rules(Map<String, Object> period, PeriodBoard board) {
+        EventRules rules = board.period().rules();
+        period.put("ranking", rules.ranking().name());
+        if (!rules.filter().isEmpty()) {
+            Map<String, Object> filter = new java.util.TreeMap<>();
+            rules.filter().forEach((key, values) -> filter.put(key, values.stream().sorted().toList()));
+            period.put("filter", filter);
+        }
+        if (rules.communityGoal()) {
+            Map<String, Object> community = new LinkedHashMap<>();
+            long total = board.community() == null ? 0L : board.community();
+            community.put("goal", rules.goal());
+            community.put("total", total);
+            community.put("reached", total >= rules.goal());
+            period.put("community", community);
+        }
+        if (!rules.rewards().isEmpty()) {
+            period.put("rewards", rules.rewards().stream().map(EventReward::describe).toList());
+        }
     }
 
     private static List<Map<String, Object>> rankedRows(List<StatisticsRepository.RankedRow> rows) {

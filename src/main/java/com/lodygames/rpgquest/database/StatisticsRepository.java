@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.database;
 
 import com.lodygames.rpgquest.player.PublicProfilePolicy;
+import com.lodygames.rpgquest.stats.EventLifecycle;
 import com.lodygames.rpgquest.stats.StatMetric;
 import com.lodygames.rpgquest.stats.StatPeriod;
 import java.sql.Connection;
@@ -14,7 +15,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -27,6 +30,10 @@ import java.util.concurrent.CompletableFuture;
  * joueur sur une période est la somme de ses octrois dans la fenêtre {@code [début, fin)} : aucun
  * compteur parallèle, deux périodes qui se chevauchent comptent la même action chacune selon sa
  * fenêtre, et un retry déjà dédupliqué par le journal ne compte jamais deux fois.</p>
+ *
+ * <p>Issue #57 : les métriques d'activité (mob tué, pêche) se lisent de la même manière dans
+ * {@code stat_activity_log}, filtrées par cible ; la règle de classement de l'événement choisit
+ * somme ou meilleure action, et l'ordre.</p>
  *
  * <p>À la fin d'une période, {@link #archive} fige ses valeurs dans {@code stat_period_results} :
  * le classement d'une saison passée ne bouge plus, même si le journal est ensuite purgé (reset d'un
@@ -60,13 +67,13 @@ public final class StatisticsRepository {
                                                       PublicProfilePolicy.Visibility visibility,
                                                       Collection<UUID> excluded, Collection<String> excludedReasons) {
         requireWindowed(metric);
-        String sql = "SELECT p.last_name AS name, " + aggregate(metric) + " AS total "
-                + "FROM xp_grants g JOIN player_profiles p ON p.uuid = g.player_uuid "
-                + "WHERE " + windowFilter(excludedReasons)
+        String sql = "SELECT p.last_name AS name, " + aggregate(period) + " AS total "
+                + "FROM " + source(metric) + " g JOIN player_profiles p ON p.uuid = g.player_uuid "
+                + "WHERE " + windowFilter(period, metric, excludedReasons)
                 + " AND " + PublicProfilePolicy.visible("p", visibility)
                 + notIn("p.uuid", excluded.size())
-                + " GROUP BY p.uuid, p.last_name HAVING " + aggregate(metric) + " > 0"
-                + " ORDER BY total " + metric.order().name() + ", p.last_name ASC, p.uuid ASC LIMIT ?";
+                + " GROUP BY p.uuid, p.last_name HAVING " + aggregate(period) + " > 0"
+                + " ORDER BY total " + period.rules().ranking().order().name() + ", p.last_name ASC, p.uuid ASC LIMIT ?";
         return database.execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 int index = bindWindow(statement, 1, period, metric, excludedReasons);
@@ -78,9 +85,76 @@ public final class StatisticsRepository {
     }
 
     /**
+     * Total de tous les participants d'un objectif commun (#57), en direct. Les profils privés
+     * comptent (aucun pseudo n'est lu), les joueurs exclus non.
+     */
+    public CompletableFuture<Long> communityTotal(StatPeriod period, StatMetric metric, Collection<UUID> excluded,
+                                                  Collection<String> excludedReasons) {
+        requireWindowed(metric);
+        String sql = "SELECT COALESCE(SUM(g.amount), 0) AS total FROM " + source(metric) + " g WHERE "
+                + windowFilter(period, metric, excludedReasons) + notIn("g.player_uuid", excluded.size());
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                int index = bindWindow(statement, 1, period, metric, excludedReasons);
+                bindUuids(statement, index, excluded);
+                return total(statement);
+            }
+        });
+    }
+
+    /** Total figé d'un objectif commun archivé (#57). */
+    public CompletableFuture<Long> archivedCommunityTotal(String periodId, StatMetric metric, Collection<UUID> excluded) {
+        String sql = "SELECT COALESCE(SUM(r.stat_value), 0) AS total FROM stat_period_results r "
+                + "WHERE r.period_id = ? AND r.metric = ?" + notIn("r.player_uuid", excluded.size());
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, periodId);
+                statement.setString(2, metric.id());
+                bindUuids(statement, 3, excluded);
+                return total(statement);
+            }
+        });
+    }
+
+    /**
+     * Note une transition de cycle de vie (#57), une seule fois par période et par état : rend
+     * {@code true} si elle vient d'être enregistrée. Journal d'audit, jamais lu par le gameplay.
+     */
+    public CompletableFuture<Boolean> recordTransition(String periodId, EventLifecycle state, Instant now) {
+        String sql = dialect.rewrite("INSERT OR IGNORE INTO stat_period_audit (period_id, action, created_at) VALUES (?, ?, ?)");
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, periodId);
+                statement.setString(2, state.name());
+                statement.setString(3, now.toString());
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    /** Transitions enregistrées d'une période, dans l'ordre où elles ont eu lieu. */
+    public CompletableFuture<List<String>> auditTrail(String periodId) {
+        return database.execute(connection -> {
+            List<String> actions = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT action FROM stat_period_audit WHERE period_id = ? ORDER BY created_at ASC, action ASC")) {
+                statement.setString(1, periodId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        actions.add(resultSet.getString("action"));
+                    }
+                }
+            }
+            return actions;
+        });
+    }
+
+    /**
      * Fige les valeurs d'une période terminée. Idempotent : la ligne d'archive est posée en premier
      * par un {@code INSERT OR IGNORE}, dans la même transaction que les résultats — un second appel
      * (redémarrage, tick concurrent) ne réécrit rien. Rend {@code true} si l'archive vient d'être créée.
+     * La valeur figée suit la règle de classement de l'événement (somme ou meilleure action, #57) ;
+     * la transition {@code ARCHIVED} est auditée dans la même transaction.
      */
     public CompletableFuture<Boolean> archive(StatPeriod period, Collection<String> excludedReasons, Instant now) {
         for (String metricId : period.metrics()) {
@@ -102,14 +176,22 @@ public final class StatisticsRepository {
             for (String metricId : period.metrics()) {
                 StatMetric metric = StatMetric.find(metricId).orElseThrow();
                 String sql = "INSERT INTO stat_period_results (period_id, metric, player_uuid, stat_value) "
-                        + "SELECT ?, ?, g.player_uuid, " + aggregate(metric) + " FROM xp_grants g WHERE "
-                        + windowFilter(excludedReasons) + " GROUP BY g.player_uuid HAVING " + aggregate(metric) + " > 0";
+                        + "SELECT ?, ?, g.player_uuid, " + aggregate(period) + " FROM " + source(metric) + " g WHERE "
+                        + windowFilter(period, metric, excludedReasons) + " GROUP BY g.player_uuid HAVING "
+                        + aggregate(period) + " > 0";
                 try (PreparedStatement statement = connection.prepareStatement(sql)) {
                     statement.setString(1, period.id());
                     statement.setString(2, metric.id());
                     bindWindow(statement, 3, period, metric, excludedReasons);
                     statement.executeUpdate();
                 }
+            }
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(
+                    "INSERT OR IGNORE INTO stat_period_audit (period_id, action, created_at) VALUES (?, ?, ?)"))) {
+                statement.setString(1, period.id());
+                statement.setString(2, EventLifecycle.ARCHIVED.name());
+                statement.setString(3, now.toString());
+                statement.executeUpdate();
             }
             return true;
         }));
@@ -130,17 +212,17 @@ public final class StatisticsRepository {
     }
 
     /** Classement figé d'une période archivée. */
-    public CompletableFuture<List<RankedRow>> archivedTop(String periodId, StatMetric metric, int limit,
+    public CompletableFuture<List<RankedRow>> archivedTop(StatPeriod period, StatMetric metric, int limit,
                                                           PublicProfilePolicy.Visibility visibility,
                                                           Collection<UUID> excluded) {
         String sql = "SELECT p.last_name AS name, r.stat_value AS total "
                 + "FROM stat_period_results r JOIN player_profiles p ON p.uuid = r.player_uuid "
                 + "WHERE r.period_id = ? AND r.metric = ? AND " + PublicProfilePolicy.visible("p", visibility)
                 + notIn("p.uuid", excluded.size())
-                + " ORDER BY total " + metric.order().name() + ", p.last_name ASC, p.uuid ASC LIMIT ?";
+                + " ORDER BY total " + period.rules().ranking().order().name() + ", p.last_name ASC, p.uuid ASC LIMIT ?";
         return database.execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, periodId);
+                statement.setString(1, period.id());
                 statement.setString(2, metric.id());
                 int index = bindUuids(statement, 3, excluded);
                 statement.setInt(index, limit);
@@ -190,7 +272,30 @@ public final class StatisticsRepository {
         return rank(names, values);
     }
 
-    private static String windowFilter(Collection<String> excludedReasons) {
+    private static long total(PreparedStatement statement) throws SQLException {
+        try (ResultSet resultSet = statement.executeQuery()) {
+            return resultSet.next() ? resultSet.getLong("total") : 0L;
+        }
+    }
+
+    /** Journal lu pour une métrique : l'XP ({@code xp_grants}) ou l'activité générique (#57). */
+    private static String source(StatMetric metric) {
+        return metric.xpSkill() != null ? "xp_grants" : "stat_activity_log";
+    }
+
+    /**
+     * Filtre SQL d'une fenêtre. Les colonnes de filtre viennent du catalogue des métriques
+     * ({@link StatMetric#filters()}), jamais du fichier ; seules les valeurs sont des paramètres.
+     */
+    private static String windowFilter(StatPeriod period, StatMetric metric, Collection<String> excludedReasons) {
+        if (metric.xpSkill() == null) {
+            StringBuilder sql = new StringBuilder("g.action = ? AND g.created_at >= ? AND g.created_at < ?");
+            for (Map.Entry<String, List<String>> filter : filters(period, metric).entrySet()) {
+                sql.append(" AND g.").append(filter.getKey()).append(" IN (")
+                        .append(String.join(", ", java.util.Collections.nCopies(filter.getValue().size(), "?"))).append(')');
+            }
+            return sql.toString();
+        }
         String reasons = excludedReasons.isEmpty() ? ""
                 : " AND (g.reason IS NULL OR g.reason NOT IN ("
                 + String.join(", ", java.util.Collections.nCopies(excludedReasons.size(), "?")) + "))";
@@ -199,21 +304,42 @@ public final class StatisticsRepository {
 
     private static int bindWindow(PreparedStatement statement, int index, StatPeriod period, StatMetric metric,
                                   Collection<String> excludedReasons) throws SQLException {
-        statement.setString(index++, metric.xpSkill().name());
+        statement.setString(index++, metric.xpSkill() != null ? metric.xpSkill().name() : metric.activity());
         statement.setString(index++, BOUND.format(period.start()));
         statement.setString(index++, BOUND.format(period.end()));
+        if (metric.xpSkill() == null) {
+            for (List<String> values : filters(period, metric).values()) {
+                for (String value : values) {
+                    statement.setString(index++, value);
+                }
+            }
+            return index;
+        }
         for (String reason : excludedReasons) {
             statement.setString(index++, reason);
         }
         return index;
     }
 
-    private static String aggregate(StatMetric metric) {
-        return (metric.aggregation() == StatMetric.Aggregation.MAX ? "MAX" : "SUM") + "(g.amount)";
+    /** Colonne du journal → valeurs acceptées, dans un ordre stable (même SQL, mêmes paramètres). */
+    private static Map<String, List<String>> filters(StatPeriod period, StatMetric metric) {
+        Map<String, List<String>> byColumn = new TreeMap<>();
+        for (Map.Entry<String, java.util.Set<String>> filter : period.rules().filter().entrySet()) {
+            String column = metric.filters().get(filter.getKey());
+            if (column != null && !filter.getValue().isEmpty()) {
+                byColumn.computeIfAbsent(column, k -> new ArrayList<>()).addAll(filter.getValue());
+            }
+        }
+        byColumn.values().forEach(values -> values.sort(null));
+        return byColumn;
+    }
+
+    private static String aggregate(StatPeriod period) {
+        return (period.rules().ranking().aggregation() == StatMetric.Aggregation.MAX ? "MAX" : "SUM") + "(g.amount)";
     }
 
     private static void requireWindowed(StatMetric metric) {
-        if (metric.xpSkill() == null) {
+        if (!metric.windowed()) {
             throw new IllegalArgumentException("métrique sans journal horodaté, non calculable sur une période : " + metric.id());
         }
     }

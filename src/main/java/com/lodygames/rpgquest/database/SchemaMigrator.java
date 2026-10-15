@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 39;
+    public static final int CURRENT_VERSION = 40;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -81,7 +81,9 @@ public final class SchemaMigrator {
             new SchemaMigration(38, "npc_spots, npc_spot_ids (emplacements de PNJ, issue #381)",
                     SchemaMigrator::applyV38),
             new SchemaMigration(39, "stat_period_archives, stat_period_results + index xp_grants (issue #54)",
-                    SchemaMigrator::applyV39));
+                    SchemaMigrator::applyV39),
+            new SchemaMigration(40, "stat_activity_log, stat_period_audit (issue #57)",
+                    SchemaMigrator::applyV40));
 
     private SchemaMigrator() {
     }
@@ -1510,6 +1512,42 @@ public final class SchemaMigrator {
                 statement.execute(dialect.ddl(
                         "CREATE INDEX IF NOT EXISTS idx_xp_grants_skill_created ON xp_grants (skill, created_at)"));
             }
+        }
+    }
+
+    private static void applyV40(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #57 — moteur d'événements générique.
+        // stat_activity_log : journal d'actions de jeu comptables (mob tué, prise de pêche…), écrit
+        // par UN listener pour tous les concours. event_key UNIQUE = idempotence : un retry ou un
+        // événement Bukkit rejoué n'insère rien. Comme xp_grants, c'est un journal, pas un compteur :
+        // un concours se lit sur sa fenêtre, plusieurs concours simultanés relisent la même ligne.
+        // target = cible filtrable (type d'entité, matériau), variant = précision facultative (id
+        // de mob spécial RPGQuest).
+        // stat_period_audit : transitions de cycle de vie observées (SCHEDULED, ACTIVE, ARCHIVED,
+        // CANCELLED…), une seule fois chacune par période (clé primaire).
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS stat_activity_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_key TEXT NOT NULL UNIQUE,
+                        player_uuid TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        target TEXT NOT NULL,
+                        variant TEXT,
+                        amount INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """));
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_stat_activity_action_created ON stat_activity_log (action, created_at)"));
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS stat_period_audit (
+                        period_id TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (period_id, action)
+                    )
+                    """));
         }
     }
 }

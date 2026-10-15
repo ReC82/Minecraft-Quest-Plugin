@@ -4659,6 +4659,37 @@ min 99 / moyenne 131 / médiane 134 / max 165 blocs. Les 7 instances restantes o
 découvertes avant le correctif et affichent `attempts = 0` — jamais retentées depuis le dernier
 redémarrage, parce que l'appariement n'est déclenché que par le passage d'un joueur.
 
+### PlugAdmin — page « Voyages » (`/travel`, issue #412)
+
+Refonte de l'ancienne page « Réseau de voyage » pour qu'un administrateur comprenne en quelques
+secondes ce qu'il peut faire. Mêmes données (`travel.catalog`), mêmes actions et permissions ;
+aucune migration, aucun changement plugin.
+
+- **En haut** : titre, « Mis à jour il y a … » + **Actualiser** (bandeau orange au-delà de 60 min :
+  « ce n'est peut-être plus l'état actuel »), résumé « N lieux · N bornes · N à vérifier »,
+  avertissement si l'agent du serveur est hors ligne, information si une actualisation est en route.
+- **Lieux** (onglet par défaut, `?q=`, `&kind=hub|wild|autre`, `&sort=recent`, `&p=`) : recherche
+  sans accents (nom, monde, biome, identifiant), 25 lieux par page, nom lisible + monde et biome
+  traduits, un seul état (« Borne prête » / « Sans borne » pour le Village, « Désactivé »), bouton
+  **Renommer**. Aucun identifiant, aucune date ISO.
+- **Fiche d'un lieu** (`?focus=<id du waypoint>`) : renommage pleine largeur (nom actuel, nouveau
+  nom, avertissement en direct si le nom est déjà pris, rappel de ce qui ne change pas),
+  « Comment y aller », **Informations techniques** repliées (identifiant, monde, biome, instance,
+  coordonnées XYZ, borne associée, actif, date de création). Le panel refuse avant la file un nom
+  déjà porté par un autre lieu ou identique au nom actuel (casse, accents et espaces ignorés) ; le
+  plugin reste seul juge de l'unicité. Après l'envoi, retour sur la fiche avec le toast de résultat.
+- **Bornes** (`&tab=bornes`) : une phrase d'explication, chaque borne nommée d'après son lieu, état,
+  « Voir » déplie ses détails (lieu, coordonnées, distance, identifiant, date).
+- **À vérifier** (`&tab=verifier`) : seulement les lieux du Village sans borne (en phrases, avec
+  l'état de l'essai) et les bornes en anomalie ; **Poser la borne maintenant** (`travel.beacon.pair`,
+  `TRAVEL_PAIR_WRITE`, case de confirmation). Les Waystones non découvertes sont expliquées dans
+  « Bon à savoir », sans être comptées comme un problème.
+- **Avancé** (`&tab=avance`) : tout le diagnostic #156/#236 décrit ci-dessous, inchangé, plus les
+  tableaux techniques des waypoints et des bornes (repliés, paginés `wp`/`tb`).
+
+Le paramètre `focus=tab-<onglet>` rouvre l'onglet d'où une action est partie. Les anciens
+paramètres `world` et `wp` (page de la liste) n'existent plus sur l'accueil.
+
 ### Diagnostic du réseau de voyage dans PlugAdmin — `/travel` (issue #156)
 
 Trois réseaux coexistent et se confondaient facilement ; `/travel` les distingue désormais
@@ -4730,7 +4761,7 @@ n'est pas écrire dans le monde.
 |---|---|---|
 | `waypoint.rename` | `WAYPOINT_WRITE` (OWNER + ADMIN) | `waypointId` (`wp_…`), `displayName` |
 
-Depuis `/travel`, chaque ligne du tableau « Waypoints » porte un bloc replié **Renommer**, nom
+Depuis `/travel` (page « Voyages », #412), le bouton **Renommer** d'un lieu ouvre sa fiche, nom
 actuel pré-rempli. Règles du nom (contrôlées par le panel **et** revalidées par le plugin) : 2 à 40
 caractères après réduction des espaces ; lettres (accents compris), chiffres, espaces, apostrophes,
 tirets et points, en commençant par une lettre ou un chiffre — jamais de `<` ni de balise

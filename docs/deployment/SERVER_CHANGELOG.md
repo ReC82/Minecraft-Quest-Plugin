@@ -48,6 +48,37 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - PlugAdmin : page « Voyages » simplifiée (#412)
+
+### Changement
+
+Refonte de la page PlugAdmin `/travel` (« Réseau de voyage » devient « Voyages ») : onglets
+Lieux / Bornes / À vérifier / Avancé, renommage d'un lieu dans sa fiche, refus panel d'un nom
+déjà pris. Aucun changement du plugin.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft : redéploiement de PlugAdmin seulement. Aucune migration, aucun
+fichier de configuration ni de contenu modifié.
+
+### Sauvegarde préalable
+
+Version précédente du panel conservée par `scripts/plugadmin/deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Déploiement
+
+`scripts/plugadmin/deploy.sh --wait-ci` après CI verte.
+
+### Validation
+
+`/travel` → 303 vers /login sans session ; JAR installé contenant `TravelPages` ; TC-322.
+
+### Rollback
+
+Réinstaller la version précédente depuis `/opt/plugadmin/releases/` et redémarrer `plugadmin.service`.
+
+---
+
 ## 2026-10-15 - Catalogues de quêtes : parcours PlugAdmin simplifié (#414)
 
 ### Changement

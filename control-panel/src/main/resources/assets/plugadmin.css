@@ -1403,3 +1403,43 @@ details.enc-biomes[open] summary{margin-bottom:0}
   .qc-savebar .qc-live-note{flex:1 1 100%;margin:0}
   .qc-zone-row .btn{flex:1 1 0;justify-content:center}
 }
+
+/* ---- Voyages : Lieux / Bornes / À vérifier / Avancé (issue #412, refonte de /travel) ---- */
+.tv-summary{font-size:15px;font-weight:700;color:var(--txt);margin:0 0 10px}
+.tv-tabs{margin-bottom:16px}
+.tv-tabs .tv-count-warn{background:var(--warn-soft);color:var(--warn)}
+.tv-intro,.tv-text{font-size:14.5px;color:var(--txt-2);margin:0 0 12px;max-width:72ch}
+.tv-search{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.tv-search input[type=search]{flex:1 1 260px;min-width:0}
+.tv-search select{flex:0 1 auto;width:auto}
+.tv-search .btn{margin-top:0}
+.tv-row .qc-row-side .btn{min-height:36px}
+.tv-back{margin:0 0 10px;font-size:14px}
+.tv-back a{display:inline-flex;gap:6px;align-items:center;text-decoration:none}
+.tv-rename{max-width:640px}
+.tv-rename label{display:block;font-weight:700;margin:6px 0 4px}
+.tv-rename input[type=text]{max-width:100%}
+.tv-keep{display:flex;gap:6px;align-items:flex-start;font-size:13.5px;color:var(--ok);margin:10px 0 0}
+.tv-keep .ic{flex:none;margin-top:2px}
+.tv-beacon{display:block;padding:0}
+.tv-beacon>summary{list-style:none;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;
+  padding:12px 14px;cursor:pointer}
+.tv-beacon>summary::-webkit-details-marker{display:none}
+.tv-beacon[open]>summary .tv-see{background:var(--surface-3)}
+.tv-beacon-body{padding:0 14px 12px}
+.tv-beacon>summary .qc-row-sub{font-weight:400}
+.tv-pair{flex:1 1 100%;margin:0;padding:0;border:0;background:none}
+.tv-rename .actform,.tv-pair .actform{border:0;padding:0;background:none;box-shadow:none;margin:0}
+details.tv-beacon{margin:0}
+.tv-pair>summary{list-style:none;display:inline-flex;gap:6px;align-items:center}
+.tv-pair>summary::-webkit-details-marker{display:none}
+.tv-pair[open]>summary{margin-bottom:8px}
+.tv-plain{margin:0 0 8px;padding-left:18px;font-size:14px}
+.tv-plain li{margin:2px 0}
+.tv-pager{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin:14px 0}
+.tv-tab .table-wrap{max-width:100%}
+@media(max-width:575.98px){
+  .tv-search select{flex:1 1 45%}
+  .tv-search .btn{flex:1 1 auto;justify-content:center}
+  .tv-pair>summary{width:100%;justify-content:center}
+}

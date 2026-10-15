@@ -6160,6 +6160,27 @@ casse ou de remise). **Durée** : 5 minutes.
 3.  Terminer un objectif en jeu, rafraîchir : la ligne porte le badge vert « fait ».
 4.  Une remise à un PNJ affiche l'objet **et** le PNJ (« Rapporter … à … »).
 
+### TC-322 — Page « Voyages » simplifiée (issue #412, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de #412 sur DEV. Renommer **un seul** lieu de test, puis lui rendre son nom.
+
+1.  PlugAdmin → **Voyages** : en moins de 10 secondes, on comprend la page (résumé « lieux · bornes ·
+    à vérifier », date de mise à jour, onglets Lieux / Bornes / À vérifier / Avancé).
+2.  Si le relevé a plus d'une heure, le bandeau orange le dit ; « Actualiser » le remet à jour.
+3.  Lieux : chercher « foret » (sans accent) → les lieux « Forêt… » apparaissent ; filtre
+    « Village » ; « Plus récents d'abord » ; page suivante.
+4.  Cliquer **Renommer** sur un lieu → la fiche s'ouvre ; taper le nom d'un autre lieu →
+    l'avertissement apparaît ; l'enregistrer quand même → refus « déjà pris », rien d'envoyé.
+5.  Saisir un nouveau nom → « Enregistrer le nouveau nom » → toast de succès, la fiche affiche le
+    nouveau nom après l'actualisation automatique ; **en jeu**, le panneau et le menu de voyage
+    affichent le nouveau nom, la découverte du lieu est conservée. Rendre ensuite son ancien nom.
+6.  Bornes : chaque borne porte le nom de son lieu ; « Voir » déplie les détails.
+7.  À vérifier : les lieux du Village sans borne sont listés en phrases ; (facultatif) « Poser la
+    borne maintenant » sur l'un d'eux → résultat affiché, retour sur l'onglet.
+8.  Avancé : diagnostic du Hub, couverture, fiches de bornes, instances (filtre), Waystones,
+    tableaux techniques — tous présents.
+9.  Téléphone (≈ 390 px) : aucun défilement horizontal, boutons utilisables au doigt.
+
 ### TC-321 — Catalogues de quêtes : parcours simplifié (issue #414, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #414 sur DEV. Ne supprimer **que** des catalogues de test.

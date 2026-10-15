@@ -340,7 +340,7 @@ public final class PanelApp {
         // /agents/action, donc par le catalogue et CITY_WRITE / CITY_DELETE.
         route("/cities", exchange -> handleBusinessPage(exchange, "/cities", "Villes",
                 Permission.TRAVEL_READ, agentPages::cities));
-        route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Réseau de voyage",
+        route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Voyages",
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",
                 Permission.MOB_READ, agentPages::mobs));
@@ -5384,6 +5384,20 @@ public final class PanelApp {
                         "DENIED", "catalogue modifié depuis l'ouverture du formulaire", rid);
                 Http.redirect(exchange, withError(returnPath, agentId, null, conflict)
                         + "&focus=" + enc(AgentPages.cleanFocus(v.params().get("id"))));
+                return;
+            }
+        }
+        // Issue #412 : un nom déjà pris par un autre lieu (ou inchangé) est refusé avant la file, sur
+        // le dernier relevé ; le plugin revérifie l'unicité sur l'état réel.
+        if (v.valid() && "waypoint.rename".equals(type)) {
+            String waypointId = v.params().getOrDefault("waypointId", "");
+            String conflict = agentPages.waypointRenameConflict(agentId, waypointId,
+                    v.params().getOrDefault("displayName", ""));
+            if (conflict != null) {
+                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                        "DENIED", "nom de lieu déjà pris ou inchangé", rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, conflict)
+                        + "&focus=" + enc(AgentPages.cleanFocus(waypointId)));
                 return;
             }
         }

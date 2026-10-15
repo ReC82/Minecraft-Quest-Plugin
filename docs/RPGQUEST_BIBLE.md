@@ -224,7 +224,8 @@ Voir aussi section 5 (NPC/Citizens) pour le mécanisme complet. Page docs-site :
 | `/rpgadmin npc tag [id] [--force]` | Identifie l'entité visée (portée 6 blocs) d'un id stable, **indépendant de son nom affiché**. Id auto-généré (`npc_<n>`) si omis ; refusé si l'entité est déjà identifiée (utiliser `untag` d'abord). Depuis #66, un id explicite doit figurer dans le **registre canonique** (même source que le catalogue `/npcs` du panel : définitions `npcs/*.yml`, puis ids référencés par un dialogue `rpgquest:<id>`, un `giver:`, un `TALK_TO_NPC` ou un `DELIVER_ITEM_TO_NPC`) : sinon refus avec suggestion proche (`ID inconnu : garde … Vouliez-vous dire guard ?`). `--force` accepte un id volontairement nouveau (avertissement). Tab-complétion de l'id sur ce registre ; le succès affiche l'id **et** le nom affiché. | oui — SQLite (`npc_ids`, migration V11 ; `npc_citizens_bindings`, migration V12, si c'est un PNJ Citizens) |
 | `/rpgadmin npc untag` | Retire l'identifiant de l'entité visée. | oui |
 | `/rpgadmin npc info` | Affiche l'identifiant courant de l'entité visée (+ suffixe « Citizens NPC #n » si applicable). | non |
-| `/rpgadmin npc spot mark [nom]` | Réserve un **emplacement de PNJ** (issue #381) à votre position exacte et orientation (regard). Ne crée ni ne déplace aucun PNJ ; un même bloc n'a qu'un emplacement (le second `mark` renvoie l'existant) ; avertit si l'endroit n'a pas de sol solide ou deux blocs d'air. Permission `rpgquest.admin.npc.spot` (incluse dans `rpgquest.admin.npc`). | oui — SQLite (`npc_spots`, `npc_spot_ids`, migration V38) |
+| `/rpgadmin npc spot tool` | Donne l'outil **« Emplacements PNJ »** (issue #381 — porte-armure identifié par PDC `rpgquest:npc_spot_tool`) ; retaper la commande retire tous les exemplaires de l'inventaire. Avec l'outil en main, **clic droit sur un bloc** enregistre immédiatement un emplacement libre au centre de la case au-dessus, tourné vers l'administrateur, nom provisoire « Emplacement PNJ <n> », sans saisie. Refus avant écriture : monde hors mondes PNJ, pas de sol plein ou pas deux blocs d'air (liquide, portail), parcelle de joueur. Anti-doublon : main secondaire ignorée, anti-rebond 350 ms, réservation concurrente du même bloc refusée, bloc déjà réservé → l'existant est signalé. Clic gauche ou autre objet : rien. Permission `rpgquest.admin.npc.spot`. | oui — SQLite (`npc_spots`) |
+| `/rpgadmin npc spot mark [nom]` | **Option avancée** : réserve un **emplacement de PNJ** (issue #381) à votre position exacte et orientation (regard). Ne crée ni ne déplace aucun PNJ ; un même bloc n'a qu'un emplacement (le second `mark` renvoie l'existant) ; avertit si l'endroit n'a pas de sol solide ou deux blocs d'air. Permission `rpgquest.admin.npc.spot` (incluse dans `rpgquest.admin.npc`). | oui — SQLite (`npc_spots`, `npc_spot_ids`, migration V38) |
 | `/rpgadmin npc spot list` | Liste les emplacements de PNJ (id, nom, position, regard, PNJ affecté ou « libre »). | non |
 
 À savoir : id valide = minuscules/chiffres/`.`/`_`/`-` uniquement. « Aucune entité visée à portée » si le rayon (`ray trace`, 6 blocs) ne touche rien.
@@ -3567,8 +3568,11 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
 
 ### Emplacements de PNJ — `/rpgadmin npc spot` + PlugAdmin → PNJ → Emplacements (issue #381)
 
-Un emplacement est une position **exacte** (monde, X/Y/Z, regard et inclinaison) réservée en jeu
-par `/rpgadmin npc spot mark [nom]`, avec auteur, date et un rayon de sécurité (2 blocs). Identité
+Un emplacement est une position **exacte** (monde, X/Y/Z, regard et inclinaison) réservée en jeu —
+normalement par **clic droit sur un bloc avec l'outil « Emplacements PNJ »** (`/rpgadmin npc spot
+tool` pour le prendre ou le ranger : emplacement au-dessus du bloc visé, tourné vers
+l'administrateur, nom provisoire « Emplacement PNJ <n> » à renommer dans PlugAdmin), ou en option
+avancée par `/rpgadmin npc spot mark [nom]` (position des pieds et regard) —, avec auteur, date et un rayon de sécurité (2 blocs). Identité
 stable `npcspot_<n>` (jamais réattribuée) : renommer l'emplacement, le PNJ ou une ville ne le rend
 jamais invalide. Persistance : tables `npc_spots` et `npc_spot_ids` (migration V38) ; `npc_id`
 désigne le PNJ **logique** affecté (vide = libre), un PNJ n'occupant qu'un emplacement à la fois.

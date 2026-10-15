@@ -48,6 +48,36 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-15 - Outil « Emplacements PNJ » : clic droit sur un bloc (#381, correction)
+
+### Changement
+
+`/rpgadmin npc spot tool` donne (ou range) un outil identifié par PDC `rpgquest:npc_spot_tool`
+(porte-armure). Clic droit sur un bloc avec l'outil = un emplacement de PNJ libre au-dessus du
+bloc, nom provisoire « Emplacement PNJ <n> », sans saisie. `/rpgadmin npc spot mark` reste une
+option avancée. Les emplacements créés sans nom (outil ou `mark` sans nom) sont désormais numérotés.
+Textes PlugAdmin (`/npcs/spots`, aide) mis à jour.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du panel (textes d'aide). Aucune migration
+(schéma V38 inchangé), aucune configuration. Redémarrage Minecraft requis pour charger le JAR.
+
+### Sauvegarde préalable
+
+Gérée par `deploy-verygames.sh` (JAR + `data.db`) et `deploy.sh` (release panel).
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : TC-315 (étapes 0 à 2 et 12 pour l'outil).
+
+### Rollback
+
+Réinstaller le JAR et la release panel précédents ; les emplacements créés restent valides (même
+table), l'outil devient alors un porte-armure inerte… qui se poserait : le retirer des inventaires.
+
+---
+
 ## 2026-10-15 - `quest.player.status` structuré (#79, tranche 1)
 
 ### Changement

@@ -915,6 +915,7 @@ public final class RPGQuestBootstrap {
         // Issue #175 : boss communautaires du Wild, construits sur le moteur de mobs spéciaux (même
         // registre, même application de profil). Hub et Claims exclus explicitement, en plus du
         // périmètre Wild. État persistant en fichier de données (aucune table, aucune migration).
+        // Issue #471 : repères = waypoints du Wild (aucun joueur requis), chunks chargés ponctuellement.
         communityBossSettingsStore = new com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore(
                 plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
         communityBossService = new com.lodygames.rpgquest.mob.community.CommunityBossService(
@@ -928,7 +929,7 @@ public final class RPGQuestBootstrap {
                 zoneRegistry, () -> cityRegistry.index(), () -> waypointService.all(),
                 java.util.concurrent.ThreadLocalRandom.current(), System::currentTimeMillis,
                 task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
-                com.lodygames.rpgquest.mob.community.CommunityBossService.loadedChunksOnly());
+                com.lodygames.rpgquest.mob.community.CommunityBossService.targetedChunkLoads());
         registry.start(communityBossService);
         // Issue #176 : participation (coups effectifs mémorisés sur l'entité, effacés à la mort du joueur,
         // rayon réglable dans PlugAdmin) et récompenses des boss communautaires, remises par les droits à récompense (#422) : au plus une fois, inventaire plein géré.

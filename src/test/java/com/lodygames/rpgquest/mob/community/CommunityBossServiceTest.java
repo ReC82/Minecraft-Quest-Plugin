@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SplittableRandom;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -119,17 +120,20 @@ class CommunityBossServiceTest {
 
     /** Emplacement fixe à 50 blocs à l'est du centre, soumis aux règles réelles d'acceptation. */
     private static CommunityBossService.SpotFinder fixedSpot() {
-        return (world, center, accept, random) -> {
+        return (world, center, accept, random, surfaceOnly) -> {
             Location spot = new Location(world, center.getBlockX() + 50.5, 64, center.getBlockZ() + 0.5);
-            return accept.test(spot) ? Optional.of(spot) : Optional.empty();
+            return CompletableFuture.completedFuture(accept.test(spot) ? Optional.of(spot) : Optional.empty());
         };
     }
+
+    private CommunityBossService.SpotFinder finder = fixedSpot();
 
     private CommunityBossService newService() {
         CommunityBossService service = new CommunityBossService(plugin, plugin.getSLF4JLogger(), registry, mobService,
                 settingsStore, new CommunityBossStateStore(tempDir.resolve("state"), plugin.getSLF4JLogger()),
                 w -> true, () -> Set.of("hub"), zoneRegistry, () -> null, () -> waypoints,
-                new SplittableRandom(42), clock::get, Runnable::run, fixedSpot());
+                new SplittableRandom(42), clock::get, Runnable::run, (world, center, accept, random, surface) ->
+                        finder.find(world, center, accept, random, surface));
         service.applyProfilesWith((entity, def, test) -> tagAsProfile(entity, def.id().asString()));
         service.start();
         started.add(service);
@@ -194,7 +198,7 @@ class CommunityBossServiceTest {
         String announce = String.join("\n", drainMessages(player));
         assertTrue(announce.contains("Ogre des collines"), announce);
         assertTrue(announce.contains("Pierre aux Corbeaux"), announce);
-        assertTrue(announce.contains("à environ 50 blocs au est"), announce);
+        assertTrue(announce.contains("à environ 50 blocs à l'est"), announce);
         assertTrue(service.snapshot().lastSpawnMillis() > 0);
     }
 
@@ -220,16 +224,153 @@ class CommunityBossServiceTest {
     }
 
     @Test
-    void noPlayerInTheWildMeansNoSpawnAndNoAnnouncement() {
+    void bossSpawnsInTheWildWhileEveryoneIsInTheHubAndTheyAreAllTold() {
         player.teleport(new Location(hub, 0, 64, 0)); // Hub déclaré Wild par erreur : exclu quand même.
+        PlayerMock bob = server.addPlayer("Bob");
+        bob.teleport(new Location(hub, 10, 64, 0));
+        CommunityBossService service = newService();
+        drainMessages(player);
+        drainMessages(bob);
+        passDeadline();
+        service.tick();
+
+        assertEquals(1, service.snapshot().instances().size(), service.snapshot().lastOutcome());
+        CommunityBossInstance instance = service.snapshot().instances().get(0);
+        assertEquals("wild", instance.world(), "jamais au Hub : ancré sur le waypoint du Wild");
+        assertEquals("Pierre aux Corbeaux", instance.waypointName());
+        for (PlayerMock p : List.of(player, bob)) {
+            String announce = String.join("\n", drainMessages(p));
+            assertTrue(announce.contains("Ogre des collines") && announce.contains("Pierre aux Corbeaux"), announce);
+        }
+    }
+
+    @Test
+    void nobodyConnectedStillSpawnsFromTheWaypoints() {
+        player.disconnect();
+        CommunityBossService service = newService();
+        passDeadline();
+        service.tick();
+        assertEquals(1, service.snapshot().instances().size(), service.snapshot().lastOutcome());
+    }
+
+    @Test
+    void withoutAnyWaypointNorPlayerInTheWildNothingSpawnsAndTheReasonSaysWhatIsMissing() {
+        player.teleport(new Location(hub, 0, 64, 0));
+        waypoints.clear();
+        waypoints.add(new Waypoint("hub-wp", "Place du Hub", "hub", "hub@0,0", "minecraft:plains", 0, 0,
+                0, 64, 0, "NORTH", 1, true, Instant.EPOCH));
+        waypoints.add(new Waypoint("old", "Ancienne borne", "wild", "plains@0,0", "minecraft:plains", 0, 0,
+                0, 64, 0, "NORTH", 1, false, Instant.EPOCH));
         CommunityBossService service = newService();
         drainMessages(player);
         passDeadline();
         service.tick();
 
         assertTrue(service.snapshot().instances().isEmpty());
-        assertTrue(drainMessages(player).isEmpty());
-        assertTrue(service.snapshot().lastOutcome().contains("Aucun joueur"), service.snapshot().lastOutcome());
+        assertTrue(drainMessages(player).isEmpty(), "rien d'annoncé");
+        String outcome = service.snapshot().lastOutcome();
+        assertTrue(outcome.contains("Aucun repère dans le Wild") && outcome.contains("waypoint"), outcome);
+    }
+
+    @Test
+    void aBossIsNeverPlacedNearAPlayerEvenWhenAnchoredOnAWaypoint() {
+        player.teleport(new Location(wild, 50, 64, 0)); // exactement sur l'emplacement fixe du test
+        waypoints.clear();
+        waypoints.add(new Waypoint("wp-1", "Pierre aux Corbeaux", "wild", "plains@0,0", "minecraft:plains", 0, 0,
+                0, 64, 0, "NORTH", 1, true, Instant.EPOCH));
+        CommunityBossService service = newService();
+        passDeadline();
+        service.tick();
+        // Ancre « waypoint » refusée (joueur trop près) ; ancre « joueur » à 100 : acceptée, loin de lui.
+        assertEquals(1, service.snapshot().instances().size());
+        assertEquals(100, service.snapshot().instances().get(0).x());
+    }
+
+    @Test
+    void searchInProgressBlocksASecondSpawnAndTheCapIsCheckedAgainWhenTheChunkArrives() {
+        CompletableFuture<Optional<Location>> pending = new CompletableFuture<>();
+        finder = (world, center, accept, random, surface) -> pending;
+        CommunityBossService service = newService();
+        passDeadline();
+        service.tick();
+        assertTrue(service.snapshot().instances().isEmpty(), "chunk pas encore chargé");
+        assertEquals("BUSY", service.testSpawn(null, null).join().code(), "une seule recherche à la fois");
+
+        // Pendant le chargement, un boss marqué est réadopté : le plafond (1) est atteint.
+        LivingEntity orphan = (LivingEntity) wild.spawnEntity(new Location(wild, 60, 64, 0), EntityType.ZOMBIE);
+        tagAsProfile(orphan, "rpgquest:ogre");
+        orphan.getPersistentDataContainer().set(service.instanceKey(), PersistentDataType.STRING,
+                orphan.getUniqueId().toString());
+        service.onEntitiesLoad(new EntitiesLoadEvent(wild.getChunkAt(orphan.getLocation()), List.of(orphan)));
+
+        pending.complete(Optional.of(new Location(wild, 80.5, 64, 0.5)));
+        assertEquals(1, service.snapshot().instances().size(), "jamais au-delà du plafond");
+        assertTrue(service.snapshot().lastOutcome().contains("Plafond"), service.snapshot().lastOutcome());
+    }
+
+    @Test
+    void aFailingSearchNeverLeavesTheSchedulerStuck() {
+        finder = (world, center, accept, random, surface) -> CompletableFuture.failedFuture(new IllegalStateException());
+        CommunityBossService service = newService();
+        passDeadline();
+        service.tick();
+        assertTrue(service.snapshot().lastOutcome().contains("a échoué"), service.snapshot().lastOutcome());
+
+        finder = fixedSpot();
+        passDeadline();
+        service.tick();
+        assertEquals(1, service.snapshot().instances().size(), "recherche suivante possible");
+    }
+
+    @Test
+    void surfaceOnlySettingIsPassedToTheSearch() throws Exception {
+        List<Boolean> seen = new ArrayList<>();
+        finder = (world, center, accept, random, surface) -> {
+            seen.add(surface);
+            return CompletableFuture.completedFuture(Optional.empty());
+        };
+        CommunityBossService service = newService();
+        passDeadline();
+        service.tick();
+        settingsStore.save(settingsStore.current().withLocating(true, 48, false));
+        passDeadline();
+        service.tick();
+        assertTrue(seen.get(0), "surface uniquement par défaut");
+        assertFalse(seen.get(seen.size() - 1), "réglage désactivé transmis");
+        assertTrue(service.snapshot().lastOutcome().contains("Aucun emplacement sûr"));
+    }
+
+    // ---- Contour lumineux (#471) -------------------------------------------------------------------
+
+    @Test
+    void glowLightsOnlyWhenAPlayerIsWithinTheRadiusAndCanBeTurnedOff() throws Exception {
+        CommunityBossService service = newService();
+        passDeadline();
+        service.tick();
+        Entity boss = server.getEntity(service.snapshot().instances().get(0).entityId());
+
+        service.refreshGlow(); // Alice à 50 blocs > 48
+        assertFalse(boss.isGlowing());
+
+        player.teleport(new Location(wild, 20, 64, 0)); // 30 blocs
+        service.refreshGlow();
+        assertTrue(boss.isGlowing());
+
+        player.teleport(new Location(hub, 50, 64, 0)); // même x/z, autre monde
+        service.refreshGlow();
+        assertFalse(boss.isGlowing());
+
+        player.teleport(new Location(wild, 20, 64, 0));
+        settingsStore.save(settingsStore.current().withLocating(false, 48, true));
+        service.refreshGlow();
+        assertFalse(boss.isGlowing(), "option désactivée");
+
+        settingsStore.save(settingsStore.current().withLocating(true, 48, true));
+        service.refreshGlow();
+        assertTrue(boss.isGlowing());
+        service.stop();
+        started.remove(service);
+        assertFalse(boss.isGlowing(), "éteint à l'arrêt du plugin");
     }
 
     @Test
@@ -329,7 +470,7 @@ class CommunityBossServiceTest {
         long lastSpawn = service.snapshot().lastSpawnMillis();
         drainMessages(player);
 
-        CommunityBossService.Outcome outcome = service.testSpawn(null, "Alice");
+        CommunityBossService.Outcome outcome = service.testSpawn(null, "Alice").join();
         assertTrue(outcome.ok(), outcome.message());
         assertEquals(2, service.snapshot().instances().size());
         assertEquals(deadline, service.snapshot().nextDueMillis());
@@ -340,10 +481,20 @@ class CommunityBossServiceTest {
     @Test
     void testSpawnRefusesAQuestBossAndAnOfflinePlayer() {
         CommunityBossService service = newService();
-        assertEquals("NOT_COMMUNITY", service.testSpawn("rpgquest:quest_boss", null).code());
-        assertEquals("NOT_COMMUNITY", service.testSpawn("quest_boss", null).code(), "forme courte = rpgquest:");
-        assertEquals("OFFLINE", service.testSpawn(null, "Bob").code());
+        assertEquals("NOT_COMMUNITY", service.testSpawn("rpgquest:quest_boss", null).join().code());
+        assertEquals("NOT_COMMUNITY", service.testSpawn("quest_boss", null).join().code(), "forme courte = rpgquest:");
+        assertEquals("OFFLINE", service.testSpawn(null, "Bob").join().code());
         assertTrue(service.snapshot().instances().isEmpty());
+    }
+
+    @Test
+    void testSpawnAnywhereNeedsNoPlayerInTheWildButNearAPlayerDoes() {
+        player.teleport(new Location(hub, 0, 64, 0));
+        CommunityBossService service = newService();
+        assertEquals("NOT_IN_WILD", service.testSpawn(null, "Alice").join().code());
+        CommunityBossService.Outcome anywhere = service.testSpawn(null, null).join();
+        assertTrue(anywhere.ok(), anywhere.message());
+        assertEquals("wild", anywhere.instance().world());
     }
 
     @Test
@@ -351,7 +502,7 @@ class CommunityBossServiceTest {
         CommunityBossService service = newService();
         passDeadline();
         service.tick();
-        service.testSpawn(null, "Alice");
+        service.testSpawn(null, "Alice").join();
         CommunityBossInstance test = service.snapshot().instances().stream()
                 .filter(CommunityBossInstance::test).findFirst().orElseThrow();
 

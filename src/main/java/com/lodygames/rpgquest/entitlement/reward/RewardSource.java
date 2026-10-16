@@ -1,0 +1,12 @@
+package com.lodygames.rpgquest.entitlement.reward;
+
+/**
+ * Origine d'un droit à récompense (issue #422). Une future source (saison, concours, code promo,
+ * VIP) = une nouvelle valeur et un format de clé, sans nouvelle table.
+ */
+public enum RewardSource {
+    /** Récompense d'un événement archivé (#57), lue dans l'archive figée. */
+    EVENT,
+    /** Déclaration manuelle depuis PlugAdmin. */
+    ADMIN
+}

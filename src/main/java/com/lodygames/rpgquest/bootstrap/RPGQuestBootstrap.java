@@ -251,6 +251,7 @@ public final class RPGQuestBootstrap {
     private SpecialMobService mobService;
     private ProgressionService progressionService;
     private EntitlementService entitlementService;
+    private com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService rewardEntitlementService;
     private BackpackService backpackService;
     private EconomyService economyService;
     /** Issue #140 — exposé à l'agent pour la lecture du journal des transactions. */
@@ -644,6 +645,15 @@ public final class RPGQuestBootstrap {
                 entitlementService, backpackService, () -> configService.current().store(),
                 () -> configService.current().backpacks(), plugin.getSLF4JLogger());
         registry.start(storeDeliveryService);
+
+        // Issue #422 : droits à récompense (événements archivés, PlugAdmin), remis une seule fois par
+        // la remise sécurisée commune. Inerte tant que entitlements.yml n'a pas « enabled: true ».
+        rewardEntitlementService = new com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService(plugin,
+                plugin.getDataFolder().toPath().resolve("entitlements.yml"),
+                new com.lodygames.rpgquest.database.RewardEntitlementRepository(databaseService.databaseManager()),
+                statisticsService, statisticsRepository, entitlementService,
+                (line, log) -> rewardItem(line), plugin.getSLF4JLogger());
+        registry.start(rewardEntitlementService);
 
         registry.start(merchantRegistry);
         merchantTradeService = new MerchantTradeService(
@@ -1104,6 +1114,7 @@ public final class RPGQuestBootstrap {
         agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
         agentActions.setGameSettings(gameSettingsService);
         agentActions.setEncounters(encounterService);
+        agentActions.setRewardEntitlements(rewardEntitlementService);
         agentActions.setNpcSpots(npcSpotService, claimService);
         // Issue #381 (correction du 15/10) — l'outil « Emplacements PNJ » : clic droit = un emplacement.
         // Enregistré ici parce qu'il refuse les parcelles, donc a besoin du ClaimService.
@@ -1355,6 +1366,18 @@ public final class RPGQuestBootstrap {
 
     public WorldService worldService() {
         return worldService;
+    }
+
+    /** Pile d'une ligne du catalogue de récompenses (#422) : matériau Paper ou objet custom (PDC). */
+    private java.util.Optional<org.bukkit.inventory.ItemStack> rewardItem(
+            com.lodygames.rpgquest.entitlement.reward.RewardDefinition.Item line) {
+        if (line.custom()) {
+            org.bukkit.NamespacedKey id = org.bukkit.NamespacedKey.fromString(line.itemId());
+            return id == null ? java.util.Optional.empty() : customItemRegistry.create(id, line.amount());
+        }
+        org.bukkit.Material material = org.bukkit.Material.matchMaterial(line.itemId());
+        return material == null || material.isAir() ? java.util.Optional.empty()
+                : java.util.Optional.of(new org.bukkit.inventory.ItemStack(material, line.amount()));
     }
 
     private void registerCommands() {

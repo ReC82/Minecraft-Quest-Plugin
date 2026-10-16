@@ -1243,6 +1243,45 @@ public interface AgentActions {
                 Map.of(), List.of(), List.of(), System.currentTimeMillis()));
     }
 
+    // ---- Droits à récompense (issue #422) --------------------------------------------------------
+
+    /** Une ligne de traçabilité d'un droit à récompense. Horodatages ISO-8601, vides si absents. */
+    record RewardEntitlementSummary(String key, String playerUuid, String playerName, String source,
+                                    String sourceRef, String rewardKey, String label, String status, int attempts,
+                                    String lastError, String revokeReason, String createdAt, String updatedAt,
+                                    String deliveredAt, String revokedAt) {
+    }
+
+    /** Une récompense du catalogue {@code entitlements.yml}, pour le formulaire de déclaration. */
+    record RewardOption(String key, String label) {
+    }
+
+    /**
+     * @param available {@code false} si le service n'est pas branché sur ce serveur
+     * @param enabled   interrupteur {@code entitlements.yml}
+     */
+    record RewardEntitlementView(boolean available, boolean enabled, List<RewardEntitlementSummary> entitlements,
+                                 List<RewardOption> rewards) {
+    }
+
+    /** {@code status} : {@code null} = tous. */
+    default CompletableFuture<RewardEntitlementView> rewardEntitlements(UUID playerId, String status, int limit) {
+        return CompletableFuture.completedFuture(new RewardEntitlementView(false, false, List.of(), List.of()));
+    }
+
+    /** Codes : {@code DECLARED}, {@code ALREADY_DECLARED}, {@code DISABLED}, {@code INVALID}, {@code UNAVAILABLE}. */
+    default CompletableFuture<MutationResult> declareRewardEntitlement(UUID playerId, String rewardKey,
+                                                                       String reference) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Droits à récompense indisponibles sur ce serveur."));
+    }
+
+    /** Codes : {@code REVOKED}, {@code NOT_PENDING}, {@code UNAVAILABLE}. */
+    default CompletableFuture<MutationResult> revokeRewardEntitlement(String key, String reason) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Droits à récompense indisponibles sur ce serveur."));
+    }
+
     /** {@code operation} : {@code retry}, {@code disable} ou {@code remove}, sur la seule occurrence nommée. */
     default CompletableFuture<MutationResult> encounterSiteAction(String operation, String siteId) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",

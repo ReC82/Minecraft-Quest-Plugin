@@ -493,6 +493,54 @@ class AgentActionExecutorTest {
         assertEquals("DUPLICATE", dup.details().get("code"));
     }
 
+    // ---- entitlement.* (issue #422) -----------------------------------------------------------
+
+    @Test
+    void entitlementListValidatesFiltersAndReturnsRowsAndCatalog() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("el0", "entitlement.list", Map.of("status", "LOST"))).status());
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("el1", "entitlement.list", Map.of("limit", "beaucoup"))).status());
+        assertEquals(AgentActionOutcome.FAILED,
+                run(new AgentAction("el2", "entitlement.list", Map.of("player", "Inconnu"))).status());
+
+        AgentActionOutcome ok = run(new AgentAction("el3", "entitlement.list",
+                Map.of("player", "Rondoudou9000", "status", "PENDING", "limit", "9999")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status(), ok.message());
+        assertEquals(RONDOUDOU + "/PENDING/500", actions.lastEntitlementQuery, "limite bornée");
+        assertEquals(true, ok.details().get("enabled"));
+        List<?> rows = (List<?>) ok.details().get("entitlements");
+        assertEquals("admin:ref:" + RONDOUDOU, ((Map<?, ?>) rows.get(0)).get("key"));
+        assertEquals(List.of(Map.of("key", "diamonds", "label", "Trois diamants")), ok.details().get("rewards"));
+
+        run(new AgentAction("el4", "entitlement.list", Map.of()));
+        assertEquals("null/null/100", actions.lastEntitlementQuery);
+    }
+
+    @Test
+    void entitlementDeclareAndRevokeRequireTheirParameters() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("ed0", "entitlement.declare",
+                Map.of("player", "Rondoudou9000", "reward", "diamonds"))).status(), "référence obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("ed1", "entitlement.declare",
+                Map.of("player", "Rondoudou9000", "reward", "Diamonds!", "reference", "r"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("ed2", "entitlement.declare",
+                Map.of("player", "Rondoudou9000", "reward", "diamonds", "reference", "avec espace"))).status());
+        AgentActionOutcome declared = run(new AgentAction("ed3", "entitlement.declare",
+                Map.of("player", "Rondoudou9000", "reward", "diamonds", "reference", "concours-1")));
+        assertEquals(AgentActionOutcome.SUCCESS, declared.status(), declared.message());
+        assertEquals(RONDOUDOU + "/diamonds/concours-1", actions.lastEntitlementDeclare);
+
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("er0", "entitlement.revoke",
+                Map.of("key", "admin:x"))).status(), "motif obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("er1", "entitlement.revoke",
+                Map.of("key", "clé invalide", "reason", "r"))).status());
+        AgentActionOutcome revoked = run(new AgentAction("er2", "entitlement.revoke",
+                Map.of("key", "admin:x", "reason", "erreur de saisie")));
+        assertEquals(AgentActionOutcome.FAILED, revoked.status());
+        assertEquals("NOT_PENDING", revoked.details().get("code"));
+        assertEquals("admin:x=erreur de saisie", actions.lastEntitlementRevoke);
+    }
+
     @Test
     void npcDefinitionCreateValidatesIdAndDelegates() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("nd0", "npc.definition.create",
@@ -2607,6 +2655,32 @@ class AgentActionExecutorTest {
         String lastPairedWaypointId;
         boolean pairSucceeds = true;
         String lastRenamedWaypoint;
+        String lastEntitlementQuery;
+        String lastEntitlementDeclare;
+        String lastEntitlementRevoke;
+
+        @Override
+        public CompletableFuture<RewardEntitlementView> rewardEntitlements(UUID playerId, String status, int limit) {
+            lastEntitlementQuery = playerId + "/" + status + "/" + limit;
+            return CompletableFuture.completedFuture(new RewardEntitlementView(true, true, List.of(
+                    new RewardEntitlementSummary("admin:ref:" + RONDOUDOU, RONDOUDOU.toString(), "Rondoudou9000",
+                            "ADMIN", "ref", "diamonds", "Trois diamants", "PENDING", 0, "", "",
+                            "2026-11-10T10:00:00Z", "2026-11-10T10:00:00Z", "", "")),
+                    List.of(new RewardOption("diamonds", "Trois diamants"))));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> declareRewardEntitlement(UUID playerId, String rewardKey,
+                                                                          String reference) {
+            lastEntitlementDeclare = playerId + "/" + rewardKey + "/" + reference;
+            return CompletableFuture.completedFuture(MutationResult.of(true, "DECLARED", "Droit déclaré."));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> revokeRewardEntitlement(String key, String reason) {
+            lastEntitlementRevoke = key + "=" + reason;
+            return CompletableFuture.completedFuture(MutationResult.of(false, "NOT_PENDING", "Rien à révoquer."));
+        }
 
         @Override
         public CompletableFuture<MutationResult> renameWaypoint(String waypointId, String displayName) {

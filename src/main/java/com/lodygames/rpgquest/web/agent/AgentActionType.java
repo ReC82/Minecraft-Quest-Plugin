@@ -467,6 +467,18 @@ public enum AgentActionType {
      * par monde (position, PNJ Citizens, état, dernière erreur) et événements récents. Lecture seule.
      */
     ENCOUNTER_LIST("encounter.list"),
+    /**
+     * Issue #422 — droits à récompense : liste filtrable (joueur, statut), catalogue et
+     * interrupteur. Lecture seule.
+     */
+    ENTITLEMENT_LIST("entitlement.list"),
+    /**
+     * Issue #422 — déclare un droit à récompense pour un joueur. Référence obligatoire : la clé
+     * d'idempotence {@code admin:<référence>:<uuid>} rend un second envoi sans effet.
+     */
+    ENTITLEMENT_DECLARE("entitlement.declare"),
+    /** Issue #422 — révoque un droit <strong>en attente</strong> ; un droit remis ne se révoque pas. */
+    ENTITLEMENT_REVOKE("entitlement.revoke"),
     /** Issue #13 — réactive une occurrence et la matérialise si sa zone est chargée. Cette occurrence seule. */
     ENCOUNTER_RETRY("encounter.retry"),
     /** Issue #13 — désactive une occurrence : son PNJ est retiré, l'instance ne génère plus rien. */

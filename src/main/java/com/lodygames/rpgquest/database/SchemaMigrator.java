@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 40;
+    public static final int CURRENT_VERSION = 41;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -83,7 +83,9 @@ public final class SchemaMigrator {
             new SchemaMigration(39, "stat_period_archives, stat_period_results + index xp_grants (issue #54)",
                     SchemaMigrator::applyV39),
             new SchemaMigration(40, "stat_activity_log, stat_period_audit (issue #57)",
-                    SchemaMigrator::applyV40));
+                    SchemaMigrator::applyV40),
+            new SchemaMigration(41, "reward_entitlements (droits à récompense, issue #422)",
+                    SchemaMigrator::applyV41));
 
     private SchemaMigrator() {
     }
@@ -1512,6 +1514,39 @@ public final class SchemaMigrator {
                 statement.execute(dialect.ddl(
                         "CREATE INDEX IF NOT EXISTS idx_xp_grants_skill_created ON xp_grants (skill, created_at)"));
             }
+        }
+    }
+
+    private static void applyV41(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #422 — droits à récompense (docs/REWARD_ENTITLEMENTS.md). Une ligne = un droit
+        // déclaré une fois (clé d'idempotence en clé primaire : INSERT OR IGNORE) et remis au plus
+        // une fois : PENDING → DELIVERED et PENDING → REVOKED sont des UPDATE conditionnels sur le
+        // statut, dont le nombre de lignes dit qui a gagné (deux sessions, deux processus).
+        // Comme player_heart_grants, SANS clé étrangère vers player_profiles. label, revoke_reason
+        // et last_error sont des textes libres, nullables (TEXT aussi sur MariaDB).
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS reward_entitlements (
+                        idempotency_key TEXT PRIMARY KEY,
+                        player_uuid TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        source_ref TEXT NOT NULL,
+                        reward_key TEXT NOT NULL,
+                        label TEXT,
+                        status TEXT NOT NULL,
+                        attempts INTEGER NOT NULL DEFAULT 0,
+                        last_error TEXT,
+                        revoke_reason TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        delivered_at TEXT,
+                        revoked_at TEXT
+                    )
+                    """));
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_reward_entitlements_status ON reward_entitlements (status, created_at)"));
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_reward_entitlements_player ON reward_entitlements (player_uuid, status)"));
         }
     }
 

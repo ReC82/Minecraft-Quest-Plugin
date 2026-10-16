@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Droits à récompense remis une seule fois par le plugin (#422)
+
+### Changement
+
+Plugin : droits à récompense (événements archivés #57, déclarations PlugAdmin) remis une seule fois
+au joueur connecté par la remise sécurisée #318 ; catalogue `plugins/RPGQuest/entitlements.yml`,
+**désactivé par défaut**. PlugAdmin : section « Droits à récompense » dans l'onglet Monnaie de la fiche
+joueur (actions agent `entitlement.list`, `entitlement.declare`, `entitlement.revoke`).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest et redéploiement de PlugAdmin (`scripts/plugadmin/deploy.sh`).
+**Migration automatique V41** au démarrage (table `reward_entitlements` et deux index ; aucune donnée
+existante modifiée). Aucune clé de `config.yml`. **Ne pas créer** `entitlements.yml` sur DEV sans
+décision du propriétaire : absent = rien n'est déclaré ni remis.
+
+### Sauvegarde préalable
+
+JAR, `data.db` et `config.yml` datés par `scripts/deploy-verygames.sh` ; release précédente de
+PlugAdmin conservée par `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+Console : aucune erreur de migration, schéma en V41. PlugAdmin : fiche joueur → Monnaie → « Droits à
+récompense » → relevé « Fonction désactivée sur ce serveur ». Parcours en jeu : `docs/MANUAL_TEST_PLAN.md`
+TC-328 (`PENDING MANUAL VALIDATION`).
+
+### Rollback
+
+JAR précédent (gardé daté par `scripts/deploy-verygames.sh`) : la table V41 reste en base, inutilisée
+par l'ancien JAR (sans effet). PlugAdmin : release précédente.
+
+---
+
 ## 2026-10-16 - Portail : acheminement de l'instantané et statut honnête du serveur (#421)
 
 ### Changement

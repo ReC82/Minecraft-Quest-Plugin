@@ -211,6 +211,34 @@ public final class StatisticsRepository {
         });
     }
 
+    /** Valeur figée d'un joueur pour une métrique d'une période archivée. */
+    public record ArchivedValue(UUID player, long value) {
+    }
+
+    /**
+     * Toutes les valeurs figées d'une métrique (issue #422) : la source des droits à récompense d'un
+     * événement. Aucun filtre de visibilité ni jointure de profil — la confidentialité règle la
+     * publication, pas le droit ; les exclusions de modération sont appliquées par l'appelant.
+     */
+    public CompletableFuture<List<ArchivedValue>> archivedValues(String periodId, String metricId) {
+        return database.execute(connection -> {
+            List<ArchivedValue> values = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT player_uuid, stat_value FROM stat_period_results WHERE period_id = ? AND metric = ? "
+                            + "ORDER BY player_uuid ASC")) {
+                statement.setString(1, periodId);
+                statement.setString(2, metricId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        values.add(new ArchivedValue(UUID.fromString(resultSet.getString("player_uuid")),
+                                resultSet.getLong("stat_value")));
+                    }
+                }
+            }
+            return values;
+        });
+    }
+
     /** Classement figé d'une période archivée. */
     public CompletableFuture<List<RankedRow>> archivedTop(StatPeriod period, StatMetric metric, int limit,
                                                           PublicProfilePolicy.Visibility visibility,

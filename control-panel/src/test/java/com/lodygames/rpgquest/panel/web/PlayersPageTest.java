@@ -301,6 +301,65 @@ class PlayersPageTest {
         assertTrue(lody.contains("Aperçu du <time"), "l'aperçu porte sa propre date");
     }
 
+    // ---- Issue #422 : droits à récompense dans l'onglet monnaie ---------------------------------
+
+    @Test
+    void entitlementsShowTheirRealStateAndOnlyAPendingOneCanBeRevoked() throws Exception {
+        start();
+        seedCatalog(CATALOG);
+        String page = sheet(get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=economie").body());
+        assertTrue(page.contains("Droits à récompense"));
+        assertTrue(page.contains("Aucun relevé encore demandé"), "jamais un état inventé avant le premier relevé");
+
+        done("entitlement.list", UUID_STEVE, "SUCCESS", "3 droit(s) à récompense.", "{\"available\":true,"
+                + "\"enabled\":true,\"rewards\":[{\"key\":\"diamonds\",\"label\":\"Trois diamants\"}],"
+                + "\"entitlements\":["
+                + "{\"key\":\"admin:noel:" + UUID_STEVE + "\",\"source\":\"ADMIN\",\"sourceRef\":\"noel\","
+                + "\"rewardKey\":\"diamonds\",\"label\":\"Trois diamants\",\"status\":\"PENDING\",\"attempts\":2,"
+                + "\"lastError\":\"remise interrompue\",\"createdAt\":\"2026-11-10T10:00:00Z\"},"
+                + "{\"key\":\"event:zombie:rank:1:title:" + UUID_STEVE + "\",\"source\":\"EVENT\","
+                + "\"sourceRef\":\"zombie\",\"rewardKey\":\"title\",\"label\":\"Titre\",\"status\":\"DELIVERED\","
+                + "\"attempts\":0,\"lastError\":\"\",\"createdAt\":\"2026-11-09T22:01:00Z\","
+                + "\"deliveredAt\":\"2026-11-10T09:00:00Z\"},"
+                + "{\"key\":\"admin:erreur:" + UUID_STEVE + "\",\"source\":\"ADMIN\",\"sourceRef\":\"erreur\","
+                + "\"rewardKey\":\"diamonds\",\"label\":\"Trois diamants\",\"status\":\"REVOKED\","
+                + "\"revokeReason\":\"mauvais joueur\",\"createdAt\":\"2026-11-08T10:00:00Z\"}]}",
+                java.time.Instant.now());
+        String after = sheet(get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=economie").body());
+        assertTrue(after.contains("En attente — 2 essai(s)"), "une attente avec échecs le dit");
+        assertTrue(after.contains("remise interrompue"));
+        assertTrue(after.contains("Remis</span>") && after.contains("datetime=\"2026-11-10T09:00:00Z\""));
+        assertTrue(after.contains("Révoqué</span>") && after.contains("mauvais joueur"));
+        assertTrue(after.contains("Événement zombie"));
+        assertEquals(1, after.split("name=\"type\" value=\"entitlement.revoke\"", -1).length - 1,
+                "seul le droit en attente est révocable");
+        assertTrue(after.contains("<option value=\"diamonds\">Trois diamants (diamonds)</option>"),
+                "le formulaire propose le catalogue réel du serveur");
+    }
+
+    @Test
+    void entitlementFormsAreValidatedByThePanel() {
+        assertTrue(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("entitlement.list",
+                Map.of("player", UUID_STEVE, "limit", "50")).valid());
+        assertFalse(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("entitlement.list",
+                Map.of("player", UUID_STEVE, "status", "LOST")).valid());
+        assertFalse(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("entitlement.declare",
+                Map.of("player", UUID_STEVE, "reward", "diamonds", "confirm", "true")).valid(), "référence obligatoire");
+        assertFalse(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("entitlement.declare",
+                Map.of("player", UUID_STEVE, "reward", "diamonds", "reference", "noel")).valid(), "confirmation");
+        assertTrue(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("entitlement.declare",
+                Map.of("player", UUID_STEVE, "reward", "diamonds", "reference", "noel-2026", "confirm", "true")).valid());
+        assertFalse(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("entitlement.revoke",
+                Map.of("player", UUID_STEVE, "key", "admin:noel", "confirm", "true")).valid(), "raison obligatoire");
+        assertTrue(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("entitlement.revoke",
+                Map.of("player", UUID_STEVE, "key", "admin:noel:" + UUID_STEVE, "reason", "doublon",
+                        "confirm", "true")).valid());
+        assertEquals(com.lodygames.rpgquest.panel.authz.Permission.ECONOMY_WRITE,
+                com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec("entitlement.declare").orElseThrow().permission());
+        assertEquals(com.lodygames.rpgquest.panel.authz.Permission.ECONOMY_READ,
+                com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec("entitlement.list").orElseThrow().permission());
+    }
+
     // ---- Issue #319 : valeur relue, valeur proposée, ancien résultat ----------------------------
 
     @Test

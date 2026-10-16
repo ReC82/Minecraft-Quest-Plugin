@@ -677,6 +677,9 @@ public final class AgentPages {
         toggles.add(new String[] {slug + "-f-debt", "Récompenses en attente", "gift", "secondary sm"});
         forms.append(actionCollapse(slug + "-f-debt", "<div class=\"card card-body npc-formcard\">"
                 + playerRewardDebtTools(session, agentId, uuid, name, r.ecoWrite()) + "</div>"));
+        toggles.add(new String[] {slug + "-f-entitlements", "Droits à récompense", "gift", "secondary sm"});
+        forms.append(actionCollapse(slug + "-f-entitlements", "<div class=\"card card-body npc-formcard\">"
+                + playerEntitlementTools(session, agentId, uuid, name, r.ecoWrite()) + "</div>"));
         sb.append(actionBlock("Actions", toggles, forms));
         return sb.toString();
     }
@@ -1074,6 +1077,135 @@ public final class AgentPages {
             }
         }
 
+        return sb.toString();
+    }
+
+    /**
+     * Droits à récompense (issue #422, docs/REWARD_ENTITLEMENTS.md) : ce que le joueur a gagné
+     * (événement, concours, déclaration manuelle) et ce qu'il en est advenu. Le plugin seul remet,
+     * une fois, à la connexion du joueur et inventaire libre ; le panel ne fait que déclarer,
+     * consulter et révoquer un droit encore en attente.
+     */
+    private String playerEntitlementTools(Session session, String agentId, String uuid, String name,
+                                          boolean canWrite) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("gift"))
+                .append("Droits à récompense — ").append(Http.esc(name)).append("</p>");
+        sb.append("<p class=\"muted\">Un droit est remis <strong>une seule fois</strong>, par le serveur, "
+                + "quand le joueur est connecté et a la place dans son inventaire. Tant qu'il ne l'a pas, "
+                + "le droit reste <em>en attente</em> : rien n'est jeté au sol, rien n'est perdu.</p>");
+
+        sb.append(formStart(session, agentId, "entitlement.list", "/players", uuid));
+        sb.append("<input type=\"hidden\" name=\"limit\" value=\"50\">");
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                .append(Icons.icon("refresh")).append("Lire les droits du joueur</button></form>");
+
+        Optional<AgentActionRow> survey = latestForPlayer(agentId, "entitlement.list", uuid);
+        survey.ifPresent(row -> sb.append(readResult("Dernier relevé", row)));
+        Map<String, Object> details = survey.flatMap(this::detailsOf).orElse(Map.of());
+        List<Object> rows = asList(details.get("entitlements"));
+        List<Object> rewards = asList(details.get("rewards"));
+        boolean enabled = Boolean.TRUE.equals(details.get("enabled"));
+
+        if (survey.isEmpty()) {
+            sb.append(Ui.banner("info", "Aucun relevé encore demandé pour ce joueur : le bouton ci-dessus "
+                    + "interroge le serveur."));
+        } else {
+            if (Boolean.FALSE.equals(details.get("available"))) {
+                sb.append(Ui.banner("warn", "Ce serveur ne gère pas encore les droits à récompense."));
+            } else if (!enabled) {
+                sb.append(Ui.banner("info", "Fonction désactivée sur ce serveur (<code>entitlements.yml</code> : "
+                        + "<code>enabled: false</code>) : aucune remise, aucune nouvelle déclaration."));
+            }
+            sb.append(rows.isEmpty() ? Ui.banner("ok", "Aucun droit à récompense pour ce joueur.")
+                    : entitlementTable(session, agentId, uuid, name, rows, canWrite));
+        }
+        if (canWrite && enabled) {
+            sb.append(entitlementDeclareForm(session, agentId, uuid, name, rewards));
+        }
+        return sb.toString();
+    }
+
+    private String entitlementTable(Session session, String agentId, String uuid, String name, List<Object> rows,
+                                    boolean canWrite) {
+        StringBuilder sb = new StringBuilder("<div class=\"table-responsive\"><table class=\"table table-sm "
+                + "align-middle\"><thead><tr><th>Récompense</th><th>Origine</th><th>État</th></tr></thead><tbody>");
+        for (Object raw : rows) {
+            Map<String, Object> e = asMap(raw);
+            String status = str(e.get("status"));
+            sb.append("<tr><td>").append(Http.esc(str(e.get("label"))))
+                    .append("<br><span class=\"muted\">").append(Http.esc(str(e.get("rewardKey")))).append("</span></td>");
+            sb.append("<td>").append("EVENT".equals(str(e.get("source"))) ? "Événement " : "Déclaré à la main — ")
+                    .append(Http.esc(str(e.get("sourceRef"))))
+                    .append("<br><span class=\"muted\">").append(when(instant(str(e.get("createdAt"))))).append("</span></td>");
+            sb.append("<td>").append(entitlementState(e, status)).append("</td></tr>");
+            if (canWrite && "PENDING".equals(status)) {
+                sb.append("<tr><td colspan=\"3\">").append(entitlementRevokeForm(session, agentId, uuid, name,
+                        str(e.get("key")))).append("</td></tr>");
+            }
+        }
+        return sb.append("</tbody></table></div>").toString();
+    }
+
+    /** État RÉEL : une attente avec échecs le dit, un droit remis ou révoqué donne sa date et son motif. */
+    private static String entitlementState(Map<String, Object> e, String status) {
+        return switch (status) {
+            case "DELIVERED" -> "<span class=\"badge text-bg-success\">Remis</span><br><span class=\"muted\">"
+                    + when(instant(str(e.get("deliveredAt")))) + "</span>";
+            case "REVOKED" -> "<span class=\"badge text-bg-secondary\">Révoqué</span><br><span class=\"muted\">"
+                    + Http.esc(str(e.get("revokeReason"))) + "</span>";
+            default -> {
+                long attempts = asLong(e.get("attempts"));
+                String error = str(e.get("lastError"));
+                String badge = attempts == 0 && error.isBlank()
+                        ? "<span class=\"badge text-bg-secondary\">En attente</span>"
+                        : "<span class=\"badge text-bg-warning\">En attente — " + attempts + " essai(s)</span>";
+                yield error.isBlank() ? badge : badge + "<br><span class=\"muted\">" + Http.esc(error) + "</span>";
+            }
+        };
+    }
+
+    private static Instant instant(String iso) {
+        try {
+            return iso.isBlank() ? null : Instant.parse(iso);
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    private String entitlementRevokeForm(Session session, String agentId, String uuid, String name, String key) {
+        StringBuilder sb = new StringBuilder(formStart(session, agentId, "entitlement.revoke", "/players", uuid));
+        sb.append("<input type=\"hidden\" name=\"key\" value=\"").append(Http.esc(key)).append("\">");
+        sb.append("<label class=\"form-label\">Raison de la révocation (obligatoire)</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
+        sb.append(confirmBox("Je confirme que « " + name + " » ne doit pas recevoir cette récompense."));
+        sb.append("<button class=\"btn btn-sm btn-outline-warning\" type=\"submit\">Révoquer ce droit</button></form>");
+        return sb.toString();
+    }
+
+    private String entitlementDeclareForm(Session session, String agentId, String uuid, String name,
+                                          List<Object> rewards) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">Déclarer un droit</p>");
+        sb.append("<p class=\"muted\">La <strong>référence</strong> identifie le gain (ex. "
+                + "<code>concours-noel-2026</code>) : la renvoyer pour le même joueur ne crée rien de plus.</p>");
+        sb.append(formStart(session, agentId, "entitlement.declare", "/players", uuid));
+        sb.append("<label class=\"form-label\">Récompense (catalogue <code>entitlements.yml</code>)</label>");
+        if (rewards.isEmpty()) {
+            sb.append("<input class=\"form-control mb-2\" name=\"reward\" maxlength=\"64\" required>");
+        } else {
+            sb.append("<select class=\"form-select mb-2\" name=\"reward\" required>");
+            for (Object raw : rewards) {
+                Map<String, Object> reward = asMap(raw);
+                sb.append("<option value=\"").append(Http.esc(str(reward.get("key")))).append("\">")
+                        .append(Http.esc(str(reward.get("label")))).append(" (").append(Http.esc(str(reward.get("key"))))
+                        .append(")</option>");
+            }
+            sb.append("</select>");
+        }
+        sb.append("<label class=\"form-label\">Référence (obligatoire)</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"reference\" maxlength=\"64\" required "
+                + "pattern=\"[A-Za-z0-9_.\\-]{1,64}\">");
+        sb.append(confirmBox("Je confirme que « " + name + " » a gagné cette récompense."));
+        sb.append("<button class=\"btn btn-sm\" type=\"submit\">Déclarer le droit</button></form>");
         return sb.toString();
     }
 

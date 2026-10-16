@@ -190,6 +190,9 @@ public final class AgentActionExecutor {
                 case MC_GROUP_DELETE -> mcGroupDelete(action);
                 case MC_RIGHTS_SYNC -> mcRightsSync(action);
                 case ENCOUNTER_LIST -> encounterList(action);
+                case ENTITLEMENT_LIST -> entitlementList(action);
+                case ENTITLEMENT_DECLARE -> entitlementDeclare(action);
+                case ENTITLEMENT_REVOKE -> entitlementRevoke(action);
                 case ENCOUNTER_RETRY -> encounterSiteAction(action, "retry");
                 case ENCOUNTER_DISABLE -> encounterSiteAction(action, "disable");
                 case ENCOUNTER_REMOVE -> encounterSiteAction(action, "remove");
@@ -1179,6 +1182,109 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(sites.size()),
                     templates.size() + " modèle(s), " + sites.size() + " occurrence(s).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Droits à récompense (issue #422) --------------------------------------------------------
+
+    private static final int ENTITLEMENT_LIST_DEFAULT = 100;
+    private static final int ENTITLEMENT_LIST_MAX = 500;
+    private static final int ENTITLEMENT_REASON_MAX = 200;
+    private static final java.util.regex.Pattern ENTITLEMENT_REWARD = java.util.regex.Pattern.compile("[a-z0-9_.-]{1,64}");
+    private static final java.util.regex.Pattern ENTITLEMENT_REFERENCE =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_.\\-]{1,64}");
+    private static final java.util.regex.Pattern ENTITLEMENT_KEY =
+            com.lodygames.rpgquest.entitlement.reward.RewardEntitlement.KEY_PATTERN;
+    private static final java.util.Set<String> ENTITLEMENT_STATUSES = java.util.Set.of("PENDING", "DELIVERED", "REVOKED");
+
+    /** {@code entitlement.list} : filtres facultatifs {@code player}, {@code status}, {@code limit}. */
+    private CompletableFuture<AgentActionOutcome> entitlementList(AgentAction action) {
+        String status = trimOrNull(action.param("status"));
+        if (status != null && !ENTITLEMENT_STATUSES.contains(status)) {
+            return done(AgentActionOutcome.rejected(action.id(), "Statut inconnu : PENDING, DELIVERED ou REVOKED."));
+        }
+        int limit = ENTITLEMENT_LIST_DEFAULT;
+        String rawLimit = trimOrNull(action.param("limit"));
+        if (rawLimit != null) {
+            try {
+                limit = Math.max(1, Math.min(ENTITLEMENT_LIST_MAX, Integer.parseInt(rawLimit)));
+            } catch (NumberFormatException e) {
+                return done(AgentActionOutcome.rejected(action.id(), "« limit » doit être un entier."));
+            }
+        }
+        int bounded = limit;
+        String playerRef = firstNonBlank(action.param("player_uuid"), action.param("player"));
+        if (playerRef == null) {
+            return entitlementListFor(action, null, status, bounded);
+        }
+        return withResolvedUuid(action, (uuid, name) -> entitlementListFor(action, uuid, status, bounded));
+    }
+
+    private CompletableFuture<AgentActionOutcome> entitlementListFor(AgentAction action, UUID player, String status,
+                                                                     int limit) {
+        return actions.rewardEntitlements(player, status, limit).thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.RewardEntitlementSummary e : view.entitlements()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("key", e.key());
+                row.put("playerUuid", e.playerUuid());
+                row.put("playerName", e.playerName());
+                row.put("source", e.source());
+                row.put("sourceRef", e.sourceRef());
+                row.put("rewardKey", e.rewardKey());
+                row.put("label", e.label());
+                row.put("status", e.status());
+                row.put("attempts", e.attempts());
+                row.put("lastError", e.lastError());
+                row.put("revokeReason", e.revokeReason());
+                row.put("createdAt", e.createdAt());
+                row.put("updatedAt", e.updatedAt());
+                row.put("deliveredAt", e.deliveredAt());
+                row.put("revokedAt", e.revokedAt());
+                rows.add(row);
+            }
+            List<Map<String, Object>> rewards = new ArrayList<>();
+            for (AgentActions.RewardOption option : view.rewards()) {
+                rewards.add(new LinkedHashMap<>(Map.of("key", option.key(), "label", option.label())));
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("enabled", view.enabled());
+            details.put("entitlements", rows);
+            details.put("rewards", rewards);
+            return AgentActionOutcome.success(action.id(), Integer.toString(rows.size()),
+                    rows.size() + " droit(s) à récompense.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code entitlement.declare} : {@code player}, {@code reward}, {@code reference} obligatoires. */
+    private CompletableFuture<AgentActionOutcome> entitlementDeclare(AgentAction action) {
+        String reward = trimOrNull(action.param("reward"));
+        String reference = trimOrNull(action.param("reference"));
+        if (reward == null || !ENTITLEMENT_REWARD.matcher(reward).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « reward » manquant ou invalide."));
+        }
+        if (reference == null || !ENTITLEMENT_REFERENCE.matcher(reference).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « reference » obligatoire (lettres, chiffres, _ . -, 64 caractères au plus)."));
+        }
+        return withResolvedUuid(action, (uuid, name) -> actions.declareRewardEntitlement(uuid, reward, reference)
+                .thenApply(r -> mutationOutcome(action, r, "reward", reward)));
+    }
+
+    /** {@code entitlement.revoke} : {@code key} et {@code reason} obligatoires. */
+    private CompletableFuture<AgentActionOutcome> entitlementRevoke(AgentAction action) {
+        String key = trimOrNull(action.param("key"));
+        String reason = trimOrNull(action.param("reason"));
+        if (key == null || !ENTITLEMENT_KEY.matcher(key).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « key » manquant ou invalide."));
+        }
+        if (reason == null || reason.length() > ENTITLEMENT_REASON_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « reason » obligatoire (" + ENTITLEMENT_REASON_MAX + " caractères au plus)."));
+        }
+        return actions.revokeRewardEntitlement(key, reason)
+                .thenApply(r -> mutationOutcome(action, r, "key", key))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
     private CompletableFuture<AgentActionOutcome> encounterSiteAction(AgentAction action, String operation) {

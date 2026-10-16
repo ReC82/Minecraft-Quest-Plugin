@@ -1196,6 +1196,76 @@ public final class BukkitAgentActions implements AgentActions {
     // ---- PNJ récurrents (actions encounter.*, issue #13 étape 2) -------------------------------
 
     private com.lodygames.rpgquest.encounter.EncounterService encounters;
+    private volatile com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService rewardEntitlements;
+
+    /** Issue #422 — dépendance facultative : sans elle, les actions entitlement.* répondent « indisponible ». */
+    public void setRewardEntitlements(com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService service) {
+        this.rewardEntitlements = service;
+    }
+
+    @Override
+    public CompletableFuture<RewardEntitlementView> rewardEntitlements(UUID playerId, String status, int limit) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardEntitlements(playerId, status, limit);
+        }
+        var filter = status == null ? null
+                : com.lodygames.rpgquest.entitlement.reward.RewardEntitlementStatus.valueOf(status);
+        var catalog = service.catalog();
+        List<RewardOption> options = catalog.rewards().values().stream()
+                .map(reward -> new RewardOption(reward.key(), reward.label())).toList();
+        return service.list(playerId, filter, limit).thenApply(rows -> new RewardEntitlementView(true,
+                catalog.enabled(), rows.stream().map(BukkitAgentActions::rewardSummary).toList(), options));
+    }
+
+    private static RewardEntitlementSummary rewardSummary(
+            com.lodygames.rpgquest.database.RewardEntitlementRepository.Listed listed) {
+        var e = listed.entitlement();
+        return new RewardEntitlementSummary(e.idempotencyKey(), e.playerId().toString(),
+                listed.playerName() == null ? "" : listed.playerName(), e.source().name(), e.sourceRef(),
+                e.rewardKey(), e.label() == null ? "" : e.label(), e.status().name(), e.attempts(),
+                e.lastError() == null ? "" : e.lastError(), e.revokeReason() == null ? "" : e.revokeReason(),
+                e.createdAt().toString(), e.updatedAt().toString(),
+                e.deliveredAt() == null ? "" : e.deliveredAt().toString(),
+                e.revokedAt() == null ? "" : e.revokedAt().toString());
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> declareRewardEntitlement(UUID playerId, String rewardKey,
+                                                                      String reference) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.declareRewardEntitlement(playerId, rewardKey, reference);
+        }
+        if (!service.catalog().enabled()) {
+            return done(MutationResult.of(false, "DISABLED",
+                    "Droits à récompense désactivés (entitlements.yml : enabled: false)."));
+        }
+        return service.declareAdmin(playerId, rewardKey, reference).handle((outcome, error) -> {
+            if (error != null) {
+                Throwable cause = error.getCause() != null ? error.getCause() : error;
+                return MutationResult.of(false, "INVALID", String.valueOf(cause.getMessage()));
+            }
+            return outcome.created()
+                    ? new MutationResult(true, "DECLARED", "Droit déclaré : remis à la prochaine connexion du joueur.",
+                            List.of("Clé : " + outcome.idempotencyKey()))
+                    : new MutationResult(true, "ALREADY_DECLARED",
+                            "Ce droit existait déjà (même référence) : rien de plus n'a été créé.",
+                            List.of("Clé : " + outcome.idempotencyKey()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> revokeRewardEntitlement(String key, String reason) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.revokeRewardEntitlement(key, reason);
+        }
+        return service.revoke(key, reason).thenApply(revoked -> revoked
+                ? MutationResult.of(true, "REVOKED", "Droit révoqué : il ne sera jamais remis.")
+                : MutationResult.of(false, "NOT_PENDING",
+                        "Rien à révoquer : droit inconnu, déjà remis ou déjà révoqué."));
+    }
 
     public void setEncounters(com.lodygames.rpgquest.encounter.EncounterService service) {
         this.encounters = service;

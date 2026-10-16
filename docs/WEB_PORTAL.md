@@ -46,7 +46,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | 5 | V1 publique : actualités, profils, premiers classements | #56 | **fait** (§8) : actualités en fichiers, classements lifetime / saison / événement, profils, infos & FAQ, SEO de base ; pseudos visibles seulement après 3 et 4 ; édition des actualités depuis PlugAdmin à faire |
 | 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | **fait**, désactivé (`accounts-enabled=false`) ; export et suppression de compte à faire avant ouverture ; validation navigateur + jeu à faire |
 | 7 | Saisons et événements de classement, puis moteur d'événements | #54, #57 | modèle **fait** (§4 : fenêtres du journal d'XP, archivage figé, exclusions, `statistics.yml`) ; moteur #57 **fait** (§6 : journal d'activité générique, filtres, règles de classement, objectif commun, cycle de vie audité, récompenses déclaratives) ; back-office PlugAdmin à faire |
-| 8 | Entitlements : récompenses remises par le plugin | #422 | à spécifier, après #53 et #57 |
+| 8 | Entitlements : récompenses remises par le plugin | #422 | spécification **faite** ([REWARD_ENTITLEMENTS.md](REWARD_ENTITLEMENTS.md)) ; tranche 1 **faite**, désactivée (`entitlements.yml`, V41, remise unique, archive des événements, fiche joueur PlugAdmin) ; déclaration par le portail après #53 |
 | — | Premium (VIP, pass, boutique) | — | **hors périmètre** : après cadrage juridique et règles Minecraft ; `store-enabled=false` |
 
 ## 2. Comptes joueurs et liaison au compte Minecraft (#53) — fait, désactivé
@@ -366,7 +366,8 @@ cibles, récompenses annoncées, barre de progression de l'objectif commun, clas
 ### Récompenses et modération
 
 - le moteur **décrit** les récompenses ; ni le plugin ni le portail ne livrent d'objet. La livraison
-  passera par les entitlements (#422), qui liront l'archive figée (rang, valeur, objectif atteint) ;
+  passe par les droits à récompense (#422, [REWARD_ENTITLEMENTS.md](REWARD_ENTITLEMENTS.md)), qui
+  lisent l'archive figée (rang, valeur, objectif atteint) ;
 - modérer un score : exclusion par UUID (§4) pour l'événement ou pour tout, appliquée **à la
   lecture**, archives comprises — aucune correction silencieuse des données de jeu, le fichier fait
   foi (versionné ou sauvegardé par l'administrateur).

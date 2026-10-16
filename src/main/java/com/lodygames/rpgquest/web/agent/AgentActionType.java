@@ -499,6 +499,22 @@ public enum AgentActionType {
     REWARD_TABLE_DUPLICATE("reward.table.duplicate"),
     /** Issue #177 — active ou désactive une table (ses chances et sa version ne changent pas). */
     REWARD_TABLE_TOGGLE("reward.table.toggle"),
+    /**
+     * Issue #474 — crée {@code entitlements.yml} quand il manque : désactivé, sans récompense ni table.
+     * Refusé si un fichier existe déjà.
+     */
+    REWARD_CATALOG_INIT("reward.catalog.init"),
+    /** Issue #474 — interrupteur général {@code enabled} du catalogue des récompenses. */
+    REWARD_CATALOG_TOGGLE("reward.catalog.toggle"),
+    /**
+     * Issue #474 — crée ou remplace une récompense du catalogue (objets, enchantements, potion,
+     * avantage) : mêmes garanties que {@code reward.table.save}, références vérifiées par le serveur.
+     */
+    REWARD_DEFINITION_SAVE("reward.definition.save"),
+    /** Issue #474 — copie une récompense sous une nouvelle clé, désactivée. */
+    REWARD_DEFINITION_DUPLICATE("reward.definition.duplicate"),
+    /** Issue #474 — active ou désactive une récompense (son contenu ne change pas). */
+    REWARD_DEFINITION_TOGGLE("reward.definition.toggle"),
     /** Issue #13 — réactive une occurrence et la matérialise si sa zone est chargée. Cette occurrence seule. */
     ENCOUNTER_RETRY("encounter.retry"),
     /** Issue #13 — désactive une occurrence : son PNJ est retiré, l'instance ne génère plus rien. */

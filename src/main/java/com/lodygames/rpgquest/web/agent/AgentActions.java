@@ -1284,8 +1284,32 @@ public interface AgentActions {
 
     // ---- Tables de récompenses aléatoires : éditeur PlugAdmin (issue #177, tranche 2) -----------
 
-    /** Une récompense du catalogue, telle que l'éditeur de tables la propose ({@code summary} lisible). */
-    record RewardCatalogEntryView(String key, String label, String summary) {
+    /**
+     * Une récompense du catalogue, telle que l'éditeur la propose ({@code summary} lisible). Issue #474 :
+     * interrupteur, version (formulaire périmé refusé), lignes d'objets, avantage et usages connus.
+     */
+    record RewardCatalogEntryView(String key, String label, String summary, boolean enabled, String version,
+                                  List<RewardItemView> items, String perkKey, String perkTier, List<String> usages) {
+
+        /** Forme antérieure à #474. */
+        RewardCatalogEntryView(String key, String label, String summary) {
+            this(key, label, summary, true, "", List.of(), "", "", List.of());
+        }
+    }
+
+    /** Une ligne d'objet d'une récompense ; {@code enchantments} = {@code sharpness:3,unbreaking:1}. */
+    record RewardItemView(String itemId, int amount, String enchantments, String potion) {
+    }
+
+    /** Une ligne d'objet saisie dans PlugAdmin ({@code potion} vide = aucune). */
+    record RewardItemInput(String itemId, int amount, java.util.Map<String, Integer> enchantments, String potion) {
+    }
+
+    /**
+     * Valeurs connues du serveur pour l'éditeur de récompenses (issue #474) : objets custom,
+     * enchantements, types de potion.
+     */
+    record RewardReferenceView(List<String> customItems, List<String> enchantments, List<String> potions) {
     }
 
     /**
@@ -1297,7 +1321,15 @@ public interface AgentActions {
      */
     record RewardCatalogView(boolean available, boolean fileExists, boolean valid, boolean enabled,
                              List<String> errors, List<RewardCatalogEntryView> rewards,
-                             List<RewardTableView> tables) {
+                             List<RewardTableView> tables, java.util.Map<String, List<String>> tableUsages,
+                             String initialText, RewardReferenceView references) {
+
+        /** Forme antérieure à #474 (sans usages, aperçu ni références). */
+        RewardCatalogView(boolean available, boolean fileExists, boolean valid, boolean enabled,
+                          List<String> errors, List<RewardCatalogEntryView> rewards, List<RewardTableView> tables) {
+            this(available, fileExists, valid, enabled, errors, rewards, tables, java.util.Map.of(), "",
+                    new RewardReferenceView(List.of(), List.of(), List.of()));
+        }
     }
 
     /** Une entrée saisie dans l'éditeur ; {@code chance} en centièmes de pour cent (1250 = 12,5 %). */
@@ -1334,6 +1366,48 @@ public interface AgentActions {
     default CompletableFuture<MutationResult> rewardTableToggle(String id, boolean enabled) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
                 "Tables de récompenses indisponibles sur ce serveur."));
+    }
+
+    // ---- Catalogue des récompenses : éditeur PlugAdmin (issue #474) -----------------------------
+
+    /** Crée {@code entitlements.yml}, désactivé et vide -- action {@code reward.catalog.init}. */
+    default CompletableFuture<MutationResult> rewardCatalogInit() {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des récompenses indisponible sur ce serveur."));
+    }
+
+    /** Interrupteur général -- action {@code reward.catalog.toggle}. */
+    default CompletableFuture<MutationResult> rewardCatalogToggle(boolean enabled) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des récompenses indisponible sur ce serveur."));
+    }
+
+    /**
+     * Crée ou remplace une récompense -- action {@code reward.definition.save}. Codes : ceux de
+     * {@code reward.table.save}, plus {@code INVALID} pour une référence inconnue du serveur (objet
+     * custom, enchantement, potion).
+     *
+     * @param perkKey {@code null} = aucun avantage
+     */
+    default CompletableFuture<MutationResult> rewardDefinitionSave(String key, String label, boolean enabled,
+                                                                   List<RewardItemInput> items, String perkKey,
+                                                                   String perkTier, String expectedVersion,
+                                                                   boolean create) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des récompenses indisponible sur ce serveur."));
+    }
+
+    /** Copie désactivée -- action {@code reward.definition.duplicate}. {@code newLabel} facultatif. */
+    default CompletableFuture<MutationResult> rewardDefinitionDuplicate(String sourceKey, String newKey,
+                                                                        String newLabel) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des récompenses indisponible sur ce serveur."));
+    }
+
+    /** Active ou désactive une récompense -- action {@code reward.definition.toggle}. */
+    default CompletableFuture<MutationResult> rewardDefinitionToggle(String key, boolean enabled) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des récompenses indisponible sur ce serveur."));
     }
 
     /** {@code operation} : {@code retry}, {@code disable} ou {@code remove}, sur la seule occurrence nommée. */

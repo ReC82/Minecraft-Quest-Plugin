@@ -19,6 +19,14 @@ public interface RewardTables {
 
     Optional<RewardTable> table(String id);
 
+    /**
+     * La récompense peut-elle être promise (issue #474) ? Faux = désactivée dans le catalogue : un
+     * tirage qui tombe dessus ne donne rien.
+     */
+    default boolean rewardEnabled(String rewardKey) {
+        return true;
+    }
+
     /** Libellé du catalogue, ou la clé elle-même si elle y est inconnue. */
     String label(String rewardKey);
 

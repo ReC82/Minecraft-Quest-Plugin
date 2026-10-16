@@ -202,6 +202,14 @@ public final class AgentActionExecutor {
                 case REWARD_TABLE_SAVE -> rewardTableSave(action);
                 case REWARD_TABLE_DUPLICATE -> rewardTableDuplicate(action);
                 case REWARD_TABLE_TOGGLE -> rewardTableToggle(action);
+                case REWARD_CATALOG_INIT -> actions.rewardCatalogInit().thenApply(r -> toOutcome(action, r))
+                        .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                case REWARD_CATALOG_TOGGLE -> actions.rewardCatalogToggle(isTrue(action.param("enabled")))
+                        .thenApply(r -> toOutcome(action, r))
+                        .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                case REWARD_DEFINITION_SAVE -> rewardDefinitionSave(action);
+                case REWARD_DEFINITION_DUPLICATE -> rewardDefinitionDuplicate(action);
+                case REWARD_DEFINITION_TOGGLE -> rewardDefinitionToggle(action);
                 case ENCOUNTER_RETRY -> encounterSiteAction(action, "retry");
                 case ENCOUNTER_DISABLE -> encounterSiteAction(action, "disable");
                 case ENCOUNTER_REMOVE -> encounterSiteAction(action, "remove");
@@ -1445,6 +1453,21 @@ public final class AgentActionExecutor {
                 row.put("key", r.key());
                 row.put("label", r.label());
                 row.put("summary", r.summary());
+                row.put("enabled", r.enabled());
+                row.put("version", r.version());
+                List<Map<String, Object>> items = new ArrayList<>();
+                for (AgentActions.RewardItemView item : r.items()) {
+                    Map<String, Object> line = new LinkedHashMap<>();
+                    line.put("item", item.itemId());
+                    line.put("amount", item.amount());
+                    line.put("enchantments", item.enchantments());
+                    line.put("potion", item.potion());
+                    items.add(line);
+                }
+                row.put("items", items);
+                row.put("perkKey", r.perkKey());
+                row.put("perkTier", r.perkTier());
+                row.put("usages", r.usages());
                 rewards.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();
@@ -1454,7 +1477,13 @@ public final class AgentActionExecutor {
             details.put("enabled", view.enabled());
             details.put("errors", view.errors());
             details.put("rewards", rewards);
-            details.put("tables", rewardTableRows(view.tables()));
+            List<Map<String, Object>> tables = rewardTableRows(view.tables());
+            tables.forEach(t -> t.put("usages", view.tableUsages().getOrDefault(String.valueOf(t.get("id")), List.of())));
+            details.put("tables", tables);
+            details.put("initialText", view.initialText());
+            details.put("customItems", view.references().customItems());
+            details.put("enchantments", view.references().enchantments());
+            details.put("potions", view.references().potions());
             return AgentActionOutcome.success(action.id(), Integer.toString(view.tables().size()),
                     view.tables().size() + " table(s), " + rewards.size() + " récompense(s) au catalogue.", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
@@ -1561,6 +1590,143 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « table_id » invalide."));
         }
         return actions.rewardTableToggle(id, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Catalogue des récompenses : éditeur (issue #474) ----------------------------------------
+
+    private static final java.util.regex.Pattern REWARD_ITEM =
+            java.util.regex.Pattern.compile("[A-Z0-9_]{1,64}|[a-z0-9_.-]{1,64}:[a-z0-9_./-]{1,128}");
+    private static final java.util.regex.Pattern REWARD_MC_KEY = java.util.regex.Pattern.compile("[a-z0-9_]{1,64}");
+    private static final java.util.regex.Pattern REWARD_PERK_PART = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,64}");
+
+    /**
+     * {@code reward.definition.save} : {@code reward_key}, {@code label}, {@code enabled},
+     * {@code items} ({@code ITEM@quantité[+ench=clé:niveau,…][+potion=type];…}), {@code perk_key} /
+     * {@code perk_tier} facultatifs, {@code create}, {@code expected_version}. Forme vérifiée ici ; les
+     * références (objet custom, enchantement, potion) par le serveur, le reste par le vrai chargeur.
+     */
+    private CompletableFuture<AgentActionOutcome> rewardDefinitionSave(AgentAction action) {
+        String key = trimOrNull(action.param("reward_key"));
+        if (key == null || !ENTITLEMENT_REWARD.matcher(key).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « reward_key » invalide (minuscules, chiffres, _ -, 64 caractères au plus)."));
+        }
+        String label = trimOrNull(action.param("label"));
+        if (label == null || label.length() > com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.LABEL_MAX
+                || label.chars().anyMatch(Character::isISOControl)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « label » obligatoire, sur une ligne, 120 caractères au plus."));
+        }
+        String expected = trimOrNull(action.param("expected_version"));
+        if (expected != null && !REWARD_TABLE_VERSION.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_version » invalide."));
+        }
+        String perkKey = trimOrNull(action.param("perk_key"));
+        String perkTier = trimOrNull(action.param("perk_tier"));
+        if ((perkKey == null) != (perkTier == null) || (perkKey != null
+                && (!REWARD_PERK_PART.matcher(perkKey).matches() || !REWARD_PERK_PART.matcher(perkTier).matches()))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Avantage : « perk_key » et « perk_tier » ensemble (lettres, chiffres, _ . -), ou aucun."));
+        }
+        List<AgentActions.RewardItemInput> items = new ArrayList<>();
+        String error = parseRewardItems(action.param("items"), items);
+        if (error != null) {
+            return done(AgentActionOutcome.rejected(action.id(), error));
+        }
+        if (items.isEmpty() && perkKey == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Au moins un objet ou un avantage."));
+        }
+        return actions.rewardDefinitionSave(key, label, isTrue(action.param("enabled")), items, perkKey, perkTier,
+                        expected, isTrue(action.param("create")))
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Remplit {@code out} ; renvoie le message de refus, ou {@code null} (liste vide acceptée). */
+    static String parseRewardItems(String raw, List<AgentActions.RewardItemInput> out) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        for (String piece : raw.split(";")) {
+            String line = piece.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            String[] parts = line.split("\\+");
+            int at = parts[0].lastIndexOf('@');
+            String itemId = at < 0 ? parts[0].trim() : parts[0].substring(0, at).trim();
+            if (!REWARD_ITEM.matcher(itemId).matches()) {
+                return "Objet « " + safe(itemId) + " » invalide : matériau (DIAMOND) ou objet custom (rpgquest:…).";
+            }
+            int amount;
+            try {
+                amount = at < 0 ? 1 : Integer.parseInt(parts[0].substring(at + 1).trim());
+            } catch (NumberFormatException e) {
+                return "Objet « " + itemId + " » : quantité entière attendue.";
+            }
+            if (amount < 1 || amount > 64) {
+                return "Objet « " + itemId + " » : quantité entre 1 et 64.";
+            }
+            Map<String, Integer> enchantments = new LinkedHashMap<>();
+            String potion = "";
+            for (int i = 1; i < parts.length; i++) {
+                String extra = parts[i].trim();
+                if (extra.startsWith("ench=")) {
+                    for (String e : extra.substring(5).split(",")) {
+                        String[] kv = e.trim().split(":");
+                        Integer level = kv.length == 2 ? parseIntOrNull(kv[1].trim()) : null;
+                        if (level == null || !REWARD_MC_KEY.matcher(kv[0].trim()).matches() || level < 1 || level > 10
+                                || enchantments.put(kv[0].trim(), level) != null) {
+                            return "Objet « " + itemId + " » : enchantement « " + safe(e.trim())
+                                    + " » invalide (clé:niveau, niveau 1 à 10, sans doublon).";
+                        }
+                    }
+                } else if (extra.startsWith("potion=") && REWARD_MC_KEY.matcher(extra.substring(7)).matches()) {
+                    potion = extra.substring(7);
+                } else {
+                    return "Objet « " + itemId + " » : précision « " + safe(extra) + " » inconnue (ench=…, potion=…).";
+                }
+            }
+            out.add(new AgentActions.RewardItemInput(itemId, amount, enchantments, potion));
+        }
+        if (out.size() > 9) {
+            return "9 lignes d'objets au plus par récompense.";
+        }
+        return null;
+    }
+
+    private static Integer parseIntOrNull(String raw) {
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private CompletableFuture<AgentActionOutcome> rewardDefinitionDuplicate(AgentAction action) {
+        String source = trimOrNull(action.param("reward_key"));
+        String target = trimOrNull(action.param("new_key"));
+        if (source == null || !ENTITLEMENT_REWARD.matcher(source).matches() || target == null
+                || !ENTITLEMENT_REWARD.matcher(target).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètres « reward_key » et « new_key » "
+                    + "obligatoires (minuscules, chiffres, _ -, 64 caractères au plus)."));
+        }
+        String label = trimOrNull(action.param("new_label"));
+        if (label != null && (label.length() > com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.LABEL_MAX
+                || label.chars().anyMatch(Character::isISOControl))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_label » : une ligne, 120 caractères au plus."));
+        }
+        return actions.rewardDefinitionDuplicate(source, target, label).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> rewardDefinitionToggle(AgentAction action) {
+        String key = trimOrNull(action.param("reward_key"));
+        if (key == null || !ENTITLEMENT_REWARD.matcher(key).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « reward_key » invalide."));
+        }
+        return actions.rewardDefinitionToggle(key, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

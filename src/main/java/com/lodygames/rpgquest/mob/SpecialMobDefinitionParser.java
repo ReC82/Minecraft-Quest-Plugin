@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.mob;
 
+import com.lodygames.rpgquest.mob.model.BossMode;
 import com.lodygames.rpgquest.mob.model.EnragedAbility;
 import com.lodygames.rpgquest.mob.model.ExplosiveOnAttackAbility;
 import com.lodygames.rpgquest.mob.model.MobAbility;
@@ -67,6 +68,8 @@ final class SpecialMobDefinitionParser {
         List<ResourceDrop> drops = parseDrops(section, errors);
         Integer xpReward = parseOptionalNonNegativeInt(section, "xp-reward", errors);
         Integer maxPopulation = parseOptionalNonNegativeInt(section, "max-population", errors);
+        BossMode bossMode = parseBossMode(section, category, errors);
+        int communityWeight = parseCommunityWeight(section, errors);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(m -> new SpecialMobLoadIssue(fileName, m)).toList());
@@ -76,7 +79,7 @@ final class SpecialMobDefinitionParser {
             SpecialMobDefinition definition = new SpecialMobDefinition(id, category, enabled, entityType,
                     displayName, spawnChance, worlds, biomes, zones, health, damage, speed, armor,
                     knockbackResistance, scale, creeperExplosionRadius, particle, sound, abilities, drops,
-                    xpReward, maxPopulation);
+                    xpReward, maxPopulation, bossMode, communityWeight);
             return ParseResult.success(definition);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new SpecialMobLoadIssue(fileName, e.getMessage())));
@@ -98,6 +101,39 @@ final class SpecialMobDefinitionParser {
             errors.add("« category » invalide : \"" + raw + "\" (valides : " + List.of(MobCategory.values()) + ").");
             return null;
         }
+    }
+
+    /**
+     * Issue #175 : optionnel, défaut {@code QUEST} (profils antérieurs inchangés). {@code COMMUNITY}
+     * est refusé sur un profil SPECIAL -- jamais une option silencieusement ignorée.
+     */
+    private BossMode parseBossMode(ConfigurationSection section, MobCategory category, List<String> errors) {
+        String raw = section.getString("boss-mode");
+        if (raw == null || raw.isBlank()) {
+            return BossMode.QUEST;
+        }
+        BossMode mode;
+        try {
+            mode = BossMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            errors.add("« boss-mode » invalide : \"" + raw + "\" (valides : " + List.of(BossMode.values()) + ").");
+            return BossMode.QUEST;
+        }
+        if (mode == BossMode.COMMUNITY && category != null && category != MobCategory.BOSS) {
+            errors.add("« boss-mode: COMMUNITY » n'a de sens que pour « category: BOSS ».");
+        }
+        return mode;
+    }
+
+    private int parseCommunityWeight(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("community-weight")) {
+            return SpecialMobDefinition.DEFAULT_COMMUNITY_WEIGHT;
+        }
+        if (!section.isInt("community-weight") || section.getInt("community-weight") < 1) {
+            errors.add("« community-weight » doit être un entier supérieur ou égal à 1.");
+            return SpecialMobDefinition.DEFAULT_COMMUNITY_WEIGHT;
+        }
+        return section.getInt("community-weight");
     }
 
     private Double parseOptionalFraction(ConfigurationSection section, String key, List<String> errors) {

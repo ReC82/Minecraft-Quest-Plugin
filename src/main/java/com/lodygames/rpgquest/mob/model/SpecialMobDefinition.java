@@ -53,8 +53,27 @@ public record SpecialMobDefinition(
         List<MobAbility> abilities,
         List<ResourceDrop> drops,
         Integer xpReward,
-        Integer maxPopulation
+        Integer maxPopulation,
+        /** Issue #175 : QUEST (défaut) ou COMMUNITY (scheduler du Wild) -- significatif pour BOSS seulement. */
+        BossMode bossMode,
+        /** Issue #175 : poids relatif dans le tirage pondéré des boss communautaires (≥ 1). */
+        int communityWeight
 ) {
+
+    public static final int DEFAULT_COMMUNITY_WEIGHT = 1;
+
+    /** Forme antérieure à l'issue #175 : boss de quête, poids par défaut. */
+    public SpecialMobDefinition(NamespacedKey id, MobCategory category, boolean enabled, EntityType entityType,
+                                String displayName, double spawnChance, Set<String> allowedWorlds,
+                                Set<String> allowedBiomes, Set<String> allowedZones, Double health, Double damage,
+                                Double speed, Double armor, Double knockbackResistance, Double scale,
+                                Double creeperExplosionRadius, Particle particle, Sound sound,
+                                List<MobAbility> abilities, List<ResourceDrop> drops, Integer xpReward,
+                                Integer maxPopulation) {
+        this(id, category, enabled, entityType, displayName, spawnChance, allowedWorlds, allowedBiomes,
+                allowedZones, health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius,
+                particle, sound, abilities, drops, xpReward, maxPopulation, BossMode.QUEST, DEFAULT_COMMUNITY_WEIGHT);
+    }
 
     public SpecialMobDefinition {
         if (id == null) {
@@ -112,6 +131,26 @@ public record SpecialMobDefinition(
         if (maxPopulation != null && maxPopulation < 0) {
             throw new IllegalArgumentException("maxPopulation ne peut pas être négatif si présent : " + maxPopulation);
         }
+        bossMode = bossMode == null ? BossMode.QUEST : bossMode;
+        if (bossMode == BossMode.COMMUNITY && category != MobCategory.BOSS) {
+            throw new IllegalArgumentException("boss-mode: COMMUNITY n'a de sens que pour category: BOSS.");
+        }
+        if (communityWeight < 1) {
+            throw new IllegalArgumentException("communityWeight doit être au moins 1 : " + communityWeight);
+        }
+    }
+
+    /** Issue #175 : profil éligible au scheduler des boss communautaires (BOSS + COMMUNITY + activé). */
+    public boolean isCommunityBoss() {
+        return enabled && category == MobCategory.BOSS && bossMode == BossMode.COMMUNITY;
+    }
+
+    /** Copie avec un autre état d'activation (bascule panel) -- préserve tous les autres champs. */
+    public SpecialMobDefinition withEnabled(boolean value) {
+        return new SpecialMobDefinition(id, category, value, entityType, displayName, spawnChance, allowedWorlds,
+                allowedBiomes, allowedZones, health, damage, speed, armor, knockbackResistance, scale,
+                creeperExplosionRadius, particle, sound, abilities, drops, xpReward, maxPopulation, bossMode,
+                communityWeight);
     }
 
     public int totalDropWeight() {

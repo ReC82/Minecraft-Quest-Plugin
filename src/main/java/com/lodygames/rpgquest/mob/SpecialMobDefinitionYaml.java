@@ -28,6 +28,10 @@ public final class SpecialMobDefinitionYaml {
         sb.append("id: ").append(d.id()).append('\n');
         sb.append("category: ").append(d.category()).append('\n');
         sb.append("enabled: ").append(d.enabled()).append('\n');
+        if (d.category() == com.lodygames.rpgquest.mob.model.MobCategory.BOSS) {
+            sb.append("boss-mode: ").append(d.bossMode()).append('\n');
+            sb.append("community-weight: ").append(d.communityWeight()).append('\n');
+        }
         sb.append("entity-type: ").append(d.entityType().name()).append('\n');
         sb.append("name: ").append(quote(d.displayName())).append('\n');
         sb.append("spawn-chance: ").append(d.spawnChance()).append('\n');

@@ -467,6 +467,15 @@ class AgentActionCatalogTest {
                 Map.of("interval_minutes", "15", "max_active", "1", "participation_radius", "4")).valid());
         assertFalse(AgentActionCatalog.validate("boss.community.settings.set",
                 Map.of("interval_minutes", "15", "max_active", "1", "participation_radius", "501")).valid());
+        // Issue #471 : contour et surface envoyés explicitement avec le formulaire (case décochée = false).
+        var located = AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "15", "max_active", "1", "glow_radius", "48", "surface_only", "true"));
+        assertEquals("48", located.params().get("glow_radius"));
+        assertEquals("false", located.params().get("glow"));
+        assertEquals("true", located.params().get("surface_only"));
+        assertFalse(ok.params().containsKey("glow"), "ancien formulaire : réglages inchangés");
+        assertFalse(AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "15", "max_active", "1", "glow_radius", "200")).valid());
     }
 
     @Test

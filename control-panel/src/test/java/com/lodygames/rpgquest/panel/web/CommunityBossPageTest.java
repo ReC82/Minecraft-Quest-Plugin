@@ -81,6 +81,10 @@ class CommunityBossPageTest {
         assertTrue(page.contains("name=\"interval_minutes\""), "intervalle modifiable");
         assertTrue(page.contains("name=\"max_active\""), "plafond modifiable");
         assertTrue(page.contains("name=\"participation_radius\""), "distance de participation modifiable (#176)");
+        assertTrue(page.contains("name=\"glow\""), "contour lumineux réglable (#471)");
+        assertTrue(page.contains("name=\"glow_radius\""), "distance d'allumage réglable (#471)");
+        assertTrue(page.contains("name=\"surface_only\""), "surface uniquement réglable (#471)");
+        assertTrue(page.contains("N'importe où dans le Wild"), "apparition sans joueur dans le Wild (#471)");
         assertTrue(page.contains("value=\"64\""), "valeur courante relue");
         assertTrue(page.contains("Retirer ce boss"));
         assertTrue(page.contains("Retirer toutes les apparitions de test"));

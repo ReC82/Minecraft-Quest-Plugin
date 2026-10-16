@@ -1982,7 +1982,8 @@ public interface AgentActions {
                              int participationRadius, Long nextDueMillis, long lastSpawnMillis, long lastAttemptMillis, String lastOutcome,
                              long nowMillis, List<CommunityBossInstanceView> instances,
                              List<CommunityBossProfileView> bossProfiles,
-                             List<CommunityBossDefeatView> recentDefeats, List<RewardTableView> rewardTables) {
+                             List<CommunityBossDefeatView> recentDefeats, List<RewardTableView> rewardTables,
+                             boolean glow, int glowRadius, boolean surfaceOnly) {
     }
 
     /** Une entrée d'une table de tirage (#177) ; {@code chance} lisible (« 12,5 % »). */
@@ -2006,22 +2007,26 @@ public interface AgentActions {
     /** Lecture de l'état du scheduler -- action {@code boss.community.status}. */
     default CompletableFuture<CommunityBossView> communityBossStatus() {
         return CompletableFuture.completedFuture(new CommunityBossView(false, false, 0, 0, 0, null, 0, 0, "", 0,
-                List.of(), List.of(), List.of(), List.of()));
+                List.of(), List.of(), List.of(), List.of(), false, 0, false));
     }
 
     /**
      * Réglages globaux -- action {@code boss.community.settings.set}. {@code participationRadius}
-     * {@code null} = distance de participation inchangée (#176).
+     * {@code null} = distance de participation inchangée (#176) ; de même {@code glow},
+     * {@code glowRadius} et {@code surfaceOnly} {@code null} = inchangés (#471, panel plus ancien).
      */
     default CompletableFuture<MutationResult> communityBossSettingsSet(boolean enabled, int intervalMinutes,
-                                                                       int maxActive, Integer participationRadius) {
+                                                                       int maxActive, Integer participationRadius,
+                                                                       Boolean glow, Integer glowRadius,
+                                                                       Boolean surfaceOnly) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
                 "Boss communautaires indisponibles sur ce serveur."));
     }
 
     /**
      * Apparition de test immédiate -- action {@code boss.community.test.spawn}. {@code profileId} et
-     * {@code playerName} facultatifs ({@code null} = tirage pondéré / n'importe quel joueur du Wild).
+     * {@code playerName} facultatifs ({@code null} = tirage pondéré / n'importe où dans le Wild, sans
+     * joueur requis -- #471).
      */
     default CompletableFuture<MutationResult> communityBossTestSpawn(String profileId, String playerName) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",

@@ -2241,6 +2241,17 @@ public final class AgentActionCatalog {
                     }
                     params.put("participation_radius", Integer.toString(radius));
                 }
+                String glowRadiusRaw = trim(form.get("glow_radius"));
+                if (!glowRadiusRaw.isEmpty()) { // absent = inchangé (#471)
+                    Integer glowRadius = positiveInt(glowRadiusRaw);
+                    if (glowRadius == null || glowRadius < 8 || glowRadius > 128) {
+                        return Validation.fail("Distance d'allumage du contour : un nombre entier de 8 à 128 blocs.");
+                    }
+                    params.put("glow_radius", Integer.toString(glowRadius));
+                    // Le formulaire #471 porte aussi les deux cases : décochées = « false », jamais absentes.
+                    params.put("glow", "true".equals(trim(form.get("glow"))) ? "true" : "false");
+                    params.put("surface_only", "true".equals(trim(form.get("surface_only"))) ? "true" : "false");
+                }
             }
             case "boss.community.test.spawn" -> {
                 String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);

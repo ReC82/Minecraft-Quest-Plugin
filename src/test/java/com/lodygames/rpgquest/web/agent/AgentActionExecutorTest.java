@@ -602,6 +602,10 @@ class AgentActionExecutorTest {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb9", "boss.community.settings.set",
                 Map.of("enabled", "true", "interval_minutes", "15", "max_active", "1",
                         "participation_radius", "cent"))).status());
+        // Issue #471 : distance d'allumage du contour bornée (8 à 128 blocs), absente = inchangée.
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb10", "boss.community.settings.set",
+                Map.of("enabled", "true", "interval_minutes", "15", "max_active", "1",
+                        "glow_radius", "500"))).status());
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb2", "boss.community.test.spawn",
                 Map.of("player", "bad name!"))).status());
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb3", "boss.community.remove",

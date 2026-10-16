@@ -4796,7 +4796,7 @@ public final class BukkitAgentActions implements AgentActions {
         return done(new CommunityBossView(true, settings.enabled(), settings.intervalMinutes(), settings.maxActive(),
                 settings.participationRadius(), state.nextDueMillis(), state.lastSpawnMillis(), state.lastAttemptMillis(), state.lastOutcome(),
                 System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles), recentDefeats(),
-                rewardTables()));
+                rewardTables(), settings.glow(), settings.glowRadius(), settings.surfaceOnly()));
     }
 
     /** Issue #177 : tables de tirage du catalogue chargé (vide sans service ou sans tables). */
@@ -4844,16 +4844,21 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<MutationResult> communityBossSettingsSet(boolean enabled, int intervalMinutes,
-                                                                      int maxActive, Integer participationRadius) {
+                                                                      int maxActive, Integer participationRadius,
+                                                                      Boolean glow, Integer glowRadius,
+                                                                      Boolean surfaceOnly) {
         if (communityBosses == null) {
             return AgentActions.super.communityBossSettingsSet(enabled, intervalMinutes, maxActive,
-                    participationRadius);
+                    participationRadius, glow, glowRadius, surfaceOnly);
         }
+        var current = communityBosses.settings();
         com.lodygames.rpgquest.mob.community.CommunityBossSettings next;
         try {
             next = new com.lodygames.rpgquest.mob.community.CommunityBossSettings(enabled, intervalMinutes, maxActive,
-                    participationRadius != null ? participationRadius
-                            : communityBosses.settings().participationRadius());
+                    participationRadius != null ? participationRadius : current.participationRadius(),
+                    glow != null ? glow : current.glow(),
+                    glowRadius != null ? glowRadius : current.glowRadius(),
+                    surfaceOnly != null ? surfaceOnly : current.surfaceOnly());
         } catch (IllegalArgumentException e) {
             return done(MutationResult.of(false, "INVALID", e.getMessage()));
         }
@@ -4865,12 +4870,15 @@ public final class BukkitAgentActions implements AgentActions {
         }
         return onMain(() -> {
             communityBosses.settingsChanged(previous, next);
-            return done(MutationResult.of(true, "UPDATED", next.enabled()
+            return done(MutationResult.of(true, "UPDATED", (next.enabled()
                     ? "Boss communautaires actifs : un essai toutes les " + next.intervalMinutes() + " min, "
                     + next.maxActive() + " boss maximum en même temps, récompenses à " + next.participationRadius()
                     + " blocs au plus."
                     : "Boss communautaires en pause : plus aucune apparition automatique. Récompenses à "
-                    + next.participationRadius() + " blocs au plus."));
+                    + next.participationRadius() + " blocs au plus.")
+                    + (next.glow() ? " Contour lumineux à " + next.glowRadius() + " blocs." : " Contour désactivé.")
+                    + (next.surfaceOnly() ? " Apparition en surface uniquement." : " Apparition sur le plus haut "
+                    + "bloc praticable.")));
         });
     }
 
@@ -4879,7 +4887,8 @@ public final class BukkitAgentActions implements AgentActions {
         if (communityBosses == null) {
             return AgentActions.super.communityBossTestSpawn(profileId, playerName);
         }
-        return onMain(() -> done(toMutation(communityBosses.testSpawn(profileId, playerName))));
+        // Le chargement ponctuel de chunk (#471) est asynchrone : le résultat arrive plus tard, sur le main.
+        return onMain(() -> communityBosses.testSpawn(profileId, playerName).thenApply(BukkitAgentActions::toMutation));
     }
 
     @Override

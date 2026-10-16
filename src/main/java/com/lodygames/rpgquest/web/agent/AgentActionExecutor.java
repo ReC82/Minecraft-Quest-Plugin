@@ -1004,6 +1004,9 @@ public final class AgentActionExecutor {
             details.put("intervalMinutes", view.intervalMinutes());
             details.put("maxActive", view.maxActive());
             details.put("participationRadius", view.participationRadius());
+            details.put("glow", view.glow());
+            details.put("glowRadius", view.glowRadius());
+            details.put("surfaceOnly", view.surfaceOnly());
             if (view.nextDueMillis() != null) { // Map.copyOf de l'outcome refuse les valeurs nulles.
                 details.put("nextDue", view.nextDueMillis());
             }
@@ -1043,7 +1046,21 @@ public final class AgentActionExecutor {
                         + CommunityBossSettings.MAX_PARTICIPATION_RADIUS + " blocs)."));
             }
         }
-        return actions.communityBossSettingsSet(enabled, interval, max, radius).thenApply(r -> toOutcome(action, r))
+        Integer glowRadius = null; // absent = inchangé (panel antérieur à #471)
+        String glowRadiusRaw = action.param("glow_radius");
+        if (glowRadiusRaw != null && !glowRadiusRaw.isBlank()) {
+            glowRadius = parseOptionalInt(glowRadiusRaw);
+            if (glowRadius == null || glowRadius < CommunityBossSettings.MIN_GLOW_RADIUS
+                    || glowRadius > CommunityBossSettings.MAX_GLOW_RADIUS) {
+                return done(AgentActionOutcome.rejected(action.id(), "Paramètre « glow_radius » invalide ("
+                        + CommunityBossSettings.MIN_GLOW_RADIUS + " à "
+                        + CommunityBossSettings.MAX_GLOW_RADIUS + " blocs)."));
+            }
+        }
+        Boolean glow = optionalBoolean(action.param("glow"));
+        Boolean surfaceOnly = optionalBoolean(action.param("surface_only"));
+        return actions.communityBossSettingsSet(enabled, interval, max, radius, glow, glowRadius, surfaceOnly)
+                .thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
@@ -4643,6 +4660,11 @@ public final class AgentActionExecutor {
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    /** {@code null} si absent ou vide (réglage inchangé), sinon la valeur de {@link #isTrue}. */
+    private static Boolean optionalBoolean(String raw) {
+        return raw == null || raw.isBlank() ? null : isTrue(raw);
     }
 
     private static boolean isTrue(String raw) {

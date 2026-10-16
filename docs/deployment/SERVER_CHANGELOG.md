@@ -69,11 +69,17 @@ JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygame
 
 ### Déploiement
 
-À compléter par la session de déploiement (rapport #176 du 16/10 après-midi).
+Effectué le 2026-10-16 ~16:35 (heure locale) : `scripts/deploy-verygames.sh -y` depuis `bf7dae9` (merge
+PR #466, CI verte ; tests + build relancés par le script : verts). JAR 3 286 631 o, SHA-256
+`84c980c5…2b35`, **retéléchargé identique**. Sauvegarde du JAR précédent (#461, 3 281 826 o,
+`baf04b0b…d5b0`) : `rpgquest-20261016T143507Z-predeploy.jar`. `scripts/verygames-restart.sh` (0 joueur),
+DEV ONLINE. `scripts/plugadmin/deploy.sh` : OK, le JAR servi contient le champ `participation_radius`.
 
 ### Validation
 
-PENDING MANUAL VALIDATION : TC-330 (étapes 3, 3b, 3c, 3d).
+Vérifié : `boss.community.status` sur DEV → SUCCESS, `participationRadius: 100` (défaut, aucun
+`community-bosses.yml` modifié), scheduler toujours désactivé, 0 boss actif. PENDING MANUAL
+VALIDATION : TC-330 (étapes 3, 3b, 3c, 3d).
 
 ### Rollback
 

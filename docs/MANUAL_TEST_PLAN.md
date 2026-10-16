@@ -6367,3 +6367,28 @@ rewards:
 9.  Redémarrer le serveur avec un droit en attente : remise après le redémarrage, une fois.
 10. Remettre `enabled: false` (ou supprimer le fichier) : plus aucune remise ; la fiche dit
     « Fonction désactivée ».
+
+### TC-329 — Boss communautaires du Wild (issue #175, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #175, sur **DEV seulement**. Un compte de test connecté **dans le
+Wild**, en survie, près de waypoints existants.
+
+1.  PlugAdmin → Mobs spéciaux & boss → ouvrir un profil **Boss** jetable (ou en créer un) → Modifier →
+    « Type de boss » = **Boss communautaire** → Enregistrer. Section « Boss communautaires du Wild » →
+    « Rafraîchir l'état ». **Attendu** : le bandeau « Aucun profil n'est encore un boss communautaire »
+    disparaît ; « Apparitions automatiques : en pause ».
+2.  **Apparition de test** (boss au hasard, près du compte de test). **Attendu** : le boss apparaît à
+    40–96 blocs, jamais dans une ville, une zone protégée ou collé à un waypoint ; tout le serveur lit
+    « ⚔ Boss communautaire : <nom> vient d'apparaître dans le biome …, à environ N blocs au <direction> du
+    waypoint <nom réel> (apparition de test) » ; barre de vie visible de près ; le prochain essai n'a pas
+    bougé. Aucune découverte de waypoint, aucune téléportation.
+3.  Se déconnecter puis se reconnecter. **Attendu** : rappel individuel « Un boss communautaire rôde… »
+    ~3 s après la connexion ; un autre joueur déjà connecté ne reçoit rien.
+4.  Réglages : activer, intervalle **1 min**, maximum 1 (DEV uniquement). Tuer le boss de test.
+    **Attendu** : « … a été vaincu par <pseudo> » ; à l'échéance suivante, un boss apparaît tout seul ;
+    les échéances suivantes ne créent pas de deuxième boss tant qu'il vit (« Plafond atteint »).
+5.  S'éloigner pour décharger sa zone, redémarrer le serveur, revenir. **Attendu** : toujours un seul
+    boss (verrou restauré), barre de vie présente, aucun doublon ; décocher « Apparitions automatiques »
+    → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
+    Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
+

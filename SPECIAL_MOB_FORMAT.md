@@ -17,6 +17,13 @@ id: rpgquest:golden_creeper
 # spawn de test admin ou futur objectif de quête (non implémenté).
 category: SPECIAL
 
+# Optionnels, uniquement pour category: BOSS — issue #175.
+# QUEST (défaut) : jamais automatique. COMMUNITY : boss communautaire du Wild,
+# tiré par le scheduler (mobs/community-bosses.yml) avec ce poids relatif.
+# COMMUNITY est refusé (erreur de chargement) sur un profil SPECIAL.
+# boss-mode: COMMUNITY
+# community-weight: 1
+
 # Optionnelle, défaut true. false = ignoré par le tirage aléatoire ET par le
 # spawn de test, jamais supprimé du disque.
 enabled: true
@@ -124,6 +131,21 @@ chance: 0.05                     # 0 à 1
 max-simultaneous-special: 20     # optionnel, toutes définitions SPECIAL confondues
 ```
 
+## Boss communautaires (`mobs/community-bosses.yml`, issue #175)
+
+Réglages globaux édités depuis PlugAdmin (section « Boss communautaires du Wild » de la page Mobs) :
+`enabled` (défaut `false`), `interval-minutes` (défaut 15), `max-active` (défaut 1). Les profils
+éligibles sont les profils `category: BOSS` + `boss-mode: COMMUNITY` activés ; leurs `worlds`,
+`biomes` et `zones` restreignent le placement, toujours à l'intérieur des mondes Wild (jamais le Hub
+ni les Claims). État des boss actifs : `state/community-bosses.yml` (géré par le plugin, ne pas
+éditer). Sémantique complète : docs/RPGQUEST_BIBLE.md, section 11.
+
+```yaml
+enabled: true
+interval-minutes: 15
+max-active: 1
+```
+
 ## Commandes (`rpgquest.admin.world`)
 
 -   `/rpgadmin mob spawn <id>` — invoque la variante à la position du joueur
@@ -154,6 +176,8 @@ max-simultaneous-special: 20     # optionnel, toutes définitions SPECIAL confon
 
 -   `id`, `entity-type` (vivant), `name`, `spawn-chance` (0–1) sont
     obligatoires. `category` optionnelle (défaut `SPECIAL`).
+-   `boss-mode` optionnel (`QUEST` défaut, `COMMUNITY` réservé à `BOSS`) ;
+    `community-weight` entier ≥ 1 si présent (issue #175).
 -   `health`/`speed` strictement positifs si présents ; `damage`/`armor`
     positifs ou nuls si présents ; `knockback-resistance` entre 0 et 1 ;
     `scale` strictement positif ; `creeper-explosion-radius` strictement

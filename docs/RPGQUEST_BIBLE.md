@@ -5204,7 +5204,7 @@ d'icônes/récompenses (#196) sont des lots distincts.
 
 ### Catégorie et attributs (issue #169, lot 1)
 
-- `category` : `SPECIAL` (éligible au tirage aléatoire Wild, nom coloré) ou `BOSS` (jamais tiré au hasard — n'apparaît que par spawn de test admin ou, plus tard, objectif de quête #173 — nom coloré + particules colorées en continu + barre de vie Adventure).
+- `category` : `SPECIAL` (éligible au tirage aléatoire Wild, nom coloré) ou `BOSS` (jamais tiré au hasard — n'apparaît que par spawn de test admin, par le scheduler des boss communautaires si `boss-mode: COMMUNITY` (issue #175, voir plus bas) ou, plus tard, objectif de quête #173 — nom coloré + particules colorées en continu + barre de vie Adventure).
 - `enabled` (optionnel, défaut `true`) : désactivé = ignoré par le tirage aléatoire ET par le spawn de test, jamais supprimé du disque.
 - `knockback-resistance` (0 à 1), `scale` (taille relative, 1.0 = normale) : attributs vanilla supplémentaires, en plus de `health`/`damage`/`speed`/`armor` déjà existants.
 - `creeper-explosion-radius` : uniquement si `entity-type: CREEPER` — refusé (erreur de chargement, jamais une option silencieusement ignorée) pour tout autre type.
@@ -5219,6 +5219,60 @@ Réglé depuis le Control Panel (`mobs/spawn-settings.yml`, jamais édité à la
 4. `max_simultaneous_special` (optionnel) plafonne le nombre total de mobs `SPECIAL` vivants, toutes définitions confondues, en plus du `max-population` déjà existant par profil.
 5. Les profils `BOSS` sont **exclus** de ce tirage automatique, sans exception.
 6. Aucun nouveau tirage au chargement de chunk ni à la reconnexion (seul un vrai spawn naturel `CreatureSpawnEvent` déclenche un tirage).
+
+### Boss communautaires du Wild (issue #175, première version)
+
+Un profil `BOSS` porte désormais un **type de boss** (`boss-mode`), distinct du choix SPECIAL/BOSS :
+`QUEST` (défaut, comportement antérieur : jamais automatique) ou `COMMUNITY` (apparaît tout seul dans
+le Wild). `community-weight` (entier ≥ 1, défaut 1) pondère le tirage entre boss communautaires.
+Les deux champs se règlent dans l'éditeur de profil (« Type de boss », « Poids »).
+
+Réglages globaux — `mobs/community-bosses.yml`, édité depuis PlugAdmin (page « Mobs spéciaux & boss »,
+section **Boss communautaires du Wild**), jamais à la main :
+
+| Clé | Défaut | Rôle |
+|---|---|---|
+| `enabled` | `false` | Apparitions automatiques. Décoché = pause immédiate ; les boss présents restent. |
+| `interval-minutes` | `15` | Délai entre deux essais (1 à 1440). |
+| `max-active` | `1` | Boss communautaires actifs en même temps (1 à 10). |
+
+Fonctionnement (une seule tâche toutes les 20 s) :
+
+1. **Échéance** : à chaque échéance, s'il manque un boss sous `max-active`, tirage pondéré d'un profil
+   `BOSS` + `COMMUNITY` + activé. Une échéance manquée (serveur arrêté, pause) donne **au plus une**
+   tentative 2 min après la reprise, jamais une rafale de rattrapage.
+2. **Placement sûr** : uniquement autour d'un joueur en survie/aventure d'un **monde Wild** (`wild.worlds`
+   ou `travel.wild-world`), le Hub et le monde des Claims étant exclus explicitement ; à 40–96 blocs du
+   joueur, à plus de 24 blocs de tout joueur, **dans un chunk déjà chargé** (jamais de chargement forcé),
+   sur une colonne accessible (pas d'eau, de lave, de canopée). Refusés : biome hors des `biomes` du
+   profil, monde hors de ses `worlds`, zone protégée (`allow-hostile-spawn: false`), zone hors des
+   `zones` du profil, ville, moins de 16 blocs d'un waypoint. Aucun emplacement → **rien n'est annoncé**,
+   nouvel essai à l'échéance suivante.
+3. **Moteur commun** : le boss est créé par le moteur de mobs spéciaux (attributs, nom, barre de vie,
+   particules, capacités, drops du profil) — pas de second moteur.
+4. **Annonce globale** après apparition réussie : nom du boss, biome (traduit par le client), distance et
+   direction approximatives depuis le **waypoint réel** le plus proche (à moins de 600 blocs) — sinon
+   « loin de tout waypoint connu », jamais un nom inventé. Aucune découverte, aucun voyage débloqué.
+5. **Connexion** : un joueur qui se connecte reçoit (3 s après) un rappel **individuel** des boss
+   communautaires actifs ; rien si aucun n'est actif ; jamais de rediffusion globale.
+6. **Mort** : message « X a été vaincu (par Y) ». Pas encore de récompense de participation (#176/#177) :
+   seuls les drops/XP du profil s'appliquent, comme pour tout mob spécial.
+
+**Verrou persistant** (`plugins/RPGQuest/state/community-bosses.yml`, fichier de données — aucune table,
+aucune migration) : chaque boss actif y est inscrit (identifiant d'entité, profil, dernière position,
+biome, waypoint) et porte une PDC `community-boss-instance`. Le plafond compte ces verrous, y compris
+pour un boss resté dans un chunk déchargé ou d'avant un redémarrage. Un verrou n'est libéré que sur
+preuve : mort, retrait PlugAdmin, ou entité absente alors que le chunk de sa dernière position a ses
+entités chargées. Un boss marqué retrouvé sans verrou (crash) est réadopté sous le plafond, sinon retiré.
+
+**PlugAdmin** : état (actif/en pause, prochain essai, dernière apparition, dernier essai et sa raison),
+réglages, liste des boss actifs (biome, waypoint, dernière position, ancienneté), **Apparition de test**
+(immédiate, boss au hasard ou choisi, près d'un joueur choisi ou de n'importe quel joueur du Wild ;
+marquée « test », hors plafond, ne décale pas le prochain essai), **Retirer ce boss** / **Retirer toutes
+les apparitions de test** (case de confirmation, aucune récompense, retrait différé au rechargement si la
+zone n'est pas chargée). Actions d'agent : `boss.community.status` (MOB_READ),
+`boss.community.settings.set` (MOB_WRITE), `boss.community.test.spawn` et `boss.community.remove`
+(MOB_TEST_SPAWN), toutes auditées. Page docs-site : aucune (comme le reste de la section 11).
 
 ### Capacités (premier lot, issue #171)
 

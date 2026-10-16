@@ -137,7 +137,6 @@ public final class CommunityBossService implements PluginService, Listener {
     private BukkitTask task;
     private ProfileApplier applier;
 
-    @SuppressWarnings("checkstyle:ParameterNumber")
     public CommunityBossService(Plugin plugin, Logger logger, SpecialMobRegistry registry,
                                 SpecialMobService mobService, CommunityBossSettingsStore settingsStore,
                                 CommunityBossStateStore stateStore, Predicate<World> wildWorld,

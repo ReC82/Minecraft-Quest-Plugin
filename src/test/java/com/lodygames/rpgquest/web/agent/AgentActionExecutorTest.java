@@ -572,6 +572,23 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void mobDefinitionUpdateSplitsMultiValuedListsOnLineBreaksAndRejectsInjectedValues() {
+        // Issue #461 : la multisélection non retouchée soumettait « swamp\r\nplains ».
+        AgentActionOutcome ok = run(new AgentAction("ml0", "mob.definition.update",
+                Map.of("mob_id", "rpgquest:claude_diag_boss", "category", "BOSS", "entity_type", "WITHER_SKELETON",
+                        "display_name", "<red>Diag Boss</red>", "spawn_chance", "0.01",
+                        "worlds", "wild", "biomes", "swamp\r\nplains", "zones", "a, b\nb")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status(), ok.message());
+        assertEquals(List.of(List.of("wild"), List.of("swamp", "plains"), List.of("a", "b")), actions.lastMobPlacement);
+
+        AgentActionOutcome bad = run(new AgentAction("ml1", "mob.definition.update",
+                Map.of("mob_id", "ogre", "category", "BOSS", "entity_type", "ZOMBIE", "display_name", "Ogre",
+                        "spawn_chance", "0", "biomes", "swamp,\"plains: x\"")));
+        assertEquals(AgentActionOutcome.REJECTED, bad.status());
+        assertTrue(bad.message().contains("Biomes autorisés"), bad.message());
+    }
+
+    @Test
     void communityBossActionsRevalidateEveryParameter() {
         // Issue #175 : l'agent est la dernière barrière, jamais le navigateur.
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb0", "boss.community.settings.set",
@@ -1836,6 +1853,7 @@ class AgentActionExecutorTest {
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
+        List<List<String>> lastMobPlacement;
         /** Issue #246 : ce que la capture a réellement reçu. */
         BuildingCaptureRequest lastCaptureRequest;
         String lastCaptureToken;
@@ -2758,6 +2776,7 @@ class AgentActionExecutorTest {
                 Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
                 Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
                 List<String> participationRewards) {
+            lastMobPlacement = List.of(worlds, biomes, zones);
             return mutation("mob update " + id);
         }
 

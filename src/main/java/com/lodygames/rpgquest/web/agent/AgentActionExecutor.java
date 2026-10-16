@@ -824,9 +824,25 @@ public final class AgentActionExecutor {
                     + MAX_PARTICIPATION_REWARDS + " clés au plus : minuscules, chiffres, _ . -, ou table:<id>)."));
         }
 
+        // Issue #461 : mondes / biomes / zones -- virgule, espace ou retour à la ligne (CRLF d'une
+        // textarea) séparent les valeurs ; chacune doit être un identifiant simple.
+        Map<String, List<String>> placement = new LinkedHashMap<>();
+        for (String[] field : MOB_PLACEMENT_FIELDS) {
+            List<String> values = splitIdentifiers(action.param(field[0]));
+            String bad = values.stream().filter(v -> !PLACEMENT_VALUE.matcher(v).matches()).findFirst().orElse(null);
+            if (bad != null) {
+                return done(AgentActionOutcome.rejected(action.id(), field[1] + " : valeur invalide « " + bad
+                        + " » (lettres, chiffres, _ . - : / seulement ; une valeur par entrée). Rien n'a été écrit."));
+            }
+            placement.put(field[0], values);
+        }
+        List<String> worlds = placement.get("worlds");
+        List<String> biomes = placement.get("biomes");
+        List<String> zones = placement.get("zones");
+
         CompletableFuture<AgentActions.MutationResult> future = (create ? actions.mobDefinitionCreate(
                 id, category, enabled, entityType, displayName, spawnChance,
-                splitList(action.param("worlds")), splitList(action.param("biomes")), splitList(action.param("zones")),
+                worlds, biomes, zones,
                 parseDouble(action.param("health")), parseDouble(action.param("damage")),
                 parseDouble(action.param("speed")), parseDouble(action.param("armor")),
                 parseDouble(action.param("knockback_resistance")), parseDouble(action.param("scale")),
@@ -840,7 +856,7 @@ public final class AgentActionExecutor {
                 bossMode, communityWeight, participationRewards)
                 : actions.mobDefinitionUpdate(
                 id, category, enabled, entityType, displayName, spawnChance,
-                splitList(action.param("worlds")), splitList(action.param("biomes")), splitList(action.param("zones")),
+                worlds, biomes, zones,
                 parseDouble(action.param("health")), parseDouble(action.param("damage")),
                 parseDouble(action.param("speed")), parseDouble(action.param("armor")),
                 parseDouble(action.param("knockback_resistance")), parseDouble(action.param("scale")),
@@ -854,6 +870,19 @@ public final class AgentActionExecutor {
                 bossMode, communityWeight, participationRewards));
         return future.thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Champs de placement d'un profil de mob : paramètre, libellé du formulaire (issue #461). */
+    private static final String[][] MOB_PLACEMENT_FIELDS = {
+            {"worlds", "Mondes autorisés"}, {"biomes", "Biomes autorisés"}, {"zones", "Zones autorisées"}};
+    private static final Pattern PLACEMENT_VALUE = Pattern.compile("[A-Za-z0-9_.:/-]{1,128}");
+
+    /** Liste d'identifiants : virgules, espaces et retours à la ligne séparent ; doublons retirés. */
+    private static List<String> splitIdentifiers(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(raw.split("[,\\s]+")).filter(v -> !v.isBlank()).distinct().toList();
     }
 
     private CompletableFuture<AgentActionOutcome> mobDefinitionToggle(AgentAction action) {

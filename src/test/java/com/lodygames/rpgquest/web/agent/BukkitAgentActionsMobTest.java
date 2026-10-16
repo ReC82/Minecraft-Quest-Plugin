@@ -138,4 +138,93 @@ class BukkitAgentActionsMobTest {
         assertEquals(false, second.ok());
         assertEquals("EXISTS", second.code());
     }
+
+    // ---- Issue #461 -------------------------------------------------------------------------
+
+    @Test
+    void anEditKeepsAbilitiesAndDropsTheFormDoesNotExposeAndWritesBothBiomes() throws Exception {
+        Files.writeString(mobsDir.resolve("splitting_zombie.yml"), """
+                id: rpgquest:splitting_zombie
+                category: BOSS
+                enabled: false
+                entity-type: ZOMBIE
+                name: "Zombie Fissible"
+                spawn-chance: 0.02
+                abilities:
+                  - type: SPLIT_ON_HIT
+                    max-depth: 2
+                    max-children-per-hit: 2
+                    max-alive-per-parent: 2
+                drops:
+                  - material: ROTTEN_FLESH
+                    weight: 100
+                    min-amount: 1
+                    max-amount: 2
+                """);
+
+        AgentActions.MutationResult r = actions.mobDefinitionUpdate("rpgquest:splitting_zombie", "BOSS", true,
+                "ZOMBIE", "Zombie Fissible", 0.02, List.of("wild"), List.of("swamp", "plains"), List.of(),
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, "COMMUNITY", 1, List.of()).get();
+
+        assertTrue(r.ok(), r.message());
+        mobRegistry.reload();
+        var def = mobRegistry.find(new NamespacedKey("rpgquest", "splitting_zombie")).orElseThrow();
+        assertEquals(java.util.Set.of("swamp", "plains"), def.allowedBiomes());
+        assertEquals(1, def.abilities().size(), "Division conservée (non éditée par le formulaire)");
+        assertTrue(def.abilities().get(0) instanceof com.lodygames.rpgquest.mob.model.SplitOnHitAbility);
+        assertEquals(1, def.drops().size(), "drops conservés");
+    }
+
+    @Test
+    void anEditOfAnUnreadableProfileIsRefusedAndTheFileIsNotTouched() throws Exception {
+        String broken = "id: rpgquest:claude_diag_boss\ncategory: BOSS\nentity-type: WITHER_SKELETON\n"
+                + "name: \"Diag\"\nspawn-chance: 0.01\nbiomes:\n  - swamp\r\nplains\nzones: []\n";
+        Files.writeString(mobsDir.resolve("claude_diag_boss.yml"), broken);
+
+        AgentActions.MutationResult r = actions.mobDefinitionUpdate("rpgquest:claude_diag_boss", "BOSS", true,
+                "WITHER_SKELETON", "Diag", 0.01, List.of("wild"), List.of("swamp", "plains"), List.of(),
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, "COMMUNITY", 1, List.of()).get();
+
+        assertEquals(false, r.ok());
+        assertEquals("CURRENT_UNREADABLE", r.code());
+        assertEquals(broken, Files.readString(mobsDir.resolve("claude_diag_boss.yml")));
+    }
+
+    @Test
+    void theRepairedDiagBossFileLoadsAndCanBeSavedUnchangedAgain() throws Exception {
+        // Contenu exact remis sur DEV pour réparer « Diag Boss » (issue #461).
+        Files.writeString(mobsDir.resolve("claude_diag_boss.yml"), """
+                id: rpgquest:claude_diag_boss
+                category: BOSS
+                enabled: true
+                boss-mode: COMMUNITY
+                community-weight: 1
+                entity-type: WITHER_SKELETON
+                name: "<red>Diag Boss</red>"
+                spawn-chance: 0.01
+                worlds:
+                  - "wild"
+                biomes:
+                  - "swamp"
+                  - "plains"
+                zones: []
+                health: 200.0
+                particle: DUST
+                sound: ENTITY.WITHER.SPAWN
+                """);
+        mobRegistry.reload();
+        var def = mobRegistry.find(new NamespacedKey("rpgquest", "claude_diag_boss")).orElseThrow();
+        assertEquals(java.util.Set.of("swamp", "plains"), def.allowedBiomes());
+        assertEquals(com.lodygames.rpgquest.mob.model.BossMode.COMMUNITY, def.bossMode());
+
+        AgentActions.MutationResult r = actions.mobDefinitionUpdate("rpgquest:claude_diag_boss", "BOSS", true,
+                "WITHER_SKELETON", "<red>Diag Boss</red>", 0.01, List.of("wild"), List.of("swamp", "plains"),
+                List.of(), 200.0, null, null, null, null, null, null, "DUST", "ENTITY.WITHER.SPAWN", null, null,
+                null, null, null, null, null, null, null, null, "COMMUNITY", 1, List.of()).get();
+        assertTrue(r.ok(), r.message());
+        mobRegistry.reload();
+        assertEquals(def, mobRegistry.find(new NamespacedKey("rpgquest", "claude_diag_boss")).orElseThrow());
+    }
 }

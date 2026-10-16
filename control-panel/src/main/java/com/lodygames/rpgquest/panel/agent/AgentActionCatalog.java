@@ -2119,9 +2119,15 @@ public final class AgentActionCatalog {
                     }
                 }
                 params.put("participation_rewards", String.join(",", participationRewards));
-                copyOptionalList(form, params, "worlds");
-                copyOptionalList(form, params, "biomes");
-                copyOptionalList(form, params, "zones");
+                // Issue #461 : la multisélection soumet « swamp\r\nplains » si on n'y touche pas -- toujours
+                // renormalisé en CSV, chaque valeur contrôlée, jamais transmis brut.
+                for (String[] field : new String[][] {{"worlds", "Mondes autorisés"}, {"biomes", "Biomes autorisés"},
+                        {"zones", "Zones autorisées"}}) {
+                    String error = copyIdentifierList(form, params, field[0], field[1]);
+                    if (error != null) {
+                        return Validation.fail(error);
+                    }
+                }
                 for (String key : new String[] {"health", "damage", "speed", "armor", "knockback_resistance",
                         "scale", "creeper_explosion_radius"}) {
                     Double v = finite(form.get(key));
@@ -2828,12 +2834,26 @@ public final class AgentActionCatalog {
         return java.util.Arrays.stream(trim(raw).split("[,\\s]+")).filter(v -> !v.isBlank()).toList();
     }
 
-    /** Copie une liste texte virgule (formulaire : une valeur par ligne, jointe côté page en CSV) si non vide. */
-    private static void copyOptionalList(Map<String, String> form, Map<String, String> params, String key) {
-        String raw = trim(form.get(key));
-        if (!raw.isEmpty()) {
-            params.put(key, raw);
+    /** Valeur d'un monde / biome / zone de profil de mob (même forme que la garde côté plugin, issue #461). */
+    private static final Pattern MOB_PLACEMENT_VALUE = Pattern.compile("[A-Za-z0-9_.:/-]{1,128}");
+
+    /**
+     * Recopie une liste d'identifiants (virgule, espace ou ligne) en CSV dédoublonné si non vide.
+     *
+     * @return message d'erreur lisible, ou {@code null}
+     */
+    private static String copyIdentifierList(Map<String, String> form, Map<String, String> params, String key,
+                                             String label) {
+        List<String> values = splitWords(form.get(key)).stream().distinct().toList();
+        for (String value : values) {
+            if (!MOB_PLACEMENT_VALUE.matcher(value).matches()) {
+                return label + " : valeur invalide « " + value + " » (lettres, chiffres, _ . - : / seulement).";
+            }
         }
+        if (!values.isEmpty()) {
+            params.put(key, String.join(",", values));
+        }
+        return null;
     }
 
     /** {@code namespace:clé} minuscule, ou {@code null} si invalide. Une clé simple reçoit {@code rpgquest:}. */

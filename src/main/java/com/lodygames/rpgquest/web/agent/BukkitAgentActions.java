@@ -4571,6 +4571,18 @@ public final class BukkitAgentActions implements AgentActions {
             List<String> participationRewards, boolean create) {
         List<MobAbility> abilities = new ArrayList<>();
         try {
+            // Issue #461 : ce que le formulaire n'édite pas (drops, capacités hors Enragé/Renforts, récompenses
+            // d'un ancien panel) est repris du profil actuel. S'il est illisible, on refuse plutôt que
+            // d'effacer silencieusement ces champs.
+            Optional<SpecialMobDefinition> current = create ? Optional.empty() : mobDefinitionStore.find(resolveKey(id));
+            if (!create && current.isEmpty() && mobDefinitionStore.hasFile(resolveKey(id))) {
+                return done(MutationResult.of(false, "CURRENT_UNREADABLE", "Le profil actuel « " + safe(id)
+                        + " » ne se relit pas : modification refusée pour ne perdre ni drops ni "
+                        + "capacités. Restaurer d'abord le fichier mobs/ (voir Diagnostics)."));
+            }
+            current.ifPresent(c -> c.abilities().stream()
+                    .filter(a -> !(a instanceof EnragedAbility) && !(a instanceof SummonOnDamageAbility))
+                    .forEach(abilities::add));
             if (enragedHealthFraction != null || enragedSpeedMultiplier != null || enragedDamageMultiplier != null) {
                 abilities.add(new EnragedAbility(enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier));
             }
@@ -4590,16 +4602,14 @@ public final class BukkitAgentActions implements AgentActions {
                     sound == null ? null : org.bukkit.Sound.valueOf(sound.toUpperCase(Locale.ROOT)),
                     // Issue #175 : le formulaire n'édite pas la table de drops -- une modification la
                     // conserve au lieu de l'effacer (elle disparaissait à chaque enregistrement).
-                    abilities, create ? List.of() : mobDefinitionStore.find(resolveKey(id))
-                            .map(SpecialMobDefinition::drops).orElse(List.of()),
+                    abilities, current.map(SpecialMobDefinition::drops).orElse(List.of()),
                     xpReward, maxPopulation,
                     bossMode == null ? com.lodygames.rpgquest.mob.model.BossMode.QUEST
                             : com.lodygames.rpgquest.mob.model.BossMode.valueOf(bossMode.toUpperCase(Locale.ROOT)),
                     communityWeight == null ? SpecialMobDefinition.DEFAULT_COMMUNITY_WEIGHT : communityWeight,
                     // Issue #176 : absent (ancien panel) = conservé, comme la table de drops ; liste vide = retiré.
-                    participationRewards != null ? participationRewards : create ? List.of()
-                            : mobDefinitionStore.find(resolveKey(id))
-                            .map(SpecialMobDefinition::participationRewards).orElse(List.of()));
+                    participationRewards != null ? participationRewards
+                            : current.map(SpecialMobDefinition::participationRewards).orElse(List.of()));
 
             SpecialMobDefinitionStore.Result r = create
                     ? mobDefinitionStore.create(definition) : mobDefinitionStore.update(definition);

@@ -51,6 +51,22 @@ class SpecialMobDefinitionYamlTest {
     }
 
     @Test
+    void listValuesAreQuotedSoAControlCharacterCanNeverBreakTheFile() {
+        // Issue #461 : une valeur « swamp\r\nplains » écrivait « plains » seul en racine.
+        SpecialMobDefinition in = new SpecialMobDefinition(
+                new NamespacedKey("rpgquest", "claude_diag_boss"),
+                MobCategory.BOSS, true, EntityType.WITHER_SKELETON, "<red>Diag\nBoss</red>", 0.01,
+                Set.of("wild"), Set.of("swamp\r\nplains", "minecraft:plains"), Set.of(),
+                200.0, null, null, null, null, null, null,
+                null, null, List.of(), List.of(), null, null);
+
+        String yaml = SpecialMobDefinitionYaml.render(in);
+        assertTrue(yaml.lines().noneMatch(l -> l.equals("plains")), yaml);
+        assertTrue(yaml.contains("  - \"wild\"\n"), yaml);
+        assertEquals(in, roundTrip(in));
+    }
+
+    @Test
     void communityBossModeAndWeightRoundTrip() {
         SpecialMobDefinition in = new SpecialMobDefinition(
                 new NamespacedKey("rpgquest", "hill_ogre"),

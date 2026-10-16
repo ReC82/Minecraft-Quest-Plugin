@@ -333,6 +333,26 @@ class AgentActionCatalogTest {
     }
 
     @Test
+    void mobDefinitionUpdateNormalisesTheUntouchedMultiSelectInsteadOfForwardingCrLf() {
+        // Issue #461 : formulaire réel de « Diag Boss » -- biomes non retouchés = « swamp\r\nplains ».
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:claude_diag_boss", "category", "BOSS", "entity_type", "WITHER_SKELETON",
+                "display_name", "<red>Diag Boss</red>", "spawn_chance", "0.01",
+                "boss_mode", "COMMUNITY", "worlds", "wild",
+                "biomes", "swamp\r\nplains", "zones", ""));
+        assertTrue(ok.valid(), ok.error());
+        assertEquals("wild", ok.params().get("worlds"));
+        assertEquals("swamp,plains", ok.params().get("biomes"));
+        assertFalse(ok.params().containsKey("zones"), "liste vide = paramètre absent, comme avant");
+
+        AgentActionCatalog.Validation bad = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "x", "category", "SPECIAL", "entity_type", "ZOMBIE", "display_name", "X",
+                "spawn_chance", "0.1", "biomes", "swamp, plains:\"x\""));
+        assertFalse(bad.valid());
+        assertTrue(bad.error().contains("Biomes autorisés"), bad.error());
+    }
+
+    @Test
     void mobDefinitionWriteKeepsEnragedAndSummonFieldsOnlyWhenTheirToggleIsChecked() {
         Map<String, String> base = Map.of("mob_id", "x", "category", "SPECIAL", "entity_type", "ZOMBIE",
                 "display_name", "X", "spawn_chance", "0.1");

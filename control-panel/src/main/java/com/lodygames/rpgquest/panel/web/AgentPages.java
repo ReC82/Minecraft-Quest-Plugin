@@ -11218,7 +11218,7 @@ public final class AgentPages {
             StringBuilder joined = new StringBuilder();
             for (Object v : list) {
                 if (!joined.isEmpty()) {
-                    joined.append('\n');
+                    joined.append(", "); // même séparateur que data-multisel-separator (issue #461)
                 }
                 joined.append(str(v));
             }

@@ -72,7 +72,9 @@ public final class SpecialMobDefinitionYaml {
         }
         sb.append(key).append(":\n");
         for (String value : values) {
-            sb.append("  - ").append(value).append('\n');
+            // Issue #461 : toujours entre guillemets -- une valeur « swamp\r\nplains » écrivait
+            // « plains » seul en racine et rendait le fichier illisible.
+            sb.append("  - ").append(quote(value)).append('\n');
         }
     }
 
@@ -139,8 +141,30 @@ public final class SpecialMobDefinitionYaml {
         }
     }
 
-    /** Toujours entre guillemets doubles : le nom d'affichage peut contenir des espaces, du MiniMessage, « : »… */
-    private static String quote(String value) {
-        return '"' + value.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+    /**
+     * Toujours entre guillemets doubles : le nom d'affichage peut contenir des espaces, du MiniMessage,
+     * « : »… Les caractères de contrôle (retours à la ligne compris) sont échappés : une valeur reste
+     * sur une seule ligne YAML et se relit à l'identique (issue #461).
+     */
+    static String quote(String value) {
+        StringBuilder out = new StringBuilder(value.length() + 2).append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '\\' -> out.append("\\\\");
+                case '"' -> out.append("\\\"");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (Character.isISOControl(c)) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        return out.append('"').toString();
     }
 }

@@ -194,3 +194,10 @@ max-active: 1
 -   Drops : même validation que `RESOURCE_NODE_FORMAT.md`.
 -   Un fichier invalide est rejeté seul ; un `id` de variante dupliqué entre
     fichiers rejette les deux fichiers concernés.
+-   Écriture depuis le Control Panel (issue #461) : `worlds`/`biomes`/`zones` sont des identifiants
+    simples (`[A-Za-z0-9_.:/-]`, sans espace ni retour à la ligne), écrits entre guillemets. Le fichier
+    généré est relu par ce même validateur **avant** écriture (refus `INVALID`, rien n'est écrit) ; s'il
+    ne se recharge pas ensuite, l'ancienne version est remise (`ROLLED_BACK`). Une modification
+    conserve `drops`, `participation-rewards` absents du formulaire et les capacités qu'il n'édite pas
+    (`STRONGER_EXPLOSION`, `EXPLOSIVE_ON_ATTACK`, `SPLIT_ON_HIT`) ; elle est refusée
+    (`CURRENT_UNREADABLE`) si le profil actuel ne se relit pas.

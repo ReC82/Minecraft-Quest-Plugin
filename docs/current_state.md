@@ -1197,6 +1197,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   gagnants, BOSS toujours exclu). Éditeur Control Panel complet (`/mobs`) : créer/modifier/activer-
   désactiver un profil, régler le throttle, faire apparaître/nettoyer une instance de test — aucune
   YAML ni commande requise.
+  Écriture sûre (issue #461) : mondes / biomes / zones normalisés (virgule, espace ou ligne) et
+  contrôlés côté panel **et** côté agent, valeurs de liste toujours entre guillemets ; le texte final
+  est relu par le parseur réel avant écriture (refus `INVALID`, rien n'est écrit) ; si le profil ne se
+  recharge pas après écriture, l'ancienne version est remise à l'octet près (`ROLLED_BACK`) ; une
+  modification conserve drops, récompenses et capacités non éditées (Explosion renforcée, Explosive,
+  Division) et est refusée (`CURRENT_UNREADABLE`) si le profil actuel ne se relit pas.
 - **Boss communautaires du Wild** (issue #175, première version, PENDING MANUAL VALIDATION) — type
   de boss QUEST/COMMUNITY + poids sur les profils BOSS ; scheduler unique (`mobs/community-bosses.yml`,
   désactivé par défaut, 15 min, 1 boss max) construit sur `SpecialMobService` ; placement sûr dans les

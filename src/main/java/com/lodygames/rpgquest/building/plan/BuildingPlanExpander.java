@@ -191,7 +191,7 @@ public final class BuildingPlanExpander {
             PlanStep step = plan.steps().get(i);
             if (step.kind() == PlanStep.Kind.STAIRCASE) {
                 cells.current = i + 1;
-                Optional<String> refused = staircase(step, cells);
+                Optional<String> refused = staircase(step, cells, plan);
                 if (refused.isPresent()) {
                     return Result.failure("Instruction " + (i + 1) + " (STAIRCASE) : "
                             + refused.get());
@@ -315,16 +315,21 @@ public final class BuildingPlanExpander {
      *       trompe de plancher.</li>
      * </ul>
      */
-    private static Optional<String> staircase(PlanStep step, Cells cells) {
-        Optional<Staircase> parsed = Staircase.of(step);
+    private static Optional<String> staircase(PlanStep step, Cells cells, BuildingPlan plan) {
+        Optional<Staircase> parsed = plan.staircase(step);
         if (parsed.isEmpty()) {
             return Optional.of("direction de montée inconnue.");
         }
         Staircase stair = parsed.get();
+        // #472 : les marches d'une volée posée sur le terrain sont l'entrée de l'édifice, donc à
+        // son bord : elles peuvent prendre la place du bord d'un plateau. Les vides au-dessus
+        // restent soumis à la règle — ils ne percent jamais un mur.
+        boolean exterior = stair.onTerrain(plan.anchorY());
         int[] bounds = materialBounds(cells);
         for (Staircase.Placement p : stair.placements()) {
             boolean envelope = bounds != null && (p.x() <= bounds[0] || p.x() >= bounds[3]
-                    || p.z() <= bounds[2] || p.z() >= bounds[5]);
+                    || p.z() <= bounds[2] || p.z() >= bounds[5])
+                    && !(exterior && !p.clears());
             String there = cells.get(key(p.x(), p.y(), p.z()));
             if (envelope && there != null) {
                 return Optional.of("l'escalier toucherait le mur extérieur en " + p.x() + "/"
@@ -338,7 +343,7 @@ public final class BuildingPlanExpander {
                         + "jamais sacrifiée à un escalier : déplace-le.");
             }
         }
-        for (int[] s : stair.supports()) {
+        for (int[] s : stair.supports(plan.anchorY())) {
             String below = cells.get(key(s[0], s[1], s[2]));
             if (!BlockSemantics.support(below)) {
                 boolean landing = s[1] == stair.floor();

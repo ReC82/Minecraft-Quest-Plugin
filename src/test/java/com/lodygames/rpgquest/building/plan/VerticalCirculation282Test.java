@@ -204,7 +204,7 @@ class VerticalCirculation282Test {
     }
 
     @Test
-    void floorIsRequiredAndMustBeAboveTheFirstStep() {
+    void floorIsRequiredAndMustNotBeBelowTheFirstStep() {
         List<String> problems = new ArrayList<>();
         String base = """
                 id: escalier
@@ -220,6 +220,7 @@ class VerticalCirculation282Test {
         assertTrue(String.join(" ", problems).contains("floor"), problems.toString());
         problems.clear();
         assertTrue(BuildingPlanYaml.read(base + "    floor: 2\n", problems).isEmpty());
-        assertTrue(String.join(" ", problems).contains("AU-DESSUS"), problems.toString());
+        // #472 : « floor » égal au pied est UNE marche ; seul un plancher sous le pied est refusé.
+        assertTrue(String.join(" ", problems).contains("SOUS la première marche"), problems.toString());
     }
 }

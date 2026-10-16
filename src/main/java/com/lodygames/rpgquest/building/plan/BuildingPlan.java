@@ -131,8 +131,12 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
             PlanStep step = steps.get(i);
             String where = "Instruction " + (i + 1) + " (" + step.kind() + ") : ";
             if (!step.box().within(sizeX, sizeY, sizeZ)) {
+                // #472 : « 7 × 6 × 6 » se lisait comme largeur × profondeur × hauteur. Les bornes
+                // sont données axe par axe, telles que le plan les écrit.
                 problems.add(where + "la zone " + step.box().label()
-                        + " sort du volume " + sizeX + " × " + sizeY + " × " + sizeZ + ".");
+                        + " sort du volume " + sizeX + " × " + sizeY + " × " + sizeZ
+                        + " (coordonnées permises : x 0.." + (sizeX - 1) + ", y 0.." + (sizeY - 1)
+                        + ", z 0.." + (sizeZ - 1) + ").");
                 continue;
             }
             // Une primitive repérée par façade doit viser une cellule qui existe. Le décalage est
@@ -171,21 +175,30 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
             // #282 : l'escalier entre niveaux — direction connue, plancher au-dessus du pied, et
             // toute la volée (départ et palier compris) dans le volume. Son rapport à la grille
             // (enveloppe, porte, vitrage, appuis) se vérifie à l'expansion, où la grille existe.
+            // #472 : une volée posée sur le terrain (marches d'une estrade, d'un perron) peut avoir
+            // son départ hors du volume, et se repérer par « facade » au lieu de « from ».
             if (step.kind() == PlanStep.Kind.STAIRCASE) {
                 if (!step.hasNumber("floor")) {
-                    problems.add(where + "clé « floor » absente : c'est le y du PLANCHER à "
-                            + "atteindre (le bloc sur lequel on marche à l'étage). Le moteur en "
+                    problems.add(where + "clé « floor » absente : c'est le y du bloc sur lequel on "
+                            + "marche en haut (plancher de l'étage, dessus du plateau). Le moteur en "
                             + "déduit le nombre de marches et la trémie.");
                     continue;
                 }
-                Optional<Staircase> stair = Staircase.of(step);
+                int width = step.number("width", 1);
+                if (width < 1 || width > Staircase.MAX_WIDTH) {
+                    problems.add(where + "« width: " + width + " » : une volée compte de 1 à "
+                            + Staircase.MAX_WIDTH + " voies.");
+                    continue;
+                }
+                Optional<Staircase> stair = staircase(step);
                 if (stair.isEmpty()) {
                     problems.add(where + "direction de montée manquante ou inconnue : « "
                             + step.axis() + " ». Écris « direction: » avec un point cardinal — "
-                            + "north, south, east ou west.");
+                            + "north, south, east ou west — ou « facade: FRONT » pour des marches "
+                            + "d'entrée posées sur le terrain.");
                     continue;
                 }
-                Optional<String> refused = stair.get().refusal(sizeX, sizeY, sizeZ);
+                Optional<String> refused = stair.get().refusal(sizeX, sizeY, sizeZ, anchorY);
                 if (refused.isPresent()) {
                     problems.add(where + refused.get());
                     continue;
@@ -286,6 +299,17 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
 
     public boolean valid() {
         return validate().isEmpty();
+    }
+
+    /**
+     * La géométrie d'une instruction {@code staircase} : repérée par façade (#472) — sur le
+     * terrain, au bord du volume, montant vers l'intérieur — ou par {@code from}/{@code direction}.
+     */
+    public Optional<Staircase> staircase(PlanStep step) {
+        if (step.facade() != null) {
+            return Optional.of(Staircase.atFacade(step, front, sizeX, sizeZ, anchorY));
+        }
+        return Staircase.of(step);
     }
 
     /** Les états de bloc cités par le plan, dans l'ordre de première apparition. */

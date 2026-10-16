@@ -559,7 +559,7 @@ class BuildingGeneratorTest {
         assertTrue(library.find("maison_de_lily").isPresent(), "et le bâtiment est dans la bibliothèque");
     }
 
-    private static final class FakeGateway implements SchematicGateway {
+    static final class FakeGateway implements SchematicGateway {
         final Set<String> files = new LinkedHashSet<>();
         final java.util.Map<String, String> refuse = new java.util.HashMap<>();
         boolean available = true;

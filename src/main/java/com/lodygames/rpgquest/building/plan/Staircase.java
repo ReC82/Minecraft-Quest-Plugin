@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.building.plan;
 
+import com.lodygames.rpgquest.building.model.Facing;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -44,8 +45,27 @@ import java.util.Optional;
  *   <li>devant la première marche, un départ de trois blocs de haut ; après la dernière, un
  *       palier posé <em>sur</em> le plancher, de deux blocs de haut ;</li>
  *   <li>{@code width} élargit la volée vers {@code +z} (montée est/ouest) ou {@code +x} (montée
- *       nord/sud), de 1 à 3 voies.</li>
+ *       nord/sud), de 1 à {@value #MAX_WIDTH} voies.</li>
  * </ul>
+ *
+ * <h2>Les marches posées sur le terrain (issue #472)</h2>
+ *
+ * <p>L'estrade d'Elias — un plateau de planches en y=0, surélevé d'un bloc, et une rangée de marches
+ * devant — a été refusée trois fois de suite : sa seule marche est posée sur le <em>terrain</em>,
+ * pas sur un sol du plan. Elle est donc en y=0, son départ est hors du volume (on arrive de la
+ * place), et elle affleure le plateau (« floor » = y). Trois règles écrites pour l'escalier
+ * intérieur refusaient chacune ce cas. Désormais, une volée dont la première marche est sur la
+ * couche du terrain ({@code y == anchorY}) :</p>
+ *
+ * <ul>
+ *   <li>n'exige aucun appui sous son départ — c'est le terrain ;</li>
+ *   <li>peut avoir son départ hors du volume — c'est la place devant l'édifice ;</li>
+ *   <li>et toute volée peut ne compter qu'<strong>une</strong> marche ({@code floor == y}).</li>
+ * </ul>
+ *
+ * <p>Avec {@code facade} au lieu de {@code from}/{@code direction}, le moteur pose lui-même la
+ * volée au bord du volume sur cette façade, sur le terrain, montant vers l'intérieur, centrée sur
+ * {@code offset} ({@link #atFacade}) : le modèle n'a plus de coordonnée ni de sens à calculer.</p>
  *
  * <h2>Le volume est réservé</h2>
  *
@@ -66,8 +86,12 @@ import java.util.Optional;
 public record Staircase(int x, int y, int z, BlockStates.Dir dir, int floor, int width,
                         String material) {
 
-    /** Largeur maximale : au-delà, ce n'est plus un escalier mais une estrade. */
-    public static final int MAX_WIDTH = 3;
+    /**
+     * Largeur maximale. Trois voies suffisaient à un escalier d'étage ; un perron ou les marches
+     * d'une estrade en demandent davantage (cinq pour l'estrade d'Elias, #472). Au-delà, le plan
+     * est refusé — il n'est plus réduit en silence.
+     */
+    public static final int MAX_WIDTH = 9;
 
     /** Hauteur maximale d'une volée : au-delà, deux niveaux de plus de 32 blocs n'existent pas. */
     public static final int MAX_STEPS = 32;
@@ -98,6 +122,28 @@ public record Staircase(int x, int y, int z, BlockStates.Dir dir, int floor, int
                 step.number("floor", box.minY()), step.number("width", 1), step.state()));
     }
 
+    /**
+     * Une volée repérée par sa façade (#472) : posée sur le terrain ({@code groundY}), sur la
+     * rangée du bord du volume de cette façade, montant vers l'intérieur, et centrée sur
+     * {@code offset} (par défaut le milieu de la façade). Aucune coordonnée à calculer pour le
+     * modèle : c'est la classe d'erreurs des trois refus de l'estrade d'Elias qui disparaît.
+     */
+    public static Staircase atFacade(PlanStep step, Facing front,
+                                     int sizeX, int sizeZ, int groundY) {
+        BlockStates.Dir out = step.facade().direction(front);
+        int span = step.facade().span(front, sizeX, sizeZ);
+        int width = step.number("width", 1);
+        int start = step.number("offset", span / 2) - (Math.max(1, width) - 1) / 2;
+        int plane = switch (out) {
+            case NORTH, WEST -> 0;
+            case SOUTH -> sizeZ - 1;
+            case EAST -> sizeX - 1;
+        };
+        boolean alongX = !out.alongX();
+        return new Staircase(alongX ? start : plane, groundY, alongX ? plane : start,
+                out.opposite(), step.number("floor", groundY), width, step.state());
+    }
+
     /** Une direction cardinale écrite en minuscules, ou {@code null}. */
     static BlockStates.Dir direction(String raw) {
         for (BlockStates.Dir candidate : BlockStates.Dir.values()) {
@@ -122,32 +168,56 @@ public record Staircase(int x, int y, int z, BlockStates.Dir dir, int floor, int
         return dir.alongX() ? 1 : 0;
     }
 
+    /** La première marche repose sur le terrain : la couche {@code anchorY} du plan (#472). */
+    public boolean onTerrain(int groundY) {
+        return y == groundY;
+    }
+
     /**
      * Le motif qui rend cet escalier inconstructible, sans grille — bornes et cohérence seules.
      *
+     * @param groundY la couche du plan posée au niveau du terrain ({@code anchorY})
      * @return vide si l'escalier tient dans le volume {@code sx × sy × sz}
      */
-    public Optional<String> refusal(int sx, int sy, int sz) {
-        if (floor <= y) {
-            return Optional.of("le plancher d'arrivée « floor: " + floor + " » doit être AU-DESSUS "
-                    + "de la première marche (y=" + y + "). « floor » est le y du plancher de "
-                    + "l'étage, le bloc sur lequel on marche en haut.");
+    public Optional<String> refusal(int sx, int sy, int sz, int groundY) {
+        if (floor < y) {
+            return Optional.of("le plancher d'arrivée « floor: " + floor + " » est SOUS la première "
+                    + "marche (y=" + y + "). « floor » est le y du bloc sur lequel on marche en haut "
+                    + "(le dessus du plateau ou le plancher de l'étage) ; la dernière marche "
+                    + "l'affleure, donc floor ≥ y. Pour UNE marche devant un plateau dont le dessus "
+                    + "est en y=F, écris « from » avec y = F et « floor: F ».");
         }
         if (steps() > MAX_STEPS) {
             return Optional.of("volée de " + steps() + " marches, " + MAX_STEPS + " au plus.");
         }
-        if (y < 1) {
-            return Optional.of("la première marche est en y=" + y + " : elle doit être posée SUR "
-                    + "un sol, donc au moins en y=1.");
+        if (y < 1 && !onTerrain(groundY)) {
+            return Optional.of("la première marche est en y=" + y + ", sous le terrain (le terrain "
+                    + "porte la couche anchor.y=" + groundY + ") : pose-la sur un sol du plan "
+                    + "(y ≥ 1) ou sur le terrain (y=" + groundY + ").");
         }
         for (Placement p : placements()) {
-            if (p.x() < 0 || p.y() < 0 || p.z() < 0 || p.x() >= sx || p.y() >= sy || p.z() >= sz) {
-                return Optional.of("la volée, son départ ou son palier sortent du volume en "
-                        + p.x() + "/" + p.y() + "/" + p.z() + " (volume " + sx + " × " + sy + " × "
-                        + sz + "). Rapproche le pied de l'intérieur ou change de direction.");
+            boolean outside = p.x() < 0 || p.y() < 0 || p.z() < 0
+                    || p.x() >= sx || p.y() >= sy || p.z() >= sz;
+            if (outside && !(onTerrain(groundY) && departure(p))) {
+                return Optional.of("la volée, son départ ou son palier sortent du volume en x="
+                        + p.x() + " y=" + p.y() + " z=" + p.z() + " (volume x 0.." + (sx - 1)
+                        + ", y 0.." + (sy - 1) + ", z 0.." + (sz - 1) + "). Rapproche le pied de "
+                        + "l'intérieur ou change de direction ; pour des marches d'entrée, écris "
+                        + "« facade: FRONT » et le moteur les place.");
             }
         }
         return Optional.empty();
+    }
+
+    /** Une cellule du départ : les trois blocs libres devant la première marche d'une voie. */
+    private boolean departure(Placement p) {
+        for (int lane = 0; lane < width; lane++) {
+            if (p.x() == x + laneX() * lane - dir.dx() && p.z() == z + laneZ() * lane - dir.dz()
+                    && p.y() >= y && p.y() <= y + 2) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -196,14 +266,24 @@ public record Staircase(int x, int y, int z, BlockStates.Dir dir, int floor, int
         return out;
     }
 
-    /** Les cellules qui doivent porter : sous le départ, et le plancher sous le palier. */
+    /** Les appuis d'une volée intérieure, qui ne part jamais du terrain (planificateur #282). */
     public List<int[]> supports() {
+        return supports(Integer.MIN_VALUE);
+    }
+
+    /**
+     * Les cellules qui doivent porter : sous le départ, et le plancher sous le palier. Une volée
+     * posée sur le terrain n'en exige aucune sous son départ : c'est le terrain qui porte (#472).
+     */
+    public List<int[]> supports(int groundY) {
         List<int[]> out = new ArrayList<>();
         int n = steps();
         for (int lane = 0; lane < width; lane++) {
             int ox = x + laneX() * lane;
             int oz = z + laneZ() * lane;
-            out.add(new int[] {ox - dir.dx(), y - 1, oz - dir.dz()});
+            if (!onTerrain(groundY)) {
+                out.add(new int[] {ox - dir.dx(), y - 1, oz - dir.dz()});
+            }
             out.add(new int[] {ox + dir.dx() * n, floor, oz + dir.dz() * n});
         }
         return out;

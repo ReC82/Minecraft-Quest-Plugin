@@ -211,21 +211,31 @@ public final class BuildingPromptBuilder {
                 - op: light     → une source de lumière. Clés : « from », « to » (des points
                                   [x, y, z]), « spacing », « block » (minecraft:lantern,
                                   minecraft:torch…).
-                - op: staircase → L'ESCALIER ENTRE DEUX NIVEAUX. Tu donnes le pied, la
-                                  direction et le plancher à atteindre ; le moteur calcule le
-                                  nombre de marches, PERCE LA TRÉMIE dans le plancher, dégage la
-                                  hauteur libre, le départ et le palier, et protège ce volume contre
-                                  le mobilier. Clés : « from » (la PREMIÈRE MARCHE, posée sur le sol
-                                  du niveau de départ : y = y du sol + 1), « direction » (le POINT
-                                  CARDINAL vers lequel on monte : north, south, east ou west),
-                                  « floor » (le y du PLANCHER de l'étage, le bloc sur lequel on
-                                  marche en haut), « width » (1 à 3 voies, élargit vers +z pour une
-                                  montée est/ouest, vers +x pour une montée nord/sud), « block »
-                                  (un bloc d'escalier). La volée compte floor - y + 1 marches et
-                                  occupe autant de cellules dans sa direction, plus une cellule de
-                                  départ avant et une de palier après : toutes doivent être À
-                                  L'INTÉRIEUR, à au moins une cellule des murs extérieurs. Ne perce
-                                  JAMAIS la trémie toi-même.
+                - op: staircase → UN ESCALIER, de deux sortes. Le moteur calcule le nombre de
+                                  marches, leur orientation, la hauteur libre, le départ et le
+                                  palier, et protège ce volume contre le mobilier. Clés communes :
+                                  « floor » (le y du bloc sur lequel on marche EN HAUT : plancher
+                                  de l'étage ou DESSUS du plateau ; la dernière marche l'affleure,
+                                  donc floor ≥ y de la première marche ; floor = y : UNE marche),
+                                  « width » (1 à 9 voies), « block » (un bloc d'escalier).
+                                  1) MARCHES D'ENTRÉE posées sur le terrain — estrade, perron,
+                                  podium, plateforme basse : écris « facade » (FRONT, BACK, LEFT ou
+                                  RIGHT) et « offset » (le CENTRE de la volée le long de la façade,
+                                  par défaut le milieu), SANS « from » ni « direction ». Le moteur
+                                  pose la volée sur la rangée du bord du volume de cette façade,
+                                  au niveau du terrain, montant vers l'intérieur. Laisse cette
+                                  rangée libre devant le plateau (sinon les marches prennent la
+                                  place de son bord). Plateau en y=0 : « floor: 0 », une marche.
+                                  2) ESCALIER ENTRE DEUX NIVEAUX à l'intérieur : « from » (la
+                                  PREMIÈRE MARCHE, posée sur le sol du niveau de départ : y = y du
+                                  sol + 1), « direction » (le POINT CARDINAL vers lequel on monte :
+                                  north, south, east ou west), « width » élargit vers +z pour une
+                                  montée est/ouest, vers +x pour une montée nord/sud. La volée
+                                  compte floor - y + 1 marches et occupe autant de cellules dans sa
+                                  direction, plus une cellule de départ avant et une de palier
+                                  après : toutes À L'INTÉRIEUR, à au moins une cellule des murs
+                                  extérieurs. Le moteur PERCE LA TRÉMIE : ne la perce jamais
+                                  toi-même.
                 - op: bed       → UN LIT, assemblage de deux cellules : le pied et la tête. Clés :
                                   « from » (le PIED, [x, y, z] posé sur le sol), « direction »
                                   (north, south, east ou west : la direction de la TÊTE vue depuis
@@ -288,6 +298,12 @@ public final class BuildingPromptBuilder {
                     floor: 5
                     width: 1
                     block: minecraft:oak_stairs
+                  - op: staircase
+                    facade: FRONT
+                    offset: 4
+                    width: 3
+                    floor: 0
+                    block: minecraft:oak_stairs
                   - op: bed
                     from: [6, 1, 5]
                     direction: east
@@ -324,8 +340,8 @@ public final class BuildingPromptBuilder {
                       joueur venu du terrain franchit jusqu'au sol intérieur SANS SAUTER. Le
                       terrain est juste sous la couche « anchor.y » : avec un sol en y=0, mets
                       « anchor: y: 1 » (la fondation s'enfonce, l'entrée est de plain-pied), ou
-                      pose devant la porte, DANS le volume, des marches d'escalier tournées vers
-                      elle. Une porte posée hors des murs ne compte pas.
+                      pose devant la porte des marches d'entrée : « op: staircase » avec
+                      « facade: FRONT ». Une porte posée hors des murs ne compte pas.
                   [ ] DES VITRAGES DANS LES MURS, sur au moins DEUX façades différentes. Utilise
                       « op: window » ; une vitre posée hors d'un mur ne compte pas.
                   [ ] DE LA LUMIÈRE, à moins de 8 blocs de tout point intérieur.
@@ -464,6 +480,48 @@ public final class BuildingPromptBuilder {
                 dans un coin, et le mobilier longe les murs. « anchor: y: 1 » enterre la fondation
                 (y=0) : on entre de plain-pied. Il décrit, et le moteur calcule.
 
+                UN EXEMPLE VALIDE D'ESTRADE — PLATEAU BAS ET MARCHES D'ENTRÉE
+
+                id: exemple_estrade
+                name: "Estrade du crieur"
+                kind: decoration
+                front: NORTH
+                size:
+                  x: 7
+                  y: 4
+                  z: 6
+                steps:
+                  - op: box
+                    from: [0, 0, 1]
+                    to: [6, 0, 5]
+                    block: minecraft:oak_planks
+                  - op: staircase
+                    facade: FRONT
+                    width: 5
+                    floor: 0
+                    block: minecraft:oak_stairs
+                  - op: box
+                    from: [1, 1, 5]
+                    to: [5, 1, 5]
+                    block: minecraft:oak_fence
+                  - op: box
+                    from: [0, 1, 5]
+                    block: minecraft:stripped_oak_log
+                  - op: box
+                    from: [6, 1, 5]
+                    block: minecraft:stripped_oak_log
+                  - op: light
+                    from: [0, 2, 5]
+                    block: minecraft:lantern
+                  - op: light
+                    from: [6, 2, 5]
+                    block: minecraft:lantern
+
+                Le plateau (7 × 5, y=0) est posé sur le terrain : on s'y tient en y=1, un bloc
+                au-dessus de la place. La rangée z=0, sur la façade d'entrée, reste libre : le
+                moteur y pose les cinq marches centrées, tournées vers le plateau. Emprise 7 × 6,
+                aucune coordonnée de marche ni orientation à calculer.
+
                 CONTRAINTE DE LONGUEUR — LIS CECI
 
                 Ta réponse a un budget de sortie limité. Un document COUPÉ EN PLEIN MILIEU est
@@ -533,7 +591,7 @@ public final class BuildingPromptBuilder {
               Porte               op: door — deux moitiés, orientation et dégagement calculés
               Fenêtres, vitraux   instruction window, minecraft:glass_pane ou <couleur>_stained_glass_pane
               Lumière             op: light (lanternes posées ou suspendues, minecraft:iron_chain), torches
-              Escalier d'étage    op: staircase ; marches de perron : blocs d'escalier tournés vers la porte
+              Escaliers           op: staircase — entre étages, ou marches d'entrée (facade: FRONT)
               Tapis               minecraft:<couleur>_carpet, posé SUR le sol (il lui faut un bloc dessous)
               Plantes en pot      minecraft:potted_<plante> (potted_poppy, potted_fern, potted_azalea_bush…)
               Cuisine             minecraft:furnace, smoker, crafting_table, barrel, cauldron

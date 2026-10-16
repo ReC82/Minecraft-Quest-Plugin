@@ -313,7 +313,9 @@ public final class CommunityBossService implements PluginService, Listener {
     public Outcome testSpawn(String profileId, String playerName) {
         Optional<NamespacedKey> profile = Optional.empty();
         if (profileId != null && !profileId.isBlank()) {
-            NamespacedKey key = NamespacedKey.fromString(profileId.toLowerCase(Locale.ROOT));
+            String raw = profileId.trim().toLowerCase(Locale.ROOT);
+            // Forme courte « ogre » = « rpgquest:ogre », comme partout ailleurs (jamais minecraft:ogre).
+            NamespacedKey key = NamespacedKey.fromString(raw.contains(":") ? raw : "rpgquest:" + raw);
             if (key == null) {
                 return Outcome.fail("INVALID", "Identifiant de profil invalide.");
             }

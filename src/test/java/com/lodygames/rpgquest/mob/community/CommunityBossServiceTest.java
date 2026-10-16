@@ -341,6 +341,7 @@ class CommunityBossServiceTest {
     void testSpawnRefusesAQuestBossAndAnOfflinePlayer() {
         CommunityBossService service = newService();
         assertEquals("NOT_COMMUNITY", service.testSpawn("rpgquest:quest_boss", null).code());
+        assertEquals("NOT_COMMUNITY", service.testSpawn("quest_boss", null).code(), "forme courte = rpgquest:");
         assertEquals("OFFLINE", service.testSpawn(null, "Bob").code());
         assertTrue(service.snapshot().instances().isEmpty());
     }

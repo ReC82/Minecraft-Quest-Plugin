@@ -6392,6 +6392,27 @@ Wild**, en survie, près de waypoints existants.
     → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
     Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
 
+### TC-334 — Boss communautaire sans joueur dans le Wild, contour, surface (issue #471, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #471, sur **DEV seulement**, au moins un waypoint actif dans le
+Wild, un profil Boss jetable en *Boss communautaire*. **Ne pas activer le scheduler sans l'accord du
+propriétaire** : les étapes 1–4 utilisent l'apparition de test.
+
+1.  Tous les comptes au **Hub** (ou dans les Claims). PlugAdmin → Boss communautaires du Wild →
+    Apparition de test, « Près de » = **N'importe où dans le Wild**. **Attendu** : SUCCESS/SPAWNED (plus
+    jamais NO_PLAYER) ; au Hub, chacun lit « ⚔ Boss communautaire : <nom> vient d'apparaître dans le
+    biome …, à environ N blocs au nord/à l'est… du waypoint <nom réel> (apparition de test) ».
+2.  Aller au waypoint annoncé (voyage normal), suivre la direction. **Attendu** : boss trouvé à ~N blocs,
+    debout sur un sol naturel à ciel ouvert (pas dans une grotte, l'eau, un arbre, un toit) ; à moins de
+    48 blocs, **contour lumineux** visible à travers le relief, et barre de vie ; en s'éloignant au-delà
+    de 48 blocs le contour s'éteint (≤ 2 s).
+3.  Décocher « Contour lumineux », Enregistrer, revenir près du boss. **Attendu** : plus de contour. Le
+    recocher. Laisser le boss loin de tout joueur, redémarrer le serveur, revenir. **Attendu** : un seul
+    boss, toujours là, contour à l'approche.
+4.  (Facultatif) Désactiver tous les waypoints du Wild ou tester un profil limité à un monde sans
+    waypoint. **Attendu** : échec lisible « Aucun repère dans le Wild… », rien d'annoncé.
+5.  Avec l'accord du propriétaire seulement : scheduler actif, tout le monde au Hub, attendre
+    l'échéance. **Attendu** : boss apparu dans le Wild + annonce à tous. Restaurer ensuite les réglages.
 
 ### TC-330 — Participation et récompenses des boss communautaires (issue #176, PENDING MANUAL VALIDATION)
 

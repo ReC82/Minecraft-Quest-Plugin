@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Boss communautaires : apparition sans joueur dans le Wild, contour, surface (#471)
+
+### Changement
+
+Le boss communautaire n'exige plus de joueur dans le Wild (fin du `NO_PLAYER`) : recherche ancrée sur les
+waypoints actifs du Wild (et les joueurs du Wild), chunks chargés ponctuellement en asynchrone, sans
+génération, bornés, sans ticket. Contour lumineux à proximité et « surface uniquement » réglables dans
+PlugAdmin (`glow`, `glow-radius`, `surface-only` dans `mobs/community-bosses.yml`, défauts `true`, `48`,
+`true`). Annonce : « à l'est » au lieu de « au est », coordonnées arrondies si aucun waypoint à portée.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin (AWS). Aucune migration, aucun fichier créé ni
+réécrit : un `mobs/community-bosses.yml` existant garde `enabled`, `interval-minutes`, `max-active` et
+`participation-radius` tels quels ; les trois nouvelles clés prennent leur défaut en lecture tant que
+personne n'enregistre le formulaire. **Le scheduler n'est ni activé ni modifié par ce lot.**
+
+### Sauvegarde préalable
+
+JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygames.sh` / `deploy.sh`).
+
+### Déploiement
+
+Voir le rapport `docs/claude-reports/` de #471 (scripts officiels, redémarrage DEV).
+
+### Validation
+
+TC-334 (PENDING MANUAL VALIDATION). Logs : « Boss communautaire … apparu … (biome …, waypoint …) » ou
+« pas d'apparition à cette échéance — … (NO_ANCHOR / NO_SAFE_LOCATION) ».
+
+### Rollback
+
+Remettre le JAR sauvegardé et redéployer le PlugAdmin précédent ; les clés `glow`, `glow-radius`,
+`surface-only` éventuellement écrites sont ignorées par l'ancien JAR.
+
+---
+
 ## 2026-10-16 - Éditeur PlugAdmin des tables de récompenses aléatoires (#177, tranche 2)
 
 ### Changement

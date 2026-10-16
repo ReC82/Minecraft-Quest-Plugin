@@ -71,12 +71,18 @@ JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygame
 
 ### Déploiement
 
-`scripts/deploy-verygames.sh -y` depuis la branche d'intégration après CI verte, redémarrage DEV par
-`scripts/verygames-restart.sh`, `scripts/plugadmin/deploy.sh`. Détails réels : rapport de session #176.
+Effectué le 2026-10-16 ~11:58 (heure locale) : `scripts/deploy-verygames.sh -y` depuis `bc12e70`
+(merge de la PR #458, CI verte ; JAR 3 250 590 o, SHA-256 `a56c4c77…ba5c0e7`), sauvegarde
+`~/.local/share/rpgquest/verygames-backups/rpgquest-20261016T095803Z-predeploy.jar` (JAR #175,
+3 225 009 o, SHA-256 `80ac1073…cd3ce`), `scripts/verygames-restart.sh` (seul le propriétaire était
+connecté), `scripts/plugadmin/deploy.sh`.
 
 ### Validation
 
-PENDING MANUAL VALIDATION : TC-330.
+Vérifié : DEV de nouveau ONLINE ; action `boss.community.status` réussie sur DEV avec les nouveaux champs
+`recentDefeats` (vide) et `participationRewards` (profil `claude_diag_boss` : aucune) ; PlugAdmin
+servi contient la section « Victoires récentes et participants ». `entitlements.yml` absent sur DEV :
+aucune récompense ne sera déclarée tant qu'il n'existe pas. PENDING MANUAL VALIDATION : TC-330.
 
 ### Rollback
 

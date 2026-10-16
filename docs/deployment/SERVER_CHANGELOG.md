@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Atelier bâtiments : marches d'entrée posées sur le terrain (#472)
+
+### Changement
+
+Moteur de plans (plugin) : `op: staircase` accepte une volée dont la première marche repose sur le
+terrain (`y = anchor.y`) — départ hors volume, pas d'appui exigé, une seule marche (`floor` = y),
+marches à la place du bord d'un plateau — et une forme `facade: FRONT` (+ `offset`, `width`) où le
+moteur place lui-même les marches d'entrée. Largeur 1 à 9 (refus explicite au-delà, plus de
+réduction silencieuse à 3). Message « sort du volume » avec les bornes par axe. Prompt de
+planification PlugAdmin : les deux usages documentés, exemple minimal par façade et exemple complet
+d'estrade.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (moteur de plans) **et** redéploiement de PlugAdmin (prompt).
+Aucune migration, aucun fichier de configuration ni bâtiment existant modifié : les plans déjà
+générés se régénèrent à l'identique (aucune volée existante ne part du terrain).
+
+### Sauvegarde préalable
+
+JAR précédent (sauvegarde datée automatique de `deploy-verygames.sh`) ; installation PlugAdmin
+précédente (sauvegarde de `scripts/plugadmin/deploy.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh` ; `scripts/plugadmin/deploy.sh`.
+Détails réels (commit, empreintes) dans le rapport de session #472.
+
+### Validation
+
+Atelier bâtiments : relancer « L'estrade d'Elias » (projet `e7802b8d`) — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Remettre le JAR `rpgquest-<horodatage>-predeploy.jar` et redémarrer ; PlugAdmin : réinstaller la
+sauvegarde de `deploy.sh`.
+
 ## 2026-10-16 - Journal : quêtes de palier du kit reconnaissables, PNJ des remises nommé (#475)
 
 ### Changement

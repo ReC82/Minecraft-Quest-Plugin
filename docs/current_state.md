@@ -992,6 +992,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   descriptions de 12 000 caractères ; échec d'enregistrement affiché dans l'Atelier.
   `PENDING MANUAL VALIDATION` : TC-294 à TC-297. Adaptation au terrain réel au moment de la pose :
   non traitée (suite de #291).
+- **Marches d'entrée sur le terrain (estrade, perron)** *(issue #472, 16/10/2026)* — `op: staircase`
+  accepte une volée posée sur le terrain (départ hors volume, une seule marche, largeur 1 à 9) et la
+  forme `facade: FRONT` où le moteur place les marches ; prompt de planification aligné (exemple
+  d'estrade). L'estrade d'Elias passe validation, audit et génération en test automatisé ; génération
+  IA réelle et pose en jeu : PENDING MANUAL VALIDATION. Voir la Bible.
 - **Retirer un bâtiment de la bibliothèque** *(issue #284, déployé sur DEV le 12/10/2026, `7025bd8`)* — action
   `building.definition.retire` : refus si le bâtiment est posé ou si c'est un exemple embarqué ;
   sinon fichiers archivés dans `buildings/.retired/`, pas de réapparition au redémarrage, historique

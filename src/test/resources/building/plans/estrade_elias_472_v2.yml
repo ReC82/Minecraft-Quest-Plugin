@@ -1,0 +1,39 @@
+id: estrade_elias
+name: "L'estrade d'Elias"
+kind: decoration
+front: NORTH
+size:
+  x: 7
+  y: 6
+  z: 6
+steps:
+  - op: box
+    from: [0, 0, 0]
+    to: [6, 0, 5]
+    block: minecraft:oak_planks
+  - op: staircase
+    from: [1, 0, 5]
+    direction: north
+    floor: 1
+    width: 5
+    block: minecraft:oak_stairs
+  - op: box
+    from: [1, 1, 5]
+    to: [5, 1, 5]
+    block: minecraft:oak_fence
+  - op: box
+    from: [0, 1, 5]
+    to: [0, 1, 5]
+    block: minecraft:stripped_oak_log
+  - op: light
+    from: [0, 2, 5]
+    to: [0, 2, 5]
+    block: minecraft:lantern
+  - op: box
+    from: [6, 1, 5]
+    to: [6, 1, 5]
+    block: minecraft:stripped_oak_log
+  - op: light
+    from: [6, 2, 5]
+    to: [6, 2, 5]
+    block: minecraft:lantern

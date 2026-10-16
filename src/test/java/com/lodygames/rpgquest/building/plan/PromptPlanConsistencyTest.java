@@ -75,6 +75,23 @@ class PromptPlanConsistencyTest {
                 "deux étages atteignables attendus : " + report.metrics());
     }
 
+    /**
+     * #472 : l'exemple d'estrade — plateau sur le terrain, marches d'entrée par façade — est
+     * accepté et passe l'audit. C'est le gabarit que le modèle imitera pour l'estrade d'Elias.
+     */
+    @Test
+    void theEstradeExampleIsAcceptedAndPassesTheArchitecturalContract() {
+        String yaml = section("UN EXEMPLE VALIDE D'ESTRADE", "Le plateau (7 × 5");
+        List<String> problems = new ArrayList<>();
+        BuildingPlan plan = BuildingPlanYaml.read(yaml, problems)
+                .orElseThrow(() -> new AssertionError("exemple d'estrade refusé : " + problems));
+        BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
+        assertTrue(expansion.ok(), expansion.error());
+        ArchitecturalAudit.Report report = ArchitecturalAudit.audit(expansion.blueprint(),
+                plan.front(), plan.rules(), expansion.provenance(), plan.anchorY());
+        assertTrue(report.blocking().isEmpty(), "l'estrade du prompt : " + report.blocking());
+    }
+
     // ---- Les exemples minimaux --------------------------------------------------------------
 
     /** Chaque exemple minimal, inséré tel quel dans un plan, est accepté par le vrai parseur. */

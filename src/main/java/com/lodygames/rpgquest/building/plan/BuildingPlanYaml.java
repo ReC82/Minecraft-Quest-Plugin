@@ -223,7 +223,8 @@ public final class BuildingPlanYaml {
         // Une zone n'est pas exigée des primitives repérées par façade : elles n'en ont pas besoin,
         // et en réclamer une rendrait la syntaxe inutilement lourde.
         PlanBox box;
-        if (map.get("from") == null && byFacade(k)) {
+        if (map.get("from") == null && byFacade(k)
+                && (facade != null || k != PlanStep.Kind.STAIRCASE)) {
             box = PlanBox.at(0, 0, 0);
         } else {
             Optional<PlanBox> parsed = box(map, where, problems);
@@ -252,9 +253,13 @@ public final class BuildingPlanYaml {
         return PlanStep.semanticKind(kind);
     }
 
-    /** Ces primitives se repèrent par façade et décalage, pas par une zone. */
+    /**
+     * Ces primitives se repèrent par façade et décalage, pas par une zone. L'escalier ne l'est que
+     * s'il porte une « facade » (marches d'entrée posées sur le terrain, #472).
+     */
     private static boolean byFacade(PlanStep.Kind kind) {
-        return kind == PlanStep.Kind.DOOR || kind == PlanStep.Kind.WINDOW;
+        return kind == PlanStep.Kind.DOOR || kind == PlanStep.Kind.WINDOW
+                || kind == PlanStep.Kind.STAIRCASE;
     }
 
     /**

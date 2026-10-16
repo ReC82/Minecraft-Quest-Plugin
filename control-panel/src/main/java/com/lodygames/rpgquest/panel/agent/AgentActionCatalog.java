@@ -17,6 +17,13 @@ import java.util.regex.Pattern;
  */
 public final class AgentActionCatalog {
 
+    /** Issue #422 — formats repris du plugin (RewardCatalogLoader, RewardEntitlement). */
+    private static final java.util.Set<String> ENTITLEMENT_STATUSES = java.util.Set.of("PENDING", "DELIVERED", "REVOKED");
+    private static final java.util.regex.Pattern ENTITLEMENT_REWARD = java.util.regex.Pattern.compile("[a-z0-9_.-]{1,64}");
+    private static final java.util.regex.Pattern ENTITLEMENT_REFERENCE =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,64}");
+    private static final java.util.regex.Pattern ENTITLEMENT_KEY =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_:.-]{1,160}");
     private static final Pattern PLAYER_REF = Pattern.compile("[A-Za-z0-9_\\-]{1,40}|[0-9a-fA-F\\-]{36}");
     private static final Pattern VARIABLE_KEY = Pattern.compile("[A-Za-z0-9_.:\\-]{1,128}");
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-zA-Z0-9_.:\\-/]{1,128}");
@@ -689,6 +696,14 @@ public final class AgentActionCatalog {
                 "Reprendre le paiement d'une récompense due", "player.catalog");
         addSensitiveWrite("economy.debt.settle", Permission.ECONOMY_WRITE, true,
                 "Marquer une récompense due comme réglée à la main", "player.catalog");
+        // Issue #422 — droits à récompense (concours, événements). Mêmes permissions que la monnaie :
+        // déclarer un droit fait entrer des objets en jeu, révoquer en retire la promesse.
+        add("entitlement.list", Permission.ECONOMY_READ, false, true,
+                "Lire les droits à récompense d'un joueur");
+        addSensitiveWrite("entitlement.declare", Permission.ECONOMY_WRITE, true,
+                "Déclarer un droit à récompense");
+        addSensitiveWrite("entitlement.revoke", Permission.ECONOMY_WRITE, true,
+                "Révoquer un droit à récompense en attente");
         // Issue #200 — pont vers les droits Minecraft. Distribuer un droit de construction ou un
         // bypass est au moins aussi sensible que gérer un groupe du panel : même permission.
         add("mc.rights.read", Permission.USER_MANAGE, false, true,
@@ -2338,6 +2353,56 @@ public final class AgentActionCatalog {
                     }
                     params.put("limit", Integer.toString(n));
                 }
+            }
+            case "entitlement.list" -> {
+                String status = trim(form.get("status"));
+                if (!status.isEmpty()) {
+                    if (!ENTITLEMENT_STATUSES.contains(status)) {
+                        return Validation.fail("Statut inconnu (PENDING, DELIVERED ou REVOKED).");
+                    }
+                    params.put("status", status);
+                }
+                String limit = trim(form.get("limit"));
+                if (!limit.isEmpty()) {
+                    int n;
+                    try {
+                        n = Integer.parseInt(limit);
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Nombre de droits invalide.");
+                    }
+                    if (n < 1 || n > 100) {
+                        return Validation.fail("Nombre de droits hors bornes (1 à 100).");
+                    }
+                    params.put("limit", Integer.toString(n));
+                }
+            }
+            case "entitlement.declare" -> {
+                String reward = trim(form.get("reward"));
+                if (!ENTITLEMENT_REWARD.matcher(reward).matches()) {
+                    return Validation.fail("Récompense manquante ou invalide (clé du catalogue entitlements.yml).");
+                }
+                String reference = trim(form.get("reference"));
+                if (!ENTITLEMENT_REFERENCE.matcher(reference).matches()) {
+                    return Validation.fail("Référence obligatoire : lettres, chiffres, _ . - (64 caractères au "
+                            + "plus). La même référence ne crée jamais un second droit.");
+                }
+                params.put("reward", reward);
+                params.put("reference", reference);
+            }
+            case "entitlement.revoke" -> {
+                String key = trim(form.get("key"));
+                if (!ENTITLEMENT_KEY.matcher(key).matches()) {
+                    return Validation.fail("Identifiant de droit manquant ou invalide.");
+                }
+                String reason = trim(form.get("reason"));
+                if (reason.isEmpty()) {
+                    return Validation.fail("Une raison est obligatoire : elle est conservée avec le droit révoqué.");
+                }
+                if (reason.length() > 200 || reason.indexOf('\n') >= 0) {
+                    return Validation.fail("Raison trop longue (max 200) ou multi-ligne.");
+                }
+                params.put("key", key);
+                params.put("reason", reason);
             }
             case "economy.debt.retry" -> {
                 String grant = trim(form.get("grant"));

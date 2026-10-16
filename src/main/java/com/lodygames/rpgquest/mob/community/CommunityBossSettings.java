@@ -1,0 +1,42 @@
+package com.lodygames.rpgquest.mob.community;
+
+/**
+ * Issue #175 — réglages globaux du scheduler des boss communautaires ({@code mobs/community-bosses.yml},
+ * édités depuis PlugAdmin, jamais à la main).
+ *
+ * <p>Désactivé par défaut : un serveur qui reçoit ce JAR ne voit apparaître aucun boss tant qu'un
+ * administrateur n'a pas explicitement activé le scheduler. Les profils éligibles sont portés par les
+ * profils eux-mêmes ({@code category: BOSS} + {@code boss-mode: COMMUNITY}) ; les mondes et biomes
+ * autorisés aussi ({@code worlds}/{@code biomes} du profil, toujours intersectés avec les mondes Wild).</p>
+ *
+ * @param enabled         scheduler actif (false = pause immédiate, aucun boss existant n'est supprimé)
+ * @param intervalMinutes délai entre deux échéances (défaut 15)
+ * @param maxActive       nombre maximum de boss communautaires actifs en même temps (défaut 1)
+ */
+public record CommunityBossSettings(boolean enabled, int intervalMinutes, int maxActive) {
+
+    public static final int DEFAULT_INTERVAL_MINUTES = 15;
+    public static final int DEFAULT_MAX_ACTIVE = 1;
+    public static final int MIN_INTERVAL_MINUTES = 1;
+    public static final int MAX_INTERVAL_MINUTES = 24 * 60;
+    public static final int MAX_MAX_ACTIVE = 10;
+
+    public CommunityBossSettings {
+        if (intervalMinutes < MIN_INTERVAL_MINUTES || intervalMinutes > MAX_INTERVAL_MINUTES) {
+            throw new IllegalArgumentException("L'intervalle doit être compris entre " + MIN_INTERVAL_MINUTES
+                    + " et " + MAX_INTERVAL_MINUTES + " minutes : " + intervalMinutes);
+        }
+        if (maxActive < 1 || maxActive > MAX_MAX_ACTIVE) {
+            throw new IllegalArgumentException("Le nombre maximum de boss simultanés doit être compris entre 1 et "
+                    + MAX_MAX_ACTIVE + " : " + maxActive);
+        }
+    }
+
+    public static CommunityBossSettings defaults() {
+        return new CommunityBossSettings(false, DEFAULT_INTERVAL_MINUTES, DEFAULT_MAX_ACTIVE);
+    }
+
+    public long intervalMillis() {
+        return intervalMinutes * 60_000L;
+    }
+}

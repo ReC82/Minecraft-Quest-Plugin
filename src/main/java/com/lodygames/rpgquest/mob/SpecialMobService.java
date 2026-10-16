@@ -39,6 +39,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.event.world.EntitiesLoadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
@@ -202,14 +203,39 @@ public final class SpecialMobService implements PluginService, Listener {
     /** Redécouvre les variantes déjà présentes (rechargement de chunk ou redémarrage) sans les recompter. */
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent event) {
-        for (Entity entity : event.getChunk().getEntities()) {
+        rediscover(java.util.Arrays.asList(event.getChunk().getEntities()));
+    }
+
+    /**
+     * Issue #175 : sur Paper, les entités d'un chunk sont chargées <em>après</em> le chunk lui-même --
+     * {@link ChunkLoadEvent} peut les voir vides. {@link EntitiesLoadEvent} est le moment fiable pour
+     * reconstituer population et barre de vie d'un boss après redémarrage. Idempotent (ensembles).
+     */
+    @EventHandler
+    public void onEntitiesLoad(EntitiesLoadEvent event) {
+        rediscover(event.getEntities());
+    }
+
+    private void rediscover(List<Entity> entities) {
+        for (Entity entity : entities) {
             specialMobId(entity).ifPresent(id -> {
                 trackAlive(id, entity.getUniqueId());
                 registry.find(id)
-                        .filter(def -> def.category() == MobCategory.BOSS)
+                        .filter(def -> def.category() == MobCategory.BOSS && entity instanceof LivingEntity)
                         .ifPresent(def -> ensureBossBar((LivingEntity) entity, def));
             });
         }
+    }
+
+    /**
+     * Issue #175 : retire une variante sans mort (retrait admin) en la décomptant de la population et
+     * en fermant sa barre de vie -- jamais de drop, jamais d'XP. Sans effet de suivi si l'entité n'est
+     * pas une variante (elle est tout de même retirée).
+     */
+    public void discard(Entity entity) {
+        specialMobId(entity).ifPresent(id -> untrack(id, entity.getUniqueId()));
+        removeBossBar(entity.getUniqueId());
+        entity.remove();
     }
 
     @EventHandler(ignoreCancelled = true)

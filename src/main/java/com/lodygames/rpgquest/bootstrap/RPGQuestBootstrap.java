@@ -249,6 +249,8 @@ public final class RPGQuestBootstrap {
     private QuestJournalService questJournalService;
     private ResourceNodeService resourceNodeService;
     private SpecialMobService mobService;
+    private com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore communityBossSettingsStore;
+    private com.lodygames.rpgquest.mob.community.CommunityBossService communityBossService;
     private ProgressionService progressionService;
     private EntitlementService entitlementService;
     private com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService rewardEntitlementService;
@@ -903,8 +905,28 @@ public final class RPGQuestBootstrap {
         // Issue #168 : hostiles de jour comme de nuit dans les mondes Wild configurés, immunité au
         // soleil (jamais aux autres dégâts de feu) et araignées agressives en pleine lumière.
         // Strictement limité aux mondes Wild : Hub et Claims inchangés.
-        registry.start(new com.lodygames.rpgquest.wild.WildHostileRulesService(plugin,
-                () -> configService.current().wild(), () -> configService.current().travel().wildWorld()));
+        com.lodygames.rpgquest.wild.WildHostileRulesService wildRules = new com.lodygames.rpgquest.wild.WildHostileRulesService(
+                plugin, () -> configService.current().wild(), () -> configService.current().travel().wildWorld());
+        registry.start(wildRules);
+
+        // Issue #175 : boss communautaires du Wild, construits sur le moteur de mobs spéciaux (même
+        // registre, même application de profil). Hub et Claims exclus explicitement, en plus du
+        // périmètre Wild. État persistant en fichier de données (aucune table, aucune migration).
+        communityBossSettingsStore = new com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore(
+                plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
+        communityBossService = new com.lodygames.rpgquest.mob.community.CommunityBossService(
+                plugin, plugin.getSLF4JLogger(), mobRegistry, mobService, communityBossSettingsStore,
+                new com.lodygames.rpgquest.mob.community.CommunityBossStateStore(
+                        plugin.getDataFolder().toPath().resolve("state"), plugin.getSLF4JLogger()),
+                wildRules::isWildWorld,
+                () -> java.util.stream.Stream.of(configService.current().hub().world(),
+                                configService.current().claims().world())
+                        .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet()),
+                zoneRegistry, () -> cityRegistry.index(), () -> waypointService.all(),
+                java.util.concurrent.ThreadLocalRandom.current(), System::currentTimeMillis,
+                task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
+                com.lodygames.rpgquest.mob.community.CommunityBossService.loadedChunksOnly());
+        registry.start(communityBossService);
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -1102,6 +1124,8 @@ public final class RPGQuestBootstrap {
         // aucune opération n'échoue pour autant. Un setter plutôt qu'un paramètre de plus dans une
         // liste qui en compte déjà une trentaine.
         agentActions.setBuildingHistoryRepository(buildingHistoryRepository);
+        // Issue #175 : boss communautaires (état, réglages, apparition de test, retrait).
+        agentActions.setCommunityBosses(communityBossService, communityBossSettingsStore);
         // Issue #94 : génération de bâtiments depuis un plan déclaratif. Même logique de setter
         // facultatif — sans WorldEdit, l'atelier refuse d'écrire et la génération échoue avec son
         // motif, sans empêcher quoi que ce soit d'autre de fonctionner.

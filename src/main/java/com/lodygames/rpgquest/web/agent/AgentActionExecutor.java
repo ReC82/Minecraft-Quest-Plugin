@@ -930,7 +930,9 @@ public final class AgentActionExecutor {
             details.put("enabled", view.enabled());
             details.put("intervalMinutes", view.intervalMinutes());
             details.put("maxActive", view.maxActive());
-            details.put("nextDue", view.nextDueMillis());
+            if (view.nextDueMillis() != null) { // Map.copyOf de l'outcome refuse les valeurs nulles.
+                details.put("nextDue", view.nextDueMillis());
+            }
             details.put("lastSpawn", view.lastSpawnMillis());
             details.put("lastAttempt", view.lastAttemptMillis());
             details.put("lastOutcome", view.lastOutcome());

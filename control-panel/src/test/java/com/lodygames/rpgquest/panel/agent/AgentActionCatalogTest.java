@@ -422,6 +422,72 @@ class AgentActionCatalogTest {
         assertEquals(Permission.MOB_TEST_SPAWN, AgentActionCatalog.spec("mob.test.clear").orElseThrow().permission());
     }
 
+    // ---- Boss communautaires (issue #175) ----------------------------------------------
+
+    @Test
+    void communityBossSettingsAreBoundedAndNormalised() {
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("enabled", "true", "interval_minutes", "15", "max_active", "1"));
+        assertTrue(ok.valid(), ok.error());
+        assertEquals("true", ok.params().get("enabled"));
+        assertEquals("15", ok.params().get("interval_minutes"));
+        AgentActionCatalog.Validation paused = AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "15", "max_active", "1"));
+        assertEquals("false", paused.params().get("enabled"), "case décochée = pause");
+        assertFalse(AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "0", "max_active", "1")).valid());
+        assertFalse(AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "15", "max_active", "11")).valid());
+    }
+
+    @Test
+    void communityBossTestSpawnAndRemoveRequireConfirmationAndValidTargets() {
+        assertFalse(AgentActionCatalog.validate("boss.community.test.spawn", Map.of()).valid(),
+                "confirmation manquante");
+        AgentActionCatalog.Validation any = AgentActionCatalog.validate("boss.community.test.spawn",
+                Map.of("confirm", "true"));
+        assertTrue(any.valid(), any.error());
+        assertFalse(any.params().containsKey("player"), "joueur facultatif");
+        AgentActionCatalog.Validation near = AgentActionCatalog.validate("boss.community.test.spawn",
+                Map.of("confirm", "true", "player", "Steve", "mob_id", "rpgquest:ogre"));
+        assertEquals("Steve", near.params().get("player"));
+        assertEquals("rpgquest:ogre", near.params().get("mob_id"));
+        assertFalse(AgentActionCatalog.validate("boss.community.test.spawn",
+                Map.of("confirm", "true", "player", "a b")).valid());
+
+        assertFalse(AgentActionCatalog.validate("boss.community.remove",
+                Map.of("target", "tests")).valid(), "confirmation manquante");
+        assertTrue(AgentActionCatalog.validate("boss.community.remove",
+                Map.of("target", "tests", "confirm", "true")).valid());
+        assertTrue(AgentActionCatalog.validate("boss.community.remove",
+                Map.of("target", "123e4567-e89b-12d3-a456-426614174000", "confirm", "true")).valid());
+        assertFalse(AgentActionCatalog.validate("boss.community.remove",
+                Map.of("target", "../etc", "confirm", "true")).valid());
+        assertEquals(Permission.MOB_READ, AgentActionCatalog.spec("boss.community.status").orElseThrow().permission());
+        assertEquals(Permission.MOB_WRITE,
+                AgentActionCatalog.spec("boss.community.settings.set").orElseThrow().permission());
+        assertEquals(Permission.MOB_TEST_SPAWN,
+                AgentActionCatalog.spec("boss.community.remove").orElseThrow().permission());
+    }
+
+    @Test
+    void bossModeIsSentOnlyForBossProfiles() {
+        AgentActionCatalog.Validation boss = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE",
+                "display_name", "Ogre", "spawn_chance", "0", "boss_mode", "community", "community_weight", "3"));
+        assertTrue(boss.valid(), boss.error());
+        assertEquals("COMMUNITY", boss.params().get("boss_mode"));
+        assertEquals("3", boss.params().get("community_weight"));
+        AgentActionCatalog.Validation special = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:red", "category", "SPECIAL", "entity_type", "CREEPER",
+                "display_name", "Rouge", "spawn_chance", "0.1", "boss_mode", "COMMUNITY"));
+        assertTrue(special.valid(), special.error());
+        assertFalse(special.params().containsKey("boss_mode"));
+        assertFalse(AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE",
+                "display_name", "Ogre", "spawn_chance", "0", "community_weight", "0")).valid());
+    }
+
     // ---- Exploitation serveur (issue #95) --------------------------------------------
 
     @Test

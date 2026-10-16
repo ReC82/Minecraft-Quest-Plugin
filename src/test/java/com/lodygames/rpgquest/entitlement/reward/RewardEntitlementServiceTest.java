@@ -203,6 +203,19 @@ class RewardEntitlementServiceTest {
     }
 
     @Test
+    void bossDeclarationsAreIdempotentAndRefusedWhenDisabled() throws Exception {
+        String key = "boss:00000000-0000-0000-0000-0000000000b0:diamonds:" + player.getUniqueId();
+        RewardEntitlement.Declaration declaration = new RewardEntitlement.Declaration(key, player.getUniqueId(),
+                RewardSource.BOSS, "rpgquest:ogre@x", "diamonds", "Trois diamants — Ogre");
+        assertEquals(1, get(service.declareAll(List.of(declaration))));
+        assertEquals(0, get(service.declareAll(List.of(declaration))), "seconde mort constatée : aucun doublon");
+        assertEquals(RewardSource.BOSS, get(repository.find(key)).orElseThrow().source());
+
+        RewardEntitlementService disabled = newService(CATALOG.replace("enabled: true", "enabled: false"));
+        assertThrows(Exception.class, () -> get(disabled.declareAll(List.of(declaration))));
+    }
+
+    @Test
     void adminDeclarationIsIdempotentPerReference() throws Exception {
         RewardEntitlementService.DeclareOutcome first = get(service.declareAdmin(player.getUniqueId(), "diamonds", "concours-1"));
         RewardEntitlementService.DeclareOutcome again = get(service.declareAdmin(player.getUniqueId(), "diamonds", "concours-1"));

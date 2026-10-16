@@ -73,7 +73,8 @@ public final class QuestMessagesService implements PluginService {
                 if (!disk.isSet(entry.getKey())) {
                     disk.set(entry.getKey(), entry.getValue());
                     changed = true;
-                } else if (entry.getValue().equals(upgradeOf(entry.getKey(), disk.getString(entry.getKey())))) {
+                } else if (entry.getValue().equals(upgradeOf(entry.getKey(), disk.getString(entry.getKey())))
+                        || isReplacedDefault(entry.getKey(), disk.getString(entry.getKey()))) {
                     // Ancien texte par défaut resté tel quel : remplacé par le nouveau. Un texte
                     // modifié à la main ne correspond à aucun ancien défaut et n'est jamais touché.
                     disk.set(entry.getKey(), entry.getValue());
@@ -106,6 +107,21 @@ public final class QuestMessagesService implements PluginService {
                     + "<yellow>+<amount> pièce(s)</yellow> <gray>— solde :</gray> <white><balance></white>",
             "quest.reward-money-failed", "<red>Ta récompense en pièces n'a pas pu être créditée. Rien n'a été "
                     + "perdu de ta progression : signale-le à un administrateur.</red>");
+
+    /**
+     * Anciens textes par défaut remplacés <em>tels quels</em> par le texte embarqué (issue #467 :
+     * plus aucun renvoi à {@code /quests} dans un message joueur). Un texte modifié à la main n'est
+     * égal à aucun d'eux et reste intact.
+     */
+    static boolean isReplacedDefault(String key, String onDisk) {
+        return onDisk != null && onDisk.equals(REPLACED_DEFAULTS.get(key));
+    }
+
+    private static final Map<String, String> REPLACED_DEFAULTS = Map.of(
+            "quest.started-objectives-header", "<green><bold>Quête commencée :</bold></green> <white><quest></white> "
+                    + "<gray>— à faire (suivi dans</gray> <white>/quests</white><gray>) :</gray>",
+            "quest.step-advanced-header", "<gold><bold>Étape suivante :</bold></gold> <white><quest></white> "
+                    + "<gray>— à faire maintenant (suivi dans</gray> <white>/quests</white><gray>) :</gray>");
 
     public QuestMessages current() {
         return current;

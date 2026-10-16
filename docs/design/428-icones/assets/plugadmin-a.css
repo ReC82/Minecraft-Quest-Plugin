@@ -1,0 +1,16 @@
+/* Variante A — sobre, « Minecraft modernisé » : on garde la charte PlugAdmin (Bootstrap bleu),
+   les icônes pixel art apportent seules l'univers ; tuiles neutres, aucune police pixel. */
+:root{--lq-tile-bg:#f2f5fa;--lq-tile-line:#d6deea}
+.lq-proto-note{font-size:12.5px;color:var(--txt-2);margin:0 0 14px}
+.lq-qlist{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:8px}
+.lq-qrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius-s);padding:8px 12px}
+.lq-qrow-t{font-weight:650}
+.lq-qcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
+.lq-qhead{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.lq-qhead .badge{margin-left:6px}
+.lq-qname{font-size:19px;font-weight:750;margin:0 0 4px;text-transform:none;letter-spacing:0;color:var(--txt)}
+.lq-list li{padding-left:0;gap:8px 10px}
+.lq-list li::before{display:none}
+.lq-giver{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lq-actions{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 0}

@@ -1,0 +1,17 @@
+/* Variante B — « RPG fantasy voxel » : nuit bleutée, cadres bois et or, emplacements biseautés,
+   titres serif. Même structure HTML, mêmes contrastes minimaux (texte ≥ 4.5:1). */
+:root{--bg:#121626;--panel:#1d2236;--line:#5b4127;--gold:#f5c95c;--lq-tile-bg:#3a2a1a;--lq-tile-line:#120c06}
+body{background:#121626 radial-gradient(circle at 50% 0,#2a2f52 0,#121626 900px) no-repeat}
+header{background:linear-gradient(#3a2a1a,#2a1d11);border-bottom:4px solid #8b6234;box-shadow:0 2px 0 #f5c95c}
+.brand{display:inline-flex;align-items:center;gap:.5rem;font-family:Georgia,"Times New Roman",serif;letter-spacing:.04em}
+nav a{display:inline-flex;align-items:center;gap:.4rem;color:#f3e6c8}
+nav a:hover,nav a[aria-current="page"]{background:#4a3520}
+h1,h2{font-family:Georgia,"Times New Roman",serif;color:#f5d98a}
+h2{display:flex;align-items:center;gap:.6rem}
+.lq-tile{box-shadow:inset 2px 2px 0 #6b4c2c,inset -2px -2px 0 #1e140a;border-radius:3px}
+.card{border:3px solid #6b4c2c;border-radius:6px;box-shadow:0 0 0 2px #1e140a}
+.hero{background:linear-gradient(135deg,#3b2a55,#1f3a4a);border:3px solid #8b6234;border-radius:6px}
+.lq-hero-icons{display:flex;gap:.5rem;margin-bottom:.6rem}
+.button{border-radius:4px;box-shadow:inset 0 -3px 0 #b07f1a}
+.lq-empty{display:flex;align-items:center;gap:.8rem;background:#1d2236;border:2px dashed #6b4c2c;
+  border-radius:6px;padding:.8rem 1rem}

@@ -1,0 +1,9 @@
+/* Variante A — sobre : thème sombre actuel du portail conservé, icônes dans les titres, le menu
+   et les états vides ; tuiles ardoise ; aucune police pixel. */
+:root{--lq-tile-bg:#262c3a;--lq-tile-line:#3a4356}
+.brand{display:inline-flex;align-items:center;gap:.5rem}
+nav a{display:inline-flex;align-items:center;gap:.4rem}
+h2{display:flex;align-items:center;gap:.6rem}
+.lq-hero-icons{display:flex;gap:.5rem;margin-bottom:.6rem}
+.lq-empty{display:flex;align-items:center;gap:.8rem;background:var(--panel);border:1px dashed var(--line);
+  border-radius:.6rem;padding:.8rem 1rem}

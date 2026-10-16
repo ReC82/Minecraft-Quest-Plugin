@@ -10819,7 +10819,7 @@ public final class AgentPages {
         for (int i = 0; i < rows; i++) {
             Map<String, Object> item = i < items.size() ? asMap(items.get(i)) : Map.of();
             String itemId = str(item.get("item"));
-            sb.append("<div class=\"row g-2 mb-2 align-items-start\">")
+            sb.append("<div class=\"row g-2 mb-2 pb-2 border-bottom align-items-start\">")
                     .append("<div class=\"col-12 col-md-5\"><input class=\"form-control\" type=\"text\" name=\"item_id_")
                     .append(i).append("\" aria-label=\"Objet ").append(i + 1).append("\" value=\"").append(Http.esc(itemId))
                     .append("\" list=\"dl-reward-items\" autocomplete=\"off\" placeholder=\"Objet…\">")

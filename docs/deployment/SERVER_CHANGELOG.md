@@ -48,6 +48,45 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Boss communautaires du Wild, première version (#175)
+
+### Changement
+
+Scheduler de boss communautaires construit sur le moteur de mobs spéciaux : profils BOSS en mode
+« Boss communautaire », apparition automatique dans le Wild (désactivée par défaut), annonce avec le
+waypoint réel le plus proche, rappel à la connexion, section PlugAdmin « Boss communautaires du Wild ».
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin (AWS). Aucune migration de base. Deux
+fichiers créés par le plugin au besoin : `plugins/RPGQuest/mobs/community-bosses.yml` (seulement
+quand un administrateur enregistre des réglages ; absent = désactivé) et
+`plugins/RPGQuest/state/community-bosses.yml` (état, géré par le plugin — ne pas éditer).
+
+### Sauvegarde préalable
+
+JAR précédent : `~/.local/share/rpgquest/verygames-backups/rpgquest-20261016T084423Z-predeploy.jar`
+(3 172 227 o). PlugAdmin précédent : `/opt/plugadmin/releases/` (horodaté par `deploy.sh`).
+
+### Déploiement
+
+Effectué le 2026-10-16 10:44 (heure locale) : `scripts/deploy-verygames.sh -y` depuis `2bbc665`
+(CI verte, JAR 3 225 009 o, SHA-256 `80ac1073…cd3ce`), `scripts/verygames-restart.sh` (0 joueur en
+ligne), `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+Vérifié : DEV de nouveau ONLINE, heartbeat agent ONLINE ; action `boss.community.status` réussie sur
+DEV (service disponible, en pause, 0 boss actif, échéance armée) ; page `/mobs` servie avec la section.
+PENDING MANUAL VALIDATION : TC-329.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; PlugAdmin : release précédente sous
+`/opt/plugadmin/releases/`. Les fichiers `mobs/community-bosses.yml` et `state/community-bosses.yml`
+sont ignorés par l'ancien JAR (sans effet) ; un boss communautaire encore vivant redevient un simple
+boss de profil (barre de vie, drops du profil).
+
 ## 2026-10-16 - Droits à récompense remis une seule fois par le plugin (#422)
 
 ### Changement

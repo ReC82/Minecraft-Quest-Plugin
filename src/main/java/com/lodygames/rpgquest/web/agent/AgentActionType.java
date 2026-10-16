@@ -329,6 +329,11 @@ public enum AgentActionType {
     /** Spawn/suppression d'instances de test, distinctes des mobs ordinaires (issue #169 lot 1). */
     MOB_TEST_SPAWN("mob.test.spawn"),
     MOB_TEST_CLEAR("mob.test.clear"),
+    /** Boss communautaires du Wild (issue #175) : état, réglages, apparition de test, retrait. */
+    BOSS_COMMUNITY_STATUS("boss.community.status"),
+    BOSS_COMMUNITY_SETTINGS_SET("boss.community.settings.set"),
+    BOSS_COMMUNITY_TEST_SPAWN("boss.community.test.spawn"),
+    BOSS_COMMUNITY_REMOVE("boss.community.remove"),
     /**
      * Issue #95 — annonce globale aux joueurs connectés. Le message est envoyé comme
      * <strong>texte</strong> : jamais exécuté comme commande, jamais interprété comme du

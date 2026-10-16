@@ -37,6 +37,10 @@ public final class AgentActionCatalog {
      * doit être accepté, sinon tout profil existant est rejeté « identifiant invalide ». */
     private static final Pattern MOB_ID = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,64})?");
     private static final java.util.Set<String> MOB_CATEGORIES = java.util.Set.of("SPECIAL", "BOSS");
+    /** Issue #175 : mode d'un profil BOSS. */
+    private static final java.util.Set<String> BOSS_MODES = java.util.Set.of("QUEST", "COMMUNITY");
+    private static final Pattern ENTITY_UUID = Pattern.compile(
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
     private static final Pattern DIALOGUE_NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");
     private static final int MAX_DIALOGUE_TEXT = 512;
@@ -433,6 +437,8 @@ public final class AgentActionCatalog {
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         add("mob.list", Permission.MOB_READ, false, false,
                 "Rafraîchir le catalogue des profils de mob spécial/boss (issue #169)");
+        add("boss.community.status", Permission.MOB_READ, false, false,
+                "Rafraîchir l'état des boss communautaires (issue #175)");
         // Issue #172/#196 : catalogues RÉELS de la version installée (entités, particules, sons,
         // biomes, mondes). Sans ce relevé, les champs de l'éditeur restent du texte libre et
         // l'administrateur doit deviner les identifiants vanilla exacts.
@@ -653,6 +659,13 @@ public final class AgentActionCatalog {
                 "Faire apparaître une instance de test", "mob.list");
         addSensitiveWrite("mob.test.clear", Permission.MOB_TEST_SPAWN, false,
                 "Supprimer les instances de test", "mob.list");
+        // Issue #175 : boss communautaires du Wild.
+        addContentWrite("boss.community.settings.set", Permission.MOB_WRITE,
+                "Régler les boss communautaires", "boss.community.status");
+        addSensitiveWrite("boss.community.test.spawn", Permission.MOB_TEST_SPAWN, false,
+                "Faire apparaître un boss communautaire de test", "boss.community.status", "mob.list");
+        addSensitiveWrite("boss.community.remove", Permission.MOB_TEST_SPAWN, false,
+                "Retirer un boss communautaire", "boss.community.status", "mob.list");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
@@ -2061,6 +2074,27 @@ public final class AgentActionCatalog {
                 params.put("display_name", displayName);
                 params.put("spawn_chance", trimNumber(spawnChance));
                 params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+                // Issue #175 : mode de boss (Boss de quête / Boss communautaire) et poids du tirage.
+                if ("BOSS".equals(category)) {
+                    String bossMode = orDefault(trim(form.get("boss_mode")).toUpperCase(java.util.Locale.ROOT), "QUEST");
+                    if (!BOSS_MODES.contains(bossMode)) {
+                        return Validation.fail("Mode de boss invalide (Boss de quête ou Boss communautaire).");
+                    }
+                    params.put("boss_mode", bossMode);
+                    String weightRaw = trim(form.get("community_weight"));
+                    if (!weightRaw.isEmpty()) {
+                        int weight;
+                        try {
+                            weight = Integer.parseInt(weightRaw);
+                        } catch (NumberFormatException e) {
+                            return Validation.fail("Le poids doit être un nombre entier.");
+                        }
+                        if (weight < 1 || weight > 1000) {
+                            return Validation.fail("Le poids doit être compris entre 1 et 1000.");
+                        }
+                        params.put("community_weight", Integer.toString(weight));
+                    }
+                }
                 copyOptionalList(form, params, "worlds");
                 copyOptionalList(form, params, "biomes");
                 copyOptionalList(form, params, "zones");
@@ -2145,6 +2179,42 @@ public final class AgentActionCatalog {
                         return Validation.fail("Plafond simultané doit être un entier.");
                     }
                 }
+            }
+            case "boss.community.settings.set" -> {
+                Integer interval = positiveInt(form.get("interval_minutes"));
+                if (interval == null || interval < 1 || interval > 1440) {
+                    return Validation.fail("Intervalle entre deux essais : un nombre entier de 1 à 1440 minutes.");
+                }
+                Integer maxActive = positiveInt(form.get("max_active"));
+                if (maxActive == null || maxActive < 1 || maxActive > 10) {
+                    return Validation.fail("Nombre de boss en même temps : un nombre entier de 1 à 10.");
+                }
+                params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+                params.put("interval_minutes", Integer.toString(interval));
+                params.put("max_active", Integer.toString(maxActive));
+            }
+            case "boss.community.test.spawn" -> {
+                String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!mobId.isEmpty()) {
+                    if (!MOB_ID.matcher(mobId).matches()) {
+                        return Validation.fail("Identifiant de profil invalide.");
+                    }
+                    params.put("mob_id", mobId);
+                }
+                String player = trim(form.get("player"));
+                if (!player.isEmpty()) {
+                    if (!MINECRAFT_NAME.matcher(player).matches()) {
+                        return Validation.fail("Pseudo Minecraft invalide.");
+                    }
+                    params.put("player", player);
+                }
+            }
+            case "boss.community.remove" -> {
+                String target = trim(form.get("target"));
+                if (!"tests".equals(target) && !ENTITY_UUID.matcher(target).matches()) {
+                    return Validation.fail("Boss à retirer manquant ou invalide.");
+                }
+                params.put("target", target);
             }
             case "mob.test.spawn" -> {
                 String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);

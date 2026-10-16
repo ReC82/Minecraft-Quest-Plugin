@@ -162,6 +162,10 @@ public final class AgentActionExecutor {
                 case MOB_SPAWN_SETTINGS_SET -> mobSpawnSettingsSet(action);
                 case MOB_TEST_SPAWN -> mobTestSpawn(action);
                 case MOB_TEST_CLEAR -> mobTestClear(action);
+                case BOSS_COMMUNITY_STATUS -> communityBossStatus(action);
+                case BOSS_COMMUNITY_SETTINGS_SET -> communityBossSettingsSet(action);
+                case BOSS_COMMUNITY_TEST_SPAWN -> communityBossTestSpawn(action);
+                case BOSS_COMMUNITY_REMOVE -> communityBossRemove(action);
                 case SERVER_ANNOUNCE -> serverAnnounce(action);
                 case SERVER_LOGS_TAIL -> serverLogsTail(action);
                 case CONTENT_RELOAD_PREVIEW -> contentReload(action, false);
@@ -758,6 +762,8 @@ public final class AgentActionExecutor {
                 row.put("summonCooldownSeconds", p.summonCooldownSeconds());
                 row.put("summonMaxAlive", p.summonMaxAlive());
                 row.put("abilitiesSummary", p.abilitiesSummary());
+                row.put("bossMode", p.bossMode());
+                row.put("communityWeight", p.communityWeight());
                 rows.add(row);
             }
             Map<String, Object> settings = new LinkedHashMap<>();
@@ -798,6 +804,16 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « spawn_chance » manquant ou invalide."));
         }
         boolean enabled = !"false".equalsIgnoreCase(trimOrNull(action.param("enabled")));
+        // Issue #175 : facultatifs (défaut QUEST / 1) ; revalidés par le modèle côté plugin.
+        String bossMode = trimOrNull(action.param("boss_mode"));
+        if (bossMode != null && !BOSS_MODES.contains(bossMode.toUpperCase(java.util.Locale.ROOT))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « boss_mode » invalide (QUEST ou COMMUNITY)."));
+        }
+        Integer communityWeight = parseOptionalInt(action.param("community_weight"));
+        if (communityWeight != null && (communityWeight < 1 || communityWeight > MAX_COMMUNITY_WEIGHT)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « community_weight » invalide (entier de 1 à " + MAX_COMMUNITY_WEIGHT + ")."));
+        }
 
         CompletableFuture<AgentActions.MutationResult> future = (create ? actions.mobDefinitionCreate(
                 id, category, enabled, entityType, displayName, spawnChance,
@@ -811,7 +827,8 @@ public final class AgentActionExecutor {
                 parseDouble(action.param("enraged_health_fraction")), parseDouble(action.param("enraged_speed_multiplier")),
                 parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
                 parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
-                parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")))
+                parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
+                bossMode, communityWeight)
                 : actions.mobDefinitionUpdate(
                 id, category, enabled, entityType, displayName, spawnChance,
                 splitList(action.param("worlds")), splitList(action.param("biomes")), splitList(action.param("zones")),
@@ -824,7 +841,8 @@ public final class AgentActionExecutor {
                 parseDouble(action.param("enraged_health_fraction")), parseDouble(action.param("enraged_speed_multiplier")),
                 parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
                 parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
-                parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive"))));
+                parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
+                bossMode, communityWeight));
         return future.thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
@@ -865,6 +883,102 @@ public final class AgentActionExecutor {
 
     private CompletableFuture<AgentActionOutcome> mobTestClear(AgentAction action) {
         return actions.mobTestClear().thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Boss communautaires (issue #175) ------------------------------------------------------
+
+    private static final java.util.Set<String> BOSS_MODES = java.util.Set.of("QUEST", "COMMUNITY");
+    private static final int MAX_COMMUNITY_WEIGHT = 1000;
+    private static final Pattern ENTITY_UUID = Pattern.compile(
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+
+    private CompletableFuture<AgentActionOutcome> communityBossStatus(AgentAction action) {
+        return actions.communityBossStatus().thenApply(view -> {
+            List<Map<String, Object>> instances = new ArrayList<>();
+            for (AgentActions.CommunityBossInstanceView i : view.instances()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("entityId", i.entityId());
+                row.put("profileId", i.profileId());
+                row.put("profileName", i.profileName());
+                row.put("world", i.world());
+                row.put("x", i.x());
+                row.put("y", i.y());
+                row.put("z", i.z());
+                row.put("biome", i.biome());
+                row.put("waypointName", i.waypointName());
+                row.put("waypointDistance", i.waypointDistance());
+                row.put("waypointDirection", i.waypointDirection());
+                row.put("spawnedAt", i.spawnedAtMillis());
+                row.put("test", i.test());
+                instances.add(row);
+            }
+            List<Map<String, Object>> profiles = new ArrayList<>();
+            for (AgentActions.CommunityBossProfileView p : view.bossProfiles()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", p.id());
+                row.put("displayName", p.displayName());
+                row.put("enabled", p.enabled());
+                row.put("bossMode", p.bossMode());
+                row.put("communityWeight", p.communityWeight());
+                row.put("worlds", p.worlds());
+                row.put("biomes", p.biomes());
+                profiles.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("enabled", view.enabled());
+            details.put("intervalMinutes", view.intervalMinutes());
+            details.put("maxActive", view.maxActive());
+            if (view.nextDueMillis() != null) { // Map.copyOf de l'outcome refuse les valeurs nulles.
+                details.put("nextDue", view.nextDueMillis());
+            }
+            details.put("lastSpawn", view.lastSpawnMillis());
+            details.put("lastAttempt", view.lastAttemptMillis());
+            details.put("lastOutcome", view.lastOutcome());
+            details.put("now", view.nowMillis());
+            details.put("instances", instances);
+            details.put("profiles", profiles);
+            return AgentActionOutcome.success(action.id(), String.valueOf(instances.size()),
+                    instances.size() + " boss communautaire(s) actif(s).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> communityBossSettingsSet(AgentAction action) {
+        boolean enabled = isTrue(action.param("enabled"));
+        Integer interval = parseOptionalInt(action.param("interval_minutes"));
+        if (interval == null || interval < 1 || interval > 1440) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « interval_minutes » invalide (1 à 1440 minutes)."));
+        }
+        Integer max = parseOptionalInt(action.param("max_active"));
+        if (max == null || max < 1 || max > 10) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « max_active » invalide (1 à 10)."));
+        }
+        return actions.communityBossSettingsSet(enabled, interval, max).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> communityBossTestSpawn(AgentAction action) {
+        String profile = trimOrNull(action.param("mob_id"));
+        if (profile != null && !MOB_ID.matcher(profile).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « mob_id » invalide."));
+        }
+        String player = trimOrNull(action.param("player"));
+        if (player != null && !PLAYER_NAME.matcher(player).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « player » invalide."));
+        }
+        return actions.communityBossTestSpawn(profile, player).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> communityBossRemove(AgentAction action) {
+        String target = trimOrNull(action.param("target"));
+        if (target == null || !("tests".equals(target) || ENTITY_UUID.matcher(target).matches())) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « target » invalide (identifiant de boss ou « tests »)."));
+        }
+        return actions.communityBossRemove(target).thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

@@ -1197,6 +1197,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   gagnants, BOSS toujours exclu). Éditeur Control Panel complet (`/mobs`) : créer/modifier/activer-
   désactiver un profil, régler le throttle, faire apparaître/nettoyer une instance de test — aucune
   YAML ni commande requise.
+- **Boss communautaires du Wild** (issue #175, première version, PENDING MANUAL VALIDATION) — type
+  de boss QUEST/COMMUNITY + poids sur les profils BOSS ; scheduler unique (`mobs/community-bosses.yml`,
+  désactivé par défaut, 15 min, 1 boss max) construit sur `SpecialMobService` ; placement sûr dans les
+  chunks déjà chargés autour des joueurs du Wild (Hub, Claims, zones protégées, villes, abords de
+  waypoints exclus) ; annonce globale avec le waypoint réel le plus proche ; rappel individuel à la
+  connexion ; verrous persistants `state/community-bosses.yml` (aucune table) réconciliés au
+  rechargement des entités et au redémarrage. PlugAdmin `/mobs` : état, réglages, boss actifs,
+  apparition de test, retrait confirmé. Récompenses de participation : non livrées (#176/#177).
 - **Économie / Marché / Marchands** — portefeuille, transactions, hôtel des ventes, offres PNJ.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.

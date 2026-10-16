@@ -572,6 +572,27 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void communityBossActionsRevalidateEveryParameter() {
+        // Issue #175 : l'agent est la dernière barrière, jamais le navigateur.
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb0", "boss.community.settings.set",
+                Map.of("enabled", "true", "interval_minutes", "0", "max_active", "1"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb1", "boss.community.settings.set",
+                Map.of("enabled", "true", "interval_minutes", "15", "max_active", "50"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb2", "boss.community.test.spawn",
+                Map.of("player", "bad name!"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb3", "boss.community.remove",
+                Map.of("target", "../../x"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb4", "mob.definition.update",
+                Map.of("mob_id", "ogre", "category", "BOSS", "entity_type", "ZOMBIE", "display_name", "Ogre",
+                        "spawn_chance", "0", "boss_mode", "WEEKLY"))).status());
+
+        // Sans service côté plugin : un état explicitement « indisponible », jamais inventé.
+        AgentActionOutcome status = run(new AgentAction("cb5", "boss.community.status", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, status.status());
+        assertEquals(Boolean.FALSE, status.details().get("available"));
+    }
+
+    @Test
     void npcCitizensListReturnsRoster() {
         AgentActionOutcome outcome = run(new AgentAction("cl0", "npc.citizens.list", Map.of()));
         assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
@@ -2716,7 +2737,7 @@ class AgentActionExecutorTest {
                 Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
                 Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
                 Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-                Integer summonCooldownSeconds, Integer summonMaxAlive) {
+                Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
             return mutation("mob create " + id);
         }
 
@@ -2727,7 +2748,7 @@ class AgentActionExecutorTest {
                 Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
                 Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
                 Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-                Integer summonCooldownSeconds, Integer summonMaxAlive) {
+                Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
             return mutation("mob update " + id);
         }
 

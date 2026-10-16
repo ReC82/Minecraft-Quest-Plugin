@@ -10319,6 +10319,11 @@ public final class AgentPages {
             sb.append("</div></div>");
         }
 
+        List<String> onlinePlayers = latestDetails(agentId, "player.list")
+                .map(x -> asList(x.get("players"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("name"))).filter(n -> !n.isEmpty()).toList();
+        sb.append(communityBossSection(session, agentId, canWrite, canTest, onlinePlayers));
+
         Optional<Map<String, Object>> details = latestDetails(agentId, "mob.list");
         if (details.isEmpty()) {
             sb.append(Ui.empty("mob", "Aucun catalogue chargé — cliquer sur « Rafraîchir »."));
@@ -10349,9 +10354,6 @@ public final class AgentPages {
             sb.append(Ui.empty("mob", "Aucun profil : créer le premier avec « Nouveau profil »."));
             return sb.toString();
         }
-        List<String> onlinePlayers = latestDetails(agentId, "player.list")
-                .map(x -> asList(x.get("players"))).orElse(List.of())
-                .stream().map(o -> str(asMap(o).get("name"))).filter(s -> !s.isEmpty()).toList();
         // Issue #172 : recherche nom/ID + filtres Boss / Mob spécial / désactivés, comme les autres
         // catalogues du panel (même composant, même ergonomie).
         sb.append(listControls("mobs", "Rechercher un profil (nom ou identifiant)\u2026",
@@ -10367,6 +10369,224 @@ public final class AgentPages {
         }
         sb.append("</div>");
         return sb.toString();
+    }
+
+    // ---- Boss communautaires (issue #175) --------------------------------------------------------
+
+    /**
+     * Issue #175 — tableau « Boss communautaires » : état du scheduler, réglages, boss actifs (lieu,
+     * biome, waypoint), apparition de test immédiate et retrait avec confirmation. Rien n'est inventé :
+     * sans relevé {@code boss.community.status}, la section invite à le charger.
+     */
+    private String communityBossSection(Session session, String agentId, boolean canWrite, boolean canTest,
+                                        List<String> onlinePlayers) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.sectionTitle("mob", "Boss communautaires du Wild"));
+        sb.append("<p class=\"muted\">Un boss communautaire apparaît <strong>tout seul</strong> dans le Wild, "
+                + "près des joueurs mais jamais sur eux, ni dans le Hub, les Claims, une ville ou une zone "
+                + "protégée. Tout le serveur est prévenu (nom, biome, waypoint le plus proche) et les joueurs "
+                + "qui se connectent plus tard reçoivent un rappel. Les récompenses de participation ne sont "
+                + "pas encore livrées : à sa mort, le boss lâche seulement les objets de son profil.</p>");
+        sb.append("<div class=\"npc-catbar\">")
+                .append(compactRefresh(session, agentId, "boss.community.status", "Rafraîchir l'état",
+                        "btn-outline-primary", "/mobs"))
+                .append("</div>");
+        Optional<Map<String, Object>> loaded = latestDetails(agentId, "boss.community.status");
+        if (loaded.isEmpty()) {
+            return sb.append(Ui.empty("mob", "État pas encore chargé — cliquer sur « Rafraîchir l'état ».")).toString();
+        }
+        Map<String, Object> d = loaded.get();
+        if (!Boolean.TRUE.equals(d.get("available"))) {
+            return sb.append(Ui.banner("warn", "Le plugin installé ne connaît pas encore les boss communautaires "
+                    + "(version antérieure).")).toString();
+        }
+        boolean enabled = Boolean.TRUE.equals(d.get("enabled"));
+        long now = asLong(d.get("now"));
+        List<Object> instances = asList(d.get("instances"));
+        List<Object> profiles = asList(d.get("profiles"));
+        long communityProfiles = profiles.stream().map(AgentPages::asMap)
+                .filter(p -> "COMMUNITY".equals(str(p.get("bossMode"))) && Boolean.TRUE.equals(p.get("enabled")))
+                .count();
+
+        sb.append("<div class=\"card card-body mb-3\">");
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Apparitions automatiques</span> ")
+                .append(enabled ? "<span class=\"badge text-bg-success\">actives</span>"
+                        : "<span class=\"badge text-bg-secondary\">en pause</span>").append("</p>");
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Boss actifs</span> ")
+                .append(instances.size()).append(" / ").append(Http.esc(str(d.get("maxActive")))).append("</p>");
+        Object nextDue = d.get("nextDue");
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Prochain essai</span> ")
+                .append(!enabled ? "aucun (en pause)" : nextDue == null ? "pas encore planifié"
+                        : Http.esc(relative(asLong(nextDue) - now)))
+                .append("</p>");
+        long lastSpawn = asLong(d.get("lastSpawn"));
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Dernière apparition automatique</span> ")
+                .append(lastSpawn <= 0 ? "jamais" : Http.esc(relative(lastSpawn - now))).append("</p>");
+        String lastOutcome = str(d.get("lastOutcome"));
+        if (!lastOutcome.isBlank()) {
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Dernier essai</span> ")
+                    .append(Http.esc(lastOutcome)).append("</p>");
+        }
+        if (communityProfiles == 0) {
+            sb.append(Ui.banner("warn", "Aucun profil n'est encore un <strong>boss communautaire</strong> : "
+                    + "ouvrir un profil <strong>Boss</strong> ci-dessous, « Modifier », puis choisir le mode "
+                    + "« Boss communautaire »."));
+        }
+        sb.append("</div>");
+
+        if (canWrite) {
+            sb.append(communityBossSettingsForm(session, agentId, d));
+        }
+        if (canTest) {
+            sb.append(communityBossTestForm(session, agentId, profiles, onlinePlayers));
+        }
+
+        sb.append("<p class=\"npc-fs-h mt-3\">Boss actifs en ce moment</p>");
+        if (instances.isEmpty()) {
+            sb.append(Ui.empty("mob", "Aucun boss communautaire actif."));
+            return sb.toString();
+        }
+        sb.append("<div class=\"list-group mb-3\">");
+        for (Object o : instances) {
+            sb.append(communityBossInstanceItem(session, agentId, asMap(o), now, canTest));
+        }
+        sb.append("</div>");
+        if (canTest && instances.stream().map(AgentPages::asMap).anyMatch(i -> Boolean.TRUE.equals(i.get("test")))) {
+            sb.append(communityBossRemoveForm(session, agentId, "tests", "Retirer toutes les apparitions de test",
+                    "Je confirme : retirer les boss de test (sans récompense)"));
+        }
+        return sb.toString();
+    }
+
+    private String communityBossInstanceItem(Session session, String agentId, Map<String, Object> i, long now,
+                                             boolean canTest) {
+        StringBuilder sb = new StringBuilder("<div class=\"list-group-item\">");
+        sb.append("<div><strong>").append(Http.esc(str(i.get("profileName")))).append("</strong>");
+        if (Boolean.TRUE.equals(i.get("test"))) {
+            sb.append(" <span class=\"badge text-bg-warning\">test</span>");
+        }
+        sb.append("</div>");
+        String biome = prettyBiomeName(str(i.get("biome")));
+        String waypoint = str(i.get("waypointName"));
+        sb.append("<div class=\"muted\">Biome : ").append(Http.esc(biome)).append(" · ");
+        if (waypoint.isBlank()) {
+            sb.append("loin de tout waypoint");
+        } else {
+            String dir = str(i.get("waypointDirection"));
+            sb.append(dir.isBlank() ? "tout près du waypoint " : "à ~" + Http.esc(str(i.get("waypointDistance")))
+                    + " blocs au " + Http.esc(dir) + " du waypoint ").append("<strong>")
+                    .append(Http.esc(waypoint)).append("</strong>");
+        }
+        sb.append("</div>");
+        sb.append("<div class=\"muted small\">Dernière position connue : ").append(Http.esc(str(i.get("world"))))
+                .append(" ").append(Http.esc(str(i.get("x")))).append(" ").append(Http.esc(str(i.get("y"))))
+                .append(" ").append(Http.esc(str(i.get("z")))).append(" · apparu ")
+                .append(Http.esc(relative(asLong(i.get("spawnedAt")) - now))).append("</div>");
+        if (canTest) {
+            sb.append(communityBossRemoveForm(session, agentId, str(i.get("entityId")), "Retirer ce boss",
+                    "Je confirme : retirer ce boss (aucune récompense ne sera donnée)"));
+        }
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    private String communityBossSettingsForm(Session session, String agentId, Map<String, Object> d) {
+        boolean enabled = Boolean.TRUE.equals(d.get("enabled"));
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">");
+        sb.append(hiddenActionFields(session, agentId, "boss.community.settings.set"));
+        sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Réglages</p>");
+        sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" "
+                + "role=\"switch\" id=\"cb-en\" name=\"enabled\" value=\"true\"").append(enabled ? " checked" : "")
+                .append("><label class=\"form-check-label\" for=\"cb-en\">Apparitions automatiques actives</label></div>")
+                .append(fieldHelp("Décoché, plus aucun boss n'apparaît tout seul, <strong>tout de suite</strong>. "
+                        + "Les boss déjà présents restent en jeu. Le bouton d'apparition de test marche quand même.",
+                        null, "désactivé", null));
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-int\">Minutes entre deux essais</label>")
+                .append("<input class=\"form-control\" id=\"cb-int\" type=\"number\" name=\"interval_minutes\" "
+                        + "min=\"1\" max=\"1440\" required value=\"").append(Http.esc(str(d.get("intervalMinutes"))))
+                .append("\">")
+                .append(fieldHelp("Toutes les X minutes, le serveur essaie de faire apparaître un boss s'il en manque. "
+                        + "Si personne n'est dans le Wild ou si aucun endroit sûr n'est trouvé, il réessaie au "
+                        + "tour suivant, sans rattrapage. Une valeur très courte est réservée aux tests sur DEV.",
+                        "15", "15", null))
+                .append("</div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-max\">Boss en même temps (maximum)</label>")
+                .append("<input class=\"form-control\" id=\"cb-max\" type=\"number\" name=\"max_active\" "
+                        + "min=\"1\" max=\"10\" required value=\"").append(Http.esc(str(d.get("maxActive"))))
+                .append("\">")
+                .append(fieldHelp("Tant que ce nombre de boss est en vie (même loin de tout joueur), aucun autre "
+                        + "n'apparaît automatiquement.", "1", "1", null))
+                .append("</div></div>");
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
+                .append("Enregistrer</button></form>");
+        return sb.toString();
+    }
+
+    private String communityBossTestForm(Session session, String agentId, List<Object> profiles,
+                                         List<String> onlinePlayers) {
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form mt-4\">");
+        sb.append(hiddenActionFields(session, agentId, "boss.community.test.spawn"));
+        sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Apparition de test</p>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-t-prof\">Boss</label>")
+                .append("<select class=\"form-select\" id=\"cb-t-prof\" name=\"mob_id\">")
+                .append("<option value=\"\">Au hasard (comme le serveur)</option>");
+        for (Object o : profiles) {
+            Map<String, Object> p = asMap(o);
+            if ("COMMUNITY".equals(str(p.get("bossMode"))) && Boolean.TRUE.equals(p.get("enabled"))) {
+                sb.append("<option value=\"").append(Http.esc(str(p.get("id")))).append("\">")
+                        .append(Http.esc(MiniText.plain(str(p.get("displayName"))))).append("</option>");
+            }
+        }
+        sb.append("</select></div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-t-pl\">Près de</label>")
+                .append("<select class=\"form-select\" id=\"cb-t-pl\" name=\"player\">")
+                .append("<option value=\"\">N'importe quel joueur du Wild</option>");
+        for (String p : onlinePlayers) {
+            sb.append("<option value=\"").append(Http.esc(p)).append("\">").append(Http.esc(p)).append("</option>");
+        }
+        sb.append("</select></div>");
+        sb.append("<div class=\"form-text mb-2\">Fait apparaître un boss <strong>tout de suite</strong>, à 40–96 "
+                + "blocs du joueur, avec la vraie annonce (marquée « test »). Ne change pas l'heure du prochain "
+                + "essai automatique et ne compte pas dans le maximum. Le joueur doit être connecté et dans le Wild.</div>");
+        sb.append("</div><button class=\"btn btn-outline-primary\" type=\"submit\">").append(Icons.icon("target"))
+                .append("Apparition de test</button></form>");
+        return sb.toString();
+    }
+
+    private String communityBossRemoveForm(Session session, String agentId, String target, String label,
+                                           String confirmText) {
+        return "<form method=\"post\" action=\"/agents/action\" class=\"mt-2\">"
+                + hiddenActionFields(session, agentId, "boss.community.remove")
+                + "<input type=\"hidden\" name=\"target\" value=\"" + Http.esc(target) + "\">"
+                + confirmBox(confirmText)
+                + " <button class=\"btn danger sm\" type=\"submit\">" + Http.esc(label) + "</button>"
+                + "</form>";
+    }
+
+    private static String hiddenActionFields(Session session, String agentId, String type) {
+        return "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
+                + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
+                + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"/mobs\">";
+    }
+
+    /** « dans 12 min » / « il y a 3 h » à partir d'un écart en millisecondes (horloge du serveur). */
+    static String relative(long deltaMillis) {
+        long minutes = Math.round(Math.abs(deltaMillis) / 60_000.0);
+        String span = minutes < 1 ? "moins d'une minute" : minutes < 60 ? minutes + " min"
+                : minutes < 48 * 60 ? (minutes / 60) + " h " + (minutes % 60 == 0 ? "" : (minutes % 60) + " min")
+                : (minutes / (24 * 60)) + " jours";
+        return (deltaMillis >= 0 ? "dans " : "il y a ") + span.strip();
+    }
+
+    private static String prettyBiomeName(String biomeKey) {
+        if (biomeKey == null || biomeKey.isBlank()) {
+            return "inconnu";
+        }
+        int colon = biomeKey.indexOf(':');
+        return (colon >= 0 ? biomeKey.substring(colon + 1) : biomeKey).replace('_', ' ');
     }
 
     private String spawnSettingsForm(Session session, String agentId, Map<String, Object> settings, boolean canWrite) {
@@ -10579,6 +10799,28 @@ public final class AgentPages {
                         + "à 48 blocs et une aura de particules rafraîchie chaque seconde.",
                         "Spécial pour une variante de mob courante, Boss pour une rencontre unique",
                         "Spécial", null))
+                .append("</div>");
+        // Issue #175 : mode d'un profil Boss. Envoyé seulement pour la catégorie Boss.
+        String bossMode = existing == null || str(existing.get("bossMode")).isBlank() ? "QUEST" : str(existing.get("bossMode"));
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-bm\">Type de boss</label>")
+                .append("<select class=\"form-select\" id=\"").append(uid).append("-bm\" name=\"boss_mode\">")
+                .append(option("QUEST", bossMode, "Boss de quête (apparaît seulement sur demande)"))
+                .append(option("COMMUNITY", bossMode, "Boss communautaire (apparaît tout seul dans le Wild)"))
+                .append("</select>")
+                .append(fieldHelp("Utilisé seulement si la catégorie est <strong>Boss</strong>. "
+                        + "<strong>Boss communautaire</strong> : le serveur le fait apparaître de temps en temps dans "
+                        + "le Wild (réglages dans « Boss communautaires du Wild » en haut de la page), dans les "
+                        + "mondes et biomes choisis plus bas. <strong>Boss de quête</strong> : jamais automatique.",
+                        "Boss communautaire pour un ogre que tout le serveur chasse", "Boss de quête", null))
+                .append("</div>");
+        String weight = existing == null || str(existing.get("communityWeight")).isBlank() ? "1" : str(existing.get("communityWeight"));
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-cw\">Poids "
+                + "(boss communautaire)</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-cw\" type=\"number\" "
+                        + "name=\"community_weight\" min=\"1\" max=\"1000\" value=\"").append(Http.esc(weight))
+                .append("\">")
+                .append(fieldHelp("Quand plusieurs boss communautaires sont possibles, un boss de poids 3 sort "
+                        + "trois fois plus souvent qu'un boss de poids 1.", "3", "1", null))
                 .append("</div>");
         sb.append(catalogCombo(uid, "entity_type", "et", "Type d'entité Minecraft",
                 str(existing == null ? null : existing.get("entityType")), "dl-mob-entity", true,

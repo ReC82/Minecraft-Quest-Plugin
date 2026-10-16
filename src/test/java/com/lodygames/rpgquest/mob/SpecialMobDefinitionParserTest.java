@@ -257,6 +257,61 @@ class SpecialMobDefinitionParserTest {
                 """;
     }
 
+    // ---- Issue #175 : mode de boss ------------------------------------------------------------
+
+    @Test
+    void bossModeDefaultsToQuestAndWeightToOne() {
+        SpecialMobDefinitionParser.ParseResult result = parser.parse("boss.yml", load("""
+                id: rpgquest:old_boss
+                category: BOSS
+                entity-type: ZOMBIE
+                name: "Ancien boss"
+                spawn-chance: 0.0
+                """));
+        assertTrue(result.isSuccess(), result.issues().toString());
+        assertEquals(com.lodygames.rpgquest.mob.model.BossMode.QUEST, result.definition().bossMode());
+        assertEquals(1, result.definition().communityWeight());
+        assertFalse(result.definition().isCommunityBoss());
+    }
+
+    @Test
+    void communityBossParsesWithItsWeight() {
+        SpecialMobDefinitionParser.ParseResult result = parser.parse("boss.yml", load("""
+                id: rpgquest:ogre
+                category: BOSS
+                boss-mode: community
+                community-weight: 4
+                entity-type: ZOMBIE
+                name: "Ogre"
+                spawn-chance: 0.0
+                """));
+        assertTrue(result.isSuccess(), result.issues().toString());
+        assertTrue(result.definition().isCommunityBoss());
+        assertEquals(4, result.definition().communityWeight());
+    }
+
+    @Test
+    void communityModeOnASpecialProfileAndABadWeightAreRejected() {
+        SpecialMobDefinitionParser.ParseResult special = parser.parse("s.yml", load("""
+                id: rpgquest:s
+                entity-type: ZOMBIE
+                name: "S"
+                spawn-chance: 0.1
+                boss-mode: COMMUNITY
+                """));
+        assertFalse(special.isSuccess());
+        SpecialMobDefinitionParser.ParseResult weight = parser.parse("w.yml", load("""
+                id: rpgquest:w
+                category: BOSS
+                boss-mode: COMMUNITY
+                community-weight: 0
+                entity-type: ZOMBIE
+                name: "W"
+                spawn-chance: 0.0
+                """));
+        assertFalse(weight.isSuccess());
+    }
+
     private ConfigurationSection load(String yaml) {
         YamlConfiguration configuration = new YamlConfiguration();
         try {

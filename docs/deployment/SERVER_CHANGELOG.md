@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Écriture sûre des profils de mob / boss et réparation de « Diag Boss » (#461)
+
+### Changement
+
+Modifier un boss avec plusieurs biomes dans PlugAdmin écrivait un YAML invalide (`biomes: - swamp\r\nplains`
+→ `plains` seul en racine) : la multisélection non retouchée soumet les valeurs séparées par CRLF, l'agent
+ne découpait que sur la virgule et le rendu YAML n'échappait pas les valeurs de liste. Corrigé à trois
+niveaux (panel, agent, rendu) + validation avant écriture, restauration automatique si le profil ne se
+recharge pas, conservation des capacités non éditées.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin (AWS). Aucune migration, aucune clé de
+configuration. Réparation **du seul** fichier `plugins/RPGQuest/mobs/claude_diag_boss.yml` (`--also`,
+sauvegarde automatique de la version cassée). Aucun autre profil touché. Scheduler des boss
+communautaires laissé tel que configuré par le propriétaire (désactivé).
+
+### Sauvegarde préalable
+
+JAR et PlugAdmin précédents (sauvegarde datée automatique) ; les 7 fichiers `mobs/*.yml` de DEV
+téléchargés avant toute action (empreintes dans le rapport de session #461).
+
+### Déploiement
+
+Voir le rapport `docs/claude-reports/` de l'issue #461 (horodatage, empreintes, sauvegarde).
+
+### Validation
+
+`mob.definitions` sans erreur de chargement et `boss.community.status` listant `claude_diag_boss`
+(COMMUNITY, actif, biomes swamp + plains). PENDING MANUAL VALIDATION : TC-332.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage. L'ancien JAR relit sans problème le profil
+réparé (valeurs entre guillemets = YAML standard) ; il réintroduirait seulement le défaut d'écriture.
+
 ## 2026-10-16 - Tables de récompenses aléatoires quêtes / boss (#177)
 
 ### Changement

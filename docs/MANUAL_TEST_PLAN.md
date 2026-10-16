@@ -6476,3 +6476,14 @@ tables:
     « tc177_sure » v… → … ; B : … ».
 8.  Redémarrer DEV avec un gain de tirage en attente (cas 4 non libéré). **Attendu** : remis à la
     reconnexion, une fois, sans nouveau tirage.
+
+### TC-332 — Modifier un boss à plusieurs biomes depuis PlugAdmin (issue #461, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.
+
+1.  PlugAdmin → Mobs spéciaux & boss → **Diag Boss** : ouvrir la fiche, sans rien changer, **Enregistrer**.
+    **Attendu** : action réussie, aucun avertissement « ne se recharge pas » ; la fiche montre toujours
+    les deux biomes **swamp** et **plains**, le type Boss communautaire et « Profil actif ».
+2.  (Facultatif) Retirer **plains**, enregistrer, le remettre, enregistrer. **Attendu** : la liste suit,
+    jamais d'erreur YAML ; les autres profils sont inchangés.
+

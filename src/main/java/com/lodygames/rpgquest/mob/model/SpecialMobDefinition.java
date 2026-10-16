@@ -57,10 +57,16 @@ public record SpecialMobDefinition(
         /** Issue #175 : QUEST (défaut) ou COMMUNITY (scheduler du Wild) -- significatif pour BOSS seulement. */
         BossMode bossMode,
         /** Issue #175 : poids relatif dans le tirage pondéré des boss communautaires (≥ 1). */
-        int communityWeight
+        int communityWeight,
+        /** Issue #176 : clés du catalogue {@code entitlements.yml} remises à chaque participant éligible
+         * d'un boss communautaire vaincu -- BOSS seulement, vide = aucune récompense de participation. */
+        List<String> participationRewards
 ) {
 
     public static final int DEFAULT_COMMUNITY_WEIGHT = 1;
+    /** Issue #176 : même forme qu'une clé du catalogue {@code entitlements.yml}. */
+    public static final java.util.regex.Pattern REWARD_KEY = java.util.regex.Pattern.compile("[a-z0-9_.-]{1,64}");
+    public static final int MAX_PARTICIPATION_REWARDS = 5;
 
     /** Forme antérieure à l'issue #175 : boss de quête, poids par défaut. */
     public SpecialMobDefinition(NamespacedKey id, MobCategory category, boolean enabled, EntityType entityType,
@@ -73,6 +79,19 @@ public record SpecialMobDefinition(
         this(id, category, enabled, entityType, displayName, spawnChance, allowedWorlds, allowedBiomes,
                 allowedZones, health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius,
                 particle, sound, abilities, drops, xpReward, maxPopulation, BossMode.QUEST, DEFAULT_COMMUNITY_WEIGHT);
+    }
+
+    /** Forme de l'issue #175 : sans récompense de participation. */
+    public SpecialMobDefinition(NamespacedKey id, MobCategory category, boolean enabled, EntityType entityType,
+                                String displayName, double spawnChance, Set<String> allowedWorlds,
+                                Set<String> allowedBiomes, Set<String> allowedZones, Double health, Double damage,
+                                Double speed, Double armor, Double knockbackResistance, Double scale,
+                                Double creeperExplosionRadius, Particle particle, Sound sound,
+                                List<MobAbility> abilities, List<ResourceDrop> drops, Integer xpReward,
+                                Integer maxPopulation, BossMode bossMode, int communityWeight) {
+        this(id, category, enabled, entityType, displayName, spawnChance, allowedWorlds, allowedBiomes,
+                allowedZones, health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius,
+                particle, sound, abilities, drops, xpReward, maxPopulation, bossMode, communityWeight, List.of());
     }
 
     public SpecialMobDefinition {
@@ -138,6 +157,21 @@ public record SpecialMobDefinition(
         if (communityWeight < 1) {
             throw new IllegalArgumentException("communityWeight doit être au moins 1 : " + communityWeight);
         }
+        participationRewards = participationRewards == null ? List.of()
+                : List.copyOf(new java.util.LinkedHashSet<>(participationRewards));
+        if (!participationRewards.isEmpty() && category != MobCategory.BOSS) {
+            throw new IllegalArgumentException("participation-rewards n'a de sens que pour category: BOSS.");
+        }
+        if (participationRewards.size() > MAX_PARTICIPATION_REWARDS) {
+            throw new IllegalArgumentException("participation-rewards : " + MAX_PARTICIPATION_REWARDS
+                    + " récompenses au plus.");
+        }
+        for (String key : participationRewards) {
+            if (key == null || !REWARD_KEY.matcher(key).matches()) {
+                throw new IllegalArgumentException("participation-rewards : clé invalide « " + key
+                        + " » (minuscules, chiffres, _ . -).");
+            }
+        }
     }
 
     /** Issue #175 : profil éligible au scheduler des boss communautaires (BOSS + COMMUNITY + activé). */
@@ -150,7 +184,7 @@ public record SpecialMobDefinition(
         return new SpecialMobDefinition(id, category, value, entityType, displayName, spawnChance, allowedWorlds,
                 allowedBiomes, allowedZones, health, damage, speed, armor, knockbackResistance, scale,
                 creeperExplosionRadius, particle, sound, abilities, drops, xpReward, maxPopulation, bossMode,
-                communityWeight);
+                communityWeight, participationRewards);
     }
 
     public int totalDropWeight() {

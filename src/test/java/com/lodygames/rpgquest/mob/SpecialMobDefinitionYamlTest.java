@@ -64,6 +64,19 @@ class SpecialMobDefinitionYamlTest {
     }
 
     @Test
+    void participationRewardsRoundTrip() {
+        SpecialMobDefinition in = new SpecialMobDefinition(
+                new NamespacedKey("rpgquest", "hill_ogre"),
+                MobCategory.BOSS, true, EntityType.ZOMBIE, "Ogre", 0.0,
+                Set.of("wild"), Set.of(), Set.of(),
+                200.0, null, null, null, null, null, null,
+                null, null, List.of(), List.of(), null, null,
+                com.lodygames.rpgquest.mob.model.BossMode.COMMUNITY, 3, List.of("boss_ogre", "titre.ogre"));
+
+        assertEquals(in, roundTrip(in));
+    }
+
+    @Test
     void creeperExplosionRadiusRoundTrips() {
         SpecialMobDefinition in = new SpecialMobDefinition(
                 new NamespacedKey("rpgquest", "big_boom"),

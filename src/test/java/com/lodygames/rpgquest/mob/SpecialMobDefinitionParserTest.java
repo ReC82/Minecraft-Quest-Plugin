@@ -11,6 +11,7 @@ import com.lodygames.rpgquest.mob.model.SplitOnHitAbility;
 import com.lodygames.rpgquest.mob.model.StrongerExplosionAbility;
 import com.lodygames.rpgquest.resource.model.VanillaItemDrop;
 import java.io.StringReader;
+import java.util.List;
 import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
@@ -310,6 +311,57 @@ class SpecialMobDefinitionParserTest {
                 spawn-chance: 0.0
                 """));
         assertFalse(weight.isSuccess());
+    }
+
+    // ---- Issue #176 : récompenses de participation -------------------------------------------
+
+    @Test
+    void participationRewardsAreOptionalDeduplicatedAndBossOnly() {
+        SpecialMobDefinitionParser.ParseResult boss = parser.parse("boss.yml", load("""
+                id: rpgquest:ogre
+                category: BOSS
+                boss-mode: COMMUNITY
+                participation-rewards: [boss_ogre, boss_ogre, titre.ogre]
+                entity-type: ZOMBIE
+                name: "Ogre"
+                spawn-chance: 0.0
+                """));
+        assertTrue(boss.isSuccess(), boss.issues().toString());
+        assertEquals(List.of("boss_ogre", "titre.ogre"), boss.definition().participationRewards());
+
+        SpecialMobDefinitionParser.ParseResult none = parser.parse("old.yml", load("""
+                id: rpgquest:old
+                category: BOSS
+                entity-type: ZOMBIE
+                name: "Old"
+                spawn-chance: 0.0
+                """));
+        assertTrue(none.definition().participationRewards().isEmpty());
+    }
+
+    @Test
+    void participationRewardsAreRejectedOnSpecialOrWithABadKey() {
+        SpecialMobDefinitionParser.ParseResult special = parser.parse("s.yml", load(minimalMob()
+                + "participation-rewards: [boss_ogre]\n"));
+        assertFalse(special.isSuccess());
+        SpecialMobDefinitionParser.ParseResult badKey = parser.parse("b.yml", load("""
+                id: rpgquest:b
+                category: BOSS
+                participation-rewards: ["Pas Valide"]
+                entity-type: ZOMBIE
+                name: "B"
+                spawn-chance: 0.0
+                """));
+        assertFalse(badKey.isSuccess());
+        SpecialMobDefinitionParser.ParseResult notAList = parser.parse("n.yml", load("""
+                id: rpgquest:n
+                category: BOSS
+                participation-rewards: boss_ogre
+                entity-type: ZOMBIE
+                name: "N"
+                spawn-chance: 0.0
+                """));
+        assertFalse(notAList.isSuccess());
     }
 
     private ConfigurationSection load(String yaml) {

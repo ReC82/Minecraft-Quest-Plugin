@@ -31,6 +31,9 @@ public final class SpecialMobDefinitionYaml {
         if (d.category() == com.lodygames.rpgquest.mob.model.MobCategory.BOSS) {
             sb.append("boss-mode: ").append(d.bossMode()).append('\n');
             sb.append("community-weight: ").append(d.communityWeight()).append('\n');
+            if (!d.participationRewards().isEmpty()) {
+                appendList(sb, "participation-rewards", new java.util.LinkedHashSet<>(d.participationRewards()));
+            }
         }
         sb.append("entity-type: ").append(d.entityType().name()).append('\n');
         sb.append("name: ").append(quote(d.displayName())).append('\n');

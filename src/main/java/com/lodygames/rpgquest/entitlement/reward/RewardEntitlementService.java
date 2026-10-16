@@ -158,8 +158,12 @@ public final class RewardEntitlementService implements PluginService, Listener {
             reloadIfChanged();
             declareFromArchivedEvents().join();
         } catch (RuntimeException e) {
-            // Base en cours d'arrêt ou indisponible : nouvel essai à la prochaine minute.
-            logger.debug("Récompenses : tick ignoré ({}).", e.toString());
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof java.util.concurrent.RejectedExecutionException) {
+                return; // base en cours d'arrêt : le prochain démarrage reprendra
+            }
+            logger.warn("Récompenses : déclaration depuis les événements impossible, nouvel essai dans une minute.",
+                    cause);
         }
     }
 

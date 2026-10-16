@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.dialogue.render;
 
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.ui.DialogButtonLayout;
 import io.papermc.paper.dialog.Dialog;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
@@ -10,7 +11,6 @@ import io.papermc.paper.registry.data.dialog.body.DialogBody;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
 import java.util.ArrayList;
 import java.util.List;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.entity.Player;
@@ -22,12 +22,14 @@ import org.bukkit.entity.Player;
  * bytecode de paper-api 1.21.11) — utilisable, mais pas le choix par défaut
  * (voir {@code config.yml} → {@code dialogue.renderer}, et
  * {@code ChatDialogueRenderer} pour le renderer de secours stable).
+ *
+ * <p>Issue #467 : un bouton par ligne, largeur commune et libellés jamais tronqués en silence —
+ * voir {@link DialogButtonLayout}, partagé avec l'invite d'entrée dans le Wild.</p>
  */
 @SuppressWarnings("UnstableApiUsage")
 public final class PaperDialogRenderer implements DialogueRenderer {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
-    private static final int BUTTON_WIDTH = 150;
 
     private final DialogueChoiceHandler handler;
 
@@ -37,23 +39,31 @@ public final class PaperDialogRenderer implements DialogueRenderer {
 
     @Override
     public void render(Player player, DialogueDefinition dialogue, DialogueNode node, List<VisibleChoice> visibleChoices) {
+        DialogButtonLayout layout = DialogButtonLayout.of(
+                visibleChoices.stream().map(choice -> MM.deserialize(choice.label())).toList());
         List<ActionButton> buttons = new ArrayList<>();
-        for (VisibleChoice choice : visibleChoices) {
+        for (int i = 0; i < visibleChoices.size(); i++) {
+            VisibleChoice choice = visibleChoices.get(i);
+            DialogButtonLayout.Button button = layout.buttons().get(i);
             buttons.add(ActionButton.create(
-                    MM.deserialize(choice.label()),
-                    Component.empty(),
-                    BUTTON_WIDTH,
+                    button.label(),
+                    button.tooltip(),
+                    layout.width(),
                     DialogAction.customClick(
                             (view, audience) -> handler.onChoiceSelected(player, dialogue.id(), node.id(), choice.index()),
                             ClickCallback.Options.builder().uses(1).build())));
         }
 
+        List<DialogBody> body = new ArrayList<>();
+        body.add(DialogBody.plainMessage(MM.deserialize(node.text().base()), layout.width()));
+        layout.fullLabelsBody().forEach(line -> body.add(DialogBody.plainMessage(line, layout.width())));
+
         Dialog dialog = Dialog.create(factory -> factory.empty()
                 .base(DialogBase.builder(MM.deserialize(node.speaker()))
-                        .body(List.of(DialogBody.plainMessage(MM.deserialize(node.text().base()))))
+                        .body(body)
                         .canCloseWithEscape(true)
                         .build())
-                .type(DialogType.multiAction(buttons).build()));
+                .type(DialogType.multiAction(buttons).columns(DialogButtonLayout.COLUMNS).build()));
 
         player.showDialog(dialog);
     }

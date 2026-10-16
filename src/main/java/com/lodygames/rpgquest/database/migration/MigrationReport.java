@@ -49,6 +49,7 @@ public final class MigrationReport {
             Map.entry("market_listings", "Économie"),
             Map.entry("store_deliveries_processed", "Économie"),
             Map.entry("player_entitlements", "Économie"),
+            Map.entry("reward_entitlements", "Récompenses"),
             Map.entry("player_skills", "Compétences"),
             Map.entry("xp_grants", "Compétences"),
             Map.entry("player_placed_blocks", "Compétences"),

@@ -1240,11 +1240,188 @@ public final class BukkitAgentActions implements AgentActions {
             return AgentActions.super.rewardCatalogStatus();
         }
         var catalog = service.catalog();
+        Map<String, List<String>> rewardUsages = rewardUsages(catalog);
         List<RewardCatalogEntryView> rewards = catalog.rewards().values().stream()
-                .map(r -> new RewardCatalogEntryView(r.key(), r.label(), r.summary())).toList();
+                .map(r -> new RewardCatalogEntryView(r.key(), r.label(), r.summary(), r.enabled(), r.version(),
+                        r.items().stream().map(i -> new RewardItemView(i.itemId(), i.amount(),
+                                i.enchantments().entrySet().stream().map(e -> e.getKey() + ":" + e.getValue())
+                                        .collect(java.util.stream.Collectors.joining(",")),
+                                i.potion() == null ? "" : i.potion())).toList(),
+                        r.perk() == null ? "" : r.perk().key(), r.perk() == null ? "" : r.perk().tier(),
+                        rewardUsages.getOrDefault(r.key(), List.of())))
+                .toList();
         List<String> errors = service.lastErrors();
-        return done(new RewardCatalogView(true, java.nio.file.Files.isRegularFile(service.file()), errors.isEmpty(),
-                catalog.enabled(), errors, rewards, rewardTables()));
+        boolean exists = java.nio.file.Files.isRegularFile(service.file());
+        return done(new RewardCatalogView(true, exists, errors.isEmpty(), catalog.enabled(), errors, rewards,
+                rewardTables(), tableUsages(),
+                exists ? "" : com.lodygames.rpgquest.entitlement.reward.RewardCatalogEditor.INITIAL_TEXT,
+                rewardReferences()));
+    }
+
+    /** Qui promet chaque récompense : tables (#177) et boss (récompenses de participation, #176). */
+    private Map<String, List<String>> rewardUsages(com.lodygames.rpgquest.entitlement.reward.RewardCatalog catalog) {
+        Map<String, List<String>> usages = new java.util.LinkedHashMap<>();
+        for (var table : catalog.tables().values()) {
+            table.entries().stream().map(e -> e.rewardKey()).distinct().forEach(key -> usages
+                    .computeIfAbsent(key, k -> new ArrayList<>())
+                    .add("table « " + table.label() + " » (" + table.id() + (table.enabled() ? ")" : ", désactivée)")));
+        }
+        for (SpecialMobDefinition def : mobRegistry == null ? List.<SpecialMobDefinition>of() : mobRegistry.definitions()) {
+            def.participationRewards().stream()
+                    .filter(k -> !k.startsWith(SpecialMobDefinition.TABLE_PREFIX)).distinct()
+                    .forEach(key -> usages.computeIfAbsent(key, k -> new ArrayList<>()).add(bossUsage(def)));
+        }
+        return usages;
+    }
+
+    /** Qui tire chaque table : quêtes (récompense « Tirage au sort ») et boss ({@code table:<id>}). */
+    private Map<String, List<String>> tableUsages() {
+        Map<String, List<String>> usages = new java.util.LinkedHashMap<>();
+        for (var quest : questEngine == null ? List.<com.lodygames.rpgquest.quest.model.QuestDefinition>of()
+                : questEngine.quests()) {
+            quest.rewards().stream()
+                    .filter(r -> r instanceof com.lodygames.rpgquest.quest.model.TableReward)
+                    .map(r -> ((com.lodygames.rpgquest.quest.model.TableReward) r).tableId()).distinct()
+                    .forEach(id -> usages.computeIfAbsent(id, k -> new ArrayList<>())
+                            .add("quête « " + quest.title().base() + " » (" + quest.id() + ")"));
+        }
+        for (SpecialMobDefinition def : mobRegistry == null ? List.<SpecialMobDefinition>of() : mobRegistry.definitions()) {
+            def.participationRewards().stream()
+                    .filter(k -> k.startsWith(SpecialMobDefinition.TABLE_PREFIX)).distinct()
+                    .forEach(k -> usages.computeIfAbsent(k.substring(SpecialMobDefinition.TABLE_PREFIX.length()),
+                            x -> new ArrayList<>()).add(bossUsage(def)));
+        }
+        return usages;
+    }
+
+    private static String bossUsage(SpecialMobDefinition def) {
+        return "boss « " + net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().stripTags(def.displayName())
+                + " » (" + def.id().asString() + ")";
+    }
+
+    /** Objets custom, enchantements et potions connus de ce serveur, pour les listes de l'éditeur. */
+    private RewardReferenceView rewardReferences() {
+        List<String> custom = customItemRegistry == null ? List.of() : customItemRegistry.items().stream().map(d -> d.id().toString()).sorted().toList();
+        List<String> enchantments = new ArrayList<>();
+        io.papermc.paper.registry.RegistryAccess.registryAccess()
+                .getRegistry(io.papermc.paper.registry.RegistryKey.ENCHANTMENT)
+                .forEach(e -> enchantments.add(e.getKey().getKey()));
+        List<String> potions = new ArrayList<>();
+        io.papermc.paper.registry.RegistryAccess.registryAccess()
+                .getRegistry(io.papermc.paper.registry.RegistryKey.POTION)
+                .forEach(p -> potions.add(p.getKey().getKey()));
+        java.util.Collections.sort(enchantments);
+        java.util.Collections.sort(potions);
+        return new RewardReferenceView(custom, List.copyOf(enchantments), List.copyOf(potions));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardCatalogInit() {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardCatalogInit();
+        }
+        return done(catalogMutation(service.catalogEditor().initialize(), List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardCatalogToggle(boolean enabled) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardCatalogToggle(enabled);
+        }
+        return done(catalogMutation(service.catalogEditor().setCatalogEnabled(enabled), List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardDefinitionSave(String key, String label, boolean enabled,
+                                                                  List<RewardItemInput> items, String perkKey,
+                                                                  String perkTier, String expectedVersion,
+                                                                  boolean create) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardDefinitionSave(key, label, enabled, items, perkKey, perkTier,
+                    expectedVersion, create);
+        }
+        String unknown = unknownRewardReference(items);
+        if (unknown != null) {
+            return done(MutationResult.of(false, "INVALID", unknown + " Rien n'a été écrit."));
+        }
+        var reward = new com.lodygames.rpgquest.entitlement.reward.RewardDefinition(key, label.trim(),
+                items.stream().map(i -> new com.lodygames.rpgquest.entitlement.reward.RewardDefinition.Item(i.itemId(),
+                        i.amount(), i.enchantments(), i.potion() == null || i.potion().isBlank() ? null : i.potion()))
+                        .toList(),
+                perkKey == null ? null : new com.lodygames.rpgquest.entitlement.reward.RewardDefinition.Perk(perkKey,
+                        perkTier), enabled);
+        List<String> usages = enabled || create ? List.of()
+                : rewardUsages(service.catalog()).getOrDefault(key, List.of());
+        return done(catalogMutation(service.catalogEditor().saveReward(reward, expectedVersion, create), usages));
+    }
+
+    /**
+     * Références que le chargeur ne peut pas vérifier seul (issue #474) : un objet custom, un
+     * enchantement ou une potion inconnus laisseraient chaque droit en attente à la remise.
+     */
+    private String unknownRewardReference(List<RewardItemInput> items) {
+        var enchantments = io.papermc.paper.registry.RegistryAccess.registryAccess()
+                .getRegistry(io.papermc.paper.registry.RegistryKey.ENCHANTMENT);
+        var potions = io.papermc.paper.registry.RegistryAccess.registryAccess()
+                .getRegistry(io.papermc.paper.registry.RegistryKey.POTION);
+        for (RewardItemInput item : items) {
+            if (item.itemId().indexOf(':') >= 0) {
+                NamespacedKey id = NamespacedKey.fromString(item.itemId());
+                if (id == null || customItemRegistry == null || customItemRegistry.find(id).isEmpty()) {
+                    return "Objet custom « " + item.itemId() + " » inconnu de ce serveur.";
+                }
+                continue;
+            }
+            for (String enchantment : item.enchantments().keySet()) {
+                if (enchantments.get(NamespacedKey.minecraft(enchantment)) == null) {
+                    return "Enchantement « " + enchantment + " » inconnu de ce serveur (objet " + item.itemId() + ").";
+                }
+            }
+            if (item.potion() != null && !item.potion().isBlank()
+                    && potions.get(NamespacedKey.minecraft(item.potion())) == null) {
+                return "Type de potion « " + item.potion() + " » inconnu de ce serveur (objet " + item.itemId() + ").";
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardDefinitionDuplicate(String sourceKey, String newKey,
+                                                                       String newLabel) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardDefinitionDuplicate(sourceKey, newKey, newLabel);
+        }
+        return done(catalogMutation(service.catalogEditor().duplicateReward(sourceKey, newKey, newLabel), List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardDefinitionToggle(String key, boolean enabled) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardDefinitionToggle(key, enabled);
+        }
+        List<String> usages = enabled ? List.of() : rewardUsages(service.catalog()).getOrDefault(key, List.of());
+        return done(catalogMutation(service.catalogEditor().setRewardEnabled(key, enabled), usages));
+    }
+
+    /** Désactivation : les usages connus sont cités, pour que l'administrateur sache ce qui ne donne plus rien. */
+    private static MutationResult catalogMutation(
+            com.lodygames.rpgquest.entitlement.reward.RewardCatalogEditor.Outcome o, List<String> usages) {
+        List<String> effects = new ArrayList<>();
+        if (o.reward() != null) {
+            effects.add("récompense " + o.reward().key() + " v" + o.reward().version()
+                    + (o.reward().enabled() ? " active" : " désactivée"));
+        }
+        String message = o.message();
+        if (o.success() && !usages.isEmpty() && !"UNCHANGED".equals(o.code())) {
+            message += " Concerné : " + String.join(", ", usages) + ".";
+            effects.addAll(usages);
+        }
+        return new MutationResult(o.success(), o.code(), message, effects);
     }
 
     @Override

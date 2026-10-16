@@ -85,6 +85,11 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
             return Optional.empty();
         }
 
+        /** Faux = récompense désactivée dans le catalogue (#474) : plus promise à personne. */
+        default boolean rewardEnabled(String rewardKey) {
+            return true;
+        }
+
         static RewardSink of(RewardEntitlementService service) {
             return new RewardSink() {
                 @Override
@@ -110,6 +115,11 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                 @Override
                 public Optional<RewardTable> table(String id) {
                     return service.catalog().findTable(id);
+                }
+
+                @Override
+                public boolean rewardEnabled(String rewardKey) {
+                    return service.rewardEnabled(rewardKey);
                 }
             };
         }
@@ -249,14 +259,23 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                 .filter(e -> e.verdict() == BossParticipation.Verdict.ELIGIBLE).toList();
 
         String status = initialStatus(evaluated, eligible, rewardKeys);
-        List<String> fixedKeys = rewardKeys.stream().filter(k -> !k.startsWith(SpecialMobDefinition.TABLE_PREFIX))
-                .toList();
+        List<String> draws = new ArrayList<>();
+        List<String> fixedKeys = new ArrayList<>();
+        for (String key : rewardKeys) {
+            if (key.startsWith(SpecialMobDefinition.TABLE_PREFIX)) {
+                continue;
+            }
+            if (rewards.rewardEnabled(key)) {
+                fixedKeys.add(key);
+            } else {
+                draws.add("récompense « " + key + " » désactivée dans le catalogue — non déclarée");
+            }
+        }
         List<String> tableIds = rewardKeys.stream().filter(k -> k.startsWith(SpecialMobDefinition.TABLE_PREFIX))
                 .map(k -> k.substring(SpecialMobDefinition.TABLE_PREFIX.length())).toList();
         List<RewardEntitlement.Declaration> declarations = new ArrayList<>(BossParticipation.declarations(instance,
                 evaluated, fixedKeys, this::label));
         java.util.Map<UUID, Promised> promised = new java.util.LinkedHashMap<>();
-        List<String> draws = new ArrayList<>();
         if (!eligible.isEmpty() && rewards.enabled()) {
             drawTables(instance, eligible, fixedKeys, tableIds, declarations, promised, draws);
         }
@@ -308,7 +327,8 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                     continue;
                 }
                 List<RewardTableDraw.Win> wins = RewardTableDraw.wins(table.get(), "boss:" + instance.entityId(),
-                        participant.playerId(), RewardSource.BOSS, BossParticipation.sourceRef(instance), this::label);
+                        participant.playerId(), RewardSource.BOSS, BossParticipation.sourceRef(instance), this::label,
+                        rewards::rewardEnabled);
                 wins.forEach(win -> declarations.add(win.declaration()));
                 List<String> won = wins.stream().map(win -> label(win.entry().rewardKey())).toList();
                 labels.addAll(won);

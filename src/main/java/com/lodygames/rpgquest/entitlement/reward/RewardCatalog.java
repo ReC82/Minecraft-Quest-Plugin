@@ -28,6 +28,15 @@ public record RewardCatalog(boolean enabled, Map<String, RewardDefinition> rewar
         return Optional.ofNullable(tables.get(id));
     }
 
+    /**
+     * La récompense peut-elle encore être promise (issue #474) ? Inconnue = oui : le droit reste en
+     * attente avec l'erreur visible, comme avant ; désactivée = non.
+     */
+    public boolean promisable(String key) {
+        RewardDefinition reward = rewards.get(key);
+        return reward == null || reward.enabled();
+    }
+
     public Optional<RewardDefinition> find(String key) {
         return Optional.ofNullable(rewards.get(key));
     }

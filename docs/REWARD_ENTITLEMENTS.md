@@ -42,7 +42,11 @@ rewards:
       - {item: DIAMOND, amount: 3}               # matériau Paper
       - {item: "rpgquest:return_stone", amount: 1}   # objet custom RPGQuest (PDC)
     perk: {key: title_zombie, tier: GOLD}        # facultatif : avantage via EntitlementService
+    enabled: true                                # facultatif (#474) ; false = plus promise à personne
 ```
+
+Ce fichier n'a plus à être écrit à la main : PlugAdmin → **Récompenses** le crée, l'active et en édite les
+récompenses et les tables (§10.8).
 
 Validation au chargement, fichier refusé **en entier** à la moindre erreur (comme `statistics.yml`) :
 clé `[a-z0-9_]{1,48}`, `label` obligatoire, au moins un `items` ou un `perk`, `amount` 1–64 × 9 lignes
@@ -269,7 +273,7 @@ le tracent. (Tranche 1 enregistrait les gains de quête même désactivé : aban
 
 ### 10.6 Édition depuis PlugAdmin (tranche 2)
 
-Page **Récompenses aléatoires** (`/rewards`). Actions agent :
+Page **Récompenses** (`/rewards`, anciennement « Récompenses aléatoires »). Actions agent :
 
 | Action | Paramètres | Effet |
 | --- | --- | --- |
@@ -289,6 +293,40 @@ existante garde le sien (il fait partie de la clé d'idempotence des gains).
 
 ### 10.7 Hors de ces tranches
 
-Édition du **catalogue des récompenses** lui-même dans PlugAdmin (objets, avantages), XP / argent comme
-entrée de table, suppression d'une table (la désactiver), boss de quête (#171).
+XP / argent comme entrée de table, suppression d'une table ou d'une récompense (les désactiver), boss de
+quête (#171), usages des récompenses par les événements de `statistics.yml` dans PlugAdmin (non listés).
+
+### 10.8 Catalogue administré depuis PlugAdmin (#474)
+
+Plus aucune manipulation de fichier : la page **Récompenses** (`/rewards`, droit « Économie — lecture »,
+écritures « Économie — écriture ») couvre tout `entitlements.yml`.
+
+| Action | Paramètres | Effet |
+| --- | --- | --- |
+| `reward.catalog.init` | — (case de confirmation côté panel) | crée le fichier **désactivé et vide** (`enabled: false`, `rewards: {}`, `tables: {}`, en-tête de commentaires) ; `EXISTS` si un fichier existe déjà, même refusé — jamais écrasé ; aperçu exact (`initialText`) dans `reward.catalog.status` tant qu'il manque |
+| `reward.catalog.toggle` | `enabled` (confirmation côté panel) | seul l'interrupteur général change |
+| `reward.definition.save` | `reward_key`, `label`, `enabled`, `items` = `ITEM@quantité[+ench=clé:niveau,…][+potion=type];…`, `perk_key` / `perk_tier` facultatifs, `create`, `expected_version` | crée (`EXISTS`) ou remplace (`NOT_FOUND`, `STALE`, `UNCHANGED`) une récompense ; objet custom, enchantement ou potion inconnus du serveur refusés (`INVALID`) avant toute écriture |
+| `reward.definition.duplicate` | `reward_key`, `new_key`, `new_label` facultatif | copie **désactivée**, même contenu |
+| `reward.definition.toggle` | `reward_key`, `enabled` | seul `enabled` de la récompense change ; le message cite les tables et boss concernés |
+
+`reward.catalog.status` donne en plus, par récompense : `enabled`, `version` (empreinte nom + contenu +
+interrupteur, contrôle de formulaire périmé), lignes d'objets éditables, avantage, **usages** (tables qui la
+tirent, boss qui la déclarent) ; par table : **usages** (quêtes « Tirage au sort », boss `table:<id>`) ; et les
+objets custom, enchantements et potions connus du serveur (listes de l'éditeur).
+
+Garanties (`EntitlementsFile`, partagé avec l'éditeur de tables, un seul verrou) : fichier actuel absent
+(`NO_CATALOG`) ou refusé (`CURRENT_INVALID`) → rien n'est écrit ; seule la clé visée est remplacée (ordre,
+commentaires, autres récompenses et tables conservés) ; le texte final relu par le vrai chargeur doit redonner
+**exactement** le catalogue attendu (sinon `INVALID`, rien d'écrit) ; écriture atomique (création : fichier
+complet puis lien vers le nom définitif, refusée si un fichier est apparu) ; rechargement immédiat et, s'il ne
+redonne pas ce catalogue, ancien fichier remis à l'octet près — ou retiré s'il venait d'être créé
+(`ROLLED_BACK`). Nouvelles clés : `[a-z0-9_-]` (pas de point : YAML lirait deux niveaux), mots oui/non refusés.
+
+**Récompense désactivée** (`enabled: false`) : plus jamais promise. Un tirage qui tombe sur elle ne donne
+rien (le tirage lui-même ne change pas, les autres entrées gardent leurs chances) ; un boss ne la déclare plus
+(trace « désactivée dans le catalogue » dans ses victoires récentes) ; une déclaration administrateur est
+refusée ; un événement archivé ne la déclare pas et sera relu jusqu'à sa réactivation (clés idempotentes).
+Les droits **déjà ouverts** restent remis (le contenu est résolu à la remise). Aucune suppression : désactiver
+ne casse aucune référence. Interrupteur général : voir §10.5 (désactivé = aucun tirage ni nouveau droit, droits
+en attente conservés jusqu'à la réactivation).
 

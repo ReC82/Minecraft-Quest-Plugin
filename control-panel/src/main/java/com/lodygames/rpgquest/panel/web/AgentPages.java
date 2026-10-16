@@ -10485,7 +10485,7 @@ public final class AgentPages {
         return sb.toString();
     }
 
-    // ---- Récompenses aléatoires : éditeur de tables (issue #177, tranche 2) -------------------
+    // ---- Récompenses : catalogue (issue #474) et tables de tirage (issue #177) ---------------
 
     private static final String REWARDS_PATH = "/rewards";
     /** Lignes vides proposées sous les entrées existantes d'une table. */
@@ -10493,17 +10493,19 @@ public final class AgentPages {
     private static final int REWARD_TABLE_MIN_ROWS = 5;
 
     /**
-     * Page {@code /rewards} : catalogue des récompenses (lecture) et tables de tirage — créer,
-     * modifier, dupliquer, activer / désactiver sans écrire de YAML. Tout passe par les actions
-     * agent {@code reward.table.*}, validées par le serveur avant écriture.
+     * Page {@code /rewards} (issues #177, #474) : tout le catalogue {@code entitlements.yml} sans YAML —
+     * création du fichier, interrupteur général, récompenses (créer, modifier, dupliquer, activer) et
+     * tables de tirage. Tout passe par les actions agent {@code reward.*}, validées par le serveur
+     * avant écriture.
      */
     public String rewardTables(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        sb.append(Ui.pageHeader("gift", "Récompenses aléatoires",
-                "Tables de tirage au sort utilisées par les quêtes (récompense « Tirage au sort ») et par les "
-                        + "boss communautaires (récompenses de participation). Chaque gain est remis une seule fois, "
-                        + "même si l'inventaire est plein ou si le joueur se déconnecte.", ""));
+        sb.append(Ui.pageHeader("gift", "Récompenses",
+                "Le catalogue des récompenses (objets, enchantements, potions…) et les tables de tirage au sort "
+                        + "utilisées par les quêtes (récompense « Tirage au sort ») et les boss communautaires "
+                        + "(récompenses de participation). Chaque gain est remis une seule fois, même si l'inventaire "
+                        + "est plein ou si le joueur se déconnecte.", ""));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -10512,34 +10514,47 @@ public final class AgentPages {
         sb.append(agentPicker(agentId, REWARDS_PATH, ""));
         Optional<Map<String, Object>> loaded = latestDetails(agentId, "reward.catalog.status");
         Map<String, Object> d = loaded.orElse(Map.of());
-        boolean writable = loaded.isPresent() && Boolean.TRUE.equals(d.get("available"))
-                && Boolean.TRUE.equals(d.get("fileExists")) && Boolean.TRUE.equals(d.get("valid"))
-                && !asList(d.get("rewards")).isEmpty();
-        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Tables</span>")
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue</span>")
                 .append(compactRefresh(session, agentId, "reward.catalog.status", "Rafraîchir",
-                        loaded.isPresent() ? "btn-outline-primary" : "btn-warning", REWARDS_PATH));
-        if (canWrite && writable) {
-            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
-                    + "data-bs-target=\"#rt-new\" aria-expanded=\"false\" aria-controls=\"rt-new\">")
-                    .append(Icons.icon("plus")).append("Nouvelle table</button>");
-        }
-        sb.append("</div>");
+                        loaded.isPresent() ? "btn-outline-primary" : "btn-warning", REWARDS_PATH))
+                .append("</div>");
         if (loaded.isEmpty()) {
             return sb.append(Ui.empty("gift", "État pas encore chargé — cliquer sur « Rafraîchir »."))
                     .toString();
         }
         if (!Boolean.TRUE.equals(d.get("available"))) {
-            return sb.append(Ui.banner("warn", "Le plugin installé ne sait pas encore éditer les tables de "
-                    + "récompenses (version antérieure).")).toString();
+            return sb.append(Ui.banner("warn", "Le plugin installé ne sait pas encore éditer les récompenses "
+                    + "(version antérieure).")).toString();
         }
         sb.append(rewardCatalogBanner(d));
+        if (!Boolean.TRUE.equals(d.get("fileExists"))) {
+            return sb.append(rewardCatalogInitCard(session, agentId, d, canWrite)).toString();
+        }
+        if (!Boolean.TRUE.equals(d.get("valid"))) {
+            return sb.toString();
+        }
+        boolean editorReady = d.containsKey("initialText"); // plugin #474 : catalogue éditable
+        sb.append(rewardCatalogSwitchCard(session, agentId, d, canWrite && editorReady));
         List<Object> rewards = asList(d.get("rewards"));
         sb.append(rewardCatalogDatalist(rewards));
+        if (editorReady) {
+            sb.append(rewardItemDatalists(agentId, d));
+        }
         Map<String, String> rewardNames = new java.util.LinkedHashMap<>();
         rewards.forEach(o -> rewardNames.put(str(asMap(o).get("key")), str(asMap(o).get("label"))
+                + (Boolean.FALSE.equals(asMap(o).get("enabled")) ? " (désactivée)" : "")
                 + (str(asMap(o).get("summary")).isBlank() ? "" : " — " + str(asMap(o).get("summary")))));
+        sb.append(rewardDefinitionsSection(session, agentId, d, rewards, canWrite && editorReady));
+        boolean tablesWritable = !rewards.isEmpty();
+        sb.append("<div class=\"npc-catbar mt-4\"><span class=\"npc-catbar-t\">Tables de tirage</span>");
+        if (canWrite && tablesWritable) {
+            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#rt-new\" aria-expanded=\"false\" aria-controls=\"rt-new\">")
+                    .append(Icons.icon("plus")).append("Nouvelle table</button>");
+        }
+        sb.append("</div>");
         sb.append(rewardModesHelp());
-        if (canWrite && writable) {
+        if (canWrite && tablesWritable) {
             sb.append("<div class=\"collapse\" id=\"rt-new\"><div class=\"card card-body npc-formcard\">")
                     .append("<p class=\"npc-fs-h\">Nouvelle table</p>")
                     .append(rewardTableForm(session, agentId, null, "rt-new", rewardNames))
@@ -10548,24 +10563,23 @@ public final class AgentPages {
         List<Object> tables = asList(d.get("tables"));
         sb.append(Ui.sectionTitle("gift", "Tables (" + tables.size() + ")"));
         if (tables.isEmpty()) {
-            sb.append(Ui.empty("gift", writable ? "Aucune table pour l'instant — « Nouvelle table » pour en créer une."
-                    : "Aucune table."));
+            sb.append(Ui.empty("gift", tablesWritable
+                    ? "Aucune table pour l'instant — « Nouvelle table » pour en créer une."
+                    : "Aucune table : créer d'abord une récompense, puis une table qui la fait gagner."));
         }
         for (Object o : tables) {
-            sb.append(rewardTableCard(session, agentId, asMap(o), canWrite && writable, rewardNames));
+            sb.append(rewardTableCard(session, agentId, asMap(o), canWrite && tablesWritable, rewardNames));
         }
-        sb.append(rewardCatalogList(rewards));
         return sb.toString();
     }
 
-    /** État du fichier : absent, refusé, désactivé — chaque cas dit ce qu'il implique pour les joueurs. */
+    /** État du fichier : absent, refusé, vide — chaque cas dit ce qu'il implique pour les joueurs. */
     private static String rewardCatalogBanner(Map<String, Object> d) {
         if (!Boolean.TRUE.equals(d.get("fileExists"))) {
             return Ui.banner("warn", "<strong>Aucun catalogue de récompenses sur ce serveur</strong> "
-                    + "(<code>entitlements.yml</code> absent) : il n'existe aucune récompense à mettre dans une table, "
-                    + "donc aucune table ne peut être créée ici. Les quêtes et boss qui demandent un tirage "
-                    + "l'annoncent au joueur comme indisponible. Le catalogue se crée sur le serveur "
-                    + "(voir la documentation « Droits à récompense »).");
+                    + "(<code>entitlements.yml</code> absent) : aucune récompense n'existe, donc aucune table ne peut "
+                    + "être créée. Les quêtes et boss qui demandent un tirage l'annoncent au joueur comme "
+                    + "indisponible, et rien n'est promis.");
         }
         if (!Boolean.TRUE.equals(d.get("valid"))) {
             StringBuilder errors = new StringBuilder("<ul class=\"mb-0\">");
@@ -10577,16 +10591,277 @@ public final class AgentPages {
         }
         if (asList(d.get("rewards")).isEmpty()) {
             return Ui.banner("warn", "Le catalogue ne contient <strong>aucune récompense</strong> : une table n'aurait "
-                    + "rien à tirer. Ajouter d'abord des récompenses au catalogue du serveur.");
+                    + "rien à tirer. Commencer par « Nouvelle récompense » ci-dessous.");
         }
-        if (!Boolean.TRUE.equals(d.get("enabled"))) {
-            return Ui.banner("warn", "<strong>Récompenses désactivées sur le serveur</strong> "
-                    + "(<code>enabled: false</code>) : aucune quête ni aucun boss ne tire de table pour l'instant — "
-                    + "le joueur voit « récompenses aléatoires désactivées » et rien ne lui est promis. Les tables "
-                    + "peuvent être préparées ici en attendant.");
+        return "";
+    }
+
+    /** Fichier absent : aperçu exact du fichier qui sera créé, confirmation explicite. */
+    private static String rewardCatalogInitCard(Session session, String agentId, Map<String, Object> d,
+                                                boolean canWrite) {
+        String preview = str(d.get("initialText"));
+        StringBuilder sb = new StringBuilder("<div class=\"card card-body mb-3\">")
+                .append("<p class=\"npc-fs-h\">Créer le catalogue des récompenses</p>");
+        if (preview.isBlank()) {
+            return sb.append("<p class=\"mb-0\">Le plugin installé ne sait pas encore créer le catalogue depuis "
+                    + "PlugAdmin : le mettre à jour.</p></div>").toString();
         }
-        return Ui.banner("ok", "Récompenses actives : les tables <strong>actives</strong> ci-dessous sont tirées "
-                + "par les quêtes et boss qui les utilisent.");
+        sb.append("<p>Le serveur créera exactement ce fichier : <strong>désactivé</strong>, sans aucune récompense ni "
+                + "table. Rien ne change pour les joueurs tant que vous n'avez pas ajouté des récompenses puis activé "
+                + "le catalogue, ici même.</p><pre class=\"small border rounded p-2\" style=\"white-space:pre-wrap\">")
+                .append(Http.esc(preview)).append("</pre>");
+        if (!canWrite) {
+            return sb.append("<p class=\"muted small mb-0\">Création réservée aux comptes ayant le droit « Économie : "
+                    + "écriture ».</p></div>").toString();
+        }
+        sb.append("<form method=\"post\" action=\"/agents/action\">")
+                .append(rewardHiddenFields(session, agentId, "reward.catalog.init"))
+                .append("<div class=\"form-check mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
+                        + "name=\"confirm\" value=\"yes\" id=\"rc-init-ok\" required><label class=\"form-check-label\" "
+                        + "for=\"rc-init-ok\">Je crée le catalogue vide et désactivé sur ce serveur.</label></div>")
+                .append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("plus"))
+                .append("Créer le catalogue</button></form>");
+        return sb.append("</div>").toString();
+    }
+
+    /** Interrupteur général : état, conséquences pour les quêtes et les boss, confirmation. */
+    private static String rewardCatalogSwitchCard(Session session, String agentId, Map<String, Object> d,
+                                                  boolean canWrite) {
+        boolean enabled = Boolean.TRUE.equals(d.get("enabled"));
+        StringBuilder sb = new StringBuilder("<div class=\"card card-body mb-3\" id=\"rc-switch\">")
+                .append("<p class=\"npc-fs-h\">Récompenses sur ce serveur : ")
+                .append(enabled ? "<span class=\"badge text-bg-success\">activées</span>"
+                        : "<span class=\"badge text-bg-secondary\">désactivées</span>").append("</p>");
+        sb.append(enabled
+                ? "<p class=\"mb-2\">Les quêtes et boss tirent leurs tables <strong>actives</strong> et déclarent leurs "
+                + "récompenses ; les gains sont remis aux joueurs (une seule fois, même inventaire plein).</p>"
+                : "<p class=\"mb-2\">Aucun tirage ni nouvelle récompense : une quête ou un boss qui en prévoit une "
+                + "affiche « récompenses désactivées » et ne promet rien. Les gains déjà obtenus attendent la "
+                + "réactivation (rien n'est perdu). Récompenses et tables se préparent ici en attendant.</p>");
+        if (canWrite) {
+            sb.append("<form method=\"post\" action=\"/agents/action\">")
+                    .append(rewardHiddenFields(session, agentId, "reward.catalog.toggle"))
+                    .append("<input type=\"hidden\" name=\"enabled\" value=\"").append(!enabled).append("\">")
+                    .append("<div class=\"form-check mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
+                            + "name=\"confirm\" value=\"yes\" id=\"rc-sw-ok\" required><label class=\"form-check-label\" "
+                            + "for=\"rc-sw-ok\">")
+                    .append(enabled ? "J'ai compris : plus aucun tirage ni nouvelle récompense pour les quêtes et boss."
+                            : "J'ai compris : les quêtes et boss vont tirer leurs tables actives et remettre leurs "
+                            + "récompenses.")
+                    .append("</label></div><button class=\"btn").append(enabled ? " secondary" : " btn-primary")
+                    .append("\" type=\"submit\">").append(enabled ? "Désactiver les récompenses" : "Activer les récompenses")
+                    .append("</button></form>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    /** Liste recherchable des récompenses : valeur = clé du catalogue, libellé = nom + contenu. */
+    private static String rewardCatalogDatalist(List<Object> rewards) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"dl-reward-catalog\">");
+        for (Object o : rewards) {
+            Map<String, Object> r = asMap(o);
+            String summary = str(r.get("summary"));
+            sb.append("<option value=\"").append(Http.esc(str(r.get("key")))).append("\" label=\"")
+                    .append(Http.esc(str(r.get("label")) + (Boolean.FALSE.equals(r.get("enabled")) ? " (désactivée)" : "")
+                            + (summary.isBlank() ? "" : " — " + summary)))
+                    .append("\">");
+        }
+        return sb.append("</datalist>").toString();
+    }
+
+    /** Objets Minecraft (nom français) et RPGQuest, enchantements et potions connus du serveur. */
+    private String rewardItemDatalists(String agentId, Map<String, Object> d) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"dl-reward-items\">");
+        for (Object custom : asList(d.get("customItems"))) {
+            sb.append("<option value=\"").append(Http.esc(str(custom))).append("\" label=\"Objet RPGQuest\">");
+        }
+        for (String material : referenceData(agentId).materials()) {
+            sb.append("<option value=\"").append(Http.esc(material)).append("\" label=\"")
+                    .append(Http.esc(MaterialNames.french(material))).append("\">");
+        }
+        sb.append("</datalist><datalist id=\"dl-reward-potions\">");
+        asList(d.get("potions")).forEach(p -> sb.append("<option value=\"").append(Http.esc(str(p))).append("\">"));
+        return sb.append("</datalist>").toString();
+    }
+
+    /** Catalogue des récompenses : fiches éditables (#474), ou liste en lecture sans le droit d'écrire. */
+    private String rewardDefinitionsSection(Session session, String agentId, Map<String, Object> d,
+                                            List<Object> rewards, boolean canWrite) {
+        StringBuilder sb = new StringBuilder("<div class=\"npc-catbar mt-3\"><span class=\"npc-catbar-t\">")
+                .append("Récompenses (").append(rewards.size()).append(")</span>");
+        if (canWrite) {
+            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#rd-new\" aria-expanded=\"false\" aria-controls=\"rd-new\">")
+                    .append(Icons.icon("plus")).append("Nouvelle récompense</button>");
+        }
+        sb.append("</div><p class=\"muted small\">Ce qu'une table, un boss ou un événement peut faire gagner. Une "
+                + "récompense <strong>désactivée</strong> n'est plus promise à personne (un tirage qui tombe dessus ne "
+                + "donne rien, un boss ne la déclare plus) ; les gains déjà obtenus restent remis. Pas de suppression : "
+                + "désactiver suffit et ne casse aucune référence.</p>");
+        if (canWrite) {
+            sb.append("<div class=\"collapse\" id=\"rd-new\"><div class=\"card card-body npc-formcard\">")
+                    .append("<p class=\"npc-fs-h\">Nouvelle récompense</p>")
+                    .append(rewardDefinitionForm(session, agentId, null, "rd-new", d))
+                    .append("</div></div>");
+        }
+        if (rewards.isEmpty()) {
+            return sb.append(Ui.empty("gift", canWrite ? "Aucune récompense — « Nouvelle récompense » pour en créer une."
+                    : "Aucune récompense.")).toString();
+        }
+        for (Object o : rewards) {
+            sb.append(rewardDefinitionCard(session, agentId, asMap(o), d, canWrite));
+        }
+        return sb.toString();
+    }
+
+    private String rewardDefinitionCard(Session session, String agentId, Map<String, Object> r, Map<String, Object> d,
+                                        boolean canWrite) {
+        String key = str(r.get("key"));
+        boolean enabled = !Boolean.FALSE.equals(r.get("enabled"));
+        String uid = "rd-" + key.replaceAll("[^a-z0-9_-]", "_");
+        List<Object> usages = asList(r.get("usages"));
+        StringBuilder sb = new StringBuilder("<div class=\"card card-body mb-2\" id=\"").append(uid).append("\">");
+        sb.append("<div><strong>").append(Http.esc(str(r.get("label")))).append("</strong> <code>").append(Http.esc(key))
+                .append("</code> ").append(enabled ? "<span class=\"badge text-bg-success\">active</span>"
+                        : "<span class=\"badge text-bg-secondary\">désactivée</span>")
+                .append("</div><div>").append(Http.esc(str(r.get("summary")))).append("</div>");
+        sb.append("<div class=\"muted small\">").append(usages.isEmpty()
+                ? "Utilisée par aucune table ni aucun boss pour l'instant."
+                : "Utilisée par : " + Http.esc(String.join(", ", usages.stream().map(AgentPages::str).toList())) + ".")
+                .append("</div>");
+        if (canWrite) {
+            sb.append("<div class=\"d-flex flex-wrap gap-2 mt-2\">");
+            sb.append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#").append(uid).append("-edit\" aria-expanded=\"false\">")
+                    .append(Icons.icon("edit")).append("Modifier</button>");
+            sb.append("<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">")
+                    .append(rewardHiddenFields(session, agentId, "reward.definition.toggle"))
+                    .append("<input type=\"hidden\" name=\"reward_key\" value=\"").append(Http.esc(key)).append("\">")
+                    .append("<input type=\"hidden\" name=\"enabled\" value=\"").append(!enabled).append("\">")
+                    .append("<button class=\"btn sm").append(enabled ? " secondary" : "").append("\" type=\"submit\"")
+                    .append(enabled && !usages.isEmpty() ? " title=\"Ces usages ne la donneront plus\"" : "")
+                    .append(">").append(enabled ? "Désactiver" : "Activer").append("</button></form>");
+            sb.append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#").append(uid).append("-dup\" aria-expanded=\"false\">")
+                    .append(Icons.icon("plus")).append("Dupliquer</button>");
+            sb.append("</div>");
+            if (enabled && !usages.isEmpty()) {
+                sb.append("<div class=\"form-text\">Désactiver : ").append(usages.size())
+                        .append(" usage(s) ci-dessus ne la donneront plus (aucune erreur, simplement rien à gagner).</div>");
+            }
+            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-dup\">")
+                    .append("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">")
+                    .append(rewardHiddenFields(session, agentId, "reward.definition.duplicate"))
+                    .append("<input type=\"hidden\" name=\"reward_key\" value=\"").append(Http.esc(key)).append("\">")
+                    .append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
+                    .append("-dup-id\">Identifiant de la copie</label><input class=\"form-control\" id=\"").append(uid)
+                    .append("-dup-id\" name=\"new_key\" required maxlength=\"64\" pattern=\"[a-z0-9_\\-]{1,64}\" value=\"")
+                    .append(Http.esc(rewardCopyKey(key))).append("\"></div>")
+                    .append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
+                    .append("-dup-l\">Nom de la copie (facultatif)</label><input class=\"form-control\" id=\"")
+                    .append(uid).append("-dup-l\" name=\"new_label\" maxlength=\"120\"></div>")
+                    .append("<div class=\"form-text mb-2\">La copie est créée <strong>désactivée</strong>, avec le même "
+                            + "contenu : la modifier, puis l'activer.</div>")
+                    .append("<button class=\"btn sm\" type=\"submit\">Créer la copie</button></form></div>");
+            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-edit\"><div class=\"card card-body "
+                    + "npc-formcard\">").append(rewardDefinitionForm(session, agentId, r, uid + "-f", d))
+                    .append("</div></div>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    private static String rewardCopyKey(String key) {
+        String base = key.replace('.', '_');
+        return (base.length() > 58 ? base.substring(0, 58) : base) + "_copie";
+    }
+
+    /** Lignes d'objets proposées : celles de la récompense, plus deux vides (neuf au plus). */
+    private static final int REWARD_ITEM_BLANK_ROWS = 2;
+
+    /** Formulaire de récompense, création ({@code existing == null}) ou modification. */
+    private String rewardDefinitionForm(Session session, String agentId, Map<String, Object> existing, String uid,
+                                        Map<String, Object> d) {
+        boolean create = existing == null;
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">");
+        sb.append(rewardHiddenFields(session, agentId, "reward.definition.save"));
+        sb.append("<input type=\"hidden\" name=\"create\" value=\"").append(create).append("\">");
+        if (!create) {
+            sb.append("<input type=\"hidden\" name=\"reward_key\" value=\"").append(Http.esc(str(existing.get("key"))))
+                    .append("\"><input type=\"hidden\" name=\"expected_version\" value=\"")
+                    .append(Http.esc(str(existing.get("version")))).append("\">");
+        }
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-l\">Nom de la "
+                + "récompense</label><input class=\"form-control\" id=\"").append(uid).append("-l\" name=\"label\" "
+                + "required maxlength=\"120\" value=\"").append(Http.esc(create ? "" : str(existing.get("label"))))
+                .append("\">").append(fieldHelp("Nom montré au joueur quand il la reçoit (« Récompense reçue : … »).",
+                        "Épée du héros", "aucun (obligatoire)", null)).append("</div>");
+        if (create) {
+            sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">Identifiant "
+                    + "(facultatif)</label><input class=\"form-control\" id=\"").append(uid).append("-id\" "
+                    + "name=\"reward_key\" maxlength=\"64\" pattern=\"[a-z0-9_\\-]{0,64}\">")
+                    .append(fieldHelp("Ce que les tables et les boss utilisent pour la désigner. Vide : tiré du nom "
+                            + "(« Épée du héros » → <code>epee_du_heros</code>). Ne change plus ensuite.",
+                            "epee_du_heros", "tiré du nom", null)).append("</div>");
+        }
+        boolean enabled = create || !Boolean.FALSE.equals(existing.get("enabled"));
+        sb.append("<div class=\"form-check form-switch mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
+                + "role=\"switch\" id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
+                .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
+                .append("-en\">Récompense active (peut être gagnée)</label></div>");
+        List<Object> items = create ? List.of() : asList(existing.get("items"));
+        int rows = Math.min(com.lodygames.rpgquest.panel.agent.RewardDefinitionForm.MAX_ITEMS,
+                Math.max(3, items.size() + REWARD_ITEM_BLANK_ROWS));
+        sb.append("<p class=\"form-label mb-1\">Objets remis (tous ensemble)</p><div class=\"form-text mb-1\">Taper pour "
+                + "chercher un objet (nom français ou identifiant). Enchantements : « nom niveau » séparés par des "
+                + "virgules, sur l'objet — ou <em>stockés</em> dans un livre enchanté (ENCHANTED_BOOK). Potion : "
+                + "seulement sur POTION, SPLASH_POTION, LINGERING_POTION ou TIPPED_ARROW. Vider l'objet pour retirer "
+                + "la ligne.</div>");
+        for (int i = 0; i < rows; i++) {
+            Map<String, Object> item = i < items.size() ? asMap(items.get(i)) : Map.of();
+            String itemId = str(item.get("item"));
+            sb.append("<div class=\"row g-2 mb-2 pb-2 border-bottom align-items-start\">")
+                    .append("<div class=\"col-12 col-md-5\"><input class=\"form-control\" type=\"text\" name=\"item_id_")
+                    .append(i).append("\" aria-label=\"Objet ").append(i + 1).append("\" value=\"").append(Http.esc(itemId))
+                    .append("\" list=\"dl-reward-items\" autocomplete=\"off\" placeholder=\"Objet…\">")
+                    .append(itemId.isEmpty() || itemId.indexOf(':') >= 0 ? ""
+                            : "<div class=\"form-text mt-0\">" + Http.esc(MaterialNames.french(itemId)) + "</div>")
+                    .append("</div><div class=\"col-4 col-md-1\"><input class=\"form-control\" type=\"number\" min=\"1\" "
+                            + "max=\"64\" name=\"item_amount_").append(i).append("\" aria-label=\"Quantité objet ")
+                    .append(i + 1).append("\" value=\"").append(Http.esc(item.isEmpty() ? "" : str(item.get("amount"))))
+                    .append("\" placeholder=\"1\"></div>")
+                    .append("<div class=\"col-8 col-md-4\"><input class=\"form-control\" type=\"text\" name=\"item_ench_")
+                    .append(i).append("\" aria-label=\"Enchantements objet ").append(i + 1).append("\" value=\"")
+                    .append(Http.esc(str(item.get("enchantments")).replace(":", " ").replace(",", ", ")))
+                    .append("\" placeholder=\"Enchantements (sharpness 3)\"></div>")
+                    .append("<div class=\"col-12 col-md-2\"><input class=\"form-control\" type=\"text\" name=\"item_potion_")
+                    .append(i).append("\" aria-label=\"Potion objet ").append(i + 1).append("\" value=\"")
+                    .append(Http.esc(str(item.get("potion")))).append("\" list=\"dl-reward-potions\" "
+                            + "autocomplete=\"off\" placeholder=\"Potion\"></div></div>");
+        }
+        List<Object> enchantments = asList(d.get("enchantments"));
+        if (!enchantments.isEmpty()) {
+            sb.append("<details class=\"mb-2 small\"><summary>Enchantements connus du serveur (")
+                    .append(enchantments.size()).append(")</summary><p class=\"mb-0\">")
+                    .append(Http.esc(String.join(", ", enchantments.stream().map(AgentPages::str).toList())))
+                    .append("</p></details>");
+        }
+        String perkKey = create ? "" : str(existing.get("perkKey"));
+        sb.append("<details class=\"mb-2\"").append(perkKey.isEmpty() ? "" : " open").append("><summary>Avancé : "
+                + "avantage persistant</summary><div class=\"form-text\">Un avantage est enregistré sur le joueur (clé + "
+                + "palier) et lu par un système du jeu qui le connaît. Laisser vide si vous ne savez pas : seuls les "
+                + "objets ci-dessus seront remis. Le sac à dos n'est pas accepté ici.</div><div class=\"row g-2 mt-1\">")
+                .append("<div class=\"col-6\"><input class=\"form-control\" name=\"perk_key\" maxlength=\"64\" "
+                        + "aria-label=\"Clé de l'avantage\" placeholder=\"clé\" value=\"").append(Http.esc(perkKey))
+                .append("\"></div><div class=\"col-6\"><input class=\"form-control\" name=\"perk_tier\" maxlength=\"64\" "
+                        + "aria-label=\"Palier de l'avantage\" placeholder=\"palier\" value=\"")
+                .append(Http.esc(create ? "" : str(existing.get("perkTier")))).append("\"></div></div></details>");
+        if (!create) {
+            sb.append("<div class=\"form-text mb-2\">Contenu actuel : ").append(Http.esc(str(existing.get("summary"))))
+                    .append(". Modifier change aussi ce que remettront les gains déjà obtenus et pas encore reçus.</div>");
+        }
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
+                .append(create ? "Créer la récompense" : "Enregistrer").append("</button></form>");
+        return sb.toString();
     }
 
     private static String rewardModesHelp() {
@@ -10604,39 +10879,6 @@ public final class AgentPages {
                 + "<li>Une table <strong>désactivée</strong>, ou des récompenses désactivées sur le serveur : "
                 + "aucun tirage, et le joueur en est averti (même règle pour les quêtes et les boss).</li>"
                 + "</ul></details>";
-    }
-
-    /** Liste recherchable des récompenses : valeur = clé du catalogue, libellé = nom + contenu. */
-    private static String rewardCatalogDatalist(List<Object> rewards) {
-        StringBuilder sb = new StringBuilder("<datalist id=\"dl-reward-catalog\">");
-        for (Object o : rewards) {
-            Map<String, Object> r = asMap(o);
-            String summary = str(r.get("summary"));
-            sb.append("<option value=\"").append(Http.esc(str(r.get("key")))).append("\" label=\"")
-                    .append(Http.esc(str(r.get("label")) + (summary.isBlank() ? "" : " — " + summary)))
-                    .append("\">");
-        }
-        return sb.append("</datalist>").toString();
-    }
-
-    private static String rewardCatalogList(List<Object> rewards) {
-        StringBuilder sb = new StringBuilder("<details class=\"mt-4\"><summary>")
-                .append(Ui.sectionTitle("gift", "Catalogue des récompenses (" + rewards.size() + ")"))
-                .append("</summary><p class=\"muted small\">Les récompenses qu'une table peut faire gagner. Une "
-                        + "même récompense peut servir dans plusieurs tables. Le catalogue lui-même se modifie sur le "
-                        + "serveur (<code>entitlements.yml</code>).</p>");
-        if (rewards.isEmpty()) {
-            return sb.append(Ui.empty("gift", "Aucune récompense.")).append("</details>").toString();
-        }
-        sb.append("<div class=\"table-responsive\"><table class=\"table table-sm\"><thead><tr><th>Récompense</th>"
-                + "<th>Contenu</th><th>Clé</th></tr></thead><tbody>");
-        for (Object o : rewards) {
-            Map<String, Object> r = asMap(o);
-            sb.append("<tr><td>").append(Http.esc(str(r.get("label")))).append("</td><td>")
-                    .append(Http.esc(str(r.get("summary")))).append("</td><td><code>")
-                    .append(Http.esc(str(r.get("key")))).append("</code></td></tr>");
-        }
-        return sb.append("</tbody></table></div></details>").toString();
     }
 
     private String rewardTableCard(Session session, String agentId, Map<String, Object> t, boolean canWrite,
@@ -10664,6 +10906,11 @@ public final class AgentPages {
             sb.append("</li>");
         }
         sb.append("</ul><div class=\"muted small\">").append(Http.esc(str(t.get("explanation")))).append("</div>");
+        List<Object> usages = asList(t.get("usages"));
+        if (!usages.isEmpty()) {
+            sb.append("<div class=\"small\">Tirée par : ")
+                    .append(Http.esc(String.join(", ", usages.stream().map(AgentPages::str).toList()))).append(".</div>");
+        }
         sb.append("<div class=\"muted small\">Utilisation : quête → récompense « Tirage au sort », table <code>")
                 .append(Http.esc(id)).append("</code> ; boss → récompense de participation <code>table:")
                 .append(Http.esc(id)).append("</code>.</div>");
@@ -11343,7 +11590,7 @@ public final class AgentPages {
                         + "deux fois. Vide = aucune récompense (seulement les drops). Une entrée « Tirage : … » "
                         + "(<code>table:&lt;id&gt;</code>) fait un <strong>tirage au sort</strong> de cette table, une "
                         + "fois par joueur éligible (résultat individuel, figé) — tables gérées dans "
-                        + "<a href=\"/rewards\">Récompenses aléatoires</a>. Récompenses désactivées sur le serveur : "
+                        + "<a href=\"/rewards\">Récompenses</a>. Récompenses désactivées sur le serveur : "
                         + "rien n'est attribué et les joueurs en sont avertis.",
                         "boss_ogre, table:butin_ogre", "vide", null))
                 .append("</div>");

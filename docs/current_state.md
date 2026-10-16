@@ -1247,7 +1247,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   dupliquer, activer/désactiver, écriture sûre `RewardTableEditor` : validation avant écriture, écriture
   atomique, restauration si refus), listes recherchables des tables dans les éditeurs de quête et de boss,
   règle commune quêtes/boss quand le catalogue ou une table est désactivé (aucun tirage, joueur averti).
-  Non livré : édition du catalogue des récompenses lui-même (fichier serveur).
+  **#474** : catalogue entier administré depuis PlugAdmin → « Récompenses » (création du fichier désactivé
+  et vide, interrupteur général, récompenses créées / modifiées / dupliquées / activées, usages listés,
+  références objet / enchantement / potion vérifiées) ; `enabled` par récompense (désactivée = plus promise,
+  droits ouverts remis) ; écriture commune `EntitlementsFile` (PENDING MANUAL VALIDATION TC-336).
 - **Économie / Marché / Marchands** — portefeuille, transactions, hôtel des ventes, offres PNJ.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.

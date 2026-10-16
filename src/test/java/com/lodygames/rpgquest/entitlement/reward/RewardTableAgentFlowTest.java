@@ -135,4 +135,62 @@ class RewardTableAgentFlowTest {
         assertTrue(Files.notExists(file));
         assertEquals(Boolean.FALSE, run("reward.catalog.status", Map.of()).details().get("fileExists"));
     }
+
+    // ---- Issue #474 : catalogue administré depuis PlugAdmin ----------------------------------------
+
+    @Test
+    void theWholeCatalogIsAdministeredThroughTheAgentFromNoFile() throws Exception {
+        Files.delete(file);
+        service.reloadNow();
+        AgentActionOutcome before = run("reward.catalog.status", Map.of());
+        assertTrue(String.valueOf(before.details().get("initialText")).contains("enabled: false"));
+
+        AgentActionOutcome init = run("reward.catalog.init", Map.of());
+        assertEquals(AgentActionOutcome.SUCCESS, init.status(), init.message());
+        assertEquals("EXISTS", run("reward.catalog.init", Map.of()).details().get("code"));
+
+        AgentActionOutcome saved = run("reward.definition.save", Map.of("reward_key", "epee", "label", "Épée",
+                "enabled", "true", "create", "true",
+                "items", "DIAMOND_SWORD@1+ench=sharpness:3,unbreaking:2;POTION@2+potion=strength"));
+        assertEquals(AgentActionOutcome.SUCCESS, saved.status(), saved.message());
+        RewardDefinition epee = service.catalog().find("epee").orElseThrow();
+        assertEquals(Map.of("sharpness", 3, "unbreaking", 2), epee.items().get(0).enchantments());
+        assertEquals("strength", epee.items().get(1).potion());
+        assertEquals(false, service.catalog().enabled(), "rien n'est activé implicitement");
+
+        assertEquals(AgentActionOutcome.SUCCESS, run("reward.table.save", Map.of("table_id", "coffre", "label", "Coffre",
+                "mode", "single", "enabled", "true", "create", "true", "entries", "epee=epee@50")).status());
+        AgentActionOutcome off = run("reward.definition.toggle", Map.of("reward_key", "epee", "enabled", "false"));
+        assertEquals(AgentActionOutcome.SUCCESS, off.status(), off.message());
+        assertTrue(off.message().contains("table « Coffre » (coffre)"), "usages cités : " + off.message());
+        assertEquals(AgentActionOutcome.SUCCESS, run("reward.definition.duplicate",
+                Map.of("reward_key", "epee", "new_key", "epee_v2")).status());
+        assertEquals(AgentActionOutcome.SUCCESS, run("reward.catalog.toggle", Map.of("enabled", "true")).status());
+        assertTrue(service.catalog().enabled());
+
+        AgentActionOutcome status = run("reward.catalog.status", Map.of());
+        List<?> rewards = (List<?>) status.details().get("rewards");
+        Map<?, ?> first = (Map<?, ?>) rewards.get(0);
+        assertEquals(Boolean.FALSE, first.get("enabled"));
+        assertEquals(List.of("table « Coffre » (coffre)"), first.get("usages"));
+        assertEquals("sharpness:3,unbreaking:2", ((Map<?, ?>) ((List<?>) first.get("items")).get(0)).get("enchantments"));
+        assertEquals("", status.details().get("initialText"));
+        assertTrue(((List<?>) status.details().get("enchantments")).contains("sharpness"));
+    }
+
+    @Test
+    void unknownReferencesAndMalformedItemsAreRefusedBeforeWriting() throws Exception {
+        byte[] before = Files.readAllBytes(file);
+        AgentActionOutcome enchant = run("reward.definition.save", Map.of("reward_key", "x", "label", "X",
+                "enabled", "true", "create", "true", "items", "DIAMOND_SWORD@1+ench=pas_un_enchantement:1"));
+        assertEquals("INVALID", enchant.details().get("code"), enchant.message());
+        AgentActionOutcome custom = run("reward.definition.save", Map.of("reward_key", "x", "label", "X",
+                "enabled", "true", "create", "true", "items", "rpgquest:inexistant@1"));
+        assertEquals("INVALID", custom.details().get("code"), custom.message());
+        assertEquals(AgentActionOutcome.REJECTED, run("reward.definition.save", Map.of("reward_key", "x",
+                "label", "X", "enabled", "true", "create", "true", "items", "DIAMOND@99")).status());
+        assertEquals(AgentActionOutcome.REJECTED, run("reward.definition.save", Map.of("reward_key", "x",
+                "label", "X", "enabled", "true", "create", "true")).status());
+        assertArrayEquals(before, Files.readAllBytes(file));
+    }
 }

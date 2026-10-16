@@ -90,6 +90,7 @@ public final class RewardEntitlementService implements PluginService, Listener, 
     private volatile RewardCatalog catalog = RewardCatalog.DISABLED;
     private volatile List<String> lastErrors = List.of();
     private final RewardTableEditor tableEditor;
+    private final RewardCatalogEditor catalogEditor;
     private long loadedModified = Long.MIN_VALUE;
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final Set<String> declaredEvents = ConcurrentHashMap.newKeySet();
@@ -127,7 +128,9 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         this.logger = logger;
         this.clock = clock;
         this.mainThread = mainThread;
-        this.tableEditor = new RewardTableEditor(file, this::reloadNow, logger);
+        EntitlementsFile shared = new EntitlementsFile(file, this::reloadNow, logger);
+        this.tableEditor = new RewardTableEditor(shared);
+        this.catalogEditor = new RewardCatalogEditor(shared);
     }
 
     @Override
@@ -165,9 +168,19 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         return tableEditor;
     }
 
+    /** Administration du catalogue depuis PlugAdmin (issue #474), hors du thread principal. */
+    public RewardCatalogEditor catalogEditor() {
+        return catalogEditor;
+    }
+
     @Override
     public boolean enabled() {
         return catalog.enabled();
+    }
+
+    @Override
+    public boolean rewardEnabled(String rewardKey) {
+        return catalog.promisable(rewardKey);
     }
 
     @Override
@@ -266,10 +279,17 @@ public final class RewardEntitlementService implements PluginService, Listener, 
             }
             Set<UUID> excluded = definition.excludedFrom(event.id());
             chain = chain.thenCompose(ignored -> statisticsRepository.archivedValues(event.id(), event.metrics().get(0)))
-                    .thenCompose(values -> repository.declareAll(
-                            EventRewardRecipients.declarations(event, values, excluded), clock.instant()))
+                    .thenCompose(values -> {
+                        List<RewardEntitlement.Declaration> all = EventRewardRecipients.declarations(event, values,
+                                excluded);
+                        List<RewardEntitlement.Declaration> kept = promisable(all, "événement " + event.id());
+                        if (kept.size() == all.size()) {
+                            declaredEvents.add(event.id());
+                        } // sinon relu à chaque tour : la récompense réactivée sera déclarée (clés idempotentes)
+                        return kept.isEmpty() ? CompletableFuture.completedFuture(0)
+                                : repository.declareAll(kept, clock.instant());
+                    })
                     .thenAccept(created -> {
-                        declaredEvents.add(event.id());
                         if (created > 0) {
                             logger.info("Récompenses : {} droit(s) déclaré(s) pour l'événement « {} ».",
                                     created, event.id());
@@ -294,6 +314,10 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         if (reward.isEmpty()) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("récompense inconnue : " + rewardKey));
         }
+        if (!reward.get().enabled()) {
+            return CompletableFuture.failedFuture(new IllegalStateException(
+                    "récompense désactivée dans le catalogue : " + rewardKey));
+        }
         String key = "admin:" + reference + ":" + player;
         if (!RewardEntitlement.KEY_PATTERN.matcher(key).matches()) {
             return CompletableFuture.failedFuture(new IllegalArgumentException(
@@ -316,10 +340,26 @@ public final class RewardEntitlementService implements PluginService, Listener, 
             return CompletableFuture.failedFuture(new IllegalStateException(
                     "droits à récompense désactivés (entitlements.yml : enabled: false)"));
         }
-        if (declarations.isEmpty()) {
+        List<RewardEntitlement.Declaration> promisable = promisable(declarations, "déclaration d'une source du jeu");
+        if (promisable.isEmpty()) {
             return CompletableFuture.completedFuture(0);
         }
-        return repository.declareAll(declarations, clock.instant());
+        return repository.declareAll(promisable, clock.instant());
+    }
+
+    /**
+     * Retire les droits d'une récompense désactivée (issue #474) : elle n'est plus promise à personne.
+     * Les sources le font déjà (tirages, boss) ; ceci garantit la règle pour toutes.
+     */
+    private List<RewardEntitlement.Declaration> promisable(List<RewardEntitlement.Declaration> declarations,
+                                                           String context) {
+        List<RewardEntitlement.Declaration> kept = declarations.stream()
+                .filter(d -> catalog.promisable(d.rewardKey())).toList();
+        if (kept.size() < declarations.size()) {
+            logger.info("Récompenses : {} droit(s) non déclaré(s) ({}) — récompense désactivée dans le catalogue.",
+                    declarations.size() - kept.size(), context);
+        }
+        return kept;
     }
 
     /** Tente tout de suite la remise des droits en attente de ces joueurs (sans attendre le tour de 30 s). */

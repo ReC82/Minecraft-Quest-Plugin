@@ -97,7 +97,11 @@ public final class RewardCatalogLoader {
             errors.add(where + " : au moins un objet (« items ») ou un avantage (« perk »).");
             return null;
         }
-        return new RewardDefinition(key, label.trim(), items, perk);
+        if (entry.contains("enabled") && !entry.isBoolean("enabled")) {
+            errors.add(where + " : « enabled » = true ou false.");
+            return null;
+        }
+        return new RewardDefinition(key, label.trim(), items, perk, entry.getBoolean("enabled", true));
     }
 
     private static List<RewardDefinition.Item> readItems(String where, List<Map<?, ?>> raw, List<String> errors) {

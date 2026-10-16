@@ -61,9 +61,22 @@ public final class RewardTableDraw {
      */
     public static List<Win> wins(RewardTable table, String base, UUID player, RewardSource source, String sourceRef,
                                  java.util.function.Function<String, String> label) {
+        return wins(table, base, player, source, sourceRef, label, key -> true);
+    }
+
+    /**
+     * @param promisable faux pour une récompense désactivée du catalogue (issue #474) : l'entrée tirée
+     *                   ne donne rien. Le tirage lui-même ne change pas (mêmes chances pour les autres).
+     */
+    public static List<Win> wins(RewardTable table, String base, UUID player, RewardSource source, String sourceRef,
+                                 java.util.function.Function<String, String> label,
+                                 java.util.function.Predicate<String> promisable) {
         List<Win> wins = new ArrayList<>();
         String version = table.version();
         for (RewardTable.Entry entry : draw(table, base + ":" + table.id() + ":" + player)) {
+            if (!promisable.test(entry.rewardKey())) {
+                continue;
+            }
             String key = base + ":" + table.id() + "." + entry.id() + ":" + player;
             String trace = label.apply(entry.rewardKey()) + " — table " + table.id() + " v" + version + " ("
                     + RewardTable.percent(entry.chance()) + ")";

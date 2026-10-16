@@ -216,6 +216,22 @@ class RewardEntitlementServiceTest {
     }
 
     @Test
+    void aDisabledRewardIsNeverPromisedButAPendingOneIsStillDelivered() throws Exception {
+        RewardEntitlement pending = declare("admin:a", "diamonds");
+        RewardEntitlementService off = newService(CATALOG.replace("    perk: {key: title_zombie, tier: GOLD}\n",
+                "    perk: {key: title_zombie, tier: GOLD}\n    enabled: false\n"));
+        assertFalse(off.catalog().find("diamonds").orElseThrow().enabled());
+        assertFalse(off.rewardEnabled("diamonds"));
+        assertThrows(Exception.class, () -> get(off.declareAdmin(player.getUniqueId(), "diamonds", "x")));
+        RewardEntitlement.Declaration boss = new RewardEntitlement.Declaration("boss:b:diamonds:" + player.getUniqueId(),
+                player.getUniqueId(), RewardSource.BOSS, "rpgquest:ogre@x", "diamonds", "Trois diamants");
+        assertEquals(0, get(off.declareAll(List.of(boss))));
+        assertTrue(get(repository.find(boss.idempotencyKey())).isEmpty());
+        assertEquals(RewardEntitlementService.Attempt.DELIVERED, get(off.attempt(pending)),
+                "un droit déjà ouvert reste remis");
+    }
+
+    @Test
     void adminDeclarationIsIdempotentPerReference() throws Exception {
         RewardEntitlementService.DeclareOutcome first = get(service.declareAdmin(player.getUniqueId(), "diamonds", "concours-1"));
         RewardEntitlementService.DeclareOutcome again = get(service.declareAdmin(player.getUniqueId(), "diamonds", "concours-1"));

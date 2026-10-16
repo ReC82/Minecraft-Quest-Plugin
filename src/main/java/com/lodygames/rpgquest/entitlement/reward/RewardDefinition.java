@@ -7,13 +7,39 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Une récompense du catalogue {@code entitlements.yml} (issue #422, docs/REWARD_ENTITLEMENTS.md §3).
  *
- * @param items objets remis ensemble, tout ou rien (peut être vide si {@code perk} est présent)
- * @param perk  avantage persistant accordé via {@code EntitlementService}, facultatif
+ * @param items   objets remis ensemble, tout ou rien (peut être vide si {@code perk} est présent)
+ * @param perk    avantage persistant accordé via {@code EntitlementService}, facultatif
+ * @param enabled faux = plus jamais promise (aucun nouveau droit, aucun gain de tirage) ; les droits
+ *                déjà ouverts restent remis (issue #474)
  */
-public record RewardDefinition(String key, String label, List<Item> items, @Nullable Perk perk) {
+public record RewardDefinition(String key, String label, List<Item> items, @Nullable Perk perk, boolean enabled) {
 
     public RewardDefinition {
         items = List.copyOf(items);
+    }
+
+    public RewardDefinition(String key, String label, List<Item> items, @Nullable Perk perk) {
+        this(key, label, items, perk, true);
+    }
+
+    /**
+     * Empreinte courte de la définition (nom, contenu, interrupteur) : un formulaire PlugAdmin ouvert
+     * sur une version plus ancienne est refusé plutôt que d'écraser une modification (issue #474).
+     */
+    public String version() {
+        String canonical = label + "|" + enabled + "|" + items + "|" + perk;
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest, 0, 4);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 indisponible", e);
+        }
+    }
+
+    /** Même récompense, nom et interrupteur changés (copie, bascule). */
+    public RewardDefinition with(String newKey, String newLabel, boolean newEnabled) {
+        return new RewardDefinition(newKey, newLabel, items, perk, newEnabled);
     }
 
     /**

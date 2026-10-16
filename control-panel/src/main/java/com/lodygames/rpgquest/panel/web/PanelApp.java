@@ -344,9 +344,9 @@ public final class PanelApp {
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",
                 Permission.MOB_READ, agentPages::mobs));
-        // Issue #177 (tranche 2) — tables de récompenses aléatoires. Lecture gardée par ECONOMY_READ ;
-        // les écritures passent par /agents/action (reward.table.*, ECONOMY_WRITE).
-        route("/rewards", exchange -> handleBusinessPage(exchange, "/rewards", "Récompenses aléatoires",
+        // Issues #177 / #474 — catalogue des récompenses et tables de tirage. Lecture : ECONOMY_READ ;
+        // les écritures passent par /agents/action (reward.*, ECONOMY_WRITE).
+        route("/rewards", exchange -> handleBusinessPage(exchange, "/rewards", "Récompenses",
                 Permission.ECONOMY_READ, agentPages::rewardTables));
         // Issue #332 — dialogues, version simple : une liste, un éditeur, « Enregistrer » puis
         // « Mettre en jeu » par la publication à chaud (#47). L'ancien écran reste en « Détails

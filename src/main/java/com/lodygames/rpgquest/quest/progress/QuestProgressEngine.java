@@ -1503,7 +1503,8 @@ public final class QuestProgressEngine implements PluginService {
                 continue;
             }
             List<RewardTableDraw.Win> wins = RewardTableDraw.wins(table.get(), "quest:" + token, playerId,
-                    RewardSource.QUEST, quest.id().toString(), rewardTables::label);
+                    RewardSource.QUEST, quest.id().toString(), rewardTables::label,
+                    rewardTables::rewardEnabled);
             if (wins.isEmpty()) {
                 lines.add(messagesService.current().format("quest.reward-line-table-none",
                         Placeholder.unparsed("table", table.get().label())));

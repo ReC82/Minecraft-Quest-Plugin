@@ -6392,6 +6392,31 @@ Wild**, en survie, près de waypoints existants.
     → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
     Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
 
+### TC-336 — Administrer le catalogue des récompenses sans YAML (issue #474, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #474 sur **DEV**, `entitlements.yml` **absent** (état DEV au 16/10).
+Compte PlugAdmin avec « Économie — écriture ». Aucun accès fichier nécessaire.
+
+1.  PlugAdmin → **Récompenses** → Rafraîchir. **Attendu** : « Aucun catalogue », aperçu du fichier qui sera
+    créé (`enabled: false`, aucune récompense ni table), bouton **Créer le catalogue** et case à cocher.
+2.  Cliquer sans cocher → refusé. Cocher → Créer. **Attendu** : succès ; la page montre « Récompenses sur ce
+    serveur : désactivées », 0 récompense, « Nouvelle récompense ».
+3.  **Nouvelle récompense** : « Gemme d'essai », objet « diam » → Diamant, quantité 2 → Créer. Puis
+    « Épée d'essai » : Épée en diamant, enchantements `sharpness 3, unbreaking 2`. **Attendu** : deux fiches
+    actives, contenu lisible (« 2 × DIAMOND », « DIAMOND_SWORD (sharpness 3, unbreaking 2) »).
+4.  Erreurs lisibles, rien écrit : enchantement `pas_un_enchantement 1` ; potion sur une épée ; quantité 65.
+5.  **Modifier** la gemme (quantité 3) → Enregistrer ; sans changement → « Aucune modification ».
+    **Dupliquer** l'épée → copie **désactivée**.
+6.  Tables de tirage → **Nouvelle table** avec les deux récompenses (ex. 30 % / 5 %). **Attendu** : chaque fiche
+    de récompense affiche « Utilisée par : table … ». Associer la table au boss zombie d'entraînement
+    (éditeur de boss, `Tirage : …`) puis Rafraîchir : la table affiche « Tirée par : boss … ».
+7.  **Désactiver** la gemme. **Attendu** : message citant la table et le boss concernés ; badge « désactivée » ;
+    dans la liste des tables, « (désactivée) ».
+8.  Interrupteur général : cocher « J'ai compris » → **Activer les récompenses**. **Attendu** : « activées ».
+9.  En jeu (TC-331) : boss d'entraînement vaincu → l'épée tirée est remise **une fois** (inventaire plein :
+    elle attend) ; la gemme désactivée n'est jamais donnée. Puis **Désactiver les récompenses** → victoire →
+    « les récompenses sont désactivées sur le serveur », aucun droit créé.
+
 ### TC-335 — Quête d'amélioration du kit dans le journal (issue #475, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de #475 sur **DEV**, un compte au palier de kit N (variable `STARTER_KIT_TIER`), sans la
@@ -6528,8 +6553,8 @@ tables:
 
 ### TC-333 — Éditer les tables de récompenses depuis PlugAdmin (issue #177 tranche 2, PENDING MANUAL VALIDATION)
 
-Prérequis : JAR et PlugAdmin issus de #177 tranche 2 sur **DEV**, `entitlements.yml` créé par le propriétaire
-avec au moins deux récompenses (exemple TC-331, tables facultatives). Compte PlugAdmin avec « Économie ».
+Prérequis : JAR et PlugAdmin issus de #177 tranche 2 sur **DEV**, catalogue avec au moins deux récompenses —
+depuis #474, créé et rempli depuis PlugAdmin (TC-336), sans fichier à écrire. Compte PlugAdmin avec « Économie ».
 
 1.  PlugAdmin → **Récompenses aléatoires** → Rafraîchir. **Attendu** : bandeau d'état (actif / désactivé),
     catalogue des récompenses en bas, tables existantes avec Modifier / Désactiver / Dupliquer.

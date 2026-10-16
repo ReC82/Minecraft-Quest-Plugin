@@ -1,0 +1,30 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md (TC-337).
+#
+# Objectif KILL_QUEST_BOSS (issue #171) : à l'acceptation, un boss apparaît
+# dans le Wild POUR CE JOUEUR (profil « ogre » : catégorie Boss, type « Boss
+# de quête », activé — à créer ou adapter dans PlugAdmin › Mobs).
+#
+# Procédure et pièges à vérifier explicitement :
+#   - message et journal : biome + waypoint le plus proche (découvert ou non) ;
+#   - recliquer, se reconnecter, mourir : toujours un seul boss ;
+#   - tuer le boss d'un autre joueur ou un zombie ordinaire ne compte pas ;
+#   - boss tué à plus de 64 blocs du propriétaire : objectif non rempli,
+#     nouveau boss ~1 min plus tard ;
+#   - abandonner la quête retire le boss sans butin.
+id: rpgquest:test_kill_quest_boss
+title: "<red>[TEST] Vaincre son boss de quête</red>"
+description: "<gray>Quête de test manuel — objectif KILL_QUEST_BOSS. Un boss apparaît dans le Wild pour toi : trouve-le et vaincs-le.</gray>"
+category: test
+icon: ZOMBIE_HEAD
+repeatable: true
+
+steps:
+  - id: vaincre_le_boss
+    objectives:
+      - type: KILL_QUEST_BOSS
+        mob: ogre
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

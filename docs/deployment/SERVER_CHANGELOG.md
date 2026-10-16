@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Tables de récompenses aléatoires quêtes / boss (#177)
+
+### Changement
+
+Section facultative `tables:` dans `entitlements.yml` (mode explicite `independent` / `single`, chances
+exactes) ; récompense de quête `TABLE` (`table: <id>`) et `table:<id>` dans `participation-rewards` des
+boss. Tirage figé (graine stable), chaque gain = un droit à récompense (source `QUEST` ou `BOSS`).
+Catalogue : `enchantments` et `potion` sur les objets. PlugAdmin : tables en lecture et tirages dans la
+section Boss communautaires, récompense « Tirage au sort » dans l'éditeur de quête.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin (AWS). Aucune migration (réutilise
+`reward_entitlements`, V41 ; nouvelle valeur `source = QUEST`). Nouvelles clés `quest.reward-line-table-*`
+ajoutées automatiquement à `messages.yml` (fusion des clés manquantes). Aucun fichier créé :
+`entitlements.yml` reste absent sur DEV tant que le propriétaire ne le crée pas (exemple TC-331).
+
+### Sauvegarde préalable
+
+JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygames.sh` / `deploy.sh`).
+
+### Déploiement
+
+Voir le rapport `docs/claude-reports/` du ticket #177 (date, empreintes).
+
+### Validation
+
+PENDING MANUAL VALIDATION : TC-331.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage. L'ancien JAR **ignore** la section `tables`
+et les clés `enchantments` / `potion` de `entitlements.yml` (un livre serait alors remis sans enchantement) ; une quête portant une récompense `TABLE` serait en revanche
+refusée au chargement par l'ancien parseur (type inconnu) — retirer la récompense avant un rollback. Un
+profil boss avec `table:<id>` serait refusé par l'ancien parseur (clé invalide). Les droits `QUEST` déjà
+écrits restent remis normalement.
+
 ## 2026-10-16 - Participation et récompenses des boss communautaires (#176)
 
 ### Changement

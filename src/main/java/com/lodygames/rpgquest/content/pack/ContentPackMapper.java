@@ -149,6 +149,7 @@ public final class ContentPackMapper {
             case CommandReward x -> QuestPackEntry.Reward.command(x.command());
             case MoneyReward x -> QuestPackEntry.Reward.money(x.amount());
             case HeartReward x -> QuestPackEntry.Reward.heart(x.hearts(), x.grantKey());
+            case com.lodygames.rpgquest.quest.model.TableReward x -> QuestPackEntry.Reward.table(x.tableId());
         };
     }
 

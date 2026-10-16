@@ -10461,7 +10461,56 @@ public final class AgentPages {
                     "Je confirme : retirer les boss de test (sans récompense)"));
         }
         sb.append(communityBossDefeats(asList(d.get("recentDefeats")), now));
+        sb.append(rewardTablesSection(d.get("rewardTables")));
         return sb.toString();
+    }
+
+    /**
+     * Issue #177 : tables de récompenses aléatoires chargées depuis {@code entitlements.yml}, en
+     * lecture — mode explicite, chance de chaque entrée et explication des chances réelles.
+     */
+    private String rewardTablesSection(Object raw) {
+        StringBuilder sb = new StringBuilder("<p class=\"npc-fs-h mt-3\">Tables de récompenses aléatoires "
+                + "(quêtes et boss)</p>");
+        if (raw == null) {
+            return sb.append(Ui.empty("gift", "Le serveur n'envoie pas encore les tables (plugin antérieur à #177)."))
+                    .toString();
+        }
+        List<Object> tables = asList(raw);
+        sb.append("<p class=\"muted small\">Définies dans la section <code>tables</code> de "
+                + "<code>entitlements.yml</code> du serveur. Une quête les tire avec la récompense « Tirage au sort », "
+                + "un boss avec <code>table:&lt;id&gt;</code> dans ses récompenses de participation. Chaque gain devient "
+                + "un droit à récompense (fiche joueur → Monnaie → Droits à récompense), remis une seule fois.</p>");
+        if (tables.isEmpty()) {
+            return sb.append(Ui.empty("gift", "Aucune table chargée sur le serveur.")).toString();
+        }
+        sb.append("<div class=\"list-group mb-3\">");
+        for (Object o : tables) {
+            Map<String, Object> t = asMap(o);
+            sb.append("<div class=\"list-group-item\"><div><strong>").append(Http.esc(str(t.get("label"))))
+                    .append("</strong> <code>").append(Http.esc(str(t.get("id")))).append("</code> ")
+                    .append("<span class=\"badge text-bg-info\">").append(Http.esc(str(t.get("modeLabel"))))
+                    .append("</span>");
+            if (!Boolean.TRUE.equals(t.get("enabled"))) {
+                sb.append(" <span class=\"badge text-bg-secondary\">désactivée</span>");
+            }
+            sb.append(" <span class=\"muted small\">version ").append(Http.esc(str(t.get("version"))))
+                    .append(" · total ").append(Http.esc(str(t.get("totalChance")))).append("</span></div>");
+            sb.append("<ul class=\"mb-1\">");
+            for (Object e : asList(t.get("entries"))) {
+                Map<String, Object> entry = asMap(e);
+                sb.append("<li><strong>").append(Http.esc(str(entry.get("chance")))).append("</strong> — ")
+                        .append(Http.esc(str(entry.get("rewardLabel")))).append(" <span class=\"muted small\">(")
+                        .append(Http.esc(str(entry.get("rewardKey")))).append(")</span>");
+                if (!Boolean.TRUE.equals(entry.get("rewardKnown"))) {
+                    sb.append(" <span class=\"badge text-bg-danger\">récompense inconnue</span>");
+                }
+                sb.append("</li>");
+            }
+            sb.append("</ul><div class=\"muted small\">").append(Http.esc(str(t.get("explanation"))))
+                    .append("</div></div>");
+        }
+        return sb.append("</div>").toString();
     }
 
     /** Issue #176 : traçabilité des dernières victoires — participants, verdicts, droits déclarés. */
@@ -10507,7 +10556,14 @@ public final class AgentPages {
             sb.append("<div class=\"muted small\">Récompenses du profil : ")
                     .append(keys.isEmpty() ? "aucune" : Http.esc(String.join(", ",
                             keys.stream().map(AgentPages::str).toList())))
-                    .append(" · ").append(Http.esc(str(d.get("rewardStatus")))).append("</div></div>");
+                    .append(" · ").append(Http.esc(str(d.get("rewardStatus")))).append("</div>");
+            // Issue #177 : résultat individuel de chaque tirage (table, version, gains).
+            List<Object> draws = asList(d.get("draws"));
+            if (!draws.isEmpty()) {
+                sb.append("<div class=\"muted small\">Tirages : ").append(Http.esc(String.join(" ; ",
+                        draws.stream().map(AgentPages::str).toList()))).append("</div>");
+            }
+            sb.append("</div>");
         }
         return sb.append("</div>").toString();
     }
@@ -10888,8 +10944,10 @@ public final class AgentPages {
                         + "plus), remises à <strong>chaque</strong> joueur qui a touché ce boss et qui, à sa mort, est "
                         + "vivant, dans le même monde et dans le même biome que lui. Remise sûre : inventaire plein = "
                         + "la récompense attend, jamais deux fois. Vide = aucune récompense (seulement les drops). "
-                        + "Exige <code>enabled: true</code> dans <code>entitlements.yml</code>.",
-                        "boss_ogre, titre.ogre", "vide", null))
+                        + "<code>table:&lt;id&gt;</code> = un <strong>tirage au sort</strong> de cette table, une fois "
+                        + "par joueur éligible (résultat individuel, figé). Exige <code>enabled: true</code> dans "
+                        + "<code>entitlements.yml</code>.",
+                        "boss_ogre, table:butin_ogre", "vide", null))
                 .append("</div>");
         sb.append(catalogCombo(uid, "entity_type", "et", "Type d'entité Minecraft",
                 str(existing == null ? null : existing.get("entityType")), "dl-mob-entity", true,

@@ -4728,7 +4728,30 @@ public final class BukkitAgentActions implements AgentActions {
         }
         return done(new CommunityBossView(true, settings.enabled(), settings.intervalMinutes(), settings.maxActive(),
                 state.nextDueMillis(), state.lastSpawnMillis(), state.lastAttemptMillis(), state.lastOutcome(),
-                System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles), recentDefeats()));
+                System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles), recentDefeats(),
+                rewardTables()));
+    }
+
+    /** Issue #177 : tables de tirage du catalogue chargé (vide sans service ou sans tables). */
+    private List<RewardTableView> rewardTables() {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return List.of();
+        }
+        var catalog = service.catalog();
+        List<RewardTableView> views = new ArrayList<>();
+        for (var table : catalog.tables().values()) {
+            List<RewardTableEntryView> entries = table.entries().stream()
+                    .map(e -> new RewardTableEntryView(e.id(), e.rewardKey(), service.label(e.rewardKey()),
+                            catalog.find(e.rewardKey()).isPresent(),
+                            com.lodygames.rpgquest.entitlement.reward.RewardTable.percent(e.chance())))
+                    .toList();
+            views.add(new RewardTableView(table.id(), table.label(), table.mode().yaml(), table.mode().label(),
+                    table.enabled(), table.version(),
+                    com.lodygames.rpgquest.entitlement.reward.RewardTable.percent(table.totalChance()),
+                    com.lodygames.rpgquest.entitlement.reward.RewardTableDraw.explain(table), entries));
+        }
+        return List.copyOf(views);
     }
 
     private List<CommunityBossDefeatView> recentDefeats() {
@@ -4745,7 +4768,7 @@ public final class BukkitAgentActions implements AgentActions {
                     .toList();
             views.add(new CommunityBossDefeatView(d.entityId().toString(), d.profileId(), d.profileName(),
                     d.defeatedAtMillis(), d.world(), d.biome(), d.killerName() == null ? "" : d.killerName(), d.test(),
-                    participants, d.rewardKeys(), d.rewardStatus()));
+                    participants, d.rewardKeys(), d.rewardStatus(), d.draws()));
         }
         return List.copyOf(views);
     }
@@ -5431,6 +5454,7 @@ public final class BukkitAgentActions implements AgentActions {
                 case CommandReward r -> "commande console : " + truncate(r.command(), 60);
                 case MoneyReward r -> "+" + CurrencyName.amount(r.amount());
                 case HeartReward r -> heartRewardText(r);
+                case com.lodygames.rpgquest.quest.model.TableReward r -> "tirage table " + r.tableId();
             });
         }
         return out;
@@ -5519,6 +5543,9 @@ public final class BukkitAgentActions implements AgentActions {
                 // target = clé de droit explicite (null = propre à la quête), comme la clé d'une VARIABLE.
                 case HeartReward r -> new RewardSummary("HEART", r.hearts(), r.grantKey(), null, null,
                         heartRewardText(r));
+                // Issue #177 : target = identifiant de la table, comme la clé d'une VARIABLE.
+                case com.lodygames.rpgquest.quest.model.TableReward r -> new RewardSummary("TABLE", 0, r.tableId(),
+                        null, null, "tirage table " + r.tableId());
             });
         }
         return out;

@@ -142,7 +142,8 @@ public record QuestPackEntry(
      *   <li>{@code VARIABLE} : {@code key} + {@code value} ;</li>
      *   <li>{@code COMMAND} : {@code command} (contenu éditorial, jamais un secret) ;</li>
      *   <li>{@code MONEY} : {@code amount} ;</li>
-     *   <li>{@code HEART} : {@code amount} (cœurs) + {@code key} facultative (clé de droit).</li>
+     *   <li>{@code HEART} : {@code amount} (cœurs) + {@code key} facultative (clé de droit) ;</li>
+     *   <li>{@code TABLE} : {@code key} = identifiant de la table de récompenses aléatoires (#177).</li>
      * </ul>
      */
     public record Reward(String type, Integer amount, String material, String key, String value, String command) {
@@ -175,6 +176,10 @@ public record QuestPackEntry(
          */
         public static Reward heart(int hearts, String key) {
             return new Reward("HEART", hearts, null, key, null, null);
+        }
+
+        public static Reward table(String tableId) {
+            return new Reward("TABLE", null, null, tableId, null, null);
         }
     }
 }

@@ -3,6 +3,9 @@ package com.lodygames.rpgquest.mob.community;
 import com.lodygames.rpgquest.entitlement.reward.RewardDefinition;
 import com.lodygames.rpgquest.entitlement.reward.RewardEntitlement;
 import com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService;
+import com.lodygames.rpgquest.entitlement.reward.RewardSource;
+import com.lodygames.rpgquest.entitlement.reward.RewardTable;
+import com.lodygames.rpgquest.entitlement.reward.RewardTableDraw;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,7 +42,10 @@ import org.slf4j.Logger;
  *   <li><b>Éligibilité</b> : figée à la mort, selon {@link BossParticipation} ;</li>
  *   <li><b>Récompenses</b> : un droit à récompense (#422, source {@code BOSS}) par participant
  *       éligible et par clé {@code participation-rewards} du profil. La remise (inventaire plein,
- *       reconnexion, redémarrage, au plus une fois) est celle de {@link RewardEntitlementService}.</li>
+ *       reconnexion, redémarrage, au plus une fois) est celle de {@link RewardEntitlementService} ;</li>
+ *   <li><b>Tirages</b> (#177) : une entrée {@code table:<id>} tire la table <em>une fois par
+ *       participant éligible</em>, résultat individuel ; chaque gain devient un droit. Le tirage est
+ *       déterministe (graine = entité du boss + joueur) : un nouvel essai retombe sur les mêmes gains.</li>
  * </ul>
  *
  * <p>Seuls les boss communautaires (PDC d'instance posée par {@link CommunityBossService}) sont
@@ -64,6 +70,11 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
 
         void deliverSoon(List<UUID> players);
 
+        /** Table de récompenses aléatoires (#177), vide si inconnue. */
+        default Optional<RewardTable> table(String id) {
+            return Optional.empty();
+        }
+
         static RewardSink of(RewardEntitlementService service) {
             return new RewardSink() {
                 @Override
@@ -85,6 +96,11 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                 public void deliverSoon(List<UUID> players) {
                     service.deliverSoon(players);
                 }
+
+                @Override
+                public Optional<RewardTable> table(String id) {
+                    return service.catalog().findTable(id);
+                }
             };
         }
     }
@@ -92,17 +108,22 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
     /** Une victoire récente, pour la traçabilité PlugAdmin (mémoire, depuis le dernier démarrage). */
     public record Defeat(UUID entityId, String profileId, String profileName, long defeatedAtMillis, String world,
                          String biome, String killerName, boolean test, List<BossParticipation.Evaluated> participants,
-                         List<String> rewardKeys, String rewardStatus) {
+                         List<String> rewardKeys, String rewardStatus, List<String> draws) {
 
         public Defeat {
             participants = List.copyOf(participants);
             rewardKeys = List.copyOf(rewardKeys);
+            draws = List.copyOf(draws);
         }
 
         Defeat withStatus(String status) {
             return new Defeat(entityId, profileId, profileName, defeatedAtMillis, world, biome, killerName, test,
-                    participants, rewardKeys, status);
+                    participants, rewardKeys, status, draws);
         }
+    }
+
+    /** Ce que reçoit un participant éligible : libellés garantis et tirés, et tables sans gain. */
+    private record Promised(List<String> labels, List<String> emptyDraws) {
     }
 
     private final Plugin plugin;
@@ -171,9 +192,21 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                 .filter(e -> e.verdict() == BossParticipation.Verdict.ELIGIBLE).toList();
 
         String status = initialStatus(evaluated, eligible, rewardKeys);
+        List<String> fixedKeys = rewardKeys.stream().filter(k -> !k.startsWith(SpecialMobDefinition.TABLE_PREFIX))
+                .toList();
+        List<String> tableIds = rewardKeys.stream().filter(k -> k.startsWith(SpecialMobDefinition.TABLE_PREFIX))
+                .map(k -> k.substring(SpecialMobDefinition.TABLE_PREFIX.length())).toList();
+        List<RewardEntitlement.Declaration> declarations = new ArrayList<>(BossParticipation.declarations(instance,
+                evaluated, fixedKeys, this::label));
+        java.util.Map<UUID, Promised> promised = new java.util.LinkedHashMap<>();
+        List<String> draws = new ArrayList<>();
+        if (!eligible.isEmpty() && rewards.enabled()) {
+            drawTables(instance, eligible, fixedKeys, tableIds, declarations, promised, draws);
+        }
         remember(new Defeat(instance.entityId(), instance.profileId(), instance.profileName(),
                 System.currentTimeMillis(), world, biome, killer == null ? null : killer.getName(), instance.test(),
-                evaluated, rewardKeys, status));
+                evaluated, rewardKeys, status, draws));
+        draws.forEach(line -> logger.info("  tirage : {}.", line));
         logger.info("Boss communautaire « {} » ({}) vaincu dans {} / {} : {} participant(s), {} éligible(s) {} — {}.",
                 instance.profileId(), instance.entityId(), world, biome, evaluated.size(), eligible.size(),
                 eligible.stream().map(BossParticipation.Evaluated::name).toList(), status);
@@ -192,9 +225,44 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                     + "— aucune récompense déclarée.", instance.profileId(), eligible.size());
             return;
         }
-        List<RewardEntitlement.Declaration> declarations = BossParticipation.declarations(instance, evaluated,
-                rewardKeys, key -> Optional.ofNullable(rewards.label(key)).orElse(key));
-        declare(instance, eligible, rewardKeys, declarations, 1);
+        declare(instance, eligible, promised, declarations, 1);
+    }
+
+    /**
+     * Un tirage par participant éligible et par table (#177), résultat individuel. Table inconnue ou
+     * désactivée : rien n'est tiré, c'est tracé (jamais un gain inventé).
+     */
+    private void drawTables(CommunityBossInstance instance, List<BossParticipation.Evaluated> eligible,
+                            List<String> fixedKeys, List<String> tableIds,
+                            List<RewardEntitlement.Declaration> declarations, java.util.Map<UUID, Promised> promised,
+                            List<String> draws) {
+        for (BossParticipation.Evaluated participant : eligible) {
+            List<String> labels = new ArrayList<>(fixedKeys.stream().map(this::label).toList());
+            List<String> empty = new ArrayList<>();
+            for (String tableId : tableIds) {
+                Optional<RewardTable> table = rewards.table(tableId);
+                if (table.isEmpty() || !table.get().enabled()) {
+                    draws.add(participant.name() + " : table « " + tableId + " » "
+                            + (table.isEmpty() ? "inconnue" : "désactivée") + " — aucun tirage");
+                    continue;
+                }
+                List<RewardTableDraw.Win> wins = RewardTableDraw.wins(table.get(), "boss:" + instance.entityId(),
+                        participant.playerId(), RewardSource.BOSS, BossParticipation.sourceRef(instance), this::label);
+                wins.forEach(win -> declarations.add(win.declaration()));
+                List<String> won = wins.stream().map(win -> label(win.entry().rewardKey())).toList();
+                labels.addAll(won);
+                if (won.isEmpty()) {
+                    empty.add(table.get().label());
+                }
+                draws.add(participant.name() + " : table « " + tableId + " » v" + table.get().version() + " → "
+                        + (won.isEmpty() ? "aucun gain" : String.join(", ", won)));
+            }
+            promised.put(participant.playerId(), new Promised(labels, empty));
+        }
+    }
+
+    private String label(String rewardKey) {
+        return Optional.ofNullable(rewards.label(rewardKey)).orElse(rewardKey);
     }
 
     private String initialStatus(List<BossParticipation.Evaluated> evaluated, List<BossParticipation.Evaluated> eligible,
@@ -213,12 +281,13 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
 
     /** Déclaration idempotente (même clé = un seul droit) : un nouvel essai est donc sans risque. */
     private void declare(CommunityBossInstance instance, List<BossParticipation.Evaluated> eligible,
-                         List<String> rewardKeys, List<RewardEntitlement.Declaration> declarations, int attempt) {
+                         java.util.Map<UUID, Promised> promised, List<RewardEntitlement.Declaration> declarations,
+                         int attempt) {
         rewards.declare(declarations).whenComplete((created, error) -> Bukkit.getScheduler().runTask(plugin, () -> {
             if (error == null) {
                 updateStatus(instance.entityId(), created + " droit(s) déclaré(s) pour " + eligible.size()
                         + " joueur(s) éligible(s).");
-                notifyEligible(instance, eligible, rewardKeys);
+                notifyEligible(instance, eligible, promised);
                 rewards.deliverSoon(eligible.stream().map(BossParticipation.Evaluated::playerId).toList());
                 return;
             }
@@ -226,7 +295,7 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                 logger.warn("Boss communautaire « {} » : déclaration des récompenses impossible (essai {}/{}), "
                         + "nouvel essai dans 5 s.", instance.profileId(), attempt, DECLARE_ATTEMPTS, error);
                 Bukkit.getScheduler().runTaskLater(plugin,
-                        () -> declare(instance, eligible, rewardKeys, declarations, attempt + 1), RETRY_DELAY_TICKS);
+                        () -> declare(instance, eligible, promised, declarations, attempt + 1), RETRY_DELAY_TICKS);
                 return;
             }
             updateStatus(instance.entityId(), "ÉCHEC de la déclaration — à déclarer à la main (voir le journal).");
@@ -237,16 +306,23 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
     }
 
     private void notifyEligible(CommunityBossInstance instance, List<BossParticipation.Evaluated> eligible,
-                                List<String> rewardKeys) {
-        String labels = String.join(", ", rewardKeys.stream()
-                .map(key -> Optional.ofNullable(rewards.label(key)).orElse(key)).toList());
+                                java.util.Map<UUID, Promised> promised) {
         for (BossParticipation.Evaluated participant : eligible) {
             Player player = Bukkit.getPlayer(participant.playerId());
-            if (player != null) {
+            Promised mine = promised.get(participant.playerId());
+            if (player == null || mine == null) {
+                continue;
+            }
+            if (!mine.labels().isEmpty()) {
                 player.sendMessage(MM.deserialize("<gold>⚔ Participation reconnue contre</gold> <name><gold> !</gold> "
                                 + "<gray>Récompense :</gray> <white><labels></white><gray>. Elle arrive dans ton "
                                 + "inventaire (garde de la place libre).</gray>",
-                        Placeholder.unparsed("name", instance.profileName()), Placeholder.unparsed("labels", labels)));
+                        Placeholder.unparsed("name", instance.profileName()),
+                        Placeholder.unparsed("labels", String.join(", ", mine.labels()))));
+            }
+            for (String table : mine.emptyDraws()) {
+                player.sendMessage(MM.deserialize("<gray>Tirage « <table> » : pas de gain cette fois.</gray>",
+                        Placeholder.unparsed("table", table)));
             }
         }
     }

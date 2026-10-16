@@ -72,7 +72,16 @@ public final class RewardEntitlementRepository {
 
     private boolean insert(Connection connection, RewardEntitlement.Declaration declaration, Instant now)
             throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(database.dialect().rewrite(INSERT))) {
+        return insertDeclaration(connection, database.dialect(), declaration, now);
+    }
+
+    /**
+     * Déclaration sur une connexion fournie : la fin de quête (#177) écrit ses gains de tirage dans
+     * la même transaction que la complétion ({@link QuestProgressRepository#completeQuest}).
+     */
+    static boolean insertDeclaration(Connection connection, SqlDialect dialect,
+                                     RewardEntitlement.Declaration declaration, Instant now) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT))) {
             statement.setString(1, declaration.idempotencyKey());
             statement.setString(2, declaration.playerId().toString());
             statement.setString(3, declaration.source().name());

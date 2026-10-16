@@ -219,7 +219,18 @@ public final class Descriptors {
                                     "Laisser vide : le cœur est propre à cette quête. Une même clé sur "
                                             + "plusieurs quêtes (ex. city:central_city) n'accorde qu'UN "
                                             + "cœur au total pour elles toutes. Minuscules, chiffres, "
-                                            + "« _ . : - ».", false))));
+                                            + "« _ . : - ».", false))),
+            // Issue #177 : tirage d'une table de entitlements.yml, figé avec la complétion.
+            new Descriptor("TABLE", "Tirage au sort (table de récompenses)", "gift",
+                    "Tire au sort une table de récompenses aléatoires du serveur (section « tables » de "
+                            + "entitlements.yml), une fois par complétion. Le résultat est figé et enregistré avec "
+                            + "la fin de quête : une remise rejouée, une reconnexion ou un redémarrage ne relancent "
+                            + "jamais le tirage. Les gains arrivent dans l'inventaire (ils attendent s'il est plein). "
+                            + "Se combine avec les récompenses garanties de la quête.",
+                    List.of(Field.text("table", "Identifiant de la table",
+                            "Identifiant de la table dans entitlements.yml (minuscules, chiffres, _ -), ex. "
+                                    + "butin_dragon. Les tables chargées sont listées dans Boss communautaires → "
+                                    + "Tables de récompenses aléatoires.", true))));
 
     // ---- Actions de dialogue (calquées sur dialogue.model.ActionType) -----------------------
 

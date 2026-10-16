@@ -65,7 +65,11 @@ public record SpecialMobDefinition(
 
     public static final int DEFAULT_COMMUNITY_WEIGHT = 1;
     /** Issue #176 : même forme qu'une clé du catalogue {@code entitlements.yml}. */
-    public static final java.util.regex.Pattern REWARD_KEY = java.util.regex.Pattern.compile("[a-z0-9_.-]{1,64}");
+    /** Clé du catalogue {@code entitlements.yml}, ou {@code table:<id>} pour un tirage aléatoire (issue #177). */
+    public static final java.util.regex.Pattern REWARD_KEY =
+            java.util.regex.Pattern.compile("table:[a-z0-9_-]{1,32}|[a-z0-9_.-]{1,64}");
+    /** Préfixe d'une référence à une table de récompenses aléatoires (issue #177). */
+    public static final String TABLE_PREFIX = "table:";
     public static final int MAX_PARTICIPATION_REWARDS = 5;
 
     /** Forme antérieure à l'issue #175 : boss de quête, poids par défaut. */
@@ -169,7 +173,7 @@ public record SpecialMobDefinition(
         for (String key : participationRewards) {
             if (key == null || !REWARD_KEY.matcher(key).matches()) {
                 throw new IllegalArgumentException("participation-rewards : clé invalide « " + key
-                        + " » (minuscules, chiffres, _ . -).");
+                        + " » (minuscules, chiffres, _ . -, ou table:<id>).");
             }
         }
     }

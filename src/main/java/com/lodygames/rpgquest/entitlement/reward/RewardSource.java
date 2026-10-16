@@ -10,5 +10,7 @@ public enum RewardSource {
     /** Déclaration manuelle depuis PlugAdmin. */
     ADMIN,
     /** Participation éligible à un boss communautaire vaincu (#176). */
-    BOSS
+    BOSS,
+    /** Gain d'un tirage de table de récompenses à la fin d'une quête (#177). */
+    QUEST
 }

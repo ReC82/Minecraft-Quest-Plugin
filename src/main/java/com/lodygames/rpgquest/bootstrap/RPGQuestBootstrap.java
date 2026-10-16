@@ -657,6 +657,8 @@ public final class RPGQuestBootstrap {
                 statisticsService, statisticsRepository, entitlementService,
                 (line, log) -> rewardItem(line), plugin.getSLF4JLogger());
         registry.start(rewardEntitlementService);
+        // Issue #177 : tirages des tables de récompenses aléatoires à la fin d'une quête.
+        questProgressEngine.setRewardTables(rewardEntitlementService);
 
         registry.start(merchantRegistry);
         merchantTradeService = new MerchantTradeService(
@@ -1401,16 +1403,10 @@ public final class RPGQuestBootstrap {
         return worldService;
     }
 
-    /** Pile d'une ligne du catalogue de récompenses (#422) : matériau Paper ou objet custom (PDC). */
+    /** Pile d'une ligne du catalogue de récompenses (#422, enchantements et potions #177). */
     private java.util.Optional<org.bukkit.inventory.ItemStack> rewardItem(
             com.lodygames.rpgquest.entitlement.reward.RewardDefinition.Item line) {
-        if (line.custom()) {
-            org.bukkit.NamespacedKey id = org.bukkit.NamespacedKey.fromString(line.itemId());
-            return id == null ? java.util.Optional.empty() : customItemRegistry.create(id, line.amount());
-        }
-        org.bukkit.Material material = org.bukkit.Material.matchMaterial(line.itemId());
-        return material == null || material.isAir() ? java.util.Optional.empty()
-                : java.util.Optional.of(new org.bukkit.inventory.ItemStack(material, line.amount()));
+        return com.lodygames.rpgquest.entitlement.reward.RewardItems.create(line, customItemRegistry::create);
     }
 
     private void registerCommands() {

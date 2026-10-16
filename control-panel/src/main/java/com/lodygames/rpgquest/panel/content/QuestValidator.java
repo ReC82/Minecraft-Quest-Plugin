@@ -189,6 +189,16 @@ public final class QuestValidator {
             if ("HEART".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
                 heartRewardChecks(out, ctx, r.get("amount"), r.get("key"));
             }
+            if ("TABLE".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
+                String table = r.getOrDefault("table", "").trim();
+                if (!table.isEmpty() && !TABLE_ID.matcher(table).matches()) {
+                    out.add(Diagnostic.error(ctx, "Identifiant de table « " + table + " » invalide : minuscules, "
+                            + "chiffres, « _ - » uniquement (32 caractères au plus)."));
+                }
+                out.add(Diagnostic.info(ctx, "Tirage au sort : une fois par complétion, résultat figé avec la fin "
+                        + "de quête. La table doit exister dans entitlements.yml du serveur, sinon le joueur est "
+                        + "prévenu que le tirage est indisponible."));
+            }
         }
 
         // --- Variables ---
@@ -214,6 +224,8 @@ public final class QuestValidator {
     static final int HEART_REWARD_MAX = 512;
     /** Seuil au-delà duquel un nombre de cœurs est signalé, jamais refusé (issue #166). */
     static final int HEART_REWARD_WARNING_THRESHOLD = 5;
+    /** Identifiant d'une table de récompenses aléatoires (issue #177). */
+    private static final Pattern TABLE_ID = Pattern.compile("[a-z0-9_-]{1,32}");
     private static final Pattern HEART_GRANT_KEY = Pattern.compile("[a-z0-9_.:\\-]{1,128}");
 
     private static void heartRewardChecks(List<Diagnostic> out, String ctx, String rawAmount, String rawKey) {

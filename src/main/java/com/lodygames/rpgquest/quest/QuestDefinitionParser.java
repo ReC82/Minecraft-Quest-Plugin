@@ -9,6 +9,7 @@ import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.model.HeartReward;
+import com.lodygames.rpgquest.quest.model.TableReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
@@ -572,6 +573,17 @@ final class QuestDefinitionParser {
                 yield amount != null ? new MoneyReward(amount) : null;
             }
             case HEART -> parseHeartReward(section, context, errors);
+            // L'existence de la table n'est pas vérifiée ici (catalogue relu à chaud, chargé après les
+            // quêtes) : une table inconnue à la remise est signalée au joueur et au journal.
+            case TABLE -> {
+                String table = section.getString("table");
+                if (table == null || !TableReward.TABLE_ID.matcher(table.trim()).matches()) {
+                    errors.add(context + ": « table » obligatoire, identifiant d'une table de entitlements.yml "
+                            + "(minuscules, chiffres, _ -, 32 caractères au plus).");
+                    yield null;
+                }
+                yield new TableReward(table.trim());
+            }
         };
     }
 

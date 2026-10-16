@@ -20,7 +20,7 @@ class EditorDescriptorsTest {
             "BREAK_BLOCK", "PLACE_BLOCK", "KILL_ENTITY", "COLLECT_ITEM", "CRAFT_ITEM",
             "TALK_TO_NPC", "REACH_LOCATION", "DELIVER_ITEM_TO_NPC", "SMELT_ITEM", "DISCOVER_WAYPOINT", "DISCOVER_CITY");
     private static final Set<String> ENGINE_REWARDS =
-            Set.of("EXPERIENCE", "ITEM", "VARIABLE", "COMMAND", "MONEY", "HEART");
+            Set.of("EXPERIENCE", "ITEM", "VARIABLE", "COMMAND", "MONEY", "HEART", "TABLE");
 
     /** Noms de champ YAML réellement lus par {@code QuestDefinitionParser}. */
     /**
@@ -30,7 +30,7 @@ class EditorDescriptorsTest {
      */
     private static final Set<String> ENGINE_FIELDS = Set.of(
             "entity", "material", "amount", "npc", "world", "x", "y", "z", "radius",
-            "key", "value", "command", "worlds", "count-mode", "city");
+            "key", "value", "command", "worlds", "count-mode", "city", "table");
 
     @Test
     void objectiveKindsMatchTheEngineExactly() {

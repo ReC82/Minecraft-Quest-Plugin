@@ -25,7 +25,7 @@ category: SPECIAL
 # community-weight: 1
 # Issue #176 : clés de entitlements.yml remises à chaque participant éligible
 # d'un boss communautaire (5 au plus, BOSS seulement). Absent = aucune.
-# participation-rewards: [boss_ogre]
+# participation-rewards: [boss_ogre, "table:butin_ogre"]
 
 # Optionnelle, défaut true. false = ignoré par le tirage aléatoire ET par le
 # spawn de test, jamais supprimé du disque.
@@ -183,6 +183,8 @@ max-active: 1
     `community-weight` entier ≥ 1 si présent (issue #175).
 -   `participation-rewards` liste facultative de 5 clés au plus (`[a-z0-9_.-]{1,64}`), réservée à
     `BOSS` ; l'existence de la clé dans `entitlements.yml` est vérifiée à la remise (issue #176).
+    `table:<id>` (`[a-z0-9_-]{1,32}`) désigne une table de récompenses aléatoires de `entitlements.yml`,
+    tirée une fois par participant éligible (issue #177) ; table inconnue ou désactivée = aucun tirage.
 -   `health`/`speed` strictement positifs si présents ; `damage`/`armor`
     positifs ou nuls si présents ; `knockback-resistance` entre 0 et 1 ;
     `scale` strictement positif ; `creeper-explosion-radius` strictement

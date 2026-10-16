@@ -821,7 +821,7 @@ public final class AgentActionExecutor {
         if (participationRewards != null && (participationRewards.size() > MAX_PARTICIPATION_REWARDS
                 || !participationRewards.stream().allMatch(k -> REWARD_KEY.matcher(k).matches()))) {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « participation_rewards » invalide ("
-                    + MAX_PARTICIPATION_REWARDS + " clés au plus : minuscules, chiffres, _ . -)."));
+                    + MAX_PARTICIPATION_REWARDS + " clés au plus : minuscules, chiffres, _ . -, ou table:<id>)."));
         }
 
         CompletableFuture<AgentActions.MutationResult> future = (create ? actions.mobDefinitionCreate(
@@ -900,7 +900,7 @@ public final class AgentActionExecutor {
     private static final java.util.Set<String> BOSS_MODES = java.util.Set.of("QUEST", "COMMUNITY");
     private static final int MAX_COMMUNITY_WEIGHT = 1000;
     private static final int MAX_PARTICIPATION_REWARDS = 5;
-    private static final Pattern REWARD_KEY = Pattern.compile("[a-z0-9_.-]{1,64}");
+    private static final Pattern REWARD_KEY = com.lodygames.rpgquest.mob.model.SpecialMobDefinition.REWARD_KEY;
     private static final Pattern ENTITY_UUID = Pattern.compile(
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
@@ -960,6 +960,7 @@ public final class AgentActionExecutor {
                 row.put("participants", participants);
                 row.put("rewardKeys", d.rewardKeys());
                 row.put("rewardStatus", d.rewardStatus());
+                row.put("draws", d.draws());
                 defeats.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();
@@ -977,6 +978,31 @@ public final class AgentActionExecutor {
             details.put("instances", instances);
             details.put("profiles", profiles);
             details.put("recentDefeats", defeats);
+            List<Map<String, Object>> tables = new ArrayList<>();
+            for (AgentActions.RewardTableView t : view.rewardTables()) {
+                List<Map<String, Object>> entries = new ArrayList<>();
+                for (AgentActions.RewardTableEntryView e : t.entries()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", e.id());
+                    row.put("rewardKey", e.rewardKey());
+                    row.put("rewardLabel", e.rewardLabel());
+                    row.put("rewardKnown", e.rewardKnown());
+                    row.put("chance", e.chance());
+                    entries.add(row);
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", t.id());
+                row.put("label", t.label());
+                row.put("mode", t.mode());
+                row.put("modeLabel", t.modeLabel());
+                row.put("enabled", t.enabled());
+                row.put("version", t.version());
+                row.put("totalChance", t.totalChance());
+                row.put("explanation", t.explanation());
+                row.put("entries", entries);
+                tables.add(row);
+            }
+            details.put("rewardTables", tables);
             return AgentActionOutcome.success(action.id(), String.valueOf(instances.size()),
                     instances.size() + " boss communautaire(s) actif(s).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));

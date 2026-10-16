@@ -228,12 +228,25 @@ public final class QuestProgressRepository {
     public CompletableFuture<QuestCompletion> completeQuest(UUID playerUuid, NamespacedKey questId,
                                                             String completionToken, List<Long> amounts,
                                                             List<HeartGrantRequest> hearts) {
+        return completeQuest(playerUuid, questId, completionToken, amounts, hearts, List.of());
+    }
+
+    /**
+     * {@link #completeQuest(UUID, NamespacedKey, String, List, List)} étendu aux gains de tirage
+     * (issue #177) : chaque gain est un droit à récompense écrit dans la <strong>même</strong>
+     * transaction que la complétion — un tirage n'est donc jamais perdu ni refait.
+     */
+    public CompletableFuture<QuestCompletion> completeQuest(UUID playerUuid, NamespacedKey questId,
+                                                            String completionToken, List<Long> amounts,
+                                                            List<HeartGrantRequest> hearts,
+                                                            List<com.lodygames.rpgquest.entitlement.reward.RewardEntitlement.Declaration> drawn) {
         if (completionToken == null || completionToken.isBlank()) {
             return CompletableFuture.failedFuture(new IllegalArgumentException(
                     "« completionToken » est obligatoire : c'est la racine de l'identité de paiement."));
         }
         List<Long> owed = List.copyOf(amounts);
         List<HeartGrantRequest> heartRequests = List.copyOf(hearts);
+        List<com.lodygames.rpgquest.entitlement.reward.RewardEntitlement.Declaration> wins = List.copyOf(drawn);
         return database.execute(connection -> {
             boolean previousAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
@@ -256,6 +269,10 @@ public final class QuestProgressRepository {
                             request.grantKey(), request.hearts(), questId.toString());
                     heartOutcomes.add(new HeartGrantOutcome(request.grantKey(), request.hearts(), granted,
                             HeartGrantRepository.totalHearts(connection, playerUuid)));
+                }
+                Instant now = Instant.now();
+                for (var win : wins) {
+                    RewardEntitlementRepository.insertDeclaration(connection, dialect, win, now);
                 }
                 connection.commit();
                 return new QuestCompletion(grantIds, heartOutcomes);

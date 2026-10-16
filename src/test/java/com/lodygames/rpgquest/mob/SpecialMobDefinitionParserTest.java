@@ -321,13 +321,13 @@ class SpecialMobDefinitionParserTest {
                 id: rpgquest:ogre
                 category: BOSS
                 boss-mode: COMMUNITY
-                participation-rewards: [boss_ogre, boss_ogre, titre.ogre]
+                participation-rewards: [boss_ogre, boss_ogre, titre.ogre, "table:ogre_loot"]
                 entity-type: ZOMBIE
                 name: "Ogre"
                 spawn-chance: 0.0
                 """));
         assertTrue(boss.isSuccess(), boss.issues().toString());
-        assertEquals(List.of("boss_ogre", "titre.ogre"), boss.definition().participationRewards());
+        assertEquals(List.of("boss_ogre", "titre.ogre", "table:ogre_loot"), boss.definition().participationRewards());
 
         SpecialMobDefinitionParser.ParseResult none = parser.parse("old.yml", load("""
                 id: rpgquest:old

@@ -778,6 +778,8 @@ public final class QuestJournalService implements QuestJournalUi {
             case MoneyReward r -> Optional.of(Component.text(CurrencyName.amount(r.amount())));
             // Issue #166 : prévu, une seule fois par joueur et par clé de droit.
             case HeartReward r -> Optional.of(Component.text("+" + r.hearts() + " ❤ vie maximale"));
+            // Issue #177 : une chance, pas une promesse — le gain réel s'affiche à la remise.
+            case com.lodygames.rpgquest.quest.model.TableReward r -> Optional.of(Component.text("Tirage au sort"));
         };
     }
 

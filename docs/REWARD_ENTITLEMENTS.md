@@ -60,7 +60,7 @@ une entrée du catalogue tant que le droit est en attente. Une clé inconnue du 
 | --- | --- |
 | `idempotency_key` | clé primaire, ≤ 160 caractères, `[A-Za-z0-9_:.-]` |
 | `player_uuid` | destinataire (UUID, jamais le pseudo) |
-| `source` | `EVENT`, `ADMIN`, `BOSS` (#176) (à venir : `SEASON`, `CONTEST`, `PROMO`, `VIP`) |
+| `source` | `EVENT`, `ADMIN`, `BOSS` (#176), `QUEST` (#177) (à venir : `SEASON`, `CONTEST`, `PROMO`, `VIP`) |
 | `source_ref` | id de l'événement, référence administrateur… |
 | `reward_key` | clé du catalogue |
 | `label` | libellé figé à la déclaration (traçabilité) |
@@ -147,7 +147,13 @@ un droit par participant éligible à la mort d'un boss communautaire et par cl�
 du profil. Règles d'éligibilité : docs/RPGQUEST_BIBLE.md §11. Déclaré seulement si `enabled: true` ; une
 clé inconnue du catalogue est déclarée quand même (droit en attente avec l'erreur).
 
-### 6.4 Plus tard (hors tranche 1)
+### 6.4 Tirages des tables aléatoires (#177)
+
+Fin de quête : source `QUEST`, référence = id de la quête, clé
+`quest:<jeton de complétion>:<table>.<entrée>:<uuid joueur>`, écrite dans la transaction de complétion.
+Boss communautaire : source `BOSS`, clé `boss:<uuid entité>:<table>.<entrée>:<uuid joueur>`. Voir §10.
+
+### 6.5 Plus tard (hors tranche 1)
 
 Saisons (#54), concours, codes promotionnels, VIP : chacun = une nouvelle valeur de `source` et un
 format de clé, **sans nouvelle table**. Un portail qui déclare (après #53, comptes liés) passera par
@@ -185,3 +191,73 @@ actions agent (validation des paramètres).
 
 `PENDING MANUAL VALIDATION` en jeu : inventaire plein puis libéré, déconnexion pendant la remise,
 deux remises simultanées, redémarrage avec droits en attente, événement archivé réel.
+
+## 10. Tables de récompenses aléatoires (#177)
+
+Section `tables` de `entitlements.yml`, partagée entre quêtes et boss. Chaque entrée **désigne une
+récompense du catalogue** (`rewards`) : la remise (objets, avantage, inventaire plein, au plus une fois)
+reste celle des §3–5, rien n'est dupliqué.
+
+```yaml
+rewards:
+  gem: {label: "Émeraudes", items: [{item: EMERALD, amount: 3}]}
+  sharp_book:
+    label: "Livre Tranchant III"
+    items: [{item: ENCHANTED_BOOK, enchantments: {sharpness: 3}}]   # stocké dans le livre
+  strength:
+    label: "Potion de force"
+    items: [{item: POTION, potion: strength}]
+tables:
+  butin_ogre:
+    label: "Butin de l'ogre"
+    mode: single            # obligatoire : single | independent
+    enabled: true           # défaut true
+    entries:
+      - {id: gem,  reward: gem,        chance: 50}
+      - {id: book, reward: sharp_book, chance: 12.5}
+      - {id: pot,  reward: strength,   chance: 0.5}
+```
+
+### 10.1 Sémantique — toujours explicite
+
+| Mode | Tirage | Somme des chances |
+| --- | --- | --- |
+| `independent` (« chances indépendantes ») | un tirage par entrée : plusieurs gains possibles, ou aucun | libre (peut dépasser 100 %) |
+| `single` (« une récompense maximum ») | un seul tirage : au plus une entrée, le reste = aucun gain | ≤ 100 %, refusé sinon |
+
+Aucun mode par défaut, aucune normalisation des pourcentages en poids relatifs : la chance affichée est
+la chance réelle. Chances stockées en centièmes de pour cent (entiers, `12.5` → 1250) ; `12.345` est
+refusé plutôt qu'arrondi. PlugAdmin affiche l'explication calculée (`single` : « aucun gain : 37,5 % » ;
+`independent` : probabilité de n'avoir rien et nombre moyen de gains).
+
+### 10.2 Tirage figé, jamais relancé
+
+Le tirage est une fonction pure (SHA-256) d'une **graine stable** : `quest:<jeton de complétion>:<table>:<joueur>`
+ou `boss:<entité>:<table>:<joueur>`. Le jeton de complétion et l'UUID d'entité sont aléatoires : un joueur
+ne peut pas prévoir son tirage. Un nouvel essai (déclaration de boss rejouée, reprise) recalcule
+exactement les mêmes gains, et chaque gain est un droit à clé d'idempotence stable : jamais de double gain.
+Pour une quête, les gains sont écrits **dans la même transaction** que la complétion
+(`QuestProgressRepository#completeQuest`) : un arrêt brutal ne peut ni perdre le tirage ni le refaire.
+Limite : une table modifiée **entre** deux essais d'une même déclaration de boss (fenêtre de 10 s au plus)
+pourrait donner un gain différent ; chaque gain reste tracé avec la version de table qui l'a produit.
+
+### 10.3 Traçabilité
+
+Libellé figé du droit : `<libellé de la récompense> — table <id> v<version> (<chance>)`. `version` = 8
+caractères hexadécimaux du SHA-256 du mode et des entrées (id, récompense, chance) : changer le nom de la
+table ne la change pas, changer une chance la change. Journal serveur : `Quête … : tirage « id » vXXXX pour
+<uuid> → [entrées]` et, pour un boss, une ligne `tirage :` par participant.
+
+### 10.4 Objets enrichis du catalogue
+
+`enchantments: {clé: niveau}` (clé Minecraft, `minecraft:` facultatif, niveau 1–10, 8 au plus, pas sur un
+objet custom) ; sur `ENCHANTED_BOOK` l'enchantement est **stocké** dans le livre. Appliquer un enchantement
+à l'équipement porté par le joueur n'existe **pas** (aucune cible implicite). `potion: <type Minecraft>` sur
+`POTION`, `SPLASH_POTION`, `LINGERING_POTION`, `TIPPED_ARROW`. Les clés sont résolues à la remise : inconnue
+= droit en attente avec l'erreur.
+
+### 10.5 Hors de cette tranche
+
+Édition graphique des tables dans PlugAdmin (création, duplication, activation), sélecteur avec recherche
+dans les éditeurs de quête et de boss, XP / argent comme entrée de table, boss de quête (#171).
+

@@ -26,6 +26,8 @@ public final class StatusHandler implements ApiHandler {
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("online", server.get("online"));
+        body.put("status", server.get("status"));
+        body.put("lastUpdate", server.get("lastUpdate"));
         if (Boolean.TRUE.equals(server.get("online"))) {
             body.put("playerCount", server.get("playerCount"));
             body.put("maxPlayers", server.get("maxPlayers"));

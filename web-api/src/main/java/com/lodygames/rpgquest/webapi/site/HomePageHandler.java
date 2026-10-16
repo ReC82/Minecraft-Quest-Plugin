@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi.site;
 
 import com.lodygames.rpgquest.webapi.ServerState;
+import com.lodygames.rpgquest.webapi.ServerStatus;
 import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
@@ -46,10 +47,8 @@ public final class HomePageHandler implements ApiHandler {
             return 404;
         }
         Map<String, Object> state = ServerState.resolve(store);
-        boolean online = ServerState.isOnline(state);
-
         StringBuilder body = new StringBuilder(hero());
-        body.append("<div class=\"grid\">").append(status(state, online)).append(periods(state)).append("</div>");
+        body.append("<div class=\"grid\">").append(status(state)).append(periods(state)).append("</div>");
         body.append(latestNews());
         body.append(serverMessages(state));
         body.append(boardsPreview(state));
@@ -68,15 +67,25 @@ public final class HomePageHandler implements ApiHandler {
                 + "<a class=\"button secondary\" href=\"/actualites\">Les actualités</a></p></section>";
     }
 
-    private static String status(Map<String, Object> state, boolean online) {
+    /** Carte « Le serveur » (#421) : rouge seulement pour un arrêt annoncé par le serveur lui-même. */
+    private static String status(Map<String, Object> state) {
         StringBuilder html = new StringBuilder("<section class=\"card\"><h2>Le serveur</h2>");
-        if (online && state.get("server") instanceof Map<?, ?> server) {
-            html.append("<p><strong style=\"color:var(--ok)\">● En ligne</strong></p><p>")
-                    .append(StatLabels.number(server.get("playerCount"))).append(" joueur(s) connecté(s) sur ")
-                    .append(StatLabels.number(server.get("maxPlayers"))).append(".</p>");
-        } else {
-            html.append("<p><strong style=\"color:var(--ko)\">● Hors ligne ou injoignable</strong></p>"
-                    + "<p class=\"note\">Le portail n'a pas reçu de nouvelles du serveur récemment.</p>");
+        ServerStatus status = ServerStatus.of(state);
+        switch (status.kind()) {
+            case ONLINE -> {
+                Map<?, ?> server = state.get("server") instanceof Map<?, ?> map ? map : Map.of();
+                html.append("<p><strong style=\"color:var(--ok)\">● En ligne</strong></p><p>")
+                        .append(StatLabels.number(server.get("playerCount"))).append(" joueur(s) connecté(s) sur ")
+                        .append(StatLabels.number(server.get("maxPlayers"))).append(".</p>");
+            }
+            case OFFLINE -> html.append("<p><strong style=\"color:var(--ko)\">● Hors ligne</strong></p>"
+                    + "<p class=\"note\">Arrêt annoncé par le serveur le ").append(Html.escape(status.lastUpdateText()))
+                    .append(".</p>");
+            case STALE -> html.append("<p><strong style=\"color:var(--muted)\">● État inconnu</strong></p>"
+                    + "<p class=\"note\">Informations non actualisées depuis le ").append(Html.escape(status.lastUpdateText()))
+                    .append(".</p>");
+            case UNKNOWN -> html.append("<p><strong style=\"color:var(--muted)\">● État inconnu</strong></p>"
+                    + "<p class=\"note\">Aucune donnée reçue du serveur de jeu pour le moment.</p>");
         }
         return html.append("<p><a href=\"/status\">Détails</a></p></section>").toString();
     }

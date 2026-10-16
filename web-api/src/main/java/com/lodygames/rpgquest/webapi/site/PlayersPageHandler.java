@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi.site;
 
 import com.lodygames.rpgquest.webapi.ServerState;
+import com.lodygames.rpgquest.webapi.ServerStatus;
 import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
@@ -44,7 +45,7 @@ public final class PlayersPageHandler implements ApiHandler {
     @Override
     public int handle(HttpExchange exchange) throws IOException {
         Map<String, Object> state = ServerState.resolve(store);
-        boolean online = ServerState.isOnline(state);
+        ServerStatus serverStatus = ServerStatus.of(state);
         List<Map<String, Object>> profiles = PublicPlayerData.profiles(state.get("profiles"));
 
         String path = exchange.getRequestURI().getRawPath();
@@ -61,29 +62,29 @@ public final class PlayersPageHandler implements ApiHandler {
             int page = SitePaging.page(query);
             int pages = SitePaging.pageCount(profiles.size(), PAGE_SIZE);
             if (page > pages) {
-                return notFound(exchange, online);
+                return notFound(exchange, serverStatus);
             }
             HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, new PageMeta(PageMeta.PLAYERS,
                     "Les aventuriers de " + site.title() + " qui ont choisi d'afficher leur profil.", PageMeta.PLAYERS),
-                    "Joueurs", online, list(profiles, page, pages)));
+                    "Joueurs", serverStatus, list(profiles, page, pages)));
             return 200;
         }
         String name = rest.length() <= 48 ? URLDecoder.decode(rest, StandardCharsets.UTF_8) : "";
         Optional<Map<String, Object>> profile = NAME.matcher(name).matches() ? find(profiles, name) : Optional.empty();
         if (profile.isEmpty()) {
-            return notFound(exchange, online);
+            return notFound(exchange, serverStatus);
         }
         String shown = String.valueOf(profile.get().get("name"));
         HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, new PageMeta(
                 "/joueurs/" + URLEncoder.encode(shown, StandardCharsets.UTF_8),
                 "Profil public de " + shown + " sur " + site.title() + " : expérience, quêtes et classements.",
-                PageMeta.PLAYERS), shown, online, detail(profile.get(), state)));
+                PageMeta.PLAYERS), shown, serverStatus, detail(profile.get(), state)));
         return 200;
     }
 
-    private int notFound(HttpExchange exchange, boolean online) throws IOException {
+    private int notFound(HttpExchange exchange, ServerStatus serverStatus) throws IOException {
         HttpResponses.sendHtml(exchange, 404, PageLayout.render(site, new PageMeta("", "", PageMeta.PLAYERS), "Joueur",
-                online, "<p>Aucun profil public pour ce pseudo. Un joueur n'apparaît ici que s'il figure dans un "
+                serverStatus, "<p>Aucun profil public pour ce pseudo. Un joueur n'apparaît ici que s'il figure dans un "
                         + "classement et a choisi d'afficher son profil.</p><p><a href=\"/joueurs\">Tous les "
                         + "profils publics</a></p>"));
         return 404;

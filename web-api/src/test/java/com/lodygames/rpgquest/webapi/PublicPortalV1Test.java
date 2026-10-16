@@ -117,7 +117,8 @@ class PublicPortalV1Test {
         HttpResponse<String> home = get("/");
         assertEquals(200, home.statusCode());
         assertTrue(home.body().contains("Titre ouverture"), "dernière actualité sur l'accueil, sans instantané");
-        assertTrue(home.body().contains("Hors ligne"));
+        assertTrue(home.body().contains("État inconnu"), "aucune donnée : état inconnu (#421)");
+        assertFalse(home.body().contains("Hors ligne"), "jamais « hors ligne » sans arrêt annoncé (#421)");
 
         HttpResponse<String> list = get("/actualites");
         assertTrue(list.body().contains("href=\"/actualites/ouverture\""));
@@ -131,7 +132,7 @@ class PublicPortalV1Test {
         assertTrue(article.body().contains("<strong>ouverture</strong>"));
         assertTrue(article.body().contains("&lt;b&gt;brut&lt;/b&gt;"), "aucun HTML du fichier n'est interprété");
         assertTrue(article.body().contains("<link rel=\"canonical\" href=\"https://portail.example/actualites/ouverture\">"));
-        assertFalse(article.body().contains("Le serveur de jeu ne répond pas"),
+        assertFalse(article.body().contains("État du serveur de jeu inconnu"),
                 "une actualité n'affiche pas le bandeau du serveur de jeu");
 
         assertEquals(404, get("/actualites/secret").statusCode());

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi.site;
 
+import com.lodygames.rpgquest.webapi.ServerStatus;
 import java.util.List;
 
 /**
@@ -43,6 +44,7 @@ public final class PageLayout {
             h1 { font-size:1.8rem; margin:.5rem 0 1rem; } h2 { font-size:1.35rem; margin:1.6rem 0 .6rem; }
             h3 { font-size:1.1rem; margin:1rem 0 .4rem; }
             .offline { background:#4a1f1f; border-left:4px solid var(--ko); padding:.6rem 1rem; border-radius:.3rem; }
+            .unknown { background:#2c3446; border-left:4px solid var(--muted); padding:.6rem 1rem; border-radius:.3rem; }
             .notice { background:#1e3f2a; border-left:4px solid var(--ok); padding:.6rem 1rem; border-radius:.3rem; }
             .note, .meta { color:var(--muted); font-size:.92rem; }
             .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:1rem; }
@@ -94,11 +96,19 @@ public final class PageLayout {
         return render(new Site(siteTitle, ""), PageMeta.none(), pageTitle, online, bodyHtml);
     }
 
+    public static String render(String siteTitle, String pageTitle, ServerStatus status, String bodyHtml) {
+        return render(new Site(siteTitle, ""), PageMeta.none(), pageTitle, status, bodyHtml);
+    }
+
+    /** {@code online = true} : page sans bandeau d'état du jeu ; {@code false} : état inconnu. */
     public static String render(Site site, PageMeta meta, String pageTitle, boolean online, String bodyHtml) {
-        String banner = online
-                ? ""
-                : "<p class=\"offline\">Le serveur de jeu ne répond pas pour le moment : les données du jeu "
-                        + "(statut, classements, profils) sont indisponibles ou en retard.</p>";
+        return render(site, meta, pageTitle, new ServerStatus(online ? ServerStatus.Kind.ONLINE : ServerStatus.Kind.UNKNOWN,
+                null), bodyHtml);
+    }
+
+    /** Bandeau selon l'état du serveur de jeu (#421) : rouge uniquement pour un arrêt annoncé. */
+    public static String render(Site site, PageMeta meta, String pageTitle, ServerStatus status, String bodyHtml) {
+        String banner = status.bannerHtml();
         String fullTitle = pageTitle.equals(site.title()) ? site.title() : pageTitle + " — " + site.title();
         StringBuilder head = new StringBuilder();
         if (!meta.description().isEmpty()) {

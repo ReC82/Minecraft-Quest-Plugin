@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi.site;
 
 import com.lodygames.rpgquest.webapi.ServerState;
+import com.lodygames.rpgquest.webapi.ServerStatus;
 import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
@@ -41,7 +42,7 @@ public final class LeaderboardsPageHandler implements ApiHandler {
     @Override
     public int handle(HttpExchange exchange) throws IOException {
         Map<String, Object> state = ServerState.resolve(store);
-        boolean online = ServerState.isOnline(state);
+        ServerStatus serverStatus = ServerStatus.of(state);
         Map<String, Object> statistics = PublicPlayerData.statistics(state.get("statistics"));
         String requested = QueryParams.parse(exchange.getRequestURI().getRawQuery()).getOrDefault("periode", "");
 
@@ -50,7 +51,7 @@ public final class LeaderboardsPageHandler implements ApiHandler {
         if (!requested.isEmpty()) {
             period = PERIOD_ID.matcher(requested).matches() ? find(periods, requested) : null;
             if (period == null) {
-                return send(exchange, 404, online, "<p>Ce classement n'existe pas ou n'est plus publié.</p>"
+                return send(exchange, 404, serverStatus, "<p>Ce classement n'existe pas ou n'est plus publié.</p>"
                         + "<p><a href=\"/classements\">Voir les classements</a></p>");
             }
         }
@@ -62,13 +63,13 @@ public final class LeaderboardsPageHandler implements ApiHandler {
             body.append(periodBoards(period));
         }
         body.append(freshness(state));
-        return send(exchange, 200, online, body.toString());
+        return send(exchange, 200, serverStatus, body.toString());
     }
 
-    private int send(HttpExchange exchange, int status, boolean online, String body) throws IOException {
+    private int send(HttpExchange exchange, int status, ServerStatus serverStatus, String body) throws IOException {
         HttpResponses.sendHtml(exchange, status, PageLayout.render(site, new PageMeta(PageMeta.BOARDS,
                 "Les meilleurs aventuriers de " + site.title() + " : expérience, quêtes terminées, saisons et événements.",
-                PageMeta.BOARDS), "Classements", online, body));
+                PageMeta.BOARDS), "Classements", serverStatus, body));
         return status;
     }
 

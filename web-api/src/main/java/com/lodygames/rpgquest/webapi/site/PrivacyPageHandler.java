@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi.site;
 
 import com.lodygames.rpgquest.webapi.ServerState;
+import com.lodygames.rpgquest.webapi.ServerStatus;
 import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
@@ -31,7 +32,7 @@ public final class PrivacyPageHandler implements ApiHandler {
 
     @Override
     public int handle(HttpExchange exchange) throws IOException {
-        boolean online = ServerState.isOnline(ServerState.resolve(store));
+        ServerStatus serverStatus = ServerStatus.of(ServerState.resolve(store));
         String publication = playerDataPublic
                 ? "<p><strong>Actuellement :</strong> les pseudos des joueurs qui l'ont accepté sont publiés.</p>"
                 : "<p><strong>Actuellement :</strong> aucun pseudo n'est publié sur ce site.</p>";
@@ -62,7 +63,7 @@ public final class PrivacyPageHandler implements ApiHandler {
                 <p>Avant l'ouverture des comptes, une politique de confidentialité complète — âge minimal,
                 consentement parental, accès, export et effacement de tes données — sera publiée ici.</p>
                 """.formatted(publication, accounts);
-        HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, "Confidentialité", online, body));
+        HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, "Confidentialité", serverStatus, body));
         return 200;
     }
 }

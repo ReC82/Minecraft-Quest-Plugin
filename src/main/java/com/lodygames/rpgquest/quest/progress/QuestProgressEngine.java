@@ -116,6 +116,7 @@ public final class QuestProgressEngine implements PluginService {
     private final Map<UUID, Map<NamespacedKey, ActiveQuestProgress>> activeByPlayer = new ConcurrentHashMap<>();
     private final Map<ObjectiveType, List<Listener>> registeredListeners = new EnumMap<>(ObjectiveType.class);
     private final List<Consumer<UUID>> progressListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<UUID>> loadListeners = new CopyOnWriteArrayList<>();
     /** Jeton anti double-clic / spam / appel concurrent d'une remise d'objets (issue #123), par joueur. */
     private final java.util.Set<UUID> deliveriesInFlight = ConcurrentHashMap.newKeySet();
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
@@ -234,6 +235,11 @@ public final class QuestProgressEngine implements PluginService {
         progressListeners.add(listener);
     }
 
+    /** Issue #171 — notifié (thread quelconque) quand la progression d'un joueur vient d'être chargée. */
+    public void onProgressLoaded(Consumer<UUID> listener) {
+        loadListeners.add(listener);
+    }
+
     private void notifyChanged(UUID playerId) {
         for (Consumer<UUID> listener : progressListeners) {
             listener.accept(playerId);
@@ -310,6 +316,9 @@ public final class QuestProgressEngine implements PluginService {
             // Issue #178 : même principe — la progression vient exclusivement des PREMIÈRES
             // découvertes enregistrées par city.CityDiscoveryService (handleCityDiscovered).
             case DISCOVER_CITY -> null;
+            // Issue #171 : aucun écouteur de mort générique — seul mob.quest.QuestBossService, qui
+            // connaît l'instance possédée, crédite l'objectif (creditQuestBoss).
+            case KILL_QUEST_BOSS -> null;
         };
         if (primary == null) {
             return List.of();
@@ -349,6 +358,12 @@ public final class QuestProgressEngine implements PluginService {
             return CompletableFuture.allOf(counterLoads.toArray(CompletableFuture[]::new))
                     .thenRun(() -> {
                         activeByPlayer.put(playerId, map);
+                        // Issue #171 : abonnés propres au chargement (boss de quête) — jamais
+                        // notifyChanged, dont les abonnés existants (XP, histoires) ne doivent pas
+                        // être rejoués à chaque connexion.
+                        for (Consumer<UUID> listener : loadListeners) {
+                            listener.accept(playerId);
+                        }
                         // Rattrapage des récompenses monétaires restées dues (crash, panne SQL).
                         // Ici et nulle part ailleurs : une seule fois par chargement, asynchrone,
                         // borné — jamais une tâche répétitive.
@@ -779,6 +794,50 @@ public final class QuestProgressEngine implements PluginService {
             objectives.add(new ObjectiveProgressView(describeObjective(objective), progress.counter(i), requiredAmount(objective)));
         }
         return Optional.of(new QuestStepProgressView(step.id(), objectives));
+    }
+
+    // ---- Boss de quête (issue #171) ---------------------------------------
+
+    /** {@code true} si la progression de ce joueur est chargée (connecté, lecture SQL terminée). */
+    public boolean isLoaded(UUID playerId) {
+        return activeByPlayer.containsKey(playerId);
+    }
+
+    /**
+     * Objectifs {@code KILL_QUEST_BOSS} que ce joueur doit <strong>réellement</strong> remplir ici et
+     * maintenant : quête {@code ACTIVE}, étape courante, objectif non encore rempli. Lecture pure ;
+     * vide si la progression n'est pas chargée (l'appelant distingue ce cas avec {@link #isLoaded}).
+     */
+    public List<ObjectiveRef> pendingQuestBosses(UUID playerId) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive == null || playerActive.isEmpty()) {
+            return List.of();
+        }
+        List<ObjectiveRef> out = new ArrayList<>();
+        for (ObjectiveRef ref : index.questBoss()) {
+            ActiveQuestProgress progress = playerActive.get(ref.questId());
+            if (progress != null && progress.state() == QuestState.ACTIVE
+                    && progress.currentStepIndex() == ref.stepIndex()
+                    && progress.counter(ref.objectiveIndex()) < requiredAmount(ref.objective())) {
+                out.add(ref);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Crédite un objectif {@code KILL_QUEST_BOSS} : le boss possédé par ce joueur pour cet objectif
+     * vient de mourir dans les conditions d'attribution. Sans effet (et {@code false}) si l'objectif
+     * n'est plus en cours — étape changée, quête abandonnée ou déjà rempli : jamais deux crédits.
+     */
+    public boolean creditQuestBoss(Player player, NamespacedKey questId, String stepId, int objectiveIndex) {
+        for (ObjectiveRef ref : pendingQuestBosses(player.getUniqueId())) {
+            if (ref.questId().equals(questId) && ref.stepId().equals(stepId) && ref.objectiveIndex() == objectiveIndex) {
+                handleCandidates(player, List.of(ref));
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---- Remise d'objets à un PNJ (issue #123) ---------------------------

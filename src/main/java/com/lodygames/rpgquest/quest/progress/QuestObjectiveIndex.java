@@ -49,6 +49,7 @@ public final class QuestObjectiveIndex {
      */
     private final List<ObjectiveRef> discoverWaypoint = new ArrayList<>();
     private final List<ObjectiveRef> discoverCity = new ArrayList<>();
+    private final List<ObjectiveRef> questBoss = new ArrayList<>();
 
     public QuestObjectiveIndex(List<QuestDefinition> quests) {
         for (QuestDefinition quest : quests) {
@@ -76,6 +77,9 @@ public final class QuestObjectiveIndex {
             case SmeltItemObjective o -> add(smeltItem, o.material(), ref);
             case DiscoverWaypointObjective o -> discoverWaypoint.add(ref);
             case com.lodygames.rpgquest.quest.model.DiscoverCityObjective o -> discoverCity.add(ref);
+            // Issue #171 : aucun événement de jeu à indexer — la progression vient exclusivement de la
+            // mort de l'instance possédée (mob.quest.QuestBossService → creditQuestBoss).
+            case com.lodygames.rpgquest.quest.model.KillQuestBossObjective o -> questBoss.add(ref);
         }
     }
 
@@ -136,6 +140,11 @@ public final class QuestObjectiveIndex {
         return List.copyOf(discoverCity);
     }
 
+    /** Issue #171 — objectifs {@code KILL_QUEST_BOSS}. */
+    public List<ObjectiveRef> questBoss() {
+        return List.copyOf(questBoss);
+    }
+
     public boolean isEmpty(ObjectiveType type) {
         return switch (type) {
             case BREAK_BLOCK -> breakBlock.isEmpty();
@@ -149,6 +158,7 @@ public final class QuestObjectiveIndex {
             case SMELT_ITEM -> smeltItem.isEmpty();
             case DISCOVER_WAYPOINT -> discoverWaypoint.isEmpty();
             case DISCOVER_CITY -> discoverCity.isEmpty();
+            case KILL_QUEST_BOSS -> questBoss.isEmpty();
         };
     }
 }

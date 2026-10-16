@@ -251,6 +251,7 @@ public final class RPGQuestBootstrap {
     private SpecialMobService mobService;
     private com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore communityBossSettingsStore;
     private com.lodygames.rpgquest.mob.community.CommunityBossService communityBossService;
+    private com.lodygames.rpgquest.mob.quest.QuestBossService questBossService;
     private com.lodygames.rpgquest.mob.community.CommunityBossRewards communityBossRewards;
     private ProgressionService progressionService;
     private EntitlementService entitlementService;
@@ -944,6 +945,38 @@ public final class RPGQuestBootstrap {
         communityBossService.addHooks(communityBossRewards);
         registry.start(new PlayerListenerService(plugin, communityBossRewards));
 
+        // Issue #171 : boss de quête personnels (objectif KILL_QUEST_BOSS) — même moteur de mobs, même
+        // placement sûr que les boss communautaires, verrou en fichier de données (aucune migration).
+        com.lodygames.rpgquest.mob.MobNames.use(mobRegistry);
+        questBossService = new com.lodygames.rpgquest.mob.quest.QuestBossService(
+                plugin, plugin.getSLF4JLogger(), mobRegistry, mobService,
+                new com.lodygames.rpgquest.mob.quest.QuestBossStateStore(
+                        plugin.getDataFolder().toPath().resolve("state"), plugin.getSLF4JLogger()),
+                new com.lodygames.rpgquest.mob.quest.QuestBossService.QuestSide() {
+                    @Override
+                    public boolean isLoaded(java.util.UUID playerId) {
+                        return questProgressEngine.isLoaded(playerId);
+                    }
+
+                    @Override
+                    public java.util.List<com.lodygames.rpgquest.quest.progress.ObjectiveRef> pendingQuestBosses(
+                            java.util.UUID playerId) {
+                        return questProgressEngine.pendingQuestBosses(playerId);
+                    }
+
+                    @Override
+                    public boolean creditQuestBoss(org.bukkit.entity.Player player, org.bukkit.NamespacedKey questId,
+                                                   String stepId, int objectiveIndex) {
+                        return questProgressEngine.creditQuestBoss(player, questId, stepId, objectiveIndex);
+                    }
+                },
+                communityBossService::findQuestBossSpot, () -> waypointService.all(),
+                waypointService::hasActivelyDiscovered, System::currentTimeMillis,
+                task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task));
+        registry.start(questBossService);
+        questProgressEngine.onProgressChanged(questBossService::requestReconcile);
+        questProgressEngine.onProgressLoaded(questBossService::requestReconcile);
+
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
                 configService.current().dialogue().allowedCommands());
@@ -1036,6 +1069,7 @@ public final class RPGQuestBootstrap {
         questJournalService.setContextLabels(questId -> configService.current().starterToolKit()
                 .tierUnlockedBy(questId.toString())
                 .map(tier -> "Amélioration du kit — palier " + tier.level()));
+        questJournalService.setObjectiveHints(questBossService::journalHint);
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
 

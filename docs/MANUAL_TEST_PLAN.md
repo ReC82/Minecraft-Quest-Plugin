@@ -6392,6 +6392,26 @@ Wild**, en survie, près de waypoints existants.
     → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
     Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
 
+### TC-337 — Boss de quête personnel : apparition, localisation, attribution (issue #171, PENDING MANUAL VALIDATION)
+
+Prérequis : un profil de mob **Boss**, type « Boss de quête », activé (page Mobs, ex. `ogre`) ; au moins
+un waypoint actif dans le Wild ; une quête de test avec une étape « Vaincre son boss de quête »
+(`KILL_QUEST_BOSS`, profil `ogre`) créée dans PlugAdmin. Deux comptes (A et B) si possible.
+
+1. A accepte la quête (au Hub ou dans le Wild). Attendu : message « Votre boss de quête … vous attend
+   dans le biome …, à environ N blocs <direction> du waypoint … (waypoint déjà découvert / pas encore
+   découvert) » ; même ligne dans le journal (`/quests`, détails de la quête). Aucun waypoint débloqué.
+2. Recliquer l'acceptation, se déconnecter/reconnecter, mourir : toujours **un seul** boss (vérifier
+   sur place ou `/rpgadmin mob list`) et la même indication.
+3. B tue un boss du même profil apparu pour lui, ou un zombie ordinaire : l'objectif de A ne bouge pas.
+4. A s'éloigne à plus de 64 blocs, B tue le boss de A : A est prévenu « objectif non rempli », un
+   nouveau boss apparaît ~1 min plus tard.
+5. A à moins de 64 blocs, le boss meurt (tué par A ou par B) : « objectif rempli », l'étape avance.
+6. Accepter de nouveau puis abandonner : le boss disparaît sans butin.
+7. Redémarrer le serveur pendant qu'un boss est actif : même boss, même indication, aucun doublon.
+8. Profil désactivé ou mis en « Boss communautaire » : à l'acceptation, message « indisponible …
+   prévenez un administrateur » une fois, ligne rouge dans le journal, rien n'apparaît.
+
 ### TC-336 — Administrer le catalogue des récompenses sans YAML (issue #474, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #474 sur **DEV**, `entitlements.yml` **absent** (état DEV au 16/10).

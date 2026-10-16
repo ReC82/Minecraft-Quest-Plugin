@@ -138,6 +138,8 @@ public final class ContentPackMapper {
             case com.lodygames.rpgquest.quest.model.DiscoverCityObjective b ->
                     QuestPackEntry.Objective.discoverCity(b.specific() ? null : b.amount(), b.city(),
                             b.countMode().name());
+            case com.lodygames.rpgquest.quest.model.KillQuestBossObjective b ->
+                    QuestPackEntry.Objective.questBoss(b.mob().asString());
         };
     }
 

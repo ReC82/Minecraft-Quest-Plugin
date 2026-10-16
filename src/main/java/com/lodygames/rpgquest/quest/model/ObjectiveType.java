@@ -15,5 +15,7 @@ public enum ObjectiveType {
     /** Première découverte réelle de waypoints distincts (issue #185). */
     DISCOVER_WAYPOINT,
     /** Issue #178 — découvrir X villes distinctes, ou une ville précise. */
-    DISCOVER_CITY
+    DISCOVER_CITY,
+    /** Issue #171 — vaincre son propre boss de quête, créé pour le joueur (jamais un mob quelconque). */
+    KILL_QUEST_BOSS
 }

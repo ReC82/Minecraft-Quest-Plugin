@@ -130,6 +130,17 @@ public final class Descriptors {
                                             + "comptent. INCLUDE_EXISTING : celles déjà découvertes comptent "
                                             + "aussi. La règle choisie est affichée au joueur dans son journal.",
                                     false))),
+            // Issue #171 : boss PERSONNEL — jamais « tuer un mob de ce type » (voir KILL_ENTITY).
+            new Descriptor("KILL_QUEST_BOSS", "Vaincre son boss de quête", "target",
+                    "Un boss apparaît dans le Wild POUR CE JOUEUR dès que cette étape commence (à "
+                            + "l'acceptation si c'est la première). Le joueur reçoit le biome et le waypoint le "
+                            + "plus proche, aussi affichés dans son journal. L'objectif est rempli quand SON boss "
+                            + "meurt alors qu'il est à moins de 64 blocs, même si un autre joueur l'a aidé. "
+                            + "Abandonner la quête retire le boss. Le profil doit être de catégorie Boss, en mode "
+                            + "« Boss de quête » et activé (page Mobs).",
+                    List.of(Field.text("mob", "Profil de boss",
+                            "Identifiant du profil de boss (ex. ogre ou rpgquest:ogre), visible dans la page "
+                                    + "Mobs. Catégorie Boss, mode « Boss de quête », activé.", true))),
             new Descriptor("CRAFT_ITEM", "Fabriquer un objet", "gift",
                     "Fabriquer N exemplaires d'un objet (table de craft ou grille 2×2).",
                     List.of(Field.select("material", "Objet", "material",

@@ -60,24 +60,33 @@ public final class CommunityBossMessages {
 
     /** « dans <biome>, à ~120 blocs au nord-est du waypoint X » — ou le biome seul, honnêtement. */
     static Component where(CommunityBossInstance i) {
-        Component biome = biomeComponent(i.biome());
-        if (i.waypointName() == null) {
+        return where(i.biome(), i.x(), i.z(), i.waypointName(), i.waypointDistance(), i.waypointDirection());
+    }
+
+    /**
+     * Issue #171 — même indication pour toute position décrite (boss de quête compris) : biome, puis
+     * waypoint réel le plus proche avec distance et direction, sinon coordonnées arrondies.
+     */
+    public static Component where(String biomeKey, int x, int z, String waypointName, int waypointDistance,
+                                  String waypointDirection) {
+        Component biome = biomeComponent(biomeKey);
+        if (waypointName == null) {
             // Aucun waypoint à portée (#471) : une indication navigable plutôt qu'un nom inventé.
             return MM.deserialize("<gray>dans le biome</gray> <white><biome></white><gray>, loin de tout waypoint "
                             + "connu, vers X ≈ <x>, Z ≈ <z>.</gray>", Placeholder.component("biome", biome),
-                    Placeholder.unparsed("x", String.valueOf(roundCoordinate(i.x()))),
-                    Placeholder.unparsed("z", String.valueOf(roundCoordinate(i.z()))));
+                    Placeholder.unparsed("x", String.valueOf(roundCoordinate(x))),
+                    Placeholder.unparsed("z", String.valueOf(roundCoordinate(z))));
         }
-        if (i.waypointDirection() == null || i.waypointDirection().isBlank()) {
+        if (waypointDirection == null || waypointDirection.isBlank()) {
             return MM.deserialize("<gray>dans le biome</gray> <white><biome></white><gray>, tout près du waypoint"
                             + "</gray> <aqua><wp></aqua><gray>.</gray>",
-                    Placeholder.component("biome", biome), Placeholder.unparsed("wp", i.waypointName()));
+                    Placeholder.component("biome", biome), Placeholder.unparsed("wp", waypointName));
         }
         return MM.deserialize("<gray>dans le biome</gray> <white><biome></white><gray>, à environ <dist> blocs "
                         + "<dir> du waypoint</gray> <aqua><wp></aqua><gray>.</gray>",
-                Placeholder.component("biome", biome), Placeholder.unparsed("wp", i.waypointName()),
-                Placeholder.unparsed("dist", String.valueOf(roundDistance(i.waypointDistance()))),
-                Placeholder.unparsed("dir", towards(i.waypointDirection())));
+                Placeholder.component("biome", biome), Placeholder.unparsed("wp", waypointName),
+                Placeholder.unparsed("dist", String.valueOf(roundDistance(waypointDistance))),
+                Placeholder.unparsed("dir", towards(waypointDirection)));
     }
 
     /** « au nord », « au sud-ouest », mais « à l'est », « à l'ouest ». */

@@ -248,6 +248,10 @@ public final class AgentPages {
         if ("DISCOVER_CITY".equals(kind)) {
             o.put("target", nz(obj.get("city")));
         }
+        // Issue #171 : le profil de boss d'un KILL_QUEST_BOSS, même clé que le relevé.
+        if ("KILL_QUEST_BOSS".equals(kind)) {
+            o.put("target", nz(obj.get("mob")));
+        }
         o.put("raw", "");
         return o;
     }

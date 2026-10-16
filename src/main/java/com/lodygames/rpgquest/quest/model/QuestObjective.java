@@ -4,7 +4,7 @@ public sealed interface QuestObjective
         permits BreakBlockObjective, PlaceBlockObjective, KillEntityObjective,
                 CollectItemObjective, CraftItemObjective, TalkToNpcObjective, ReachLocationObjective,
                 DeliverItemToNpcObjective, SmeltItemObjective, DiscoverWaypointObjective,
-                DiscoverCityObjective {
+                DiscoverCityObjective, KillQuestBossObjective {
 
     ObjectiveType type();
 
@@ -22,6 +22,7 @@ public sealed interface QuestObjective
             case SmeltItemObjective o -> o.amount();
             case DiscoverWaypointObjective o -> o.amount();
             case DiscoverCityObjective o -> o.amount();
+            case KillQuestBossObjective o -> 1;
         };
     }
 
@@ -41,6 +42,7 @@ public sealed interface QuestObjective
             case DiscoverCityObjective o -> o.specific()
                     ? "Découvrir " + com.lodygames.rpgquest.city.CityNames.of(o.city())
                     : "Découvrir " + o.amount() + " ville(s)";
+            case KillQuestBossObjective o -> "Vaincre le boss " + com.lodygames.rpgquest.mob.MobNames.of(o.mob());
         };
     }
 }

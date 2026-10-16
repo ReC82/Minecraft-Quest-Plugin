@@ -308,6 +308,13 @@ public final class QuestValidator {
         if ("DISCOVER_CITY".equalsIgnoreCase(kind)) {
             validateDiscoverCity(out, ctx, row, ref);
         }
+        // Issue #171 : même forme d'identifiant que le plugin (forme courte = rpgquest:<id>).
+        String mob = row.getOrDefault("mob", "").trim();
+        if ("KILL_QUEST_BOSS".equalsIgnoreCase(kind) && !mob.isEmpty()
+                && !mob.toLowerCase(Locale.ROOT).matches("([a-z0-9_.-]+:)?[a-z0-9_./-]+")) {
+            out.add(Diagnostic.error(ctx, "Profil de boss invalide « " + mob + " » : minuscules, chiffres, _ . - "
+                    + "(ex. ogre ou rpgquest:ogre)."));
+        }
         for (Descriptors.Field f : found.get().fields()) {
             if ("DISCOVER_CITY".equalsIgnoreCase(kind) && "city".equals(f.name())) {
                 continue; // vérifiée par validateDiscoverCity, avec un message propre aux villes

@@ -650,4 +650,32 @@ class QuestDefinitionParserTest {
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }
+
+    // ---- Issue #171 : boss de quête personnel ---------------------------------------------------
+
+    private QuestDefinitionParser.ParseResult parseQuestBoss(String objective) {
+        return parser.parse("boss.yml", load(minimalQuestWithSteps("""
+                steps:
+                  - id: chasse
+                    objectives:
+                      - type: KILL_QUEST_BOSS
+                """ + objective)));
+    }
+
+    @Test
+    void questBossAcceptsShortAndFullProfileIds() {
+        QuestDefinitionParser.ParseResult shortForm = parseQuestBoss("        mob: Ogre\n");
+        assertTrue(shortForm.isSuccess(), () -> "issues: " + shortForm.issues());
+        assertEquals(new com.lodygames.rpgquest.quest.model.KillQuestBossObjective(
+                new org.bukkit.NamespacedKey("rpgquest", "ogre")), shortForm.quest().steps().get(0).objectives().get(0));
+        assertTrue(parseQuestBoss("        mob: rpgquest:ogre\n        amount: 1\n").isSuccess());
+    }
+
+    @Test
+    void questBossWithoutProfileOrWithAmountAboveOneIsRejected() {
+        assertFalse(parseQuestBoss("        amount: 1\n").isSuccess());
+        QuestDefinitionParser.ParseResult many = parseQuestBoss("        mob: ogre\n        amount: 3\n");
+        assertFalse(many.isSuccess());
+        assertTrue(many.issues().toString().contains("amount"), () -> many.issues().toString());
+    }
 }

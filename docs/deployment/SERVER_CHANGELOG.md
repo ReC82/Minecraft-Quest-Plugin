@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Boss de quête personnels : objectif KILL_QUEST_BOSS (#171)
+
+### Changement
+
+Nouvel objectif de quête `KILL_QUEST_BOSS` (`mob: <profil>`) : un boss (profil BOSS en mode « Boss de
+quête ») apparaît dans le Wild pour le joueur quand l'étape devient active, localisé (biome + waypoint
+le plus proche, sinon coordonnées) dans le chat et le journal, crédité à son seul propriétaire présent
+à ≤ 64 blocs, retiré à l'abandon. Nouveau fichier de données géré par le plugin :
+`plugins/RPGQuest/state/quest-bosses.yml` (créé au premier boss). PlugAdmin : objectif « Vaincre son
+boss de quête » dans l'éditeur de quêtes.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement de PlugAdmin. Aucune migration, aucun fichier de
+configuration à modifier. Aucune quête existante n'utilise ce type : rien ne change tant que le
+propriétaire n'en crée pas une.
+
+### Sauvegarde préalable
+
+JAR précédent (sauvegarde datée automatique de `deploy-verygames.sh`) ; installation PlugAdmin
+précédente (sauvegarde de `scripts/plugadmin/deploy.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh` ; `scripts/plugadmin/deploy.sh`.
+Détails réels (commit, empreintes) dans le rapport de session #171.
+
+### Validation
+
+TC-337 — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Remettre le JAR sauvegardé et l'installation PlugAdmin précédente. `state/quest-bosses.yml` peut rester
+(ignoré par l'ancien JAR) ; un boss de quête encore vivant redevient un boss ordinaire du profil, à
+retirer en jeu si besoin.
+
 ## 2026-10-16 - Récompenses : catalogue administré depuis PlugAdmin, sans YAML (#474)
 
 ### Changement

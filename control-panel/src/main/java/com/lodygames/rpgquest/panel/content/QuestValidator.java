@@ -195,9 +195,12 @@ public final class QuestValidator {
                     out.add(Diagnostic.error(ctx, "Identifiant de table « " + table + " » invalide : minuscules, "
                             + "chiffres, « _ - » uniquement (32 caractères au plus)."));
                 }
+                if (!table.isEmpty() && TABLE_ID.matcher(table).matches()) {
+                    tableReferenceCheck(out, ctx, table, refData);
+                }
                 out.add(Diagnostic.info(ctx, "Tirage au sort : une fois par complétion, résultat figé avec la fin "
-                        + "de quête. La table doit exister dans entitlements.yml du serveur, sinon le joueur est "
-                        + "prévenu que le tirage est indisponible."));
+                        + "de quête. Si la table n'existe pas ou est désactivée, le joueur est prévenu que le "
+                        + "tirage est indisponible (aucun gain inventé)."));
             }
         }
 
@@ -226,6 +229,21 @@ public final class QuestValidator {
     static final int HEART_REWARD_WARNING_THRESHOLD = 5;
     /** Identifiant d'une table de récompenses aléatoires (issue #177). */
     private static final Pattern TABLE_ID = Pattern.compile("[a-z0-9_-]{1,32}");
+
+    /** Issue #177 : table connue du dernier relevé, et active — sinon un avertissement qui dit quoi faire. */
+    private static void tableReferenceCheck(List<Diagnostic> out, String ctx, String table, RefData ref) {
+        if (!ref.sourceKnown("reward-table")) {
+            out.add(Diagnostic.info(ctx, "Impossible de vérifier la table « " + table + " » : ouvrir la page "
+                    + "Récompenses aléatoires et cliquer sur « Rafraîchir »."));
+        } else if (!ref.isValueKnown("reward-table", table)) {
+            out.add(Diagnostic.warning(ctx, "Table « " + table + " » introuvable sur le serveur : la créer dans "
+                    + "Récompenses aléatoires, ou choisir une table de la liste. Sinon le joueur verra « tirage "
+                    + "indisponible »."));
+        } else if (ref.rewardTableDisabled(table)) {
+            out.add(Diagnostic.warning(ctx, "La table « " + table + " » est désactivée : aucun tirage tant qu'elle "
+                    + "ne l'est pas (le joueur verra « tirage indisponible »)."));
+        }
+    }
     private static final Pattern HEART_GRANT_KEY = Pattern.compile("[a-z0-9_.:\\-]{1,128}");
 
     private static void heartRewardChecks(List<Diagnostic> out, String ctx, String rawAmount, String rawKey) {
@@ -331,6 +349,9 @@ public final class QuestValidator {
                                     + " » invalide. Valeurs acceptées : " + String.join(", ", allowed) + "."));
                         }
                         continue;
+                    }
+                    if ("reward-table".equals(f.selectSource())) {
+                        continue; // #177 : message dédié dans le bloc « TABLE » des récompenses
                     }
                     // #196 : un bloc sans forme d'objet n'est pas une valeur « inconnue » — il
                     // existe bel et bien, mais ne peut jamais devenir un objet. Le dire

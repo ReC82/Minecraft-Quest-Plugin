@@ -868,6 +868,11 @@
   }
 
   function setupMultiSel(box) {
+    // Issue #177 : data-multisel-exact = comparer les valeurs telles quelles (« table:butin » et
+    // « butin » sont deux choses différentes), au lieu de l'id sans espace de noms des quêtes.
+    var keyOf = box.hasAttribute("data-multisel-exact")
+      ? function (v) { return String(v == null ? "" : v).trim().toLowerCase(); }
+      : plainId;
     var store = box.querySelector("textarea[data-multisel-store]");
     if (!store || store.getAttribute("data-multisel-ready") === "1") { return; }
     var dl = document.getElementById(box.getAttribute("data-multisel-list") || "");
@@ -887,7 +892,7 @@
         origin: opts[k].getAttribute("data-origin") || ""
       };
       options.push(o);
-      byPlain[plainId(v)] = o;
+      byPlain[keyOf(v)] = o;
     }
 
     // Le séparateur dépend du contrat de l'action cible : « \n » pour les prérequis de quête
@@ -950,7 +955,7 @@
       }
       var html = "";
       for (var c = 0; c < chosen.length; c++) {
-        var known = byPlain[plainId(chosen[c])];
+        var known = byPlain[keyOf(chosen[c])];
         var title = known && known.label ? known.label : chosen[c];
         html += '<span class="chip' + (known ? "" : " chip-unknown") + '">'
           + '<span class="chip-t">' + esc(title) + "</span>"
@@ -969,7 +974,7 @@
       visible = [];
       for (var n = 0; n < options.length && visible.length < 60; n++) {
         var o = options[n];
-        if (chosen.some(function (ch) { return plainId(ch) === plainId(o.value); })) { continue; }
+        if (chosen.some(function (ch) { return keyOf(ch) === keyOf(o.value); })) { continue; }
         if (!q || o.value.toLowerCase().indexOf(q) !== -1
             || (o.label && o.label.toLowerCase().indexOf(q) !== -1)) {
           visible.push(o);
@@ -1008,7 +1013,7 @@
     function add(value) {
       var v = String(value || "").trim();
       if (!v) { return; }
-      if (chosen.some(function (ch) { return plainId(ch) === plainId(v); })) { return; }
+      if (chosen.some(function (ch) { return keyOf(ch) === keyOf(v); })) { return; }
       chosen.push(v);
       sync();
       renderChips();
@@ -1793,6 +1798,7 @@
     run("initFocus", initFocus);
     run("initCombo", initCombo);
     run("initMultiSel", initMultiSel);
+    run("initChanceTotals", initChanceTotals);
     run("initEditorForms", initEditorForms);
     run("initStyleFields", initStyleFields);
     run("initSubmitOnce", initSubmitOnce);
@@ -1815,6 +1821,58 @@
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.
     window.addEventListener("load", upgradeToasts);
+  }
+
+  // Issue #177 — éditeur de tables de récompenses : total des chances recalculé à la saisie, avec
+  // le même texte que le serveur (AgentPages#chanceTotalText). Le serveur revalide tout.
+  function initChanceTotals() {
+    var forms = document.querySelectorAll("form[data-chance-form]");
+    for (var i = 0; i < forms.length; i++) {
+      setupChanceTotal(forms[i]);
+    }
+  }
+
+  function hundredths(raw) {
+    var s = String(raw == null ? "" : raw).trim();
+    if (!/^\d{1,3}([.,]\d{1,2})?$/.test(s)) { return null; }
+    var parts = s.replace(",", ".").split(".");
+    var frac = (parts[1] || "") + "00";
+    var value = parseInt(parts[0], 10) * 100 + parseInt(frac.substring(0, 2), 10);
+    return value >= 1 && value <= 10000 ? value : null;
+  }
+
+  function percentText(h) {
+    var whole = Math.floor(h / 100);
+    var rest = h % 100;
+    var text = rest === 0 ? String(whole) : whole + "," + (rest < 10 ? "0" + rest : String(rest)).replace(/0$/, "");
+    return text + " %";
+  }
+
+  function setupChanceTotal(form) {
+    var out = form.querySelector("[data-chance-total]");
+    if (!out) { return; }
+    function update() {
+      var total = 0;
+      var inputs = form.querySelectorAll("input[data-chance]");
+      for (var k = 0; k < inputs.length; k++) {
+        var h = hundredths(inputs[k].value);
+        if (h !== null) { total += h; }
+      }
+      var mode = form.querySelector("input[data-chance-mode]:checked");
+      var single = mode && mode.value === "single";
+      if (single) {
+        out.textContent = total > 10000
+          ? "Total : " + percentText(total) + " — trop élevé, 100 % au plus pour « une récompense au plus »."
+          : "Total : " + percentText(total) + " · chance de ne rien gagner : " + percentText(10000 - total) + ".";
+      } else {
+        out.textContent = "Total : " + percentText(total)
+          + " (chaque ligne est tirée à part ; le total peut dépasser 100 %).";
+      }
+      out.classList.toggle("text-danger", single && total > 10000);
+    }
+    form.addEventListener("input", update);
+    form.addEventListener("change", update);
+    update();
   }
 
   // Issue #266 — une ligne de tableau marquée data-href ouvre sa fiche au clic. Le vrai lien de la

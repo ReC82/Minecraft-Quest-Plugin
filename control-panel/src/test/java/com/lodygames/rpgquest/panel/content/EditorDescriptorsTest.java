@@ -101,7 +101,7 @@ class EditorDescriptorsTest {
                 // l'énumération CountMode du moteur (issue #185), servies telles quelles. « countMode »
                 // est la même énumération, libellée en français ; « city » est le relevé city.list (#178).
                 assertTrue(Set.of("entity", "material", "icon", "npc", "quest", "world",
-                        "waypointCountMode", "countMode", "city").contains(src),
+                        "waypointCountMode", "countMode", "city", "reward-table").contains(src),
                         d.kind() + "/" + f.name() + " : source de liste inconnue « " + src + " »");
             }
         }

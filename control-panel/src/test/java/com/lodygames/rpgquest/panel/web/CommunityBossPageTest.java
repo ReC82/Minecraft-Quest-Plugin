@@ -136,6 +136,21 @@ class CommunityBossPageTest {
         assertTrue(page.contains("Tirages : Alice"), page);
     }
 
+    /** Issue #177 tranche 2 : récompenses de participation choisies dans une liste recherchable. */
+    @Test
+    void participationRewardsAreChosenFromCatalogRewardsAndTables() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", RewardTablesPageTest.status(true, true, true, "[]",
+                "[" + RewardTablesPageTest.TABLE + "]"));
+        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("<datalist id=\"dl-boss-rewards\"><option value=\"gem\" label=\"Gemme rare\">"), page);
+        assertTrue(page.contains("<option value=\"table:butin_ogre\" label=\"Tirage : Butin de l&#39;ogre\">"), page);
+        assertTrue(page.contains("data-multisel=\"participation_rewards\""), "multisélection");
+        assertTrue(page.contains("data-multisel-exact"), "table:x et x restent distincts");
+        assertTrue(page.contains("href=\"/rewards\""), "lien vers l'éditeur de tables");
+    }
+
     @Test
     void withoutAnyDefeatTheSectionSaysSoHonestly() throws Exception {
         start();

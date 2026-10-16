@@ -104,6 +104,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > `DISCOVER_CITY` (ville précise ou X villes distinctes, `NEW_ONLY` / `INCLUDE_EXISTING`).
 > Validation en jeu : TC-301.
 >
+> **Boss de quête personnels (#171, 17/10/2026)** — objectif `KILL_QUEST_BOSS` (`mob: <profil>`) :
+> boss possédé par joueur + quête + étape + objectif, apparu dans le Wild quand l'étape devient active,
+> localisé (biome, waypoint réel le plus proche découvert ou non, sinon coordonnées) au joueur et dans
+> le journal ; crédité au propriétaire présent à ≤ 64 blocs ; retiré à l'abandon/fin ; persisté dans
+> `state/quest-bosses.yml` (aucune migration). Politique à confirmer par le propriétaire. TC-337.
+>
 > **PNJ central et arrivée distincte (#322, 14/10/2026)** — même fiche `village_centers`, migration
 > **V37** (colonnes NULL par défaut) : PNJ central facultatif par identifiant stable, diagnostic
 > relu en direct (dans la ville, sorti, autre monde, non chargé, non lié, supprimé — la ville ne

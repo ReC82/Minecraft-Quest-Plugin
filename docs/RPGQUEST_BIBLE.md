@@ -544,6 +544,7 @@ Les 10 types existent **tous** réellement dans le code (`ObjectiveType` enum, e
 | `DELIVER_ITEM_TO_NPC` | `npc` (id logique RPGQuest, comme `TALK_TO_NPC`), `material`, `amount` (> 0) | `DeliverItemToNpcObjective` | **Aucun** — volontairement. Seule l'action de dialogue `DELIVER_QUEST_ITEMS` sur le bon PNJ fait progresser cet objectif (`QuestProgressEngine#deliverTo`) | Global (le PNJ est où il est). Le compteur porte la quantité **déjà remise** : dépôts partiels acquis définitivement, objets remis **consommés**, jamais restitués. Voir « Remise d'objets à un PNJ » plus bas. |
 | `DISCOVER_WAYPOINT` | `amount` (> 0), `worlds` (liste optionnelle ; vide = tous les mondes), `count-mode` (`NEW_ONLY` par défaut, ou `INCLUDE_EXISTING`) | `DiscoverWaypointObjective` | **Aucun** — volontairement. La progression vient de l'abonnement aux **premières** découvertes du système de waypoints (`WaypointService#onFirstDiscovery` → `QuestProgressEngine#handleWaypointDiscovered`), branché une seule fois au bootstrap. Un écouteur de déplacement ou d'interaction recréerait une seconde règle de découverte à côté de celle du système de waypoints. | Filtré par `worlds` quand la liste est renseignée, global sinon. L'identité comptée est l'**id stable** du waypoint : deux waypoints du même biome comptent séparément, renommer ou déplacer un waypoint ne le fait pas compter deux fois. Aucune table supplémentaire — une première découverte est unique par couple (joueur, waypoint) au niveau de la base, donc un reclic ne notifie jamais. **Limite connue, assumée** : en `NEW_ONLY`, un joueur ayant déjà découvert tous les waypoints accessibles ne peut pas valider un nouveau cycle d'une quête répétable ; aucune découverte n'est jamais supprimée ni aucun waypoint débloqué pour y remédier. Utiliser `INCLUDE_EXISTING` si ce cumul est voulu. |
 | `DISCOVER_CITY` | `city` (identifiant stable d'une ville) **ou** `amount` (> 0, villes distinctes), `count-mode` (`NEW_ONLY` par défaut, ou `INCLUDE_EXISTING`) | `DiscoverCityObjective` | **Aucun** — la progression vient de l'abonnement aux **premières** découvertes de ville (`CityDiscoveryService#onFirstDiscovery` → `QuestProgressEngine#handleCityDiscovered`). | Une ville compte une fois par joueur (clé primaire de `city_discoveries`). Avec `city`, `amount` vaut 1 (le parseur refuse une autre valeur) ; sans `city`, `amount` est obligatoire. Le mode cumulatif compte les villes **existantes** déjà découvertes, actives ou non. Voir « Découverte de villes ». |
+| `KILL_QUEST_BOSS` (issue #171) | `mob` (profil de boss : `ogre` = `rpgquest:ogre` ; `amount` absent ou 1) | `KillQuestBossObjective` | **Aucun écouteur générique** — seul `mob.quest.QuestBossService`, qui connaît l'instance possédée, crédite l'objectif (`QuestProgressEngine#creditQuestBoss`). | Boss **personnel** : apparaît dans le Wild pour le joueur quand l'étape devient active (à l'acceptation si c'est la première). Tuer un mob du même type, ou le boss d'un autre joueur, ne compte jamais. Voir « Boss de quête personnels ». Le profil (BOSS, mode `QUEST`, activé) est vérifié à l'apparition, pas au chargement. |
 | `REACH_LOCATION` | `world`, `x`, `y`, `z`, `radius` (> 0) | `ReachLocationObjective` | `PlayerMoveEvent` (`QuestLocationListener`, `ignoreCancelled = true`, ignore les mouvements qui ne changent pas de bloc) — distance euclidienne comparée à `radius` | **Seul type explicitement lié à un monde précis** — `world` est un simple nom (résolu à l'évaluation, pas au chargement) ; un déplacement dans un autre monde n'est jamais candidat, même avec les mêmes coordonnées. |
 
 Dans tous les cas, la progression n'a lieu que si, au moment de l'événement, la quête est `ACTIVE` pour ce joueur **et** l'objectif appartient à l'étape actuellement active (`QuestProgressEngine#handleCandidates`, couvert par `QuestProgressEngineTest#objectiveEventBeforeAcceptingTheQuestIsIgnored` et `#objectiveOnALaterStepIsIgnoredUntilItsOwnStepIsActive`) — un événement pour une quête non acceptée, abandonnée, terminée, ou pour une étape pas encore atteinte, est silencieusement ignoré.
@@ -5288,7 +5289,7 @@ d'icônes/récompenses (#196) sont des lots distincts.
 
 ### Catégorie et attributs (issue #169, lot 1)
 
-- `category` : `SPECIAL` (éligible au tirage aléatoire Wild, nom coloré) ou `BOSS` (jamais tiré au hasard — n'apparaît que par spawn de test admin, par le scheduler des boss communautaires si `boss-mode: COMMUNITY` (issue #175, voir plus bas) ou, plus tard, objectif de quête #173 — nom coloré + particules colorées en continu + barre de vie Adventure).
+- `category` : `SPECIAL` (éligible au tirage aléatoire Wild, nom coloré) ou `BOSS` (jamais tiré au hasard — n'apparaît que par spawn de test admin, par le scheduler des boss communautaires si `boss-mode: COMMUNITY` (issue #175, voir plus bas) ou par un objectif de quête `KILL_QUEST_BOSS` si `boss-mode: QUEST` (issue #171, voir « Boss de quête personnels ») — nom coloré + particules colorées en continu + barre de vie Adventure).
 - `enabled` (optionnel, défaut `true`) : désactivé = ignoré par le tirage aléatoire ET par le spawn de test, jamais supprimé du disque.
 - `knockback-resistance` (0 à 1), `scale` (taille relative, 1.0 = normale) : attributs vanilla supplémentaires, en plus de `health`/`damage`/`speed`/`armor` déjà existants.
 - `creeper-explosion-radius` : uniquement si `entity-type: CREEPER` — refusé (erreur de chargement, jamais une option silencieusement ignorée) pour tout autre type.
@@ -5378,6 +5379,38 @@ les apparitions de test** (case de confirmation, aucune récompense, retrait dif
 zone n'est pas chargée). Actions d'agent : `boss.community.status` (MOB_READ),
 `boss.community.settings.set` (MOB_WRITE), `boss.community.test.spawn` et `boss.community.remove`
 (MOB_TEST_SPAWN), toutes auditées. Page docs-site : aucune (comme le reste de la section 11).
+
+### Boss de quête personnels — objectif `KILL_QUEST_BOSS` (issue #171, première version)
+
+```yaml
+- type: KILL_QUEST_BOSS
+  mob: ogre            # profil de catégorie BOSS, « Type de boss » = Boss de quête (QUEST), activé
+```
+
+Créé dans PlugAdmin (éditeur de quête → objectif « Vaincre son boss de quête », champ « Profil de
+boss »). Construit sur le moteur de mobs spéciaux (`SpecialMobService#apply` : attributs, nom, barre de
+vie, butin du profil) et sur le **placement sûr des boss communautaires** (mêmes règles : monde Wild
+autorisé par le profil, biome, zone, ville, distance aux waypoints et aux joueurs, surface naturelle si
+le réglage communautaire l'exige ; repères = le joueur s'il est dans le Wild, puis les waypoints actifs
+du Wild). Aucun second moteur, aucune table, **aucune migration**.
+
+Politique retenue (première version — **à confirmer par le propriétaire**) :
+
+| Situation | Comportement |
+|---|---|
+| Étape portant l'objectif devient active (acceptation, étape suivante) et joueur connecté | Un boss apparaît **pour ce joueur** dans le monde partagé (pas de monde instancié) ; message : nom + biome + waypoint réel le plus proche (distance, direction, « déjà découvert » / « pas encore découvert », rien n'est déverrouillé) ou, sans waypoint à moins de 600 blocs, coordonnées arrondies. La même ligne est dans le journal sous l'objectif. |
+| Double-clic, nouvel essai, reconnexion, redémarrage | Une seule instance par **joueur + quête + étape + objectif** (verrou `state/quest-bosses.yml` + PDC `quest-boss-instance` sur l'entité), une seule recherche à la fois : jamais de doublon. |
+| Mort du boss, propriétaire connecté, vivant, à ≤ 64 blocs | Objectif rempli pour le propriétaire, **quel que soit le tueur** (d'autres joueurs peuvent aider, mais n'y gagnent aucune progression de quête). |
+| Mort du boss sans le propriétaire (absent, trop loin, mort) | Objectif **non** rempli, joueur prévenu, **un** nouveau boss apparaît après ~60 s (joueur connecté). |
+| Mort du joueur, déconnexion, chunk déchargé | Le boss reste où il est (entité persistante), même indication. |
+| Abandon, fin de quête, étape passée, quête retirée | Boss retiré **sans butin**, tout de suite s'il est chargé, sinon au rechargement de son chunk. |
+| Profil absent / désactivé / communautaire, aucun emplacement sûr, plafond (40 boss de quête) | Message clair au joueur (une fois), ligne rouge dans le journal, nouvel essai automatique toutes les 2 min — la quête n'est jamais silencieusement impossible. |
+| Entité marquée retrouvée sans verrou | Supprimée (jamais réadoptée) ; la réconciliation recrée au besoin **une** instance propre. |
+
+Le butin est celui du profil (moteur de mobs) ; la récompense de quête reste celle de la quête,
+remise par le moteur de quêtes et son idempotence (aucun doublon entre les deux). Pas encore de
+participation/tables propres au boss de quête (#176/#177 couvrent les boss communautaires).
+Validation en jeu : **TC-337** (`PENDING MANUAL VALIDATION`).
 
 ### Participation et récompenses des boss communautaires (issue #176)
 

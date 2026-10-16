@@ -101,6 +101,12 @@ rewards:                    # optionnel
             mondes. <code>count-mode</code> vaut <code>NEW_ONLY</code> (défaut : seules les découvertes
             faites pendant que l'objectif est actif) ou <code>INCLUDE_EXISTING</code> (les découvertes
             déjà acquises comptent aussi) ; la règle retenue est annoncée au joueur.</td></tr>
+        <tr><td><code>KILL_QUEST_BOSS</code></td><td><code>mob</code> (profil de boss, ex. <code>ogre</code>)</td>
+          <td><strong>Vaincre son boss de quête</strong> : un boss (profil de catégorie Boss, type « Boss de
+            quête », activé) apparaît dans le Wild <strong>pour ce joueur</strong> quand l'étape commence. Le
+            joueur reçoit le biome et le waypoint le plus proche (aussi dans son journal). L'objectif est
+            rempli quand <strong>son</strong> boss meurt alors qu'il est à moins de 64 blocs ; tuer un autre mob
+            ou le boss d'un autre joueur ne compte jamais. Abandonner la quête retire le boss (issue #171).</td></tr>
         <tr><td><code>DISCOVER_CITY</code></td><td><code>city</code> <strong>ou</strong> <code>amount</code>, <code>count-mode</code> (optionnel)</td>
           <td><strong>Découvrir</strong> une ville précise (<code>city</code>, identifiant stable choisi par
             son nom dans PlugAdmin) ou <code>amount</code> villes distinctes. Seule la première entrée

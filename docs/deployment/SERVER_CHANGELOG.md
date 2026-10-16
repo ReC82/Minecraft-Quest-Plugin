@@ -82,6 +82,19 @@ sans rouge ; `POST /api/snapshot` sans jeton → 401. Parcours complet après ac
 JAR précédent (`scripts/deploy-verygames.sh` le garde daté) ; portail :
 `scripts/web-portal/rollback.sh app` ; nginx : restaurer la copie du vhost, `nginx -t`, `reload`.
 
+### Déploiement effectué — 2026-10-16
+
+- Portail (02:22) : `10c7785`, release précédente `/opt/lodyquests-portal/releases/20261016-022204` ;
+  `/health` → `"snapshot":"MISSING","server":"UNKNOWN"` ; accueil « ● État inconnu », `/status`
+  bandeau gris « État du serveur de jeu inconnu », aucun « hors ligne ».
+- nginx (02:22) : bloc `location = /api/snapshot` ajouté au vhost en service, copie préalable
+  `/opt/lodyquests-portal/releases/nginx-lodyquests-portal.pre-421-20261016-022215.bak`, `nginx -t`
+  OK, `reload`. Vérifié : POST `/api/snapshot` → 401, GET → 403, `/api/status` → 404,
+  POST `/api/link/confirm` → 401, PlugAdmin → 303 (connexion).
+- DEV (02:29) : JAR `10c7785` (CI verte), sauvegarde `rpgquest-20261016T002912Z-predeploy.jar`
+  (3 109 579 o < 3 119 418 o du nouveau) ; redémarrage RCON, serveur revenu en ligne, RPGQuest
+  vert dans `/plugins`. `portal-snapshot.properties` **non créé**, `web-export` toujours désactivé.
+
 ---
 
 ## 2026-10-15 - Moteur d'événements et classements temporaires (#57)

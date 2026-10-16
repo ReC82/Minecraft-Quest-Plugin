@@ -4524,7 +4524,7 @@ public final class BukkitAgentActions implements AgentActions {
                 def.sound() == null ? null : def.sound().name(), def.xpReward(), def.maxPopulation(),
                 mobService.populationOf(def.id()), enragedHealthFraction, enragedSpeedMultiplier,
                 enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
-                summonMaxAlive, List.copyOf(abilitiesSummary));
+                summonMaxAlive, List.copyOf(abilitiesSummary), def.bossMode().name(), def.communityWeight());
     }
 
     @Override
@@ -4534,11 +4534,12 @@ public final class BukkitAgentActions implements AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
         return writeMobDefinition(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones,
                 health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
                 xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
-                summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, true);
+                summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, bossMode,
+                communityWeight, true);
     }
 
     @Override
@@ -4548,11 +4549,12 @@ public final class BukkitAgentActions implements AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
         return writeMobDefinition(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones,
                 health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
                 xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
-                summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, false);
+                summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, bossMode,
+                communityWeight, false);
     }
 
     @SuppressWarnings("removal") // Particle/Sound#valueOf : voir la justification dans SpecialMobDefinitionParser.
@@ -4562,7 +4564,8 @@ public final class BukkitAgentActions implements AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive, boolean create) {
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+            boolean create) {
         List<MobAbility> abilities = new ArrayList<>();
         try {
             if (enragedHealthFraction != null || enragedSpeedMultiplier != null || enragedDamageMultiplier != null) {
@@ -4582,7 +4585,14 @@ public final class BukkitAgentActions implements AgentActions {
                     knockbackResistance, scale, creeperExplosionRadius,
                     particle == null ? null : org.bukkit.Particle.valueOf(particle.toUpperCase(Locale.ROOT)),
                     sound == null ? null : org.bukkit.Sound.valueOf(sound.toUpperCase(Locale.ROOT)),
-                    abilities, List.of(), xpReward, maxPopulation);
+                    // Issue #175 : le formulaire n'édite pas la table de drops -- une modification la
+                    // conserve au lieu de l'effacer (elle disparaissait à chaque enregistrement).
+                    abilities, create ? List.of() : mobDefinitionStore.find(resolveKey(id))
+                            .map(SpecialMobDefinition::drops).orElse(List.of()),
+                    xpReward, maxPopulation,
+                    bossMode == null ? com.lodygames.rpgquest.mob.model.BossMode.QUEST
+                            : com.lodygames.rpgquest.mob.model.BossMode.valueOf(bossMode.toUpperCase(Locale.ROOT)),
+                    communityWeight == null ? SpecialMobDefinition.DEFAULT_COMMUNITY_WEIGHT : communityWeight);
 
             SpecialMobDefinitionStore.Result r = create
                     ? mobDefinitionStore.create(definition) : mobDefinitionStore.update(definition);
@@ -4613,12 +4623,7 @@ public final class BukkitAgentActions implements AgentActions {
             return done(MutationResult.of(false, "NOT_FOUND", "Aucun profil « " + key + " » à basculer."));
         }
         SpecialMobDefinition current = existing.get();
-        SpecialMobDefinition toggled = new SpecialMobDefinition(current.id(), current.category(), enabled,
-                current.entityType(), current.displayName(), current.spawnChance(), current.allowedWorlds(),
-                current.allowedBiomes(), current.allowedZones(), current.health(), current.damage(), current.speed(),
-                current.armor(), current.knockbackResistance(), current.scale(), current.creeperExplosionRadius(),
-                current.particle(), current.sound(), current.abilities(), current.drops(), current.xpReward(),
-                current.maxPopulation());
+        SpecialMobDefinition toggled = current.withEnabled(enabled);
         SpecialMobDefinitionStore.Result r = mobDefinitionStore.update(toggled);
         mobRegistry.reload();
         return done(new MutationResult(r.ok(), r.code(), r.message(), List.of()));
@@ -4676,6 +4681,102 @@ public final class BukkitAgentActions implements AgentActions {
             int removed = mobService.clearTestInstances();
             return done(new MutationResult(true, "CLEARED", removed + " instance(s) de test supprimée(s).", List.of()));
         });
+    }
+
+    // ---- Boss communautaires (issue #175) -------------------------------------------------------
+
+    private com.lodygames.rpgquest.mob.community.CommunityBossService communityBosses;
+    private com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore communityBossSettingsStore;
+
+    /** Dépendance facultative (même logique de setter que l'historique des bâtiments). */
+    public void setCommunityBosses(com.lodygames.rpgquest.mob.community.CommunityBossService service,
+                                   com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore settingsStore) {
+        this.communityBosses = service;
+        this.communityBossSettingsStore = settingsStore;
+    }
+
+    @Override
+    public CompletableFuture<CommunityBossView> communityBossStatus() {
+        if (communityBosses == null) {
+            return AgentActions.super.communityBossStatus();
+        }
+        var settings = communityBosses.settings();
+        var state = communityBosses.snapshot();
+        List<CommunityBossInstanceView> instances = new ArrayList<>();
+        for (var i : state.instances()) {
+            instances.add(new CommunityBossInstanceView(i.entityId().toString(), i.profileId(), i.profileName(),
+                    i.world(), i.x(), i.y(), i.z(), i.biome(), i.waypointName(), i.waypointDistance(),
+                    i.waypointDirection(), i.spawnedAtMillis(), i.test()));
+        }
+        List<CommunityBossProfileView> profiles = new ArrayList<>();
+        for (SpecialMobDefinition def : mobRegistry.definitions()) {
+            if (def.category() == MobCategory.BOSS) {
+                profiles.add(new CommunityBossProfileView(def.id().asString(), def.displayName(), def.enabled(),
+                        def.bossMode().name(), def.communityWeight(), List.copyOf(def.allowedWorlds()),
+                        List.copyOf(def.allowedBiomes())));
+            }
+        }
+        return done(new CommunityBossView(true, settings.enabled(), settings.intervalMinutes(), settings.maxActive(),
+                state.nextDueMillis(), state.lastSpawnMillis(), state.lastAttemptMillis(), state.lastOutcome(),
+                System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> communityBossSettingsSet(boolean enabled, int intervalMinutes,
+                                                                      int maxActive) {
+        if (communityBosses == null) {
+            return AgentActions.super.communityBossSettingsSet(enabled, intervalMinutes, maxActive);
+        }
+        com.lodygames.rpgquest.mob.community.CommunityBossSettings next;
+        try {
+            next = new com.lodygames.rpgquest.mob.community.CommunityBossSettings(enabled, intervalMinutes, maxActive);
+        } catch (IllegalArgumentException e) {
+            return done(MutationResult.of(false, "INVALID", e.getMessage()));
+        }
+        var previous = communityBosses.settings();
+        try {
+            communityBossSettingsStore.save(next); // fichier : hors du thread principal (thread agent).
+        } catch (java.io.IOException e) {
+            return done(MutationResult.of(false, "ERROR", "Écriture impossible : " + e.getMessage()));
+        }
+        return onMain(() -> {
+            communityBosses.settingsChanged(previous, next);
+            return done(MutationResult.of(true, "UPDATED", next.enabled()
+                    ? "Boss communautaires actifs : un essai toutes les " + next.intervalMinutes() + " min, "
+                    + next.maxActive() + " boss maximum en même temps."
+                    : "Boss communautaires en pause : plus aucune apparition automatique."));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> communityBossTestSpawn(String profileId, String playerName) {
+        if (communityBosses == null) {
+            return AgentActions.super.communityBossTestSpawn(profileId, playerName);
+        }
+        return onMain(() -> done(toMutation(communityBosses.testSpawn(profileId, playerName))));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> communityBossRemove(String target) {
+        if (communityBosses == null) {
+            return AgentActions.super.communityBossRemove(target);
+        }
+        return onMain(() -> {
+            if ("tests".equals(target)) {
+                return done(toMutation(communityBosses.removeTestInstances()));
+            }
+            UUID entityId;
+            try {
+                entityId = UUID.fromString(target);
+            } catch (IllegalArgumentException e) {
+                return done(MutationResult.of(false, "INVALID", "Identifiant de boss invalide."));
+            }
+            return done(toMutation(communityBosses.remove(entityId)));
+        });
+    }
+
+    private static MutationResult toMutation(com.lodygames.rpgquest.mob.community.CommunityBossService.Outcome o) {
+        return MutationResult.of(o.ok(), o.code(), o.message());
     }
 
     // ---- Exploitation serveur (issue #95) -----------------------------------------------------

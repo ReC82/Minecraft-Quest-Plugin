@@ -443,7 +443,7 @@ class StubAgentActions implements AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
         return unsupported();
     }
 
@@ -454,7 +454,7 @@ class StubAgentActions implements AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
         return unsupported();
     }
 

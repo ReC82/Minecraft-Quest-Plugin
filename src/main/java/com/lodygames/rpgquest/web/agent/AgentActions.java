@@ -1838,7 +1838,7 @@ public interface AgentActions {
                              int alivePopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
                              Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount,
                              Double summonChance, Integer summonCooldownSeconds, Integer summonMaxAlive,
-                             List<String> abilitiesSummary) {
+                             List<String> abilitiesSummary, String bossMode, int communityWeight) {
     }
 
     /** Throttle global du tirage aléatoire Wild (voir {@code mob.MobSpawnSettings}). */
@@ -1864,7 +1864,7 @@ public interface AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive);
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight);
 
     CompletableFuture<MutationResult> mobDefinitionUpdate(String id, String category, boolean enabled,
             String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
@@ -1872,7 +1872,7 @@ public interface AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive);
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight);
 
     /** Bascule {@code enabled} sans toucher au reste du profil -- action {@code mob.definition.toggle}. */
     CompletableFuture<MutationResult> mobDefinitionToggle(String id, boolean enabled);
@@ -1891,6 +1891,54 @@ public interface AgentActions {
 
     /** Supprime uniquement les instances de test encore vivantes (toutes définitions) -- {@code mob.test.clear}. */
     CompletableFuture<MutationResult> mobTestClear();
+
+    // ---- Boss communautaires (issue #175) --------------------------------------------------------
+
+    /** Boss communautaire actif, tel que présenté dans PlugAdmin ({@code loaded} = zone actuellement chargée). */
+    record CommunityBossInstanceView(String entityId, String profileId, String profileName, String world, int x,
+                                     int y, int z, String biome, String waypointName, int waypointDistance,
+                                     String waypointDirection, long spawnedAtMillis, boolean test) {
+    }
+
+    /** Profil BOSS et son mode, pour la liste des profils éligibles. */
+    record CommunityBossProfileView(String id, String displayName, boolean enabled, String bossMode,
+                                    int communityWeight, List<String> worlds, List<String> biomes) {
+    }
+
+    /** {@code available=false} : plugin sans le service (ancienne version) -- jamais un état inventé. */
+    record CommunityBossView(boolean available, boolean enabled, int intervalMinutes, int maxActive,
+                             Long nextDueMillis, long lastSpawnMillis, long lastAttemptMillis, String lastOutcome,
+                             long nowMillis, List<CommunityBossInstanceView> instances,
+                             List<CommunityBossProfileView> bossProfiles) {
+    }
+
+    /** Lecture de l'état du scheduler -- action {@code boss.community.status}. */
+    default CompletableFuture<CommunityBossView> communityBossStatus() {
+        return CompletableFuture.completedFuture(new CommunityBossView(false, false, 0, 0, null, 0, 0, "", 0,
+                List.of(), List.of()));
+    }
+
+    /** Réglages globaux -- action {@code boss.community.settings.set}. */
+    default CompletableFuture<MutationResult> communityBossSettingsSet(boolean enabled, int intervalMinutes,
+                                                                       int maxActive) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Boss communautaires indisponibles sur ce serveur."));
+    }
+
+    /**
+     * Apparition de test immédiate -- action {@code boss.community.test.spawn}. {@code profileId} et
+     * {@code playerName} facultatifs ({@code null} = tirage pondéré / n'importe quel joueur du Wild).
+     */
+    default CompletableFuture<MutationResult> communityBossTestSpawn(String profileId, String playerName) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Boss communautaires indisponibles sur ce serveur."));
+    }
+
+    /** Retire un boss ({@code entityId}) ou toutes les apparitions de test ({@code "tests"}) -- {@code boss.community.remove}. */
+    default CompletableFuture<MutationResult> communityBossRemove(String target) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Boss communautaires indisponibles sur ce serveur."));
+    }
 
     // ---- Exploitation serveur (issue #95) ------------------------------------------------------
 

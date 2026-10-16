@@ -68,7 +68,11 @@ JAR précédent (sauvegarde datée automatique de `deploy-verygames.sh`).
 
 ### Déploiement
 
-`scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh`.
+Effectué le 2026-10-16 vers 21:23 (heure locale) : `scripts/deploy-verygames.sh -y` depuis `41ec5cf` (merge de
+la PR #478, CI verte ; tests et build relancés par le script, verts). JAR de 3 316 879 o, SHA-256
+`87e696ac…481ab280`, « JAR en ligne : 3316879 octets (== local) ». Sauvegarde
+`rpgquest-20261016T192301Z-predeploy.jar` (JAR #471, 3 315 002 o, `b5cd752d…ebf1258`). Puis
+`scripts/verygames-restart.sh` (aucun joueur connecté) : serveur ONLINE, RPGQuest actif.
 
 ### Validation
 

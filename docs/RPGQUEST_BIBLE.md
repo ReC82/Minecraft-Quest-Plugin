@@ -5315,27 +5315,38 @@ n'est promis aux joueurs. Refusé sur un profil `SPECIAL`.
 
 **Participation** : chaque coup **effectif** porté à cette instance précise — dégâts finaux > 0,
 événement non annulé, par le joueur lui-même ou par un projectile dont il est le tireur — inscrit son UUID
-sur l'entité (PDC `community-boss-participants`, 100 joueurs au plus). La liste survit au déchargement du
-chunk et au redémarrage ; elle n'est jamais transférée à un autre boss. Pas de seuil de dégâts, dernier
-coup non requis. Les dégâts indirects (loup apprivoisé, TNT, lave, potion jetée sans tireur) ne comptent
-pas.
+et l'heure de son **dernier** coup sur l'entité (PDC `community-boss-participants`, format
+`uuid@millis`, 100 joueurs au plus). La liste survit au déchargement du chunk et au redémarrage ; elle
+n'est jamais transférée à un autre boss. Pas de seuil de dégâts, dernier coup non requis. Les dégâts
+indirects (loup apprivoisé, TNT, lave, potion jetée sans tireur) ne comptent pas.
+
+**Mort d'un joueur pendant le combat** (règle arbitrée le 16/10/2026) : ses coups précédents **cessent
+de compter** pour cette instance. À la mort (`PlayerDeathEvent` non annulé), il est retiré sur-le-champ
+de la liste de chaque boss communautaire actif chargé, et l'heure de sa mort est inscrite sur le joueur
+(PDC `community-boss-last-death`, persistante) pour un boss déchargé ou après un redémarrage : à la mort
+du boss, un coup antérieur à cette heure est ignoré. Pour redevenir éligible, il doit **toucher de
+nouveau** le boss après sa réapparition. Ni la reconnexion ni un changement de monde n'effacent sa
+participation. Une inscription du format #458 (UUID sans heure) compte tant que le joueur n'est pas mort
+depuis le déploiement.
 
 **Éligibilité**, figée **au moment de la mort** du boss, conditions cumulatives :
 
-1. avoir porté au moins un coup effectif (ci-dessus) ;
-2. être **connecté et vivant** à cet instant ;
-3. être dans le **même monde** et dans le **même biome** que la **position réelle du boss à sa mort**
-   (pas son biome d'apparition) : comparaison stricte des clés de biome, **sans rayon supplémentaire**.
+1. avoir porté au moins un coup effectif (ci-dessus) **depuis sa dernière mort** ;
+2. être **connecté et vivant** à cet instant, dans le **même monde** que le boss ;
+3. être à **au plus N blocs** de la **position réelle du boss à sa mort** (pas son lieu d'apparition) :
+   distance euclidienne 3D (hauteur comprise), limite incluse — à 100 blocs pile, éligible ; à 101, exclu.
+   **Le biome ne compte pas** : un joueur à 3 blocs, de l'autre côté d'une frontière de biome, est
+   éligible.
 
-Exclus : hors ligne, mort, autre monde, autre biome. Un participant exclu et connecté reçoit la raison
-(« tu étais hors du biome du boss au moment de sa défaite »).
+N = **distance de participation**, réglage global des boss communautaires : PlugAdmin → Mobs spéciaux
+& boss → Boss communautaires du Wild → Réglages → « Distance pour être récompensé (blocs) », **100 par
+défaut**, de 5 à 500, enregistré dans `mobs/community-bosses.yml` (`participation-radius`, jamais à éditer
+à la main ; une valeur hors bornes dans le fichier revient à 100 sans mettre le scheduler en pause). La
+valeur est lue à chaque victoire et affichée avec elle dans « Victoires récentes et participants ».
 
-> **Interprétations retenues, à confirmer par le porteur du projet** (#176) :
-> - « dans le biome » = le bloc où se tient le joueur a **la même clé de biome** que celui du boss, sans
->   rayon. Conséquence assumée : un joueur ayant frappé puis parti dans une autre zone du même type de
->   biome reste éligible ; un joueur à 3 blocs mais de l'autre côté d'une frontière de biome ne l'est pas.
-> - « encore vivant » = vivant **à l'instant de la mort** du boss. Un joueur qui a frappé, est mort puis
->   a réapparu et est revenu dans le biome **reste éligible** (ses coups ne sont pas effacés).
+Exclus : hors ligne, mort, mort pendant le combat sans nouveau coup, autre monde, trop loin. Un
+participant exclu et connecté reçoit la raison (« tu étais trop loin du boss (143 blocs, 100 au plus) au
+moment de sa défaite », « … mort pendant le combat, sans nouveau coup ensuite … »).
 
 **Récompenses** : un **droit à récompense** (#422, `source = BOSS`) par participant éligible et par clé,
 clé d'idempotence `boss:<uuid entité>:<clé récompense>:<uuid joueur>` — une seconde déclaration, un

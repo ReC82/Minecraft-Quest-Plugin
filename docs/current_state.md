@@ -1213,11 +1213,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   apparition de test, retrait confirmé.
 - **Participation et récompenses des boss communautaires** (issue #176, PENDING MANUAL VALIDATION) —
   coups effectifs (directs/projectiles, non annulés, dégâts > 0) mémorisés en PDC sur l'entité ;
-  éligibilité figée à la mort (connecté, vivant, même monde et même biome que la position réelle du
-  boss) ; `participation-rewards` (clés `entitlements.yml`) sur le profil → un droit à récompense #422
+  éligibilité figée à la mort (connecté, vivant, même monde, à au plus N blocs — distance 3D — de la
+  position réelle du boss, N réglable dans PlugAdmin, 100 par défaut ; le biome ne compte plus) ; un
+  joueur mort pendant le combat perd ses coups et doit retoucher le boss (règles arbitrées le 16/10) ;
+  `participation-rewards` (clés `entitlements.yml`) sur le profil → un droit à récompense #422
   `BOSS` par participant éligible (au plus une fois, inventaire plein géré). PlugAdmin : champ dans
-  l'éditeur Boss, « Victoires récentes et participants ». Interprétations biome / « encore vivant » à
-  confirmer.
+  l'éditeur Boss, distance dans les réglages, « Victoires récentes et participants ».
 - **Tables de récompenses aléatoires** (issue #177, PENDING MANUAL VALIDATION) — section `tables:` de
   `entitlements.yml` (mode explicite `independent` / `single`, chances exactes, version tracée) ;
   récompense de quête `TABLE` (gains écrits dans la transaction de complétion, source `QUEST`) et

@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Boss communautaires : distance de participation et mort pendant le combat (#176)
+
+### Changement
+
+Règles d'éligibilité arbitrées par le propriétaire : le biome ne compte plus, un participant doit être à
+au plus N blocs (distance 3D, 100 par défaut, réglable dans PlugAdmin) de la position du boss à sa mort,
+dans le même monde ; un joueur mort pendant le combat perd ses coups et doit retoucher le boss.
+Attribution unique (#422) et inventaire plein inchangés.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin (AWS). Aucune migration. Nouvelle clé
+`participation-radius` dans `plugins/RPGQuest/mobs/community-bosses.yml`, **écrite uniquement par
+PlugAdmin** ; absente = 100. Ne pas créer `entitlements.yml`, ne pas activer le scheduler.
+
+### Sauvegarde préalable
+
+JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygames.sh` / `deploy.sh`).
+
+### Déploiement
+
+À compléter par la session de déploiement (rapport #176 du 16/10 après-midi).
+
+### Validation
+
+PENDING MANUAL VALIDATION : TC-330 (étapes 3, 3b, 3c, 3d).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage. L'ancien JAR ignore `participation-radius`
+et relit l'ancien format des participants ; le nouveau format `uuid@millis` d'un boss vivant au moment
+du retour arrière serait illisible pour lui (participants de ce boss perdus, sans autre effet).
+
 ## 2026-10-16 - Écriture sûre des profils de mob / boss et réparation de « Diag Boss » (#461)
 
 ### Changement

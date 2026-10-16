@@ -489,6 +489,8 @@ But : ouvrir le journal paginé. **Deux onglets** : « Quêtes en cours » (`ACT
 Ouverture : `/quests`, **ou** un clic droit sur l'item `rpgquest:journal_quetes` remis par le Libraire (même GUI, `QuestJournalService`). L'item est reconnu par son identité RPGQuest/PDC, jamais par son nom/lore ; il ne peut pas être dupliqué (garde `LACKS_CUSTOM_ITEM` sur le dialogue du Libraire) ni perdu (`SoulboundItemService`).
 Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : clic gauche = détail, clic droit = suivi/bossbar). Aucune interaction ne permet de retirer ou dupliquer un item de la GUI (tout clic/drag sur un `JournalInventoryHolder` est annulé). Aucun paramètre.
 Persistance : le suivi (quête « trackée ») persiste (`player_variables`), pas la simple ouverture du menu.
+Source des entrées (issue #475) : les onglets sont construits depuis la **progression du joueur** (`quest_progress`), puis rapprochés des définitions chargées. Toute quête acceptée et active apparaît dans « en cours », quels que soient sa catégorie, son donneur ou le dialogue qui l'a démarrée. Une quête **en cours dont la définition est introuvable** (fichier retiré, publication en échec) n'est plus masquée : elle reste listée sous une icône « Quête momentanément indisponible — ta progression est conservée », et le serveur journalise un avertissement `Journal de … : quête(s) en cours sans définition chargée […]`. Une quête terminée retirée n'est pas listée. Aucune écriture : la progression n'est ni modifiée ni recalculée.
+Quêtes de palier du kit (issue #475) : la quête `unlock-quest` d'un palier de `starter-tool-kit.tiers` porte, sous son état, l'étiquette « Amélioration du kit — palier N » (liste et détails), quel que soit son titre narratif (« Premiers pas dans le Wild », « Explorateur »…). Ses objectifs `DELIVER_ITEM_TO_NPC` affichent la quantité **déjà remise** / demandée, mise à jour à chaque remise partielle.
 Quêtes renouvelables (issue #13) : une quête de rencontre (catégorie `encounter` ou donneur `encounter_*`) porte la ligne « Rencontre — quête secondaire » ; une quête **terminée et répétable** affiche « À refaire dans 19 h 40 min » tant que son `cooldown:` court, puis « Peut être refaite » (« … auprès d'un PNJ de rencontre » pour une rencontre) ; la vue détail ajoute la cadence « Renouvelable : toutes les 20 h ». Même calcul que le refus `ON_COOLDOWN` (`QuestProgressEngine#remainingCooldowns`, une lecture asynchrone). Si cette lecture échoue, aucune de ces lignes n'est affichée : le journal ne promet jamais une quête disponible à tort.
 Bouton « Fermer » (slot `CLOSE_SLOT`/`DETAIL_CLOSE_SLOT`) : la fermeture est différée d'un tick serveur (`QuestJournalService#closeNextTick`) plutôt qu'appelée directement dans le gestionnaire de `InventoryClickEvent` — fermer une fenêtre pendant le traitement de son propre clic annulé pouvait laisser le client avec une fenêtre visuellement toujours ouverte (paquet de resynchronisation du clic annulé arrivant après le paquet de fermeture).
 
@@ -645,9 +647,10 @@ par `QuestProgressEngine#deliverTo` + `QuestItemWithdrawal`. Page docs-site : `q
 -   **Anti double-remise** : un jeton par joueur refuse toute remise réentrante (double-clic, spam,
     cascade d'événements), et la mise à jour mémoire précède toute écriture asynchrone. La complétion
     d'étape n'est évaluée qu'une fois **toute** la remise appliquée.
--   **Journal** : la ligne affiche `<objet> (à remettre) remis/demandé` — le verbe distingue la
-    remise d'une collecte. Le PNJ n'y est pas nommé (son id est une donnée interne, même raison que
-    `TALK_TO_NPC`) ; le dialogue, lui, donne le détail complet.
+-   **Journal** : la ligne affiche `<objet> (à remettre à <PNJ>) remis/demandé` — le verbe distingue la
+    remise d'une collecte. Depuis #475, le PNJ est nommé par son **nom affiché** (même résolution que
+    l'annonce des objectifs, #70) ; s'il est inconnu, la ligne reste `<objet> (à remettre)` — jamais
+    l'identifiant logique.
 
 Champ `giver` (optionnel, racine de la quête) : id logique stable du **PNJ donneur** (même convention que `objectives[].npc`, posé via `/rpgadmin npc tag`), jamais le nom affiché. Purement informatif — n'affecte ni la progression ni l'acceptation ; exposé tel quel dans le catalogue du Control Panel (`quest.list` → `giverId`, issue #75). Absent = aucun donneur ; présent mais vide = erreur de chargement. Vérifié dans `QuestDefinitionParser#parseGiver` / `QuestDefinition`.
 

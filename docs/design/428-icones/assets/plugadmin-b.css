@@ -1,0 +1,22 @@
+/* Variante B — « RPG fantasy voxel » : fiche parchemin, cadres bois, emplacements d'inventaire
+   biseautés (dessin propre, pas l'interface Minecraft), titres en serif système. Menu inchangé. */
+:root{--lq-tile-bg:#5b4127;--lq-tile-line:#2d1f12;--primary:#a8641b;--primary-d:#8a4f12;--primary-soft:#f7ead4}
+.main{background:linear-gradient(#f3ead8,#efe3cb)}
+.lq-proto-note{font-size:12.5px;color:#6b5236;margin:0 0 14px}
+.pagehead h1,.lq-qname{font-family:Georgia,"Times New Roman",serif;color:#3b2611}
+.lq-tile{box-shadow:inset 2px 2px 0 #7b5a38,inset -2px -2px 0 #3a2817;border-radius:3px}
+.lq-qlist{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:8px}
+.lq-qrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;background:#fbf4e4;border:2px solid #b08a5a;
+  border-radius:4px;padding:8px 12px}
+.lq-qrow-t{font-weight:700;color:#3b2611}
+.lq-qcard{background:#fdf8ec;border:3px solid #8b6234;border-radius:6px;padding:18px;
+  box-shadow:0 0 0 3px #e9d9b6,0 6px 18px rgba(60,35,10,.18)}
+.lq-qhead{display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-bottom:2px dashed #c9a877;padding-bottom:12px}
+.lq-qhead .badge{margin-left:6px}
+.lq-qname{font-size:21px;font-weight:700;margin:0 0 4px;text-transform:none;letter-spacing:0}
+.npc-section{color:#7a4a14!important;border-color:#e2cfa8!important}
+.lq-list li{padding-left:0;gap:8px 10px}
+.lq-list li::before{display:none}
+.lq-giver{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lq-actions{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 0}
+.btn{background:#a8641b;border-color:#8a4f12}.btn.secondary{background:#fff;color:#7a4a14;border-color:#c9a877}

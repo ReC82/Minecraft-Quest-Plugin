@@ -1,0 +1,11 @@
+/* #428 — base commune PlugAdmin + portail : icônes pixel art LodyQuests.
+   Tailles natives nettes : 16, 32, 48 (multiples de la grille 16). 20 et 24 px = tuile autour d'une icône 16. */
+.lq-sprite{position:absolute;width:0;height:0;overflow:hidden}
+.lq-ico{display:inline-block;flex:none;vertical-align:middle;image-rendering:pixelated}
+.lq-16{width:16px;height:16px}.lq-32{width:32px;height:32px}.lq-48{width:48px;height:48px}
+.lq-tile{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;
+  border-radius:6px;background:var(--lq-tile-bg,#eef2f8);border:1px solid var(--lq-tile-line,#cfd7e4)}
+.lq-tile:has(.lq-32){width:44px;height:44px;border-radius:10px}
+.proto-bar{font:13px/1.5 system-ui,sans-serif;background:#fff7d6;color:#3d2f00;border-bottom:2px solid #e0b100;
+  padding:6px 12px;position:relative;z-index:40;overflow-wrap:anywhere}
+.proto-bar a{color:#5a3e00;font-weight:600}.proto-bar a[aria-current]{text-decoration:underline;color:#000}

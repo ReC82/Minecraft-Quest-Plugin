@@ -45,4 +45,12 @@ public record StarterToolKitConfig(boolean enabled, List<StarterKitTier> tiers) 
                 .filter(t -> t.level() <= Math.max(1, unlockedLevel))
                 .max((a, b) -> Integer.compare(a.level(), b.level()));
     }
+
+    /**
+     * Issue #475 — palier débloqué par la quête {@code questId} (son {@code unlock-quest}), s'il y en
+     * a un. Sert à reconnaître une quête de palier dans le journal, quel que soit le palier.
+     */
+    public Optional<StarterKitTier> tierUnlockedBy(String questId) {
+        return tiers.stream().filter(t -> t.unlockQuest() != null && t.unlockQuest().equals(questId)).findFirst();
+    }
 }

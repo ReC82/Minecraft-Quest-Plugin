@@ -6,6 +6,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Dialogues : un bouton par ligne, bilan de remise cohérent (#467, 17/10/2026)** — fenêtres
+> `paper-dialog` (PNJ + invite du Wild) : une colonne, largeur commune adaptée au plus long
+> libellé (200–310 px), libellé trop long raccourci avec texte complet en infobulle et dans le
+> corps (`ui.DialogButtonLayout`). `%delivery_status%` affiche le bilan de la remise qui vient de
+> terminer la quête au lieu de « Je n'attends aucun matériau ». En-têtes de quête sans `/quests`
+> (renvoi au journal), ancien défaut remplacé sur disque s'il est intact. Aucune migration.
+> Validation : PENDING MANUAL VALIDATION.
+
 > **Noms affichés en double entre PNJ (#125, 14/10/2026)** — PlugAdmin seul : badge « nom en
 > double » + avertissement citant l'autre identifiant sur `/npcs`, section dédiée sur
 > `/npcs/diagnostic`, code `DUPLICATE_DISPLAY_NAME` (warning) sur `/diagnostics`, avertissement en

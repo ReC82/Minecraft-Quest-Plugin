@@ -3190,7 +3190,7 @@ Implémentation : `dialogue.DialogueTextPlaceholders`, appelée par
 
 | Clé | Valeur substituée |
 |---|---|
-| `%delivery_status%` | Issue #123 — état de remise du PNJ **porteur du dialogue courant** : une ligne par matériau, `déjà remis/demandé`, nom d'objet traduit côté client. « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Lecture pure de la progression en mémoire. |
+| `%delivery_status%` | Issue #123 — état de remise du PNJ **porteur du dialogue courant** : une ligne par matériau, `déjà remis/demandé`, nom d'objet traduit côté client. « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Lecture pure de la progression en mémoire. Issue #467 : sur le nœud affiché **juste après** un `DELIVER_QUEST_ITEMS` qui a tout complété (quête terminée, donc sortie des quêtes actives), affiche le bilan de cette remise (`✔ … 3/3`) suivi de « Merci, c'est tout ce qu'il me fallait ! » au lieu d'un faux « je n'attends rien » ; dès qu'il reste quelque chose à remettre, l'état réel prime. |
 | `%wild_conditions%` | État réel du monde `travel.wild-world` : « Il fait jour dans le Wild. Le temps est clair. », « Il fait nuit dans le Wild. Il pleut. », « Il fait nuit dans le Wild. Un orage est en cours. », ou « Je n'ai pas de nouvelles du Wild pour le moment. » si le monde n'est pas chargé. Lecture seule (`travel.WildConditionsService`) : ni l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés. |
 
 Règles : une clé **non enregistrée** est laissée visible telle quelle (une
@@ -3214,6 +3214,24 @@ Paper) ; alternative `chat` (liens cliquables `ClickEvent.callback`,
 compatible tout client, aucune API instable). ⚠️ Divergence constatée :
 `README.md` (racine) affirme à tort que `chat` est la valeur par défaut —
 c'est `paper-dialog` dans le `config.yml` généré réellement ; `docs-site/dialogues.html` a la bonne valeur.
+
+**Mise en page des boutons `paper-dialog` (issue #467)** — `ui.DialogButtonLayout`, partagé par
+les dialogues de PNJ et l'invite d'entrée dans le Wild : **un bouton par ligne** (le
+`multi_action` natif en mettait deux de 150 px, d'où les libellés coupés), même largeur pour tous
+les boutons d'une fenêtre = plus long libellé estimé (police par défaut du jeu, gras compris),
+bornée entre 200 et 310 px d'interface (310 tient dans les 427 px d'un 854×480 en échelle
+automatique) ; le corps du texte est aligné sur cette largeur. Un libellé qui ne tiendrait pas
+même à 310 px (≈ 50 caractères) devient un libellé court terminé par « … », avec le texte complet
+en infobulle (survol ou focus clavier/manette) **et** répété en gris dans le corps — jamais coupé
+en silence, choix et action inchangés. Aucun resource pack requis. Le renderer `chat` n'est pas
+concerné (une ligne par choix, déjà).
+
+**Aucune commande dans les messages joueur (issue #467)** — les en-têtes de démarrage et
+d'étape (`quest.started-objectives-header`, `quest.step-advanced-header`) renvoient vers
+« ton journal de quêtes » (objet remis par le Libraire, clic droit), plus vers `/quests`. Un
+serveur dont `messages.yml` contient encore l'ancien texte par défaut **exact** est mis à jour au
+démarrage (`QuestMessagesService.REPLACED_DEFAULTS`) ; un texte personnalisé n'est jamais touché.
+Les commandes `/quest`/`/quests` restent disponibles.
 
 ### Onboarding du Guide : quête explicite et progression du kit visible (issue #235)
 

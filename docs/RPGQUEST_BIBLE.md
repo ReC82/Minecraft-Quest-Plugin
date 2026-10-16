@@ -1870,7 +1870,9 @@ déclaré conforme.
 
 **`op: staircase` — le moteur calcule l'escalier.** Le modèle donne le pied (`from`, la première
 marche, posée sur le sol), la `direction` de montée et le plancher visé (`floor`, le y du plancher
-de l'étage) ; `width` (1 à 3) élargit la volée vers +z (montée est/ouest) ou +x (nord/sud).
+de l'étage) ; `width` (1 à 9 depuis #472, refusé au-delà au lieu d'être réduit en silence)
+élargit la volée vers +z (montée est/ouest) ou +x (nord/sud). `floor` égal au y du pied vaut
+**une** marche.
 
 ```yaml
 - op: staircase
@@ -1888,6 +1890,28 @@ de l'étage) ; `width` (1 à 3) élargit la volée vers +z (montée est/ouest) o
 | départ et palier | 3 blocs libres devant la première marche, 2 au-dessus du palier, qui doit **porter** sur le plancher |
 | volume réservé | appliqué **après toutes les autres instructions** : un meuble écrit plus loin ne peut plus le reboucher |
 | façade intouchable | refus nommant la cellule si la volée touche le mur extérieur, une porte ou un vitrage |
+
+**Marches d'entrée posées sur le terrain (#472).** Une estrade, un perron ou un podium se monte
+depuis la place : la première marche est sur la couche du terrain (`y = anchor.y`, 0 par défaut),
+son départ est hors du volume et elle affleure souvent le plateau (`floor` = y). Ces trois cas,
+refusés auparavant (« sort du volume », « au moins en y=1 », « floor doit être AU-DESSUS »), sont
+acceptés pour une volée posée sur le terrain : pas d'appui exigé sous le départ, départ hors
+volume permis, et ses marches peuvent prendre la place du bord d'un plateau (jamais d'une porte
+ou d'un vitrage ; les vides au-dessus restent soumis à la règle de l'enveloppe). Plus simple :
+`facade` au lieu de `from`/`direction` — le moteur pose la volée sur la rangée du bord du volume
+de cette façade, au niveau du terrain, montant vers l'intérieur, centrée sur `offset` (par défaut
+le milieu de la façade). Valable pour les quatre orientations de `front`.
+
+```yaml
+- op: staircase      # l'estrade d'Elias : plateau 7 × 5 en y=0, z 1..5
+  facade: FRONT
+  width: 5
+  floor: 0           # le dessus du plateau : une seule marche
+  block: minecraft:oak_stairs
+```
+
+Un « sort du volume » donne désormais les coordonnées permises axe par axe
+(`x 0..6, y 0..5, z 0..5`) : « 7 × 6 × 6 » se lisait à tort largeur × profondeur × hauteur.
 
 `stair_run` reste lu pour les plans déjà écrits — son expansion n'a pas changé, pour que la
 régénération d'un bâtiment existant reproduise exactement son `.schem` — mais n'est plus enseigné.

@@ -1,0 +1,31 @@
+# =============================================================================
+# RPGQuest — envoi de l'instantané web au portail AWS (issue #421) — EXEMPLE, SANS SECRET
+# =============================================================================
+#
+# Le fichier RÉEL vit SUR LE SERVEUR MINECRAFT, hors dépôt Git :
+#
+#     plugins/RPGQuest/portal-snapshot.properties
+#
+# Lu au démarrage par com.lodygames.rpgquest.web.push.SnapshotPushConfigLoader. Sans lui, ou sans
+# "enabled=true" + base-url + token, seul plugins/RPGQuest/web-export/snapshot.json est écrit et
+# rien ne part vers AWS. Les variables RPGQUEST_PORTAL_SNAPSHOT_ENABLED / _BASE_URL / _TOKEN le
+# surchargent si l'hébergeur permet d'en définir.
+#
+# Il faut AUSSI web-export.enabled: true dans config.yml (décision du propriétaire) : sans export,
+# il n'y a rien à envoyer. Le contenu envoyé est exactement snapshot.json : jamais d'UUID, d'IP ni
+# de position ; seuls les joueurs passés en « /profile web public » y sont nommés (#55).
+#
+# Transfert VeryGames (après avoir remplacé le jeton) :
+#   scripts/deploy-verygames.sh --also scripts/portal-snapshot.properties:RPGQuest/portal-snapshot.properties
+# puis redémarrage du serveur (le fichier n'est lu qu'au démarrage).
+#
+# Le portail doit avoir le MÊME jeton dans /etc/lodyquests-portal/portal.env
+# (RPGQUEST_PORTAL_SNAPSHOT_TOKEN). Jeton DÉDIÉ : jamais celui de /lien, de l'API ou de PlugAdmin.
+# Générer : openssl rand -base64 36. Voir docs/deployment/WEB_PORTAL_AWS.md.
+
+enabled=false
+# HTTPS obligatoire (http accepté seulement vers 127.0.0.1/localhost, pour les essais locaux).
+base-url=https://lodyquests.lodylands.com
+token=REMPLACER_PAR_LE_JETON_D_INSTANTANE
+#connect-timeout-ms=5000
+#request-timeout-ms=10000

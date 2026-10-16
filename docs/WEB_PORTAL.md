@@ -41,7 +41,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | 0 | Socle d'hébergement AWS : service, nginx, `/health`, déploiement, rollback | #52 | **fait** — en ligne en HTTPS depuis le 15/10 (certificat Let's Encrypt ECDSA, échéance 13/01/2027, renouvellement automatique certbot) |
 | 1 | Instantané v2 : statistiques par portée, profils publics | #54, #56 | **fait** |
 | 2 | Confidentialité : profils privés par défaut, liste blanche, politique d'âge configurable, registre des données | #55 | **fait** (garde-fous, [PRIVACY.md](PRIVACY.md)) ; pays, seuils d'âge, durées de conservation et textes juridiques **à décider** par le propriétaire après revue juridique |
-| 3 | Acheminer l'instantané du serveur Minecraft vers AWS | #421 | **à faire** — sans lui, le portail reste en mode dégradé |
+| 3 | Acheminer l'instantané du serveur Minecraft vers AWS | #421 | **fait**, inactif : `POST /api/snapshot` (jeton dédié) + envoi par le plugin (`portal-snapshot.properties` hors Git) ; statut en quatre états (en ligne, hors ligne annoncé, non actualisé, inconnu). L'activation (`web-export.enabled`, jetons des deux côtés) reste une décision du propriétaire |
 | 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **attend la décision** du propriétaire (#55) ; seuls les joueurs ayant tapé `/profile web public` seraient publiés |
 | 5 | V1 publique : actualités, profils, premiers classements | #56 | **fait** (§8) : actualités en fichiers, classements lifetime / saison / événement, profils, infos & FAQ, SEO de base ; pseudos visibles seulement après 3 et 4 ; édition des actualités depuis PlugAdmin à faire |
 | 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | **fait**, désactivé (`accounts-enabled=false`) ; export et suppression de compte à faire avant ouverture ; validation navigateur + jeu à faire |
@@ -389,8 +389,10 @@ Garde-fous en place sur l'instance publique (`/etc/lodyquests-portal/web-api.pro
 `player-data-public=false` (aucun pseudo publié, même si un instantané arrivait),
 `accounts-enabled=false` (aucun compte, aucune base `accounts.db`),
 `store-enabled=false` (aucune boutique), écoute sur `127.0.0.1` seulement, `/api/` fermé par nginx.
-Le portail lit `snapshot.json` dans `/var/lib/lodyquests-portal/web-export/` ; l'export du plugin
-(`web-export.enabled`) reste désactivé sur DEV et aucun canal ne l'achemine encore (#421).
+Le portail lit `snapshot.json` dans `/var/lib/lodyquests-portal/web-export/`, que le plugin y dépose
+par `POST /api/snapshot` (#421, [WEB_API.md](WEB_API.md)). L'export du plugin (`web-export.enabled`)
+reste désactivé sur DEV et aucun jeton d'instantané n'est configuré : `/health` dit
+`"snapshot":"MISSING","server":"UNKNOWN"` et le site affiche « état inconnu », pas « hors ligne ».
 
 ## 8. V1 publique (#56) — faite
 
@@ -399,7 +401,7 @@ seule colonne lisible sur téléphone, zones cliquables de 44 px, focus clavier 
 
 | Page | Contenu | Sans instantané (serveur de jeu arrêté) | `player-data-public=false` |
 | --- | --- | --- | --- |
-| `/` | présentation, statut du serveur, saison et événements (noms et dates), 3 dernières actualités, message du serveur, aperçu de 2 classements (top 3), « Comment rejoindre » | présentation et actualités intactes, statut « Hors ligne » | aperçu remplacé par « ouvriront quand… » ; aucun pseudo |
+| `/` | présentation, statut du serveur, saison et événements (noms et dates), 3 dernières actualités, message du serveur, aperçu de 2 classements (top 3), « Comment rejoindre » | présentation et actualités intactes, statut « État inconnu » (« Hors ligne » seulement après un arrêt annoncé par le serveur, #421) | aperçu remplacé par « ouvriront quand… » ; aucun pseudo |
 | `/actualites`, `/actualites/<slug>` | liste paginée (10 par page), filtre `?categorie=`, article complet | **inchangées** : ne lisent pas l'instantané | inchangées |
 | `/classements` (alias `/leaderboards`) | onglets « Depuis toujours », saison, événements (`?periode=<id>`) ; top 10 par métrique, rang du plugin (ex aequo), statut et dates de la période, date de relevé | « Aucun classement » | « pas encore publiée » |
 | `/joueurs`, `/joueurs/<pseudo>`, `/joueurs?pseudo=` | liste alphabétique paginée (60), recherche, profil : XP par piste, quêtes, rangs « depuis toujours » ; initiale à la place d'un skin (pas de service tiers ni d'UUID) | liste vide | « pas encore publiée » |

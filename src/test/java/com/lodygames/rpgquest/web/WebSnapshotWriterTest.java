@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.web;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -145,6 +146,64 @@ class WebSnapshotWriterTest {
                 plugin, tempDir, progressionRepository, customItemRegistry, () -> config(true), plugin.getSLF4JLogger());
         writer.start();
         assertDoesNotThrow(writer::stop);
+    }
+
+    @Test
+    void eachSnapshotIsPushedToThePortalAndShutdownIsAnnounced() throws Exception {
+        List<String> received = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.sun.net.httpserver.HttpServer portal =
+                com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        portal.createContext("/api/snapshot", exchange -> {
+            received.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        portal.start();
+        try {
+            WebSnapshotWriter writer = new WebSnapshotWriter(
+                    plugin, tempDir, progressionRepository, customItemRegistry, () -> config(true), plugin.getSLF4JLogger());
+            writer.setPortalPush(new com.lodygames.rpgquest.web.push.SnapshotPushClient(
+                    new com.lodygames.rpgquest.web.push.SnapshotPushConfig(true,
+                            "http://127.0.0.1:" + portal.getAddress().getPort(), "jeton", 1000, 3000),
+                    plugin.getSLF4JLogger()));
+            writer.start();
+            writer.triggerNow();
+            long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+            while (received.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20);
+            }
+            assertEquals(1, received.size(), "instantané envoyé au portail");
+            assertEquals(Files.readString(snapshotFile(), StandardCharsets.UTF_8), received.get(0),
+                    "le portail reçoit exactement le fichier local");
+
+            writer.stop();
+
+            assertEquals(2, received.size(), "arrêt annoncé au portail");
+            assertTrue(received.get(1).contains("\"online\":false"), received.get(1));
+            assertTrue(Files.readString(snapshotFile()).contains("\"online\":false"));
+        } finally {
+            portal.stop(0);
+        }
+    }
+
+    @Test
+    void shutdownWithoutAnyExportThisRunAnnouncesNothing() throws Exception {
+        WebSnapshotWriter writer = new WebSnapshotWriter(
+                plugin, tempDir, progressionRepository, customItemRegistry, () -> config(true), plugin.getSLF4JLogger());
+        writer.start();
+        writer.stop();
+
+        assertFalse(Files.exists(snapshotFile()));
+    }
+
+    @Test
+    void shutdownSnapshotCarriesNoPlayerData() {
+        String json = Json.write(WebSnapshotWriter.shutdownSnapshot(20, java.time.Instant.parse("2026-10-16T00:00:00Z")));
+
+        assertTrue(json.contains("\"online\":false"));
+        assertTrue(json.contains("\"schemaVersion\":" + WebSnapshotWriter.SCHEMA_VERSION));
+        assertTrue(json.contains("\"players\":[]"));
+        assertFalse(json.contains("profiles"));
     }
 
     private String awaitFile(Path target) throws Exception {

@@ -6307,3 +6307,32 @@ seuil d'âge, jeton des deux côtés, `portal-link.properties` sur DEV, redémar
     « limité », pas de bouton de code.
 10. `journalctl -u lodyquests-portal` et `latest.log` du serveur : aucun code ni jeton.
 11. Téléphone (≈ 390 px) : formulaires lisibles, aucun défilement horizontal.
+
+### TC-327 — Statut du serveur sur le portail et acheminement de l'instantané (issue #421, PENDING MANUAL VALIDATION)
+
+Prérequis : portail et plugin issus de #421. Aucune donnée de jeu n'est modifiée par ce test ; aucun
+pseudo n'est publié (`player-data-public=false`).
+
+**A. État livré (canal inactif)**
+
+1.  Navigateur : https://lodyquests.lodylands.com/ puis `/status`. **Attendu** : bandeau gris
+    « État du serveur de jeu inconnu — aucune donnée reçue pour le moment » ; carte « Le serveur »
+    « ● État inconnu » ; **jamais** de bandeau rouge ni « Hors ligne ».
+2.  `curl -s https://lodyquests.lodylands.com/health` → `"snapshot":"MISSING"`, `"server":"UNKNOWN"`.
+3.  `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://lodyquests.lodylands.com/api/snapshot`
+    → `401` ; même chose en `GET` → `403` (nginx).
+
+**B. Après activation par le propriétaire** (jetons des deux côtés, `web-export.enabled: true`,
+`portal-snapshot.properties` sur DEV, redémarrage — `docs/deployment/WEB_PORTAL_AWS.md`)
+
+4.  Moins d'une minute après le démarrage du serveur : `/health` → `"FRESH"`, `"ONLINE"` ; `/` →
+    « ● En ligne », nombre de joueurs connectés ; `/status` → « Dernière mise à jour : … ».
+5.  Arrêter le serveur Minecraft proprement. **Attendu** : `/` → « ● Hors ligne », « Arrêt annoncé
+    par le serveur le … » ; bandeau rouge.
+6.  Serveur relancé, puis canal coupé (`enabled=false` + redémarrage, ou jeton retiré du portail).
+    **Attendu**, après 2 minutes : bandeau gris « Informations non actualisées depuis le … », pas
+    « hors ligne » ; `latest.log` : un seul avertissement « Envoi de l'instantané au portail … impossible »,
+    sans jeton.
+7.  `journalctl -u lodyquests-portal` et `latest.log` : aucun jeton ; `snapshot.json` sur AWS ne
+    contient ni UUID, ni IP, ni position.
+8.  Téléphone (≈ 390 px) : bandeaux lisibles, aucun défilement horizontal.

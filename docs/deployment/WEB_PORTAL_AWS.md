@@ -15,7 +15,7 @@ validation CI #257), mais **strictement séparé** de lui.
 | Versions précédentes | `/opt/lodyquests-portal/releases/<AAAAMMJJ-HHMMSS>` (5 gardées) |
 | Données | `/var/lib/lodyquests-portal` (seul dossier inscriptible) |
 | Configuration | `/etc/lodyquests-portal/web-api.properties` (non secrète) |
-| Secrets | `/etc/lodyquests-portal/portal.env` (root:lodyquests-web, 640) — **vide** aujourd'hui (futur : `RPGQUEST_PORTAL_LINK_TOKEN`, #53) |
+| Secrets | `/etc/lodyquests-portal/portal.env` (root:lodyquests-web, 640) — **vide** aujourd'hui (futurs : `RPGQUEST_PORTAL_LINK_TOKEN` #53, `RPGQUEST_PORTAL_SNAPSHOT_TOKEN` #421) |
 | Comptes joueurs (#53) | `accounts-enabled=false` : pas de `accounts.db`. Activés : `/var/lib/lodyquests-portal/accounts.db`, copiée à chaque déploiement (service arrêté) dans `/opt/lodyquests-portal/backups/accounts-<AAAAMMJJ-HHMMSS>.db` (10 gardées) |
 | nginx | `/etc/nginx/sites-available/lodyquests-portal` (+ lien dans `sites-enabled/`) |
 | Journaux | `journalctl -u lodyquests-portal` ; nginx : `/var/log/nginx/lodyquests_portal_*.log` |
@@ -31,14 +31,17 @@ base, avec son propre cookie, et ne donnent aucun droit ni sur le jeu ni sur Plu
 L'API `/api/*` (jeton `RPGQUEST_WEB_API_TOKEN`) est fermée deux fois : aucun jeton n'est configuré
 (401) et nginx répond 404 sur `/api/` côté public. Seule exception, `location = /api/link/confirm`
 (POST, jeton dédié `RPGQUEST_PORTAL_LINK_TOKEN`, 401 sans lui, 503 tant que les comptes sont
-fermés) : le serveur Minecraft y envoie la preuve d'un `/lien <code>`.
+fermés) : le serveur Minecraft y envoie la preuve d'un `/lien <code>`. Seconde exception,
+`location = /api/snapshot` (#421 : POST, 1 Mo, jeton dédié `RPGQUEST_PORTAL_SNAPSHOT_TOKEN`, 401
+sans lui) : le serveur Minecraft y pousse son instantané.
 
 ### Confidentialité (#55)
 
 `player-data-public=false` : `/joueurs` et `/leaderboards` affichent « pas encore publiée » sans
 lire l'instantané. `web-export` est désactivé côté serveur Minecraft et aucun canal n'achemine
-l'instantané jusqu'à AWS (#421) : `/health` dit donc `"snapshot":"MISSING"` et le site affiche son
-mode dégradé — **c'est l'état attendu**. Passer `player-data-public` à `true` n'est permis que sur
+l'instantané jusqu'à AWS tant que les jetons d'instantané ne sont pas posés (#421) : `/health` dit
+donc `"snapshot":"MISSING","server":"UNKNOWN"` et le site affiche « État du serveur de jeu
+inconnu » (neutre, pas « hors ligne ») — **c'est l'état attendu**. Passer `player-data-public` à `true` n'est permis que sur
 décision écrite du propriétaire, après #55.
 
 `store-enabled=false` : la boutique historique (mission étape 22) n'est pas servie, aucun
@@ -99,6 +102,31 @@ curl -s -o /dev/null -w '%{http_code}\n' --resolve lodyquests.lodylands.com:80:1
 systemctl show lodyquests-portal -p MemoryCurrent -p ActiveState
 ```
 
+### Acheminer l'instantané du serveur Minecraft (#421) — décision du propriétaire
+
+Inactif aujourd'hui. Pour l'activer (sans publier aucun pseudo : `player-data-public` reste
+`false`, et seuls les joueurs en `/profile web public` figureraient de toute façon dans l'instantané) :
+
+1. nginx — le vhost en service doit contenir le bloc `location = /api/snapshot` de
+   `scripts/web-portal/nginx-lodyquests-portal.conf` (copie du vhost, ajout, `sudo nginx -t`,
+   `sudo systemctl reload nginx`) ;
+2. portail — `openssl rand -base64 36`, puis dans `/etc/lodyquests-portal/portal.env` :
+   `RPGQUEST_PORTAL_SNAPSHOT_TOKEN=<jeton>` ; `sudo systemctl restart lodyquests-portal` ;
+3. serveur Minecraft — `scripts/portal-snapshot.properties.example` copié **hors Git** avec
+   `enabled=true` et **le même jeton**, transféré par
+   `scripts/deploy-verygames.sh --also <fichier>:RPGQuest/portal-snapshot.properties` ;
+   `web-export.enabled: true` dans `config.yml` du serveur ; redémarrage du serveur ;
+4. vérifier : `curl -s http://127.0.0.1:8092/health` passe de `MISSING`/`UNKNOWN` à
+   `FRESH`/`ONLINE` en moins d'une minute ; arrêter le serveur → `OFFLINE` ; couper le canal
+   (jeton retiré) → `STALE` après `snapshot-max-age-seconds`, jamais `OFFLINE`.
+
+Revenir en arrière : `enabled=false` dans `portal-snapshot.properties` (ou retirer le jeton de
+`portal.env` : tout envoi reçoit 401, journalisé une fois côté plugin) ; le dernier `snapshot.json`
+reçu reste lisible et passe en « non actualisé ».
+
+Sans jeton, contrôle de fermeture : `curl -s -o /dev/null -w '%{http_code}\n' -X POST
+https://lodyquests.lodylands.com/api/snapshot` → `401`.
+
 ### Publier une actualité (#56)
 
 ```bash
@@ -115,7 +143,8 @@ de `/etc/lodyquests-portal/web-api.properties`, puis `sudo systemctl restart lod
 Depuis un navigateur (`PENDING MANUAL VALIDATION` tant que le propriétaire ne l'a pas fait) :
 
 1. `https://lodyquests.lodylands.com/` : cadenas valide, page d'accueil LodyQuests, bandeau
-   « Serveur hors-ligne — données indisponibles » (attendu : aucun instantané) ;
+   bandeau gris « État du serveur de jeu inconnu — aucune donnée reçue » (attendu : aucun
+   instantané, #421) — jamais un bandeau rouge « hors ligne » ;
 2. menu Statut, Classements, Joueurs, Wiki, Confidentialité : chaque page s'ouvre ; Classements
    et Joueurs disent « pas encore publiée » ; **aucun pseudo nulle part** ;
 3. `https://lodyquests.lodylands.com/store` et `/api/status` : « introuvable » (404) ;
@@ -124,8 +153,8 @@ Depuis un navigateur (`PENDING MANUAL VALIDATION` tant que le propriétaire ne l
 
 V1 publique (#56) — `PENDING MANUAL VALIDATION` :
 
-6. `/` : présentation, carte « Le serveur » (« Hors ligne » tant que #421 n'achemine pas
-   l'instantané), « Saison et événements », « Dernières actualités », « Comment rejoindre » ;
+6. `/` : présentation, carte « Le serveur » (« État inconnu » tant qu'aucun instantané n'arrive,
+   « Hors ligne » seulement après un arrêt annoncé par le serveur), « Saison et événements », « Dernières actualités », « Comment rejoindre » ;
 7. `/actualites` : « Aucune actualité publiée » ; après avoir publié `bienvenue.md` (ci-dessus),
    elle apparaît sur l'accueil et `/actualites/bienvenue` s'ouvre ; repassée en brouillon → 404 ;
 8. `/classements`, `/joueurs` : « pas encore publiée », aucun pseudo ; `/infos` : adresse

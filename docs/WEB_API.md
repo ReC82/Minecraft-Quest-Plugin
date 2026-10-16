@@ -133,7 +133,7 @@ numérique, piste de classement inconnue...) renvoie `400`.
 
 | Route | Contenu |
 |---|---|
-| `GET /api/status` | `online`, et si en ligne `playerCount`/`maxPlayers`/`generatedAt` |
+| `GET /api/status` | `online`, `status` (`ONLINE`, `STALE`, `OFFLINE`, `UNKNOWN` — #421), `lastUpdate` (date du dernier relevé ou `null`), et si en ligne `playerCount`/`maxPlayers`/`generatedAt` |
 | `GET /api/players` | `count`, `players` (liste nominative seulement si `include-connected-players` l'autorise côté plugin) |
 | `GET /api/leaderboards[?skill=COMBAT&limit=N]` | classements, un ou toutes les pistes |
 | `GET /api/catalog` | catalogue public d'objets (id, nom en texte brut, rareté) |
@@ -164,9 +164,31 @@ Jeton : `RPGQUEST_PORTAL_LINK_TOKEN` (variable d'environnement uniquement). Il a
 401 sans le bon jeton (le jeton général `RPGQUEST_WEB_API_TOKEN` ne l'ouvre pas), 503 si les
 comptes sont fermés. Pages, sécurité et parcours : [WEB_PORTAL.md §2](WEB_PORTAL.md).
 
+## Réception de l'instantané (`POST /api/snapshot`, issue #421)
+
+Le plugin écrit `snapshot.json` chez VeryGames ; le portail tourne sur AWS. Le plugin **pousse**
+donc chaque instantané (même sens que l'agent PlugAdmin : le serveur Minecraft initie, AWS reçoit) :
+`POST <base-url>/api/snapshot`, corps = le fichier tel quel.
+
+- Jeton : `RPGQUEST_PORTAL_SNAPSHOT_TOKEN` (variable d'environnement uniquement), **dédié** : le
+  jeton général, celui de `/lien` et ceux de PlugAdmin ne l'ouvrent pas. Absent : `401` pour tout.
+- Taille : `snapshot-ingest-max-bytes` (défaut 1 Mio, 64 Kio à 8 Mio) → `413` au-delà.
+- Validation avant écriture : objet JSON, `schemaVersion` entre 1 et 2, `generatedAt` ISO-8601
+  au plus 5 min dans le futur, `server.online` booléen, aucune clé contenant `uuid` à aucun niveau
+  (#55) → sinon `400` et **fichier précédent intact**.
+- Écriture atomique (temporaire dans le même dossier puis `rename`) du `snapshot-file` ; aucune
+  autre écriture, aucun accès à `data.db`.
+- Réponse `200 {"result":"STORED"}` ; `405` hors `POST` ; chemin exact seulement.
+
+Côté plugin : fichier hors Git `plugins/RPGQuest/portal-snapshot.properties` (modèle
+`scripts/portal-snapshot.properties.example`) ; envoi depuis le fil `RPGQuest-WebExport`, jamais le
+thread principal ; un échec est journalisé une fois (statut HTTP ou « injoignable », jamais le jeton
+ni le contenu), puis au rétablissement. À l'arrêt du plugin, un dernier instantané minimal
+`server.online=false` (sans aucune donnée de joueur) est publié.
+
 ## Sonde `GET /health` (pas d'authentification)
 
-`{"status":"UP","snapshot":"MISSING|STALE|FRESH","playerDataPublic":false,"store":false}` —
+`{"status":"UP","snapshot":"MISSING|STALE|FRESH","server":"UNKNOWN|STALE|OFFLINE|ONLINE","playerDataPublic":false,"store":false}` —
 toujours `200` tant que le processus sert des requêtes (un instantané absent n'est pas une panne).
 Ni donnée joueur, ni chemin, ni configuration sensible. Les requêtes `HEAD` reçoivent les en-têtes
 sans corps.
@@ -186,13 +208,19 @@ connexion joueur, ni modification de données à cette étape (mission point
 
 ## Mode dégradé
 
-Si `snapshot.json` est absent (le plugin n'a jamais exporté, ou le dossier
-n'est pas partagé correctement) ou périmé (plus vieux que
-`snapshot-max-age-seconds` — typiquement le serveur Minecraft est arrêté),
-l'API et le site répondent normalement (`200`, jamais d'erreur) avec
-`online: false` et un bandeau « Serveur hors-ligne » côté site — mission
-point 9. Un snapshot illisible (JSON corrompu) est traité de la même façon,
-jamais une erreur 500.
+Si `snapshot.json` est absent, illisible ou périmé (plus vieux que
+`snapshot-max-age-seconds`), l'API et le site répondent normalement (`200`, jamais d'erreur) avec
+`online: false` — mission point 9. Depuis #421, le portail ne confond plus absence de données et
+arrêt du serveur :
+
+| `status` | Cause | Bandeau du site |
+|---|---|---|
+| `UNKNOWN` | aucun instantané (ou JSON corrompu) | neutre : « État du serveur de jeu inconnu — aucune donnée reçue pour le moment » |
+| `STALE` | instantané plus vieux que `snapshot-max-age-seconds` | neutre : « Informations non actualisées depuis le … » |
+| `OFFLINE` | instantané `server.online=false`, publié par le plugin à son arrêt | rouge : « Serveur de jeu hors ligne — arrêt annoncé par le serveur le … » |
+| `ONLINE` | instantané récent `server.online=true` | aucun |
+
+Une panne du canal de télémétrie donne `UNKNOWN` ou `STALE`, jamais `OFFLINE`.
 
 ## Sécurité
 

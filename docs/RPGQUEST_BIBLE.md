@@ -5286,6 +5286,18 @@ surcharge. Absent : `/lien` répond « pas activée » et ne contacte rien. Aucu
 `data.db` : la liaison vit dans la base du portail. Parcours et sécurité :
 [WEB_PORTAL.md §2](WEB_PORTAL.md).
 
+### Portail — envoi de l'instantané web (#421)
+
+Aucune commande. Fichier **hors Git** `plugins/RPGQuest/portal-snapshot.properties` (modèle
+`scripts/portal-snapshot.properties.example` : `enabled`, `base-url` HTTPS, `token` = le
+`RPGQUEST_PORTAL_SNAPSHOT_TOKEN` du portail, jeton dédié), lu au démarrage ; variables
+`RPGQUEST_PORTAL_SNAPSHOT_*` en surcharge. Avec `web-export.enabled: true`, chaque `snapshot.json`
+est aussi envoyé à `POST /api/snapshot` du portail, depuis le fil d'export ; à l'arrêt du plugin,
+un instantané minimal `server.online=false` annonce l'arrêt. Absent : rien ne part vers AWS. Le
+portail affiche alors l'état du serveur en quatre cas : en ligne, hors ligne (arrêt annoncé), non
+actualisé depuis …, inconnu. Détail : [WEB_API.md](WEB_API.md) ; exploitation :
+[deployment/WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).
+
 ### Boutique web — `/store`
 
 | Commande | Type | Permission | Effet |

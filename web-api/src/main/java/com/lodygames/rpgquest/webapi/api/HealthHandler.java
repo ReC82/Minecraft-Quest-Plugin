@@ -1,5 +1,7 @@
 package com.lodygames.rpgquest.webapi.api;
 
+import com.lodygames.rpgquest.webapi.ServerState;
+import com.lodygames.rpgquest.webapi.ServerStatus;
 import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
@@ -36,6 +38,7 @@ public final class HealthHandler implements ApiHandler {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "UP");
         body.put("snapshot", snapshotState());
+        body.put("server", ServerStatus.of(ServerState.resolve(store)).kind().name());
         body.put("playerDataPublic", playerDataPublic);
         body.put("store", storeEnabled);
         body.put("news", news.published().size());

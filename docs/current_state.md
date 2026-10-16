@@ -138,8 +138,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > - **Portail web** : instantané v2 (statistiques par portée, profils publics), `/profile web
 >   prive|public`, pages `/joueurs` et `/confidentialite` (#52–#57). **Hébergé sur AWS** depuis le
 >   15/10 (#52 : `lodyquests-portal.service`, `/health`, `scripts/web-portal/`), sans pseudo publié
->   (`player-data-public=false`) ni boutique ; `web-export` désactivé sur DEV et pas encore acheminé
->   vers AWS (#421). Comptes (#53) faits, désactivés ; moteur d'événements (#57) fait : journal d'activité
+>   (`player-data-public=false`) ni boutique ; `web-export` désactivé sur DEV ; canal
+>   d'acheminement vers AWS livré, inactif (#421 : `POST /api/snapshot` à jeton dédié,
+>   `portal-snapshot.properties` hors Git, statut public en quatre états en ligne / hors ligne
+>   annoncé / non actualisé / inconnu). Comptes (#53) faits, désactivés ; moteur d'événements (#57) fait : journal d'activité
 >   générique `stat_activity_log` (mobs tués, pêche ; admin/debug exclus), filtres, règles de
 >   classement, objectif commun, `status: draft|cancelled`, audit `stat_period_audit` (migration
 >   **V40**), récompenses déclaratives non livrées ; back-office PlugAdmin à faire.

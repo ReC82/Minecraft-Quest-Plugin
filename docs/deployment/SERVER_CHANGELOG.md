@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Portail : acheminement de l'instantané et statut honnête du serveur (#421)
+
+### Changement
+
+Portail (AWS) : la page d'accueil, `/status` et toutes les pages à bandeau distinguent « en ligne »,
+« hors ligne » (arrêt annoncé par le serveur), « non actualisé depuis … » et « état inconnu » ; plus
+de bandeau rouge « hors ligne » sans preuve. Nouvelle route `POST /api/snapshot` (jeton dédié
+`RPGQUEST_PORTAL_SNAPSHOT_TOKEN`, 1 Mo, JSON validé, écriture atomique). Plugin : chaque instantané
+web peut être poussé au portail et l'arrêt du plugin est annoncé — inerte sans le fichier hors Git
+`plugins/RPGQuest/portal-snapshot.properties`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest seulement. Aucune migration de `data.db`, aucune clé de `config.yml`,
+aucun fichier à téléverser (ne **pas** créer `portal-snapshot.properties` ni activer `web-export`
+sans décision du propriétaire). Portail : `scripts/web-portal/deploy.sh` ; bloc nginx
+`location = /api/snapshot` ajouté au vhost dédié (`nginx -t` puis `reload`).
+
+### Sauvegarde préalable
+
+JAR, `data.db` et `config.yml` datés par `scripts/deploy-verygames.sh` ; release précédente du
+portail conservée par `scripts/web-portal/deploy.sh` ; copie du vhost nginx avant modification.
+
+### Validation
+
+`/health` → `"snapshot":"MISSING","server":"UNKNOWN"` ; accueil et `/status` → « État inconnu »,
+sans rouge ; `POST /api/snapshot` sans jeton → 401. Parcours complet après activation :
+`docs/MANUAL_TEST_PLAN.md` TC-327 (`PENDING MANUAL VALIDATION`).
+
+### Rollback
+
+JAR précédent (`scripts/deploy-verygames.sh` le garde daté) ; portail :
+`scripts/web-portal/rollback.sh app` ; nginx : restaurer la copie du vhost, `nginx -t`, `reload`.
+
+---
+
 ## 2026-10-15 - Moteur d'événements et classements temporaires (#57)
 
 ### Changement

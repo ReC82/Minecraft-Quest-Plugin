@@ -1,10 +1,7 @@
 package com.lodygames.rpgquest.web.link;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
+import com.lodygames.rpgquest.web.LocalSettingsFile;
 import java.nio.file.Path;
-import java.util.Properties;
 import java.util.function.UnaryOperator;
 import org.slf4j.Logger;
 
@@ -46,12 +43,12 @@ public final class PortalLinkConfigLoader {
     }
 
     public PortalLinkConfig load() {
-        Properties props = readFile();
-        boolean enabled = "true".equalsIgnoreCase(resolve(props, "enabled", "RPGQUEST_PORTAL_LINK_ENABLED", "false"));
-        String baseUrl = stripTrailingSlash(resolve(props, "base-url", "RPGQUEST_PORTAL_LINK_BASE_URL", ""));
-        String token = resolve(props, "token", "RPGQUEST_PORTAL_LINK_TOKEN", "");
-        int connectTimeout = clamp(intOf(props.getProperty("connect-timeout-ms"), 5000), 500, 30_000);
-        int requestTimeout = clamp(intOf(props.getProperty("request-timeout-ms"), 10_000), 1000, 60_000);
+        LocalSettingsFile settings = LocalSettingsFile.read(file, env, logger, "Liaison portail");
+        boolean enabled = settings.flag("enabled", "RPGQUEST_PORTAL_LINK_ENABLED");
+        String baseUrl = settings.baseUrl("base-url", "RPGQUEST_PORTAL_LINK_BASE_URL");
+        String token = settings.text("token", "RPGQUEST_PORTAL_LINK_TOKEN", "");
+        int connectTimeout = settings.boundedInt("connect-timeout-ms", 5000, 500, 30_000);
+        int requestTimeout = settings.boundedInt("request-timeout-ms", 10_000, 1000, 60_000);
 
         if (!enabled) {
             logger.info("Liaison portail (/lien) désactivée (enabled != true dans {}).", FILE_NAME);
@@ -62,8 +59,7 @@ public final class PortalLinkConfigLoader {
                     baseUrl.isBlank() ? "absent" : "présent", token.isBlank() ? "absent" : "présent", FILE_NAME);
             return PortalLinkConfig.disabled();
         }
-        if (!baseUrl.startsWith("https://") && !baseUrl.startsWith("http://127.0.0.1")
-                && !baseUrl.startsWith("http://localhost")) {
+        if (!LocalSettingsFile.isAcceptableBaseUrl(baseUrl)) {
             logger.warn("Liaison portail (/lien) NON activée : base-url doit être en HTTPS (ou http en local) — reçu « {} ».",
                     baseUrl);
             return PortalLinkConfig.disabled();
@@ -71,43 +67,5 @@ public final class PortalLinkConfigLoader {
         PortalLinkConfig config = new PortalLinkConfig(true, baseUrl, token, connectTimeout, requestTimeout);
         logger.info("Liaison portail (/lien) configurée : {}", config);
         return config;
-    }
-
-    private Properties readFile() {
-        Properties props = new Properties();
-        if (file == null || !Files.isReadable(file)) {
-            return props;
-        }
-        try (InputStream in = Files.newInputStream(file)) {
-            props.load(in);
-        } catch (IOException e) {
-            logger.warn("Liaison portail : lecture de {} impossible ({}) — configuration ignorée.", file, e.getMessage());
-        }
-        return props;
-    }
-
-    private String resolve(Properties props, String fileKey, String envKey, String fallback) {
-        String fromEnv = env.apply(envKey);
-        if (fromEnv != null && !fromEnv.isBlank()) {
-            return fromEnv.trim();
-        }
-        String value = props.getProperty(fileKey);
-        return value == null || value.isBlank() ? fallback : value.trim();
-    }
-
-    private static String stripTrailingSlash(String url) {
-        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
-    }
-
-    private static int intOf(String raw, int fallback) {
-        try {
-            return raw == null ? fallback : Integer.parseInt(raw.trim());
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
-    }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 }

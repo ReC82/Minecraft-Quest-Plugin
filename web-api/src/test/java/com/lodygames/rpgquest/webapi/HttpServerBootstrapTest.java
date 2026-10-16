@@ -228,13 +228,14 @@ class HttpServerBootstrapTest {
     }
 
     @Test
-    void degradedSitePageShowsOfflineBannerInsteadOfErroring() throws Exception {
+    void degradedSitePageShowsUnknownBannerInsteadOfErroring() throws Exception {
         startServer(120, 60);
 
         HttpResponse<String> response = get("/status", null);
 
         assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("Le serveur de jeu ne répond pas"));
+        assertTrue(response.body().contains("État du serveur de jeu inconnu"));
+        assertFalse(response.body().contains("hors ligne"), "aucune donnée n'est pas un arrêt (#421)");
     }
 
     // ---- Portail V1 (#54 / #55 / #56) -----------------------------------------------------------

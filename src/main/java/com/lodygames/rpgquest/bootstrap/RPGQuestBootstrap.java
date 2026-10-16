@@ -577,6 +577,18 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("statistics.yml"), statisticsRepository, plugin.getSLF4JLogger());
         registry.start(statisticsService);
         webSnapshotWriter.setStatistics(statisticsService, statisticsRepository);
+        // Issue #421 : chaque instantané part aussi vers le portail AWS. Inerte tant que
+        // plugins/RPGQuest/portal-snapshot.properties (hors Git) ne l'active pas.
+        var snapshotPushConfig = new com.lodygames.rpgquest.web.push.SnapshotPushConfigLoader(
+                plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
+        if (snapshotPushConfig.enabled()) {
+            webSnapshotWriter.setPortalPush(
+                    new com.lodygames.rpgquest.web.push.SnapshotPushClient(snapshotPushConfig, plugin.getSLF4JLogger()));
+            if (!configService.current().webExport().enabled()) {
+                plugin.getSLF4JLogger().warn("Envoi d'instantané au portail configuré, mais web-export.enabled=false "
+                        + "dans config.yml : rien ne sera envoyé tant que l'export reste désactivé.");
+            }
+        }
         registry.start(webSnapshotWriter);
 
         // Bridge d'administration HTTP (issue #37) — désactivé sauf RPGQUEST_WEB_ADMIN_ENABLED=true

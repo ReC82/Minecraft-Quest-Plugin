@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi.site;
 
 import com.lodygames.rpgquest.webapi.ServerState;
+import com.lodygames.rpgquest.webapi.ServerStatus;
 import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
@@ -23,7 +24,7 @@ public final class WikiPageHandler implements ApiHandler {
     @Override
     public int handle(HttpExchange exchange) throws IOException {
         Map<String, Object> state = ServerState.resolve(store);
-        boolean online = ServerState.isOnline(state);
+        ServerStatus serverStatus = ServerStatus.of(state);
 
         Object catalogRaw = state.get("catalog");
         List<?> catalog = catalogRaw instanceof List<?> list ? list : List.of();
@@ -42,7 +43,7 @@ public final class WikiPageHandler implements ApiHandler {
             body.append("</tbody></table>");
         }
 
-        HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, "Wiki", online, body.toString()));
+        HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, "Wiki", serverStatus, body.toString()));
         return 200;
     }
 }

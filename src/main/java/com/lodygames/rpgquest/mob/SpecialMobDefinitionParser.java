@@ -70,6 +70,7 @@ final class SpecialMobDefinitionParser {
         Integer maxPopulation = parseOptionalNonNegativeInt(section, "max-population", errors);
         BossMode bossMode = parseBossMode(section, category, errors);
         int communityWeight = parseCommunityWeight(section, errors);
+        List<String> participationRewards = parseParticipationRewards(section, category, errors);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(m -> new SpecialMobLoadIssue(fileName, m)).toList());
@@ -79,7 +80,7 @@ final class SpecialMobDefinitionParser {
             SpecialMobDefinition definition = new SpecialMobDefinition(id, category, enabled, entityType,
                     displayName, spawnChance, worlds, biomes, zones, health, damage, speed, armor,
                     knockbackResistance, scale, creeperExplosionRadius, particle, sound, abilities, drops,
-                    xpReward, maxPopulation, bossMode, communityWeight);
+                    xpReward, maxPopulation, bossMode, communityWeight, participationRewards);
             return ParseResult.success(definition);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new SpecialMobLoadIssue(fileName, e.getMessage())));
@@ -134,6 +135,39 @@ final class SpecialMobDefinitionParser {
             return SpecialMobDefinition.DEFAULT_COMMUNITY_WEIGHT;
         }
         return section.getInt("community-weight");
+    }
+
+    /**
+     * Issue #176 : liste facultative de clés du catalogue {@code entitlements.yml}, BOSS seulement.
+     * L'existence de la clé n'est pas vérifiée ici (catalogue relu à chaud) : une clé inconnue laisse
+     * le droit en attente avec l'erreur, visible dans PlugAdmin.
+     */
+    private List<String> parseParticipationRewards(ConfigurationSection section, MobCategory category,
+                                                   List<String> errors) {
+        if (!section.isSet("participation-rewards")) {
+            return List.of();
+        }
+        if (!section.isList("participation-rewards")) {
+            errors.add("« participation-rewards » doit être une liste de clés de entitlements.yml.");
+            return List.of();
+        }
+        List<String> keys = new ArrayList<>();
+        for (String raw : section.getStringList("participation-rewards")) {
+            String key = raw == null ? "" : raw.trim();
+            if (!SpecialMobDefinition.REWARD_KEY.matcher(key).matches()) {
+                errors.add("« participation-rewards » : clé invalide \"" + raw + "\" (minuscules, chiffres, _ . -).");
+            } else if (!keys.contains(key)) {
+                keys.add(key);
+            }
+        }
+        if (keys.size() > SpecialMobDefinition.MAX_PARTICIPATION_REWARDS) {
+            errors.add("« participation-rewards » : " + SpecialMobDefinition.MAX_PARTICIPATION_REWARDS
+                    + " récompenses au plus.");
+        }
+        if (!keys.isEmpty() && category != null && category != MobCategory.BOSS) {
+            errors.add("« participation-rewards » n'a de sens que pour « category: BOSS ».");
+        }
+        return keys;
     }
 
     private Double parseOptionalFraction(ConfigurationSection section, String key, List<String> errors) {

@@ -39,6 +39,9 @@ public final class AgentActionCatalog {
     private static final java.util.Set<String> MOB_CATEGORIES = java.util.Set.of("SPECIAL", "BOSS");
     /** Issue #175 : mode d'un profil BOSS. */
     private static final java.util.Set<String> BOSS_MODES = java.util.Set.of("QUEST", "COMMUNITY");
+    /** Issue #176 : clés du catalogue entitlements.yml, comme côté plugin. */
+    private static final Pattern REWARD_KEY = Pattern.compile("[a-z0-9_.-]{1,64}");
+    private static final int MAX_PARTICIPATION_REWARDS = 5;
     private static final Pattern ENTITY_UUID = Pattern.compile(
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
@@ -2095,6 +2098,26 @@ public final class AgentActionCatalog {
                         params.put("community_weight", Integer.toString(weight));
                     }
                 }
+                // Issue #176 : toujours envoyé (vide = aucune récompense) ; un profil Spécial n'en a jamais.
+                List<String> participationRewards = new java.util.ArrayList<>();
+                if ("BOSS".equals(category)) {
+                    for (String piece : trim(form.get("participation_rewards")).split("[,\\s]+")) {
+                        String key = piece.trim().toLowerCase(java.util.Locale.ROOT);
+                        if (key.isEmpty() || participationRewards.contains(key)) {
+                            continue;
+                        }
+                        if (!REWARD_KEY.matcher(key).matches()) {
+                            return Validation.fail("Récompense de participation invalide : « " + key
+                                    + " » (clé de entitlements.yml : minuscules, chiffres, _ . -).");
+                        }
+                        participationRewards.add(key);
+                    }
+                    if (participationRewards.size() > MAX_PARTICIPATION_REWARDS) {
+                        return Validation.fail("Au plus " + MAX_PARTICIPATION_REWARDS
+                                + " récompenses de participation par boss.");
+                    }
+                }
+                params.put("participation_rewards", String.join(",", participationRewards));
                 copyOptionalList(form, params, "worlds");
                 copyOptionalList(form, params, "biomes");
                 copyOptionalList(form, params, "zones");

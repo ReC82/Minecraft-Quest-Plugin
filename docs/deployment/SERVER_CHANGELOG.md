@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Participation et récompenses des boss communautaires (#176)
+
+### Changement
+
+Les coups effectifs portés à un boss communautaire sont mémorisés sur l'entité ; à sa mort, chaque
+participant connecté, vivant, dans le même monde et le même biome que le boss reçoit les récompenses
+`participation-rewards` de son profil sous forme de droits à récompense (#422, remise sûre, une seule
+fois). PlugAdmin : champ « Récompenses de participation » dans l'éditeur Boss et liste « Victoires
+récentes et participants ».
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin (AWS). Aucune migration de base (réutilise
+`reward_entitlements`, schéma V41). Aucun fichier créé. Effet seulement si `entitlements.yml` existe avec
+`enabled: true` **et** qu'un profil Boss porte `participation-rewards` : sans cela, comportement
+identique à #175.
+
+### Sauvegarde préalable
+
+JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygames.sh` / `deploy.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` depuis la branche d'intégration après CI verte, redémarrage DEV par
+`scripts/verygames-restart.sh`, `scripts/plugadmin/deploy.sh`. Détails réels : rapport de session #176.
+
+### Validation
+
+PENDING MANUAL VALIDATION : TC-330.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage. L'ancien JAR ignore la clé
+`participation-rewards` des profils (profil chargé sans elle) et la PDC des participants ; les droits
+`BOSS` déjà déclarés restent dans `reward_entitlements` et sont remis normalement (la remise ne dépend
+pas de la source).
+
 ## 2026-10-16 - Boss communautaires du Wild, première version (#175)
 
 ### Changement

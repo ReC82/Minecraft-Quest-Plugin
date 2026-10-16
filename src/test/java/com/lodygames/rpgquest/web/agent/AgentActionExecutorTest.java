@@ -585,6 +585,13 @@ class AgentActionExecutorTest {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb4", "mob.definition.update",
                 Map.of("mob_id", "ogre", "category", "BOSS", "entity_type", "ZOMBIE", "display_name", "Ogre",
                         "spawn_chance", "0", "boss_mode", "WEEKLY"))).status());
+        // Issue #176 : clés de récompense revalidées (forme, nombre).
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb6", "mob.definition.update",
+                Map.of("mob_id", "ogre", "category", "BOSS", "entity_type", "ZOMBIE", "display_name", "Ogre",
+                        "spawn_chance", "0", "participation_rewards", "Coffre!"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb7", "mob.definition.update",
+                Map.of("mob_id", "ogre", "category", "BOSS", "entity_type", "ZOMBIE", "display_name", "Ogre",
+                        "spawn_chance", "0", "participation_rewards", "a,b,c,d,e,f"))).status());
 
         // Sans service côté plugin : un état explicitement « indisponible », jamais inventé.
         AgentActionOutcome status = run(new AgentAction("cb5", "boss.community.status", Map.of()));
@@ -2737,7 +2744,8 @@ class AgentActionExecutorTest {
                 Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
                 Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
                 Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-                Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
+                Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+                List<String> participationRewards) {
             return mutation("mob create " + id);
         }
 
@@ -2748,7 +2756,8 @@ class AgentActionExecutorTest {
                 Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
                 Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
                 Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-                Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
+                Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+                List<String> participationRewards) {
             return mutation("mob update " + id);
         }
 

@@ -64,7 +64,7 @@ class BukkitAgentActionsMobTest {
     private AgentActions.MutationResult create(String id, String entityType) throws Exception {
         return actions.mobDefinitionCreate(id, "SPECIAL", true, entityType, "Test " + entityType, 0.01,
                 List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null).get();
+                null, null, null, null, null, null, null, null, null, null, null, null, null).get();
     }
 
     @Test
@@ -94,7 +94,7 @@ class BukkitAgentActionsMobTest {
         AgentActions.MutationResult updated = actions.mobDefinitionUpdate(
                 "swamp_king", "SPECIAL", true, "ZOMBIE", "Roi des Marais (modifié)", 0.02,
                 List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null).get();
+                null, null, null, null, null, null, null, null, null, null, null, null, null).get();
         assertTrue(updated.ok(), updated.message());
         assertEquals("UPDATED", updated.code());
 
@@ -103,6 +103,32 @@ class BukkitAgentActionsMobTest {
         mobRegistry.reload();
         assertTrue(mobRegistry.find(new NamespacedKey("rpgquest", "swamp_king"))
                 .map(def -> !def.enabled()).orElse(false));
+    }
+
+    private AgentActions.MutationResult writeBoss(boolean create, List<String> participationRewards) throws Exception {
+        return (create ? actions.mobDefinitionCreate("ogre", "BOSS", true, "ZOMBIE", "Ogre", 0.0,
+                List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, "COMMUNITY", 1, participationRewards)
+                : actions.mobDefinitionUpdate("ogre", "BOSS", true, "ZOMBIE", "Ogre", 0.0,
+                List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, "COMMUNITY", 1, participationRewards)).get();
+    }
+
+    private List<String> ogreRewards() {
+        mobRegistry.reload();
+        return mobRegistry.find(new NamespacedKey("rpgquest", "ogre")).orElseThrow().participationRewards();
+    }
+
+    @Test
+    void participationRewardsAreKeptWhenAnOlderPanelOmitsThemAndClearedWhenSentEmpty() throws Exception {
+        assertTrue(writeBoss(true, List.of("boss_ogre")).ok());
+        assertEquals(List.of("boss_ogre"), ogreRewards());
+
+        assertTrue(writeBoss(false, null).ok(), "paramètre absent (ancien panel)");
+        assertEquals(List.of("boss_ogre"), ogreRewards(), "conservées, comme la table de drops");
+
+        assertTrue(writeBoss(false, List.of()).ok());
+        assertTrue(ogreRewards().isEmpty(), "champ vidé = retirées");
     }
 
     @Test

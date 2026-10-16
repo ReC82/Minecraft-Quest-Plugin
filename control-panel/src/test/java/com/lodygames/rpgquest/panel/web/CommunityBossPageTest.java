@@ -88,6 +88,36 @@ class CommunityBossPageTest {
     }
 
     @Test
+    void recentDefeatsListParticipantsVerdictsAndDeclaredRewards() throws Exception {
+        start();
+        login();
+        runAction("boss.community.status", STATUS.substring(0, STATUS.length() - 1)
+                + ",\"recentDefeats\":[{\"entityId\":\"" + ENTITY + "\",\"profileId\":\"rpgquest:ogre\","
+                + "\"profileName\":\"Ogre des collines\",\"defeatedAt\":940000,\"world\":\"wild\","
+                + "\"biome\":\"minecraft:plains\",\"killerName\":\"Bob\",\"test\":false,"
+                + "\"participants\":[{\"uuid\":\"u1\",\"name\":\"Alice\",\"eligible\":true,\"reason\":\"\"},"
+                + "{\"uuid\":\"u2\",\"name\":\"Carol\",\"eligible\":false,\"reason\":\"hors du biome du boss\"}],"
+                + "\"rewardKeys\":[\"boss_ogre\"],\"rewardStatus\":\"1 droit(s) déclaré(s) pour 1 joueur(s) éligible(s).\"}]}");
+        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Victoires récentes et participants"));
+        assertTrue(page.contains("dernier coup : Bob"));
+        assertTrue(page.contains("Alice"), page);
+        assertTrue(page.contains("hors du biome du boss"));
+        assertTrue(page.contains("boss_ogre"));
+        assertTrue(page.contains("1 droit(s) déclaré(s)"));
+    }
+
+    @Test
+    void withoutAnyDefeatTheSectionSaysSoHonestly() throws Exception {
+        start();
+        login();
+        runAction("boss.community.status", STATUS);
+        assertTrue(get("/mobs?agent=" + TestConfig.AGENT_ID).body()
+                .contains("Aucun boss communautaire vaincu depuis le dernier démarrage"));
+    }
+
+    @Test
     void relativeTimesReadNaturally() {
         org.junit.jupiter.api.Assertions.assertEquals("dans 15 min", AgentPages.relative(15 * 60_000L));
         org.junit.jupiter.api.Assertions.assertEquals("il y a 2 h", AgentPages.relative(-2 * 3_600_000L));

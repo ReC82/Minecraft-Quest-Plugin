@@ -6392,3 +6392,37 @@ Wild**, en survie, près de waypoints existants.
     → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
     Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
 
+
+### TC-330 — Participation et récompenses des boss communautaires (issue #176, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #176, sur **DEV seulement**. `plugins/RPGQuest/entitlements.yml`
+présent avec `enabled: true` et une récompense de test, par exemple :
+
+```yaml
+enabled: true
+rewards:
+  boss_test:
+    label: "Butin de boss (test)"
+    items:
+      - {item: DIAMOND, amount: 1}
+```
+
+Deux comptes de test (A et B) dans le Wild, en survie. Un profil Boss jetable en *Boss communautaire*.
+
+1.  PlugAdmin → Mobs spéciaux & boss → profil Boss → Modifier → « Récompenses de participation » =
+    `boss_test` → Enregistrer, rouvrir. **Attendu** : la valeur est conservée ; sur un profil Spécial,
+    le champ est ignoré.
+2.  **Apparition de test**. A frappe **une seule fois** à l'épée ; B tue le boss (arc conseillé : le
+    projectile doit compter). **Attendu** : A et B lisent « Participation reconnue contre … » puis
+    « Récompense reçue : Butin de boss (test) » ; un diamant chacun ; « Victoires récentes et
+    participants » (après « Rafraîchir l'état ») liste A et B **éligibles**, « 2 droit(s) déclaré(s) ».
+3.  Nouveau boss de test. A frappe puis part dans **un autre biome** ; B frappe puis **meurt** et attend
+    sur l'écran de mort ; un 3ᵉ compte (ou A revenu) tue le boss. **Attendu** : A « hors du biome du
+    boss », B « mort au moment de la victoire », aucun diamant pour eux, message d'explication.
+4.  Inventaire plein : remplir l'inventaire de A, frapper, faire tuer le boss. **Attendu** : « Une
+    récompense t'attend » + « libère N emplacements », rien au sol ; libérer une case → diamant reçu
+    sous 30 s ; jamais deux.
+5.  A frappe puis **se déconnecte** avant la mort. **Attendu** : A exclu « hors ligne », aucun droit.
+6.  Fiche joueur A → Monnaie → Droits à récompense → Lire. **Attendu** : origine « Boss communautaire —
+    rpgquest:…@… », état Remis (ou En attente pour le cas 4 avant libération).
+7.  Redémarrer avec un droit en attente (cas 4 non libéré). **Attendu** : remis à la reconnexion, une fois.

@@ -1838,7 +1838,8 @@ public interface AgentActions {
                              int alivePopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
                              Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount,
                              Double summonChance, Integer summonCooldownSeconds, Integer summonMaxAlive,
-                             List<String> abilitiesSummary, String bossMode, int communityWeight) {
+                             List<String> abilitiesSummary, String bossMode, int communityWeight,
+                             List<String> participationRewards) {
     }
 
     /** Throttle global du tirage aléatoire Wild (voir {@code mob.MobSpawnSettings}). */
@@ -1864,7 +1865,8 @@ public interface AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight);
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+            List<String> participationRewards);
 
     CompletableFuture<MutationResult> mobDefinitionUpdate(String id, String category, boolean enabled,
             String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
@@ -1872,7 +1874,8 @@ public interface AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight);
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+            List<String> participationRewards);
 
     /** Bascule {@code enabled} sans toucher au reste du profil -- action {@code mob.definition.toggle}. */
     CompletableFuture<MutationResult> mobDefinitionToggle(String id, boolean enabled);
@@ -1902,20 +1905,33 @@ public interface AgentActions {
 
     /** Profil BOSS et son mode, pour la liste des profils éligibles. */
     record CommunityBossProfileView(String id, String displayName, boolean enabled, String bossMode,
-                                    int communityWeight, List<String> worlds, List<String> biomes) {
+                                    int communityWeight, List<String> worlds, List<String> biomes,
+                                    List<String> participationRewards) {
+    }
+
+    /** Issue #176 : participant d'une victoire et son verdict ({@code reason} vide si éligible). */
+    record CommunityBossParticipantView(String uuid, String name, boolean eligible, String reason) {
+    }
+
+    /** Issue #176 : victoire récente (mémoire, depuis le dernier démarrage du serveur). */
+    record CommunityBossDefeatView(String entityId, String profileId, String profileName, long defeatedAtMillis,
+                                   String world, String biome, String killerName, boolean test,
+                                   List<CommunityBossParticipantView> participants, List<String> rewardKeys,
+                                   String rewardStatus) {
     }
 
     /** {@code available=false} : plugin sans le service (ancienne version) -- jamais un état inventé. */
     record CommunityBossView(boolean available, boolean enabled, int intervalMinutes, int maxActive,
                              Long nextDueMillis, long lastSpawnMillis, long lastAttemptMillis, String lastOutcome,
                              long nowMillis, List<CommunityBossInstanceView> instances,
-                             List<CommunityBossProfileView> bossProfiles) {
+                             List<CommunityBossProfileView> bossProfiles,
+                             List<CommunityBossDefeatView> recentDefeats) {
     }
 
     /** Lecture de l'état du scheduler -- action {@code boss.community.status}. */
     default CompletableFuture<CommunityBossView> communityBossStatus() {
         return CompletableFuture.completedFuture(new CommunityBossView(false, false, 0, 0, null, 0, 0, "", 0,
-                List.of(), List.of()));
+                List.of(), List.of(), List.of()));
     }
 
     /** Réglages globaux -- action {@code boss.community.settings.set}. */

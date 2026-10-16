@@ -4524,7 +4524,8 @@ public final class BukkitAgentActions implements AgentActions {
                 def.sound() == null ? null : def.sound().name(), def.xpReward(), def.maxPopulation(),
                 mobService.populationOf(def.id()), enragedHealthFraction, enragedSpeedMultiplier,
                 enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
-                summonMaxAlive, List.copyOf(abilitiesSummary), def.bossMode().name(), def.communityWeight());
+                summonMaxAlive, List.copyOf(abilitiesSummary), def.bossMode().name(), def.communityWeight(),
+                def.participationRewards());
     }
 
     @Override
@@ -4534,12 +4535,13 @@ public final class BukkitAgentActions implements AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+            List<String> participationRewards) {
         return writeMobDefinition(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones,
                 health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
                 xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
                 summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, bossMode,
-                communityWeight, true);
+                communityWeight, participationRewards, true);
     }
 
     @Override
@@ -4549,12 +4551,13 @@ public final class BukkitAgentActions implements AgentActions {
             Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
-            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight) {
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+            List<String> participationRewards) {
         return writeMobDefinition(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones,
                 health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
                 xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
                 summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, bossMode,
-                communityWeight, false);
+                communityWeight, participationRewards, false);
     }
 
     @SuppressWarnings("removal") // Particle/Sound#valueOf : voir la justification dans SpecialMobDefinitionParser.
@@ -4565,7 +4568,7 @@ public final class BukkitAgentActions implements AgentActions {
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
             Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
-            boolean create) {
+            List<String> participationRewards, boolean create) {
         List<MobAbility> abilities = new ArrayList<>();
         try {
             if (enragedHealthFraction != null || enragedSpeedMultiplier != null || enragedDamageMultiplier != null) {
@@ -4592,7 +4595,11 @@ public final class BukkitAgentActions implements AgentActions {
                     xpReward, maxPopulation,
                     bossMode == null ? com.lodygames.rpgquest.mob.model.BossMode.QUEST
                             : com.lodygames.rpgquest.mob.model.BossMode.valueOf(bossMode.toUpperCase(Locale.ROOT)),
-                    communityWeight == null ? SpecialMobDefinition.DEFAULT_COMMUNITY_WEIGHT : communityWeight);
+                    communityWeight == null ? SpecialMobDefinition.DEFAULT_COMMUNITY_WEIGHT : communityWeight,
+                    // Issue #176 : absent (ancien panel) = conservé, comme la table de drops ; liste vide = retiré.
+                    participationRewards != null ? participationRewards : create ? List.of()
+                            : mobDefinitionStore.find(resolveKey(id))
+                            .map(SpecialMobDefinition::participationRewards).orElse(List.of()));
 
             SpecialMobDefinitionStore.Result r = create
                     ? mobDefinitionStore.create(definition) : mobDefinitionStore.update(definition);
@@ -4687,12 +4694,15 @@ public final class BukkitAgentActions implements AgentActions {
 
     private com.lodygames.rpgquest.mob.community.CommunityBossService communityBosses;
     private com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore communityBossSettingsStore;
+    private com.lodygames.rpgquest.mob.community.CommunityBossRewards communityBossRewards;
 
     /** Dépendance facultative (même logique de setter que l'historique des bâtiments). */
     public void setCommunityBosses(com.lodygames.rpgquest.mob.community.CommunityBossService service,
-                                   com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore settingsStore) {
+                                   com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore settingsStore,
+                                   com.lodygames.rpgquest.mob.community.CommunityBossRewards rewards) {
         this.communityBosses = service;
         this.communityBossSettingsStore = settingsStore;
+        this.communityBossRewards = rewards;
     }
 
     @Override
@@ -4713,12 +4723,31 @@ public final class BukkitAgentActions implements AgentActions {
             if (def.category() == MobCategory.BOSS) {
                 profiles.add(new CommunityBossProfileView(def.id().asString(), def.displayName(), def.enabled(),
                         def.bossMode().name(), def.communityWeight(), List.copyOf(def.allowedWorlds()),
-                        List.copyOf(def.allowedBiomes())));
+                        List.copyOf(def.allowedBiomes()), def.participationRewards()));
             }
         }
         return done(new CommunityBossView(true, settings.enabled(), settings.intervalMinutes(), settings.maxActive(),
                 state.nextDueMillis(), state.lastSpawnMillis(), state.lastAttemptMillis(), state.lastOutcome(),
-                System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles)));
+                System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles), recentDefeats()));
+    }
+
+    private List<CommunityBossDefeatView> recentDefeats() {
+        if (communityBossRewards == null) {
+            return List.of();
+        }
+        List<CommunityBossDefeatView> views = new ArrayList<>();
+        for (var d : communityBossRewards.recentDefeats()) {
+            List<CommunityBossParticipantView> participants = d.participants().stream()
+                    .map(p -> new CommunityBossParticipantView(p.playerId().toString(), p.name(),
+                            p.verdict() == com.lodygames.rpgquest.mob.community.BossParticipation.Verdict.ELIGIBLE,
+                            p.verdict() == com.lodygames.rpgquest.mob.community.BossParticipation.Verdict.ELIGIBLE
+                                    ? "" : p.verdict().label()))
+                    .toList();
+            views.add(new CommunityBossDefeatView(d.entityId().toString(), d.profileId(), d.profileName(),
+                    d.defeatedAtMillis(), d.world(), d.biome(), d.killerName() == null ? "" : d.killerName(), d.test(),
+                    participants, d.rewardKeys(), d.rewardStatus()));
+        }
+        return List.copyOf(views);
     }
 
     @Override

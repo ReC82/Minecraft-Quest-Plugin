@@ -1204,7 +1204,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   waypoints exclus) ; annonce globale avec le waypoint réel le plus proche ; rappel individuel à la
   connexion ; verrous persistants `state/community-bosses.yml` (aucune table) réconciliés au
   rechargement des entités et au redémarrage. PlugAdmin `/mobs` : état, réglages, boss actifs,
-  apparition de test, retrait confirmé. Récompenses de participation : non livrées (#176/#177).
+  apparition de test, retrait confirmé.
+- **Participation et récompenses des boss communautaires** (issue #176, PENDING MANUAL VALIDATION) —
+  coups effectifs (directs/projectiles, non annulés, dégâts > 0) mémorisés en PDC sur l'entité ;
+  éligibilité figée à la mort (connecté, vivant, même monde et même biome que la position réelle du
+  boss) ; `participation-rewards` (clés `entitlements.yml`) sur le profil → un droit à récompense #422
+  `BOSS` par participant éligible (au plus une fois, inventaire plein géré). PlugAdmin : champ dans
+  l'éditeur Boss, « Victoires récentes et participants ». Interprétations biome / « encore vivant » à
+  confirmer. Tables de récompenses aléatoires : #177, non livrées.
 - **Économie / Marché / Marchands** — portefeuille, transactions, hôtel des ventes, offres PNJ.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.

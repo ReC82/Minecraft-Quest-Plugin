@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.dialogue;
 
+import com.lodygames.rpgquest.quest.progress.DeliveryOutcome;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 
@@ -12,8 +13,16 @@ import org.bukkit.entity.Player;
  * parle — l'état de remise d'objets, par exemple (issue #123) — et que la clé du dialogue est
  * précisément l'id de ce PNJ (voir {@link DialogueNpcResolution}). Une valeur qui n'en a pas besoin,
  * comme l'état du Wild (issue #24), ignore simplement le contexte.</p>
+ *
+ * <p>{@code justDelivered} (issue #467) : résultat de la remise que le choix du joueur vient
+ * d'effectuer, si le nœud est affiché juste après un {@code DELIVER_QUEST_ITEMS} ; {@code null}
+ * sinon.</p>
  */
-public record DialoguePlaceholderContext(Player player, NamespacedKey dialogueId) {
+public record DialoguePlaceholderContext(Player player, NamespacedKey dialogueId, DeliveryOutcome justDelivered) {
+
+    public DialoguePlaceholderContext(Player player, NamespacedKey dialogueId) {
+        this(player, dialogueId, null);
+    }
 
     /** PNJ porteur du dialogue courant, ou {@code null} si le dialogue est inconnu. */
     public String npcId() {

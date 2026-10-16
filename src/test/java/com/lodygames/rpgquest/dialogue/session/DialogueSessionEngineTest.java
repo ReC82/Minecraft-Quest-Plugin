@@ -995,6 +995,106 @@ class DialogueSessionEngineTest {
                 () -> "obtenu : " + renderer.lastNode.text().base());
     }
 
+    // ---- Issue #467 : bilan cohérent juste après une remise qui termine la quête -------------
+
+    /** Même câblage que {@code RPGQuestBootstrap}, PNJ {@code guard} fixé comme dans le dialogue de test. */
+    private void wireDeliveryStatusForGuard() {
+        sessionEngine.setPlaceholders(new com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders(
+                java.util.Map.of("delivery_status", context ->
+                        com.lodygames.rpgquest.quest.progress.DeliveryStatusText.render(
+                                questProgressEngine.pendingDeliveries(context.player().getUniqueId(), "guard"),
+                                context.justDelivered()))));
+    }
+
+    private PlayerMock deliveryPlayerWithLeather(int leather) throws Exception {
+        installDeliveryContent();
+        wireDeliveryStatusForGuard();
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, new NamespacedKey("rpgquest", "deliver"))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        player.getInventory().clear();
+        player.getInventory().addItem(new org.bukkit.inventory.ItemStack(Material.LEATHER, leather));
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        return player;
+    }
+
+    private void chooseDeliver(PlayerMock player) throws Exception {
+        int index = renderer.lastVisibleChoices.get(0).index();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, DELIVERY_DIALOGUE, "deliver", index);
+        awaitRendered();
+    }
+
+    /**
+     * Reproduction du signalement Lily (« Un repas pour Lily ») : la remise complète termine la
+     * quête, qui quitte les quêtes actives. Le nœud affiché juste après disait « Je n'attends
+     * aucun matériau de ta part » sous le « Quête terminée ».
+     */
+    @Test
+    void aDeliveryThatCompletesTheQuestShowsTheDeliveryNotNothingExpected() throws Exception {
+        PlayerMock player = deliveryPlayerWithLeather(6);
+
+        chooseDeliver(player);
+
+        assertEquals(QuestState.COMPLETED, questProgressEngine.stateOf(player.getUniqueId(),
+                new NamespacedKey("rpgquest", "deliver")).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        String text = renderer.lastNode.text().base();
+        assertFalse(text.contains(com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_EXPECTED),
+                () -> "jamais un faux refus après une remise réussie : " + text);
+        assertTrue(text.contains("4/4") && text.contains(
+                        com.lodygames.rpgquest.quest.progress.DeliveryStatusText.ALL_DELIVERED),
+                () -> "bilan de la remise attendu : " + text);
+        assertEquals(2, player.getInventory().all(Material.LEATHER).values().stream()
+                .mapToInt(org.bukkit.inventory.ItemStack::getAmount).sum(), "exactement 4 cuirs retirés sur 6");
+        assertEquals(List.of("Tout est remis"),
+                renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList());
+    }
+
+    @Test
+    void aPartialDeliveryStillShowsWhatIsMissing() throws Exception {
+        PlayerMock player = deliveryPlayerWithLeather(2);
+
+        chooseDeliver(player);
+
+        String text = renderer.lastNode.text().base();
+        assertTrue(text.contains("2/4"), () -> "obtenu : " + text);
+        assertFalse(text.contains(com.lodygames.rpgquest.quest.progress.DeliveryStatusText.ALL_DELIVERED),
+                () -> "rien n'est terminé : " + text);
+    }
+
+    @Test
+    void aDoubleClickOnTheDeliveryChoiceNeverWithdrawsTwice() throws Exception {
+        PlayerMock player = deliveryPlayerWithLeather(8);
+        int index = renderer.lastVisibleChoices.get(0).index();
+        renderer.lastNode = null;
+
+        sessionEngine.onChoiceSelected(player, DELIVERY_DIALOGUE, "deliver", index);
+        sessionEngine.onChoiceSelected(player, DELIVERY_DIALOGUE, "deliver", index);
+        awaitRendered();
+        server.getScheduler().performTicks(5);
+
+        assertEquals(4, player.getInventory().all(Material.LEATHER).values().stream()
+                .mapToInt(org.bukkit.inventory.ItemStack::getAmount).sum(), "un seul retrait de 4 cuirs");
+        assertFalse(renderer.lastNode.text().base().contains(
+                com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_EXPECTED));
+    }
+
+    /** Le bilan ne vaut que pour le nœud affiché juste après la remise : une visite suivante relit l'état réel. */
+    @Test
+    void theDeliveryOutcomeIsNotReusedOnALaterVisit() throws Exception {
+        PlayerMock player = deliveryPlayerWithLeather(4);
+        chooseDeliver(player);
+
+        renderer.lastNode = null;
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+
+        assertTrue(renderer.lastNode.text().base().contains(
+                        com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_EXPECTED),
+                () -> "quête terminée, plus rien n'est attendu : " + renderer.lastNode.text().base());
+    }
+
     // ---- Issue #158 : accueil selon l'etat reel de la quete + repliques variees ---------------
 
     private static final NamespacedKey HELP_ID = new NamespacedKey("rpgquest", "help");

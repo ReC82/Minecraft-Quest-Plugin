@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.dialogue;
 
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
+import com.lodygames.rpgquest.quest.progress.DeliveryOutcome;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
@@ -53,10 +54,15 @@ public final class DialogueTextPlaceholders {
      * statiques (le moteur les indexe par position, un libellé dynamique n'apporterait rien ici).
      */
     public DialogueNode apply(Player player, NamespacedKey dialogueId, DialogueNode node) {
+        return apply(player, dialogueId, node, null);
+    }
+
+    /** Idem, juste après une remise du choix en cours ({@link DialoguePlaceholderContext#justDelivered()}). */
+    public DialogueNode apply(Player player, NamespacedKey dialogueId, DialogueNode node, DeliveryOutcome justDelivered) {
         if (values.isEmpty()) {
             return node;
         }
-        DialoguePlaceholderContext context = new DialoguePlaceholderContext(player, dialogueId);
+        DialoguePlaceholderContext context = new DialoguePlaceholderContext(player, dialogueId, justDelivered);
         LocalizedText text = node.text();
         Map<String, String> substituted = new LinkedHashMap<>();
         boolean changed = false;

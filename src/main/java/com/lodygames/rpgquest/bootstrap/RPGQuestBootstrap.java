@@ -1023,7 +1023,7 @@ public final class RPGQuestBootstrap {
         dialogueSessionEngine.setPlaceholders(new DialogueTextPlaceholders(Map.of(
                 "wild_conditions", context -> wildConditionsService.describe(),
                 "delivery_status", context -> DeliveryStatusText.render(questProgressEngine.pendingDeliveries(
-                        context.player().getUniqueId(), context.npcId())),
+                        context.player().getUniqueId(), context.npcId()), context.justDelivered()),
                 "kit_tier_current", context -> kitProgressService.currentTierText(context.player().getUniqueId()),
                 "kit_tier_next", context -> kitProgressService.nextTierText(context.player().getUniqueId()),
                 "kit_upgrade_requirements",

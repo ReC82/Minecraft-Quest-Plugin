@@ -155,7 +155,7 @@ final class SpecialMobDefinitionParser {
         for (String raw : section.getStringList("participation-rewards")) {
             String key = raw == null ? "" : raw.trim();
             if (!SpecialMobDefinition.REWARD_KEY.matcher(key).matches()) {
-                errors.add("« participation-rewards » : clé invalide \"" + raw + "\" (minuscules, chiffres, _ . -).");
+                errors.add("« participation-rewards » : clé invalide \"" + raw + "\" (minuscules, chiffres, _ . -, ou table:<id>).");
             } else if (!keys.contains(key)) {
                 keys.add(key);
             }

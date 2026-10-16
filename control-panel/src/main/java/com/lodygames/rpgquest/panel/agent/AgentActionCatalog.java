@@ -40,7 +40,8 @@ public final class AgentActionCatalog {
     /** Issue #175 : mode d'un profil BOSS. */
     private static final java.util.Set<String> BOSS_MODES = java.util.Set.of("QUEST", "COMMUNITY");
     /** Issue #176 : clés du catalogue entitlements.yml, comme côté plugin. */
-    private static final Pattern REWARD_KEY = Pattern.compile("[a-z0-9_.-]{1,64}");
+    /** Clé de entitlements.yml, ou table:<id> pour un tirage aléatoire (#177). */
+    private static final Pattern REWARD_KEY = Pattern.compile("table:[a-z0-9_-]{1,32}|[a-z0-9_.-]{1,64}");
     private static final int MAX_PARTICIPATION_REWARDS = 5;
     private static final Pattern ENTITY_UUID = Pattern.compile(
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
@@ -2108,7 +2109,7 @@ public final class AgentActionCatalog {
                         }
                         if (!REWARD_KEY.matcher(key).matches()) {
                             return Validation.fail("Récompense de participation invalide : « " + key
-                                    + " » (clé de entitlements.yml : minuscules, chiffres, _ . -).");
+                                    + " » (clé de entitlements.yml : minuscules, chiffres, _ . -, ou table:<id> pour un tirage).");
                         }
                         participationRewards.add(key);
                     }

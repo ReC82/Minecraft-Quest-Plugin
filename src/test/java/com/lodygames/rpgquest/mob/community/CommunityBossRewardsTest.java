@@ -85,6 +85,14 @@ class CommunityBossRewardsTest {
         public void deliverSoon(List<UUID> players) {
             delivered.addAll(players);
         }
+
+        @Override
+        public Optional<com.lodygames.rpgquest.entitlement.reward.RewardTable> table(String id) {
+            return Optional.ofNullable(tables.get(id));
+        }
+
+        final java.util.Map<String, com.lodygames.rpgquest.entitlement.reward.RewardTable> tables =
+                new java.util.HashMap<>();
     }
 
     @BeforeEach
@@ -278,5 +286,69 @@ class CommunityBossRewardsTest {
         defeat();
         assertEquals(List.of("boss_ogre", "pas_au_catalogue"),
                 sink.declared.stream().map(RewardEntitlement.Declaration::rewardKey).toList());
+    }
+
+    // ---- issue #177 : tirages par participant ------------------------------------------------
+
+    private static com.lodygames.rpgquest.entitlement.reward.RewardTable certain(String id, boolean enabled) {
+        return new com.lodygames.rpgquest.entitlement.reward.RewardTable(id, "Butin de l'ogre",
+                com.lodygames.rpgquest.entitlement.reward.RewardTable.Mode.SINGLE, enabled,
+                List.of(new com.lodygames.rpgquest.entitlement.reward.RewardTable.Entry("gem", "boss_ogre",
+                        com.lodygames.rpgquest.entitlement.reward.RewardTable.FULL)));
+    }
+
+    @Test
+    void aTableIsDrawnOncePerEligibleParticipantWithPersonalKeys() {
+        sink.tables.put("ogre_loot", certain("ogre_loot", true));
+        profileRewards.clear();
+        profileRewards.add("table:ogre_loot");
+        PlayerMock alice = fighter("Alice");
+        PlayerMock bob = fighter("Bob");
+        hit(alice, boss, 2.0);
+        hit(bob, boss, 2.0);
+
+        defeat();
+
+        assertEquals(2, sink.declared.size());
+        for (RewardEntitlement.Declaration d : sink.declared) {
+            assertEquals("boss_ogre", d.rewardKey());
+            assertEquals("boss:" + boss.getUniqueId() + ":ogre_loot.gem:" + d.playerId(), d.idempotencyKey());
+            assertTrue(d.label().contains("table ogre_loot v"), d.label());
+        }
+        assertTrue(messages(alice).contains("Coffre de l'ogre"));
+        assertEquals(2, rewards.recentDefeats().get(0).draws().size());
+    }
+
+    @Test
+    void guaranteedAndRandomRewardsCombineAndARetryRedrawsTheSame() {
+        sink.tables.put("ogre_loot", certain("ogre_loot", true));
+        profileRewards.add("table:ogre_loot");
+        sink.failuresBeforeSuccess = 1;
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+
+        defeat();
+        server.getScheduler().performTicks(20L * 5 + 2);
+
+        assertEquals(List.of("boss:" + boss.getUniqueId() + ":boss_ogre:" + alice.getUniqueId(),
+                        "boss:" + boss.getUniqueId() + ":ogre_loot.gem:" + alice.getUniqueId()),
+                sink.declared.stream().map(RewardEntitlement.Declaration::idempotencyKey).toList());
+    }
+
+    @Test
+    void anUnknownOrDisabledTableDrawsNothingAndIsTraced() {
+        sink.tables.put("off", certain("off", false));
+        profileRewards.clear();
+        profileRewards.add("table:off");
+        profileRewards.add("table:missing");
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+
+        defeat();
+
+        assertTrue(sink.declared.isEmpty());
+        List<String> draws = rewards.recentDefeats().get(0).draws();
+        assertTrue(draws.get(0).contains("désactivée"), draws.toString());
+        assertTrue(draws.get(1).contains("inconnue"), draws.toString());
     }
 }

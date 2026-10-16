@@ -337,6 +337,34 @@ class QuestDefinitionParserTest {
                 result.quest().rewards().stream().map(r -> r.type()).toList());
     }
 
+    // ---- Tirage d'une table de récompenses (issue #177) ----------------------------------------
+
+    @Test
+    void aTableRewardNamesItsTableAndCombinesWithGuaranteedRewards() {
+        QuestDefinitionParser.ParseResult result = parser.parse("table.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 10
+                  - type: TABLE
+                    table: dragon_loot
+                """)));
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(new com.lodygames.rpgquest.quest.model.TableReward("dragon_loot"), result.quest().rewards().get(1));
+
+        QuestDefinitionParser.ParseResult missing = parser.parse("table.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: TABLE
+                """)));
+        assertTrue(missing.issues().stream().anyMatch(i -> i.toString().contains("« table » obligatoire")),
+                () -> "issues: " + missing.issues());
+        QuestDefinitionParser.ParseResult bad = parser.parse("table.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: TABLE
+                    table: "Pas Valide"
+                """)));
+        assertTrue(!bad.isSuccess());
+    }
+
     // ---- Cœur supplémentaire (issue #166) -------------------------------------------------------
 
     @Test

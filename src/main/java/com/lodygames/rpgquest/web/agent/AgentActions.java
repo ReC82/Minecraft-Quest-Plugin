@@ -1917,7 +1917,7 @@ public interface AgentActions {
     record CommunityBossDefeatView(String entityId, String profileId, String profileName, long defeatedAtMillis,
                                    String world, String biome, String killerName, boolean test,
                                    List<CommunityBossParticipantView> participants, List<String> rewardKeys,
-                                   String rewardStatus) {
+                                   String rewardStatus, List<String> draws) {
     }
 
     /** {@code available=false} : plugin sans le service (ancienne version) -- jamais un état inventé. */

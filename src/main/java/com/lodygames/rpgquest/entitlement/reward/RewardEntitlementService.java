@@ -56,7 +56,7 @@ import org.slf4j.Logger;
  * <p>{@code entitlements.yml} absent, invalide ou {@code enabled: false} : aucune déclaration depuis
  * les événements, aucune remise, aucune déclaration manuelle. La consultation reste possible.</p>
  */
-public final class RewardEntitlementService implements PluginService, Listener {
+public final class RewardEntitlementService implements PluginService, Listener, RewardTables {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final long CATALOG_INTERVAL_TICKS = 20L * 60;
@@ -146,6 +146,16 @@ public final class RewardEntitlementService implements PluginService, Listener {
 
     public RewardCatalog catalog() {
         return catalog;
+    }
+
+    @Override
+    public Optional<RewardTable> table(String id) {
+        return catalog.findTable(id);
+    }
+
+    @Override
+    public String label(String rewardKey) {
+        return catalog.find(rewardKey).map(RewardDefinition::label).orElse(rewardKey);
     }
 
     // ---- catalogue et déclarations depuis les événements (hors thread principal) --------------
@@ -277,8 +287,9 @@ public final class RewardEntitlementService implements PluginService, Listener {
     }
 
     /** Tente tout de suite la remise des droits en attente de ces joueurs (sans attendre le tour de 30 s). */
-    public CompletableFuture<Void> deliverSoon(List<UUID> players) {
-        return deliverPendingOf(players);
+    @Override
+    public void deliverSoon(List<UUID> players) {
+        deliverPendingOf(players);
     }
 
     /** Révocation d'un droit en attente. {@code false} = inconnu, déjà remis ou déjà révoqué. */
@@ -362,7 +373,7 @@ public final class RewardEntitlementService implements PluginService, Listener {
         for (RewardDefinition.Item line : reward.get().items()) {
             Optional<ItemStack> stack = itemFactory.apply(line, logger);
             if (stack.isEmpty()) {
-                return traceFailure(entitlement, "objet inconnu : " + line.itemId());
+                return traceFailure(entitlement, "objet, enchantement ou potion inconnu : " + line.itemId());
             }
             items.add(stack.get());
         }

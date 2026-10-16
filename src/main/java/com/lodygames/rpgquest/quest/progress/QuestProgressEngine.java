@@ -23,6 +23,12 @@ import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.HeartReward;
+import com.lodygames.rpgquest.quest.model.TableReward;
+import com.lodygames.rpgquest.entitlement.reward.RewardEntitlement;
+import com.lodygames.rpgquest.entitlement.reward.RewardSource;
+import com.lodygames.rpgquest.entitlement.reward.RewardTable;
+import com.lodygames.rpgquest.entitlement.reward.RewardTableDraw;
+import com.lodygames.rpgquest.entitlement.reward.RewardTables;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.health.HeartBonusService;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
@@ -150,6 +156,8 @@ public final class QuestProgressEngine implements PluginService {
 
     private com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar;
     private @Nullable HeartBonusService heartBonusService;
+    /** Tables de récompenses aléatoires (issue #177) ; {@code null} = tirages indisponibles. */
+    private @Nullable RewardTables rewardTables;
 
     /**
      * Issue #318 : registre des objets custom, pour connaître l'objet remis par une récompense
@@ -168,6 +176,11 @@ public final class QuestProgressEngine implements PluginService {
 
     /** Issues #69 / #209 — canal partagé de l'action bar, branché au démarrage. */
     /** Issue #166 : applique les cœurs gagnés ; absent (tests), les droits restent écrits en base. */
+    /** Issue #177 : branché après la construction (le catalogue de récompenses naît plus tard). */
+    public void setRewardTables(RewardTables rewardTables) {
+        this.rewardTables = rewardTables;
+    }
+
     public void setHeartBonusService(HeartBonusService heartBonusService) {
         this.heartBonusService = heartBonusService;
     }
@@ -1413,13 +1426,21 @@ public final class QuestProgressEngine implements PluginService {
             }
         }
 
+        // Issue #177 : tirages de CETTE complétion, faits maintenant (graine = jeton de complétion,
+        // donc déterministes) et écrits avec elle : une remise rejouée ne relance jamais un tirage.
+        List<Component> drawLines = new ArrayList<>();
+        List<RewardEntitlement.Declaration> drawn = drawTables(playerId, quest, progress.rewardGrantId(), drawLines);
+
         // Complétion ET dettes dans la MÊME transaction (voir
         // QuestProgressRepository#completeQuest) : sans cela, un arrêt brutal entre
         // les deux perd soit la récompense, soit la garantie de ne pas la payer deux fois.
-        repository.completeQuest(playerId, quest.id(), progress.rewardGrantId(), owed, hearts)
+        repository.completeQuest(playerId, quest.id(), progress.rewardGrantId(), owed, hearts, drawn)
                 .thenAccept(completion -> {
                     payRecordedMoneyRewards(playerId, quest, completion.moneyGrantIds());
                     applyHeartGrants(playerId, quest, completion.hearts());
+                    if (!drawn.isEmpty() && rewardTables != null) {
+                        rewardTables.deliverSoon(List.of(playerId));
+                    }
                 })
                 .exceptionally(error -> {
                     logger.error("Impossible de persister la fin de quête {} pour {}", quest.id(), playerId, error);
@@ -1438,9 +1459,49 @@ public final class QuestProgressEngine implements PluginService {
                 });
 
         List<Component> rewardLines = grantRewards(player, quest);
+        rewardLines.addAll(drawLines);
         showQuestCompleted(player, quest, rewardLines);
         notifyChanged(playerId);
         return true;
+    }
+
+    /**
+     * Tire chaque table {@code TABLE} de la quête (issue #177) et prépare un droit à récompense par
+     * gain (source {@code QUEST}, clé {@code quest:<jeton>:<table>.<entrée>:<joueur>}). Table inconnue
+     * ou désactivée : aucun tirage, le joueur et le journal le disent — jamais un gain inventé.
+     */
+    private List<RewardEntitlement.Declaration> drawTables(UUID playerId, QuestDefinition quest, String token,
+                                                           List<Component> lines) {
+        List<RewardEntitlement.Declaration> drawn = new ArrayList<>();
+        for (QuestReward reward : quest.rewards()) {
+            if (!(reward instanceof TableReward tableReward)) {
+                continue;
+            }
+            Optional<RewardTable> table = rewardTables == null ? Optional.empty()
+                    : rewardTables.table(tableReward.tableId()).filter(RewardTable::enabled);
+            if (table.isEmpty()) {
+                logger.warn("Quête {} : table de récompenses « {} » inconnue ou désactivée — aucun tirage pour {}.",
+                        quest.id(), tableReward.tableId(), playerId);
+                lines.add(messagesService.current().format("quest.reward-line-table-unavailable",
+                        Placeholder.unparsed("table", tableReward.tableId())));
+                continue;
+            }
+            List<RewardTableDraw.Win> wins = RewardTableDraw.wins(table.get(), "quest:" + token, playerId,
+                    RewardSource.QUEST, quest.id().toString(), rewardTables::label);
+            if (wins.isEmpty()) {
+                lines.add(messagesService.current().format("quest.reward-line-table-none",
+                        Placeholder.unparsed("table", table.get().label())));
+            }
+            for (RewardTableDraw.Win win : wins) {
+                drawn.add(win.declaration());
+                lines.add(messagesService.current().format("quest.reward-line-table-win",
+                        Placeholder.unparsed("item", rewardTables.label(win.entry().rewardKey())),
+                        Placeholder.unparsed("table", table.get().label())));
+            }
+            logger.info("Quête {} : tirage « {} » v{} pour {} → {}.", quest.id(), table.get().id(),
+                    table.get().version(), playerId, wins.stream().map(w -> w.entry().id()).toList());
+        }
+        return drawn;
     }
 
     /**
@@ -1671,6 +1732,9 @@ public final class QuestProgressEngine implements PluginService {
                 // HeartReward : idem, le droit est écrit avec la complétion et annoncé après le
                 // commit — voir applyHeartGrants (issue #166).
                 case HeartReward r -> { }
+                // TableReward : tirée et écrite avec la complétion (drawTables), remise par les
+                // droits à récompense (issue #177).
+                case TableReward r -> { }
             }
         }
         return lines;

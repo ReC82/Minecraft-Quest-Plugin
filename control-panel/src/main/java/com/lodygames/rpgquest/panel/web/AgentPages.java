@@ -10525,7 +10525,7 @@ public final class AgentPages {
 
     private String communityBossTestForm(Session session, String agentId, List<Object> profiles,
                                          List<String> onlinePlayers) {
-        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">");
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form mt-4\">");
         sb.append(hiddenActionFields(session, agentId, "boss.community.test.spawn"));
         sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
         sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Apparition de test</p>");
@@ -10561,7 +10561,7 @@ public final class AgentPages {
                 + hiddenActionFields(session, agentId, "boss.community.remove")
                 + "<input type=\"hidden\" name=\"target\" value=\"" + Http.esc(target) + "\">"
                 + confirmBox(confirmText)
-                + " <button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">" + Http.esc(label) + "</button>"
+                + " <button class=\"btn danger sm\" type=\"submit\">" + Http.esc(label) + "</button>"
                 + "</form>";
     }
 

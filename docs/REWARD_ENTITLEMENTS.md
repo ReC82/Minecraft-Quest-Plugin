@@ -144,8 +144,9 @@ Action agent `entitlement.declare` : joueur connu, clé du catalogue, **référe
 
 Source `BOSS`, référence `<profil>@<uuid entité>`, clé `boss:<uuid entité>:<clé catalogue>:<uuid joueur>` :
 un droit par participant éligible à la mort d'un boss communautaire et par clé `participation-rewards`
-du profil. Règles d'éligibilité : docs/RPGQUEST_BIBLE.md §11. Déclaré seulement si `enabled: true` ; une
-clé inconnue du catalogue est déclarée quand même (droit en attente avec l'erreur).
+du profil. Règles d'éligibilité : docs/RPGQUEST_BIBLE.md §11. Déclaré seulement si `enabled: true` (sinon
+chaque joueur éligible est averti que les récompenses sont désactivées, #177) ; une clé inconnue du catalogue
+est déclarée quand même (droit en attente avec l'erreur).
 
 ### 6.4 Tirages des tables aléatoires (#177)
 
@@ -256,8 +257,38 @@ objet custom) ; sur `ENCHANTED_BOOK` l'enchantement est **stocké** dans le livr
 `POTION`, `SPLASH_POTION`, `LINGERING_POTION`, `TIPPED_ARROW`. Les clés sont résolues à la remise : inconnue
 = droit en attente avec l'erreur.
 
-### 10.5 Hors de cette tranche
+### 10.5 Catalogue ou table désactivés — une seule règle (tranche 2)
 
-Édition graphique des tables dans PlugAdmin (création, duplication, activation), sélecteur avec recherche
-dans les éditeurs de quête et de boss, XP / argent comme entrée de table, boss de quête (#171).
+| Situation | Quête « Tirage au sort » | Boss `table:<id>` |
+| --- | --- | --- |
+| `enabled: false`, fichier absent ou refusé | aucun tirage ; résumé de fin : « récompenses aléatoires désactivées sur le serveur » ; garanties de la quête remises | rien n'est tiré ni déclaré (ni clés garanties) ; chaque joueur éligible : « les récompenses sont désactivées sur le serveur » |
+| table inconnue ou `enabled: false` | aucun tirage ; « Tirage « id » indisponible » | aucun tirage pour cette table ; « Tirage « id » indisponible » ; clés garanties déclarées |
+
+Jamais de gain inventé, jamais de promesse silencieuse ; le journal serveur et les « Victoires récentes »
+le tracent. (Tranche 1 enregistrait les gains de quête même désactivé : abandonné pour cette règle commune.)
+
+### 10.6 Édition depuis PlugAdmin (tranche 2)
+
+Page **Récompenses aléatoires** (`/rewards`). Actions agent :
+
+| Action | Paramètres | Effet |
+| --- | --- | --- |
+| `reward.catalog.status` | — | fichier présent / accepté / activé, erreurs, récompenses (`key`, `label`, `summary`), tables (chances lisibles et `chanceValue` éditable) |
+| `reward.table.save` | `table_id`, `label`, `mode`, `enabled`, `entries` = `id=récompense@chance;…`, `create`, `expected_version` facultatif | crée (`EXISTS` si déjà là) ou remplace (`NOT_FOUND`, `STALE` si la version a changé, `UNCHANGED` sans écriture) |
+| `reward.table.duplicate` | `table_id`, `new_id`, `new_label` facultatif | copie **désactivée**, mêmes entrées (donc même version) |
+| `reward.table.toggle` | `table_id`, `enabled` | seul l'interrupteur change, la version non |
+
+Garanties (`RewardTableEditor`, mêmes que l'écriture des profils de mob #461) : fichier actuel absent
+(`NO_CATALOG`) ou refusé (`CURRENT_INVALID`) → rien n'est écrit ; seule `tables.<id>` est remplacée
+(commentaires et ordre conservés, `rewards` et `enabled` jamais touchés) ; le texte final est relu par le
+vrai chargeur et doit redonner exactement la table voulue sans rien changer d'autre (`INVALID` sinon) ;
+écriture atomique ; rechargement immédiat (`reloadNow`) et, s'il n'aboutit pas, ancien fichier remis à
+l'octet près (`ROLLED_BACK`). Identifiants `y/n/yes/no/on/off/true/false/null` refusés (YAML les lit comme
+oui/non). Une ligne de table ajoutée reçoit un identifiant stable dérivé de la récompense ; une ligne
+existante garde le sien (il fait partie de la clé d'idempotence des gains).
+
+### 10.7 Hors de ces tranches
+
+Édition du **catalogue des récompenses** lui-même dans PlugAdmin (objets, avantages), XP / argent comme
+entrée de table, suppression d'une table (la désactiver), boss de quête (#171).
 

@@ -71,11 +71,15 @@ JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygame
 
 ### Déploiement
 
-Voir le rapport `docs/claude-reports/` du ticket #177 (date, empreintes).
+Effectué le 2026-10-16 ~13:17 (heure locale) : `scripts/deploy-verygames.sh -y` depuis `adecf3d`
+(merge de la PR #460, CI verte ; JAR 3 277 817 o, SHA-256 `214e79d6…a171b9`), sauvegarde
+`rpgquest-20261016T111740Z-predeploy.jar` (JAR #176, 3 250 590 o), `scripts/verygames-restart.sh`
+(aucun joueur connecté), `scripts/plugadmin/deploy.sh`.
 
 ### Validation
 
-PENDING MANUAL VALIDATION : TC-331.
+Vérifié : DEV ONLINE ; `boss.community.status` réussi avec le nouveau champ `rewardTables` (vide :
+`entitlements.yml` absent) ; PlugAdmin servi contient « Tirage au sort ». PENDING MANUAL VALIDATION : TC-331.
 
 ### Rollback
 

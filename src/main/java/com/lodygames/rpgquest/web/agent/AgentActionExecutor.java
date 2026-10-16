@@ -978,6 +978,31 @@ public final class AgentActionExecutor {
             details.put("instances", instances);
             details.put("profiles", profiles);
             details.put("recentDefeats", defeats);
+            List<Map<String, Object>> tables = new ArrayList<>();
+            for (AgentActions.RewardTableView t : view.rewardTables()) {
+                List<Map<String, Object>> entries = new ArrayList<>();
+                for (AgentActions.RewardTableEntryView e : t.entries()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", e.id());
+                    row.put("rewardKey", e.rewardKey());
+                    row.put("rewardLabel", e.rewardLabel());
+                    row.put("rewardKnown", e.rewardKnown());
+                    row.put("chance", e.chance());
+                    entries.add(row);
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", t.id());
+                row.put("label", t.label());
+                row.put("mode", t.mode());
+                row.put("modeLabel", t.modeLabel());
+                row.put("enabled", t.enabled());
+                row.put("version", t.version());
+                row.put("totalChance", t.totalChance());
+                row.put("explanation", t.explanation());
+                row.put("entries", entries);
+                tables.add(row);
+            }
+            details.put("rewardTables", tables);
             return AgentActionOutcome.success(action.id(), String.valueOf(instances.size()),
                     instances.size() + " boss communautaire(s) actif(s).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));

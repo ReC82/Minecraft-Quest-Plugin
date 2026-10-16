@@ -492,9 +492,9 @@ class AgentActionCatalogTest {
     void participationRewardsAreNormalizedForBossesAndClearedForSpecials() {
         AgentActionCatalog.Validation boss = AgentActionCatalog.validate("mob.definition.update", Map.of(
                 "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE",
-                "display_name", "Ogre", "spawn_chance", "0", "participation_rewards", "Boss_Ogre, titre.ogre boss_ogre"));
+                "display_name", "Ogre", "spawn_chance", "0", "participation_rewards", "Boss_Ogre, titre.ogre boss_ogre table:butin_ogre"));
         assertTrue(boss.valid(), boss.error());
-        assertEquals("boss_ogre,titre.ogre", boss.params().get("participation_rewards"));
+        assertEquals("boss_ogre,titre.ogre,table:butin_ogre", boss.params().get("participation_rewards"));
         AgentActionCatalog.Validation cleared = AgentActionCatalog.validate("mob.definition.update", Map.of(
                 "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE",
                 "display_name", "Ogre", "spawn_chance", "0"));

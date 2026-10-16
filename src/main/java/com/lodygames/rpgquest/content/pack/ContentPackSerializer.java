@@ -121,7 +121,8 @@ public final class ContentPackSerializer {
         sb.append("        - type: ").append(plain(r.type())).append('\n');
         opt(sb, 5, "amount", r.amount() == null ? null : String.valueOf(r.amount()));
         opt(sb, 5, "material", r.material() == null ? null : plain(r.material()));
-        opt(sb, 5, "key", r.key() == null ? null : quote(r.key()));
+        // Issue #177 : la table d'une récompense TABLE se lit sous « table » dans le YAML de quête.
+        opt(sb, 5, "TABLE".equals(r.type()) ? "table" : "key", r.key() == null ? null : quote(r.key()));
         opt(sb, 5, "value", r.value() == null ? null : quote(r.value()));
         opt(sb, 5, "command", r.command() == null ? null : quote(r.command()));
     }

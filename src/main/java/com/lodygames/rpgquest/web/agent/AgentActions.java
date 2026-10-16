@@ -1925,13 +1925,26 @@ public interface AgentActions {
                              Long nextDueMillis, long lastSpawnMillis, long lastAttemptMillis, String lastOutcome,
                              long nowMillis, List<CommunityBossInstanceView> instances,
                              List<CommunityBossProfileView> bossProfiles,
-                             List<CommunityBossDefeatView> recentDefeats) {
+                             List<CommunityBossDefeatView> recentDefeats, List<RewardTableView> rewardTables) {
+    }
+
+    /** Une entrée d'une table de tirage (#177) ; {@code chance} lisible (« 12,5 % »). */
+    record RewardTableEntryView(String id, String rewardKey, String rewardLabel, boolean rewardKnown,
+                                String chance) {
+    }
+
+    /**
+     * Une table de récompenses aléatoires de {@code entitlements.yml} (#177), en lecture : mode,
+     * version (empreinte figée dans chaque gain) et explication des chances réelles.
+     */
+    record RewardTableView(String id, String label, String mode, String modeLabel, boolean enabled, String version,
+                           String totalChance, String explanation, List<RewardTableEntryView> entries) {
     }
 
     /** Lecture de l'état du scheduler -- action {@code boss.community.status}. */
     default CompletableFuture<CommunityBossView> communityBossStatus() {
         return CompletableFuture.completedFuture(new CommunityBossView(false, false, 0, 0, null, 0, 0, "", 0,
-                List.of(), List.of(), List.of()));
+                List.of(), List.of(), List.of(), List.of()));
     }
 
     /** Réglages globaux -- action {@code boss.community.settings.set}. */

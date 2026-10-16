@@ -101,6 +101,9 @@ public final class RewardText {
                 yield new Reward("+" + hearts + (hearts > 1 ? " cœurs" : " cœur") + " de vie maximum",
                         key.isEmpty() ? null : "clé de droit " + key);
             }
+            // Issue #177 : une chance, pas une promesse — le gain réel est tracé par joueur.
+            case "TABLE" -> new Reward("Tirage au sort : table " + str(summary.get("target")),
+                    "table " + str(summary.get("target")));
             default -> parse(str(summary.get("raw")));
         };
     }

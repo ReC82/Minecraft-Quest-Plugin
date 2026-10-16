@@ -109,6 +109,31 @@ class CommunityBossPageTest {
     }
 
     @Test
+    void rewardTablesShowModeChancesExplanationAndDraws() throws Exception {
+        start();
+        login();
+        runAction("boss.community.status", STATUS.substring(0, STATUS.length() - 1)
+                + ",\"recentDefeats\":[{\"entityId\":\"" + ENTITY + "\",\"profileId\":\"rpgquest:ogre\","
+                + "\"profileName\":\"Ogre\",\"defeatedAt\":940000,\"world\":\"wild\",\"biome\":\"minecraft:plains\","
+                + "\"killerName\":\"\",\"test\":false,\"participants\":[],\"rewardKeys\":[\"table:butin_ogre\"],"
+                + "\"rewardStatus\":\"ok\",\"draws\":[\"Alice : table « butin_ogre » v1a2b3c4d → Gemme\"]}],"
+                + "\"rewardTables\":[{\"id\":\"butin_ogre\",\"label\":\"Butin de l'ogre\",\"mode\":\"single\","
+                + "\"modeLabel\":\"Une récompense maximum\",\"enabled\":true,\"version\":\"1a2b3c4d\","
+                + "\"totalChance\":\"37,5 %\",\"explanation\":\"aucun gain : 62,5 %.\",\"entries\":["
+                + "{\"id\":\"gem\",\"rewardKey\":\"gem\",\"rewardLabel\":\"Gemme\",\"rewardKnown\":true,\"chance\":\"12,5 %\"},"
+                + "{\"id\":\"x\",\"rewardKey\":\"nope\",\"rewardLabel\":\"nope\",\"rewardKnown\":false,\"chance\":\"25 %\"}]}]}");
+        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Tables de récompenses aléatoires"), page);
+        assertTrue(page.contains("Butin de l&#39;ogre") || page.contains("Butin de l'ogre"), page);
+        assertTrue(page.contains("Une récompense maximum"));
+        assertTrue(page.contains("12,5 %"));
+        assertTrue(page.contains("aucun gain : 62,5 %"));
+        assertTrue(page.contains("récompense inconnue"));
+        assertTrue(page.contains("Tirages : Alice"), page);
+    }
+
+    @Test
     void withoutAnyDefeatTheSectionSaysSoHonestly() throws Exception {
         start();
         login();

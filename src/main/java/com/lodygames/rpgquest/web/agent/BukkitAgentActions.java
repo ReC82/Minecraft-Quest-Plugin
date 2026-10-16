@@ -4728,7 +4728,30 @@ public final class BukkitAgentActions implements AgentActions {
         }
         return done(new CommunityBossView(true, settings.enabled(), settings.intervalMinutes(), settings.maxActive(),
                 state.nextDueMillis(), state.lastSpawnMillis(), state.lastAttemptMillis(), state.lastOutcome(),
-                System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles), recentDefeats()));
+                System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles), recentDefeats(),
+                rewardTables()));
+    }
+
+    /** Issue #177 : tables de tirage du catalogue chargé (vide sans service ou sans tables). */
+    private List<RewardTableView> rewardTables() {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return List.of();
+        }
+        var catalog = service.catalog();
+        List<RewardTableView> views = new ArrayList<>();
+        for (var table : catalog.tables().values()) {
+            List<RewardTableEntryView> entries = table.entries().stream()
+                    .map(e -> new RewardTableEntryView(e.id(), e.rewardKey(), service.label(e.rewardKey()),
+                            catalog.find(e.rewardKey()).isPresent(),
+                            com.lodygames.rpgquest.entitlement.reward.RewardTable.percent(e.chance())))
+                    .toList();
+            views.add(new RewardTableView(table.id(), table.label(), table.mode().yaml(), table.mode().label(),
+                    table.enabled(), table.version(),
+                    com.lodygames.rpgquest.entitlement.reward.RewardTable.percent(table.totalChance()),
+                    com.lodygames.rpgquest.entitlement.reward.RewardTableDraw.explain(table), entries));
+        }
+        return List.copyOf(views);
     }
 
     private List<CommunityBossDefeatView> recentDefeats() {

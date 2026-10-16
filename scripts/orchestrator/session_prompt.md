@@ -35,6 +35,10 @@ File complète : {{QUEUE_JSON}}
 4. Autorisé sans demander : code, tests, commits, push, PR, merge vers la branche d'intégration
    quand la CI est verte, déploiement DEV avec les scripts officiels (sauvegardes, mémoire
    « deploy »), redémarrage DEV selon la mémoire, commentaires GitHub.
+   Une PR qui ne touche que de la documentation (`docs/**` hors `docs/manual-tests/`, `docs-site/**`,
+   `.ai/**`, `*.md`) ne déclenche AUCUNE CI (filtre `paths` de `.github/workflows/ci.yml`) : ne
+   l'attends pas (`gh pr checks` répond « no checks reported »), fusionne-la dès qu'elle est
+   `MERGEABLE`. Toute boucle d'attente de CI doit aussi s'arrêter sur « no checks reported ».
 5. Interdit : toucher la production ; migration ou bascule réelle de base (#42/#43/#58 : outils et
    procédures seulement, copies isolées) ; modifier des données de joueurs pour simuler un test ;
    supprimer bases, mondes, inventaires ; afficher un secret ; contourner un certificat ; pousser

@@ -25,7 +25,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Issue #177 tranche 2 — page « Récompenses aléatoires » : éditeur de tables sans YAML. */
+/** Issues #177 tranche 2 / #474 — page « Récompenses » : catalogue et tables sans YAML. */
 class RewardTablesPageTest {
 
     static final String TABLE = "{\"id\":\"butin_ogre\",\"label\":\"Butin de l'ogre\",\"mode\":\"single\","
@@ -99,7 +99,7 @@ class RewardTablesPageTest {
         runAction("reward.catalog.status", status(true, true, false, "[]", "[" + TABLE + "]"));
         String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Récompenses désactivées sur le serveur"), "catalogue désactivé expliqué");
+        assertTrue(page.contains("Aucun tirage ni nouvelle récompense"), "catalogue désactivé expliqué");
         assertTrue(page.contains("Nouvelle table"));
         assertTrue(page.contains("Une récompense au plus") && page.contains("Chaque récompense tentée séparément"));
         assertTrue(page.contains("<datalist id=\"dl-reward-catalog\"><option value=\"gem\" label=\"Gemme rare — 2 × DIAMOND\">"),
@@ -144,6 +144,87 @@ class RewardTablesPageTest {
         String location = res.headers().firstValue("Location").orElse("");
         assertTrue(java.net.URLDecoder.decode(location, StandardCharsets.UTF_8).contains("110 %"), location);
         assertFalse(pollActions().contains("reward.table.save"));
+    }
+
+    // ---- Issue #474 : catalogue administré depuis PlugAdmin ----------------------------------------
+
+    static final String PREVIEW = "\"# Catalogue des récompenses\\nenabled: false\\nrewards: {}\\ntables: {}\\n\"";
+    static final String REWARDS_474 = "[{\"key\":\"gem\",\"label\":\"Gemme rare\",\"summary\":\"2 × DIAMOND\","
+            + "\"enabled\":true,\"version\":\"0a0b0c0d\",\"items\":[{\"item\":\"DIAMOND\",\"amount\":2,"
+            + "\"enchantments\":\"\",\"potion\":\"\"}],\"perkKey\":\"\",\"perkTier\":\"\","
+            + "\"usages\":[\"table « Butin de l'ogre » (butin_ogre)\",\"boss « Ogre » (rpgquest:ogre)\"]},"
+            + "{\"key\":\"book\",\"label\":\"Livre\",\"summary\":\"ENCHANTED_BOOK (sharpness 3)\","
+            + "\"enabled\":false,\"version\":\"1a1b1c1d\",\"items\":[{\"item\":\"ENCHANTED_BOOK\",\"amount\":1,"
+            + "\"enchantments\":\"sharpness:3\",\"potion\":\"\"}],\"perkKey\":\"\",\"perkTier\":\"\",\"usages\":[]}]";
+
+    static String status474(boolean fileExists, boolean enabled) {
+        String table = TABLE.substring(0, TABLE.length() - 1) + ",\"usages\":[\"quête « Le marais » (rpgquest:marais)\"]}";
+        return "{\"available\":true,\"fileExists\":" + fileExists + ",\"valid\":" + fileExists + ",\"enabled\":"
+                + enabled + ",\"errors\":[],\"rewards\":" + (fileExists ? REWARDS_474 : "[]") + ",\"tables\":"
+                + (fileExists ? "[" + table + "]" : "[]") + ",\"initialText\":" + (fileExists ? "\"\"" : PREVIEW)
+                + ",\"customItems\":[\"rpgquest:return_stone\"],\"enchantments\":[\"sharpness\",\"unbreaking\"],"
+                + "\"potions\":[\"strength\"]}";
+    }
+
+    @Test
+    void withoutCatalogTheExactFileIsPreviewedAndCreatedOnlyAfterConfirmation() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474(false, false));
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Créer le catalogue"), page);
+        assertTrue(page.contains("enabled: false"), "aperçu du fichier exact");
+        assertTrue(page.contains("name=\"confirm\" value=\"yes\""), "confirmation explicite");
+        assertFalse(page.contains("Nouvelle récompense") || page.contains("Nouvelle table"));
+
+        String token = csrf(page);
+        HttpResponse<String> refused = post("/agents/action", "_csrf=" + token + "&type=reward.catalog.init&agent="
+                + TestConfig.AGENT_ID + "&return=/rewards");
+        assertTrue(java.net.URLDecoder.decode(refused.headers().firstValue("Location").orElse(""),
+                StandardCharsets.UTF_8).contains("confirmation"));
+        assertFalse(pollActions().contains("reward.catalog.init"));
+        post("/agents/action", "_csrf=" + token + "&type=reward.catalog.init&agent=" + TestConfig.AGENT_ID
+                + "&return=/rewards&confirm=yes");
+        assertTrue(pollActions().contains("reward.catalog.init"));
+    }
+
+    @Test
+    void rewardsAreEditableWithUsagesAndTheGlobalSwitchIsExplained() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474(true, false));
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Activer les récompenses"), "interrupteur général");
+        assertTrue(page.contains("Nouvelle récompense"));
+        assertTrue(page.contains("Utilisée par : table « Butin de l&#39;ogre » (butin_ogre), boss « Ogre » "
+                + "(rpgquest:ogre)."), page);
+        assertTrue(page.contains("2 usage(s) ci-dessus ne la donneront plus"), "conséquence de la désactivation");
+        assertTrue(page.contains("name=\"item_id_0\" aria-label=\"Objet 1\" value=\"DIAMOND\""), "objet relu");
+        assertTrue(page.contains("value=\"sharpness 3\""), "enchantement relu");
+        assertTrue(page.contains("name=\"expected_version\" value=\"0a0b0c0d\""), "contrôle de version");
+        assertTrue(page.contains("<datalist id=\"dl-reward-items\"><option value=\"rpgquest:return_stone\""),
+                "objets RPGQuest recherchables");
+        assertTrue(page.contains("Livre (désactivée)"), "récompense désactivée signalée dans les choix de table");
+        assertTrue(page.contains("Tirée par : quête « Le marais » (rpgquest:marais)."), "usages d'une table");
+        assertTrue(page.contains("value=\"gem_copie\""), "identifiant de copie proposé");
+    }
+
+    @Test
+    void submittingARewardQueuesANormalisedSave() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474(true, true));
+        String token = csrf(get("/rewards?agent=" + TestConfig.AGENT_ID).body());
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token + "&type=reward.definition.save&agent="
+                + TestConfig.AGENT_ID + "&return=/rewards&create=true&enabled=true"
+                + "&label=" + URLEncoder.encode("Épée du héros", StandardCharsets.UTF_8)
+                + "&item_id_0=DIAMOND_SWORD&item_amount_0=1&item_ench_0=" + URLEncoder.encode("sharpness 3",
+                StandardCharsets.UTF_8) + "&item_potion_0=&item_id_1=&item_amount_1=");
+        assertEquals(303, res.statusCode(), res.body());
+        String queued = pollActions();
+        assertTrue(queued.contains("reward.definition.save"), queued);
+        assertTrue(queued.contains("DIAMOND_SWORD@1+ench=sharpness:3"), queued);
+        assertTrue(queued.contains("epee_du_heros"), queued);
     }
 
     private String pollActions() throws Exception {

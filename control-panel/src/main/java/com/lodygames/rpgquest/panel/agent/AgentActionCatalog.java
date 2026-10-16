@@ -732,6 +732,18 @@ public final class AgentActionCatalog {
                 "reward.catalog.status", "boss.community.status");
         addContentWrite("reward.table.toggle", Permission.ECONOMY_WRITE,
                 "Activer / désactiver une table de récompenses", "reward.catalog.status", "boss.community.status");
+        // Issue #474 — le catalogue lui-même (entitlements.yml) : création, récompenses, interrupteur
+        // général. Mêmes permissions ; création et interrupteur exigent une case de confirmation.
+        addContentWrite("reward.catalog.init", Permission.ECONOMY_WRITE, "Créer le catalogue des récompenses",
+                "reward.catalog.status", "boss.community.status");
+        addContentWrite("reward.catalog.toggle", Permission.ECONOMY_WRITE,
+                "Activer / désactiver toutes les récompenses", "reward.catalog.status", "boss.community.status");
+        addContentWrite("reward.definition.save", Permission.ECONOMY_WRITE, "Enregistrer une récompense",
+                "reward.catalog.status", "boss.community.status");
+        addContentWrite("reward.definition.duplicate", Permission.ECONOMY_WRITE, "Dupliquer une récompense",
+                "reward.catalog.status", "boss.community.status");
+        addContentWrite("reward.definition.toggle", Permission.ECONOMY_WRITE,
+                "Activer / désactiver une récompense", "reward.catalog.status", "boss.community.status");
         // Issue #200 — pont vers les droits Minecraft. Distribuer un droit de construction ou un
         // bypass est au moins aussi sensible que gérer un groupe du panel : même permission.
         add("mc.rights.read", Permission.USER_MANAGE, false, true,
@@ -2533,6 +2545,19 @@ public final class AgentActionCatalog {
             }
             case "reward.table.toggle" -> {
                 String error = RewardTableForm.fillToggle(form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "reward.catalog.init", "reward.catalog.toggle", "reward.definition.save",
+                 "reward.definition.duplicate", "reward.definition.toggle" -> {
+                String error = switch (type) {
+                    case "reward.catalog.init" -> RewardDefinitionForm.fillInit(form, params);
+                    case "reward.catalog.toggle" -> RewardDefinitionForm.fillCatalogToggle(form, params);
+                    case "reward.definition.save" -> RewardDefinitionForm.fill(form, params);
+                    case "reward.definition.duplicate" -> RewardDefinitionForm.fillDuplicate(form, params);
+                    default -> RewardDefinitionForm.fillToggle(form, params);
+                };
                 if (error != null) {
                     return Validation.fail(error);
                 }

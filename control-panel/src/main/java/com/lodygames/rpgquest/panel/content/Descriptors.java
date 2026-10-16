@@ -228,7 +228,7 @@ public final class Descriptors {
                             + "jamais le tirage. Les gains arrivent dans l'inventaire (ils attendent s'il est plein). "
                             + "Se combine avec les récompenses garanties de la quête.",
                     List.of(Field.select("table", "Table de récompenses", "reward-table",
-                            "Taper pour chercher parmi les tables du serveur (page « Récompenses aléatoires », qui "
+                            "Taper pour chercher parmi les tables du serveur (page « Récompenses », qui "
                                     + "sert aussi à les créer et les modifier). Une table désactivée, ou des "
                                     + "récompenses désactivées sur le serveur : aucun tirage, le joueur en est averti.",
                             true))));

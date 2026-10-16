@@ -48,7 +48,7 @@ public final class Layout {
                         new NavItem("Villes", "/cities", "world", Permission.TRAVEL_READ, true),
                         new NavItem("Mobs spéciaux & boss", "/mobs", "mob", Permission.MOB_READ, true),
                         // Issue #177 : tables de tirage partagées par les quêtes et les boss.
-                        new NavItem("Récompenses aléatoires", "/rewards", "gift", Permission.ECONOMY_READ, true),
+                        new NavItem("Récompenses", "/rewards", "gift", Permission.ECONOMY_READ, true),
                         new NavItem("Quêtes", "/quests", "quests", Permission.CONTENT_READ, true),
                         new NavItem("Stories", "/stories", "stories", Permission.CONTENT_READ, true),
                         new NavItem("Dialogues", "/dialogues", "dialogues", Permission.DIALOGUE_READ, true),

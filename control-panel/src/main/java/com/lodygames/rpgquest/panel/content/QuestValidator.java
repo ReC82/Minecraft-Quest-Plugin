@@ -234,10 +234,10 @@ public final class QuestValidator {
     private static void tableReferenceCheck(List<Diagnostic> out, String ctx, String table, RefData ref) {
         if (!ref.sourceKnown("reward-table")) {
             out.add(Diagnostic.info(ctx, "Impossible de vérifier la table « " + table + " » : ouvrir la page "
-                    + "Récompenses aléatoires et cliquer sur « Rafraîchir »."));
+                    + "Récompenses et cliquer sur « Rafraîchir »."));
         } else if (!ref.isValueKnown("reward-table", table)) {
             out.add(Diagnostic.warning(ctx, "Table « " + table + " » introuvable sur le serveur : la créer dans "
-                    + "Récompenses aléatoires, ou choisir une table de la liste. Sinon le joueur verra « tirage "
+                    + "Récompenses, ou choisir une table de la liste. Sinon le joueur verra « tirage "
                     + "indisponible »."));
         } else if (ref.rewardTableDisabled(table)) {
             out.add(Diagnostic.warning(ctx, "La table « " + table + " » est désactivée : aucun tirage tant qu'elle "

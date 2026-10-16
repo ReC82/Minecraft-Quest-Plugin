@@ -16,6 +16,7 @@ import com.lodygames.rpgquest.stats.StatPeriod;
 import com.lodygames.rpgquest.stats.StatScope;
 import com.lodygames.rpgquest.stats.StatisticsDefinition;
 import com.lodygames.rpgquest.stats.StatisticsService;
+import com.lodygames.rpgquest.web.push.SnapshotPushClient;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -33,6 +34,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -113,7 +115,20 @@ public final class WebSnapshotWriter implements PluginService {
         this.variables = variables;
     }
 
+    private SnapshotPushClient portalPush;
+
+    /**
+     * Issue #421 — envoi de chaque instantané au portail hébergé sur AWS, depuis le fil d'export.
+     * Sans client, seul le fichier local est écrit (comportement historique).
+     */
+    public void setPortalPush(SnapshotPushClient portalPush) {
+        this.portalPush = portalPush;
+    }
+
     private BukkitTask task;
+    private volatile boolean stopping = false;
+    /** Au moins un instantané publié (ou en cours) pendant cette exécution du plugin. */
+    private volatile boolean published = false;
     private volatile long lastWriteMillis = Long.MIN_VALUE;
     private volatile boolean writeInProgress = false;
 
@@ -146,6 +161,8 @@ public final class WebSnapshotWriter implements PluginService {
             task.cancel();
             task = null;
         }
+        stopping = true;
+        announceShutdown();
         ioExecutor.shutdown();
         try {
             if (!ioExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -168,7 +185,7 @@ public final class WebSnapshotWriter implements PluginService {
 
     private void tick(boolean force) {
         WebExportConfig current = config.get();
-        if (!current.enabled()) {
+        if (stopping || !current.enabled()) {
             return;
         }
         long now = clock.getAsLong();
@@ -205,14 +222,22 @@ public final class WebSnapshotWriter implements PluginService {
                     return snapshot;
                 })
                 .thenAccept(snapshot -> {
-                    CompletableFuture.runAsync(() -> writeAtomic(current, Json.write(snapshot)), ioExecutor)
-                            .whenComplete((ignored, error) -> {
-                                if (error != null) {
-                                    logger.warn("Échec de l'écriture du snapshot web.", error);
-                                }
-                                lastWriteMillis = clock.getAsLong();
-                                writeInProgress = false;
-                            });
+                    if (stopping) {
+                        writeInProgress = false;
+                        return;
+                    }
+                    try {
+                        CompletableFuture.runAsync(() -> publish(current, Json.write(snapshot)), ioExecutor)
+                                .whenComplete((ignored, error) -> {
+                                    if (error != null) {
+                                        logger.warn("Échec de l'écriture du snapshot web.", error);
+                                    }
+                                    lastWriteMillis = clock.getAsLong();
+                                    writeInProgress = false;
+                                });
+                    } catch (RejectedExecutionException e) {
+                        writeInProgress = false; // arrêt du plugin pendant la collecte
+                    }
                 })
                 .exceptionally(error -> {
                     logger.warn("Échec de la génération du snapshot web (classements indisponibles).", error);
@@ -511,6 +536,52 @@ public final class WebSnapshotWriter implements PluginService {
             profile.put("name", n);
             return profile;
         });
+    }
+
+    /** Fil d'export uniquement : fichier local, puis portail (#421) — un envoi raté ne bloque rien. */
+    private void publish(WebExportConfig current, String json) {
+        published = true;
+        writeAtomic(current, json);
+        SnapshotPushClient push = portalPush;
+        if (push != null) {
+            push.push(json);
+        }
+    }
+
+    /**
+     * Issue #421 — à l'arrêt du plugin, publie un dernier instantané {@code server.online = false} :
+     * c'est la seule façon pour le portail d'annoncer « hors ligne » plutôt qu'« état inconnu ».
+     * Rien n'est publié si aucun instantané ne l'a été pendant cette exécution. L'envoi part du fil
+     * d'export ; {@link #stop()} l'attend au plus quelques secondes.
+     */
+    private void announceShutdown() {
+        WebExportConfig current = config.get();
+        if (!current.enabled() || !(published || writeInProgress)) {
+            return;
+        }
+        String json = Json.write(shutdownSnapshot(Bukkit.getMaxPlayers(), Instant.now()));
+        try {
+            ioExecutor.execute(() -> publish(current, json));
+        } catch (RejectedExecutionException e) {
+            // déjà arrêté
+        }
+    }
+
+    /** Instantané minimal d'arrêt annoncé : aucune donnée de joueur, seulement l'état du serveur. */
+    static Map<String, Object> shutdownSnapshot(int maxPlayers, Instant now) {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("schemaVersion", SCHEMA_VERSION);
+        root.put("generatedAt", now.toString());
+        Map<String, Object> server = new LinkedHashMap<>();
+        server.put("online", false);
+        server.put("playerCount", 0);
+        server.put("maxPlayers", maxPlayers);
+        root.put("server", server);
+        root.put("players", List.of());
+        root.put("leaderboards", Map.of());
+        root.put("catalog", List.of());
+        root.put("announcements", List.of());
+        return root;
     }
 
     private void writeAtomic(WebExportConfig current, String json) {

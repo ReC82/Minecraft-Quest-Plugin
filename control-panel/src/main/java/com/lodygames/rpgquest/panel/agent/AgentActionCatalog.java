@@ -2222,6 +2222,14 @@ public final class AgentActionCatalog {
                 params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
                 params.put("interval_minutes", Integer.toString(interval));
                 params.put("max_active", Integer.toString(maxActive));
+                String radiusRaw = trim(form.get("participation_radius"));
+                if (!radiusRaw.isEmpty()) { // absent = distance inchangée (#176)
+                    Integer radius = positiveInt(radiusRaw);
+                    if (radius == null || radius < 5 || radius > 500) {
+                        return Validation.fail("Distance pour être récompensé : un nombre entier de 5 à 500 blocs.");
+                    }
+                    params.put("participation_radius", Integer.toString(radius));
+                }
             }
             case "boss.community.test.spawn" -> {
                 String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);

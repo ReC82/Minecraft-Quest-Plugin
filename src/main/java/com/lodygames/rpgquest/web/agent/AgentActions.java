@@ -1913,16 +1913,19 @@ public interface AgentActions {
     record CommunityBossParticipantView(String uuid, String name, boolean eligible, String reason) {
     }
 
-    /** Issue #176 : victoire récente (mémoire, depuis le dernier démarrage du serveur). */
+    /**
+     * Issue #176 : victoire récente (mémoire, depuis le dernier démarrage du serveur) ; {@code radius} =
+     * distance de participation appliquée à cette victoire.
+     */
     record CommunityBossDefeatView(String entityId, String profileId, String profileName, long defeatedAtMillis,
-                                   String world, String biome, String killerName, boolean test,
+                                   String world, String biome, int radius, String killerName, boolean test,
                                    List<CommunityBossParticipantView> participants, List<String> rewardKeys,
                                    String rewardStatus, List<String> draws) {
     }
 
     /** {@code available=false} : plugin sans le service (ancienne version) -- jamais un état inventé. */
     record CommunityBossView(boolean available, boolean enabled, int intervalMinutes, int maxActive,
-                             Long nextDueMillis, long lastSpawnMillis, long lastAttemptMillis, String lastOutcome,
+                             int participationRadius, Long nextDueMillis, long lastSpawnMillis, long lastAttemptMillis, String lastOutcome,
                              long nowMillis, List<CommunityBossInstanceView> instances,
                              List<CommunityBossProfileView> bossProfiles,
                              List<CommunityBossDefeatView> recentDefeats, List<RewardTableView> rewardTables) {
@@ -1943,13 +1946,16 @@ public interface AgentActions {
 
     /** Lecture de l'état du scheduler -- action {@code boss.community.status}. */
     default CompletableFuture<CommunityBossView> communityBossStatus() {
-        return CompletableFuture.completedFuture(new CommunityBossView(false, false, 0, 0, null, 0, 0, "", 0,
+        return CompletableFuture.completedFuture(new CommunityBossView(false, false, 0, 0, 0, null, 0, 0, "", 0,
                 List.of(), List.of(), List.of(), List.of()));
     }
 
-    /** Réglages globaux -- action {@code boss.community.settings.set}. */
+    /**
+     * Réglages globaux -- action {@code boss.community.settings.set}. {@code participationRadius}
+     * {@code null} = distance de participation inchangée (#176).
+     */
     default CompletableFuture<MutationResult> communityBossSettingsSet(boolean enabled, int intervalMinutes,
-                                                                       int maxActive) {
+                                                                       int maxActive, Integer participationRadius) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
                 "Boss communautaires indisponibles sur ce serveur."));
     }

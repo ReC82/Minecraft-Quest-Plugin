@@ -39,6 +39,7 @@ public final class CommunityBossSettingsStore {
         yaml.set("enabled", settings.enabled());
         yaml.set("interval-minutes", settings.intervalMinutes());
         yaml.set("max-active", settings.maxActive());
+        yaml.set("participation-radius", settings.participationRadius());
         Files.createDirectories(file.getParent());
         Path tmp = file.resolveSibling("." + file.getFileName() + ".tmp");
         Files.writeString(tmp, "# Boss communautaires du Wild — édité via le Control Panel (issue #175).\n"
@@ -51,6 +52,19 @@ public final class CommunityBossSettingsStore {
         this.current = settings;
     }
 
+    /** Une distance hors bornes ne doit pas mettre le scheduler en pause : seule elle revient au défaut. */
+    private int participationRadius(YamlConfiguration yaml) {
+        int radius = yaml.getInt("participation-radius", CommunityBossSettings.DEFAULT_PARTICIPATION_RADIUS);
+        if (radius < CommunityBossSettings.MIN_PARTICIPATION_RADIUS
+                || radius > CommunityBossSettings.MAX_PARTICIPATION_RADIUS) {
+            logger.warn("mobs/community-bosses.yml : participation-radius {} hors bornes ({} à {}), {} utilisé.",
+                    radius, CommunityBossSettings.MIN_PARTICIPATION_RADIUS,
+                    CommunityBossSettings.MAX_PARTICIPATION_RADIUS, CommunityBossSettings.DEFAULT_PARTICIPATION_RADIUS);
+            return CommunityBossSettings.DEFAULT_PARTICIPATION_RADIUS;
+        }
+        return radius;
+    }
+
     private CommunityBossSettings load() {
         if (!Files.exists(file)) {
             return CommunityBossSettings.defaults();
@@ -61,7 +75,8 @@ public final class CommunityBossSettingsStore {
             return new CommunityBossSettings(
                     yaml.getBoolean("enabled", false),
                     yaml.getInt("interval-minutes", CommunityBossSettings.DEFAULT_INTERVAL_MINUTES),
-                    yaml.getInt("max-active", CommunityBossSettings.DEFAULT_MAX_ACTIVE));
+                    yaml.getInt("max-active", CommunityBossSettings.DEFAULT_MAX_ACTIVE),
+                    participationRadius(yaml));
         } catch (Exception e) {
             logger.warn("Impossible de charger mobs/community-bosses.yml, scheduler désactivé par défaut : {}",
                     e.getMessage());

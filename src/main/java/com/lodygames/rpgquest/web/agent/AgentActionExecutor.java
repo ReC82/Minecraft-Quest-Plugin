@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.content.pack.ContentFamily;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import com.lodygames.rpgquest.dialogue.model.ActionType;
 import com.lodygames.rpgquest.encounter.EncounterTemplateParser;
+import com.lodygames.rpgquest.mob.community.CommunityBossSettings;
 import com.lodygames.rpgquest.player.PlayerResetService.ResetScope;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import java.util.ArrayList;
@@ -984,6 +985,7 @@ public final class AgentActionExecutor {
                 row.put("defeatedAt", d.defeatedAtMillis());
                 row.put("world", d.world());
                 row.put("biome", d.biome());
+                row.put("radius", d.radius());
                 row.put("killerName", d.killerName());
                 row.put("test", d.test());
                 row.put("participants", participants);
@@ -997,6 +999,7 @@ public final class AgentActionExecutor {
             details.put("enabled", view.enabled());
             details.put("intervalMinutes", view.intervalMinutes());
             details.put("maxActive", view.maxActive());
+            details.put("participationRadius", view.participationRadius());
             if (view.nextDueMillis() != null) { // Map.copyOf de l'outcome refuse les valeurs nulles.
                 details.put("nextDue", view.nextDueMillis());
             }
@@ -1048,7 +1051,18 @@ public final class AgentActionExecutor {
         if (max == null || max < 1 || max > 10) {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « max_active » invalide (1 à 10)."));
         }
-        return actions.communityBossSettingsSet(enabled, interval, max).thenApply(r -> toOutcome(action, r))
+        Integer radius = null; // absent = inchangé (panel antérieur à #176)
+        String radiusRaw = action.param("participation_radius");
+        if (radiusRaw != null && !radiusRaw.isBlank()) {
+            radius = parseOptionalInt(radiusRaw);
+            if (radius == null || radius < CommunityBossSettings.MIN_PARTICIPATION_RADIUS
+                    || radius > CommunityBossSettings.MAX_PARTICIPATION_RADIUS) {
+                return done(AgentActionOutcome.rejected(action.id(), "Paramètre « participation_radius » invalide ("
+                        + CommunityBossSettings.MIN_PARTICIPATION_RADIUS + " à "
+                        + CommunityBossSettings.MAX_PARTICIPATION_RADIUS + " blocs)."));
+            }
+        }
+        return actions.communityBossSettingsSet(enabled, interval, max, radius).thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

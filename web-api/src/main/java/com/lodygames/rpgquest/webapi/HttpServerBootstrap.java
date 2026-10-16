@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.webapi;
 import com.lodygames.rpgquest.webapi.account.AccountPagesHandler;
 import com.lodygames.rpgquest.webapi.account.AccountService;
 import com.lodygames.rpgquest.webapi.account.LinkConfirmHandler;
+import com.lodygames.rpgquest.webapi.ingest.SnapshotIngestHandler;
 import com.lodygames.rpgquest.webapi.api.AnnouncementsHandler;
 import com.lodygames.rpgquest.webapi.api.CatalogHandler;
 import com.lodygames.rpgquest.webapi.api.HealthHandler;
@@ -124,6 +125,9 @@ public final class HttpServerBootstrap {
                     new LinkConfirmHandler(accountService, config.accounts().linkToken())));
         }
 
+        // #421 : instantané poussé par le serveur Minecraft, authentifié par son jeton dédié.
+        server.createContext(SnapshotIngestHandler.PATH, pipeline.wrap(false, new SnapshotIngestHandler(config.snapshotFile(),
+                config.snapshotIngest(), Clock.systemUTC())));
         server.createContext("/api/", pipeline.wrap(true, new NotFoundHandler()));
 
         // Portail public (mission point 8) : jamais authentifié, jamais de connexion joueur (point 11).

@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi;
 
 import com.lodygames.rpgquest.webapi.account.AccountSettings;
+import com.lodygames.rpgquest.webapi.ingest.SnapshotIngestSettings;
 import com.lodygames.rpgquest.webapi.privacy.AgePolicy;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,13 +23,15 @@ public final class WebApiConfigLoader {
     public static final String WEBHOOK_SECRET_ENV = "RPGQUEST_STORE_WEBHOOK_SECRET";
     /** Jeton dédié à {@code POST /api/link/confirm} (#53), jamais le jeton général de l'API. */
     public static final String LINK_TOKEN_ENV = "RPGQUEST_PORTAL_LINK_TOKEN";
+    /** Jeton dédié à {@code POST /api/snapshot} (#421), distinct de tous les autres. */
+    public static final String SNAPSHOT_TOKEN_ENV = "RPGQUEST_PORTAL_SNAPSHOT_TOKEN";
 
     private WebApiConfigLoader() {
     }
 
     public static WebApiConfig load() throws IOException {
         return load(resolveConfigPath(), System.getenv(TOKEN_ENV), System.getenv(WEBHOOK_SECRET_ENV),
-                System.getenv(LINK_TOKEN_ENV));
+                System.getenv(LINK_TOKEN_ENV), System.getenv(SNAPSHOT_TOKEN_ENV));
     }
 
     static Path resolveConfigPath() {
@@ -42,6 +45,11 @@ public final class WebApiConfigLoader {
 
     public static WebApiConfig load(Path propertiesFile, String tokenFromEnv, String webhookSecretFromEnv,
             String linkTokenFromEnv) throws IOException {
+        return load(propertiesFile, tokenFromEnv, webhookSecretFromEnv, linkTokenFromEnv, null);
+    }
+
+    public static WebApiConfig load(Path propertiesFile, String tokenFromEnv, String webhookSecretFromEnv,
+            String linkTokenFromEnv, String snapshotTokenFromEnv) throws IOException {
         Properties properties = new Properties();
         if (Files.exists(propertiesFile)) {
             try (var in = Files.newInputStream(propertiesFile)) {
@@ -66,7 +74,17 @@ public final class WebApiConfigLoader {
         return new WebApiConfig(port, snapshotFile, snapshotMaxAgeSeconds, tokenFromEnv, rateLimitPerMinute, siteTitle,
                 productsFile, storeDatabaseFile, webhookSecretFromEnv, publicBaseUrl, bindAddress, storeEnabled,
                 playerDataPublic, trustProxyHeaders, AgePolicy.fromProperties(properties),
-                accountSettings(properties, publicBaseUrl, linkTokenFromEnv), siteSettings(properties));
+                accountSettings(properties, publicBaseUrl, linkTokenFromEnv), siteSettings(properties),
+                snapshotIngest(properties, snapshotTokenFromEnv));
+    }
+
+    /** Réception de l'instantané (#421) : clé {@code snapshot-ingest-max-bytes}, jeton par l'environnement. */
+    private static SnapshotIngestSettings snapshotIngest(Properties properties, String token) {
+        int maxBytes = parseInt(properties, "snapshot-ingest-max-bytes", SnapshotIngestSettings.DEFAULT_MAX_BYTES);
+        if (maxBytes < 64 * 1024 || maxBytes > 8 * 1024 * 1024) {
+            throw new IllegalStateException("« snapshot-ingest-max-bytes » doit être compris entre 65536 et 8388608.");
+        }
+        return new SnapshotIngestSettings(token, maxBytes);
     }
 
     /** Portail public (#56) : clés {@code news-dir}, {@code server-address}, {@code minecraft-version}. */

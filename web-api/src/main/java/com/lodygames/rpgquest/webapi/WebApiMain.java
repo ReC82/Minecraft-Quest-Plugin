@@ -54,6 +54,11 @@ public final class WebApiMain {
             LOGGER.warning("Aucun jeton de liaison configuré (" + WebApiConfigLoader.LINK_TOKEN_ENV
                     + ") : /api/link/confirm refusera toutes les preuves venues du serveur Minecraft (401).");
         }
+        String snapshotToken = config.snapshotIngest().token();
+        if (snapshotToken == null || snapshotToken.isBlank()) {
+            LOGGER.info("Aucun jeton de réception d'instantané (" + WebApiConfigLoader.SNAPSHOT_TOKEN_ENV
+                    + ") : POST /api/snapshot refuse tout (401), le portail lit seulement " + config.snapshotFile() + ".");
+        }
         if (config.authToken() == null || config.authToken().isBlank()) {
             LOGGER.warning(
                     "Aucun jeton d'authentification configuré (" + WebApiConfigLoader.TOKEN_ENV

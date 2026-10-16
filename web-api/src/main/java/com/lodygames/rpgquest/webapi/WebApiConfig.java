@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.webapi;
 
 import com.lodygames.rpgquest.webapi.account.AccountSettings;
+import com.lodygames.rpgquest.webapi.ingest.SnapshotIngestSettings;
 import com.lodygames.rpgquest.webapi.privacy.AgePolicy;
 import java.nio.file.Path;
 
@@ -23,6 +24,9 @@ import java.nio.file.Path;
  * <p>{@code accounts} (#53) : comptes joueurs et liaison Minecraft, désactivés par défaut.</p>
  *
  * <p>{@code site} (#56) : actualités et informations de connexion du portail public.</p>
+ *
+ * <p>{@code snapshotIngest} (#421) : réception authentifiée de l'instantané poussé par le serveur
+ * Minecraft, fermée sans jeton dédié.</p>
  */
 public record WebApiConfig(
         int port,
@@ -41,8 +45,20 @@ public record WebApiConfig(
         boolean trustProxyHeaders,
         AgePolicy agePolicy,
         AccountSettings accounts,
-        SiteSettings site
+        SiteSettings site,
+        SnapshotIngestSettings snapshotIngest
 ) {
+
+    /** Sans réception d'instantané (#421) : {@code POST /api/snapshot} refuse tout. */
+    public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,
+            int rateLimitPerMinute, String siteTitle, Path productsFile, Path storeDatabaseFile,
+            String webhookSecret, String publicBaseUrl, String bindAddress, boolean storeEnabled,
+            boolean playerDataPublic, boolean trustProxyHeaders, AgePolicy agePolicy, AccountSettings accounts,
+            SiteSettings site) {
+        this(port, snapshotFile, snapshotMaxAgeSeconds, authToken, rateLimitPerMinute, siteTitle, productsFile,
+                storeDatabaseFile, webhookSecret, publicBaseUrl, bindAddress, storeEnabled, playerDataPublic,
+                trustProxyHeaders, agePolicy, accounts, site, SnapshotIngestSettings.disabled());
+    }
 
     /** Sans contenu éditorial explicite (#56) : dossier {@code news} par défaut. */
     public WebApiConfig(int port, Path snapshotFile, long snapshotMaxAgeSeconds, String authToken,

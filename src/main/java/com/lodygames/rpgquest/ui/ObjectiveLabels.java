@@ -79,6 +79,10 @@ public final class ObjectiveLabels {
                             : "Villes distinctes à découvrir")
                     .append(Component.text(o.countMode() == DiscoverWaypointObjective.CountMode.NEW_ONLY
                             ? " — nouvelles découvertes" : " — découvertes déjà acquises incluses"));
+            // Issue #171 : le nom affiché du boss (jamais son identifiant) ; « votre » rappelle que
+            // seul le boss créé pour ce joueur compte.
+            case com.lodygames.rpgquest.quest.model.KillQuestBossObjective o -> Component.text("Vaincre votre boss "
+                    + com.lodygames.rpgquest.mob.MobNames.of(o.mob()));
         };
     }
 
@@ -106,6 +110,7 @@ public final class ObjectiveLabels {
      * binaires — parler à un PNJ, atteindre un lieu — n'affichent pas « 0/1 », qui serait du bruit.
      */
     public static boolean isCountable(QuestObjective objective) {
-        return !(objective instanceof TalkToNpcObjective || objective instanceof ReachLocationObjective);
+        return !(objective instanceof TalkToNpcObjective || objective instanceof ReachLocationObjective
+                || objective instanceof com.lodygames.rpgquest.quest.model.KillQuestBossObjective);
     }
 }

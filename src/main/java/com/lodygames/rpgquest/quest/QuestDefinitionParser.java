@@ -435,7 +435,32 @@ final class QuestDefinitionParser {
                         ? new com.lodygames.rpgquest.quest.model.DiscoverCityObjective(amount, specific ? city : null, mode)
                         : null;
             }
+            // Issue #171 : « mob » désigne un profil de mob (forme courte « ogre » = « rpgquest:ogre »,
+            // comme partout ailleurs). Sa catégorie BOSS / mode QUEST est vérifiée à l'apparition :
+            // les profils se chargent après les quêtes, et un profil manquant est alors signalé au
+            // joueur au lieu de rendre la quête silencieusement impossible.
+            case KILL_QUEST_BOSS -> {
+                NamespacedKey mob = parseMobKey(section.getString("mob"));
+                if (mob == null) {
+                    errors.add(context + ": « mob » est obligatoire (identifiant d'un profil de boss, ex. ogre).");
+                    yield null;
+                }
+                if (section.contains("amount") && section.getInt("amount", 1) != 1) {
+                    errors.add(context + ": « amount » doit valoir 1 (ou être omis) : un boss de quête est unique.");
+                    yield null;
+                }
+                yield new com.lodygames.rpgquest.quest.model.KillQuestBossObjective(mob);
+            }
         };
+    }
+
+    /** Identifiant de profil de mob ; forme courte = espace {@code rpgquest}. {@code null} si invalide. */
+    static NamespacedKey parseMobKey(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String id = raw.trim().toLowerCase(Locale.ROOT);
+        return NamespacedKey.fromString(id.contains(":") ? id : "rpgquest:" + id);
     }
 
     private QuestObjective parseReachLocation(ConfigurationSection section, String context, List<String> errors) {

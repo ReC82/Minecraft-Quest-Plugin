@@ -183,6 +183,11 @@ public record SpecialMobDefinition(
         return enabled && category == MobCategory.BOSS && bossMode == BossMode.COMMUNITY;
     }
 
+    /** Issue #171 : profil utilisable comme boss de quête personnel (BOSS + QUEST + activé). */
+    public boolean isQuestBoss() {
+        return enabled && category == MobCategory.BOSS && bossMode == BossMode.QUEST;
+    }
+
     /** Copie avec un autre état d'activation (bascule panel) -- préserve tous les autres champs. */
     public SpecialMobDefinition withEnabled(boolean value) {
         return new SpecialMobDefinition(id, category, value, entityType, displayName, spawnChance, allowedWorlds,

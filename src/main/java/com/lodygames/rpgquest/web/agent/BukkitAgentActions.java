@@ -5778,6 +5778,8 @@ public final class BukkitAgentActions implements AgentActions {
             case DiscoverWaypointObjective o -> null;
             // Issue #178 : la ville précise (identifiant stable) ; null pour « X villes distinctes ».
             case com.lodygames.rpgquest.quest.model.DiscoverCityObjective o -> o.city();
+            // Issue #171 : le profil de boss (identifiant stable).
+            case com.lodygames.rpgquest.quest.model.KillQuestBossObjective o -> o.mob().asString();
         };
     }
 

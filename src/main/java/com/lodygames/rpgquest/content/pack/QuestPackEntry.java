@@ -68,6 +68,7 @@ public record QuestPackEntry(
      *   <li>{@code REACH_LOCATION} : {@code world} + {@code x}/{@code y}/{@code z} + {@code radius} ;</li>
      *   <li>{@code DISCOVER_WAYPOINT} : {@code amount} + {@code worlds} (optionnel) + {@code countMode}.</li>
      *   <li>{@code DISCOVER_CITY} (issue #178) : {@code city} OU {@code amount}, + {@code countMode}.</li>
+     *   <li>{@code KILL_QUEST_BOSS} (issue #171) : {@code mob} (identifiant du profil de boss).</li>
      * </ul>
      *
      * <p>{@code worlds} est distinct de {@code world} (singulier, propre à {@code REACH_LOCATION}) :
@@ -76,10 +77,23 @@ public record QuestPackEntry(
      */
     public record Objective(String type, String material, String entity, String npc, String world,
                             Integer amount, Double x, Double y, Double z, Double radius,
-                            List<String> worlds, String countMode, String city) {
+                            List<String> worlds, String countMode, String city, String mob) {
 
         public Objective {
             worlds = worlds == null ? List.of() : List.copyOf(worlds);
+        }
+
+        /** Forme sans boss (tous les types antérieurs à #171). */
+        public Objective(String type, String material, String entity, String npc, String world,
+                         Integer amount, Double x, Double y, Double z, Double radius,
+                         List<String> worlds, String countMode, String city) {
+            this(type, material, entity, npc, world, amount, x, y, z, radius, worlds, countMode, city, null);
+        }
+
+        /** Boss de quête personnel (issue #171) : {@code mob} = profil de boss en mode QUEST. */
+        public static Objective questBoss(String mob) {
+            return new Objective("KILL_QUEST_BOSS", null, null, null, null, null,
+                    null, null, null, null, List.of(), null, null, mob);
         }
 
         /** Forme sans ville (tous les types antérieurs à #178). */

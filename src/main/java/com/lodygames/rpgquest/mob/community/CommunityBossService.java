@@ -508,6 +508,37 @@ public final class CommunityBossService implements PluginService, Listener {
         });
     }
 
+    /**
+     * Issue #171 — emplacement d'un boss de <strong>quête</strong> : exactement les règles de placement
+     * sûr des boss communautaires ({@link #acceptable} : monde Wild autorisé par le profil, biome, zone,
+     * ville, distance aux waypoints et aux joueurs ; surface naturelle si le réglage l'exige), avec la
+     * même recherche bornée et ses chargements de chunk ponctuels asynchrones. Repères : le joueur
+     * propriétaire d'abord s'il est dans le Wild, puis les waypoints actifs du Wild au hasard.
+     *
+     * <p>Ne touche ni aux verrous, ni au plafond, ni à l'échéance des boss communautaires : seul le
+     * placement est partagé, jamais un second moteur de recherche. Résultat délivré sur le thread
+     * principal ; vide si aucun repère ou aucun emplacement sûr.</p>
+     */
+    public CompletableFuture<Optional<Location>> findQuestBossSpot(SpecialMobDefinition def, Player owner) {
+        List<Location> usable = new ArrayList<>();
+        for (Waypoint w : waypoints.get()) {
+            World world = w.active() ? Bukkit.getWorld(w.world()) : null;
+            if (world != null && isWildWorld(world) && worldAllowed(def, world)) {
+                usable.add(new Location(world, w.x() + 0.5, w.y(), w.z() + 0.5));
+            }
+        }
+        java.util.Collections.shuffle(usable, new java.util.Random(random.nextLong()));
+        if (owner != null && wildPlayers().contains(owner) && worldAllowed(def, owner.getWorld())) {
+            usable.addFirst(owner.getLocation());
+        }
+        try {
+            return findSpot(def, usable.subList(0, Math.min(ANCHORS_TRIED + 1, usable.size())), 0,
+                    settings().surfaceOnly());
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
     private Outcome capReached(CommunityBossSettings settings) {
         return Outcome.fail("CAP_REACHED", "Plafond atteint (" + instances.size() + "/" + settings.maxActive()
                 + " boss actif(s)) : aucune nouvelle apparition.");

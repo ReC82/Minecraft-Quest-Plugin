@@ -156,6 +156,32 @@ public final class QuestJournalService implements QuestJournalUi {
         trackedDisplay.clearAll();
     }
 
+    /**
+     * Issue #171 — ligne d'indication sous un objectif (boss de quête : où il est, ou pourquoi il
+     * n'est pas encore là). Lecture seule, thread principal.
+     */
+    @FunctionalInterface
+    public interface ObjectiveHints {
+        Optional<Component> hint(UUID playerId, NamespacedKey questId, String stepId, int objectiveIndex);
+    }
+
+    private volatile ObjectiveHints objectiveHints = (playerId, questId, stepId, index) -> Optional.empty();
+
+    public void setObjectiveHints(ObjectiveHints objectiveHints) {
+        this.objectiveHints = objectiveHints;
+    }
+
+    /** Issue #171 : ajoute l'indication de l'objectif {@code index} s'il en a une (boss de quête seulement). */
+    private void addObjectiveHint(List<Component> lore, UUID playerId, QuestDefinition quest, QuestState state,
+                                  String stepId, QuestObjective objective, int index) {
+        if (state == QuestState.ACTIVE
+                && objective instanceof com.lodygames.rpgquest.quest.model.KillQuestBossObjective) {
+            objectiveHints.hint(playerId, quest.id(), stepId, index)
+                    .map(line -> line.decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false))
+                    .ifPresent(lore::add);
+        }
+    }
+
     /** Issue #475 — voir {@link #contextLabels}. Texte brut, jamais un identifiant interne. */
     public void setContextLabels(Function<NamespacedKey, Optional<String>> contextLabels) {
         this.contextLabels = contextLabels;
@@ -687,6 +713,9 @@ public final class QuestJournalService implements QuestJournalUi {
         int shown = Math.min(progress.size(), MAX_COMPACT_COUNTERS);
         for (int i = 0; i < shown; i++) {
             lore.add(counterLine(progress.get(i), i < objectives.size() ? objectives.get(i) : null));
+            if (i < objectives.size()) {
+                addObjectiveHint(lore, playerId, quest, state, stepView.stepId(), objectives.get(i), i);
+            }
         }
         if (progress.size() > shown) {
             lore.add(MM.deserialize("<dark_gray>+<n> autre(s) — voir les détails</dark_gray>",
@@ -752,6 +781,9 @@ public final class QuestJournalService implements QuestJournalUi {
             for (int i = 0; i < stepView.objectives().size(); i++) {
                 lore.add(counterLine(stepView.objectives().get(i),
                         i < objectives.size() ? objectives.get(i) : null));
+                if (i < objectives.size()) {
+                    addObjectiveHint(lore, playerId, quest, state, stepView.stepId(), objectives.get(i), i);
+                }
             }
         }
 

@@ -388,6 +388,8 @@ class CommunityBossRewardsTest {
         defeat();
         assertTrue(sink.declared.isEmpty());
         assertTrue(rewards.recentDefeats().get(0).rewardStatus().contains("désactivés"));
+        // #177 tranche 2 : même règle que les quêtes, le joueur éligible le sait.
+        assertTrue(messages(alice).contains("récompenses sont désactivées"));
 
         sink.enabled = true;
         profileRewards.clear();
@@ -483,5 +485,8 @@ class CommunityBossRewardsTest {
         List<String> draws = rewards.recentDefeats().get(0).draws();
         assertTrue(draws.get(0).contains("désactivée"), draws.toString());
         assertTrue(draws.get(1).contains("inconnue"), draws.toString());
+        String told = messages(alice);
+        assertTrue(told.contains("Tirage « off » indisponible") && told.contains("Tirage « missing » indisponible"),
+                told);
     }
 }

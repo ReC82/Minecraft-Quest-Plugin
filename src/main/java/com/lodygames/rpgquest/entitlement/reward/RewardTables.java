@@ -10,6 +10,13 @@ import java.util.UUID;
  */
 public interface RewardTables {
 
+    /**
+     * Interrupteur {@code enabled} de {@code entitlements.yml} (fichier absent ou invalide = faux).
+     * Désactivé : aucun tirage, ni pour une quête ni pour un boss, et le joueur en est averti
+     * (issue #177, même règle des deux côtés).
+     */
+    boolean enabled();
+
     Optional<RewardTable> table(String id);
 
     /** Libellé du catalogue, ou la clé elle-même si elle y est inconnue. */

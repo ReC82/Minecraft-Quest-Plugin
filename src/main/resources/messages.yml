@@ -70,6 +70,7 @@ quest:
   reward-line-table-win: "<gold> + <item></gold> <gray>(tirage « <table> »)</gray>"
   reward-line-table-none: "<gray> + Tirage « <table> » : pas de gain cette fois</gray>"
   reward-line-table-unavailable: "<gray> + Tirage « <table> » indisponible — signale-le à un administrateur</gray>"
+  reward-line-table-disabled: "<gray> + Tirage « <table> » : récompenses aléatoires désactivées sur le serveur, aucun tirage — signale-le à un administrateur</gray>"
   reward-money-credited: "<gold>Récompense de</gold> <white><quest></white> <gold>:</gold> <yellow>+<amount> <currency></yellow> <gray>— solde :</gray> <white><balance></white>"
   reward-money-failed: "<red>Ta récompense en <currency> n'a pas pu être créditée. Rien n'a été perdu de ta progression : signale-le à un administrateur.</red>"
   # Issue #166 : récompense « Cœur supplémentaire ». Envoyés APRÈS l'écriture du droit en base,

@@ -1468,13 +1468,21 @@ public final class QuestProgressEngine implements PluginService {
     /**
      * Tire chaque table {@code TABLE} de la quête (issue #177) et prépare un droit à récompense par
      * gain (source {@code QUEST}, clé {@code quest:<jeton>:<table>.<entrée>:<joueur>}). Table inconnue
-     * ou désactivée : aucun tirage, le joueur et le journal le disent — jamais un gain inventé.
+     * ou désactivée, ou droits à récompense désactivés ({@code entitlements.yml}) : aucun tirage, le
+     * joueur et le journal le disent — jamais un gain inventé. Même règle que les boss communautaires.
      */
     private List<RewardEntitlement.Declaration> drawTables(UUID playerId, QuestDefinition quest, String token,
                                                            List<Component> lines) {
         List<RewardEntitlement.Declaration> drawn = new ArrayList<>();
         for (QuestReward reward : quest.rewards()) {
             if (!(reward instanceof TableReward tableReward)) {
+                continue;
+            }
+            if (rewardTables != null && !rewardTables.enabled()) {
+                logger.warn("Quête {} : droits à récompense désactivés (entitlements.yml) — aucun tirage « {} » pour {}.",
+                        quest.id(), tableReward.tableId(), playerId);
+                lines.add(messagesService.current().format("quest.reward-line-table-disabled",
+                        Placeholder.unparsed("table", tableReward.tableId())));
                 continue;
             }
             Optional<RewardTable> table = rewardTables == null ? Optional.empty()

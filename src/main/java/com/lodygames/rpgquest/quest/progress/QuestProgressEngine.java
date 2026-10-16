@@ -170,6 +170,14 @@ public final class QuestProgressEngine implements PluginService {
         this.npcNames = npcNames;
     }
 
+    /**
+     * Issue #475 — même résolution de nom affiché de PNJ que l'annonce des objectifs (#70), pour que
+     * le journal nomme le destinataire d'une remise (« à remettre à Guide ») sans seconde règle.
+     */
+    public Function<String, Optional<String>> npcNameResolver() {
+        return npcNames;
+    }
+
     public void setCustomItemRegistry(YamlCustomItemRegistry customItemRegistry) {
         this.customItemRegistry = customItemRegistry;
     }

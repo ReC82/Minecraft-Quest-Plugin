@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Journal : quêtes de palier du kit reconnaissables, PNJ des remises nommé (#475)
+
+### Changement
+
+Journal des quêtes : étiquette « Amélioration du kit — palier N » sur la quête de déblocage de chaque palier
+(d'après `starter-tool-kit.tiers[].unlock-quest`), PNJ destinataire nommé sur les lignes de remise
+(« Bâton (à remettre à Guide) 1/4 »), et une quête en cours dont la définition manque reste visible
+(« Quête momentanément indisponible ») au lieu de disparaître, avec un avertissement dans les logs.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement. Aucune migration, aucun fichier de configuration ni de contenu
+modifié, aucune donnée joueur écrite (dépôts partiels, paliers et progressions inchangés).
+
+### Sauvegarde préalable
+
+JAR précédent (sauvegarde datée automatique de `deploy-verygames.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh`.
+
+### Validation
+
+TC-335 (PENDING MANUAL VALIDATION). Log éventuel : `Journal de … : quête(s) en cours sans définition chargée`.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer ; aucune donnée à restaurer.
+
+---
+
 ## 2026-10-16 - Boss communautaires : apparition sans joueur dans le Wild, contour, surface (#471)
 
 ### Changement

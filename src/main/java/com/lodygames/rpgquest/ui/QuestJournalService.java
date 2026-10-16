@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -111,6 +112,13 @@ public final class QuestJournalService implements QuestJournalUi {
     private final Map<UUID, JournalSession> openSessions = new ConcurrentHashMap<>();
     private final Map<UUID, NamespacedKey> trackedByPlayer = new ConcurrentHashMap<>();
 
+    /**
+     * Issue #475 — étiquette de contexte lisible d'une quête (« Amélioration du kit — palier 2 »),
+     * branchée au démarrage. Sans elle, une quête de palier du kit s'affichait sous son seul titre
+     * narratif (« Explorateur »), impossible à reconnaître comme l'amélioration du kit.
+     */
+    private volatile Function<NamespacedKey, Optional<String>> contextLabels = id -> Optional.empty();
+
     public QuestJournalService(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressEngine questProgressEngine,
                                 PlayerVariableRepository variableRepository, YamlCustomItemRegistry customItemRegistry,
                                 EconomyService economyService, JournalConfig config) {
@@ -146,6 +154,11 @@ public final class QuestJournalService implements QuestJournalUi {
         }
         trackedByPlayer.clear();
         trackedDisplay.clearAll();
+    }
+
+    /** Issue #475 — voir {@link #contextLabels}. Texte brut, jamais un identifiant interne. */
+    public void setContextLabels(Function<NamespacedKey, Optional<String>> contextLabels) {
+        this.contextLabels = contextLabels;
     }
 
     /** Listener Bukkit unique (clic/drag/fermeture/connexion/déconnexion) à enregistrer via {@code PlayerListenerService}. */
@@ -286,27 +299,28 @@ public final class QuestJournalService implements QuestJournalUi {
             Map<NamespacedKey, QuestState> states = statesFuture.join();
             Map<NamespacedKey, Duration> cooldowns = cooldownsFuture.join();
             Optional<Long> balance = balanceFuture.join();
-            List<QuestDefinition> matching = questEngine.quests().stream()
-                    .filter(quest -> tabMatches(tab, states.getOrDefault(quest.id(), QuestState.NOT_STARTED)))
-                    .sorted(Comparator.comparing(quest -> quest.title().base(), String.CASE_INSENSITIVE_ORDER))
-                    .toList();
+            List<NamespacedKey> matching = journalEntries(playerId, tab, states);
 
             int pageCount = JournalPagination.pageCount(matching.size());
             int page = JournalPagination.clampPage(requestedPage, pageCount);
-            List<QuestDefinition> pageItems = JournalPagination.pageOf(matching, page);
-            List<NamespacedKey> pageIds = pageItems.stream().map(QuestDefinition::id).toList();
+            List<NamespacedKey> pageIds = JournalPagination.pageOf(matching, page);
 
             JournalInventoryHolder holder = new JournalInventoryHolder(JournalKind.LIST);
             Inventory inventory = Bukkit.createInventory(holder, LIST_SIZE, MM.deserialize(TITLE_LIST));
             holder.bind(inventory);
 
             renderChrome(inventory, tab, page, pageCount, balance);
-            for (int i = 0; i < pageItems.size(); i++) {
-                QuestDefinition quest = pageItems.get(i);
-                QuestState state = states.getOrDefault(quest.id(), QuestState.NOT_STARTED);
-                boolean tracked = quest.id().equals(trackedByPlayer.get(playerId));
+            for (int i = 0; i < pageIds.size(); i++) {
+                NamespacedKey questId = pageIds.get(i);
+                Optional<QuestDefinition> quest = questEngine.find(questId);
+                if (quest.isEmpty()) {
+                    inventory.setItem(CONTENT_SLOTS[i], unavailableIcon());
+                    continue;
+                }
+                QuestState state = states.getOrDefault(questId, QuestState.NOT_STARTED);
+                boolean tracked = questId.equals(trackedByPlayer.get(playerId));
                 inventory.setItem(CONTENT_SLOTS[i],
-                        buildIcon(playerId, quest, state, cooldownOf(cooldowns, quest.id()), tracked, false));
+                        buildIcon(playerId, quest.get(), state, cooldownOf(cooldowns, questId), tracked, false));
             }
             // openInventory AVANT d'enregistrer la session : quand il remplace un menu déjà ouvert,
             // il déclenche un InventoryCloseEvent SYNCHRONE pour l'ancien inventaire, que
@@ -320,6 +334,56 @@ public final class QuestJournalService implements QuestJournalUi {
             logger.error("Impossible de construire le journal de quêtes pour {}", playerId, error);
             return null;
         });
+    }
+
+    /**
+     * Issue #475 — les entrées d'un onglet viennent de la <strong>progression du joueur</strong>,
+     * plus seulement des définitions chargées. Une quête en cours dont la définition manque (retirée
+     * ou en échec de chargement après une publication) disparaissait sans un mot alors que sa
+     * progression existe toujours ; elle reste désormais visible dans « en cours » sous une icône
+     * « indisponible », et un avertissement est journalisé pour l'administrateur. Une quête
+     * <em>terminée</em> retirée, elle, n'a plus rien à montrer : elle n'est pas listée.
+     *
+     * <p>Ordre stable : quêtes connues par titre, puis les indisponibles par identifiant.</p>
+     */
+    private List<NamespacedKey> journalEntries(UUID playerId, JournalTab tab, Map<NamespacedKey, QuestState> states) {
+        List<QuestDefinition> known = new ArrayList<>();
+        List<NamespacedKey> unavailable = new ArrayList<>();
+        states.forEach((questId, state) -> {
+            if (!tabMatches(tab, state)) {
+                return;
+            }
+            Optional<QuestDefinition> quest = questEngine.find(questId);
+            if (quest.isPresent()) {
+                known.add(quest.get());
+            } else if (tab == JournalTab.IN_PROGRESS) {
+                unavailable.add(questId);
+            }
+        });
+        if (!unavailable.isEmpty()) {
+            logger.warn("Journal de {} : quête(s) en cours sans définition chargée {} — progression conservée, "
+                    + "vérifier la publication du contenu.", playerId, unavailable);
+        }
+        List<NamespacedKey> entries = new ArrayList<>();
+        known.stream()
+                .sorted(Comparator.comparing((QuestDefinition quest) -> quest.title().base(), String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(quest -> quest.id().toString()))
+                .forEach(quest -> entries.add(quest.id()));
+        unavailable.stream().sorted(Comparator.comparing(NamespacedKey::toString)).forEach(entries::add);
+        return entries;
+    }
+
+    /** Icône d'une quête en cours dont la définition est introuvable (voir {@link #journalEntries}). */
+    private ItemStack unavailableIcon() {
+        ItemStack stack = new ItemStack(Material.PAPER);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(MM.deserialize("<gray>Quête momentanément indisponible</gray>"));
+        meta.lore(List.of(
+                MM.deserialize("<white>État :</white> <yellow>Active</yellow>"),
+                MM.deserialize("<gray>Ta progression est conservée.</gray>"),
+                MM.deserialize("<dark_gray>Elle réapparaîtra dès que la quête sera de nouveau publiée.</dark_gray>")));
+        stack.setItemMeta(meta);
+        return stack;
     }
 
     private boolean tabMatches(JournalTab tab, QuestState state) {
@@ -611,6 +675,7 @@ public final class QuestJournalService implements QuestJournalUi {
                                              Duration cooldown, boolean tracked) {
         List<Component> lore = new ArrayList<>();
         lore.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
+        addContextLine(lore, quest);
         addReplayLines(lore, quest, state, cooldown);
 
         QuestStepProgressView stepView = stepViewFor(playerId, quest, state);
@@ -642,8 +707,10 @@ public final class QuestJournalService implements QuestJournalUi {
      */
     private Component counterLine(ObjectiveProgressView progress, QuestObjective objective) {
         boolean done = progress.current() >= progress.total();
+        // Issue #475 : une remise nomme son PNJ destinataire (« à remettre à Guide »), même règle
+        // que l'annonce des objectifs (#70) — le joueur sait à qui apporter les objets restants.
         Component name = objective != null
-                ? ObjectiveLabels.targetName(objective)
+                ? ObjectiveLabels.targetName(objective, questProgressEngine.npcNameResolver())
                 : Component.text(progress.description());
         Component line = Component.text("• ", done ? NamedTextColor.GREEN : NamedTextColor.GRAY)
                 .append(name.colorIfAbsent(done ? NamedTextColor.GREEN : NamedTextColor.GRAY));
@@ -673,6 +740,7 @@ public final class QuestJournalService implements QuestJournalUi {
         lore.add(MM.deserialize("<white>Catégorie :</white> <gray><category></gray>",
                 Placeholder.unparsed("category", quest.category())));
         lore.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
+        addContextLine(lore, quest);
         addReplayLines(lore, quest, state, cooldown);
         JournalReplayText.cadenceLine(quest).map(MM::deserialize).ifPresent(lore::add);
 
@@ -710,6 +778,12 @@ public final class QuestJournalService implements QuestJournalUi {
             }
         }
         return lore;
+    }
+
+    /** Issue #475 — « Amélioration du kit — palier 2 » sous l'état, quand la quête en a une. */
+    private void addContextLine(List<Component> lore, QuestDefinition quest) {
+        contextLabels.apply(quest.id()).filter(label -> !label.isBlank()).ifPresent(label ->
+                lore.add(MM.deserialize("<aqua><label></aqua>", Placeholder.unparsed("label", label))));
     }
 
     /**

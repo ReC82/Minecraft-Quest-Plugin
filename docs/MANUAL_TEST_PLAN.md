@@ -6392,6 +6392,24 @@ Wild**, en survie, près de waypoints existants.
     → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
     Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
 
+### TC-335 — Quête d'amélioration du kit dans le journal (issue #475, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de #475 sur **DEV**, un compte au palier de kit N (variable `STARTER_KIT_TIER`), sans la
+quête du palier N+1 acceptée. Ne jamais remettre à zéro un compte réel pour ce test.
+
+1.  Ouvrir le journal (clic droit sur le Journal des quêtes). **Attendu** : la quête du palier suivant n'y
+    est pas (non acceptée = invisible).
+2.  Guide → « Comment améliorer mon kit ? » → « Commencer l'amélioration ». Rouvrir le journal.
+    **Attendu** : onglet « Quêtes en cours », la quête (titre narratif, ex. « Explorateur ») porte la ligne
+    « Amélioration du kit — palier N+1 » et une ligne par matériau, ex. « Bâton (à remettre à Guide) 0/4 ».
+3.  Ramasser une partie des matériaux sans les remettre. **Attendu** : compteurs inchangés.
+4.  Guide → « J'ai des matériaux ». **Attendu** : les compteurs du journal (ouvert ou rouvert) montrent les
+    quantités remises, le reste visible d'un coup d'œil. Clic gauche = détails (tous les objectifs), clic
+    droit = suivi (bossbar).
+5.  Mourir, se déconnecter / reconnecter. **Attendu** : mêmes compteurs.
+6.  Remettre le reste. **Attendu** : palier débloqué, la quête quitte « en cours » et apparaît dans
+    « Quêtes terminées » ; le palier suivant devient proposable par le Guide.
+
 ### TC-334 — Boss communautaire sans joueur dans le Wild, contour, surface (issue #471, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #471, sur **DEV seulement**, au moins un waypoint actif dans le

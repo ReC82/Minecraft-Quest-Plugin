@@ -58,6 +58,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > par joueur. Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu,
 > TC-304/TC-305 PlugAdmin, TC-306 quêtes secondaires, TC-307 journal).
 >
+> **Journal et quêtes de kit (#475)** : le journal liste les quêtes depuis la progression du joueur
+> (une quête en cours sans définition chargée reste visible, « indisponible », jamais masquée),
+> étiquette « Amélioration du kit — palier N » sur les quêtes de palier, PNJ nommé sur les lignes
+> de remise. Validation : PENDING (TC-335).
+>
 > **Mode bypass administrateur explicite (#35, corrige #321, 14/10/2026)** — être OP ne contourne
 > plus aucune règle de jeu (accès et règles du monde Claims, claims d'autrui, zones protégées,
 > combat au Hub). `/rpgadmin bypass on|off|status` (permission `rpgquest.admin.bypass`, défaut OP) ouvre

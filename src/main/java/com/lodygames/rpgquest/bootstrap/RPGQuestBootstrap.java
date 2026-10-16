@@ -1031,6 +1031,11 @@ public final class RPGQuestBootstrap {
         questJournalService = new QuestJournalService(
                 plugin, questEngine, questProgressEngine, variableRepository, customItemRegistry,
                 economyService, configService.current().journal());
+        // Issue #475 : une quête de palier du kit (titre narratif « Explorateur »…) est signalée
+        // comme telle dans le journal, d'après les unlock-quest de config.yml — tout palier.
+        questJournalService.setContextLabels(questId -> configService.current().starterToolKit()
+                .tierUnlockedBy(questId.toString())
+                .map(tier -> "Amélioration du kit — palier " + tier.level()));
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
 

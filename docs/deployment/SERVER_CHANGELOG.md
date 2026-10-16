@@ -72,12 +72,17 @@ téléchargés avant toute action (empreintes dans le rapport de session #461).
 
 ### Déploiement
 
-Voir le rapport `docs/claude-reports/` de l'issue #461 (horodatage, empreintes, sauvegarde).
+Effectué le 2026-10-16 ~14:41 (heure locale) : `scripts/deploy-verygames.sh -y --also
+<réparé>:RPGQuest/mobs/claude_diag_boss.yml` depuis `0895b9a` (merge PR #463, CI verte ; JAR 3 281 826 o,
+SHA-256 `baf04b0b…d5b0`, retéléchargé identique), sauvegardes `rpgquest-20261016T124126Z-predeploy.jar`
+(JAR #177) et `extra-20261016T124126Z/` (profil cassé), `scripts/verygames-restart.sh` (aucun joueur),
+`scripts/plugadmin/deploy.sh`. Les 6 autres profils retéléchargés : inchangés.
 
 ### Validation
 
-`mob.definitions` sans erreur de chargement et `boss.community.status` listant `claude_diag_boss`
-(COMMUNITY, actif, biomes swamp + plains). PENDING MANUAL VALIDATION : TC-332.
+Vérifié : `mob.list` sans erreur de chargement (7 profils) et `boss.community.status` listant
+`claude_diag_boss` (COMMUNITY, actif, biomes swamp + plains), scheduler toujours désactivé, aucun boss
+lancé. PENDING MANUAL VALIDATION : TC-332.
 
 ### Rollback
 

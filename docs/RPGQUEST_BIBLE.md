@@ -140,6 +140,31 @@ Résultat attendu : console `Récompenses : N récompense(s) chargée(s) depuis 
 PlugAdmin : **Joueurs** → fiche → onglet **Monnaie** → **Droits à récompense** : relevé (état réel, essais, dernière erreur, date de remise, motif de révocation), **Déclarer un droit** (récompense du catalogue, référence obligatoire, confirmation ; même référence = rien de plus), **Révoquer** un droit en attente (raison obligatoire). Permissions monnaie (lecture / écriture). Actions agent `entitlement.list`, `entitlement.declare`, `entitlement.revoke`.
 À savoir : absent, invalide ou `enabled: false` = aucune remise ni déclaration (consultation possible) ; fichier invalide refusé en entier. Remise seulement au joueur connecté, tout ou rien (remise sécurisée #318), contrôlée toutes les 30 s et 3 s après la connexion. Jamais deux fois (prise conditionnelle en base) ; un arrêt brutal pile entre la prise et la remise laisse un droit « remis » sans objet — redéclarer avec une nouvelle référence. Un droit remis ne se révoque pas. Récompense d'événement : rang sur la **première** métrique, ex-aequo inclus, exclusions appliquées, profils privés compris. Spécification : [REWARD_ENTITLEMENTS.md](REWARD_ENTITLEMENTS.md).
 
+**Tables de récompenses aléatoires — section `tables:` (issue #177).** Partagées entre quêtes et boss. Par
+identifiant (`[a-z0-9_-]`, 32 caractères) : `label`, `mode` **obligatoire** — `independent` (« chances
+indépendantes » : un tirage par entrée, plusieurs gains ou aucun, la somme peut dépasser 100 %) ou `single`
+(« une récompense maximum » : entrées exclusives, somme ≤ 100 %, le reste = aucun gain ; jamais renormalisé en
+poids relatifs) — `enabled` (défaut `true` ; `false` = aucun tirage, références conservées) et `entries` (1 à 20)
+: `{id: <stable>, reward: <clé de rewards du même fichier>, chance: 12.5}` (pourcentage > 0 et ≤ 100, deux
+décimales au plus, jamais arrondi). Erreur = fichier entier refusé, comme le reste. Exemple :
+[REWARD_ENTITLEMENTS.md §10](REWARD_ENTITLEMENTS.md#10-tables-de-récompenses-aléatoires-177).
+Utilisation : quête → récompense `TABLE` (`table: <id>`) ; boss communautaire → `table:<id>` dans
+`participation-rewards`. Combinables avec les récompenses garanties. **Tirage figé** : graine stable (jeton de la
+complétion de quête, ou entité du boss + joueur), donc un nouvel essai, une reconnexion ou un redémarrage
+retombent sur le même résultat ; chaque gain est un droit à récompense (source `QUEST` ou `BOSS`, clé
+`quest:<jeton>:<table>.<entrée>:<uuid>` / `boss:<entité>:<table>.<entrée>:<uuid>`) dont le libellé figé porte la
+table, sa **version** (empreinte du mode et des entrées) et la chance. Quête : gains écrits dans la **même
+transaction** que la complétion (`reward_entitlements`, pas de migration), remis par les droits à récompense
+(inventaire plein = attente) — la remise exige `enabled: true`, les gains sont enregistrés même sinon. Table
+inconnue ou désactivée : aucun tirage, le joueur voit « Tirage « … » indisponible » (quête) et le journal le dit.
+Objets du catalogue : `enchantments: {sharpness: 3}` (niveau 1–10, 8 au plus ; sur `ENCHANTED_BOOK` l'enchantement
+est **stocké dans le livre**, jamais appliqué à l'équipement du joueur) et `potion: strength` (sur `POTION`,
+`SPLASH_POTION`, `LINGERING_POTION`, `TIPPED_ARROW`) ; clé inconnue à la remise = droit en attente avec l'erreur.
+PlugAdmin : section **Boss communautaires du Wild** → « Tables de récompenses aléatoires » (lecture : mode,
+chances, version, explication des chances réelles, récompense inconnue signalée) et « Tirages » dans les
+victoires récentes ; éditeur de quête → récompense « Tirage au sort ». Édition des tables depuis PlugAdmin :
+non livrée (fichier serveur).
+
 ---
 
 ## 2. Administration RPGQuest (`/rpgadmin`)
@@ -633,6 +658,13 @@ acquis et s'active si le plafond monte. Messages `quest.reward-heart-*` (chat, a
 Le reset joueur conserve les cœurs. Panel : descripteur `HEART` « Cœur supplémentaire » (icône
 cœur), erreur au-delà de 512 ou clé invalide, avertissement au-delà de 5 cœurs.
 
+**Récompense « Tirage au sort » `TABLE` (`table: <id>` — issue #177).** Tire la table de récompenses aléatoires
+`<id>` de `entitlements.yml` (section 1, « Tables de récompenses aléatoires ») **une fois par complétion** ; une
+quête répétable retire à chaque cycle. Résultat figé et écrit dans la transaction de complétion, sous forme de
+droits à récompense (`source = QUEST`, référence = id de la quête) ; annoncé dans le résumé de fin de quête
+(`quest.reward-line-table-win` / `-none` / `-unavailable`), remis juste après (attend si l'inventaire est plein).
+Journal de quête : « Tirage au sort ». Panel : descripteur `TABLE` « Tirage au sort (table de récompenses) ».
+
 **Récompense monétaire `MONEY` (`amount`, entier > 0 — issue #16).** Crédite le **portefeuille
 persistant** du joueur (`wallets`, la même source que `/money`, les marchands, le marché et le
 Control Panel). Elle ne donne **aucun objet** : la monnaie RPGQuest est un solde, et aucun objet
@@ -740,7 +772,7 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - **Formulaire guidé** : sections Général / Prérequis / Objectifs / Récompenses /
   Variables (quête) et Général / Chaîne de quêtes (story). Chaque type d'objectif
   (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`,
-  `REACH_LOCATION`, `DELIVER_ITEM_TO_NPC`, `SMELT_ITEM`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`, `HEART`) est décrit par
+  `REACH_LOCATION`, `DELIVER_ITEM_TO_NPC`, `SMELT_ITEM`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`, `HEART`, `TABLE`) est décrit par
   **un seul descripteur** (`Descriptors`) qui pilote ensemble libellé, description, champs, aide,
   listes proposées et validation. **Choisir le type n'affiche que les champs pertinents** ; le
   changement est immédiat (JavaScript progressif — `panel.js`) et **efface** les valeurs saisies
@@ -5321,7 +5353,12 @@ liste des droits à déclarer à la main.
 apparitions de test comprises. Un boss de quête (#171, non livré) ou un mob spécial ne déclare rien ; la
 progression de quête reste gérée par le moteur de quêtes ; les drops du profil ne sont pas modifiés.
 
-**Traçabilité** : journal serveur (participants, éligibles, exclus et raison) ; PlugAdmin → section
+**Tirages (#177)** : une entrée `table:<id>` dans `participation-rewards` tire la table une fois **par
+participant éligible** (résultat individuel, aucun loot au sol partagé) ; chaque gain = un droit `BOSS`
+(clé `boss:<entité>:<table>.<entrée>:<joueur>`). Le joueur voit ses gains dans « Participation reconnue » ou
+« Tirage « … » : pas de gain cette fois ». Voir « Tables de récompenses aléatoires » (section 1).
+
+**Traçabilité** : journal serveur (participants, éligibles, exclus et raison, résultat de chaque tirage) ; PlugAdmin → section
 « Boss communautaires du Wild » → **Victoires récentes et participants** (10 dernières depuis le
 démarrage : verdict par joueur, récompenses, droits déclarés) ; fiche joueur → Monnaie → Droits à
 récompense (origine « Boss communautaire », état, essais, erreur — durable).

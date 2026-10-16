@@ -1211,7 +1211,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   boss) ; `participation-rewards` (clés `entitlements.yml`) sur le profil → un droit à récompense #422
   `BOSS` par participant éligible (au plus une fois, inventaire plein géré). PlugAdmin : champ dans
   l'éditeur Boss, « Victoires récentes et participants ». Interprétations biome / « encore vivant » à
-  confirmer. Tables de récompenses aléatoires : #177, non livrées.
+  confirmer.
+- **Tables de récompenses aléatoires** (issue #177, PENDING MANUAL VALIDATION) — section `tables:` de
+  `entitlements.yml` (mode explicite `independent` / `single`, chances exactes, version tracée) ;
+  récompense de quête `TABLE` (gains écrits dans la transaction de complétion, source `QUEST`) et
+  `table:<id>` dans `participation-rewards` (un tirage par participant éligible) ; tirage déterministe
+  par graine stable, jamais relancé ; objets du catalogue avec `enchantments` (livre = stocké) et
+  `potion`. PlugAdmin : tables en lecture + tirages (Boss communautaires), « Tirage au sort » dans
+  l'éditeur de quête. Non livré : édition des tables dans PlugAdmin, sélecteur avec recherche.
 - **Économie / Marché / Marchands** — portefeuille, transactions, hôtel des ventes, offres PNJ.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.

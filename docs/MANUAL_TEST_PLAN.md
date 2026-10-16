@@ -6426,3 +6426,53 @@ Deux comptes de test (A et B) dans le Wild, en survie. Un profil Boss jetable en
 6.  Fiche joueur A → Monnaie → Droits à récompense → Lire. **Attendu** : origine « Boss communautaire —
     rpgquest:…@… », état Remis (ou En attente pour le cas 4 avant libération).
 7.  Redémarrer avec un droit en attente (cas 4 non libéré). **Attendu** : remis à la reconnexion, une fois.
+
+### TC-331 — Tables de récompenses aléatoires quêtes / boss (issue #177, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #177, sur **DEV seulement**. `plugins/RPGQuest/entitlements.yml`
+avec `enabled: true`, par exemple :
+
+```yaml
+enabled: true
+rewards:
+  tc177_gem: {label: "Émeraude (test)", items: [{item: EMERALD, amount: 1}]}
+  tc177_book: {label: "Livre Tranchant III (test)", items: [{item: ENCHANTED_BOOK, enchantments: {sharpness: 3}}]}
+  tc177_potion: {label: "Potion de force (test)", items: [{item: POTION, potion: strength}]}
+tables:
+  tc177_sure:
+    label: "Coffre certain (test)"
+    mode: single
+    entries:
+      - {id: book, reward: tc177_book, chance: 100}
+  tc177_mix:
+    label: "Coffre mélangé (test)"
+    mode: independent
+    entries:
+      - {id: gem, reward: tc177_gem, chance: 50}
+      - {id: potion, reward: tc177_potion, chance: 50}
+```
+
+1.  Console après ≤ 1 min : « Récompenses : 3 récompense(s) chargée(s) … activé ». PlugAdmin → Mobs
+    spéciaux & boss → Boss communautaires du Wild → Rafraîchir l'état. **Attendu** : section « Tables de
+    récompenses aléatoires » avec les deux tables, leur mode, « 100 % » / « 50 % », l'explication (« aucun
+    gain : 0 % » ; « Aucun gain : 25,00 % »).
+2.  Fichier invalide : passer `tc177_sure` en `chance: 60` + une 2ᵉ entrée à 50 en mode `single`.
+    **Attendu** : console « ne peut pas dépasser 100 % », fichier entier refusé (fonction désactivée) ;
+    remettre le fichier correct.
+3.  Quête jetable (éditeur de quête PlugAdmin) avec une récompense « Objet » (1 pain) et une récompense
+    « Tirage au sort » `tc177_sure`, publiée sur DEV. La terminer. **Attendu** : résumé de fin « + Livre
+    Tranchant III (test) (tirage « Coffre certain (test) ») », pain reçu, puis « Récompense reçue : … » et un
+    **livre enchanté** Tranchant III (l'épée n'est pas enchantée). Fiche joueur → Monnaie → Droits à
+    récompense : origine quête, libellé « … — table tc177_sure v… (100 %) », état Remis.
+4.  Même quête, inventaire plein avant de la terminer avec la seule place pour le pain… **Attendu** : le
+    livre attend (« libère N emplacements »), rien au sol, reçu après libération, une seule fois.
+5.  Quête répétable avec `tc177_mix` terminée 4 fois. **Attendu** : selon le tirage, 0, 1 ou 2 gains par
+    cycle, « pas de gain cette fois » quand rien n'est tiré ; jamais de doublon dans les droits.
+6.  Récompense « Tirage au sort » vers une table inexistante (`tc177_absente`). **Attendu** : « Tirage
+    « tc177_absente » indisponible — signale-le à un administrateur », aucun droit, avertissement console.
+7.  Boss communautaire : profil Boss → « Récompenses de participation » = `table:tc177_sure` → apparition de
+    test, deux joueurs frappent, boss tué. **Attendu** : chacun reçoit **son** livre (« Participation
+    reconnue … Livre Tranchant III (test) ») ; « Victoires récentes » → ligne « Tirages : A : table
+    « tc177_sure » v… → … ; B : … ».
+8.  Redémarrer DEV avec un gain de tirage en attente (cas 4 non libéré). **Attendu** : remis à la
+    reconnexion, une fois, sans nouveau tirage.

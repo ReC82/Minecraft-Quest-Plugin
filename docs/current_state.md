@@ -144,7 +144,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   annoncé / non actualisé / inconnu). Comptes (#53) faits, désactivés ; moteur d'événements (#57) fait : journal d'activité
 >   générique `stat_activity_log` (mobs tués, pêche ; admin/debug exclus), filtres, règles de
 >   classement, objectif commun, `status: draft|cancelled`, audit `stat_period_audit` (migration
->   **V40**), récompenses déclaratives non livrées ; back-office PlugAdmin à faire.
+>   **V40**), back-office PlugAdmin à faire. Droits à récompense (#422) : tranche 1 livrée,
+>   désactivée (`entitlements.yml` absent) — table `reward_entitlements` (migration **V41**),
+>   déclaration depuis l'archive des événements et depuis la fiche joueur PlugAdmin, remise unique
+>   au joueur connecté par la remise sécurisée #318 ([REWARD_ENTITLEMENTS.md](REWARD_ENTITLEMENTS.md)).
 >   Statistiques (#54) : saisons et événements de classement définis dans `statistics.yml` (absent
 >   par défaut), calculés sur les fenêtres du journal `xp_grants`, figés à leur fin (migration
 >   **V39** : `stat_period_archives`, `stat_period_results`), exclusions par UUID, opérations

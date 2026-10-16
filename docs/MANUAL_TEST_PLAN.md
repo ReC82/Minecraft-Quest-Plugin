@@ -6336,3 +6336,34 @@ pseudo n'est publié (`player-data-public=false`).
 7.  `journalctl -u lodyquests-portal` et `latest.log` : aucun jeton ; `snapshot.json` sur AWS ne
     contient ni UUID, ni IP, ni position.
 8.  Téléphone (≈ 390 px) : bandeaux lisibles, aucun défilement horizontal.
+
+### TC-328 — Droits à récompense : remise unique en jeu (issue #422, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de #422 (migration V41), PlugAdmin à jour. Sur DEV seulement, avec un compte de
+test. Créer `plugins/RPGQuest/entitlements.yml` :
+
+```yaml
+enabled: true
+rewards:
+  test_diamants:
+    label: "Trois diamants de test"
+    items: [{item: DIAMOND, amount: 3}]
+```
+
+1.  Console, sous une minute : `Récompenses : 1 récompense(s) chargée(s) depuis entitlements.yml, activé.`
+2.  PlugAdmin → Joueurs → fiche du compte de test → **Monnaie** → **Droits à récompense** →
+    « Lire les droits du joueur ». **Attendu** : « Aucun droit à récompense », formulaire de déclaration
+    proposant « Trois diamants de test (test_diamants) ».
+3.  Déclarer avec la référence `tc328-a`, joueur **connecté**, inventaire libre. **Attendu**, sous 30 s :
+    « Récompense reçue : Trois diamants de test » et 3 diamants, une fois ; relevé → « Remis » daté.
+4.  Redéclarer `tc328-a`. **Attendu** : « Ce droit existait déjà » ; aucun diamant de plus.
+5.  Remplir les 36 cases, déclarer `tc328-b`. **Attendu** : « Une récompense t'attend » + cases à
+    libérer, rien au sol, relevé « En attente ». Libérer une case : diamants reçus sous 30 s.
+6.  Joueur **déconnecté**, déclarer `tc328-c`, se reconnecter. **Attendu** : remise ~3 s après la
+    connexion.
+7.  Déclarer `tc328-d` joueur déconnecté, puis **Révoquer** (raison « test »). Reconnexion : rien
+    reçu ; relevé « Révoqué — test ». Aucun bouton « Révoquer » sur un droit remis.
+8.  Deux connexions rapides (quitter/revenir pendant la remise) : jamais deux remises du même droit.
+9.  Redémarrer le serveur avec un droit en attente : remise après le redémarrage, une fois.
+10. Remettre `enabled: false` (ou supprimer le fichier) : plus aucune remise ; la fiche dit
+    « Fonction désactivée ».

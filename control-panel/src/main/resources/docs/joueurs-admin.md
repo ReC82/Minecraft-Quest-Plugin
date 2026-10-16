@@ -111,6 +111,17 @@ auteur, résultat. Un aperçu porte sa propre date et ne modifie rien. Hors lign
 progression sont remises à zéro tout de suite ; seul le nettoyage de l'inventaire attend sa
 prochaine connexion.
 
+## Droits à récompense
+
+Onglet **Monnaie** → **Droits à récompense** : ce que le joueur a gagné (événement, concours) et ce
+qu'il en est advenu — *en attente* (avec le nombre d'essais et la dernière erreur, par exemple un
+inventaire plein), *remis* (date) ou *révoqué* (motif). **Déclarer un droit** demande une récompense
+du catalogue `entitlements.yml` et une **référence** (ex. `concours-noel-2026`) : la même référence
+pour le même joueur ne crée jamais un second droit. Le serveur remet la récompense **une seule
+fois**, au joueur connecté qui a la place ; rien n'est jamais jeté au sol. Seul un droit *en attente*
+se révoque. Si la fonction est désactivée sur le serveur, la page le dit et ne propose pas de
+déclaration.
+
 ## Sécurité
 
 - Authentification + permission backend + CSRF sur chaque mutation.

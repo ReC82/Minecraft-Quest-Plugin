@@ -1890,6 +1890,18 @@ sans corriger la logique fonctionnelle « à l'aveugle » (consigne explicite de
     différent (métier, cosmétique...) réutilise la même table
     `player_entitlements` sans migration supplémentaire — seule la clé
     (`entitlement_key`) change.
+-   **`entitlement.reward` (issue #422) n'est pas un avantage mais un
+    droit à récompense** : « tel joueur doit recevoir telle récompense, une
+    fois » (`reward_entitlements`, V41), là où `EntitlementService` stocke un
+    *état* (palier). `RewardEntitlementService` lit le catalogue
+    `entitlements.yml` (`RewardCatalogLoader`, tout ou rien), déclare les
+    droits d'un événement depuis l'archive figée (`EventRewardRecipients`,
+    fonction pure) et les remet : place vérifiée → prise conditionnelle
+    `PENDING → DELIVERED` (`RewardEntitlementRepository#claim`, le nombre de
+    lignes tranche entre sessions et processus) → `ItemDelivery.deliver` →
+    compensation `DELIVERED → PENDING` si la remise n'a pas eu lieu. Un
+    `perk` passe par `EntitlementService` (jamais `backpack`, réservé à
+    `BackpackService`). Spécification : `docs/REWARD_ENTITLEMENTS.md`.
 -   **`database.EntitlementRepository` implémente directement
     l'interface**, sans service métier intermédiaire — contrairement à
     `claim.ClaimService`/`backpack.BackpackService`, un avantage générique

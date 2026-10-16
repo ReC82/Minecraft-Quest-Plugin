@@ -161,8 +161,10 @@ un canal authentifié vers PlugAdmin, puis l'action agent — jamais par du SQL.
 - déclaration depuis l'archive des événements (§6.1) et depuis PlugAdmin (§6.2) ;
 - remise sécurisée (§5) avec garde mémoire, prise conditionnelle et compensation ;
 - actions agent `entitlement.list` (lecture), `entitlement.declare`, `entitlement.revoke` ;
-- page PlugAdmin **Récompenses** : liste filtrable (joueur, statut), déclaration, révocation d'un droit
-  en attente.
+- PlugAdmin : fiche joueur → onglet **Monnaie** → **Droits à récompense** — relevé du joueur (état
+  réel, essais, dernière erreur, dates), déclaration depuis le catalogue réel du serveur, révocation
+  d'un droit en attente (permissions monnaie, confirmation). Une vue globale multi-joueurs n'est pas
+  faite : `entitlement.list` sait déjà lister sans filtre de joueur.
 
 `enabled: false` (ou fichier absent) : aucune déclaration depuis les événements, aucune remise ; la
 liste PlugAdmin reste consultable, la déclaration manuelle est refusée.

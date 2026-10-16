@@ -10533,11 +10533,14 @@ public final class AgentPages {
         sb.append(rewardCatalogBanner(d));
         List<Object> rewards = asList(d.get("rewards"));
         sb.append(rewardCatalogDatalist(rewards));
+        Map<String, String> rewardNames = new java.util.LinkedHashMap<>();
+        rewards.forEach(o -> rewardNames.put(str(asMap(o).get("key")), str(asMap(o).get("label"))
+                + (str(asMap(o).get("summary")).isBlank() ? "" : " — " + str(asMap(o).get("summary")))));
         sb.append(rewardModesHelp());
         if (canWrite && writable) {
             sb.append("<div class=\"collapse\" id=\"rt-new\"><div class=\"card card-body npc-formcard\">")
                     .append("<p class=\"npc-fs-h\">Nouvelle table</p>")
-                    .append(rewardTableForm(session, agentId, null, "rt-new"))
+                    .append(rewardTableForm(session, agentId, null, "rt-new", rewardNames))
                     .append("</div></div>");
         }
         List<Object> tables = asList(d.get("tables"));
@@ -10547,7 +10550,7 @@ public final class AgentPages {
                     : "Aucune table."));
         }
         for (Object o : tables) {
-            sb.append(rewardTableCard(session, agentId, asMap(o), canWrite && writable));
+            sb.append(rewardTableCard(session, agentId, asMap(o), canWrite && writable, rewardNames));
         }
         sb.append(rewardCatalogList(rewards));
         return sb.toString();
@@ -10634,7 +10637,8 @@ public final class AgentPages {
         return sb.append("</tbody></table></div></details>").toString();
     }
 
-    private String rewardTableCard(Session session, String agentId, Map<String, Object> t, boolean canWrite) {
+    private String rewardTableCard(Session session, String agentId, Map<String, Object> t, boolean canWrite,
+                                   Map<String, String> rewardNames) {
         String id = str(t.get("id"));
         boolean enabled = Boolean.TRUE.equals(t.get("enabled"));
         String uid = "rt-" + id.replaceAll("[^a-z0-9_-]", "");
@@ -10663,16 +10667,16 @@ public final class AgentPages {
                 .append(Http.esc(id)).append("</code>.</div>");
         if (canWrite) {
             sb.append("<div class=\"d-flex flex-wrap gap-2 mt-2\">");
-            sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+            sb.append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
                     + "data-bs-target=\"#").append(uid).append("-edit\" aria-expanded=\"false\">")
                     .append(Icons.icon("edit")).append("Modifier</button>");
             sb.append("<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">")
                     .append(rewardHiddenFields(session, agentId, "reward.table.toggle"))
                     .append("<input type=\"hidden\" name=\"table_id\" value=\"").append(Http.esc(id)).append("\">")
                     .append("<input type=\"hidden\" name=\"enabled\" value=\"").append(enabled ? "false" : "true")
-                    .append("\"><button class=\"btn btn-sm ").append(enabled ? "btn-outline-secondary" : "btn-outline-success")
+                    .append("\"><button class=\"btn sm").append(enabled ? " secondary" : "")
                     .append("\" type=\"submit\">").append(enabled ? "Désactiver" : "Activer").append("</button></form>");
-            sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"button\" data-bs-toggle=\"collapse\" "
+            sb.append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
                     + "data-bs-target=\"#").append(uid).append("-dup\" aria-expanded=\"false\">")
                     .append(Icons.icon("plus")).append("Dupliquer</button>");
             sb.append("</div>");
@@ -10689,9 +10693,9 @@ public final class AgentPages {
                     .append(uid).append("-dup-l\" name=\"new_label\" maxlength=\"120\"></div>")
                     .append("<div class=\"form-text mb-2\">La copie est créée <strong>désactivée</strong>, avec les "
                             + "mêmes récompenses et chances : la modifier, puis l'activer.</div>")
-                    .append("<button class=\"btn btn-sm btn-primary\" type=\"submit\">Créer la copie</button></form></div>");
+                    .append("<button class=\"btn sm\" type=\"submit\">Créer la copie</button></form></div>");
             sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-edit\"><div class=\"card card-body npc-formcard\">")
-                    .append(rewardTableForm(session, agentId, t, uid + "-f")).append("</div></div>");
+                    .append(rewardTableForm(session, agentId, t, uid + "-f", rewardNames)).append("</div></div>");
         }
         return sb.append("</div>").toString();
     }
@@ -10709,7 +10713,8 @@ public final class AgentPages {
     }
 
     /** Formulaire de table, création ({@code existing == null}) ou modification. */
-    private String rewardTableForm(Session session, String agentId, Map<String, Object> existing, String uid) {
+    private String rewardTableForm(Session session, String agentId, Map<String, Object> existing, String uid,
+                                   Map<String, String> rewardNames) {
         boolean create = existing == null;
         String mode = create ? "single" : str(existing.get("mode"));
         StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\" "
@@ -10724,8 +10729,8 @@ public final class AgentPages {
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-l\">Nom de la table</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-l\" name=\"label\" required "
                         + "maxlength=\"120\" value=\"").append(Http.esc(create ? "" : str(existing.get("label"))))
-                .append("\">").append(fieldHelp("Affiché au joueur : « Tirage « Butin de l'ogre » : pas de gain cette "
-                        + "fois ».", "Butin de l'ogre", null, null)).append("</div>");
+                .append("\">").append(fieldHelp("Nom montré au joueur au moment du tirage.", "Butin de l'ogre",
+                        "aucun (obligatoire)", null)).append("</div>");
         if (create) {
             sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">Identifiant "
                     + "(facultatif)</label><input class=\"form-control\" id=\"").append(uid).append("-id\" "
@@ -10765,7 +10770,10 @@ public final class AgentPages {
                     .append("\" aria-label=\"Récompense ligne ").append(i + 1).append("\" value=\"")
                     .append(Http.esc(str(entry.get("rewardKey")))).append("\" list=\"dl-reward-catalog\" "
                             + "autocomplete=\"off\" role=\"combobox\" aria-expanded=\"false\" aria-autocomplete=\"list\" "
-                            + "placeholder=\"Récompense…\"></div></div>")
+                            + "placeholder=\"Récompense…\"></div>")
+                    .append(entry.isEmpty() ? "" : "<div class=\"form-text mt-0\">" + Http.esc(rewardNames.getOrDefault(
+                            str(entry.get("rewardKey")), "récompense absente du catalogue")) + "</div>")
+                    .append("</div>")
                     .append("<div class=\"col-8 col-md-3\"><div class=\"input-group\"><input class=\"form-control\" "
                             + "type=\"text\" inputmode=\"decimal\" name=\"entry_chance_").append(i)
                     .append("\" aria-label=\"Chance ligne ").append(i + 1).append(" en pour cent\" maxlength=\"6\" "
@@ -10783,8 +10791,8 @@ public final class AgentPages {
         String id = uid + "-m-" + value;
         return "<div class=\"form-check\"><input class=\"form-check-input\" type=\"radio\" name=\"mode\" id=\"" + id
                 + "\" value=\"" + value + "\" data-chance-mode" + (value.equals(current) ? " checked" : "") + " required>"
-                + "<label class=\"form-check-label\" for=\"" + id + "\"><strong>" + Http.esc(label) + "</strong> — "
-                + Http.esc(help) + "</label></div>";
+                + "<label class=\"form-check-label\" for=\"" + id + "\">" + Http.esc(label) + "</label>"
+                + "<div class=\"form-text mt-0\">" + Http.esc(help) + "</div></div>";
     }
 
     /** Même texte que {@code panel.js} recalcule à la saisie. */

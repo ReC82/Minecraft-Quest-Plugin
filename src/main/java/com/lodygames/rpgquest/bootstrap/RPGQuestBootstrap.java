@@ -930,12 +930,16 @@ public final class RPGQuestBootstrap {
                 task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
                 com.lodygames.rpgquest.mob.community.CommunityBossService.loadedChunksOnly());
         registry.start(communityBossService);
-        // Issue #176 : participation (coups effectifs mémorisés sur l'entité) et récompenses des boss
-        // communautaires, remises par les droits à récompense (#422) : au plus une fois, inventaire plein géré.
+        // Issue #176 : participation (coups effectifs mémorisés sur l'entité, effacés à la mort du joueur,
+        // rayon réglable dans PlugAdmin) et récompenses des boss communautaires, remises par les droits à récompense (#422) : au plus une fois, inventaire plein géré.
         communityBossRewards = new com.lodygames.rpgquest.mob.community.CommunityBossRewards(
                 plugin, plugin.getSLF4JLogger(), communityBossService.instanceKey(),
                 id -> java.util.Optional.ofNullable(org.bukkit.NamespacedKey.fromString(id)).flatMap(mobRegistry::find),
-                com.lodygames.rpgquest.mob.community.CommunityBossRewards.RewardSink.of(rewardEntitlementService));
+                com.lodygames.rpgquest.mob.community.CommunityBossRewards.RewardSink.of(rewardEntitlementService),
+                () -> communityBossService.settings().participationRadius(),
+                () -> communityBossService.snapshot().instances().stream()
+                        .map(com.lodygames.rpgquest.mob.community.CommunityBossInstance::entityId).toList(),
+                System::currentTimeMillis);
         communityBossService.addHooks(communityBossRewards);
         registry.start(new PlayerListenerService(plugin, communityBossRewards));
 

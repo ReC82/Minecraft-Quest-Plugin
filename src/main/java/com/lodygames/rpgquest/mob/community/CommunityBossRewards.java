@@ -8,12 +8,17 @@ import com.lodygames.rpgquest.entitlement.reward.RewardTable;
 import com.lodygames.rpgquest.entitlement.reward.RewardTableDraw;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
@@ -26,6 +31,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
@@ -36,9 +42,12 @@ import org.slf4j.Logger;
  *
  * <ul>
  *   <li><b>Participation</b> : chaque coup effectif (dégâts finaux &gt; 0, événement non annulé,
- *       joueur direct ou tireur d'un projectile) inscrit le joueur sur l'entité elle-même (PDC) :
- *       la liste survit au déchargement du chunk et au redémarrage, et n'est jamais transférée à un
- *       autre boss ;</li>
+ *       joueur direct ou tireur d'un projectile) inscrit le joueur et l'heure de son dernier coup sur
+ *       l'entité elle-même (PDC) : la liste survit au déchargement du chunk et au redémarrage, et n'est
+ *       jamais transférée à un autre boss ;</li>
+ *   <li><b>Mort du joueur</b> : sa participation aux boss chargés est effacée sur-le-champ, et l'heure
+ *       de sa mort est inscrite sur le joueur (PDC) pour les boss déchargés ou un redémarrage : seul un
+ *       coup porté après cette mort compte. Reconnexion et changement de monde n'effacent rien ;</li>
  *   <li><b>Éligibilité</b> : figée à la mort, selon {@link BossParticipation} ;</li>
  *   <li><b>Récompenses</b> : un droit à récompense (#422, source {@code BOSS}) par participant
  *       éligible et par clé {@code participation-rewards} du profil. La remise (inventaire plein,
@@ -54,6 +63,7 @@ import org.slf4j.Logger;
 public final class CommunityBossRewards implements CommunityBossHooks, Listener {
 
     public static final String PARTICIPANTS_KEY_NAME = "community-boss-participants";
+    public static final String LAST_DEATH_KEY_NAME = "community-boss-last-death";
     static final int RECENT_DEFEATS = 10;
     static final int DECLARE_ATTEMPTS = 3;
     private static final long RETRY_DELAY_TICKS = 20L * 5;
@@ -107,8 +117,9 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
 
     /** Une victoire récente, pour la traçabilité PlugAdmin (mémoire, depuis le dernier démarrage). */
     public record Defeat(UUID entityId, String profileId, String profileName, long defeatedAtMillis, String world,
-                         String biome, String killerName, boolean test, List<BossParticipation.Evaluated> participants,
-                         List<String> rewardKeys, String rewardStatus, List<String> draws) {
+                         String biome, int radius, String killerName, boolean test,
+                         List<BossParticipation.Evaluated> participants, List<String> rewardKeys,
+                         String rewardStatus, List<String> draws) {
 
         public Defeat {
             participants = List.copyOf(participants);
@@ -117,8 +128,8 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         }
 
         Defeat withStatus(String status) {
-            return new Defeat(entityId, profileId, profileName, defeatedAtMillis, world, biome, killerName, test,
-                    participants, rewardKeys, status, draws);
+            return new Defeat(entityId, profileId, profileName, defeatedAtMillis, world, biome, radius, killerName,
+                    test, participants, rewardKeys, status, draws);
         }
     }
 
@@ -130,18 +141,32 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
     private final Logger logger;
     private final NamespacedKey instanceKey;
     private final NamespacedKey participantsKey;
+    private final NamespacedKey lastDeathKey;
     private final Function<String, Optional<SpecialMobDefinition>> profiles;
     private final RewardSink rewards;
+    private final IntSupplier participationRadius;
+    private final Supplier<Collection<UUID>> activeBosses;
+    private final LongSupplier clock;
     private volatile List<Defeat> recent = List.of();
 
+    /**
+     * @param participationRadius distance de participation en vigueur (réglage PlugAdmin, lue à chaque mort)
+     * @param activeBosses        entités des boss communautaires actifs (effacement à la mort d'un joueur)
+     */
     public CommunityBossRewards(Plugin plugin, Logger logger, NamespacedKey instanceKey,
-                                Function<String, Optional<SpecialMobDefinition>> profiles, RewardSink rewards) {
+                                Function<String, Optional<SpecialMobDefinition>> profiles, RewardSink rewards,
+                                IntSupplier participationRadius, Supplier<Collection<UUID>> activeBosses,
+                                LongSupplier clock) {
         this.plugin = plugin;
         this.logger = logger;
         this.instanceKey = instanceKey;
         this.participantsKey = new NamespacedKey(plugin, PARTICIPANTS_KEY_NAME);
+        this.lastDeathKey = new NamespacedKey(plugin, LAST_DEATH_KEY_NAME);
         this.profiles = profiles;
         this.rewards = rewards;
+        this.participationRadius = participationRadius;
+        this.activeBosses = activeBosses;
+        this.clock = clock;
     }
 
     /** Les dernières victoires, la plus récente d'abord. */
@@ -163,18 +188,44 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         BossParticipation.attacker(event.getDamager()).ifPresent(player -> record(pdc, player.getUniqueId()));
     }
 
+    /** Inscrit le joueur ou rafraîchit l'heure de son dernier coup (c'est elle que la mort invalide). */
     private void record(PersistentDataContainer pdc, UUID playerId) {
-        Set<UUID> participants = BossParticipation.decode(pdc.get(participantsKey, PersistentDataType.STRING));
-        if (participants.contains(playerId) || participants.size() >= BossParticipation.MAX_PARTICIPANTS) {
+        Map<UUID, Long> hits = hits(pdc);
+        if (!hits.containsKey(playerId) && hits.size() >= BossParticipation.MAX_PARTICIPANTS) {
             return;
         }
-        participants.add(playerId);
-        pdc.set(participantsKey, PersistentDataType.STRING, BossParticipation.encode(participants));
+        hits.put(playerId, clock.getAsLong());
+        pdc.set(participantsKey, PersistentDataType.STRING, BossParticipation.encode(hits));
+    }
+
+    private Map<UUID, Long> hits(PersistentDataContainer pdc) {
+        return BossParticipation.decode(pdc.get(participantsKey, PersistentDataType.STRING));
     }
 
     /** Participants inscrits sur l'entité (tests, diagnostic). */
     public Set<UUID> participants(LivingEntity boss) {
-        return BossParticipation.decode(boss.getPersistentDataContainer().get(participantsKey, PersistentDataType.STRING));
+        return hits(boss.getPersistentDataContainer()).keySet();
+    }
+
+    /**
+     * Mort d'un joueur : ses coups passés cessent de compter. Effacement immédiat sur les boss chargés
+     * (le coup qui précède sa mort dans la même milliseconde est donc bien perdu) et heure de mort sur le
+     * joueur, persistante, pour les boss déchargés et après un redémarrage.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+        UUID playerId = player.getUniqueId();
+        player.getPersistentDataContainer().set(lastDeathKey, PersistentDataType.LONG, clock.getAsLong());
+        for (UUID bossId : activeBosses.get()) {
+            if (Bukkit.getEntity(bossId) instanceof LivingEntity boss) {
+                PersistentDataContainer pdc = boss.getPersistentDataContainer();
+                Map<UUID, Long> hits = hits(pdc);
+                if (hits.remove(playerId) != null) {
+                    pdc.set(participantsKey, PersistentDataType.STRING, BossParticipation.encode(hits));
+                }
+            }
+        }
     }
 
     // ---- victoire --------------------------------------------------------------------------------
@@ -184,8 +235,11 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         Location at = entity.getLocation();
         String world = at.getWorld().getName();
         String biome = at.getBlock().getBiome().getKey().toString();
-        List<BossParticipation.Evaluated> evaluated = BossParticipation.evaluate(participants(entity), world, biome,
-                CommunityBossRewards::situation, CommunityBossRewards::name);
+        int radius = participationRadius.getAsInt();
+        BossParticipation.BossDeath death = new BossParticipation.BossDeath(world, at.getX(), at.getY(), at.getZ(),
+                radius);
+        List<BossParticipation.Evaluated> evaluated = BossParticipation.evaluate(
+                hits(entity.getPersistentDataContainer()), death, this::situation, CommunityBossRewards::name);
         List<String> rewardKeys = profiles.apply(instance.profileId())
                 .map(SpecialMobDefinition::participationRewards).orElse(List.of());
         List<BossParticipation.Evaluated> eligible = evaluated.stream()
@@ -204,19 +258,20 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
             drawTables(instance, eligible, fixedKeys, tableIds, declarations, promised, draws);
         }
         remember(new Defeat(instance.entityId(), instance.profileId(), instance.profileName(),
-                System.currentTimeMillis(), world, biome, killer == null ? null : killer.getName(), instance.test(),
+                clock.getAsLong(), world, biome, radius, killer == null ? null : killer.getName(), instance.test(),
                 evaluated, rewardKeys, status, draws));
         draws.forEach(line -> logger.info("  tirage : {}.", line));
-        logger.info("Boss communautaire « {} » ({}) vaincu dans {} / {} : {} participant(s), {} éligible(s) {} — {}.",
-                instance.profileId(), instance.entityId(), world, biome, evaluated.size(), eligible.size(),
+        logger.info("Boss communautaire « {} » ({}) vaincu dans {} à {} {} {} (rayon {}) : {} participant(s), "
+                        + "{} éligible(s) {} — {}.", instance.profileId(), instance.entityId(), world, at.getBlockX(),
+                at.getBlockY(), at.getBlockZ(), radius, evaluated.size(), eligible.size(),
                 eligible.stream().map(BossParticipation.Evaluated::name).toList(), status);
         evaluated.stream().filter(e -> e.verdict() != BossParticipation.Verdict.ELIGIBLE)
-                .forEach(e -> logger.info("  participant {} ({}) exclu : {}.", e.name(), e.playerId(), e.verdict().label()));
+                .forEach(e -> logger.info("  participant {} ({}) exclu : {}.", e.name(), e.playerId(), e.reason(radius)));
 
         if (rewardKeys.isEmpty()) {
             return; // profil sans récompense de participation : rien n'est promis ni déclaré
         }
-        notifyExcluded(instance, evaluated);
+        notifyExcluded(instance, evaluated, radius);
         if (eligible.isEmpty()) {
             return;
         }
@@ -327,7 +382,8 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         }
     }
 
-    private void notifyExcluded(CommunityBossInstance instance, List<BossParticipation.Evaluated> evaluated) {
+    private void notifyExcluded(CommunityBossInstance instance, List<BossParticipation.Evaluated> evaluated,
+                                int radius) {
         for (BossParticipation.Evaluated participant : evaluated) {
             if (participant.verdict() == BossParticipation.Verdict.ELIGIBLE) {
                 continue;
@@ -337,7 +393,7 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                 player.sendMessage(MM.deserialize("<gray>Tu as combattu</gray> <name> <gray>mais tu n'as pas de "
                                 + "récompense : tu étais</gray> <white><why></white><gray> au moment de sa défaite.</gray>",
                         Placeholder.unparsed("name", instance.profileName()),
-                        Placeholder.unparsed("why", participant.verdict().label())));
+                        Placeholder.unparsed("why", participant.reason(radius))));
             }
         }
     }
@@ -360,14 +416,15 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         recent = recent.stream().map(d -> d.entityId().equals(entityId) ? d.withStatus(status) : d).toList();
     }
 
-    private static BossParticipation.PlayerSituation situation(UUID playerId) {
+    private BossParticipation.PlayerSituation situation(UUID playerId) {
         Player player = Bukkit.getPlayer(playerId);
         if (player == null || !player.isOnline()) {
             return BossParticipation.PlayerSituation.OFFLINE;
         }
         Location l = player.getLocation();
+        Long lastDeath = player.getPersistentDataContainer().get(lastDeathKey, PersistentDataType.LONG);
         return new BossParticipation.PlayerSituation(true, player.isDead() || player.getHealth() <= 0,
-                l.getWorld().getName(), l.getBlock().getBiome().getKey().toString());
+                l.getWorld().getName(), l.getX(), l.getY(), l.getZ(), lastDeath == null ? 0L : lastDeath);
     }
 
     private static String name(UUID playerId) {

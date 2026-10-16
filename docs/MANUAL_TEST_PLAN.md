@@ -6395,8 +6395,8 @@ Wild**, en survie, près de waypoints existants.
 
 ### TC-330 — Participation et récompenses des boss communautaires (issue #176, PENDING MANUAL VALIDATION)
 
-Prérequis : JAR et PlugAdmin issus de #176, sur **DEV seulement**. `plugins/RPGQuest/entitlements.yml`
-présent avec `enabled: true` et une récompense de test, par exemple :
+Prérequis : JAR et PlugAdmin issus de #176 (règles du 16/10 : rayon et mort pendant le combat), sur
+**DEV seulement**. `plugins/RPGQuest/entitlements.yml` présent avec `enabled: true` et une récompense de test, par exemple :
 
 ```yaml
 enabled: true
@@ -6416,9 +6416,19 @@ Deux comptes de test (A et B) dans le Wild, en survie. Un profil Boss jetable en
     projectile doit compter). **Attendu** : A et B lisent « Participation reconnue contre … » puis
     « Récompense reçue : Butin de boss (test) » ; un diamant chacun ; « Victoires récentes et
     participants » (après « Rafraîchir l'état ») liste A et B **éligibles**, « 2 droit(s) déclaré(s) ».
-3.  Nouveau boss de test. A frappe puis part dans **un autre biome** ; B frappe puis **meurt** et attend
-    sur l'écran de mort ; un 3ᵉ compte (ou A revenu) tue le boss. **Attendu** : A « hors du biome du
-    boss », B « mort au moment de la victoire », aucun diamant pour eux, message d'explication.
+3.  Nouveau boss de test. A frappe puis s'éloigne à **plus de 100 blocs** (F3 : coordonnées) ; B frappe
+    puis **meurt** et attend sur l'écran de mort ; un 3ᵉ compte (ou A revenu) tue le boss. **Attendu** :
+    A « trop loin du boss (… blocs, 100 au plus) », B « mort au moment de la victoire », aucun diamant
+    pour eux, message d'explication.
+3b. Frontière de biome : A frappe et se place **à quelques blocs** du boss mais dans un **autre biome**
+    (F3 : biome) au moment de sa mort. **Attendu** : A **éligible**, diamant reçu.
+3c. Mort pendant le combat : B frappe, **meurt**, réapparaît, revient près du boss **sans le toucher** ;
+    le boss meurt. **Attendu** : B exclu « mort pendant le combat, sans nouveau coup ensuite ». Nouveau
+    boss : B frappe, meurt, revient et **frappe de nouveau** (un coup suffit). **Attendu** : B éligible.
+3d. Distance réglable : Réglages → « Distance pour être récompensé (blocs) » = 20 → Enregistrer, puis
+    « Rafraîchir l'état » : 20 relu. A frappe et se tient à ~30 blocs à la mort. **Attendu** : exclu
+    « trop loin du boss (30 blocs, 20 au plus) », la victoire affiche « récompenses à 20 blocs au plus ».
+    Remettre **100** à la fin.
 4.  Inventaire plein : remplir l'inventaire de A, frapper, faire tuer le boss. **Attendu** : « Une
     récompense t'attend » + « libère N emplacements », rien au sol ; libérer une case → diamant reçu
     sous 30 s ; jamais deux.

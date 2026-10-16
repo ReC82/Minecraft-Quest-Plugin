@@ -53,6 +53,9 @@ class CommunityBossRewardsTest {
     private List<String> profileRewards;
     private CommunityBossRewards rewards;
     private Zombie boss;
+    private int radius;
+    private long now;
+    private final List<UUID> activeBosses = new ArrayList<>();
 
     /** Puits en mémoire : déclarations reçues et joueurs dont la remise a été demandée. */
     private static final class FakeSink implements CommunityBossRewards.RewardSink {
@@ -104,16 +107,24 @@ class CommunityBossRewardsTest {
         instanceKey = new NamespacedKey(plugin, CommunityBossService.INSTANCE_KEY_NAME);
         sink = new FakeSink();
         profileRewards = new ArrayList<>(List.of("boss_ogre"));
+        radius = 100;
+        now = 1_000L;
         rewards = new CommunityBossRewards(plugin, plugin.getSLF4JLogger(), instanceKey,
-                id -> Optional.of(profile()), sink);
+                id -> Optional.of(profile()), sink, () -> radius, () -> List.copyOf(activeBosses), () -> now);
         server.getPluginManager().registerEvents(rewards, plugin);
-        boss = wild.spawn(new Location(wild, 0.5, 64, 0.5), Zombie.class);
-        boss.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, boss.getUniqueId().toString());
+        boss = communityBoss(0.5);
     }
 
     @AfterEach
     void tearDown() {
         MockBukkit.unmock();
+    }
+
+    private Zombie communityBoss(double x) {
+        Zombie zombie = wild.spawn(new Location(wild, x, 64, 0.5), Zombie.class);
+        zombie.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, zombie.getUniqueId().toString());
+        activeBosses.add(zombie.getUniqueId());
+        return zombie;
     }
 
     private SpecialMobDefinition profile() {
@@ -145,6 +156,20 @@ class CommunityBossRewardsTest {
     private void defeat() {
         rewards.onDefeated(instance(), boss, null);
         server.getScheduler().performTicks(1);
+    }
+
+    private List<BossParticipation.Verdict> verdicts() {
+        return rewards.recentDefeats().get(0).participants().stream().map(BossParticipation.Evaluated::verdict)
+                .toList();
+    }
+
+    /** Mort réelle (PlayerDeathEvent), le temps passe, puis réapparition près du boss. */
+    private void dieAndRespawn(PlayerMock player) {
+        now += 1_000;
+        player.setHealth(0);
+        now += 1_000;
+        player.respawn();
+        player.teleport(new Location(wild, 3.5, 64, 0.5));
     }
 
     private static String messages(PlayerMock p) {
@@ -209,31 +234,139 @@ class CommunityBossRewardsTest {
     }
 
     @Test
-    void deadOfflineOtherWorldAndOtherBiomeParticipantsAreExcluded() {
+    void deadOfflineOtherWorldAndTooFarParticipantsAreExcluded() {
         PlayerMock dead = fighter("Mort");
         PlayerMock gone = fighter("Parti");
         PlayerMock away = fighter("Ailleurs");
-        PlayerMock elsewhere = fighter("Foret");
+        PlayerMock far = fighter("Loin");
         PlayerMock winner = fighter("Present");
-        for (PlayerMock p : List.of(dead, gone, away, elsewhere, winner)) {
+        for (PlayerMock p : List.of(dead, gone, away, far, winner)) {
             hit(p, boss, 2.0);
         }
         dead.setHealth(0);
         gone.disconnect();
         away.teleport(new Location(hub, 0.5, 64, 0.5));
-        wild.setBiome(200, 200, Biome.FOREST);
-        elsewhere.teleport(new Location(wild, 200.5, 64, 200.5));
-        messages(elsewhere);
+        far.teleport(new Location(wild, 150.5, 64, 0.5));
+        messages(far);
 
         defeat();
 
         assertEquals(List.of(winner.getUniqueId()), sink.declared.stream().map(RewardEntitlement.Declaration::playerId).toList());
-        List<BossParticipation.Evaluated> verdicts = rewards.recentDefeats().get(0).participants();
-        assertEquals(List.of(BossParticipation.Verdict.DEAD, BossParticipation.Verdict.OFFLINE,
-                        BossParticipation.Verdict.OTHER_WORLD, BossParticipation.Verdict.OTHER_BIOME,
-                        BossParticipation.Verdict.ELIGIBLE),
-                verdicts.stream().map(BossParticipation.Evaluated::verdict).toList());
-        assertTrue(messages(elsewhere).contains("hors du biome du boss"));
+        // Le mort a perdu ses coups (#176, 16/10) : il n'est plus participant du tout.
+        assertTrue(rewards.recentDefeats().get(0).participants().stream()
+                .noneMatch(e -> e.playerId().equals(dead.getUniqueId())));
+        assertEquals(List.of(BossParticipation.Verdict.OFFLINE, BossParticipation.Verdict.OTHER_WORLD,
+                BossParticipation.Verdict.TOO_FAR, BossParticipation.Verdict.ELIGIBLE), verdicts());
+        assertTrue(messages(far).contains("trop loin du boss (150 blocs, 100 au plus)"));
+        assertEquals(100, rewards.recentDefeats().get(0).radius());
+    }
+
+    @Test
+    void theBiomeNoLongerMattersOnlyTheConfiguredDistance() {
+        // À 3 blocs, mais de l'autre côté d'une frontière de biome : éligible.
+        wild.setBiome(3, 64, 0, Biome.FOREST);
+        PlayerMock border = fighter("Frontiere");
+        PlayerMock edge = fighter("Limite");
+        PlayerMock beyond = fighter("Dehors");
+        for (PlayerMock p : List.of(border, edge, beyond)) {
+            hit(p, boss, 2.0);
+        }
+        edge.teleport(new Location(wild, 100.5, 64, 0.5)); // exactement 100 blocs
+        beyond.teleport(new Location(wild, 101.5, 64, 0.5)); // 101 blocs
+
+        defeat();
+
+        assertEquals(List.of(BossParticipation.Verdict.ELIGIBLE, BossParticipation.Verdict.ELIGIBLE,
+                BossParticipation.Verdict.TOO_FAR), verdicts());
+    }
+
+    @Test
+    void theRadiusIsReadFromTheSettingsAtEachDefeat() {
+        PlayerMock far = fighter("Loin");
+        hit(far, boss, 2.0);
+        far.teleport(new Location(wild, 150.5, 64, 0.5));
+        radius = 200;
+
+        defeat();
+
+        assertEquals(List.of(BossParticipation.Verdict.ELIGIBLE), verdicts());
+        assertEquals(200, rewards.recentDefeats().get(0).radius());
+    }
+
+    @Test
+    void aPlayerWhoDiedAndCameBackWithoutHittingIsExcluded() {
+        PlayerMock alice = fighter("Alice");
+        PlayerMock bob = fighter("Bob");
+        hit(alice, boss, 2.0);
+        hit(bob, boss, 2.0);
+        dieAndRespawn(alice);
+
+        assertEquals(Set.of(bob.getUniqueId()), rewards.participants(boss), "coups effacés du boss chargé");
+        defeat();
+
+        assertEquals(List.of(bob.getUniqueId()), sink.declared.stream().map(RewardEntitlement.Declaration::playerId)
+                .toList());
+    }
+
+    @Test
+    void aPlayerWhoDiedThenHitAgainIsEligible() {
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+        dieAndRespawn(alice);
+        hit(alice, boss, 2.0);
+
+        defeat();
+
+        assertEquals(List.of(BossParticipation.Verdict.ELIGIBLE), verdicts());
+        assertEquals(1, sink.declared.size());
+    }
+
+    @Test
+    void aDeathWhileTheBossIsUnloadedStillCancelsOlderHits() {
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+        activeBosses.clear(); // boss déchargé : seule l'heure de mort inscrite sur le joueur témoigne
+        dieAndRespawn(alice);
+        assertEquals(Set.of(alice.getUniqueId()), rewards.participants(boss));
+
+        defeat();
+        assertEquals(List.of(BossParticipation.Verdict.NO_HIT_SINCE_DEATH), verdicts());
+        assertTrue(sink.declared.isEmpty());
+        assertTrue(messages(alice).contains("mort pendant le combat, sans nouveau coup ensuite"));
+
+        now += 1_000;
+        hit(alice, boss, 2.0); // nouveau coup : la participation revient
+        defeat();
+        assertEquals(List.of(BossParticipation.Verdict.ELIGIBLE), verdicts());
+    }
+
+    @Test
+    void reconnectingOrChangingWorldDoesNotEraseTheParticipation() {
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+        alice.teleport(new Location(hub, 0.5, 64, 0.5));
+        alice.teleport(new Location(wild, 3.5, 64, 0.5));
+        alice.disconnect();
+        alice.reconnect();
+        alice.teleport(new Location(wild, 3.5, 64, 0.5));
+
+        defeat();
+
+        assertEquals(List.of(BossParticipation.Verdict.ELIGIBLE), verdicts());
+    }
+
+    @Test
+    void aDeathClearsTheParticipationOnEveryActiveBossOnly() {
+        PlayerMock alice = fighter("Alice");
+        PlayerMock bob = fighter("Bob");
+        Zombie second = communityBoss(10.5);
+        hit(alice, boss, 2.0);
+        hit(alice, second, 2.0);
+        hit(bob, second, 2.0);
+        dieAndRespawn(alice);
+
+        assertTrue(rewards.participants(boss).isEmpty());
+        assertEquals(Set.of(bob.getUniqueId()), rewards.participants(second));
     }
 
     @Test

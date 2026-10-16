@@ -458,6 +458,15 @@ class AgentActionCatalogTest {
                 Map.of("interval_minutes", "0", "max_active", "1")).valid());
         assertFalse(AgentActionCatalog.validate("boss.community.settings.set",
                 Map.of("interval_minutes", "15", "max_active", "11")).valid());
+        // Issue #176 : distance de participation, 5 à 500 blocs ; absente = inchangée côté plugin.
+        assertEquals("100", AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "15", "max_active", "1", "participation_radius", "100"))
+                .params().get("participation_radius"));
+        assertFalse(ok.params().containsKey("participation_radius"));
+        assertFalse(AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "15", "max_active", "1", "participation_radius", "4")).valid());
+        assertFalse(AgentActionCatalog.validate("boss.community.settings.set",
+                Map.of("interval_minutes", "15", "max_active", "1", "participation_radius", "501")).valid());
     }
 
     @Test

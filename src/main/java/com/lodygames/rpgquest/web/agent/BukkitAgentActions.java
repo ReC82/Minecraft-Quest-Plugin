@@ -4737,7 +4737,7 @@ public final class BukkitAgentActions implements AgentActions {
             }
         }
         return done(new CommunityBossView(true, settings.enabled(), settings.intervalMinutes(), settings.maxActive(),
-                state.nextDueMillis(), state.lastSpawnMillis(), state.lastAttemptMillis(), state.lastOutcome(),
+                settings.participationRadius(), state.nextDueMillis(), state.lastSpawnMillis(), state.lastAttemptMillis(), state.lastOutcome(),
                 System.currentTimeMillis(), List.copyOf(instances), List.copyOf(profiles), recentDefeats(),
                 rewardTables()));
     }
@@ -4774,10 +4774,10 @@ public final class BukkitAgentActions implements AgentActions {
                     .map(p -> new CommunityBossParticipantView(p.playerId().toString(), p.name(),
                             p.verdict() == com.lodygames.rpgquest.mob.community.BossParticipation.Verdict.ELIGIBLE,
                             p.verdict() == com.lodygames.rpgquest.mob.community.BossParticipation.Verdict.ELIGIBLE
-                                    ? "" : p.verdict().label()))
+                                    ? "" : p.reason(d.radius())))
                     .toList();
             views.add(new CommunityBossDefeatView(d.entityId().toString(), d.profileId(), d.profileName(),
-                    d.defeatedAtMillis(), d.world(), d.biome(), d.killerName() == null ? "" : d.killerName(), d.test(),
+                    d.defeatedAtMillis(), d.world(), d.biome(), d.radius(), d.killerName() == null ? "" : d.killerName(), d.test(),
                     participants, d.rewardKeys(), d.rewardStatus(), d.draws()));
         }
         return List.copyOf(views);
@@ -4785,13 +4785,16 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<MutationResult> communityBossSettingsSet(boolean enabled, int intervalMinutes,
-                                                                      int maxActive) {
+                                                                      int maxActive, Integer participationRadius) {
         if (communityBosses == null) {
-            return AgentActions.super.communityBossSettingsSet(enabled, intervalMinutes, maxActive);
+            return AgentActions.super.communityBossSettingsSet(enabled, intervalMinutes, maxActive,
+                    participationRadius);
         }
         com.lodygames.rpgquest.mob.community.CommunityBossSettings next;
         try {
-            next = new com.lodygames.rpgquest.mob.community.CommunityBossSettings(enabled, intervalMinutes, maxActive);
+            next = new com.lodygames.rpgquest.mob.community.CommunityBossSettings(enabled, intervalMinutes, maxActive,
+                    participationRadius != null ? participationRadius
+                            : communityBosses.settings().participationRadius());
         } catch (IllegalArgumentException e) {
             return done(MutationResult.of(false, "INVALID", e.getMessage()));
         }
@@ -4805,8 +4808,10 @@ public final class BukkitAgentActions implements AgentActions {
             communityBosses.settingsChanged(previous, next);
             return done(MutationResult.of(true, "UPDATED", next.enabled()
                     ? "Boss communautaires actifs : un essai toutes les " + next.intervalMinutes() + " min, "
-                    + next.maxActive() + " boss maximum en même temps."
-                    : "Boss communautaires en pause : plus aucune apparition automatique."));
+                    + next.maxActive() + " boss maximum en même temps, récompenses à " + next.participationRadius()
+                    + " blocs au plus."
+                    : "Boss communautaires en pause : plus aucune apparition automatique. Récompenses à "
+                    + next.participationRadius() + " blocs au plus."));
         });
     }
 

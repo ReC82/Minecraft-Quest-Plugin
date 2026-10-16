@@ -10390,7 +10390,8 @@ public final class AgentPages {
                 + "près des joueurs mais jamais sur eux, ni dans le Hub, les Claims, une ville ou une zone "
                 + "protégée. Tout le serveur est prévenu (nom, biome, waypoint le plus proche) et les joueurs "
                 + "qui se connectent plus tard reçoivent un rappel. À sa mort, il lâche les objets de son profil "
-                + "et chaque joueur qui l'a touché, encore vivant et dans le même biome que lui, reçoit les "
+                + "et chaque joueur qui l'a touché depuis sa dernière mort, encore vivant, dans le même monde et "
+                + "assez près de lui (distance réglable plus bas, 100 blocs par défaut), reçoit les "
                 + "<strong>récompenses de participation</strong> du profil (droits à récompense, remise sûre).</p>");
         sb.append("<div class=\"npc-catbar\">")
                 .append(compactRefresh(session, agentId, "boss.community.status", "Rafraîchir l'état",
@@ -10535,7 +10536,11 @@ public final class AgentPages {
             if (!killer.isBlank()) {
                 sb.append(" · dernier coup : ").append(Http.esc(killer));
             }
-            sb.append(" · biome ").append(Http.esc(prettyBiomeName(str(d.get("biome"))))).append("</span></div>");
+            sb.append(" · biome ").append(Http.esc(prettyBiomeName(str(d.get("biome")))));
+            if (asLong(d.get("radius")) > 0) {
+                sb.append(" · récompenses à ").append(asLong(d.get("radius"))).append(" blocs au plus");
+            }
+            sb.append("</span></div>");
             List<Object> participants = asList(d.get("participants"));
             if (participants.isEmpty()) {
                 sb.append("<div class=\"muted\">Aucun joueur ne l'a touché.</div>");
@@ -10627,6 +10632,17 @@ public final class AgentPages {
                 .append("\">")
                 .append(fieldHelp("Tant que ce nombre de boss est en vie (même loin de tout joueur), aucun autre "
                         + "n'apparaît automatiquement.", "1", "1", null))
+                .append("</div>");
+        String radius = str(d.get("participationRadius"));
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-rad\">Distance pour être récompensé "
+                        + "(blocs)</label>")
+                .append("<input class=\"form-control\" id=\"cb-rad\" type=\"number\" name=\"participation_radius\" "
+                        + "min=\"5\" max=\"500\" required value=\"")
+                .append(Http.esc(radius.isBlank() || "0".equals(radius) ? "100" : radius)).append("\">")
+                .append(fieldHelp("À la mort du boss, un joueur qui l'a touché n'est récompensé que s'il est dans le "
+                        + "même monde et à cette distance au plus de l'endroit où le boss est mort (distance en "
+                        + "ligne droite, hauteur comprise). Le biome ne compte pas. Un joueur mort pendant le combat "
+                        + "doit le toucher de nouveau après sa réapparition.", "100", "100", null))
                 .append("</div></div>");
         sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
                 .append("Enregistrer</button></form>");
@@ -10942,7 +10958,9 @@ public final class AgentPages {
                 .append("\">")
                 .append(fieldHelp("Clés du catalogue <code>entitlements.yml</code> (séparées par des virgules, 5 au "
                         + "plus), remises à <strong>chaque</strong> joueur qui a touché ce boss et qui, à sa mort, est "
-                        + "vivant, dans le même monde et dans le même biome que lui. Remise sûre : inventaire plein = "
+                        + "vivant, dans le même monde et assez près de lui (distance réglée dans « Boss communautaires », "
+                        + "100 blocs par défaut ; un joueur mort pendant le combat doit le retoucher). Remise sûre : "
+                        + "inventaire plein = "
                         + "la récompense attend, jamais deux fois. Vide = aucune récompense (seulement les drops). "
                         + "<code>table:&lt;id&gt;</code> = un <strong>tirage au sort</strong> de cette table, une fois "
                         + "par joueur éligible (résultat individuel, figé). Exige <code>enabled: true</code> dans "

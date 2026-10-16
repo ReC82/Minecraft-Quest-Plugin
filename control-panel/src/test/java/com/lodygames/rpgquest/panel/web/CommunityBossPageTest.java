@@ -29,7 +29,7 @@ class CommunityBossPageTest {
 
     private static final String ENTITY = "123e4567-e89b-12d3-a456-426614174000";
     private static final String STATUS = "{\"available\":true,\"enabled\":true,\"intervalMinutes\":15,"
-            + "\"maxActive\":1,\"nextDue\":1600000,\"lastSpawn\":400000,\"lastAttempt\":400000,"
+            + "\"maxActive\":1,\"participationRadius\":64,\"nextDue\":1600000,\"lastSpawn\":400000,\"lastAttempt\":400000,"
             + "\"lastOutcome\":\"Plafond atteint (1/1 boss actif(s)) : aucune nouvelle apparition.\","
             + "\"now\":1000000,\"instances\":[{\"entityId\":\"" + ENTITY + "\",\"profileId\":\"rpgquest:ogre\","
             + "\"profileName\":\"Ogre des collines\",\"world\":\"wild\",\"x\":120,\"y\":70,\"z\":-40,"
@@ -80,6 +80,8 @@ class CommunityBossPageTest {
         assertTrue(page.contains("Apparition de test"), "bouton de test immédiat");
         assertTrue(page.contains("name=\"interval_minutes\""), "intervalle modifiable");
         assertTrue(page.contains("name=\"max_active\""), "plafond modifiable");
+        assertTrue(page.contains("name=\"participation_radius\""), "distance de participation modifiable (#176)");
+        assertTrue(page.contains("value=\"64\""), "valeur courante relue");
         assertTrue(page.contains("Retirer ce boss"));
         assertTrue(page.contains("Retirer toutes les apparitions de test"));
         assertTrue(page.contains("name=\"confirm\" value=\"true\" required"), "retrait avec case de confirmation");
@@ -94,16 +96,17 @@ class CommunityBossPageTest {
         runAction("boss.community.status", STATUS.substring(0, STATUS.length() - 1)
                 + ",\"recentDefeats\":[{\"entityId\":\"" + ENTITY + "\",\"profileId\":\"rpgquest:ogre\","
                 + "\"profileName\":\"Ogre des collines\",\"defeatedAt\":940000,\"world\":\"wild\","
-                + "\"biome\":\"minecraft:plains\",\"killerName\":\"Bob\",\"test\":false,"
+                + "\"biome\":\"minecraft:plains\",\"radius\":100,\"killerName\":\"Bob\",\"test\":false,"
                 + "\"participants\":[{\"uuid\":\"u1\",\"name\":\"Alice\",\"eligible\":true,\"reason\":\"\"},"
-                + "{\"uuid\":\"u2\",\"name\":\"Carol\",\"eligible\":false,\"reason\":\"hors du biome du boss\"}],"
+                + "{\"uuid\":\"u2\",\"name\":\"Carol\",\"eligible\":false,\"reason\":\"trop loin du boss (143 blocs, 100 au plus)\"}],"
                 + "\"rewardKeys\":[\"boss_ogre\"],\"rewardStatus\":\"1 droit(s) déclaré(s) pour 1 joueur(s) éligible(s).\"}]}");
         String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("Victoires récentes et participants"));
         assertTrue(page.contains("dernier coup : Bob"));
         assertTrue(page.contains("Alice"), page);
-        assertTrue(page.contains("hors du biome du boss"));
+        assertTrue(page.contains("trop loin du boss (143 blocs, 100 au plus)"));
+        assertTrue(page.contains("récompenses à 100 blocs au plus"));
         assertTrue(page.contains("boss_ogre"));
         assertTrue(page.contains("1 droit(s) déclaré(s)"));
     }

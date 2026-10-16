@@ -595,6 +595,13 @@ class AgentActionExecutorTest {
                 Map.of("enabled", "true", "interval_minutes", "0", "max_active", "1"))).status());
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb1", "boss.community.settings.set",
                 Map.of("enabled", "true", "interval_minutes", "15", "max_active", "50"))).status());
+        // Issue #176 : distance de participation bornée (5 à 500 blocs), absente = inchangée.
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb8", "boss.community.settings.set",
+                Map.of("enabled", "true", "interval_minutes", "15", "max_active", "1",
+                        "participation_radius", "4"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb9", "boss.community.settings.set",
+                Map.of("enabled", "true", "interval_minutes", "15", "max_active", "1",
+                        "participation_radius", "cent"))).status());
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb2", "boss.community.test.spawn",
                 Map.of("player", "bad name!"))).status());
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cb3", "boss.community.remove",

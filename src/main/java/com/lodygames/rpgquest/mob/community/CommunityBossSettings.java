@@ -12,14 +12,19 @@ package com.lodygames.rpgquest.mob.community;
  * @param enabled         scheduler actif (false = pause immédiate, aucun boss existant n'est supprimé)
  * @param intervalMinutes délai entre deux échéances (défaut 15)
  * @param maxActive       nombre maximum de boss communautaires actifs en même temps (défaut 1)
+ * @param participationRadius issue #176 : distance maximale (blocs, distance 3D) entre un participant et la
+ *                        position du boss à sa mort pour être récompensé (défaut 100)
  */
-public record CommunityBossSettings(boolean enabled, int intervalMinutes, int maxActive) {
+public record CommunityBossSettings(boolean enabled, int intervalMinutes, int maxActive, int participationRadius) {
 
     public static final int DEFAULT_INTERVAL_MINUTES = 15;
     public static final int DEFAULT_MAX_ACTIVE = 1;
     public static final int MIN_INTERVAL_MINUTES = 1;
     public static final int MAX_INTERVAL_MINUTES = 24 * 60;
     public static final int MAX_MAX_ACTIVE = 10;
+    public static final int DEFAULT_PARTICIPATION_RADIUS = 100;
+    public static final int MIN_PARTICIPATION_RADIUS = 5;
+    public static final int MAX_PARTICIPATION_RADIUS = 500;
 
     public CommunityBossSettings {
         if (intervalMinutes < MIN_INTERVAL_MINUTES || intervalMinutes > MAX_INTERVAL_MINUTES) {
@@ -30,6 +35,15 @@ public record CommunityBossSettings(boolean enabled, int intervalMinutes, int ma
             throw new IllegalArgumentException("Le nombre maximum de boss simultanés doit être compris entre 1 et "
                     + MAX_MAX_ACTIVE + " : " + maxActive);
         }
+        if (participationRadius < MIN_PARTICIPATION_RADIUS || participationRadius > MAX_PARTICIPATION_RADIUS) {
+            throw new IllegalArgumentException("La distance de participation doit être comprise entre "
+                    + MIN_PARTICIPATION_RADIUS + " et " + MAX_PARTICIPATION_RADIUS + " blocs : " + participationRadius);
+        }
+    }
+
+    /** Réglages du scheduler seuls (#175) : distance de participation par défaut. */
+    public CommunityBossSettings(boolean enabled, int intervalMinutes, int maxActive) {
+        this(enabled, intervalMinutes, maxActive, DEFAULT_PARTICIPATION_RADIUS);
     }
 
     public static CommunityBossSettings defaults() {

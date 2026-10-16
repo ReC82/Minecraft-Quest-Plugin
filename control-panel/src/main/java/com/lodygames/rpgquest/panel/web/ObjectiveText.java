@@ -87,6 +87,10 @@ public final class ObjectiveText {
                         ? new Objective("Découvrir " + amount + " ville(s) distincte(s)" + rule, null)
                         : new Objective("Découvrir la ville « " + cityNames.apply(target) + " »" + rule, target);
             }
+            // Issue #171 : boss personnel, nommé par son profil (forme courte).
+            case "KILL_QUEST_BOSS" -> new Objective("Vaincre son boss de quête « "
+                    + MiniText.prettifyId(target.contains(":") ? target.substring(target.indexOf(':') + 1) : target)
+                    + " »", target);
             default -> {
                 String raw = str(summary.get("raw"));
                 yield new Objective(raw.isEmpty()

@@ -1,0 +1,282 @@
+package com.lodygames.rpgquest.mob.community;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.entitlement.reward.RewardEntitlement;
+import com.lodygames.rpgquest.mob.model.BossMode;
+import com.lodygames.rpgquest.mob.model.MobCategory;
+import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.World;
+import org.bukkit.block.Biome;
+import org.bukkit.damage.DamageSource;
+import org.bukkit.damage.DamageType;
+import org.bukkit.entity.Arrow;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Zombie;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.persistence.PersistentDataType;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockbukkit.mockbukkit.MockBukkit;
+import org.mockbukkit.mockbukkit.ServerMock;
+import org.mockbukkit.mockbukkit.entity.PlayerMock;
+
+/**
+ * Issue #176 — participation (coups effectifs mémorisés sur l'entité) et déclaration des droits à la
+ * mort, contre MockBukkit. Le service de droits à récompense est remplacé par un puits en mémoire :
+ * la remise elle-même (au plus une fois, inventaire plein) est couverte par les tests de #422.
+ */
+class CommunityBossRewardsTest {
+
+    private ServerMock server;
+    private RPGQuestPlugin plugin;
+    private World wild;
+    private World hub;
+    private NamespacedKey instanceKey;
+    private FakeSink sink;
+    private List<String> profileRewards;
+    private CommunityBossRewards rewards;
+    private Zombie boss;
+
+    /** Puits en mémoire : déclarations reçues et joueurs dont la remise a été demandée. */
+    private static final class FakeSink implements CommunityBossRewards.RewardSink {
+        boolean enabled = true;
+        int failuresBeforeSuccess;
+        final List<RewardEntitlement.Declaration> declared = new ArrayList<>();
+        final List<UUID> delivered = new ArrayList<>();
+
+        @Override
+        public boolean enabled() {
+            return enabled;
+        }
+
+        @Override
+        public String label(String rewardKey) {
+            return "boss_ogre".equals(rewardKey) ? "Coffre de l'ogre" : null;
+        }
+
+        @Override
+        public CompletableFuture<Integer> declare(List<RewardEntitlement.Declaration> declarations) {
+            if (failuresBeforeSuccess > 0) {
+                failuresBeforeSuccess--;
+                return CompletableFuture.failedFuture(new IllegalStateException("base indisponible"));
+            }
+            declared.addAll(declarations);
+            return CompletableFuture.completedFuture(declarations.size());
+        }
+
+        @Override
+        public void deliverSoon(List<UUID> players) {
+            delivered.addAll(players);
+        }
+    }
+
+    @BeforeEach
+    void setUp() {
+        server = MockBukkit.mock();
+        plugin = MockBukkit.load(RPGQuestPlugin.class);
+        wild = server.addSimpleWorld("wild");
+        hub = server.addSimpleWorld("hub");
+        instanceKey = new NamespacedKey(plugin, CommunityBossService.INSTANCE_KEY_NAME);
+        sink = new FakeSink();
+        profileRewards = new ArrayList<>(List.of("boss_ogre"));
+        rewards = new CommunityBossRewards(plugin, plugin.getSLF4JLogger(), instanceKey,
+                id -> Optional.of(profile()), sink);
+        server.getPluginManager().registerEvents(rewards, plugin);
+        boss = wild.spawn(new Location(wild, 0.5, 64, 0.5), Zombie.class);
+        boss.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, boss.getUniqueId().toString());
+    }
+
+    @AfterEach
+    void tearDown() {
+        MockBukkit.unmock();
+    }
+
+    private SpecialMobDefinition profile() {
+        return new SpecialMobDefinition(new NamespacedKey("rpgquest", "ogre"), MobCategory.BOSS, true,
+                EntityType.ZOMBIE, "Ogre", 0.0, Set.of(), Set.of(), Set.of(), 200.0, null, null, null, null, null,
+                null, null, null, List.of(), List.of(), null, null, BossMode.COMMUNITY, 1, profileRewards);
+    }
+
+    private CommunityBossInstance instance() {
+        return new CommunityBossInstance(boss.getUniqueId(), "rpgquest:ogre", "Ogre", "wild", 0, 64, 0,
+                "minecraft:plains", null, null, 0, null, 0L, false);
+    }
+
+    private PlayerMock fighter(String name) {
+        PlayerMock player = server.addPlayer(name);
+        player.teleport(new Location(wild, 3.5, 64, 0.5));
+        return player;
+    }
+
+    private EntityDamageByEntityEvent hit(Entity damager, LivingEntity victim, double damage) {
+        EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(damager, victim,
+                EntityDamageEvent.DamageCause.ENTITY_ATTACK,
+                DamageSource.builder(DamageType.GENERIC).withCausingEntity(damager).withDirectEntity(damager).build(),
+                damage);
+        server.getPluginManager().callEvent(event);
+        return event;
+    }
+
+    private void defeat() {
+        rewards.onDefeated(instance(), boss, null);
+        server.getScheduler().performTicks(1);
+    }
+
+    private static String messages(PlayerMock p) {
+        StringBuilder out = new StringBuilder();
+        Component c;
+        while ((c = p.nextComponentMessage()) != null) {
+            out.append(PlainTextComponentSerializer.plainText().serialize(c)).append('\n');
+        }
+        return out.toString();
+    }
+
+    @Test
+    void oneEffectiveHitIsEnoughAndTheFinalBlowIsNotRequired() {
+        PlayerMock alice = fighter("Alice");
+        PlayerMock bob = fighter("Bob");
+        hit(alice, boss, 1.0);
+        hit(alice, boss, 4.0); // un second coup n'inscrit pas deux fois
+        hit(bob, boss, 0.5);
+
+        rewards.onDefeated(instance(), boss, bob); // Bob porte le coup final, Alice non
+        server.getScheduler().performTicks(1);
+
+        assertEquals(Set.of(alice.getUniqueId(), bob.getUniqueId()),
+                Set.copyOf(sink.declared.stream().map(RewardEntitlement.Declaration::playerId).toList()));
+        assertEquals(2, sink.declared.size());
+        assertEquals(Set.of(alice.getUniqueId(), bob.getUniqueId()), Set.copyOf(sink.delivered));
+        assertTrue(messages(alice).contains("Participation reconnue"));
+        assertEquals(2, rewards.recentDefeats().get(0).participants().size());
+    }
+
+    @Test
+    void projectilesCountForTheirShooter() {
+        PlayerMock archer = fighter("Archer");
+        Arrow arrow = wild.spawn(new Location(wild, 2.5, 65, 0.5), Arrow.class);
+        arrow.setShooter(archer);
+        hit(arrow, boss, 3.0);
+
+        assertEquals(Set.of(archer.getUniqueId()), rewards.participants(boss));
+    }
+
+    @Test
+    void cancelledOrZeroDamageHitsDoNotCount() {
+        PlayerMock alice = fighter("Alice");
+        EntityDamageByEntityEvent cancelled = new EntityDamageByEntityEvent(alice, boss,
+                EntityDamageEvent.DamageCause.ENTITY_ATTACK,
+                DamageSource.builder(DamageType.GENERIC).withCausingEntity(alice).withDirectEntity(alice).build(), 5.0);
+        cancelled.setCancelled(true);
+        server.getPluginManager().callEvent(cancelled);
+        hit(alice, boss, 0.0);
+
+        assertTrue(rewards.participants(boss).isEmpty());
+        defeat();
+        assertTrue(sink.declared.isEmpty());
+    }
+
+    @Test
+    void hitsOnAnOrdinaryMobAreNeverRecorded() {
+        PlayerMock alice = fighter("Alice");
+        Zombie ordinary = wild.spawn(new Location(wild, 5.5, 64, 0.5), Zombie.class);
+        hit(alice, ordinary, 5.0);
+        assertTrue(rewards.participants(ordinary).isEmpty());
+    }
+
+    @Test
+    void deadOfflineOtherWorldAndOtherBiomeParticipantsAreExcluded() {
+        PlayerMock dead = fighter("Mort");
+        PlayerMock gone = fighter("Parti");
+        PlayerMock away = fighter("Ailleurs");
+        PlayerMock elsewhere = fighter("Foret");
+        PlayerMock winner = fighter("Present");
+        for (PlayerMock p : List.of(dead, gone, away, elsewhere, winner)) {
+            hit(p, boss, 2.0);
+        }
+        dead.setHealth(0);
+        gone.disconnect();
+        away.teleport(new Location(hub, 0.5, 64, 0.5));
+        wild.setBiome(200, 200, Biome.FOREST);
+        elsewhere.teleport(new Location(wild, 200.5, 64, 200.5));
+        messages(elsewhere);
+
+        defeat();
+
+        assertEquals(List.of(winner.getUniqueId()), sink.declared.stream().map(RewardEntitlement.Declaration::playerId).toList());
+        List<BossParticipation.Evaluated> verdicts = rewards.recentDefeats().get(0).participants();
+        assertEquals(List.of(BossParticipation.Verdict.DEAD, BossParticipation.Verdict.OFFLINE,
+                        BossParticipation.Verdict.OTHER_WORLD, BossParticipation.Verdict.OTHER_BIOME,
+                        BossParticipation.Verdict.ELIGIBLE),
+                verdicts.stream().map(BossParticipation.Evaluated::verdict).toList());
+        assertTrue(messages(elsewhere).contains("hors du biome du boss"));
+    }
+
+    @Test
+    void participationSurvivesOnTheEntityAndIsNeverSharedWithAnotherBoss() {
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+        Zombie other = wild.spawn(new Location(wild, 6.5, 64, 0.5), Zombie.class);
+        other.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, other.getUniqueId().toString());
+
+        assertEquals(Set.of(alice.getUniqueId()), rewards.participants(boss));
+        assertTrue(rewards.participants(other).isEmpty());
+    }
+
+    @Test
+    void nothingIsDeclaredWithoutRewardsOrWhenEntitlementsAreDisabled() {
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+        sink.enabled = false;
+        defeat();
+        assertTrue(sink.declared.isEmpty());
+        assertTrue(rewards.recentDefeats().get(0).rewardStatus().contains("désactivés"));
+
+        sink.enabled = true;
+        profileRewards.clear();
+        defeat();
+        assertTrue(sink.declared.isEmpty());
+        assertTrue(messages(alice).isEmpty(), "aucune récompense configurée : rien n'est promis");
+    }
+
+    @Test
+    void aFailedDeclarationIsRetriedWithTheSameKeys() {
+        PlayerMock alice = fighter("Alice");
+        hit(alice, boss, 2.0);
+        sink.failuresBeforeSuccess = 2;
+
+        defeat();
+        assertTrue(sink.declared.isEmpty());
+        server.getScheduler().performTicks(20L * 5 + 2);
+        server.getScheduler().performTicks(20L * 5 + 2);
+
+        assertEquals(1, sink.declared.size());
+        assertTrue(rewards.recentDefeats().get(0).rewardStatus().contains("1 droit(s) déclaré(s)"));
+    }
+
+    @Test
+    void anUnknownCatalogKeyIsStillDeclaredSoItIsNeverLost() {
+        PlayerMock alice = fighter("Alice");
+        profileRewards.add("pas_au_catalogue");
+        hit(alice, boss, 2.0);
+        defeat();
+        assertEquals(List.of("boss_ogre", "pas_au_catalogue"),
+                sink.declared.stream().map(RewardEntitlement.Declaration::rewardKey).toList());
+    }
+}

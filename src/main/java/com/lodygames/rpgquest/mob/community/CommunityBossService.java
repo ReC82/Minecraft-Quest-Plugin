@@ -518,7 +518,7 @@ public final class CommunityBossService implements PluginService, Listener {
                 killer == null ? null : killer.getName(), instance.test()));
         logger.info("Boss communautaire « {} » vaincu{}.", instance.profileId(),
                 killer == null ? "" : " par " + killer.getName());
-        fire(h -> h.onDefeated(instance, killer));
+        fire(h -> h.onDefeated(instance, event.getEntity(), killer));
     }
 
     /** Retrait admin d'un boss précis (test ou non). Ne donne jamais de récompense. */

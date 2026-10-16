@@ -251,6 +251,7 @@ public final class RPGQuestBootstrap {
     private SpecialMobService mobService;
     private com.lodygames.rpgquest.mob.community.CommunityBossSettingsStore communityBossSettingsStore;
     private com.lodygames.rpgquest.mob.community.CommunityBossService communityBossService;
+    private com.lodygames.rpgquest.mob.community.CommunityBossRewards communityBossRewards;
     private ProgressionService progressionService;
     private EntitlementService entitlementService;
     private com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService rewardEntitlementService;
@@ -927,6 +928,14 @@ public final class RPGQuestBootstrap {
                 task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
                 com.lodygames.rpgquest.mob.community.CommunityBossService.loadedChunksOnly());
         registry.start(communityBossService);
+        // Issue #176 : participation (coups effectifs mémorisés sur l'entité) et récompenses des boss
+        // communautaires, remises par les droits à récompense (#422) : au plus une fois, inventaire plein géré.
+        communityBossRewards = new com.lodygames.rpgquest.mob.community.CommunityBossRewards(
+                plugin, plugin.getSLF4JLogger(), communityBossService.instanceKey(),
+                id -> java.util.Optional.ofNullable(org.bukkit.NamespacedKey.fromString(id)).flatMap(mobRegistry::find),
+                com.lodygames.rpgquest.mob.community.CommunityBossRewards.RewardSink.of(rewardEntitlementService));
+        communityBossService.addHooks(communityBossRewards);
+        registry.start(new PlayerListenerService(plugin, communityBossRewards));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -1125,7 +1134,7 @@ public final class RPGQuestBootstrap {
         // liste qui en compte déjà une trentaine.
         agentActions.setBuildingHistoryRepository(buildingHistoryRepository);
         // Issue #175 : boss communautaires (état, réglages, apparition de test, retrait).
-        agentActions.setCommunityBosses(communityBossService, communityBossSettingsStore);
+        agentActions.setCommunityBosses(communityBossService, communityBossSettingsStore, communityBossRewards);
         // Issue #94 : génération de bâtiments depuis un plan déclaratif. Même logique de setter
         // facultatif — sans WorldEdit, l'atelier refuse d'écrire et la génération échoue avec son
         // motif, sans empêcher quoi que ce soit d'autre de fonctionner.

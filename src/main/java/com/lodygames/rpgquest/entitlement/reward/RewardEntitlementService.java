@@ -258,6 +258,29 @@ public final class RewardEntitlementService implements PluginService, Listener {
         return repository.declare(declaration, clock.instant()).thenApply(created -> new DeclareOutcome(created, key));
     }
 
+    /**
+     * Déclarations d'une source du jeu (boss communautaire, #176) : idempotentes par clé, refusées si
+     * la fonction est désactivée. Une clé de récompense absente du catalogue est tout de même
+     * déclarée : le droit reste en attente avec l'erreur visible, jamais perdu.
+     *
+     * @return nombre de droits réellement créés
+     */
+    public CompletableFuture<Integer> declareAll(List<RewardEntitlement.Declaration> declarations) {
+        if (!catalog.enabled()) {
+            return CompletableFuture.failedFuture(new IllegalStateException(
+                    "droits à récompense désactivés (entitlements.yml : enabled: false)"));
+        }
+        if (declarations.isEmpty()) {
+            return CompletableFuture.completedFuture(0);
+        }
+        return repository.declareAll(declarations, clock.instant());
+    }
+
+    /** Tente tout de suite la remise des droits en attente de ces joueurs (sans attendre le tour de 30 s). */
+    public CompletableFuture<Void> deliverSoon(List<UUID> players) {
+        return deliverPendingOf(players);
+    }
+
     /** Révocation d'un droit en attente. {@code false} = inconnu, déjà remis ou déjà révoqué. */
     public CompletableFuture<Boolean> revoke(String idempotencyKey, String reason) {
         // Pas de garde mémoire ici : si une remise est en vol, la prise et la révocation sont deux

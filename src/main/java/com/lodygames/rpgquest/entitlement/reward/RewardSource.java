@@ -8,5 +8,7 @@ public enum RewardSource {
     /** Récompense d'un événement archivé (#57), lue dans l'archive figée. */
     EVENT,
     /** Déclaration manuelle depuis PlugAdmin. */
-    ADMIN
+    ADMIN,
+    /** Participation éligible à un boss communautaire vaincu (#176). */
+    BOSS
 }

@@ -764,6 +764,7 @@ public final class AgentActionExecutor {
                 row.put("abilitiesSummary", p.abilitiesSummary());
                 row.put("bossMode", p.bossMode());
                 row.put("communityWeight", p.communityWeight());
+                row.put("participationRewards", p.participationRewards());
                 rows.add(row);
             }
             Map<String, Object> settings = new LinkedHashMap<>();
@@ -814,6 +815,14 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(),
                     "Paramètre « community_weight » invalide (entier de 1 à " + MAX_COMMUNITY_WEIGHT + ")."));
         }
+        // Issue #176 : absent = conservé (ancien panel) ; présent et vide = retiré. Revalidé par le modèle.
+        List<String> participationRewards = action.param("participation_rewards") == null ? null
+                : splitList(action.param("participation_rewards"));
+        if (participationRewards != null && (participationRewards.size() > MAX_PARTICIPATION_REWARDS
+                || !participationRewards.stream().allMatch(k -> REWARD_KEY.matcher(k).matches()))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « participation_rewards » invalide ("
+                    + MAX_PARTICIPATION_REWARDS + " clés au plus : minuscules, chiffres, _ . -)."));
+        }
 
         CompletableFuture<AgentActions.MutationResult> future = (create ? actions.mobDefinitionCreate(
                 id, category, enabled, entityType, displayName, spawnChance,
@@ -828,7 +837,7 @@ public final class AgentActionExecutor {
                 parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
                 parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
                 parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
-                bossMode, communityWeight)
+                bossMode, communityWeight, participationRewards)
                 : actions.mobDefinitionUpdate(
                 id, category, enabled, entityType, displayName, spawnChance,
                 splitList(action.param("worlds")), splitList(action.param("biomes")), splitList(action.param("zones")),
@@ -842,7 +851,7 @@ public final class AgentActionExecutor {
                 parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
                 parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
                 parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
-                bossMode, communityWeight));
+                bossMode, communityWeight, participationRewards));
         return future.thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
@@ -890,6 +899,8 @@ public final class AgentActionExecutor {
 
     private static final java.util.Set<String> BOSS_MODES = java.util.Set.of("QUEST", "COMMUNITY");
     private static final int MAX_COMMUNITY_WEIGHT = 1000;
+    private static final int MAX_PARTICIPATION_REWARDS = 5;
+    private static final Pattern REWARD_KEY = Pattern.compile("[a-z0-9_.-]{1,64}");
     private static final Pattern ENTITY_UUID = Pattern.compile(
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
@@ -923,7 +934,33 @@ public final class AgentActionExecutor {
                 row.put("communityWeight", p.communityWeight());
                 row.put("worlds", p.worlds());
                 row.put("biomes", p.biomes());
+                row.put("participationRewards", p.participationRewards());
                 profiles.add(row);
+            }
+            List<Map<String, Object>> defeats = new ArrayList<>();
+            for (AgentActions.CommunityBossDefeatView d : view.recentDefeats()) {
+                List<Map<String, Object>> participants = new ArrayList<>();
+                for (AgentActions.CommunityBossParticipantView p : d.participants()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("uuid", p.uuid());
+                    row.put("name", p.name());
+                    row.put("eligible", p.eligible());
+                    row.put("reason", p.reason());
+                    participants.add(row);
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("entityId", d.entityId());
+                row.put("profileId", d.profileId());
+                row.put("profileName", d.profileName());
+                row.put("defeatedAt", d.defeatedAtMillis());
+                row.put("world", d.world());
+                row.put("biome", d.biome());
+                row.put("killerName", d.killerName());
+                row.put("test", d.test());
+                row.put("participants", participants);
+                row.put("rewardKeys", d.rewardKeys());
+                row.put("rewardStatus", d.rewardStatus());
+                defeats.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("available", view.available());
@@ -939,6 +976,7 @@ public final class AgentActionExecutor {
             details.put("now", view.nowMillis());
             details.put("instances", instances);
             details.put("profiles", profiles);
+            details.put("recentDefeats", defeats);
             return AgentActionOutcome.success(action.id(), String.valueOf(instances.size()),
                     instances.size() + " boss communautaire(s) actif(s).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));

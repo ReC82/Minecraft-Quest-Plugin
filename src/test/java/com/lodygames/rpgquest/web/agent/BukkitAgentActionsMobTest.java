@@ -64,7 +64,7 @@ class BukkitAgentActionsMobTest {
     private AgentActions.MutationResult create(String id, String entityType) throws Exception {
         return actions.mobDefinitionCreate(id, "SPECIAL", true, entityType, "Test " + entityType, 0.01,
                 List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null).get();
+                null, null, null, null, null, null, null, null, null, null, null, null, null).get();
     }
 
     @Test
@@ -94,7 +94,7 @@ class BukkitAgentActionsMobTest {
         AgentActions.MutationResult updated = actions.mobDefinitionUpdate(
                 "swamp_king", "SPECIAL", true, "ZOMBIE", "Roi des Marais (modifié)", 0.02,
                 List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null).get();
+                null, null, null, null, null, null, null, null, null, null, null, null, null).get();
         assertTrue(updated.ok(), updated.message());
         assertEquals("UPDATED", updated.code());
 

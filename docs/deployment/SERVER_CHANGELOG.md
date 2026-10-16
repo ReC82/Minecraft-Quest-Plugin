@@ -71,7 +71,12 @@ JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygame
 
 ### Déploiement
 
-Voir le rapport `docs/claude-reports/` de #471 (scripts officiels, redémarrage DEV).
+Effectué le 2026-10-16 ~20:14 (heure locale) : `scripts/deploy-verygames.sh -y` depuis `dcbc9c8` (merge de la
+PR #476, CI verte ; tests + build relancés par le script, verts ; JAR 3 315 002 o, SHA-256 `b5cd752d…ebf1258`,
+« JAR en ligne : 3315002 octets (== local) », JAR distant retéléchargé : même SHA-256), sauvegarde
+`rpgquest-20261016T181244Z-predeploy.jar` (JAR #177, 3 308 137 o, `4103484b…16ab63`),
+`scripts/verygames-restart.sh` (seul LoDyMcFly connecté), `scripts/plugadmin/deploy.sh`.
+`mobs/community-bosses.yml` de DEV ni lu ni écrit ; aucun boss invoqué.
 
 ### Validation
 

@@ -721,6 +721,17 @@ public final class AgentActionCatalog {
                 "Déclarer un droit à récompense");
         addSensitiveWrite("entitlement.revoke", Permission.ECONOMY_WRITE, true,
                 "Révoquer un droit à récompense en attente");
+        // Issue #177 (tranche 2) — tables de récompenses aléatoires (section « tables » de
+        // entitlements.yml). Mêmes permissions que les droits à récompense : une table décide de ce
+        // qui entre en jeu. Écriture réversible (copie, désactivation), pas de confirmation cachée.
+        add("reward.catalog.status", Permission.ECONOMY_READ, false, false,
+                "Rafraîchir les tables de récompenses");
+        addContentWrite("reward.table.save", Permission.ECONOMY_WRITE, "Enregistrer une table de récompenses",
+                "reward.catalog.status", "boss.community.status");
+        addContentWrite("reward.table.duplicate", Permission.ECONOMY_WRITE, "Dupliquer une table de récompenses",
+                "reward.catalog.status", "boss.community.status");
+        addContentWrite("reward.table.toggle", Permission.ECONOMY_WRITE,
+                "Activer / désactiver une table de récompenses", "reward.catalog.status", "boss.community.status");
         // Issue #200 — pont vers les droits Minecraft. Distribuer un droit de construction ou un
         // bypass est au moins aussi sensible que gérer un groupe du panel : même permission.
         add("mc.rights.read", Permission.USER_MANAGE, false, true,
@@ -2496,6 +2507,24 @@ public final class AgentActionCatalog {
                 }
                 params.put("reward", reward);
                 params.put("reference", reference);
+            }
+            case "reward.table.save" -> {
+                String error = RewardTableForm.fill(form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "reward.table.duplicate" -> {
+                String error = RewardTableForm.fillDuplicate(form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "reward.table.toggle" -> {
+                String error = RewardTableForm.fillToggle(form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
             }
             case "entitlement.revoke" -> {
                 String key = trim(form.get("key"));

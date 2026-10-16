@@ -198,6 +198,10 @@ public final class AgentActionExecutor {
                 case ENTITLEMENT_LIST -> entitlementList(action);
                 case ENTITLEMENT_DECLARE -> entitlementDeclare(action);
                 case ENTITLEMENT_REVOKE -> entitlementRevoke(action);
+                case REWARD_CATALOG_STATUS -> rewardCatalogStatus(action);
+                case REWARD_TABLE_SAVE -> rewardTableSave(action);
+                case REWARD_TABLE_DUPLICATE -> rewardTableDuplicate(action);
+                case REWARD_TABLE_TOGGLE -> rewardTableToggle(action);
                 case ENCOUNTER_RETRY -> encounterSiteAction(action, "retry");
                 case ENCOUNTER_DISABLE -> encounterSiteAction(action, "disable");
                 case ENCOUNTER_REMOVE -> encounterSiteAction(action, "remove");
@@ -1010,30 +1014,7 @@ public final class AgentActionExecutor {
             details.put("instances", instances);
             details.put("profiles", profiles);
             details.put("recentDefeats", defeats);
-            List<Map<String, Object>> tables = new ArrayList<>();
-            for (AgentActions.RewardTableView t : view.rewardTables()) {
-                List<Map<String, Object>> entries = new ArrayList<>();
-                for (AgentActions.RewardTableEntryView e : t.entries()) {
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("id", e.id());
-                    row.put("rewardKey", e.rewardKey());
-                    row.put("rewardLabel", e.rewardLabel());
-                    row.put("rewardKnown", e.rewardKnown());
-                    row.put("chance", e.chance());
-                    entries.add(row);
-                }
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("id", t.id());
-                row.put("label", t.label());
-                row.put("mode", t.mode());
-                row.put("modeLabel", t.modeLabel());
-                row.put("enabled", t.enabled());
-                row.put("version", t.version());
-                row.put("totalChance", t.totalChance());
-                row.put("explanation", t.explanation());
-                row.put("entries", entries);
-                tables.add(row);
-            }
+            List<Map<String, Object>> tables = rewardTableRows(view.rewardTables());
             details.put("rewardTables", tables);
             return AgentActionOutcome.success(action.id(), String.valueOf(instances.size()),
                     instances.size() + " boss communautaire(s) actif(s).", details);
@@ -1403,6 +1384,167 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(sites.size()),
                     templates.size() + " modèle(s), " + sites.size() + " occurrence(s).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Tables de tirage (#177), même forme dans {@code boss.community.status} et {@code reward.catalog.status}. */
+    private static List<Map<String, Object>> rewardTableRows(List<AgentActions.RewardTableView> views) {
+        List<Map<String, Object>> tables = new ArrayList<>();
+        for (AgentActions.RewardTableView t : views) {
+            List<Map<String, Object>> entries = new ArrayList<>();
+            for (AgentActions.RewardTableEntryView e : t.entries()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", e.id());
+                row.put("rewardKey", e.rewardKey());
+                row.put("rewardLabel", e.rewardLabel());
+                row.put("rewardKnown", e.rewardKnown());
+                row.put("chance", e.chance());
+                row.put("chanceValue", e.chanceValue());
+                entries.add(row);
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", t.id());
+            row.put("label", t.label());
+            row.put("mode", t.mode());
+            row.put("modeLabel", t.modeLabel());
+            row.put("enabled", t.enabled());
+            row.put("version", t.version());
+            row.put("totalChance", t.totalChance());
+            row.put("explanation", t.explanation());
+            row.put("entries", entries);
+            tables.add(row);
+        }
+        return tables;
+    }
+
+    // ---- Tables de récompenses aléatoires : éditeur (issue #177, tranche 2) ----------------------
+
+    private static final java.util.regex.Pattern REWARD_TABLE_VERSION = java.util.regex.Pattern.compile("[0-9a-f]{8}");
+
+    private CompletableFuture<AgentActionOutcome> rewardCatalogStatus(AgentAction action) {
+        return actions.rewardCatalogStatus().thenApply(view -> {
+            List<Map<String, Object>> rewards = new ArrayList<>();
+            for (AgentActions.RewardCatalogEntryView r : view.rewards()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("key", r.key());
+                row.put("label", r.label());
+                row.put("summary", r.summary());
+                rewards.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("fileExists", view.fileExists());
+            details.put("valid", view.valid());
+            details.put("enabled", view.enabled());
+            details.put("errors", view.errors());
+            details.put("rewards", rewards);
+            details.put("tables", rewardTableRows(view.tables()));
+            return AgentActionOutcome.success(action.id(), Integer.toString(view.tables().size()),
+                    view.tables().size() + " table(s), " + rewards.size() + " récompense(s) au catalogue.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code reward.table.save} : {@code table_id}, {@code label}, {@code mode}, {@code enabled},
+     * {@code entries} ({@code id=récompense@chance;…}, chance en %), {@code create},
+     * {@code expected_version} facultatif. Forme vérifiée ici ; le reste (récompense existante,
+     * somme ≤ 100 % en « single ») par le vrai chargeur avant écriture.
+     */
+    private CompletableFuture<AgentActionOutcome> rewardTableSave(AgentAction action) {
+        String id = trimOrNull(action.param("table_id"));
+        if (id == null || !com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.TABLE_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « table_id » invalide (minuscules, chiffres, _ -, 32 caractères au plus)."));
+        }
+        String label = trimOrNull(action.param("label"));
+        if (label == null || label.length() > com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.LABEL_MAX
+                || label.chars().anyMatch(Character::isISOControl)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « label » obligatoire, sur une ligne, 120 caractères au plus."));
+        }
+        String mode = trimOrNull(action.param("mode"));
+        if (com.lodygames.rpgquest.entitlement.reward.RewardTable.Mode.fromYaml(mode == null ? "" : mode) == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « mode » : independent ou single."));
+        }
+        String expected = trimOrNull(action.param("expected_version"));
+        if (expected != null && !REWARD_TABLE_VERSION.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_version » invalide."));
+        }
+        List<AgentActions.RewardTableEntryInput> entries = new ArrayList<>();
+        String error = parseTableEntries(action.param("entries"), entries);
+        if (error != null) {
+            return done(AgentActionOutcome.rejected(action.id(), error));
+        }
+        return actions.rewardTableSave(id, label, mode.toLowerCase(java.util.Locale.ROOT), isTrue(action.param("enabled")),
+                        entries, expected, isTrue(action.param("create")))
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Remplit {@code out} ; renvoie le message de refus, ou {@code null} si tout est valide. */
+    static String parseTableEntries(String raw, List<AgentActions.RewardTableEntryInput> out) {
+        if (raw == null || raw.isBlank()) {
+            return "Paramètre « entries » : au moins une récompense.";
+        }
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (String piece : raw.split(";")) {
+            String line = piece.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            int eq = line.indexOf('=');
+            int at = line.lastIndexOf('@');
+            if (eq <= 0 || at <= eq + 1 || at == line.length() - 1) {
+                return "Entrée « " + safe(line) + " » : forme id=récompense@chance attendue.";
+            }
+            String entryId = line.substring(0, eq).trim();
+            String reward = line.substring(eq + 1, at).trim();
+            Integer chance = com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.chance(line.substring(at + 1).trim());
+            if (!com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.ENTRY_ID.matcher(entryId).matches()) {
+                return "Entrée « " + safe(entryId) + " » : identifiant invalide (minuscules, chiffres, _ -, 24 au plus).";
+            }
+            if (!ENTITLEMENT_REWARD.matcher(reward).matches()) {
+                return "Entrée « " + entryId + " » : récompense invalide (clé du catalogue).";
+            }
+            if (chance == null) {
+                return "Entrée « " + entryId + " » : chance = pourcentage > 0 et ≤ 100, deux décimales au plus (12.5).";
+            }
+            if (!ids.add(entryId)) {
+                return "Entrée « " + entryId + " » en double.";
+            }
+            out.add(new AgentActions.RewardTableEntryInput(entryId, reward, chance));
+        }
+        if (out.isEmpty() || out.size() > com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.MAX_TABLE_ENTRIES) {
+            return "Paramètre « entries » : de 1 à "
+                    + com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.MAX_TABLE_ENTRIES + " récompenses.";
+        }
+        return null;
+    }
+
+    private CompletableFuture<AgentActionOutcome> rewardTableDuplicate(AgentAction action) {
+        String source = trimOrNull(action.param("table_id"));
+        String target = trimOrNull(action.param("new_id"));
+        java.util.regex.Pattern tableId = com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.TABLE_ID;
+        if (source == null || !tableId.matcher(source).matches() || target == null
+                || !tableId.matcher(target).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètres « table_id » et « new_id » obligatoires "
+                    + "(minuscules, chiffres, _ -, 32 caractères au plus)."));
+        }
+        String label = trimOrNull(action.param("new_label"));
+        if (label != null && (label.length() > com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.LABEL_MAX
+                || label.chars().anyMatch(Character::isISOControl))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_label » : une ligne, 120 caractères au plus."));
+        }
+        return actions.rewardTableDuplicate(source, target, label).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> rewardTableToggle(AgentAction action) {
+        String id = trimOrNull(action.param("table_id"));
+        if (id == null || !com.lodygames.rpgquest.entitlement.reward.RewardCatalogLoader.TABLE_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « table_id » invalide."));
+        }
+        return actions.rewardTableToggle(id, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
     // ---- Droits à récompense (issue #422) --------------------------------------------------------

@@ -133,8 +133,11 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         }
     }
 
-    /** Ce que reçoit un participant éligible : libellés garantis et tirés, et tables sans gain. */
-    private record Promised(List<String> labels, List<String> emptyDraws) {
+    /**
+     * Ce que reçoit un participant éligible : libellés garantis et tirés, tables sans gain, et tables
+     * inconnues ou désactivées (annoncées comme indisponibles, jamais passées sous silence).
+     */
+    private record Promised(List<String> labels, List<String> emptyDraws, List<String> unavailableDraws) {
     }
 
     private final Plugin plugin;
@@ -278,6 +281,7 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         if (!rewards.enabled()) {
             logger.warn("Boss communautaire « {} » : {} participant(s) éligible(s) mais entitlements.yml est désactivé "
                     + "— aucune récompense déclarée.", instance.profileId(), eligible.size());
+            notifyDisabled(instance, eligible);
             return;
         }
         declare(instance, eligible, promised, declarations, 1);
@@ -294,11 +298,13 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
         for (BossParticipation.Evaluated participant : eligible) {
             List<String> labels = new ArrayList<>(fixedKeys.stream().map(this::label).toList());
             List<String> empty = new ArrayList<>();
+            List<String> unavailable = new ArrayList<>();
             for (String tableId : tableIds) {
                 Optional<RewardTable> table = rewards.table(tableId);
                 if (table.isEmpty() || !table.get().enabled()) {
                     draws.add(participant.name() + " : table « " + tableId + " » "
                             + (table.isEmpty() ? "inconnue" : "désactivée") + " — aucun tirage");
+                    unavailable.add(tableId);
                     continue;
                 }
                 List<RewardTableDraw.Win> wins = RewardTableDraw.wins(table.get(), "boss:" + instance.entityId(),
@@ -312,7 +318,7 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
                 draws.add(participant.name() + " : table « " + tableId + " » v" + table.get().version() + " → "
                         + (won.isEmpty() ? "aucun gain" : String.join(", ", won)));
             }
-            promised.put(participant.playerId(), new Promised(labels, empty));
+            promised.put(participant.playerId(), new Promised(labels, empty, unavailable));
         }
     }
 
@@ -378,6 +384,26 @@ public final class CommunityBossRewards implements CommunityBossHooks, Listener 
             for (String table : mine.emptyDraws()) {
                 player.sendMessage(MM.deserialize("<gray>Tirage « <table> » : pas de gain cette fois.</gray>",
                         Placeholder.unparsed("table", table)));
+            }
+            for (String table : mine.unavailableDraws()) {
+                player.sendMessage(MM.deserialize("<gray>Tirage « <table> » indisponible — signale-le à un "
+                        + "administrateur.</gray>", Placeholder.unparsed("table", table)));
+            }
+        }
+    }
+
+    /**
+     * Droits à récompense désactivés (#177, même règle que les quêtes) : rien n'est tiré ni déclaré,
+     * et chaque joueur éligible le sait au lieu d'attendre une récompense qui ne viendra pas.
+     */
+    private void notifyDisabled(CommunityBossInstance instance, List<BossParticipation.Evaluated> eligible) {
+        for (BossParticipation.Evaluated participant : eligible) {
+            Player player = Bukkit.getPlayer(participant.playerId());
+            if (player != null) {
+                player.sendMessage(MM.deserialize("<gold>⚔ Participation reconnue contre</gold> <name><gold>,</gold> "
+                                + "<gray>mais les récompenses sont désactivées sur le serveur : rien n'est attribué "
+                                + "(ni récompense, ni tirage). Signale-le à un administrateur.</gray>",
+                        Placeholder.unparsed("name", instance.profileName())));
             }
         }
     }

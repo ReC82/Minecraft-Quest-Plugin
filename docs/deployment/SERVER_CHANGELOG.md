@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Éditeur PlugAdmin des tables de récompenses aléatoires (#177, tranche 2)
+
+### Changement
+
+Page PlugAdmin **Récompenses aléatoires** (`/rewards`) : créer, modifier, dupliquer, activer / désactiver
+les tables de `entitlements.yml` sans YAML (actions agent `reward.catalog.status`, `reward.table.save`,
+`reward.table.duplicate`, `reward.table.toggle`, écriture sûre : validation par le vrai chargeur avant
+écriture, écriture atomique, ancienne version remise si le rechargement échoue). Listes recherchables des
+tables dans l'éditeur de quête et de boss. Règle commune quêtes / boss : catalogue désactivé = aucun tirage
+et le joueur est averti (avant : une quête enregistrait le gain quand même ; un boss ne disait rien).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin (AWS). Aucune migration. Nouvelle clé
+`quest.reward-line-table-disabled` ajoutée automatiquement à `messages.yml`. Aucun fichier créé ni modifié :
+`entitlements.yml` reste absent sur DEV ; **aucune table ni récompense n'est créée sur DEV** par ce lot
+(l'éditeur refuse d'écrire tant que le catalogue n'existe pas).
+
+### Sauvegarde préalable
+
+JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygames.sh` / `deploy.sh`).
+
+### Déploiement
+
+À effectuer après fusion : `scripts/deploy-verygames.sh -y`, redémarrage DEV, `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`reward.catalog.status` en lecture seule sur DEV (attendu : fichier absent, aucune table). PENDING MANUAL
+VALIDATION : TC-333 (après création du catalogue par le propriétaire).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; PlugAdmin `scripts/plugadmin/rollback.sh`.
+L'ancien JAR ne connaît pas les actions `reward.*` (le panel affiche « indisponible ») ; les tables écrites
+par l'éditeur restent un `entitlements.yml` valide pour l'ancien JAR.
+
 ## 2026-10-16 - Boss communautaires : distance de participation et mort pendant le combat (#176)
 
 ### Changement

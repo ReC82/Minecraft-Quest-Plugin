@@ -484,6 +484,21 @@ public enum AgentActionType {
     ENTITLEMENT_DECLARE("entitlement.declare"),
     /** Issue #422 — révoque un droit <strong>en attente</strong> ; un droit remis ne se révoque pas. */
     ENTITLEMENT_REVOKE("entitlement.revoke"),
+    /**
+     * Issue #177 (tranche 2) — état de {@code entitlements.yml} pour l'éditeur de tables : fichier
+     * présent / valide / activé, erreurs, catalogue des récompenses et tables. Lecture seule.
+     */
+    REWARD_CATALOG_STATUS("reward.catalog.status"),
+    /**
+     * Issue #177 — crée ou remplace une table de récompenses aléatoires (section {@code tables} de
+     * {@code entitlements.yml}) : validée par le vrai chargeur avant écriture, écriture atomique,
+     * ancienne version remise si le rechargement échoue.
+     */
+    REWARD_TABLE_SAVE("reward.table.save"),
+    /** Issue #177 — copie une table sous un nouvel identifiant, désactivée. */
+    REWARD_TABLE_DUPLICATE("reward.table.duplicate"),
+    /** Issue #177 — active ou désactive une table (ses chances et sa version ne changent pas). */
+    REWARD_TABLE_TOGGLE("reward.table.toggle"),
     /** Issue #13 — réactive une occurrence et la matérialise si sa zone est chargée. Cette occurrence seule. */
     ENCOUNTER_RETRY("encounter.retry"),
     /** Issue #13 — désactive une occurrence : son PNJ est retiré, l'instance ne génère plus rien. */

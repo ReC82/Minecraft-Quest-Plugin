@@ -29,7 +29,18 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
                       boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
                       Map<String, String> npcNames, Map<String, String> questNames,
                       Map<String, String> questOrigins, Map<String, List<String>> questPrereqs,
-                      ItemCatalog itemCatalog, Map<String, String> cityNames, boolean citiesKnown) {
+                      ItemCatalog itemCatalog, Map<String, String> cityNames, boolean citiesKnown,
+                      Map<String, String> rewardTableNames, boolean rewardTablesKnown) {
+
+    /** Forme antérieure à #177 tranche 2 : aucune table de récompenses relevée. */
+    public RefData(List<String> quests, List<String> npcs, List<String> worlds,
+                   boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
+                   Map<String, String> npcNames, Map<String, String> questNames,
+                   Map<String, String> questOrigins, Map<String, List<String>> questPrereqs,
+                   ItemCatalog itemCatalog, Map<String, String> cityNames, boolean citiesKnown) {
+        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames, questNames, questOrigins,
+                questPrereqs, itemCatalog, cityNames, citiesKnown, Map.of(), false);
+    }
 
     /** Forme antérieure à #178 : aucune ville relevée. */
     public RefData(List<String> quests, List<String> npcs, List<String> worlds,
@@ -74,6 +85,14 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             String v = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
             return blocksWithoutItem.contains(v);
         }
+    }
+
+    /** Issue #177 : suffixe du nom d'une table désactivée (affiché, et repéré par le validateur). */
+    public static final String DISABLED_TABLE_SUFFIX = " (désactivée)";
+
+    /** Table relevée mais désactivée sur le serveur ? */
+    public boolean rewardTableDisabled(String id) {
+        return rewardTableNames.getOrDefault(id == null ? "" : id.trim(), "").endsWith(DISABLED_TABLE_SUFFIX);
     }
 
     /** Origines possibles d'une quête du catalogue fusionné (issues #163/#164). */
@@ -127,6 +146,9 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
         // Issue #178 : identifiant stable → nom affiché, dans l'ordre du relevé (trié par nom).
         cityNames = java.util.Collections.unmodifiableMap(
                 new java.util.LinkedHashMap<>(cityNames == null ? Map.of() : cityNames));
+        // Issue #177 : identifiant de table → nom affiché, dans l'ordre du relevé reward.catalog.status.
+        rewardTableNames = java.util.Collections.unmodifiableMap(
+                new java.util.LinkedHashMap<>(rewardTableNames == null ? Map.of() : rewardTableNames));
     }
 
     /**
@@ -164,7 +186,8 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             prereqs.putAll(packQuestPrereqs);
         }
         return new RefData(q, n, worlds, true, npcsKnown || !n.isEmpty(), worldsKnown,
-                npcNames, questNames, origins, prereqs, itemCatalog, cityNames, citiesKnown);
+                npcNames, questNames, origins, prereqs, itemCatalog, cityNames, citiesKnown,
+                rewardTableNames, rewardTablesKnown);
     }
 
     public static RefData empty() {
@@ -309,6 +332,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             case "quest" -> quests;
             case "world" -> worlds;
             case "city" -> List.copyOf(cityNames.keySet());
+            case "reward-table" -> List.copyOf(rewardTableNames.keySet());
             default -> List.of();
         };
     }
@@ -324,6 +348,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             case "quest" -> questsKnown;
             case "world" -> worldsKnown;
             case "city" -> citiesKnown;
+            case "reward-table" -> rewardTablesKnown;
             // « category » et « icon » : saisie libre légitime (nouvelle catégorie, n'importe quel
             // matériau vanilla) — on ne prétend jamais « connaître » la liste, donc jamais de
             // WARNING sur ces champs (au pire un INFO côté validateur).
@@ -339,6 +364,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             case "quest" -> isQuestKnown(value);
             case "world" -> isWorldKnown(value);
             case "city" -> value == null || cityNames.containsKey(value.trim());
+            case "reward-table" -> value == null || rewardTableNames.containsKey(value.trim());
             default -> true;
         };
     }
@@ -360,7 +386,15 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     /** Issue #178 — ajoute (ou remplace) le relevé des villes, sans toucher au reste. */
     public RefData withCities(Map<String, String> names, boolean known) {
         return new RefData(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown,
-                npcNames, questNames, questOrigins, questPrereqs, itemCatalog, names, known);
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog, names, known,
+                rewardTableNames, rewardTablesKnown);
+    }
+
+    /** Issue #177 — ajoute (ou remplace) le relevé des tables de récompenses, sans toucher au reste. */
+    public RefData withRewardTables(Map<String, String> names, boolean known) {
+        return new RefData(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown,
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog, cityNames, citiesKnown,
+                names, known);
     }
 
     /** Nom affiché d'une ville connue, sinon l'identifiant. */
@@ -373,7 +407,8 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     public RefData withItemCatalog(ItemCatalog catalog) {
         return new RefData(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown,
                 npcNames, questNames, questOrigins, questPrereqs,
-                catalog == null ? ItemCatalog.empty() : catalog, cityNames, citiesKnown);
+                catalog == null ? ItemCatalog.empty() : catalog, cityNames, citiesKnown, rewardTableNames,
+                rewardTablesKnown);
     }
 
     private static boolean contains(List<String> list, String value) {
@@ -390,7 +425,8 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             }
         }
         return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown,
-                npcNames, questNames, questOrigins, questPrereqs, itemCatalog, cityNames, citiesKnown);
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog, cityNames, citiesKnown,
+                rewardTableNames, rewardTablesKnown);
     }
 
     // ---- listes curées (les plus courantes ; saisie libre toujours possible) ----------------

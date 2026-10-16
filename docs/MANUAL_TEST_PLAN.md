@@ -6487,6 +6487,33 @@ tables:
 8.  Redémarrer DEV avec un gain de tirage en attente (cas 4 non libéré). **Attendu** : remis à la
     reconnexion, une fois, sans nouveau tirage.
 
+### TC-333 — Éditer les tables de récompenses depuis PlugAdmin (issue #177 tranche 2, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de #177 tranche 2 sur **DEV**, `entitlements.yml` créé par le propriétaire
+avec au moins deux récompenses (exemple TC-331, tables facultatives). Compte PlugAdmin avec « Économie ».
+
+1.  PlugAdmin → **Récompenses aléatoires** → Rafraîchir. **Attendu** : bandeau d'état (actif / désactivé),
+    catalogue des récompenses en bas, tables existantes avec Modifier / Désactiver / Dupliquer.
+2.  **Nouvelle table** : nom « Coffre du marais », identifiant vide, « Une récompense au plus », deux
+    récompenses choisies dans la liste (taper « émer ») à 30 et 12,5. **Attendu** : pendant la saisie,
+    « Total : 42,5 % · chance de ne rien gagner : 57,5 % » ; passer la 2ᵉ à 80 → « trop élevé » ; remettre
+    12,5 → Créer → toast de succès, table `coffre_du_marais` listée, active, version affichée.
+3.  Console / fichier : `entitlements.yml` contient la nouvelle table, le reste du fichier (récompenses,
+    commentaires, autres tables) est inchangé.
+4.  **Modifier** : changer une chance → Enregistrer. **Attendu** : message « Nouvelle version vXXXX (les gains
+    déjà tirés gardent leur version …) ». Enregistrer sans rien changer → « Aucune modification ».
+5.  **Dupliquer** → Créer la copie. **Attendu** : `coffre_du_marais_copie` désactivée, mêmes chances ;
+    **Activer** → active.
+6.  Éditeur de quête → récompense « Tirage au sort » → le champ propose les tables (recherche par nom) ;
+    choisir la copie désactivée → avertissement « est désactivée ». Éditeur de boss → « Récompenses de
+    participation » propose les récompenses et « Tirage : Coffre du marais ».
+7.  Cohérence désactivé : `enabled: false` dans `entitlements.yml`, terminer une quête avec « Tirage au sort ».
+    **Attendu** : résumé « Tirage « … » : récompenses aléatoires désactivées sur le serveur », aucun droit
+    créé, garanties de la quête reçues. Boss communautaire de test avec `table:` tué : chaque participant
+    éligible lit « les récompenses sont désactivées sur le serveur ». Remettre `enabled: true`.
+8.  Désactiver la table depuis PlugAdmin puis terminer la quête / tuer le boss. **Attendu** : « Tirage « id »
+    indisponible » côté quête **et** côté boss, aucun gain.
+
 ### TC-332 — Modifier un boss à plusieurs biomes depuis PlugAdmin (issue #461, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.

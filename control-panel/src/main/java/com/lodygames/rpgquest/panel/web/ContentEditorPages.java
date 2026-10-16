@@ -1268,6 +1268,7 @@ public final class ContentEditorPages {
             case "waypointCountMode" -> "dl-waypoint-count-mode";
             case "countMode" -> "dl-count-mode";
             case "city" -> "dl-city";
+            case "reward-table" -> "dl-reward-table";
             default -> null;
         };
     }
@@ -1303,7 +1304,18 @@ public final class ContentEditorPages {
                 + "<datalist id=\"dl-count-mode\"><option value=\"NEW_ONLY\" label=\"Nouvelles "
                 + "découvertes seulement\"><option value=\"INCLUDE_EXISTING\" label=\"Découvertes déjà "
                 + "acquises incluses\"></datalist>"
-                + cityDatalist("dl-city", r);
+                + cityDatalist("dl-city", r)
+                + labelledMap("dl-reward-table", r.rewardTableNames());
+    }
+
+    /** Issue #177 — {@code value} = identifiant, {@code label} = nom affiché (tables de récompenses). */
+    private static String labelledMap(String id, Map<String, String> names) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"").append(id).append("\">");
+        for (Map.Entry<String, String> e : names.entrySet()) {
+            sb.append("<option value=\"").append(Http.esc(e.getKey())).append("\" label=\"")
+                    .append(Http.esc(e.getValue())).append("\">");
+        }
+        return sb.append("</datalist>").toString();
     }
 
     /** Issue #178 — villes : {@code value} = identifiant stable, {@code label} = nom affiché. */

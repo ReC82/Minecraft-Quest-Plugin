@@ -1282,6 +1282,60 @@ public interface AgentActions {
                 "Droits à récompense indisponibles sur ce serveur."));
     }
 
+    // ---- Tables de récompenses aléatoires : éditeur PlugAdmin (issue #177, tranche 2) -----------
+
+    /** Une récompense du catalogue, telle que l'éditeur de tables la propose ({@code summary} lisible). */
+    record RewardCatalogEntryView(String key, String label, String summary) {
+    }
+
+    /**
+     * État de {@code entitlements.yml} pour l'éditeur de tables -- action {@code reward.catalog.status}.
+     *
+     * @param fileExists le fichier existe sur le serveur (sinon aucune récompense, donc aucune table possible)
+     * @param valid      le serveur accepte le fichier ; {@code errors} dit pourquoi sinon
+     * @param enabled    interrupteur général : faux = aucun tirage, ni pour les quêtes ni pour les boss
+     */
+    record RewardCatalogView(boolean available, boolean fileExists, boolean valid, boolean enabled,
+                             List<String> errors, List<RewardCatalogEntryView> rewards,
+                             List<RewardTableView> tables) {
+    }
+
+    /** Une entrée saisie dans l'éditeur ; {@code chance} en centièmes de pour cent (1250 = 12,5 %). */
+    record RewardTableEntryInput(String id, String rewardKey, int chance) {
+    }
+
+    default CompletableFuture<RewardCatalogView> rewardCatalogStatus() {
+        return CompletableFuture.completedFuture(new RewardCatalogView(false, false, false, false, List.of(),
+                List.of(), List.of()));
+    }
+
+    /**
+     * Crée ({@code create}) ou remplace une table -- action {@code reward.table.save}. Codes :
+     * {@code CREATED}, {@code UPDATED}, {@code UNCHANGED}, {@code EXISTS}, {@code NOT_FOUND},
+     * {@code STALE}, {@code INVALID}, {@code NO_CATALOG}, {@code CURRENT_INVALID},
+     * {@code ROLLED_BACK}, {@code ERROR}, {@code UNAVAILABLE}.
+     *
+     * @param expectedVersion version lue par le formulaire, {@code null} = pas de contrôle
+     */
+    default CompletableFuture<MutationResult> rewardTableSave(String id, String label, String mode, boolean enabled,
+                                                              List<RewardTableEntryInput> entries,
+                                                              String expectedVersion, boolean create) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Tables de récompenses indisponibles sur ce serveur."));
+    }
+
+    /** Copie désactivée d'une table -- action {@code reward.table.duplicate}. {@code newLabel} facultatif. */
+    default CompletableFuture<MutationResult> rewardTableDuplicate(String sourceId, String newId, String newLabel) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Tables de récompenses indisponibles sur ce serveur."));
+    }
+
+    /** Active ou désactive une table -- action {@code reward.table.toggle}. */
+    default CompletableFuture<MutationResult> rewardTableToggle(String id, boolean enabled) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Tables de récompenses indisponibles sur ce serveur."));
+    }
+
     /** {@code operation} : {@code retry}, {@code disable} ou {@code remove}, sur la seule occurrence nommée. */
     default CompletableFuture<MutationResult> encounterSiteAction(String operation, String siteId) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
@@ -1933,7 +1987,12 @@ public interface AgentActions {
 
     /** Une entrée d'une table de tirage (#177) ; {@code chance} lisible (« 12,5 % »). */
     record RewardTableEntryView(String id, String rewardKey, String rewardLabel, boolean rewardKnown,
-                                String chance) {
+                                String chance, String chanceValue) {
+
+        /** Forme antérieure à #177 tranche 2 : sans la valeur éditable ({@code 12.5}). */
+        RewardTableEntryView(String id, String rewardKey, String rewardLabel, boolean rewardKnown, String chance) {
+            this(id, rewardKey, rewardLabel, rewardKnown, chance, "");
+        }
     }
 
     /**

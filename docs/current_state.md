@@ -1225,7 +1225,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `table:<id>` dans `participation-rewards` (un tirage par participant éligible) ; tirage déterministe
   par graine stable, jamais relancé ; objets du catalogue avec `enchantments` (livre = stocké) et
   `potion`. PlugAdmin : tables en lecture + tirages (Boss communautaires), « Tirage au sort » dans
-  l'éditeur de quête. Non livré : édition des tables dans PlugAdmin, sélecteur avec recherche.
+  l'éditeur de quête. **Tranche 2** : page PlugAdmin « Récompenses aléatoires » (créer, modifier,
+  dupliquer, activer/désactiver, écriture sûre `RewardTableEditor` : validation avant écriture, écriture
+  atomique, restauration si refus), listes recherchables des tables dans les éditeurs de quête et de boss,
+  règle commune quêtes/boss quand le catalogue ou une table est désactivé (aucun tirage, joueur averti).
+  Non livré : édition du catalogue des récompenses lui-même (fichier serveur).
 - **Économie / Marché / Marchands** — portefeuille, transactions, hôtel des ventes, offres PNJ.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.

@@ -623,6 +623,48 @@ class AgentActionExecutorTest {
         assertEquals(Boolean.FALSE, status.details().get("available"));
     }
 
+    /** Issue #177 tranche 2 : l'éditeur de tables revalide tout côté agent, jamais le navigateur seul. */
+    @Test
+    void rewardTableActionsRevalidateEveryParameter() {
+        Map<String, String> good = Map.of("table_id", "butin", "label", "Butin", "mode", "single",
+                "enabled", "true", "entries", "gem=gem_reward@12.5;book=book@0.01", "create", "true");
+        for (Map.Entry<String, String> bad : List.of(Map.entry("table_id", "Butin!"), Map.entry("label", "a\nb"),
+                Map.entry("mode", "weighted"), Map.entry("entries", ""), Map.entry("entries", "gem=gem@12.345"),
+                Map.entry("entries", "gem=gem@0"), Map.entry("entries", "gem=gem@101"), Map.entry("entries", "gem@5"),
+                Map.entry("entries", "gem=Gem!@5"), Map.entry("entries", "a=gem@5;a=book@5"),
+                Map.entry("expected_version", "zz"))) {
+            Map<String, String> params = new java.util.HashMap<>(good);
+            params.put(bad.getKey(), bad.getValue());
+            assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("rt-" + bad.getKey(), "reward.table.save",
+                    params)).status(), bad.toString());
+        }
+        String tooMany = java.util.stream.IntStream.range(0, 21).mapToObj(i -> "e" + i + "=gem@1")
+                .collect(java.util.stream.Collectors.joining(";"));
+        Map<String, String> params = new java.util.HashMap<>(good);
+        params.put("entries", tooMany);
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("rt-many", "reward.table.save", params)).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("rt-d", "reward.table.duplicate",
+                Map.of("table_id", "butin", "new_id", "../x"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("rt-t", "reward.table.toggle",
+                Map.of("table_id", ""))).status());
+
+        // Valide mais sans service : « indisponible », jamais un faux succès.
+        AgentActionOutcome save = run(new AgentAction("rt-ok", "reward.table.save", good));
+        assertEquals(AgentActionOutcome.FAILED, save.status());
+        assertEquals("UNAVAILABLE", save.details().get("code"));
+        AgentActionOutcome status = run(new AgentAction("rt-s", "reward.catalog.status", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, status.status());
+        assertEquals(Boolean.FALSE, status.details().get("available"));
+    }
+
+    @Test
+    void tableEntriesAreParsedExactly() {
+        List<AgentActions.RewardTableEntryInput> out = new java.util.ArrayList<>();
+        assertEquals(null, AgentActionExecutor.parseTableEntries(" gem = gem_reward @ 12.5 ;; book=book@100 ", out));
+        assertEquals(List.of(new AgentActions.RewardTableEntryInput("gem", "gem_reward", 1250),
+                new AgentActions.RewardTableEntryInput("book", "book", 10_000)), out);
+    }
+
     @Test
     void npcCitizensListReturnsRoster() {
         AgentActionOutcome outcome = run(new AgentAction("cl0", "npc.citizens.list", Map.of()));

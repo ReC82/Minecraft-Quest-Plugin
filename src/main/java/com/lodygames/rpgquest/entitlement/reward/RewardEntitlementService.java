@@ -88,6 +88,8 @@ public final class RewardEntitlementService implements PluginService, Listener, 
     private final Executor mainThread;
 
     private volatile RewardCatalog catalog = RewardCatalog.DISABLED;
+    private volatile List<String> lastErrors = List.of();
+    private final RewardTableEditor tableEditor;
     private long loadedModified = Long.MIN_VALUE;
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final Set<String> declaredEvents = ConcurrentHashMap.newKeySet();
@@ -125,6 +127,7 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         this.logger = logger;
         this.clock = clock;
         this.mainThread = mainThread;
+        this.tableEditor = new RewardTableEditor(file, this::reloadNow, logger);
     }
 
     @Override
@@ -146,6 +149,25 @@ public final class RewardEntitlementService implements PluginService, Listener, 
 
     public RewardCatalog catalog() {
         return catalog;
+    }
+
+    /** Erreurs du dernier chargement de {@code entitlements.yml} (vide = accepté ou absent). */
+    public List<String> lastErrors() {
+        return lastErrors;
+    }
+
+    public Path file() {
+        return file;
+    }
+
+    /** Écriture des tables depuis PlugAdmin (issue #177), hors du thread principal. */
+    public RewardTableEditor tableEditor() {
+        return tableEditor;
+    }
+
+    @Override
+    public boolean enabled() {
+        return catalog.enabled();
     }
 
     @Override
@@ -177,21 +199,32 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         }
     }
 
-    void reloadIfChanged() {
+    /**
+     * Relit {@code entitlements.yml} tout de suite, même si sa date n'a pas bougé (issue #177 :
+     * écriture depuis PlugAdmin, dont l'appelant doit savoir si elle a été acceptée). Hors du thread
+     * principal.
+     */
+    public synchronized RewardCatalogLoader.Result reloadNow() {
+        loadedModified = Long.MIN_VALUE;
+        return reloadIfChanged();
+    }
+
+    synchronized RewardCatalogLoader.Result reloadIfChanged() {
         long modified;
         try {
             modified = Files.exists(file) ? Files.getLastModifiedTime(file).toMillis() : -1L;
         } catch (IOException e) {
             logger.warn("Récompenses : lecture de {} impossible.", file, e);
-            return;
+            return new RewardCatalogLoader.Result(catalog, List.of("lecture impossible : " + e.getMessage()));
         }
         if (modified == loadedModified) {
-            return;
+            return new RewardCatalogLoader.Result(catalog, List.of());
         }
         loadedModified = modified;
         if (modified < 0) {
             catalog = RewardCatalog.DISABLED;
-            return;
+            lastErrors = List.of();
+            return new RewardCatalogLoader.Result(catalog, List.of());
         }
         YamlConfiguration yaml = new YamlConfiguration();
         try {
@@ -199,14 +232,17 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         } catch (IOException | InvalidConfigurationException e) {
             logger.warn("Récompenses : {} illisible, droits à récompense désactivés.", file, e);
             catalog = RewardCatalog.DISABLED;
-            return;
+            lastErrors = List.of("fichier illisible : " + e.getMessage());
+            return new RewardCatalogLoader.Result(catalog, lastErrors);
         }
         RewardCatalogLoader.Result result = RewardCatalogLoader.load(yaml);
         result.errors().forEach(error -> logger.warn("Récompenses : {} — {}", file.getFileName(), error));
         catalog = result.catalog();
+        lastErrors = result.errors();
         logger.info("Récompenses : {} récompense(s) chargée(s) depuis {}, {}{}.", catalog.rewards().size(),
                 file.getFileName(), catalog.enabled() ? "activé" : "désactivé",
                 result.valid() ? "" : " (fichier invalide ignoré)");
+        return result;
     }
 
     /**

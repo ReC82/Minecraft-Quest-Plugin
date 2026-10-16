@@ -50,6 +50,7 @@ class QuestTableRewardIntegrationTest {
     private static final NamespacedKey SURE = new NamespacedKey("rpgquest", "tc177_sure");
     private static final NamespacedKey BOTH = new NamespacedKey("rpgquest", "tc177_both");
     private static final NamespacedKey NOWHERE = new NamespacedKey("rpgquest", "tc177_nowhere");
+    private static final NamespacedKey CLOSED = new NamespacedKey("rpgquest", "tc177_closed");
 
     @TempDir
     Path tempDir;
@@ -60,9 +61,12 @@ class QuestTableRewardIntegrationTest {
     private RewardEntitlementRepository entitlements;
     private QuestProgressEngine engine;
     private final List<UUID> deliverSoon = new ArrayList<>();
+    private volatile boolean catalogEnabled = true;
 
     private final Map<String, RewardTable> tables = Map.of(
             "sure", new RewardTable("sure", "Coffre sûr", RewardTable.Mode.SINGLE, true,
+                    List.of(new RewardTable.Entry("gem", "gem_reward", RewardTable.FULL))),
+            "closed_chest", new RewardTable("closed_chest", "Coffre fermé", RewardTable.Mode.SINGLE, false,
                     List.of(new RewardTable.Entry("gem", "gem_reward", RewardTable.FULL))),
             "both", new RewardTable("both", "Double coffre", RewardTable.Mode.INDEPENDENT, true,
                     List.of(new RewardTable.Entry("a", "gem_reward", RewardTable.FULL),
@@ -82,6 +86,7 @@ class QuestTableRewardIntegrationTest {
         Files.writeString(questsDir.resolve("sure.yml"), questYaml(SURE, true, "sure"));
         Files.writeString(questsDir.resolve("both.yml"), questYaml(BOTH, false, "both"));
         Files.writeString(questsDir.resolve("nowhere.yml"), questYaml(NOWHERE, false, "missing"));
+        Files.writeString(questsDir.resolve("closed.yml"), questYaml(CLOSED, false, "closed_chest"));
         YamlQuestEngine questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
         questEngine.reload();
         QuestMessagesService messagesService = new QuestMessagesService(plugin);
@@ -92,6 +97,11 @@ class QuestTableRewardIntegrationTest {
                 new PlayerVariableRepository(database), messagesService, npcIdentityService,
                 new EconomyService(new WalletRepository(database)));
         engine.setRewardTables(new RewardTables() {
+            @Override
+            public boolean enabled() {
+                return catalogEnabled;
+            }
+
             @Override
             public Optional<RewardTable> table(String id) {
                 return Optional.ofNullable(tables.get(id));
@@ -163,6 +173,30 @@ class QuestTableRewardIntegrationTest {
         assertTrue(message.contains("missing"), message);
         assertEquals(0, entitlements.pendingFor(List.of(player.getUniqueId()), 10)
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void aDisabledTableDrawsNothingAndSaysSo() throws Exception {
+        PlayerMock player = addPlayer();
+        complete(player, CLOSED);
+        String message = awaitMessageContaining(player, "indisponible");
+        assertTrue(message.contains("closed_chest"), message);
+        assertEquals(0, entitlements.pendingFor(List.of(player.getUniqueId()), 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    /** Issue #177 tranche 2 : catalogue désactivé = aucun tirage et un message clair, comme pour un boss. */
+    @Test
+    void aDisabledCatalogDrawsNothingAndSaysSo() throws Exception {
+        catalogEnabled = false;
+        PlayerMock player = addPlayer();
+        complete(player, SURE);
+        String message = awaitMessageContaining(player, "désactivées");
+        assertTrue(message.contains("sure"), message);
+        assertEquals(0, entitlements.pendingFor(List.of(player.getUniqueId()), 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+        // Les récompenses garanties de la quête restent remises.
+        assertTrue(player.getInventory().contains(Material.BREAD));
     }
 
     // ---- utilitaires ---------------------------------------------------------------------------

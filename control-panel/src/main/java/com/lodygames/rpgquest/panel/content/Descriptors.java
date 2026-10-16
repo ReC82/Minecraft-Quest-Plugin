@@ -227,10 +227,11 @@ public final class Descriptors {
                             + "la fin de quête : une remise rejouée, une reconnexion ou un redémarrage ne relancent "
                             + "jamais le tirage. Les gains arrivent dans l'inventaire (ils attendent s'il est plein). "
                             + "Se combine avec les récompenses garanties de la quête.",
-                    List.of(Field.text("table", "Identifiant de la table",
-                            "Identifiant de la table dans entitlements.yml (minuscules, chiffres, _ -), ex. "
-                                    + "butin_dragon. Les tables chargées sont listées dans Boss communautaires → "
-                                    + "Tables de récompenses aléatoires.", true))));
+                    List.of(Field.select("table", "Table de récompenses", "reward-table",
+                            "Taper pour chercher parmi les tables du serveur (page « Récompenses aléatoires », qui "
+                                    + "sert aussi à les créer et les modifier). Une table désactivée, ou des "
+                                    + "récompenses désactivées sur le serveur : aucun tirage, le joueur en est averti.",
+                            true))));
 
     // ---- Actions de dialogue (calquées sur dialogue.model.ActionType) -----------------------
 

@@ -155,15 +155,25 @@ retombent sur le même résultat ; chaque gain est un droit à récompense (sour
 `quest:<jeton>:<table>.<entrée>:<uuid>` / `boss:<entité>:<table>.<entrée>:<uuid>`) dont le libellé figé porte la
 table, sa **version** (empreinte du mode et des entrées) et la chance. Quête : gains écrits dans la **même
 transaction** que la complétion (`reward_entitlements`, pas de migration), remis par les droits à récompense
-(inventaire plein = attente) — la remise exige `enabled: true`, les gains sont enregistrés même sinon. Table
-inconnue ou désactivée : aucun tirage, le joueur voit « Tirage « … » indisponible » (quête) et le journal le dit.
+(inventaire plein = attente). **Même règle pour quêtes et boss** (tranche 2) : `enabled: false` (ou fichier absent /
+refusé) = aucun tirage, rien n'est promis, le joueur voit « récompenses aléatoires désactivées sur le serveur » (quête)
+ou « les récompenses sont désactivées sur le serveur » (boss) ; table inconnue ou désactivée = aucun tirage, le
+joueur voit « Tirage « … » indisponible » (quête et boss) et le journal le dit.
 Objets du catalogue : `enchantments: {sharpness: 3}` (niveau 1–10, 8 au plus ; sur `ENCHANTED_BOOK` l'enchantement
 est **stocké dans le livre**, jamais appliqué à l'équipement du joueur) et `potion: strength` (sur `POTION`,
 `SPLASH_POTION`, `LINGERING_POTION`, `TIPPED_ARROW`) ; clé inconnue à la remise = droit en attente avec l'erreur.
-PlugAdmin : section **Boss communautaires du Wild** → « Tables de récompenses aléatoires » (lecture : mode,
-chances, version, explication des chances réelles, récompense inconnue signalée) et « Tirages » dans les
-victoires récentes ; éditeur de quête → récompense « Tirage au sort ». Édition des tables depuis PlugAdmin :
-non livrée (fichier serveur).
+PlugAdmin : page **Récompenses aléatoires** (`/rewards`, droit « Économie — lecture », écritures « Économie —
+écriture ») : état du fichier expliqué (absent, refusé avec ses erreurs, désactivé), catalogue des récompenses en
+lecture, tables **créées, modifiées, dupliquées (copie désactivée), activées / désactivées** sans YAML — récompenses
+choisies dans le catalogue (liste recherchable), mode expliqué en mots simples, total des chances et chance de ne
+rien gagner affichés pendant la saisie. Actions agent `reward.catalog.status`, `reward.table.save`,
+`reward.table.duplicate`, `reward.table.toggle` : seule la section `tables` est réécrite, le texte final est relu
+par le vrai chargeur **avant** écriture (rien n'est écrit sinon), écriture atomique, rechargement immédiat et
+ancienne version remise à l'octet près si le serveur la refuse ; un formulaire périmé (table changée entre-temps)
+est refusé. Fichier absent ou refusé : aucune écriture (le catalogue des récompenses reste un fichier serveur).
+Éditeur de quête → « Tirage au sort » avec liste recherchable des tables (table inconnue ou désactivée signalée) ;
+éditeur de boss → « Récompenses de participation » en liste recherchable (récompenses + « Tirage : … »). Section
+**Boss communautaires du Wild** : tables en lecture et « Tirages » des victoires récentes.
 
 ---
 
@@ -662,7 +672,8 @@ cœur), erreur au-delà de 512 ou clé invalide, avertissement au-delà de 5 cœ
 `<id>` de `entitlements.yml` (section 1, « Tables de récompenses aléatoires ») **une fois par complétion** ; une
 quête répétable retire à chaque cycle. Résultat figé et écrit dans la transaction de complétion, sous forme de
 droits à récompense (`source = QUEST`, référence = id de la quête) ; annoncé dans le résumé de fin de quête
-(`quest.reward-line-table-win` / `-none` / `-unavailable`), remis juste après (attend si l'inventaire est plein).
+(`quest.reward-line-table-win` / `-none` / `-unavailable` / `-disabled`), remis juste après (attend si
+l'inventaire est plein). Récompenses désactivées sur le serveur : aucun tirage (`-disabled`).
 Journal de quête : « Tirage au sort ». Panel : descripteur `TABLE` « Tirage au sort (table de récompenses) ».
 
 **Récompense monétaire `MONEY` (`amount`, entier > 0 — issue #16).** Crédite le **portefeuille

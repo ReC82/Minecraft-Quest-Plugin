@@ -5278,16 +5278,29 @@ section **Boss communautaires du Wild**), jamais à la main :
 | `enabled` | `false` | Apparitions automatiques. Décoché = pause immédiate ; les boss présents restent. |
 | `interval-minutes` | `15` | Délai entre deux essais (1 à 1440). |
 | `max-active` | `1` | Boss communautaires actifs en même temps (1 à 10). |
+| `glow` | `true` | #471 — contour lumineux du boss quand un joueur est à moins de `glow-radius` blocs. |
+| `glow-radius` | `48` | #471 — distance d'allumage du contour (8 à 128 ; 48 = portée de la barre de vie). |
+| `surface-only` | `true` | #471 — apparition seulement sur un sol naturel à ciel ouvert (voir plus bas). |
 
 Fonctionnement (une seule tâche toutes les 20 s) :
 
 1. **Échéance** : à chaque échéance, s'il manque un boss sous `max-active`, tirage pondéré d'un profil
    `BOSS` + `COMMUNITY` + activé. Une échéance manquée (serveur arrêté, pause) donne **au plus une**
    tentative 2 min après la reprise, jamais une rafale de rattrapage.
-2. **Placement sûr** : uniquement autour d'un joueur en survie/aventure d'un **monde Wild** (`wild.worlds`
-   ou `travel.wild-world`), le Hub et le monde des Claims étant exclus explicitement ; à 40–96 blocs du
-   joueur, à plus de 24 blocs de tout joueur, **dans un chunk déjà chargé** (jamais de chargement forcé),
-   sur une colonne accessible (pas d'eau, de lave, de canopée). Refusés : biome hors des `biomes` du
+2. **Placement sûr** (#471 : **aucun joueur n'a besoin d'être dans le Wild**) : la recherche part d'un
+   **repère** tiré au hasard parmi les **waypoints actifs** des mondes Wild (`wild.worlds` ou
+   `travel.wild-world`) et les joueurs en survie/aventure présents dans le Wild — le Hub et le monde des
+   Claims étant exclus explicitement. Le boss apparaît à 40–96 blocs du repère, à plus de 24 blocs de tout
+   joueur ; au plus 3 repères × 16 colonnes. Un chunk non chargé est chargé **ponctuellement, en
+   asynchrone et sans génération de terrain neuf** (au plus 4 par repère), sans ticket conservé : il se
+   décharge ensuite normalement, le boss persistant dedans. Sans aucun waypoint actif ni joueur dans un
+   monde Wild autorisé : **rien n'apparaît**, raison « Aucun repère dans le Wild… » dans « Dernier essai ».
+   Colonne : `surface-only: true` → sol **naturel** (herbe, terre, sable, gravier, pierre, neige tassée,
+   terre cuite…) qui est le plus haut bloc de la colonne (ciel ouvert : jamais une grotte ni un
+   intérieur), 3 blocs libres au-dessus, 8 voisins à ±2 blocs et sans liquide (ni falaise, ni bord de
+   ravin, ni berge), pas sous niveau de la mer − 2 ; refusés : toit/plancher, feuillage, tronc, glace,
+   neige poudreuse, eau, lave. `surface-only: false` → règle d'origine (plus haut bloc praticable, pas
+   d'eau, de lave, de canopée). Refusés : biome hors des `biomes` du
    profil, monde hors de ses `worlds`, zone protégée (`allow-hostile-spawn: false`), zone hors des
    `zones` du profil, ville, moins de 16 blocs d'un waypoint. Aucun emplacement → **rien n'est annoncé**,
    nouvel essai à l'échéance suivante.
@@ -5295,7 +5308,14 @@ Fonctionnement (une seule tâche toutes les 20 s) :
    particules, capacités, drops du profil) — pas de second moteur.
 4. **Annonce globale** après apparition réussie : nom du boss, biome (traduit par le client), distance et
    direction approximatives depuis le **waypoint réel** le plus proche (à moins de 600 blocs) — sinon
-   « loin de tout waypoint connu », jamais un nom inventé. Aucune découverte, aucun voyage débloqué.
+   « loin de tout waypoint connu, vers X ≈ …, Z ≈ … » (arrondi à 10 blocs), jamais un nom inventé.
+   Aucune découverte, aucun voyage débloqué.
+7. **Contour lumineux** (#471, `glow`) : toutes les 2 s, chaque boss chargé brille si un joueur du même
+   monde est à moins de `glow-radius` blocs, s'éteint sinon (et à l'arrêt du plugin). API publique
+   `Entity#setGlowing` : le contour se voit à travers les blocs, mais **seulement quand le client reçoit
+   l'entité** (portée de suivi Paper, 48 blocs par défaut pour les monstres, `spigot.yml`) — il ne
+   localise jamais un boss lointain ; de loin, c'est l'annonce (biome, waypoint, direction, distance) et
+   le rappel de connexion qui guident.
 5. **Connexion** : un joueur qui se connecte reçoit (3 s après) un rappel **individuel** des boss
    communautaires actifs ; rien si aucun n'est actif ; jamais de rediffusion globale.
 6. **Mort** : message « X a été vaincu (par Y) ». Les drops/XP du profil s'appliquent comme pour tout
@@ -5310,7 +5330,8 @@ entités chargées. Un boss marqué retrouvé sans verrou (crash) est réadopté
 
 **PlugAdmin** : état (actif/en pause, prochain essai, dernière apparition, dernier essai et sa raison),
 réglages, liste des boss actifs (biome, waypoint, dernière position, ancienneté), **Apparition de test**
-(immédiate, boss au hasard ou choisi, près d'un joueur choisi ou de n'importe quel joueur du Wild ;
+(immédiate, boss au hasard ou choisi ; « N'importe où dans le Wild » = même recherche que le serveur,
+sans joueur requis ; ou près d'un joueur choisi, qui doit alors être dans le Wild ;
 marquée « test », hors plafond, ne décale pas le prochain essai), **Retirer ce boss** / **Retirer toutes
 les apparitions de test** (case de confirmation, aucune récompense, retrait différé au rechargement si la
 zone n'est pas chargée). Actions d'agent : `boss.community.status` (MOB_READ),

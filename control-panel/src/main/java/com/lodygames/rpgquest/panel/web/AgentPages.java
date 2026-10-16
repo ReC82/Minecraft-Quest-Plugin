@@ -10404,8 +10404,10 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.sectionTitle("mob", "Boss communautaires du Wild"));
         sb.append("<p class=\"muted\">Un boss communautaire apparaît <strong>tout seul</strong> dans le Wild, "
-                + "près des joueurs mais jamais sur eux, ni dans le Hub, les Claims, une ville ou une zone "
-                + "protégée. Tout le serveur est prévenu (nom, biome, waypoint le plus proche) et les joueurs "
+                + "<strong>même si tous les joueurs sont au Hub ou dans leurs Claims</strong> : le serveur choisit "
+                + "un endroit sûr à 40–96 blocs d'un waypoint du Wild (ou d'un joueur qui s'y trouve), jamais sur "
+                + "un joueur, ni dans le Hub, les Claims, une ville ou une zone protégée. Sans aucun waypoint dans "
+                + "le Wild, rien n'apparaît et la raison s'affiche dans « Dernier essai ». Tout le serveur est prévenu (nom, biome, waypoint le plus proche) et les joueurs "
                 + "qui se connectent plus tard reçoivent un rappel. À sa mort, il lâche les objets de son profil "
                 + "et chaque joueur qui l'a touché depuis sa dernière mort, encore vivant, dans le même monde et "
                 + "assez près de lui (distance réglable plus bas, 100 blocs par défaut), reçoit les "
@@ -10964,8 +10966,8 @@ public final class AgentPages {
                         + "min=\"1\" max=\"1440\" required value=\"").append(Http.esc(str(d.get("intervalMinutes"))))
                 .append("\">")
                 .append(fieldHelp("Toutes les X minutes, le serveur essaie de faire apparaître un boss s'il en manque. "
-                        + "Si personne n'est dans le Wild ou si aucun endroit sûr n'est trouvé, il réessaie au "
-                        + "tour suivant, sans rattrapage. Une valeur très courte est réservée aux tests sur DEV.",
+                        + "Personne n'a besoin d'être dans le Wild. Si aucun endroit sûr n'est trouvé, il réessaie "
+                        + "au tour suivant, sans rattrapage. Une valeur très courte est réservée aux tests sur DEV.",
                         "15", "15", null))
                 .append("</div>");
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-max\">Boss en même temps (maximum)</label>")
@@ -10985,7 +10987,35 @@ public final class AgentPages {
                         + "même monde et à cette distance au plus de l'endroit où le boss est mort (distance en "
                         + "ligne droite, hauteur comprise). Le biome ne compte pas. Un joueur mort pendant le combat "
                         + "doit le toucher de nouveau après sa réapparition.", "100", "100", null))
-                .append("</div></div>");
+                .append("</div>");
+        boolean glow = !Boolean.FALSE.equals(d.get("glow"));
+        sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" "
+                + "role=\"switch\" id=\"cb-glow\" name=\"glow\" value=\"true\"").append(glow ? " checked" : "")
+                .append("><label class=\"form-check-label\" for=\"cb-glow\">Contour lumineux près du boss</label></div>")
+                .append(fieldHelp("Quand un joueur s'approche, le boss brille : on voit son contour même derrière un "
+                        + "mur ou une colline. Il s'éteint quand plus personne n'est près. Il ne sert pas à le trouver "
+                        + "de loin : le jeu n'affiche les monstres qu'à environ 48 blocs. De loin, c'est l'annonce "
+                        + "(biome, waypoint, direction) qui guide.", "activé", "activé", null));
+        String glowRadius = str(d.get("glowRadius"));
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-glow-r\">Distance d'allumage du "
+                        + "contour (blocs)</label>")
+                .append("<input class=\"form-control\" id=\"cb-glow-r\" type=\"number\" name=\"glow_radius\" "
+                        + "min=\"8\" max=\"128\" required value=\"")
+                .append(Http.esc(glowRadius.isBlank() || "0".equals(glowRadius) ? "48" : glowRadius)).append("\">")
+                .append(fieldHelp("48 = la distance où la barre de vie du boss apparaît. Au-delà de 48, le jeu ne "
+                        + "montre en général plus le monstre : une valeur plus grande n'aide pas.", "48", "48", null))
+                .append("</div>");
+        boolean surface = !Boolean.FALSE.equals(d.get("surfaceOnly"));
+        sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" "
+                + "role=\"switch\" id=\"cb-surf\" name=\"surface_only\" value=\"true\"")
+                .append(surface ? " checked" : "")
+                .append("><label class=\"form-check-label\" for=\"cb-surf\">Apparition en surface uniquement</label></div>")
+                .append(fieldHelp("Le boss n'apparaît que sur un sol naturel à ciel ouvert (herbe, terre, sable, "
+                        + "pierre, neige tassée…), sur un terrain assez plat : jamais dans une grotte, sur un toit, "
+                        + "un arbre, de la glace ou de la neige poudreuse, ni dans l'eau, la lave, au bord d'un ravin "
+                        + "ou au fond d'un trou. Décoché : la règle d'avant (le plus haut bloc où l'on tient debout).",
+                        "activé", "activé", null))
+                .append("</div>");
         sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
                 .append("Enregistrer</button></form>");
         return sb.toString();
@@ -11010,14 +11040,16 @@ public final class AgentPages {
         sb.append("</select></div>");
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-t-pl\">Près de</label>")
                 .append("<select class=\"form-select\" id=\"cb-t-pl\" name=\"player\">")
-                .append("<option value=\"\">N'importe quel joueur du Wild</option>");
+                .append("<option value=\"\">N'importe où dans le Wild (comme le serveur)</option>");
         for (String p : onlinePlayers) {
             sb.append("<option value=\"").append(Http.esc(p)).append("\">").append(Http.esc(p)).append("</option>");
         }
         sb.append("</select></div>");
-        sb.append("<div class=\"form-text mb-2\">Fait apparaître un boss <strong>tout de suite</strong>, à 40–96 "
-                + "blocs du joueur, avec la vraie annonce (marquée « test »). Ne change pas l'heure du prochain "
-                + "essai automatique et ne compte pas dans le maximum. Le joueur doit être connecté et dans le Wild.</div>");
+        sb.append("<div class=\"form-text mb-2\">Fait apparaître un boss <strong>tout de suite</strong>, avec la "
+                + "vraie annonce (marquée « test »). Ne change pas l'heure du prochain essai automatique et ne compte "
+                + "pas dans le maximum. « N'importe où » : comme le serveur, à 40–96 blocs d'un waypoint du Wild, "
+                + "même si personne n'y est. Avec un joueur choisi : à 40–96 blocs de lui ; il doit alors être "
+                + "connecté et dans le Wild.</div>");
         sb.append("</div><button class=\"btn btn-outline-primary\" type=\"submit\">").append(Icons.icon("target"))
                 .append("Apparition de test</button></form>");
         return sb.toString();

@@ -1211,6 +1211,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   connexion ; verrous persistants `state/community-bosses.yml` (aucune table) réconciliés au
   rechargement des entités et au redémarrage. PlugAdmin `/mobs` : état, réglages, boss actifs,
   apparition de test, retrait confirmé.
+- **Boss communautaires sans joueur dans le Wild** (issue #471, PENDING MANUAL VALIDATION) — la cause
+  du `NO_PLAYER` (recherche ancrée uniquement sur les joueurs du Wild) est supprimée : repères =
+  waypoints actifs du Wild + joueurs du Wild ; chunks chargés ponctuellement en asynchrone, sans
+  génération, bornés (3 repères × 16 colonnes, 4 chargements par repère), sans ticket ; plafond revérifié
+  à l'arrivée du chunk ; raison `NO_ANCHOR` explicite sans waypoint. Réglages `glow`/`glow-radius`
+  (contour à proximité, 48 blocs) et `surface-only` (sol naturel à ciel ouvert) dans
+  `mobs/community-bosses.yml`, éditables dans PlugAdmin. Annonce : « à l'est » corrigé, coordonnées
+  arrondies si aucun waypoint à portée.
 - **Participation et récompenses des boss communautaires** (issue #176, PENDING MANUAL VALIDATION) —
   coups effectifs (directs/projectiles, non annulés, dégâts > 0) mémorisés en PDC sur l'entité ;
   éligibilité figée à la mort (connecté, vivant, même monde, à au plus N blocs — distance 3D — de la

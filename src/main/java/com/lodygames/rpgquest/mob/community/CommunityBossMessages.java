@@ -62,19 +62,32 @@ public final class CommunityBossMessages {
     static Component where(CommunityBossInstance i) {
         Component biome = biomeComponent(i.biome());
         if (i.waypointName() == null) {
+            // Aucun waypoint à portée (#471) : une indication navigable plutôt qu'un nom inventé.
             return MM.deserialize("<gray>dans le biome</gray> <white><biome></white><gray>, loin de tout waypoint "
-                    + "connu.</gray>", Placeholder.component("biome", biome));
+                            + "connu, vers X ≈ <x>, Z ≈ <z>.</gray>", Placeholder.component("biome", biome),
+                    Placeholder.unparsed("x", String.valueOf(roundCoordinate(i.x()))),
+                    Placeholder.unparsed("z", String.valueOf(roundCoordinate(i.z()))));
         }
         if (i.waypointDirection() == null || i.waypointDirection().isBlank()) {
             return MM.deserialize("<gray>dans le biome</gray> <white><biome></white><gray>, tout près du waypoint"
                             + "</gray> <aqua><wp></aqua><gray>.</gray>",
                     Placeholder.component("biome", biome), Placeholder.unparsed("wp", i.waypointName()));
         }
-        return MM.deserialize("<gray>dans le biome</gray> <white><biome></white><gray>, à environ <dist> blocs au "
+        return MM.deserialize("<gray>dans le biome</gray> <white><biome></white><gray>, à environ <dist> blocs "
                         + "<dir> du waypoint</gray> <aqua><wp></aqua><gray>.</gray>",
                 Placeholder.component("biome", biome), Placeholder.unparsed("wp", i.waypointName()),
                 Placeholder.unparsed("dist", String.valueOf(roundDistance(i.waypointDistance()))),
-                Placeholder.unparsed("dir", i.waypointDirection()));
+                Placeholder.unparsed("dir", towards(i.waypointDirection())));
+    }
+
+    /** « au nord », « au sud-ouest », mais « à l'est », « à l'ouest ». */
+    static String towards(String direction) {
+        return direction.startsWith("est") || direction.startsWith("ouest") ? "à l'" + direction : "au " + direction;
+    }
+
+    /** Arrondi à la dizaine : une zone à rejoindre, pas une coordonnée exacte. */
+    static int roundCoordinate(int value) {
+        return (int) (Math.round(value / 10.0) * 10);
     }
 
     /** Arrondi à la dizaine : une indication, pas une coordonnée exacte. */

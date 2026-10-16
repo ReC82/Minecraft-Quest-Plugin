@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
@@ -70,10 +71,21 @@ import org.slf4j.Logger;
  * Une entité marquée retrouvée sans verrou (crash entre un déplacement et la sauvegarde) est
  * réadoptée sous le plafond, sinon supprimée : jamais de doublon.
  *
+ * <h2>Choix de l'emplacement (issue #471)</h2>
+ * Le boss apparaît dans le Wild <strong>même si aucun joueur n'y est</strong> (tous au Hub ou dans les
+ * Claims) : les repères de recherche sont les <em>waypoints actifs</em> des mondes Wild autorisés par le
+ * profil, plus les joueurs présents dans le Wild. Autour d'un repère tiré au hasard, quelques colonnes
+ * sont essayées ; un chunk non chargé est chargé <em>ponctuellement et de façon asynchrone</em>
+ * ({@code World#getChunkAtAsync}, sans génération de terrain neuf, au plus
+ * {@link #MAX_CHUNK_LOADS_PER_ANCHOR} par repère), jamais retenu : il se décharge normalement ensuite,
+ * avec le boss persistant dedans. Sans aucun repère, rien n'apparaît et la raison est expliquée.
+ *
  * <h2>Coût</h2>
  * Une seule tâche toutes les {@link #TICK_PERIOD_TICKS} ticks : réconciliation bornée au nombre de
- * verrous (≤ 10) et, à échéance seulement, une recherche d'emplacement limitée aux chunks <em>déjà
- * chargés</em> autour des joueurs du Wild. Aucun parcours global d'entités, aucun chargement forcé.
+ * verrous (≤ 10) et, à échéance seulement, une recherche bornée ({@link #ANCHORS_TRIED} repères ×
+ * {@link #COLUMNS_TRIED_PER_ANCHOR} colonnes). Une tâche de contour toutes les
+ * {@link #GLOW_PERIOD_TICKS} ticks, bornée aux boss chargés. Aucun parcours global d'entités, aucun
+ * chargement forcé permanent.
  */
 public final class CommunityBossService implements PluginService, Listener {
 
@@ -85,13 +97,19 @@ public final class CommunityBossService implements PluginService, Listener {
     static final int MAX_DISTANCE_FROM_PLAYER = 96;
     static final int MIN_CLEARANCE_FROM_ANY_PLAYER = 24;
     static final int MIN_CLEARANCE_FROM_WAYPOINT = 16;
-    private static final int ANCHOR_PLAYERS_TRIED = 3;
-    private static final int COLUMNS_TRIED_PER_ANCHOR = 16;
+    static final int ANCHORS_TRIED = 3;
+    static final int COLUMNS_TRIED_PER_ANCHOR = 16;
+    static final int MAX_CHUNK_LOADS_PER_ANCHOR = 4;
+    static final long GLOW_PERIOD_TICKS = 40L; // 2 s
 
-    /** Recherche d'une colonne sûre autour d'un centre ; injectable pour les tests. */
+    /**
+     * Recherche d'une colonne sûre autour d'un centre ; injectable pour les tests. Le résultat est
+     * toujours délivré sur le thread principal (chargement de chunk asynchrone de Paper).
+     */
     @FunctionalInterface
     public interface SpotFinder {
-        Optional<Location> find(World world, Location center, Predicate<Location> accept, RandomGenerator random);
+        CompletableFuture<Optional<Location>> find(World world, Location center, Predicate<Location> accept,
+                                                   RandomGenerator random, boolean surfaceOnly);
     }
 
     /** Application du profil par le moteur de mobs spéciaux ; remplaçable en test seulement. */
@@ -135,6 +153,8 @@ public final class CommunityBossService implements PluginService, Listener {
     private final AtomicLong revision = new AtomicLong();
     private volatile CommunityBossState published = CommunityBossState.empty();
     private BukkitTask task;
+    private BukkitTask glowTask;
+    private boolean searching;
     private ProfileApplier applier;
 
     public CommunityBossService(Plugin plugin, Logger logger, SpecialMobRegistry registry,
@@ -173,32 +193,61 @@ public final class CommunityBossService implements PluginService, Listener {
         this.applier = testApplier;
     }
 
-    /** Recherche par défaut : colonnes accessibles, uniquement dans des chunks déjà chargés. */
-    public static SpotFinder loadedChunksOnly() {
-        return (world, center, accept, random) -> {
-            for (int attempt = 0; attempt < COLUMNS_TRIED_PER_ANCHOR; attempt++) {
-                double angle = random.nextDouble() * 2 * Math.PI;
-                double distance = MIN_DISTANCE_FROM_PLAYER
-                        + random.nextDouble() * (MAX_DISTANCE_FROM_PLAYER - MIN_DISTANCE_FROM_PLAYER);
-                int x = center.getBlockX() + (int) Math.round(Math.cos(angle) * distance);
-                int z = center.getBlockZ() + (int) Math.round(Math.sin(angle) * distance);
-                // Les 4 voisins testés par findAccessibleColumn doivent rester dans le même chunk :
-                // jamais de lecture qui forcerait le chargement d'un chunk voisin.
-                int lx = x & 15;
-                int lz = z & 15;
-                if (lx == 0 || lx == 15 || lz == 0 || lz == 15 || !world.isChunkLoaded(x >> 4, z >> 4)) {
-                    continue;
-                }
-                if (!world.getWorldBorder().isInside(new Location(world, x + 0.5, 64, z + 0.5))) {
-                    continue;
-                }
-                Optional<Location> spot = RandomSafeLocationFinder.findAccessibleColumn(world, x, z);
-                if (spot.isPresent() && accept.test(spot.get())) {
-                    return spot;
-                }
+    /**
+     * Recherche par défaut (#471) : colonnes tirées autour du repère ; un chunk déjà chargé est lu
+     * directement, un chunk non chargé est chargé ponctuellement en asynchrone, <em>sans génération</em>
+     * ({@code getChunkAtAsync(x, z, false)} : un chunk jamais généré est simplement écarté), au plus
+     * {@link #MAX_CHUNK_LOADS_PER_ANCHOR} fois. Aucun ticket n'est conservé.
+     */
+    public static SpotFinder targetedChunkLoads() {
+        return (world, center, accept, random, surfaceOnly) ->
+                tryColumns(world, center, accept, random, surfaceOnly, 0, 0);
+    }
+
+    private static CompletableFuture<Optional<Location>> tryColumns(World world, Location center,
+                                                                    Predicate<Location> accept, RandomGenerator random,
+                                                                    boolean surfaceOnly, int attempt, int loads) {
+        for (int next = attempt + 1; next <= COLUMNS_TRIED_PER_ANCHOR; next++) {
+            double angle = random.nextDouble() * 2 * Math.PI;
+            double distance = MIN_DISTANCE_FROM_PLAYER
+                    + random.nextDouble() * (MAX_DISTANCE_FROM_PLAYER - MIN_DISTANCE_FROM_PLAYER);
+            int x = center.getBlockX() + (int) Math.round(Math.cos(angle) * distance);
+            int z = center.getBlockZ() + (int) Math.round(Math.sin(angle) * distance);
+            // Les voisins lus par la règle de terrain doivent rester dans le même chunk : jamais de
+            // lecture qui forcerait le chargement d'un chunk voisin.
+            if (!SurfaceSpot.fitsInChunk(x, z)
+                    || !world.getWorldBorder().isInside(new Location(world, x + 0.5, 64, z + 0.5))) {
+                continue;
             }
-            return Optional.empty();
-        };
+            if (world.isChunkLoaded(x >> 4, z >> 4)) {
+                Optional<Location> spot = evaluate(world, x, z, surfaceOnly, accept);
+                if (spot.isPresent()) {
+                    return CompletableFuture.completedFuture(spot);
+                }
+                continue;
+            }
+            if (loads >= MAX_CHUNK_LOADS_PER_ANCHOR) {
+                continue;
+            }
+            final int done = next;
+            return world.getChunkAtAsync(x >> 4, z >> 4, false).thenCompose(chunk -> {
+                if (chunk != null) {
+                    Optional<Location> spot = evaluate(world, x, z, surfaceOnly, accept);
+                    if (spot.isPresent()) {
+                        return CompletableFuture.completedFuture(spot);
+                    }
+                }
+                return tryColumns(world, center, accept, random, surfaceOnly, done, loads + 1);
+            });
+        }
+        return CompletableFuture.completedFuture(Optional.empty());
+    }
+
+    /** Règle de terrain puis règles de placement ; le chunk de (x, z) est chargé. */
+    static Optional<Location> evaluate(World world, int x, int z, boolean surfaceOnly, Predicate<Location> accept) {
+        Optional<Location> spot = surfaceOnly ? SurfaceSpot.find(world, x, z)
+                : RandomSafeLocationFinder.findAccessibleColumn(world, x, z);
+        return spot.filter(accept);
     }
 
     // ---- Cycle de vie -------------------------------------------------------------------------
@@ -217,6 +266,7 @@ public final class CommunityBossService implements PluginService, Listener {
         nextDue = CommunityBossSchedule.armOnStart(now, loaded.nextDueMillis(), settings().intervalMillis());
         Bukkit.getPluginManager().registerEvents(this, plugin);
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, TICK_PERIOD_TICKS, TICK_PERIOD_TICKS);
+        glowTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshGlow, GLOW_PERIOD_TICKS, GLOW_PERIOD_TICKS);
         persist();
         logger.info("Boss communautaires : scheduler {} ({} verrou(s) restauré(s), prochaine échéance dans {} s).",
                 settings().enabled() ? "actif" : "en pause", instances.size(), (nextDue - now) / 1000);
@@ -228,6 +278,17 @@ public final class CommunityBossService implements PluginService, Listener {
         if (task != null) {
             task.cancel();
             task = null;
+        }
+        if (glowTask != null) {
+            glowTask.cancel();
+            glowTask = null;
+        }
+        // Plugin arrêté ou retiré : aucun boss ne doit rester allumé sans plus personne pour l'éteindre.
+        for (CommunityBossInstance i : instances.values()) {
+            Entity entity = Bukkit.getEntity(i.entityId());
+            if (entity != null && entity.isValid()) {
+                entity.setGlowing(false);
+            }
         }
         // Arrêt du plugin : plus de tâche asynchrone possible, dernière écriture synchrone.
         try {
@@ -260,17 +321,48 @@ public final class CommunityBossService implements PluginService, Listener {
         reconcileLoaded();
         CommunityBossSettings settings = settings();
         long now = clock.getAsLong();
-        if (settings.enabled() && CommunityBossSchedule.isDue(now, nextDue)) {
+        if (settings.enabled() && !searching && CommunityBossSchedule.isDue(now, nextDue)) {
             nextDue = CommunityBossSchedule.afterAttempt(now, settings.intervalMillis());
-            Outcome outcome = spawn(Optional.empty(), Optional.empty(), false);
-            lastAttempt = now;
-            lastOutcome = outcome.message();
-            if (outcome.ok()) {
-                lastSpawn = now;
-            } else {
-                logger.info("Boss communautaire : pas d'apparition à cette échéance — {}", outcome.message());
+            spawn(Optional.empty(), Optional.empty(), false).thenAccept(outcome -> {
+                lastAttempt = now;
+                lastOutcome = outcome.message();
+                if (outcome.ok()) {
+                    lastSpawn = now;
+                } else {
+                    logger.info("Boss communautaire : pas d'apparition à cette échéance — {} ({})",
+                            outcome.message(), outcome.code());
+                }
+                persist();
+            });
+        }
+    }
+
+    /**
+     * Contour lumineux (#471) : allumé seulement quand un joueur du même monde est à moins de
+     * {@link CommunityBossSettings#glowRadius()} blocs, éteint sinon ou si l'option est désactivée.
+     * Borné aux boss chargés (≤ plafond), jamais un chargement de chunk.
+     */
+    void refreshGlow() {
+        CommunityBossSettings settings = settings();
+        double radiusSq = (double) settings.glowRadius() * settings.glowRadius();
+        for (CommunityBossInstance i : instances.values()) {
+            Entity entity = Bukkit.getEntity(i.entityId());
+            if (entity == null || !entity.isValid()) {
+                continue;
             }
-            persist();
+            boolean near = false;
+            if (settings.glow()) {
+                Location l = entity.getLocation();
+                for (Player p : entity.getWorld().getPlayers()) {
+                    if (p.getLocation().distanceSquared(l) <= radiusSq) {
+                        near = true;
+                        break;
+                    }
+                }
+            }
+            if (entity.isGlowing() != near) {
+                entity.setGlowing(near);
+            }
         }
     }
 
@@ -310,14 +402,14 @@ public final class CommunityBossService implements PluginService, Listener {
      * Apparition de test depuis PlugAdmin : même chemin que le scheduler (placement sûr, annonce,
      * verrou), marquée « test », hors plafond, sans toucher à l'échéance ni à « dernière apparition ».
      */
-    public Outcome testSpawn(String profileId, String playerName) {
+    public CompletableFuture<Outcome> testSpawn(String profileId, String playerName) {
         Optional<NamespacedKey> profile = Optional.empty();
         if (profileId != null && !profileId.isBlank()) {
             String raw = profileId.trim().toLowerCase(Locale.ROOT);
             // Forme courte « ogre » = « rpgquest:ogre », comme partout ailleurs (jamais minecraft:ogre).
             NamespacedKey key = NamespacedKey.fromString(raw.contains(":") ? raw : "rpgquest:" + raw);
             if (key == null) {
-                return Outcome.fail("INVALID", "Identifiant de profil invalide.");
+                return done(Outcome.fail("INVALID", "Identifiant de profil invalide."));
             }
             profile = Optional.of(key);
         }
@@ -325,62 +417,122 @@ public final class CommunityBossService implements PluginService, Listener {
         if (playerName != null && !playerName.isBlank()) {
             Player player = Bukkit.getPlayerExact(playerName);
             if (player == null) {
-                return Outcome.fail("OFFLINE", "Le joueur « " + playerName + " » n'est pas connecté.");
+                return done(Outcome.fail("OFFLINE", "Le joueur « " + playerName + " » n'est pas connecté."));
             }
             near = Optional.of(player);
         }
         return spawn(profile, near, true);
     }
 
-    Outcome spawn(Optional<NamespacedKey> forcedProfile, Optional<Player> near, boolean test) {
+    /**
+     * Apparition complète (scheduler, test au hasard ou près d'un joueur). Ne complète jamais en
+     * erreur : toute défaillance devient un {@link Outcome} lisible. Une seule recherche à la fois.
+     */
+    CompletableFuture<Outcome> spawn(Optional<NamespacedKey> forcedProfile, Optional<Player> near, boolean test) {
+        if (searching) {
+            return done(Outcome.fail("BUSY", "Une recherche d'emplacement est déjà en cours : réessayez dans "
+                    + "quelques secondes."));
+        }
         CommunityBossSettings settings = settings();
         if (!test && instances.size() >= settings.maxActive()) {
-            return Outcome.fail("CAP_REACHED", "Plafond atteint (" + instances.size() + "/" + settings.maxActive()
-                    + " boss actif(s)) : aucune nouvelle apparition.");
+            return done(capReached(settings));
         }
         List<SpecialMobDefinition> eligible;
         if (forcedProfile.isPresent()) {
             Optional<SpecialMobDefinition> def = registry.find(forcedProfile.get());
             if (def.isEmpty()) {
-                return Outcome.fail("UNKNOWN_MOB", "Profil introuvable : " + forcedProfile.get() + ".");
+                return done(Outcome.fail("UNKNOWN_MOB", "Profil introuvable : " + forcedProfile.get() + "."));
             }
             if (!def.get().isCommunityBoss()) {
-                return Outcome.fail("NOT_COMMUNITY", "« " + plain(def.get().displayName()) + " » n'est pas un boss "
-                        + "communautaire activé (catégorie Boss, mode « Boss communautaire », profil activé).");
+                return done(Outcome.fail("NOT_COMMUNITY", "« " + plain(def.get().displayName()) + " » n'est pas un "
+                        + "boss communautaire activé (catégorie Boss, mode « Boss communautaire », profil activé)."));
             }
             eligible = List.of(def.get());
         } else {
             eligible = registry.definitions().stream().filter(SpecialMobDefinition::isCommunityBoss).toList();
             if (eligible.isEmpty()) {
-                return Outcome.fail("NO_PROFILE", "Aucun profil Boss en mode « Boss communautaire » activé.");
+                return done(Outcome.fail("NO_PROFILE", "Aucun profil Boss en mode « Boss communautaire » activé."));
             }
         }
 
-        List<Player> candidates = wildPlayers();
+        final List<Location> anchors;
         if (near.isPresent()) {
-            if (!candidates.contains(near.get())) {
-                return Outcome.fail("NOT_IN_WILD", near.get().getName() + " doit être dans un monde Wild "
-                        + "(ni le Hub, ni les Claims) et en mode survie ou aventure.");
+            // Apparition « près de ce joueur » : la seule méthode qui exige un joueur dans le Wild.
+            if (!wildPlayers().contains(near.get())) {
+                return done(Outcome.fail("NOT_IN_WILD", near.get().getName() + " doit être dans un monde Wild "
+                        + "(ni le Hub, ni les Claims) et en mode survie ou aventure."));
             }
-            candidates = List.of(near.get());
+            anchors = List.of(near.get().getLocation());
+        } else {
+            anchors = anchors();
         }
-        final List<Player> anchors = candidates;
         List<SpecialMobDefinition> placeable = eligible.stream()
-                .filter(def -> anchors.stream().anyMatch(p -> worldAllowed(def, p.getWorld()))).toList();
+                .filter(def -> anchors.stream().anyMatch(a -> worldAllowed(def, a.getWorld()))).toList();
         if (placeable.isEmpty()) {
-            return Outcome.fail("NO_PLAYER", anchors.isEmpty()
-                    ? "Aucun joueur dans un monde Wild : apparition reportée à la prochaine échéance."
-                    : "Aucun joueur dans un monde autorisé par ce(s) profil(s) : apparition reportée.");
+            return done(Outcome.fail("NO_ANCHOR", anchors.isEmpty()
+                    ? "Aucun repère dans le Wild : ni waypoint actif dans un monde Wild, ni joueur dans le Wild. "
+                    + "Créez au moins un waypoint dans le Wild : rien n'a été annoncé."
+                    : "Aucun waypoint actif (ni joueur) dans un monde autorisé par ce(s) profil(s) : vérifiez les "
+                    + "mondes du profil ou créez un waypoint dans ce monde. Rien n'a été annoncé."));
         }
         SpecialMobDefinition def = CommunityBossPicker.pick(placeable, random).orElseThrow();
+        List<Location> usable = new ArrayList<>(anchors.stream().filter(a -> worldAllowed(def, a.getWorld())).toList());
+        java.util.Collections.shuffle(usable, new java.util.Random(random.nextLong()));
 
-        Optional<Location> spot = findSpot(def, anchors.stream().filter(p -> worldAllowed(def, p.getWorld())).toList());
-        if (spot.isEmpty()) {
-            return Outcome.fail("NO_SAFE_LOCATION", "Aucun emplacement sûr et autorisé trouvé autour des joueurs "
-                    + "(biome, zone protégée, ville, waypoint, terrain) : rien n'a été annoncé, nouvel essai à la "
-                    + "prochaine échéance.");
+        searching = true;
+        CompletableFuture<Optional<Location>> search;
+        try {
+            search = findSpot(def, usable.subList(0, Math.min(ANCHORS_TRIED, usable.size())), 0,
+                    settings.surfaceOnly());
+        } catch (RuntimeException e) {
+            search = CompletableFuture.failedFuture(e);
         }
-        return place(def, spot.get(), test);
+        return search.handle((spot, err) -> {
+            searching = false;
+            if (err != null) {
+                logger.warn("Boss communautaire : recherche d'emplacement en échec : {}", err.toString());
+                return Outcome.fail("SEARCH_FAILED", "La recherche d'emplacement a échoué (" + err.getClass()
+                        .getSimpleName() + ") : rien n'a été annoncé, nouvel essai à la prochaine échéance.");
+            }
+            if (spot.isEmpty()) {
+                return Outcome.fail("NO_SAFE_LOCATION", "Aucun emplacement sûr et autorisé trouvé autour des "
+                        + "repères essayés (biome, zone protégée, ville, waypoint, terrain"
+                        + (settings.surfaceOnly() ? ", surface naturelle à ciel ouvert" : "")
+                        + ") : rien n'a été annoncé, nouvel essai à la prochaine échéance.");
+            }
+            // Le plafond a pu être atteint pendant le chargement asynchrone : jamais de dépassement.
+            if (!test && instances.size() >= settings().maxActive()) {
+                return capReached(settings());
+            }
+            return place(def, spot.get(), test);
+        });
+    }
+
+    private Outcome capReached(CommunityBossSettings settings) {
+        return Outcome.fail("CAP_REACHED", "Plafond atteint (" + instances.size() + "/" + settings.maxActive()
+                + " boss actif(s)) : aucune nouvelle apparition.");
+    }
+
+    private static <T> CompletableFuture<T> done(T value) {
+        return CompletableFuture.completedFuture(value);
+    }
+
+    /**
+     * Repères de recherche (#471) : waypoints actifs des mondes Wild chargés, puis joueurs du Wild.
+     * Ne dépend jamais de la présence d'un joueur : les waypoints suffisent.
+     */
+    private List<Location> anchors() {
+        List<Location> result = new ArrayList<>();
+        for (Waypoint w : waypoints.get()) {
+            World world = w.active() ? Bukkit.getWorld(w.world()) : null;
+            if (world != null && isWildWorld(world)) {
+                result.add(new Location(world, w.x() + 0.5, w.y(), w.z() + 0.5));
+            }
+        }
+        for (Player p : wildPlayers()) {
+            result.add(p.getLocation());
+        }
+        return result;
     }
 
     private Outcome place(SpecialMobDefinition def, Location location, boolean test) {
@@ -422,17 +574,15 @@ public final class CommunityBossService implements PluginService, Listener {
                 clock.getAsLong(), test);
     }
 
-    private Optional<Location> findSpot(SpecialMobDefinition def, List<Player> anchors) {
-        List<Player> shuffled = new ArrayList<>(anchors);
-        java.util.Collections.shuffle(shuffled, new java.util.Random(random.nextLong()));
-        for (Player anchor : shuffled.subList(0, Math.min(ANCHOR_PLAYERS_TRIED, shuffled.size()))) {
-            Optional<Location> spot = spotFinder.find(anchor.getWorld(), anchor.getLocation(),
-                    candidate -> acceptable(def, candidate), random);
-            if (spot.isPresent()) {
-                return spot;
-            }
+    /** Repères essayés l'un après l'autre (jamais deux chargements de chunk en parallèle). */
+    private CompletableFuture<Optional<Location>> findSpot(SpecialMobDefinition def, List<Location> anchors, int index,
+                                                           boolean surfaceOnly) {
+        if (index >= anchors.size()) {
+            return done(Optional.empty());
         }
-        return Optional.empty();
+        Location anchor = anchors.get(index);
+        return spotFinder.find(anchor.getWorld(), anchor, candidate -> acceptable(def, candidate), random, surfaceOnly)
+                .thenCompose(spot -> spot.isPresent() ? done(spot) : findSpot(def, anchors, index + 1, surfaceOnly));
     }
 
     /** Toutes les règles de placement sûr (hors terrain, déjà vérifié par le {@link SpotFinder}). */

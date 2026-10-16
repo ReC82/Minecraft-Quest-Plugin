@@ -40,6 +40,9 @@ public final class CommunityBossSettingsStore {
         yaml.set("interval-minutes", settings.intervalMinutes());
         yaml.set("max-active", settings.maxActive());
         yaml.set("participation-radius", settings.participationRadius());
+        yaml.set("glow", settings.glow());
+        yaml.set("glow-radius", settings.glowRadius());
+        yaml.set("surface-only", settings.surfaceOnly());
         Files.createDirectories(file.getParent());
         Path tmp = file.resolveSibling("." + file.getFileName() + ".tmp");
         Files.writeString(tmp, "# Boss communautaires du Wild — édité via le Control Panel (issue #175).\n"
@@ -65,6 +68,18 @@ public final class CommunityBossSettingsStore {
         return radius;
     }
 
+    /** Même règle pour le contour (#471) : une valeur hors bornes revient seule au défaut. */
+    private int glowRadius(YamlConfiguration yaml) {
+        int radius = yaml.getInt("glow-radius", CommunityBossSettings.DEFAULT_GLOW_RADIUS);
+        if (radius < CommunityBossSettings.MIN_GLOW_RADIUS || radius > CommunityBossSettings.MAX_GLOW_RADIUS) {
+            logger.warn("mobs/community-bosses.yml : glow-radius {} hors bornes ({} à {}), {} utilisé.",
+                    radius, CommunityBossSettings.MIN_GLOW_RADIUS, CommunityBossSettings.MAX_GLOW_RADIUS,
+                    CommunityBossSettings.DEFAULT_GLOW_RADIUS);
+            return CommunityBossSettings.DEFAULT_GLOW_RADIUS;
+        }
+        return radius;
+    }
+
     private CommunityBossSettings load() {
         if (!Files.exists(file)) {
             return CommunityBossSettings.defaults();
@@ -76,7 +91,10 @@ public final class CommunityBossSettingsStore {
                     yaml.getBoolean("enabled", false),
                     yaml.getInt("interval-minutes", CommunityBossSettings.DEFAULT_INTERVAL_MINUTES),
                     yaml.getInt("max-active", CommunityBossSettings.DEFAULT_MAX_ACTIVE),
-                    participationRadius(yaml));
+                    participationRadius(yaml),
+                    yaml.getBoolean("glow", true),
+                    glowRadius(yaml),
+                    yaml.getBoolean("surface-only", true));
         } catch (Exception e) {
             logger.warn("Impossible de charger mobs/community-bosses.yml, scheduler désactivé par défaut : {}",
                     e.getMessage());

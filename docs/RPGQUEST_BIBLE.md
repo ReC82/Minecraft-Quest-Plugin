@@ -5255,8 +5255,8 @@ Fonctionnement (une seule tâche toutes les 20 s) :
    « loin de tout waypoint connu », jamais un nom inventé. Aucune découverte, aucun voyage débloqué.
 5. **Connexion** : un joueur qui se connecte reçoit (3 s après) un rappel **individuel** des boss
    communautaires actifs ; rien si aucun n'est actif ; jamais de rediffusion globale.
-6. **Mort** : message « X a été vaincu (par Y) ». Pas encore de récompense de participation (#176/#177) :
-   seuls les drops/XP du profil s'appliquent, comme pour tout mob spécial.
+6. **Mort** : message « X a été vaincu (par Y) ». Les drops/XP du profil s'appliquent comme pour tout
+   mob spécial, puis les **récompenses de participation** (#176, ci-dessous).
 
 **Verrou persistant** (`plugins/RPGQuest/state/community-bosses.yml`, fichier de données — aucune table,
 aucune migration) : chaque boss actif y est inscrit (identifiant d'entité, profil, dernière position,
@@ -5273,6 +5273,59 @@ les apparitions de test** (case de confirmation, aucune récompense, retrait dif
 zone n'est pas chargée). Actions d'agent : `boss.community.status` (MOB_READ),
 `boss.community.settings.set` (MOB_WRITE), `boss.community.test.spawn` et `boss.community.remove`
 (MOB_TEST_SPAWN), toutes auditées. Page docs-site : aucune (comme le reste de la section 11).
+
+### Participation et récompenses des boss communautaires (issue #176)
+
+Un profil `BOSS` peut porter `participation-rewards` : jusqu'à 5 **clés du catalogue
+`entitlements.yml`** (voir « Droits à récompense », section 1), éditées dans PlugAdmin (éditeur de
+profil → « Récompenses de participation »). Vide (défaut) = aucune récompense de participation, rien
+n'est promis aux joueurs. Refusé sur un profil `SPECIAL`.
+
+**Participation** : chaque coup **effectif** porté à cette instance précise — dégâts finaux > 0,
+événement non annulé, par le joueur lui-même ou par un projectile dont il est le tireur — inscrit son UUID
+sur l'entité (PDC `community-boss-participants`, 100 joueurs au plus). La liste survit au déchargement du
+chunk et au redémarrage ; elle n'est jamais transférée à un autre boss. Pas de seuil de dégâts, dernier
+coup non requis. Les dégâts indirects (loup apprivoisé, TNT, lave, potion jetée sans tireur) ne comptent
+pas.
+
+**Éligibilité**, figée **au moment de la mort** du boss, conditions cumulatives :
+
+1. avoir porté au moins un coup effectif (ci-dessus) ;
+2. être **connecté et vivant** à cet instant ;
+3. être dans le **même monde** et dans le **même biome** que la **position réelle du boss à sa mort**
+   (pas son biome d'apparition) : comparaison stricte des clés de biome, **sans rayon supplémentaire**.
+
+Exclus : hors ligne, mort, autre monde, autre biome. Un participant exclu et connecté reçoit la raison
+(« tu étais hors du biome du boss au moment de sa défaite »).
+
+> **Interprétations retenues, à confirmer par le porteur du projet** (#176) :
+> - « dans le biome » = le bloc où se tient le joueur a **la même clé de biome** que celui du boss, sans
+>   rayon. Conséquence assumée : un joueur ayant frappé puis parti dans une autre zone du même type de
+>   biome reste éligible ; un joueur à 3 blocs mais de l'autre côté d'une frontière de biome ne l'est pas.
+> - « encore vivant » = vivant **à l'instant de la mort** du boss. Un joueur qui a frappé, est mort puis
+>   a réapparu et est revenu dans le biome **reste éligible** (ses coups ne sont pas effacés).
+
+**Récompenses** : un **droit à récompense** (#422, `source = BOSS`) par participant éligible et par clé,
+clé d'idempotence `boss:<uuid entité>:<clé récompense>:<uuid joueur>` — une seconde déclaration, un
+nouvel essai ou un rejeu ne crée jamais de second droit. La remise est celle des droits à récompense :
+tout ou rien, au plus une fois, **inventaire plein = le droit attend** (message « libère N
+emplacements »), remise à la reconnexion et après un redémarrage. Une remise est tentée tout de suite
+après la victoire. Une clé absente du catalogue est quand même déclarée (le droit attend avec l'erreur
+visible, jamais perdu). Échec de base : 3 essais à 5 s d'intervalle, puis erreur au journal avec la
+liste des droits à déclarer à la main.
+
+**Prérequis** : `entitlements.yml` avec `enabled: true` et les clés utilisées. Sinon, rien n'est déclaré
+(avertissement au journal, statut visible dans PlugAdmin).
+
+**Séparation** : seuls les boss communautaires (PDC `community-boss-instance`) déclarent des droits ici,
+apparitions de test comprises. Un boss de quête (#171, non livré) ou un mob spécial ne déclare rien ; la
+progression de quête reste gérée par le moteur de quêtes ; les drops du profil ne sont pas modifiés.
+
+**Traçabilité** : journal serveur (participants, éligibles, exclus et raison) ; PlugAdmin → section
+« Boss communautaires du Wild » → **Victoires récentes et participants** (10 dernières depuis le
+démarrage : verdict par joueur, récompenses, droits déclarés) ; fiche joueur → Monnaie → Droits à
+récompense (origine « Boss communautaire », état, essais, erreur — durable).
+
 
 ### Capacités (premier lot, issue #171)
 

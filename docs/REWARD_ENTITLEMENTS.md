@@ -60,7 +60,7 @@ une entrée du catalogue tant que le droit est en attente. Une clé inconnue du 
 | --- | --- |
 | `idempotency_key` | clé primaire, ≤ 160 caractères, `[A-Za-z0-9_:.-]` |
 | `player_uuid` | destinataire (UUID, jamais le pseudo) |
-| `source` | `EVENT`, `ADMIN` (à venir : `SEASON`, `CONTEST`, `PROMO`, `VIP`) |
+| `source` | `EVENT`, `ADMIN`, `BOSS` (#176) (à venir : `SEASON`, `CONTEST`, `PROMO`, `VIP`) |
 | `source_ref` | id de l'événement, référence administrateur… |
 | `reward_key` | clé du catalogue |
 | `label` | libellé figé à la déclaration (traçabilité) |
@@ -140,7 +140,14 @@ au redémarrage) ne crée rien de plus.
 Action agent `entitlement.declare` : joueur connu, clé du catalogue, **référence** obligatoire
 (→ clé `admin:<référence>:<uuid>`). Même référence deux fois = un seul droit.
 
-### 6.3 Plus tard (hors tranche 1)
+### 6.3 Boss communautaires (#176)
+
+Source `BOSS`, référence `<profil>@<uuid entité>`, clé `boss:<uuid entité>:<clé catalogue>:<uuid joueur>` :
+un droit par participant éligible à la mort d'un boss communautaire et par clé `participation-rewards`
+du profil. Règles d'éligibilité : docs/RPGQUEST_BIBLE.md §11. Déclaré seulement si `enabled: true` ; une
+clé inconnue du catalogue est déclarée quand même (droit en attente avec l'erreur).
+
+### 6.4 Plus tard (hors tranche 1)
 
 Saisons (#54), concours, codes promotionnels, VIP : chacun = une nouvelle valeur de `source` et un
 format de clé, **sans nouvelle table**. Un portail qui déclare (après #53, comptes liés) passera par

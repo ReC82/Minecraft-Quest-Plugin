@@ -23,17 +23,17 @@ public final class RewardCatalogLoader {
     /** Avantages gérés par un service dédié, jamais accordés directement par une récompense. */
     static final java.util.Set<String> RESERVED_PERKS =
             java.util.Set.of(com.lodygames.rpgquest.backpack.BackpackService.ENTITLEMENT_KEY);
-    static final int LABEL_MAX = 120;
+    public static final int LABEL_MAX = 120;
     static final int MAX_ITEMS = 9;
     static final int MAX_AMOUNT = 64;
     static final int MAX_ENCHANTMENTS = 8;
     static final int MAX_ENCHANT_LEVEL = 10;
     static final int MAX_TABLES = 100;
-    static final int MAX_TABLE_ENTRIES = 20;
+    public static final int MAX_TABLE_ENTRIES = 20;
     private static final Pattern MINECRAFT_KEY = Pattern.compile("[a-z0-9_]{1,64}");
     /** Identifiant d'une table (issue #177) : court, pour tenir dans la clé d'idempotence d'un gain. */
     public static final Pattern TABLE_ID = Pattern.compile("[a-z0-9_-]{1,32}");
-    static final Pattern ENTRY_ID = Pattern.compile("[a-z0-9_-]{1,24}");
+    public static final Pattern ENTRY_ID = Pattern.compile("[a-z0-9_-]{1,24}");
     static final java.util.Set<String> POTION_ITEMS =
             java.util.Set.of("POTION", "SPLASH_POTION", "LINGERING_POTION", "TIPPED_ARROW");
 
@@ -282,7 +282,7 @@ public final class RewardCatalogLoader {
     }
 
     /** Pourcentage → centièmes de pour cent, sans arrondi : 12.345 est refusé plutôt qu'arrondi. */
-    static Integer chance(Object raw) {
+    public static Integer chance(Object raw) {
         if (!(raw instanceof Number) && !(raw instanceof String)) {
             return null;
         }

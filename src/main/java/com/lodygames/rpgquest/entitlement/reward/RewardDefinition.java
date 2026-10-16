@@ -23,6 +23,32 @@ public record RewardDefinition(String key, String label, List<Item> items, @Null
      *                     l'objet, ou <em>stockés</em> dans un livre enchanté (issue #177)
      * @param potion       type de potion Minecraft ({@code strength}) d'une potion ou flèche, facultatif
      */
+    /** Résumé lisible pour PlugAdmin : « 2 × DIAMOND, ENCHANTED_BOOK (sharpness 3) + avantage title:GOLD ». */
+    public String summary() {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        for (Item item : items) {
+            StringBuilder part = new StringBuilder();
+            if (item.amount() > 1) {
+                part.append(item.amount()).append(" × ");
+            }
+            part.append(item.itemId());
+            java.util.List<String> extras = new java.util.ArrayList<>();
+            item.enchantments().forEach((key, level) -> extras.add(key + " " + level));
+            if (item.potion() != null) {
+                extras.add("potion " + item.potion());
+            }
+            if (!extras.isEmpty()) {
+                part.append(" (").append(String.join(", ", extras)).append(')');
+            }
+            parts.add(part.toString());
+        }
+        String text = String.join(", ", parts);
+        if (perk != null) {
+            text = (text.isEmpty() ? "" : text + " + ") + "avantage " + perk.key() + ":" + perk.tier();
+        }
+        return text;
+    }
+
     public record Item(String itemId, int amount, Map<String, Integer> enchantments, @Nullable String potion) {
 
         public Item {

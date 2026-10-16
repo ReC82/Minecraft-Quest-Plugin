@@ -88,6 +88,8 @@ public final class RewardEntitlementService implements PluginService, Listener, 
     private final Executor mainThread;
 
     private volatile RewardCatalog catalog = RewardCatalog.DISABLED;
+    private volatile List<String> lastErrors = List.of();
+    private final RewardTableEditor tableEditor;
     private long loadedModified = Long.MIN_VALUE;
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final Set<String> declaredEvents = ConcurrentHashMap.newKeySet();
@@ -125,6 +127,7 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         this.logger = logger;
         this.clock = clock;
         this.mainThread = mainThread;
+        this.tableEditor = new RewardTableEditor(file, this::reloadNow, logger);
     }
 
     @Override
@@ -146,6 +149,20 @@ public final class RewardEntitlementService implements PluginService, Listener, 
 
     public RewardCatalog catalog() {
         return catalog;
+    }
+
+    /** Erreurs du dernier chargement de {@code entitlements.yml} (vide = accepté ou absent). */
+    public List<String> lastErrors() {
+        return lastErrors;
+    }
+
+    public Path file() {
+        return file;
+    }
+
+    /** Écriture des tables depuis PlugAdmin (issue #177), hors du thread principal. */
+    public RewardTableEditor tableEditor() {
+        return tableEditor;
     }
 
     @Override
@@ -206,6 +223,7 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         loadedModified = modified;
         if (modified < 0) {
             catalog = RewardCatalog.DISABLED;
+            lastErrors = List.of();
             return new RewardCatalogLoader.Result(catalog, List.of());
         }
         YamlConfiguration yaml = new YamlConfiguration();
@@ -214,11 +232,13 @@ public final class RewardEntitlementService implements PluginService, Listener, 
         } catch (IOException | InvalidConfigurationException e) {
             logger.warn("Récompenses : {} illisible, droits à récompense désactivés.", file, e);
             catalog = RewardCatalog.DISABLED;
-            return new RewardCatalogLoader.Result(catalog, List.of("fichier illisible : " + e.getMessage()));
+            lastErrors = List.of("fichier illisible : " + e.getMessage());
+            return new RewardCatalogLoader.Result(catalog, lastErrors);
         }
         RewardCatalogLoader.Result result = RewardCatalogLoader.load(yaml);
         result.errors().forEach(error -> logger.warn("Récompenses : {} — {}", file.getFileName(), error));
         catalog = result.catalog();
+        lastErrors = result.errors();
         logger.info("Récompenses : {} récompense(s) chargée(s) depuis {}, {}{}.", catalog.rewards().size(),
                 file.getFileName(), catalog.enabled() ? "activé" : "désactivé",
                 result.valid() ? "" : " (fichier invalide ignoré)");

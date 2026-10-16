@@ -282,7 +282,7 @@ public final class RewardTableEditor {
     }
 
     /** Centièmes de pour cent → nombre YAML exact ({@code 1250} → {@code 12.5}, {@code 500} → {@code 5}). */
-    static Number chanceValue(int hundredths) {
+    public static Number chanceValue(int hundredths) {
         BigDecimal percent = BigDecimal.valueOf(hundredths, 2).stripTrailingZeros();
         return percent.scale() <= 0 ? (Number) percent.intValueExact() : (Number) percent.doubleValue();
     }

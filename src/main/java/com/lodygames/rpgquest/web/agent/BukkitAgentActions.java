@@ -1230,6 +1230,63 @@ public final class BukkitAgentActions implements AgentActions {
                 e.revokedAt() == null ? "" : e.revokedAt().toString());
     }
 
+    // ---- Éditeur de tables de récompenses (issue #177, tranche 2) --------------------------------
+    // Appelé sur le thread agent : lecture / écriture de entitlements.yml hors du thread principal.
+
+    @Override
+    public CompletableFuture<RewardCatalogView> rewardCatalogStatus() {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardCatalogStatus();
+        }
+        var catalog = service.catalog();
+        List<RewardCatalogEntryView> rewards = catalog.rewards().values().stream()
+                .map(r -> new RewardCatalogEntryView(r.key(), r.label(), r.summary())).toList();
+        List<String> errors = service.lastErrors();
+        return done(new RewardCatalogView(true, java.nio.file.Files.isRegularFile(service.file()), errors.isEmpty(),
+                catalog.enabled(), errors, rewards, rewardTables()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardTableSave(String id, String label, String mode, boolean enabled,
+                                                             List<RewardTableEntryInput> entries,
+                                                             String expectedVersion, boolean create) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardTableSave(id, label, mode, enabled, entries, expectedVersion, create);
+        }
+        var table = new com.lodygames.rpgquest.entitlement.reward.RewardTable(id, label.trim(),
+                com.lodygames.rpgquest.entitlement.reward.RewardTable.Mode.fromYaml(mode), enabled,
+                entries.stream().map(e -> new com.lodygames.rpgquest.entitlement.reward.RewardTable.Entry(e.id(),
+                        e.rewardKey(), e.chance())).toList());
+        return done(tableMutation(service.tableEditor().save(table, expectedVersion, create)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardTableDuplicate(String sourceId, String newId, String newLabel) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardTableDuplicate(sourceId, newId, newLabel);
+        }
+        return done(tableMutation(service.tableEditor().duplicate(sourceId, newId, newLabel)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> rewardTableToggle(String id, boolean enabled) {
+        var service = rewardEntitlements;
+        if (service == null) {
+            return AgentActions.super.rewardTableToggle(id, enabled);
+        }
+        return done(tableMutation(service.tableEditor().setEnabled(id, enabled)));
+    }
+
+    private static MutationResult tableMutation(com.lodygames.rpgquest.entitlement.reward.RewardTableEditor.Outcome o) {
+        List<String> effects = o.table() == null ? List.of()
+                : List.of("table " + o.table().id() + " v" + o.table().version()
+                + (o.table().enabled() ? " active" : " désactivée"));
+        return new MutationResult(o.success(), o.code(), o.message(), effects);
+    }
+
     @Override
     public CompletableFuture<MutationResult> declareRewardEntitlement(UUID playerId, String rewardKey,
                                                                       String reference) {
@@ -4754,7 +4811,9 @@ public final class BukkitAgentActions implements AgentActions {
             List<RewardTableEntryView> entries = table.entries().stream()
                     .map(e -> new RewardTableEntryView(e.id(), e.rewardKey(), service.label(e.rewardKey()),
                             catalog.find(e.rewardKey()).isPresent(),
-                            com.lodygames.rpgquest.entitlement.reward.RewardTable.percent(e.chance())))
+                            com.lodygames.rpgquest.entitlement.reward.RewardTable.percent(e.chance()),
+                            com.lodygames.rpgquest.entitlement.reward.RewardTableEditor.chanceValue(e.chance())
+                                    .toString()))
                     .toList();
             views.add(new RewardTableView(table.id(), table.label(), table.mode().yaml(), table.mode().label(),
                     table.enabled(), table.version(),

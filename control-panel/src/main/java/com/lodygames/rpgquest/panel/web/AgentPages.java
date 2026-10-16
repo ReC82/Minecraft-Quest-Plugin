@@ -1134,7 +1134,11 @@ public final class AgentPages {
             String status = str(e.get("status"));
             sb.append("<tr><td>").append(Http.esc(str(e.get("label"))))
                     .append("<br><span class=\"muted\">").append(Http.esc(str(e.get("rewardKey")))).append("</span></td>");
-            sb.append("<td>").append("EVENT".equals(str(e.get("source"))) ? "Événement " : "Déclaré à la main — ")
+            sb.append("<td>").append(switch (str(e.get("source"))) {
+                        case "EVENT" -> "Événement ";
+                        case "BOSS" -> "Boss communautaire — ";
+                        default -> "Déclaré à la main — ";
+                    })
                     .append(Http.esc(str(e.get("sourceRef"))))
                     .append("<br><span class=\"muted\">").append(when(instant(str(e.get("createdAt"))))).append("</span></td>");
             sb.append("<td>").append(entitlementState(e, status)).append("</td></tr>");
@@ -10385,8 +10389,9 @@ public final class AgentPages {
         sb.append("<p class=\"muted\">Un boss communautaire apparaît <strong>tout seul</strong> dans le Wild, "
                 + "près des joueurs mais jamais sur eux, ni dans le Hub, les Claims, une ville ou une zone "
                 + "protégée. Tout le serveur est prévenu (nom, biome, waypoint le plus proche) et les joueurs "
-                + "qui se connectent plus tard reçoivent un rappel. Les récompenses de participation ne sont "
-                + "pas encore livrées : à sa mort, le boss lâche seulement les objets de son profil.</p>");
+                + "qui se connectent plus tard reçoivent un rappel. À sa mort, il lâche les objets de son profil "
+                + "et chaque joueur qui l'a touché, encore vivant et dans le même biome que lui, reçoit les "
+                + "<strong>récompenses de participation</strong> du profil (droits à récompense, remise sûre).</p>");
         sb.append("<div class=\"npc-catbar\">")
                 .append(compactRefresh(session, agentId, "boss.community.status", "Rafraîchir l'état",
                         "btn-outline-primary", "/mobs"))
@@ -10444,18 +10449,67 @@ public final class AgentPages {
         sb.append("<p class=\"npc-fs-h mt-3\">Boss actifs en ce moment</p>");
         if (instances.isEmpty()) {
             sb.append(Ui.empty("mob", "Aucun boss communautaire actif."));
-            return sb.toString();
+        } else {
+            sb.append("<div class=\"list-group mb-3\">");
+            for (Object o : instances) {
+                sb.append(communityBossInstanceItem(session, agentId, asMap(o), now, canTest));
+            }
+            sb.append("</div>");
         }
-        sb.append("<div class=\"list-group mb-3\">");
-        for (Object o : instances) {
-            sb.append(communityBossInstanceItem(session, agentId, asMap(o), now, canTest));
-        }
-        sb.append("</div>");
         if (canTest && instances.stream().map(AgentPages::asMap).anyMatch(i -> Boolean.TRUE.equals(i.get("test")))) {
             sb.append(communityBossRemoveForm(session, agentId, "tests", "Retirer toutes les apparitions de test",
                     "Je confirme : retirer les boss de test (sans récompense)"));
         }
+        sb.append(communityBossDefeats(asList(d.get("recentDefeats")), now));
         return sb.toString();
+    }
+
+    /** Issue #176 : traçabilité des dernières victoires — participants, verdicts, droits déclarés. */
+    private String communityBossDefeats(List<Object> defeats, long now) {
+        StringBuilder sb = new StringBuilder("<p class=\"npc-fs-h mt-3\">Victoires récentes et participants</p>");
+        if (defeats.isEmpty()) {
+            return sb.append(Ui.empty("mob", "Aucun boss communautaire vaincu depuis le dernier démarrage du serveur."))
+                    .toString();
+        }
+        sb.append("<p class=\"muted small\">Depuis le dernier démarrage du serveur (les droits déclarés, eux, restent "
+                + "visibles pour toujours dans la fiche de chaque joueur → Monnaie → Droits à récompense).</p>");
+        sb.append("<div class=\"list-group mb-3\">");
+        for (Object raw : defeats) {
+            Map<String, Object> d = asMap(raw);
+            sb.append("<div class=\"list-group-item\"><div><strong>").append(Http.esc(str(d.get("profileName"))))
+                    .append("</strong>");
+            if (Boolean.TRUE.equals(d.get("test"))) {
+                sb.append(" <span class=\"badge text-bg-warning\">test</span>");
+            }
+            sb.append(" <span class=\"muted\">vaincu ").append(Http.esc(relative(asLong(d.get("defeatedAt")) - now)));
+            String killer = str(d.get("killerName"));
+            if (!killer.isBlank()) {
+                sb.append(" · dernier coup : ").append(Http.esc(killer));
+            }
+            sb.append(" · biome ").append(Http.esc(prettyBiomeName(str(d.get("biome"))))).append("</span></div>");
+            List<Object> participants = asList(d.get("participants"));
+            if (participants.isEmpty()) {
+                sb.append("<div class=\"muted\">Aucun joueur ne l'a touché.</div>");
+            } else {
+                sb.append("<ul class=\"mb-1\">");
+                for (Object o : participants) {
+                    Map<String, Object> p = asMap(o);
+                    boolean eligible = Boolean.TRUE.equals(p.get("eligible"));
+                    sb.append("<li>").append(Http.esc(str(p.get("name")))).append(" — ")
+                            .append(eligible ? "<span class=\"badge text-bg-success\">éligible</span>"
+                                    : "<span class=\"badge text-bg-secondary\">exclu</span> "
+                                    + Http.esc(str(p.get("reason"))))
+                            .append("</li>");
+                }
+                sb.append("</ul>");
+            }
+            List<Object> keys = asList(d.get("rewardKeys"));
+            sb.append("<div class=\"muted small\">Récompenses du profil : ")
+                    .append(keys.isEmpty() ? "aucune" : Http.esc(String.join(", ",
+                            keys.stream().map(AgentPages::str).toList())))
+                    .append(" · ").append(Http.esc(str(d.get("rewardStatus")))).append("</div></div>");
+        }
+        return sb.append("</div>").toString();
     }
 
     private String communityBossInstanceItem(Session session, String agentId, Map<String, Object> i, long now,
@@ -10821,6 +10875,21 @@ public final class AgentPages {
                 .append("\">")
                 .append(fieldHelp("Quand plusieurs boss communautaires sont possibles, un boss de poids 3 sort "
                         + "trois fois plus souvent qu'un boss de poids 1.", "3", "1", null))
+                .append("</div>");
+        // Issue #176 : récompenses de participation (clés de entitlements.yml), Boss seulement.
+        String participationRewards = existing == null ? ""
+                : String.join(", ", asList(existing.get("participationRewards")).stream().map(AgentPages::str).toList());
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-pr\">Récompenses "
+                + "de participation (boss communautaire)</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-pr\" type=\"text\" "
+                        + "name=\"participation_rewards\" maxlength=\"340\" value=\"").append(Http.esc(participationRewards))
+                .append("\">")
+                .append(fieldHelp("Clés du catalogue <code>entitlements.yml</code> (séparées par des virgules, 5 au "
+                        + "plus), remises à <strong>chaque</strong> joueur qui a touché ce boss et qui, à sa mort, est "
+                        + "vivant, dans le même monde et dans le même biome que lui. Remise sûre : inventaire plein = "
+                        + "la récompense attend, jamais deux fois. Vide = aucune récompense (seulement les drops). "
+                        + "Exige <code>enabled: true</code> dans <code>entitlements.yml</code>.",
+                        "boss_ogre, titre.ogre", "vide", null))
                 .append("</div>");
         sb.append(catalogCombo(uid, "entity_type", "et", "Type d'entité Minecraft",
                 str(existing == null ? null : existing.get("entityType")), "dl-mob-entity", true,

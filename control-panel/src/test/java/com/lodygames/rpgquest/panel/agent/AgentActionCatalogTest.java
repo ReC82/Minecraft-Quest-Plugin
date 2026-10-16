@@ -488,6 +488,29 @@ class AgentActionCatalogTest {
                 "display_name", "Ogre", "spawn_chance", "0", "community_weight", "0")).valid());
     }
 
+    @Test
+    void participationRewardsAreNormalizedForBossesAndClearedForSpecials() {
+        AgentActionCatalog.Validation boss = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE",
+                "display_name", "Ogre", "spawn_chance", "0", "participation_rewards", "Boss_Ogre, titre.ogre boss_ogre"));
+        assertTrue(boss.valid(), boss.error());
+        assertEquals("boss_ogre,titre.ogre", boss.params().get("participation_rewards"));
+        AgentActionCatalog.Validation cleared = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE",
+                "display_name", "Ogre", "spawn_chance", "0"));
+        assertEquals("", cleared.params().get("participation_rewards"), "champ vidé = récompenses retirées");
+        AgentActionCatalog.Validation special = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:red", "category", "SPECIAL", "entity_type", "CREEPER",
+                "display_name", "Rouge", "spawn_chance", "0.1", "participation_rewards", "boss_ogre"));
+        assertEquals("", special.params().get("participation_rewards"));
+        assertFalse(AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE", "display_name", "Ogre",
+                "spawn_chance", "0", "participation_rewards", "coffre!")).valid());
+        assertFalse(AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:ogre", "category", "BOSS", "entity_type", "ZOMBIE", "display_name", "Ogre",
+                "spawn_chance", "0", "participation_rewards", "a,b,c,d,e,f")).valid());
+    }
+
     // ---- Exploitation serveur (issue #95) --------------------------------------------
 
     @Test

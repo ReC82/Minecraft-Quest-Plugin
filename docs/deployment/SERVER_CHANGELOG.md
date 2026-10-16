@@ -72,12 +72,18 @@ JAR et PlugAdmin précédents (sauvegarde datée automatique de `deploy-verygame
 
 ### Déploiement
 
-À effectuer après fusion : `scripts/deploy-verygames.sh -y`, redémarrage DEV, `scripts/plugadmin/deploy.sh`.
+Effectué le 2026-10-16 ~18:40 (heure locale) : `scripts/deploy-verygames.sh -y` depuis `dbacbca` (merge de la
+PR #470, CI verte ; tests + build relancés par le script, verts ; JAR 3 308 137 o, SHA-256 `4103484b…16ab63`,
+« JAR en ligne : 3308137 octets (== local) »), sauvegarde `rpgquest-20261016T164057Z-predeploy.jar` (JAR #176,
+3 286 631 o, `84c980c5…72b35`), `scripts/verygames-restart.sh` (seul LoDyMcFly connecté), `scripts/plugadmin/deploy.sh`.
 
 ### Validation
 
-`reward.catalog.status` en lecture seule sur DEV (attendu : fichier absent, aucune table). PENDING MANUAL
-VALIDATION : TC-333 (après création du catalogue par le propriétaire).
+Vérifié : DEV ONLINE ; PlugAdmin servi contient `RewardTableForm`, `/rewards` répond 303 → /login ; compte
+PlugAdmin jetable en lecture seule (supprimé ensuite) : `reward.catalog.status` → SUCCESS « 0 table(s), 0
+récompense(s) au catalogue », page « Aucun catalogue de récompenses sur ce serveur », pas de bouton « Nouvelle
+table » ; une écriture `reward.table.toggle` par ce compte est refusée (403). Rien n'a été écrit sur DEV.
+PENDING MANUAL VALIDATION : TC-333 (après création du catalogue par le propriétaire).
 
 ### Rollback
 

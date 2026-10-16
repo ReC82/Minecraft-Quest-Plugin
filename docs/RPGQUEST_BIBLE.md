@@ -162,7 +162,7 @@ joueur voit « Tirage « … » indisponible » (quête et boss) et le journal l
 Objets du catalogue : `enchantments: {sharpness: 3}` (niveau 1–10, 8 au plus ; sur `ENCHANTED_BOOK` l'enchantement
 est **stocké dans le livre**, jamais appliqué à l'équipement du joueur) et `potion: strength` (sur `POTION`,
 `SPLASH_POTION`, `LINGERING_POTION`, `TIPPED_ARROW`) ; clé inconnue à la remise = droit en attente avec l'erreur.
-PlugAdmin : page **Récompenses aléatoires** (`/rewards`, droit « Économie — lecture », écritures « Économie —
+PlugAdmin : page **Récompenses** (`/rewards`, droit « Économie — lecture », écritures « Économie —
 écriture ») : état du fichier expliqué (absent, refusé avec ses erreurs, désactivé), catalogue des récompenses en
 lecture, tables **créées, modifiées, dupliquées (copie désactivée), activées / désactivées** sans YAML — récompenses
 choisies dans le catalogue (liste recherchable), mode expliqué en mots simples, total des chances et chance de ne
@@ -170,10 +170,24 @@ rien gagner affichés pendant la saisie. Actions agent `reward.catalog.status`, 
 `reward.table.duplicate`, `reward.table.toggle` : seule la section `tables` est réécrite, le texte final est relu
 par le vrai chargeur **avant** écriture (rien n'est écrit sinon), écriture atomique, rechargement immédiat et
 ancienne version remise à l'octet près si le serveur la refuse ; un formulaire périmé (table changée entre-temps)
-est refusé. Fichier absent ou refusé : aucune écriture (le catalogue des récompenses reste un fichier serveur).
+est refusé. Fichier refusé : aucune écriture.
 Éditeur de quête → « Tirage au sort » avec liste recherchable des tables (table inconnue ou désactivée signalée) ;
 éditeur de boss → « Récompenses de participation » en liste recherchable (récompenses + « Tirage : … »). Section
 **Boss communautaires du Wild** : tables en lecture et « Tirages » des victoires récentes.
+
+**Catalogue administré depuis PlugAdmin, sans YAML (issue #474).** Page **Récompenses** (`/rewards`) :
+fichier absent → aperçu exact du fichier puis **Créer le catalogue** (case de confirmation) : `entitlements.yml`
+créé **désactivé et vide**, jamais d'écrasement d'un fichier existant ; **interrupteur général** expliqué
+(conséquences pour les quêtes et boss) et confirmé ; **récompenses** créées, modifiées, dupliquées (copie
+désactivée), activées / désactivées — objets cherchés par nom français ou identifiant (objets RPGQuest compris),
+quantité, enchantements « nom niveau » et potion vérifiés par le serveur, avantage persistant en option avancée ;
+chaque fiche dit qui l'utilise (tables, boss), chaque table qui la tire (quêtes, boss). Nouveau champ
+`enabled` par récompense (défaut `true`) : `false` = plus jamais promise (tirage sans gain sur cette entrée, boss
+qui ne la déclare plus, déclaration manuelle refusée), droits déjà ouverts toujours remis ; pas de suppression.
+Actions agent `reward.catalog.init`, `reward.catalog.toggle`, `reward.definition.save`,
+`reward.definition.duplicate`, `reward.definition.toggle` — mêmes garanties que les tables (validation par le vrai
+chargeur avant écriture, écriture atomique, `ROLLED_BACK`, `STALE`, `UNCHANGED`, commentaires conservés).
+Détail : [REWARD_ENTITLEMENTS.md §10.8](REWARD_ENTITLEMENTS.md#108-catalogue-administré-depuis-plugadmin-474).
 
 ---
 

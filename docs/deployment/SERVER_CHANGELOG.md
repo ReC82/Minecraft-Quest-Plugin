@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-16 - Récompenses : catalogue administré depuis PlugAdmin, sans YAML (#474)
+
+### Changement
+
+PlugAdmin → **Récompenses** (ex-« Récompenses aléatoires ») : créer `entitlements.yml` quand il manque
+(désactivé et vide, confirmation), interrupteur général, récompenses créées / modifiées / dupliquées /
+activées avec leurs usages. Plugin : actions agent `reward.catalog.init`, `reward.catalog.toggle`,
+`reward.definition.*` ; champ facultatif `enabled` par récompense (absent = `true`, fichiers existants
+inchangés) ; écriture commune `EntitlementsFile` (validation avant écriture, atomique, restauration).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement de PlugAdmin. Aucune migration. **Ne pas** créer ni
+modifier `entitlements.yml` au déploiement : absent sur DEV, il le reste jusqu'à ce que le propriétaire
+le crée depuis PlugAdmin (TC-336).
+
+### Sauvegarde préalable
+
+JAR précédent (sauvegarde datée automatique de `deploy-verygames.sh`) ; installation PlugAdmin
+précédente (sauvegarde de `scripts/plugadmin/deploy.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh` ; `scripts/plugadmin/deploy.sh`.
+Détails réels (commit, empreintes) dans le rapport de session #474.
+
+### Validation
+
+TC-336 (PlugAdmin puis jeu) — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Remettre le JAR `rpgquest-<horodatage>-predeploy.jar` et redémarrer ; PlugAdmin : réinstaller la
+sauvegarde de `deploy.sh`. Un ancien JAR lit un `entitlements.yml` créé par PlugAdmin ; il ignore le
+champ `enabled` d'une récompense (elle redevient promise) — désactiver le catalogue avant un rollback si
+c'est gênant.
+
 ## 2026-10-16 - Atelier bâtiments : marches d'entrée posées sur le terrain (#472)
 
 ### Changement

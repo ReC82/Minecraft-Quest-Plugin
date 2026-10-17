@@ -9,8 +9,8 @@ import java.util.regex.Pattern;
 
 /**
  * Formulaires « Marchands » de PlugAdmin (issue #17) → paramètres des actions {@code merchant.*}.
- * Un catalogue arrive avec son nom ({@code title}), sa nature ({@code catalog_type} : vente, rachat
- * ou mixte) et des lignes d'offre {@code of_*_<i>}, normalisées en {@code offers} (une offre par
+ * Un catalogue arrive avec son nom ({@code title}), sa nature ({@code catalog_type} : vente, rachat,
+ * mixte ou atelier d'artisan #18) et des lignes d'offre {@code of_*_<i>}, normalisées en {@code offers} (une offre par
  * ligne, {@code sens|objet|quantité|prix|prix-ref|quête|état|niveau|permission}). Le plugin
  * revalide tout : objets, prix du catalogue central, cohérence avec la nature du catalogue.
  */
@@ -20,7 +20,7 @@ public final class MerchantForm {
     public static final Pattern KEY = Pattern.compile("[a-z0-9_-]{1,64}");
     /** Id d'un marchand existant : {@code ns:clé} ou clé seule. */
     static final Pattern ID = Pattern.compile("([a-z0-9._-]{1,64}:)?[a-z0-9/._-]{1,64}");
-    static final Set<String> TYPES = Set.of("SELL", "BUY", "MIXED");
+    static final Set<String> TYPES = Set.of("SELL", "BUY", "MIXED", "CRAFT");
     static final Set<String> DIRECTIONS = Set.of("SELL_TO_PLAYER", "BUY_FROM_PLAYER");
     static final Set<String> QUEST_STATES = Set.of("NOT_STARTED", "ACTIVE", "READY_TO_TURN_IN", "COMPLETED",
             "FAILED", "ABANDONED");
@@ -53,7 +53,7 @@ public final class MerchantForm {
         }
         String type = trim(form.get("catalog_type")).toUpperCase(Locale.ROOT);
         if (!TYPES.contains(type)) {
-            return "Choisir ce que fait ce marchand : vendre, racheter, ou les deux.";
+            return "Choisir ce que fait ce marchand : vendre, racheter, les deux, ou fabriquer (atelier).";
         }
         String expected = trim(form.get("expected_version"));
         if (!expected.isEmpty() && !RewardTableForm.VERSION.matcher(expected).matches()) {
@@ -127,6 +127,10 @@ public final class MerchantForm {
             }
             out.add("||||" + ref + "|" + conditions);
             return null;
+        }
+        if ("CRAFT".equals(type)) {
+            return n + "un atelier d'artisan ne propose que des recettes : choisir une fabrication de la page Prix et "
+                    + "coûts dans « Prix du catalogue » (et vider l'objet et le prix).";
         }
         String item = PriceForm.normalizeItem(rawItem);
         if (item == null) {

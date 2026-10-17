@@ -18,7 +18,8 @@ import org.bukkit.configuration.ConfigurationSection;
  * qui cite un prix ne s'échange — et la liste des erreurs ; le plugin démarre normalement.
  *
  * <p>Refusé : montant absent ou négatif (aucun prix implicite), quantité hors 1–64, objet inconnu,
- * fabrication sans ingrédient, ingrédients sur une vente, et toute <strong>boucle d'enrichissement</strong>
+ * fabrication sans ingrédient <em>ni</em> pièce (une recette « pièces seules » est permise, issue #18),
+ * ingrédients sur une vente, et toute <strong>boucle d'enrichissement</strong>
  * entre prix actifs ({@link PriceArbitrage}). Avertissements (le fichier reste appliqué) : objet
  * donné ou racheté pour 0 pièce, valeurs de démonstration.</p>
  */
@@ -108,6 +109,10 @@ public final class PriceCatalogLoader {
         if (errors.size() > before || type == null || item == null || coins == null) {
             return null;
         }
+        if (type == PriceType.CRAFT && ingredients.isEmpty() && coins == 0) {
+            errors.add(where + " : une fabrication demande des ingrédients, des pièces, ou les deux — jamais rien.");
+            return null;
+        }
         if (coins == 0 && type == PriceType.SELL_TO_PLAYER) {
             warnings.add(where + " : objet donné gratuitement (0 pièce).");
         } else if (coins == 0 && type == PriceType.BUY_FROM_PLAYER) {
@@ -158,8 +163,7 @@ public final class PriceCatalogLoader {
         }
         List<?> raw = entry.getList("ingredients");
         if (raw == null || raw.isEmpty()) {
-            errors.add(where + " : une fabrication demande au moins un ingrédient (sinon, c'est une vente).");
-            return List.of();
+            return List.of(); // recette « pièces seules » (issue #18) : vérifiée avec le montant dans readPrice
         }
         if (raw.size() > MAX_INGREDIENTS) {
             errors.add(where + " : " + MAX_INGREDIENTS + " ingrédients au plus.");

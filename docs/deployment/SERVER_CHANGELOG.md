@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Artisans : ateliers de recettes (ingrédients et/ou pièces) administrés depuis PlugAdmin (#18)
+
+### Changement
+
+JAR + PlugAdmin. Nouvelle nature de catalogue `type: CRAFT` (« Atelier d'artisan ») : uniquement des recettes
+`price-ref` vers des prix `CRAFT`. Un prix `CRAFT` peut désormais n'avoir **aucun ingrédient** s'il coûte des
+pièces (recette « pièces seules ») ; sans ingrédient ni pièce, il reste refusé. Vitrine : ingrédients possédés
+✔/✘ et pièces manquantes par joueur, message listant tout ce qui manque. Nouvel exemple embarqué
+`merchants/artisan_demo.yml` (seedé au démarrage, sans prix : ses trois recettes restent « indisponibles »
+tant que `demo_recette_*` n'existent pas dans Prix et coûts).
+
+### Action serveur
+
+Remplacer le JAR RPGQuest (`scripts/deploy-verygames.sh -y`), redémarrer DEV ; redéployer PlugAdmin
+(`scripts/plugadmin/deploy.sh`). Aucune migration de base, aucun fichier de configuration à copier.
+Aucun prix, marchand ni solde n'est créé ou modifié par le déploiement.
+
+### Sauvegarde préalable
+
+Celles des scripts (JAR précédent daté, `data.db`).
+
+### Validation
+
+RCON `merchant list` : les marchands d'avant + `rpgquest:artisan_demo (3 offre(s))`. `/merchants` servi.
+TC-345 en jeu (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR précédent. L'ancien parseur refuse `type: CRAFT` : `artisan_demo.yml` (et tout atelier créé)
+serait signalé invalide, les autres marchands chargent normalement. **Attention** : si une recette « pièces
+seules » a été créée dans `prices.yml`, l'ancien JAR refuse tout le fichier (toutes les offres liées
+indisponibles) — la désactiver ne suffit pas, il faut lui ajouter un ingrédient avant un rollback.
+
+---
+
 ## 2026-10-17 - Marchands : catalogues vente / rachat administrés depuis PlugAdmin (#17)
 
 ### Changement

@@ -170,7 +170,7 @@ public final class DialoguePages {
     /**
      * Issue #17 — un catalogue de marchand, proposé par l'action « Ouvrir un marchand ».
      *
-     * @param type {@code SELL} (boutique), {@code BUY} (rachat) ou {@code MIXED}
+     * @param type {@code SELL} (boutique), {@code BUY} (rachat), {@code MIXED} ou {@code CRAFT} (atelier, #18)
      */
     public record Merchant(String id, String title, String type, boolean enabled) {
 
@@ -179,6 +179,7 @@ public final class DialoguePages {
             String kind = switch (type) {
                 case "SELL" -> "boutique (vente)";
                 case "BUY" -> "rachat d'objets";
+                case "CRAFT" -> "atelier d'artisan (recettes)";
                 default -> "vente et rachat";
             };
             return MiniText.plain(title) + " — " + kind + (enabled ? "" : " (fermé)");

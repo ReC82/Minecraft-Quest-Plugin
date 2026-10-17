@@ -82,7 +82,7 @@ empêche un double-clic de vendre deux fois le même stock.
 ### Catalogues administrés depuis PlugAdmin (issue #17)
 
 -   Chaque marchand est un **catalogue** (`type: SELL` boutique, `BUY` rachat, `MIXED`
-    historique) réutilisable par plusieurs PNJ ; `enabled: false` ferme la boutique.
+    historique, `CRAFT` atelier d'artisan #18) réutilisable par plusieurs PNJ ; `enabled: false` ferme la boutique.
 -   PlugAdmin → **Marchands** (`/merchants`) : créer, modifier, dupliquer (copie fermée),
     ouvrir/fermer, supprimer (refusé si un dialogue l'ouvre, ou pour un exemple fourni).
     Écriture relue par le vrai parseur, contrôle de version, atomique, ancienne version
@@ -95,6 +95,20 @@ empêche un double-clic de vendre deux fois le même stock.
 -   **Audit** : `transactions.context` commence par `marchand:<id>`.
 -   **Préparé, non actif** : stock, conditions de monde/ville/période/réputation, offres
     spéciales — aucun de ces filtres n'existe encore (tickets distincts).
+
+### Ateliers d'artisan (issue #18)
+
+-   Un catalogue `type: CRAFT` (« Atelier d'artisan » dans PlugAdmin → Marchands) ne
+    propose que des **recettes** : des prix `CRAFT` du catalogue central. Trois formes :
+    ingrédients seuls (`coins: 0`), pièces seules (aucun ingrédient), ingrédients + pièces.
+    Une recette sans ingrédient ni pièce est refusée ; une recette « pièces seules » reste
+    soumise au contrôle des boucles d'enrichissement (rachat plus cher que son coût).
+-   La vitrine montre à chaque joueur ce qu'il possède de chaque ingrédient (✔ / ✘) et les
+    pièces qui lui manquent ; au clic, la liste complète de ce qui manque, rien n'étant pris.
+-   Mêmes garanties que la fabrication #336 (place vérifiée avant débit, remboursement des
+    seules pièces, double-clic = une fabrication). Audit `ARTISAN_CRAFT`.
+-   **Pas encore** : lien avec les recettes Bukkit `recipes/*.yml`, conditions de monde /
+    ville / période / métier / réputation, stocks, remises (socle #336).
 
 ## Catalogue des prix et coûts (issue #336)
 
@@ -110,7 +124,7 @@ rachat n'est pas « la moitié de la vente ») :
 |---|---|---|
 | `SELL_TO_PLAYER` | vend | paie `coins`, reçoit l'objet × quantité |
 | `BUY_FROM_PLAYER` | rachète | donne l'objet × quantité, reçoit `coins` |
-| `CRAFT` | fabrique | paie `coins` **et** donne les ingrédients exacts, reçoit l'objet |
+| `CRAFT` | fabrique | donne les ingrédients exacts et/ou paie `coins`, reçoit l'objet |
 
 Un objet est un matériau Minecraft (`BREAD`) ou un objet RPGQuest (`rpgquest:…`),
 reconnu par son PersistentDataContainer — jamais par son nom.

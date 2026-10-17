@@ -46,7 +46,7 @@ offers:
 ```yaml
 id: rpgquest:comptoir_port
 title: "<aqua>Comptoir du port</aqua>"
-type: BUY          # SELL (boutique), BUY (rachat), MIXED (les deux) — absent = MIXED
+type: BUY          # SELL (boutique), BUY (rachat), MIXED (les deux), CRAFT (atelier #18) — absent = MIXED
 enabled: false     # absent = true ; false = boutique fermée
 offers:
   - direction: BUY_FROM_PLAYER
@@ -60,6 +60,10 @@ offers:
     `BUY_FROM_PLAYER` et des prix de rachat. Une offre fixe dans le mauvais
     sens rejette le fichier ; un `price-ref` d'un autre type est affiché
     « Offre indisponible ».
+-   `type: CRAFT` (atelier d'artisan, issue #18) n'accepte **que** des
+    `price-ref` vers des prix de fabrication (`CRAFT`) : aucune offre à prix
+    écrit, aucun prix de vente ou de rachat (affiché « Offre indisponible »).
+    Voir « Atelier d'artisan » ci-dessous.
 -   Un marchand de rachat ne rachète **que** les objets qu'il liste : il
     n'existe aucun rachat générique.
 -   `enabled: false` : le dialogue répond « Cette boutique est fermée pour le
@@ -89,6 +93,38 @@ offers:
 -   Prix absent ou désactivé : l'offre est affichée « Offre indisponible »
     et ne s'échange pas — jamais un montant par défaut.
 -   Exemple embarqué : `merchants/atelier_demo.yml`.
+
+## Atelier d'artisan (`type: CRAFT`, issue #18)
+
+```yaml
+id: rpgquest:forge_village
+title: "<gold>Forge du village</gold>"
+type: CRAFT
+offers:
+  - price-ref: pain_cuit        # recette à ingrédients seuls (coins: 0)
+  - price-ref: lanterne         # recette à pièces seules (aucun ingrédient)
+  - price-ref: epee_forgee      # ingrédients + pièces
+    required-level: 5
+```
+
+-   Chaque recette est un prix `CRAFT` de **PlugAdmin → Prix et coûts** :
+    résultat et quantité, ingrédients exacts (objets Minecraft ou RPGQuest,
+    reconnus par PDC) et/ou montant en pièces. Une recette sans ingrédient
+    **ni** pièce est refusée.
+-   Vitrine : chaque recette affiche, pour le joueur qui la regarde, chaque
+    ingrédient avec ce qu'il possède (✔ / ✘) et, une fois son solde lu, les
+    pièces qui lui manquent. Au clic, tous les ingrédients manquants sont
+    listés (« 1 × IRON_INGOT (tu en as 1 sur 2) ») ; fonds insuffisants →
+    montant exact manquant. Rien n'est pris tant que tout n'est pas réuni.
+-   Sécurité : place vérifiée (ingrédients retirés compris) avant le débit ;
+    pièces débitées d'abord, puis — sur le thread principal — ingrédients
+    revérifiés, retirés et objet remis en une passe ; tout échec rembourse
+    les pièces seules. Double-clic : une seule fabrication.
+-   Le catalogue se crée dans **PlugAdmin → Marchands** (nature « Atelier
+    d'artisan ») et se relie au PNJ par l'action de dialogue « Ouvrir un
+    marchand ». Exemple embarqué : `merchants/artisan_demo.yml` (recettes
+    `demo_recette_ingredients`, `demo_recette_pieces`, `demo_recette_mixte`
+    à créer dans Prix et coûts).
 
 ## Ouvrir la vitrine depuis un dialogue
 

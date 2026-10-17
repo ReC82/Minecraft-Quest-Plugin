@@ -126,6 +126,40 @@ class MerchantsPageTest {
         assertFalse(pollActions().contains("merchant.save"));
     }
 
+    /** Issue #18 : un atelier d'artisan est regroupé à part et chaque recette dit ce qu'elle demande. */
+    @Test
+    void anArtisanWorkshopListsItsRecipesInPlainWords() throws Exception {
+        start();
+        login();
+        String atelier = "[{\"id\":\"rpgquest:forge\",\"file\":\"forge.yml\",\"title\":\"Forge\","
+                + "\"type\":\"CRAFT\",\"enabled\":true,\"bundled\":false,\"version\":\"2a2b2c2d\",\"offers\":["
+                + "{\"direction\":null,\"item\":null,\"quantity\":0,\"price\":0,\"priceRef\":\"epee\"}],"
+                + "\"usages\":[],\"unavailableRefs\":[]}]";
+        runAction("merchant.catalog.status", "{\"available\":true,\"merchants\":" + atelier + ",\"issues\":[],"
+                + "\"customItems\":[],\"prices\":[{\"key\":\"epee\",\"label\":\"Épée\",\"type\":\"CRAFT\","
+                + "\"enabled\":true,\"summary\":\"1 × IRON_SWORD fabriqué contre 2 × IRON_INGOT + 5 pièce(s)\"}],"
+                + "\"currency\":\"LodyCoins\"}");
+        String page = get("/merchants?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Atelier d&#39;artisan (1)") || page.contains("Atelier d'artisan (1)"), page);
+        assertTrue(page.contains("1 × IRON_SWORD fabriqué contre 2 × IRON_INGOT + 5 pièce(s)"), page);
+        assertTrue(page.contains("value=\"CRAFT\" checked"), "nature relue dans le formulaire");
+    }
+
+    @Test
+    void aWorkshopRefusesAnItemSoldAtAWrittenPrice() throws Exception {
+        start();
+        login();
+        runAction("merchant.catalog.status", status(MERCHANTS, "[]"));
+        String token = csrf(get("/merchants?agent=" + TestConfig.AGENT_ID).body());
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token + "&type=merchant.save&agent="
+                + TestConfig.AGENT_ID + "&return=/merchants&create=true&title=Forge&catalog_type=CRAFT"
+                + "&of_item_0=BREAD&of_qty_0=1&of_price_0=1");
+        String location = java.net.URLDecoder.decode(res.headers().firstValue("Location").orElse(""),
+                StandardCharsets.UTF_8);
+        assertTrue(location.contains("ne propose que des recettes"), location);
+        assertFalse(pollActions().contains("merchant.save"));
+    }
+
     @Test
     void deleteNeedsAnExplicitConfirmation() throws Exception {
         start();

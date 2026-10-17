@@ -6741,6 +6741,36 @@ PNJ de test qui a une définition (pas un PNJ joué par le propriétaire en ce m
 
 **Reset** : remettre le rôle d'origine (ou vider le champ) depuis les Réglages avancés.
 
+### TC-345 — Atelier d'artisan : recettes à ingrédients et/ou pièces (issue #18, PENDING MANUAL VALIDATION)
+
+**Préparation** : PlugAdmin (DEV) → « Prix et coûts », compte avec « Économie — écriture ». Créer, nature
+« Le PNJ fabrique », cochés « démonstration » (valeurs libres) :
+`demo_recette_ingredients` = 1 × BREAD contre 3 × WHEAT, 0 pièce ; `demo_recette_pieces` = 1 × LANTERN,
+**aucun ingrédient**, 12 pièces ; `demo_recette_mixte` = 1 × IRON_SWORD contre 2 × IRON_INGOT + 1 × STICK,
+5 pièces. En jeu : un compte avec quelques LodyCoins, 3 blés, 1 lingot de fer, 1 bâton.
+
+1.  Prix et coûts : une fabrication sans ingrédient **et** à 0 pièce → **Attendu** refus « des ingrédients,
+    des pièces, ou les deux ».
+2.  Marchands : **Attendu** `artisan_demo` dans « Atelier d'artisan », chaque recette décrite en clair
+    (« 1 × LANTERN fabriqué contre 12 pièce(s) »). Créer un atelier avec une ligne « objet + prix » →
+    **Attendu** refus « ne propose que des recettes ».
+3.  `/merchant open rpgquest:artisan_demo` : **Attendu** pour l'épée « ✔ 1 × STICK », « ✘ 2 × IRON_INGOT
+    (tu en as 1) », coût 5 et, si le solde est inférieur, « Il te manque N ». Lanterne : « Ingrédients :
+    aucun ». Pain : « Coût : aucune pièce ».
+4.  Cliquer l'épée : **Attendu** « Il te manque des ingrédients : 1 × IRON_INGOT (tu en as 1 sur 2). Rien
+    n'a été pris. », solde et inventaire inchangés.
+5.  Cliquer le pain : 3 blés pris, 1 pain reçu, solde inchangé.
+6.  Avec moins de 12 pièces, cliquer la lanterne : **Attendu** « Fonds insuffisants : il te manque N … (coût
+    12, solde S) ». Avec assez de pièces : double-clic rapide → une seule lanterne, 12 pièces débitées.
+7.  Ajouter un lingot, cliquer l'épée : 2 lingots + 1 bâton + 5 pièces pris, épée reçue, vitrine mise à jour
+    (✘ revenus).
+8.  Inventaire plein : clic sur une recette → message de place, rien débité ni pris.
+9.  Relier l'atelier à un PNJ de test (dialogue « Voir les recettes » → Ouvrir un marchand → Atelier de
+    l'artisan) et vérifier l'ouverture depuis le dialogue.
+
+**Reset** : désactiver les trois prix `demo_recette_*` ; fermer l'atelier si besoin. Les essais n'ont touché
+que le solde et l'inventaire du compte de test.
+
 ### TC-344 — Marchands vendeurs / acheteurs administrés depuis PlugAdmin (issue #17, PENDING MANUAL VALIDATION)
 
 **Préparation** : PlugAdmin (DEV) → « Marchands » → « Rafraîchir ». Compte avec « Économie — écriture ».

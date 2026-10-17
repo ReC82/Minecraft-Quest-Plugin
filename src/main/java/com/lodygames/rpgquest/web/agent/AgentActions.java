@@ -1492,7 +1492,7 @@ public interface AgentActions {
     /**
      * Un marchand chargé.
      *
-     * @param type            {@code SELL}, {@code BUY} ou {@code MIXED}
+     * @param type            {@code SELL}, {@code BUY}, {@code MIXED} ou {@code CRAFT}
      * @param bundled         exemple fourni avec le plugin (jamais supprimable)
      * @param usages          dialogues dont une action {@code OPEN_MERCHANT} l'ouvre
      * @param unavailableRefs prix cités sans prix actif du bon type (offres « indisponibles »)

@@ -195,7 +195,7 @@ public final class MerchantTradeService implements PluginService {
         int contentSlots = contentSlotCount(merchant);
         List<MerchantOffer> offers = merchant.offers();
         for (int i = 0; i < offers.size() && i < contentSlots; i++) {
-            ItemStack icon = buildIcon(offers.get(i), merchant.type());
+            ItemStack icon = buildIcon(player, offers.get(i), merchant.type(), null);
             if (icon != null) {
                 inventory.setItem(i, icon);
             }
@@ -229,22 +229,44 @@ public final class MerchantTradeService implements PluginService {
 
     /**
      * Relit le solde (base, hors thread principal) et l'affiche si la même vitrine est toujours
-     * ouverte. Purement informatif : chaque échange revérifie le solde au débit.
+     * ouverte, avec les recettes redessinées (issue #18 : ingrédients possédés, pièces manquantes).
+     * Purement informatif : chaque échange revérifie le solde au débit et l'inventaire au retrait.
      */
     private void refreshBalance(Player player) {
         UUID playerId = player.getUniqueId();
         economyService.balance(playerId).thenAccept(balance -> runOnMainThread(() -> {
-            if (!player.isOnline() || !sessions.containsKey(playerId)) {
+            MerchantSession session = sessions.get(playerId);
+            if (!player.isOnline() || session == null) {
                 return;
             }
             Inventory top = player.getOpenInventory().getTopInventory();
             if (top != null && top.getHolder() instanceof MerchantShopInventoryHolder) {
                 top.setItem(balanceSlot(top.getSize()), balanceIcon(balance));
+                redrawRecipes(player, top, session, balance);
             }
         })).exceptionally(error -> {
             logger.warn("Solde illisible pour l'affichage marchand de {}", playerId, error);
             return null;
         });
+    }
+
+    /**
+     * Recettes de la vitrine affichée, redessinées pour ce joueur. Seulement si les prix n'ont pas
+     * changé depuis l'affichage : sinon le prochain clic réaffiche toute la vitrine.
+     */
+    private void redrawRecipes(Player player, Inventory top, MerchantSession session, long balance) {
+        if (session.priceGeneration() != priceGeneration()) {
+            return;
+        }
+        MerchantDefinition shown = session.shown();
+        List<MerchantOffer> offers = shown.offers();
+        int contentSlots = contentSlotCount(shown);
+        for (int i = 0; i < offers.size() && i < contentSlots && i < top.getSize(); i++) {
+            MerchantOffer offer = offers.get(i);
+            if (offer.linked() && usablePrice(offer, shown.type()).map(p -> p.type() == PriceType.CRAFT).orElse(false)) {
+                top.setItem(i, buildIcon(player, offer, shown.type(), balance));
+            }
+        }
     }
 
     private int inventorySize(int offerCount) {
@@ -257,9 +279,9 @@ public final class MerchantTradeService implements PluginService {
         return inventorySize(merchant.offers().size()) - 9;
     }
 
-    private ItemStack buildIcon(MerchantOffer offer, MerchantCatalogType type) {
+    private ItemStack buildIcon(Player player, MerchantOffer offer, MerchantCatalogType type, Long balance) {
         if (offer.linked()) {
-            return buildLinkedIcon(offer, type);
+            return buildLinkedIcon(player, offer, type, balance);
         }
         ItemStack stack = createOfferStack(offer);
         if (stack == null) {
@@ -285,7 +307,7 @@ public final class MerchantTradeService implements PluginService {
      * Icône d'une offre liée (issue #336) : le prix du catalogue, ou une barrière « indisponible »
      * qui garde la place de l'offre (les index de clic restent ceux du fichier du marchand).
      */
-    private ItemStack buildLinkedIcon(MerchantOffer offer, MerchantCatalogType type) {
+    private ItemStack buildLinkedIcon(Player player, MerchantOffer offer, MerchantCatalogType type, Long balance) {
         Optional<PriceDefinition> price = usablePrice(offer, type);
         ItemStack stack = price.map(p -> createStack(p.item())).orElse(null);
         if (stack == null) {
@@ -313,14 +335,7 @@ public final class MerchantTradeService implements PluginService {
         lore.add(MM.deserialize("<white>Quantité :</white> <gray><amount></gray>",
                 Placeholder.unparsed("amount", String.valueOf(p.item().amount()))));
         if (p.type() == PriceType.CRAFT) {
-            lore.add(MM.deserialize("<white>Ingrédients :</white>"));
-            for (PriceItem ingredient : p.ingredients()) {
-                lore.add(MM.deserialize("<gray> - <amount> × <item></gray>",
-                        Placeholder.unparsed("amount", String.valueOf(ingredient.amount())),
-                        Placeholder.unparsed("item", ingredient.itemId())));
-            }
-            lore.add(MM.deserialize("<white>Coût :</white> <gold><price> " + CurrencyName.get() + "</gold>",
-                    Placeholder.unparsed("price", String.valueOf(p.coins()))));
+            addRecipeLore(player, p, balance, lore);
         } else {
             lore.add(MM.deserialize("<white>Prix :</white> <gold><price> " + CurrencyName.get() + "</gold>",
                     Placeholder.unparsed("price", String.valueOf(p.coins()))));
@@ -329,6 +344,49 @@ public final class MerchantTradeService implements PluginService {
         meta.lore(lore);
         stack.setItemMeta(meta);
         return stack;
+    }
+
+    /**
+     * Recette vue par ce joueur (issue #18) : chaque ingrédient avec ce qu'il possède, puis le coût en
+     * pièces et, une fois le solde connu, ce qui lui manque. Indicatif : tout est revérifié au clic.
+     */
+    private void addRecipeLore(Player player, PriceDefinition price, Long balance, List<Component> lore) {
+        if (price.ingredients().isEmpty()) {
+            lore.add(MM.deserialize("<white>Ingrédients :</white> <gray>aucun</gray>"));
+        } else {
+            lore.add(MM.deserialize("<white>Ingrédients :</white>"));
+        }
+        for (PriceItem ingredient : price.ingredients()) {
+            ItemStack template = createStack(ingredient);
+            int owned = template == null ? 0 : countSimilar(player, template);
+            boolean enough = owned >= ingredient.amount();
+            lore.add(MM.deserialize((enough ? "<green> ✔ " : "<red> ✘ ") + "<amount> × <item></" + (enough ? "green" : "red")
+                            + "> <gray>(tu en as <owned>)</gray>",
+                    Placeholder.unparsed("amount", String.valueOf(ingredient.amount())),
+                    Placeholder.unparsed("item", ingredient.itemId()),
+                    Placeholder.unparsed("owned", String.valueOf(owned))));
+        }
+        if (price.coins() == 0) {
+            lore.add(MM.deserialize("<white>Coût :</white> <gray>aucune pièce</gray>"));
+            return;
+        }
+        lore.add(MM.deserialize("<white>Coût :</white> <gold><price> " + CurrencyName.get() + "</gold>",
+                Placeholder.unparsed("price", String.valueOf(price.coins()))));
+        if (balance != null && balance < price.coins()) {
+            lore.add(MM.deserialize("<red> ✘ Il te manque <missing> " + CurrencyName.get() + "</red>",
+                    Placeholder.unparsed("missing", String.valueOf(price.coins() - balance))));
+        }
+    }
+
+    /** Nombre d'objets identiques au modèle (même test que le retrait : PDC compris) dans l'inventaire. */
+    private static int countSimilar(Player player, ItemStack template) {
+        int total = 0;
+        for (ItemStack stack : player.getInventory().getStorageContents()) {
+            if (stack != null && stack.isSimilar(template)) {
+                total += stack.getAmount();
+            }
+        }
+        return total;
     }
 
     private void addRequirementLore(MerchantOffer offer, List<Component> lore) {
@@ -467,17 +525,19 @@ public final class MerchantTradeService implements PluginService {
         }
         if (price.coins() == 0) {
             completeCraft(player, price, ingredients, result);
+            refreshBalance(player);
             return;
         }
         economyService.debit(player.getUniqueId(), price.coins(), TransactionType.ARTISAN_CRAFT, context)
-                .whenComplete((ignored, error) -> refreshBalance(player))
                 .thenAccept(success -> runOnMainThread(() -> {
                     if (!success) {
-                        player.sendMessage(MM.deserialize("<red>Fonds insuffisants.</red>"));
+                        sendMissingCoins(player, price);
                         return;
                     }
                     if (!player.isOnline() || !completeCraft(player, price, ingredients, result)) {
                         refundCraft(player, price, context);
+                    } else {
+                        refreshBalance(player);
                     }
                 }))
                 .exceptionally(error -> {
@@ -487,17 +547,46 @@ public final class MerchantTradeService implements PluginService {
                 });
     }
 
-    /** Ingrédients présents et place suffisante une fois ceux-ci pris ; sinon message au joueur. */
+    /**
+     * Débit refusé (solde insuffisant) : rien n'a été pris. Issue #18 : le joueur apprend combien il
+     * lui manque, d'après son solde relu.
+     */
+    private void sendMissingCoins(Player player, PriceDefinition price) {
+        economyService.balance(player.getUniqueId()).thenAccept(balance -> runOnMainThread(() -> {
+            long missing = Math.max(1, price.coins() - balance);
+            player.sendMessage(MM.deserialize("<red>Fonds insuffisants :</red> <white>il te manque <missing> "
+                            + CurrencyName.get() + "</white> <gray>(coût <price>, solde <balance>). Rien n'a été "
+                            + "pris.</gray>",
+                    Placeholder.unparsed("missing", String.valueOf(missing)),
+                    Placeholder.unparsed("price", String.valueOf(price.coins())),
+                    Placeholder.unparsed("balance", String.valueOf(balance))));
+            refreshBalance(player);
+        })).exceptionally(error -> {
+            runOnMainThread(() -> player.sendMessage(MM.deserialize("<red>Fonds insuffisants.</red> <gray>Rien n'a été "
+                    + "pris.</gray>")));
+            return null;
+        });
+    }
+
+    /**
+     * Ingrédients présents et place suffisante une fois ceux-ci pris ; sinon message au joueur.
+     * Issue #18 : <em>tous</em> les ingrédients manquants sont listés, avec ce que le joueur possède.
+     */
     private boolean craftPossible(Player player, PriceDefinition price, List<ItemStack> ingredients, ItemStack result) {
+        List<String> missingIngredients = new ArrayList<>();
         for (int i = 0; i < ingredients.size(); i++) {
             PriceItem wanted = price.ingredients().get(i);
-            if (!player.getInventory().containsAtLeast(ingredients.get(i), wanted.amount())) {
-                player.sendMessage(MM.deserialize("<red>Il te manque des ingrédients :</red> <white><amount> × "
-                                + "<item></white> <gray>requis.</gray>",
-                        Placeholder.unparsed("amount", String.valueOf(wanted.amount())),
-                        Placeholder.unparsed("item", wanted.itemId())));
-                return false;
+            int owned = countSimilar(player, ingredients.get(i));
+            if (owned < wanted.amount()) {
+                missingIngredients.add((wanted.amount() - owned) + " × " + wanted.itemId() + " (tu en as " + owned
+                        + " sur " + wanted.amount() + ")");
             }
+        }
+        if (!missingIngredients.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Il te manque des ingrédients :</red> <white><list></white> "
+                            + "<gray>Rien n'a été pris.</gray>",
+                    Placeholder.unparsed("list", String.join(", ", missingIngredients) + ".")));
+            return false;
         }
         Inventory simulated = Bukkit.createInventory(null, 36);
         ItemStack[] contents = player.getInventory().getStorageContents();

@@ -6,6 +6,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Lily → Julius : villes citées dans les dialogues (#180, 17/10/2026)** — valeurs de dialogue à
+> argument `%city_name:<id_ville>%` (nom actuel, renommable dans le panel) et
+> `%city_direction:<id_ville>%` (« au nord, à environ 420 blocs », `city.CityDirections`, depuis le
+> centre réel de la ville). Bossbar de la quête suivie et `/quest` : « Parler à Lily » au lieu de
+> l'identifiant. Cause du retour à l'intro après la tarte : contenu (`gouter` → `next: accueil` sans
+> `ADVANCE_QUEST`), corrigé par publication de contenu. Aucune migration. PENDING MANUAL VALIDATION.
+
 > **Dialogues : un bouton par ligne, bilan de remise cohérent (#467, 17/10/2026)** — fenêtres
 > `paper-dialog` (PNJ + invite du Wild) : une colonne, largeur commune adaptée au plus long
 > libellé (200–310 px), libellé trop long raccourci avec texte complet en infobulle et dans le

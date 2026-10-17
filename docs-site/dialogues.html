@@ -195,6 +195,14 @@ nodes:
             « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Juste après une
             remise qui a tout complété, affiche le bilan de cette remise suivi de « Merci, c'est
             tout ce qu'il me fallait ! » (issue #467).</td></tr>
+        <tr><td><code>%city_name:id_ville%</code></td>
+          <td>Nom actuel d'une ville, désignée par son identifiant stable (ex.
+            <code>%city_name:ville_nerana%</code> → « Nerana »). Renommer la ville dans le Control
+            Panel change le texte sans toucher au dialogue (issue #180).</td></tr>
+        <tr><td><code>%city_direction:id_ville%</code></td>
+          <td>Direction et distance approximative de cette ville depuis le joueur qui lit :
+            « au nord, à environ 420 blocs », « tout près : tu y es déjà », ou « loin d'ici, dans un
+            autre monde… ». Aucune coordonnée, aucun waypoint débloqué (issue #180).</td></tr>
         <tr><td><code>%wild_conditions%</code></td>
           <td>État réel du monde d'exploration (<code>config.yml</code> → <code>travel.wild-world</code>) :
             « Il fait jour dans le Wild. Le temps est clair. », « … Il pleut. », « … Un orage est en cours. »,

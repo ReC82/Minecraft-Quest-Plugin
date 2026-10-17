@@ -6741,6 +6741,27 @@ PNJ de test qui a une définition (pas un PNJ joué par le propriétaire en ce m
 
 **Reset** : remettre le rôle d'origine (ou vider le champ) depuis les Réglages avancés.
 
+### TC-346 — Pièces et niveau RPG à l'écran : panneau `/hud` et retours de gains (issue #184, PENDING MANUAL VALIDATION)
+
+**Préparation** : DEV, un compte joueur avec une quête suivie (bossbar visible) et quelques LodyCoins ;
+résolution et interface habituelles, sans resource pack.
+
+1.  Sans rien taper : **Attendu** aucun panneau à droite (défaut `hud.default-mode: "off"`).
+2.  `/hud` : **Attendu** panneau « LodyQuests » avec `Bourse : N LodyCoins` (= `/money`) et
+    `Niveau RPG : N` (= niveau Global de `/skills`), sans chiffres rouges à droite. La bossbar de quête et
+    la liste de discussion restent lisibles.
+3.  Acheter / vendre chez un marchand, ou `/money admin give <toi> 5` : **Attendu** dans l'action bar
+    `+5 LodyCoins · solde S` (ou `-N …`) et le panneau mis à jour aussitôt. Achat refusé (fonds
+    insuffisants) : aucun message `-N`.
+4.  Tuer un mob de quête : la progression de l'objectif reste lisible dans l'action bar (le retour de
+    pièces s'ajoute, ne l'efface pas).
+5.  Se déconnecter / reconnecter : **Attendu** panneau toujours affiché (choix mémorisé). `/hud off` :
+    panneau retiré, les retours `+N` restent.
+6.  Gagner un niveau Global (`/skills admin grant <toi> combat 500`) : **Attendu** `Niveau RPG` mis à jour.
+7.  Donner un avis : lisibilité, emplacement, faut-il le panneau par défaut, autre surface ?
+
+**Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
+
 ### TC-345 — Atelier d'artisan : recettes à ingrédients et/ou pièces (issue #18, PENDING MANUAL VALIDATION)
 
 **Préparation** : PlugAdmin (DEV) → « Prix et coûts », compte avec « Économie — écriture ». Créer, nature

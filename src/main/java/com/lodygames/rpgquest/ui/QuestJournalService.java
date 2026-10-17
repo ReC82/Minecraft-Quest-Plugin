@@ -133,6 +133,12 @@ public final class QuestJournalService implements QuestJournalUi {
      * et ramener le joueur sur l'ancien onglet (issue #15, quêtes démarrées pendant l'ouverture).
      */
     private final Map<UUID, Long> renderTickets = new ConcurrentHashMap<>();
+    /**
+     * Onglet périodique demandé dont l'attribution est en cours. Tant qu'il est là, un
+     * rafraîchissement déclenché par la progression (quête démarrée par cette même attribution) ne
+     * réaffiche pas l'ancien onglet : c'est l'onglet demandé qui s'affichera, avec l'état à jour.
+     */
+    private final Map<UUID, JournalTab> pendingPeriodicTabs = new ConcurrentHashMap<>();
 
     /**
      * Issue #475 — étiquette de contexte lisible d'une quête (« Amélioration du kit — palier 2 »),
@@ -241,7 +247,14 @@ public final class QuestJournalService implements QuestJournalUi {
         if (!periodicEnabled()) {
             return;
         }
-        periodicQuests.unlockAndRefresh(player).whenComplete((v, error) -> showList(player, tab, 0));
+        UUID playerId = player.getUniqueId();
+        pendingPeriodicTabs.put(playerId, tab);
+        periodicQuests.unlockAndRefresh(player).whenComplete((v, error) -> runOnMainThread(() -> {
+            // Rien si le joueur est allé ailleurs entre-temps (autre onglet, fermeture).
+            if (pendingPeriodicTabs.remove(playerId, tab)) {
+                showList(player, tab, 0);
+            }
+        }));
     }
 
     /** {@code true} si {@code stack} est l'item Journal des quêtes RPGQuest (identité PDC, jamais le nom/lore). */
@@ -292,6 +305,7 @@ public final class QuestJournalService implements QuestJournalUi {
         UUID playerId = player.getUniqueId();
         openSessions.remove(playerId);
         renderTickets.remove(playerId);
+        pendingPeriodicTabs.remove(playerId);
         trackedByPlayer.remove(playerId);
         trackedDisplay.clear(player);
     }
@@ -306,6 +320,8 @@ public final class QuestJournalService implements QuestJournalUi {
      */
     void handleClose(Player player) {
         openSessions.remove(player.getUniqueId());
+        // Journal fermé pendant une attribution : ne pas le rouvrir de force ensuite.
+        pendingPeriodicTabs.remove(player.getUniqueId());
     }
 
     JournalSession sessionOf(Player player) {
@@ -322,7 +338,7 @@ public final class QuestJournalService implements QuestJournalUi {
             }
             refreshTrackedDisplay(player);
             JournalSession session = openSessions.get(playerId);
-            if (session == null) {
+            if (session == null || pendingPeriodicTabs.containsKey(playerId)) {
                 return;
             }
             if (session.isDetail()) {
@@ -665,6 +681,7 @@ public final class QuestJournalService implements QuestJournalUi {
     // ---- Clics ------------------------------------------------------------
 
     void handleListClick(Player player, JournalSession session, int slot, boolean rightClick) {
+        pendingPeriodicTabs.remove(player.getUniqueId());
         if (slot == TAB_IN_PROGRESS_SLOT) {
             showList(player, JournalTab.IN_PROGRESS, 0);
             return;

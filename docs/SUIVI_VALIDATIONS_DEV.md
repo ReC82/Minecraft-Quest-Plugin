@@ -42,6 +42,7 @@
 | 15 | [#421](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/421) · portail public | Partiel | « État inconnu » affiché correctement ; activer puis vérifier canal de statut VeryGames→AWS uniquement après validation sécurité | Captures portail 16/10 |
 | 16 | [#166](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/166) · cœurs | Partiel | Cœur +1 après quête test, persistance mort/reconnexion, non-duplication après reset **validés** ; restent Stan/villes et persistance après restart | Test en jeu 16/10 |
 
+| 21 | [#15](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/15) · **TC-350 quêtes quotidiennes / hebdomadaires** | **Partiel (lot 1 livré)** ; test manuel en attente | **Avant première ouverture du journal, contrôler l'activation des exemples et récompenses** : service périodique déjà `enabled: true` sur DEV, fuseau Europe/Paris, renouvellement 04:00 / lundi, 2 quotidiennes + 1 hebdomadaire, 4 quêtes démo chargées. Après accord, ouvrir le journal : onglets dédiés, attribution 2+1, stabilité reconnexion, progression, expiration sans récompense, un seul paiement par période. Tester changement d'heure/reset et non-duplication avec méthode sûre ; **ne pas changer l'heure système ni forcer reset d'un joueur**. **Lot 2 manquant** : onglets dédiés et gestion des modèles depuis PlugAdmin. | Rapport 2026-10-17_1820, PR #514 merge `c6a45c9`, JAR + PlugAdmin DEV, migration V42 ; aucun test Minecraft ; modèles et montants **démonstration** |
 ## Derniers correctifs livrés, encore à valider
 
 - **17/10 #475 (PR #509, `d0c8bdd`)** : Guide renommé « Elias » dans les textes dynamiques, un seul bouton de remise quand l'inventaire contient un objet attendu, bilan intégré au dialogue et descriptions du journal repliées. Correctif également appliqué au moteur partagé ; autres dialogues à plusieurs écrans non republiés. **TC-348 en attente, pas de validation manuelle du nouveau comportement.**
@@ -60,6 +61,9 @@
 | 16/10 | [#166](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/166) | 10→11 cœurs, persiste après reconnexion/mort, 2e tentative refuse un second gain | **Partiel**, Stan et restart non testés |
 
 ## Dépendances et décisions à garder visibles
+
+- **Quêtes périodiques #15** : configuration DEV déjà active (`enabled: true`, `Europe/Paris`, `04:00`, lundi, 2 quotidiennes + 1 hebdomadaire) et modèles de démonstration contenant des gains de pièces et XP. La première ouverture du journal débloque les quêtes périodiques. **Décision propriétaire sur activation/volume/valeurs/expiration impérative avant de considérer ces paramètres comme définitifs.** Lot 2 PlugAdmin requis pour leur administration complète. Les quêtes expireront sans paiement à la frontière de période sauf si `READY_TO_TURN_IN` (conservée), selon le rapport. 
+
 
 1. **Récompenses** : #474 (catalogue créé et activé consciemment) → #177 (tables) → #176 (test de participation en jeu). Ne pas créer `entitlements.yml` à la main.
 2. **Économie** : #336 (prix) → #17 (marchands) → #18 (artisans, **code livré mais TC-345 non validé**), en conservant l'absence de tarifs définitifs ; seuls les prix de démonstration peuvent être employés pour essais. **#18** : trois modèles de recettes (ingrédients seuls, pièces seules, mixte), aucun disponible tant que les prix correspondants ne sont pas créés. Arbitrer plus tard liaison avec recettes Bukkit, conditions d'accès, tarifs réels.

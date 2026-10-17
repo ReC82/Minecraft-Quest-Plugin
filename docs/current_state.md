@@ -6,12 +6,19 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Coffres physiques des Hubs (#105, 17/10/2026)** — `VaultAccessPointService` : registre
+> `monde + position → vault_id` (table `vault_access_points`, **schéma V44**, cache mémoire), géré par
+> `/rpgadmin vault bind|unbind|info|list`. Clic droit sur un point déclaré = coffre personnel de
+> **celui qui clique** (deux joueurs sur le même bloc : deux contenus) ; même `vault_id` dans deux
+> Hubs = même contenu ; un coffre non déclaré reste vanilla. Points incassables (même par un builder),
+> protégés des pistons/explosions/feu/entités ; refus dans le Wild et le monde des claims.
+> Détail : [PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
+
 > **Coffres personnels — socle (#104, 17/10/2026)** — `PersonalVaultService` : `UUID + vault_id
 > → inventaire` (27 cases), table `personal_vaults` (**schéma V43**), identique depuis tous les
 > Hubs, indépendant de toute coordonnée, distinct de l'Ender Chest vanilla. Un seul inventaire
 > vivant par coffre, sauvegarde à la fermeture / déconnexion / arrêt, contenu illisible jamais
-> écrasé. **Aucune commande ni aucun bloc** : rien n'est encore ouvrable en jeu (#105 coffres
-> physiques des Hubs). Détail : [PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
+> écrasé. Ouvrable en jeu via les coffres physiques des Hubs (#105, ci-dessus). Détail : [PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
 
 > **Quêtes quotidiennes et hebdomadaires — lot 1 côté plugin (#15, 17/10/2026)** — modèles =
 > quêtes `period: daily|weekly` de `quests/` (jamais proposées par PNJ/catalogue/commande :

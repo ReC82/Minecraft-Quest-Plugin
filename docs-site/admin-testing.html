@@ -156,6 +156,23 @@
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Coffres personnels des Hubs (#105)</h2>
+    <p>
+      Un coffre déclaré ouvre, pour chaque joueur, <strong>son propre</strong> coffre personnel (même contenu
+      depuis tous les Hubs liés au même identifiant). Viser le coffre (vide) puis :
+    </p>
+    <pre><code>/rpgadmin vault bind [vault_01]
+/rpgadmin vault unbind [x y z]
+/rpgadmin vault info
+/rpgadmin vault list</code></pre>
+    <p class="text-body-secondary">
+      Refusé sur un coffre non vide, dans le Wild et le monde des claims. Un coffre lié est incassable
+      (même en OP) : le délier d'abord — le contenu des joueurs n'est jamais touché. Droit :
+      <code>rpgquest.admin.world</code>. Détail : <code>docs/PERSONAL_VAULTS.md</code>, test TC-353.
+    </p>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Permissions</h2>
     <table class="table table-sm align-middle">
       <thead><tr><th>Permission</th><th>Défaut</th><th>Couvre</th></tr></thead>

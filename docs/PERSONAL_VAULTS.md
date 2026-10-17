@@ -4,14 +4,13 @@ Stockage personnel du joueur, partagé entre tous les Hubs : `UUID joueur + vaul
 Proche d'un Ender Chest, mais géré par LodyQuests et **distinct** de l'Ender Chest vanilla (qui
 n'est ni remplacé ni détourné).
 
-## État livré (phase 1)
+## État livré
 
-- **Socle seulement** : aucune commande, aucun bloc physique, aucune page PlugAdmin. Le joueur ne
-  peut pas encore ouvrir de coffre personnel en jeu — c'est l'objet de #105 (coffres physiques des
-  Hubs), puis #106 (capacité progressive) et #107 (salles de préparation).
-- **Aucun accès distant depuis le Wild** : il n'existe volontairement pas de commande joueur.
-- API interne : `PersonalVaultService#open(Player, VaultId)` (accessible via
-  `RPGQuestBootstrap#personalVaultService()`), `PersonalVaultService#vaultIds(UUID)`.
+- **Phase 1 (#104)** — socle : `PersonalVaultService#open(Player, VaultId)` (accessible via
+  `RPGQuestBootstrap#personalVaultService()`), `PersonalVaultService#vaultIds(UUID)`. Aucune commande
+  joueur, **aucun accès distant depuis le Wild**.
+- **Phase 2 (#105)** — coffres physiques des Hubs : voir « Points d'accès physiques » ci-dessous.
+- À venir : capacité progressive (#106), salles de préparation (#107). Aucune page PlugAdmin.
 
 ## Modèle
 
@@ -54,8 +53,41 @@ migration SQLite → MariaDB (#42, groupe « Coffres personnels ») ; aucune mig
 Limite connue (phase 1) : comme pour les backpacks, un crash brutal du serveur **pendant** qu'un
 coffre est ouvert perd les mouvements faits depuis l'ouverture (rien n'est sauvegardé en continu).
 
+## Points d'accès physiques (phase 2, issue #105)
+
+Les blocs visibles d'une salle des coffres ne **contiennent** rien : ce sont des portes vers un
+`vault_id`. Le modèle sépare strictement le binding du stockage :
+
+```
+vault_access_points : (world, x, y, z) → vault_id        (schéma V44, porte)
+personal_vaults     : (player_uuid, vault_id) → contenu   (schéma V43, données joueur)
+```
+
+| Règle | Détail |
+|---|---|
+| Déclaration | `/rpgadmin vault bind [vault_id]` sur le bloc visé (défaut `vault_01`) ; `unbind [x y z]`, `info`, `list`. Droit : ombrelle `rpgquest.admin.world`. Aucune coordonnée en dur dans le code. |
+| Blocs acceptés | coffre, coffre piégé, tonneau, coffre de l'Ender. Un coffre double est lié sur ses deux moitiés. |
+| Refus | bloc non pris en charge ; conteneur **non vide** (son contenu physique ne serait plus jamais montré) ; `travel.wild-world` et `claims.world` (pas d'accès distant au stockage personnel). |
+| Ouverture | Clic droit main principale : l'ouverture vanilla est **toujours** annulée (builder et OP compris) et remplacée par `open(joueur qui clique, vault_id)`. Main secondaire annulée sans ouvrir ; spectateur : rien. Traité en premier (priorité `LOWEST`) : le drapeau de zone `public-containers: false` ne bloque pas un point d'accès (ce n'est pas un conteneur public). |
+| Multi-joueur | Deux joueurs sur le même bloc obtiennent deux inventaires distincts (clé = leur UUID). Un builder ne voit jamais le contenu d'un autre joueur. |
+| Multi-Hub | Plusieurs positions peuvent viser le même `vault_id` : même contenu pour le même joueur, quel que soit le Hub. |
+| Déplacer / reconfigurer | Lier la nouvelle position puis délier l'ancienne, ou relier vers un autre `vault_id` : `personal_vaults` n'est jamais lu ni écrit. |
+| Coffre copié / posé par un joueur | Ignoré : seule une position déclarée compte (pas d'identité portée par le bloc, donc rien à copier). |
+| Protections | Casse refusée à tous (délier d'abord) ; explosions (le bloc est retiré de la liste), pistons, feu et entités (endermen, wither…) bloqués ; poser un coffre accolé à un point lié (coffre double non lié) refusé. S'ajoute aux protections du monde Hub. |
+| Performance | Cache mémoire chargé au démarrage ; aucun SQL par clic. Écritures (bind/unbind) asynchrones, cache mis à jour après confirmation de la base. |
+
+Limites connues : si le chargement initial du registre échoue (erreur base au démarrage), les points
+se comportent comme des coffres vanilla vides jusqu'au redémarrage suivant (erreur en console). Le
+contenu *physique* d'un bloc lié n'est jamais montré ; il peut seulement être rempli par un hopper,
+sans lien avec les données des joueurs.
+
 ## Tests
 
 `PersonalVaultServiceTest` (isolation entre joueurs, plusieurs `vault_id`, objets complexes avec
 PDC, redémarrage, déconnexion, arrêt, ouvertures concurrentes, contenu illisible) et
 `PersonalVaultRepositoryTest` (clé composite, upsert, survie à la réouverture de la base).
+Phase 2 : `VaultAccessPointServiceTest` (ouverture du coffre de celui qui clique, deux joueurs sur le
+même bloc, même `vault_id` dans deux Hubs, déplacement/reliaison sans toucher au contenu, coffre
+vanilla inchangé, main secondaire et refus antérieur, survie au redémarrage, refus de liaison,
+protections casse/explosion/coffre accolé, moitié d'un coffre double) et
+`VaultAccessPointRepositoryTest`.

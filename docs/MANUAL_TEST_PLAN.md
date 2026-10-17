@@ -6766,6 +6766,32 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-353 — Coffres physiques des Hubs liés aux coffres personnels (issue #105, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR #105 sur **DEV** (schéma V44). Un compte admin (OP, ombrelle
+`rpgquest.admin.world`) et, pour l'étape 4, un second compte joueur. Poser deux coffres **vides** dans
+le Hub, éloignés l'un de l'autre (ils figurent les salles de deux Hubs).
+
+1.  Viser le premier coffre : `/rpgadmin vault bind`. **Attendu** : « Coffre lié à vault_01 » avec la
+    position. Idem sur le second coffre. `/rpgadmin vault list` : **Attendu** deux lignes `vault_01`.
+2.  Clic droit sur le premier coffre. **Attendu** : fenêtre « Coffre personnel vault_01 » (27 cases),
+    vide la première fois. Y déposer quelques objets (dont un objet nommé/enchanté), fermer.
+3.  Clic droit sur le second coffre. **Attendu** : exactement les mêmes objets, mêmes cases.
+4.  Second joueur sur le même coffre (en même temps que le premier si possible). **Attendu** : son
+    propre coffre, vide ; il ne voit jamais les objets du premier.
+5.  Essayer de casser un coffre lié (même en OP, même en créatif). **Attendu** : refusé avec le
+    message « Délie-le d'abord ». Essayer de poser un coffre accolé : refusé.
+6.  Ouvrir un coffre **non** lié du Hub (si le droit de construire le permet) et un Ender Chest
+    vanilla. **Attendu** : comportement vanilla inchangé.
+7.  Déplacer : lier un troisième coffre vide, puis `/rpgadmin vault unbind` sur le premier. **Attendu** :
+    le troisième coffre montre le contenu de l'étape 2 ; le premier redevient un coffre vanilla vide.
+8.  Se déconnecter / reconnecter, puis redémarrer DEV. **Attendu** : liaisons et contenu conservés.
+9.  Refus : `/rpgadmin vault bind` sur un coffre contenant un objet → refusé (« vide-le d'abord ») ;
+    dans le Wild → refusé.
+
+**Reset** : `/rpgadmin vault unbind` sur chaque coffre de test (le contenu des comptes de test reste
+dans leur `vault_01`, sans effet de bord), puis casser les coffres posés.
+
 ### TC-352 — Socle des coffres personnels : démarrage en schéma V43 (issue #104, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR #104 sur **DEV**. Rien n'est ouvrable en jeu à ce stade (pas de

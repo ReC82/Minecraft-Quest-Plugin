@@ -48,6 +48,33 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Coffres physiques des Hubs liés aux coffres personnels (#105)
+
+### Changement
+
+JAR seul. Nouvelle table `vault_access_points` (**migration V44**, automatique et idempotente au
+démarrage) et commande d'administration `/rpgadmin vault bind|unbind|info|list` (ombrelle
+`rpgquest.admin.world`). Un coffre déclaré ouvre le coffre personnel de celui qui clique. Aucune
+configuration, aucun contenu ; aucun coffre n'est lié au déploiement (rien ne change en jeu tant
+qu'un administrateur n'a pas lié de coffre).
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y` (sauvegarde datée du JAR), sauvegarde de `data.db` avant le
+redémarrage, puis redémarrage. Ne pas toucher aux données joueurs.
+
+### Validation
+
+Démarrage sans erreur, schéma V44 (`vault_access_points` créée, vide). TC-353 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et redémarrer. L'ancien JAR ignore la table V44 (ajout de table
+seulement) ; les coffres liés redeviennent des coffres vanilla, le contenu des joueurs reste dans
+`personal_vaults`.
+
+---
+
 ## 2026-10-17 - Socle des coffres personnels (#104)
 
 ### Changement

@@ -49,8 +49,10 @@ class PriceFormTest {
                 "IRON_SWORD", "amount", "1", "coins", "0", "ing_id_0", "iron_ingot", "ing_amount_0", "2",
                 "ing_id_2", "rpgquest:spider_fang", "ing_amount_2", ""), params));
         assertEquals("IRON_INGOT@2;rpgquest:spider_fang@1", params.get("ingredients"));
+        assertNull(PriceForm.fill(form("create", "true", "label", "Lanterne", "price_type", "CRAFT", "item",
+                "LANTERN", "amount", "1", "coins", "5"), new HashMap<>()), "recette « pièces seules » (#18)");
         assertTrue(PriceForm.fill(form("create", "true", "label", "Épée", "price_type", "CRAFT", "item",
-                "IRON_SWORD", "amount", "1", "coins", "5"), new HashMap<>()).contains("au moins un ingrédient"));
+                "IRON_SWORD", "amount", "1", "coins", "0"), new HashMap<>()).contains("ou les deux"));
         assertTrue(PriceForm.fill(form("create", "true", "label", "Pain", "price_type", "SELL_TO_PLAYER", "item",
                 "BREAD", "amount", "1", "coins", "5", "ing_id_0", "WHEAT"), new HashMap<>())
                 .contains("ne servent qu'à une fabrication"));

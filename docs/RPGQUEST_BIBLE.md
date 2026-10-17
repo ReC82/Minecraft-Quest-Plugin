@@ -5595,8 +5595,10 @@ Un marchand n'a **aucun lien direct à une entité PNJ** — il ne s'ouvre que v
 Page **PlugAdmin → Marchands** (`/merchants`, « Économie — lecture » pour voir, « Économie — écriture » pour
 modifier ; actions agent `merchant.catalog.status`, `merchant.save`, `merchant.duplicate`,
 `merchant.toggle`, `merchant.delete`). Chaque fichier `merchants/*.yml` est un **catalogue** indépendant des
-PNJ, de nature `type: SELL` (boutique), `BUY` (rachat des seuls objets listés) ou `MIXED` (historique,
-défaut), et `enabled: false` = boutique fermée. Créer (identifiant tiré du nom), modifier (contrôle de
+PNJ, de nature `type: SELL` (boutique), `BUY` (rachat des seuls objets listés), `MIXED` (historique,
+défaut) ou `CRAFT` (**atelier d'artisan**, #18 : uniquement des recettes `price-ref` vers des prix `CRAFT` ;
+vitrine qui montre au joueur ses ingrédients ✔/✘ et les pièces manquantes, liste complète de ce qui manque
+au clic ; exemple `merchants/artisan_demo.yml`), et `enabled: false` = boutique fermée. Créer (identifiant tiré du nom), modifier (contrôle de
 version), dupliquer (copie fermée), ouvrir/fermer, supprimer (confirmation ; refusé si un dialogue l'ouvre
 ou pour un exemple fourni). Chaque offre : un prix de la page Prix et coûts (`price-ref`) **ou** un objet
 (Minecraft ou RPGQuest, quantité 1–64, prix en pièces obligatoire), conditions facultatives quête/niveau/
@@ -5613,10 +5615,11 @@ Fichier `plugins/RPGQuest/prices.yml`, **écrit uniquement depuis PlugAdmin → 
 « Économie — lecture » pour voir, « Économie — écriture » pour modifier ; actions agent
 `price.catalog.status`, `price.save`, `price.duplicate`, `price.toggle`). Absent = aucun prix ; le premier
 enregistrement le crée. Trois natures saisies séparément, jamais déduites : **vente au joueur**
-(`SELL_TO_PLAYER`), **rachat au joueur** (`BUY_FROM_PLAYER`), **fabrication** (`CRAFT` : pièces **et**
-ingrédients exacts, objets RPGQuest reconnus par PDC). Champs : `label`, `type`, `item`, `amount` (1–64),
+(`SELL_TO_PLAYER`), **rachat au joueur** (`BUY_FROM_PLAYER`), **fabrication** (`CRAFT` : ingrédients exacts
+et/ou pièces — #18 : recette « pièces seules » permise, ni l'un ni l'autre refusé ; objets RPGQuest
+reconnus par PDC). Champs : `label`, `type`, `item`, `amount` (1–64),
 `coins` (**obligatoire**, entier ≥ 0), `ingredients` (fabrication), `demo` (valeur de démonstration),
-`enabled`. Refusés : montant absent/négatif, objet inconnu, fabrication sans ingrédient, boucle
+`enabled`. Refusés : montant absent/négatif, objet inconnu, fabrication sans ingrédient ni pièce, boucle
 d'enrichissement entre prix actifs (rachat > vente, fabrication revendue plus cher que son coût).
 Une offre de marchand `price-ref: <clé>` prend tout dans le catalogue ; prix absent/désactivé ou fichier
 refusé = « Offre indisponible ». Prix changé vitrine ouverte = clic refusé, vitrine réaffichée.

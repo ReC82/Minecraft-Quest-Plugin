@@ -1304,7 +1304,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   supprimer (refusé si un dialogue l'ouvre) ; rachat limité aux objets listés ; vitrine avec solde, clic
   refusé si l'étal a changé ; audit `marchand:<id>` ; liste des catalogues dans l'action de dialogue
   « Ouvrir un marchand » (PENDING MANUAL VALIDATION TC-344). Pas encore : stock, conditions monde / ville /
-  période / réputation, recettes d'artisan (#18), règles conditionnelles de prix.
+  période / réputation, règles conditionnelles de prix.
+  **#18 (MVP)** : ateliers d'artisan — catalogue `type: CRAFT` (« Atelier d'artisan » dans PlugAdmin →
+  Marchands) limité aux recettes `price-ref` vers des prix `CRAFT` ; recettes à ingrédients seuls, pièces
+  seules (nouveau) ou les deux ; vitrine personnalisée (ingrédients possédés ✔/✘, pièces manquantes),
+  message listant tout ce qui manque, fonds insuffisants avec le montant exact ; exemple
+  `merchants/artisan_demo.yml` sans prix (PENDING MANUAL VALIDATION TC-345). Pas encore : lien avec
+  `recipes/*.yml`, conditions monde / ville / métier, stocks.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.
 - **Boutique web** — catalogue, commandes, livraisons idempotentes (voir `web-api/`).

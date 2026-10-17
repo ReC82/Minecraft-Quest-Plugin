@@ -10550,7 +10550,7 @@ public final class AgentPages {
     private static final List<String[]> PRICE_TYPES = List.of(
             new String[] {"SELL_TO_PLAYER", "Le PNJ vend", "le joueur paie et reçoit l'objet"},
             new String[] {"BUY_FROM_PLAYER", "Le PNJ rachète", "le joueur donne l'objet et reçoit les pièces"},
-            new String[] {"CRAFT", "Le PNJ fabrique", "le joueur paie ET donne les ingrédients, il reçoit l'objet"});
+            new String[] {"CRAFT", "Le PNJ fabrique", "le joueur donne les ingrédients et/ou paie, il reçoit l'objet"});
 
     /**
      * Page {@code /prices} (issue #336) : tous les tarifs du jeu au même endroit, sans YAML — ce
@@ -10805,8 +10805,9 @@ public final class AgentPages {
         int rows = Math.min(com.lodygames.rpgquest.panel.agent.PriceForm.MAX_INGREDIENTS,
                 Math.max(2, ingredients.size() + PRICE_INGREDIENT_BLANK_ROWS));
         sb.append("<p class=\"form-label mb-1\">Ingrédients exacts — <em>fabrication seulement</em></p>"
-                + "<div class=\"form-text mb-1\">Laisser vide pour une vente ou un rachat. Les objets RPGQuest sont "
-                + "reconnus par leur identité réelle, jamais par leur nom. Vider l'objet pour retirer la ligne.</div>");
+                + "<div class=\"form-text mb-1\">Laisser vide pour une vente ou un rachat. Une fabrication "
+                + "demande des ingrédients, des pièces, ou les deux (recette « pièces seules » : aucun ingrédient et un "
+                + "montant). Les objets RPGQuest sont reconnus par leur identité réelle, jamais par leur nom. Vider l'objet pour retirer la ligne.</div>");
         for (int i = 0; i < rows; i++) {
             Map<String, Object> line = i < ingredients.size() ? asMap(ingredients.get(i)) : Map.of();
             sb.append("<div class=\"row g-2 mb-2\"><div class=\"col-8 col-md-7\"><input class=\"form-control\" "
@@ -10886,7 +10887,9 @@ public final class AgentPages {
     private static final List<String[]> MERCHANT_TYPES = List.of(
             new String[] {"SELL", "Boutique", "le PNJ vend (et fabrique) : « Ouvrir la boutique »"},
             new String[] {"BUY", "Rachat", "le PNJ rachète uniquement les objets listés : « Vendre des objets »"},
-            new String[] {"MIXED", "Vente et rachat", "les deux dans la même vitrine"});
+            new String[] {"MIXED", "Vente et rachat", "les deux dans la même vitrine"},
+            new String[] {"CRAFT", "Atelier d'artisan", "le PNJ fabrique des objets selon les recettes (nature "
+                    + "« Fabrication ») de la page Prix et coûts : ingrédients, pièces, ou les deux"});
 
     /**
      * Page {@code /merchants} (issue #17) : les catalogues de marchands sans YAML — ce que chaque
@@ -10899,8 +10902,8 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("money", "Marchands",
                 "Les catalogues des marchands : une boutique vend, un comptoir de rachat n'achète que les objets "
-                        + "qu'il liste (jamais de rachat automatique de tout l'inventaire). Un catalogue se relie à "
-                        + "un ou plusieurs PNJ par l'action de dialogue « Ouvrir un marchand ». En jeu, le joueur "
+                        + "qu'il liste (jamais de rachat automatique de tout l'inventaire), un atelier d'artisan "
+                        + "fabrique selon ses recettes. Un catalogue se relie à un ou plusieurs PNJ par l'action de dialogue « Ouvrir un marchand ». En jeu, le joueur "
                         + "voit les objets, les prix et son solde.", ""));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
@@ -10929,6 +10932,8 @@ public final class AgentPages {
                     + "marchands n'existent pas en jeu ; les corriger sur le serveur) :" + list + "</ul>"));
         }
         String currency = str(d.get("currency"));
+        Map<String, String> priceSummaries = new java.util.HashMap<>();
+        asList(d.get("prices")).forEach(o -> priceSummaries.put(str(asMap(o).get("key")), str(asMap(o).get("summary"))));
         sb.append(merchantDatalists(agentId, d));
         List<Map<String, Object>> merchants = asList(d.get("merchants")).stream().map(AgentPages::asMap).toList();
         sb.append("<div class=\"npc-catbar mt-3\"><span class=\"npc-catbar-t\">Marchands (").append(merchants.size())
@@ -10960,7 +10965,7 @@ public final class AgentPages {
             }
             sb.append(Ui.sectionTitle("money", type[1] + " (" + ofType.size() + ")"));
             for (Map<String, Object> m : ofType) {
-                sb.append(merchantCard(session, agentId, m, canWrite, currency));
+                sb.append(merchantCard(session, agentId, m, canWrite, currency, priceSummaries));
             }
         }
         return sb.toString();
@@ -10995,12 +11000,13 @@ public final class AgentPages {
         return MERCHANT_TYPES.stream().filter(t -> t[0].equals(type)).map(t -> t[1]).findFirst().orElse(type);
     }
 
-    /** Une offre en une phrase, du point de vue du joueur. */
-    private static String merchantOfferText(Map<String, Object> o, String currency) {
+    /** Une offre en une phrase, du point de vue du joueur ; une recette (#18) dit ce qu'elle demande. */
+    private static String merchantOfferText(Map<String, Object> o, String currency, Map<String, String> summaries) {
         String coins = str(o.get("price")) + " " + (currency.isBlank() ? "pièces" : currency);
         String text;
         if (!str(o.get("priceRef")).isEmpty()) {
-            text = "Prix du catalogue « " + str(o.get("priceRef")) + " »";
+            String summary = summaries.getOrDefault(str(o.get("priceRef")), "");
+            text = "Prix du catalogue « " + str(o.get("priceRef")) + " »" + (summary.isEmpty() ? "" : " : " + summary);
         } else if ("BUY_FROM_PLAYER".equals(str(o.get("direction")))) {
             text = "Rachète " + priceItemText(o.get("item"), o.get("quantity")) + " pour " + coins;
         } else {
@@ -11020,7 +11026,7 @@ public final class AgentPages {
     }
 
     private String merchantCard(Session session, String agentId, Map<String, Object> m, boolean canWrite,
-                                String currency) {
+                                String currency, Map<String, String> priceSummaries) {
         String id = str(m.get("id"));
         boolean enabled = !Boolean.FALSE.equals(m.get("enabled"));
         boolean bundled = Boolean.TRUE.equals(m.get("bundled"));
@@ -11037,8 +11043,8 @@ public final class AgentPages {
                 .append("</span>")
                 .append(bundled ? " <span class=\"badge text-bg-info\">exemple fourni</span>" : "")
                 .append("</div><ul class=\"mb-1\">");
-        offers.stream().limit(12).forEach(o -> sb.append("<li>").append(Http.esc(merchantOfferText(asMap(o), currency)))
-                .append("</li>"));
+        offers.stream().limit(12).forEach(o -> sb.append("<li>")
+                .append(Http.esc(merchantOfferText(asMap(o), currency, priceSummaries))).append("</li>"));
         if (offers.size() > 12) {
             sb.append("<li class=\"muted\">… et ").append(offers.size() - 12).append(" autre(s)</li>");
         }
@@ -11158,7 +11164,8 @@ public final class AgentPages {
         sb.append("<p class=\"form-label mb-1\">Offres (dans l'ordre de la vitrine)</p><div class=\"form-text mb-2\">"
                 + "Chaque ligne : <strong>soit</strong> un prix de la page Prix et coûts, <strong>soit</strong> un objet "
                 + "avec sa quantité et son prix en ").append(Http.esc(currency.isBlank() ? "pièces" : currency))
-                .append(". Le sens (vend / rachète) ne sert que pour un marchand « vente et rachat ». Une ligne vide est "
+                .append(". Le sens (vend / rachète) ne sert que pour un marchand « vente et rachat ». Un atelier "
+                        + "d'artisan n'accepte que des recettes (prix de nature « Fabrication »). Une ligne vide est "
                         + "ignorée. Conditions facultatives : quête, niveau, permission.</div>");
         for (int i = 0; i < rows; i++) {
             sb.append(merchantOfferRow(uid, i, i < offers.size() ? asMap(offers.get(i)) : Map.of(), i < offers.size()));

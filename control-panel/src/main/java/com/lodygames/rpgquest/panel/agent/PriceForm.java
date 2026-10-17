@@ -75,8 +75,9 @@ public final class PriceForm {
                 return error;
             }
         }
-        if ("CRAFT".equals(type) && ingredients.isEmpty()) {
-            return "Une fabrication demande au moins un ingrédient (sinon, choisir « vendre »).";
+        if ("CRAFT".equals(type) && ingredients.isEmpty() && coins == 0) {
+            return "Une fabrication demande des ingrédients, des pièces, ou les deux : ajouter au moins un "
+                    + "ingrédient ou un montant en pièces.";
         }
         if (!"CRAFT".equals(type) && !ingredients.isEmpty()) {
             return "Les ingrédients ne servent qu'à une fabrication : vider les lignes d'ingrédients, ou choisir "

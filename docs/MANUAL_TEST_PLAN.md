@@ -6766,6 +6766,34 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-354 — Capacité progressive des coffres personnels (issue #106, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR #106 sur **DEV**. Un compte admin (OP, `rpgquest.admin.world` +
+`rpgquest.admin.debug`) et un compte joueur de test `<joueur>`. Deux coffres **vides** posés dans le Hub
+(ils figurent deux Hubs), plus un troisième.
+
+1.  Vérifier `config.yml` sur DEV : section `personal-vaults` présente (`starter-vaults: [vault_01]`,
+    `default-slots: 27`).
+2.  Lier les deux premiers coffres à `vault_02` (`/rpgadmin vault bind vault_02`) et le troisième à
+    `vault_01`. Avec `<joueur>`, clic droit sur un coffre `vault_02`. **Attendu** : aucune fenêtre, message
+    « Ce coffre est encore verrouillé… progression dans LodyQuests » ; le coffre `vault_01` s'ouvre (27 cases).
+3.  `/rpgadmin player variable set <joueur> VAULT_UNLOCK_VAULT_02 true`. Clic droit sur le premier coffre
+    `vault_02`. **Attendu** : « Coffre personnel vault_02 » s'ouvre. Y déposer un objet nommé, fermer.
+    Le second coffre `vault_02` (autre « Hub ») montre le même objet.
+4.  Déconnexion / reconnexion de `<joueur>`, puis redémarrage DEV. **Attendu** : `vault_02` toujours ouvert,
+    objet présent.
+5.  `/rpgadmin player variable set <joueur> VAULT_UNLOCK_VAULT_02 false`. **Attendu** : `vault_02` refusé
+    (message de verrouillage). Remettre `true` : **Attendu** : l'objet est toujours là.
+6.  `/rpgadmin player variable set <joueur> VAULT_SLOTS_VAULT_01 54`, rouvrir `vault_01`. **Attendu** :
+    54 cases. Poser un objet dans la dernière rangée, fermer, remettre `27` puis rouvrir. **Attendu** :
+    la rangée occupée reste visible (45 cases), l'objet est intact ; une fois vidée, le coffre revient à 27.
+7.  `/rpgadmin player variable set <joueur> VAULT_SLOTS_VAULT_01 40`. **Attendu** : refusé ou sans effet
+    (taille inchangée).
+
+**Reset** : remettre `VAULT_UNLOCK_VAULT_02 false` et `VAULT_SLOTS_VAULT_01 27` (ou laisser : compte de
+test), `/rpgadmin vault unbind` sur les coffres de test puis les casser. Les contenus de test restent
+dans les coffres du compte de test, sans effet de bord.
+
 ### TC-353 — Coffres physiques des Hubs liés aux coffres personnels (issue #105, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR #105 sur **DEV** (schéma V44). Un compte admin (OP, ombrelle

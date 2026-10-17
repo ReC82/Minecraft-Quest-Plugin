@@ -6,6 +6,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Capacité progressive des coffres personnels (#106, 17/10/2026)** — `storage.VaultEntitlements` :
+> accès et taille de chaque coffre selon `personal-vaults.starter-vaults` / `default-slots` (config,
+> valeurs de démonstration) et les variables joueur `VAULT_UNLOCK_<ID>` / `VAULT_SLOTS_<ID>` (posées par
+> récompense de quête `VARIABLE`, dialogue `SET_VARIABLE`, `/rpgadmin player variable set`, PlugAdmin).
+> Coffre verrouillé : `OpenOutcome.LOCKED`, message générique, contenu jamais supprimé. Pas de migration.
+
 > **Coffres physiques des Hubs (#105, 17/10/2026)** — `VaultAccessPointService` : registre
 > `monde + position → vault_id` (table `vault_access_points`, **schéma V44**, cache mémoire), géré par
 > `/rpgadmin vault bind|unbind|info|list`. Clic droit sur un point déclaré = coffre personnel de

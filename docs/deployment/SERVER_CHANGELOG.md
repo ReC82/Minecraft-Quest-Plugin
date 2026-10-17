@@ -48,6 +48,31 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Capacité progressive des coffres personnels (#106)
+
+### Changement
+
+JAR seul, **pas de migration**. Nouvelle section `personal-vaults:` de `config.yml`
+(`starter-vaults: [vault_01]`, `default-slots: 27` — valeurs de démonstration), ajoutée
+automatiquement par le complément de configuration au démarrage. Un coffre personnel hors
+`starter-vaults` est verrouillé tant que la variable joueur `VAULT_UNLOCK_<ID>` ne vaut pas `true` ;
+`VAULT_SLOTS_<ID>` agrandit un coffre. Avec les valeurs par défaut, rien ne change pour `vault_01`
+(27 cases) ; un point lié à `vault_02` ou plus refuse désormais l'ouverture tant que rien n'est débloqué.
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y` (sauvegarde datée du JAR), puis redémarrage. Ne pas téléverser
+`config.yml` ; ne pas toucher aux données joueurs.
+
+### Validation
+
+Démarrage sans erreur ; `config.yml` contient `personal-vaults`. TC-354 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et redémarrer. L'ancien JAR ignore la section `personal-vaults` et les
+variables `VAULT_*` (tous les coffres redeviennent ouverts, 27 cases) ; aucun contenu n'est touché.
+
 ## 2026-10-17 - Coffres physiques des Hubs liés aux coffres personnels (#105)
 
 ### Changement

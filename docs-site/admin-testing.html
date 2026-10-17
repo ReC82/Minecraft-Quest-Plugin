@@ -170,6 +170,16 @@
       (même en OP) : le délier d'abord — le contenu des joueurs n'est jamais touché. Droit :
       <code>rpgquest.admin.world</code>. Détail : <code>docs/PERSONAL_VAULTS.md</code>, test TC-353.
     </p>
+    <p>
+      <strong>Déblocage progressif (#106).</strong> Seuls les coffres de <code>personal-vaults.starter-vaults</code>
+      (config, défaut <code>vault_01</code>) sont ouverts d'office ; les autres refusent l'ouverture avec un message
+      générique tant que la variable joueur <code>VAULT_UNLOCK_&lt;ID&gt;</code> ne vaut pas <code>true</code>.
+      <code>VAULT_SLOTS_&lt;ID&gt;</code> (9 à 54, par rangée de 9) agrandit un coffre. Verrouiller ou réduire ne
+      supprime jamais de contenu. Test rapide :
+    </p>
+    <pre><code>/rpgadmin player variable set &lt;joueur&gt; VAULT_UNLOCK_VAULT_02 true
+/rpgadmin player variable set &lt;joueur&gt; VAULT_SLOTS_VAULT_01 54</code></pre>
+    <p class="text-body-secondary">Droit supplémentaire : <code>rpgquest.admin.debug</code>. Test TC-354.</p>
   </section>
 
   <section class="my-5">

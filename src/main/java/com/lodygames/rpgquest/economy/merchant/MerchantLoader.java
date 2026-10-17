@@ -63,7 +63,7 @@ public final class MerchantLoader {
         }
         List<MerchantLoadIssue> merged = new ArrayList<>(ioIssues);
         merged.addAll(report.issues());
-        return new MerchantLoadReport(report.loaded(), merged);
+        return new MerchantLoadReport(report.loaded(), merged, report.files());
     }
 
     /** Entrée testable directement avec des sections déjà parsées, sans toucher au disque. */
@@ -95,6 +95,7 @@ public final class MerchantLoader {
                 .collect(Collectors.groupingBy(pm -> pm.merchant().id(), LinkedHashMap::new, Collectors.toList()));
 
         List<MerchantDefinition> survivors = new ArrayList<>();
+        Map<NamespacedKey, String> fileNames = new LinkedHashMap<>();
         for (var entry : byId.entrySet()) {
             if (entry.getValue().size() > 1) {
                 String files = entry.getValue().stream().map(ParsedMerchant::fileName).collect(Collectors.joining(", "));
@@ -104,10 +105,11 @@ public final class MerchantLoader {
                 }
             } else {
                 survivors.add(entry.getValue().get(0).merchant());
+                fileNames.put(entry.getKey(), entry.getValue().get(0).fileName());
             }
         }
 
-        return new MerchantLoadReport(survivors, allIssues);
+        return new MerchantLoadReport(survivors, allIssues, fileNames);
     }
 
     private record ParsedMerchant(String fileName, MerchantDefinition merchant) {

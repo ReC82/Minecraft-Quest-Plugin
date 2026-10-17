@@ -41,6 +41,38 @@ offers:
     required-level: 5                  # niveau d'expérience vanilla (Player#getLevel())
 ```
 
+## Nature du catalogue et fermeture (issue #17)
+
+```yaml
+id: rpgquest:comptoir_port
+title: "<aqua>Comptoir du port</aqua>"
+type: BUY          # SELL (boutique), BUY (rachat), MIXED (les deux) — absent = MIXED
+enabled: false     # absent = true ; false = boutique fermée
+offers:
+  - direction: BUY_FROM_PLAYER
+    material: COD
+    quantity: 8
+    price: 4
+```
+
+-   `type: SELL` n'accepte que des offres `SELL_TO_PLAYER` et des prix du
+    catalogue de vente ou de fabrication ; `type: BUY` que des offres
+    `BUY_FROM_PLAYER` et des prix de rachat. Une offre fixe dans le mauvais
+    sens rejette le fichier ; un `price-ref` d'un autre type est affiché
+    « Offre indisponible ».
+-   Un marchand de rachat ne rachète **que** les objets qu'il liste : il
+    n'existe aucun rachat générique.
+-   `enabled: false` : le dialogue répond « Cette boutique est fermée pour le
+    moment » ; une vitrine déjà ouverte se ferme au clic suivant sans rien
+    échanger.
+-   Un même catalogue peut être ouvert par plusieurs PNJ (plusieurs
+    dialogues avec la même action `OPEN_MERCHANT`). Pour un PNJ « mixte »,
+    deux choix de dialogue : « Ouvrir la boutique » → catalogue `SELL`,
+    « Vendre des objets » → catalogue `BUY`.
+-   Ces fichiers se créent et se modifient depuis **PlugAdmin → Marchands**
+    (`/merchants`), sans YAML. L'éditeur réécrit `id`, `title`, `type`,
+    `enabled` et `offers` (les commentaires d'en-tête restent).
+
 ## Offre au prix du catalogue (`price-ref`, issue #336)
 
 ```yaml
@@ -96,4 +128,11 @@ choices:
     avec un message explicite.
 -   Au-delà de 45 offres (vitrine à 6 lignes, la maximale), les offres
     excédentaires ne sont pas affichées — limitation connue, voir
-    `docs/ARCHITECTURE.md`.
+    `docs/ARCHITECTURE.md`. L'éditeur PlugAdmin refuse plus de 45 offres.
+-   La dernière ligne affiche le **solde** du joueur (rafraîchi après
+    chaque échange ; purement informatif, le débit revérifie le solde).
+-   Si le marchand a été modifié (PlugAdmin, `/merchant reload`) depuis
+    l'ouverture de la vitrine, le clic est refusé, rien n'est échangé et la
+    vitrine est réaffichée : le joueur n'échange jamais une offre qu'il n'a
+    pas vue.
+-   Audit : `transactions.context` commence par `marchand:<id>`.

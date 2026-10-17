@@ -302,9 +302,12 @@ public final class Descriptors {
                     List.of(Field.select("dialogue", "Dialogue", "dialogue",
                             "Identifiant du dialogue à ouvrir.", true))),
             new Descriptor("OPEN_MERCHANT", "Ouvrir un marchand", "money",
-                    "Ouvre l'inventaire d'un marchand PNJ.",
+                    "Ouvre la vitrine d'un catalogue de marchand (issue #17) : un catalogue de vente pour "
+                            + "« Ouvrir la boutique », un catalogue de rachat pour « Vendre des objets ». "
+                            + "Un même catalogue peut servir à plusieurs PNJ. Les catalogues se gèrent "
+                            + "dans PlugAdmin → Marchands.",
                     List.of(Field.select("merchant", "Marchand", "merchant",
-                            "Identifiant du marchand.", true))),
+                            "Catalogue à ouvrir (page Marchands).", true))),
             new Descriptor("GIVE_STARTER_KIT", "Remettre le kit de départ", "gift",
                     "Remet le kit de départ correspondant au palier atteint par le joueur "
                             + "(issue #218). Aucun paramètre : le palier et le contenu viennent de la "

@@ -1298,8 +1298,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (montant obligatoire, prix absent/désactivé = offre indisponible), boucles d'enrichissement refusées,
   valeurs de démonstration marquées ; offres de marchand `price-ref` ; fabrication sûre (débit d'abord,
   remboursement des seules pièces) ; prix changé vitrine ouverte = clic refusé ; `/merchant open <id>` ;
-  exemple sans prix `merchants/atelier_demo.yml` (PENDING MANUAL VALIDATION TC-342). Pas encore : édition
-  des marchands (#17), recettes d'artisan (#18), règles conditionnelles de prix.
+  exemple sans prix `merchants/atelier_demo.yml` (PENDING MANUAL VALIDATION TC-342).
+  **#17 (MVP)** : catalogues de marchands administrés depuis PlugAdmin → « Marchands » (`merchant.*`,
+  droits Économie) : `type` SELL / BUY / MIXED, `enabled`, créer / modifier / dupliquer / ouvrir-fermer /
+  supprimer (refusé si un dialogue l'ouvre) ; rachat limité aux objets listés ; vitrine avec solde, clic
+  refusé si l'étal a changé ; audit `marchand:<id>` ; liste des catalogues dans l'action de dialogue
+  « Ouvrir un marchand » (PENDING MANUAL VALIDATION TC-344). Pas encore : stock, conditions monde / ville /
+  période / réputation, recettes d'artisan (#18), règles conditionnelles de prix.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.
 - **Boutique web** — catalogue, commandes, livraisons idempotentes (voir `web-api/`).

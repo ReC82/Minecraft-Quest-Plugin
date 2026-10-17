@@ -79,6 +79,23 @@ un débit refusé ne donne jamais rien.
 façon synchrone avant même que le crédit (asynchrone) ne démarre, ce qui
 empêche un double-clic de vendre deux fois le même stock.
 
+### Catalogues administrés depuis PlugAdmin (issue #17)
+
+-   Chaque marchand est un **catalogue** (`type: SELL` boutique, `BUY` rachat, `MIXED`
+    historique) réutilisable par plusieurs PNJ ; `enabled: false` ferme la boutique.
+-   PlugAdmin → **Marchands** (`/merchants`) : créer, modifier, dupliquer (copie fermée),
+    ouvrir/fermer, supprimer (refusé si un dialogue l'ouvre, ou pour un exemple fourni).
+    Écriture relue par le vrai parseur, contrôle de version, atomique, ancienne version
+    remise si le rechargement la refuse.
+-   **Rachat filtré** : un comptoir ne rachète que les objets qu'il liste ; un prix de vente
+    cité par un catalogue de rachat (ou l'inverse) est « indisponible ».
+-   **Vitrine** : solde affiché (dernière ligne) et rafraîchi après chaque échange ; si l'étal
+    a changé depuis l'affichage, le clic est refusé et la vitrine réaffichée (aucun échange
+    sur une offre non vue) ; boutique fermée entre-temps → vitrine fermée, rien échangé.
+-   **Audit** : `transactions.context` commence par `marchand:<id>`.
+-   **Préparé, non actif** : stock, conditions de monde/ville/période/réputation, offres
+    spéciales — aucun de ces filtres n'existe encore (tickets distincts).
+
 ## Catalogue des prix et coûts (issue #336)
 
 Tous les tarifs peuvent vivre dans **un seul catalogue**, `plugins/RPGQuest/prices.yml`,

@@ -355,6 +355,10 @@ public final class PanelApp {
         // les écritures passent par /agents/action (price.*, ECONOMY_WRITE).
         route("/prices", exchange -> handleBusinessPage(exchange, "/prices", "Prix et coûts",
                 Permission.ECONOMY_READ, agentPages::prices));
+        // Issue #17 — catalogues de marchands (merchants/*.yml). Lecture : ECONOMY_READ ;
+        // les écritures passent par /agents/action (merchant.*, ECONOMY_WRITE).
+        route("/merchants", exchange -> handleBusinessPage(exchange, "/merchants", "Marchands",
+                Permission.ECONOMY_READ, agentPages::merchants));
         // Issue #332 — dialogues, version simple : une liste, un éditeur, « Enregistrer » puis
         // « Mettre en jeu » par la publication à chaud (#47). L'ancien écran reste en « Détails
         // techniques ».

@@ -540,6 +540,22 @@ public enum AgentActionType {
     PRICE_DUPLICATE("price.duplicate"),
     /** Issue #336 — active ou désactive un prix (son contenu ne change pas). */
     PRICE_TOGGLE("price.toggle"),
+    /**
+     * Issue #17 — catalogues de marchands ({@code merchants/*.yml}) : marchands chargés, type
+     * (vente / rachat / mixte), état, offres, dialogues qui les ouvrent, fichiers refusés. Lecture seule.
+     */
+    MERCHANT_CATALOG_STATUS("merchant.catalog.status"),
+    /**
+     * Issue #17 — crée ou remplace un marchand : relu par le vrai parseur avant écriture, objets,
+     * prix et types vérifiés, écriture atomique, ancienne version remise si le rechargement échoue.
+     */
+    MERCHANT_SAVE("merchant.save"),
+    /** Issue #17 — copie un marchand sous un nouvel identifiant, fermée. */
+    MERCHANT_DUPLICATE("merchant.duplicate"),
+    /** Issue #17 — ouvre ou ferme une boutique (ses offres ne changent pas). */
+    MERCHANT_TOGGLE("merchant.toggle"),
+    /** Issue #17 — supprime un marchand ; refusé s'il est cité par un dialogue ou fourni avec le plugin. */
+    MERCHANT_DELETE("merchant.delete"),
     /** Issue #13 — réactive une occurrence et la matérialise si sa zone est chargée. Cette occurrence seule. */
     ENCOUNTER_RETRY("encounter.retry"),
     /** Issue #13 — désactive une occurrence : son PNJ est retiré, l'instance ne génère plus rien. */

@@ -759,6 +759,16 @@ public final class AgentActionCatalog {
         addContentWrite("price.duplicate", Permission.ECONOMY_WRITE, "Dupliquer un prix", "price.catalog.status");
         addContentWrite("price.toggle", Permission.ECONOMY_WRITE, "Activer / désactiver un prix",
                 "price.catalog.status");
+        // Issue #17 — catalogues de marchands (merchants/*.yml) : vente, rachat, mixte.
+        add("merchant.catalog.status", Permission.ECONOMY_READ, false, false, "Rafraîchir les marchands");
+        addContentWrite("merchant.save", Permission.ECONOMY_WRITE, "Enregistrer un marchand",
+                "merchant.catalog.status", "price.catalog.status");
+        addContentWrite("merchant.duplicate", Permission.ECONOMY_WRITE, "Dupliquer un marchand",
+                "merchant.catalog.status", "price.catalog.status");
+        addContentWrite("merchant.toggle", Permission.ECONOMY_WRITE, "Ouvrir / fermer une boutique",
+                "merchant.catalog.status");
+        addSensitiveWrite("merchant.delete", Permission.ECONOMY_WRITE, false, "Supprimer un marchand",
+                "merchant.catalog.status", "price.catalog.status");
         // Issue #200 — pont vers les droits Minecraft. Distribuer un droit de construction ou un
         // bypass est au moins aussi sensible que gérer un groupe du panel : même permission.
         add("mc.rights.read", Permission.USER_MANAGE, false, true,
@@ -2596,6 +2606,17 @@ public final class AgentActionCatalog {
                     case "reward.definition.save" -> RewardDefinitionForm.fill(form, params);
                     case "reward.definition.duplicate" -> RewardDefinitionForm.fillDuplicate(form, params);
                     default -> RewardDefinitionForm.fillToggle(form, params);
+                };
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "merchant.save", "merchant.duplicate", "merchant.toggle", "merchant.delete" -> {
+                String error = switch (type) {
+                    case "merchant.save" -> MerchantForm.fill(form, params);
+                    case "merchant.duplicate" -> MerchantForm.fillDuplicate(form, params);
+                    case "merchant.toggle" -> MerchantForm.fillToggle(form, params);
+                    default -> MerchantForm.fillDelete(form, params);
                 };
                 if (error != null) {
                     return Validation.fail(error);

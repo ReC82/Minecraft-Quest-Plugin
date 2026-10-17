@@ -7393,9 +7393,20 @@ public final class AgentPages {
                 models.add(new DialoguePages.Model(t.id(), t.name(), t.npcId(), t.enabled(), t.catalogs()));
             }
         }
+        // #17 : les catalogues de marchands, pour l'action « Ouvrir un marchand ».
+        List<DialoguePages.Merchant> merchants = new ArrayList<>();
+        if (agentId != null) {
+            latestDetails(agentId, "merchant.catalog.status").filter(x -> Boolean.TRUE.equals(x.get("available")))
+                    .ifPresent(x -> asList(x.get("merchants")).forEach(o -> {
+                        Map<String, Object> m = asMap(o);
+                        merchants.add(new DialoguePages.Merchant(str(m.get("id")), str(m.get("title")),
+                                str(m.get("type")), !Boolean.FALSE.equals(m.get("enabled"))));
+                    }));
+        }
         return new DialoguePages.Ctx(agentId == null ? "" : agentId, List.copyOf(npcs), List.copyOf(quests),
                 java.util.Set.copyOf(serverKeys), npcDet.isPresent(), slug -> dialogueLive(agentId, slug),
-                List.copyOf(catalogs), List.copyOf(models), survey != null && survey.available());
+                List.copyOf(catalogs), List.copyOf(models), survey != null && survey.available(),
+                List.copyOf(merchants));
     }
 
     /**
@@ -10832,7 +10843,8 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder(Ui.sectionTitle("money", "Marchands (" + merchants.size() + ")"));
         sb.append("<p class=\"muted small\">Une offre de marchand prend son prix ici quand son fichier dit "
                 + "<code>price-ref: &lt;identifiant&gt;</code> ; les autres offres gardent le prix écrit dans le "
-                + "fichier du marchand. L'édition des marchands eux-mêmes depuis PlugAdmin viendra avec #17.</p>");
+                + "fichier du marchand. Les marchands eux-mêmes se modifient dans la page "
+                + "<a href=\"/merchants\">Marchands</a>.</p>");
         if (merchants.isEmpty()) {
             return sb.append(Ui.empty("money", "Aucun marchand chargé sur ce serveur.")).toString();
         }
@@ -10864,6 +10876,368 @@ public final class AgentPages {
                 + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
                 + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
                 + "<input type=\"hidden\" name=\"return\" value=\"" + PRICES_PATH + "\">";
+    }
+
+    // ---- Marchands : catalogues merchants/*.yml (issue #17) ---------------------------------
+
+    private static final String MERCHANTS_PATH = "/merchants";
+    /** Lignes d'offre vides proposées sous les offres existantes. */
+    private static final int MERCHANT_BLANK_ROWS = 3;
+    private static final List<String[]> MERCHANT_TYPES = List.of(
+            new String[] {"SELL", "Boutique", "le PNJ vend (et fabrique) : « Ouvrir la boutique »"},
+            new String[] {"BUY", "Rachat", "le PNJ rachète uniquement les objets listés : « Vendre des objets »"},
+            new String[] {"MIXED", "Vente et rachat", "les deux dans la même vitrine"});
+
+    /**
+     * Page {@code /merchants} (issue #17) : les catalogues de marchands sans YAML — ce que chaque
+     * boutique vend, ce que chaque comptoir rachète, et quels dialogues les ouvrent. Un catalogue est
+     * indépendant des PNJ : on le relie par l'action de dialogue « Ouvrir un marchand », et plusieurs
+     * PNJ peuvent partager le même. Tout passe par les actions agent {@code merchant.*}.
+     */
+    public String merchants(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("money", "Marchands",
+                "Les catalogues des marchands : une boutique vend, un comptoir de rachat n'achète que les objets "
+                        + "qu'il liste (jamais de rachat automatique de tout l'inventaire). Un catalogue se relie à "
+                        + "un ou plusieurs PNJ par l'action de dialogue « Ouvrir un marchand ». En jeu, le joueur "
+                        + "voit les objets, les prix et son solde.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canWrite = perms.can(session.effective(), Permission.ECONOMY_WRITE);
+        sb.append(agentPicker(agentId, MERCHANTS_PATH, ""));
+        Optional<Map<String, Object>> loaded = latestDetails(agentId, "merchant.catalog.status");
+        Map<String, Object> d = loaded.orElse(Map.of());
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogues de marchands</span>")
+                .append(compactRefresh(session, agentId, "merchant.catalog.status", "Rafraîchir",
+                        loaded.isPresent() ? "btn-outline-primary" : "btn-warning", MERCHANTS_PATH))
+                .append("</div>");
+        if (loaded.isEmpty()) {
+            return sb.append(Ui.empty("money", "État pas encore chargé — cliquer sur « Rafraîchir ».")).toString();
+        }
+        if (!Boolean.TRUE.equals(d.get("available"))) {
+            return sb.append(Ui.banner("warn", "Le plugin installé ne sait pas encore éditer les marchands "
+                    + "(version antérieure).")).toString();
+        }
+        List<Object> issues = asList(d.get("issues"));
+        if (!issues.isEmpty()) {
+            StringBuilder list = new StringBuilder("<ul class=\"mb-0\">");
+            issues.stream().limit(10).forEach(i -> list.append("<li>").append(Http.esc(str(i))).append("</li>"));
+            sb.append(Ui.banner("err", "<strong>Fichiers de marchands refusés par le serveur</strong> (ces "
+                    + "marchands n'existent pas en jeu ; les corriger sur le serveur) :" + list + "</ul>"));
+        }
+        String currency = str(d.get("currency"));
+        sb.append(merchantDatalists(agentId, d));
+        List<Map<String, Object>> merchants = asList(d.get("merchants")).stream().map(AgentPages::asMap).toList();
+        sb.append("<div class=\"npc-catbar mt-3\"><span class=\"npc-catbar-t\">Marchands (").append(merchants.size())
+                .append(")</span>");
+        if (canWrite) {
+            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#mc-new\" aria-expanded=\"false\" aria-controls=\"mc-new\">")
+                    .append(Icons.icon("plus")).append("Nouveau marchand</button>");
+        }
+        sb.append("</div><p class=\"muted small\">Un marchand <strong>fermé</strong> n'échange plus rien : le "
+                + "dialogue répond « boutique fermée ». Les montants se saisissent ici ou viennent de la page "
+                + "<a href=\"/prices\">Prix et coûts</a> (prix partagé entre plusieurs marchands). Aucun prix n'est "
+                + "définitif : ce sont des valeurs de réglage, à revoir avant d'ouvrir l'économie aux joueurs.</p>");
+        if (canWrite) {
+            sb.append("<div class=\"collapse\" id=\"mc-new\"><div class=\"card card-body npc-formcard\">")
+                    .append("<p class=\"npc-fs-h\">Nouveau marchand</p>")
+                    .append(merchantForm(session, agentId, null, "mc-new", currency))
+                    .append("</div></div>");
+        }
+        if (merchants.isEmpty()) {
+            sb.append(Ui.empty("money", canWrite ? "Aucun marchand — « Nouveau marchand » pour en créer un."
+                    : "Aucun marchand chargé sur ce serveur."));
+        }
+        for (String[] type : MERCHANT_TYPES) {
+            List<Map<String, Object>> ofType = merchants.stream().filter(m -> type[0].equals(str(m.get("type"))))
+                    .toList();
+            if (ofType.isEmpty()) {
+                continue;
+            }
+            sb.append(Ui.sectionTitle("money", type[1] + " (" + ofType.size() + ")"));
+            for (Map<String, Object> m : ofType) {
+                sb.append(merchantCard(session, agentId, m, canWrite, currency));
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Objets (Minecraft + RPGQuest), prix du catalogue central et quêtes, pour les champs de saisie. */
+    private String merchantDatalists(String agentId, Map<String, Object> d) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"dl-merchant-items\">");
+        for (Object custom : asList(d.get("customItems"))) {
+            sb.append("<option value=\"").append(Http.esc(str(custom))).append("\" label=\"Objet RPGQuest\">");
+        }
+        var ref = referenceData(agentId);
+        for (String material : ref.materials()) {
+            sb.append("<option value=\"").append(Http.esc(material)).append("\" label=\"")
+                    .append(Http.esc(MaterialNames.french(material))).append("\">");
+        }
+        sb.append("</datalist><datalist id=\"dl-merchant-prices\">");
+        for (Object o : asList(d.get("prices"))) {
+            Map<String, Object> p = asMap(o);
+            sb.append("<option value=\"").append(Http.esc(str(p.get("key")))).append("\" label=\"")
+                    .append(Http.esc(str(p.get("label")) + " — " + priceTypeLabel(str(p.get("type")))
+                            + (Boolean.FALSE.equals(p.get("enabled")) ? " (désactivé)" : ""))).append("\">");
+        }
+        sb.append("</datalist><datalist id=\"dl-merchant-quests\">");
+        for (String quest : ref.quests()) {
+            sb.append("<option value=\"").append(Http.esc(quest)).append("\">");
+        }
+        return sb.append("</datalist>").toString();
+    }
+
+    private static String merchantTypeLabel(String type) {
+        return MERCHANT_TYPES.stream().filter(t -> t[0].equals(type)).map(t -> t[1]).findFirst().orElse(type);
+    }
+
+    /** Une offre en une phrase, du point de vue du joueur. */
+    private static String merchantOfferText(Map<String, Object> o, String currency) {
+        String coins = str(o.get("price")) + " " + (currency.isBlank() ? "pièces" : currency);
+        String text;
+        if (!str(o.get("priceRef")).isEmpty()) {
+            text = "Prix du catalogue « " + str(o.get("priceRef")) + " »";
+        } else if ("BUY_FROM_PLAYER".equals(str(o.get("direction")))) {
+            text = "Rachète " + priceItemText(o.get("item"), o.get("quantity")) + " pour " + coins;
+        } else {
+            text = "Vend " + priceItemText(o.get("item"), o.get("quantity")) + " pour " + coins;
+        }
+        List<String> conditions = new ArrayList<>();
+        if (!str(o.get("requiredQuest")).isEmpty()) {
+            conditions.add("quête " + str(o.get("requiredQuest")) + " (" + str(o.get("requiredQuestState")) + ")");
+        }
+        if (!str(o.get("requiredLevel")).isEmpty()) {
+            conditions.add("niveau " + str(o.get("requiredLevel")));
+        }
+        if (!str(o.get("requiredPermission")).isEmpty()) {
+            conditions.add("permission " + str(o.get("requiredPermission")));
+        }
+        return text + (conditions.isEmpty() ? "" : " — si " + String.join(", ", conditions));
+    }
+
+    private String merchantCard(Session session, String agentId, Map<String, Object> m, boolean canWrite,
+                                String currency) {
+        String id = str(m.get("id"));
+        boolean enabled = !Boolean.FALSE.equals(m.get("enabled"));
+        boolean bundled = Boolean.TRUE.equals(m.get("bundled"));
+        String uid = "mc-" + id.replaceAll("[^a-z0-9_-]", "_");
+        List<Object> usages = asList(m.get("usages"));
+        List<Object> unavailable = asList(m.get("unavailableRefs"));
+        List<Object> offers = asList(m.get("offers"));
+        StringBuilder sb = new StringBuilder("<div class=\"card card-body mb-2\" id=\"").append(uid).append("\">");
+        sb.append("<div><strong>").append(Http.esc(MiniText.plain(str(m.get("title"))))).append("</strong> <code>")
+                .append(Http.esc(id)).append("</code> ")
+                .append(enabled ? "<span class=\"badge text-bg-success\">ouvert</span>"
+                        : "<span class=\"badge text-bg-secondary\">fermé</span>")
+                .append(" <span class=\"badge text-bg-light\">").append(Http.esc(merchantTypeLabel(str(m.get("type")))))
+                .append("</span>")
+                .append(bundled ? " <span class=\"badge text-bg-info\">exemple fourni</span>" : "")
+                .append("</div><ul class=\"mb-1\">");
+        offers.stream().limit(12).forEach(o -> sb.append("<li>").append(Http.esc(merchantOfferText(asMap(o), currency)))
+                .append("</li>"));
+        if (offers.size() > 12) {
+            sb.append("<li class=\"muted\">… et ").append(offers.size() - 12).append(" autre(s)</li>");
+        }
+        sb.append("</ul>");
+        if (!unavailable.isEmpty()) {
+            sb.append("<div class=\"text-danger small\">Indisponible en jeu (prix absent, désactivé ou d'un autre type "
+                    + "que ce marchand) : ").append(Http.esc(String.join(", ", unavailable.stream().map(AgentPages::str)
+                    .toList()))).append("</div>");
+        }
+        sb.append("<div class=\"muted small\">").append(usages.isEmpty()
+                ? "Aucun dialogue ne l'ouvre encore : ajouter l'action « Ouvrir un marchand » à un choix de dialogue."
+                : "Ouvert par : " + Http.esc(String.join(", ", usages.stream().map(AgentPages::str).toList())) + ".")
+                .append(" Fichier <code>").append(Http.esc(str(m.get("file")))).append("</code>.</div>");
+        if (canWrite) {
+            sb.append("<div class=\"d-flex flex-wrap gap-2 mt-2\">")
+                    .append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                            + "data-bs-target=\"#").append(uid).append("-edit\" aria-expanded=\"false\">")
+                    .append(Icons.icon("edit")).append("Modifier</button>")
+                    .append("<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">")
+                    .append(merchantHiddenFields(session, agentId, "merchant.toggle"))
+                    .append("<input type=\"hidden\" name=\"merchant_id\" value=\"").append(Http.esc(id)).append("\">")
+                    .append("<input type=\"hidden\" name=\"enabled\" value=\"").append(!enabled).append("\">")
+                    .append("<button class=\"btn sm").append(enabled ? " secondary" : "").append("\" type=\"submit\">")
+                    .append(enabled ? "Fermer la boutique" : "Ouvrir la boutique").append("</button></form>")
+                    .append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                            + "data-bs-target=\"#").append(uid).append("-dup\" aria-expanded=\"false\">")
+                    .append(Icons.icon("plus")).append("Dupliquer</button>");
+            if (!bundled && usages.isEmpty()) {
+                sb.append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                        + "data-bs-target=\"#").append(uid).append("-del\" aria-expanded=\"false\">")
+                        .append(Icons.icon("trash")).append("Supprimer</button>");
+            }
+            sb.append("</div>");
+            if (bundled || !usages.isEmpty()) {
+                sb.append("<div class=\"form-text\">Suppression impossible : ").append(bundled
+                        ? "exemple fourni avec le plugin (il serait recréé au démarrage)."
+                        : "des dialogues l'ouvrent encore (retirer d'abord leur action « Ouvrir un marchand »).")
+                        .append(" Le fermer suffit à arrêter les échanges.</div>");
+            }
+            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-dup\">")
+                    .append("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">")
+                    .append(merchantHiddenFields(session, agentId, "merchant.duplicate"))
+                    .append("<input type=\"hidden\" name=\"merchant_id\" value=\"").append(Http.esc(id)).append("\">")
+                    .append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
+                    .append("-dup-id\">Identifiant de la copie</label><input class=\"form-control\" id=\"").append(uid)
+                    .append("-dup-id\" name=\"new_key\" required maxlength=\"64\" pattern=\"[a-z0-9_\\-]{1,64}\" value=\"")
+                    .append(Http.esc(merchantKey(id) + "_copie")).append("\"></div>")
+                    .append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
+                    .append("-dup-l\">Nom de la copie (facultatif)</label><input class=\"form-control\" id=\"")
+                    .append(uid).append("-dup-l\" name=\"new_title\" maxlength=\"120\"></div>")
+                    .append("<div class=\"form-text mb-2\">La copie est créée <strong>fermée</strong> : la modifier, "
+                            + "puis l'ouvrir et la relier à un dialogue.</div>")
+                    .append("<button class=\"btn sm\" type=\"submit\">Créer la copie</button></form></div>");
+            if (!bundled && usages.isEmpty()) {
+                sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-del\">")
+                        .append("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">")
+                        .append(merchantHiddenFields(session, agentId, "merchant.delete"))
+                        .append("<input type=\"hidden\" name=\"merchant_id\" value=\"").append(Http.esc(id))
+                        .append("\"><input type=\"hidden\" name=\"expected_version\" value=\"")
+                        .append(Http.esc(str(m.get("version")))).append("\">")
+                        .append("<label class=\"form-check mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
+                                + "name=\"confirm\" value=\"true\" required> <span>Supprimer définitivement ce "
+                                + "catalogue (aucun solde ni objet de joueur n'est touché)</span></label>")
+                        .append("<button class=\"btn sm btn-danger\" type=\"submit\">Supprimer</button></form></div>");
+            }
+            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-edit\"><div class=\"card "
+                    + "card-body npc-formcard\">").append(merchantForm(session, agentId, m, uid + "-f", currency))
+                    .append("</div></div>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    private static String merchantKey(String id) {
+        String key = id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id;
+        key = key.replaceAll("[^a-z0-9_-]", "_");
+        return key.length() > 58 ? key.substring(0, 58) : key;
+    }
+
+    /** Formulaire de marchand, création ({@code existing == null}) ou modification. */
+    private String merchantForm(Session session, String agentId, Map<String, Object> existing, String uid,
+                                String currency) {
+        boolean create = existing == null;
+        String type = create ? "SELL" : str(existing.get("type"));
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">");
+        sb.append(merchantHiddenFields(session, agentId, "merchant.save"));
+        sb.append("<input type=\"hidden\" name=\"create\" value=\"").append(create).append("\">");
+        if (!create) {
+            sb.append("<input type=\"hidden\" name=\"merchant_id\" value=\"").append(Http.esc(str(existing.get("id"))))
+                    .append("\"><input type=\"hidden\" name=\"expected_version\" value=\"")
+                    .append(Http.esc(str(existing.get("version")))).append("\">");
+        }
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-t\">Nom affiché</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-t\" name=\"title\" required "
+                        + "maxlength=\"120\" value=\"").append(Http.esc(create ? "" : str(existing.get("title"))))
+                .append("\">").append(fieldHelp("Titre de la vitrine en jeu. Les couleurs MiniMessage sont acceptées.",
+                        "&lt;gold&gt;Boutique du village&lt;/gold&gt;", "aucun (obligatoire)", null)).append("</div>");
+        if (create) {
+            sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">Identifiant "
+                    + "(facultatif)</label><input class=\"form-control\" id=\"").append(uid).append("-id\" "
+                    + "name=\"merchant_id\" maxlength=\"64\" pattern=\"[a-z0-9_\\-]{0,64}\">")
+                    .append(fieldHelp("Ce que cite l'action de dialogue. Vide : tiré du nom. Ne change plus ensuite.",
+                            "boutique_village", "tiré du nom", null)).append("</div>");
+        }
+        sb.append("<fieldset class=\"mb-2\"><legend class=\"form-label fs-6 mb-1\">Ce que fait ce marchand</legend>");
+        for (String[] t : MERCHANT_TYPES) {
+            String id = uid + "-ty-" + t[0].toLowerCase(java.util.Locale.ROOT);
+            sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"radio\" name=\"catalog_type\" "
+                    + "id=\"").append(id).append("\" value=\"").append(t[0]).append('"')
+                    .append(t[0].equals(type) ? " checked" : "").append(" required><label class=\"form-check-label\" "
+                    + "for=\"").append(id).append("\"><strong>").append(t[1]).append("</strong> — ").append(t[2])
+                    .append("</label></div>");
+        }
+        sb.append("</fieldset>");
+        List<Object> offers = create ? List.of() : asList(existing.get("offers"));
+        int rows = Math.min(com.lodygames.rpgquest.panel.agent.MerchantForm.MAX_OFFERS,
+                offers.size() + MERCHANT_BLANK_ROWS);
+        sb.append("<p class=\"form-label mb-1\">Offres (dans l'ordre de la vitrine)</p><div class=\"form-text mb-2\">"
+                + "Chaque ligne : <strong>soit</strong> un prix de la page Prix et coûts, <strong>soit</strong> un objet "
+                + "avec sa quantité et son prix en ").append(Http.esc(currency.isBlank() ? "pièces" : currency))
+                .append(". Le sens (vend / rachète) ne sert que pour un marchand « vente et rachat ». Une ligne vide est "
+                        + "ignorée. Conditions facultatives : quête, niveau, permission.</div>");
+        for (int i = 0; i < rows; i++) {
+            sb.append(merchantOfferRow(uid, i, i < offers.size() ? asMap(offers.get(i)) : Map.of(), i < offers.size()));
+        }
+        boolean enabled = create || !Boolean.FALSE.equals(existing.get("enabled"));
+        sb.append("<div class=\"form-check form-switch mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
+                        + "role=\"switch\" id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
+                .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
+                .append("-en\">Boutique ouverte (les dialogues l'ouvrent et les échanges se font)</label></div>");
+        if (!create) {
+            sb.append("<div class=\"form-text mb-2\">Un joueur dont la vitrine est ouverte la voit se mettre à jour à "
+                    + "son prochain clic, sans rien échanger : il ne paie jamais une offre qu'il n'a pas vue.</div>");
+        }
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
+                .append(create ? "Créer le marchand" : "Enregistrer").append("</button></form>");
+        return sb.toString();
+    }
+
+    private static String merchantOfferRow(String uid, int i, Map<String, Object> o, boolean existing) {
+        String p = uid + "-o" + i;
+        String direction = str(o.get("direction"));
+        String state = str(o.get("requiredQuestState"));
+        StringBuilder sb = new StringBuilder("<fieldset class=\"border rounded p-2 mb-2\"><legend class=\"fs-6 mb-1\">")
+                .append("Offre ").append(i + 1).append(existing ? "" : " (nouvelle)").append("</legend>");
+        sb.append("<div class=\"row g-2\"><div class=\"col-12 col-md-4\"><label class=\"form-label small mb-0\" for=\"")
+                .append(p).append("-ref\">Prix du catalogue</label><input class=\"form-control\" id=\"").append(p)
+                .append("-ref\" name=\"of_ref_").append(i).append("\" list=\"dl-merchant-prices\" autocomplete=\"off\" "
+                        + "maxlength=\"64\" value=\"").append(Http.esc(str(o.get("priceRef"))))
+                .append("\" placeholder=\"ou objet + prix →\"></div>")
+                .append("<div class=\"col-6 col-md-2\"><label class=\"form-label small mb-0\" for=\"").append(p)
+                .append("-dir\">Sens</label><select class=\"form-select\" id=\"").append(p).append("-dir\" name=\"of_dir_")
+                .append(i).append("\"><option value=\"SELL_TO_PLAYER\"")
+                .append("BUY_FROM_PLAYER".equals(direction) ? "" : " selected").append(">Vend</option>")
+                .append("<option value=\"BUY_FROM_PLAYER\"").append("BUY_FROM_PLAYER".equals(direction) ? " selected" : "")
+                .append(">Rachète</option></select></div>")
+                .append("<div class=\"col-6 col-md-3\"><label class=\"form-label small mb-0\" for=\"").append(p)
+                .append("-it\">Objet</label><input class=\"form-control\" id=\"").append(p).append("-it\" name=\"of_item_")
+                .append(i).append("\" list=\"dl-merchant-items\" autocomplete=\"off\" value=\"")
+                .append(Http.esc(str(o.get("item")))).append("\" placeholder=\"Chercher…\"></div>")
+                .append("<div class=\"col-6 col-md-1\"><label class=\"form-label small mb-0\" for=\"").append(p)
+                .append("-q\">Qté</label><input class=\"form-control\" type=\"number\" min=\"1\" max=\"64\" id=\"")
+                .append(p).append("-q\" name=\"of_qty_").append(i).append("\" value=\"")
+                .append(Http.esc(str(o.get("item")).isEmpty() ? "" : str(o.get("quantity")))).append("\"></div>")
+                .append("<div class=\"col-6 col-md-2\"><label class=\"form-label small mb-0\" for=\"").append(p)
+                .append("-pr\">Prix</label><input class=\"form-control\" type=\"number\" min=\"0\" step=\"1\" id=\"")
+                .append(p).append("-pr\" name=\"of_price_").append(i).append("\" value=\"")
+                .append(Http.esc(str(o.get("item")).isEmpty() ? "" : str(o.get("price")))).append("\"></div></div>");
+        sb.append("<div class=\"row g-2 mt-1\"><div class=\"col-12 col-md-4\"><label class=\"form-label small mb-0\" "
+                        + "for=\"").append(p).append("-qu\">Quête requise</label><input class=\"form-control\" id=\"")
+                .append(p).append("-qu\" name=\"of_quest_").append(i).append("\" list=\"dl-merchant-quests\" "
+                        + "autocomplete=\"off\" value=\"").append(Http.esc(str(o.get("requiredQuest")))).append("\"></div>")
+                .append("<div class=\"col-6 col-md-3\"><label class=\"form-label small mb-0\" for=\"").append(p)
+                .append("-st\">État de la quête</label><select class=\"form-select\" id=\"").append(p)
+                .append("-st\" name=\"of_state_").append(i).append("\">");
+        for (String[] s : List.of(new String[] {"COMPLETED", "terminée"}, new String[] {"ACTIVE", "en cours"},
+                new String[] {"READY_TO_TURN_IN", "à rendre"}, new String[] {"NOT_STARTED", "pas commencée"})) {
+            sb.append("<option value=\"").append(s[0]).append('"').append(s[0].equals(state) ? " selected" : "")
+                    .append('>').append(s[1]).append("</option>");
+        }
+        sb.append("</select></div><div class=\"col-6 col-md-2\"><label class=\"form-label small mb-0\" for=\"").append(p)
+                .append("-lv\">Niveau min.</label><input class=\"form-control\" type=\"number\" min=\"0\" id=\"").append(p)
+                .append("-lv\" name=\"of_level_").append(i).append("\" value=\"")
+                .append(Http.esc(str(o.get("requiredLevel")))).append("\"></div>")
+                .append("<div class=\"col-12 col-md-3\"><label class=\"form-label small mb-0\" for=\"").append(p)
+                .append("-pe\">Permission</label><input class=\"form-control\" id=\"").append(p)
+                .append("-pe\" name=\"of_perm_").append(i).append("\" maxlength=\"100\" value=\"")
+                .append(Http.esc(str(o.get("requiredPermission")))).append("\"></div></div>");
+        if (existing) {
+            sb.append("<label class=\"form-check mt-1\"><input class=\"form-check-input\" type=\"checkbox\" name=\"of_del_")
+                    .append(i).append("\" value=\"true\"> <span>Retirer cette offre</span></label>");
+        }
+        return sb.append("</fieldset>").toString();
+    }
+
+    private static String merchantHiddenFields(Session session, String agentId, String type) {
+        return "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
+                + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
+                + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"" + MERCHANTS_PATH + "\">";
     }
 
     // ---- Récompenses : catalogue (issue #474) et tables de tirage (issue #177) ---------------

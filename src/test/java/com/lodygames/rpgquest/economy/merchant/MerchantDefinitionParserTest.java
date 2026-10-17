@@ -202,6 +202,66 @@ class MerchantDefinitionParserTest {
                 """ + offersYaml;
     }
 
+    @Test
+    void typeAndEnabledAreReadAndDefaultToMixedAndOpen() {
+        MerchantDefinitionParser.ParseResult typed = parser.parse("rachat.yml", load("""
+                id: rpgquest:rachat
+                title: Rachat
+                type: BUY
+                enabled: false
+                offers:
+                  - direction: BUY_FROM_PLAYER
+                    material: COBBLESTONE
+                    quantity: 64
+                    price: 6
+                """));
+        assertTrue(typed.isSuccess(), () -> "issues: " + typed.issues());
+        assertEquals(com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType.BUY, typed.merchant().type());
+        assertFalse(typed.merchant().enabled());
+
+        MerchantDefinitionParser.ParseResult legacy = parser.parse("legacy.yml", load("""
+                id: rpgquest:legacy
+                title: Legacy
+                offers:
+                  - direction: SELL_TO_PLAYER
+                    material: BREAD
+                    quantity: 1
+                    price: 1
+                """));
+        assertTrue(legacy.isSuccess());
+        assertEquals(com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType.MIXED, legacy.merchant().type());
+        assertTrue(legacy.merchant().enabled());
+    }
+
+    @Test
+    void aBuyCatalogRefusesASaleOfferAndUnknownTypeOrEnabledAreRefused() {
+        MerchantDefinitionParser.ParseResult wrongDirection = parser.parse("rachat.yml", load("""
+                id: rpgquest:rachat
+                title: Rachat
+                type: BUY
+                offers:
+                  - direction: SELL_TO_PLAYER
+                    material: BREAD
+                    quantity: 1
+                    price: 1
+                """));
+        assertFalse(wrongDirection.isSuccess());
+
+        MerchantDefinitionParser.ParseResult bad = parser.parse("bad.yml", load("""
+                id: rpgquest:bad
+                title: Bad
+                type: TROC
+                enabled: peut-etre
+                offers:
+                  - direction: SELL_TO_PLAYER
+                    material: BREAD
+                    quantity: 1
+                    price: 1
+                """));
+        assertFalse(bad.isSuccess());
+        assertEquals(2, bad.issues().size(), () -> "issues: " + bad.issues());
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

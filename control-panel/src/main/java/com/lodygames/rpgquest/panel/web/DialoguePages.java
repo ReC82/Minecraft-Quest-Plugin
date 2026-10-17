@@ -73,12 +73,20 @@ public final class DialoguePages {
     /** Tout ce que les pages affichent, préparé par l'appelant. */
     public record Ctx(String agentId, List<Npc> npcs, List<Quest> quests, Set<String> serverKeys,
                       boolean npcsSurveyed, java.util.function.Function<String, LiveState> live,
-                      List<Catalog> catalogs, List<Model> models, boolean catalogsSurveyed) {
+                      List<Catalog> catalogs, List<Model> models, boolean catalogsSurveyed,
+                      List<Merchant> merchants) {
 
         /** Sans catalogues relevés (écrans qui n'en ont pas besoin, versions antérieures à #430). */
         public Ctx(String agentId, List<Npc> npcs, List<Quest> quests, Set<String> serverKeys,
                    boolean npcsSurveyed, java.util.function.Function<String, LiveState> live) {
             this(agentId, npcs, quests, serverKeys, npcsSurveyed, live, List.of(), List.of(), false);
+        }
+
+        /** Sans marchands relevés (versions antérieures à #17). */
+        public Ctx(String agentId, List<Npc> npcs, List<Quest> quests, Set<String> serverKeys,
+                   boolean npcsSurveyed, java.util.function.Function<String, LiveState> live,
+                   List<Catalog> catalogs, List<Model> models, boolean catalogsSurveyed) {
+            this(agentId, npcs, quests, serverKeys, npcsSurveyed, live, catalogs, models, catalogsSurveyed, List.of());
         }
 
         /** Modèles de PNJ récurrents dont les apparitions disent ce dialogue (npc_id = dialogue). */
@@ -157,6 +165,24 @@ public final class DialoguePages {
 
     /** Issue #430 — un modèle de PNJ récurrent (#13) : ses apparitions disent le dialogue {@code npcId}. */
     public record Model(String id, String name, String npcId, boolean enabled, List<String> catalogs) {
+    }
+
+    /**
+     * Issue #17 — un catalogue de marchand, proposé par l'action « Ouvrir un marchand ».
+     *
+     * @param type {@code SELL} (boutique), {@code BUY} (rachat) ou {@code MIXED}
+     */
+    public record Merchant(String id, String title, String type, boolean enabled) {
+
+        /** « Boutique du village — vente », « … — rachat (fermé) ». */
+        String label() {
+            String kind = switch (type) {
+                case "SELL" -> "boutique (vente)";
+                case "BUY" -> "rachat d'objets";
+                default -> "vente et rachat";
+            };
+            return MiniText.plain(title) + " — " + kind + (enabled ? "" : " (fermé)");
+        }
     }
 
     /** Ce que la session peut faire. */
@@ -1121,6 +1147,21 @@ public final class DialoguePages {
                 sb.append(option(value, value, value));
             }
             sb.append("</select>");
+        } else if ("merchant".equals(source) && !ctx.merchants().isEmpty()) {
+            sb.append("<select class=\"form-select\" id=\"").append(id).append("\" name=\"").append(name).append("\"")
+                    .append(editable ? "" : " disabled").append(">");
+            sb.append(option("", value, "Choisir un marchand…"));
+            boolean found = value.isEmpty();
+            for (Merchant m : ctx.merchants()) {
+                boolean on = m.id().equals(value) || DialogueYaml.plainId(m.id()).equals(DialogueYaml.plainId(value));
+                found |= on;
+                sb.append("<option value=\"").append(Http.esc(on ? value : m.id())).append("\"")
+                        .append(on ? " selected" : "").append(">").append(Http.esc(m.label())).append("</option>");
+            }
+            if (!found) {
+                sb.append(option(value, value, value + " (introuvable)"));
+            }
+            sb.append("</select>");
         } else if ("npc".equals(source)) {
             sb.append("<select class=\"form-select\" id=\"").append(id).append("\" name=\"").append(name).append("\"")
                     .append(editable ? "" : " disabled").append(">");
@@ -1139,7 +1180,8 @@ public final class DialoguePages {
                     .append(type == Descriptors.FieldType.INT ? " type=\"number\" min=\"1\" inputmode=\"numeric\"" : " type=\"text\"")
                     .append(" value=\"").append(Http.esc(value)).append("\"").append(editable ? "" : " readonly").append(">");
         }
-        if (!editable && ("quest".equals(source) || "questState".equals(source) || "npc".equals(source))) {
+        if (!editable && ("quest".equals(source) || "questState".equals(source) || "npc".equals(source)
+                || ("merchant".equals(source) && !ctx.merchants().isEmpty()))) {
             sb.append(hidden(name, value));
         }
         return sb.append("</div>").toString();

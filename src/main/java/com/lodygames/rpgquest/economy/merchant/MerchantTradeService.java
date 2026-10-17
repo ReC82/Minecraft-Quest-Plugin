@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.economy.TransactionType;
+import com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType;
 import com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition;
 import com.lodygames.rpgquest.economy.merchant.model.MerchantOffer;
 import com.lodygames.rpgquest.economy.merchant.model.OfferItemKind;
@@ -126,6 +127,10 @@ public final class MerchantTradeService implements PluginService {
                     Placeholder.unparsed("id", merchantId.toString())));
             return;
         }
+        if (!merchantOpt.get().enabled()) {
+            player.sendMessage(MM.deserialize("<yellow>Cette boutique est fermée pour le moment.</yellow>"));
+            return;
+        }
         render(player, merchantOpt.get());
     }
 
@@ -143,12 +148,22 @@ public final class MerchantTradeService implements PluginService {
             return;
         }
         Optional<MerchantDefinition> merchantOpt = merchantRegistry.find(session.merchantId());
-        if (merchantOpt.isEmpty()) {
-            // Marchand supprimé par un /merchant reload pendant que la vitrine était ouverte.
+        if (merchantOpt.isEmpty() || !merchantOpt.get().enabled()) {
+            // Marchand supprimé ou désactivé (PlugAdmin, /merchant reload) pendant que la vitrine était ouverte.
             player.closeInventory();
+            player.sendMessage(MM.deserialize("<yellow>Cette boutique vient de fermer :</yellow> <gray>rien n'a été "
+                    + "échangé.</gray>"));
             return;
         }
         MerchantDefinition merchant = merchantOpt.get();
+        if (!merchant.equals(session.shown())) {
+            // Issue #17 : l'étal a été modifié depuis l'affichage — l'offre sous ce slot n'est peut-être
+            // plus celle que le joueur voit. Rien n'est échangé, la vitrine est réaffichée.
+            player.sendMessage(MM.deserialize("<yellow>Le marchand vient de changer son étal :</yellow> <gray>la "
+                    + "vitrine est mise à jour, rien n'a été échangé. Vérifie l'offre puis clique de nouveau.</gray>"));
+            render(player, merchant);
+            return;
+        }
         int contentSlots = contentSlotCount(merchant);
         if (slot < 0 || slot >= contentSlots || slot >= merchant.offers().size()) {
             return;
@@ -158,7 +173,7 @@ public final class MerchantTradeService implements PluginService {
             pricesChanged(player, merchant);
             return;
         }
-        checkRequirementsAndTrade(player, offer, session.priceGeneration());
+        checkRequirementsAndTrade(player, merchant, offer, session.priceGeneration());
     }
 
     /** Les prix ont été modifiés depuis l'affichage : rien n'est échangé, la vitrine est réaffichée. */
@@ -180,15 +195,56 @@ public final class MerchantTradeService implements PluginService {
         int contentSlots = contentSlotCount(merchant);
         List<MerchantOffer> offers = merchant.offers();
         for (int i = 0; i < offers.size() && i < contentSlots; i++) {
-            ItemStack icon = buildIcon(offers.get(i));
+            ItemStack icon = buildIcon(offers.get(i), merchant.type());
             if (icon != null) {
                 inventory.setItem(i, icon);
             }
         }
+        inventory.setItem(balanceSlot(size), balanceIcon(null));
 
         player.openInventory(inventory);
         // Après l'ouverture : fermer l'ancienne vitrine (réaffichage) retire la session précédente.
-        sessions.put(player.getUniqueId(), new MerchantSession(merchant.id(), generation));
+        sessions.put(player.getUniqueId(), new MerchantSession(merchant.id(), generation, merchant));
+        refreshBalance(player);
+    }
+
+    // ---- Solde affiché (issue #17) -------------------------------------------
+
+    /** Case du solde : milieu de la dernière ligne, jamais une offre (les offres s'arrêtent avant). */
+    private static int balanceSlot(int size) {
+        return size - 5;
+    }
+
+    private static ItemStack balanceIcon(Long balance) {
+        ItemStack stack = new ItemStack(Material.SUNFLOWER);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(MM.deserialize("<gold>Ton solde</gold>"));
+        meta.lore(List.of(balance == null
+                ? MM.deserialize("<gray>Chargement…</gray>")
+                : MM.deserialize("<white><amount> " + CurrencyName.get() + "</white>",
+                Placeholder.unparsed("amount", String.valueOf(balance)))));
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /**
+     * Relit le solde (base, hors thread principal) et l'affiche si la même vitrine est toujours
+     * ouverte. Purement informatif : chaque échange revérifie le solde au débit.
+     */
+    private void refreshBalance(Player player) {
+        UUID playerId = player.getUniqueId();
+        economyService.balance(playerId).thenAccept(balance -> runOnMainThread(() -> {
+            if (!player.isOnline() || !sessions.containsKey(playerId)) {
+                return;
+            }
+            Inventory top = player.getOpenInventory().getTopInventory();
+            if (top != null && top.getHolder() instanceof MerchantShopInventoryHolder) {
+                top.setItem(balanceSlot(top.getSize()), balanceIcon(balance));
+            }
+        })).exceptionally(error -> {
+            logger.warn("Solde illisible pour l'affichage marchand de {}", playerId, error);
+            return null;
+        });
     }
 
     private int inventorySize(int offerCount) {
@@ -201,9 +257,9 @@ public final class MerchantTradeService implements PluginService {
         return inventorySize(merchant.offers().size()) - 9;
     }
 
-    private ItemStack buildIcon(MerchantOffer offer) {
+    private ItemStack buildIcon(MerchantOffer offer, MerchantCatalogType type) {
         if (offer.linked()) {
-            return buildLinkedIcon(offer);
+            return buildLinkedIcon(offer, type);
         }
         ItemStack stack = createOfferStack(offer);
         if (stack == null) {
@@ -229,8 +285,8 @@ public final class MerchantTradeService implements PluginService {
      * Icône d'une offre liée (issue #336) : le prix du catalogue, ou une barrière « indisponible »
      * qui garde la place de l'offre (les index de clic restent ceux du fichier du marchand).
      */
-    private ItemStack buildLinkedIcon(MerchantOffer offer) {
-        Optional<PriceDefinition> price = usablePrice(offer);
+    private ItemStack buildLinkedIcon(MerchantOffer offer, MerchantCatalogType type) {
+        Optional<PriceDefinition> price = usablePrice(offer, type);
         ItemStack stack = price.map(p -> createStack(p.item())).orElse(null);
         if (stack == null) {
             ItemStack barrier = new ItemStack(Material.BARRIER);
@@ -239,8 +295,8 @@ public final class MerchantTradeService implements PluginService {
             meta.lore(List.of(MM.deserialize("<gray>Aucun prix actif pour cette offre.</gray>")));
             barrier.setItemMeta(meta);
             if (price.isEmpty()) {
-                logger.warn("Offre de marchand indisponible : prix « {} » absent ou désactivé dans prices.yml.",
-                        offer.priceRef());
+                logger.warn("Offre de marchand indisponible : prix « {} » absent, désactivé ou d'un type refusé "
+                        + "par ce catalogue ({}).", offer.priceRef(), type);
             } else {
                 logger.warn("Offre de marchand indisponible : objet introuvable pour le prix « {} ».", offer.priceRef());
             }
@@ -293,7 +349,8 @@ public final class MerchantTradeService implements PluginService {
 
     // ---- Conditions ---------------------------------------------------------
 
-    private void checkRequirementsAndTrade(Player player, MerchantOffer offer, long generation) {
+    private void checkRequirementsAndTrade(Player player, MerchantDefinition merchant, MerchantOffer offer,
+                                           long generation) {
         if (offer.requiredPermission() != null && !player.hasPermission(offer.requiredPermission())) {
             sendDenied(player, "<red>Il te manque la permission requise pour cette offre.</red>");
             return;
@@ -308,7 +365,7 @@ public final class MerchantTradeService implements PluginService {
                         if (state != offer.requiredQuestState()) {
                             sendDenied(player, "<red>Cette offre nécessite une progression de quête différente.</red>");
                         } else {
-                            executeTrade(player, offer, generation);
+                            executeTrade(player, merchant, offer, generation);
                         }
                     })).exceptionally(error -> {
                 logger.error("Échec de la vérification de quête pour une offre de marchand ({})", player.getUniqueId(), error);
@@ -316,7 +373,7 @@ public final class MerchantTradeService implements PluginService {
             });
             return;
         }
-        executeTrade(player, offer, generation);
+        executeTrade(player, merchant, offer, generation);
     }
 
     private void sendDenied(Player player, String message) {
@@ -325,14 +382,16 @@ public final class MerchantTradeService implements PluginService {
 
     // ---- Échange --------------------------------------------------------------
 
-    private void executeTrade(Player player, MerchantOffer offer, long generation) {
+    private void executeTrade(Player player, MerchantDefinition merchant, MerchantOffer offer, long generation) {
         if (offer.linked()) {
-            executeLinkedTrade(player, offer, generation);
+            executeLinkedTrade(player, merchant, offer, generation);
             return;
         }
+        // Issue #17 : la trace d'audit porte le marchand (catalogue) qui a fait l'échange.
+        String context = "marchand:" + merchant.id() + " " + describeItem(offer);
         switch (offer.direction()) {
-            case SELL_TO_PLAYER -> sellToPlayer(player, offer, describeItem(offer));
-            case BUY_FROM_PLAYER -> buyFromPlayer(player, offer, describeItem(offer));
+            case SELL_TO_PLAYER -> sellToPlayer(player, offer, context);
+            case BUY_FROM_PLAYER -> buyFromPlayer(player, offer, context);
         }
     }
 
@@ -341,19 +400,20 @@ public final class MerchantTradeService implements PluginService {
      * pendant la vérification de quête, rien n'est échangé. La trace de transaction porte la clé et
      * la version du prix appliqué.
      */
-    private void executeLinkedTrade(Player player, MerchantOffer offer, long generation) {
+    private void executeLinkedTrade(Player player, MerchantDefinition merchant, MerchantOffer offer, long generation) {
         if (generation != priceGeneration()) {
             player.sendMessage(MM.deserialize("<yellow>Les prix viennent de changer :</yellow> <gray>rien n'a été "
                     + "échangé, rouvre la boutique.</gray>"));
             return;
         }
-        Optional<PriceDefinition> priceOpt = usablePrice(offer);
+        Optional<PriceDefinition> priceOpt = usablePrice(offer, merchant.type());
         if (priceOpt.isEmpty()) {
             player.sendMessage(MM.deserialize("<red>Cette offre est indisponible :</red> <gray>aucun prix actif.</gray>"));
             return;
         }
         PriceDefinition price = priceOpt.get();
-        String context = "prix:" + price.key() + "@" + price.version() + " " + price.item();
+        String context = "marchand:" + merchant.id() + " prix:" + price.key() + "@" + price.version() + " "
+                + price.item();
         if (price.type() == PriceType.CRAFT) {
             craft(player, price, context);
             return;
@@ -410,6 +470,7 @@ public final class MerchantTradeService implements PluginService {
             return;
         }
         economyService.debit(player.getUniqueId(), price.coins(), TransactionType.ARTISAN_CRAFT, context)
+                .whenComplete((ignored, error) -> refreshBalance(player))
                 .thenAccept(success -> runOnMainThread(() -> {
                     if (!success) {
                         player.sendMessage(MM.deserialize("<red>Fonds insuffisants.</red>"));
@@ -477,6 +538,7 @@ public final class MerchantTradeService implements PluginService {
     private void refundCraft(Player player, PriceDefinition price, String context) {
         UUID playerId = player.getUniqueId();
         economyService.credit(playerId, price.coins(), TransactionType.ARTISAN_CRAFT, "remboursement:" + context)
+                .whenComplete((ignored, error) -> refreshBalance(player))
                 .thenRun(() -> runOnMainThread(() -> player.sendMessage(MM.deserialize(
                         "<yellow>Fabrication annulée et remboursée</yellow> <gray>(+<price>) : aucun ingrédient n'a été "
                                 + "pris.</gray>",
@@ -496,9 +558,10 @@ public final class MerchantTradeService implements PluginService {
         return copy;
     }
 
-    private Optional<PriceDefinition> usablePrice(MerchantOffer offer) {
+    /** Prix actif de l'offre liée, et d'un type que ce catalogue accepte (issue #17) — sinon indisponible. */
+    private Optional<PriceDefinition> usablePrice(MerchantOffer offer, MerchantCatalogType type) {
         PriceCatalog catalog = priceCatalog == null ? PriceCatalog.EMPTY : priceCatalog.catalog();
-        return catalog.usable(offer.priceRef());
+        return catalog.usable(offer.priceRef()).filter(price -> type.accepts(price.type()));
     }
 
     private long priceGeneration() {
@@ -536,6 +599,7 @@ public final class MerchantTradeService implements PluginService {
             return;
         }
         economyService.debit(player.getUniqueId(), offer.price(), TransactionType.MERCHANT_BUY, context)
+                .whenComplete((ignored, error) -> refreshBalance(player))
                 .thenAccept(success -> runOnMainThread(() -> {
                     if (!success) {
                         player.sendMessage(MM.deserialize("<red>Fonds insuffisants.</red>"));
@@ -570,6 +634,7 @@ public final class MerchantTradeService implements PluginService {
     private void refund(Player player, MerchantOffer offer, String context) {
         UUID playerId = player.getUniqueId();
         economyService.credit(playerId, offer.price(), TransactionType.MERCHANT_SELL, "remboursement:" + context)
+                .whenComplete((ignored, error) -> refreshBalance(player))
                 .thenRun(() -> runOnMainThread(() -> player.sendMessage(MM.deserialize(
                         "<yellow>Achat annulé et remboursé</yellow> <gray>(+<price>) : l'objet ne tenait pas dans ton inventaire.</gray>",
                         Placeholder.unparsed("price", String.valueOf(offer.price()))))))
@@ -608,6 +673,7 @@ public final class MerchantTradeService implements PluginService {
             return;
         }
         economyService.credit(player.getUniqueId(), offer.price(), TransactionType.MERCHANT_SELL, context)
+                .whenComplete((ignored, error) -> refreshBalance(player))
                 .thenAccept(v -> runOnMainThread(() -> player.sendMessage(MM.deserialize(
                         "<green>Vendu :</green> <white><amount>x <item></white> <gray>(+<price>)</gray>",
                         Placeholder.unparsed("amount", String.valueOf(offer.quantity())),

@@ -52,10 +52,33 @@ public final class ConfigValidator {
         NpcHintConfig npcHints = validateNpcHints(section);
         CityConfig cities = validateCities(section);
         EncounterConfig encounters = validateEncounters(section);
+        HudConfig hud = validateHud(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
                 backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit,
-                wild, npcHints, cities, encounters);
+                wild, npcHints, cities, encounters, hud);
+    }
+
+    /** Section {@code hud:} (issue #184) — absente : panneau désactivé, retours de gains actifs. */
+    static HudConfig validateHud(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection hud = section.getConfigurationSection("hud");
+        HudConfig defaults = HudConfig.defaults();
+        if (hud == null) {
+            return defaults;
+        }
+        String rawMode = hud.getString("default-mode", defaults.defaultMode().name());
+        HudMode mode;
+        // YAML 1.1 lit « off » non guillemeté comme le booléen false : c'est bien « off ».
+        if ("false".equalsIgnoreCase(rawMode.trim())) {
+            rawMode = HudMode.OFF.name();
+        }
+        try {
+            mode = HudMode.valueOf(rawMode.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException(
+                    "« hud.default-mode » invalide : \"" + rawMode + "\" (valides : off, sidebar).");
+        }
+        return new HudConfig(mode, hud.getBoolean("wallet-feedback", defaults.walletFeedback()));
     }
 
     /** Section {@code encounters:} (issue #13) — PNJ récurrents par instance de biome, bornée. */

@@ -27,6 +27,11 @@ format YAML d'un marchand.
 -   `/money admin give|take|set <joueur> <montant>` (`rpgquest.admin`) —
     seule façon de faire entrer de la monnaie dans l'économie hors
     marchand (aucun solde de départ, voir plus haut).
+-   `/hud [sidebar|off]` (`rpgquest.hud`, `default: true`, prototype
+    #184) — panneau latéral « Bourse / Niveau RPG » lu sur ce même
+    portefeuille. Chaque mouvement **réussi** passé par `EconomyService`
+    prévient `WalletChangeListener` : le HUD relit le solde et affiche
+    `+N LodyCoins · solde S` dans l'action bar. Aucun solde parallèle.
 -   `/merchant reload|validate|list` (`rpgquest.admin`) — recharge/valide
     les définitions de marchands, ou liste celles actuellement chargées.
     Aucune sous-commande joueur : un marchand n'existe qu'à travers un

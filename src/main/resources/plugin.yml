@@ -67,6 +67,9 @@ commands:
   profile:
     description: Résumé de tes niveaux RPG (progression) ; « web » règle la visibilité sur le portail — voir docs/WEB_PORTAL.md.
     usage: /<command> [web [public|prive]]
+  hud:
+    description: Affiche ou masque le panneau pièces / niveau RPG (prototype #184).
+    usage: /<command> [sidebar|off]
   skills:
     description: Détail de tes compétences RPG et outils d'administration de test — voir docs/PROGRESSION.md.
     usage: /<command> [admin <grant|set> <joueur> <compétence> <montant>]
@@ -150,6 +153,9 @@ permissions:
   rpgquest.admin.bypass:
     description: "Ouvrir soi-même une session de mode bypass administrateur (/rpgadmin bypass on|off|status, issue #35). N'accorde AUCUN contournement par elle-même : pendant la session, seuls les nœuds de bypass déjà détenus (rpgquest.bypass.*, rpgquest.admin.hub.combat ou l'ombrelle rpgquest.admin.world) s'appliquent. Hors session, un OP joue comme un joueur normal. Session visible en barre d'action, close à la déconnexion et au redémarrage."
     default: op
+  rpgquest.hud:
+    description: Choisir l'affichage pièces / niveau RPG (/hud).
+    default: true
   rpgquest.money:
     description: Accès aux commandes joueur d'économie (/money, /money pay).
     default: true

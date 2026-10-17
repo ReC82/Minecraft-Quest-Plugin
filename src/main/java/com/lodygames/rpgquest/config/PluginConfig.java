@@ -23,7 +23,8 @@ public record PluginConfig(
         WildConfig wild,
         NpcHintConfig npcHints,
         CityConfig cities,
-        EncounterConfig encounters
+        EncounterConfig encounters,
+        HudConfig hud
 ) {
 
     /**

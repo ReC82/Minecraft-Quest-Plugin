@@ -6,6 +6,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Affichage pièces / niveau RPG — prototype (#184, 17/10/2026)** — `/hud [sidebar|off]` : panneau
+> latéral natif propre au joueur (« Bourse » = portefeuille `wallets`, « Niveau RPG » = piste GLOBAL),
+> choix rangé dans le PDC du joueur ; retour en action bar de chaque gain/dépense réussi
+> (`EconomyService` → `WalletChangeListener`). `config.yml` → `hud.default-mode` (`"off"`) et
+> `hud.wallet-feedback` (`true`). Choix d'interface non définitif (PENDING MANUAL VALIDATION TC-346).
+
 > **Rôle métier des PNJ libre (#127, 17/10/2026)** — PlugAdmin seul : le champ « Rôle affiché »
 > (Réglages avancés d'une fiche `/npcs`) est une saisie libre avec suggestions (Cartographe,
 > Forgeron, Aubergiste, Téléporteur…) au lieu de la liste fermée « Aucun / Donneur de quête ». La

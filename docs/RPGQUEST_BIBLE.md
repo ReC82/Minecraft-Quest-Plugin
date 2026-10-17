@@ -5579,6 +5579,28 @@ Vérifié dans `MoneyCommand.java`, `MerchantCommand.java`, `MarketCommand.java`
 
 À savoir : montant toujours un entier strictement positif (`pay`/`give`/`take`) ; `take` échoue proprement si solde insuffisant (aucun solde négatif possible) ; `pay` à soi-même refusé.
 
+### Affichage des pièces et du niveau RPG — `/hud` (prototype #184)
+
+| Commande | Type | Permission | Effet | Persistance |
+|---|---|---|---|---|
+| `/hud` | Joueur | `rpgquest.hud` (défaut : tous) | Bascule le panneau latéral « Bourse / Niveau RPG ». | oui — choix rangé dans le `PersistentDataContainer` du joueur (`rpgquest:hud_mode`), aucune table |
+| `/hud sidebar\|off` | Joueur | `rpgquest.hud` | Affiche / masque explicitement le panneau. | idem |
+
+Panneau = scoreboard natif **propre au joueur**, à droite de l'écran : `Bourse : N LodyCoins` (solde du
+portefeuille `wallets`, relu après chaque mouvement réussi ; « … » tant qu'il n'est pas lu, jamais un faux 0) et
+`Niveau RPG : N` (piste `GLOBAL`, voir `/skills`). Il ne touche ni la bossbar de quête suivie ni l'action bar. Il
+n'est pas posé si un autre plugin a déjà donné un scoreboard au joueur (message d'erreur). Pendant qu'il est
+affiché, les équipes du scoreboard principal (`/team`) ne s'appliquent plus à ce joueur.
+
+Indépendamment du panneau, chaque gain ou dépense **réussi** (marchand, artisan, marché, portail, `/money`,
+récompense de quête, PlugAdmin) s'ajoute à l'action bar : `+25 LodyCoins · solde 150`, `-10 … · solde 140`,
+`Solde ajusté : …` après un `set` admin. Jamais sur un refus (fonds insuffisants, double clic rejeté).
+
+Configuration `config.yml` → `hud:` : `default-mode` (`"off"` défaut, `sidebar`) = panneau proposé tant que le
+joueur n'a rien choisi ; `wallet-feedback` (`true`) = retour en action bar. Section ajoutée automatiquement au
+`config.yml` du serveur par la complétion au démarrage. **Choix d'interface non définitif** : à valider en jeu
+(TC-346).
+
 ### Marchands PNJ — `/merchant` (entièrement admin, aucune sous-commande joueur)
 
 | Commande | Effet | Persistance |

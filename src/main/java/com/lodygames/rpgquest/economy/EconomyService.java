@@ -18,9 +18,23 @@ import java.util.concurrent.CompletableFuture;
 public final class EconomyService implements QuestRewardPayer {
 
     private final WalletRepository wallets;
+    private volatile WalletChangeListener changeListener = WalletChangeListener.NONE;
 
     public EconomyService(WalletRepository wallets) {
         this.wallets = wallets;
+    }
+
+    /** Issue #184 — prévenu après chaque mouvement réussi (HUD) ; jamais après un refus ou une erreur. */
+    public void setChangeListener(WalletChangeListener listener) {
+        this.changeListener = listener == null ? WalletChangeListener.NONE : listener;
+    }
+
+    private void notifyChange(UUID playerId, long delta) {
+        try {
+            changeListener.walletChanged(playerId, delta);
+        } catch (RuntimeException ignored) {
+            // Un affichage défaillant ne doit jamais faire échouer une transaction déjà validée.
+        }
     }
 
     public CompletableFuture<Long> balance(UUID playerId) {
@@ -29,11 +43,17 @@ public final class EconomyService implements QuestRewardPayer {
 
     /** {@code true} si le débit a eu lieu (fonds suffisants), {@code false} sinon — rien n'est modifié dans ce cas. */
     public CompletableFuture<Boolean> debit(UUID playerId, long amount, TransactionType type, String context) {
-        return wallets.debit(playerId, amount, type.name(), context);
+        return wallets.debit(playerId, amount, type.name(), context).thenApply(debited -> {
+            if (debited) {
+                notifyChange(playerId, -amount);
+            }
+            return debited;
+        });
     }
 
     public CompletableFuture<Void> credit(UUID playerId, long amount, TransactionType type, String context) {
-        return wallets.credit(playerId, amount, type.name(), context);
+        return wallets.credit(playerId, amount, type.name(), context)
+                .thenRun(() -> notifyChange(playerId, amount));
     }
 
     /** Transfert atomique. Valide {@code amount}/{@code from != to} avant de toucher la base. */
@@ -44,8 +64,14 @@ public final class EconomyService implements QuestRewardPayer {
         if (from.equals(to)) {
             return CompletableFuture.completedFuture(PayOutcome.SAME_PLAYER);
         }
-        return wallets.pay(from, to, amount, null)
-                .thenApply(success -> success ? PayOutcome.PAID : PayOutcome.INSUFFICIENT_FUNDS);
+        return wallets.pay(from, to, amount, null).thenApply(success -> {
+            if (!success) {
+                return PayOutcome.INSUFFICIENT_FUNDS;
+            }
+            notifyChange(from, -amount);
+            notifyChange(to, amount);
+            return PayOutcome.PAID;
+        });
     }
 
     /**
@@ -67,7 +93,13 @@ public final class EconomyService implements QuestRewardPayer {
                     case "ALREADY_PAID", "ALREADY_SETTLED" -> QuestRewardReceipt.Status.ALREADY_CREDITED;
                     // Dette inconnue : ne JAMAIS annoncer un gain. C'est un échec, et il doit se voir.
                     default -> QuestRewardReceipt.Status.FAILED;
-                }, payment.amount(), payment.balanceAfter(), payment.occurrence()));
+                }, payment.amount(), payment.balanceAfter(), payment.occurrence()))
+                .thenApply(receipt -> {
+                    if (receipt.credited()) {
+                        notifyChange(playerId, receipt.amount());
+                    }
+                    return receipt;
+                });
     }
 
     @Override
@@ -110,6 +142,7 @@ public final class EconomyService implements QuestRewardPayer {
 
     /** Outil admin : fixe le solde exact, jamais négatif. */
     public CompletableFuture<Void> adminSet(UUID playerId, long amount, String context) {
-        return wallets.setBalance(playerId, amount, TransactionType.ADMIN_SET.name(), context);
+        return wallets.setBalance(playerId, amount, TransactionType.ADMIN_SET.name(), context)
+                .thenRun(() -> notifyChange(playerId, 0L));
     }
 }

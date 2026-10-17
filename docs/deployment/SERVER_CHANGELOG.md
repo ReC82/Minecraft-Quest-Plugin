@@ -48,6 +48,36 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Économie : affichage des pièces et du niveau RPG en jeu, prototype `/hud` (#184)
+
+### Changement
+
+JAR seul. Commande joueur `/hud [sidebar|off]` (permission `rpgquest.hud`, accordée à tous) : panneau latéral
+natif propre au joueur « Bourse : N LodyCoins / Niveau RPG : N », lu sur le portefeuille réel et la piste
+GLOBAL. Chaque gain ou dépense réussi du portefeuille s'affiche dans l'action bar (`+25 LodyCoins · solde
+150`). Nouvelle section `hud:` (`default-mode: "off"`, `wallet-feedback: true`) ajoutée au `config.yml` du
+serveur par la complétion au démarrage — panneau désactivé par défaut.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest (`scripts/deploy-verygames.sh -y`), redémarrer DEV. Aucune migration, aucun
+fichier à copier, PlugAdmin inchangé. Aucun solde, objet ni donnée joueur modifié.
+
+### Sauvegarde préalable
+
+Celles des scripts (JAR précédent daté, `data.db`).
+
+### Validation
+
+`/hud` en jeu (TC-346, PENDING MANUAL VALIDATION) ; `config.yml` du serveur contient la section `hud:`.
+
+### Rollback
+
+Remettre le JAR précédent. La section `hud:` du `config.yml` est ignorée par l'ancien JAR ; la clé PDC
+`rpgquest:hud_mode` des joueurs reste inerte.
+
+---
+
 ## 2026-10-17 - Artisans : ateliers de recettes (ingrédients et/ou pièces) administrés depuis PlugAdmin (#18)
 
 ### Changement

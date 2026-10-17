@@ -81,6 +81,17 @@ journal:
   # suivi lui-même (persisté) ni le journal, seulement la bossbar.
   tracker-enabled: true
 
+hud:
+  # Prototype #184 — affichage des pièces (portefeuille réel) et du niveau RPG
+  # (piste GLOBAL). Choix d'interface NON définitif : à comparer en jeu.
+  # default-mode : panneau proposé tant qu'un joueur n'a rien choisi avec /hud.
+  #   off     = aucun panneau permanent (défaut) ;
+  #   sidebar = panneau latéral natif, à droite de l'écran.
+  default-mode: "off"
+  # Affiche « +25 LodyCoins · solde 150 » dans l'action bar à chaque gain ou
+  # dépense réellement passé au portefeuille (jamais sur un refus).
+  wallet-feedback: true
+
 claims:
   # Limites d'un claim de terrain (/claim create). max-claims-per-player est
   # une base : +1 claim tous les 10 niveaux de la piste GLOBAL (voir

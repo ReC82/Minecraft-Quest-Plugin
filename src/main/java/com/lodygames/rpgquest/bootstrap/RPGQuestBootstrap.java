@@ -1526,7 +1526,7 @@ public final class RPGQuestBootstrap {
             money.setTabCompleter(moneyCommand);
         }
 
-        MerchantCommand merchantCommand = new MerchantCommand(merchantRegistry);
+        MerchantCommand merchantCommand = new MerchantCommand(merchantRegistry, merchantTradeService);
         var merchant = plugin.getCommand("merchant");
         if (merchant != null) {
             merchant.setExecutor(merchantCommand);

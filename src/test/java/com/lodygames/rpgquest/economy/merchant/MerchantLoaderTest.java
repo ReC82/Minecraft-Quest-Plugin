@@ -89,4 +89,18 @@ class MerchantLoaderTest {
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new java.io.StringReader(yaml));
     }
+
+    /** Issue #336 : les marchands embarqués se chargent ; l'atelier de démonstration ne porte aucun prix. */
+    @Test
+    void bundledMerchantsLoadAndTheDemoWorkshopOnlyCitesTheCatalog() {
+        Path dir = tempDir.resolve("bundled");
+        YamlMerchantRegistry registry = new YamlMerchantRegistry(dir, org.slf4j.helpers.NOPLogger.NOP_LOGGER);
+        registry.start();
+
+        assertTrue(registry.lastReport().issues().isEmpty(), () -> registry.lastReport().issues().toString());
+        var demo = registry.find(new org.bukkit.NamespacedKey("rpgquest", "atelier_demo")).orElseThrow();
+        assertEquals(java.util.List.of("demo_vente", "demo_rachat", "demo_fabrication"),
+                demo.offers().stream().map(o -> o.priceRef()).toList());
+        assertTrue(demo.offers().stream().allMatch(o -> o.direction() == null && o.price() == 0));
+    }
 }

@@ -499,7 +499,7 @@ doit être vérifiée. Voir section 2 et [docs/ADMIN_TEST_SHORTCUTS.md](ADMIN_TE
 
 ### `/quests` — journal de quêtes
 Type : Joueur — Permission : `rpgquest.quest`
-But : ouvrir le journal paginé. **Deux onglets** : « Quêtes en cours » (`ACTIVE`/`READY_TO_TURN_IN`) et « Quêtes terminées » (`COMPLETED`). Il n'y a **pas** d'onglet catalogue des quêtes disponibles (issue #11) : le journal ne liste que les quêtes déjà acceptées par le joueur, jamais les quêtes non découvertes.
+But : ouvrir le journal paginé. Onglets : « Quêtes en cours » (`ACTIVE`/`READY_TO_TURN_IN`), « Quêtes terminées » (`COMPLETED`) et, si `periodic-quests.enabled`, « Quêtes quotidiennes » (horloge) et « Quêtes hebdomadaires » (boussole) — voir « Quêtes quotidiennes et hebdomadaires » ci-dessous (issue #15). Barre du haut : slots 0 en cours, 1 terminées, 2 quotidiennes, 3 hebdomadaires, 4/5/6 pages, 7 bourse, 8 fermer. Il n'y a **pas** d'onglet catalogue des quêtes disponibles (issue #11) : le journal ne liste que les quêtes déjà acceptées par le joueur, jamais les quêtes non découvertes.
 Ouverture : `/quests`, **ou** un clic droit sur l'item `rpgquest:journal_quetes` remis par le Libraire (même GUI, `QuestJournalService`). L'item est reconnu par son identité RPGQuest/PDC, jamais par son nom/lore ; il ne peut pas être dupliqué (garde `LACKS_CUSTOM_ITEM` sur le dialogue du Libraire) ni perdu (`SoulboundItemService`).
 Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : clic gauche = détail, clic droit = suivi/bossbar). Aucune interaction ne permet de retirer ou dupliquer un item de la GUI (tout clic/drag sur un `JournalInventoryHolder` est annulé). Aucun paramètre.
 Persistance : le suivi (quête « trackée ») persiste (`player_variables`), pas la simple ouverture du menu.
@@ -517,6 +517,62 @@ construit à partir des descriptions déjà humanisées de chaque objectif de l'
 (`ObjectiveProgressView#description()`, même source que `/quest progress`), avec repli sur l'id
 technique seulement si aucune description n'est disponible. Les ids internes ne sont jamais
 modifiés — correction d'affichage uniquement.
+
+### Quêtes quotidiennes et hebdomadaires (issue #15)
+
+Type : système joueur (journal) + contenu administrable (`quests/`) + configuration (`config.yml > periodic-quests`).
+
+**Modèles.** Une quête quotidienne ou hebdomadaire est un fichier ordinaire de `quests/` portant
+`period: daily` ou `period: weekly` : mêmes étapes, objectifs (tous les types existants) et
+récompenses (`EXPERIENCE`, `MONEY` via le portefeuille LodyCoins, `ITEM`, `TABLE`…) que toute quête.
+Une quête `period:` est implicitement répétable ; `repeatable: false`, `cooldown:` et
+`prerequisites:` y sont refusés au chargement (message dans le rapport de chargement). Modèles de
+**démonstration** fournis (valeurs non définitives) : `daily_demo_bucheron`, `daily_demo_mineur`,
+`daily_demo_chasseur`, `weekly_demo_expedition` (seedés seulement s'ils manquent sur le serveur).
+
+**Jamais proposée ailleurs.** Un modèle périodique n'est disponible ni par un PNJ, ni par un
+catalogue, ni par `/quest accept`, ni même par `/rpgadmin quest start … force` : refus
+`NOT_ASSIGNED` (« ouvre ton journal de quêtes »). `/rpgadmin quest complete` et l'action de
+dialogue `TURN_IN_QUEST` ne la terminent que si elle est réellement active (sinon `NOT_ACTIVE`,
+rien n'est accordé).
+
+**Déblocage et attribution.** Rien n'est attribué tant que le joueur n'a pas **ouvert son journal**
+une première fois (variable `__periodic_quests_unlocked__`). Ensuite, pour chaque période, le
+plugin choisit `daily-count` quêtes quotidiennes et `weekly-count` hebdomadaires parmi les modèles
+chargés — sélection déterministe par joueur et par période, qui **évite les quêtes de la période
+précédente** tant que la réserve le permet — et les **démarre** aussitôt (« Quête commencée »).
+L'attribution est persistée (`periodic_quest_assignments`, schéma V42) : reconnexion, clics
+répétés sur l'onglet, redémarrage ou deux appels simultanés ne réattribuent jamais une période.
+Les quêtes non attribuées restent invisibles : l'onglet ne montre que les quêtes du joueur pour la
+période en cours, avec « À faire aujourd'hui » / « ✔ Terminée aujourd'hui » et « Nouvelles
+quêtes dans 15 h 20 min ». Elles n'apparaissent plus dans « en cours » / « terminées ».
+
+**Réinitialisation.** Heure locale `reset-time` dans le fuseau `timezone` (défaut 04:00
+Europe/Paris), chaque jour ; la semaine change le `weekly-reset-day` (défaut lundi) à la même
+heure. Les joueurs en ligne sont renouvelés au plus une minute après le reset (« ✦ Nouvelles
+quêtes quotidiennes : ouvre ton journal »), les autres à leur connexion. Une quête de la période
+échue encore en cours **expire sans récompense** (« ⌛ Quête expirée ») ; une quête réussie qui
+attendait seulement de la place dans l'inventaire (`READY_TO_TURN_IN`) est conservée et remise.
+Une quête reprise d'une période à l'autre repart de zéro (compteurs effacés au démarrage, y compris
+après un redémarrage serveur). Récompense : une complétion = un jeton de paiement, exactement comme
+une quête ordinaire — pas de double récompense possible.
+
+**Configuration** (`config.yml`, ajoutée automatiquement par le complément de configuration ;
+valeurs de démonstration) :
+
+| Clé | Défaut | Effet |
+|---|---|---|
+| `periodic-quests.enabled` | `true` | Onglets et attribution actifs. `false` : onglets masqués, rien n'est attribué ni expiré. |
+| `periodic-quests.timezone` | `Europe/Paris` | Fuseau IANA des réinitialisations (indépendant de l'hôte). |
+| `periodic-quests.reset-time` | `04:00` | Heure locale du reset quotidien (et hebdomadaire). |
+| `periodic-quests.weekly-reset-day` | `MONDAY` | Jour du reset hebdomadaire. |
+| `periodic-quests.daily-count` | `2` | Quêtes quotidiennes par joueur (0 à 9). |
+| `periodic-quests.weekly-count` | `1` | Quêtes hebdomadaires par joueur (0 à 9). |
+
+Hors périmètre de ce lot (préparé, non implémenté) : onglets PlugAdmin dédiés, difficulté selon le
+niveau, nombre variable, personnalisation par monde/ville/réputation. Un reset joueur
+(`/rpgadmin player resetnew`) efface la progression mais **pas** les attributions : il ne permet pas
+de regagner les récompenses du jour.
 
 ### Commandes admin — `/quest admin`
 

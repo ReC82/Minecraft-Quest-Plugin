@@ -245,6 +245,44 @@ rewards:                    # optionnel
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Quêtes quotidiennes et hebdomadaires (#15)</h2>
+    <p class="text-body-secondary">
+      Une quête portant <code>period: daily</code> ou <code>period: weekly</code> est un
+      <strong>modèle</strong> : jamais proposée par un PNJ, un catalogue ou <code>/quest accept</code>.
+      Dès que le joueur a ouvert son journal une première fois, le plugin lui attribue chaque jour
+      <code>daily-count</code> quêtes quotidiennes et chaque semaine <code>weekly-count</code>
+      hebdomadaires (en évitant celles de la période précédente), et les démarre. Elles se lisent dans
+      les onglets « Quêtes quotidiennes » (horloge) et « Quêtes hebdomadaires » (boussole) du journal,
+      avec le temps restant avant les nouvelles quêtes.
+    </p>
+    <p class="text-body-secondary">
+      Réinitialisation à <code>periodic-quests.reset-time</code> (04:00 par défaut) dans le fuseau
+      <code>periodic-quests.timezone</code> (Europe/Paris), la semaine changeant le
+      <code>weekly-reset-day</code> (lundi). Une quête non finie à temps expire sans récompense ;
+      une quête finie ne rapporte qu'une fois par période. <code>repeatable: false</code>,
+      <code>cooldown</code> et <code>prerequisites</code> sont refusés sur un modèle périodique.
+    </p>
+    <pre class="rpgq-code"><code># quests/daily_demo_bucheron.yml — modèle de démonstration
+id: rpgquest:daily_demo_bucheron
+title: "&lt;gold&gt;Bois du jour&lt;/gold&gt;"
+description: "&lt;gray&gt;Coupe quelques bûches de chêne.&lt;/gray&gt;"
+category: daily
+icon: OAK_LOG
+period: daily
+steps:
+  - id: couper
+    objectives:
+      - type: BREAK_BLOCK
+        material: OAK_LOG
+        amount: 16
+rewards:
+  - type: EXPERIENCE
+    amount: 20
+  - type: MONEY
+    amount: 5</code></pre>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Exemple complet : Guide → Libraire</h2>
     <p class="text-body-secondary">
       La quête <code>rpgquest:premiers_pas</code>, livrée avec le plugin, illustre l'enchaînement

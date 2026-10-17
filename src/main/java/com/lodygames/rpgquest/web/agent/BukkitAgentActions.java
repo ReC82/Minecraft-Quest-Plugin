@@ -1419,6 +1419,216 @@ public final class BukkitAgentActions implements AgentActions {
                                 com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry merchants) {
         this.priceCatalog = service;
         this.merchantRegistry = merchants;
+        this.merchantEditor = merchants == null ? null
+                : new com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor(merchants, plugin.getSLF4JLogger());
+    }
+
+    // ---- Catalogues de marchands (issue #17) ---------------------------------------------------
+    // Appelé sur le thread agent : lecture / écriture de merchants/*.yml hors du thread principal.
+
+    private volatile com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor merchantEditor;
+
+    @Override
+    public CompletableFuture<MerchantCatalogView> merchantCatalogStatus() {
+        var registry = merchantRegistry;
+        var editor = merchantEditor;
+        if (registry == null || editor == null) {
+            return AgentActions.super.merchantCatalogStatus();
+        }
+        var prices = priceCatalog == null ? com.lodygames.rpgquest.economy.price.PriceCatalog.EMPTY
+                : priceCatalog.catalog();
+        Map<String, List<String>> usages = merchantUsages();
+        List<MerchantEntryView> merchants = new ArrayList<>();
+        for (var merchant : registry.merchants()) {
+            List<MerchantOfferView> offers = merchant.offers().stream().map(BukkitAgentActions::offerView).toList();
+            List<String> unavailable = merchant.offers().stream().filter(o -> o.linked()).map(o -> o.priceRef())
+                    .filter(ref -> prices.usable(ref).filter(p -> merchant.type().accepts(p.type())).isEmpty())
+                    .distinct().toList();
+            String file = registry.fileOf(merchant.id()).orElse("");
+            merchants.add(new MerchantEntryView(merchant.id().toString(), file, merchant.title(),
+                    merchant.type().name(), merchant.enabled(),
+                    com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry.isBundled(file),
+                    editor.version(merchant.id()), offers,
+                    usages.getOrDefault(merchant.id().toString(), List.of()), unavailable));
+        }
+        List<String> issues = registry.lastReport().issues().stream().map(i -> i.file() + " : " + i.message())
+                .toList();
+        List<String> custom = customItemRegistry == null ? List.of()
+                : customItemRegistry.items().stream().map(d -> d.id().toString()).sorted().toList();
+        List<MerchantPriceRefView> priceRefs = prices.prices().values().stream()
+                .map(p -> new MerchantPriceRefView(p.key(), p.label(), p.type().name(), p.enabled(), p.summary()))
+                .toList();
+        return done(new MerchantCatalogView(true, merchants, issues, custom, priceRefs,
+                com.lodygames.rpgquest.economy.CurrencyName.get()));
+    }
+
+    private static MerchantOfferView offerView(com.lodygames.rpgquest.economy.merchant.model.MerchantOffer o) {
+        String quest = o.requiredQuestId() == null ? null : o.requiredQuestId().toString();
+        String state = o.requiredQuestState() == null ? null : o.requiredQuestState().name();
+        if (o.linked()) {
+            return new MerchantOfferView(null, null, 0, 0, o.priceRef(), quest, state, o.requiredLevel(),
+                    o.requiredPermission());
+        }
+        String item = o.itemKind() == com.lodygames.rpgquest.economy.merchant.model.OfferItemKind.VANILLA
+                ? o.vanillaMaterial().name() : o.customItemId().toString();
+        return new MerchantOfferView(o.direction().name(), item, o.quantity(), o.price(), null, quest, state,
+                o.requiredLevel(), o.requiredPermission());
+    }
+
+    /** Dialogues (id → « dialogue x ») dont une action {@code OPEN_MERCHANT} ouvre chaque marchand. */
+    private Map<String, List<String>> merchantUsages() {
+        Map<String, List<String>> usages = new java.util.LinkedHashMap<>();
+        if (dialogueEngine == null) {
+            return usages;
+        }
+        for (DialogueDefinition d : dialogueEngine.dialogues()) {
+            d.nodes().values().stream().flatMap(n -> n.choices().stream()).flatMap(c -> c.actions().stream())
+                    .filter(a -> a instanceof OpenMerchantAction).map(a -> ((OpenMerchantAction) a).merchantId().toString())
+                    .distinct().forEach(id -> usages.computeIfAbsent(id, k -> new ArrayList<>())
+                            .add("dialogue « " + d.id() + " »"));
+        }
+        return usages;
+    }
+
+    private static @org.jetbrains.annotations.Nullable NamespacedKey merchantKey(String raw) {
+        try {
+            return raw.indexOf(':') >= 0 ? NamespacedKey.fromString(raw) : new NamespacedKey("rpgquest", raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> merchantSave(String id, String title, String type, boolean enabled,
+                                                          List<MerchantOfferView> offers, String expectedVersion,
+                                                          boolean create) {
+        var editor = merchantEditor;
+        if (editor == null) {
+            return AgentActions.super.merchantSave(id, title, type, enabled, offers, expectedVersion, create);
+        }
+        NamespacedKey key = merchantKey(id);
+        if (key == null) {
+            return done(MutationResult.of(false, "INVALID", "Identifiant de marchand « " + id + " » invalide."));
+        }
+        var catalogType = com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType.valueOf(type);
+        var prices = priceCatalog == null ? com.lodygames.rpgquest.economy.price.PriceCatalog.EMPTY
+                : priceCatalog.catalog();
+        List<com.lodygames.rpgquest.economy.merchant.model.MerchantOffer> built = new ArrayList<>();
+        for (int i = 0; i < offers.size(); i++) {
+            MerchantOfferView o = offers.get(i);
+            String where = "Offre " + (i + 1) + " : ";
+            NamespacedKey quest = o.requiredQuest() == null ? null : merchantKey(o.requiredQuest());
+            if (o.requiredQuest() != null && quest == null) {
+                return done(MutationResult.of(false, "INVALID", where + "quête « " + o.requiredQuest() + " » invalide."));
+            }
+            var state = o.requiredQuestState() == null ? null
+                    : com.lodygames.rpgquest.quest.model.QuestState.valueOf(o.requiredQuestState());
+            try {
+                if (o.priceRef() != null) {
+                    var price = prices.prices().get(o.priceRef());
+                    if (price == null) {
+                        return done(MutationResult.of(false, "INVALID", where + "prix « " + o.priceRef() + " » absent "
+                                + "du catalogue des prix : le créer d'abord (Prix et coûts). Rien n'a été écrit."));
+                    }
+                    if (!catalogType.accepts(price.type())) {
+                        return done(MutationResult.of(false, "INVALID", where + "le prix « " + o.priceRef() + " » ("
+                                + price.type() + ") ne convient pas à un catalogue " + catalogLabel(catalogType)
+                                + ". Rien n'a été écrit."));
+                    }
+                    built.add(com.lodygames.rpgquest.economy.merchant.model.MerchantOffer.linked(o.priceRef(),
+                            o.requiredPermission(), quest, state, o.requiredLevel()));
+                    continue;
+                }
+                var direction = com.lodygames.rpgquest.economy.merchant.model.TradeDirection.valueOf(o.direction());
+                if (o.item().indexOf(':') >= 0) {
+                    NamespacedKey item = NamespacedKey.fromString(o.item());
+                    if (item == null || customItemRegistry == null || customItemRegistry.find(item).isEmpty()) {
+                        return done(MutationResult.of(false, "INVALID", where + "objet RPGQuest « " + o.item()
+                                + " » inconnu de ce serveur. Rien n'a été écrit."));
+                    }
+                    built.add(new com.lodygames.rpgquest.economy.merchant.model.MerchantOffer(direction,
+                            com.lodygames.rpgquest.economy.merchant.model.OfferItemKind.CUSTOM, null, item,
+                            o.quantity(), o.price(), o.requiredPermission(), quest, state, o.requiredLevel()));
+                } else {
+                    org.bukkit.Material material = org.bukkit.Material.matchMaterial(o.item());
+                    if (material == null || !material.isItem() || material.isAir()) {
+                        return done(MutationResult.of(false, "INVALID", where + "« " + o.item() + " » n'est pas un "
+                                + "objet Minecraft. Rien n'a été écrit."));
+                    }
+                    built.add(new com.lodygames.rpgquest.economy.merchant.model.MerchantOffer(direction,
+                            com.lodygames.rpgquest.economy.merchant.model.OfferItemKind.VANILLA, material, null,
+                            o.quantity(), o.price(), o.requiredPermission(), quest, state, o.requiredLevel()));
+                }
+            } catch (IllegalArgumentException e) {
+                return done(MutationResult.of(false, "INVALID", where + e.getMessage() + " Rien n'a été écrit."));
+            }
+        }
+        com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition merchant;
+        try {
+            merchant = new com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition(key, title.trim(), built,
+                    catalogType, enabled);
+        } catch (IllegalArgumentException e) {
+            return done(MutationResult.of(false, "INVALID", e.getMessage() + " Rien n'a été écrit."));
+        }
+        return done(merchantMutation(editor.save(merchant, expectedVersion, create)));
+    }
+
+    private static String catalogLabel(com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType type) {
+        return switch (type) {
+            case SELL -> "de vente";
+            case BUY -> "de rachat";
+            case MIXED -> "mixte";
+        };
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> merchantDuplicate(String id, String newKey, String newTitle) {
+        var editor = merchantEditor;
+        NamespacedKey key = merchantKey(id);
+        if (editor == null || key == null) {
+            return editor == null ? AgentActions.super.merchantDuplicate(id, newKey, newTitle)
+                    : done(MutationResult.of(false, "INVALID", "Identifiant de marchand « " + id + " » invalide."));
+        }
+        return done(merchantMutation(editor.duplicate(key, newKey, newTitle)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> merchantToggle(String id, boolean enabled) {
+        var editor = merchantEditor;
+        NamespacedKey key = merchantKey(id);
+        if (editor == null || key == null) {
+            return editor == null ? AgentActions.super.merchantToggle(id, enabled)
+                    : done(MutationResult.of(false, "INVALID", "Identifiant de marchand « " + id + " » invalide."));
+        }
+        MutationResult result = merchantMutation(editor.setEnabled(key, enabled));
+        List<String> usages = merchantUsages().getOrDefault(key.toString(), List.of());
+        if (result.ok() && !enabled && !usages.isEmpty() && !"UNCHANGED".equals(result.code())) {
+            return done(new MutationResult(true, result.code(), result.message() + " Dialogues concernés : "
+                    + String.join(", ", usages) + ".", result.effects()));
+        }
+        return done(result);
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> merchantDelete(String id, String expectedVersion) {
+        var editor = merchantEditor;
+        NamespacedKey key = merchantKey(id);
+        if (editor == null || key == null) {
+            return editor == null ? AgentActions.super.merchantDelete(id, expectedVersion)
+                    : done(MutationResult.of(false, "INVALID", "Identifiant de marchand « " + id + " » invalide."));
+        }
+        return done(merchantMutation(editor.delete(key, expectedVersion,
+                merchantUsages().getOrDefault(key.toString(), List.of()))));
+    }
+
+    private static MutationResult merchantMutation(
+            com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor.Outcome o) {
+        List<String> effects = new ArrayList<>();
+        if (o.merchant() != null) {
+            effects.add("marchand " + o.merchant().id() + " (" + o.merchant().type() + ", "
+                    + o.merchant().offers().size() + " offre(s))" + (o.merchant().enabled() ? " ouvert" : " fermé"));
+        }
+        return new MutationResult(o.success(), o.code(), o.message(), effects);
     }
 
     @Override

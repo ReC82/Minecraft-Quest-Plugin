@@ -45,7 +45,7 @@ public final class YamlMerchantRegistry implements MerchantRegistry {
     }
 
     /** Recharge depuis le disque et remplace l'ensemble de définitions actif. */
-    public MerchantLoadReport reload() {
+    public synchronized MerchantLoadReport reload() {
         MerchantLoadReport report = loader.loadDirectory(merchantsDirectory);
         this.merchants = report.loaded();
         this.lastReport = report;
@@ -66,6 +66,24 @@ public final class YamlMerchantRegistry implements MerchantRegistry {
 
     public MerchantLoadReport lastReport() {
         return lastReport;
+    }
+
+    /** Dossier des fichiers de marchands (issue #17, édition depuis PlugAdmin). */
+    public Path directory() {
+        return merchantsDirectory;
+    }
+
+    /** Fichier d'où vient le marchand chargé {@code id}. */
+    public Optional<String> fileOf(NamespacedKey id) {
+        return Optional.ofNullable(lastReport.files().get(id));
+    }
+
+    /**
+     * Fichier d'exemple embarqué dans le jar : recréé au démarrage s'il manque, donc jamais
+     * supprimable depuis PlugAdmin (on le désactive).
+     */
+    public static boolean isBundled(String fileName) {
+        return java.util.Arrays.asList(BUNDLED_EXAMPLES).contains(fileName);
     }
 
     public Optional<MerchantDefinition> find(NamespacedKey id) {

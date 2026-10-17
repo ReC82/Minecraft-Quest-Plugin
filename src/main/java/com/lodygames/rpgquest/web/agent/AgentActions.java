@@ -1476,6 +1476,77 @@ public interface AgentActions {
                 "Catalogue des prix indisponible sur ce serveur."));
     }
 
+    // ---- Catalogues de marchands (issue #17) ---------------------------------------------------
+
+    /**
+     * Une offre de marchand. Forme liée : {@code priceRef} seul (le reste vient du catalogue des
+     * prix) ; sinon {@code direction} ({@code SELL_TO_PLAYER} / {@code BUY_FROM_PLAYER}),
+     * {@code item} (matériau {@code BREAD} ou objet RPGQuest {@code rpgquest:…}), {@code quantity},
+     * {@code price}. Conditions facultatives ({@code null} = aucune).
+     */
+    record MerchantOfferView(String direction, String item, int quantity, long price, String priceRef,
+                             String requiredQuest, String requiredQuestState, Integer requiredLevel,
+                             String requiredPermission) {
+    }
+
+    /**
+     * Un marchand chargé.
+     *
+     * @param type            {@code SELL}, {@code BUY} ou {@code MIXED}
+     * @param bundled         exemple fourni avec le plugin (jamais supprimable)
+     * @param usages          dialogues dont une action {@code OPEN_MERCHANT} l'ouvre
+     * @param unavailableRefs prix cités sans prix actif du bon type (offres « indisponibles »)
+     */
+    record MerchantEntryView(String id, String file, String title, String type, boolean enabled, boolean bundled,
+                             String version, List<MerchantOfferView> offers, List<String> usages,
+                             List<String> unavailableRefs) {
+    }
+
+    /** Un prix du catalogue central, proposé pour une offre liée. */
+    record MerchantPriceRefView(String key, String label, String type, boolean enabled, String summary) {
+    }
+
+    /** État des marchands -- action {@code merchant.catalog.status}. {@code issues} : fichiers refusés. */
+    record MerchantCatalogView(boolean available, List<MerchantEntryView> merchants, List<String> issues,
+                               List<String> customItems, List<MerchantPriceRefView> prices, String currency) {
+    }
+
+    default CompletableFuture<MerchantCatalogView> merchantCatalogStatus() {
+        return CompletableFuture.completedFuture(new MerchantCatalogView(false, List.of(), List.of(), List.of(),
+                List.of(), ""));
+    }
+
+    /**
+     * Crée ({@code create}, {@code id} = clé seule) ou remplace un marchand -- action
+     * {@code merchant.save}. Codes : {@code CREATED}, {@code UPDATED}, {@code UNCHANGED},
+     * {@code EXISTS}, {@code NOT_FOUND}, {@code STALE}, {@code INVALID}, {@code CURRENT_INVALID},
+     * {@code ROLLED_BACK}, {@code ERROR}, {@code UNAVAILABLE}.
+     */
+    default CompletableFuture<MutationResult> merchantSave(String id, String title, String type, boolean enabled,
+                                                           List<MerchantOfferView> offers, String expectedVersion,
+                                                           boolean create) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Édition des marchands indisponible sur ce serveur."));
+    }
+
+    /** Copie fermée -- action {@code merchant.duplicate}. {@code newTitle} facultatif. */
+    default CompletableFuture<MutationResult> merchantDuplicate(String id, String newKey, String newTitle) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Édition des marchands indisponible sur ce serveur."));
+    }
+
+    /** Ouvre ou ferme une boutique -- action {@code merchant.toggle}. */
+    default CompletableFuture<MutationResult> merchantToggle(String id, boolean enabled) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Édition des marchands indisponible sur ce serveur."));
+    }
+
+    /** Supprime un marchand non cité -- action {@code merchant.delete}. Codes : {@code DELETED}, {@code IN_USE}… */
+    default CompletableFuture<MutationResult> merchantDelete(String id, String expectedVersion) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Édition des marchands indisponible sur ce serveur."));
+    }
+
     /** {@code operation} : {@code retry}, {@code disable} ou {@code remove}, sur la seule occurrence nommée. */
     default CompletableFuture<MutationResult> encounterSiteAction(String operation, String siteId) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",

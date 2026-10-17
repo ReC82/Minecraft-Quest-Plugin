@@ -216,6 +216,11 @@ public final class AgentActionExecutor {
                 case PRICE_SAVE -> priceSave(action);
                 case PRICE_DUPLICATE -> priceDuplicate(action);
                 case PRICE_TOGGLE -> priceToggle(action);
+                case MERCHANT_CATALOG_STATUS -> merchantCatalogStatus(action);
+                case MERCHANT_SAVE -> merchantSave(action);
+                case MERCHANT_DUPLICATE -> merchantDuplicate(action);
+                case MERCHANT_TOGGLE -> merchantToggle(action);
+                case MERCHANT_DELETE -> merchantDelete(action);
                 case ENCOUNTER_RETRY -> encounterSiteAction(action, "retry");
                 case ENCOUNTER_DISABLE -> encounterSiteAction(action, "disable");
                 case ENCOUNTER_REMOVE -> encounterSiteAction(action, "remove");
@@ -1946,6 +1951,224 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « price_key » invalide."));
         }
         return actions.priceToggle(key, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Catalogues de marchands (issue #17) ---------------------------------------------------
+
+    /** Id d'un marchand : {@code ns:clé} ou clé seule ({@code rpgquest:} implicite). */
+    private static final java.util.regex.Pattern MERCHANT_ID =
+            java.util.regex.Pattern.compile("([a-z0-9._-]{1,64}:)?[a-z0-9/._-]{1,64}");
+    private static final java.util.Set<String> MERCHANT_TYPES = java.util.Set.of("SELL", "BUY", "MIXED");
+    private static final java.util.regex.Pattern MERCHANT_QUEST =
+            java.util.regex.Pattern.compile("([a-z0-9._-]{1,64}:)?[a-z0-9/._-]{1,64}");
+    private static final java.util.regex.Pattern MERCHANT_PERMISSION = java.util.regex.Pattern.compile("[A-Za-z0-9._*-]{1,100}");
+    private static final java.util.Set<String> MERCHANT_QUEST_STATES = java.util.Arrays.stream(
+            com.lodygames.rpgquest.quest.model.QuestState.values()).map(Enum::name)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+    private CompletableFuture<AgentActionOutcome> merchantCatalogStatus(AgentAction action) {
+        return actions.merchantCatalogStatus().thenApply(view -> {
+            List<Map<String, Object>> merchants = new ArrayList<>();
+            for (AgentActions.MerchantEntryView m : view.merchants()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", m.id());
+                row.put("file", m.file());
+                row.put("title", m.title());
+                row.put("type", m.type());
+                row.put("enabled", m.enabled());
+                row.put("bundled", m.bundled());
+                row.put("version", m.version());
+                List<Map<String, Object>> offers = new ArrayList<>();
+                for (AgentActions.MerchantOfferView o : m.offers()) {
+                    Map<String, Object> offer = new LinkedHashMap<>();
+                    offer.put("direction", o.direction());
+                    offer.put("item", o.item());
+                    offer.put("quantity", o.quantity());
+                    offer.put("price", o.price());
+                    offer.put("priceRef", o.priceRef());
+                    offer.put("requiredQuest", o.requiredQuest());
+                    offer.put("requiredQuestState", o.requiredQuestState());
+                    offer.put("requiredLevel", o.requiredLevel());
+                    offer.put("requiredPermission", o.requiredPermission());
+                    offers.add(offer);
+                }
+                row.put("offers", offers);
+                row.put("usages", m.usages());
+                row.put("unavailableRefs", m.unavailableRefs());
+                merchants.add(row);
+            }
+            List<Map<String, Object>> prices = new ArrayList<>();
+            for (AgentActions.MerchantPriceRefView p : view.prices()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("key", p.key());
+                row.put("label", p.label());
+                row.put("type", p.type());
+                row.put("enabled", p.enabled());
+                row.put("summary", p.summary());
+                prices.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("merchants", merchants);
+            details.put("issues", view.issues());
+            details.put("customItems", view.customItems());
+            details.put("prices", prices);
+            details.put("currency", view.currency());
+            return AgentActionOutcome.success(action.id(), Integer.toString(merchants.size()),
+                    merchants.size() + " marchand(s), " + view.issues().size() + " fichier(s) refusé(s).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code merchant.save} : {@code merchant_id}, {@code title}, {@code catalog_type}
+     * ({@code SELL}/{@code BUY}/{@code MIXED}), {@code enabled}, {@code create},
+     * {@code expected_version}, {@code offers} (une offre par ligne :
+     * {@code sens|objet|quantité|prix|prix-ref|quête|état|niveau|permission}). Forme vérifiée ici ;
+     * objets, prix et cohérence par le serveur et le vrai parseur avant écriture.
+     */
+    private CompletableFuture<AgentActionOutcome> merchantSave(AgentAction action) {
+        String id = trimOrNull(action.param("merchant_id"));
+        boolean create = isTrue(action.param("create"));
+        if (id == null || !(create ? com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor.KEY
+                : MERCHANT_ID).matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « merchant_id » invalide (minuscules, "
+                    + "chiffres, _ -, 64 caractères au plus)."));
+        }
+        String title = trimOrNull(action.param("title"));
+        if (title == null || title.length() > com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor.TITLE_MAX
+                || title.chars().anyMatch(Character::isISOControl)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « title » obligatoire, sur une ligne, 120 caractères au plus."));
+        }
+        String type = trimOrNull(action.param("catalog_type"));
+        if (type == null || !MERCHANT_TYPES.contains(type)) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « catalog_type » : SELL, BUY ou MIXED."));
+        }
+        String expected = trimOrNull(action.param("expected_version"));
+        if (expected != null && !REWARD_TABLE_VERSION.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_version » invalide."));
+        }
+        List<AgentActions.MerchantOfferView> offers = new ArrayList<>();
+        String error = parseMerchantOffers(action.param("offers"), offers);
+        if (error != null) {
+            return done(AgentActionOutcome.rejected(action.id(), error));
+        }
+        return actions.merchantSave(id, title, type, isTrue(action.param("enabled")), offers, expected, create)
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Une offre par ligne, champs séparés par {@code |} ; renvoie le message de refus ou {@code null}. */
+    static String parseMerchantOffers(String raw, List<AgentActions.MerchantOfferView> out) {
+        if (raw == null || raw.isBlank()) {
+            return "Au moins une offre est obligatoire.";
+        }
+        int n = 0;
+        for (String line : raw.split("\n")) {
+            if (line.isBlank()) {
+                continue;
+            }
+            n++;
+            String[] f = line.split("\\|", -1);
+            if (f.length != 9) {
+                return "Offre " + n + " : format invalide.";
+            }
+            for (int i = 0; i < f.length; i++) {
+                f[i] = f[i].trim();
+            }
+            String ref = f[4].isEmpty() ? null : f[4];
+            String quest = f[5].isEmpty() ? null : f[5];
+            String state = f[6].isEmpty() ? null : f[6];
+            String permission = f[8].isEmpty() ? null : f[8];
+            Integer level = f[7].isEmpty() ? null : parseIntOrNull(f[7]);
+            if (!f[7].isEmpty() && (level == null || level < 0 || level > 10_000)) {
+                return "Offre " + n + " : niveau requis entier entre 0 et 10000.";
+            }
+            if (quest != null && !MERCHANT_QUEST.matcher(quest).matches()) {
+                return "Offre " + n + " : quête requise « " + safe(quest) + " » invalide.";
+            }
+            if (state != null && (quest == null || !MERCHANT_QUEST_STATES.contains(state))) {
+                return "Offre " + n + " : état de quête invalide " + MERCHANT_QUEST_STATES + ", avec une quête.";
+            }
+            if (permission != null && !MERCHANT_PERMISSION.matcher(permission).matches()) {
+                return "Offre " + n + " : permission « " + safe(permission) + " » invalide.";
+            }
+            if (ref != null) {
+                if (!com.lodygames.rpgquest.economy.price.PriceCatalogLoader.KEY.matcher(ref).matches()) {
+                    return "Offre " + n + " : prix du catalogue « " + safe(ref) + " » invalide.";
+                }
+                if (!f[0].isEmpty() || !f[1].isEmpty() || !f[2].isEmpty() || !f[3].isEmpty()) {
+                    return "Offre " + n + " : une offre liée au catalogue des prix ne porte ni sens, ni objet, ni "
+                            + "quantité, ni prix.";
+                }
+                out.add(new AgentActions.MerchantOfferView(null, null, 0, 0, ref, quest, state, level, permission));
+            } else {
+                if (!f[0].equals("SELL_TO_PLAYER") && !f[0].equals("BUY_FROM_PLAYER")) {
+                    return "Offre " + n + " : sens SELL_TO_PLAYER ou BUY_FROM_PLAYER obligatoire.";
+                }
+                if (!com.lodygames.rpgquest.economy.price.PriceCatalogLoader.ITEM.matcher(f[1]).matches()) {
+                    return "Offre " + n + " : objet « " + safe(f[1]) + " » invalide (BREAD ou rpgquest:…).";
+                }
+                Integer quantity = parseIntOrNull(f[2]);
+                if (quantity == null || quantity < 1
+                        || quantity > com.lodygames.rpgquest.economy.price.PriceCatalogLoader.MAX_AMOUNT) {
+                    return "Offre " + n + " : quantité entière entre 1 et 64.";
+                }
+                Long price = parseLongOrNull(f[3]);
+                if (price == null || price < 0 || price > com.lodygames.rpgquest.economy.price.PriceCatalogLoader.MAX_COINS) {
+                    return "Offre " + n + " : prix en pièces obligatoire, entier entre 0 et "
+                            + com.lodygames.rpgquest.economy.price.PriceCatalogLoader.MAX_COINS + ".";
+                }
+                out.add(new AgentActions.MerchantOfferView(f[0], f[1], quantity, price, null, quest, state, level,
+                        permission));
+            }
+        }
+        if (out.isEmpty()) {
+            return "Au moins une offre est obligatoire.";
+        }
+        if (out.size() > com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor.MAX_OFFERS) {
+            return com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor.MAX_OFFERS + " offres au plus.";
+        }
+        return null;
+    }
+
+    private CompletableFuture<AgentActionOutcome> merchantDuplicate(AgentAction action) {
+        String id = trimOrNull(action.param("merchant_id"));
+        String target = trimOrNull(action.param("new_key"));
+        if (id == null || !MERCHANT_ID.matcher(id).matches() || target == null
+                || !com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor.KEY.matcher(target).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètres « merchant_id » et « new_key » "
+                    + "obligatoires (minuscules, chiffres, _ -, 64 caractères au plus)."));
+        }
+        String title = trimOrNull(action.param("new_title"));
+        if (title != null && (title.length() > com.lodygames.rpgquest.economy.merchant.MerchantCatalogEditor.TITLE_MAX
+                || title.chars().anyMatch(Character::isISOControl))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_title » : une ligne, 120 caractères au plus."));
+        }
+        return actions.merchantDuplicate(id, target, title).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> merchantToggle(AgentAction action) {
+        String id = trimOrNull(action.param("merchant_id"));
+        if (id == null || !MERCHANT_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « merchant_id » invalide."));
+        }
+        return actions.merchantToggle(id, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> merchantDelete(AgentAction action) {
+        String id = trimOrNull(action.param("merchant_id"));
+        if (id == null || !MERCHANT_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « merchant_id » invalide."));
+        }
+        String expected = trimOrNull(action.param("expected_version"));
+        if (expected != null && !REWARD_TABLE_VERSION.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_version » invalide."));
+        }
+        return actions.merchantDelete(id, expected).thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

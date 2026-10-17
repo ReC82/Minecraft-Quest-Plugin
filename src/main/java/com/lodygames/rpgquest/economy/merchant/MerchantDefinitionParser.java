@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.economy.merchant;
 
+import com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType;
 import com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition;
 import com.lodygames.rpgquest.economy.merchant.model.MerchantOffer;
 import com.lodygames.rpgquest.economy.merchant.model.OfferItemKind;
@@ -32,13 +33,15 @@ final class MerchantDefinitionParser {
         NamespacedKey id = parseId(section, errors);
         String title = parseTitle(section, errors);
         List<MerchantOffer> offers = parseOffers(section, errors);
+        MerchantCatalogType type = parseType(section, errors);
+        boolean enabled = parseEnabled(section, errors);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(message -> new MerchantLoadIssue(fileName, message)).toList());
         }
 
         try {
-            return ParseResult.success(new MerchantDefinition(id, title, offers));
+            return ParseResult.success(new MerchantDefinition(id, title, offers, type, enabled));
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new MerchantLoadIssue(fileName, e.getMessage())));
         }
@@ -64,6 +67,32 @@ final class MerchantDefinitionParser {
             return null;
         }
         return title;
+    }
+
+    /** Issue #17 : {@code type} facultatif ({@code SELL}, {@code BUY}, {@code MIXED}) ; absent = mixte. */
+    private MerchantCatalogType parseType(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("type")) {
+            return MerchantCatalogType.MIXED;
+        }
+        String raw = section.getString("type", "");
+        try {
+            return MerchantCatalogType.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            errors.add("« type » inconnu « " + raw + " » (valides : " + List.of(MerchantCatalogType.values()) + ").");
+            return MerchantCatalogType.MIXED;
+        }
+    }
+
+    /** Issue #17 : {@code enabled} facultatif, booléen ; absent = actif. */
+    private boolean parseEnabled(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("enabled")) {
+            return true;
+        }
+        if (!section.isBoolean("enabled")) {
+            errors.add("« enabled » doit valoir true ou false, valeur trouvée : " + section.get("enabled"));
+            return true;
+        }
+        return section.getBoolean("enabled");
     }
 
     private List<MerchantOffer> parseOffers(ConfigurationSection section, List<String> errors) {

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.economy.merchant;
 
+import com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition;
 import org.bukkit.NamespacedKey;
 
 /**
@@ -14,6 +15,10 @@ import org.bukkit.NamespacedKey;
  * <p>Issue #336 : {@code priceGeneration} est la génération du catalogue des
  * prix affichée ; si elle a changé au moment du clic, l'échange est refusé et
  * la vitrine réaffichée — le joueur paie toujours le prix qu'il voit.</p>
+ *
+ * <p>Issue #17 : {@code shown} est le marchand tel qu'affiché. Les catalogues étant désormais
+ * modifiables depuis PlugAdmin, un clic n'est accepté que si le marchand actuel est
+ * <em>identique</em> : sinon l'offre sous le slot pourrait ne plus être celle affichée.</p>
  */
-record MerchantSession(NamespacedKey merchantId, long priceGeneration) {
+record MerchantSession(NamespacedKey merchantId, long priceGeneration, MerchantDefinition shown) {
 }

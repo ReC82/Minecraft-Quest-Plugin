@@ -93,7 +93,7 @@ Aucun changement visible en jeu ; le socle est prêt pour les coffres physiques 
 Rien à réinitialiser (table vide). Retour arrière : JAR précédent (voir rollback).
 
 ## Déploiement VeryGames
-Effectué le 2026-10-17 vers 19:14–19:25 (heure locale), DEV uniquement :
+Effectué le 2026-10-17 vers 19:13–19:23 (heure locale), DEV uniquement :
 * `RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y --wait-ci` depuis le worktree propre
   `/srv/rpgquest/wt-orch` au commit `4f02612` : CI verte, `assemble`, JAR 3 589 698 o, SHA-256
   `1778709b…` ; JAR distant retéléchargé : SHA identique. `DEPLOY_EXIT=0`.

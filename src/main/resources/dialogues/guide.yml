@@ -35,8 +35,8 @@ start: greeting
 
 nodes:
   greeting:
-    speaker: "Guide"
-    text: "<white>Bienvenue au village !</white> <gray>Je suis le Guide : je t'explique comment fonctionne le monde, je te dis à qui parler, et je te remets ton équipement de secours quand tu en as besoin.</gray>"
+    speaker: "%npc_name%"
+    text: "<white>Bienvenue au village !</white> <gray>Je suis %npc_name%, le guide du village : je t'explique comment fonctionne le monde, je te dis à qui parler, et je te remets ton équipement de secours quand tu en as besoin.</gray>%delivery_hint%"
     choices:
       # Issue #235 : ce choix REMPLACE « Très bien, j'y vais. », qui démarrait une quête sans le
       # dire. Il mène à un nœud qui explique ce qu'il y a à faire et NOMME la quête ; le démarrage
@@ -72,15 +72,18 @@ nodes:
           - type: GIVE_STARTER_KIT
           - type: CLOSE
 
-      # Issue #123/#218 : branche de remise GÉNÉRIQUE — aucune quête, aucun matériau et aucun PNJ
-      # n'est nommé ici. HAS_PENDING_DELIVERY n'est vraie que si une quête active du joueur demande
-      # de remettre des objets à CE PNJ (déduit de la clé du dialogue, « rpgquest:guide » → PNJ
-      # « guide ») : le choix reste donc invisible le reste du temps. C'est par ici que passent les
-      # matériaux du palier suivant du kit.
-      - text: "J'ai des matériaux"
+      # Issue #123/#218 : remise GÉNÉRIQUE — aucune quête, aucun matériau et aucun PNJ n'est nommé
+      # ici. HAS_PENDING_DELIVERY n'est vraie que si une quête active du joueur demande de remettre
+      # des objets à CE PNJ (déduit de la clé du dialogue, « rpgquest:guide » → PNJ « guide »).
+      # Issue #475 : UNE seule action, sans écran de confirmation. Le moteur ne la propose que si
+      # la remise retirerait réellement quelque chose ; sinon %delivery_hint% (texte d'accueil) dit
+      # ce qui manque et que le joueur n'en porte pas. Le bilan s'affiche dans « delivery_result ».
+      - text: "Donner les matériaux"
         conditions:
           - type: HAS_PENDING_DELIVERY
-        next: delivery
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_result
 
       - text: "D'accord !"
         actions:
@@ -89,7 +92,7 @@ nodes:
   # Issue #235 — la quête d'introduction est EXPLIQUÉE puis NOMMÉE avant de démarrer. Le joueur
   # sait donc ce qu'il accepte, et ce qu'il devra faire ensuite.
   intro_quest:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<gray>Rien de compliqué pour commencer : va te présenter au <white>Libraire</white>, juste à côté — c'est lui qui te remettra ton <white>journal des quêtes</white>. Si tu veux, je l'inscris comme ta première quête : elle s'appelle <white>Premiers pas</white>.</gray>"
     choices:
       - text: "Commencer : Premiers pas"
@@ -121,7 +124,7 @@ nodes:
   # Au palier maximum, %kit_tier_next% rend une phrase complète (« aucune — tu as déjà… ») et
   # %kit_upgrade_requirements% rend « rien de particulier » : ce nœud unique reste donc juste.
   kit_progress:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>La quête qui l'améliore :</gray> %kit_unlock_quest%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
     choices:
       - text: "Commencer l'amélioration"
@@ -172,10 +175,12 @@ nodes:
           - type: START_QUEST
             quest: rpgquest:kit_tier5
           - type: CLOSE
-      - text: "J'ai des matériaux"
+      - text: "Donner les matériaux"
         conditions:
           - type: HAS_PENDING_DELIVERY
-        next: delivery
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_result
       - text: "← Autres questions"
         next: greeting
       - text: "Merci !"
@@ -183,7 +188,7 @@ nodes:
           - type: CLOSE
 
   help_menu:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<white>Sur quoi veux-tu de l'aide ?</white>"
     choices:
       - text: "Les quêtes"
@@ -203,7 +208,7 @@ nodes:
           - type: CLOSE
 
   help_quetes:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<gray>Les quêtes s'obtiennent en parlant aux PNJ. Une fois acceptée, une quête a des objectifs (récolter, vaincre, parler…) qui progressent en jouant. Quand tous les objectifs d'une quête sont remplis, retourne voir le PNJ concerné pour la rendre et toucher tes récompenses.</gray>"
     choices:
       - text: "← Autres questions"
@@ -213,7 +218,7 @@ nodes:
           - type: CLOSE
 
   help_journal:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<gray>Va voir le Libraire, juste à côté : il te remet un <white>journal des quêtes</white>. Un clic droit dessus ouvre une fenêtre avec deux onglets : « Quêtes en cours » et « Quêtes terminées ». Seules les quêtes que tu as déjà acceptées y figurent.</gray>"
     choices:
       - text: "← Autres questions"
@@ -223,7 +228,7 @@ nodes:
           - type: CLOSE
 
   help_wild:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<gray>Le Wild est la zone d'aventure hors du village : monstres, ressources et Waystones s'y trouvent. On y accède par le portail du village. Emporte toujours une <white>rune de rappel</white> — elle te ramène ici si les choses tournent mal. Chaque nouveau venu en reçoit une ; je peux t'en redonner une si tu l'as perdue.</gray>"
     choices:
       - text: "← Autres questions"
@@ -233,7 +238,7 @@ nodes:
           - type: CLOSE
 
   help_claims:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<gray>Un claim est un terrain qui t'appartient et que personne d'autre ne peut modifier. Le droit d'en poser un <white>se mérite</white> : il faut d'abord terminer <white>l'histoire principale</white> du village (ta dernière étape, <white>La chasse aux cristaux</white>, se rend au Garde). Une fois ce droit acquis, parle à <white>Jo</white> : il te remet un acte de propriété, et un clic droit avec l'acte dans le monde des claims pose ton terrain. Une Pierre de retour t'est donnée en arrivant là-bas pour revenir au village. Tant que tu n'as pas ce droit, le portail vers le monde des claims reste fermé.</gray>"
     choices:
       - text: "← Autres questions"
@@ -243,7 +248,7 @@ nodes:
           - type: CLOSE
 
   help_marchands:
-    speaker: "Guide"
+    speaker: "%npc_name%"
     text: "<gray>Les marchands PNJ achètent et vendent des objets contre des pièces. Fais un clic droit sur un marchand pour ouvrir sa vitrine. Entre joueurs, l'hôtel des ventes (/market) permet d'acheter et de vendre librement.</gray>"
     choices:
       - text: "← Autres questions"
@@ -253,8 +258,8 @@ nodes:
           - type: CLOSE
 
   help_qui:
-    speaker: "Guide"
-    text: "<gray>Pour tes quêtes et ton journal : <white>le Libraire</white>. Pour ton premier terrain, une fois l'histoire principale terminée au Garde : <white>Jo</white>, le spécialiste des claims. Pour acheter et vendre : <white>les marchands</white> du village. Et pour te repérer ou une explication : reviens me voir, moi le Guide.</gray>"
+    speaker: "%npc_name%"
+    text: "<gray>Pour tes quêtes et ton journal : <white>le Libraire</white>. Pour ton premier terrain, une fois l'histoire principale terminée au Garde : <white>Jo</white>, le spécialiste des claims. Pour acheter et vendre : <white>les marchands</white> du village. Et pour te repérer ou une explication : reviens me voir, moi, %npc_name%.</gray>"
     choices:
       - text: "← Autres questions"
         next: help_menu
@@ -262,45 +267,26 @@ nodes:
         actions:
           - type: CLOSE
 
-  # Issue #123 — %delivery_status% liste ce qui a déjà été remis et ce qui manque, lu sur la
-  # progression réelle juste avant l'affichage. « Donner les matériaux que j'ai » traite TOUS les
-  # objectifs de remise de ce PNJ en une seule fois, ne retire jamais plus que le reliquat, et ce
-  # qui est remis est acquis définitivement (survit à la mort, à une reconnexion, à un redémarrage).
-  delivery:
-    speaker: "Guide"
-    text: "<white>Voyons ce que tu m'apportes :</white><newline>%delivery_status%"
+  # Issue #123 / #475 — bilan de la remise, affiché juste après « Donner les matériaux » :
+  # %delivery_status% dit ce qui vient d'être remis (« Tu viens de me remettre : 2 × Bâton »), ou
+  # « rien d'utile », puis ce qui est déjà remis / demandé, ce que le joueur porte encore d'utile, et
+  # l'amélioration obtenue quand la quête se termine. Ce qui est remis est acquis définitivement
+  # (survit à la mort, à une reconnexion, à un redémarrage). Pas de « Donner encore » : le bouton
+  # ci-dessous n'est proposé que s'il reste réellement quelque chose à remettre de l'inventaire.
+  delivery_result:
+    speaker: "%npc_name%"
+    text: "%delivery_status%"
     choices:
-      - text: "Donner mes matériaux"
-        actions:
-          - type: DELIVER_QUEST_ITEMS
-        next: delivery_after
-      - text: "Plus tard"
-        actions:
-          - type: CLOSE
-
-  delivery_after:
-    speaker: "Guide"
-    text: "<white>%delivery_status%</white>"
-    choices:
-      - text: "Donner encore"
+      - text: "Donner les matériaux"
         conditions:
           - type: HAS_PENDING_DELIVERY
         actions:
           - type: DELIVER_QUEST_ITEMS
-        next: delivery_after
-      - text: "Tout est remis"
-        conditions:
-          - type: HAS_PENDING_DELIVERY
-            negate: true
-        next: delivery_done
-      - text: "Plus tard"
-        actions:
-          - type: CLOSE
-
-  delivery_done:
-    speaker: "Guide"
-    text: "<gold>Tout est là. Ton équipement de secours s'améliorera dès ta prochaine demande.</gold>"
-    choices:
-      - text: "Parfait"
+        next: delivery_result
+      - text: "Comment améliorer mon kit ?"
+        next: kit_progress
+      - text: "← Autres questions"
+        next: greeting
+      - text: "Fermer"
         actions:
           - type: CLOSE

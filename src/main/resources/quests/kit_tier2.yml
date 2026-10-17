@@ -19,7 +19,7 @@
 id: rpgquest:kit_tier2
 title: "<gold>Premiers pas dans le Wild</gold>"
 description: >
-  <gray>Rapporte au Guide de quoi améliorer ton équipement de secours : un bâton et deux pierres
+  <gray>Rapporte à %npc_name:guide% de quoi améliorer ton équipement de secours : un bâton et deux pierres
   pour une épée, quatre cuirs pour des bottes, et trois graines de blé pour du pain. Tu peux lui
   donner tes matériaux au fur et à mesure : ce qui est remis est gardé en sécurité, même si tu
   meurs.</gray>

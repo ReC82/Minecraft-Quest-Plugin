@@ -52,6 +52,20 @@ apparence n'avait jamais été enregistrée (avant, ce renommage était refusé)
 sont jamais modifiés tant qu'on ne les renomme pas, et les PNJ qui ne sont pas des joueurs
 (villageois…) n'ont pas de skin.
 
+### Le rôle affiché (Cartographe, Forgeron…)
+
+Dans **Informations avancées → Réglages avancés**, le champ **« Rôle affiché »** accepte n'importe
+quel métier : tapez « Cartographe », « Maître d'armes »… ou choisissez une suggestion. Le rôle
+apparaît ensuite à côté du nom dans la liste des PNJ et dans le résumé de sa fiche. Laissez-le vide
+pour n'en mettre aucun.
+
+C'est **un libellé seulement** : il ne donne aucun pouvoir au PNJ. Écrire « Marchand » ne le fait
+pas vendre, écrire « Donneur de quête » ne lui fait proposer aucune quête — les quêtes qu'il donne
+se règlent avec le champ **« PNJ donneur »** de chaque quête, et ce qu'il dit avec son dialogue.
+
+Le rôle est enregistré sans accents ni espaces (« Téléporteur » devient `teleporteur`) ; les rôles
+suggérés retrouvent leurs accents à l'affichage. 32 caractères au plus.
+
 ### Peut-on changer l'identifiant d'un PNJ ?
 
 Non. L'identifiant (`lucien`, visible dans « Informations avancées ») est ce que les quêtes et les

@@ -18,6 +18,7 @@ import com.lodygames.rpgquest.panel.json.Json;
 import com.lodygames.rpgquest.panel.npc.NpcAppearance;
 import com.lodygames.rpgquest.panel.npc.NpcCreationPlanner;
 import com.lodygames.rpgquest.panel.npc.NpcDisplayNames;
+import com.lodygames.rpgquest.panel.npc.NpcRoles;
 import com.lodygames.rpgquest.panel.security.Session;
 import com.lodygames.rpgquest.panel.travel.TravelNetworkDiagnostic;
 import java.time.Instant;
@@ -5074,7 +5075,8 @@ public final class AgentPages {
         String slug = npcSlug(id);
         String collapseId = slug + "-body";
         String cat = card.problems().isEmpty() ? "" : "todo";
-        String ftext = Http.esc(card.name() + " " + MiniText.plain(card.inGameName()) + " " + id);
+        String roleText = card.hasDefinition() ? roleLabel(cleanNull(str(card.row().get("role")))) : "";
+        String ftext = Http.esc(card.name() + " " + MiniText.plain(card.inGameName()) + " " + id + " " + roleText);
 
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"npcs\" data-filter-cat=\"")
@@ -5084,6 +5086,9 @@ public final class AgentPages {
                 + "type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(collapseId)
                 .append("\" aria-expanded=\"false\" aria-controls=\"").append(collapseId).append("\">");
         sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(card.nameHtml()).append("</span>");
+        if (!roleText.isEmpty()) {
+            sb.append("<span class=\"npc-role\">").append(Http.esc(roleText)).append("</span>");
+        }
         String place = npcPlace(card.citizens());
         if (!place.isEmpty()) {
             sb.append("<span class=\"npc-loc\">").append(Icons.icon("world")).append(Http.esc(place)).append("</span>");
@@ -5107,6 +5112,9 @@ public final class AgentPages {
         // ---- En-tête de fiche : nom, apparence, emplacement, état utile ----
         sb.append("<dl class=\"npc-dl npc-summary-dl\">");
         dlRow(sb, "Nom", card.nameHtml());
+        if (!roleText.isEmpty()) {
+            dlRow(sb, "Rôle", Http.esc(roleText));
+        }
         if (card.inWorld()) {
             dlRow(sb, "Apparence", Http.esc(capitalize(card.appearance().label())));
             dlRow(sb, "Emplacement", place.isEmpty() ? "<span class=\"muted\">inconnu</span>" : Http.esc(place));
@@ -5722,10 +5730,6 @@ public final class AgentPages {
                         + " · rayon " + Http.esc(cleanNull(str(c.get("wanderXRange")))));
             }
         }
-        String role = cleanNull(str(n.get("role")));
-        if (!role.isEmpty()) {
-            dlRow(sb, "Rôle", Http.esc(roleLabel(role)));
-        }
         String desc = cleanNull(str(n.get("description")));
         if (!desc.isEmpty()) {
             dlRow(sb, "Description", Http.esc(desc));
@@ -5752,11 +5756,7 @@ public final class AgentPages {
         sb.append("<label for=\"").append(uid).append("-dlg\">Dialogue</label>")
                 .append(dlgSelect(uid + "-dlg", cleanNull(str(n.get("definedDialogueId"))),
                         dialogueSelectOptions(agentId)));
-        String role = cleanNull(str(n.get("role")));
-        sb.append("<label for=\"").append(uid).append("-role\">Rôle</label><select class=\"form-select\" id=\"")
-                .append(uid).append("-role\" name=\"role\"><option value=\"\">Aucun</option>")
-                .append("<option value=\"quest_giver\"").append("quest_giver".equals(role) ? " selected" : "")
-                .append(">Donneur de quête</option></select>");
+        sb.append(npcRoleField(uid, cleanNull(str(n.get("role")))));
         sb.append("<label class=\"inline npc-check\"><input type=\"checkbox\" "
                 + "name=\"enabled\" value=\"true\"").append(card.enabled() ? " checked" : "")
                 .append("> <span>PNJ actif</span></label>");
@@ -5782,9 +5782,32 @@ public final class AgentPages {
         return sb.append("</select>").toString();
     }
 
-    /** {@code quest_giver} → « Donneur de quête » ; sinon forme lisible de l'id. */
+    /** Libellé affiché du rôle métier (issue #127) : « Cartographe », « Donneur de quête »… */
     private static String roleLabel(String role) {
-        return "quest_giver".equals(role) ? "Donneur de quête" : MiniText.prettifyId(role);
+        return NpcRoles.label(role);
+    }
+
+    /**
+     * Issue #127 — rôle métier en saisie libre, avec des suggestions. Le texte dit clairement que
+     * c'est un libellé : les quêtes proposées et le dialogue se règlent ailleurs sur la fiche.
+     */
+    static String npcRoleField(String uid, String currentRole) {
+        String listId = uid + "-roles";
+        StringBuilder sb = new StringBuilder();
+        sb.append("<label for=\"").append(uid).append("-role\">Rôle affiché</label>")
+                .append("<input class=\"form-control\" type=\"text\" id=\"").append(uid)
+                .append("-role\" name=\"role\" maxlength=\"").append(NpcRoles.MAX_LENGTH)
+                .append("\" placeholder=\"Cartographe, Forgeron… (vide = aucun)\" list=\"").append(listId)
+                .append("\" value=\"").append(Http.esc(roleLabel(currentRole))).append("\">");
+        sb.append("<datalist id=\"").append(listId).append("\">");
+        for (NpcRoles.Role r : NpcRoles.suggestions()) {
+            sb.append("<option value=\"").append(Http.esc(r.label())).append("\"></option>");
+        }
+        sb.append("</datalist>");
+        sb.append("<p class=\"form-text\">Libellé seulement : il dit qui est ce PNJ, il ne lui donne "
+                + "aucun pouvoir. Les quêtes qu'il propose et son dialogue se règlent dans les autres "
+                + "sections de la fiche.</p>");
+        return sb.toString();
     }
 
     // ---- Personnage du jeu pas encore rattaché ------------------------------------------------

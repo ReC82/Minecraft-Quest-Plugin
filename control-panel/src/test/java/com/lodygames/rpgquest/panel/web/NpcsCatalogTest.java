@@ -171,6 +171,32 @@ class NpcsCatalogTest {
     }
 
     @Test
+    void theRoleIsAFreeLabelShownInTheListAndTheSheet() throws Exception {
+        start();
+        runListWithSuccess(NPC_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+        // #127 : l'ancienne valeur quest_giver reste lisible, dans l'en-tête de liste comme sur la fiche.
+        assertTrue(page.contains("<span class=\"npc-role\">Donneur de quête</span>"), "rôle dans la liste");
+        assertTrue(page.contains("<dt>Rôle</dt><dd>Donneur de quête</dd>"), "rôle sur la fiche");
+        // Plus de liste fermée à deux valeurs : saisie libre + suggestions, présentée comme un libellé.
+        assertFalse(page.contains("<option value=\"quest_giver\""), "plus de sélecteur fermé");
+        assertTrue(page.contains("name=\"role\" maxlength=\"32\""), "champ texte libre");
+        assertTrue(page.contains("<option value=\"Cartographe\">"), "suggestion Cartographe");
+        assertTrue(page.contains("il ne lui donne aucun pouvoir"), "libellé distinct des capacités");
+
+        String token = csrf(page);
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
+                + "&type=npc.definition.update&agent=" + TestConfig.AGENT_ID + "&return=/npcs&npc_id=woodcutter_bob"
+                + "&display_name=" + enc("Bûcheron Bob") + "&role=" + enc("Téléporteur") + "&enabled=true");
+        assertEquals(303, ok.statusCode());
+        assertFalse(ok.headers().firstValue("Location").orElse("").contains("err="), "rôle libre accepté");
+        HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertTrue(poll.body().contains("teleporteur"), "stocké sous l'identifiant normalisé : " + poll.body());
+    }
+
+    @Test
     void questGiverSetActionIsValidatedAndQueued() throws Exception {
         start();
         String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());

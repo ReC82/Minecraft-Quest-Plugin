@@ -49,7 +49,6 @@ public final class AgentActionCatalog {
     private static final Pattern DIALOGUE_NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");
     private static final int MAX_DIALOGUE_TEXT = 512;
     private static final int MAX_DIALOGUE_CHOICE_INDEX = 199;
-    private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     /** Jeton anti-doublon d'un formulaire de création (issue #325). */
     private static final Pattern REQUEST_TOKEN = Pattern.compile("[A-Za-z0-9_-]{8,64}");
     /** Issue #213 : exactement la forme que le serveur attribue à un emplacement. */
@@ -936,10 +935,13 @@ public final class AgentActionCatalog {
                 if (!dialogueId.isEmpty() && !DIALOGUE_REF.matcher(dialogueId).matches()) {
                     return Validation.fail("Dialogue invalide (« namespace:clé » ou une clé simple).");
                 }
-                String role = trim(form.get("role")).toLowerCase(java.util.Locale.ROOT);
-                if (!role.isEmpty() && !NPC_ROLE.matcher(role).matches()) {
-                    return Validation.fail("Rôle invalide (minuscules, « _ - », max 32).");
+                // Issue #127 : saisie libre (« Cartographe », « Téléporteur ») ramenée à l'identifiant stocké.
+                var normalizedRole = com.lodygames.rpgquest.panel.npc.NpcRoles.normalize(form.get("role"));
+                if (normalizedRole.isEmpty()) {
+                    return Validation.fail("Rôle invalide : des lettres ou chiffres, 32 caractères au plus "
+                            + "(ex. « Cartographe »).");
                 }
+                String role = normalizedRole.get();
                 params.put("npc_id", npcId);
                 params.put("display_name", displayName);
                 if (!dialogueId.isEmpty()) {
@@ -2778,7 +2780,7 @@ public final class AgentActionCatalog {
         }
         for (String label : List.of("role", "family")) {
             String value = trim(form.get(label)).toLowerCase(java.util.Locale.ROOT);
-            if (!value.isEmpty() && !NPC_ROLE.matcher(value).matches()) {
+            if (!value.isEmpty() && !com.lodygames.rpgquest.panel.npc.NpcRoles.ROLE_ID.matcher(value).matches()) {
                 return "« " + label + " » invalide (minuscules, chiffres, « _ - », 32 au plus).";
             }
             if (!value.isEmpty()) {

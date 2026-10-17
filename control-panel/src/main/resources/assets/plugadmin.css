@@ -1516,3 +1516,10 @@ details.tv-beacon{margin:0}
   .tv-search .btn{flex:1 1 auto;justify-content:center}
   .tv-pair>summary{width:100%;justify-content:center}
 }
+/* Issue #465 — « Changements dans le dialogue » (diff de sens d'un réimport) : lisible sur téléphone. */
+.sem-diff-list{list-style:none;padding:0;margin:.5rem 0}
+.sem-diff-list li{padding:.4rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.sem-diff .sem-before,.sem-diff .sem-after{font-size:.9em;margin:.15rem 0 0 .75rem;white-space:pre-wrap}
+.sem-diff .sem-before{color:#b42318}
+.sem-diff .sem-after{color:#067647}
+.ai-steps li{margin-bottom:.35rem}

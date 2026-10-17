@@ -34,6 +34,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > `/quests/catalogs`. Aucune migration. Dialogues livrés `encounter_*` inchangés (quête fixe).
 > Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-314).
 
+> **Modifier un dialogue existant avec une IA (#465, 17/10/2026)** — « Modifier avec une IA… » sur un
+> dialogue en source : pack ciblé (dialogue + quêtes et listes de ses PNJ, `baseElement`/`baseSha`) et
+> prompt prêt à copier, sans appel IA ; réimport par `/content/import` : même identifiant exigé, refus si
+> la source a changé depuis l'export, quêtes/listes vérifiées contre les relevés, « Changements dans le
+> dialogue » (diff de sens), remplacement explicite, rien publié. Validation : PENDING (TC-340).
+
 > **Dialogues des PNJ récurrents dans PlugAdmin (#430, 15/10/2026)** — copie d'un dialogue
 > « Hors source » de DEV vers la source, octet pour octet et vérifiée par empreinte
 > (`content.dev.read` + `content.dev.state`, `POST /dialogues/import`, sans effet en jeu) ; menu

@@ -177,6 +177,15 @@ public final class ContentPackImport {
      */
     public static Analysis analyze(String packYaml, ContentWorkspace workspace, RefData ref,
                                    Map<String, Decision> decisions) {
+        return analyze(packYaml, workspace, ref, decisions, null);
+    }
+
+    /**
+     * @param catalogs issue #465 — identifiants des listes de quêtes relevées sur le serveur, pour
+     *                 vérifier les {@code OFFER_CATALOG_QUEST} ; {@code null} = aucun relevé
+     */
+    public static Analysis analyze(String packYaml, ContentWorkspace workspace, RefData ref,
+                                   Map<String, Decision> decisions, Set<String> catalogs) {
         Map<String, Decision> choices = decisions == null ? Map.of() : decisions;
         if (packYaml == null || packYaml.isBlank()) {
             return Analysis.refused(Diagnostic.error("fichier", "Aucun contenu à importer."));
@@ -280,9 +289,10 @@ public final class ContentPackImport {
         for (String family : ContentPackSchema.FAMILIES) {
             for (Object raw : asList(content.get(family))) {
                 elements.add(element(family, raw, workspace, augmented, ref == null ? RefData.empty() : ref,
-                        choices, seen));
+                        choices, seen, catalogs));
             }
         }
+        checkBase(metadata, elements, workspace, envelope);
 
         List<Dependency> dependencies = readDependencies(pack.get("dependencies"), packQuestIds,
                 packNpcIds, workspace, augmented);
@@ -292,7 +302,7 @@ public final class ContentPackImport {
 
     private static Element element(String family, Object raw, ContentWorkspace workspace,
                                    RefData ref, RefData serverRef, Map<String, Decision> decisions,
-                                   Set<String> seen) {
+                                   Set<String> seen, Set<String> catalogs) {
         if (!(raw instanceof Map<?, ?> m)) {
             return invalid(family, "", "", "Élément mal formé : une table était attendue.");
         }
@@ -351,6 +361,7 @@ public final class ContentPackImport {
                 }
                 r.problems().forEach(p -> diagnostics.add(Diagnostic.error("contenu", p)));
                 diagnostics.addAll(DialogueValidator.validate(r.draft()));
+                diagnostics.addAll(DialogueReferenceCheck.check(r.draft(), ref, serverRef, catalogs));
                 yaml = DialogueYaml.write(r.draft());
             }
             default -> {
@@ -387,6 +398,69 @@ public final class ContentPackImport {
                 existing.get().sha256(), diff,
                 "Un contenu « " + slug + " » existe déjà et diffère. Choisir explicitement de le "
                         + "remplacer ou de l'ignorer — rien n'est écrasé sans décision.");
+    }
+
+    // ---- Pack exporté pour modification (issue #465) -----------------------------------------
+
+    /**
+     * Un pack produit par « Modifier avec une IA » ({@link DialogueAiExport}) est rattaché à UN
+     * contenu de la source et à son empreinte au moment de l'export. Au réimport :
+     * <ul>
+     *   <li>le contenu doit toujours être dans le pack, sous le même identifiant — sinon l'IA en a
+     *       créé un parallèle (erreur d'enveloppe) ;</li>
+     *   <li>la source ne doit pas avoir changé depuis l'export — sinon l'élément devient
+     *       {@link Status#INVALID} : le remplacer écraserait ce qui a été fait entre-temps.</li>
+     * </ul>
+     * Le remplacement lui-même reste une décision explicite ({@link Decision#REPLACE}).
+     */
+    private static void checkBase(Map<String, String> metadata, List<Element> elements,
+                                  ContentWorkspace workspace, List<Diagnostic> envelope) {
+        String base = metadata.getOrDefault(DialogueAiExport.BASE_ELEMENT, "").trim();
+        if (base.isEmpty()) {
+            return;
+        }
+        String baseSha = metadata.getOrDefault(DialogueAiExport.BASE_SHA, "").trim();
+        int at = -1;
+        for (int i = 0; i < elements.size(); i++) {
+            if (elements.get(i).key().equals(base)) {
+                at = i;
+            }
+        }
+        if (at < 0) {
+            envelope.add(Diagnostic.error("metadata." + DialogueAiExport.BASE_ELEMENT,
+                    "Ce pack a été exporté pour modifier « " + base + " », qui n'y figure plus sous cet "
+                            + "identifiant. Un identifiant changé créerait un contenu parallèle : "
+                            + "remettre l'identifiant d'origine."));
+            return;
+        }
+        if (elements.size() > 1) {
+            envelope.add(Diagnostic.warning("content",
+                    "Ce pack devait modifier seulement « " + base + " » ; il contient aussi d'autres "
+                            + "éléments. Vérifier qu'ils sont voulus."));
+        }
+        Element e = elements.get(at);
+        // Déjà identique (dont : relu juste après l'écriture de ce même pack) : rien à protéger.
+        if (e.status() == Status.INVALID || e.status() == Status.UNCHANGED) {
+            return;
+        }
+        var current = workspace == null ? java.util.Optional.<ContentWorkspace.ContentFile>empty()
+                : workspace.read(e.family(), e.slug());
+        String why = null;
+        if (current.isEmpty()) {
+            why = "« " + base + " » n'est plus dans la source depuis l'export : rien à remplacer.";
+        } else if (!current.get().sha256().equals(baseSha)) {
+            why = "La source de « " + base + " » a changé depuis l'export (empreinte "
+                    + shortSha(baseSha) + " → " + shortSha(current.get().sha256()) + ") : remplacer "
+                    + "écraserait ces modifications. Réexporter le dialogue et refaire la modification.";
+        }
+        if (why != null) {
+            elements.set(at, new Element(e.family(), e.slug(), e.id(), Status.INVALID, e.diagnostics(),
+                    e.yaml(), e.currentSha(), e.diff(), why));
+        }
+    }
+
+    private static String shortSha(String sha) {
+        return sha == null || sha.isBlank() ? "absente" : sha.substring(0, Math.min(12, sha.length()));
     }
 
     // ---- PNJ logiques (issue #211) -----------------------------------------------------------

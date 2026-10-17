@@ -69,6 +69,28 @@ en jeu** — le serveur garde son fichier tant que vous ne mettez pas une nouvel
 Si PlugAdmin a déjà un dialogue de ce nom, ou si le fichier a changé sur le serveur depuis la
 lecture, rien n'est copié.
 
+## Modifier un dialogue avec une IA
+
+Pour une transformation qui touche beaucoup de conditions, d'effets et de textes (par exemple
+passer d'une quête précise à « une quête au hasard dans une liste »), inutile de tout reprendre à
+la main : **Modifier avec une IA…** (en haut d'un dialogue enregistré dans PlugAdmin).
+
+1. **Copier le prompt** : il contient le dialogue tel qu'il est **enregistré**, les quêtes qu'il cite
+   (avec leur titre), les listes de quêtes de ses PNJ récurrents, et les conditions/effets que le jeu
+   sait vraiment exécuter. Les modifications non enregistrées de l'éditeur n'y sont pas.
+2. **Le coller dans une IA** (ChatGPT, Claude…) en écrivant ce que vous voulez changer à la place de
+   la ligne `<<< ÉCRIS ICI … >>>`. PlugAdmin n'appelle aucune IA.
+3. **Importer** le bloc YAML rendu dans **Import contenu**. L'analyse montre **Changements dans le
+   dialogue** : répliques, réponses, conditions et effets modifiés, ajoutés ou retirés, avec
+   « avant / après ». Les notes `#` du fichier actuel ne sont pas conservées : c'est signalé.
+4. **Remplacer l'existant**, puis confirmer : seul le dialogue de PlugAdmin change (une sauvegarde est
+   faite avant), **rien n'est en jeu**. Revenir sur le dialogue, vérifier l'aperçu, **Mettre en jeu**.
+
+Le réimport est **refusé** si l'IA a changé l'identifiant du dialogue (il en créerait un second), si
+elle cite une quête ou une liste que le serveur ne connaît pas, ou si le dialogue a été modifié dans
+PlugAdmin depuis l'export (réexporter alors). Sans relevé du serveur, les références sont dites
+« non vérifiées », jamais bonnes.
+
 ## Conditions et autres effets
 
 Sous chaque réponse, **Conditions et autres effets** (replié) :

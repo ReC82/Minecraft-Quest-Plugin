@@ -4,6 +4,9 @@ import com.lodygames.rpgquest.panel.content.ContentPackImport;
 import com.lodygames.rpgquest.panel.content.ContentPackSchema;
 import com.lodygames.rpgquest.panel.content.ContentPackSummary;
 import com.lodygames.rpgquest.panel.content.ContentWorkspace;
+import com.lodygames.rpgquest.panel.content.DialogueAiExport;
+import com.lodygames.rpgquest.panel.content.DialogueSemanticDiff;
+import com.lodygames.rpgquest.panel.content.DialogueYaml;
 import com.lodygames.rpgquest.panel.content.Diagnostic;
 import com.lodygames.rpgquest.panel.content.StoryKit;
 import com.lodygames.rpgquest.panel.content.TextDiff;
@@ -71,7 +74,7 @@ public final class ContentImportPages {
         sb.append(storyKitCard(analysis == null && applied == null));
         sb.append(uploadCard(packYaml, analysis == null));
         if (analysis != null) {
-            sb.append(analysisCard(analysis, packYaml, decisions));
+            sb.append(analysisCard(analysis, packYaml, decisions, workspace));
         }
         sb.append(aboutCard());
         return sb.toString();
@@ -154,7 +157,8 @@ public final class ContentImportPages {
     // ---- Analyse -------------------------------------------------------------------------------
 
     private static String analysisCard(ContentPackImport.Analysis a, String packYaml,
-                                       Map<String, ContentPackImport.Decision> decisions) {
+                                       Map<String, ContentPackImport.Decision> decisions,
+                                       ContentWorkspace workspace) {
         StringBuilder sb = new StringBuilder("<section class=\"card\">");
         sb.append(Ui.sectionTitle("check", "2. Analyse du pack"));
 
@@ -171,7 +175,10 @@ public final class ContentImportPages {
             sb.append("<p class=\"muted\">");
             a.metadata().forEach((k, v) -> sb.append("<strong>").append(Http.esc(k)).append("</strong> ")
                     .append(Http.esc(v)).append(" &middot; "));
-            sb.append("<em>informatif : ces métadonnées n'influent sur aucune décision.</em></p>");
+            sb.append(a.metadata().containsKey(DialogueAiExport.BASE_ELEMENT)
+                    ? "<em>pack exporté pour modifier un contenu existant (#465) : il doit garder son "
+                            + "identifiant, et la source ne doit pas avoir changé depuis l'export.</em></p>"
+                    : "<em>informatif : ces métadonnées n'influent sur aucune décision.</em></p>");
         }
 
         sb.append("<p class=\"npc-summary\">")
@@ -195,7 +202,7 @@ public final class ContentImportPages {
         sb.append(editorialPreview(a, packYaml));
 
         for (ContentPackImport.Element e : a.elements()) {
-            sb.append(element(e, decisions));
+            sb.append(element(e, decisions, workspace));
         }
 
         sb.append(confirmForm(a, packYaml, decisions));
@@ -306,7 +313,8 @@ public final class ContentImportPages {
     }
 
     private static String element(ContentPackImport.Element e,
-                                  Map<String, ContentPackImport.Decision> decisions) {
+                                  Map<String, ContentPackImport.Decision> decisions,
+                                  ContentWorkspace workspace) {
         StringBuilder sb = new StringBuilder("<div class=\"npc-item\">");
         sb.append("<p class=\"meta-line\"><span class=\"badge ").append(badgeClass(e.status()))
                 .append("\">").append(statusLabel(e.status())).append("</span> ")
@@ -335,6 +343,9 @@ public final class ContentImportPages {
                     "btn secondary", decisions));
             sb.append("</div>");
         }
+        if (!e.diff().isEmpty() && "dialogues".equals(e.family())) {
+            sb.append(dialogueChanges(e, workspace));
+        }
         if (!e.diff().isEmpty()) {
             sb.append(diff(e.diff()));
         } else if (e.writes() && e.yaml() != null && !"npcs".equals(e.family())) {
@@ -342,6 +353,57 @@ public final class ContentImportPages {
                     + "<div class=\"codeblock bounded\"><pre>").append(Http.esc(e.yaml())).append("</pre></div></details>");
         }
         return sb.append("</div>").toString();
+    }
+
+    /**
+     * Issue #465 — ce qui change <em>dans le dialogue</em> (répliques, réponses, conditions, effets),
+     * au-dessus du diff de lignes : c'est ce qu'il faut relire avant de remplacer le brouillon. Les
+     * notes « # » du fichier actuel, que l'import ne conserve pas, sont signalées.
+     */
+    private static String dialogueChanges(ContentPackImport.Element e, ContentWorkspace workspace) {
+        var current = workspace.read(e.family(), e.slug());
+        if (current.isEmpty() || e.yaml() == null) {
+            return "";
+        }
+        var before = DialogueYaml.read(current.get().text());
+        var after = DialogueYaml.read(e.yaml());
+        if (before.draft() == null || after.draft() == null) {
+            return "";
+        }
+        DialogueSemanticDiff.Result r = DialogueSemanticDiff.compare(before.draft(), after.draft());
+        StringBuilder sb = new StringBuilder("<div class=\"sem-diff\">");
+        if (current.get().text().lines().anyMatch(l -> l.trim().startsWith("#"))) {
+            sb.append(Ui.banner("warning", "Le fichier actuel contient des notes « # » : elles ne sont pas "
+                    + "conservées par l'import (elles apparaissent retirées dans le diff de lignes)."));
+        }
+        if (r.identical()) {
+            sb.append("<p class=\"muted\">Aucun changement de sens : mêmes répliques, réponses, conditions "
+                    + "et effets. Seule la mise en forme du fichier diffère.</p>");
+            return sb.append("</div>").toString();
+        }
+        sb.append("<p><strong>Changements dans le dialogue</strong> — ")
+                .append(r.count(DialogueSemanticDiff.Kind.CHANGED)).append(" modifié(s), ")
+                .append(r.count(DialogueSemanticDiff.Kind.ADDED)).append(" ajouté(s), ")
+                .append(r.count(DialogueSemanticDiff.Kind.REMOVED)).append(" retiré(s) ; ")
+                .append(r.unchangedNodes()).append(" réplique(s) inchangée(s) sur ").append(r.nodesBefore())
+                .append(".</p><ul class=\"sem-diff-list\">");
+        for (DialogueSemanticDiff.Change c : r.changes()) {
+            sb.append("<li class=\"sem-").append(c.kind().name().toLowerCase(java.util.Locale.ROOT)).append("\">")
+                    .append("<span class=\"badge ").append(switch (c.kind()) {
+                        case ADDED -> "text-bg-success\">ajouté";
+                        case REMOVED -> "text-bg-danger\">retiré";
+                        case CHANGED -> "text-bg-info\">modifié";
+                    }).append("</span> <strong>").append(Http.esc(c.where())).append("</strong> — ")
+                    .append(Http.esc(c.what()));
+            if (!c.before().isEmpty()) {
+                sb.append("<div class=\"sem-before\">avant : ").append(Http.esc(c.before())).append("</div>");
+            }
+            if (!c.after().isEmpty()) {
+                sb.append("<div class=\"sem-after\">après : ").append(Http.esc(c.after())).append("</div>");
+            }
+            sb.append("</li>");
+        }
+        return sb.append("</ul></div>").toString();
     }
 
     /**

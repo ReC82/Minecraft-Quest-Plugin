@@ -316,7 +316,10 @@ id: rpgquest:libraire</code></pre>
       par leur nom et cocher les PNJ qui la proposent (parcours simplifié, issue #414). Depuis la fiche,
       « Configurer le dialogue de ce PNJ » ouvre son dialogue ; un dialogue présent seulement sur le serveur
       s'y copie à l'identique pour être modifié, et la réponse « Du travail ? » peut « Proposer une quête
-      au hasard dans une liste » (issue #430).
+      au hasard dans une liste » (issue #430). Pour une transformation plus large, « Modifier avec une
+      IA… » exporte le dialogue et son contexte avec un prompt prêt à copier ; la version rendue par l'IA
+      se réimporte dans Import contenu, où les changements (répliques, réponses, conditions, effets) sont
+      relus avant de remplacer le dialogue de PlugAdmin (issue #465).
     </p>
     <p>
       Des PNJ de rencontre (Brigand des bois, Marchand égaré, Forgeron perdu…) apparaissent seuls

@@ -65,6 +65,7 @@ quest:
   completed-subtitle: "<white><quest></white>"
   reward-summary-header: "<gold><bold>Quête terminée :</bold></gold> <white><quest></white> <gray>— récompenses :</gray>"
   reward-line-experience: "<yellow> + <amount> XP</yellow>"
+  reward-line-rpg-experience: "<yellow> + <amount> XP RPG</yellow>"
   reward-line-item: "<yellow> + <amount>x <item></yellow>"
   reward-line-special: "<yellow> + Récompense spéciale</yellow>"
   # Issue #177 : tirage d'une table de récompenses aléatoires. <item> = récompense gagnée, remise dans

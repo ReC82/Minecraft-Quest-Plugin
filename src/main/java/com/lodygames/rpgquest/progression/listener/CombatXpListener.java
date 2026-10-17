@@ -66,9 +66,6 @@ public final class CombatXpListener implements Listener {
         if (killer == null) {
             return;
         }
-        if (!current.keepVanillaXp()) {
-            event.setDroppedExp(0);
-        }
         if (isSpawnerOrigin(victim) || mobService.isSplitOffspring(victim)) {
             return;
         }

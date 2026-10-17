@@ -273,7 +273,7 @@ public final class ProgressionService implements PluginService, Listener {
                     ? MM.deserialize("<gold><bold>Niveau supérieur !</bold></gold> <white><skill></white> <yellow>niveau <level></yellow>",
                             Placeholder.unparsed("skill", label(result.skill())),
                             Placeholder.unparsed("level", String.valueOf(result.newLevel())))
-                    : MM.deserialize("<green>+<amount> XP</green> <gray>(<skill>)</gray>",
+                    : MM.deserialize("<green>+<amount> XP RPG</green> <gray>(<skill>)</gray>",
                             Placeholder.unparsed("amount", String.valueOf(result.amountGranted())),
                             Placeholder.unparsed("skill", label(result.skill())));
 

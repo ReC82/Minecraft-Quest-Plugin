@@ -6740,3 +6740,32 @@ PNJ de test qui a une définition (pas un PNJ joué par le propriétaire en ce m
 6.  Un PNJ existant en `role: quest_giver` s'affiche « Donneur de quête », sans erreur.
 
 **Reset** : remettre le rôle d'origine (ou vider le champ) depuis les Réglages avancés.
+
+### TC-344 — Marchands vendeurs / acheteurs administrés depuis PlugAdmin (issue #17, PENDING MANUAL VALIDATION)
+
+**Préparation** : PlugAdmin (DEV) → « Marchands » → « Rafraîchir ». Compte avec « Économie — écriture ».
+En jeu, un compte avec quelques LodyCoins (`/money`), de la place, 16 pierres taillées (COBBLESTONE).
+
+1.  Page : **Attendu** `village_merchant` (Vente et rachat) et `atelier_demo`, badge « exemple fourni »,
+    « Ouvert par : dialogue … » quand un dialogue les ouvre ; pas de bouton Supprimer pour eux.
+2.  « Nouveau marchand » : nom « Boutique d'essai », « Boutique », offre 1 = BREAD × 4, prix **vide** →
+    **Attendu** refus « aucun prix n'est jamais mis par défaut ». Prix 3 → créé, ouvert, « Aucun dialogue ne
+    l'ouvre encore ».
+3.  « Nouveau marchand » : « Comptoir d'essai », « Rachat », offre COBBLESTONE × 8 pour 2. Créé.
+4.  Dialogues → un PNJ de test → deux choix : « Ouvrir la boutique » (Ouvrir un marchand → Boutique d'essai)
+    et « Vendre des objets » (Ouvrir un marchand → Comptoir d'essai). **Attendu** : la liste déroulante
+    montre les catalogues avec leur nature. Publier.
+5.  En jeu, « Ouvrir la boutique » : **Attendu** pain 4 × pour 3, solde affiché en bas ; acheter → solde
+    diminué de 3 dans la vitrine. Sans fonds : « Fonds insuffisants », rien reçu. Inventaire plein :
+    message de place, rien débité.
+6.  « Vendre des objets » : vendre 8 pierres → +2 ; sans pierres : refus clair ; un autre objet n'est
+    jamais proposé ni racheté.
+7.  Vitrine ouverte, modifier le prix dans PlugAdmin (3 → 5) puis cliquer : **Attendu** « Le marchand vient
+    de changer son étal », rien échangé ; cliquer à nouveau → achat à 5.
+8.  « Fermer la boutique » : **Attendu** le dialogue répond « Cette boutique est fermée pour le moment ».
+9.  Double-clic rapide sur une offre de rachat avec exactement 8 pierres : une seule vente.
+10. Supprimer « Boutique d'essai » encore citée par le dialogue : **Attendu** bouton absent, explication ;
+    retirer l'action du dialogue, rafraîchir, supprimer (case de confirmation) → fichier retiré.
+
+**Reset** : supprimer le PNJ / dialogue de test et les catalogues d'essai depuis PlugAdmin ; les échanges
+n'ont touché que le solde et l'inventaire du compte de test.

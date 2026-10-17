@@ -5590,6 +5590,23 @@ Vérifié dans `MoneyCommand.java`, `MerchantCommand.java`, `MarketCommand.java`
 
 Un marchand n'a **aucun lien direct à une entité PNJ** — il ne s'ouvre que via l'action de dialogue `OPEN_MERCHANT` (section 4) — ou `/merchant open` pour un admin. Format YAML complet (offres `SELL_TO_PLAYER`/`BUY_FROM_PLAYER`, offre `price-ref` liée au catalogue, conditions cumulatives permission/quête/niveau) : [MERCHANT_FORMAT.md](../MERCHANT_FORMAT.md).
 
+### Catalogues de marchands depuis PlugAdmin (#17)
+
+Page **PlugAdmin → Marchands** (`/merchants`, « Économie — lecture » pour voir, « Économie — écriture » pour
+modifier ; actions agent `merchant.catalog.status`, `merchant.save`, `merchant.duplicate`,
+`merchant.toggle`, `merchant.delete`). Chaque fichier `merchants/*.yml` est un **catalogue** indépendant des
+PNJ, de nature `type: SELL` (boutique), `BUY` (rachat des seuls objets listés) ou `MIXED` (historique,
+défaut), et `enabled: false` = boutique fermée. Créer (identifiant tiré du nom), modifier (contrôle de
+version), dupliquer (copie fermée), ouvrir/fermer, supprimer (confirmation ; refusé si un dialogue l'ouvre
+ou pour un exemple fourni). Chaque offre : un prix de la page Prix et coûts (`price-ref`) **ou** un objet
+(Minecraft ou RPGQuest, quantité 1–64, prix en pièces obligatoire), conditions facultatives quête/niveau/
+permission. Écriture relue par le vrai parseur, atomique, rechargement immédiat, ancienne version remise en
+cas de refus. Liaison PNJ : action de dialogue « Ouvrir un marchand » (liste des catalogues dans l'éditeur
+de dialogues) ; « Ouvrir la boutique » = catalogue `SELL`, « Vendre des objets » = catalogue `BUY`.
+Vitrine : solde LodyCoins affiché, clic refusé si l'étal a changé depuis l'affichage. Audit
+`transactions.context = marchand:<id> …`. Prix = valeurs de réglage, aucune règle économique définitive.
+Aucune migration de base. Détail : [MERCHANT_FORMAT.md](../MERCHANT_FORMAT.md).
+
 ### Prix et coûts — catalogue `prices.yml` (#336)
 
 Fichier `plugins/RPGQuest/prices.yml`, **écrit uniquement depuis PlugAdmin → Prix et coûts** (`/prices`,

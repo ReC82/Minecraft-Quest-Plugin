@@ -48,6 +48,36 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Marchands : catalogues vente / rachat administrés depuis PlugAdmin (#17)
+
+### Changement
+
+JAR + PlugAdmin. Les fichiers `merchants/*.yml` acceptent `type` (SELL, BUY, MIXED ; absent = MIXED) et
+`enabled` (absent = true) ; ils se gèrent depuis PlugAdmin → « Marchands » (actions `merchant.*`). Vitrine :
+solde affiché, clic refusé si l'étal a changé, boutique fermable. Fichiers existants inchangés et valides.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest (`scripts/deploy-verygames.sh -y`), redémarrer DEV ; redéployer PlugAdmin
+(`scripts/plugadmin/deploy.sh`). Aucune migration de base, aucun fichier de configuration à copier.
+Aucun marchand n'est créé ni modifié par le déploiement.
+
+### Sauvegarde préalable
+
+Celles des scripts (JAR précédent daté, `data.db`).
+
+### Validation
+
+RCON `merchant list` : mêmes marchands qu'avant. `/merchants` servi (303 → /login). TC-344 en jeu
+(PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR précédent. L'ancien parseur ignore `type` et `enabled` : un marchand fermé redeviendrait
+ouvert (et mixte). Avant un rollback, supprimer un catalogue qui doit rester fermé (ou retirer son action de dialogue).
+
+---
+
 ## 2026-10-17 - PNJ : rôle métier affiché en saisie libre dans PlugAdmin (#127)
 
 ### Changement

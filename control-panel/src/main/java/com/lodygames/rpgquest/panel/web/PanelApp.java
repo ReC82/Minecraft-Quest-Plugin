@@ -344,6 +344,9 @@ public final class PanelApp {
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",
                 Permission.MOB_READ, agentPages::mobs));
+        // Issue #214 : modèles complets, prompt IA, import vérifié d'un fichier de profil, génération.
+        route("/mobs/import", this::handleMobImport);
+        route("/mobs/template", this::handleMobTemplate);
         // Issues #177 / #474 — catalogue des récompenses et tables de tirage. Lecture : ECONOMY_READ ;
         // les écritures passent par /agents/action (reward.*, ECONOMY_WRITE).
         route("/rewards", exchange -> handleBusinessPage(exchange, "/rewards", "Récompenses",
@@ -5155,6 +5158,187 @@ public final class PanelApp {
                 permissions.can(session.effective(), Permission.CONTENT_IMPORT)));
     }
 
+    // ---- Import de profils de mob (issue #214) ---------------------------------------------------
+
+    private String mobAgent(Map<String, String> source) {
+        String requested = source.getOrDefault("agent", "").trim();
+        return agentRegistry.byId(requested).isPresent() ? requested : config.agents().defaultAgentId();
+    }
+
+    private void handleMobImport(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.MOB_WRITE)) {
+            forbidden(exchange, session, "/mobs");
+            return;
+        }
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            handleMobImportPost(exchange, session);
+            return;
+        }
+        Map<String, String> q = Http.query(exchange);
+        String agentId = mobAgent(q);
+        var ctx = agentPages.mobImportContext(agentId);
+        String random = q.getOrDefault("random", "");
+        String kind = com.lodygames.rpgquest.panel.mob.MobImportContext.isKind(q.get("kind")) ? q.get("kind")
+                : com.lodygames.rpgquest.panel.mob.MobImportContext.isKind(random) ? random : "boss-community";
+        String from = q.getOrDefault("from", "").trim();
+        String yaml = "";
+        String notice = "";
+        if (com.lodygames.rpgquest.panel.mob.MobImportContext.isKind(random)) {
+            yaml = com.lodygames.rpgquest.panel.mob.MobRandomProfile.generate(random, ctx, new java.security.SecureRandom());
+            notice = "Brouillon « " + com.lodygames.rpgquest.panel.mob.MobImportContext.kindLabel(random)
+                    + " » généré dans l'étape 3 : rien n'est encore créé. Le relire, le modifier si besoin, puis « Vérifier ».";
+        } else if (!from.isEmpty()) {
+            var profile = ctx.profile(from);
+            if (profile.isPresent() && !profile.get().yaml().isBlank()) {
+                yaml = profile.get().yaml();
+            } else {
+                notice = "Profil « " + from + " » introuvable dans le dernier relevé (ou plugin antérieur à l'export) : "
+                        + "rafraîchir la liste des profils.";
+                from = "";
+            }
+        }
+        AgentActionRow check = null;
+        String checkId = q.getOrDefault("check", "").trim();
+        if (!checkId.isEmpty()) {
+            check = agentStore.action(checkId)
+                    .filter(a -> "mob.definition.import.check".equals(a.type()) && a.agentId().equals(agentId))
+                    .orElse(null);
+            if (check != null && yaml.isEmpty()) {
+                yaml = check.params().getOrDefault("yaml", "");
+            }
+        }
+        StringBuilder body = new StringBuilder(actionFeedback(q));
+        body.append(MobImportPages.render(new MobImportPages.View(agentId, ctx, kind, from, yaml, notice, check,
+                check == null ? Optional.empty() : agentPages.actionDetails(check))));
+        Http.html(exchange, 200, renderPage("Modèles et import de profils", session, "/mobs", body.toString()));
+    }
+
+    private void handleMobImportPost(HttpExchange exchange, Session session) throws IOException {
+        Optional<Map<String, String>> body;
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        int max = 512 * 1024;
+        if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/form-data")) {
+            byte[] raw = exchange.getRequestBody().readNBytes(max + 1);
+            var parsed = raw.length > max ? Optional.<com.lodygames.rpgquest.panel.http.Multipart.Form>empty()
+                    : com.lodygames.rpgquest.panel.http.Multipart.parse(contentType, raw);
+            body = parsed.map(f -> {
+                Map<String, String> fields = new LinkedHashMap<>(f.fields());
+                f.file("yaml_file").filter(file -> file.data().length > 0).ifPresent(file ->
+                        fields.put("yaml", new String(file.data(), StandardCharsets.UTF_8)));
+                return fields;
+            });
+        } else {
+            body = Http.formBody(exchange, max);
+        }
+        if (body.isEmpty()) {
+            Http.redirect(exchange, "/mobs/import?err=" + enc("Fichier trop volumineux."));
+            return;
+        }
+        Map<String, String> form = body.get();
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String agentId = mobAgent(form);
+        String back = "/mobs/import?agent=" + enc(agentId);
+        boolean apply = "apply".equals(form.get("step"));
+        String type = apply ? "mob.definition.import.apply" : "mob.definition.import.check";
+        Map<String, String> input = new LinkedHashMap<>();
+        String checkId = form.getOrDefault("check", "").trim();
+        if (apply) {
+            // Ce qui est écrit est ce que le serveur a vérifié : le YAML et l'empreinte viennent de
+            // l'action de vérification enregistrée ici, jamais du navigateur.
+            Optional<AgentActionRow> check = agentStore.action(checkId)
+                    .filter(a -> "mob.definition.import.check".equals(a.type()) && a.agentId().equals(agentId)
+                            && a.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS);
+            Map<String, Object> details = check.flatMap(agentPages::actionDetails).orElse(Map.of());
+            if (check.isEmpty() || !Boolean.TRUE.equals(details.get("valid"))) {
+                Http.redirect(exchange, back + "&err=" + enc("Vérification introuvable ou refusée : vérifier à nouveau le fichier."));
+                return;
+            }
+            String expected = String.valueOf(details.getOrDefault("existingSha", ""));
+            boolean replace = "true".equals(form.get("replace"));
+            if (!expected.isBlank() && !replace) {
+                Http.redirect(exchange, back + "&check=" + enc(checkId) + "&err="
+                        + enc("Cocher « remplacer le profil existant » après avoir relu les différences. Rien n'a été écrit."));
+                return;
+            }
+            boolean alreadySent = agentStore.recentActions(agentId, 100).stream()
+                    .anyMatch(a -> type.equals(a.type()) && checkId.equals(a.params().get("check_id"))
+                            && (!a.status().terminal() || a.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS));
+            if (alreadySent) {
+                Http.redirect(exchange, "/mobs?agent=" + enc(agentId) + "&err="
+                        + enc("Ce fichier a déjà été envoyé : rien n'a été envoyé en double."));
+                return;
+            }
+            input.put("yaml", check.get().params().getOrDefault("yaml", ""));
+            input.put("expected_sha", expected);
+            input.put("replace", replace ? "true" : "false");
+        } else {
+            input.put("yaml", form.getOrDefault("yaml", ""));
+        }
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate(type, input);
+        if (!v.valid()) {
+            audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                    "DENIED", v.error(), rid);
+            Http.redirect(exchange, back + "&err=" + enc(v.error()));
+            return;
+        }
+        Map<String, String> params = new LinkedHashMap<>(v.params());
+        if (apply) {
+            params.put("check_id", checkId);
+        }
+        String id = agentStore.createAction(agentId, type, params, session.username());
+        audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type + " action=" + id,
+                "PENDING", safeParams(params), rid);
+        LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
+                + " type=" + type + " action=" + id + " by=" + session.username());
+        Http.redirect(exchange, apply ? "/mobs?agent=" + enc(agentId) + "&toast=" + enc(id)
+                : back + "&check=" + enc(id) + "#mob-import-check");
+    }
+
+    /** {@code ?kind=} : un modèle du moteur installé ; {@code ?profile=} : le fichier complet d'un profil. */
+    private void handleMobTemplate(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.MOB_READ)) {
+            forbidden(exchange, session, "/mobs");
+            return;
+        }
+        Map<String, String> q = Http.query(exchange);
+        String agentId = mobAgent(q);
+        var ctx = agentPages.mobImportContext(agentId);
+        String kind = q.getOrDefault("kind", "");
+        String profile = q.getOrDefault("profile", "").trim();
+        String text;
+        String fileName;
+        if (!profile.isEmpty()) {
+            var p = ctx.profile(profile);
+            text = p.map(com.lodygames.rpgquest.panel.mob.MobImportContext.Profile::yaml).orElse("");
+            fileName = profile.replaceAll("^[a-z0-9_.-]+:", "").replaceAll("[^a-z0-9_.-]", "_") + ".yml";
+        } else {
+            text = ctx.templates().getOrDefault(kind, "");
+            fileName = "lodyquests-modele-" + kind + ".yml";
+        }
+        if (text.isBlank()) {
+            Http.redirect(exchange, "/mobs/import?agent=" + enc(agentId) + "&err="
+                    + enc("Rien à télécharger : rafraîchir les catalogues Minecraft et la liste des profils."));
+            return;
+        }
+        audit.record(session.username(), "mobs.template.download", profile.isEmpty() ? "kind=" + kind : "profile=" + profile,
+                "OK", fileName, UUID.randomUUID().toString().substring(0, 8));
+        Http.attachment(exchange, fileName, "application/yaml", text.getBytes(StandardCharsets.UTF_8));
+    }
+
     /** Issue #430 — où en est la copie possible d'un dialogue présent seulement sur DEV. */
     private com.lodygames.rpgquest.panel.content.DialogueServerCopy dialogueServerCopy(String agentId, String slug) {
         boolean pending = agentStore.recentActions(agentId, 200).stream()
@@ -5928,6 +6112,7 @@ public final class PanelApp {
         // Pages atteignables sans entrée de navigation propre : elles existent, et une action peut
         // légitimement vouloir y revenir.
         paths.add("/content/import");
+        paths.add("/mobs/import");
         paths.add("/ai/studio");
         paths.add("/npcs/diagnostic");
         paths.add("/npcs/encounters");

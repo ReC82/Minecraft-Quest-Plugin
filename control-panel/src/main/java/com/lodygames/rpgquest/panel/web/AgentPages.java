@@ -10333,6 +10333,11 @@ public final class AgentPages {
                     + "data-bs-target=\"#mob-new-def\" aria-expanded=\"false\" aria-controls=\"mob-new-def\">")
                     .append(Icons.icon("plus")).append("Nouveau profil</button>");
         }
+        if (canWrite) {
+            // Issue #214 : modèle complet, import d'un fichier rempli (par une IA ou à la main), génération.
+            sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/mobs/import?agent=").append(Http.esc(agentId))
+                    .append("\">").append(Icons.icon("export")).append("Modèles, IA et import de fichier</a>");
+        }
         if (canTest) {
             sb.append(compactRefresh(session, agentId, "mob.test.clear", "Nettoyer les instances de test",
                     "btn-outline-danger", "/mobs"));
@@ -10340,6 +10345,7 @@ public final class AgentPages {
         sb.append("</div>");
         if (canWrite) {
             sb.append("<div class=\"collapse\" id=\"mob-new-def\"><div class=\"card card-body npc-formcard\">");
+            sb.append(MobImportPages.shortcuts(agentId));
             sb.append(mobDefForm(session, agentId, null, "mob-new-def"));
             sb.append("</div></div>");
         }
@@ -10394,6 +10400,19 @@ public final class AgentPages {
         }
         sb.append("</div>");
         return sb.toString();
+    }
+
+    /** Issue #214 — derniers relevés utiles à l'import de profils de mob. */
+    public com.lodygames.rpgquest.panel.mob.MobImportContext mobImportContext(String agentId) {
+        return com.lodygames.rpgquest.panel.mob.MobImportContext.of(
+                latestDetails(agentId, "mob.catalogs").orElse(null),
+                latestDetails(agentId, "mob.list").orElse(null),
+                latestDetails(agentId, "reward.catalog.status").orElse(null));
+    }
+
+    /** Issue #214 — détails d'une action précise (vérification d'un fichier importé). */
+    public Optional<Map<String, Object>> actionDetails(AgentActionRow row) {
+        return detailsOf(row);
     }
 
     // ---- Boss communautaires (issue #175) --------------------------------------------------------
@@ -11426,6 +11445,20 @@ public final class AgentPages {
             sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Capacités</span> ").append(join(abilities)).append("</p>");
         }
 
+        // Issue #214 : le formulaire n'édite pas tout (drops, capacités avancées) — le fichier complet, si.
+        if (!str(m.get("yaml")).isBlank()) {
+            sb.append("<p class=\"field-help\">Le formulaire « Modifier » ne montre pas tout (butin, capacités "
+                    + "avancées) : <strong>Exporter ce profil</strong> donne le fichier complet, et « Modifier avec une "
+                    + "IA » le fait retoucher puis réimporter, avec les différences à relire.</p>");
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/mobs/template?agent=").append(Http.esc(agentId))
+                    .append("&amp;profile=").append(Http.esc(id)).append("\">").append(Icons.icon("export"))
+                    .append("Exporter ce profil</a> ");
+            if (canWrite) {
+                sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/mobs/import?agent=").append(Http.esc(agentId))
+                        .append("&amp;from=").append(Http.esc(id)).append("\">").append(Icons.icon("edit"))
+                        .append("Modifier avec une IA</a> ");
+            }
+        }
         if (canWrite) {
             sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"button\" data-bs-toggle=\"collapse\" "
                     + "data-bs-target=\"#mob-edit-").append(index).append("\" aria-expanded=\"false\">")

@@ -111,6 +111,8 @@ public final class AgentActionCatalog {
     private static final int MAX_BUILD_SITE_BRIEF = com.lodygames.rpgquest.panel.building.BuildingProject.MAX_BRIEF;
     /** Issue #94 — borne du plan transmis, identique à celle de l'exécuteur côté plugin. */
     private static final int MAX_BUILD_PLAN = 64_000;
+    /** Miroir de {@code SpecialMobImport.MAX_CHARS} côté plugin, qui revalide (issue #214). */
+    public static final int MAX_MOB_PROFILE_CHARS = 32_000;
     /** Familles de contenu exportables (issue #108) — miroir de {@code ContentFamily} côté plugin. */
     private static final java.util.Set<String> CONTENT_FAMILIES =
             java.util.Set.of("all", "quests", "stories", "dialogues", "npcs");
@@ -658,6 +660,12 @@ public final class AgentActionCatalog {
         addContentWrite("mob.definition.create", Permission.MOB_WRITE, "Créer un profil de mob spécial/boss", "mob.list");
         addContentWrite("mob.definition.update", Permission.MOB_WRITE, "Modifier un profil de mob spécial/boss", "mob.list");
         addContentWrite("mob.definition.toggle", Permission.MOB_WRITE, "Activer/désactiver un profil", "mob.list");
+        // Issue #214 : import d'un fichier de profil rempli hors PlugAdmin. La vérification n'écrit
+        // rien ; l'écriture ne touche que le profil importé et ne fait jamais apparaître de créature.
+        add("mob.definition.import.check", Permission.MOB_WRITE, false, false,
+                "Vérifier un fichier de profil de mob avant import");
+        addContentWrite("mob.definition.import.apply", Permission.MOB_WRITE,
+                "Importer un profil de mob spécial/boss", "mob.list");
         addContentWrite("mob.spawn-settings.set", Permission.MOB_WRITE, "Régler le throttle Wild (issue #169)", "mob.list");
         addSensitiveWrite("mob.test.spawn", Permission.MOB_TEST_SPAWN, true,
                 "Faire apparaître une instance de test", "mob.list");
@@ -2207,6 +2215,27 @@ public final class AgentActionCatalog {
                     }
                     params.put("summon_entity_type", summonType);
                     params.put("summon_chance", trimNumber(chance));
+                }
+            }
+            // Issue #214 : le fichier est une DONNÉE, revalidée par le parseur réel du plugin ; le panel
+            // n'en borne que la taille, comme le plan d'un bâtiment (#94).
+            case "mob.definition.import.check", "mob.definition.import.apply" -> {
+                String yaml = form.get("yaml") == null ? "" : form.get("yaml").strip();
+                if (yaml.isEmpty()) {
+                    return Validation.fail("Aucun fichier de profil à vérifier : déposer le fichier ou coller son contenu.");
+                }
+                if (yaml.length() > MAX_MOB_PROFILE_CHARS) {
+                    return Validation.fail("Fichier trop volumineux : " + yaml.length() + " caractères pour un maximum de "
+                            + MAX_MOB_PROFILE_CHARS + ".");
+                }
+                params.put("yaml", yaml);
+                if ("mob.definition.import.apply".equals(type)) {
+                    String sha = trim(form.get("expected_sha")).toLowerCase(java.util.Locale.ROOT);
+                    if (!sha.isEmpty() && !sha.matches("[0-9a-f]{64}")) {
+                        return Validation.fail("Empreinte du profil vérifié invalide : vérifier à nouveau le fichier.");
+                    }
+                    params.put("expected_sha", sha);
+                    params.put("replace", "true".equals(trim(form.get("replace"))) ? "true" : "false");
                 }
             }
             case "mob.definition.toggle" -> {

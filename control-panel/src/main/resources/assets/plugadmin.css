@@ -1523,3 +1523,10 @@ details.tv-beacon{margin:0}
 .sem-diff .sem-before{color:#b42318}
 .sem-diff .sem-after{color:#067647}
 .ai-steps li{margin-bottom:.35rem}
+/* Issue #214 — modèles, IA et import de profils de mob */
+.mob-kinds{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.75rem}
+.mob-kind{border:1px solid var(--line);border-radius:.5rem;padding:.6rem .75rem}
+.mob-shortcuts{border:1px dashed var(--line);border-radius:.5rem;padding:.6rem .75rem;margin-bottom:1rem}
+.mob-issues li{overflow-wrap:anywhere;margin-bottom:.25rem;color:#b42318}
+.mob-issues.warn li{color:inherit}
+pre.mob-cell{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85em}

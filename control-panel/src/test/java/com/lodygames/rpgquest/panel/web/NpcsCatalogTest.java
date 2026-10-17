@@ -1000,8 +1000,11 @@ class NpcsCatalogTest {
         assertFalse(page.contains("avec définition ·"), "plus de statistiques compactées");
         assertTrue(page.contains("href=\"/npcs/diagnostic\""), "le diagnostic a sa page");
         assertTrue(page.contains("<strong>2</strong> PNJ"), "un total simple");
+        // Le jeton CSRF (base64url aléatoire, répété dans chaque formulaire) contient parfois « pdc »
+        // à la casse près (~0,14 % des sessions) : il n'est pas du texte affiché, on l'exclut (#506).
+        String shown = page.replace(csrf(page), "").toLowerCase(java.util.Locale.ROOT);
         for (String jargon : new String[] {"canonique", "runtime", "heartbeat", "PDC", "YAML", "binding"}) {
-            assertFalse(page.toLowerCase(java.util.Locale.ROOT).contains(jargon.toLowerCase(java.util.Locale.ROOT)),
+            assertFalse(shown.contains(jargon.toLowerCase(java.util.Locale.ROOT)),
                     "pas de jargon dans le parcours normal : " + jargon);
         }
     }

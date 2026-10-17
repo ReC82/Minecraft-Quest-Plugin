@@ -1530,3 +1530,5 @@ details.tv-beacon{margin:0}
 .mob-issues li{overflow-wrap:anywhere;margin-bottom:.25rem;color:#b42318}
 .mob-issues.warn li{color:inherit}
 pre.mob-cell{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85em}
+#mob-accordion .accordion-button{flex-wrap:wrap;row-gap:.25rem}
+#mob-accordion .accordion-button code{overflow-wrap:anywhere;white-space:normal}

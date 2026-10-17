@@ -37,14 +37,14 @@ public final class MobImportPages {
                 + "commentée en français : remplissez-le vous-même ou faites-le remplir par une IA, puis importez-le.</p>"
                 + "<div class=\"btnrow\">");
         for (String kind : MobImportContext.KINDS) {
-            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/mobs/template?").append(a).append("&amp;kind=")
+            sb.append("<a class=\"btn secondary sm\" href=\"/mobs/template?").append(a).append("&amp;kind=")
                     .append(kind).append("\">").append(Icons.icon("export")).append("Modèle ")
                     .append(Http.esc(MobImportContext.kindLabel(kind).replace(" (tirage aléatoire du Wild)", "")))
                     .append("</a>");
         }
-        sb.append("<a class=\"btn btn-sm btn-primary\" href=\"/mobs/import?").append(a).append("\">")
+        sb.append("<a class=\"btn sm\" href=\"/mobs/import?").append(a).append("\">")
                 .append(Icons.icon("check")).append("Importer un fichier / IA</a>");
-        sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/mobs/import?").append(a)
+        sb.append("<a class=\"btn secondary sm\" href=\"/mobs/import?").append(a)
                 .append("&amp;random=boss-community\">Générer aléatoirement</a>");
         return sb.append("</div></div>").toString();
     }
@@ -85,7 +85,7 @@ public final class MobImportPages {
                 + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
                 + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
                 + "<input type=\"hidden\" name=\"return\" value=\"/mobs/import\">"
-                + "<button class=\"btn btn-sm btn-warning\" type=\"submit\">" + Http.esc(label) + "</button></form>";
+                + "<button class=\"btn sm\" type=\"submit\">" + Http.esc(label) + "</button></form>";
     }
 
     // ---- 1. Modèles ----------------------------------------------------------------------------
@@ -105,12 +105,12 @@ public final class MobImportPages {
             sb.append("<div class=\"mob-kind\"><p class=\"npc-fs-h\">").append(Http.esc(MobImportContext.kindLabel(kind)))
                     .append("</p><div class=\"btnrow\">");
             if (available) {
-                sb.append("<a class=\"btn btn-sm\" href=\"/mobs/template?").append(a).append("&amp;kind=").append(kind)
+                sb.append("<a class=\"btn sm\" href=\"/mobs/template?").append(a).append("&amp;kind=").append(kind)
                         .append("\">").append(Icons.icon("export")).append("Télécharger le modèle</a>");
             } else {
                 sb.append("<span class=\"muted\">Modèle indisponible (catalogues non relevés).</span>");
             }
-            sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/mobs/import?").append(a).append("&amp;random=")
+            sb.append("<a class=\"btn secondary sm\" href=\"/mobs/import?").append(a).append("&amp;random=")
                     .append(kind).append("\">Générer aléatoirement</a>");
             sb.append("</div></div>");
         }
@@ -138,7 +138,7 @@ public final class MobImportPages {
             base = ctx.templates().get(v.kind());
             sb.append("<div class=\"btnrow\" role=\"group\" aria-label=\"Sorte de profil\">");
             for (String kind : MobImportContext.KINDS) {
-                sb.append("<a class=\"btn btn-sm ").append(kind.equals(v.kind()) ? "btn-primary" : "btn-outline-secondary")
+                sb.append("<a class=\"btn sm ").append(kind.equals(v.kind()) ? "" : "secondary")
                         .append("\" href=\"/mobs/import?").append(a).append("&amp;kind=").append(kind).append("\"")
                         .append(kind.equals(v.kind()) ? " aria-current=\"true\"" : "").append(">")
                         .append(Http.esc(MobImportContext.kindLabel(kind))).append("</a>");

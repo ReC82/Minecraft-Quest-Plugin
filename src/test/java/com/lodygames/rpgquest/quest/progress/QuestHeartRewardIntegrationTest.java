@@ -29,6 +29,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.entity.EntityType;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.junit.jupiter.api.AfterEach;
@@ -71,6 +72,11 @@ class QuestHeartRewardIntegrationTest {
     void setUp() throws Exception {
         server = MockBukkit.mock();
         RPGQuestPlugin plugin = MockBukkit.load(RPGQuestPlugin.class);
+        // Le plugin chargé a son propre HeartBonusService, branché sur sa propre base : à chaque
+        // addPlayer() il relit 0 cœur (après ses migrations, en asynchrone) et, si cette relecture
+        // arrive après la complétion du test, retire le bonus. Seuls les services du test doivent
+        // agir sur le joueur (#506).
+        HandlerList.unregisterAll(plugin);
 
         database = new DatabaseManager(tempDir.resolve("test.db"));
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);

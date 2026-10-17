@@ -111,16 +111,37 @@ class DeedClaimListenerTest {
         return customItemRegistry.create(DeedClaimListener.DEED_ITEM_ID, 1).orElseThrow();
     }
 
+    /**
+     * Chaque clic se termine par un message du listener (aperçu, refus, création, visualisation),
+     * envoyé après toutes ses continuations asynchrones (thread DB puis runTask). On attend ce
+     * message plutôt qu'un nombre fixe de ticks : un clic n'en chevauche jamais un autre (#506).
+     */
+    private static final List<String> FINAL_MESSAGES = List.of(
+            "ne peut être utilisé que", "Voici les limites", "Un faisceau", "pas encore le droit",
+            "Tu possèdes déjà", "Clique à nouveau", "pas (ou plus) le droit", "a été créé", "Impossible de créer");
+
     private void rightClick(PlayerMock player, ItemStack item, Block block) throws Exception {
+        while (player.nextMessage() != null) {
+            // messages des clics précédents déjà vérifiés
+        }
         PlayerInteractEvent event = new PlayerInteractEvent(
                 player, Action.RIGHT_CLICK_BLOCK, item, block, org.bukkit.block.BlockFace.UP, EquipmentSlot.HAND);
         listener.onInteract(event);
-        // Les continuations (hasClaimTierOne/create) sont async (thread DB) puis republiées via
-        // runTask : laisse quelques ticks s'exécuter avant que le test n'observe le résultat.
-        for (int i = 0; i < 20; i++) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        List<String> seen = new java.util.ArrayList<>();
+        while (System.nanoTime() < deadline) {
+            String message;
+            while ((message = player.nextMessage()) != null) {
+                seen.add(message);
+                String text = message;
+                if (FINAL_MESSAGES.stream().anyMatch(text::contains)) {
+                    return;
+                }
+            }
             server.getScheduler().performTicks(1);
-            Thread.sleep(10);
+            Thread.sleep(5);
         }
+        throw new AssertionError("le clic n'a pas abouti en " + TIMEOUT_SECONDS + " s ; messages : " + seen);
     }
 
     // ---- CLAIM_TIER_1 absent -----------------------------------------------------------------
@@ -202,6 +223,30 @@ class DeedClaimListenerTest {
                 .filter(java.util.Objects::nonNull)
                 .anyMatch(stack -> customItemRegistry.identify(stack).map(DeedClaimListener.DEED_ITEM_ID::equals).orElse(false));
         assertFalse(stillHasDeed, "l'Acte doit être consommé après la création réussie du claim");
+    }
+
+    @Test
+    void confirmingConsumesOneDeedEvenWhenSeveralSingleDeedsAreCarried() throws Exception {
+        PlayerMock player = addPlayer();
+        grantClaimTierOne(player);
+        Block block = claimsWorld.getBlockAt(100, 64, 100);
+        ItemStack item = deed();
+        player.getInventory().setItemInMainHand(item);
+        player.getInventory().setItem(5, deed()); // second Acte isolé (redonné par Jo), pile distincte
+
+        rightClick(player, item, block);
+        rightClick(player, item, block);
+
+        assertEquals(1, claimService.claimsOwnedBy(player.getUniqueId()).size());
+        assertEquals(1, deedsCarried(player), "un seul Acte consommé, jamais toutes les piles identiques");
+    }
+
+    private int deedsCarried(PlayerMock player) {
+        return java.util.Arrays.stream(player.getInventory().getContents())
+                .filter(java.util.Objects::nonNull)
+                .filter(stack -> customItemRegistry.identify(stack).map(DeedClaimListener.DEED_ITEM_ID::equals).orElse(false))
+                .mapToInt(ItemStack::getAmount)
+                .sum();
     }
 
     @Test

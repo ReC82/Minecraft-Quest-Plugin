@@ -22,7 +22,7 @@ enabled: true                 # optionnel ; true par défaut
 | `display_name` | oui | Nom affiché, MiniMessage. Max 128 caractères, pas de saut de ligne. |
 | `description` | non | Note libre pour l'admin. |
 | `dialogue` | non | Dialogue *déclaré* pour ce PNJ. Une clé simple est normalisée en `rpgquest:<clé>`. S'il ne correspond à aucun dialogue chargé → anomalie `DIALOGUE_MISSING`. |
-| `role` | non | Classification libre (`quest_giver`, `merchant`, `guide`…). Aucun effet mécanique. |
+| `role` | non | Rôle métier affiché, libre (`cartographe`, `forgeron`, `quest_giver`…). Aucun effet mécanique : c'est un libellé, les capacités (quêtes données, dialogue) se règlent ailleurs. PlugAdmin le saisit en texte libre (« Téléporteur » → `teleporteur`) et l'affiche avec ses accents pour les rôles suggérés (#127). |
 | `enabled` | non | `false` = définition conservée mais marquée désactivée (`DISABLED`). |
 
 ## Définition logique vs binding Citizens

@@ -3867,7 +3867,8 @@ Panel seulement, aucune migration, aucun changement du plugin.
 Depuis la V2, un PNJ RPGQuest a une **définition logique** en données :
 un fichier par PNJ sous `plugins/RPGQuest/npcs/*.yml` (`YamlNpcEngine`,
 même pattern que `quests/`), avec `id`, `display_name`, `dialogue` (optionnel),
-`role` (optionnel), `enabled`. Format complet :
+`role` (optionnel — rôle métier **affiché**, libre, sans effet en jeu ; saisi en texte libre
+avec suggestions dans PlugAdmin, issue #127), `enabled`. Format complet :
 [NPC_FORMAT.md](../NPC_FORMAT.md). Cette définition est **indépendante de
 Citizens et du monde** : on peut préparer toute la configuration d'un PNJ
 (nom, dialogue, quêtes données) avant qu'il n'existe en jeu. Le **binding

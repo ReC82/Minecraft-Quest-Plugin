@@ -6,6 +6,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Rôle métier des PNJ libre (#127, 17/10/2026)** — PlugAdmin seul : le champ « Rôle affiché »
+> (Réglages avancés d'une fiche `/npcs`) est une saisie libre avec suggestions (Cartographe,
+> Forgeron, Aubergiste, Téléporteur…) au lieu de la liste fermée « Aucun / Donneur de quête ». La
+> saisie est ramenée à l'identifiant déjà accepté par le plugin (`[a-z0-9_-]{1,32}`, accents
+> retirés : « Téléporteur » → `teleporteur`) ; le rôle s'affiche en clair dans l'en-tête de la liste
+> et le résumé de la fiche. C'est un **libellé** sans effet en jeu : les capacités (quêtes données,
+> dialogue) restent réglées séparément. `quest_giver` existant conservé (« Donneur de quête »).
+> `panel.npc.NpcRoles` (pur, testé). Aucune migration, aucun changement du plugin.
+
 > **Lily → Julius : villes citées dans les dialogues (#180, 17/10/2026)** — valeurs de dialogue à
 > argument `%city_name:<id_ville>%` (nom actuel, renommable dans le panel) et
 > `%city_direction:<id_ville>%` (« au nord, à environ 420 blocs », `city.CityDirections`, depuis le

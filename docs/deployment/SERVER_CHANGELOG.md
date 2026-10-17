@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - PNJ : rôle métier affiché en saisie libre dans PlugAdmin (#127)
+
+### Changement
+
+PlugAdmin seul. Le champ « Rôle » d'un PNJ (`/npcs` → Réglages avancés) devient « Rôle affiché » :
+texte libre avec suggestions, ramené à l'identifiant que le plugin accepte déjà
+(`[a-z0-9_-]{1,32}`). Rôle visible dans la liste et le résumé de fiche. Libellé sans effet en jeu.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft (JAR inchangé, format `npcs/*.yml` inchangé, aucune migration).
+Redéployer PlugAdmin (`scripts/plugadmin/deploy.sh`).
+
+### Sauvegarde préalable
+
+Celle de `deploy.sh` (JAR PlugAdmin précédent).
+
+### Validation
+
+`/npcs` : rôle affiché à côté du nom ; Réglages avancés → saisir « Cartographe », enregistrer,
+rafraîchir la liste → « Cartographe » affiché. PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Redéployer le JAR PlugAdmin précédent. Les rôles saisis entre-temps restent valides pour le plugin
+et s'affichent sous leur forme lisible.
+
+---
+
 ## 2026-10-17 - Économie : catalogue central des prix et coûts administré depuis PlugAdmin (#336)
 
 ### Changement

@@ -65,6 +65,9 @@ Ne pas toucher aux données joueurs.
 
 Démarrage sans erreur, schéma V43 (`personal_vaults` créée, vide). TC-352 (PENDING MANUAL VALIDATION).
 
+Effectué le 2026-10-17 vers 19:23 sur DEV : JAR `4f02612` (SHA vérifié par retéléchargement), `data.db`
+sauvegardée avant redémarrage, schéma V43 constaté après redémarrage.
+
 ### Rollback
 
 Remettre le JAR `*-predeploy.jar` et redémarrer. L'ancien JAR ignore la table V43 (ajout de table

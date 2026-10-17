@@ -5,7 +5,7 @@
 id: rpgquest:kit_tier4
 title: "<gold>Aventurier</gold>"
 description: >
-  <gray>Rapporte au Guide de quoi améliorer ton équipement de secours : deux bâtons et une pierre pour une pelle en pierre, et sept cuirs pour des jambières. Tu peux lui
+  <gray>Rapporte à %npc_name:guide% de quoi améliorer ton équipement de secours : deux bâtons et une pierre pour une pelle en pierre, et sept cuirs pour des jambières. Tu peux lui
   donner tes matériaux au fur et à mesure : ce qui est remis est gardé en sécurité, même si tu
   meurs.</gray>
 category: kit

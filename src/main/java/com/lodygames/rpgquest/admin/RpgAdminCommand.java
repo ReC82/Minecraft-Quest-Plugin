@@ -2664,9 +2664,15 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                                     Placeholder.unparsed("p", target.getName()),
                                     Placeholder.unparsed("t", Integer.toString(result.tier()))));
                             if (target.isOnline()) {
+                                // Issue #475 : le PNJ Guide est nommé par son nom affiché ACTUEL
+                                // (hub.guide-npc-id), jamais « Guide » en dur — il peut être renommé.
+                                String guideId = plugin.bootstrap().configService().current().hub().guideNpcId();
+                                String guide = com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(
+                                        guideId, questProgressEngine.npcNameResolver());
                                 target.sendMessage(MM.deserialize(
-                                        "<gold>Ton kit de départ s'améliore !</gold> <gray>Demande-le au Guide "
-                                                + "après ta prochaine mort.</gray>"));
+                                        "<gold>Ton kit de départ s'améliore !</gold> <gray>Demande-le à "
+                                                + (guide == null ? "ton guide" : "<white>" + guide + "</white>")
+                                                + " après ta prochaine mort.</gray>"));
                             }
                         }
                         case ALREADY_AT_LEAST -> sender.sendMessage(MM.deserialize(

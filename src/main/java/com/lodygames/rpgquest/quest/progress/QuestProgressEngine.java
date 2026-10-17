@@ -874,6 +874,24 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     /**
+     * Issue #475 — {@code true} si une remise à ce PNJ retirerait <strong>réellement</strong> au
+     * moins un objet maintenant : un objectif encore incomplet dont le joueur porte le matériau,
+     * selon la même règle d'éligibilité que le retrait ({@link QuestItemWithdrawal}). Un objectif
+     * déjà rempli ne compte plus, même si le joueur en porte encore. Lecture seule, thread principal.
+     */
+    public boolean hasDeliverableItems(Player player, String npcId) {
+        UUID playerId = player.getUniqueId();
+        for (ObjectiveRef ref : activeDeliveryRefs(playerId, npcId)) {
+            DeliverItemToNpcObjective objective = (DeliverItemToNpcObjective) ref.objective();
+            if (counterOf(playerId, ref) < objective.amount()
+                    && QuestItemWithdrawal.available(player.getInventory(), objective.material()) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Remet en <strong>une seule opération</strong> tout ce que le joueur possède d'utile pour les
      * objectifs de remise de {@code npcId} (issue #123) : plusieurs matériaux, plusieurs objectifs
      * et plusieurs quêtes à la fois, sans obliger le joueur à cliquer une fois par matériau.
@@ -954,15 +972,20 @@ public final class QuestProgressEngine implements PluginService {
             return DeliveryOutcome.of(status, lines, allComplete);
         }
 
-        DeliveryOutcome outcome = DeliveryOutcome.of(DeliveryOutcome.Status.DELIVERED, lines, allComplete);
-        sendDeliveryFeedback(player, outcome);
+        sendDeliveryFeedback(player, DeliveryOutcome.of(DeliveryOutcome.Status.DELIVERED, lines, allComplete));
 
         // Après TOUTE la remise seulement : une étape à plusieurs matériaux ne doit pas se terminer
         // au milieu de l'opération, et une quête terminée ici sort de activeByPlayer.
         touchedQuests.forEach((questId, progress) ->
                 questEngine.find(questId).ifPresent(quest -> checkStepCompletion(player, quest, progress)));
         notifyChanged(playerId);
-        return outcome;
+        // Issue #475 : une quête qui n'est plus suivie du tout vient d'être rendue (récompenses
+        // remises) — READY_TO_TURN_IN (inventaire plein) reste suivie, donc n'est pas annoncée finie.
+        Map<NamespacedKey, ActiveQuestProgress> stillTracked = activeByPlayer.getOrDefault(playerId, Map.of());
+        List<NamespacedKey> completed = touchedQuests.keySet().stream()
+                .filter(questId -> !stillTracked.containsKey(questId))
+                .toList();
+        return new DeliveryOutcome(DeliveryOutcome.Status.DELIVERED, lines, allComplete, completed);
     }
 
     /**

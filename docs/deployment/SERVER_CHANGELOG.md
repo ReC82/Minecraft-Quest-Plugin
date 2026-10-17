@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Remise au Guide en une action, PNJ renommé propagé, infobulle du journal (#475, retour du 17/10)
+
+### Changement
+
+JAR + 6 contenus. Un bouton de remise (`DELIVER_QUEST_ITEMS`) n'est proposé que s'il retirerait réellement
+un objet ; sinon le dialogue dit ce qui manque et que le joueur n'en porte pas. Le bilan de la remise
+(remis à l'instant, restant, quête terminée / amélioration du kit obtenue) s'affiche dans la fenêtre. Un
+clic devenu sans objet réaffiche le nœud. Nouveaux marqueurs `%delivery_hint%`, `%npc_name%`,
+`%npc_name:<id>%` (locuteur, textes, titres et descriptions de quête dans le journal). Description du
+journal repliée. Messages Java « Guide » en dur (amélioration du kit, accès aux claims) remplacés par le
+nom affiché du PNJ `hub.guide-npc-id`.
+
+Contenus republiés (existants sur DEV, identiques au dépôt avant correctif) : `dialogues/guide.yml`
+(action unique « Donner les matériaux », nœud `delivery_result`, locuteur `%npc_name%`, « Je suis
+%npc_name%, le guide du village »), `dialogues/libraire.yml` (« c'est %npc_name:guide% qui t'envoie »),
+`quests/kit_tier2..5.yml` (« Rapporte à %npc_name:guide% »). IDs, objectifs, récompenses et associations
+inchangés.
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y` avec `--also` pour les 6 contenus (sauvegarde datée `extra-<UTC>Z` des
+fichiers distants), redémarrage DEV. Aucune migration de schéma, aucune donnée joueur modifiée,
+PlugAdmin inchangé, `npcs/guide.yml` (nom Elias) non touché.
+
+### Sauvegarde préalable
+
+Celles des scripts (JAR précédent daté, `data.db`, contenus `--also` remplacés).
+
+### Validation
+
+Contenus distants relus après déploiement ; en jeu TC-348 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR sauvegardé et les 6 fichiers du dossier `extra-<UTC>Z` (`scripts/rollback-verygames.sh
+--also <backup>:<chemin>`). Les dépôts déjà faits restent acquis dans `data.db` quel que soit le JAR.
+
 ## 2026-10-17 - Progression : XP RPG seule, suppression de la progression de niveaux Minecraft (#183)
 
 ### Changement

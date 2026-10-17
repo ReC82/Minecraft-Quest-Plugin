@@ -62,8 +62,8 @@ public final class DialogueTextPlaceholders {
 
     /**
      * Renvoie {@code node} enrichi de ses valeurs dynamiques, ou {@code node} lui-même si rien n'est
-     * à substituer. Seul le <em>texte</em> du nœud est concerné : les libellés de choix restent
-     * statiques (le moteur les indexe par position, un libellé dynamique n'apporterait rien ici).
+     * à substituer. Le <em>texte</em> et, issue #475, le <em>locuteur</em> du nœud sont concernés :
+     * les libellés de choix restent statiques (le moteur les indexe par position).
      */
     public DialogueNode apply(Player player, NamespacedKey dialogueId, DialogueNode node) {
         return apply(player, dialogueId, node, null);
@@ -83,8 +83,12 @@ public final class DialogueTextPlaceholders {
             changed |= !resolved.equals(entry.getValue());
             substituted.put(entry.getKey(), resolved);
         }
+        // Issue #475 : le locuteur aussi (« %npc_name% ») — le titre de la fenêtre suit un
+        // renommage du PNJ comme le texte.
+        String speaker = apply(context, node.speaker());
+        changed |= speaker != null && !speaker.equals(node.speaker());
         return changed
-                ? node.withSpeakerAndText(node.speaker(), new LocalizedText(substituted))
+                ? node.withSpeakerAndText(speaker, new LocalizedText(substituted))
                 : node;
     }
 

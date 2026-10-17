@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.quest.progress;
 
 import java.util.List;
+import org.bukkit.NamespacedKey;
 
 /**
  * Résultat d'une tentative de remise d'objets à un PNJ (issue #123). Toujours renvoyé, y compris
@@ -14,8 +15,12 @@ import java.util.List;
  * @param allComplete  {@code true} si tous les objectifs de remise destinés à ce PNJ sont désormais
  *                     satisfaits — c'est ce que le dialogue regarde pour basculer vers son nœud de
  *                     fin, jamais une somme recalculée ailleurs
+ * @param completedQuests  issue #475 : quêtes que cette remise vient de <strong>terminer</strong>
+ *                         (récompenses remises), pour que le dialogue confirme la fin ou
+ *                         l'amélioration obtenue au lieu de renvoyer le joueur au chat
  */
-public record DeliveryOutcome(Status status, List<DeliveryLine> lines, boolean allComplete) {
+public record DeliveryOutcome(Status status, List<DeliveryLine> lines, boolean allComplete,
+                              List<NamespacedKey> completedQuests) {
 
     public enum Status {
         /** Aucun objectif de remise actif pour ce PNJ (mauvais PNJ, ou aucune quête concernée). */
@@ -35,6 +40,11 @@ public record DeliveryOutcome(Status status, List<DeliveryLine> lines, boolean a
 
     public DeliveryOutcome {
         lines = List.copyOf(lines);
+        completedQuests = completedQuests == null ? List.of() : List.copyOf(completedQuests);
+    }
+
+    public DeliveryOutcome(Status status, List<DeliveryLine> lines, boolean allComplete) {
+        this(status, lines, allComplete, List.of());
     }
 
     public static DeliveryOutcome of(Status status, List<DeliveryLine> lines, boolean allComplete) {

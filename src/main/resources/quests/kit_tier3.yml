@@ -5,7 +5,7 @@
 id: rpgquest:kit_tier3
 title: "<gold>Explorateur</gold>"
 description: >
-  <gray>Rapporte au Guide de quoi améliorer ton équipement de secours : un bâton et trois pierres pour chaque outil en pierre (pioche et hache), cinq cuirs pour un casque, et trois blés pour un pain de plus. Tu peux lui
+  <gray>Rapporte à %npc_name:guide% de quoi améliorer ton équipement de secours : un bâton et trois pierres pour chaque outil en pierre (pioche et hache), cinq cuirs pour un casque, et trois blés pour un pain de plus. Tu peux lui
   donner tes matériaux au fur et à mesure : ce qui est remis est gardé en sécurité, même si tu
   meurs.</gray>
 category: kit

@@ -6483,6 +6483,10 @@ Compte PlugAdmin avec « Économie — écriture ». Aucun accès fichier néces
 
 ### TC-335 — Quête d'amélioration du kit dans le journal (issue #475, PENDING MANUAL VALIDATION)
 
+> **17/10 — tests suspendus par le propriétaire puis repris par TC-348.** Le dépôt partiel (étapes 3-5)
+> est **déjà validé** ; l'étape 4 « J'ai des matériaux » n'existe plus (action unique « Donner les
+> matériaux ») et le Guide s'appelle désormais selon son nom affiché (« Elias »). Reprendre par TC-348.
+
 Prérequis : JAR issu de #475 sur **DEV**, un compte au palier de kit N (variable `STARTER_KIT_TIER`), sans la
 quête du palier N+1 acceptée. Ne jamais remettre à zéro un compte réel pour ce test.
 
@@ -6761,6 +6765,34 @@ résolution et interface habituelles, sans resource pack.
 7.  Donner un avis : lisibilité, emplacement, faut-il le panneau par défaut, autre surface ?
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
+
+### TC-348 — Remise au Guide en une action, Guide renommé, infobulle du journal (issue #475, retour du 17/10, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu du correctif #475 du 17/10 sur **DEV**, contenus `dialogues/guide.yml`,
+`dialogues/libraire.yml` et `quests/kit_tier2..5.yml` republiés (voir le rapport de session). Compte
+**LoDyMcFly tel quel** : « Explorateur » (palier 3) active, dépôts déjà faits conservés. **Aucun reset**,
+aucune quête de remplacement. Le dépôt partiel est **déjà validé** par le propriétaire : ne pas le refaire
+pour lui-même.
+
+1.  Inventaire **sans** bâton, pierre, cuir ni blé. Parler au Guide. **Attendu** : titre de la fenêtre
+    « Elias », « Je suis Elias, le guide du village », puis « Matériaux à me remettre : » avec les
+    compteurs réels (ex. Bâton 0/4…) et « Tu n'as sur toi aucun des matériaux qui manquent. ». **Aucun**
+    bouton « Donner les matériaux », « J'ai des matériaux » ni « Donner encore ».
+2.  Prendre un matériau qu'aucun objectif restant n'attend (ex. de la terre) ou un matériau dont
+    l'objectif est déjà rempli. **Attendu** : même chose qu'en 1, aucun bouton de remise.
+3.  Prendre une partie d'un matériau attendu, reparler au Guide. **Attendu** : « Tu as sur toi des
+    matériaux que j'attends. » et **un seul** bouton « Donner les matériaux ». Clic : **une** fenêtre de
+    bilan — « Tu viens de me remettre : N × … », compteurs à jour, ce qui manque, et plus de bouton de
+    remise s'il ne reste rien d'utile. Pas d'écran « Donner mes matériaux » ni « Donner encore ».
+4.  (Facultatif) Ouvrir le Guide avec un matériau utile, le jeter avant de cliquer « Donner les
+    matériaux ». **Attendu** : rien retiré, la fenêtre se réaffiche sans le bouton.
+5.  Remettre le reste. **Attendu** : dans la fenêtre, « Merci, c'est tout ce qu'il me fallait ! » et
+    « Amélioration du kit obtenue : palier 3… » ; la quête passe dans « Terminées ».
+6.  Journal → « Explorateur » (ou la quête suivante) → clic gauche (détails). **Attendu** : description
+    « Rapporte à Elias de quoi… » repliée sur plusieurs lignes, entièrement lisible, rien de coupé à droite ;
+    objectifs « (à remettre à Elias) ».
+7.  Libraire : « Ah, c'est Elias qui t'envoie ? ». (Si le Guide est renommé à nouveau dans PlugAdmin,
+    les points 1, 6 et 7 suivent le nouveau nom sans republier aucun contenu.)
 
 ### TC-347 — XP RPG seule : plus de progression de niveaux Minecraft (issue #183, PENDING MANUAL VALIDATION)
 

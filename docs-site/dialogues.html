@@ -194,7 +194,19 @@ nodes:
             <em>déjà remis / demandé</em>, nom d'objet traduit par le client. Affiche
             « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Juste après une
             remise qui a tout complété, affiche le bilan de cette remise suivi de « Merci, c'est
-            tout ce qu'il me fallait ! » (issue #467).</td></tr>
+            tout ce qu'il me fallait ! » (issue #467). Juste après une remise, commence par
+            « Tu viens de me remettre : 2 × Bâton… » ou « rien d'utile », dit si le joueur porte
+            encore des matériaux utiles et annonce la quête terminée ou l'amélioration du kit
+            obtenue (issue #475).</td></tr>
+        <tr><td><code>%delivery_hint%</code></td>
+          <td>Pour un texte d'accueil : vide si ce PNJ n'attend rien du joueur ; sinon la liste des
+            matériaux à remettre et « Tu as sur toi des matériaux que j'attends. » ou « Tu n'as sur
+            toi aucun des matériaux qui manquent. » (issue #475).</td></tr>
+        <tr><td><code>%npc_name%</code> / <code>%npc_name:id_pnj%</code></td>
+          <td>Nom affiché actuel du PNJ qui parle, ou d'un autre PNJ désigné par son identifiant
+            (ex. <code>%npc_name:guide%</code> → « Elias »). Fonctionne aussi dans le
+            <code>speaker</code> d'un nœud et dans le titre / la description d'une quête. Renommer
+            le PNJ dans le Control Panel suffit : rien à republier (issue #475).</td></tr>
         <tr><td><code>%city_name:id_ville%</code></td>
           <td>Nom actuel d'une ville, désignée par son identifiant stable (ex.
             <code>%city_name:ville_nerana%</code> → « Nerana »). Renommer la ville dans le Control

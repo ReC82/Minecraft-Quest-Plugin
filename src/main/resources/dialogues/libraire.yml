@@ -11,7 +11,7 @@ start: greeting
 nodes:
   greeting:
     speaker: "Libraire"
-    text: "<white>Ah, le Guide t'envoie ?</white> <gray>Bienvenue ! Tu trouveras ici tout ce qu'il faut pour commencer ton aventure.</gray>"
+    text: "<white>Ah, c'est %npc_name:guide% qui t'envoie ?</white> <gray>Bienvenue ! Tu trouveras ici tout ce qu'il faut pour commencer ton aventure.</gray>"
     choices:
       - text: "Obtenir mon journal"
         conditions:

@@ -683,7 +683,7 @@ public final class QuestJournalService implements QuestJournalUi {
         };
         String colorEnd = color.replace("<", "</");
         String star = tracked ? " <gold>★</gold>" : "";
-        return MM.deserialize(color + "<name>" + colorEnd + star, Placeholder.parsed("name", quest.title().base()));
+        return MM.deserialize(color + "<name>" + colorEnd + star, Placeholder.parsed("name", npcNamed(quest.title().base())));
     }
 
     /** Au-delà de ce nombre, les compteurs sont résumés : une infobulle de liste reste courte. */
@@ -760,11 +760,21 @@ public final class QuestJournalService implements QuestJournalUi {
         return List.of();
     }
 
+    /** Issue #475 : {@code %npc_name:<id>%} → nom affiché actuel du PNJ (renommage propagé au rendu). */
+    private String npcNamed(String raw) {
+        return com.lodygames.rpgquest.npc.NpcNameTokens.resolve(raw, questProgressEngine.npcNameResolver());
+    }
+
     /** Infobulle de <strong>détails</strong> : tout ce qui a été retiré de la liste. */
     private List<Component> buildDetailedLore(UUID playerId, QuestDefinition quest, QuestState state,
                                               Duration cooldown) {
         List<Component> lore = new ArrayList<>();
-        lore.add(MM.deserialize("<gray><description></gray>", Placeholder.parsed("description", quest.description().base())));
+        // Issue #475 : la description est repliée (une ligne de lore n'est jamais coupée par le
+        // client, elle débordait de l'écran) et ses PNJ cités par id portent leur nom actuel.
+        for (String line : LoreWrap.wrap(npcNamed(quest.description().base()), LoreWrap.DEFAULT_WIDTH)) {
+            lore.add(MM.deserialize("<gray>" + line + "</gray>")
+                    .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false));
+        }
         lore.add(Component.empty());
         lore.add(MM.deserialize("<white>Catégorie :</white> <gray><category></gray>",
                 Placeholder.unparsed("category", quest.category())));

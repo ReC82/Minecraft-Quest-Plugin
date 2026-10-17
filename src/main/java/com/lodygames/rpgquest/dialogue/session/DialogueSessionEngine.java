@@ -353,13 +353,20 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             return;
         }
         // Re-vérification défensive : la visibilité initiale garantit l'affichage, pas la validité au moment du clic.
-        evaluateAll(player, dialogueId, choice.conditions()).whenComplete((stillVisible, error) -> runOnMainThread(() -> {
+        choiceAvailable(player, dialogue, choice).whenComplete((stillVisible, error) -> runOnMainThread(() -> {
             try {
                 DialogueSession current = sessions.get(playerId);
                 // Le nœud a pu changer entre le clic et la réponse (fermeture, autre choix) : la
                 // décision prise sur l'ancien nœud n'a plus cours.
-                if (error != null || !Boolean.TRUE.equals(stillVisible) || current == null
+                if (error != null || current == null
                         || !current.dialogueId().equals(dialogueId) || !current.nodeId().equals(nodeId)) {
+                    return;
+                }
+                if (!Boolean.TRUE.equals(stillVisible)) {
+                    // Issue #475 : le choix n'a plus cours (inventaire vidé entre l'affichage et le
+                    // clic…). La fenêtre se ferme au clic : le même nœud est réaffiché, recalculé,
+                    // plutôt que de laisser le joueur devant rien.
+                    openNode(player, dialogue, nodeId);
                     return;
                 }
                 executeActionsAndTransition(player, dialogue, choice);
@@ -463,7 +470,9 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         for (int i = 0; i < node.choices().size(); i++) {
             visible.add(new VisibleChoice(i, node.choices().get(i).text().base()));
         }
-        renderer.render(player, dialogue, node, visible);
+        // Issue #475 : le locuteur (« %npc_name% ») et la description de quête de l'offre passent
+        // par les mêmes valeurs dynamiques qu'un nœud écrit dans le fichier.
+        renderer.render(player, dialogue, placeholders.apply(player, dialogue.id(), node), visible);
     }
 
     private void onCatalogOfferChoice(Player player, DialogueDefinition dialogue, String nodeId, int choiceIndex) {
@@ -646,12 +655,33 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                 .thenApply(v -> checks.stream().allMatch(CompletableFuture::join));
     }
 
+    /**
+     * Un choix est proposé si ses conditions passent et, issue #475, si sa remise
+     * {@code DELIVER_QUEST_ITEMS} retirerait réellement quelque chose : un bouton de remise qui ne
+     * peut que répondre « rien d'utile » n'est jamais cliquable, quel que soit le contenu du
+     * dialogue. Le texte du nœud ({@code %delivery_status%}, {@code %delivery_hint%}) dit pourquoi.
+     */
+    private CompletableFuture<Boolean> choiceAvailable(Player player, DialogueDefinition dialogue, DialogueChoice choice) {
+        return evaluateAll(player, dialogue.id(), choice.conditions())
+                .thenApply(passes -> passes && deliveryWouldTakeSomething(player, dialogue, choice));
+    }
+
+    private boolean deliveryWouldTakeSomething(Player player, DialogueDefinition dialogue, DialogueChoice choice) {
+        for (DialogueAction action : choice.actions()) {
+            if (action instanceof DeliverQuestItemsAction deliver && !questProgressEngine.hasDeliverableItems(
+                    player, DialogueNpcResolution.resolve(deliver.npcId(), dialogue.id()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Choix réellement visibles pour ce joueur : source unique d'évaluation des conditions. */
     public CompletableFuture<List<VisibleChoice>> visibleChoices(Player player, DialogueDefinition dialogue,
                                                                  DialogueNode node) {
         List<DialogueChoice> choices = node.choices();
         List<CompletableFuture<Boolean>> checks = choices.stream()
-                .map(choice -> evaluateAll(player, dialogue.id(), choice.conditions()))
+                .map(choice -> choiceAvailable(player, dialogue, choice))
                 .toList();
         return CompletableFuture.allOf(checks.toArray(CompletableFuture[]::new)).thenApply(v -> {
             List<VisibleChoice> visible = new ArrayList<>();

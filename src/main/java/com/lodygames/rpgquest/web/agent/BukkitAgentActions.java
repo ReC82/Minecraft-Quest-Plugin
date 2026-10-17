@@ -1408,6 +1408,128 @@ public final class BukkitAgentActions implements AgentActions {
         return done(catalogMutation(service.catalogEditor().setRewardEnabled(key, enabled), usages));
     }
 
+    // ---- Catalogue des prix et coûts (issue #336) -----------------------------------------------
+    // Appelé sur le thread agent : lecture / écriture de prices.yml hors du thread principal.
+
+    private volatile com.lodygames.rpgquest.economy.price.PriceCatalogService priceCatalog;
+    private volatile com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry merchantRegistry;
+
+    /** Issue #336 — dépendances facultatives : sans elles, les actions price.* répondent « indisponible ». */
+    public void setPriceCatalog(com.lodygames.rpgquest.economy.price.PriceCatalogService service,
+                                com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry merchants) {
+        this.priceCatalog = service;
+        this.merchantRegistry = merchants;
+    }
+
+    @Override
+    public CompletableFuture<PriceCatalogView> priceCatalogStatus() {
+        var service = priceCatalog;
+        if (service == null) {
+            return AgentActions.super.priceCatalogStatus();
+        }
+        var catalog = service.catalog();
+        Map<String, List<String>> usages = priceUsages();
+        List<PriceEntryView> prices = catalog.prices().values().stream()
+                .map(p -> new PriceEntryView(p.key(), p.label(), p.type().name(),
+                        new PriceItemView(p.item().itemId(), p.item().amount()), p.coins(),
+                        p.ingredients().stream().map(i -> new PriceItemView(i.itemId(), i.amount())).toList(),
+                        p.demo(), p.enabled(), p.version(), p.summary(), usages.getOrDefault(p.key(), List.of())))
+                .toList();
+        List<MerchantPriceView> merchants = new ArrayList<>();
+        var registry = merchantRegistry;
+        for (var merchant : registry == null ? List.<com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition>of()
+                : registry.merchants()) {
+            List<String> refs = merchant.offers().stream().filter(o -> o.linked()).map(o -> o.priceRef()).toList();
+            merchants.add(new MerchantPriceView(merchant.id().toString(),
+                    net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().stripTags(merchant.title()),
+                    (int) merchant.offers().stream().filter(o -> !o.linked()).count(), refs,
+                    refs.stream().filter(r -> catalog.usable(r).isEmpty()).distinct().toList()));
+        }
+        List<String> custom = customItemRegistry == null ? List.of()
+                : customItemRegistry.items().stream().map(d -> d.id().toString()).sorted().toList();
+        return done(new PriceCatalogView(true, service.fileExists(), service.lastErrors().isEmpty(),
+                service.lastErrors(), service.lastWarnings(), prices, merchants, custom,
+                com.lodygames.rpgquest.economy.CurrencyName.get()));
+    }
+
+    /** Marchands dont une offre cite chaque prix. */
+    private Map<String, List<String>> priceUsages() {
+        Map<String, List<String>> usages = new java.util.LinkedHashMap<>();
+        var registry = merchantRegistry;
+        if (registry == null) {
+            return usages;
+        }
+        for (var merchant : registry.merchants()) {
+            merchant.offers().stream().filter(o -> o.linked()).map(o -> o.priceRef()).distinct()
+                    .forEach(ref -> usages.computeIfAbsent(ref, k -> new ArrayList<>()).add("marchand « "
+                            + net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().stripTags(merchant.title())
+                            + " » (" + merchant.id() + ")"));
+        }
+        return usages;
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> priceSave(String key, String label, String type, PriceItemView item,
+                                                       long coins, List<PriceItemView> ingredients, boolean demo,
+                                                       boolean enabled, String expectedVersion, boolean create) {
+        var service = priceCatalog;
+        if (service == null) {
+            return AgentActions.super.priceSave(key, label, type, item, coins, ingredients, demo, enabled,
+                    expectedVersion, create);
+        }
+        List<PriceItemView> all = new ArrayList<>(ingredients);
+        all.add(0, item);
+        for (PriceItemView line : all) {
+            if (line.itemId().indexOf(':') >= 0) {
+                NamespacedKey id = NamespacedKey.fromString(line.itemId());
+                if (id == null || customItemRegistry == null || customItemRegistry.find(id).isEmpty()) {
+                    return done(MutationResult.of(false, "INVALID", "Objet RPGQuest « " + line.itemId()
+                            + " » inconnu de ce serveur. Rien n'a été écrit."));
+                }
+            }
+        }
+        var price = new com.lodygames.rpgquest.economy.price.PriceDefinition(key, label.trim(),
+                com.lodygames.rpgquest.economy.price.PriceType.valueOf(type),
+                new com.lodygames.rpgquest.economy.price.PriceDefinition.PriceItem(item.itemId(), item.amount()), coins,
+                ingredients.stream().map(i -> new com.lodygames.rpgquest.economy.price.PriceDefinition.PriceItem(
+                        i.itemId(), i.amount())).toList(), demo, enabled);
+        List<String> usages = enabled || create ? List.of() : priceUsages().getOrDefault(key, List.of());
+        return done(priceMutation(service.editor().savePrice(price, expectedVersion, create), usages));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> priceDuplicate(String sourceKey, String newKey, String newLabel) {
+        var service = priceCatalog;
+        if (service == null) {
+            return AgentActions.super.priceDuplicate(sourceKey, newKey, newLabel);
+        }
+        return done(priceMutation(service.editor().duplicatePrice(sourceKey, newKey, newLabel), List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> priceToggle(String key, boolean enabled) {
+        var service = priceCatalog;
+        if (service == null) {
+            return AgentActions.super.priceToggle(key, enabled);
+        }
+        List<String> usages = enabled ? List.of() : priceUsages().getOrDefault(key, List.of());
+        return done(priceMutation(service.editor().setPriceEnabled(key, enabled), usages));
+    }
+
+    private static MutationResult priceMutation(com.lodygames.rpgquest.economy.price.PriceCatalogEditor.Outcome o,
+                                                List<String> usages) {
+        List<String> effects = new ArrayList<>();
+        if (o.price() != null) {
+            effects.add("prix " + o.price().key() + " v" + o.price().version() + (o.price().enabled() ? " actif"
+                    : " désactivé") + (o.price().demo() ? " (démonstration)" : ""));
+        }
+        String message = o.message();
+        if (o.success() && !usages.isEmpty() && !"UNCHANGED".equals(o.code())) {
+            message += " Offres désormais indisponibles chez : " + String.join(", ", usages) + ".";
+        }
+        return new MutationResult(o.success(), o.code(), message, effects);
+    }
+
     /** Désactivation : les usages connus sont cités, pour que l'administrateur sache ce qui ne donne plus rien. */
     private static MutationResult catalogMutation(
             com.lodygames.rpgquest.entitlement.reward.RewardCatalogEditor.Outcome o, List<String> usages) {

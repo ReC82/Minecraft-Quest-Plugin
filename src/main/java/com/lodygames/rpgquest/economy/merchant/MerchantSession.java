@@ -10,6 +10,10 @@ import org.bukkit.NamespacedKey;
  * clic ne peut donc jamais faire acheter au joueur « la mauvaise offre »
  * (l'offre à l'index cliqué est relue depuis le marchand actuel au moment du
  * clic, voir {@link MerchantTradeService}).
+ *
+ * <p>Issue #336 : {@code priceGeneration} est la génération du catalogue des
+ * prix affichée ; si elle a changé au moment du clic, l'échange est refusé et
+ * la vitrine réaffichée — le joueur paie toujours le prix qu'il voit.</p>
  */
-record MerchantSession(NamespacedKey merchantId) {
+record MerchantSession(NamespacedKey merchantId, long priceGeneration) {
 }

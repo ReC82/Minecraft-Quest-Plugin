@@ -166,6 +166,34 @@ class MerchantDefinitionParserTest {
         assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("direction")));
     }
 
+    @Test
+    void priceRefOfferTakesEverythingFromTheCatalog() {
+        MerchantDefinitionParser.ParseResult result = parser.parse("linked.yml", load(minimalMerchantWithOffer("""
+                  - price-ref: pain_x4
+                    required-level: 2
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        MerchantOffer offer = result.merchant().offers().get(0);
+        assertTrue(offer.linked());
+        assertEquals("pain_x4", offer.priceRef());
+        assertEquals(null, offer.direction());
+        assertEquals(2, offer.requiredLevel());
+    }
+
+    @Test
+    void priceRefMixedWithLocalFieldsIsRejected() {
+        MerchantDefinitionParser.ParseResult result = parser.parse("mixed.yml", load(minimalMerchantWithOffer("""
+                  - price-ref: pain_x4
+                    price: 3
+                  - price-ref: "Pain X4"
+                """)));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("« price » interdit")));
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("« price-ref » invalide")));
+    }
+
     private String minimalMerchantWithOffer(String offersYaml) {
         return """
                 id: rpgquest:test

@@ -1284,6 +1284,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   références objet / enchantement / potion vérifiées) ; `enabled` par récompense (désactivée = plus promise,
   droits ouverts remis) ; écriture commune `EntitlementsFile` (PENDING MANUAL VALIDATION TC-336).
 - **Économie / Marché / Marchands** — portefeuille, transactions, hôtel des ventes, offres PNJ.
+  **#336 (tranche 1)** : catalogue central `prices.yml` (vente, rachat, fabrication pièces + ingrédients
+  exacts), géré depuis PlugAdmin → « Prix et coûts » (`price.*`, droits Économie) ; aucun prix implicite
+  (montant obligatoire, prix absent/désactivé = offre indisponible), boucles d'enrichissement refusées,
+  valeurs de démonstration marquées ; offres de marchand `price-ref` ; fabrication sûre (débit d'abord,
+  remboursement des seules pièces) ; prix changé vitrine ouverte = clic refusé ; `/merchant open <id>` ;
+  exemple sans prix `merchants/atelier_demo.yml` (PENDING MANUAL VALIDATION TC-342). Pas encore : édition
+  des marchands (#17), recettes d'artisan (#18), règles conditionnelles de prix.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.
 - **Boutique web** — catalogue, commandes, livraisons idempotentes (voir `web-api/`).

@@ -1,0 +1,21 @@
+# Atelier de démonstration du catalogue des prix (issue #336).
+# Ses offres ne portent AUCUN prix : sens, objet, quantité et montant viennent de
+# PlugAdmin → Prix et coûts (fichier prices.yml). Tant que les prix cités n'y existent
+# pas (ou sont désactivés), chaque offre est affichée « Offre indisponible » et rien ne
+# s'échange — aucun prix n'est jamais inventé.
+#
+# Prix à créer dans PlugAdmin pour l'essayer (valeurs libres, marquées « démonstration ») :
+#   demo_vente      — Le PNJ vend        (ex. 4 × BREAD)
+#   demo_rachat     — Le PNJ rachète     (ex. 8 × COBBLESTONE)
+#   demo_fabrication — Le PNJ fabrique   (ex. IRON_SWORD contre 2 × IRON_INGOT + 1 × STICK + pièces)
+#
+# Ouverture : /merchant open rpgquest:atelier_demo (administrateur), ou une action de
+# dialogue OPEN_MERCHANT merchant: rpgquest:atelier_demo. Voir MERCHANT_FORMAT.md.
+
+id: rpgquest:atelier_demo
+title: "<gold>Atelier de démonstration</gold>"
+
+offers:
+  - price-ref: demo_vente
+  - price-ref: demo_rachat
+  - price-ref: demo_fabrication

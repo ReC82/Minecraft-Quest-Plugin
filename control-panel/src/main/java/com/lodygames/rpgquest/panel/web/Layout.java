@@ -49,6 +49,8 @@ public final class Layout {
                         new NavItem("Mobs spéciaux & boss", "/mobs", "mob", Permission.MOB_READ, true),
                         // Issue #177 : tables de tirage partagées par les quêtes et les boss.
                         new NavItem("Récompenses", "/rewards", "gift", Permission.ECONOMY_READ, true),
+                        // Issue #336 : prix de vente, de rachat et de fabrication des PNJ.
+                        new NavItem("Prix et coûts", "/prices", "money", Permission.ECONOMY_READ, true),
                         new NavItem("Quêtes", "/quests", "quests", Permission.CONTENT_READ, true),
                         new NavItem("Stories", "/stories", "stories", Permission.CONTENT_READ, true),
                         new NavItem("Dialogues", "/dialogues", "dialogues", Permission.DIALOGUE_READ, true),

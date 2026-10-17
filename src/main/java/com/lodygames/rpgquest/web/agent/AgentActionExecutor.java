@@ -212,6 +212,10 @@ public final class AgentActionExecutor {
                 case REWARD_DEFINITION_SAVE -> rewardDefinitionSave(action);
                 case REWARD_DEFINITION_DUPLICATE -> rewardDefinitionDuplicate(action);
                 case REWARD_DEFINITION_TOGGLE -> rewardDefinitionToggle(action);
+                case PRICE_CATALOG_STATUS -> priceCatalogStatus(action);
+                case PRICE_SAVE -> priceSave(action);
+                case PRICE_DUPLICATE -> priceDuplicate(action);
+                case PRICE_TOGGLE -> priceToggle(action);
                 case ENCOUNTER_RETRY -> encounterSiteAction(action, "retry");
                 case ENCOUNTER_DISABLE -> encounterSiteAction(action, "disable");
                 case ENCOUNTER_REMOVE -> encounterSiteAction(action, "remove");
@@ -1779,6 +1783,169 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « reward_key » invalide."));
         }
         return actions.rewardDefinitionToggle(key, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Catalogue des prix et coûts (issue #336) -----------------------------------------------
+
+    private CompletableFuture<AgentActionOutcome> priceCatalogStatus(AgentAction action) {
+        return actions.priceCatalogStatus().thenApply(view -> {
+            List<Map<String, Object>> prices = new ArrayList<>();
+            for (AgentActions.PriceEntryView p : view.prices()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("key", p.key());
+                row.put("label", p.label());
+                row.put("type", p.type());
+                row.put("item", p.item().itemId());
+                row.put("amount", p.item().amount());
+                row.put("coins", p.coins());
+                List<Map<String, Object>> ingredients = new ArrayList<>();
+                for (AgentActions.PriceItemView i : p.ingredients()) {
+                    ingredients.add(new LinkedHashMap<>(Map.of("item", i.itemId(), "amount", i.amount())));
+                }
+                row.put("ingredients", ingredients);
+                row.put("demo", p.demo());
+                row.put("enabled", p.enabled());
+                row.put("version", p.version());
+                row.put("summary", p.summary());
+                row.put("usages", p.usages());
+                prices.add(row);
+            }
+            List<Map<String, Object>> merchants = new ArrayList<>();
+            for (AgentActions.MerchantPriceView m : view.merchants()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", m.id());
+                row.put("title", m.title());
+                row.put("inlineOffers", m.inlineOffers());
+                row.put("priceRefs", m.priceRefs());
+                row.put("unavailableRefs", m.unavailableRefs());
+                merchants.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("available", view.available());
+            details.put("fileExists", view.fileExists());
+            details.put("valid", view.valid());
+            details.put("errors", view.errors());
+            details.put("warnings", view.warnings());
+            details.put("prices", prices);
+            details.put("merchants", merchants);
+            details.put("customItems", view.customItems());
+            details.put("currency", view.currency());
+            return AgentActionOutcome.success(action.id(), Integer.toString(prices.size()),
+                    prices.size() + " prix au catalogue, " + merchants.size() + " marchand(s).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code price.save} : {@code price_key}, {@code label}, {@code type}, {@code item},
+     * {@code amount}, {@code coins} (obligatoire : jamais de prix par défaut), {@code ingredients}
+     * ({@code ITEM@quantité;…}, fabrication seulement), {@code demo}, {@code enabled},
+     * {@code create}, {@code expected_version}. Forme vérifiée ici ; le reste (objet Minecraft,
+     * boucles d'enrichissement…) par le vrai chargeur avant écriture.
+     */
+    private CompletableFuture<AgentActionOutcome> priceSave(AgentAction action) {
+        String key = trimOrNull(action.param("price_key"));
+        if (key == null || !com.lodygames.rpgquest.economy.price.PriceCatalogLoader.KEY.matcher(key).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « price_key » invalide (minuscules, chiffres, _ -, 64 caractères au plus)."));
+        }
+        String label = trimOrNull(action.param("label"));
+        if (label == null || label.length() > com.lodygames.rpgquest.economy.price.PriceCatalogLoader.LABEL_MAX
+                || label.chars().anyMatch(Character::isISOControl)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « label » obligatoire, sur une ligne, 120 caractères au plus."));
+        }
+        String type = trimOrNull(action.param("type"));
+        if (type == null || !java.util.Set.of("SELL_TO_PLAYER", "BUY_FROM_PLAYER", "CRAFT").contains(type)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « type » : SELL_TO_PLAYER, BUY_FROM_PLAYER ou CRAFT."));
+        }
+        String expected = trimOrNull(action.param("expected_version"));
+        if (expected != null && !REWARD_TABLE_VERSION.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_version » invalide."));
+        }
+        List<AgentActions.PriceItemView> items = new ArrayList<>();
+        String error = parsePriceItems(action.param("item") == null ? null
+                : action.param("item") + "@" + java.util.Objects.requireNonNullElse(action.param("amount"), ""), items);
+        if (error != null || items.size() != 1) {
+            return done(AgentActionOutcome.rejected(action.id(), error != null ? error
+                    : "Paramètres « item » et « amount » obligatoires."));
+        }
+        Long coins = parseLongOrNull(action.param("coins"));
+        if (coins == null || coins < 0 || coins > com.lodygames.rpgquest.economy.price.PriceCatalogLoader.MAX_COINS) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « coins » obligatoire : nombre entier de "
+                    + "pièces entre 0 et " + com.lodygames.rpgquest.economy.price.PriceCatalogLoader.MAX_COINS
+                    + " (aucun prix par défaut)."));
+        }
+        List<AgentActions.PriceItemView> ingredients = new ArrayList<>();
+        error = parsePriceItems(action.param("ingredients"), ingredients);
+        if (error != null) {
+            return done(AgentActionOutcome.rejected(action.id(), error));
+        }
+        return actions.priceSave(key, label, type, items.get(0), coins, ingredients, isTrue(action.param("demo")),
+                        isTrue(action.param("enabled")), expected, isTrue(action.param("create")))
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code ITEM@quantité;…} → {@code out} ; renvoie le message de refus, ou {@code null} (vide accepté). */
+    static String parsePriceItems(String raw, List<AgentActions.PriceItemView> out) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        for (String piece : raw.split(";")) {
+            String line = piece.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            int at = line.lastIndexOf('@');
+            String itemId = at < 0 ? line : line.substring(0, at).trim();
+            if (!com.lodygames.rpgquest.economy.price.PriceCatalogLoader.ITEM.matcher(itemId).matches()) {
+                return "Objet « " + safe(itemId) + " » invalide : matériau (BREAD) ou objet RPGQuest (rpgquest:…).";
+            }
+            Integer amount = at < 0 ? null : parseIntOrNull(line.substring(at + 1).trim());
+            if (amount == null || amount < 1 || amount > com.lodygames.rpgquest.economy.price.PriceCatalogLoader.MAX_AMOUNT) {
+                return "Objet « " + itemId + " » : quantité entière entre 1 et 64 obligatoire.";
+            }
+            out.add(new AgentActions.PriceItemView(itemId, amount));
+        }
+        if (out.size() > com.lodygames.rpgquest.economy.price.PriceCatalogLoader.MAX_INGREDIENTS) {
+            return "9 ingrédients au plus.";
+        }
+        return null;
+    }
+
+    private static Long parseLongOrNull(String raw) {
+        try {
+            return raw == null ? null : Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private CompletableFuture<AgentActionOutcome> priceDuplicate(AgentAction action) {
+        String source = trimOrNull(action.param("price_key"));
+        String target = trimOrNull(action.param("new_key"));
+        var key = com.lodygames.rpgquest.economy.price.PriceCatalogLoader.KEY;
+        if (source == null || !key.matcher(source).matches() || target == null || !key.matcher(target).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètres « price_key » et « new_key » "
+                    + "obligatoires (minuscules, chiffres, _ -, 64 caractères au plus)."));
+        }
+        String label = trimOrNull(action.param("new_label"));
+        if (label != null && (label.length() > com.lodygames.rpgquest.economy.price.PriceCatalogLoader.LABEL_MAX
+                || label.chars().anyMatch(Character::isISOControl))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_label » : une ligne, 120 caractères au plus."));
+        }
+        return actions.priceDuplicate(source, target, label).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> priceToggle(AgentAction action) {
+        String key = trimOrNull(action.param("price_key"));
+        if (key == null || !com.lodygames.rpgquest.economy.price.PriceCatalogLoader.KEY.matcher(key).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « price_key » invalide."));
+        }
+        return actions.priceToggle(key, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

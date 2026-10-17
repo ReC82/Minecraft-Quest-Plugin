@@ -19,7 +19,7 @@ import org.slf4j.Logger;
  */
 public final class YamlMerchantRegistry implements MerchantRegistry {
 
-    private static final String[] BUNDLED_EXAMPLES = {"village_merchant.yml"};
+    private static final String[] BUNDLED_EXAMPLES = {"village_merchant.yml", "atelier_demo.yml"};
 
     private final Path merchantsDirectory;
     private final Logger logger;

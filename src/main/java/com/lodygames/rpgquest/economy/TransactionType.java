@@ -9,6 +9,8 @@ public enum TransactionType {
     MARKET_BUY,
     MARKET_SELL,
     PORTAL_USE,
+    /** Fabrication payante chez un artisan (issue #336), et son remboursement. */
+    ARTISAN_CRAFT,
     /** Récompense monétaire d'une quête (issue #16) — voir {@code QuestRewardReceipt}. */
     QUEST_REWARD,
     ADMIN_GRANT,

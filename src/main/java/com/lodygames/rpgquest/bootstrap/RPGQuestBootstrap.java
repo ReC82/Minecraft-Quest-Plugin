@@ -261,6 +261,7 @@ public final class RPGQuestBootstrap {
     /** Issue #140 — exposé à l'agent pour la lecture du journal des transactions. */
     private WalletRepository walletRepository;
     private MerchantTradeService merchantTradeService;
+    private com.lodygames.rpgquest.economy.price.PriceCatalogService priceCatalogService;
     private MarketRepository marketRepository;
     private MarketService marketService;
     private PortalService portalService;
@@ -662,8 +663,12 @@ public final class RPGQuestBootstrap {
         questProgressEngine.setRewardTables(rewardEntitlementService);
 
         registry.start(merchantRegistry);
+        // Issue #336 : catalogue central des prix (prices.yml), géré depuis PlugAdmin. Absent = aucun prix.
+        priceCatalogService = new com.lodygames.rpgquest.economy.price.PriceCatalogService(
+                plugin.getDataFolder().toPath().resolve("prices.yml"), plugin.getSLF4JLogger());
+        registry.start(priceCatalogService);
         merchantTradeService = new MerchantTradeService(
-                plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine);
+                plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine, priceCatalogService);
         registry.start(merchantTradeService);
         registry.start(new PlayerListenerService(plugin, merchantTradeService.listener()));
 
@@ -1206,6 +1211,7 @@ public final class RPGQuestBootstrap {
         agentActions.setGameSettings(gameSettingsService);
         agentActions.setEncounters(encounterService);
         agentActions.setRewardEntitlements(rewardEntitlementService);
+        agentActions.setPriceCatalog(priceCatalogService, merchantRegistry);
         agentActions.setNpcSpots(npcSpotService, claimService);
         // Issue #381 (correction du 15/10) — l'outil « Emplacements PNJ » : clic droit = un emplacement.
         // Enregistré ici parce qu'il refuse les parcelles, donc a besoin du ClaimService.
@@ -1520,7 +1526,7 @@ public final class RPGQuestBootstrap {
             money.setTabCompleter(moneyCommand);
         }
 
-        MerchantCommand merchantCommand = new MerchantCommand(merchantRegistry);
+        MerchantCommand merchantCommand = new MerchantCommand(merchantRegistry, merchantTradeService);
         var merchant = plugin.getCommand("merchant");
         if (merchant != null) {
             merchant.setExecutor(merchantCommand);

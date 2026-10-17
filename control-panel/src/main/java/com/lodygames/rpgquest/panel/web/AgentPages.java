@@ -10508,6 +10508,341 @@ public final class AgentPages {
         return sb.toString();
     }
 
+    // ---- Prix et coûts : catalogue central prices.yml (issue #336) -------------------------
+
+    private static final String PRICES_PATH = "/prices";
+    /** Lignes d'ingrédients proposées : celles du prix, plus deux vides (neuf au plus). */
+    private static final int PRICE_INGREDIENT_BLANK_ROWS = 2;
+    private static final List<String[]> PRICE_TYPES = List.of(
+            new String[] {"SELL_TO_PLAYER", "Le PNJ vend", "le joueur paie et reçoit l'objet"},
+            new String[] {"BUY_FROM_PLAYER", "Le PNJ rachète", "le joueur donne l'objet et reçoit les pièces"},
+            new String[] {"CRAFT", "Le PNJ fabrique", "le joueur paie ET donne les ingrédients, il reçoit l'objet"});
+
+    /**
+     * Page {@code /prices} (issue #336) : tous les tarifs du jeu au même endroit, sans YAML — ce
+     * qu'un PNJ vend, rachète ou fabrique, pour combien de pièces et contre quels ingrédients. Tout
+     * passe par les actions agent {@code price.*}, validées par le serveur avant écriture (montants,
+     * objets, boucles d'enrichissement).
+     */
+    public String prices(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("money", "Prix et coûts",
+                "Les tarifs des marchands et artisans, réunis en un seul catalogue : vente au joueur, rachat au "
+                        + "joueur et fabrication (pièces + objets exacts). Aucun prix n'est jamais calculé ni mis par "
+                        + "défaut : une offre sans prix actif est affichée « indisponible » en jeu.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canWrite = perms.can(session.effective(), Permission.ECONOMY_WRITE);
+        sb.append(agentPicker(agentId, PRICES_PATH, ""));
+        Optional<Map<String, Object>> loaded = latestDetails(agentId, "price.catalog.status");
+        Map<String, Object> d = loaded.orElse(Map.of());
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue des prix</span>")
+                .append(compactRefresh(session, agentId, "price.catalog.status", "Rafraîchir",
+                        loaded.isPresent() ? "btn-outline-primary" : "btn-warning", PRICES_PATH))
+                .append("</div>");
+        if (loaded.isEmpty()) {
+            return sb.append(Ui.empty("money", "État pas encore chargé — cliquer sur « Rafraîchir ».")).toString();
+        }
+        if (!Boolean.TRUE.equals(d.get("available"))) {
+            return sb.append(Ui.banner("warn", "Le plugin installé ne connaît pas encore le catalogue des prix "
+                    + "(version antérieure).")).toString();
+        }
+        sb.append(priceCatalogBanner(d));
+        boolean writable = canWrite && Boolean.TRUE.equals(d.get("valid"));
+        List<Object> prices = asList(d.get("prices"));
+        sb.append(priceItemDatalist(agentId, d));
+        sb.append("<div class=\"npc-catbar mt-3\"><span class=\"npc-catbar-t\">Prix (").append(prices.size())
+                .append(")</span>");
+        if (writable) {
+            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#pr-new\" aria-expanded=\"false\" aria-controls=\"pr-new\">")
+                    .append(Icons.icon("plus")).append("Nouveau prix</button>");
+        }
+        sb.append("</div><p class=\"muted small\">Un prix <strong>désactivé</strong> rend indisponibles les offres qui "
+                + "le citent (rien ne s'échange, aucun solde ni objet n'est touché). Pas de suppression : désactiver "
+                + "suffit et ne casse aucun marchand. Les prix marqués <em>démonstration</em> sont des valeurs d'essai "
+                + "à revoir avant d'ouvrir l'économie aux joueurs.</p>");
+        if (writable) {
+            sb.append("<div class=\"collapse\" id=\"pr-new\"><div class=\"card card-body npc-formcard\">")
+                    .append("<p class=\"npc-fs-h\">Nouveau prix</p>")
+                    .append(priceForm(session, agentId, null, "pr-new", str(d.get("currency"))))
+                    .append("</div></div>");
+        }
+        if (prices.isEmpty()) {
+            sb.append(Ui.empty("money", writable ? "Aucun prix — « Nouveau prix » pour en créer un."
+                    : "Aucun prix défini."));
+        }
+        for (String[] type : PRICE_TYPES) {
+            List<Map<String, Object>> ofType = prices.stream().map(AgentPages::asMap)
+                    .filter(p -> type[0].equals(str(p.get("type")))).toList();
+            if (ofType.isEmpty()) {
+                continue;
+            }
+            sb.append(Ui.sectionTitle("money", type[1] + " (" + ofType.size() + ")"));
+            for (Map<String, Object> p : ofType) {
+                sb.append(priceCard(session, agentId, p, writable, str(d.get("currency"))));
+            }
+        }
+        sb.append(priceMerchantsSection(asList(d.get("merchants"))));
+        return sb.toString();
+    }
+
+    /** Fichier absent, refusé, avertissements : chaque cas dit ce qu'il implique en jeu. */
+    private static String priceCatalogBanner(Map<String, Object> d) {
+        StringBuilder sb = new StringBuilder();
+        if (!Boolean.TRUE.equals(d.get("fileExists"))) {
+            sb.append(Ui.banner("info", "<strong>Aucun prix défini sur ce serveur</strong> (<code>prices.yml</code> "
+                    + "absent). Le premier prix enregistré ici crée le fichier. Les marchands à prix fixé dans leur "
+                    + "propre fichier continuent de fonctionner comme avant."));
+        } else if (!Boolean.TRUE.equals(d.get("valid"))) {
+            StringBuilder errors = new StringBuilder("<ul class=\"mb-0\">");
+            asList(d.get("errors")).stream().limit(5)
+                    .forEach(e -> errors.append("<li>").append(Http.esc(str(e))).append("</li>"));
+            sb.append(Ui.banner("err", "<strong>Le serveur refuse <code>prices.yml</code></strong> : aucun prix du "
+                    + "catalogue ne s'applique (toutes les offres liées sont indisponibles) et rien ne peut être "
+                    + "enregistré ici tant qu'il n'est pas corrigé." + errors + "</ul>"));
+        }
+        List<Object> warnings = asList(d.get("warnings"));
+        if (!warnings.isEmpty()) {
+            StringBuilder list = new StringBuilder("<ul class=\"mb-0\">");
+            warnings.stream().limit(10).forEach(w -> list.append("<li>").append(Http.esc(str(w))).append("</li>"));
+            sb.append(Ui.banner("warn", "<strong>À vérifier</strong> (le catalogue s'applique quand même) :"
+                    + list + "</ul>"));
+        }
+        return sb.toString();
+    }
+
+    /** Objets Minecraft (nom français) et RPGQuest connus du serveur. */
+    private String priceItemDatalist(String agentId, Map<String, Object> d) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"dl-price-items\">");
+        for (Object custom : asList(d.get("customItems"))) {
+            sb.append("<option value=\"").append(Http.esc(str(custom))).append("\" label=\"Objet RPGQuest\">");
+        }
+        for (String material : referenceData(agentId).materials()) {
+            sb.append("<option value=\"").append(Http.esc(material)).append("\" label=\"")
+                    .append(Http.esc(MaterialNames.french(material))).append("\">");
+        }
+        return sb.append("</datalist>").toString();
+    }
+
+    private static String priceItemText(Object itemId, Object amount) {
+        String id = str(itemId);
+        String name = id.indexOf(':') >= 0 ? id : MaterialNames.french(id) + " (" + id + ")";
+        return str(amount) + " × " + name;
+    }
+
+    private static String priceTypeLabel(String type) {
+        return PRICE_TYPES.stream().filter(t -> t[0].equals(type)).map(t -> t[1]).findFirst().orElse(type);
+    }
+
+    private String priceCard(Session session, String agentId, Map<String, Object> p, boolean canWrite,
+                             String currency) {
+        String key = str(p.get("key"));
+        String type = str(p.get("type"));
+        boolean enabled = !Boolean.FALSE.equals(p.get("enabled"));
+        String uid = "pr-" + key.replaceAll("[^a-z0-9_-]", "_");
+        String coins = str(p.get("coins")) + " " + Http.esc(currency.isBlank() ? "pièces" : currency);
+        List<Object> usages = asList(p.get("usages"));
+        StringBuilder sb = new StringBuilder("<div class=\"card card-body mb-2\" id=\"").append(uid).append("\">");
+        sb.append("<div><strong>").append(Http.esc(str(p.get("label")))).append("</strong> <code>")
+                .append(Http.esc(key)).append("</code> ")
+                .append(enabled ? "<span class=\"badge text-bg-success\">actif</span>"
+                        : "<span class=\"badge text-bg-secondary\">désactivé</span>")
+                .append(Boolean.TRUE.equals(p.get("demo")) ? " <span class=\"badge text-bg-warning\">démonstration</span>"
+                        : "")
+                .append("</div><div>");
+        switch (type) {
+            case "SELL_TO_PLAYER" -> sb.append("Le joueur paie <strong>").append(coins).append("</strong> et reçoit ")
+                    .append(Http.esc(priceItemText(p.get("item"), p.get("amount")))).append('.');
+            case "BUY_FROM_PLAYER" -> sb.append("Le joueur donne ")
+                    .append(Http.esc(priceItemText(p.get("item"), p.get("amount")))).append(" et reçoit <strong>")
+                    .append(coins).append("</strong>.");
+            default -> {
+                List<String> parts = new ArrayList<>();
+                asList(p.get("ingredients")).forEach(o -> parts.add(priceItemText(asMap(o).get("item"),
+                        asMap(o).get("amount"))));
+                sb.append("Le joueur donne ").append(Http.esc(String.join(" + ", parts))).append(" et paie <strong>")
+                        .append(coins).append("</strong> ; il reçoit ")
+                        .append(Http.esc(priceItemText(p.get("item"), p.get("amount")))).append('.');
+            }
+        }
+        sb.append("</div><div class=\"muted small\">").append(usages.isEmpty()
+                ? "Cité par aucun marchand pour l'instant."
+                : "Cité par : " + Http.esc(String.join(", ", usages.stream().map(AgentPages::str).toList())) + ".")
+                .append("</div>");
+        if (canWrite) {
+            sb.append("<div class=\"d-flex flex-wrap gap-2 mt-2\">")
+                    .append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                            + "data-bs-target=\"#").append(uid).append("-edit\" aria-expanded=\"false\">")
+                    .append(Icons.icon("edit")).append("Modifier</button>")
+                    .append("<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">")
+                    .append(priceHiddenFields(session, agentId, "price.toggle"))
+                    .append("<input type=\"hidden\" name=\"price_key\" value=\"").append(Http.esc(key)).append("\">")
+                    .append("<input type=\"hidden\" name=\"enabled\" value=\"").append(!enabled).append("\">")
+                    .append("<button class=\"btn sm").append(enabled ? " secondary" : "").append("\" type=\"submit\">")
+                    .append(enabled ? "Désactiver" : "Activer").append("</button></form>")
+                    .append("<button class=\"btn secondary sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                            + "data-bs-target=\"#").append(uid).append("-dup\" aria-expanded=\"false\">")
+                    .append(Icons.icon("plus")).append("Dupliquer</button></div>");
+            if (enabled && !usages.isEmpty()) {
+                sb.append("<div class=\"form-text\">Désactiver : les offres de ces marchands deviendront "
+                        + "« indisponibles » en jeu.</div>");
+            }
+            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-dup\">")
+                    .append("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">")
+                    .append(priceHiddenFields(session, agentId, "price.duplicate"))
+                    .append("<input type=\"hidden\" name=\"price_key\" value=\"").append(Http.esc(key)).append("\">")
+                    .append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
+                    .append("-dup-id\">Identifiant de la copie</label><input class=\"form-control\" id=\"").append(uid)
+                    .append("-dup-id\" name=\"new_key\" required maxlength=\"64\" pattern=\"[a-z0-9_\\-]{1,64}\" value=\"")
+                    .append(Http.esc((key.length() > 58 ? key.substring(0, 58) : key) + "_copie")).append("\"></div>")
+                    .append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
+                    .append("-dup-l\">Nom de la copie (facultatif)</label><input class=\"form-control\" id=\"")
+                    .append(uid).append("-dup-l\" name=\"new_label\" maxlength=\"120\"></div>")
+                    .append("<div class=\"form-text mb-2\">La copie est créée <strong>désactivée</strong> : la "
+                            + "modifier, puis l'activer.</div>")
+                    .append("<button class=\"btn sm\" type=\"submit\">Créer la copie</button></form></div>")
+                    .append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-edit\"><div class=\"card "
+                            + "card-body npc-formcard\">").append(priceForm(session, agentId, p, uid + "-f", currency))
+                    .append("</div></div>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    /** Formulaire de prix, création ({@code existing == null}) ou modification. */
+    private String priceForm(Session session, String agentId, Map<String, Object> existing, String uid,
+                             String currency) {
+        boolean create = existing == null;
+        String type = create ? "SELL_TO_PLAYER" : str(existing.get("type"));
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">");
+        sb.append(priceHiddenFields(session, agentId, "price.save"));
+        sb.append("<input type=\"hidden\" name=\"create\" value=\"").append(create).append("\">");
+        if (!create) {
+            sb.append("<input type=\"hidden\" name=\"price_key\" value=\"").append(Http.esc(str(existing.get("key"))))
+                    .append("\"><input type=\"hidden\" name=\"expected_version\" value=\"")
+                    .append(Http.esc(str(existing.get("version")))).append("\">");
+        }
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-l\">Nom du prix</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-l\" name=\"label\" required "
+                        + "maxlength=\"120\" value=\"").append(Http.esc(create ? "" : str(existing.get("label"))))
+                .append("\">").append(fieldHelp("Pour vous retrouver dans la liste (les joueurs voient l'objet et le "
+                        + "montant).", "Pain du village", "aucun (obligatoire)", null)).append("</div>");
+        if (create) {
+            sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">Identifiant "
+                    + "(facultatif)</label><input class=\"form-control\" id=\"").append(uid).append("-id\" "
+                    + "name=\"price_key\" maxlength=\"64\" pattern=\"[a-z0-9_\\-]{0,64}\">")
+                    .append(fieldHelp("Ce qu'un marchand cite (<code>price-ref</code>). Vide : tiré du nom (« Pain du "
+                            + "village » → <code>pain_du_village</code>). Ne change plus ensuite.", "pain_x4",
+                            "tiré du nom", null)).append("</div>");
+        }
+        sb.append("<fieldset class=\"mb-2\"><legend class=\"form-label fs-6 mb-1\">Ce que fait le PNJ</legend>");
+        for (String[] t : PRICE_TYPES) {
+            String id = uid + "-t-" + t[0].toLowerCase(java.util.Locale.ROOT);
+            sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"radio\" name=\"price_type\" id=\"")
+                    .append(id).append("\" value=\"").append(t[0]).append('"').append(t[0].equals(type) ? " checked" : "")
+                    .append(" required><label class=\"form-check-label\" for=\"").append(id).append("\"><strong>")
+                    .append(t[1]).append("</strong> — ").append(t[2]).append("</label></div>");
+        }
+        sb.append("</fieldset>");
+        String item = create ? "" : str(existing.get("item"));
+        sb.append("<div class=\"row g-2 mb-2\"><div class=\"col-12 col-md-7\"><label class=\"form-label\" for=\"")
+                .append(uid).append("-it\">Objet vendu, racheté ou fabriqué</label><input class=\"form-control\" id=\"")
+                .append(uid).append("-it\" name=\"item\" required list=\"dl-price-items\" autocomplete=\"off\" value=\"")
+                .append(Http.esc(item)).append("\" placeholder=\"Taper pour chercher…\">")
+                .append(item.isEmpty() || item.indexOf(':') >= 0 ? ""
+                        : "<div class=\"form-text mt-0\">" + Http.esc(MaterialNames.french(item)) + "</div>")
+                .append("</div><div class=\"col-6 col-md-2\"><label class=\"form-label\" for=\"").append(uid)
+                .append("-am\">Quantité</label><input class=\"form-control\" type=\"number\" min=\"1\" max=\"64\" id=\"")
+                .append(uid).append("-am\" name=\"amount\" required value=\"")
+                .append(Http.esc(create ? "1" : str(existing.get("amount")))).append("\"></div>")
+                .append("<div class=\"col-6 col-md-3\"><label class=\"form-label\" for=\"").append(uid)
+                .append("-co\">Pièces</label><input class=\"form-control\" type=\"number\" min=\"0\" max=\"1000000000\" "
+                        + "step=\"1\" id=\"").append(uid).append("-co\" name=\"coins\" required value=\"")
+                .append(Http.esc(create ? "" : str(existing.get("coins")))).append("\" placeholder=\"obligatoire\">")
+                .append("</div></div><div class=\"form-text mb-2\">Pièces : payées par le joueur (vente, fabrication) "
+                        + "ou reçues (rachat), en ").append(Http.esc(currency.isBlank() ? "pièces" : currency))
+                .append(". Aucune valeur par défaut : écrire 0 seulement si c'est vraiment gratuit. Le serveur refuse "
+                        + "un rachat plus cher que la vente du même objet (les joueurs gagneraient des pièces sans fin)."
+                        + "</div>");
+        List<Object> ingredients = create ? List.of() : asList(existing.get("ingredients"));
+        int rows = Math.min(com.lodygames.rpgquest.panel.agent.PriceForm.MAX_INGREDIENTS,
+                Math.max(2, ingredients.size() + PRICE_INGREDIENT_BLANK_ROWS));
+        sb.append("<p class=\"form-label mb-1\">Ingrédients exacts — <em>fabrication seulement</em></p>"
+                + "<div class=\"form-text mb-1\">Laisser vide pour une vente ou un rachat. Les objets RPGQuest sont "
+                + "reconnus par leur identité réelle, jamais par leur nom. Vider l'objet pour retirer la ligne.</div>");
+        for (int i = 0; i < rows; i++) {
+            Map<String, Object> line = i < ingredients.size() ? asMap(ingredients.get(i)) : Map.of();
+            sb.append("<div class=\"row g-2 mb-2\"><div class=\"col-8 col-md-7\"><input class=\"form-control\" "
+                    + "type=\"text\" name=\"ing_id_").append(i).append("\" aria-label=\"Ingrédient ").append(i + 1)
+                    .append("\" list=\"dl-price-items\" autocomplete=\"off\" placeholder=\"Ingrédient…\" value=\"")
+                    .append(Http.esc(str(line.get("item")))).append("\"></div><div class=\"col-4 col-md-2\">")
+                    .append("<input class=\"form-control\" type=\"number\" min=\"1\" max=\"64\" name=\"ing_amount_")
+                    .append(i).append("\" aria-label=\"Quantité ingrédient ").append(i + 1).append("\" value=\"")
+                    .append(Http.esc(line.isEmpty() ? "" : str(line.get("amount")))).append("\" placeholder=\"1\">")
+                    .append("</div></div>");
+        }
+        boolean demo = create || Boolean.TRUE.equals(existing.get("demo"));
+        boolean enabled = create || !Boolean.FALSE.equals(existing.get("enabled"));
+        sb.append("<div class=\"form-check mb-1\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
+                .append("-demo\" name=\"demo\" value=\"true\"").append(demo ? " checked" : "")
+                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-demo\">Valeur de "
+                        + "démonstration (à revoir avant d'ouvrir l'économie aux joueurs)</label></div>")
+                .append("<div class=\"form-check form-switch mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
+                        + "role=\"switch\" id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
+                .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
+                .append("-en\">Prix actif (les offres qui le citent s'échangent)</label></div>");
+        if (!create) {
+            sb.append("<div class=\"form-text mb-2\">Actuellement : ").append(Http.esc(str(existing.get("summary"))))
+                    .append(". Un joueur dont la vitrine est déjà ouverte devra la rouvrir : il ne paie jamais un prix "
+                            + "qu'il n'a pas vu.</div>");
+        }
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
+                .append(create ? "Créer le prix" : "Enregistrer").append("</button></form>");
+        return sb.toString();
+    }
+
+    /** Marchands chargés : d'où vient le prix de chaque offre, et les offres liées sans prix actif. */
+    private static String priceMerchantsSection(List<Object> merchants) {
+        StringBuilder sb = new StringBuilder(Ui.sectionTitle("money", "Marchands (" + merchants.size() + ")"));
+        sb.append("<p class=\"muted small\">Une offre de marchand prend son prix ici quand son fichier dit "
+                + "<code>price-ref: &lt;identifiant&gt;</code> ; les autres offres gardent le prix écrit dans le "
+                + "fichier du marchand. L'édition des marchands eux-mêmes depuis PlugAdmin viendra avec #17.</p>");
+        if (merchants.isEmpty()) {
+            return sb.append(Ui.empty("money", "Aucun marchand chargé sur ce serveur.")).toString();
+        }
+        sb.append("<div class=\"table-responsive\"><table class=\"table table-sm align-middle\"><thead><tr><th>Marchand"
+                + "</th><th>Prix du catalogue</th><th>Prix dans son fichier</th></tr></thead><tbody>");
+        for (Object o : merchants) {
+            Map<String, Object> m = asMap(o);
+            List<Object> unavailable = asList(m.get("unavailableRefs"));
+            List<Object> refs = asList(m.get("priceRefs"));
+            sb.append("<tr><td><strong>").append(Http.esc(str(m.get("title")))).append("</strong><br><code class=\"small\">")
+                    .append(Http.esc(str(m.get("id")))).append("</code></td><td>");
+            if (refs.isEmpty()) {
+                sb.append("<span class=\"muted\">aucun</span>");
+            } else {
+                sb.append(Http.esc(String.join(", ", refs.stream().map(AgentPages::str).toList())));
+            }
+            if (!unavailable.isEmpty()) {
+                sb.append("<div class=\"text-danger small\">Indisponible en jeu (prix absent ou désactivé) : ")
+                        .append(Http.esc(String.join(", ", unavailable.stream().map(AgentPages::str).toList())))
+                        .append("</div>");
+            }
+            sb.append("</td><td>").append(Http.esc(str(m.get("inlineOffers")))).append(" offre(s)</td></tr>");
+        }
+        return sb.append("</tbody></table></div>").toString();
+    }
+
+    private static String priceHiddenFields(Session session, String agentId, String type) {
+        return "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
+                + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
+                + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"" + PRICES_PATH + "\">";
+    }
+
     // ---- Récompenses : catalogue (issue #474) et tables de tirage (issue #177) ---------------
 
     private static final String REWARDS_PATH = "/rewards";

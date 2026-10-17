@@ -57,7 +57,7 @@ commands:
     usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]
   merchant:
     description: Marchands PNJ (administration) — voir docs/ECONOMY.md.
-    usage: /<command> <reload|validate|list>
+    usage: /<command> <reload|validate|list|open <id>>
   market:
     description: Marché entre joueurs — voir docs/ECONOMY.md.
     usage: /<command> [sell <prix>|cancel <id>|admin list]

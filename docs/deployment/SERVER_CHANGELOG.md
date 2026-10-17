@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Économie : catalogue central des prix et coûts administré depuis PlugAdmin (#336)
+
+### Changement
+
+Plugin + PlugAdmin. Nouveau fichier `plugins/RPGQuest/prices.yml` (vente, rachat, fabrication),
+**créé uniquement par PlugAdmin → Prix et coûts** au premier prix enregistré ; actions agent
+`price.catalog.status`, `price.save`, `price.duplicate`, `price.toggle`. Offres de marchand
+`price-ref`. Commande admin `/merchant open <id>`. Nouveau marchand embarqué sans prix
+`merchants/atelier_demo.yml` (seedé au démarrage car absent ; ses offres restent « indisponibles »
+tant que le propriétaire n'a pas créé les prix `demo_*`).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin. **Aucune migration** (le type de
+transaction `ARTISAN_CRAFT` est une simple valeur texte), aucun fichier de configuration. Ne rien
+créer à la main : pas de `prices.yml` (absent = aucun prix, les marchands existants à prix fixé dans
+leur fichier fonctionnent comme avant). Ne pas toucher `data.db`, `merchants/village_merchant.yml`.
+
+### Sauvegarde préalable
+
+Celle de `scripts/deploy-verygames.sh` (JAR + `data.db`) ; release précédente du panel sous `/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-342 — PENDING MANUAL VALIDATION (le propriétaire crée lui-même les prix d'essai `demo_*`).
+
+### Rollback
+
+Remettre le JAR sauvegardé + la release précédente du panel. L'ancien JAR ignore `prices.yml` et
+refuse l'offre `price-ref` : `merchants/atelier_demo.yml` est alors signalé invalide au chargement
+(les autres marchands chargent normalement) — le supprimer après rollback si gênant.
+
 ## 2026-10-17 - Mobs : modèles complets, prompt IA, import vérifié et génération aléatoire (#214)
 
 ### Changement

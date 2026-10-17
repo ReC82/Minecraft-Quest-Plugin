@@ -298,7 +298,7 @@ class MySqlDialectTranslationTest {
             "reward_entitlements.reward_key", "reward_entitlements.status", "reward_entitlements.created_at",
             "reward_entitlements.updated_at", "periodic_quest_assignments.quest_id",
             "periodic_quest_assignments.status", "periodic_quest_assignments.assigned_at",
-            "periodic_quest_assignments.updated_at");
+            "periodic_quest_assignments.updated_at", "personal_vaults.updated_at");
 
     /** DDL MariaDB produit par chaque migration réelle (version → instructions exécutées). */
     private java.util.Map<Integer, java.util.List<String>> realMigrationDdl() throws Exception {

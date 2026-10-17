@@ -58,6 +58,7 @@ public final class MigrationReport {
             Map.entry("backpacks", "Sacs à dos"),
             Map.entry("backpack_overflow", "Sacs à dos"),
             Map.entry("backpack_audit", "Sacs à dos"),
+            Map.entry("personal_vaults", "Coffres personnels"),
             Map.entry("npc_ids", "PNJ"),
             Map.entry("npc_citizens_bindings", "PNJ"),
             Map.entry("npc_citizens_skins", "PNJ"),

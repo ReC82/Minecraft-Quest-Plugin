@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 42;
+    public static final int CURRENT_VERSION = 43;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -87,7 +87,9 @@ public final class SchemaMigrator {
             new SchemaMigration(41, "reward_entitlements (droits à récompense, issue #422)",
                     SchemaMigrator::applyV41),
             new SchemaMigration(42, "periodic_quest_assignments (quêtes quotidiennes/hebdomadaires, issue #15)",
-                    SchemaMigrator::applyV42));
+                    SchemaMigrator::applyV42),
+            new SchemaMigration(43, "personal_vaults (coffres personnels partagés entre les Hubs, issue #104)",
+                    SchemaMigrator::applyV43));
 
     private SchemaMigrator() {
     }
@@ -1516,6 +1518,26 @@ public final class SchemaMigrator {
                 statement.execute(dialect.ddl(
                         "CREATE INDEX IF NOT EXISTS idx_xp_grants_skill_created ON xp_grants (skill, created_at)"));
             }
+        }
+    }
+
+    private static void applyV43(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #104 — coffres personnels : une ligne = le contenu d'UN coffre logique (vault_id,
+        // ex. vault_01) d'UN joueur. Aucune coordonnée ni aucun Hub dans la clé : le même contenu est
+        // présenté depuis n'importe quel coffre physique lié à ce vault_id (#105). contents reprend le
+        // format des backpacks (ItemArraySerializer, version dans schema_version). Sans clé étrangère
+        // vers player_profiles, comme player_heart_grants : le contenu ne dépend pas d'un profil.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS personal_vaults (
+                        player_uuid TEXT NOT NULL,
+                        vault_id TEXT NOT NULL,
+                        schema_version INTEGER NOT NULL,
+                        contents BLOB NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, vault_id)
+                    )
+                    """));
         }
     }
 

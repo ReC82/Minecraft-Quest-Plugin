@@ -48,6 +48,30 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Socle des coffres personnels (#104)
+
+### Changement
+
+JAR seul. Nouvelle table `personal_vaults` (**migration V43**, automatique et idempotente au
+démarrage) et service interne de coffres personnels. Aucune commande, aucune configuration, aucun
+contenu : rien n'est visible en jeu tant que #105 (coffres physiques des Hubs) n'est pas livré.
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y` (sauvegarde datée du JAR et de `data.db`), puis redémarrage.
+Ne pas toucher aux données joueurs.
+
+### Validation
+
+Démarrage sans erreur, schéma V43 (`personal_vaults` créée, vide). TC-352 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et redémarrer. L'ancien JAR ignore la table V43 (ajout de table
+seulement, base toujours lisible).
+
+---
+
 ## 2026-10-17 - Kit de départ déjà reçu expliqué dans le dialogue d'Elias (#475, 3e retour du 17/10)
 
 ### Changement

@@ -6,6 +6,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Coffres personnels — socle (#104, 17/10/2026)** — `PersonalVaultService` : `UUID + vault_id
+> → inventaire` (27 cases), table `personal_vaults` (**schéma V43**), identique depuis tous les
+> Hubs, indépendant de toute coordonnée, distinct de l'Ender Chest vanilla. Un seul inventaire
+> vivant par coffre, sauvegarde à la fermeture / déconnexion / arrêt, contenu illisible jamais
+> écrasé. **Aucune commande ni aucun bloc** : rien n'est encore ouvrable en jeu (#105 coffres
+> physiques des Hubs). Détail : [PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
+
 > **Quêtes quotidiennes et hebdomadaires — lot 1 côté plugin (#15, 17/10/2026)** — modèles =
 > quêtes `period: daily|weekly` de `quests/` (jamais proposées par PNJ/catalogue/commande :
 > refus `NOT_ASSIGNED`), attribuées par joueur après la première ouverture du journal

@@ -254,7 +254,7 @@ Serveur cible et **validé** : `10.11.6-MariaDB` (Debian 12). Driver : **MariaDB
 | Auto-increment | `INTEGER PRIMARY KEY AUTOINCREMENT` → `BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY` |
 | Booléens | colonne entière (`allow_public_redstone`) + coercition JDBC `setBoolean`/`getBoolean` (identique SQLite) |
 | Timestamps | **aucune colonne native** : RPGQuest stocke des chaînes ISO-8601 (`Instant.toString()`), aucun problème de fuseau |
-| BLOB | `BLOB` → `LONGBLOB` (backpacks, `market_listings.item_data`) |
+| BLOB | `BLOB` → `LONGBLOB` (backpacks, `personal_vaults.contents`, `market_listings.item_data`) |
 | Clés étrangères | `FOREIGN KEY … ON DELETE CASCADE` conservées (InnoDB), types de colonnes alignés via `VARCHAR(191)` uniforme |
 | Index | `CREATE [UNIQUE] INDEX IF NOT EXISTS` → `ALTER TABLE … ADD [UNIQUE] INDEX IF NOT EXISTS` (forme 100 % MariaDB) |
 | Collation | `utf8mb4_bin` : comparaisons **binaires**, comme le `BINARY` par défaut de SQLite — parité de comportement sur les clés sensibles à la casse (ids de quêtes, compétences…) |

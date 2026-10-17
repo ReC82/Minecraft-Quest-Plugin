@@ -9,7 +9,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.config.PersonalVaultConfig;
 import com.lodygames.rpgquest.database.PersonalVaultRepository;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.VaultAccessPointRepository;
 import com.lodygames.rpgquest.storage.VaultAccessPointService.BindOutcome;
 import com.lodygames.rpgquest.storage.VaultAccessPointService.UnbindOutcome;
@@ -69,7 +71,10 @@ class VaultAccessPointServiceTest {
         database = new DatabaseManager(tempDir.resolve("test.db"));
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         accessRepository = new VaultAccessPointRepository(database);
-        vaults = new PersonalVaultService(plugin, new PersonalVaultRepository(database), plugin.getSLF4JLogger());
+        vaults = new PersonalVaultService(plugin, new PersonalVaultRepository(database),
+                new VaultEntitlements(new PlayerVariableRepository(database),
+                        () -> new PersonalVaultConfig(List.of("vault_01", "vault_02"), 27)),
+                plugin.getSLF4JLogger());
         vaults.start();
         hubA = server.addSimpleWorld("hub_a");
         hubB = server.addSimpleWorld("hub_b");
@@ -139,6 +144,28 @@ class VaultAccessPointServiceTest {
     private void closeAndFlush(PlayerMock player) throws Exception {
         player.closeInventory();
         database.execute(connection -> null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void aLockedVaultRefusesWithAGenericMessageAndOpensNothing() throws Exception {
+        VaultAccessPointService service = newService();
+        Block chest = chest(hubA, 1);
+        assertEquals(BindOutcome.BOUND, await(service.bind(chest, VaultId.of("vault_03"), ADMIN)));
+        PlayerMock alice = server.addPlayer();
+
+        PlayerInteractEvent event = rightClick(alice, chest, EquipmentSlot.HAND);
+        assertEquals(Event.Result.DENY, event.useInteractedBlock(), "le conteneur physique ne s'ouvre jamais");
+        StringBuilder received = new StringBuilder();
+        long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+        while (!received.toString().contains("verrouillé") && System.currentTimeMillis() < deadline) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(10);
+            for (String message = alice.nextMessage(); message != null; message = alice.nextMessage()) {
+                received.append(message).append('\n');
+            }
+        }
+        assertTrue(received.toString().contains("verrouillé"), "messages reçus : " + received);
+        assertFalse(vaultOpen(alice));
     }
 
     @Test

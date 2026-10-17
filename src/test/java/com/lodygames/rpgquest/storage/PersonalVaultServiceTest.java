@@ -9,8 +9,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.backpack.ItemArraySerializer;
+import com.lodygames.rpgquest.config.PersonalVaultConfig;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PersonalVaultRepository;
+import com.lodygames.rpgquest.database.PlayerProfileRepository;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -44,6 +47,9 @@ class PersonalVaultServiceTest {
     private RPGQuestPlugin plugin;
     private DatabaseManager database;
     private PersonalVaultRepository repository;
+    private PlayerVariableRepository variables;
+    /** Les deux coffres utilisés par les tests du socle (#104) sont ouverts d'office. */
+    private PersonalVaultConfig config = new PersonalVaultConfig(List.of("vault_01", "vault_02"), 27);
 
     @BeforeEach
     void setUp() throws Exception {
@@ -52,6 +58,7 @@ class PersonalVaultServiceTest {
         database = new DatabaseManager(tempDir.resolve("test.db"));
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         repository = new PersonalVaultRepository(database);
+        variables = new PlayerVariableRepository(database);
     }
 
     @AfterEach
@@ -61,7 +68,8 @@ class PersonalVaultServiceTest {
     }
 
     private PersonalVaultService newService() {
-        PersonalVaultService service = new PersonalVaultService(plugin, repository, plugin.getSLF4JLogger());
+        PersonalVaultService service = new PersonalVaultService(plugin, repository,
+                new VaultEntitlements(variables, () -> config), plugin.getSLF4JLogger());
         service.start();
         return service;
     }
@@ -106,7 +114,7 @@ class PersonalVaultServiceTest {
         PlayerMock player = server.addPlayer();
 
         assertEquals(PersonalVaultService.OpenOutcome.OPENED, await(service.open(player, VaultId.DEFAULT)));
-        assertEquals(PersonalVaultService.DEFAULT_SLOTS, top(player).getSize());
+        assertEquals(27, top(player).getSize());
         for (ItemStack item : top(player).getContents()) {
             assertNull(item);
         }
@@ -274,5 +282,101 @@ class PersonalVaultServiceTest {
         assertThrows(IllegalArgumentException.class, () -> VaultId.of("Vault 01"));
         assertThrows(IllegalArgumentException.class, () -> VaultId.of(""));
         assertThrows(IllegalArgumentException.class, () -> VaultId.of(null));
+    }
+    // ---- Issue #106 : déblocage progressif ------------------------------------------------
+
+    private void setVariable(PlayerMock player, String key, String value) throws Exception {
+        new PlayerProfileRepository(database).findOrCreate(player.getUniqueId(), player.getName())
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        variables.set(player.getUniqueId(), key, value).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void aVaultOutsideTheStarterListIsLockedUntilItsVariableIsSet() throws Exception {
+        config = new PersonalVaultConfig(List.of("vault_01"), 27);
+        PersonalVaultService service = newService();
+        PlayerMock player = server.addPlayer();
+        Inventory before = top(player);
+
+        assertEquals(PersonalVaultService.OpenOutcome.LOCKED, await(service.open(player, VAULT_02)));
+        assertSame(before, top(player), "un coffre verrouillé n'ouvre aucun inventaire");
+        assertTrue(repository.find(player.getUniqueId(), "vault_02").get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+
+        setVariable(player, VaultEntitlements.unlockKey(VAULT_02), "true");
+        assertEquals(PersonalVaultService.OpenOutcome.OPENED, await(service.open(player, VAULT_02)));
+    }
+
+    @Test
+    void anUnlockIsPerPlayerAndSeenByAnyNewServiceInstance() throws Exception {
+        config = new PersonalVaultConfig(List.of("vault_01"), 27);
+        PlayerMock alice = server.addPlayer();
+        PlayerMock bob = server.addPlayer();
+        setVariable(alice, "VAULT_UNLOCK_VAULT_02", "true");
+
+        PersonalVaultService afterRestart = newService();
+        assertEquals(PersonalVaultService.OpenOutcome.OPENED, await(afterRestart.open(alice, VAULT_02)));
+        assertEquals(PersonalVaultService.OpenOutcome.LOCKED, await(afterRestart.open(bob, VAULT_02)));
+    }
+
+    @Test
+    void relockingNeverDeletesContentAndUnlockingAgainRestoresIt() throws Exception {
+        config = new PersonalVaultConfig(List.of("vault_01"), 27);
+        PersonalVaultService service = newService();
+        PlayerMock player = server.addPlayer();
+        setVariable(player, "VAULT_UNLOCK_VAULT_02", "true");
+        await(service.open(player, VAULT_02));
+        ItemStack sword = complexItem();
+        top(player).setItem(4, sword);
+        closeAndFlush(player);
+
+        setVariable(player, "VAULT_UNLOCK_VAULT_02", "false");
+        assertEquals(PersonalVaultService.OpenOutcome.LOCKED, await(service.open(player, VAULT_02)));
+        awaitDatabaseIdle();
+        assertTrue(repository.find(player.getUniqueId(), "vault_02").get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isPresent());
+
+        setVariable(player, "VAULT_UNLOCK_VAULT_02", "true");
+        await(service.open(player, VAULT_02));
+        assertEquals(sword, top(player).getItem(4));
+    }
+
+    @Test
+    void theStarterCapacityIsConfigurable() throws Exception {
+        config = new PersonalVaultConfig(List.of("vault_01"), 9);
+        PersonalVaultService service = newService();
+        PlayerMock player = server.addPlayer();
+
+        await(service.open(player, VaultId.DEFAULT));
+        assertEquals(9, top(player).getSize());
+    }
+
+    @Test
+    void aSlotsVariableEnlargesTheVaultAndARemovedExtensionKeepsFilledRows() throws Exception {
+        PersonalVaultService service = newService();
+        PlayerMock player = server.addPlayer();
+        setVariable(player, VaultEntitlements.slotsKey(VaultId.DEFAULT), "54");
+        await(service.open(player, VaultId.DEFAULT));
+        assertEquals(54, top(player).getSize());
+        top(player).setItem(40, new ItemStack(Material.EMERALD, 3));
+        closeAndFlush(player);
+
+        setVariable(player, "VAULT_SLOTS_VAULT_01", "27");
+        await(service.open(player, VaultId.DEFAULT));
+        assertEquals(45, top(player).getSize(), "la rangée encore occupée reste visible, jamais tronquée");
+        assertEquals(new ItemStack(Material.EMERALD, 3), top(player).getItem(40));
+        top(player).setItem(40, null);
+        closeAndFlush(player);
+
+        await(service.open(player, VaultId.DEFAULT));
+        assertEquals(27, top(player).getSize(), "une fois vidées, les rangées hors droit disparaissent");
+    }
+
+    @Test
+    void anInvalidSlotsValueGrantsNothing() throws Exception {
+        PersonalVaultService service = newService();
+        PlayerMock player = server.addPlayer();
+        setVariable(player, "VAULT_SLOTS_VAULT_01", "40");
+
+        await(service.open(player, VaultId.DEFAULT));
+        assertEquals(27, top(player).getSize());
     }
 }

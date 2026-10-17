@@ -5849,6 +5849,23 @@ Protections : personne (builder et OP compris) ne casse un point lié — le dé
 explosions, feu et entités ne le détruisent ni ne le déplacent ; impossible d'y accoler un coffre pour
 en faire un coffre double. Un coffre non déclaré reste vanilla.
 
+### Capacité progressive des coffres personnels (#106)
+
+Section `personal-vaults:` de `config.yml` (complétée automatiquement au démarrage, valeurs de
+démonstration) : `starter-vaults` (coffres ouverts d'office, défaut `[vault_01]`) et `default-slots`
+(taille sans extension, multiple de 9 de 9 à 54, défaut `27`). Les déblocages sont des **variables
+joueur**, relues à chaque ouverture :
+
+| Variable | Valeur | Effet |
+|---|---|---|
+| `VAULT_UNLOCK_<ID>` (ex. `VAULT_UNLOCK_VAULT_02`) | `true` / `false` | Ouvre ou reverrouille le coffre `<id>`. |
+| `VAULT_SLOTS_<ID>` (ex. `VAULT_SLOTS_VAULT_01`) | `9`, `18`, `27`, `36`, `45`, `54` | Taille du coffre si supérieure à `default-slots`. |
+
+À poser par une récompense de quête `VARIABLE`, une action de dialogue `SET_VARIABLE`,
+`/rpgadmin player variable set <joueur> <clé> <valeur>` (`rpgquest.admin.debug`) ou l'outil variable de
+PlugAdmin. Un coffre verrouillé refuse l'ouverture avec un message générique ; verrouiller ou réduire
+ne supprime jamais de contenu. Détail : [docs/PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
+
 ---
 
 ## 14. WorldEdit

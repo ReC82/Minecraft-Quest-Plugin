@@ -25,7 +25,8 @@ public record PluginConfig(
         CityConfig cities,
         EncounterConfig encounters,
         HudConfig hud,
-        PeriodicQuestConfig periodicQuests
+        PeriodicQuestConfig periodicQuests,
+        PersonalVaultConfig personalVaults
 ) {
 
     /**

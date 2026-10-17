@@ -1,4 +1,4 @@
-# Coffres personnels (vaults) — socle, issue #104
+# Coffres personnels (vaults) — issues #104, #105, #106
 
 Stockage personnel du joueur, partagé entre tous les Hubs : `UUID joueur + vault_id → inventaire`.
 Proche d'un Ender Chest, mais géré par LodyQuests et **distinct** de l'Ender Chest vanilla (qui
@@ -10,16 +10,17 @@ n'est ni remplacé ni détourné).
   `RPGQuestBootstrap#personalVaultService()`), `PersonalVaultService#vaultIds(UUID)`. Aucune commande
   joueur, **aucun accès distant depuis le Wild**.
 - **Phase 2 (#105)** — coffres physiques des Hubs : voir « Points d'accès physiques » ci-dessous.
-- À venir : capacité progressive (#106), salles de préparation (#107). Aucune page PlugAdmin.
+- **Phase 3 (#106)** — capacité progressive : voir « Déblocage et capacité » ci-dessous.
+- À venir : salles de préparation (#107). Aucune page PlugAdmin dédiée.
 
 ## Modèle
 
 | Élément | Règle |
 |---|---|
 | Propriétaire | UUID canonique du joueur (jamais le pseudo). |
-| `VaultId` | Identifiant logique `[a-z0-9_]{1,32}` ; `vault_01` (`VaultId.DEFAULT`) est le seul utilisé par le MVP, plusieurs coffres par joueur sont prévus (`vault_02`…). |
+| `VaultId` | Identifiant logique `[a-z0-9_]{1,32}` ; `vault_01` (`VaultId.DEFAULT`), puis `vault_02`… selon les déblocages (#106). |
 | Identité du contenu | Aucune coordonnée, aucun monde, aucun Hub : deux coffres physiques de deux Hubs liés au même `vault_id` montreront le même contenu. |
-| Capacité | 27 cases (3 rangées, `PersonalVaultService.DEFAULT_SLOTS`). Un contenu persisté plus grand garde sa taille (jamais tronqué, 54 au plus). |
+| Capacité | `personal-vaults.default-slots` (27 par défaut), agrandie par `VAULT_SLOTS_<ID>` (#106). Les rangées encore occupées au-delà de la capacité restent affichées (jamais tronqué, 54 au plus). |
 | Format | `ItemStack[]` sérialisé par `backpack.ItemArraySerializer` (méta complète : nom, lore, enchantements, PDC), version du format dans `schema_version`. |
 
 ## Persistance
@@ -81,6 +82,43 @@ se comportent comme des coffres vanilla vides jusqu'au redémarrage suivant (err
 contenu *physique* d'un bloc lié n'est jamais montré ; il peut seulement être rempli par un hopper,
 sans lien avec les données des joueurs.
 
+## Déblocage et capacité (phase 3, issue #106)
+
+Aucune mécanique de progression parallèle : les droits sont des **variables joueur**
+(`player_variables`, comme `CLAIM_TIER_1`), lues par `storage.VaultEntitlements` à **chaque
+ouverture** (aucun cache : un déblocage vaut aussitôt dans tous les Hubs, et survit à la reconnexion
+et au redémarrage puisqu'il est en base).
+
+| Réglage / variable | Effet |
+|---|---|
+| `personal-vaults.starter-vaults` (config.yml, défaut `[vault_01]`) | Coffres ouverts à tout joueur dès le départ. Liste vide = tout est à débloquer. |
+| `personal-vaults.default-slots` (défaut `27`) | Taille d'un coffre sans extension : multiple de 9 entre 9 et 54, sinon la configuration est refusée. |
+| `VAULT_UNLOCK_<ID>` = `true` | Ouvre le coffre `<id>` (`<ID>` en majuscules : `VAULT_UNLOCK_VAULT_02` pour `vault_02`). Toute autre valeur (dont `false`) le laisse verrouillé. |
+| `VAULT_SLOTS_<ID>` = `9`…`54` (multiple de 9) | Taille du coffre `<id>` si elle dépasse `default-slots`. Une valeur illisible ou hors bornes n'accorde rien. |
+
+Les valeurs livrées (un coffre de départ, 27 cases) sont des **valeurs de démonstration** : le nombre
+de coffres et leur taille ne sont pas arbitrés.
+
+**Obtenir un déblocage** — toute source capable de poser une variable, sans code nouveau :
+récompense de quête `VARIABLE` (`key: VAULT_UNLOCK_VAULT_02`, `value: "true"`), action de dialogue
+`SET_VARIABLE`, `/rpgadmin player variable set <joueur> VAULT_UNLOCK_VAULT_02 true` (droit
+`rpgquest.admin.debug` en plus), ou l'outil « Écrire une variable » de PlugAdmin (qui refuse une
+valeur mal typée pour ces clés). Un futur mode d'obtention (événement, saison, VIP) n'a qu'à poser la
+même variable.
+
+**Coffre verrouillé** — ouverture refusée (`OpenOutcome.LOCKED`), aucun inventaire, aucune lecture ni
+écriture de `personal_vaults` ; message générique : « Ce coffre est encore verrouillé. Il se
+débloquera au fil de ta progression dans LodyQuests. » (sans révéler la quête). Aucun visuel de coffre
+verrouillé pour l'instant.
+
+**Retrait d'un droit** — verrouiller (`false`) ou réduire la taille ne supprime jamais rien : le
+contenu reste en base et réapparaît tel quel quand le droit revient. Après réduction de taille, les
+rangées qui contiennent encore des objets restent visibles ; seules les rangées vides au-delà de la
+capacité disparaissent. Un coffre déjà ouvert au moment du retrait reste ouvert jusqu'à sa fermeture.
+
+Note : `/rpgadmin player resetnew|resetfull` efface les variables, donc les déblocages ; le contenu
+des coffres personnels n'est pas touché par ces resets.
+
 ## Tests
 
 `PersonalVaultServiceTest` (isolation entre joueurs, plusieurs `vault_id`, objets complexes avec
@@ -91,3 +129,8 @@ même bloc, même `vault_id` dans deux Hubs, déplacement/reliaison sans toucher
 vanilla inchangé, main secondaire et refus antérieur, survie au redémarrage, refus de liaison,
 protections casse/explosion/coffre accolé, moitié d'un coffre double) et
 `VaultAccessPointRepositoryTest`.
+Phase 3 : `PersonalVaultServiceTest` (coffre hors liste de départ verrouillé puis ouvert par sa variable,
+déblocage propre à un joueur et relu par une nouvelle instance, reverrouillage sans perte, capacité de
+départ configurable, extension puis réduction sans troncature, valeur de taille invalide ignorée),
+`VaultAccessPointServiceTest` (point d'accès vers un coffre verrouillé : message, rien d'ouvert),
+`PersonalVaultConfigTest`, `VariableTypesTest`.

@@ -193,6 +193,20 @@ backpacks:
   fallback-size: SMALL
   open-item-material: BUNDLE
 
+personal-vaults:
+  # Coffres personnels des Hubs (#104/#105), capacité progressive (#106).
+  # VALEURS DE DÉMONSTRATION : nombre de coffres et tailles non arbitrés.
+  # Coffres ouverts à tout joueur dès le départ. Tout autre coffre est
+  # verrouillé jusqu'à ce que la variable joueur VAULT_UNLOCK_<ID> vaille
+  # true (ex. VAULT_UNLOCK_VAULT_02), posée par une récompense de quête
+  # VARIABLE, une action de dialogue SET_VARIABLE ou un administrateur.
+  # Verrouiller un coffre ne supprime jamais son contenu.
+  starter-vaults:
+    - vault_01
+  # Taille d'un coffre sans extension (multiple de 9, de 9 à 54). La
+  # variable VAULT_SLOTS_<ID> (ex. VAULT_SLOTS_VAULT_01 = 54) l'agrandit.
+  default-slots: 27
+
 web-export:
   # Export périodique en lecture seule pour le module web-api séparé (voir
   # docs/WEB_API.md) : ce dernier n'accède jamais à data.db directement, il

@@ -25,6 +25,15 @@ class VariableTypesTest {
     }
 
     @Test
+    void vaultUnlocksAreBooleansAndVaultSlotsAreWholeRows() {
+        assertTrue(VariableTypes.problem("VAULT_UNLOCK_VAULT_02", "true").isEmpty());
+        assertFalse(VariableTypes.problem("VAULT_UNLOCK_VAULT_02", "oui").isEmpty());
+        assertTrue(VariableTypes.problem("VAULT_SLOTS_VAULT_01", "54").isEmpty());
+        assertFalse(VariableTypes.problem("VAULT_SLOTS_VAULT_01", "40").isEmpty());
+        assertFalse(VariableTypes.problem("VAULT_SLOTS_VAULT_01", "63").isEmpty());
+    }
+
+    @Test
     void otherVariablesKeepTheirFreeType() {
         assertTrue(VariableTypes.problem("tutorial_started", "lasagne").isEmpty());
         assertTrue(VariableTypes.expected("tutorial_started").isEmpty());

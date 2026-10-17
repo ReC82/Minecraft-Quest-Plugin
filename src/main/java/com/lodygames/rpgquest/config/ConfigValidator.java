@@ -54,10 +54,11 @@ public final class ConfigValidator {
         EncounterConfig encounters = validateEncounters(section);
         HudConfig hud = validateHud(section);
         PeriodicQuestConfig periodicQuests = validatePeriodicQuests(section);
+        PersonalVaultConfig personalVaults = validatePersonalVaults(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
                 backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit,
-                wild, npcHints, cities, encounters, hud, periodicQuests);
+                wild, npcHints, cities, encounters, hud, periodicQuests, personalVaults);
     }
 
     /**
@@ -104,6 +105,33 @@ public final class ConfigValidator {
         }
         return new PeriodicQuestConfig(periodic.getBoolean("enabled", defaults.enabled()), zone, resetTime, day,
                 daily, weekly);
+    }
+
+    /**
+     * Section {@code personal-vaults:} (issue #106) — absente : {@code vault_01} ouvert, 27 cases.
+     * Une valeur invalide refuse la configuration entière plutôt que d'ouvrir ou fermer des coffres
+     * par surprise.
+     */
+    static PersonalVaultConfig validatePersonalVaults(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection vaults = section.getConfigurationSection("personal-vaults");
+        PersonalVaultConfig defaults = PersonalVaultConfig.defaults();
+        if (vaults == null) {
+            return defaults;
+        }
+        List<String> starters = vaults.isList("starter-vaults")
+                ? vaults.getStringList("starter-vaults") : defaults.starterVaults();
+        for (String id : starters) {
+            if (id == null || !id.matches("[a-z0-9_]{1,32}")) {
+                throw new ConfigValidationException("« personal-vaults.starter-vaults » : identifiant invalide \""
+                        + id + "\" (lettres minuscules, chiffres et _, 32 caractères au plus, ex. vault_01).");
+            }
+        }
+        int slots = vaults.getInt("default-slots", defaults.defaultSlots());
+        if (!PersonalVaultConfig.isValidSlots(slots)) {
+            throw new ConfigValidationException("« personal-vaults.default-slots » doit être un multiple de 9 entre "
+                    + PersonalVaultConfig.MIN_SLOTS + " et " + PersonalVaultConfig.MAX_SLOTS + " (valeur : " + slots + ").");
+        }
+        return new PersonalVaultConfig(starters, slots);
     }
 
     /** Section {@code hud:} (issue #184) — absente : panneau désactivé, retours de gains actifs. */

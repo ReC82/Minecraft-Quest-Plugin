@@ -52,7 +52,15 @@ final class VaultAccessListener implements Listener {
             return;
         }
         service.open(event.getPlayer(), vaultId.get()).thenAccept(outcome -> {
-            if (outcome == PersonalVaultService.OpenOutcome.LOAD_FAILED && event.getPlayer().isOnline()) {
+            if (!event.getPlayer().isOnline()) {
+                return;
+            }
+            if (outcome == PersonalVaultService.OpenOutcome.LOCKED) {
+                // Générique à dessein : ne révèle ni la quête ni l'étape qui le débloque.
+                event.getPlayer().sendMessage(MM.deserialize(
+                        "<gold>🔒 Ce coffre est encore verrouillé.</gold> <gray>Il se débloquera au fil de ta "
+                                + "progression dans LodyQuests. Tes coffres déjà ouverts restent accessibles.</gray>"));
+            } else if (outcome == PersonalVaultService.OpenOutcome.LOAD_FAILED) {
                 event.getPlayer().sendMessage(MM.deserialize(
                         "<red>Ton coffre personnel est momentanément indisponible. Préviens un administrateur ; "
                                 + "rien n'a été perdu.</red>"));

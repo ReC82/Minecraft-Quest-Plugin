@@ -41,6 +41,23 @@ offers:
     required-level: 5                  # niveau d'expérience vanilla (Player#getLevel())
 ```
 
+## Offre au prix du catalogue (`price-ref`, issue #336)
+
+```yaml
+offers:
+  - price-ref: pain_x4                # clé d'un prix de PlugAdmin → Prix et coûts
+  - price-ref: epee_forgee            # un prix CRAFT : fabrication (pièces + ingrédients)
+    required-quest: rpgquest:first_steps
+```
+
+-   Sens, objet, quantité et montant viennent du catalogue `prices.yml`
+    (voir `docs/ECONOMY.md`) ; `direction`, `material`, `custom-item`,
+    `quantity` et `price` sont alors **interdits** dans l'offre.
+-   Les conditions `required-*` restent propres à l'offre.
+-   Prix absent ou désactivé : l'offre est affichée « Offre indisponible »
+    et ne s'échange pas — jamais un montant par défaut.
+-   Exemple embarqué : `merchants/atelier_demo.yml`.
+
 ## Ouvrir la vitrine depuis un dialogue
 
 ```yaml
@@ -54,7 +71,7 @@ choices:
 ## Validation
 
 -   `id`, `title`, `offers` (≥ 1 entrée) sont obligatoires.
--   Chaque offre : `direction` (`SELL_TO_PLAYER`/`BUY_FROM_PLAYER`),
+-   Chaque offre : soit `price-ref` (voir plus haut), soit `direction` (`SELL_TO_PLAYER`/`BUY_FROM_PLAYER`),
     exactement un de `material` ou `custom-item`, `quantity` (entier
     strictement positif) et `price` (entier ≥ 0, la monnaie du plugin est
     toujours un nombre entier — voir `docs/ECONOMY.md`) sont obligatoires.

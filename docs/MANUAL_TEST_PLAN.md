@@ -6688,3 +6688,35 @@ Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.
 6.  « Générer aléatoirement » ×2 : deux brouillons différents, rien de créé tant que non confirmé.
 7.  Apparition manuelle (propriétaire seulement) : « Faire apparaître un boss communautaire de test ».
 
+### TC-342 — Prix et coûts depuis PlugAdmin : vente, rachat, fabrication (issue #336, PENDING MANUAL VALIDATION)
+
+**Préparation** : PlugAdmin (DEV) → « Prix et coûts » → « Rafraîchir ». Compte avec « Économie — écriture ».
+En jeu, un compte administrateur avec quelques LodyCoins (`/money`), un inventaire avec de la place.
+
+1.  Page sans prix : **Attendu** « Aucun prix défini sur ce serveur », tableau Marchands avec
+    `rpgquest:atelier_demo` et « Indisponible en jeu : demo_vente, demo_rachat, demo_fabrication ».
+2.  En jeu `/merchant open rpgquest:atelier_demo` : **Attendu** trois barrières « Offre indisponible » ; un clic
+    ne débite rien.
+3.  « Nouveau prix » : identifiant `demo_vente`, « Le PNJ vend », BREAD × 4, pièces **vides** →
+    **Attendu** refus « aucun prix n'est jamais mis par défaut ». Puis 3 pièces → créé, badge
+    « démonstration », « Cité par : marchand « Atelier de démonstration » ».
+4.  `demo_rachat` : « Le PNJ rachète », BREAD × 1 pour 1 pièce → **Attendu** refus « Boucle
+    d'enrichissement » (racheté plus cher que vendu), rien d'écrit. Puis COBBLESTONE × 8 pour 1 pièce → créé.
+5.  `demo_fabrication` : « Le PNJ fabrique », IRON_SWORD × 1, 5 pièces, ingrédients IRON_INGOT × 2 et
+    STICK × 1 → créé.
+6.  En jeu, rouvrir la vitrine : pain (3 pièces), rachat de pierres, épée (ingrédients + coût affichés).
+    Acheter le pain : −3, +4 pains. Vendre 8 pierres : +1, −8 pierres.
+7.  Fabrication sans les ingrédients : **Attendu** « Il te manque des ingrédients », solde inchangé. Avec
+    2 lingots + 1 bâton : −5 pièces, lingots et bâton retirés, +1 épée. Double-clic rapide avec les
+    ingrédients pour une seule épée : **Attendu** une seule épée, une seule fabrication payée (le second
+    débit est remboursé, message « Fabrication annulée et remboursée »).
+8.  Inventaire plein (aucune case libérée par les ingrédients) : **Attendu** « Ton inventaire est plein »,
+    rien de débité ni de retiré.
+9.  Vitrine ouverte, modifier dans PlugAdmin le prix du pain (4 pièces), puis cliquer le pain : **Attendu**
+    « Les prix viennent de changer », rien d'échangé, vitrine réaffichée avec 4 ; un second clic achète à 4.
+10. « Désactiver » `demo_vente` : **Attendu** le message cite l'atelier ; en jeu, barrière « Offre
+    indisponible ». « Dupliquer » : copie désactivée.
+
+**Reset** : désactiver les trois prix depuis PlugAdmin (aucune suppression ; aucun solde à remettre au-delà
+des essais faits sur son propre compte).
+

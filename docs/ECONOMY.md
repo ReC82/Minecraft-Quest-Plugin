@@ -31,6 +31,9 @@ format YAML d'un marchand.
     les définitions de marchands, ou liste celles actuellement chargées.
     Aucune sous-commande joueur : un marchand n'existe qu'à travers un
     dialogue qui l'ouvre.
+-   `/merchant open <id>` (`rpgquest.admin`, issue #336) — ouvre la vitrine
+    pour l'administrateur lui-même, sans câbler de dialogue. Les échanges y
+    sont **réels** (son solde, son inventaire).
 
 ## Atomicité et anti-duplication
 
@@ -75,6 +78,101 @@ un débit refusé ne donne jamais rien.
 **Vente** (le marchand achète) : l'objet est retiré de l'inventaire de
 façon synchrone avant même que le crédit (asynchrone) ne démarre, ce qui
 empêche un double-clic de vendre deux fois le même stock.
+
+## Catalogue des prix et coûts (issue #336)
+
+Tous les tarifs peuvent vivre dans **un seul catalogue**, `plugins/RPGQuest/prices.yml`,
+géré depuis **PlugAdmin → Prix et coûts** (`/prices`, droit « Économie » : lecture
+pour voir, écriture pour modifier). Le portefeuille LodyCoins existant reste la seule
+source de vérité des soldes : le catalogue ne fait que dire combien coûte quoi.
+
+Trois natures de prix, **toujours saisies, jamais déduites l'une de l'autre** (un
+rachat n'est pas « la moitié de la vente ») :
+
+| Nature | Le PNJ… | Le joueur… |
+|---|---|---|
+| `SELL_TO_PLAYER` | vend | paie `coins`, reçoit l'objet × quantité |
+| `BUY_FROM_PLAYER` | rachète | donne l'objet × quantité, reçoit `coins` |
+| `CRAFT` | fabrique | paie `coins` **et** donne les ingrédients exacts, reçoit l'objet |
+
+Un objet est un matériau Minecraft (`BREAD`) ou un objet RPGQuest (`rpgquest:…`),
+reconnu par son PersistentDataContainer — jamais par son nom.
+
+### Aucun prix implicite
+
+-   `coins` est **obligatoire** (0 seulement si c'est voulu ; un avertissement le
+    signale). Pas de montant par défaut, pas de calcul.
+-   Une offre de marchand qui cite un prix **absent ou désactivé** est affichée
+    « Offre indisponible » (barrière) et ne s'échange pas. Un `prices.yml` refusé
+    par le serveur rend **toutes** les offres liées indisponibles.
+-   Les offres à prix écrit dans le fichier du marchand (forme historique)
+    continuent de fonctionner sans changement.
+-   Le champ `demo` marque une **valeur de démonstration** (badge dans PlugAdmin,
+    avertissement au chargement) : aucune valeur définitive n'est livrée.
+
+### Validation au chargement et avant chaque écriture
+
+Refusés (le fichier entier, jamais à moitié) : montant négatif ou non entier
+(borne 1 000 000 000 contre une faute de frappe), quantité hors 1–64, objet
+inconnu, fabrication sans ingrédient, ingrédient en double ou égal au résultat,
+ingrédients sur une vente, et toute **boucle d'enrichissement** entre prix actifs,
+calculée exactement sur le prix unitaire, tous marchands confondus :
+
+-   un objet racheté plus cher qu'il n'est vendu ;
+-   une fabrication dont le résultat se rachète plus cher que ce qu'elle coûte
+    (pièces + ingrédients au prix de vente le plus bas, quand tous s'achètent).
+
+Limite connue : les chaînes de plusieurs fabrications ne sont pas suivies.
+
+PlugAdmin vérifie en plus que les objets RPGQuest cités existent sur le serveur.
+L'écriture suit les garanties de `entitlements.yml` : fichier actuel valide,
+relecture par le vrai chargeur, écriture atomique (le premier enregistrement crée
+le fichier sans jamais en écraser un apparu entre-temps), rechargement immédiat et
+restauration à l'octet près si le serveur n'accepte pas le résultat. Pas de
+suppression : on désactive (aucun marchand cassé). Une copie naît désactivée.
+
+### Relier une offre de marchand
+
+```yaml
+offers:
+  - price-ref: pain_x4          # tout vient du catalogue
+    required-level: 2           # les conditions d'accès restent propres à l'offre
+```
+
+`price-ref` exclut `direction`, `material`, `custom-item`, `quantity` et `price`
+(une seule source pour un prix). Le bundle fournit `merchants/atelier_demo.yml`
+(trois offres `demo_vente`, `demo_rachat`, `demo_fabrication`, **sans aucun prix**),
+à ouvrir avec `/merchant open rpgquest:atelier_demo`. L'édition des marchands
+depuis PlugAdmin relève de #17, les recettes d'artisan de #18.
+
+### Garanties des échanges liés
+
+-   **Prix vu = prix payé** : la vitrine retient la génération du catalogue
+    affichée ; si un prix a changé depuis, le clic est refusé (« Les prix viennent
+    de changer ») et la vitrine se réaffiche.
+-   Vente et rachat réutilisent exactement les flux historiques (débit avant
+    remise, remboursement si l'objet ne tient plus ; retrait synchrone avant
+    crédit).
+-   **Fabrication** : contrôle des ingrédients exacts et de la place (simulée
+    *après* retrait des ingrédients) → débit des pièces → sur le thread principal,
+    nouvelle vérification, retrait des ingrédients et remise du résultat en une
+    seule passe synchrone. Fonds insuffisants : rien n'est pris. Ingrédients
+    disparus entre-temps (double-clic, dépôt), inventaire rempli ou joueur
+    déconnecté : **seules les pièces sont remboursées**, les ingrédients n'ont
+    jamais été touchés. Un double-clic fabrique donc une seule fois.
+-   **Audit** : chaque mouvement porte dans `transactions.context` la clé et la
+    version du prix appliqué (`prix:epee@1a2b3c4d 1 × IRON_SWORD`), type
+    `MERCHANT_BUY` / `MERCHANT_SELL` / `ARTISAN_CRAFT` ; chaque écriture PlugAdmin
+    est journalisée côté serveur (`Prix : « clé » vXXXX écrit depuis PlugAdmin`)
+    et dans l'historique des actions du panel.
+
+### Modèle extensible (non activé)
+
+Les règles évoquées par le ticket (stock, bornes, monde, ville, PNJ, période,
+niveau, métier, réputation, événement, priorités, historique) ne sont **pas**
+implémentées : elles demandent des arbitrages du propriétaire. Le modèle
+(une clé stable par prix, une version par contenu, une nature explicite) permet
+de les ajouter plus tard sans changer les offres existantes.
 
 ## Intégration Vault (préparée, non câblée)
 

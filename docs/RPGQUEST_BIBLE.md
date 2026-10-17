@@ -5585,8 +5585,27 @@ Vérifié dans `MoneyCommand.java`, `MerchantCommand.java`, `MarketCommand.java`
 | `/merchant reload` | Recharge les marchands depuis le disque, rapport `N chargé(s), N erreur(s)`. | non |
 | `/merchant validate` | Même validation sans appliquer. | non |
 | `/merchant list` | Liste les marchands chargés (id, nombre d'offres). | non |
+| `/merchant open <id>` | Ouvre la vitrine **pour l'administrateur lui-même** (#336), sans dialogue ; échanges réels sur son solde et son inventaire. Complétion des id. | oui (échanges) |
 
-Un marchand n'a **aucun lien direct à une entité PNJ** — il ne s'ouvre que via l'action de dialogue `OPEN_MERCHANT` (section 4). Format YAML complet (offres `SELL_TO_PLAYER`/`BUY_FROM_PLAYER`, conditions cumulatives permission/quête/niveau) : [MERCHANT_FORMAT.md](../MERCHANT_FORMAT.md).
+Un marchand n'a **aucun lien direct à une entité PNJ** — il ne s'ouvre que via l'action de dialogue `OPEN_MERCHANT` (section 4) — ou `/merchant open` pour un admin. Format YAML complet (offres `SELL_TO_PLAYER`/`BUY_FROM_PLAYER`, offre `price-ref` liée au catalogue, conditions cumulatives permission/quête/niveau) : [MERCHANT_FORMAT.md](../MERCHANT_FORMAT.md).
+
+### Prix et coûts — catalogue `prices.yml` (#336)
+
+Fichier `plugins/RPGQuest/prices.yml`, **écrit uniquement depuis PlugAdmin → Prix et coûts** (`/prices`,
+« Économie — lecture » pour voir, « Économie — écriture » pour modifier ; actions agent
+`price.catalog.status`, `price.save`, `price.duplicate`, `price.toggle`). Absent = aucun prix ; le premier
+enregistrement le crée. Trois natures saisies séparément, jamais déduites : **vente au joueur**
+(`SELL_TO_PLAYER`), **rachat au joueur** (`BUY_FROM_PLAYER`), **fabrication** (`CRAFT` : pièces **et**
+ingrédients exacts, objets RPGQuest reconnus par PDC). Champs : `label`, `type`, `item`, `amount` (1–64),
+`coins` (**obligatoire**, entier ≥ 0), `ingredients` (fabrication), `demo` (valeur de démonstration),
+`enabled`. Refusés : montant absent/négatif, objet inconnu, fabrication sans ingrédient, boucle
+d'enrichissement entre prix actifs (rachat > vente, fabrication revendue plus cher que son coût).
+Une offre de marchand `price-ref: <clé>` prend tout dans le catalogue ; prix absent/désactivé ou fichier
+refusé = « Offre indisponible ». Prix changé vitrine ouverte = clic refusé, vitrine réaffichée.
+Fabrication : pièces débitées d'abord, ingrédients pris et objet remis ensuite ; tout échec rembourse les
+pièces seules. Audit : `transactions.context = prix:<clé>@<version> …`, type `ARTISAN_CRAFT` pour la
+fabrication. Pas de suppression (désactiver). Exemple embarqué sans prix : `merchants/atelier_demo.yml`.
+Détail : [docs/ECONOMY.md](ECONOMY.md#catalogue-des-prix-et-coûts-issue-336). Aucune migration de base.
 
 ### Marché entre joueurs — `/market`
 

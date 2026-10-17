@@ -324,6 +324,16 @@ public enum AgentActionType {
     MOB_DEFINITION_CREATE("mob.definition.create"),
     MOB_DEFINITION_UPDATE("mob.definition.update"),
     MOB_DEFINITION_TOGGLE("mob.definition.toggle"),
+    /**
+     * Issue #214 : vérifier un fichier de profil rempli hors de PlugAdmin (parseur réel, références,
+     * différences avec le profil existant) -- n'écrit rien.
+     */
+    MOB_DEFINITION_IMPORT_CHECK("mob.definition.import.check"),
+    /**
+     * Issue #214 : écrire ce profil importé, et lui seul (confirmation de remplacement, empreinte du
+     * fichier vérifié, sauvegarde de l'ancien). Ne fait jamais apparaître de créature.
+     */
+    MOB_DEFINITION_IMPORT_APPLY("mob.definition.import.apply"),
     /** Throttle global du tirage aléatoire Wild (issue #169 lot 1). */
     MOB_SPAWN_SETTINGS_SET("mob.spawn-settings.set"),
     /** Spawn/suppression d'instances de test, distinctes des mobs ordinaires (issue #169 lot 1). */

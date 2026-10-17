@@ -1967,7 +1967,25 @@ public interface AgentActions {
                              Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount,
                              Double summonChance, Integer summonCooldownSeconds, Integer summonMaxAlive,
                              List<String> abilitiesSummary, String bossMode, int communityWeight,
-                             List<String> participationRewards) {
+                             List<String> participationRewards, String yaml) {
+
+        /** Forme antérieure à #214, sans le fichier canonique (« Exporter ce profil »). */
+        public MobProfileSummary(String id, String category, boolean enabled, String entityType, String displayName,
+                                 double spawnChance, List<String> worlds, List<String> biomes, List<String> zones,
+                                 Double health, Double damage, Double speed, Double armor,
+                                 Double knockbackResistance, Double scale, Double creeperExplosionRadius,
+                                 String particle, String sound, Integer xpReward, Integer maxPopulation,
+                                 int alivePopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+                                 Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount,
+                                 Double summonChance, Integer summonCooldownSeconds, Integer summonMaxAlive,
+                                 List<String> abilitiesSummary, String bossMode, int communityWeight,
+                                 List<String> participationRewards) {
+            this(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones, health, damage,
+                    speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound, xpReward,
+                    maxPopulation, alivePopulation, enragedHealthFraction, enragedSpeedMultiplier,
+                    enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
+                    summonMaxAlive, abilitiesSummary, bossMode, communityWeight, participationRewards, "");
+        }
     }
 
     /** Throttle global du tirage aléatoire Wild (voir {@code mob.MobSpawnSettings}). */
@@ -2007,6 +2025,30 @@ public interface AgentActions {
 
     /** Bascule {@code enabled} sans toucher au reste du profil -- action {@code mob.definition.toggle}. */
     CompletableFuture<MutationResult> mobDefinitionToggle(String id, boolean enabled);
+
+    /**
+     * Issue #214 — résultat de la vérification d'un fichier de profil importé ({@code mob.definition.import.check}).
+     *
+     * @param canonical         texte qui serait écrit (vide si refusé)
+     * @param existingFile      fichier actuel du même identifiant, vide si nouveau profil
+     * @param existingCanonical profil actuel en forme canonique, vide s'il est absent ou illisible
+     * @param existingSha       empreinte du fichier actuel, à renvoyer avec la confirmation
+     */
+    record MobImportView(boolean valid, List<String> errors, List<String> warnings, String id, String category,
+                         String bossMode, String displayName, String entityType, String canonical,
+                         String existingFile, String existingCanonical, String existingSha) {
+    }
+
+    default CompletableFuture<MobImportView> mobImportCheck(String yaml) {
+        return CompletableFuture.completedFuture(new MobImportView(false,
+                List.of("Import de profil indisponible sur ce serveur."), List.of(), "", "", "", "", "", "", "", "", ""));
+    }
+
+    /** Issue #214 — {@code mob.definition.import.apply} : n'écrit que ce profil, ne fait rien apparaître. */
+    default CompletableFuture<MutationResult> mobImportApply(String yaml, boolean replace, String expectedSha) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED",
+                "Import de profil indisponible sur ce serveur."));
+    }
 
     /** Règle le throttle global (voir {@code MobSpawnSettings}) -- action {@code mob.spawn-settings.set}. */
     CompletableFuture<MutationResult> mobSpawnSettingsSet(boolean enabled, double chance, Integer maxSimultaneousSpecial);

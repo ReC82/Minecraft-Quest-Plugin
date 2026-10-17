@@ -6669,3 +6669,22 @@ Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.
 5.  Remplacer + confirmer. **Attendu** : le dialogue de PlugAdmin est remplacé, rien n'est en jeu ;
     « Mettre en jeu » depuis le dialogue, puis le tester en jeu (0, 1 ou plusieurs quêtes dans la liste,
     pas de double démarrage). Retirer ensuite la copie `zz465_*` (PlugAdmin et DEV).
+
+### TC-341 — Profil de boss par modèle, IA et import (issue #214, PENDING MANUAL VALIDATION)
+
+**Préparation** : PlugAdmin (DEV) → Mobs spéciaux & boss → « Rafraîchir », « Catalogues Minecraft »,
+« Récompenses et tirages ». Ne jamais toucher `rpgquest:claude_diag_boss`.
+
+1.  « Nouveau profil » : **Attendu** les liens « Modèle … » et « Importer un fichier / IA ». Télécharger le
+    modèle « Boss communautaire » : fichier commenté en français, toutes les capacités en exemple.
+2.  « Modèles, IA et import de fichier » → « Boss communautaire » : copier le prompt dans une IA, demander
+    « Crée un boss zombie d'entraînement facile : id boss_zombie_entrainement, nom Zombie d'entraînement,
+    20 PV, 2 dégâts, vitesse 0,20, monde wild, aucune capacité, aucune récompense ».
+3.  Coller la réponse dans l'étape 3, « Vérifier ». **Attendu** : « Nouveau profil », fichier exact affiché,
+    aucune erreur ; « Créer ce profil » → toast réussi, profil dans la liste, **aucun boss apparu**.
+4.  Réimporter le même fichier avec `health: 40`. **Attendu** : différences `health 20.0 → 40.0`, case
+    « remplacer » obligatoire ; « Annuler » ne change rien ; confirmer remplace (sauvegarde `mob-backups/`).
+5.  Ajouter `fly-speed: 3` au fichier. **Attendu** : refus lisible « Propriété inconnue », rien d'écrit.
+6.  « Générer aléatoirement » ×2 : deux brouillons différents, rien de créé tant que non confirmé.
+7.  Apparition manuelle (propriétaire seulement) : « Faire apparaître un boss communautaire de test ».
+

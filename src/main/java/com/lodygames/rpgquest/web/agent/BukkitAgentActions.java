@@ -4759,7 +4759,74 @@ public final class BukkitAgentActions implements AgentActions {
                 mobService.populationOf(def.id()), enragedHealthFraction, enragedSpeedMultiplier,
                 enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
                 summonMaxAlive, List.copyOf(abilitiesSummary), def.bossMode().name(), def.communityWeight(),
-                def.participationRewards());
+                def.participationRewards(), com.lodygames.rpgquest.mob.SpecialMobDefinitionYaml.render(def));
+    }
+
+    // ---- Import de profil (issue #214) -------------------------------------------------------------
+
+    @Override
+    public CompletableFuture<MobImportView> mobImportCheck(String yaml) {
+        return mobImportReferences().thenApply(refs -> {
+            com.lodygames.rpgquest.mob.SpecialMobImport.Check c =
+                    com.lodygames.rpgquest.mob.SpecialMobImport.check(yaml, refs, mobDefinitionStore);
+            SpecialMobDefinition d = c.definition();
+            return new MobImportView(c.valid(), c.errors(), c.warnings(),
+                    d == null ? "" : d.id().asString(), d == null ? "" : d.category().name(),
+                    d == null ? "" : d.bossMode().name(), d == null ? "" : d.displayName(),
+                    d == null ? "" : d.entityType().name(), c.canonical(),
+                    c.existingFile() == null ? "" : c.existingFile(),
+                    c.existingCanonical() == null ? "" : c.existingCanonical(),
+                    c.existingSha() == null ? "" : c.existingSha());
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobImportApply(String yaml, boolean replace, String expectedSha) {
+        return mobImportReferences().thenApply(refs -> {
+            com.lodygames.rpgquest.mob.SpecialMobImport.Check c =
+                    com.lodygames.rpgquest.mob.SpecialMobImport.check(yaml, refs, mobDefinitionStore);
+            if (!c.valid()) {
+                return new MutationResult(false, "INVALID", "Profil refusé, rien n'a été écrit : "
+                        + String.join(" ; ", c.errors()), List.of());
+            }
+            java.nio.file.Path backups = plugin.getDataFolder().toPath().resolve("mob-backups");
+            SpecialMobDefinitionStore.Result r = mobDefinitionStore.importDefinition(c.definition(), replace,
+                    expectedSha, backups);
+            if (r.ok() || "ROLLED_BACK".equals(r.code())) {
+                mobRegistry.reload();
+            }
+            List<String> effects = new ArrayList<>();
+            if (r.file() != null) {
+                effects.add("mobs/" + r.file());
+            }
+            if (r.report() != null) {
+                for (SpecialMobLoadIssue issue : r.report().issues()) {
+                    effects.add("⚠ " + issue.file() + " : " + issue.message());
+                }
+            }
+            return new MutationResult(r.ok(), r.code(), r.message(), List.copyOf(effects));
+        });
+    }
+
+    /** Mondes et biomes lus sur le thread principal ; objets custom et récompenses tels que chargés. */
+    private CompletableFuture<com.lodygames.rpgquest.mob.SpecialMobImport.References> mobImportReferences() {
+        var rewards = rewardEntitlements;
+        return onMain(() -> {
+            Set<String> worlds = new java.util.TreeSet<>();
+            plugin.getServer().getWorlds().forEach(w -> worlds.add(w.getName()));
+            Set<String> biomes = new java.util.HashSet<>();
+            org.bukkit.Registry.BIOME.forEach(b -> biomes.add(b.getKey().getKey().toLowerCase(Locale.ROOT)));
+            java.util.function.Predicate<NamespacedKey> items = customItemRegistry == null ? null
+                    : key -> customItemRegistry.find(key).isPresent();
+            java.util.function.Predicate<String> rewardKnown = rewards == null ? null : key -> {
+                var catalog = rewards.catalog();
+                return key.startsWith(SpecialMobDefinition.TABLE_PREFIX)
+                        ? catalog.tables().containsKey(key.substring(SpecialMobDefinition.TABLE_PREFIX.length()))
+                        : catalog.find(key).isPresent();
+            };
+            return done(new com.lodygames.rpgquest.mob.SpecialMobImport.References(Set.copyOf(worlds),
+                    Set.copyOf(biomes), items, rewardKnown));
+        });
     }
 
     @Override

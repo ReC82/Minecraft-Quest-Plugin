@@ -5255,6 +5255,37 @@ abilities:
     radius-multiplier: 1.5
 ```
 
+### Modèles complets, IA et import de fichier (issue #214)
+
+PlugAdmin → **Mobs spéciaux & boss → « Modèles, IA et import de fichier »** (`/mobs/import`), aussi
+accessible depuis « Nouveau profil » et depuis chaque fiche (**Exporter ce profil**, **Modifier avec une
+IA**). Le formulaire n'édite pas tout (butin, capacités hors Enragé/Renforts) ; le fichier, si.
+
+- **Modèles** : SPECIAL, BOSS de quête, BOSS communautaire, produits par le **plugin installé**
+  (`SpecialMobSchema`, relevé `mob.catalogs`) : chaque clé lue par `SpecialMobDefinitionParser`, ses
+  bornes et son effet si absente, en français. Un test confronte ces clés au source du parseur : le modèle
+  ne peut pas devenir plus pauvre que le moteur. Format `lodyquests-mob-profile`, version 1 (un profil
+  YAML par fichier, identique à `mobs/<id>.yml`). Champs facultatifs en exemple commenté (« # ») ;
+  tel quel, un modèle est refusé (id et nom vides).
+- **Prompt prêt à copier** : modèle (ou profil actuel en modification) + valeurs réelles du serveur
+  (mondes, Wild, biomes, créatures, récompenses et tables, identifiants déjà pris). Aucun appel IA.
+- **Import** (fichier déposé ou collé) → action `mob.definition.import.check` : YAML lisible, **propriétés
+  inconnues refusées** (y compris dans une capacité ou un butin), parseur réel, références (monde, biome,
+  objet custom, récompense inconnus = refus ; zones non vérifiées = avertissement), combinaisons sans
+  effet signalées (STRONGER_EXPLOSION hors creeper…). Écran : erreurs, avertissements, fichier exact qui
+  sera écrit, et **différences par propriété** si l'identifiant existe.
+- **Confirmation** → `mob.definition.import.apply` : le YAML et l'empreinte SHA-256 du fichier existant
+  viennent de la vérification enregistrée (jamais du navigateur). Profil existant : case « remplacer »
+  obligatoire, `CONFLICT` si le fichier a changé depuis, ancienne version copiée dans
+  `plugins/RPGQuest/mob-backups/<horodatage>/` ; nouveau profil : `CONFLICT` si un fichier du même id est
+  apparu entre-temps. Écriture #461 (relecture avant, atomique, `ROLLED_BACK`). Seul ce fichier change ;
+  **aucune créature n'apparaît**, les réglages des boss communautaires ne bougent pas, les créatures déjà
+  présentes gardent leurs valeurs.
+- **Générer aléatoirement** : brouillon borné (vitesse ≤ 0,32, boss `max-population: 1`, invocation avec
+  `max-alive` ≤ 4, capacités explosives réservées au creeper, identifiant libre), placé dans la zone
+  d'import ; rien n'existe avant « Vérifier » puis « Créer ».
+- Permissions : `MOB_WRITE` (import, génération), `MOB_READ` (téléchargement des modèles et profils).
+
 ### Éditeur de mobs : catalogues réels du serveur (issue #172)
 
 **Défaut corrigé, diagnostiqué sur le parcours réel** : la page `/mobs` n'émettait **aucune**

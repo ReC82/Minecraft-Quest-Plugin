@@ -160,6 +160,8 @@ public final class AgentActionExecutor {
                 case MOB_DEFINITION_CREATE -> mobDefinitionWrite(action, true);
                 case MOB_DEFINITION_UPDATE -> mobDefinitionWrite(action, false);
                 case MOB_DEFINITION_TOGGLE -> mobDefinitionToggle(action);
+                case MOB_DEFINITION_IMPORT_CHECK -> mobImportCheck(action);
+                case MOB_DEFINITION_IMPORT_APPLY -> mobImportApply(action);
                 case MOB_SPAWN_SETTINGS_SET -> mobSpawnSettingsSet(action);
                 case MOB_TEST_SPAWN -> mobTestSpawn(action);
                 case MOB_TEST_CLEAR -> mobTestClear(action);
@@ -687,6 +689,9 @@ public final class AgentActionExecutor {
             details.put("biomes", view.biomes());
             details.put("worlds", view.worlds());
             details.put("wildWorld", view.wildWorld());
+            // Issue #214 : les modèles à remplir viennent du moteur installé, pas d'une copie du panel.
+            details.put("templates", com.lodygames.rpgquest.mob.SpecialMobSchema.templates());
+            details.put("templateFormat", com.lodygames.rpgquest.mob.SpecialMobSchema.FORMAT_VERSION);
             String summary = view.entityTypes().size() + " entités, " + view.particles().size()
                     + " particules, " + view.sounds().size() + " sons, " + view.biomes().size() + " biomes";
             return AgentActionOutcome.success(action.id(), String.valueOf(view.entityTypes().size()),
@@ -778,6 +783,7 @@ public final class AgentActionExecutor {
                 row.put("bossMode", p.bossMode());
                 row.put("communityWeight", p.communityWeight());
                 row.put("participationRewards", p.participationRewards());
+                row.put("yaml", p.yaml());
                 rows.add(row);
             }
             Map<String, Object> settings = new LinkedHashMap<>();
@@ -882,6 +888,52 @@ public final class AgentActionExecutor {
                 parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
                 bossMode, communityWeight, participationRewards));
         return future.thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code mob.definition.import.check} (#214) : vérifie un fichier de profil sans rien écrire. Le
+     * résultat est toujours {@code SUCCESS} quand la vérification a eu lieu — un fichier refusé est un
+     * <em>résultat</em> (liste d'erreurs à afficher), pas un échec de l'action.
+     */
+    private CompletableFuture<AgentActionOutcome> mobImportCheck(AgentAction action) {
+        String yaml = action.param("yaml");
+        if (yaml == null || yaml.isBlank()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « yaml » manquant."));
+        }
+        return actions.mobImportCheck(yaml).thenApply(v -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("valid", v.valid());
+            details.put("errors", v.errors());
+            details.put("warnings", v.warnings());
+            details.put("id", v.id());
+            details.put("category", v.category());
+            details.put("bossMode", v.bossMode());
+            details.put("displayName", v.displayName());
+            details.put("entityType", v.entityType());
+            details.put("canonical", v.canonical());
+            details.put("existingFile", v.existingFile());
+            details.put("existingCanonical", v.existingCanonical());
+            details.put("existingSha", v.existingSha());
+            String summary = !v.valid() ? v.errors().size() + " erreur(s) : rien ne peut être importé."
+                    : v.existingFile().isEmpty() ? "Nouveau profil « " + v.id() + " » prêt à être créé."
+                    : "Le profil « " + v.id() + " » existe : relire les différences avant de le remplacer.";
+            return AgentActionOutcome.success(action.id(), v.valid() ? "VALID" : "INVALID", summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code mob.definition.import.apply} (#214) : écrit ce profil seul ; aucune apparition. */
+    private CompletableFuture<AgentActionOutcome> mobImportApply(AgentAction action) {
+        String yaml = action.param("yaml");
+        if (yaml == null || yaml.isBlank()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « yaml » manquant."));
+        }
+        String expected = trimOrNull(action.param("expected_sha"));
+        if (expected != null && !expected.matches("[0-9a-f]{64}")) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_sha » invalide."));
+        }
+        return actions.mobImportApply(yaml, isTrue(action.param("replace")), expected)
+                .thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

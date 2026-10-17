@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.function.Supplier;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -16,12 +17,16 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.world.EntitiesLoadEvent;
 
 /**
@@ -55,6 +60,12 @@ import org.bukkit.event.world.EntitiesLoadEvent;
  * dégâts aux joueurs, qui n'ont pas de raison de viser un administrateur dans un monde de spawn
  * paisible. Construire est un <em>droit de construction</em> (#27/#200), pas un contournement de
  * règle de jeu : il ne dépend pas du mode bypass administrateur (#35).</p>
+ *
+ * <p><strong>Salles de préparation (issue #107)</strong> : les établis et autres blocs utilitaires
+ * vanilla du Hub restent <strong>utilisables</strong> (aucun clic droit n'est annulé ici) mais ne
+ * peuvent être ni cassés, ni remplacés, ni brûlés. Vider ou remplir un seau compte comme poser ou
+ * casser un bloc (même droit de construction) — sauf traire une vache ; le feu ne prend et ne brûle
+ * rien, sauf un feu allumé par un constructeur du Hub (décor volontaire).</p>
  */
 public final class HubWorldProtectionListener implements Listener {
 
@@ -123,6 +134,44 @@ public final class HubWorldProtectionListener implements Listener {
     @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
     public void onPlace(BlockPlaceEvent event) {
         if (isHub(event.getBlockPlaced().getWorld()) && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onBucketEmpty(PlayerBucketEmptyEvent event) {
+        if (isHub(event.getBlock().getWorld()) && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Ramasser de l'eau, de la lave ou de la neige poudreuse modifie le décor ; traire une vache, non. */
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onBucketFill(PlayerBucketFillEvent event) {
+        if (event.getItemStack() != null && event.getItemStack().getType() == Material.MILK_BUCKET) {
+            return;
+        }
+        if (isHub(event.getBlock().getWorld()) && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    // ---- Feu (établis, bois du décor) ------------------------------------------------------------
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onIgnite(BlockIgniteEvent event) {
+        if (!isHub(event.getBlock().getWorld())) {
+            return;
+        }
+        Player igniter = event.getPlayer();
+        if (igniter == null || !isBypassingBuild(igniter)) {
+            event.setCancelled(true); // propagation, lave, foudre, ou joueur sans droit de construction.
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onBurn(BlockBurnEvent event) {
+        if (isHub(event.getBlock().getWorld())) {
             event.setCancelled(true);
         }
     }

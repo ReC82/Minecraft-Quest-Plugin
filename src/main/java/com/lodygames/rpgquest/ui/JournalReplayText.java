@@ -45,7 +45,8 @@ final class JournalReplayText {
      * non répétable n'annonce rien, une quête en cours non plus.
      */
     static Optional<String> replayLine(QuestDefinition quest, QuestState state, Duration remaining) {
-        if (state != QuestState.COMPLETED || !quest.repeatable()) {
+        // Issue #15 : une quête périodique annonce son renouvellement à part (onglet de sa période).
+        if (state != QuestState.COMPLETED || !quest.repeatable() || quest.isPeriodic()) {
             return Optional.empty();
         }
         if (remaining != null && !remaining.isZero() && !remaining.isNegative()) {
@@ -58,6 +59,11 @@ final class JournalReplayText {
 
     /** Cadence d'une quête répétable avec délai (« toutes les 20 h »), pour la vue détail. */
     static Optional<String> cadenceLine(QuestDefinition quest) {
+        if (quest.isPeriodic()) {
+            return Optional.of("<white>Renouvelable :</white> <gray>"
+                    + (quest.period() == com.lodygames.rpgquest.quest.model.QuestPeriod.DAILY
+                    ? "chaque jour" : "chaque semaine") + "</gray>");
+        }
         if (!quest.repeatable() || quest.cooldown().isZero()) {
             return Optional.empty();
         }

@@ -31,6 +31,7 @@
 quest:
   already-active: "<red>Tu as déjà accepté :</red> <white><quest></white>"
   not-repeatable: "<red>Quête déjà terminée (non répétable) :</red> <white><quest></white>"
+  periodic-not-assigned: "<yellow>« <quest> » est une quête quotidienne ou hebdomadaire :</yellow> <gray>ouvre ton journal de quêtes pour voir celles du moment.</gray>"
   # Issue #13 : quête renouvelable reprise trop tôt (délai « cooldown: » du fichier de quête).
   on-cooldown: "<yellow>Rien de nouveau pour l'instant :</yellow> <white><quest></white> <gray>— reviens dans <time>.</gray>"
   prerequisites-missing: "<red>Prérequis manquant(s) pour</red> <white><quest></white><red> :</red> <white><missing></white>"

@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 41;
+    public static final int CURRENT_VERSION = 42;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -85,7 +85,9 @@ public final class SchemaMigrator {
             new SchemaMigration(40, "stat_activity_log, stat_period_audit (issue #57)",
                     SchemaMigrator::applyV40),
             new SchemaMigration(41, "reward_entitlements (droits à récompense, issue #422)",
-                    SchemaMigrator::applyV41));
+                    SchemaMigrator::applyV41),
+            new SchemaMigration(42, "periodic_quest_assignments (quêtes quotidiennes/hebdomadaires, issue #15)",
+                    SchemaMigrator::applyV42));
 
     private SchemaMigrator() {
     }
@@ -1514,6 +1516,34 @@ public final class SchemaMigrator {
                 statement.execute(dialect.ddl(
                         "CREATE INDEX IF NOT EXISTS idx_xp_grants_skill_created ON xp_grants (skill, created_at)"));
             }
+        }
+    }
+
+    private static void applyV42(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #15 — attributions des quêtes quotidiennes/hebdomadaires. Une ligne = une quête
+        // attribuée à un joueur pour UNE période (period_key = date locale de début). La clé
+        // primaire (joueur, type, période, emplacement) rend l'attribution idempotente : INSERT OR
+        // IGNORE, deux calculs concurrents ne créent jamais deux sélections. status : ASSIGNED
+        // (choisie) → STARTED (quête démarrée) → CLOSED (période échue, quête expirée si besoin) ;
+        // chaque transition est un UPDATE conditionnel sur le statut précédent. Sans clé étrangère
+        // vers player_profiles, comme player_heart_grants. Les récompenses restent celles du moteur
+        // de quêtes (une complétion = un jeton) : cette table ne crédite rien.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS periodic_quest_assignments (
+                        player_uuid TEXT NOT NULL,
+                        period_type TEXT NOT NULL,
+                        period_key TEXT NOT NULL,
+                        slot INTEGER NOT NULL,
+                        quest_id TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        assigned_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, period_type, period_key, slot)
+                    )
+                    """));
+            statement.execute(dialect.ddl("CREATE INDEX IF NOT EXISTS idx_periodic_quest_assignments_status "
+                    + "ON periodic_quest_assignments (player_uuid, status)"));
         }
     }
 

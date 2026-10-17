@@ -779,6 +779,51 @@ class QuestJournalServiceTest {
         assertFalse(oneShot.contains("refaire") || oneShot.contains("refaite"), oneShot);
     }
 
+    // ---- Issue #15 : onglets quotidien / hebdomadaire --------------------------------------------
+
+    @Test
+    void periodicQuestsLiveInTheirOwnTabOnceTheJournalIsOpened() throws Exception {
+        Files.writeString(questsDir.resolve("daily_a.yml"), questYaml("rpgquest:daily_a", "Corvée du jour")
+                .replace("category: test", "category: daily\nperiod: daily"));
+        questEngine.reload();
+        var periodic = new com.lodygames.rpgquest.quest.periodic.PeriodicQuestService(plugin, questEngine,
+                progressEngine, new com.lodygames.rpgquest.database.PeriodicQuestAssignmentRepository(database),
+                variableRepository, com.lodygames.rpgquest.config.PeriodicQuestConfig::defaults,
+                java.time.Instant::now, Runnable::run, plugin.getSLF4JLogger());
+        PlayerMock player = addPlayer();
+
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        assertNull(player.getOpenInventory().getTopInventory().getItem(QuestJournalService.TAB_DAILY_SLOT),
+                "sans service branché, pas d'onglet périodique");
+
+        service.setPeriodicQuests(periodic);
+        NamespacedKey daily = new NamespacedKey("rpgquest", "daily_a");
+        service.open(player);
+        waitUntil(() -> progressRepository.find(player.getUniqueId(), daily).join()
+                .map(r -> r.state() == QuestState.ACTIVE).orElse(false));
+
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        var inventory = player.getOpenInventory().getTopInventory();
+        assertNotNull(inventory.getItem(QuestJournalService.TAB_DAILY_SLOT));
+        assertNotNull(inventory.getItem(QuestJournalService.TAB_WEEKLY_SLOT));
+        assertNull(inventory.getItem(QuestJournalService.CONTENT_SLOTS[0]),
+                "une quotidienne active n'encombre pas « Quêtes en cours »");
+
+        clickTopSlot(player, QuestJournalService.TAB_DAILY_SLOT, ClickType.LEFT);
+        waitUntil(() -> listTabOf(player) == JournalTab.DAILY);
+        String lore = String.join("\n", loreText(player.getOpenInventory().getTopInventory()
+                .getItem(QuestJournalService.CONTENT_SLOTS[0])));
+        assertTrue(lore.contains("À faire aujourd'hui"), lore);
+        assertTrue(lore.contains("Nouvelles quêtes dans"), lore);
+
+        clickTopSlot(player, QuestJournalService.TAB_WEEKLY_SLOT, ClickType.LEFT);
+        waitUntil(() -> listTabOf(player) == JournalTab.WEEKLY);
+        var empty = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.CONTENT_SLOTS[0]);
+        assertNotNull(empty, "aucune hebdomadaire publiée : l'onglet le dit au lieu de rester vide");
+        assertTrue(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(empty.getItemMeta().displayName())
+                .contains("Aucune quête"));
+    }
+
     private void writeQuests(int count) throws Exception {
         for (int i = 0; i < count; i++) {
             Files.writeString(questsDir.resolve("quest_" + i + ".yml"),

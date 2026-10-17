@@ -11,7 +11,9 @@ import org.bukkit.NamespacedKey;
 public record AcceptOutcome(Result result, List<NamespacedKey> missingPrerequisites, Duration retryAfter) {
 
     public enum Result {
-        ACCEPTED, UNKNOWN_QUEST, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES, ON_COOLDOWN
+        ACCEPTED, UNKNOWN_QUEST, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES, ON_COOLDOWN,
+        /** Issue #15 : modèle de quête périodique — seul le service des quêtes périodiques l'attribue. */
+        NOT_ASSIGNED
     }
 
     public AcceptOutcome(Result result, List<NamespacedKey> missingPrerequisites) {
@@ -36,6 +38,10 @@ public record AcceptOutcome(Result result, List<NamespacedKey> missingPrerequisi
 
     public static AcceptOutcome missingPrerequisites(List<NamespacedKey> missing) {
         return new AcceptOutcome(Result.MISSING_PREREQUISITES, missing);
+    }
+
+    public static AcceptOutcome notAssigned() {
+        return new AcceptOutcome(Result.NOT_ASSIGNED, List.of());
     }
 
     public static AcceptOutcome onCooldown(Duration retryAfter) {

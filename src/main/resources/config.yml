@@ -81,6 +81,23 @@ journal:
   # suivi lui-même (persisté) ni le journal, seulement la bossbar.
   tracker-enabled: true
 
+periodic-quests:
+  # Issue #15 — quêtes quotidiennes et hebdomadaires. Les modèles sont des fichiers de
+  # quests/ portant « period: daily » ou « period: weekly ». Un joueur ne reçoit ses quêtes
+  # qu'après avoir ouvert son journal de quêtes une première fois ; elles sont ensuite
+  # renouvelées à chaque réinitialisation (une quête non finie expire, sans récompense).
+  # Valeurs de DÉMONSTRATION, non définitives : à ajuster par le propriétaire.
+  enabled: true
+  # Fuseau horaire des réinitialisations (identifiant IANA : Europe/Paris, UTC…).
+  timezone: "Europe/Paris"
+  # Heure locale de la réinitialisation quotidienne (HH:MM), aussi celle de l'hebdomadaire.
+  reset-time: "04:00"
+  # Jour de la réinitialisation hebdomadaire (MONDAY … SUNDAY).
+  weekly-reset-day: MONDAY
+  # Nombre de quêtes attribuées par joueur et par période (0 à 9).
+  daily-count: 2
+  weekly-count: 1
+
 hud:
   # Prototype #184 — affichage des pièces (portefeuille réel) et du niveau RPG
   # (piste GLOBAL). Choix d'interface NON définitif : à comparer en jeu.

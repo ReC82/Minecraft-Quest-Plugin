@@ -1,0 +1,20 @@
+# Issue #15 — modèle de DÉMONSTRATION d'une quête quotidienne. Valeurs non définitives.
+id: rpgquest:daily_demo_mineur
+title: "<gold>Pierre du jour</gold>"
+description: "<gray>Extrais de la pierre pour les réparations du village.</gray>"
+category: daily
+icon: COBBLESTONE
+period: daily
+
+steps:
+  - id: miner
+    objectives:
+      - type: BREAK_BLOCK
+        material: STONE
+        amount: 32
+
+rewards:
+  - type: EXPERIENCE
+    amount: 20
+  - type: MONEY
+    amount: 5

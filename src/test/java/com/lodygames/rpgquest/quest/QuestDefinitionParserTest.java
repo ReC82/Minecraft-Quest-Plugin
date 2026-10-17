@@ -62,6 +62,44 @@ class QuestDefinitionParserTest {
         assertEquals("true", quest.variables().get("started"));
     }
 
+    // ---- Issue #15 : quêtes quotidiennes / hebdomadaires « period: » --------------------------
+
+    private QuestDefinitionParser.ParseResult parsePeriodic(String extra) {
+        return parser.parse("periodic.yml", load("""
+                id: rpgquest:daily_x
+                title: "Quête"
+                description: "Desc"
+                category: daily
+                %s
+                steps:
+                  - id: s
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: SPIDER
+                        amount: 1
+                """.formatted(extra)));
+    }
+
+    @Test
+    void periodMakesTheQuestPeriodicAndRepeatable() {
+        QuestDefinitionParser.ParseResult daily = parsePeriodic("period: daily");
+        assertTrue(daily.isSuccess(), () -> "issues: " + daily.issues());
+        assertEquals(com.lodygames.rpgquest.quest.model.QuestPeriod.DAILY, daily.quest().period());
+        assertTrue(daily.quest().repeatable(), "une quête périodique se renouvelle");
+        assertTrue(daily.quest().isPeriodic());
+        assertEquals(com.lodygames.rpgquest.quest.model.QuestPeriod.WEEKLY,
+                parsePeriodic("period: WEEKLY").quest().period());
+        assertFalse(parsePeriodic("repeatable: true").quest().isPeriodic(), "sans period : quête ordinaire");
+    }
+
+    @Test
+    void periodRejectsContradictoryOrUnsupportedFields() {
+        assertFalse(parsePeriodic("period: monthly").isSuccess());
+        assertFalse(parsePeriodic("period: daily\nrepeatable: false").isSuccess());
+        assertFalse(parsePeriodic("period: daily\ncooldown: 20h").isSuccess());
+        assertFalse(parsePeriodic("period: weekly\nprerequisites:\n  - rpgquest:first_steps").isSuccess());
+    }
+
     // ---- Issue #13 : délai de ré-acceptation « cooldown: » ------------------------------------
 
     private QuestDefinitionParser.ParseResult parseCooldown(boolean repeatable, String cooldown) {

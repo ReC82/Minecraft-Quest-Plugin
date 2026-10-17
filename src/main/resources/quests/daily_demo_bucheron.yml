@@ -1,0 +1,22 @@
+# Issue #15 — modèle de DÉMONSTRATION d'une quête quotidienne. Valeurs non définitives (objectif et
+# récompense à ajuster par le propriétaire). « period: daily » : jamais proposée par un PNJ ; le
+# service des quêtes périodiques l'attribue au joueur depuis son journal, une fois par jour.
+id: rpgquest:daily_demo_bucheron
+title: "<gold>Bois du jour</gold>"
+description: "<gray>Coupe quelques bûches de chêne avant la prochaine réinitialisation.</gray>"
+category: daily
+icon: OAK_LOG
+period: daily
+
+steps:
+  - id: couper
+    objectives:
+      - type: BREAK_BLOCK
+        material: OAK_LOG
+        amount: 16
+
+rewards:
+  - type: EXPERIENCE
+    amount: 20
+  - type: MONEY
+    amount: 5

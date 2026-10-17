@@ -421,6 +421,21 @@ public final class QuestProgressEngine implements PluginService {
      * respect strict des prérequis pour tout le reste (dialogues, moteur de Story, commande joueur).
      */
     public CompletableFuture<AcceptOutcome> accept(Player player, NamespacedKey questId, boolean ignorePrerequisites) {
+        return accept(player, questId, ignorePrerequisites, false);
+    }
+
+    /**
+     * Issue #15 — démarre une quête périodique <strong>déjà attribuée</strong> au joueur pour la
+     * période courante. Réservé à {@code PeriodicQuestService}, seul détenteur de l'attribution :
+     * c'est l'unique chemin qui franchit le refus {@link Availability.Status#NOT_ASSIGNED}. Toutes
+     * les autres règles (déjà active, prérequis) restent celles de {@link #availability}.
+     */
+    public CompletableFuture<AcceptOutcome> startAssignedPeriodic(Player player, NamespacedKey questId) {
+        return accept(player, questId, false, true);
+    }
+
+    private CompletableFuture<AcceptOutcome> accept(Player player, NamespacedKey questId, boolean ignorePrerequisites,
+                                                    boolean periodicAssigned) {
         Optional<QuestDefinition> questOpt = questEngine.find(questId);
         if (questOpt.isEmpty()) {
             return CompletableFuture.completedFuture(AcceptOutcome.unknown());
@@ -432,8 +447,10 @@ public final class QuestProgressEngine implements PluginService {
         // signal visuel au-dessus des PNJ les réutilise telles quelles ; les dupliquer ailleurs
         // aurait garanti une divergence tôt ou tard.
         CompletableFuture<AcceptOutcome> future =
-                availability(playerId, questId, ignorePrerequisites).thenCompose(availability -> {
+                availability(playerId, questId, ignorePrerequisites, periodicAssigned).thenCompose(availability -> {
                     switch (availability.status()) {
+                        case NOT_ASSIGNED:
+                            return CompletableFuture.completedFuture(AcceptOutcome.notAssigned());
                         case UNKNOWN:
                             return CompletableFuture.completedFuture(AcceptOutcome.unknown());
                         case ALREADY_ACTIVE:
@@ -459,7 +476,9 @@ public final class QuestProgressEngine implements PluginService {
                     }
 
                     String firstStepId = quest.steps().get(0).id();
-                    return repository.upsertState(playerId, questId, QuestState.ACTIVE, firstStepId)
+                    // startQuest efface aussi les compteurs d'une exécution précédente (quête
+                    // répétable ou périodique, abandon) : sinon un redémarrage les rechargerait.
+                    return repository.startQuest(playerId, questId, firstStepId)
                             .thenApply(v -> AcceptOutcome.accepted());
                 });
         future.whenComplete((outcome, error) -> {
@@ -489,11 +508,21 @@ public final class QuestProgressEngine implements PluginService {
      */
     public CompletableFuture<Availability> availability(UUID playerId, NamespacedKey questId,
                                                         boolean ignorePrerequisites) {
+        return availability(playerId, questId, ignorePrerequisites, false);
+    }
+
+    private CompletableFuture<Availability> availability(UUID playerId, NamespacedKey questId,
+                                                         boolean ignorePrerequisites, boolean periodicAssigned) {
         Optional<QuestDefinition> questOpt = questEngine.find(questId);
         if (questOpt.isEmpty()) {
             return CompletableFuture.completedFuture(Availability.of(Availability.Status.UNKNOWN));
         }
         QuestDefinition quest = questOpt.get();
+        // Issue #15 : un modèle périodique n'est jamais disponible par un PNJ, un catalogue, une
+        // commande ou un raccourci admin — seulement via startAssignedPeriodic.
+        if (quest.isPeriodic() && !periodicAssigned) {
+            return CompletableFuture.completedFuture(Availability.of(Availability.Status.NOT_ASSIGNED));
+        }
 
         // Lecture sans création : demander la disponibilité ne doit pas instancier une entrée de
         // progression pour un joueur qui n'en a pas.
@@ -543,7 +572,7 @@ public final class QuestProgressEngine implements PluginService {
     /** Disponibilité d'une quête pour un joueur, et la raison précise quand elle ne l'est pas. */
     public record Availability(Status status, List<NamespacedKey> missingPrerequisites, Duration retryAfter) {
 
-        public enum Status { AVAILABLE, UNKNOWN, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES, ON_COOLDOWN }
+        public enum Status { AVAILABLE, UNKNOWN, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES, ON_COOLDOWN, NOT_ASSIGNED }
 
         public Availability {
             missingPrerequisites = List.copyOf(missingPrerequisites == null ? List.of() : missingPrerequisites);
@@ -630,6 +659,12 @@ public final class QuestProgressEngine implements PluginService {
                     turnIn(player, quest, cached, "quest.turn-in-inventory-full") ? CompleteOutcome.COMPLETED : CompleteOutcome.INVENTORY_FULL);
         }
 
+        // Issue #15 : une quête périodique ne se termine que depuis une progression réellement
+        // active (attribuée puis démarrée). Sans cette garde, une remise forcée (dialogue
+        // TURN_IN_QUEST) sur une quête expirée ou abandonnée accorderait ses récompenses hors période.
+        if (quest.isPeriodic()) {
+            return CompletableFuture.completedFuture(CompleteOutcome.NOT_ACTIVE);
+        }
         return repository.find(playerId, questId).thenCompose(record -> {
             if (record.isPresent() && record.get().state() == QuestState.COMPLETED) {
                 return CompletableFuture.completedFuture(CompleteOutcome.ALREADY_COMPLETED);

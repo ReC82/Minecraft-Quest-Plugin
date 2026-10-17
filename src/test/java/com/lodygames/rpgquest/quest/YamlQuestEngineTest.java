@@ -32,7 +32,9 @@ class YamlQuestEngineTest {
         assertTrue(Files.exists(tempDir.resolve("quests/kit_tier2.yml")),
                 "kit_tier2.yml doit être généré (issue #218)");
         assertEquals(0, engine.lastReport().issues().size(), () -> "issues: " + engine.lastReport().issues());
-        assertEquals(16, engine.quests().size());
+        assertTrue(Files.exists(tempDir.resolve("quests/daily_demo_bucheron.yml")),
+                "modèles de démonstration des quêtes périodiques générés (issue #15)");
+        assertEquals(20, engine.quests().size());
     }
 
     @Test

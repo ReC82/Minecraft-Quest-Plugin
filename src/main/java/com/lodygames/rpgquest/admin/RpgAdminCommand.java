@@ -2508,8 +2508,17 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString()),
                         Placeholder.unparsed("t", CooldownText.format(outcome.retryAfter()))));
                 case UNKNOWN_QUEST -> sender.sendMessage(unknownQuest(args[3]));
+                case NOT_ASSIGNED -> sender.sendMessage(periodicNotAssigned(target.getName(), questId));
             }
         }));
+    }
+
+    /** Issue #15 : une quête quotidienne/hebdomadaire ne se démarre ni ne se termine à la main. */
+    private static net.kyori.adventure.text.Component periodicNotAssigned(String playerName, NamespacedKey questId) {
+        return MM.deserialize(
+                "<yellow>Quête quotidienne/hebdomadaire non active pour <p> :</yellow> <white><q></white> "
+                        + "<gray>— elle s'attribue seule à l'ouverture du journal ; rien n'a été accordé.</gray>",
+                Placeholder.unparsed("p", playerName), Placeholder.unparsed("q", questId.toString()));
     }
 
     /**
@@ -2544,6 +2553,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         "<yellow>Déjà terminée pour <p> :</yellow> <white><q></white> <gray>— aucune récompense re-créditée.</gray>",
                         Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString())));
                 case UNKNOWN_QUEST -> sender.sendMessage(unknownQuest(args[3]));
+                case NOT_ACTIVE -> sender.sendMessage(periodicNotAssigned(target.getName(), questId));
+                default -> { }
             }
         }));
     }

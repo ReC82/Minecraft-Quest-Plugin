@@ -24,7 +24,10 @@ public final class YamlQuestEngine implements QuestEngine {
                     // Issue #218 : quêtes de montée aux paliers 2 à 5 du kit de départ.
                     "kit_tier2.yml", "kit_tier3.yml", "kit_tier4.yml", "kit_tier5.yml",
                     // Issue #13 : quêtes secondaires renouvelables des PNJ récurrents de biome.
-                    "encounter_bandit_spiders.yml", "encounter_merchant_cactus.yml", "encounter_smith_ore.yml"};
+                    "encounter_bandit_spiders.yml", "encounter_merchant_cactus.yml", "encounter_smith_ore.yml",
+                    // Issue #15 : modèles de démonstration des quêtes quotidiennes et hebdomadaires.
+                    "daily_demo_bucheron.yml", "daily_demo_mineur.yml", "daily_demo_chasseur.yml",
+                    "weekly_demo_expedition.yml"};
 
     private final Path questsDirectory;
     private final Logger logger;

@@ -53,10 +53,57 @@ public final class ConfigValidator {
         CityConfig cities = validateCities(section);
         EncounterConfig encounters = validateEncounters(section);
         HudConfig hud = validateHud(section);
+        PeriodicQuestConfig periodicQuests = validatePeriodicQuests(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
                 backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit,
-                wild, npcHints, cities, encounters, hud);
+                wild, npcHints, cities, encounters, hud, periodicQuests);
+    }
+
+    /**
+     * Section {@code periodic-quests:} (issue #15) — absente : valeurs par défaut. Une valeur
+     * invalide refuse la configuration entière plutôt que de réinitialiser à une heure inattendue.
+     */
+    static PeriodicQuestConfig validatePeriodicQuests(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection periodic = section.getConfigurationSection("periodic-quests");
+        PeriodicQuestConfig defaults = PeriodicQuestConfig.defaults();
+        if (periodic == null) {
+            return defaults;
+        }
+        String rawZone = periodic.getString("timezone", defaults.zone().getId());
+        java.time.ZoneId zone;
+        try {
+            zone = java.time.ZoneId.of(rawZone.trim());
+        } catch (java.time.DateTimeException e) {
+            throw new ConfigValidationException("« periodic-quests.timezone » invalide : \"" + rawZone
+                    + "\" (exemple : Europe/Paris, UTC).");
+        }
+        String rawTime = periodic.getString("reset-time", defaults.resetTime().toString());
+        java.time.LocalTime resetTime;
+        try {
+            resetTime = java.time.LocalTime.parse(rawTime.trim());
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new ConfigValidationException("« periodic-quests.reset-time » invalide : \"" + rawTime
+                    + "\" (format HH:MM, exemple : 04:00).");
+        }
+        String rawDay = periodic.getString("weekly-reset-day", defaults.weeklyResetDay().name());
+        java.time.DayOfWeek day;
+        try {
+            day = java.time.DayOfWeek.valueOf(rawDay.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException("« periodic-quests.weekly-reset-day » invalide : \"" + rawDay
+                    + "\" (MONDAY … SUNDAY).");
+        }
+        int daily = periodic.getInt("daily-count", defaults.dailyCount());
+        int weekly = periodic.getInt("weekly-count", defaults.weeklyCount());
+        for (Map.Entry<String, Integer> count : Map.of("daily-count", daily, "weekly-count", weekly).entrySet()) {
+            if (count.getValue() < 0 || count.getValue() > PeriodicQuestConfig.MAX_COUNT) {
+                throw new ConfigValidationException("« periodic-quests." + count.getKey() + " » doit être entre 0 et "
+                        + PeriodicQuestConfig.MAX_COUNT + " (valeur : " + count.getValue() + ").");
+            }
+        }
+        return new PeriodicQuestConfig(periodic.getBoolean("enabled", defaults.enabled()), zone, resetTime, day,
+                daily, weekly);
     }
 
     /** Section {@code hud:} (issue #184) — absente : panneau désactivé, retours de gains actifs. */

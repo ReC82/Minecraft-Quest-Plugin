@@ -16,6 +16,7 @@ import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.model.QuestPeriod;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestReward;
 import com.lodygames.rpgquest.quest.model.QuestStep;
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -59,10 +61,12 @@ final class QuestDefinitionParser {
         String category = parseCategory(section, errors);
         String giver = parseGiver(section, errors);
         Material icon = parseIcon(section, errors);
-        boolean repeatable = parseRepeatable(section, errors);
+        QuestPeriod period = parsePeriod(section, errors);
+        boolean repeatable = period != null || parseRepeatable(section, errors);
         Duration cooldown = parseCooldown(section, repeatable, errors);
         boolean secret = parseBoolean(section, "secret", errors);
         List<NamespacedKey> prerequisites = parsePrerequisites(section, id, errors);
+        validatePeriodic(section, period, cooldown, prerequisites, errors);
         List<QuestStep> steps = parseSteps(section, errors);
         List<QuestReward> rewards = parseRewards(section, errors);
         Map<String, String> variables = parseVariables(section, errors);
@@ -74,7 +78,7 @@ final class QuestDefinitionParser {
         try {
             QuestDefinition quest = new QuestDefinition(
                     id, title, description, category, icon, repeatable, secret, prerequisites, steps, rewards,
-                    variables, giver, cooldown);
+                    variables, giver, cooldown, period);
             return ParseResult.success(quest);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new QuestLoadIssue(fileName, e.getMessage())));
@@ -170,6 +174,44 @@ final class QuestDefinitionParser {
             return DEFAULT_ICON;
         }
         return material;
+    }
+
+    /**
+     * {@code period:} optionnel (issue #15) : {@code daily} ou {@code weekly}. Une quête périodique
+     * est implicitement répétable — elle se renouvelle à chaque période.
+     */
+    private QuestPeriod parsePeriod(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("period")) {
+            return null;
+        }
+        String raw = String.valueOf(section.get("period"));
+        Optional<QuestPeriod> period = QuestPeriod.fromYaml(raw);
+        if (period.isEmpty()) {
+            errors.add("« period » invalide : \"" + raw + "\" (valeurs possibles : daily, weekly).");
+            return null;
+        }
+        return period.get();
+    }
+
+    /**
+     * Règles propres à un modèle périodique (issue #15) : le renouvellement est donné par la période,
+     * pas par un {@code cooldown} ; « repeatable: false » le contredit ; et un prérequis le rendrait
+     * invisible sans explication pour un joueur qui l'a pourtant reçu — refusé dans ce MVP.
+     */
+    private void validatePeriodic(ConfigurationSection section, QuestPeriod period, Duration cooldown,
+                                  List<NamespacedKey> prerequisites, List<String> errors) {
+        if (period == null) {
+            return;
+        }
+        if (section.isSet("repeatable") && section.isBoolean("repeatable") && !section.getBoolean("repeatable")) {
+            errors.add("« repeatable: false » contredit « period » : une quête périodique se renouvelle.");
+        }
+        if (cooldown != null && !cooldown.isZero()) {
+            errors.add("« cooldown » est inutile avec « period » : le renouvellement suit la période.");
+        }
+        if (!prerequisites.isEmpty()) {
+            errors.add("« prerequisites » n'est pas pris en charge pour une quête périodique.");
+        }
     }
 
     private boolean parseRepeatable(ConfigurationSection section, List<String> errors) {

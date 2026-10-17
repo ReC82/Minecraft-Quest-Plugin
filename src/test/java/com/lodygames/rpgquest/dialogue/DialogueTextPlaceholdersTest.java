@@ -113,4 +113,47 @@ class DialogueTextPlaceholdersTest {
         assertEquals("SIMPLE ARG:ville_a",
                 mixed.apply(null, null, node("%city_name% %city_name:ville_a%")).text().base());
     }
+
+    // ---- Issue #475 : nom du PNJ résolu depuis son id au rendu, locuteur compris ----------------
+
+    /** Câblage de RPGQuestBootstrap, sur un registre de noms modifiable (= renommage + rechargement). */
+    private static DialogueTextPlaceholders npcNames(Map<String, String> names) {
+        java.util.function.Function<String, java.util.Optional<String>> resolver =
+                id -> java.util.Optional.ofNullable(names.get(id));
+        return new DialogueTextPlaceholders(
+                Map.of("npc_name", context -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(context.npcId(), resolver)),
+                Map.of("npc_name", (context, id) -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(id, resolver)));
+    }
+
+    @Test
+    void theSpeakerAndTheTextFollowARenamedNpc() {
+        Map<String, String> names = new java.util.HashMap<>(Map.of("guide", "Guide"));
+        DialogueTextPlaceholders placeholders = npcNames(names);
+        DialogueNode node = new DialogueNode("greeting", "%npc_name%", LocalizedText.of("Je suis %npc_name%, le guide du village."),
+                List.of(new DialogueChoice(LocalizedText.of("Merci"), List.of(), List.of(), "greeting")));
+        org.bukkit.NamespacedKey guide = new org.bukkit.NamespacedKey("rpgquest", "guide");
+
+        names.put("guide", "Elias"); // renommé dans le panel, puis rechargé
+        DialogueNode shown = placeholders.apply(null, guide, node);
+
+        assertEquals("Elias", shown.speaker());
+        assertEquals("Je suis Elias, le guide du village.", shown.text().base(),
+                "le mot générique « guide » n'est jamais remplacé, seul le jeton l'est");
+    }
+
+    @Test
+    void anotherNpcIsNamedByItsStableIdAndAnUnknownIdStaysVisible() {
+        DialogueTextPlaceholders placeholders = npcNames(Map.of("guide", "Elias"));
+
+        assertEquals("Ah, c'est Elias qui t'envoie ? %npc_name:fantome%",
+                placeholders.apply(null, null, node("Ah, c'est %npc_name:guide% qui t'envoie ? %npc_name:fantome%"))
+                        .text().base());
+    }
+
+    @Test
+    void aNameIsInsertedAsTextNeverAsMiniMessageTags() {
+        DialogueTextPlaceholders placeholders = npcNames(Map.of("guide", "<red>Elias"));
+
+        assertEquals("\\<red>Elias", placeholders.apply(null, null, node("%npc_name:guide%")).text().base());
+    }
 }

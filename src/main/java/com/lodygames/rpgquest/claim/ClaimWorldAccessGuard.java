@@ -69,6 +69,8 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
     /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
     private final AdminBypassMode bypass;
 
+    private volatile Supplier<String> guideName;
+
     public ClaimWorldAccessGuard(RPGQuestPlugin plugin, ClaimService claimService,
                                   ClaimReturnService returnService, Supplier<ClaimConfig> config,
                                   PortalTeleporter teleporter, AdminBypassMode bypass) {
@@ -215,7 +217,22 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
                 "<red>Le monde des claims est réservé aux joueurs qui ont débloqué leur premier terrain.</red>"));
         player.sendMessage(MM.deserialize(
                 "<gray>Termine d'abord l'histoire principale du village, puis parle à <white>Jo</white> "
-                        + "pour obtenir ton acte de propriété. Le <white>Guide</white> peut t'indiquer la marche à suivre.</gray>"));
+                        + "pour obtenir ton acte de propriété. " + guideSentence() + "</gray>"));
+    }
+
+    /**
+     * Issue #475 — nom affiché ACTUEL du PNJ Guide, ou {@code null} : branché par le bootstrap.
+     * Le Guide peut être renommé (« Elias ») ; ce message ne doit jamais garder l'ancien nom.
+     */
+    public void setGuideName(Supplier<String> guideName) {
+        this.guideName = guideName;
+    }
+
+    private String guideSentence() {
+        String name = guideName == null ? null : guideName.get();
+        return name == null
+                ? "Ton guide au village peut t'indiquer la marche à suivre."
+                : "<white>" + name + "</white> peut t'indiquer la marche à suivre.";
     }
 
     private void runOnMainThread(Runnable task) {

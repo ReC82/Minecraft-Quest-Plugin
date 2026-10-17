@@ -236,6 +236,54 @@ class QuestItemDeliveryTest {
         assertEquals(0, storedCounter(player, LEATHER_QUEST, 0), "aucune écriture pour une remise vide");
     }
 
+    // ---- Issue #475 : remise proposée seulement si elle retirerait quelque chose ----------
+
+    @Test
+    void nothingIsDeliverableWithAnEmptyOrUselessInventory() throws Exception {
+        PlayerMock player = playerWithActiveQuest(LEATHER_QUEST);
+        assertFalse(engine.hasDeliverableItems(player, NPC), "inventaire vide");
+
+        player.getInventory().addItem(new ItemStack(Material.COBBLESTONE, 32));
+        assertFalse(engine.hasDeliverableItems(player, NPC), "un matériau que personne n'attend ne compte pas");
+        assertTrue(engine.hasPendingDelivery(player.getUniqueId(), NPC), "la quête attend toujours du cuir");
+
+        player.getInventory().addItem(new ItemStack(Material.LEATHER, 1));
+        assertTrue(engine.hasDeliverableItems(player, NPC));
+        assertFalse(engine.hasDeliverableItems(player, OTHER_NPC), "un autre PNJ n'attend rien");
+    }
+
+    @Test
+    void anObjectiveAlreadyFilledNoLongerMakesItsMaterialDeliverable() throws Exception {
+        Map<Material, Integer> items = new java.util.LinkedHashMap<>();
+        items.put(Material.STICK, 1);
+        items.put(Material.LEATHER, 4);
+        writeDeliverQuest("second_quest.yml", SECOND_QUEST, NPC, items, false);
+        engine.stop();
+        engine = newEngine();
+        PlayerMock player = playerWithActiveQuest(SECOND_QUEST);
+        player.getInventory().addItem(new ItemStack(Material.STICK, 1));
+        assertEquals(DeliveryOutcome.Status.DELIVERED, engine.deliverTo(player, NPC).status());
+
+        player.getInventory().addItem(new ItemStack(Material.STICK, 5));
+        assertFalse(engine.hasDeliverableItems(player, NPC),
+                "le bâton est déjà remis : en porter d'autres ne rend pas la remise utile");
+        assertTrue(engine.hasPendingDelivery(player.getUniqueId(), NPC), "le cuir manque encore");
+    }
+
+    @Test
+    void aDeliveryThatFinishesTheQuestReportsItAsCompleted() throws Exception {
+        PlayerMock player = playerWithActiveQuest(LEATHER_QUEST);
+        player.getInventory().addItem(new ItemStack(Material.LEATHER, 2));
+        assertEquals(List.of(), engine.deliverTo(player, NPC).completedQuests(), "remise partielle : rien de terminé");
+
+        player.getInventory().addItem(new ItemStack(Material.LEATHER, 2));
+        DeliveryOutcome outcome = engine.deliverTo(player, NPC);
+
+        assertEquals(List.of(LEATHER_QUEST), outcome.completedQuests());
+        assertEquals(QuestState.COMPLETED, engine.stateOf(player.getUniqueId(), LEATHER_QUEST)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
     // ---- Dépôt partiel, puis le reliquat -------------------------------
 
     @Test

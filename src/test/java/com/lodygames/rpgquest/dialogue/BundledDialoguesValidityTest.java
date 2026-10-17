@@ -441,6 +441,41 @@ class BundledDialoguesValidityTest {
                 "connaître son palier ne doit dépendre d'aucune condition — le nœud s'adapte lui-même");
     }
 
+    // ---- Issue #475 : remise en une action, nom du Guide résolu depuis son id -----------------
+
+    /** Plus d'écran intermédiaire : « Donner les matériaux » remet directement, depuis l'accueil. */
+    @Test
+    void theGuideDeliversInOneActionWithoutIntermediateScreens() {
+        DialogueDefinition guide = guide();
+        DialogueChoice give = guide.nodes().get("greeting").choices().stream()
+                .filter(c -> c.text().base().equals("Donner les matériaux"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("« Donner les matériaux » attendu à l'accueil"));
+
+        assertTrue(give.actions().stream().anyMatch(a -> a instanceof com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction),
+                "le clic remet directement, sans confirmation");
+        assertEquals("delivery_result", give.next());
+        assertTrue(guide.nodes().get("delivery_result").text().base().contains("%delivery_status%"));
+        assertTrue(guide.nodes().get("greeting").text().base().contains("%delivery_hint%"),
+                "sans matériau utile, l'accueil doit le dire lui-même");
+        guide.nodes().values().forEach(node -> node.choices().forEach(choice -> {
+            String label = choice.text().base();
+            assertFalse(label.equals("J'ai des matériaux") || label.equals("Donner encore")
+                    || label.equals("Donner mes matériaux"), () -> "écran redondant restant : " + label);
+        }));
+    }
+
+    /** Le Guide renommé (« Elias ») : locuteur et présentation viennent de l'id, jamais « Guide » en dur. */
+    @Test
+    void theGuideNeverHardCodesItsOwnDisplayName() {
+        guide().nodes().values().forEach(node -> {
+            assertEquals("%npc_name%", node.speaker(), () -> "locuteur en dur dans " + node.id());
+            assertFalse(node.text().base().contains("le Guide") || node.text().base().contains("moi le Guide"),
+                    () -> "nom en dur dans " + node.id() + " : " + node.text().base());
+        });
+        assertTrue(guide().nodes().get("greeting").text().base().contains("Je suis %npc_name%"));
+    }
+
     private DialogueDefinition guard() {
         return loader.load(Map.of("guard.yml", read("/dialogues/guard.yml"))).loaded().stream()
                 .filter(d -> d.id().equals(new NamespacedKey("rpgquest", "guard")))

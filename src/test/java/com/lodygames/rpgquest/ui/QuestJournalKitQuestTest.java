@@ -176,6 +176,33 @@ class QuestJournalKitQuestTest {
         assertTrue(lore.contains("0/4"), lore);
     }
 
+    /**
+     * Issue #475 : le Guide renommé « Elias » — la description de la quête publiée (jeton
+     * {@code %npc_name:guide%}) suit le nouveau nom au rendu, et elle est repliée en lignes courtes
+     * au lieu de déborder de l'infobulle.
+     */
+    @Test
+    void theDetailDescriptionFollowsTheRenamedGuideAndIsWrapped() throws Exception {
+        java.util.Map<String, String> names = new java.util.HashMap<>(java.util.Map.of("guide", "Guide"));
+        progressEngine.setNpcNameResolver(id -> Optional.ofNullable(names.get(id)));
+        names.put("guide", "Elias"); // renommé dans le panel puis rechargé : aucune quête republiée
+        PlayerMock player = addPlayer();
+        progressEngine.accept(player, KIT_TIER_2).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        service.handleClose(player);
+        service.showDetail(player, JournalTab.IN_PROGRESS, 0, KIT_TIER_2);
+        waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isDetail());
+        ItemStack icon = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.DETAIL_ICON_SLOT);
+        String lore = plain(icon);
+
+        assertTrue(lore.contains("Rapporte à Elias de quoi"), lore);
+        assertFalse(lore.contains("%npc_name") || lore.contains("au Guide"), lore);
+        assertTrue(lore.contains("à remettre à Elias"), lore);
+        icon.getItemMeta().lore().forEach(line -> assertTrue(
+                PlainTextComponentSerializer.plainText().serialize(line).length() <= 48,
+                () -> "ligne d'infobulle trop large : " + PlainTextComponentSerializer.plainText().serialize(line)));
+    }
+
     @Test
     void severalActiveQuestsAllShowIncludingTheKitQuest() throws Exception {
         Files.writeString(questsDir.resolve("other.yml"), """

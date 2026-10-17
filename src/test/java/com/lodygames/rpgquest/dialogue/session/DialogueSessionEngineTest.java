@@ -939,12 +939,21 @@ class DialogueSessionEngineTest {
 
         questProgressEngine.accept(player, new NamespacedKey("rpgquest", "deliver"))
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        // Issue #475 : quête active mais aucun cuir sur soi — aucun bouton de remise cliquable.
+        player.getInventory().clear();
+        renderer.lastNode = null;
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        assertEquals(List.of(), renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList(),
+                "rien d'utile sur soi : la remise ne doit pas être proposée");
+
+        player.getInventory().addItem(new org.bukkit.inventory.ItemStack(Material.LEATHER, 1));
         renderer.lastNode = null;
         sessionEngine.open(player, DELIVERY_DIALOGUE);
         awaitRendered();
         assertEquals(List.of("Donner les matériaux que j'ai"),
                 renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList(),
-                "une quête de remise active doit faire apparaître l'option de remise");
+                "une quête de remise active et un matériau utile font apparaître l'option de remise");
     }
 
     @Test
@@ -1259,6 +1268,107 @@ class DialogueSessionEngineTest {
         assertTrue(renderer.lastNode.text().base().contains(
                         com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_EXPECTED),
                 () -> "quête terminée, plus rien n'est attendu : " + renderer.lastNode.text().base());
+    }
+
+    // ---- Issue #475 : une seule action de remise, bilan dans la fenêtre ----------------------
+
+    /** Câblage complet de %delivery_status%, comme RPGQuestBootstrap (fin de quête comprise). */
+    private void wireFullDeliveryStatusForGuard() {
+        sessionEngine.setPlaceholders(new com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders(
+                java.util.Map.of("delivery_status", context ->
+                        com.lodygames.rpgquest.quest.progress.DeliveryStatusText.render(
+                                questProgressEngine.pendingDeliveries(context.player().getUniqueId(), "guard"),
+                                questProgressEngine.hasDeliverableItems(context.player(), "guard"),
+                                context.justDelivered(), questId -> "FIN " + questId))));
+    }
+
+    private PlayerMock fullStatusPlayerWith(Material material, int amount) throws Exception {
+        installDeliveryContent();
+        wireFullDeliveryStatusForGuard();
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, new NamespacedKey("rpgquest", "deliver"))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        player.getInventory().clear();
+        if (amount > 0) {
+            player.getInventory().addItem(new org.bukkit.inventory.ItemStack(material, amount));
+        }
+        renderer.lastNode = null;
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        return player;
+    }
+
+    private int leatherDelivered(PlayerMock player) {
+        return questProgressEngine.pendingDeliveries(player.getUniqueId(), "guard").get(0).delivered();
+    }
+
+    @Test
+    void withoutAnyMaterialTheDialogueSaysSoAndOffersNoDeliveryButton() throws Exception {
+        PlayerMock player = fullStatusPlayerWith(Material.LEATHER, 0);
+
+        String text = renderer.lastNode.text().base();
+        assertTrue(text.contains("0/4") && text.contains(
+                        com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_CARRIED),
+                () -> "le dialogue doit dire ce qui manque et que le joueur n'en a pas : " + text);
+        assertEquals(List.of(), renderer.lastVisibleChoices, "aucun bouton de remise cliquable");
+        assertEquals(0, leatherDelivered(player));
+    }
+
+    @Test
+    void aMaterialNobodyExpectsDoesNotOfferTheDeliveryEither() throws Exception {
+        fullStatusPlayerWith(Material.COBBLESTONE, 16);
+
+        assertEquals(List.of(), renderer.lastVisibleChoices);
+        assertTrue(renderer.lastNode.text().base().contains(
+                com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_CARRIED));
+    }
+
+    @Test
+    void aPartialDeliveryShowsWhatWasGivenAndWhatRemainsThenHidesTheButton() throws Exception {
+        PlayerMock player = fullStatusPlayerWith(Material.LEATHER, 3);
+        assertEquals(List.of("Donner les matériaux que j'ai"),
+                renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList());
+
+        chooseDeliver(player);
+
+        String text = renderer.lastNode.text().base();
+        assertEquals(3, leatherDelivered(player));
+        assertTrue(text.contains(com.lodygames.rpgquest.quest.progress.DeliveryStatusText.JUST_DELIVERED)
+                        && text.contains("3 × <lang:item.minecraft.leather>") && text.contains("3/4"),
+                () -> "bilan : remis à l'instant, puis remis / demandé : " + text);
+        assertTrue(text.contains(com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_CARRIED),
+                () -> "plus rien d'utile sur soi : " + text);
+        assertEquals(List.of(), renderer.lastVisibleChoices, "pas de « Donner encore » quand il n'y a plus rien à donner");
+    }
+
+    @Test
+    void theFinalDeliveryConfirmsTheEndOfTheQuestInTheDialogue() throws Exception {
+        PlayerMock player = fullStatusPlayerWith(Material.LEATHER, 4);
+
+        chooseDeliver(player);
+
+        String text = renderer.lastNode.text().base();
+        assertTrue(text.contains(com.lodygames.rpgquest.quest.progress.DeliveryStatusText.ALL_DELIVERED)
+                        && text.contains("FIN rpgquest:deliver"),
+                () -> "fin confirmée dans le dialogue : " + text);
+        assertEquals(List.of("Tout est remis"),
+                renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList());
+    }
+
+    @Test
+    void anInventoryEmptiedBetweenDisplayAndClickWithdrawsNothingAndRefreshesTheNode() throws Exception {
+        PlayerMock player = fullStatusPlayerWith(Material.LEATHER, 2);
+        int index = renderer.lastVisibleChoices.get(0).index();
+        player.getInventory().clear();
+        renderer.lastNode = null;
+
+        sessionEngine.onChoiceSelected(player, DELIVERY_DIALOGUE, "deliver", index);
+        awaitRendered();
+
+        assertEquals(0, leatherDelivered(player), "rien retiré, rien compté");
+        assertEquals(List.of(), renderer.lastVisibleChoices, "le nœud réaffiché ne propose plus la remise");
+        assertTrue(renderer.lastNode.text().base().contains(
+                com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_CARRIED));
     }
 
     // ---- Issue #158 : accueil selon l'etat reel de la quete + repliques variees ---------------

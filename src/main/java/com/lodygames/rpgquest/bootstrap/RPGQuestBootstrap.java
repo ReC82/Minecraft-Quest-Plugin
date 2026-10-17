@@ -751,6 +751,8 @@ public final class RPGQuestBootstrap {
         ClaimWorldAccessGuard claimWorldAccessGuard = new ClaimWorldAccessGuard(
                 plugin, claimService, claimReturnService, () -> configService.current().claims(),
                 worldPortalTeleportListener, adminBypassMode);
+        claimWorldAccessGuard.setGuideName(() -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(
+                configService.current().hub().guideNpcId(), questProgressEngine.npcNameResolver()));
         // Avertissement de danger avant l'entrée dans le Wild (issue #161, qui couvre la partie B de
         // #26) : générique, sans aucune inspection d'inventaire, avec confirmation explicite et
         // option persistante « ne plus afficher ». Même choix de renderer que les dialogues
@@ -1042,8 +1044,20 @@ public final class RPGQuestBootstrap {
                 questProgressEngine::activeStepView);
         dialogueSessionEngine.setPlaceholders(new DialogueTextPlaceholders(Map.of(
                 "wild_conditions", context -> wildConditionsService.describe(),
+                // Issue #475 : bilan complet DANS la fenêtre — remis à l'instant, restant, ce que le
+                // joueur porte encore d'utile, quête terminée ou amélioration du kit obtenue.
                 "delivery_status", context -> DeliveryStatusText.render(questProgressEngine.pendingDeliveries(
-                        context.player().getUniqueId(), context.npcId()), context.justDelivered()),
+                        context.player().getUniqueId(), context.npcId()),
+                        questProgressEngine.hasDeliverableItems(context.player(), context.npcId()),
+                        context.justDelivered(), this::deliveryCompletionText),
+                // Issue #475 : vide si ce PNJ n'attend rien, sinon ce qu'il reste à remettre et si le
+                // joueur en porte — utilisable dans un texte d'accueil.
+                "delivery_hint", context -> DeliveryStatusText.hint(questProgressEngine.pendingDeliveries(
+                        context.player().getUniqueId(), context.npcId()),
+                        questProgressEngine.hasDeliverableItems(context.player(), context.npcId())),
+                // Issue #475 : nom affiché ACTUEL du PNJ porteur du dialogue (renommable dans le panel).
+                "npc_name", context -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(
+                        context.npcId(), questProgressEngine.npcNameResolver()),
                 "kit_tier_current", context -> kitProgressService.currentTierText(context.player().getUniqueId()),
                 "kit_tier_next", context -> kitProgressService.nextTierText(context.player().getUniqueId()),
                 "kit_upgrade_requirements",
@@ -1056,6 +1070,9 @@ public final class RPGQuestBootstrap {
                 // le panel) et direction réelle depuis la position du joueur. Ville inconnue ou
                 // désactivée : jeton laissé visible, jamais une destination inventée.
                 Map.of(
+                        // Issue #475 : un autre PNJ cité par son id stable, même règle que les villes.
+                        "npc_name", (context, npcId) -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(
+                                npcId, questProgressEngine.npcNameResolver()),
                         "city_name", (context, cityId) -> activeCity(cityId).map(c -> c.name()).orElse(null),
                         "city_direction", (context, cityId) -> activeCity(cityId).map(c -> {
                             org.bukkit.Location at = context.player() == null ? null : context.player().getLocation();
@@ -1271,6 +1288,23 @@ public final class RPGQuestBootstrap {
      * apparaître un PNJ : les trois mondes RPGQuest de la config (hub / claims / exploration). Pas
      * d'ACL géographique — le monde doit en plus être réellement chargé, vérifié côté agent.
      */
+    /**
+     * Issue #475 — fin d'une quête annoncée dans le bilan de remise : « Amélioration du kit obtenue :
+     * palier 3 » pour une quête de palier du kit (d'après starter-tool-kit.tiers[].unlock-quest),
+     * sinon « Quête terminée : <titre> ».
+     */
+    private String deliveryCompletionText(org.bukkit.NamespacedKey questId) {
+        var tier = configService.current().starterToolKit().tierUnlockedBy(questId.toString());
+        if (tier.isPresent()) {
+            return "<gold>Amélioration du kit obtenue : palier " + tier.get().level()
+                    + ". Ton équipement de secours s'améliorera dès ta prochaine demande.</gold>";
+        }
+        return questEngine.find(questId)
+                .map(quest -> "<gold>Quête terminée : " + com.lodygames.rpgquest.npc.NpcNameTokens.resolve(
+                        quest.title().base(), questProgressEngine.npcNameResolver()) + "</gold>")
+                .orElse(null);
+    }
+
     /** Issue #180 — ville citée dans un dialogue : seulement si elle existe et est active. */
     private java.util.Optional<com.lodygames.rpgquest.travel.beacon.model.VillageCenter> activeCity(String cityId) {
         return cityRegistry == null ? java.util.Optional.empty()

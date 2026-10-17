@@ -74,6 +74,10 @@ Celles des scripts (JAR précédent daté, `data.db`).
 RCON `merchant list` : les marchands d'avant + `rpgquest:artisan_demo (3 offre(s))`. `/merchants` servi.
 TC-345 en jeu (PENDING MANUAL VALIDATION).
 
+**Effectué le 2026-10-17** depuis `0e56482` : JAR 3 506 080 o, SHA-256 `1f63f1d6…3b1c` vérifié par retéléchargement ;
+sauvegarde `rpgquest-20261017T090108Z-predeploy.jar` (JAR #17) ; DEV redémarré (0 joueur), `merchant list` = 3 marchands
+dont `artisan_demo` ; PlugAdmin redéployé, `/merchants` 303 → /login. Aucun prix créé.
+
 ### Rollback
 
 Remettre le JAR précédent. L'ancien parseur refuse `type: CRAFT` : `artisan_demo.yml` (et tout atelier créé)

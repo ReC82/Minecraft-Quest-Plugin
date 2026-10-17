@@ -220,12 +220,13 @@ public final class DeedClaimListener implements Listener {
         })).exceptionally(error -> null);
     }
 
+    /**
+     * Retire exactement un Acte (#506) : {@code Inventory#remove(ItemStack)} retirait toutes les piles
+     * identiques — deux Actes isolés étaient perdus ensemble, et une création confirmée tardivement
+     * consommait l'Acte qu'entre-temps le joueur tenait pour visualiser.
+     */
     private void consumeOne(Player player, ItemStack deed) {
-        if (deed.getAmount() <= 1) {
-            player.getInventory().remove(deed);
-        } else {
-            deed.setAmount(deed.getAmount() - 1);
-        }
+        player.getInventory().removeItem(deed.asOne());
     }
 
     private void runOnMainThread(Runnable task) {

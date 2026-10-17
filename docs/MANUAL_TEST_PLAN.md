@@ -6766,7 +6766,37 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-349 — Accueil d'Elias allégé, écran du kit, fenêtres plus larges, détails du journal paginés (issue #475, 2e retour du 17/10, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu du correctif #475 « accueil léger » sur **DEV** et `dialogues/guide.yml` republié
+(voir le rapport de session). Compte **LoDyMcFly tel quel** (« Explorateur » active, bâton 1/4 déjà
+remis). **Aucun reset.** Acquis de TC-348 à ne **pas** refaire : nom Elias, remise en un clic, bilan,
+bouton conditionnel, journal 1/4. Fenêtre de jeu à la taille habituelle (~854×480), sans changer
+l'échelle de l'interface.
+
+1.  Parler à Elias. **Attendu** : accueil court (bienvenue + rôle), **aucun** matériau, compteur,
+    phrase « tu as / tu n'as pas » ni bouton « Donner les matériaux ». Texte nettement plus large
+    qu'avant (plus seulement la colonne de la largeur des boutons), boutons toujours un par ligne.
+2.  « Comment améliorer mon kit ? ». **Attendu** : kit actuel, prochaine amélioration, quête, puis
+    « À me rapporter : » avec les compteurs réels (Bâton 1/4…) et, juste dessous, « Tu n'as sur toi
+    aucun des matériaux qui manquent. » si c'est le cas — **sans** bouton de remise.
+3.  Avec un matériau attendu en poche, rouvrir cet écran. **Attendu** : « Tu as sur toi des
+    matériaux que j'attends. » et un seul bouton « Donner les matériaux » (le bilan après clic est
+    celui déjà validé en TC-348, inutile de le refaire en détail).
+4.  Juger la lisibilité de 1 et 2 : largeur, lignes de liste, défilement. Note : le client Minecraft
+    **centre toujours** chaque ligne d'un texte de dialogue (limite native vérifiée, voir la Bible) —
+    signaler si la présentation reste gênante malgré cela.
+5.  Journal → « Explorateur » → clic gauche (détails). **Attendu** : une rangée d'objets — icône de
+    la quête, Description, Objectifs, Récompenses (Prérequis s'il y en a). Survoler chacun : chaque
+    infobulle tient **entièrement** dans la fenêtre (titre visible en haut), la description complète
+    se lit (« Description (2/2) » si elle est longue), objectifs « à remettre à Elias » 1/4…
+
 ### TC-348 — Remise au Guide en une action, Guide renommé, infobulle du journal (issue #475, retour du 17/10, PENDING MANUAL VALIDATION)
+
+> **17/10 15:16 — 2e retour propriétaire : UX non validée, reprendre par TC-349.** Acquis conservés (nom
+> Elias, remise unique, bilan, bouton conditionnel, journal 1/4). Depuis le correctif suivant, l'étape 1
+> ne s'observe plus à l'accueil mais dans « Comment améliorer mon kit ? », et l'étape 6 se lit sur
+> plusieurs objets de la vue détail.
 
 Prérequis : JAR issu du correctif #475 du 17/10 sur **DEV**, contenus `dialogues/guide.yml`,
 `dialogues/libraire.yml` et `quests/kit_tier2..5.yml` republiés (voir le rapport de session). Compte

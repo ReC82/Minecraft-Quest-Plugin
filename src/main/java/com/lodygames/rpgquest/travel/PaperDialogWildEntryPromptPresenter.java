@@ -45,8 +45,8 @@ public final class PaperDialogWildEntryPromptPresenter implements WildEntryPromp
         }
 
         List<DialogBody> body = new ArrayList<>();
-        prompt.body().forEach(line -> body.add(DialogBody.plainMessage(line, layout.width())));
-        layout.fullLabelsBody().forEach(line -> body.add(DialogBody.plainMessage(line, layout.width())));
+        prompt.body().forEach(line -> body.add(DialogBody.plainMessage(line, DialogButtonLayout.BODY_WIDTH)));
+        layout.fullLabelsBody().forEach(line -> body.add(DialogBody.plainMessage(line, DialogButtonLayout.BODY_WIDTH)));
         Dialog dialog = Dialog.create(factory -> factory.empty()
                 .base(DialogBase.builder(prompt.title())
                         .body(body)

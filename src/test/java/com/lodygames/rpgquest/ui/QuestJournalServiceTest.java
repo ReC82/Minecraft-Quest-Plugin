@@ -471,6 +471,83 @@ class QuestJournalServiceTest {
 
     // ---- Infobulles : compacte en liste, complète en détails ----------------------------------
 
+    /**
+     * Issue #475 : la vue détail est une rangée d'objets (quête, description, objectifs,
+     * récompenses, prérequis) — son texte complet est celui de toute la rangée.
+     */
+    static List<String> detailText(Inventory detail) {
+        List<String> lines = new java.util.ArrayList<>();
+        for (int slot = QuestJournalService.DETAIL_ICON_SLOT; slot <= QuestJournalService.DETAIL_LAST_SECTION_SLOT; slot++) {
+            ItemStack stack = detail.getItem(slot);
+            if (stack != null) {
+                lines.add(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(stack.getItemMeta().displayName()));
+                lines.addAll(loreText(stack));
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * Issue #475 (retour du 17/10, capture 131135) : l'infobulle détaillée était trop HAUTE pour
+     * une fenêtre 854×480 — son début sortait de l'écran. Une longue description et de nombreux
+     * objectifs sont répartis sur plusieurs objets, chacun borné, et rien n'est perdu.
+     */
+    @Test
+    void aLongDetailIsSplitIntoBoundedTooltipsWithoutLosingAnything() throws Exception {
+        StringBuilder description = new StringBuilder();
+        for (int i = 1; i <= 40; i++) {
+            description.append("Phrase").append(i).append(" de la longue histoire. ");
+        }
+        StringBuilder objectives = new StringBuilder();
+        for (String entity : List.of("ZOMBIE", "SKELETON", "SPIDER", "CREEPER", "WITCH", "SLIME", "HUSK",
+                "STRAY", "DROWNED", "PILLAGER", "VINDICATOR", "EVOKER")) {
+            objectives.append("      - type: KILL_ENTITY\n        entity: ").append(entity).append("\n        amount: 2\n");
+        }
+        Files.writeString(questsDir.resolve("long.yml"), """
+                id: rpgquest:long
+                title: "Longue quête"
+                description: "%s"
+                category: test
+                steps:
+                  - id: step_one
+                    objectives:
+                %s
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 50
+                """.formatted(description.toString().strip(), objectives.toString().stripTrailing()));
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        setState(player, new NamespacedKey("rpgquest", "long"), QuestState.ACTIVE);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], false);
+        waitUntil(() -> player.getOpenInventory().getTopInventory()
+                .getItem(QuestJournalService.DETAIL_ICON_SLOT) != null);
+
+        Inventory detail = player.getOpenInventory().getTopInventory();
+        int items = 0;
+        for (int slot = QuestJournalService.DETAIL_ICON_SLOT; slot <= QuestJournalService.DETAIL_LAST_SECTION_SLOT; slot++) {
+            ItemStack stack = detail.getItem(slot);
+            if (stack != null) {
+                items++;
+                assertTrue(loreText(stack).size() <= QuestJournalService.MAX_DETAIL_LORE_LINES,
+                        () -> "infobulle trop haute : " + loreText(stack));
+            }
+        }
+        assertTrue(items >= 5, "quête + description et objectifs en plusieurs pages + récompenses : " + items);
+        String joined = String.join("\n", detailText(detail));
+        assertTrue(joined.contains("Phrase1 ") && joined.contains("Phrase40 "), "toute la description : " + joined);
+        assertTrue(joined.contains("Description (1/") && joined.contains("Objectifs (2/2)"), joined);
+        assertTrue(joined.contains("50 XP"), joined);
+        assertEquals(12, java.util.regex.Pattern.compile(" 0/2").matcher(joined).results().count(),
+                () -> "les douze objectifs : " + joined);
+        assertNotNull(detail.getItem(QuestJournalService.DETAIL_BACK_SLOT), "navigation conservée");
+        assertNotNull(detail.getItem(QuestJournalService.DETAIL_TRACK_SLOT));
+    }
+
     /** Texte brut (sans couleur ni balise) de la lore d'un objet, une ligne par entrée. */
     private static List<String> loreText(org.bukkit.inventory.ItemStack stack) {
         var lore = stack.getItemMeta().lore();
@@ -546,8 +623,7 @@ class QuestJournalServiceTest {
         waitUntil(() -> player.getOpenInventory().getTopInventory()
                 .getItem(QuestJournalService.DETAIL_ICON_SLOT) != null);
 
-        var detail = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.DETAIL_ICON_SLOT);
-        String joined = String.join("\n", loreText(detail));
+        String joined = String.join("\n", detailText(player.getOpenInventory().getTopInventory()));
 
         assertTrue(joined.contains("Description longue"), "la description est dans les détails : " + joined);
         assertTrue(joined.contains("50 XP"), "la récompense d'XP est dans les détails : " + joined);
@@ -660,8 +736,7 @@ class QuestJournalServiceTest {
         waitUntil(() -> player.getOpenInventory().getTopInventory()
                 .getItem(QuestJournalService.DETAIL_ICON_SLOT) != null);
 
-        var detail = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.DETAIL_ICON_SLOT);
-        String joined = String.join("\n", loreText(detail));
+        String joined = String.join("\n", detailText(player.getOpenInventory().getTopInventory()));
         assertTrue(joined.contains("250 LodyCoins"), () -> "la récompense prévue doit être lisible : " + joined);
     }
 

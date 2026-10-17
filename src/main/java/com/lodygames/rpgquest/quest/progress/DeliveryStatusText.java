@@ -115,6 +115,20 @@ public final class DeliveryStatusText {
                 + (carriesUseful ? CARRIES_USEFUL : NOTHING_CARRIED);
     }
 
+    /**
+     * {@code %delivery_carry%} (issue #475, retour du 17/10) : seulement la phrase qui dit si le
+     * joueur porte de quoi avancer — rien quand ce PNJ n'attend plus rien de lui. Pour un écran qui
+     * affiche déjà la liste des matériaux (l'amélioration du kit) : la répéter surchargeait la fenêtre.
+     * Commence par un retour à la ligne, comme {@link #hint}, pour se coller sous la liste sans
+     * laisser de ligne vide quand il n'y a rien à dire.
+     */
+    public static String carry(List<DeliveryLine> pending, boolean carriesUseful) {
+        if (pending.stream().allMatch(DeliveryLine::complete)) {
+            return "";
+        }
+        return "<newline>" + (carriesUseful ? CARRIES_USEFUL : NOTHING_CARRIED);
+    }
+
     /** « 2 × Bâton, 3 × Pierre » : ce qui vient d'être remis, noms traduits côté client. */
     private static String amounts(List<DeliveryLine> lines) {
         StringBuilder sb = new StringBuilder();

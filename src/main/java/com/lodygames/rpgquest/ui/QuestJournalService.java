@@ -92,7 +92,17 @@ public final class QuestJournalService implements QuestJournalUi {
 
     /** Même bourse que {@link #BALANCE_SLOT}, dans la vue détail : le solde suit le joueur. */
     static final int DETAIL_BALANCE_SLOT = 4;
-    static final int DETAIL_ICON_SLOT = 13;
+    /**
+     * Issue #475 (retour du 17/10) : la vue détail n'est plus UNE infobulle géante, trop haute pour
+     * une fenêtre 854×480 (son début sortait de l'écran), mais une rangée d'objets lus de gauche à
+     * droite — la quête (titre, état, palier), puis description, objectifs, récompenses et
+     * prérequis, chacun découpé en pages de {@link #MAX_DETAIL_LORE_LINES} lignes au plus.
+     * {@code DETAIL_ICON_SLOT} est le premier de la rangée : l'icône de la quête.
+     */
+    static final int DETAIL_ICON_SLOT = 10;
+    static final int DETAIL_LAST_SECTION_SLOT = 17;
+    /** Lignes de lore par objet de la vue détail : titre compris, ~120 px d'interface de haut. */
+    static final int MAX_DETAIL_LORE_LINES = 10;
     static final int DETAIL_BACK_SLOT = 18;
     static final int DETAIL_TRACK_SLOT = 22;
     static final int DETAIL_CLOSE_SLOT = 26;
@@ -346,7 +356,7 @@ public final class QuestJournalService implements QuestJournalUi {
                 QuestState state = states.getOrDefault(questId, QuestState.NOT_STARTED);
                 boolean tracked = questId.equals(trackedByPlayer.get(playerId));
                 inventory.setItem(CONTENT_SLOTS[i],
-                        buildIcon(playerId, quest.get(), state, cooldownOf(cooldowns, questId), tracked, false));
+                        buildIcon(playerId, quest.get(), state, cooldownOf(cooldowns, questId), tracked));
             }
             // openInventory AVANT d'enregistrer la session : quand il remplace un menu déjà ouvert,
             // il déclenche un InventoryCloseEvent SYNCHRONE pour l'ancien inventaire, que
@@ -540,8 +550,15 @@ public final class QuestJournalService implements QuestJournalUi {
             holder.bind(inventory);
 
             inventory.setItem(DETAIL_BALANCE_SLOT, balanceIcon(balance));
-            inventory.setItem(DETAIL_ICON_SLOT,
-                    buildIcon(playerId, quest, state, cooldownOf(cooldownsFuture.join(), questId), tracked, true));
+            List<ItemStack> sections = buildDetailItems(
+                    playerId, quest, state, cooldownOf(cooldownsFuture.join(), questId), tracked);
+            int shown = Math.min(sections.size(), DETAIL_LAST_SECTION_SLOT - DETAIL_ICON_SLOT + 1);
+            if (shown < sections.size()) {
+                logger.warn("Détails de {} : {} pages d'infobulle, {} affichées", questId, sections.size(), shown);
+            }
+            for (int i = 0; i < shown; i++) {
+                inventory.setItem(DETAIL_ICON_SLOT + i, sections.get(i));
+            }
             inventory.setItem(DETAIL_BACK_SLOT, navIcon(Material.ARROW, "« Retour"));
             inventory.setItem(DETAIL_TRACK_SLOT, trackToggleIcon(tracked));
             inventory.setItem(DETAIL_CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
@@ -648,27 +665,25 @@ public final class QuestJournalService implements QuestJournalUi {
     // ---- Construction des icônes -------------------------------------------
 
     /**
-     * Icône d'une quête. {@code detailed} distingue les deux usages, qui partageaient jusqu'ici la
-     * même infobulle démesurée :
-     * <ul>
-     *   <li><strong>liste</strong> ({@code false}) — infobulle <em>compacte</em> : nom, état,
-     *       compteurs de l'étape en cours, indications de clic. Rien d'autre ;</li>
-     *   <li><strong>détails</strong> ({@code true}) — tout le reste : description, catégorie,
-     *       récompenses, prérequis.</li>
-     * </ul>
+     * Icône d'une quête dans la <strong>liste</strong> : infobulle <em>compacte</em> — nom, état,
+     * compteurs de l'étape en cours, indications de clic. Tout le reste (description, catégorie,
+     * récompenses, prérequis) est dans la vue détail, voir {@link #buildDetailItems}.
      *
      * <p>Les attributs vanilla de l'objet servant d'icône sont masqués : une quête dont l'icône
      * est une épée affichait « Quand dans la main principale : … dégâts d'attaque », information
      * parasite qui n'a rien à voir avec la quête.</p>
      */
     private ItemStack buildIcon(UUID playerId, QuestDefinition quest, QuestState state, Duration cooldown,
-                                boolean tracked, boolean detailed) {
-        ItemStack stack = new ItemStack(quest.icon());
+                                boolean tracked) {
+        return detailItem(quest.icon(), buildTitle(quest, state, tracked),
+                buildCompactLore(playerId, quest, state, cooldown, tracked));
+    }
+
+    private static ItemStack detailItem(Material material, Component title, List<Component> lore) {
+        ItemStack stack = new ItemStack(material);
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(buildTitle(quest, state, tracked));
-        meta.lore(detailed
-                ? buildDetailedLore(playerId, quest, state, cooldown)
-                : buildCompactLore(playerId, quest, state, cooldown, tracked));
+        meta.displayName(title);
+        meta.lore(lore);
         meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ADDITIONAL_TOOLTIP,
                 ItemFlag.HIDE_ENCHANTS, ItemFlag.HIDE_UNBREAKABLE);
         stack.setItemMeta(meta);
@@ -765,61 +780,75 @@ public final class QuestJournalService implements QuestJournalUi {
         return com.lodygames.rpgquest.npc.NpcNameTokens.resolve(raw, questProgressEngine.npcNameResolver());
     }
 
-    /** Infobulle de <strong>détails</strong> : tout ce qui a été retiré de la liste. */
-    private List<Component> buildDetailedLore(UUID playerId, QuestDefinition quest, QuestState state,
-                                              Duration cooldown) {
-        List<Component> lore = new ArrayList<>();
+    /**
+     * Objets de la vue <strong>détails</strong> (issue #475, retour du 17/10) : tout ce qui a été
+     * retiré de la liste, réparti en sections — la quête, puis description, objectifs, récompenses
+     * et prérequis — et chaque section en pages de {@link #MAX_DETAIL_LORE_LINES} lignes. Aucune
+     * infobulle ne dépasse donc la hauteur d'une petite fenêtre ; rien n'est tronqué.
+     */
+    private List<ItemStack> buildDetailItems(UUID playerId, QuestDefinition quest, QuestState state,
+                                             Duration cooldown, boolean tracked) {
+        List<ItemStack> items = new ArrayList<>();
+        List<Component> summary = new ArrayList<>();
+        summary.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
+        addContextLine(summary, quest);
+        summary.add(MM.deserialize("<white>Catégorie :</white> <gray><category></gray>",
+                Placeholder.unparsed("category", quest.category())));
+        addReplayLines(summary, quest, state, cooldown);
+        JournalReplayText.cadenceLine(quest).map(MM::deserialize).ifPresent(summary::add);
+        summary.add(Component.empty());
+        summary.add(MM.deserialize("<dark_gray>Survole les objets à droite :</dark_gray>"));
+        summary.add(MM.deserialize("<dark_gray>description, objectifs, récompenses.</dark_gray>"));
+        addPages(items, quest.icon(), buildTitle(quest, state, tracked), summary);
+
         // Issue #475 : la description est repliée (une ligne de lore n'est jamais coupée par le
         // client, elle débordait de l'écran) et ses PNJ cités par id portent leur nom actuel.
+        List<Component> description = new ArrayList<>();
         for (String line : LoreWrap.wrap(npcNamed(quest.description().base()), LoreWrap.DEFAULT_WIDTH)) {
-            lore.add(MM.deserialize("<gray>" + line + "</gray>")
-                    .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false));
+            description.add(MM.deserialize("<gray>" + line + "</gray>"));
         }
-        lore.add(Component.empty());
-        lore.add(MM.deserialize("<white>Catégorie :</white> <gray><category></gray>",
-                Placeholder.unparsed("category", quest.category())));
-        lore.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
-        addContextLine(lore, quest);
-        addReplayLines(lore, quest, state, cooldown);
-        JournalReplayText.cadenceLine(quest).map(MM::deserialize).ifPresent(lore::add);
+        addPages(items, Material.WRITABLE_BOOK, MM.deserialize("<white>Description</white>"), description);
 
         QuestStepProgressView stepView = stepViewFor(playerId, quest, state);
         List<QuestObjective> objectives = objectivesOf(quest, stepView.stepId());
-        if (!stepView.objectives().isEmpty()) {
-            lore.add(Component.empty());
-            lore.add(MM.deserialize("<white>Objectifs :</white>"));
-            for (int i = 0; i < stepView.objectives().size(); i++) {
-                lore.add(counterLine(stepView.objectives().get(i),
-                        i < objectives.size() ? objectives.get(i) : null));
-                if (i < objectives.size()) {
-                    addObjectiveHint(lore, playerId, quest, state, stepView.stepId(), objectives.get(i), i);
-                }
+        List<Component> objectiveLines = new ArrayList<>();
+        for (int i = 0; i < stepView.objectives().size(); i++) {
+            objectiveLines.add(counterLine(stepView.objectives().get(i),
+                    i < objectives.size() ? objectives.get(i) : null));
+            if (i < objectives.size()) {
+                addObjectiveHint(objectiveLines, playerId, quest, state, stepView.stepId(), objectives.get(i), i);
             }
         }
+        addPages(items, Material.TARGET, MM.deserialize("<white>Objectifs</white>"), objectiveLines);
 
         List<Component> rewards = new ArrayList<>();
         for (QuestReward reward : quest.rewards()) {
-            describeReward(reward).ifPresent(rewards::add);
+            describeReward(reward).ifPresent(r -> rewards.add(Component.text("- ", NamedTextColor.GRAY)
+                    .append(r.colorIfAbsent(NamedTextColor.GRAY))));
         }
-        if (!rewards.isEmpty()) {
-            lore.add(Component.empty());
-            lore.add(MM.deserialize("<white>Récompenses :</white>"));
-            for (Component reward : rewards) {
-                lore.add(Component.text("- ", NamedTextColor.GRAY)
-                        .append(reward.colorIfAbsent(NamedTextColor.GRAY))
-                        .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false));
-            }
-        }
+        addPages(items, Material.CHEST, MM.deserialize("<white>Récompenses</white>"), rewards);
 
-        if (!quest.prerequisites().isEmpty()) {
-            lore.add(Component.empty());
-            lore.add(MM.deserialize("<white>Prérequis :</white>"));
-            for (NamespacedKey prereqId : quest.prerequisites()) {
-                String name = questEngine.find(prereqId).map(q -> q.title().base()).orElse(prereqId.toString());
-                lore.add(MM.deserialize("<gray>- <name></gray>", Placeholder.parsed("name", name)));
-            }
+        List<Component> prerequisites = new ArrayList<>();
+        for (NamespacedKey prereqId : quest.prerequisites()) {
+            String name = questEngine.find(prereqId).map(q -> q.title().base()).orElse(prereqId.toString());
+            prerequisites.add(MM.deserialize("<gray>- <name></gray>", Placeholder.parsed("name", name)));
         }
-        return lore;
+        addPages(items, Material.PAPER, MM.deserialize("<white>Prérequis</white>"), prerequisites);
+        return items;
+    }
+
+    /** Une section en pages bornées : « Objectifs », puis « Objectifs (2/2) »… ; rien si elle est vide. */
+    private static void addPages(List<ItemStack> items, Material icon, Component title, List<Component> lines) {
+        List<List<Component>> pages = LorePages.split(lines, MAX_DETAIL_LORE_LINES);
+        for (int i = 0; i < pages.size(); i++) {
+            Component pageTitle = pages.size() == 1 ? title
+                    : title.append(Component.text(" (" + (i + 1) + "/" + pages.size() + ")", NamedTextColor.GRAY));
+            List<Component> lore = pages.get(i).stream()
+                    .map(line -> line.decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false))
+                    .toList();
+            items.add(detailItem(icon, pageTitle.decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC,
+                    false), lore));
+        }
     }
 
     /** Issue #475 — « Amélioration du kit — palier 2 » sous l'état, quand la quête en a une. */

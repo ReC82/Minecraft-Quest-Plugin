@@ -36,6 +36,21 @@ public final class DialogButtonLayout {
     public static final int COLUMNS = 1;
     public static final int MIN_WIDTH = 200;
     public static final int MAX_WIDTH = 310;
+    /**
+     * Largeur du texte du corps d'une fenêtre (issue #475, retour du 17/10), indépendante de celle
+     * des boutons : aligné sur eux (200 à 310 px), le corps formait une colonne étroite au milieu
+     * d'un écran à moitié vide.
+     *
+     * <p>Faits vérifiés dans le client 1.21.11 (bytecode de {@code client.jar} + mappings Mojang) :
+     * {@code plain_message.width} est borné à 1..1024 (défaut 200), comme la largeur d'un bouton ;
+     * le client rend ce corps avec un {@code FocusableTextWidget} {@code setCentered(true)} codé en
+     * dur — <strong>chaque ligne est centrée, aucun alignement à gauche n'existe</strong> ; la zone
+     * défilante ajoute 20 px (2 × 10) autour du contenu. Le serveur ne connaît pas la taille de la
+     * fenêtre du joueur : la largeur ne peut donc pas s'adapter côté serveur, et un corps plus large
+     * que l'écran serait coupé. 380 px + marges ≈ 408 px tiennent dans la plus petite surface visée
+     * par {@link #MAX_WIDTH} (427 px d'interface : 854×480 en échelle automatique).</p>
+     */
+    public static final int BODY_WIDTH = 380;
     /** Marge intérieure gauche + droite du texte dans un bouton. */
     static final int PADDING = 16;
     private static final String ELLIPSIS = "…";
@@ -73,7 +88,7 @@ public final class DialogButtonLayout {
         return new DialogButtonLayout(width, buttons);
     }
 
-    /** Largeur commune des boutons de cette fenêtre — réutilisée pour le corps, aligné dessus. */
+    /** Largeur commune des boutons de cette fenêtre (le corps utilise {@link #BODY_WIDTH}). */
     public int width() {
         return width;
     }

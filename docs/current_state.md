@@ -6,6 +6,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Remise aux PNJ en une action, PNJ renommés propagés (#475, retour du 17/10/2026)** — un choix
+> `DELIVER_QUEST_ITEMS` n'est visible que si la remise retirerait réellement un objet
+> (`QuestProgressEngine#hasDeliverableItems`) ; clic devenu sans objet = nœud réaffiché. Bilan dans
+> la fenêtre (`%delivery_status%` : remis à l'instant, restant, porté, quête terminée / palier de kit
+> obtenu via `DeliveryOutcome.completedQuests`), `%delivery_hint%` pour l'accueil. Nom de PNJ résolu
+> au rendu depuis son id : `%npc_name%` / `%npc_name:<id>%` (locuteur, textes, titre et description
+> de quête au journal — `npc.NpcNameTokens`). Description du journal repliée (`ui.LoreWrap`).
+> `guide.yml` : action unique « Donner les matériaux ». Aucune migration (PENDING MANUAL VALIDATION TC-348).
+
 > **Affichage pièces / niveau RPG — prototype (#184, 17/10/2026)** — `/hud [sidebar|off]` : panneau
 > latéral natif propre au joueur (« Bourse » = portefeuille `wallets`, « Niveau RPG » = piste GLOBAL),
 > choix rangé dans le PDC du joueur ; retour en action bar de chaque gain/dépense réussi

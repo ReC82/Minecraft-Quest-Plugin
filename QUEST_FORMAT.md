@@ -147,6 +147,11 @@ title:
   en: "<gold>First Steps</gold>"
 ```
 
+Un PNJ se cite par son **identifiant**, jamais par son nom écrit en dur :
+`%npc_name:guide%` affiche le nom actuel du PNJ `guide` (« Elias ») dans le
+journal et les offres de quête ; renommer le PNJ suffit, rien à republier
+(issue #475). PNJ inconnu : le marqueur reste visible.
+
 ## Validation
 
 -   `id`, `title`, `description`, `category`, `steps` (≥ 1) sont obligatoires.

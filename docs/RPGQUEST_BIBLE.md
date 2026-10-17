@@ -3133,6 +3133,19 @@ catalogues du PNJ, avec Commencer / Plus tard / Refuser, issue #369 ; voir
 « Catalogues de quêtes secondaires » en section PNJ récurrents) ;
 `CLOSE`. `OPEN_DIALOGUE`/`CLOSE` prennent le pas sur `next`.
 
+**Remise jamais proposée à vide** (issue #475) : un choix qui porte
+`DELIVER_QUEST_ITEMS` n'est **visible et cliquable** que si la remise
+retirerait réellement au moins un objet — un objectif de remise de ce PNJ
+encore incomplet **et** son matériau dans l'inventaire du joueur
+(`QuestProgressEngine#hasDeliverableItems`, même règle d'éligibilité que le
+retrait). Un objectif déjà rempli ne compte plus, même si le joueur en porte
+encore. La règle vaut pour **tous** les dialogues, publiés ou non, sans
+modifier leur YAML ; le texte du nœud (`%delivery_status%`,
+`%delivery_hint%`) dit alors pourquoi. Si l'inventaire change entre
+l'affichage et le clic, rien n'est retiré et le même nœud est **réaffiché,
+recalculé** (plus de fenêtre fermée sans réponse) ; le double-clic reste
+refusé par les gardes existantes (#72, #123).
+
 **PNJ implicite** (issue #123) : `DELIVER_QUEST_ITEMS` et la condition
 `HAS_PENDING_DELIVERY` acceptent un `npc` vide, auquel cas le destinataire
 est la **clé du dialogue courant** (`rpgquest:guard` → PNJ `guard`, voir
@@ -3190,7 +3203,10 @@ Implémentation : `dialogue.DialogueTextPlaceholders`, appelée par
 
 | Clé | Valeur substituée |
 |---|---|
-| `%delivery_status%` | Issue #123 — état de remise du PNJ **porteur du dialogue courant** : une ligne par matériau, `déjà remis/demandé`, nom d'objet traduit côté client. « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Lecture pure de la progression en mémoire. Issue #467 : sur le nœud affiché **juste après** un `DELIVER_QUEST_ITEMS` qui a tout complété (quête terminée, donc sortie des quêtes actives), affiche le bilan de cette remise (`✔ … 3/3`) suivi de « Merci, c'est tout ce qu'il me fallait ! » au lieu d'un faux « je n'attends rien » ; dès qu'il reste quelque chose à remettre, l'état réel prime. |
+| `%delivery_status%` | Issue #123 — état de remise du PNJ **porteur du dialogue courant** : une ligne par matériau, `déjà remis/demandé`, nom d'objet traduit côté client. « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Lecture pure de la progression en mémoire. Issue #467 : sur le nœud affiché **juste après** un `DELIVER_QUEST_ITEMS` qui a tout complété (quête terminée, donc sortie des quêtes actives), affiche le bilan de cette remise (`✔ … 3/3`) suivi de « Merci, c'est tout ce qu'il me fallait ! » au lieu d'un faux « je n'attends rien » ; dès qu'il reste quelque chose à remettre, l'état réel prime. Issue #475 : juste après un `DELIVER_QUEST_ITEMS`, commence par « Tu viens de me remettre : 2 × Bâton, … » (ou « Tu n'as rien d'utile à me remettre pour l'instant. »), puis l'état réel, puis « Tu as sur toi des matériaux que j'attends. » / « Tu n'as sur toi aucun des matériaux qui manquent. » tant qu'il reste à remettre, et enfin, pour chaque quête que la remise a terminée, « Amélioration du kit obtenue : palier N. … » (quête d'un palier du kit) ou « Quête terminée : <titre> ». Tout est lu dans la fenêtre, plus seulement dans le chat. |
+| `%delivery_hint%` | Issue #475 — pour un **texte d'accueil** : **vide** quand le PNJ porteur du dialogue n'attend rien de ce joueur (le texte reste inchangé pour tous les autres), sinon un retour à la ligne, « Matériaux à me remettre : » + une ligne par matériau (`déjà remis/demandé`), puis « Tu as sur toi des matériaux que j'attends. » ou « Tu n'as sur toi aucun des matériaux qui manquent. ». |
+| `%npc_name%` | Issue #475 — nom affiché **actuel** du PNJ porteur du dialogue (`display_name` de `npcs/<id>.yml`, balises retirées, inséré comme texte). Renommer le PNJ dans le Control Panel change aussitôt le texte. Utilisable aussi dans le **`speaker`** d'un nœud (le locuteur passe par les mêmes valeurs dynamiques que le texte). |
+| `%npc_name:<id_pnj>%` | Issue #475 — nom affiché **actuel** d'un autre PNJ cité par son id stable (ex. `%npc_name:guide%` → « Elias »). PNJ inconnu : le marqueur reste visible. Même jeton accepté dans le **titre et la description d'une quête** (journal, offre de catalogue). Le mot générique « guide » n'est jamais remplacé : seul le jeton l'est. |
 | `%city_name:<id_ville>%` | Issue #180 — nom **actuel** de la ville d'identifiant stable `<id_ville>` (ex. `%city_name:ville_nerana%` → « Nerana ») : renommer la ville dans le Control Panel (#178) change aussitôt le texte, sans retoucher le dialogue. Ville inconnue ou désactivée : le marqueur reste visible tel quel. |
 | `%city_direction:<id_ville>%` | Issue #180 — indication de chemin vers cette ville depuis la position **du joueur qui lit** : « au nord, à environ 420 blocs » (8 directions, distance arrondie à la dizaine, mesurée jusqu'au centre posé avec l'outil de ville), « tout près : tu y es déjà » dans son périmètre, « loin d'ici, dans un autre monde que celui où tu te trouves » depuis un autre monde. Aucune coordonnée affichée, aucun waypoint débloqué. Ville inconnue ou désactivée : marqueur visible. |
 | `%wild_conditions%` | État réel du monde `travel.wild-world` : « Il fait jour dans le Wild. Le temps est clair. », « Il fait nuit dans le Wild. Il pleut. », « Il fait nuit dans le Wild. Un orage est en cours. », ou « Je n'ai pas de nouvelles du Wild pour le moment. » si le monde n'est pas chargé. Lecture seule (`travel.WildConditionsService`) : ni l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés. |

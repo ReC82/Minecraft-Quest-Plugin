@@ -18,8 +18,13 @@ import org.bukkit.inventory.EquipmentSlot;
  * de celui qui clique. Le contenu physique du bloc n'est donc jamais montré à personne.
  *
  * <p>Les deux mains déclenchent un événement : les deux sont annulés (sinon la main secondaire
- * pourrait encore ouvrir ou poser un bloc), seul celui de la main principale ouvre le coffre. Un
- * refus déjà posé par une autre protection (claim, zone…) est respecté.</p>
+ * pourrait encore ouvrir ou poser un bloc), seul celui de la main principale ouvre le coffre.</p>
+ *
+ * <p>Priorité {@code LOWEST} : un point d'accès est déclaré par un administrateur et n'est pas un
+ * conteneur public, donc le drapeau de zone {@code public-containers: false} (priorité
+ * {@code LOW}, qui ignore les événements déjà annulés) ne doit pas l'empêcher. Un refus posé
+ * encore plus tôt est respecté ; les claims sont exclus d'office (liaison refusée dans
+ * {@code claims.world}).</p>
  */
 final class VaultAccessListener implements Listener {
 
@@ -31,7 +36,7 @@ final class VaultAccessListener implements Listener {
         this.service = service;
     }
 
-    @EventHandler(priority = EventPriority.HIGH)
+    @EventHandler(priority = EventPriority.LOWEST)
     public void onInteract(PlayerInteractEvent event) {
         Block block = event.getClickedBlock();
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null

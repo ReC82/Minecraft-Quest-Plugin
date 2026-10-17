@@ -68,7 +68,7 @@ personal_vaults     : (player_uuid, vault_id) → contenu   (schéma V43, donné
 | Déclaration | `/rpgadmin vault bind [vault_id]` sur le bloc visé (défaut `vault_01`) ; `unbind [x y z]`, `info`, `list`. Droit : ombrelle `rpgquest.admin.world`. Aucune coordonnée en dur dans le code. |
 | Blocs acceptés | coffre, coffre piégé, tonneau, coffre de l'Ender. Un coffre double est lié sur ses deux moitiés. |
 | Refus | bloc non pris en charge ; conteneur **non vide** (son contenu physique ne serait plus jamais montré) ; `travel.wild-world` et `claims.world` (pas d'accès distant au stockage personnel). |
-| Ouverture | Clic droit main principale : l'ouverture vanilla est **toujours** annulée (builder et OP compris) et remplacée par `open(joueur qui clique, vault_id)`. Main secondaire annulée sans ouvrir ; spectateur : rien. Un refus déjà posé par une autre protection (claim, zone) est respecté. |
+| Ouverture | Clic droit main principale : l'ouverture vanilla est **toujours** annulée (builder et OP compris) et remplacée par `open(joueur qui clique, vault_id)`. Main secondaire annulée sans ouvrir ; spectateur : rien. Traité en premier (priorité `LOWEST`) : le drapeau de zone `public-containers: false` ne bloque pas un point d'accès (ce n'est pas un conteneur public). |
 | Multi-joueur | Deux joueurs sur le même bloc obtiennent deux inventaires distincts (clé = leur UUID). Un builder ne voit jamais le contenu d'un autre joueur. |
 | Multi-Hub | Plusieurs positions peuvent viser le même `vault_id` : même contenu pour le même joueur, quel que soit le Hub. |
 | Déplacer / reconfigurer | Lier la nouvelle position puis délier l'ancienne, ou relier vers un autre `vault_id` : `personal_vaults` n'est jamais lu ni écrit. |

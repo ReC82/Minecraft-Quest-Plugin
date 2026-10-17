@@ -47,11 +47,31 @@ File complète : {{QUEUE_JSON}}
 7. Machine à 3,8 Go : `RPGQUEST_TEST_MAX_HEAP=768m`, jamais deux Gradle à la fois. Tests ciblés en
    développement, CI GitHub pour la suite complète.
 8. Avant de terminer : rapport `docs/claude-reports/` (gabarit du README), commentaire sur le ticket
-   (fait / déployé / vérifié / à tester en jeu), puis le fichier d'état ci-dessous.
+   (fait / déployé / vérifié / à tester en jeu), mise à jour du registre `docs/SUIVI_VALIDATIONS_DEV.md`
+   (voir ci-dessous), puis le fichier d'état ci-dessous.
 9. Si le contexte devient long : termine l'unité en cours proprement, commit + push, et rends
    `RUNNING` avec une `next_action` précise. La session suivante reprendra.
 10. Si `lqorch status` (`python3 /opt/lodyquests-orch/lqorch.py status`) indique un mode STOP ou PAUSED,
    termine l'unité en cours sans en commencer d'autre.
+
+## Registre de validation DEV (`docs/SUIVI_VALIDATIONS_DEV.md`) — obligatoire après chaque livraison
+
+Suivi opérationnel lisible du propriétaire ; `docs/MANUAL_TEST_PLAN.md` reste le référentiel technique
+détaillé (TC-xxx). Relis les règles en tête du registre et applique-les.
+
+- Si `origin/main` contient une version du registre plus récente que la branche d'intégration
+  (`git log origin/main -- docs/SUIVI_VALIDATIONS_DEV.md`), reporte d'abord ses changements
+  (le propriétaire peut l'éditer sur `main`), sans rien perdre d'un côté ni de l'autre.
+- Mets à jour la ligne de ton ticket (ou ajoute-la) dans « Priorité immédiate » : ticket + TC,
+  version déployée sur DEV (commit, JAR et/ou PlugAdmin), tests automatisés réalisés, tests manuels
+  restants, dépendances / bugs / décisions bloquantes, **prochaine action simple pour le propriétaire**.
+  État : « À tester », « Partiel », « Bloqué » — jamais « Validé par propriétaire » : seul le
+  propriétaire valide un test manuel, avec une preuve réelle.
+- Ne supprime **aucune** ligne existante, ni de l'historique des tests propriétaire (tu n'y ajoutes
+  rien : il ne contient que des tests réellement faits par le propriétaire). Ne confonds jamais
+  livraison technique (CI, tests automatisés, déploiement) et validation en jeu.
+- Mets à jour « Dépendances et décisions à garder visibles » si ton travail en ajoute ou en lève.
+- Le registre est modifié dans la PR de rapport de la session ; mentionne-le dans le rapport.
 
 ## Tri du backlog (#0 seulement)
 

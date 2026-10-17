@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 43;
+    public static final int CURRENT_VERSION = 44;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -89,7 +89,9 @@ public final class SchemaMigrator {
             new SchemaMigration(42, "periodic_quest_assignments (quêtes quotidiennes/hebdomadaires, issue #15)",
                     SchemaMigrator::applyV42),
             new SchemaMigration(43, "personal_vaults (coffres personnels partagés entre les Hubs, issue #104)",
-                    SchemaMigrator::applyV43));
+                    SchemaMigrator::applyV43),
+            new SchemaMigration(44, "vault_access_points (coffres physiques des Hubs liés aux coffres personnels, issue #105)",
+                    SchemaMigrator::applyV44));
 
     private SchemaMigrator() {
     }
@@ -1518,6 +1520,27 @@ public final class SchemaMigrator {
                 statement.execute(dialect.ddl(
                         "CREATE INDEX IF NOT EXISTS idx_xp_grants_skill_created ON xp_grants (skill, created_at)"));
             }
+        }
+    }
+
+    private static void applyV44(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #105 — points d'accès physiques : une ligne = UN bloc (monde + position) qui ouvre le
+        // coffre personnel vault_id de celui qui l'utilise. La position n'identifie que le point
+        // d'accès, jamais un contenu : déplacer ou retirer une ligne ne touche pas personal_vaults.
+        // Plusieurs lignes peuvent viser le même vault_id (un point par Hub).
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS vault_access_points (
+                        world TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        vault_id TEXT NOT NULL,
+                        created_by TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (world, x, y, z)
+                    )
+                    """));
         }
     }
 

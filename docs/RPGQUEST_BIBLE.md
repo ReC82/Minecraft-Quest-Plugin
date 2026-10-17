@@ -5828,8 +5828,26 @@ Persistance : `player_entitlements`, `backpacks`, `backpack_overflow`, `backpack
 
 Aucune commande, aucune configuration : socle interne `PersonalVaultService` (`UUID + vault_id`, ex.
 `vault_01`, 27 cases) persisté dans `personal_vaults` (migration V43), le même contenu depuis tous les
-Hubs, distinct de l'Ender Chest vanilla. Pas encore ouvrable en jeu (coffres physiques : #105). Détail :
-[docs/PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
+Hubs, distinct de l'Ender Chest vanilla. Détail : [docs/PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
+
+### Coffres physiques des Hubs (#105)
+
+Un coffre (coffre, coffre piégé, tonneau ou coffre de l'Ender) **déclaré** par un administrateur ouvre,
+pour chaque joueur, **son propre** coffre personnel `vault_id` — jamais le contenu physique du bloc.
+Positions persistées dans `vault_access_points` (migration V44) ; plusieurs points (un par Hub) peuvent
+viser le même `vault_id`. Droit : ombrelle `rpgquest.admin.world` (comme les autres branches de
+`/rpgadmin`). Le bloc visé (5 blocs au plus) est la seule entrée.
+
+| Commande | Effet |
+|---|---|
+| `/rpgadmin vault bind [vault_id]` | Lie le coffre visé (et l'autre moitié d'un coffre double) à `vault_id` (défaut `vault_01`). Refusé : bloc non pris en charge, coffre non vide, Wild ou monde des claims. Relier un point à un autre `vault_id` ne déplace aucun contenu. |
+| `/rpgadmin vault unbind [x y z]` | Délie le coffre visé (ou cette position du monde courant). Le contenu des joueurs est conservé. |
+| `/rpgadmin vault info` | Liaison du bloc visé (ou « non lié »). |
+| `/rpgadmin vault list` | Tous les points d'accès (`vault_id`, monde, position). |
+
+Protections : personne (builder et OP compris) ne casse un point lié — le délier d'abord ; pistons,
+explosions, feu et entités ne le détruisent ni ne le déplacent ; impossible d'y accoler un coffre pour
+en faire un coffre double. Un coffre non déclaré reste vanilla.
 
 ---
 

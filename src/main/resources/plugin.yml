@@ -51,7 +51,7 @@ commands:
     usage: /<command> <create <typeId>|remove|inspect>
   rpgadmin:
     description: Commandes d'administration du monde (aplatissement, zones, portails, PNJ, spawn, mondes supplémentaires...).
-    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination|npc tag [id]|untag|info|spawn set|tp|world create <name>|tp <name>|list|worldportal create <id> <destinationWorld>|info <id>|list|enable <id>|disable <id>|delete <id>|bypass <on|off|status>
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination|npc tag [id]|untag|info|spawn set|tp|world create <name>|tp <name>|list|worldportal create <id> <destinationWorld>|info <id>|list|enable <id>|disable <id>|delete <id>|bypass <on|off|status>|vault bind [vault_id]|unbind [x y z]|info|list
   money:
     description: Portefeuille et paiements entre joueurs.
     usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]

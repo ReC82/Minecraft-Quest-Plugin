@@ -101,7 +101,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "building", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content", "ville", "bypass");
+            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "building", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content", "ville", "bypass", "vault");
     private static final List<String> TRAVEL_SUBCOMMANDS =
             List.of("beacon", "village", "diagnose", "repair", "restore", "signs", "maintenance");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
@@ -132,6 +132,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     /** Issue #35 — {@code /rpgadmin bypass on|off|status}. */
     private static final List<String> BYPASS_SUBCOMMANDS = List.of("on", "off", "status");
     private com.lodygames.rpgquest.permission.AdminBypassMode adminBypassMode;
+
+    /** Issue #105 — {@code /rpgadmin vault …}, branché au démarrage (absent : branche indisponible). */
+    private com.lodygames.rpgquest.storage.VaultAdminCommand vaultAdminCommand;
+
+    public void setVaultAdminCommand(com.lodygames.rpgquest.storage.VaultAdminCommand command) {
+        this.vaultAdminCommand = command;
+    }
 
     /** Issue #35 — branché au démarrage : le mode bypass administrateur explicite. */
     public void setAdminBypassMode(com.lodygames.rpgquest.permission.AdminBypassMode mode) {
@@ -381,6 +388,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleTravel(player, args);
         } else if (args[0].equalsIgnoreCase("bypass")) {
             handleBypass(player, args);
+        } else if (args[0].equalsIgnoreCase("vault") && vaultAdminCommand != null) {
+            vaultAdminCommand.handle(player, args);
         } else {
             sendUsage(player);
         }
@@ -3525,6 +3534,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 && cities != null) {
             return cities.all().stream().map(c -> c.id())
                     .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length >= 2 && args[0].equalsIgnoreCase("vault") && vaultAdminCommand != null) {
+            return vaultAdminCommand.tabComplete(args);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("bypass")) {
             return BYPASS_SUBCOMMANDS.stream()

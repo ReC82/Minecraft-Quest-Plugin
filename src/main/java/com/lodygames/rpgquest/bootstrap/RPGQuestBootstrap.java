@@ -39,6 +39,7 @@ import com.lodygames.rpgquest.crafting.RecipeCraftGuardListener;
 import com.lodygames.rpgquest.crafting.YamlCraftingRegistry;
 import com.lodygames.rpgquest.database.BackpackRepository;
 import com.lodygames.rpgquest.database.PersonalVaultRepository;
+import com.lodygames.rpgquest.database.VaultAccessPointRepository;
 import com.lodygames.rpgquest.database.DatabaseService;
 import com.lodygames.rpgquest.database.EntitlementRepository;
 import com.lodygames.rpgquest.database.ItemTravelCooldownRepository;
@@ -128,6 +129,8 @@ import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.progress.DeliveryStatusText;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.storage.PersonalVaultService;
+import com.lodygames.rpgquest.storage.VaultAccessPointService;
+import com.lodygames.rpgquest.storage.VaultAdminCommand;
 import com.lodygames.rpgquest.store.StoreClient;
 import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
@@ -265,6 +268,7 @@ public final class RPGQuestBootstrap {
     private com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService rewardEntitlementService;
     private BackpackService backpackService;
     private PersonalVaultService personalVaultService;
+    private VaultAccessPointService vaultAccessPointService;
     private EconomyService economyService;
     /** Issue #140 — exposé à l'agent pour la lecture du journal des transactions. */
     private WalletRepository walletRepository;
@@ -665,6 +669,15 @@ public final class RPGQuestBootstrap {
         personalVaultService = new PersonalVaultService(
                 plugin, new PersonalVaultRepository(databaseService.databaseManager()), plugin.getSLF4JLogger());
         registry.start(personalVaultService);
+
+        // Issue #105 : coffres physiques des Hubs → coffre personnel de celui qui clique. Jamais
+        // depuis le Wild ni le monde des claims (pas d'accès distant au stockage personnel).
+        vaultAccessPointService = new VaultAccessPointService(plugin,
+                new VaultAccessPointRepository(databaseService.databaseManager()), personalVaultService,
+                () -> java.util.Set.of(configService.current().travel().wildWorld(),
+                        configService.current().claims().world()),
+                plugin.getSLF4JLogger());
+        registry.start(vaultAccessPointService);
 
         registry.start(storeProductRegistry);
         StoreDeliveryRepository storeDeliveryRepository = new StoreDeliveryRepository(databaseService.databaseManager());
@@ -1694,6 +1707,7 @@ public final class RPGQuestBootstrap {
         rpgAdminCommand.setNpcCanonicalIds(() -> NpcCatalogSources.canonicalIds(
                 npcEngine.definitions(), dialogueEngine.dialogues(), questEngine.quests()));
         rpgAdminCommand.setAdminBypassMode(adminBypassMode);
+        rpgAdminCommand.setVaultAdminCommand(new VaultAdminCommand(vaultAccessPointService));
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

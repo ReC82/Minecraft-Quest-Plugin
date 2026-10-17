@@ -5824,6 +5824,13 @@ Vérifié dans `BackpackCommand.java`. Détail complet : [docs/BACKPACKS.md](BAC
 
 Persistance : `player_entitlements`, `backpacks`, `backpack_overflow`, `backpack_audit` (SQLite, migration V9). Sauvegarde à la fermeture/déconnexion/arrêt du plugin. Un downgrade compacte le contenu et bascule le surplus dans la boîte de récupération (jamais perdu) — un upgrade ne fait jamais déborder.
 
+### Coffres personnels (socle #104)
+
+Aucune commande, aucune configuration : socle interne `PersonalVaultService` (`UUID + vault_id`, ex.
+`vault_01`, 27 cases) persisté dans `personal_vaults` (migration V43), le même contenu depuis tous les
+Hubs, distinct de l'Ender Chest vanilla. Pas encore ouvrable en jeu (coffres physiques : #105). Détail :
+[docs/PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
+
 ---
 
 ## 14. WorldEdit

@@ -38,6 +38,7 @@ import com.lodygames.rpgquest.config.RendererKind;
 import com.lodygames.rpgquest.crafting.RecipeCraftGuardListener;
 import com.lodygames.rpgquest.crafting.YamlCraftingRegistry;
 import com.lodygames.rpgquest.database.BackpackRepository;
+import com.lodygames.rpgquest.database.PersonalVaultRepository;
 import com.lodygames.rpgquest.database.DatabaseService;
 import com.lodygames.rpgquest.database.EntitlementRepository;
 import com.lodygames.rpgquest.database.ItemTravelCooldownRepository;
@@ -126,6 +127,7 @@ import com.lodygames.rpgquest.spawn.SpawnService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.progress.DeliveryStatusText;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
+import com.lodygames.rpgquest.storage.PersonalVaultService;
 import com.lodygames.rpgquest.store.StoreClient;
 import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
@@ -262,6 +264,7 @@ public final class RPGQuestBootstrap {
     private EntitlementService entitlementService;
     private com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService rewardEntitlementService;
     private BackpackService backpackService;
+    private PersonalVaultService personalVaultService;
     private EconomyService economyService;
     /** Issue #140 — exposé à l'agent pour la lecture du journal des transactions. */
     private WalletRepository walletRepository;
@@ -656,6 +659,12 @@ public final class RPGQuestBootstrap {
         backpackService = new BackpackService(
                 plugin, backpackRepository, entitlementService, () -> configService.current().backpacks(), plugin.getSLF4JLogger());
         registry.start(backpackService);
+
+        // Issue #104 : socle des coffres personnels (UUID + vault_id). Aucune commande : les coffres
+        // physiques des Hubs (#105) consommeront personalVaultService().open(...).
+        personalVaultService = new PersonalVaultService(
+                plugin, new PersonalVaultRepository(databaseService.databaseManager()), plugin.getSLF4JLogger());
+        registry.start(personalVaultService);
 
         registry.start(storeProductRegistry);
         StoreDeliveryRepository storeDeliveryRepository = new StoreDeliveryRepository(databaseService.databaseManager());
@@ -1467,6 +1476,10 @@ public final class RPGQuestBootstrap {
 
     public BackpackService backpackService() {
         return backpackService;
+    }
+
+    public PersonalVaultService personalVaultService() {
+        return personalVaultService;
     }
 
     public YamlMerchantRegistry merchantRegistry() {

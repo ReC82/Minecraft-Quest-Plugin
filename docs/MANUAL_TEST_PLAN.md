@@ -6766,6 +6766,17 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-352 — Socle des coffres personnels : démarrage en schéma V43 (issue #104, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR #104 sur **DEV**. Rien n'est ouvrable en jeu à ce stade (pas de
+commande, pas de bloc) : l'ouverture d'un coffre personnel se testera avec #105. **Aucun reset.**
+
+1.  Redémarrer DEV. **Attendu** : démarrage sans erreur ni avertissement lié à `personal_vaults` ;
+    la console indique le schéma à jour (V43).
+2.  Se connecter, ouvrir un Ender Chest vanilla. **Attendu** : comportement vanilla inchangé, contenu
+    habituel (les coffres personnels LodyQuests sont un système séparé).
+3.  `/backpack` (si accès). **Attendu** : sac à dos inchangé, contenu intact.
+
 ### TC-351 — Kit de départ déjà reçu expliqué dans la fenêtre d'Elias (issue #475, 3e retour du 17/10, PENDING MANUAL VALIDATION)
 
 Prérequis : `dialogues/guide.yml` du correctif #475 « kit déjà reçu » republié sur **DEV** (voir le

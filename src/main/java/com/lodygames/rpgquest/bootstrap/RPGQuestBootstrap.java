@@ -130,6 +130,7 @@ import com.lodygames.rpgquest.quest.progress.DeliveryStatusText;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.storage.PersonalVaultService;
 import com.lodygames.rpgquest.storage.VaultAccessPointService;
+import com.lodygames.rpgquest.storage.VaultEntitlements;
 import com.lodygames.rpgquest.storage.VaultAdminCommand;
 import com.lodygames.rpgquest.store.StoreClient;
 import com.lodygames.rpgquest.store.StoreDeliveryService;
@@ -666,8 +667,12 @@ public final class RPGQuestBootstrap {
 
         // Issue #104 : socle des coffres personnels (UUID + vault_id). Aucune commande : les coffres
         // physiques des Hubs (#105) consommeront personalVaultService().open(...).
+        // Issue #106 : accès et taille selon les variables joueur VAULT_UNLOCK_* / VAULT_SLOTS_*.
         personalVaultService = new PersonalVaultService(
-                plugin, new PersonalVaultRepository(databaseService.databaseManager()), plugin.getSLF4JLogger());
+                plugin, new PersonalVaultRepository(databaseService.databaseManager()),
+                new VaultEntitlements(variableRepository,
+                        () -> configService.current().personalVaults()),
+                plugin.getSLF4JLogger());
         registry.start(personalVaultService);
 
         // Issue #105 : coffres physiques des Hubs → coffre personnel de celui qui clique. Jamais

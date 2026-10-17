@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.storage;
 
 import com.lodygames.rpgquest.backpack.ItemArraySerializer;
 import com.lodygames.rpgquest.bootstrap.PluginService;
+import com.lodygames.rpgquest.config.PersonalVaultConfig;
 import com.lodygames.rpgquest.database.PersonalVaultRepository;
 import java.io.IOException;
 import java.util.List;
@@ -27,8 +28,9 @@ import org.slf4j.Logger;
  * dans {@code personal_vaults}. Le contenu appartient au joueur, jamais à un bloc : le même
  * {@link VaultId} ouvert depuis n'importe quel Hub présente le même contenu.
  *
- * <p>Ce service n'expose <strong>aucune commande</strong> : {@link #open} est l'API interne que les
- * coffres physiques des Hubs (#105) appelleront. Aucun accès distant depuis le Wild n'est ajouté.</p>
+ * <p>Ce service n'expose <strong>aucune commande</strong> : {@link #open} est l'API interne
+ * qu'appellent les coffres physiques des Hubs (#105). Aucun accès distant depuis le Wild. L'accès
+ * et la taille de chaque coffre dépendent des droits du joueur ({@link VaultEntitlements}, #106).</p>
  *
  * <p>Garanties : une seule {@link Inventory} vivante par (joueur, coffre) — ouvrir deux fois, ou
  * depuis deux Hubs, réutilise la même ({@link #sessions}) ; le contenu est sérialisé à la
@@ -39,29 +41,30 @@ import org.slf4j.Logger;
  */
 public final class PersonalVaultService implements PluginService {
 
-    /** Capacité du MVP (3 rangées) ; la progression de capacité relève de #106. */
-    public static final int DEFAULT_SLOTS = 27;
-    private static final int MAX_SLOTS = 54;
+    private static final int MAX_SLOTS = PersonalVaultConfig.MAX_SLOTS;
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final Plugin plugin;
     private final PersonalVaultRepository repository;
+    private final VaultEntitlements entitlements;
     private final Logger logger;
     private final PersonalVaultListener listener;
 
     private final Map<VaultKey, Inventory> sessions = new ConcurrentHashMap<>();
     private final Map<VaultKey, byte[]> pendingSaves = new ConcurrentHashMap<>();
 
-    public PersonalVaultService(Plugin plugin, PersonalVaultRepository repository, Logger logger) {
+    public PersonalVaultService(Plugin plugin, PersonalVaultRepository repository, VaultEntitlements entitlements,
+                                Logger logger) {
         this.plugin = plugin;
         this.repository = repository;
+        this.entitlements = entitlements;
         this.logger = logger;
         this.listener = new PersonalVaultListener(this);
     }
 
     public enum OpenOutcome {
-        OPENED, ALREADY_OPEN, PLAYER_OFFLINE, LOAD_FAILED
+        OPENED, ALREADY_OPEN, PLAYER_OFFLINE, LOCKED, LOAD_FAILED
     }
 
     @Override
@@ -87,42 +90,51 @@ public final class PersonalVaultService implements PluginService {
 
     // ---- Ouverture -----------------------------------------------------------------------
 
-    /** Ouvre le coffre {@code vaultId} du joueur. À appeler sur le thread principal. */
+    /**
+     * Ouvre le coffre {@code vaultId} du joueur, si ses droits ({@link VaultEntitlements}) le
+     * permettent, à la taille qu'ils accordent. À appeler sur le thread principal.
+     */
     public CompletableFuture<OpenOutcome> open(Player player, VaultId vaultId) {
         VaultKey key = new VaultKey(player.getUniqueId(), vaultId);
+        CompletableFuture<OpenOutcome> result = new CompletableFuture<>();
+        entitlements.resolve(key.owner(), vaultId)
+                .thenCompose(access -> access.unlocked()
+                        ? loadBytes(key).thenApply(bytes -> new Loaded(access, bytes))
+                        : CompletableFuture.completedFuture(new Loaded(access, null)))
+                .thenAccept(loaded -> Bukkit.getScheduler().runTask(plugin, () -> finishOpen(player, key, loaded, result)))
+                .exceptionally(error -> {
+                    logger.error("Échec du chargement du coffre personnel {} de {}.", vaultId, key.owner(), error);
+                    result.complete(OpenOutcome.LOAD_FAILED);
+                    return null;
+                });
+        return result;
+    }
+
+    private void finishOpen(Player player, VaultKey key, Loaded loaded, CompletableFuture<OpenOutcome> result) {
+        if (!player.isOnline()) {
+            result.complete(OpenOutcome.PLAYER_OFFLINE);
+            return;
+        }
+        if (!loaded.access().unlocked()) {
+            // Verrouillé : rien n'est lu ni écrit, le contenu éventuel reste intact en base.
+            result.complete(OpenOutcome.LOCKED);
+            return;
+        }
         Inventory existing = sessions.get(key);
         if (existing != null) {
             showExisting(player, existing);
-            return CompletableFuture.completedFuture(OpenOutcome.ALREADY_OPEN);
+            result.complete(OpenOutcome.ALREADY_OPEN);
+            return;
         }
-
-        CompletableFuture<OpenOutcome> result = new CompletableFuture<>();
-        loadBytes(key).thenAccept(bytes -> Bukkit.getScheduler().runTask(plugin, () -> {
-            Inventory raced = sessions.get(key);
-            if (raced != null) {
-                showExisting(player, raced);
-                result.complete(OpenOutcome.ALREADY_OPEN);
-                return;
-            }
-            if (!player.isOnline()) {
-                result.complete(OpenOutcome.PLAYER_OFFLINE);
-                return;
-            }
-            Optional<ItemStack[]> contents = decode(key, bytes);
-            if (contents.isEmpty()) {
-                result.complete(OpenOutcome.LOAD_FAILED);
-                return;
-            }
-            Inventory inventory = createInventory(key, contents.get());
-            sessions.put(key, inventory);
-            player.openInventory(inventory);
-            result.complete(OpenOutcome.OPENED);
-        })).exceptionally(error -> {
-            logger.error("Échec du chargement du coffre personnel {} de {}.", vaultId, key.owner(), error);
+        Optional<ItemStack[]> contents = decode(key, loaded.bytes());
+        if (contents.isEmpty()) {
             result.complete(OpenOutcome.LOAD_FAILED);
-            return null;
-        });
-        return result;
+            return;
+        }
+        Inventory inventory = createInventory(key, contents.get(), loaded.access().slots());
+        sessions.put(key, inventory);
+        player.openInventory(inventory);
+        result.complete(OpenOutcome.OPENED);
     }
 
     /** Coffres déjà persistés pour ce joueur — base des futurs écrans de progression (#106). */
@@ -162,9 +174,8 @@ public final class PersonalVaultService implements PluginService {
         }
     }
 
-    private Inventory createInventory(VaultKey key, ItemStack[] contents) {
-        // Jamais de troncature : un contenu persisté plus grand que la capacité courante garde sa taille.
-        int slots = Math.min(MAX_SLOTS, Math.max(DEFAULT_SLOTS, roundUpToRow(contents.length)));
+    private Inventory createInventory(VaultKey key, ItemStack[] contents, int capacity) {
+        int slots = sizeFor(contents, capacity);
         PersonalVaultHolder holder = new PersonalVaultHolder(key.owner(), key.vaultId());
         Inventory inventory = Bukkit.createInventory(holder, slots, title(key.vaultId()));
         holder.bind(inventory);
@@ -172,6 +183,21 @@ public final class PersonalVaultService implements PluginService {
             inventory.setItem(slot, contents[slot]);
         }
         return inventory;
+    }
+
+    /**
+     * Jamais de troncature : si la capacité a baissé (droit retiré), les rangées qui contiennent
+     * encore des objets restent affichées ; seules les rangées vides au-delà disparaissent.
+     */
+    static int sizeFor(ItemStack[] contents, int capacity) {
+        int used = 0;
+        for (int slot = contents.length - 1; slot >= 0; slot--) {
+            if (contents[slot] != null && !contents[slot].getType().isAir()) {
+                used = slot + 1;
+                break;
+            }
+        }
+        return Math.min(MAX_SLOTS, Math.max(capacity, roundUpToRow(used)));
     }
 
     private static int roundUpToRow(int length) {
@@ -225,5 +251,8 @@ public final class PersonalVaultService implements PluginService {
     }
 
     private record VaultKey(UUID owner, VaultId vaultId) {
+    }
+
+    private record Loaded(VaultEntitlements.VaultAccess access, byte[] bytes) {
     }
 }

@@ -121,7 +121,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             List.of("TIER_1", "TIER_2", "TIER_3", "TIER_4", "TIER_5");
     /** Clés proposées en tab-complétion pour {@code /rpgadmin player variable} — jamais une liste blanche, la saisie libre reste acceptée. */
     private static final List<String> KNOWN_VARIABLE_KEYS =
-            List.of("CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "woodcutter_reputation", "RUNE_RAPPEL_GRANTED");
+            List.of("CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "woodcutter_reputation", "RUNE_RAPPEL_GRANTED",
+                    "VAULT_UNLOCK_VAULT_02", "VAULT_SLOTS_VAULT_01");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     /** Issue #213 — l'outil, et une lecture seule pour retrouver un emplacement depuis le jeu. */

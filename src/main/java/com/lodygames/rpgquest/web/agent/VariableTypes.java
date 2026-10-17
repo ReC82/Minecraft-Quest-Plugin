@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.web.agent;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -12,6 +13,8 @@ import java.util.regex.Pattern;
  *   <li>{@code CLAIM_TIER_<n>} et les préférences « ne plus afficher » : {@code true} ou
  *       {@code false} (le jeu ne reconnaît que la chaîne exacte {@code true}).</li>
  *   <li>{@code STARTER_KIT_TIER} : entier de 1 à 99 (palier du kit de départ).</li>
+ *   <li>{@code VAULT_UNLOCK_<ID>} : booléen ; {@code VAULT_SLOTS_<ID>} : 9 à 54 par rangée de 9
+ *       (coffres personnels, #106).</li>
  *   <li>Toute autre variable garde son type libre.</li>
  * </ul>
  *
@@ -21,8 +24,11 @@ import java.util.regex.Pattern;
 public final class VariableTypes {
 
     private static final Pattern BOOLEAN_KEYS = Pattern.compile(
-            "CLAIM_TIER_\\d+|WILD_ENTRY_WARNING_HIDDEN|BETA_WARNING_HIDDEN|RUNE_RAPPEL_GRANTED");
+            "CLAIM_TIER_\\d+|WILD_ENTRY_WARNING_HIDDEN|BETA_WARNING_HIDDEN|RUNE_RAPPEL_GRANTED|VAULT_UNLOCK_[A-Z0-9_]{1,32}");
     private static final Pattern INTEGER = Pattern.compile("[1-9]\\d?");
+    /** Issue #106 — taille d'un coffre personnel : une à six rangées de 9 cases. */
+    private static final Pattern VAULT_SLOTS_KEY = Pattern.compile("VAULT_SLOTS_[A-Z0-9_]{1,32}");
+    private static final Set<String> VAULT_SLOTS = Set.of("9", "18", "27", "36", "45", "54");
 
     private VariableTypes() {
     }
@@ -38,6 +44,9 @@ public final class VariableTypes {
         if ("STARTER_KIT_TIER".equals(key)) {
             return "un nombre entier de 1 à 99";
         }
+        if (VAULT_SLOTS_KEY.matcher(key).matches()) {
+            return "9, 18, 27, 36, 45 ou 54";
+        }
         return "";
     }
 
@@ -49,6 +58,9 @@ public final class VariableTypes {
         }
         if ("STARTER_KIT_TIER".equals(key) && !INTEGER.matcher(v).matches()) {
             return Optional.of("« " + v + " » n'est pas valide pour STARTER_KIT_TIER : un nombre entier de 1 à 99.");
+        }
+        if (key != null && VAULT_SLOTS_KEY.matcher(key).matches() && !VAULT_SLOTS.contains(v)) {
+            return Optional.of("« " + v + " » n'est pas valide pour " + key + " : 9, 18, 27, 36, 45 ou 54.");
         }
         return Optional.empty();
     }

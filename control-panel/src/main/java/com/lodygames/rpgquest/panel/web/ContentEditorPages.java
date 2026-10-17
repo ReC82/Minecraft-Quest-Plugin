@@ -234,6 +234,7 @@ public final class ContentEditorPages {
         d.icon = f.getOrDefault("icon", "").trim();
         d.repeatable = isOn(f.get("repeatable"));
         d.cooldown = f.getOrDefault("cooldown", "").trim();
+        d.period = f.getOrDefault("period", "").trim();
         d.secret = isOn(f.get("secret"));
         d.giver = f.getOrDefault("giver", "").trim();
         for (String line : lines(f.get("prereq"))) {
@@ -445,6 +446,7 @@ public final class ContentEditorPages {
                 "Quête répétable seulement : temps minimal entre une complétion et la suivante, contre le "
                 + "farm (issue #13). Vide = aucun délai. Exemples : 30m, 20h, 1d.",
                 d.cooldown, false, false, null, null));
+        sb.append(periodSelect(d.period));
         sb.append("</div>");
         sb.append(sectionClose());
 
@@ -1131,6 +1133,23 @@ public final class ContentEditorPages {
             sb.append("<p class=\"field-help\">").append(help).append("</p>");
         }
         sb.append("</div>");
+        return sb.toString();
+    }
+
+    /** Issue #15 — renouvellement quotidien/hebdomadaire d'un modèle de quête (vide = quête ordinaire). */
+    private static String periodSelect(String value) {
+        String current = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder("<div class=\"field\"><label for=\"f-period\">Quête quotidienne ou "
+                + "hebdomadaire</label><select id=\"f-period\" name=\"period\">");
+        String[][] options = {{"", "Non — quête ordinaire"}, {"daily", "Quotidienne (chaque jour)"},
+                {"weekly", "Hebdomadaire (chaque semaine)"}};
+        for (String[] option : options) {
+            sb.append("<option value=\"").append(option[0]).append('"')
+                    .append(option[0].equals(current) ? " selected" : "").append('>')
+                    .append(Http.esc(option[1])).append("</option>");
+        }
+        sb.append("</select><p class=\"field-help\">Attribuée seule aux joueurs depuis leur journal, jamais par un "
+                + "PNJ. Toujours répétable ; sans délai ni prérequis (issue #15).</p></div>");
         return sb.toString();
     }
 

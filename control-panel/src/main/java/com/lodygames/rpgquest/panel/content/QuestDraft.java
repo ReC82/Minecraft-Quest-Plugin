@@ -48,6 +48,12 @@ public final class QuestDraft {
      * nombre + unité {@code s/m/h/d} (« 20h »). Format du moteur, validé par {@link QuestValidator}.
      */
     public String cooldown = "";
+    /**
+     * Issue #15 — {@code daily} / {@code weekly} pour un modèle de quête quotidienne ou
+     * hebdomadaire, vide pour une quête ordinaire. Préservé à l'enregistrement : sans lui, une
+     * édition depuis le panel changerait silencieusement un modèle périodique en quête ordinaire.
+     */
+    public String period = "";
     public boolean secret = false;
     public String giver = "";
     public final List<String> prerequisites = new ArrayList<>();

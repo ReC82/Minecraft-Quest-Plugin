@@ -1578,6 +1578,7 @@ public final class BukkitAgentActions implements AgentActions {
             case SELL -> "de vente";
             case BUY -> "de rachat";
             case MIXED -> "mixte";
+            case CRAFT -> "d'artisan (recettes de fabrication seulement)";
         };
     }
 

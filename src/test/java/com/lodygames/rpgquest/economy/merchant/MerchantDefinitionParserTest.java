@@ -262,6 +262,37 @@ class MerchantDefinitionParserTest {
         assertEquals(2, bad.issues().size(), () -> "issues: " + bad.issues());
     }
 
+    /** Issue #18 : un atelier d'artisan (CRAFT) ne cite que des recettes, jamais une offre à prix écrit. */
+    @Test
+    void aCraftCatalogOnlyAcceptsCatalogRecipes() {
+        MerchantDefinitionParser.ParseResult atelier = parser.parse("atelier.yml", load("""
+                id: rpgquest:forge
+                title: Forge
+                type: CRAFT
+                offers:
+                  - price-ref: epee
+                """));
+        assertTrue(atelier.isSuccess(), () -> "issues: " + atelier.issues());
+        assertEquals(com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType.CRAFT, atelier.merchant().type());
+
+        MerchantDefinitionParser.ParseResult fixed = parser.parse("forge2.yml", load("""
+                id: rpgquest:forge2
+                title: Forge
+                type: CRAFT
+                offers:
+                  - direction: SELL_TO_PLAYER
+                    material: BREAD
+                    quantity: 1
+                    price: 1
+                """));
+        assertFalse(fixed.isSuccess());
+        assertTrue(fixed.issues().toString().contains("recettes du catalogue des prix"), () -> "issues: " + fixed.issues());
+        assertFalse(com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType.CRAFT
+                .accepts(com.lodygames.rpgquest.economy.price.PriceType.SELL_TO_PLAYER));
+        assertTrue(com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType.CRAFT
+                .accepts(com.lodygames.rpgquest.economy.price.PriceType.CRAFT));
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

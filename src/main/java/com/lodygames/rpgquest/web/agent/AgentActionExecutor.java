@@ -1959,7 +1959,7 @@ public final class AgentActionExecutor {
     /** Id d'un marchand : {@code ns:clé} ou clé seule ({@code rpgquest:} implicite). */
     private static final java.util.regex.Pattern MERCHANT_ID =
             java.util.regex.Pattern.compile("([a-z0-9._-]{1,64}:)?[a-z0-9/._-]{1,64}");
-    private static final java.util.Set<String> MERCHANT_TYPES = java.util.Set.of("SELL", "BUY", "MIXED");
+    private static final java.util.Set<String> MERCHANT_TYPES = java.util.Set.of("SELL", "BUY", "MIXED", "CRAFT");
     private static final java.util.regex.Pattern MERCHANT_QUEST =
             java.util.regex.Pattern.compile("([a-z0-9._-]{1,64}:)?[a-z0-9/._-]{1,64}");
     private static final java.util.regex.Pattern MERCHANT_PERMISSION = java.util.regex.Pattern.compile("[A-Za-z0-9._*-]{1,100}");
@@ -2022,7 +2022,7 @@ public final class AgentActionExecutor {
 
     /**
      * {@code merchant.save} : {@code merchant_id}, {@code title}, {@code catalog_type}
-     * ({@code SELL}/{@code BUY}/{@code MIXED}), {@code enabled}, {@code create},
+     * ({@code SELL}/{@code BUY}/{@code MIXED}/{@code CRAFT}), {@code enabled}, {@code create},
      * {@code expected_version}, {@code offers} (une offre par ligne :
      * {@code sens|objet|quantité|prix|prix-ref|quête|état|niveau|permission}). Forme vérifiée ici ;
      * objets, prix et cohérence par le serveur et le vrai parseur avant écriture.
@@ -2043,7 +2043,7 @@ public final class AgentActionExecutor {
         }
         String type = trimOrNull(action.param("catalog_type"));
         if (type == null || !MERCHANT_TYPES.contains(type)) {
-            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « catalog_type » : SELL, BUY ou MIXED."));
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « catalog_type » : SELL, BUY, MIXED ou CRAFT."));
         }
         String expected = trimOrNull(action.param("expected_version"));
         if (expected != null && !REWARD_TABLE_VERSION.matcher(expected).matches()) {

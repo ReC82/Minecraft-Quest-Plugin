@@ -12,7 +12,7 @@ import org.bukkit.NamespacedKey;
  * {@code economy}).
  *
  * <p>Issue #17 : un marchand est un <em>catalogue</em> réutilisable par plusieurs PNJ, de nature
- * {@link MerchantCatalogType} (vente, rachat, ou mixte historique), et peut être désactivé
+ * {@link MerchantCatalogType} (vente, rachat, mixte historique ou atelier d'artisan #18), et peut être désactivé
  * ({@code enabled: false} : la boutique est fermée, rien ne s'échange).</p>
  */
 public record MerchantDefinition(NamespacedKey id, String title, List<MerchantOffer> offers,
@@ -38,8 +38,11 @@ public record MerchantDefinition(NamespacedKey id, String title, List<MerchantOf
             MerchantOffer offer = offers.get(i);
             if (!offer.linked() && !type.accepts(offer.direction())) {
                 throw new IllegalArgumentException("offers[" + i + "] : « " + offer.direction() + " » interdit dans "
-                        + "un catalogue de type " + type + (type == MerchantCatalogType.SELL
-                        ? " (vente seulement)." : " (rachat seulement)."));
+                        + "un catalogue de type " + type + switch (type) {
+                            case SELL -> " (vente seulement).";
+                            case BUY -> " (rachat seulement).";
+                            default -> " (recettes du catalogue des prix seulement : « price-ref »).";
+                        });
             }
         }
     }

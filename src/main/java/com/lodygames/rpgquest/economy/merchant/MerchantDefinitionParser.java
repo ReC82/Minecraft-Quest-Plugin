@@ -69,7 +69,7 @@ final class MerchantDefinitionParser {
         return title;
     }
 
-    /** Issue #17 : {@code type} facultatif ({@code SELL}, {@code BUY}, {@code MIXED}) ; absent = mixte. */
+    /** Issue #17 : {@code type} facultatif ({@code SELL}, {@code BUY}, {@code MIXED}, {@code CRAFT} #18) ; absent = mixte. */
     private MerchantCatalogType parseType(ConfigurationSection section, List<String> errors) {
         if (!section.isSet("type")) {
             return MerchantCatalogType.MIXED;

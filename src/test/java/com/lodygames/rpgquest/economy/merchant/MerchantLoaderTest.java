@@ -102,5 +102,11 @@ class MerchantLoaderTest {
         assertEquals(java.util.List.of("demo_vente", "demo_rachat", "demo_fabrication"),
                 demo.offers().stream().map(o -> o.priceRef()).toList());
         assertTrue(demo.offers().stream().allMatch(o -> o.direction() == null && o.price() == 0));
+
+        // Issue #18 : l'atelier d'artisan embarqué est un catalogue CRAFT qui ne cite que des recettes.
+        var artisan = registry.find(new org.bukkit.NamespacedKey("rpgquest", "artisan_demo")).orElseThrow();
+        assertEquals(com.lodygames.rpgquest.economy.merchant.model.MerchantCatalogType.CRAFT, artisan.type());
+        assertEquals(java.util.List.of("demo_recette_ingredients", "demo_recette_pieces", "demo_recette_mixte"),
+                artisan.offers().stream().map(o -> o.priceRef()).toList());
     }
 }

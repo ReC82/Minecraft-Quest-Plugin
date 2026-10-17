@@ -148,8 +148,8 @@ class PriceCatalogLoaderTest {
                     type: CRAFT
                     item: IRON_SWORD
                     amount: 1
-                    coins: 5
-                """, "au moins un ingrédient");
+                    coins: 0
+                """, "jamais rien");
         assertRefused("""
                 prices:
                   c:
@@ -226,6 +226,61 @@ class PriceCatalogLoaderTest {
         assertTrue(load(yaml.formatted(2, "true")).valid(), "même prix unitaire : aucun gain");
         assertTrue(load(yaml.formatted(5, "false")).valid(), "un prix désactivé ne compte pas");
         assertFalse(load(yaml.formatted(3, "true")).valid());
+    }
+
+    @Test
+    void acceptsTheThreeRecipeShapesOfAnArtisan() throws Exception {
+        // Issue #18 : ingrédients seuls, pièces seules, ingrédients + pièces.
+        PriceCatalogLoader.Result result = load("""
+                prices:
+                  ingredients-seuls:
+                    label: Pain cuit
+                    type: CRAFT
+                    item: BREAD
+                    amount: 1
+                    coins: 0
+                    ingredients:
+                      - {item: WHEAT, amount: 3}
+                  pieces-seules:
+                    label: Lanterne
+                    type: CRAFT
+                    item: LANTERN
+                    amount: 1
+                    coins: 12
+                  mixte:
+                    label: Épée
+                    type: CRAFT
+                    item: IRON_SWORD
+                    amount: 1
+                    coins: 5
+                    ingredients:
+                      - {item: IRON_INGOT, amount: 2}
+                """);
+        assertTrue(result.valid(), String.valueOf(result.errors()));
+        assertEquals(3, result.catalog().prices().size());
+        assertTrue(result.catalog().prices().get("pieces-seules").ingredients().isEmpty());
+        assertEquals("1 × LANTERN fabriqué contre 12 pièce(s)", result.catalog().prices().get("pieces-seules").summary());
+    }
+
+    @Test
+    void aCoinsOnlyRecipeCannotBeSoldBackForMore() throws Exception {
+        PriceCatalogLoader.Result result = load("""
+                prices:
+                  lanterne:
+                    label: Lanterne
+                    type: CRAFT
+                    item: LANTERN
+                    amount: 1
+                    coins: 12
+                  rachat:
+                    label: Rachat lanterne
+                    type: BUY_FROM_PLAYER
+                    item: LANTERN
+                    amount: 1
+                    coins: 13
+                """);
+        assertFalse(result.valid());
+        assertTrue(result.errors().get(0).contains("Boucle d'enrichissement"), String.valueOf(result.errors()));
     }
 
     @Test

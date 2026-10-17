@@ -21,7 +21,7 @@
 
 | Ordre | Ticket / test | État | Test concret / prochaine action | Rapport ou preuve |
 |---|---|---|---|---|
-| 1 | [#475](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/475) · TC-335 journal kit | À tester | Sur compte existant, ouvrir Journal → **Explorateur** : badge « Amélioration du kit — palier 3 » et chaque dépôt **remis/requis**, PNJ Guide ; ensuite dépôt partiel, reconnexion, fin sans reset | Rapport 2026-10-16_2124 ; audit DEV : kit_tier2 COMPLETED, kit_tier3 ACTIVE |
+| 1 | [#475](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/475) · TC-335 / **TC-348** kit et remise Elias | **Partiel (propriétaire)** / correctif à tester | Journal « Explorateur » et étiquette palier 3 vus en jeu ; dépôt partiel déjà validé. **Nouveau test TC-348** : parler à Elias sans matériaux utiles → aucun bouton « Donner les matériaux », message dans dialogue ; avec matériel attendu → action unique, bilan dans dialogue ; nom Elias dans dialogue/journal/Libraire, description repliée ; fin de palier et dépôt conservés. **Ne pas reset ni refaire le dépôt partiel déjà prouvé.** | Rapport 2026-10-17_1444 ; PR #509 merge `d0c8bdd`, JAR + 6 contenus DEV déployés ; aucun test réel post-correctif |
 | 2 | [#467](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/467) · TC-338 dialogues | À tester | Lily : boutons **1 par ligne**, textes lisibles ; message démarrage sans `/quests` ; remise partielle et complète → bilan/merci ; tester Wild prompt | Rapport 2026-10-17_0252 |
 | 3 | [#180](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/180) · TC-339 Lily/Julius | Partiel / à retester fin | Depuis progression Lily déjà obtenue, « Parle-moi de Julius » ne renvoie plus à l'intro ; **Nerana** et direction affichées ; rappel, journal nommé. **Arbitrage : confirmer Julius chef de Nerana** ; `lily_pumpkin` hors story à décider | Rapport 2026-10-17_0349 ; dialogue corrigé et publié |
 | 4 | [#474](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/474) · TC-336 récompenses | À tester | PlugAdmin → Récompenses : initialiser catalogue **vide/désactivé** ; créer deux définitions choisies, sans activation implicite ; vérifier statut, erreurs et références | Rapport 2026-10-17_0005 ; `entitlements.yml` absent au rapport |
@@ -41,6 +41,10 @@
 | 14 | [#430](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/430) / [#369](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/369) · brigands catalogue | Partiel | Éditeur : dialogue récupéré, copie modifiable, action « hasard dans une liste » et catalogue sélectionnables. **Pas de publication du dialogue modifié**. Reprendre après TC-340 pour cohérence 0/1/N quêtes | Captures PlugAdmin 16/10 |
 | 15 | [#421](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/421) · portail public | Partiel | « État inconnu » affiché correctement ; activer puis vérifier canal de statut VeryGames→AWS uniquement après validation sécurité | Captures portail 16/10 |
 | 16 | [#166](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/166) · cœurs | Partiel | Cœur +1 après quête test, persistance mort/reconnexion, non-duplication après reset **validés** ; restent Stan/villes et persistance après restart | Test en jeu 16/10 |
+
+## Derniers correctifs livrés, encore à valider
+
+- **17/10 #475 (PR #509, `d0c8bdd`)** : Guide renommé « Elias » dans les textes dynamiques, un seul bouton de remise quand l'inventaire contient un objet attendu, bilan intégré au dialogue et descriptions du journal repliées. Correctif également appliqué au moteur partagé ; autres dialogues à plusieurs écrans non republiés. **TC-348 en attente, pas de validation manuelle du nouveau comportement.**
 
 ## Historique des tests propriétaire réellement effectués
 

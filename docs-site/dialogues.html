@@ -192,7 +192,9 @@ nodes:
         <tr><td><code>%delivery_status%</code></td>
           <td>État de remise du PNJ qui porte ce dialogue : une ligne par matériau,
             <em>déjà remis / demandé</em>, nom d'objet traduit par le client. Affiche
-            « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien.</td></tr>
+            « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Juste après une
+            remise qui a tout complété, affiche le bilan de cette remise suivi de « Merci, c'est
+            tout ce qu'il me fallait ! » (issue #467).</td></tr>
         <tr><td><code>%wild_conditions%</code></td>
           <td>État réel du monde d'exploration (<code>config.yml</code> → <code>travel.wild-world</code>) :
             « Il fait jour dans le Wild. Le temps est clair. », « … Il pleut. », « … Un orage est en cours. »,
@@ -287,6 +289,12 @@ nodes:
             <code>@ApiStatus.Experimental</code> par Paper lui-même (le contrat pourrait changer
             dans une future version de Paper), mais réelle et fonctionnelle contre la version
             exacte de Paper ciblée par ce projet.
+          </p>
+          <p class="text-body-secondary small mb-1">
+            Issue #467 : un bouton par ligne, tous de la même largeur (celle du plus long libellé,
+            entre 200 et 310 px d'interface). Un libellé trop long pour tenir (≈ 50 caractères)
+            est raccourci avec « … », et son texte complet apparaît en infobulle et dans le corps
+            de la fenêtre — jamais coupé en silence.
           </p>
           <p class="text-body-secondary small mb-0">
             En cas d'exception à l'exécution, <code>FallbackDialogueRenderer</code> bascule

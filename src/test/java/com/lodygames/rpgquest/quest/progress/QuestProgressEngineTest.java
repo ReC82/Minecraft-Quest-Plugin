@@ -552,7 +552,9 @@ class QuestProgressEngineTest {
         String header = player.nextMessage();
         assertNotNull(header, "le démarrage doit annoncer la quête et ses objectifs");
         assertTrue(header.contains("Titre"), () -> "le nom de la quête est attendu : " + header);
-        assertTrue(header.contains("/quests"), () -> "où retrouver l'objectif est attendu : " + header);
+        assertTrue(header.contains("journal de quêtes"), () -> "où retrouver l'objectif est attendu : " + header);
+        // Issue #467 : jamais une commande dans un message joueur.
+        assertFalse(header.contains("/quest"), () -> "aucun renvoi à une commande : " + header);
 
         String objective = player.nextMessage();
         assertNotNull(objective, "le premier objectif doit être lisible immédiatement");

@@ -28,7 +28,25 @@ public final class DeliveryStatusText {
     /** Réponse quand ce PNJ n'attend rien de ce joueur — jamais une liste vide muette. */
     public static final String NOTHING_EXPECTED = "<gray>Je n'attends aucun matériau de ta part.</gray>";
 
+    /** Conclusion du bilan quand la remise qui vient d'avoir lieu a tout complété (issue #467). */
+    public static final String ALL_DELIVERED = "<green>Merci, c'est tout ce qu'il me fallait !</green>";
+
     private DeliveryStatusText() {
+    }
+
+    /**
+     * Comme {@link #render(List)}, juste après une remise (issue #467). Une remise qui termine la
+     * quête la retire des quêtes actives : {@code pending} est alors vide, et « Je n'attends aucun
+     * matériau » contredisait le « Quête terminée » affiché au même instant. Dans ce seul cas, le
+     * bilan de la remise ({@code justDelivered}) remplace l'état relu ; dès qu'il reste quelque chose
+     * à remettre (remise partielle, étape suivante qui demande d'autres matériaux), l'état réel prime.
+     */
+    public static String render(List<DeliveryLine> pending, DeliveryOutcome justDelivered) {
+        if (!pending.isEmpty() || justDelivered == null || justDelivered.lines().isEmpty()
+                || !justDelivered.allComplete()) {
+            return render(pending);
+        }
+        return render(justDelivered.lines()) + "<newline>" + ALL_DELIVERED;
     }
 
     public static String render(List<DeliveryLine> lines) {

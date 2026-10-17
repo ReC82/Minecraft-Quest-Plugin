@@ -6392,6 +6392,28 @@ Wild**, en survie, près de waypoints existants.
     → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
     Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
 
+### TC-338 — Dialogues : un bouton par ligne, remise Lily cohérente, aucun /quests (issue #467, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de #467 sur **DEV**, renderer `paper-dialog` (défaut). Aucun reset de joueur : utiliser
+un compte où Lily propose encore une quête, ou un second compte.
+
+1.  Parler à **Lily**. **Attendu** : une fenêtre avec **un bouton par ligne**, tous de la même largeur ;
+    « Tu as l'air affamée. Je peux t'aider ? » / « Je t'apporte ce que tu m'as demandé » lisibles en entier.
+2.  Ouvrir l'offre puis **« Commencer la quête : Un repas pour Lily »** (ou « Des fleurs pour Lily ») : le
+    libellé est entier. Dans le chat : « Quête commencée : … — à faire (détails dans ton journal de
+    quêtes) : », **sans** `/quests`.
+3.  Remise **partielle** (ex. 1 pain) : « Je t'apporte… » → « Donner ce que j'ai ». **Attendu** : la
+    fenêtre suivante montre `1/3` et ce qui manque.
+4.  Remise **complète** : « Donner ce que j'ai ». **Attendu** : « Quête terminée » à l'écran et, dans la
+    fenêtre de Lily, `✔ Pain 3/3`, `✔ Pomme 4/4` puis « Merci, c'est tout ce qu'il me fallait ! » —
+    **jamais** « Je n'attends aucun matériau de ta part ». Exactement 3 pains et 4 pommes retirés,
+    même en double-cliquant.
+5.  « Retour » : l'accueil propose le chapitre suivant (« Tu vas mieux ? … »).
+6.  Échelles d'interface : refaire l'étape 1 en 854×480 (échelle auto) et avec une grande échelle
+    d'interface. **Attendu** : boutons entièrement visibles, aucun chevauchement ; navigation au clavier
+    (Tab/Entrée) possible.
+7.  Invite d'entrée dans le Wild (portail du Hub) : boutons aussi un par ligne.
+
 ### TC-337 — Boss de quête personnel : apparition, localisation, attribution (issue #171, PENDING MANUAL VALIDATION)
 
 Prérequis : un profil de mob **Boss**, type « Boss de quête », activé (page Mobs, ex. `ogre`) ; au moins

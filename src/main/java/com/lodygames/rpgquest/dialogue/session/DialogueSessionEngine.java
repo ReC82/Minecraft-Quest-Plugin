@@ -50,6 +50,7 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.StarterToolKitService;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.progress.AcceptOutcome;
+import com.lodygames.rpgquest.quest.progress.DeliveryOutcome;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
 import java.util.List;
@@ -107,6 +108,13 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private volatile CatalogOfferService catalogOffers;
     /** Issue #369 — quête réellement montrée dans l'offre en cours, par joueur : c'est elle, et elle seule, que « Commencer » accepte. */
     private final Map<UUID, NamespacedKey> shownOffers = new ConcurrentHashMap<>();
+    /**
+     * Issue #467 : résultat de la remise {@code DELIVER_QUEST_ITEMS} que le choix en cours vient
+     * d'effectuer, consommé par le nœud affiché juste après. Une remise qui termine la quête la
+     * retire des quêtes actives : relu en direct, {@code %delivery_status%} répondait « Je n'attends
+     * aucun matériau de ta part » à la place du bilan de la remise réussie.
+     */
+    private final Map<UUID, DeliveryOutcome> justDelivered = new ConcurrentHashMap<>();
 
     public DialogueSessionEngine(RPGQuestPlugin plugin, YamlDialogueEngine dialogueEngine,
                                   QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository,
@@ -215,11 +223,13 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     private void openNode(Player player, DialogueDefinition dialogue, String nodeId) {
         DialogueNode node = dialogue.nodes().get(nodeId);
+        DeliveryOutcome delivered = justDelivered.remove(player.getUniqueId());
         visibleChoices(player, dialogue, node).thenAccept(visible -> runOnMainThread(() -> {
             sessions.put(player.getUniqueId(), new DialogueSession(dialogue.id(), node.id()));
             // Substitution juste avant le rendu, sur le thread principal : la valeur affichée est
             // donc lue au plus tard possible (état réel au moment où le joueur voit le texte).
-            renderer.render(player, dialogue, placeholders.apply(player, dialogue.id(), withChosenLine(player, dialogue, node)),
+            renderer.render(player, dialogue,
+                    placeholders.apply(player, dialogue.id(), withChosenLine(player, dialogue, node), delivered),
                     visible);
             // Issue #12 : c'est le SEUL endroit où un nœud est réellement affiché au joueur, donc
             // le seul endroit où « lu » a un sens. Ouvrir un PNJ ne présente que le nœud de
@@ -375,6 +385,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                 return;
             }
             if (action instanceof OpenDialogueAction open) {
+                justDelivered.remove(player.getUniqueId()); // bilan propre au PNJ quitté
                 open(player, open.dialogueId());
                 return;
             }
@@ -397,8 +408,15 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         }
     }
 
+    private void rememberDelivery(Player player, DeliveryOutcome outcome) {
+        if (outcome != null) {
+            justDelivered.put(player.getUniqueId(), outcome);
+        }
+    }
+
     private void closeSession(Player player) {
         sessions.remove(player.getUniqueId());
+        justDelivered.remove(player.getUniqueId());
         shownOffers.remove(player.getUniqueId());
         player.closeDialog();
     }
@@ -513,8 +531,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             // Issue #123 : la remise elle-même vit dans le moteur de quêtes (retrait exact,
             // anti double-clic, persistance) ; le dialogue ne fait que la déclencher pour le PNJ
             // porteur de ce dialogue, ou celui explicitement nommé.
-            case DeliverQuestItemsAction a -> questProgressEngine.deliverTo(
-                    player, DialogueNpcResolution.resolve(a.npcId(), dialogue.id()));
+            case DeliverQuestItemsAction a -> rememberDelivery(player, questProgressEngine.deliverTo(
+                    player, DialogueNpcResolution.resolve(a.npcId(), dialogue.id())));
             case OpenDialogueAction ignored -> {
                 // Géré par l'appelant (transition, arrêt anticipé) : jamais atteint ici.
             }

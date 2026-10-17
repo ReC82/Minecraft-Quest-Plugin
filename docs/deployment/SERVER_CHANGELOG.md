@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Dialogues : un bouton par ligne, bilan de remise, aucun /quests (#467)
+
+### Changement
+
+Fenêtres `paper-dialog` (PNJ, invite du Wild) : un bouton par ligne, largeur adaptée au plus long
+libellé, libellé trop long raccourci avec texte complet en infobulle et dans le corps.
+`%delivery_status%` affiche le bilan de la remise qui vient de terminer la quête au lieu de « Je
+n'attends aucun matériau de ta part ». En-têtes de démarrage / d'étape de quête sans `/quests`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest seul. Aucune migration, aucun contenu touché. Au démarrage,
+`plugins/RPGQuest/messages.yml` voit ses deux clés `quest.started-objectives-header` et
+`quest.step-advanced-header` remplacées **uniquement** si elles contiennent encore l'ancien texte par
+défaut exact (texte personnalisé conservé).
+
+### Sauvegarde préalable
+
+JAR précédent (sauvegarde datée automatique de `deploy-verygames.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh`. Détails réels dans le rapport de
+session #467.
+
+### Validation
+
+TC-338 — PENDING MANUAL VALIDATION.
+
 ## 2026-10-17 - Boss de quête personnels : objectif KILL_QUEST_BOSS (#171)
 
 ### Changement

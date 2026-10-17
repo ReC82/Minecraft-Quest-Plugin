@@ -51,10 +51,12 @@ quest:
   # démarrage (rare). Le libellé d'un objectif est le même que partout ailleurs (journal, ActionBar).
   # Issue #70 : mêmes lignes au passage à l'étape suivante (step-advanced-header) ; un objectif
   # binaire (parler à un PNJ, atteindre un lieu) n'affiche pas de quantité (started-objective-single).
-  started-objectives-header: "<green><bold>Quête commencée :</bold></green> <white><quest></white> <gray>— à faire (suivi dans</gray> <white>/quests</white><gray>) :</gray>"
+  # Issue #467 : aucun renvoi à une commande dans un message joueur — le suivi se fait dans le
+  # journal de quêtes (objet remis par le Libraire, clic droit), jamais par /quests.
+  started-objectives-header: "<green><bold>Quête commencée :</bold></green> <white><quest></white> <gray>— à faire (détails dans ton journal de quêtes) :</gray>"
   started-objective: "<yellow> • <objective></yellow> <gray>(x<total>)</gray>"
   started-objective-single: "<yellow> • <objective></yellow>"
-  step-advanced-header: "<gold><bold>Étape suivante :</bold></gold> <white><quest></white> <gray>— à faire maintenant (suivi dans</gray> <white>/quests</white><gray>) :</gray>"
+  step-advanced-header: "<gold><bold>Étape suivante :</bold></gold> <white><quest></white> <gray>— à faire maintenant (détails dans ton journal de quêtes) :</gray>"
   objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
   # Issue #178 (et #69/#209) : quand UN même événement fait progresser plusieurs quêtes (une ville
   # découverte compte pour deux quêtes), chaque ligne nomme sa quête pour rester lisible.

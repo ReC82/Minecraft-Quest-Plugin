@@ -395,15 +395,21 @@ public final class ContentImportPages {
                         case CHANGED -> "text-bg-info\">modifié";
                     }).append("</span> <strong>").append(Http.esc(c.where())).append("</strong> — ")
                     .append(Http.esc(c.what()));
-            if (!c.before().isEmpty()) {
-                sb.append("<div class=\"sem-before\">avant : ").append(Http.esc(c.before())).append("</div>");
+            // Une modification montre toujours ses deux côtés, même quand l'un devient vide.
+            boolean changed = c.kind() == DialogueSemanticDiff.Kind.CHANGED;
+            if (changed || !c.before().isEmpty()) {
+                sb.append("<div class=\"sem-before\">avant : ").append(Http.esc(orNone(c.before()))).append("</div>");
             }
-            if (!c.after().isEmpty()) {
-                sb.append("<div class=\"sem-after\">après : ").append(Http.esc(c.after())).append("</div>");
+            if (changed || !c.after().isEmpty()) {
+                sb.append("<div class=\"sem-after\">après : ").append(Http.esc(orNone(c.after()))).append("</div>");
             }
             sb.append("</li>");
         }
         return sb.append("</ul></div>").toString();
+    }
+
+    private static String orNone(String value) {
+        return value.isEmpty() ? "(aucun)" : value;
     }
 
     /**

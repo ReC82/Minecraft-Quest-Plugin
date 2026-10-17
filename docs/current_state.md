@@ -6,6 +6,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Salles de préparation du Hub (#107, 17/10/2026)** — services logiques d'un Hub définis dans
+> [HUB_SERVICES.md](HUB_SERVICES.md) : salle des coffres = coffres personnels #104/#105/#106 (aucun
+> second stockage), salle de craft = établis vanilla utilisables par tous. `HubWorldProtectionListener`
+> refuse désormais aussi, dans tout le monde Hub, seaux vidés/remplis (sauf traite) et feu allumé par un
+> joueur sans droit de construction ; propagation et combustion toujours annulées. Pas de migration.
+
 > **Capacité progressive des coffres personnels (#106, 17/10/2026)** — `storage.VaultEntitlements` :
 > accès et taille de chaque coffre selon `personal-vaults.starter-vaults` / `default-slots` (config,
 > valeurs de démonstration) et les variables joueur `VAULT_UNLOCK_<ID>` / `VAULT_SLOTS_<ID>` (posées par

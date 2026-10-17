@@ -69,7 +69,10 @@
         <tr><td>Météo</td><td>Permanente — pas de pluie/orage (<code>ADVANCE_WEATHER</code> désactivé).</td></tr>
         <tr><td>Dégâts joueurs</td><td><strong>Toujours annulés</strong>, quelle que soit la cause (PvP, mob, chute, explosion, environnement) — aucune exception, même pour un administrateur.</td></tr>
         <tr><td>PvP</td><td>Bloqué (conséquence directe de l'annulation totale des dégâts ci-dessus).</td></tr>
-        <tr><td>Casse / pose de bloc</td><td>Bloquées pour tout le monde, <strong>sauf</strong> bypass admin (<code>rpgquest.admin.world</code>).</td></tr>
+        <tr><td>Casse / pose de bloc</td><td>Bloquées pour tout le monde, <strong>sauf</strong> constructeur du Hub (<code>rpgquest.build.hub.&lt;monde&gt;</code>, <code>rpgquest.build.hub.*</code> ou <code>rpgquest.admin.world</code>).</td></tr>
+        <tr><td>Seaux (#107)</td><td>Vider ou remplir un seau est refusé sans droit de construction (comme poser/casser un bloc) — <strong>traire une vache reste permis</strong>.</td></tr>
+        <tr><td>Feu (#107)</td><td>Propagation et combustion toujours annulées ; allumer un feu refusé sans droit de construction (un constructeur peut poser un feu décoratif, qui ne se propage pas).</td></tr>
+        <tr><td>Établis (salle de craft, #107)</td><td><strong>Utilisables</strong> par tout joueur (clic droit), même dans une zone <code>public-containers: false</code> ; jamais cassables ni brûlables. Détail : <code>docs/HUB_SERVICES.md</code>.</td></tr>
         <tr><td>Explosions</td><td>Aucune destruction de bloc (<code>blockList()</code> vidée), qu'il s'agisse d'une explosion d'entité (creeper, TNT) ou de bloc.</td></tr>
         <tr><td>Mobs hostiles</td><td>Aucun spawn naturel (<code>CreatureSpawnEvent</code> de raison <code>NATURAL</code> annulé pour tout <code>Monster</code>).</td></tr>
         <tr><td>Claims</td><td>Interdits — <code>ClaimService</code> refuse toute création dans le monde exact de <code>hub.world</code>.</td></tr>

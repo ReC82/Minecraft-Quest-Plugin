@@ -82,4 +82,35 @@ class DialogueTextPlaceholdersTest {
         assertEquals("FR : Il fait nuit dans le Wild. Il pleut.", applied.text().base());
         assertEquals("EN : Il fait nuit dans le Wild. Il pleut.", applied.text().forLocale("en"));
     }
+
+    /** Issue #180 : une valeur à argument reçoit l'identifiant écrit après « : ». */
+    @Test
+    void aPlaceholderWithAnArgumentReceivesIt() {
+        DialogueTextPlaceholders withCities = new DialogueTextPlaceholders(Map.of(), Map.of(
+                "city_name", (context, id) -> id.equals("ville_nerana") ? "Nerana" : null));
+
+        assertEquals("Julius vit à Nerana.",
+                withCities.apply(null, null, node("Julius vit à %city_name:ville_nerana%.")).text().base());
+    }
+
+    /** Issue #180 : ville inconnue = jeton visible (une erreur de configuration se voit en jeu). */
+    @Test
+    void anUnresolvedArgumentLeavesTheTokenVisible() {
+        DialogueTextPlaceholders withCities = new DialogueTextPlaceholders(Map.of(), Map.of(
+                "city_name", (context, id) -> null));
+
+        assertEquals("Ville : %city_name:ville_absente% / %inconnu:x%",
+                withCities.apply(null, null, node("Ville : %city_name:ville_absente% / %inconnu:x%")).text().base());
+    }
+
+    /** Une clé simple n'est jamais résolue par une valeur à argument, et inversement. */
+    @Test
+    void plainAndArgumentValuesDoNotMix() {
+        DialogueTextPlaceholders mixed = new DialogueTextPlaceholders(
+                Map.of("city_name", context -> "SIMPLE"),
+                Map.of("city_name", (context, id) -> "ARG:" + id));
+
+        assertEquals("SIMPLE ARG:ville_a",
+                mixed.apply(null, null, node("%city_name% %city_name:ville_a%")).text().base());
+    }
 }

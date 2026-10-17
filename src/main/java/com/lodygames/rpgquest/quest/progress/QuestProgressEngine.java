@@ -1915,7 +1915,7 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     private String describeObjective(QuestObjective objective) {
-        return QuestObjective.describe(objective);
+        return QuestObjective.describe(objective, npcNames);
     }
 
     private void runOnMainThread(Runnable task) {

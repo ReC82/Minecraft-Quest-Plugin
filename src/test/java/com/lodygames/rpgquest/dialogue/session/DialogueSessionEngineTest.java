@@ -995,6 +995,172 @@ class DialogueSessionEngineTest {
                 () -> "obtenu : " + renderer.lastNode.text().base());
     }
 
+    // ---- Issue #180 : fin de « La tarte de maman » → Julius ----------------------------------
+
+    private static final NamespacedKey LILY = new NamespacedKey("rpgquest", "lily");
+    private static final NamespacedKey TARTE = new NamespacedKey("rpgquest", "tarte");
+
+    /**
+     * Réplique réduite du contenu Lily de DEV : une remise de charbon puis « reviens goûter »
+     * ({@code TALK_TO_NPC lily}), et une quête Julius qui en dépend. {@code julesChoice} est le choix
+     * « Parle-moi de Julius » du nœud {@code gouter}, tel qu'écrit dans le fichier.
+     */
+    private void installLilyContent(String julesChoice) throws Exception {
+        Files.writeString(questsDir.resolve("tarte.yml"), """
+                id: rpgquest:tarte
+                title: "La tarte de maman"
+                description: "Description"
+                category: test
+                steps:
+                  - id: four
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: lily
+                        material: COAL
+                        amount: 1
+                  - id: gouter
+                    objectives:
+                      - type: TALK_TO_NPC
+                        npc: lily
+                """);
+        Files.writeString(questsDir.resolve("julius.yml"), """
+                id: rpgquest:julius_trail
+                title: "Sur la piste de Julius"
+                description: "Description"
+                category: test
+                prerequisites:
+                  - rpgquest:tarte
+                steps:
+                  - id: parler
+                    objectives:
+                      - type: TALK_TO_NPC
+                        npc: julius
+                """);
+        questEngine.reload();
+        questProgressEngine.reloadQuestDefinitions();
+        Files.writeString(dialoguesDir.resolve("lily.yml"), """
+                id: rpgquest:lily
+                start: accueil
+                nodes:
+                  accueil:
+                    speaker: "Lily"
+                    text: "Oh… bonjour. Je m'appelle Lily."
+                    choices:
+                      - text: "Ce Julius dont tu te souviens…"
+                        conditions:
+                          - type: QUEST_AVAILABLE
+                            quest: rpgquest:julius_trail
+                        next: offre_julius
+                      - text: "Le four est chaud ? Goûtons la tarte."
+                        conditions:
+                          - type: QUEST_STATE
+                            quest: rpgquest:tarte
+                            state: ACTIVE
+                          - type: HAS_PENDING_DELIVERY
+                            negate: true
+                        next: gouter
+                      - text: "Au revoir, Lily"
+                        actions:
+                          - type: CLOSE
+                  gouter:
+                    speaker: "Lily"
+                    text: "Papa parlait souvent de Julius, son meilleur ami."
+                    choices:
+                """ + julesChoice + """
+                  offre_julius:
+                    speaker: "Lily"
+                    text: "Julius vit dans une autre ville."
+                    choices:
+                      - text: "Commencer la quête : Sur la piste de Julius"
+                        conditions:
+                          - type: QUEST_AVAILABLE
+                            quest: rpgquest:julius_trail
+                        actions:
+                          - type: START_QUEST
+                            quest: rpgquest:julius_trail
+                          - type: CLOSE
+                """);
+        assertTrue(dialogueEngine.reload().issues().isEmpty(), () -> "lily.yml : " + dialogueEngine.lastReport().issues());
+    }
+
+    /** Joueur arrivé à l'étape « goûter » sans avoir rouvert le dialogue (remise faite dans la conversation). */
+    private PlayerMock playerReadyToTaste() throws Exception {
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, TARTE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        player.getInventory().clear();
+        player.getInventory().addItem(new org.bukkit.inventory.ItemStack(Material.COAL, 1));
+        questProgressEngine.deliverTo(player, "lily");
+        return player;
+    }
+
+    /** Ouvre Lily, choisit « Goûtons la tarte », puis « Parle-moi de Julius » ; renvoie le nœud final. */
+    private String tasteThenAskAboutJulius(PlayerMock player) throws Exception {
+        sessionEngine.open(player, LILY);
+        awaitRendered();
+        assertEquals("accueil", renderer.lastNode.id());
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, LILY, "accueil", choiceLabelled("Goûtons"));
+        awaitRendered();
+        assertEquals("gouter", renderer.lastNode.id());
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, LILY, "gouter", choiceLabelled("Parle-moi de Julius"));
+        awaitRendered();
+        return renderer.lastNode.id();
+    }
+
+    private int choiceLabelled(String fragment) {
+        return renderer.lastVisibleChoices.stream().filter(c -> c.label().contains(fragment)).findFirst()
+                .orElseThrow(() -> new AssertionError("choix « " + fragment + " » absent : " + renderer.lastVisibleChoices))
+                .index();
+    }
+
+    /**
+     * Cause du retour arrière observé sur DEV : un choix qui renvoie à {@code accueil} sans terminer
+     * l'étape « goûter » laisse la quête ACTIVE — {@code TALK_TO_NPC} ne progresse qu'au clic droit
+     * sur le PNJ, pas en naviguant dans son dialogue —, donc l'accueil repropose « Goûtons la tarte ».
+     */
+    @Test
+    void aChoiceBackToTheGreetingWithoutAdvancingOffersTheTasteAgain() throws Exception {
+        installLilyContent("""
+                      - text: "Parle-moi de Julius"
+                        next: accueil
+                """);
+        PlayerMock player = playerReadyToTaste();
+
+        assertEquals("accueil", tasteThenAskAboutJulius(player));
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().contains("Goûtons")),
+                "reproduction : la tarte est reproposée");
+        assertEquals(com.lodygames.rpgquest.quest.model.QuestState.ACTIVE,
+                questProgressEngine.stateOf(player.getUniqueId(), TARTE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    /** Correctif de contenu : le choix termine l'étape « goûter » et mène à l'offre Julius. */
+    @Test
+    void advancingTheTasteStepLeadsStraightToTheJuliusOffer() throws Exception {
+        installLilyContent("""
+                      - text: "Parle-moi de Julius"
+                        actions:
+                          - type: ADVANCE_QUEST
+                            quest: rpgquest:tarte
+                        next: offre_julius
+                """);
+        PlayerMock player = playerReadyToTaste();
+
+        assertEquals("offre_julius", tasteThenAskAboutJulius(player));
+        assertEquals(List.of("Commencer la quête : Sur la piste de Julius"),
+                renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList(),
+                "la quête Julius est réellement acceptable juste après la tarte");
+        assertEquals(com.lodygames.rpgquest.quest.model.QuestState.COMPLETED,
+                questProgressEngine.stateOf(player.getUniqueId(), TARTE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        // Rouvrir Lily ensuite ne revient jamais à la tarte : seule l'offre Julius reste.
+        renderer.lastNode = null;
+        sessionEngine.open(player, LILY);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().noneMatch(c -> c.label().contains("Goûtons")));
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().contains("Ce Julius")));
+    }
+
     // ---- Issue #467 : bilan cohérent juste après une remise qui termine la quête -------------
 
     /** Même câblage que {@code RPGQuestBootstrap}, PNJ {@code guard} fixé comme dans le dialogue de test. */

@@ -1031,7 +1031,19 @@ public final class RPGQuestBootstrap {
                 // Issue #238 : le nom de la quête d'amélioration, pour que le dialogue le dise sans
                 // l'écrire en dur — un libellé de bouton ne peut pas porter de placeholder.
                 "kit_unlock_quest",
-                        context -> kitProgressService.nextUnlockQuestTitle(context.player().getUniqueId()))));
+                        context -> kitProgressService.nextUnlockQuestTitle(context.player().getUniqueId())),
+                // Issue #180 : une ville citée par son identifiant stable — nom ACTUEL (renommable dans
+                // le panel) et direction réelle depuis la position du joueur. Ville inconnue ou
+                // désactivée : jeton laissé visible, jamais une destination inventée.
+                Map.of(
+                        "city_name", (context, cityId) -> activeCity(cityId).map(c -> c.name()).orElse(null),
+                        "city_direction", (context, cityId) -> activeCity(cityId).map(c -> {
+                            org.bukkit.Location at = context.player() == null ? null : context.player().getLocation();
+                            return at == null || at.getWorld() == null
+                                    ? com.lodygames.rpgquest.city.CityDirections.describe(c, null, 0, 0)
+                                    : com.lodygames.rpgquest.city.CityDirections.describe(
+                                            c, at.getWorld().getName(), at.getX(), at.getZ());
+                        }).orElse(null))));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
         var citizensDialogueListener = dialogueSessionEngine.citizensNpcInteractListener();
         if (citizensDialogueListener != null) {
@@ -1238,6 +1250,12 @@ public final class RPGQuestBootstrap {
      * apparaître un PNJ : les trois mondes RPGQuest de la config (hub / claims / exploration). Pas
      * d'ACL géographique — le monde doit en plus être réellement chargé, vérifié côté agent.
      */
+    /** Issue #180 — ville citée dans un dialogue : seulement si elle existe et est active. */
+    private java.util.Optional<com.lodygames.rpgquest.travel.beacon.model.VillageCenter> activeCity(String cityId) {
+        return cityRegistry == null ? java.util.Optional.empty()
+                : cityRegistry.find(cityId).filter(com.lodygames.rpgquest.travel.beacon.model.VillageCenter::active);
+    }
+
     private java.util.Set<String> rpgWorldWhitelist() {
         var cfg = configService.current();
         java.util.Set<String> worlds = new java.util.LinkedHashSet<>();

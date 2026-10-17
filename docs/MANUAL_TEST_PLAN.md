@@ -6392,6 +6392,28 @@ Wild**, en survie, près de waypoints existants.
     → plus rien n'apparaît. **Retirer ce boss** (case cochée) → disparaît sans drop.
     Restaurer ensuite les réglages (intervalle 15 min, en pause si souhaité).
 
+### TC-339 — Lily : fin de la tarte → Julius à Nerana, PNJ nommés (issue #180, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de #180 sur **DEV** et `dialogues/lily.yml` corrigé publié (rapport #180). Aucun
+reset de joueur : compte dont « La tarte de maman » est active, ou un second compte qui refait le
+parcours Lily.
+
+1.  Journal et bossbar de « La tarte de maman » (suivie) : les lignes nomment **Lily** (« Charbon (à
+    remettre à Lily) », « Parler à Lily »), jamais « Parler au PNJ » ni l'identifiant `lily`.
+2.  Remettre les 4 charbons dans le dialogue, « Retour », « Le four est chaud ? Goûtons la tarte. »,
+    puis **« Parle-moi de Julius »**. **Attendu** : « Quête terminée : La tarte de maman » (2 tartes,
+    40 XP, une seule fois), puis l'offre de Lily citant **Nerana** et une direction (« au nord, à
+    environ 420 blocs » depuis Lily) — **jamais** l'intro « Oh… bonjour » ni « Goûtons la tarte ».
+3.  Variante : remettre le charbon, **fermer**, recliquer Lily. **Attendu** : la tarte est validée au
+    clic, l'accueil propose « Ce Julius dont tu te souviens… » (pas « Goûtons »).
+4.  « Commencer la quête : Sur la piste de Julius ». Journal : « Parler à Julius ».
+5.  Recliquer Lily : « Je cherche toujours Julius. » redonne Nerana et la direction, recalculée depuis
+    la position actuelle. Se déconnecter / reconnecter : même réponse.
+6.  Marcher vers Nerana, parler à Julius : récit, quête terminée, puis Lily répond « J'ai parlé à
+    Julius. ».
+7.  Renommer la ville Nerana dans PlugAdmin (Villes) puis reparler à Lily : le nouveau nom apparaît.
+    Remettre le nom d'origine ensuite.
+
 ### TC-338 — Dialogues : un bouton par ligne, remise Lily cohérente, aucun /quests (issue #467, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de #467 sur **DEV**, renderer `paper-dialog` (défaut). Aucun reset de joueur : utiliser

@@ -1,5 +1,8 @@
 package com.lodygames.rpgquest.quest.model;
 
+import java.util.Optional;
+import java.util.function.Function;
+
 public sealed interface QuestObjective
         permits BreakBlockObjective, PlaceBlockObjective, KillEntityObjective,
                 CollectItemObjective, CraftItemObjective, TalkToNpcObjective, ReachLocationObjective,
@@ -43,6 +46,24 @@ public sealed interface QuestObjective
                     ? "Découvrir " + com.lodygames.rpgquest.city.CityNames.of(o.city())
                     : "Découvrir " + o.amount() + " ville(s)";
             case KillQuestBossObjective o -> "Vaincre le boss " + com.lodygames.rpgquest.mob.MobNames.of(o.mob());
+        };
+    }
+
+    /**
+     * Issue #180 — comme {@link #describe(QuestObjective)}, mais nomme le PNJ par son <strong>nom
+     * affiché</strong> quand {@code npcNames} le connaît : « Parler à Lily » plutôt que l'identifiant
+     * logique « lily » dans la bossbar de la quête suivie et {@code /quest}. Sans nom connu, le texte
+     * historique reste inchangé.
+     */
+    static String describe(QuestObjective objective, Function<String, Optional<String>> npcNames) {
+        return switch (objective) {
+            case TalkToNpcObjective o -> npcNames.apply(o.npcId())
+                    .map(name -> "Parler à " + name)
+                    .orElseGet(() -> describe(objective));
+            case DeliverItemToNpcObjective o -> npcNames.apply(o.npcId())
+                    .map(name -> "Remettre " + o.material() + " à " + name)
+                    .orElseGet(() -> describe(objective));
+            default -> describe(objective);
         };
     }
 }

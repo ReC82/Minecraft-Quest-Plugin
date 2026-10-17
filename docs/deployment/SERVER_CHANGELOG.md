@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Lily → Julius : villes citées dans les dialogues, PNJ nommés dans la bossbar (#180)
+
+### Changement
+
+Deux valeurs dynamiques de dialogue à argument : `%city_name:<id_ville>%` (nom actuel de la ville)
+et `%city_direction:<id_ville>%` (direction et distance approximative depuis le joueur). La bossbar de
+la quête suivie et `/quest <id>` nomment le PNJ (« Parler à Lily ») au lieu de son identifiant.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest seul. Aucune migration, aucune donnée de joueur touchée. Le contenu
+Lily (`dialogues/lily.yml`) n'est **pas** livré par le JAR : sa correction passe par la publication de
+contenu du Control Panel, après sauvegarde datée (voir le rapport de session #180).
+
+### Sauvegarde préalable
+
+JAR précédent (sauvegarde datée automatique de `deploy-verygames.sh`) ; copie datée de
+`plugins/RPGQuest/dialogues/lily.yml` avant toute publication.
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh`. Détails réels dans le rapport de
+session #180.
+
+### Validation
+
+TC-339 — PENDING MANUAL VALIDATION.
+
 ## 2026-10-17 - Dialogues : un bouton par ligne, bilan de remise, aucun /quests (#467)
 
 ### Changement

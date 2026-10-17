@@ -505,6 +505,7 @@ Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : c
 Persistance : le suivi (quête « trackée ») persiste (`player_variables`), pas la simple ouverture du menu.
 Source des entrées (issue #475) : les onglets sont construits depuis la **progression du joueur** (`quest_progress`), puis rapprochés des définitions chargées. Toute quête acceptée et active apparaît dans « en cours », quels que soient sa catégorie, son donneur ou le dialogue qui l'a démarrée. Une quête **en cours dont la définition est introuvable** (fichier retiré, publication en échec) n'est plus masquée : elle reste listée sous une icône « Quête momentanément indisponible — ta progression est conservée », et le serveur journalise un avertissement `Journal de … : quête(s) en cours sans définition chargée […]`. Une quête terminée retirée n'est pas listée. Aucune écriture : la progression n'est ni modifiée ni recalculée.
 Quêtes de palier du kit (issue #475) : la quête `unlock-quest` d'un palier de `starter-tool-kit.tiers` porte, sous son état, l'étiquette « Amélioration du kit — palier N » (liste et détails), quel que soit son titre narratif (« Premiers pas dans le Wild », « Explorateur »…). Ses objectifs `DELIVER_ITEM_TO_NPC` affichent la quantité **déjà remise** / demandée, mise à jour à chaque remise partielle.
+Vue détail (issue #475, retour du 17/10) : plus **une** infobulle géante (trop haute pour une fenêtre 854×480 : son début sortait de l'écran), mais une rangée d'objets lus de gauche à droite à partir de `DETAIL_ICON_SLOT` (slot 10) : l'icône de la quête (titre, état, « Amélioration du kit — palier N », catégorie, renouvellement), puis **Description** (livre), **Objectifs** (cible), **Récompenses** (coffre), **Prérequis** (papier) — une section vide n'a pas d'objet. Chaque infobulle est bornée à `MAX_DETAIL_LORE_LINES` = 10 lignes ; au-delà, la section continue sur l'objet suivant (« Description (2/3) »), rien n'est tronqué (`ui.LorePages`). Lignes repliées à 40 caractères (`ui.LoreWrap`).
 Quêtes renouvelables (issue #13) : une quête de rencontre (catégorie `encounter` ou donneur `encounter_*`) porte la ligne « Rencontre — quête secondaire » ; une quête **terminée et répétable** affiche « À refaire dans 19 h 40 min » tant que son `cooldown:` court, puis « Peut être refaite » (« … auprès d'un PNJ de rencontre » pour une rencontre) ; la vue détail ajoute la cadence « Renouvelable : toutes les 20 h ». Même calcul que le refus `ON_COOLDOWN` (`QuestProgressEngine#remainingCooldowns`, une lecture asynchrone). Si cette lecture échoue, aucune de ces lignes n'est affichée : le journal ne promet jamais une quête disponible à tort.
 Bouton « Fermer » (slot `CLOSE_SLOT`/`DETAIL_CLOSE_SLOT`) : la fermeture est différée d'un tick serveur (`QuestJournalService#closeNextTick`) plutôt qu'appelée directement dans le gestionnaire de `InventoryClickEvent` — fermer une fenêtre pendant le traitement de son propre clic annulé pouvait laisser le client avec une fenêtre visuellement toujours ouverte (paquet de resynchronisation du clic annulé arrivant après le paquet de fermeture).
 
@@ -3205,6 +3206,7 @@ Implémentation : `dialogue.DialogueTextPlaceholders`, appelée par
 |---|---|
 | `%delivery_status%` | Issue #123 — état de remise du PNJ **porteur du dialogue courant** : une ligne par matériau, `déjà remis/demandé`, nom d'objet traduit côté client. « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Lecture pure de la progression en mémoire. Issue #467 : sur le nœud affiché **juste après** un `DELIVER_QUEST_ITEMS` qui a tout complété (quête terminée, donc sortie des quêtes actives), affiche le bilan de cette remise (`✔ … 3/3`) suivi de « Merci, c'est tout ce qu'il me fallait ! » au lieu d'un faux « je n'attends rien » ; dès qu'il reste quelque chose à remettre, l'état réel prime. Issue #475 : juste après un `DELIVER_QUEST_ITEMS`, commence par « Tu viens de me remettre : 2 × Bâton, … » (ou « Tu n'as rien d'utile à me remettre pour l'instant. »), puis l'état réel, puis « Tu as sur toi des matériaux que j'attends. » / « Tu n'as sur toi aucun des matériaux qui manquent. » tant qu'il reste à remettre, et enfin, pour chaque quête que la remise a terminée, « Amélioration du kit obtenue : palier N. … » (quête d'un palier du kit) ou « Quête terminée : <titre> ». Tout est lu dans la fenêtre, plus seulement dans le chat. |
 | `%delivery_hint%` | Issue #475 — pour un **texte d'accueil** : **vide** quand le PNJ porteur du dialogue n'attend rien de ce joueur (le texte reste inchangé pour tous les autres), sinon un retour à la ligne, « Matériaux à me remettre : » + une ligne par matériau (`déjà remis/demandé`), puis « Tu as sur toi des matériaux que j'attends. » ou « Tu n'as sur toi aucun des matériaux qui manquent. ». |
+| `%delivery_carry%` | Issue #475 (retour du 17/10) — pour un écran qui **affiche déjà** la liste des matériaux (ex. « Comment améliorer mon kit ? » du Guide) : **vide** si le PNJ porteur n'attend rien de ce joueur, sinon un retour à la ligne puis la seule phrase « Tu as sur toi des matériaux que j'attends. » ou « Tu n'as sur toi aucun des matériaux qui manquent. » — sans répéter la liste. |
 | `%npc_name%` | Issue #475 — nom affiché **actuel** du PNJ porteur du dialogue (`display_name` de `npcs/<id>.yml`, balises retirées, inséré comme texte). Renommer le PNJ dans le Control Panel change aussitôt le texte. Utilisable aussi dans le **`speaker`** d'un nœud (le locuteur passe par les mêmes valeurs dynamiques que le texte). |
 | `%npc_name:<id_pnj>%` | Issue #475 — nom affiché **actuel** d'un autre PNJ cité par son id stable (ex. `%npc_name:guide%` → « Elias »). PNJ inconnu : le marqueur reste visible. Même jeton accepté dans le **titre et la description d'une quête** (journal, offre de catalogue). Le mot générique « guide » n'est jamais remplacé : seul le jeton l'est. |
 | `%city_name:<id_ville>%` | Issue #180 — nom **actuel** de la ville d'identifiant stable `<id_ville>` (ex. `%city_name:ville_nerana%` → « Nerana ») : renommer la ville dans le Control Panel (#178) change aussitôt le texte, sans retoucher le dialogue. Ville inconnue ou désactivée : le marqueur reste visible tel quel. |
@@ -3238,11 +3240,25 @@ les dialogues de PNJ et l'invite d'entrée dans le Wild : **un bouton par ligne*
 `multi_action` natif en mettait deux de 150 px, d'où les libellés coupés), même largeur pour tous
 les boutons d'une fenêtre = plus long libellé estimé (police par défaut du jeu, gras compris),
 bornée entre 200 et 310 px d'interface (310 tient dans les 427 px d'un 854×480 en échelle
-automatique) ; le corps du texte est aligné sur cette largeur. Un libellé qui ne tiendrait pas
+automatique). Issue #475 (retour du 17/10) : le **corps** du texte ne suit plus la largeur des
+boutons — il a sa propre largeur fixe `DialogButtonLayout.BODY_WIDTH` = **380 px**. Un libellé qui ne tiendrait pas
 même à 310 px (≈ 50 caractères) devient un libellé court terminé par « … », avec le texte complet
 en infobulle (survol ou focus clavier/manette) **et** répété en gris dans le corps — jamais coupé
 en silence, choix et action inchangés. Aucun resource pack requis. Le renderer `chat` n'est pas
 concerné (une ligne par choix, déjà).
+
+**Limites natives vérifiées du `paper-dialog` (issue #475, 17/10/2026)** — lues dans le client
+1.21.11 (`client.jar` + mappings Mojang officiels), pas supposées :
+- `plain_message.width` et la largeur d'un bouton sont bornés à **1..1024** px d'interface (défaut 200) ;
+- le corps est rendu par un `FocusableTextWidget` avec `setCentered(true)` **codé en dur** : chaque
+  ligne est centrée, **aucun alignement à gauche** n'est possible pour un `plain_message` (les listes
+  restent donc courtes, une ligne par matériau, préfixées `•` / `✔`) ;
+- la zone de corps défilante ajoute 20 px autour du contenu ; le serveur ne reçoit **pas** la taille de
+  la fenêtre du joueur, donc la largeur ne peut pas s'adapter : un corps plus large que l'écran serait
+  coupé. 380 px (+ marges ≈ 408 px) tient dans les 427 px d'un 854×480 en échelle automatique ;
+- les boutons du type `multi_action` sont dans le **pied** de la fenêtre : chaque bouton (20 px +
+  espacement) réduit la hauteur du corps visible sans défilement. D'où des écrans à peu de boutons
+  et des textes courts (accueil du Guide allégé, voir `dialogues/guide.yml`).
 
 **Aucune commande dans les messages joueur (issue #467)** — les en-têtes de démarrage et
 d'étape (`quest.started-objectives-header`, `quest.step-advanced-header`) renvoient vers

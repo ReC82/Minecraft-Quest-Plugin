@@ -192,15 +192,27 @@ class QuestJournalKitQuestTest {
         service.handleClose(player);
         service.showDetail(player, JournalTab.IN_PROGRESS, 0, KIT_TIER_2);
         waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isDetail());
-        ItemStack icon = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.DETAIL_ICON_SLOT);
-        String lore = plain(icon);
+        org.bukkit.inventory.Inventory detail = player.getOpenInventory().getTopInventory();
+        List<ItemStack> sections = new java.util.ArrayList<>();
+        for (int slot = QuestJournalService.DETAIL_ICON_SLOT; slot <= QuestJournalService.DETAIL_LAST_SECTION_SLOT; slot++) {
+            if (detail.getItem(slot) != null) {
+                sections.add(detail.getItem(slot));
+            }
+        }
+        String lore = sections.stream().map(QuestJournalKitQuestTest::plain).collect(java.util.stream.Collectors.joining());
 
         assertTrue(lore.contains("Rapporte à Elias de quoi"), lore);
         assertFalse(lore.contains("%npc_name") || lore.contains("au Guide"), lore);
         assertTrue(lore.contains("à remettre à Elias"), lore);
-        icon.getItemMeta().lore().forEach(line -> assertTrue(
-                PlainTextComponentSerializer.plainText().serialize(line).length() <= 48,
-                () -> "ligne d'infobulle trop large : " + PlainTextComponentSerializer.plainText().serialize(line)));
+        assertTrue(lore.contains("Amélioration du kit — palier 2"), lore);
+        // Retour du 17/10 (capture 131135) : ni trop large, ni trop haute pour une fenêtre 854×480.
+        sections.forEach(icon -> {
+            assertTrue(icon.getItemMeta().lore().size() <= QuestJournalService.MAX_DETAIL_LORE_LINES,
+                    () -> "infobulle trop haute : " + plain(icon));
+            icon.getItemMeta().lore().forEach(line -> assertTrue(
+                    PlainTextComponentSerializer.plainText().serialize(line).length() <= 48,
+                    () -> "ligne d'infobulle trop large : " + PlainTextComponentSerializer.plainText().serialize(line)));
+        });
     }
 
     @Test

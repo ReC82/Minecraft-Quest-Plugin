@@ -36,7 +36,7 @@ start: greeting
 nodes:
   greeting:
     speaker: "%npc_name%"
-    text: "<white>Bienvenue au village !</white> <gray>Je suis %npc_name%, le guide du village : je t'explique comment fonctionne le monde, je te dis à qui parler, et je te remets ton équipement de secours quand tu en as besoin.</gray>%delivery_hint%"
+    text: "<white>Bienvenue au village !</white><newline><gray>Je suis %npc_name%, le guide du village. Je t'explique le monde, je te dis à qui parler et je te redonne ton équipement de secours.</gray>"
     choices:
       # Issue #235 : ce choix REMPLACE « Très bien, j'y vais. », qui démarrait une quête sans le
       # dire. Il mène à un nœud qui explique ce qu'il y a à faire et NOMME la quête ; le démarrage
@@ -72,19 +72,8 @@ nodes:
           - type: GIVE_STARTER_KIT
           - type: CLOSE
 
-      # Issue #123/#218 : remise GÉNÉRIQUE — aucune quête, aucun matériau et aucun PNJ n'est nommé
-      # ici. HAS_PENDING_DELIVERY n'est vraie que si une quête active du joueur demande de remettre
-      # des objets à CE PNJ (déduit de la clé du dialogue, « rpgquest:guide » → PNJ « guide »).
-      # Issue #475 : UNE seule action, sans écran de confirmation. Le moteur ne la propose que si
-      # la remise retirerait réellement quelque chose ; sinon %delivery_hint% (texte d'accueil) dit
-      # ce qui manque et que le joueur n'en porte pas. Le bilan s'affiche dans « delivery_result ».
-      - text: "Donner les matériaux"
-        conditions:
-          - type: HAS_PENDING_DELIVERY
-        actions:
-          - type: DELIVER_QUEST_ITEMS
-        next: delivery_result
-
+      # Issue #475 (retour du 17/10) : accueil LÉGER — ni matériaux, ni compteurs, ni remise ici.
+      # Tout cela vit dans « Comment améliorer mon kit ? » (nœud « kit_progress »).
       - text: "D'accord !"
         actions:
           - type: CLOSE
@@ -123,9 +112,16 @@ nodes:
   #
   # Au palier maximum, %kit_tier_next% rend une phrase complète (« aucune — tu as déjà… ») et
   # %kit_upgrade_requirements% rend « rien de particulier » : ce nœud unique reste donc juste.
+  #
+  # Issue #475 (retour du 17/10) : CE nœud est le seul écran de la remise. %kit_upgrade_requirements%
+  # liste déjà remis / demandé ; %delivery_carry% ajoute seulement « tu as sur toi des matériaux que
+  # j'attends » ou « tu n'as sur toi aucun des matériaux qui manquent » (vide si rien n'est attendu),
+  # sans répéter la liste. « Donner les matériaux » n'est proposé par le moteur que si la remise
+  # retirerait réellement un objet (objectifs restants × inventaire) ; sa condition
+  # HAS_PENDING_DELIVERY reste générique : aucune quête, aucun matériau, aucun PNJ n'est nommé ici.
   kit_progress:
     speaker: "%npc_name%"
-    text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>La quête qui l'améliore :</gray> %kit_unlock_quest%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
+    text: "<white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>Quête :</gray> %kit_unlock_quest%<newline><newline><white>À me rapporter :</white><newline>%kit_upgrade_requirements%%delivery_carry%<newline><gray>Apporte-les au fur et à mesure : ce que tu me remets est gardé, même si tu meurs.</gray>"
     choices:
       - text: "Commencer l'amélioration"
         conditions:

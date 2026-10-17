@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Accueil d'Elias allégé, fenêtres de dialogue plus larges, détails du journal paginés (#475, 2e retour du 17/10)
+
+### Changement
+
+JAR + 1 contenu. Corps des fenêtres `paper-dialog` (dialogues de PNJ, invite d'entrée dans le Wild) à
+380 px d'interface au lieu de la largeur des boutons. Vue détail du journal répartie sur plusieurs
+objets (10 lignes d'infobulle au plus chacun). Nouveau marqueur `%delivery_carry%`.
+Contenu republié : `dialogues/guide.yml` (existant sur DEV) — accueil sans matériaux ni remise ;
+« Comment améliorer mon kit ? » porte la liste, la phrase de possession et le bouton conditionnel
+« Donner les matériaux ». IDs, nœuds `kit_progress` / `delivery_result`, conditions et actions inchangés.
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y --also dialogues/guide.yml` (sauvegarde datée du fichier distant et du
+JAR), puis redémarrage. Aucune migration, aucun `config.yml`, aucune donnée joueur touchée.
+
+### Validation
+
+Fichier distant `dialogues/guide.yml` identique au dépôt ; `dialogue.list` : guide chargé sans rejet.
+En jeu : TC-349 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et le `guide.yml` de la sauvegarde `extra-<horodatage>` créés par le
+script, puis redémarrer.
+
+---
+
 ## 2026-10-17 - Remise au Guide en une action, PNJ renommé propagé, infobulle du journal (#475, retour du 17/10)
 
 ### Changement

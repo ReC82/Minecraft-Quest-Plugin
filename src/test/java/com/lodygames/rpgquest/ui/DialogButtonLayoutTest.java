@@ -36,6 +36,18 @@ class DialogButtonLayoutTest {
         assertEquals(1, DialogButtonLayout.COLUMNS);
     }
 
+    /**
+     * Issue #475 (retour du 17/10) : le corps n'est plus aligné sur la largeur des boutons — il
+     * est plus large qu'eux, dans la borne du client (1..1024), et tient avec la zone défilante
+     * (+20 px) et la marge du widget de texte dans 427 px d'interface (854×480, échelle auto).
+     */
+    @Test
+    void theBodyIsWiderThanTheButtonsButFitsTheSmallestWindow() {
+        assertTrue(DialogButtonLayout.BODY_WIDTH > DialogButtonLayout.MAX_WIDTH);
+        assertTrue(DialogButtonLayout.BODY_WIDTH <= 1024, "borne de plain_message.width");
+        assertTrue(DialogButtonLayout.BODY_WIDTH + 20 + 8 <= 427, "doit tenir dans 854×480 en échelle auto");
+    }
+
     @Test
     void lilyLabelsAreShownInFullOnSharedWidthButtons() {
         DialogButtonLayout layout = DialogButtonLayout.of(components(LILY_LABELS));

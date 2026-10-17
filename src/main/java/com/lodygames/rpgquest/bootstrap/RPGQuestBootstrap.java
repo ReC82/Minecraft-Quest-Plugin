@@ -1055,6 +1055,11 @@ public final class RPGQuestBootstrap {
                 "delivery_hint", context -> DeliveryStatusText.hint(questProgressEngine.pendingDeliveries(
                         context.player().getUniqueId(), context.npcId()),
                         questProgressEngine.hasDeliverableItems(context.player(), context.npcId())),
+                // Issue #475 (retour du 17/10) : la seule phrase « tu portes / ne portes pas de quoi
+                // avancer », sans répéter la liste — pour l'écran du kit, qui l'affiche déjà.
+                "delivery_carry", context -> DeliveryStatusText.carry(questProgressEngine.pendingDeliveries(
+                        context.player().getUniqueId(), context.npcId()),
+                        questProgressEngine.hasDeliverableItems(context.player(), context.npcId())),
                 // Issue #475 : nom affiché ACTUEL du PNJ porteur du dialogue (renommable dans le panel).
                 "npc_name", context -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(
                         context.npcId(), questProgressEngine.npcNameResolver()),

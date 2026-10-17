@@ -55,8 +55,8 @@ public final class PaperDialogRenderer implements DialogueRenderer {
         }
 
         List<DialogBody> body = new ArrayList<>();
-        body.add(DialogBody.plainMessage(MM.deserialize(node.text().base()), layout.width()));
-        layout.fullLabelsBody().forEach(line -> body.add(DialogBody.plainMessage(line, layout.width())));
+        body.add(DialogBody.plainMessage(MM.deserialize(node.text().base()), DialogButtonLayout.BODY_WIDTH));
+        layout.fullLabelsBody().forEach(line -> body.add(DialogBody.plainMessage(line, DialogButtonLayout.BODY_WIDTH)));
 
         Dialog dialog = Dialog.create(factory -> factory.empty()
                 .base(DialogBase.builder(MM.deserialize(node.speaker()))

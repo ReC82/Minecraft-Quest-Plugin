@@ -6,6 +6,16 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Accueil du Guide allégé, fenêtres de dialogue plus larges, détails du journal paginés (#475,
+> 2e retour du 17/10/2026)** — `guide.yml` : l'accueil ne montre plus matériaux, compteurs ni
+> remise ; tout est dans « Comment améliorer mon kit ? » (`%kit_upgrade_requirements%` +
+> nouveau `%delivery_carry%`, bouton unique conditionnel « Donner les matériaux »). Corps des
+> fenêtres `paper-dialog` à 380 px (`DialogButtonLayout.BODY_WIDTH`) au lieu de la largeur des
+> boutons ; limites natives vérifiées dans le client 1.21.11 (texte toujours centré, largeur
+> 1..1024, taille de fenêtre inconnue du serveur). Vue détail du journal : une rangée d'objets
+> (quête, description, objectifs, récompenses, prérequis), 10 lignes d'infobulle au plus chacun
+> (`ui.LorePages`). Aucune migration (PENDING MANUAL VALIDATION TC-349).
+
 > **Remise aux PNJ en une action, PNJ renommés propagés (#475, retour du 17/10/2026)** — un choix
 > `DELIVER_QUEST_ITEMS` n'est visible que si la remise retirerait réellement un objet
 > (`QuestProgressEngine#hasDeliverableItems`) ; clic devenu sans objet = nœud réaffiché. Bilan dans

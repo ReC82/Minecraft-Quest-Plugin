@@ -443,26 +443,50 @@ class BundledDialoguesValidityTest {
 
     // ---- Issue #475 : remise en une action, nom du Guide résolu depuis son id -----------------
 
-    /** Plus d'écran intermédiaire : « Donner les matériaux » remet directement, depuis l'accueil. */
+    /**
+     * Plus d'écran intermédiaire : « Donner les matériaux » remet directement. Retour du 17/10 :
+     * uniquement dans l'écran « Comment améliorer mon kit ? », jamais à l'accueil.
+     */
     @Test
     void theGuideDeliversInOneActionWithoutIntermediateScreens() {
         DialogueDefinition guide = guide();
-        DialogueChoice give = guide.nodes().get("greeting").choices().stream()
+        DialogueChoice give = guide.nodes().get("kit_progress").choices().stream()
                 .filter(c -> c.text().base().equals("Donner les matériaux"))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("« Donner les matériaux » attendu à l'accueil"));
+                .orElseThrow(() -> new AssertionError("« Donner les matériaux » attendu dans l'écran du kit"));
 
         assertTrue(give.actions().stream().anyMatch(a -> a instanceof com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction),
                 "le clic remet directement, sans confirmation");
         assertEquals("delivery_result", give.next());
         assertTrue(guide.nodes().get("delivery_result").text().base().contains("%delivery_status%"));
-        assertTrue(guide.nodes().get("greeting").text().base().contains("%delivery_hint%"),
-                "sans matériau utile, l'accueil doit le dire lui-même");
         guide.nodes().values().forEach(node -> node.choices().forEach(choice -> {
             String label = choice.text().base();
             assertFalse(label.equals("J'ai des matériaux") || label.equals("Donner encore")
                     || label.equals("Donner mes matériaux"), () -> "écran redondant restant : " + label);
         }));
+    }
+
+    /**
+     * Issue #475, retour du 17/10 (captures 131227 / 131357) : accueil LÉGER. Matériaux, compteurs,
+     * état de possession et action de remise n'apparaissent qu'après « Comment améliorer mon kit ? ».
+     */
+    @Test
+    void theGuideGreetingIsLightAndTheKitScreenCarriesTheDelivery() {
+        DialogueDefinition guide = guide();
+        DialogueNode greeting = guide.nodes().get("greeting");
+        String greetingText = greeting.text().base();
+        for (String marker : List.of("%delivery_hint%", "%delivery_status%", "%delivery_carry%",
+                "%kit_upgrade_requirements%")) {
+            assertFalse(greetingText.contains(marker), () -> "accueil surchargé par " + marker);
+        }
+        assertTrue(greeting.choices().stream().noneMatch(c -> c.actions().stream()
+                        .anyMatch(a -> a instanceof com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction)),
+                "aucune remise depuis l'accueil");
+
+        String kit = guide.nodes().get("kit_progress").text().base();
+        assertTrue(kit.contains("%kit_upgrade_requirements%") && kit.contains("%delivery_carry%"),
+                "l'écran du kit dit ce qui reste et si le joueur en porte : " + kit);
+        assertFalse(kit.contains("%delivery_hint%"), "la liste ne doit pas être répétée deux fois : " + kit);
     }
 
     /** Le Guide renommé (« Elias ») : locuteur et présentation viennent de l'id, jamais « Guide » en dur. */

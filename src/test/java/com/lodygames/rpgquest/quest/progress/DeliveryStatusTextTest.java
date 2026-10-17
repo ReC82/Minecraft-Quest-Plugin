@@ -72,6 +72,16 @@ class DeliveryStatusTextTest {
     }
 
     @Test
+    void theCarryLineSaysOnlyWhetherThePlayerCanAdvanceWithoutRepeatingTheList() {
+        List<DeliveryLine> pending = List.of(new DeliveryLine(Material.STICK, 1, 4));
+
+        assertEquals("<newline>" + DeliveryStatusText.NOTHING_CARRIED, DeliveryStatusText.carry(pending, false));
+        assertEquals("<newline>" + DeliveryStatusText.CARRIES_USEFUL, DeliveryStatusText.carry(pending, true));
+        assertEquals("", DeliveryStatusText.carry(List.of(), true), "rien n'est attendu : rien à dire");
+        assertEquals("", DeliveryStatusText.carry(List.of(new DeliveryLine(Material.STICK, 4, 4)), false));
+    }
+
+    @Test
     void aRefusedDeliveryIsExplainedInTheDialogueNotOnlyInTheChat() {
         List<DeliveryLine> pending = List.of(new DeliveryLine(Material.STICK, 0, 4));
         DeliveryOutcome refused = DeliveryOutcome.of(DeliveryOutcome.Status.NOTHING_USEFUL, pending, false);

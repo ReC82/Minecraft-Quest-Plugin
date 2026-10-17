@@ -6720,3 +6720,23 @@ En jeu, un compte administrateur avec quelques LodyCoins (`/money`), un inventai
 **Reset** : désactiver les trois prix depuis PlugAdmin (aucune suppression ; aucun solde à remettre au-delà
 des essais faits sur son propre compte).
 
+
+### TC-343 — Rôle métier affiché d'un PNJ en saisie libre (issue #127, PENDING MANUAL VALIDATION)
+
+**Préparation** : PlugAdmin (DEV) → « PNJ » → « Rafraîchir ». Compte avec « PNJ — écriture ». Choisir un
+PNJ de test qui a une définition (pas un PNJ joué par le propriétaire en ce moment).
+
+1.  Ouvrir sa fiche → « Informations avancées » → « Réglages avancés ». **Attendu** : champ texte
+    « Rôle affiché » (plus de liste « Aucun / Donneur de quête »), suggestions au clic (Cartographe,
+    Forgeron, Téléporteur…), phrase « Libellé seulement : … aucun pouvoir ».
+2.  Saisir « Cartographe », Enregistrer, puis « Rafraîchir » la liste. **Attendu** : « Cartographe » en
+    italique à côté du nom dans la liste et ligne « Rôle : Cartographe » dans le résumé de la fiche ; la
+    recherche « cartographe » trouve le PNJ.
+3.  Saisir un rôle hors suggestions, « Maître d'armes ». **Attendu** : accepté, affiché « Maitre d armes »
+    (enregistré `maitre_d_armes`).
+4.  Saisir « ??? ». **Attendu** : refus « Rôle invalide », rien d'enregistré.
+5.  En jeu : le PNJ propose exactement les mêmes quêtes et le même dialogue qu'avant (le rôle n'a aucun
+    effet).
+6.  Un PNJ existant en `role: quest_giver` s'affiche « Donneur de quête », sans erreur.
+
+**Reset** : remettre le rôle d'origine (ou vider le champ) depuis les Réglages avancés.

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import net.kyori.adventure.bossbar.BossBar;
@@ -60,6 +61,27 @@ public final class ProgressionService implements PluginService, Listener {
     private final Map<UUID, BukkitTask> bossBarHideTasks = new ConcurrentHashMap<>();
 
     private com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar;
+
+    private volatile Consumer<UUID> xpListener = playerId -> {
+    };
+
+    /**
+     * Issue #184 — prévenu (hors thread principal) quand l'XP en mémoire d'un joueur change :
+     * chargement à la connexion, octroi accepté, réglage admin. Sert au HUD, qui lit ensuite
+     * {@link #level} dans ce cache.
+     */
+    public void setXpListener(Consumer<UUID> listener) {
+        this.xpListener = listener == null ? playerId -> {
+        } : listener;
+    }
+
+    private void notifyXpChanged(UUID playerId) {
+        try {
+            xpListener.accept(playerId);
+        } catch (RuntimeException ignored) {
+            // Affichage seulement : ne jamais faire échouer un octroi déjà persisté.
+        }
+    }
 
     /** Issues #69 / #209 — canal partagé de l'action bar, branché au démarrage. */
     public void setActionBar(com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar) {
@@ -124,6 +146,7 @@ public final class ProgressionService implements PluginService, Listener {
             Map<SkillType, Long> copy = new EnumMap<>(SkillType.class);
             copy.putAll(loaded);
             cache.put(playerId, copy);
+            notifyXpChanged(playerId);
         });
     }
 
@@ -187,6 +210,7 @@ public final class ProgressionService implements PluginService, Listener {
                             skill, AwardOutcome.GRANTED, actualGranted, outcome.newTotalXp(), previousLevel, newLevel);
 
                     display(playerId, result);
+                    notifyXpChanged(playerId);
 
                     if (skill != SkillType.GLOBAL && actualGranted > 0) {
                         long mirrored = Math.round(actualGranted * config.get().globalMirrorRatio());
@@ -206,7 +230,10 @@ public final class ProgressionService implements PluginService, Listener {
     /** Fixe l'XP totale d'une compétence à une valeur exacte (outil admin de test). Contourne dédup/throttle par conception. */
     public CompletableFuture<Void> setTotalXp(UUID playerId, SkillType skill, long totalXp) {
         return repository.setTotalXp(playerId, skill, totalXp)
-                .thenRun(() -> cache.computeIfAbsent(playerId, k -> new EnumMap<>(SkillType.class)).put(skill, totalXp));
+                .thenRun(() -> {
+                    cache.computeIfAbsent(playerId, k -> new EnumMap<>(SkillType.class)).put(skill, totalXp);
+                    notifyXpChanged(playerId);
+                });
     }
 
     private boolean isThrottled(UUID playerId, SkillType skill) {

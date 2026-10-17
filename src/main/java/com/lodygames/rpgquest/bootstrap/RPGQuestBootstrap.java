@@ -29,6 +29,7 @@ import com.lodygames.rpgquest.command.QuestCommand;
 import com.lodygames.rpgquest.command.QuestsCommand;
 import com.lodygames.rpgquest.command.ResourceNodeCommand;
 import com.lodygames.rpgquest.command.RPGQuestCommand;
+import com.lodygames.rpgquest.command.HudCommand;
 import com.lodygames.rpgquest.command.SkillsCommand;
 import com.lodygames.rpgquest.command.StoreCommand;
 import com.lodygames.rpgquest.config.ConfigService;
@@ -145,6 +146,7 @@ import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.travel.beacon.TravelBeaconService;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
 import com.lodygames.rpgquest.ui.QuestJournalService;
+import com.lodygames.rpgquest.ui.PlayerHudService;
 import com.lodygames.rpgquest.database.WaypointRepository;
 import com.lodygames.rpgquest.database.WaystoneRepository;
 import com.lodygames.rpgquest.waypoint.WaypointGenerationPlanner;
@@ -254,6 +256,7 @@ public final class RPGQuestBootstrap {
     private com.lodygames.rpgquest.mob.quest.QuestBossService questBossService;
     private com.lodygames.rpgquest.mob.community.CommunityBossRewards communityBossRewards;
     private ProgressionService progressionService;
+    private PlayerHudService playerHudService;
     private EntitlementService entitlementService;
     private com.lodygames.rpgquest.entitlement.reward.RewardEntitlementService rewardEntitlementService;
     private BackpackService backpackService;
@@ -568,6 +571,10 @@ public final class RPGQuestBootstrap {
                 .map(def -> net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().stripTags(def.displayName()))
                 .filter(name -> !name.isBlank()));
         progressionService.setActionBar(actionBarFeedback);
+        // Issue #184 : prototype HUD pièces / niveau RPG, lu sur le portefeuille et la piste GLOBAL.
+        playerHudService = new PlayerHudService(plugin, economyService, progressionService, actionBarFeedback,
+                () -> configService.current().hud(), plugin.getSLF4JLogger());
+        registry.start(playerHudService);
 
         webSnapshotWriter = new WebSnapshotWriter(
                 plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,
@@ -1554,6 +1561,13 @@ public final class RPGQuestBootstrap {
         var profile = plugin.getCommand("profile");
         if (profile != null) {
             profile.setExecutor(profileCommand);
+        }
+
+        HudCommand hudCommand = new HudCommand(playerHudService);
+        var hudPluginCommand = plugin.getCommand("hud");
+        if (hudPluginCommand != null) {
+            hudPluginCommand.setExecutor(hudCommand);
+            hudPluginCommand.setTabCompleter(hudCommand);
         }
 
         SkillsCommand skillsCommand = new SkillsCommand(progressionService);

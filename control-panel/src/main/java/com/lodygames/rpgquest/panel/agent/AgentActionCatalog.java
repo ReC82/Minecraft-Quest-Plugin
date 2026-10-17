@@ -752,6 +752,14 @@ public final class AgentActionCatalog {
                 "reward.catalog.status", "boss.community.status");
         addContentWrite("reward.definition.toggle", Permission.ECONOMY_WRITE,
                 "Activer / désactiver une récompense", "reward.catalog.status", "boss.community.status");
+        // Issue #336 — catalogue central des prix et coûts (prices.yml) : vente, rachat, fabrication.
+        // Mêmes permissions que la monnaie : un prix décide de ce que les joueurs paient et gagnent.
+        // Écriture réversible (copie, désactivation), validée par le serveur avant écriture.
+        add("price.catalog.status", Permission.ECONOMY_READ, false, false, "Rafraîchir le catalogue des prix");
+        addContentWrite("price.save", Permission.ECONOMY_WRITE, "Enregistrer un prix", "price.catalog.status");
+        addContentWrite("price.duplicate", Permission.ECONOMY_WRITE, "Dupliquer un prix", "price.catalog.status");
+        addContentWrite("price.toggle", Permission.ECONOMY_WRITE, "Activer / désactiver un prix",
+                "price.catalog.status");
         // Issue #200 — pont vers les droits Minecraft. Distribuer un droit de construction ou un
         // bypass est au moins aussi sensible que gérer un groupe du panel : même permission.
         add("mc.rights.read", Permission.USER_MANAGE, false, true,
@@ -2586,6 +2594,16 @@ public final class AgentActionCatalog {
                     case "reward.definition.save" -> RewardDefinitionForm.fill(form, params);
                     case "reward.definition.duplicate" -> RewardDefinitionForm.fillDuplicate(form, params);
                     default -> RewardDefinitionForm.fillToggle(form, params);
+                };
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "price.save", "price.duplicate", "price.toggle" -> {
+                String error = switch (type) {
+                    case "price.save" -> PriceForm.fill(form, params);
+                    case "price.duplicate" -> PriceForm.fillDuplicate(form, params);
+                    default -> PriceForm.fillToggle(form, params);
                 };
                 if (error != null) {
                     return Validation.fail(error);

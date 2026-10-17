@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.progress.DeliveryOutcome;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,16 +32,27 @@ import org.bukkit.entity.Player;
  *   <li>Toutes les langues de {@link LocalizedText} sont traitées, pas seulement {@code default}.</li>
  *   <li>Un nœud sans aucun {@code %} est renvoyé <em>tel quel</em> (même instance) : coût nul pour
  *       l'écrasante majorité des dialogues.</li>
+ *   <li>Issue #180 : une valeur peut prendre un <em>argument</em>, {@code %city_name:ville_nerana%}
+ *       — l'identifiant stable d'une ville plutôt que son nom écrit en dur dans le texte. Une valeur
+ *       à argument qui renvoie {@code null} (ville inconnue, par exemple) laisse le jeton visible,
+ *       comme une clé inconnue.</li>
  * </ul>
  */
 public final class DialogueTextPlaceholders {
 
-    private static final Pattern TOKEN = Pattern.compile("%([a-z0-9_]+)%");
+    private static final Pattern TOKEN = Pattern.compile("%([a-z0-9_]+)(?::([a-z0-9_.-]+))?%");
 
     private final Map<String, Function<DialoguePlaceholderContext, String>> values;
+    private final Map<String, BiFunction<DialoguePlaceholderContext, String, String>> valuesWithArgument;
 
     public DialogueTextPlaceholders(Map<String, Function<DialoguePlaceholderContext, String>> values) {
+        this(values, Map.of());
+    }
+
+    public DialogueTextPlaceholders(Map<String, Function<DialoguePlaceholderContext, String>> values,
+                                    Map<String, BiFunction<DialoguePlaceholderContext, String, String>> valuesWithArgument) {
         this.values = Map.copyOf(values);
+        this.valuesWithArgument = Map.copyOf(valuesWithArgument);
     }
 
     /** Aucune substitution : comportement historique, utilisé tant que rien n'est câblé. */
@@ -59,7 +71,7 @@ public final class DialogueTextPlaceholders {
 
     /** Idem, juste après une remise du choix en cours ({@link DialoguePlaceholderContext#justDelivered()}). */
     public DialogueNode apply(Player player, NamespacedKey dialogueId, DialogueNode node, DeliveryOutcome justDelivered) {
-        if (values.isEmpty()) {
+        if (values.isEmpty() && valuesWithArgument.isEmpty()) {
             return node;
         }
         DialoguePlaceholderContext context = new DialoguePlaceholderContext(player, dialogueId, justDelivered);
@@ -84,12 +96,20 @@ public final class DialogueTextPlaceholders {
         Matcher matcher = TOKEN.matcher(raw);
         StringBuilder out = new StringBuilder(raw.length());
         while (matcher.find()) {
-            Function<DialoguePlaceholderContext, String> value = values.get(matcher.group(1));
-            matcher.appendReplacement(out, value == null
-                    ? Matcher.quoteReplacement(matcher.group())
-                    : Matcher.quoteReplacement(value.apply(context)));
+            String resolved = resolve(context, matcher.group(1), matcher.group(2));
+            matcher.appendReplacement(out, Matcher.quoteReplacement(resolved == null ? matcher.group() : resolved));
         }
         matcher.appendTail(out);
         return out.toString();
+    }
+
+    /** Valeur du jeton, ou {@code null} s'il doit rester visible tel quel. */
+    private String resolve(DialoguePlaceholderContext context, String key, String argument) {
+        if (argument == null) {
+            Function<DialoguePlaceholderContext, String> value = values.get(key);
+            return value == null ? null : value.apply(context);
+        }
+        BiFunction<DialoguePlaceholderContext, String, String> value = valuesWithArgument.get(key);
+        return value == null ? null : value.apply(context, argument);
     }
 }

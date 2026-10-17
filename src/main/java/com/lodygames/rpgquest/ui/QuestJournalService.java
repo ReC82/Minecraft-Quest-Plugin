@@ -857,7 +857,8 @@ public final class QuestJournalService implements QuestJournalUi {
         List<ObjectiveProgressView> objectives = new ArrayList<>();
         for (QuestObjective objective : step.objectives()) {
             int total = QuestObjective.requiredAmount(objective);
-            objectives.add(new ObjectiveProgressView(QuestObjective.describe(objective), done ? total : 0, total));
+            objectives.add(new ObjectiveProgressView(
+                    QuestObjective.describe(objective, questProgressEngine.npcNameResolver()), done ? total : 0, total));
         }
         return new QuestStepProgressView(step.id(), objectives);
     }

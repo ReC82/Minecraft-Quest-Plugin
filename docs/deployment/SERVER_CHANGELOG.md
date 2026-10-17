@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Mobs : modèles complets, prompt IA, import vérifié et génération aléatoire (#214)
+
+### Changement
+
+Plugin + PlugAdmin. Nouvelles actions agent `mob.definition.import.check` / `.apply` ; `mob.catalogs`
+porte les modèles du moteur, `mob.list` le YAML canonique de chaque profil. Page PlugAdmin
+`/mobs/import` (modèles, prompt IA, import, différences, confirmation, brouillon aléatoire).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement de PlugAdmin. Aucune migration, aucun fichier de
+configuration. Nouveau dossier créé à la première confirmation de remplacement :
+`plugins/RPGQuest/mob-backups/`. Aucun profil créé ni modifié par le déploiement ; ne pas toucher
+`mobs/claude_diag_boss.yml` ni `mobs/community-bosses.yml`.
+
+### Sauvegarde préalable
+
+Celle de `scripts/deploy-verygames.sh` (JAR + `data.db`) ; release précédente du panel sous `/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-341 — PENDING MANUAL VALIDATION (le propriétaire crée lui-même le « Zombie d'entraînement »).
+
+### Rollback
+
+Remettre le JAR sauvegardé + la release précédente du panel. Un profil importé reste un fichier
+`mobs/<id>.yml` ordinaire ; une version remplacée se restaure depuis `mob-backups/`.
+
 ## 2026-10-17 - PlugAdmin : modifier un dialogue existant avec une IA, réimport avec diff (#465)
 
 ### Changement

@@ -1256,6 +1256,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (contour à proximité, 48 blocs) et `surface-only` (sol naturel à ciel ouvert) dans
   `mobs/community-bosses.yml`, éditables dans PlugAdmin. Annonce : « à l'est » corrigé, coordonnées
   arrondies si aucun waypoint à portée.
+- **Modèles, IA et import de profils de mob** (issue #214, PENDING MANUAL VALIDATION) — `/mobs/import` :
+  modèles SPECIAL / BOSS quête / BOSS communautaire issus du plugin (`SpecialMobSchema`, garde-fou de test
+  sur le parseur), prompt IA prêt à copier, import vérifié par le parseur réel (propriétés inconnues et
+  références inexistantes refusées), différences par propriété, remplacement confirmé avec empreinte et
+  sauvegarde `mob-backups/`, brouillon aléatoire borné. Aucune apparition, aucun appel IA.
 - **Participation et récompenses des boss communautaires** (issue #176, PENDING MANUAL VALIDATION) —
   coups effectifs (directs/projectiles, non annulés, dégâts > 0) mémorisés en PDC sur l'entité ;
   éligibilité figée à la mort (connecté, vivant, même monde, à au plus N blocs — distance 3D — de la

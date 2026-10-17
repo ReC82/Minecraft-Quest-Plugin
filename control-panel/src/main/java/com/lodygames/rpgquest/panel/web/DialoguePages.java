@@ -404,8 +404,14 @@ public final class DialoguePages {
         String title = title(e.slug(), d, users);
         boolean editable = rights.write() && e.readOnly().isEmpty();
         StringBuilder sb = new StringBuilder();
+        // Issue #465 : un dialogue enregistré en source peut être réécrit par une IA externe, puis
+        // réimporté avec relecture des changements.
+        String aiEdit = rights.write() && e.serverCopy() == null && !e.expectedSha().isEmpty()
+                ? "<a class=\"btn secondary\" href=\"/dialogues/ai/" + Http.esc(e.slug()) + "\">"
+                        + Icons.icon("docs") + "Modifier avec une IA…</a>"
+                : "";
         sb.append(Ui.pageHeader("dialogues", title, "",
-                "<a class=\"btn secondary\" href=\"/dialogues\">" + Icons.icon("back") + "Dialogues</a>"));
+                "<a class=\"btn secondary\" href=\"/dialogues\">" + Icons.icon("back") + "Dialogues</a>" + aiEdit));
 
         sb.append(who(csrf, ctx, rights, e.slug(), users));
         sb.append(liveBar(csrf, ctx, rights, e));

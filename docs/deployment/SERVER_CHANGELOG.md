@@ -48,6 +48,36 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - PlugAdmin : modifier un dialogue existant avec une IA, réimport avec diff (#465)
+
+### Changement
+
+PlugAdmin seulement. « Modifier avec une IA… » sur un dialogue en source : pack ciblé + prompt prêt
+à copier (aucun appel IA). Réimport par Import contenu : identifiant inchangé exigé, refus si la source a
+changé depuis l'export, quêtes et listes de quêtes vérifiées contre les relevés du serveur (aussi pour
+tout dialogue importé), diff de sens « Changements dans le dialogue ». Rien n'est publié automatiquement.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft (JAR inchangé). Redéploiement de PlugAdmin seulement. Aucune
+migration. Le dialogue réel `encounter_bandit` n'est ni modifié ni republié.
+
+### Sauvegarde préalable
+
+Version précédente du panel conservée par `scripts/plugadmin/deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Déploiement
+
+`scripts/plugadmin/deploy.sh --wait-ci` après CI verte. Détails réels dans le rapport de session #465.
+
+### Validation
+
+TC-340 — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Réinstaller la release précédente de `/opt/plugadmin/releases/` et redémarrer `plugadmin.service`.
+
 ## 2026-10-17 - Lily → Julius : villes citées dans les dialogues, PNJ nommés dans la bossbar (#180)
 
 ### Changement

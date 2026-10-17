@@ -367,6 +367,7 @@ public final class PanelApp {
         route("/dialogues/refresh", this::handleDialogueRefresh);
         route("/dialogues/link", this::handleDialogueLink);
         route("/dialogues/import", this::handleDialogueImport);
+        route("/dialogues/ai", this::handleDialogueAiExport);
         route("/content/export", this::handleContentExport);
         route("/content/export/download", this::handleContentExportDownload);
         // Issue #110 — contrat de contenu machine-readable. Trois téléchargements en lecture pure,
@@ -2419,7 +2420,8 @@ public final class PanelApp {
                 }
                 String rid = UUID.randomUUID().toString().substring(0, 8);
                 RefData ref = agentPages.referenceData(config.agents().defaultAgentId());
-                analysis = ContentPackImport.analyze(pack, contentWorkspace, ref, decisions);
+                Set<String> catalogs = surveyedCatalogs();
+                analysis = ContentPackImport.analyze(pack, contentWorkspace, ref, decisions, catalogs);
                 boolean confirm = "true".equals(form.get("confirm"));
                 audit.record(session.username(), confirm ? "content.import.confirm" : "content.import.analyze",
                         "bytes=" + pack.getBytes(StandardCharsets.UTF_8).length
@@ -2452,7 +2454,7 @@ public final class PanelApp {
                         // Après écriture, on réanalyse pour que la page montre l'état RÉEL de la
                         // source (les éléments écrits deviennent « inchangé »), au lieu de réafficher
                         // l'intention d'écrire.
-                        analysis = ContentPackImport.analyze(pack, contentWorkspace, ref, decisions);
+                        analysis = ContentPackImport.analyze(pack, contentWorkspace, ref, decisions, catalogs);
                     }
                 }
             }
@@ -5082,6 +5084,75 @@ public final class PanelApp {
                 + "plugin ou a été déposé à la main) : il s'affiche en lecture seule. Pour le modifier, copiez-le "
                 + "d'abord dans PlugAdmin (ci-dessus).", notice, "ok", Map.of(), false, false,
                 dialogueServerCopy(ctx.agentId(), slug));
+    }
+
+    /** Issue #465 — listes de quêtes relevées sur le serveur, ou {@code null} sans relevé. */
+    private Set<String> surveyedCatalogs() {
+        DialoguePages.Ctx ctx = agentPages.dialogueCtx(config.agents().defaultAgentId());
+        if (!ctx.catalogsSurveyed()) {
+            return null;
+        }
+        Set<String> out = new java.util.LinkedHashSet<>();
+        ctx.catalogs().forEach(c -> out.add(c.id()));
+        return out;
+    }
+
+    /**
+     * Issue #465 — « Modifier avec une IA » : le dialogue enregistré en source, exporté en pack
+     * ciblé (#108/#110) avec son contexte réel et un prompt prêt à copier. Lecture pure : aucune IA
+     * appelée, rien d'écrit ; le retour passe par {@code /content/import} (#109).
+     */
+    private void handleDialogueAiExport(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.DIALOGUE_READ)
+                || !permissions.can(session.effective(), Permission.CONTENT_EXPORT)) {
+            forbidden(exchange, session, "/dialogues");
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        String slug = path.startsWith("/dialogues/ai/") ? path.substring("/dialogues/ai/".length()) : "";
+        slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(slug.replace("/", ""));
+        Optional<ContentWorkspace.ContentFile> file = slug.isEmpty() ? Optional.empty()
+                : contentWorkspace.read("dialogues", slug);
+        if (file.isEmpty()) {
+            Http.redirect(exchange, "/dialogues?err=" + enc("Ce dialogue n'est pas dans PlugAdmin : "
+                    + "le copier d'abord depuis le serveur, depuis sa fiche."));
+            return;
+        }
+        DialoguePages.Ctx ctx = agentPages.dialogueCtx(config.agents().defaultAgentId());
+        List<com.lodygames.rpgquest.panel.content.DialogueAiExport.CatalogInfo> own = new ArrayList<>();
+        List<com.lodygames.rpgquest.panel.content.DialogueAiExport.CatalogInfo> others = new ArrayList<>();
+        List<String> modelCatalogs = ctx.modelCatalogs(slug);
+        for (DialoguePages.Catalog c : ctx.catalogs()) {
+            var info = new com.lodygames.rpgquest.panel.content.DialogueAiExport.CatalogInfo(c.id(),
+                    c.name().isBlank() ? c.id() : MiniText.plain(c.name()), c.enabled(), c.quests());
+            (modelCatalogs.contains(c.id()) ? own : others).add(info);
+        }
+        List<String> models = ctx.models(slug).stream()
+                .map(m -> m.name().isBlank() ? m.id() : MiniText.plain(m.name())).toList();
+        var result = com.lodygames.rpgquest.panel.content.DialogueAiExport.export(file.get(),
+                new com.lodygames.rpgquest.panel.content.DialogueAiExport.Context(own, others,
+                        q -> MiniText.plain(ctx.questTitle(q)), models));
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        boolean download = "pack".equals(Http.query(exchange).get("download"));
+        audit.record(session.username(), download ? "dialogues.ai.download" : "dialogues.ai.export",
+                "slug=" + slug + " sha=" + file.get().sha256().substring(0, 12)
+                        + " quests=" + result.quests().size(),
+                result.ok() ? "OK" : "REFUSED", result.ok() ? "pack ciblé" : result.problem(), rid);
+        if (download && result.ok()) {
+            Http.attachment(exchange, "lodyquests-dialogue-" + slug + "-ia.yaml", "application/yaml",
+                    result.pack().getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+        var parsed = com.lodygames.rpgquest.panel.content.DialogueYaml.read(file.get().text());
+        String title = DialoguePages.title(slug, parsed.draft() == null
+                ? com.lodygames.rpgquest.panel.content.DialogueDraft.blank() : parsed.draft(), ctx.users(slug));
+        dialoguePage(exchange, session, "Modifier avec une IA", DialogueAiPages.render(slug, title, result,
+                permissions.can(session.effective(), Permission.CONTENT_IMPORT)));
     }
 
     /** Issue #430 — où en est la copie possible d'un dialogue présent seulement sur DEV. */

@@ -538,6 +538,49 @@ class DialogueEditorTest {
         assertTrue(page.contains("Configurer le dialogue de ce PNJ"));
     }
 
+    /**
+     * Issue #465 — exporter un dialogue existant pour une IA, le réimporter modifié par l'import
+     * #109, relire les changements de sens, puis remplacer explicitement le brouillon. Copie jetable
+     * {@code zz465_sage} ; rien n'est publié.
+     */
+    @Test
+    void aDialogueExportedForAnAiComesBackThroughTheImportWithReadableChanges() throws Exception {
+        start();
+        Files.writeString(content.resolve("dialogues/zz465_sage.yml"), COMPLEX.replace("rpgquest:sage", "rpgquest:zz465_sage"));
+        record("quest.catalog.list", CATALOG_SURVEY.replace("brigand_test", "zz465_sage"));
+
+        assertTrue(get("/dialogues/edit/zz465_sage").body().contains("href=\"/dialogues/ai/zz465_sage\""),
+                "le geste est proposé sur la fiche");
+        String page = get("/dialogues/ai/zz465_sage").body();
+        assertTrue(page.contains("Prompt prêt à copier"));
+        assertTrue(page.contains("Quêtes des brigands"), "la liste du PNJ récurrent est dans le contexte");
+        assertTrue(page.contains("rpgquest:herbes — Herbes du marais"), "les quêtes citées, avec leur titre");
+        HttpResponse<String> dl = get("/dialogues/ai/zz465_sage?download=pack");
+        assertTrue(dl.headers().firstValue("Content-Disposition").orElse("").contains("lodyquests-dialogue-zz465_sage-ia.yaml"));
+        String pack = dl.body();
+        assertTrue(pack.contains("baseElement: dialogues/zz465_sage"), pack);
+
+        String modified = pack.replace("Il était une fois…", "Autrefois, dans ces bois…")
+                .replace("- type: HAS_PENDING_DELIVERY\n", "- type: OFFER_CATALOG_QUEST\n                  catalog: pirates\n");
+        String token = csrf(get("/content/import").body());
+        String refused = post("/content/import", Map.of("pack", modified, "_csrf", token), null).body();
+        assertTrue(refused.contains("inconnue du serveur"), "liste inventée refusée");
+
+        String ok = pack.replace("Il était une fois…", "Autrefois, dans ces bois…");
+        String analysed = post("/content/import", Map.of("pack", ok, "_csrf", token), null).body();
+        assertTrue(analysed.contains("Changements dans le dialogue"), "diff de sens");
+        assertTrue(analysed.contains("avant : Il était une fois…") && analysed.contains("après : Autrefois, dans ces bois…"));
+        assertTrue(analysed.contains("Remplacer l"), "remplacement explicite proposé");
+        assertTrue(Files.readString(content.resolve("dialogues/zz465_sage.yml")).contains("Il était une fois"),
+                "rien d'écrit avant la confirmation");
+
+        post("/content/import", Map.of("pack", ok, "_csrf", token, "decision.dialogues/zz465_sage", "REPLACE",
+                "confirm", "true"), null);
+        assertTrue(Files.readString(content.resolve("dialogues/zz465_sage.yml")).contains("Autrefois, dans ces bois"));
+        assertTrue(actions("content.publish").isEmpty() && actions("content.publish.batch").isEmpty(),
+                "le brouillon change, rien n'est mis en jeu");
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     private void start() throws Exception {

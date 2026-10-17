@@ -3831,6 +3831,22 @@ du catalogue s'il était déjà uniforme) ou `weighted` (Rare 5 / Normale 10 / S
 existants : aucun champ nouveau côté plugin, aucun poids modifié sans action de l'utilisateur. Référence :
 [ENCOUNTERS.md](ENCOUNTERS.md) § « Catalogues de quêtes secondaires ».
 
+**Modifier un dialogue existant avec une IA (issue #465).** Sur un dialogue enregistré dans la source,
+« Modifier avec une IA… » (`GET /dialogues/ai/<id>`, `DIALOGUE_READ` + `CONTENT_EXPORT`, audit
+`dialogues.ai.export` / `dialogues.ai.download`) produit un content pack #110 **ciblé** (`DialogueAiExport` :
+dialogue en forme canonique, `dependencies.quests` = quêtes citées + quêtes des listes de ses PNJ
+récurrents, `metadata.baseElement: dialogues/<id>` et `metadata.baseSha` = empreinte de la source à
+l'export) et un prompt prêt à copier (contexte réel : listes, titres de quêtes, conditions/actions de
+`Descriptors`, règles : même id, pas de START_QUEST sans « Commencer… », sémantique d'`OFFER_CATALOG_QUEST`).
+Aucune IA appelée, rien d'écrit. Le retour passe par l'import existant `/content/import` (#109) :
+`baseElement` absent du pack (id changé) = erreur d'enveloppe ; source modifiée depuis l'export
+(`baseSha` ≠ empreinte actuelle) = élément `INVALID` ; références vérifiées pour **tout** dialogue importé
+(`DialogueReferenceCheck` : quête inconnue ou liste `OFFER_CATALOG_QUEST` inconnue = erreur, PNJ/objet
+inconnu = avertissement, sans relevé = « non vérifié ») ; diff de sens `DialogueSemanticDiff`
+(« Changements dans le dialogue ») au-dessus du diff de lignes, notes `#` perdues signalées ; remplacement
+toujours explicite (« Remplacer l'existant »), sauvegarde avant écriture, publication séparée (#427/#371).
+Référence : `control-panel/src/main/resources/docs/dialogues.md` § « Modifier un dialogue avec une IA ».
+
 **Dialogues des PNJ récurrents dans PlugAdmin (issue #430).** (1) Un dialogue « Hors source »
 (présent seulement sur DEV) se copie dans la source depuis son éditeur : « Rendre ce dialogue
 modifiable » → lecture par `content.dev.read` (#47, `CONTENT_READ`) → « Copier dans PlugAdmin pour

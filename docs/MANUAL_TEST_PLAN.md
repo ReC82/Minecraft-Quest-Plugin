@@ -6652,3 +6652,20 @@ Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.
 2.  (Facultatif) Retirer **plains**, enregistrer, le remettre, enregistrer. **Attendu** : la liste suit,
     jamais d'erreur YAML ; les autres profils sont inchangés.
 
+### TC-340 — Modifier un dialogue existant avec une IA, réimport avec diff (issue #465, PENDING MANUAL VALIDATION)
+
+**Préparation** : sur PlugAdmin (DEV), dupliquer un dialogue en copie jetable `zz465_*` (jamais le vrai
+`encounter_bandit`), puis l'ouvrir dans Dialogues. « Actualiser » les dialogues et les catalogues.
+
+1.  **Modifier avec une IA…** **Attendu** : prompt avec le dialogue enregistré, quêtes citées (titres),
+    listes de quêtes du PNJ, conditions/effets ; « Télécharger le pack seul » donne un `.yaml`.
+2.  Coller le prompt dans une IA externe, demander « passer à une quête au hasard dans la liste … ».
+    Importer le YAML rendu dans Import contenu. **Attendu** : « Changements dans le dialogue » lisible
+    sur téléphone (avant/après), conditions retirées et effet `OFFER_CATALOG_QUEST` ajouté listés ;
+    collision « Remplacer l'existant / Garder l'existant » ; rien d'écrit avant confirmation.
+3.  Changer l'`id` dans le YAML puis réimporter. **Attendu** : refus « contenu parallèle ».
+4.  Modifier puis enregistrer le dialogue dans l'éditeur, puis réimporter l'ancien YAML. **Attendu** :
+    refus « a changé depuis l'export ».
+5.  Remplacer + confirmer. **Attendu** : le dialogue de PlugAdmin est remplacé, rien n'est en jeu ;
+    « Mettre en jeu » depuis le dialogue, puis le tester en jeu (0, 1 ou plusieurs quêtes dans la liste,
+    pas de double démarrage). Retirer ensuite la copie `zz465_*` (PlugAdmin et DEV).

@@ -9,7 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.dialogue.model.CloseAction;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
+import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
+import com.lodygames.rpgquest.player.StarterToolKitService;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -487,6 +492,44 @@ class BundledDialoguesValidityTest {
         assertTrue(kit.contains("%kit_upgrade_requirements%") && kit.contains("%delivery_carry%"),
                 "l'écran du kit dit ce qui reste et si le joueur en porte : " + kit);
         assertFalse(kit.contains("%delivery_hint%"), "la liste ne doit pas être répétée deux fois : " + kit);
+    }
+
+    /**
+     * Issue #475, 3e retour du 17/10 : « Demander mon kit de départ » quand le kit est déjà reçu
+     * ouvre une réponse d'Elias (retour ou fermeture) au lieu de fermer avec un message de chat.
+     * Les deux variantes du choix s'excluent sur la variable réellement écrite par le service.
+     */
+    @Test
+    void anAlreadyReceivedStarterKitIsExplainedInsideTheDialogue() {
+        DialogueDefinition guide = guide();
+        List<DialogueChoice> requests = guide.nodes().get("greeting").choices().stream()
+                .filter(c -> c.text().base().equals("Demander mon kit de départ"))
+                .toList();
+        assertEquals(2, requests.size(), "une variante « déjà reçu », une variante « remise »");
+
+        DialogueChoice already = requests.stream()
+                .filter(c -> c.actions().stream().noneMatch(a -> a instanceof GiveStarterKitAction))
+                .findFirst().orElseThrow();
+        DialogueChoice grant = requests.stream()
+                .filter(c -> c.actions().stream().anyMatch(a -> a instanceof GiveStarterKitAction))
+                .findFirst().orElseThrow();
+
+        VariableEqualsCondition consumed = new VariableEqualsCondition(
+                StarterToolKitService.AVAILABLE_KEY, StarterToolKitService.NOT_AVAILABLE);
+        assertEquals(List.of(consumed), already.conditions());
+        assertEquals(List.of(new NegatedCondition(consumed)), grant.conditions());
+        assertTrue(already.actions().isEmpty(), "la variante « déjà reçu » ne donne ni ne ferme rien");
+
+        DialogueNode answer = guide.nodes().get(already.next());
+        assertNotNull(answer, "nœud de réponse attendu : " + already.next());
+        assertTrue(answer.text().base().contains("déjà reçu ton kit de départ"));
+        assertTrue(answer.choices().stream().anyMatch(c -> "greeting".equals(c.next())),
+                "retour aux autres questions");
+        assertTrue(answer.choices().stream().anyMatch(c -> c.actions().stream().anyMatch(a -> a instanceof CloseAction)),
+                "fermeture possible");
+        assertTrue(answer.choices().stream().allMatch(c -> c.actions().stream()
+                        .noneMatch(a -> a instanceof GiveStarterKitAction)),
+                "la réponse ne redonne jamais le kit");
     }
 
     /** Le Guide renommé (« Elias ») : locuteur et présentation viennent de l'id, jamais « Guide » en dur. */

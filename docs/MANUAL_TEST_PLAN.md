@@ -6766,6 +6766,21 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-351 — Kit de départ déjà reçu expliqué dans la fenêtre d'Elias (issue #475, 3e retour du 17/10, PENDING MANUAL VALIDATION)
+
+Prérequis : `dialogues/guide.yml` du correctif #475 « kit déjà reçu » republié sur **DEV** (voir le
+rapport de session). Compte **LoDyMcFly tel quel**, kit de départ déjà reçu depuis la dernière mort.
+**Aucun reset.** Acquis de TC-348/TC-349 à ne pas refaire.
+
+1.  Parler à Elias → « Demander mon kit de départ ». **Attendu** : la fenêtre **reste ouverte** et
+    Elias répond « Tu as déjà reçu ton kit de départ. Il te sera redonné après ta prochaine mort. »,
+    avec « ← Autres questions » (retour à l'accueil) et « Fermer ». Aucun outil reçu.
+2.  « ← Autres questions » → accueil d'Elias inchangé (court, sans remise).
+3.  Mourir, réapparaître, reparler à Elias → « Demander mon kit de départ ». **Attendu** : un seul kit
+    reçu (4 outils), fenêtre fermée, message de remise dans le chat comme avant.
+4.  Redemander aussitôt (même après déconnexion/reconnexion). **Attendu** : à nouveau la réponse de
+    l'étape 1, jamais un second kit.
+
 ### TC-350 — Quêtes quotidiennes et hebdomadaires dans le journal (issue #15, lot 1, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR #15 lot 1 sur **DEV** (schéma V42 appliqué au démarrage), section

@@ -57,11 +57,12 @@ import org.bukkit.inventory.PlayerInventory;
  */
 public final class StarterToolKitService implements Listener {
 
-    static final String AVAILABLE_KEY = "STARTER_TOOL_KIT_AVAILABLE";
+    /** Lu aussi par le dialogue du Guide (guide.yml, issue #475) pour présenter « déjà reçu » dans la fenêtre. */
+    public static final String AVAILABLE_KEY = "STARTER_TOOL_KIT_AVAILABLE";
     /** Meilleur palier débloqué (issue #218). Absent = palier 1, acquis automatiquement. */
     public static final String TIER_KEY = "STARTER_KIT_TIER";
     /** Visible dans le paquet : {@link PlayerResetService} l'affiche dans l'aperçu de reset (#235). */
-    static final String NOT_AVAILABLE = "false";
+    public static final String NOT_AVAILABLE = "false";
     private static final String AVAILABLE_AGAIN = "true";
 
     private static final MiniMessage MM = MiniMessage.miniMessage();

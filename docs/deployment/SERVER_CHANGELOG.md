@@ -48,6 +48,33 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Kit de départ déjà reçu expliqué dans le dialogue d'Elias (#475, 3e retour du 17/10)
+
+### Changement
+
+Contenu `dialogues/guide.yml` (existant sur DEV) : « Demander mon kit de départ » quand le kit est déjà
+reçu ouvre le nouveau nœud `starter_kit_already` (explication + « ← Autres questions » / « Fermer »)
+au lieu de fermer avec un message de chat. Conditions déjà supportées par le JAR en place
+(`VARIABLE_EQUALS` + `negate`). Côté JAR : deux constantes rendues publiques, aucun changement de
+comportement, aucune migration, aucune donnée joueur touchée.
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y --also src/main/resources/dialogues/guide.yml:RPGQuest/dialogues/guide.yml` (sauvegarde datée du JAR, de `data.db` et
+du fichier remplacé), puis redémarrage.
+
+### Validation
+
+`dialogue.list` : `rpgquest:guide` chargé avec le nœud `starter_kit_already`, `loadIssues` vide.
+En jeu : TC-351 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre `dialogues/guide.yml` depuis la sauvegarde `extra-<horodatage>` (et le JAR `*-predeploy.jar`
+si besoin), puis redémarrer.
+
+---
+
 ## 2026-10-17 - Quêtes quotidiennes et hebdomadaires, lot 1 plugin (#15)
 
 ### Changement
@@ -90,7 +117,7 @@ Contenu republié : `dialogues/guide.yml` (existant sur DEV) — accueil sans ma
 
 ### Action serveur
 
-`scripts/deploy-verygames.sh -y --also dialogues/guide.yml` (sauvegarde datée du fichier distant et du
+`scripts/deploy-verygames.sh -y --also src/main/resources/dialogues/guide.yml:RPGQuest/dialogues/guide.yml` (sauvegarde datée du fichier distant et du
 JAR), puis redémarrage. Aucune migration, aucun `config.yml`, aucune donnée joueur touchée.
 
 ### Validation

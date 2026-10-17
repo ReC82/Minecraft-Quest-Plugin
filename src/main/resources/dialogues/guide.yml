@@ -28,8 +28,10 @@
 # Règle (issue #26, partie A — kit d'outils en bois) :
 # - « Demander mon kit de départ » appelle GIVE_STARTER_KIT (voir player.StarterToolKitService) :
 #   aucune remise automatique, le droit se renouvelle à chaque mort du joueur, remise tout ou rien
-#   (voir config.yml → starter-tool-kit). Le service gère lui-même tous les messages (déjà reçu,
-#   pas assez de place, réussite) — ce choix est toujours proposé, sans condition de dialogue.
+#   (voir config.yml → starter-tool-kit). Le service gère lui-même la remise et ses messages (pas
+#   assez de place, réussite, et « déjà reçu » en dernier rempart). Depuis #475, si le droit est
+#   déjà consommé (STARTER_TOOL_KIT_AVAILABLE = "false"), le même libellé ouvre une réponse
+#   d'Elias (« starter_kit_already ») au lieu de fermer la fenêtre.
 id: rpgquest:guide
 start: greeting
 
@@ -67,7 +69,23 @@ nodes:
             command: "customitem give %player% rpgquest:rune_rappel 1"
           - type: CLOSE
 
+      # Issue #475 (3e retour du 17/10) : kit DÉJÀ reçu depuis la dernière mort → l'explication
+      # est une réponse d'Elias (nœud « starter_kit_already »), plus un message de chat après
+      # fermeture. Les deux choix portent le même libellé et s'excluent : un seul est visible.
+      # L'interdiction de recevoir deux fois le kit reste dans StarterToolKitService (relecture du
+      # droit, anti double-clic) : ces conditions ne choisissent que la présentation.
       - text: "Demander mon kit de départ"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: STARTER_TOOL_KIT_AVAILABLE
+            value: "false"
+        next: starter_kit_already
+      - text: "Demander mon kit de départ"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: STARTER_TOOL_KIT_AVAILABLE
+            value: "false"
+            negate: true
         actions:
           - type: GIVE_STARTER_KIT
           - type: CLOSE
@@ -75,6 +93,18 @@ nodes:
       # Issue #475 (retour du 17/10) : accueil LÉGER — ni matériaux, ni compteurs, ni remise ici.
       # Tout cela vit dans « Comment améliorer mon kit ? » (nœud « kit_progress »).
       - text: "D'accord !"
+        actions:
+          - type: CLOSE
+
+  # Issue #475 (3e retour du 17/10) — kit de départ déjà reçu : explication dans la fenêtre, avec
+  # retour aux autres questions ou fermeture. Rien n'est donné ni écrit ici.
+  starter_kit_already:
+    speaker: "%npc_name%"
+    text: "<gray>Tu as déjà reçu ton kit de départ. Il te sera redonné après ta prochaine mort.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: greeting
+      - text: "Fermer"
         actions:
           - type: CLOSE
 

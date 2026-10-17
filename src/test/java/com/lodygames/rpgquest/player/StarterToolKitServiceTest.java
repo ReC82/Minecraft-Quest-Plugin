@@ -299,6 +299,25 @@ class StarterToolKitServiceTest {
         assertAnyMessageContains(player, "kit de départ");
     }
 
+    /**
+     * Issue #475 : la reconnexion (ou un redémarrage) repart d'un service sans état mémoire — seul
+     * le droit persisté décide, donc le kit n'est jamais redonné sans mort.
+     */
+    @Test
+    void aFreshServiceAfterReconnectionStillRefusesASecondKit() throws Exception {
+        PlayerMock player = addPlayer();
+        service.requestKit(player);
+        awaitAvailableValue(player.getUniqueId(), "false");
+
+        StarterToolKitService afterReconnect = new StarterToolKitService(plugin, variableRepository, config::get);
+        afterReconnect.requestKit(player);
+        settle();
+
+        assertAnyMessageContains(player, "déjà reçu");
+        assertHasExactlyOneKit(player);
+        assertEquals("false", availableValue(player.getUniqueId()));
+    }
+
     @Test
     void rapidDoubleClickNeverGrantsTwice() throws Exception {
         PlayerMock player = addPlayer();

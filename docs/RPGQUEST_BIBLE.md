@@ -3215,9 +3215,17 @@ explicite reste possible pour un dialogue partagé, ou ouvert par
 ### Kit d'outils en bois (issue #26, partie A)
 
 `dialogues/guide.yml` propose « Demander mon kit de départ » (action
-`GIVE_STARTER_KIT`, sans condition de dialogue — toujours affiché). Géré
-entièrement par `player.StarterToolKitService`, jamais le moteur de
-dialogue lui-même :
+`GIVE_STARTER_KIT`, toujours affiché). Géré entièrement par
+`player.StarterToolKitService`, jamais le moteur de dialogue lui-même.
+Depuis #475 (3e retour du 17/10), le libellé existe en deux variantes
+exclusives selon `STARTER_TOOL_KIT_AVAILABLE` : si le droit est déjà
+consommé (`"false"`), le choix ouvre le nœud `starter_kit_already` — « Tu
+as déjà reçu ton kit de départ. Il te sera redonné après ta prochaine
+mort. » **dans la fenêtre d'Elias**, avec « ← Autres questions » et
+« Fermer » — au lieu de fermer avec un message de chat ; sinon il appelle
+`GIVE_STARTER_KIT`. Ces conditions ne choisissent que la présentation : le
+service relit toujours le droit persisté et garde son refus (message de
+chat en dernier rempart, ex. bouton resté affiché) :
 
 - **Aucune remise automatique** : ni clic simple sur un PNJ, ni connexion,
   ni réapparition — seule cette demande explicite déclenche quoi que ce

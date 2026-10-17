@@ -71,6 +71,11 @@ Celles des scripts (JAR précédent daté, `data.db`).
 
 `/hud` en jeu (TC-346, PENDING MANUAL VALIDATION) ; `config.yml` du serveur contient la section `hud:`.
 
+**Effectué le 2026-10-17** depuis `ca1de6b` : JAR 3 520 199 o, SHA-256 `880aac0d…4eab1` vérifié par retéléchargement ;
+sauvegarde `rpgquest-20261017T102130Z-predeploy.jar` (JAR #18, `1f63f1d6…`) ; DEV redémarré, RCON `hud` → « doit être
+exécutée par un joueur » (commande enregistrée), `config.yml` distant complété : `hud.default-mode: 'off'`,
+`wallet-feedback: true`. PlugAdmin inchangé.
+
 ### Rollback
 
 Remettre le JAR précédent. La section `hud:` du `config.yml` est ignorée par l'ancien JAR ; la clé PDC

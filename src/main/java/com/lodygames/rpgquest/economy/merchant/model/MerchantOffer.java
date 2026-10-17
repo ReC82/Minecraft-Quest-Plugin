@@ -12,6 +12,11 @@ import org.bukkit.NamespacedKey;
  * construction, même discipline que {@code CustomItemDefinition}/{@code
  * QuestDefinition} : les invariants sont vérifiés ici, pas seulement par le
  * parseur.
+ *
+ * <p>Issue #336 : une offre <em>liée</em> ({@code priceRef} non nul) ne porte ni
+ * sens, ni objet, ni quantité, ni prix — tout vient du prix {@code priceRef} du
+ * catalogue {@code prices.yml}, résolu à l'affichage et au clic. Seules les
+ * conditions d'accès restent propres à l'offre.</p>
  */
 public record MerchantOffer(
         TradeDirection direction,
@@ -23,11 +28,37 @@ public record MerchantOffer(
         String requiredPermission,
         NamespacedKey requiredQuestId,
         QuestState requiredQuestState,
-        Integer requiredLevel
+        Integer requiredLevel,
+        String priceRef
 ) {
 
+    /** Offre au prix fixé dans le fichier du marchand (forme historique). */
+    public MerchantOffer(TradeDirection direction, OfferItemKind itemKind, Material vanillaMaterial,
+                         NamespacedKey customItemId, int quantity, long price, String requiredPermission,
+                         NamespacedKey requiredQuestId, QuestState requiredQuestState, Integer requiredLevel) {
+        this(direction, itemKind, vanillaMaterial, customItemId, quantity, price, requiredPermission,
+                requiredQuestId, requiredQuestState, requiredLevel, null);
+    }
+
+    /** Offre liée au prix {@code priceRef} du catalogue (issue #336). */
+    public static MerchantOffer linked(String priceRef, String requiredPermission, NamespacedKey requiredQuestId,
+                                       QuestState requiredQuestState, Integer requiredLevel) {
+        return new MerchantOffer(null, null, null, null, 0, 0, requiredPermission, requiredQuestId,
+                requiredQuestState, requiredLevel, priceRef);
+    }
+
     public MerchantOffer {
-        if (quantity < 1) {
+        if (priceRef != null) {
+            if (priceRef.isBlank()) {
+                throw new IllegalArgumentException("« price-ref » ne peut pas être vide si présent.");
+            }
+            if (direction != null || itemKind != null || quantity != 0 || price != 0) {
+                throw new IllegalArgumentException("Une offre « price-ref » ne porte ni sens, ni objet, ni quantité, "
+                        + "ni prix : tout vient du catalogue des prix.");
+            }
+        } else if (direction == null || itemKind == null) {
+            throw new IllegalArgumentException("Offre sans sens ou sans objet.");
+        } else if (quantity < 1) {
             throw new IllegalArgumentException("« quantity » doit être strictement positif : " + quantity);
         }
         if (price < 0) {
@@ -49,5 +80,10 @@ public record MerchantOffer(
         if (requiredQuestId != null && requiredQuestState == null) {
             requiredQuestState = QuestState.COMPLETED;
         }
+    }
+
+    /** Vrai si l'offre prend son prix dans le catalogue {@code prices.yml}. */
+    public boolean linked() {
+        return priceRef != null;
     }
 }

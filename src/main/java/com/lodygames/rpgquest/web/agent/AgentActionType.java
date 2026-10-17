@@ -525,6 +525,21 @@ public enum AgentActionType {
     REWARD_DEFINITION_DUPLICATE("reward.definition.duplicate"),
     /** Issue #474 — active ou désactive une récompense (son contenu ne change pas). */
     REWARD_DEFINITION_TOGGLE("reward.definition.toggle"),
+    /**
+     * Issue #336 — état de {@code prices.yml} (catalogue central des prix) : fichier présent /
+     * valide, erreurs, avertissements, prix et marchands qui les citent. Lecture seule.
+     */
+    PRICE_CATALOG_STATUS("price.catalog.status"),
+    /**
+     * Issue #336 — crée ou remplace un prix (vente, rachat ou fabrication) : validé par le vrai
+     * chargeur (boucles d'enrichissement comprises) avant écriture, écriture atomique, ancienne
+     * version remise si le rechargement échoue. Le premier enregistrement crée le fichier.
+     */
+    PRICE_SAVE("price.save"),
+    /** Issue #336 — copie un prix sous une nouvelle clé, désactivé. */
+    PRICE_DUPLICATE("price.duplicate"),
+    /** Issue #336 — active ou désactive un prix (son contenu ne change pas). */
+    PRICE_TOGGLE("price.toggle"),
     /** Issue #13 — réactive une occurrence et la matérialise si sa zone est chargée. Cette occurrence seule. */
     ENCOUNTER_RETRY("encounter.retry"),
     /** Issue #13 — désactive une occurrence : son PNJ est retiré, l'instance ne génère plus rien. */

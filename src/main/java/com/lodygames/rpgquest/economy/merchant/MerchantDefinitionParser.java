@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition;
 import com.lodygames.rpgquest.economy.merchant.model.MerchantOffer;
 import com.lodygames.rpgquest.economy.merchant.model.OfferItemKind;
 import com.lodygames.rpgquest.economy.merchant.model.TradeDirection;
+import com.lodygames.rpgquest.economy.price.PriceCatalogLoader;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,6 +83,9 @@ final class MerchantDefinitionParser {
     }
 
     private MerchantOffer parseOffer(ConfigurationSection section, String context, List<String> errors) {
+        if (section.isSet("price-ref")) {
+            return parseLinkedOffer(section, context, errors);
+        }
         TradeDirection direction = parseDirection(section, context, errors);
         boolean hasMaterial = section.isSet("material");
         boolean hasCustomItem = section.isSet("custom-item");
@@ -118,6 +122,39 @@ final class MerchantDefinitionParser {
         try {
             return new MerchantOffer(direction, itemKind, material, customItemId, quantity, price,
                     requiredPermission, requiredQuestId, requiredQuestState, requiredLevel);
+        } catch (IllegalArgumentException e) {
+            errors.add(context + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Issue #336 : {@code price-ref: <clé>} — sens, objet, quantité et prix viennent du catalogue
+     * {@code prices.yml}, résolus à l'affichage. Les mélanger avec des champs locaux est refusé : il
+     * n'y a jamais deux sources pour un même prix.
+     */
+    private MerchantOffer parseLinkedOffer(ConfigurationSection section, String context, List<String> errors) {
+        String ref = section.getString("price-ref", "").trim();
+        boolean ok = true;
+        if (!PriceCatalogLoader.KEY.matcher(ref).matches()) {
+            errors.add(context + ": « price-ref » invalide : \"" + ref + "\" (clé d'un prix du catalogue, ex. pain_x4).");
+            ok = false;
+        }
+        for (String local : List.of("direction", "material", "custom-item", "quantity", "price")) {
+            if (section.isSet(local)) {
+                errors.add(context + ": « " + local + " » interdit avec « price-ref » — tout vient du catalogue des prix.");
+                ok = false;
+            }
+        }
+        String requiredPermission = parseOptionalPermission(section, context, errors);
+        NamespacedKey requiredQuestId = parseOptionalQuestRef(section, context, errors);
+        QuestState requiredQuestState = parseOptionalQuestState(section, requiredQuestId, context, errors);
+        Integer requiredLevel = parseOptionalNonNegativeInt(section, "required-level", context, errors);
+        if (!ok) {
+            return null;
+        }
+        try {
+            return MerchantOffer.linked(ref, requiredPermission, requiredQuestId, requiredQuestState, requiredLevel);
         } catch (IllegalArgumentException e) {
             errors.add(context + ": " + e.getMessage());
             return null;

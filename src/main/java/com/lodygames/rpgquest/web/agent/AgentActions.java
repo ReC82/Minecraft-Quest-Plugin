@@ -1410,6 +1410,72 @@ public interface AgentActions {
                 "Catalogue des récompenses indisponible sur ce serveur."));
     }
 
+    // ---- Catalogue des prix et coûts (issue #336) -----------------------------------------------
+
+    /** Un objet et sa quantité : matériau ({@code BREAD}) ou objet RPGQuest ({@code rpgquest:…}). */
+    record PriceItemView(String itemId, int amount) {
+    }
+
+    /**
+     * Un prix du catalogue.
+     *
+     * @param type   {@code SELL_TO_PLAYER}, {@code BUY_FROM_PLAYER} ou {@code CRAFT}
+     * @param usages marchands dont une offre cite ce prix
+     */
+    record PriceEntryView(String key, String label, String type, PriceItemView item, long coins,
+                          List<PriceItemView> ingredients, boolean demo, boolean enabled, String version,
+                          String summary, List<String> usages) {
+    }
+
+    /**
+     * Un marchand chargé : nombre d'offres à prix fixé dans son fichier, offres liées au catalogue, et
+     * clés citées sans prix actif (offres affichées « indisponible »).
+     */
+    record MerchantPriceView(String id, String title, int inlineOffers, List<String> priceRefs,
+                             List<String> unavailableRefs) {
+    }
+
+    /**
+     * État de {@code prices.yml} -- action {@code price.catalog.status}.
+     *
+     * @param fileExists faux = aucun prix défini (le premier enregistrement crée le fichier)
+     * @param valid      le serveur accepte le fichier ; {@code errors} dit pourquoi sinon (aucun prix appliqué)
+     */
+    record PriceCatalogView(boolean available, boolean fileExists, boolean valid, List<String> errors,
+                            List<String> warnings, List<PriceEntryView> prices, List<MerchantPriceView> merchants,
+                            List<String> customItems, String currency) {
+    }
+
+    default CompletableFuture<PriceCatalogView> priceCatalogStatus() {
+        return CompletableFuture.completedFuture(new PriceCatalogView(false, false, false, List.of(), List.of(),
+                List.of(), List.of(), List.of(), ""));
+    }
+
+    /**
+     * Crée ({@code create}) ou remplace un prix -- action {@code price.save}. Codes : {@code CREATED},
+     * {@code UPDATED}, {@code UNCHANGED}, {@code EXISTS}, {@code NOT_FOUND}, {@code STALE},
+     * {@code INVALID} (dont objet RPGQuest inconnu, boucle d'enrichissement), {@code CURRENT_INVALID},
+     * {@code ROLLED_BACK}, {@code ERROR}, {@code UNAVAILABLE}.
+     */
+    default CompletableFuture<MutationResult> priceSave(String key, String label, String type, PriceItemView item,
+                                                        long coins, List<PriceItemView> ingredients, boolean demo,
+                                                        boolean enabled, String expectedVersion, boolean create) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des prix indisponible sur ce serveur."));
+    }
+
+    /** Copie désactivée -- action {@code price.duplicate}. {@code newLabel} facultatif. */
+    default CompletableFuture<MutationResult> priceDuplicate(String sourceKey, String newKey, String newLabel) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des prix indisponible sur ce serveur."));
+    }
+
+    /** Active ou désactive un prix -- action {@code price.toggle}. */
+    default CompletableFuture<MutationResult> priceToggle(String key, boolean enabled) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Catalogue des prix indisponible sur ce serveur."));
+    }
+
     /** {@code operation} : {@code retry}, {@code disable} ou {@code remove}, sur la seule occurrence nommée. */
     default CompletableFuture<MutationResult> encounterSiteAction(String operation, String siteId) {
         return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",

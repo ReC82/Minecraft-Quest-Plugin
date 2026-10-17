@@ -1318,7 +1318,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `merchants/artisan_demo.yml` sans prix (PENDING MANUAL VALIDATION TC-345). Pas encore : lien avec
   `recipes/*.yml`, conditions monde / ville / métier, stocks.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
-- **Progression** — compétences, XP, niveaux, courbe configurable.
+- **Progression** — compétences, XP, niveaux, courbe configurable. Depuis #183, plus aucune
+  progression de niveaux Minecraft (`progression.vanilla-xp-progression: false` par défaut, ancienne clé
+  `keep-vanilla-xp` retirée au démarrage) : plus d'orbes ni de gain d'XP vanilla, récompense de quête `EXPERIENCE`
+  = XP RPG `GLOBAL` dédupliquée par complétion, anciens niveaux ni convertis ni effacés,
+  enchantement/enclume inchangés (coût en niveaux vanilla). PENDING MANUAL VALIDATION (TC-347).
 - **Boutique web** — catalogue, commandes, livraisons idempotentes (voir `web-api/`).
 - **Compatibilité mod client** — détection de handshake, politique configurable pour les clients
   vanilla.

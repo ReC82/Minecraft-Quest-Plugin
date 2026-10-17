@@ -66,6 +66,9 @@ permis) ni allumer un feu ; la propagation et la combustion du feu sont toujours
 
 Démarrage sans erreur. TC-355 (PENDING MANUAL VALIDATION).
 
+**Effectué le 2026-10-17 (DEV)** : merge `a95cf2f` (PR #524), JAR SHA-256 `b6d97b7b…` vérifié par
+retéléchargement, sauvegarde `rpgquest-20261017T191542Z-predeploy.jar` (= #106), DEV redémarré (0 joueur) et ONLINE.
+
 ### Rollback
 
 Remettre le JAR `*-predeploy.jar` et redémarrer : seules les nouvelles protections disparaissent.

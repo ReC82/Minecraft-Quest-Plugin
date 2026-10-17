@@ -127,6 +127,12 @@ public final class QuestJournalService implements QuestJournalUi {
 
     private final Map<UUID, JournalSession> openSessions = new ConcurrentHashMap<>();
     private final Map<UUID, NamespacedKey> trackedByPlayer = new ConcurrentHashMap<>();
+    /**
+     * Jeton du dernier rendu demandé par joueur. Les rendus sont asynchrones (lectures en base) :
+     * sans ce jeton, un rafraîchissement lancé avant un clic d'onglet pouvait se terminer après lui
+     * et ramener le joueur sur l'ancien onglet (issue #15, quêtes démarrées pendant l'ouverture).
+     */
+    private final Map<UUID, Long> renderTickets = new ConcurrentHashMap<>();
 
     /**
      * Issue #475 — étiquette de contexte lisible d'une quête (« Amélioration du kit — palier 2 »),
@@ -285,6 +291,7 @@ public final class QuestJournalService implements QuestJournalUi {
     void handleQuit(Player player) {
         UUID playerId = player.getUniqueId();
         openSessions.remove(playerId);
+        renderTickets.remove(playerId);
         trackedByPlayer.remove(playerId);
         trackedDisplay.clear(player);
     }
@@ -357,8 +364,18 @@ public final class QuestJournalService implements QuestJournalUi {
 
     // ---- Vue liste ----------------------------------------------------------
 
+    private long nextRenderTicket(UUID playerId) {
+        return renderTickets.merge(playerId, 1L, Long::sum);
+    }
+
+    /** {@code false} si un rendu plus récent a été demandé depuis {@code ticket} : celui-ci est périmé. */
+    private boolean isLatestRender(UUID playerId, long ticket) {
+        return renderTickets.getOrDefault(playerId, 0L) == ticket;
+    }
+
     void showList(Player player, JournalTab requestedTab, int requestedPage) {
         UUID playerId = player.getUniqueId();
+        long ticket = nextRenderTicket(playerId);
         JournalTab shownTab = requestedTab.period() != null && !periodicEnabled()
                 ? JournalTab.IN_PROGRESS : requestedTab;
         CompletableFuture<Map<NamespacedKey, QuestState>> statesFuture = questProgressEngine.allStates(playerId);
@@ -368,6 +385,9 @@ public final class QuestJournalService implements QuestJournalUi {
                 ? CompletableFuture.completedFuture(Optional.empty())
                 : periodicQuests.view(playerId, shownTab.period()).thenApply(Optional::of);
         CompletableFuture.allOf(statesFuture, cooldownsFuture, balanceFuture, periodFuture).thenRun(() -> runOnMainThread(() -> {
+            if (!isLatestRender(playerId, ticket)) {
+                return;
+            }
             JournalTab tab = shownTab;
             Map<NamespacedKey, QuestState> states = statesFuture.join();
             Map<NamespacedKey, Duration> cooldowns = cooldownsFuture.join();
@@ -590,10 +610,14 @@ public final class QuestJournalService implements QuestJournalUi {
             return;
         }
 
+        long ticket = nextRenderTicket(playerId);
         CompletableFuture<Map<NamespacedKey, QuestState>> statesFuture = questProgressEngine.allStates(playerId);
         CompletableFuture<Map<NamespacedKey, Duration>> cooldownsFuture = readCooldowns(playerId);
         CompletableFuture<Optional<Long>> balanceFuture = readBalance(playerId);
         CompletableFuture.allOf(statesFuture, cooldownsFuture, balanceFuture).thenRun(() -> runOnMainThread(() -> {
+            if (!isLatestRender(playerId, ticket)) {
+                return;
+            }
             Map<NamespacedKey, QuestState> states = statesFuture.join();
             Optional<Long> balance = balanceFuture.join();
             QuestDefinition quest = questOpt.get();

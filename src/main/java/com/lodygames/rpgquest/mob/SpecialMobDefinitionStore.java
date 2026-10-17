@@ -36,7 +36,7 @@ public final class SpecialMobDefinitionStore {
     }
 
     /**
-     * @param code {@code CREATED} / {@code UPDATED} / {@code EXISTS} / {@code NOT_FOUND} / {@code INVALID}
+     * @param code {@code CREATED} / {@code UPDATED} / {@code REPLACED} / {@code CONFLICT} / {@code EXISTS} / {@code NOT_FOUND} / {@code INVALID}
      *             (refusé avant écriture) / {@code ROLLED_BACK} (écrit, non rechargé, ancienne version remise)
      *             / {@code ERROR}
      */
@@ -75,6 +75,96 @@ public final class SpecialMobDefinitionStore {
 
     public SpecialMobLoadReport list() {
         return loader.loadDirectory(directory);
+    }
+
+    /** Nom du fichier qui porte ce profil, {@code null} s'il n'existe pas (issue #214). */
+    public String fileName(NamespacedKey id) {
+        Path file = id == null ? null : existingFileFor(id);
+        return file == null ? null : file.getFileName().toString();
+    }
+
+    /** Empreinte SHA-256 (hex) du fichier actuel de ce profil, {@code null} s'il n'existe pas (issue #214). */
+    public String fileSha(NamespacedKey id) {
+        Path file = id == null ? null : existingFileFor(id);
+        if (file == null) {
+            return null;
+        }
+        try {
+            return sha256(Files.readAllBytes(file));
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Issue #214 — écrit un profil importé, et lui seul.
+     *
+     * <ul>
+     *   <li>nouveau profil : {@code expectedSha} doit être vide — un profil du même identifiant apparu
+     *       depuis la vérification est un {@code CONFLICT}, jamais un écrasement ;</li>
+     *   <li>profil existant : exige {@code replace} ({@code EXISTS} sinon) et que le fichier soit encore
+     *       celui vérifié ({@code expectedSha}, {@code CONFLICT} sinon). L'ancien fichier est copié dans
+     *       {@code backupDirectory} avant l'écriture ;</li>
+     *   <li>l'écriture elle-même est celle de #461 : relecture par le parseur avant, écriture atomique,
+     *       {@code ROLLED_BACK} si le dossier ne recharge pas le profil.</li>
+     * </ul>
+     *
+     * @param backupDirectory dossier des sauvegardes, hors de {@code mobs/} (le chargeur ne doit jamais les lire)
+     */
+    public synchronized Result importDefinition(SpecialMobDefinition definition, boolean replace, String expectedSha,
+                                                Path backupDirectory) {
+        Path existing = existingFileFor(definition.id());
+        String expected = expectedSha == null ? "" : expectedSha.trim();
+        if (existing == null) {
+            if (!expected.isEmpty()) {
+                return Result.fail("CONFLICT", "Le profil « " + definition.id() + " » a disparu depuis la "
+                        + "vérification : rien n'a été écrit. Vérifier à nouveau le fichier.");
+            }
+            return writeAndReload(fileFor(definition.id()), definition, "CREATED",
+                    "Profil « " + definition.id() + " » importé (nouveau).");
+        }
+        if (!replace) {
+            return Result.fail("EXISTS", "Un profil « " + definition.id() + " » existe déjà : cocher « Remplacer "
+                    + "le profil existant » après avoir relu les différences. Rien n'a été écrit.");
+        }
+        String current;
+        byte[] previous;
+        try {
+            previous = Files.readAllBytes(existing);
+            current = sha256(previous);
+        } catch (IOException e) {
+            return Result.fail("ERROR", "Lecture du profil actuel impossible : " + e.getMessage());
+        }
+        if (!current.equals(expected)) {
+            return Result.fail("CONFLICT", "Le profil « " + definition.id() + " » a été modifié depuis la "
+                    + "vérification : rien n'a été écrit. Vérifier à nouveau pour voir les nouvelles différences.");
+        }
+        String backup;
+        try {
+            String stamp = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
+                    .withZone(java.time.ZoneOffset.UTC).format(java.time.Instant.now());
+            Path dir = backupDirectory.resolve(stamp);
+            Files.createDirectories(dir);
+            Path copy = dir.resolve(existing.getFileName().toString());
+            Files.write(copy, previous);
+            backup = backupDirectory.getFileName() + "/" + stamp + "/" + existing.getFileName();
+        } catch (IOException | UncheckedIOException e) {
+            return Result.fail("ERROR", "Sauvegarde de l'ancien profil impossible (" + e.getMessage()
+                    + ") : rien n'a été écrit.");
+        }
+        Result r = writeAndReload(existing, definition, "REPLACED",
+                "Profil « " + definition.id() + " » remplacé ; ancienne version sauvegardée dans " + backup + ".");
+        return r.ok() ? r : new Result(false, r.code(), r.message() + " (sauvegarde : " + backup + ")", r.file(),
+                r.report());
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     // ---- interne -----------------------------------------------------------------------------

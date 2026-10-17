@@ -96,6 +96,34 @@ public final class QuestProgressRepository {
         });
     }
 
+    /**
+     * (Re)démarre une quête : compteurs d'objectifs d'une exécution précédente effacés et état
+     * {@code ACTIVE} posé, dans <strong>une</strong> transaction. Une quête répétable ou périodique
+     * (issues #13/#15) déjà terminée, ou abandonnée, repart ainsi de zéro même après un redémarrage
+     * du serveur — sans cela, les compteurs pleins de la fois précédente seraient rechargés.
+     */
+    public CompletableFuture<Void> startQuest(UUID playerUuid, NamespacedKey questId, String firstStepId) {
+        return database.execute(connection -> {
+            boolean previousAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement statement = connection.prepareStatement(DELETE_OBJECTIVE_PROGRESS)) {
+                    statement.setString(1, playerUuid.toString());
+                    statement.setString(2, questId.toString());
+                    statement.executeUpdate();
+                }
+                writeState(connection, playerUuid, questId, QuestState.ACTIVE, firstStepId);
+                connection.commit();
+                return null;
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(previousAutoCommit);
+            }
+        });
+    }
+
     public CompletableFuture<Map<Integer, Integer>> findObjectiveProgress(UUID playerUuid, NamespacedKey questId, String stepId) {
         return database.execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(SELECT_OBJECTIVE_PROGRESS)) {

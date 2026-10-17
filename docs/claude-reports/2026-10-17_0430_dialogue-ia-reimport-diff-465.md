@@ -2,7 +2,7 @@
 
 ## Informations
 * Date : 2026-10-17
-* Heure : 05:20
+* Heure : 04:30
 * Sujet : Issue #465 — modifier un dialogue existant par export IA et réimport avec diff, sans édition manuelle
 * Statut : WAITING_OWNER (livré et déployé sur PlugAdmin DEV ; validation propriétaire TC-340 en attente — ticket laissé ouvert)
 * Branche Git : `feature/465-dialogue-ia-reimport-diff` (PR #490, fusionnée dans `chore/257-ci-github-actions`)

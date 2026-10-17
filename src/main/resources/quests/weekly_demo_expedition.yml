@@ -1,0 +1,25 @@
+# Issue #15 — modèle de DÉMONSTRATION d'une quête hebdomadaire. Valeurs non définitives.
+# « period: weekly » : attribuée depuis le journal, renouvelée chaque semaine (jour et heure
+# réglés dans config.yml > periodic-quests).
+id: rpgquest:weekly_demo_expedition
+title: "<gold>Expédition de la semaine</gold>"
+description: "<gray>Rapporte des ressources variées pour préparer la saison.</gray>"
+category: weekly
+icon: CHEST
+period: weekly
+
+steps:
+  - id: rassembler
+    objectives:
+      - type: BREAK_BLOCK
+        material: COAL_ORE
+        amount: 12
+      - type: KILL_ENTITY
+        entity: SKELETON
+        amount: 8
+
+rewards:
+  - type: EXPERIENCE
+    amount: 80
+  - type: MONEY
+    amount: 20

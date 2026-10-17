@@ -1,0 +1,20 @@
+# Issue #15 — modèle de DÉMONSTRATION d'une quête quotidienne. Valeurs non définitives.
+id: rpgquest:daily_demo_chasseur
+title: "<gold>Patrouille du jour</gold>"
+description: "<gray>Élimine quelques zombies qui rôdent la nuit.</gray>"
+category: daily
+icon: ROTTEN_FLESH
+period: daily
+
+steps:
+  - id: chasser
+    objectives:
+      - type: KILL_ENTITY
+        entity: ZOMBIE
+        amount: 5
+
+rewards:
+  - type: EXPERIENCE
+    amount: 25
+  - type: MONEY
+    amount: 5

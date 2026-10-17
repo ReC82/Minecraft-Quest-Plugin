@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Quêtes quotidiennes et hebdomadaires, lot 1 plugin (#15)
+
+### Changement
+
+JAR seul. Nouveau champ de quête `period: daily|weekly`, service d'attribution par joueur, onglets
+« Quêtes quotidiennes » / « Quêtes hebdomadaires » du journal, nouvelle table
+`periodic_quest_assignments` (**migration V42**, automatique et idempotente au démarrage). Nouvelle
+section `periodic-quests` de `config.yml` ajoutée par le complément de configuration (aucun
+`config.yml` à téléverser). 4 modèles de démonstration seedés dans `quests/` s'ils manquent
+(`daily_demo_bucheron`, `daily_demo_mineur`, `daily_demo_chasseur`, `weekly_demo_expedition`).
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y` (sauvegarde datée du JAR et de `data.db`), puis redémarrage.
+Ne pas toucher aux quêtes existantes ni aux données joueurs.
+
+### Validation
+
+Démarrage : schéma V42, section `periodic-quests` présente, 4 modèles chargés (`quest.list`).
+En jeu : TC-350 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et redémarrer. La table V42 et la section de configuration sont
+ignorées par l'ancien JAR ; une base passée en V42 reste lisible par lui (ajout de table seulement).
+Supprimer les 4 fichiers `*_demo_*` de `quests/` si on ne veut pas qu'ils restent.
+
+---
+
 ## 2026-10-17 - Accueil d'Elias allégé, fenêtres de dialogue plus larges, détails du journal paginés (#475, 2e retour du 17/10)
 
 ### Changement

@@ -1124,6 +1124,23 @@ public final class RPGQuestBootstrap {
                 .tierUnlockedBy(questId.toString())
                 .map(tier -> "Amélioration du kit — palier " + tier.level()));
         questJournalService.setObjectiveHints(questBossService::journalHint);
+        // Issue #15 : quêtes quotidiennes/hebdomadaires — modèles « period: » de quests/, attribués
+        // par joueur une fois son journal ouvert, renouvelés à chaque réinitialisation.
+        com.lodygames.rpgquest.quest.periodic.PeriodicQuestService periodicQuestService =
+                new com.lodygames.rpgquest.quest.periodic.PeriodicQuestService(
+                        plugin, questEngine, questProgressEngine,
+                        new com.lodygames.rpgquest.database.PeriodicQuestAssignmentRepository(
+                                databaseService.databaseManager()),
+                        variableRepository, () -> configService.current().periodicQuests(),
+                        java.time.Instant::now, task -> {
+                            if (plugin.getServer().isPrimaryThread()) {
+                                task.run();
+                            } else {
+                                plugin.getServer().getScheduler().runTask(plugin, task);
+                            }
+                        }, plugin.getSLF4JLogger());
+        registry.start(periodicQuestService);
+        questJournalService.setPeriodicQuests(periodicQuestService);
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
 

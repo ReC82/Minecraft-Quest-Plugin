@@ -6,6 +6,19 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Quêtes quotidiennes et hebdomadaires — lot 1 côté plugin (#15, 17/10/2026)** — modèles =
+> quêtes `period: daily|weekly` de `quests/` (jamais proposées par PNJ/catalogue/commande :
+> refus `NOT_ASSIGNED`), attribuées par joueur après la première ouverture du journal
+> (`PeriodicQuestService`, sélection déterministe anti-répétition `PeriodicQuestSelector`),
+> démarrées dans le moteur habituel, persistées dans `periodic_quest_assignments` (**schéma V42**,
+> attribution idempotente, statuts ASSIGNED → STARTED → CLOSED). Reset quotidien/hebdomadaire
+> configurable (`config.yml > periodic-quests` : fuseau, heure, jour, nombres — valeurs de
+> démonstration), quête non finie expirée sans récompense, compteurs remis à zéro à chaque
+> (re)démarrage d'une quête (`QuestProgressRepository#startQuest`, profite aussi aux quêtes
+> répétables #13). Journal : onglets « Quêtes quotidiennes » / « Quêtes hebdomadaires » (barre du
+> haut réorganisée). 4 modèles de démonstration seedés. **Pas encore** : onglets PlugAdmin
+> (lot 2). Validation en jeu : PENDING (TC-350).
+
 > **Accueil du Guide allégé, fenêtres de dialogue plus larges, détails du journal paginés (#475,
 > 2e retour du 17/10/2026)** — `guide.yml` : l'accueil ne montre plus matériaux, compteurs ni
 > remise ; tout est dans « Comment améliorer mon kit ? » (`%kit_upgrade_requirements%` +

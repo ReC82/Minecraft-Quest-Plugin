@@ -33,7 +33,11 @@ public final class QuestYaml {
         sb.append("description: ").append(qq(q.description)).append('\n');
         sb.append("category: ").append(qq(q.category)).append('\n');
         sb.append("icon: ").append(up(q.icon.isBlank() ? "BOOK" : q.icon)).append('\n');
-        sb.append("repeatable: ").append(q.repeatable).append('\n');
+        boolean periodic = q.period != null && !q.period.isBlank();
+        sb.append("repeatable: ").append(q.repeatable || periodic).append('\n');
+        if (periodic) {
+            sb.append("period: ").append(q.period.trim().toLowerCase(java.util.Locale.ROOT)).append('\n');
+        }
         if (q.cooldown != null && !q.cooldown.isBlank()) {
             sb.append("cooldown: ").append(qq(q.cooldown.trim())).append('\n');
         }
@@ -203,6 +207,11 @@ public final class QuestYaml {
         d.icon = str(m.get("icon")).isBlank() ? "BOOK" : str(m.get("icon"));
         d.repeatable = bool(m.get("repeatable"));
         d.cooldown = str(m.get("cooldown"));
+        d.period = str(m.get("period")).trim().toLowerCase(java.util.Locale.ROOT);
+        if (!d.period.isBlank()) {
+            // Le moteur rend une quête « period: » répétable d'office (issue #15).
+            d.repeatable = true;
+        }
         d.secret = bool(m.get("secret"));
         d.giver = str(m.get("giver"));
         for (Object p : asList(m.get("prerequisites"))) {

@@ -41,6 +41,39 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void periodicQuestsHaveSafeDefaultsAndValidateTheirValues() throws Exception {
+        PeriodicQuestConfig defaults = ConfigValidator.validate(load("")).periodicQuests();
+        assertTrue(defaults.enabled());
+        assertEquals(java.time.ZoneId.of("Europe/Paris"), defaults.zone());
+        assertEquals(java.time.LocalTime.of(4, 0), defaults.resetTime());
+        assertEquals(java.time.DayOfWeek.MONDAY, defaults.weeklyResetDay());
+        assertEquals(2, defaults.dailyCount());
+        assertEquals(1, defaults.weeklyCount());
+
+        PeriodicQuestConfig custom = ConfigValidator.validate(load("""
+                periodic-quests:
+                  enabled: false
+                  timezone: UTC
+                  reset-time: "06:30"
+                  weekly-reset-day: sunday
+                  daily-count: 3
+                  weekly-count: 0
+                """)).periodicQuests();
+        assertFalse(custom.enabled());
+        assertEquals(java.time.ZoneId.of("UTC"), custom.zone());
+        assertEquals(java.time.LocalTime.of(6, 30), custom.resetTime());
+        assertEquals(java.time.DayOfWeek.SUNDAY, custom.weeklyResetDay());
+        assertEquals(3, custom.dailyCount());
+        assertEquals(0, custom.weeklyCount());
+
+        for (String bad : List.of("timezone: Mars/Olympus", "reset-time: \"25:00\"", "weekly-reset-day: someday",
+                "daily-count: 10", "weekly-count: -1")) {
+            assertThrows(ConfigValidationException.class,
+                    () -> ConfigValidator.validate(load("periodic-quests:\n  " + bad + "\n")), bad);
+        }
+    }
+
+    @Test
     void encountersDefaultToTheWildWorldAndAreBounded() throws Exception {
         EncounterConfig defaults = ConfigValidator.validate(load("")).encounters();
         assertTrue(defaults.enabled());

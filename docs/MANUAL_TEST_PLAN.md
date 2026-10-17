@@ -6766,6 +6766,35 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-350 — Quêtes quotidiennes et hebdomadaires dans le journal (issue #15, lot 1, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR #15 lot 1 sur **DEV** (schéma V42 appliqué au démarrage), section
+`periodic-quests` ajoutée à `config.yml` par le complément (défauts : 04:00 Europe/Paris, lundi,
+2 quotidiennes, 1 hebdomadaire), 4 modèles `daily_demo_*` / `weekly_demo_expedition` présents
+dans `quests/`. Un compte qui possède déjà le journal. **Aucun reset.**
+
+1.  Ouvrir le journal (clic droit ou `/quests`). **Attendu** : barre du haut « Quêtes en cours »,
+    « Quêtes terminées », **horloge** « Quêtes quotidiennes », **boussole** « Quêtes
+    hebdomadaires », puis pages, bourse, fermer. Deux titres « Quête commencée » et un message
+    « ✦ Nouvelles quêtes quotidiennes : ouvre ton journal » (et hebdomadaires).
+2.  Onglet « Quêtes quotidiennes ». **Attendu** : exactement 2 quêtes parmi Bois du jour / Pierre du
+    jour / Patrouille du jour, « À faire aujourd'hui », « Nouvelles quêtes dans … » (jusqu'à 04:00).
+    Elles **n'apparaissent pas** dans « Quêtes en cours ». Hebdomadaire : « Expédition de la
+    semaine ».
+3.  Fermer et rouvrir le journal plusieurs fois, cliquer vite sur l'onglet, se déconnecter /
+    reconnecter. **Attendu** : toujours les **mêmes** 2 quêtes, aucun nouveau « Quête commencée ».
+4.  Terminer une quotidienne (ex. 16 bûches de chêne). **Attendu** : récompense habituelle une
+    fois (XP + 5 pièces de démonstration), « ✔ Terminée aujourd'hui » dans l'onglet ; rien de plus
+    en rouvrant le journal ou en se reconnectant.
+5.  Parler à un PNJ / taper `/quest accept rpgquest:daily_demo_mineur`. **Attendu** : refus « est
+    une quête quotidienne ou hebdomadaire : ouvre ton journal… », rien n'est démarré.
+6.  Lendemain après 04:00 (ou, pour tester tout de suite : régler `periodic-quests.reset-time` à
+    quelques minutes plus tard puis redémarrer le serveur). **Attendu** : la quotidienne non finie
+    affiche « ⌛ Quête expirée, sans récompense », 2 nouvelles quotidiennes sont attribuées (de
+    préférence différentes de la veille) et repartent de zéro.
+
+**Reset** : remettre `reset-time` à `04:00` si modifié. Rien à nettoyer côté joueur.
+
 ### TC-349 — Accueil d'Elias allégé, écran du kit, fenêtres plus larges, détails du journal paginés (issue #475, 2e retour du 17/10, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu du correctif #475 « accueil léger » sur **DEV** et `dialogues/guide.yml` republié

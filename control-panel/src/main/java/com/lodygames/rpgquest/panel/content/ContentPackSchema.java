@@ -160,6 +160,8 @@ public final class ContentPackSchema {
         props.put("secret", typed("boolean", "Masquée dans le journal tant qu'elle n'est pas découverte."));
         props.put("cooldown", typed("string", "Quête répétable seulement : délai avant de pouvoir la refaire, "
                 + "compté depuis sa complétion (ex. « 20h », « 30m », « 1d » ; 30 jours maximum)."));
+        props.put("period", enumString(List.of("daily", "weekly"), "Quête quotidienne ou hebdomadaire (issue #15) : "
+                + "attribuée depuis le journal du joueur, jamais par un PNJ ; toujours répétable, sans délai ni prérequis."));
         props.put("giver", ref("logicalId"));
         props.put("prerequisites", arrayOf(ref("questId"),
                 "Quêtes qui doivent être terminées avant de pouvoir accepter celle-ci."));
@@ -363,6 +365,14 @@ public final class ContentPackSchema {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "integer");
         out.put("const", value);
+        out.put("description", description);
+        return out;
+    }
+
+    private static Map<String, Object> enumString(List<String> values, String description) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("type", "string");
+        out.put("enum", values);
         out.put("description", description);
         return out;
     }

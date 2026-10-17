@@ -101,6 +101,23 @@ public final class QuestValidator {
             }
         }
 
+        // --- Quête quotidienne / hebdomadaire (issue #15) : mêmes règles que QuestDefinitionParser ---
+        if (!blank(q.period)) {
+            String period = q.period.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!period.equals("daily") && !period.equals("weekly")) {
+                out.add(Diagnostic.error("period", "Renouvellement « " + q.period.trim()
+                        + " » invalide : « daily » (chaque jour) ou « weekly » (chaque semaine)."));
+            }
+            if (!blank(q.cooldown)) {
+                out.add(Diagnostic.error("cooldown", "Une quête quotidienne ou hebdomadaire se renouvelle "
+                        + "avec sa période : vider le délai."));
+            }
+            if (!q.prerequisites.isEmpty()) {
+                out.add(Diagnostic.error("prerequisites", "Une quête quotidienne ou hebdomadaire ne peut pas "
+                        + "avoir de prérequis."));
+            }
+        }
+
         // --- Donneur ---
         if (!blank(q.giver)) {
             if (refData.npcsKnown() && !refData.isNpcKnown(q.giver)) {

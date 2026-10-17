@@ -40,6 +40,7 @@ public final class MigrationReport {
             Map.entry("quest_progress", "Quêtes"),
             Map.entry("quest_objective_progress", "Quêtes"),
             Map.entry("quest_reward_grants", "Quêtes"),
+            Map.entry("periodic_quest_assignments", "Quêtes"),
             Map.entry("story_progress", "Stories"),
             Map.entry("dialogue_node_reads", "Dialogues"),
             Map.entry("claims", "Claims"),

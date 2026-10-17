@@ -131,6 +131,8 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
             case NOT_REPEATABLE -> player.sendMessage(messages().format(
                     "quest.not-repeatable", Placeholder.parsed("quest", questName)));
             case ON_COOLDOWN -> progressEngine.showCooldown(player, questId, outcome.retryAfter());
+            case NOT_ASSIGNED -> player.sendMessage(messages().format(
+                    "quest.periodic-not-assigned", Placeholder.parsed("quest", questName)));
             case MISSING_PREREQUISITES -> player.sendMessage(messages().format(
                     "quest.prerequisites-missing",
                     Placeholder.parsed("quest", questName),
@@ -239,6 +241,8 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                         "quest.unknown", Placeholder.parsed("quest", questName)));
                 // Le moteur a déjà prévenu le joueur (quest.turn-in-inventory-full).
                 case INVENTORY_FULL -> { }
+                case NOT_ACTIVE -> player.sendMessage(messages().format(
+                        "quest.periodic-not-assigned", Placeholder.parsed("quest", questName)));
             }
         }));
     }

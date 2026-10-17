@@ -4647,6 +4647,9 @@ public final class BukkitAgentActions implements AgentActions {
                         "Quête renouvelable encore en recharge (" + CooldownText.format(outcome.retryAfter())
                                 + ") : " + questId + " — réinitialiser pour passer outre.");
                 case UNKNOWN_QUEST -> MutationResult.of(false, "UNKNOWN_QUEST", "Quête inconnue : " + questId);
+                case NOT_ASSIGNED -> MutationResult.of(false, "NOT_ASSIGNED",
+                        "Quête quotidienne/hebdomadaire : elle s'attribue seule depuis le journal du joueur — "
+                                + questId);
             });
         });
     }
@@ -4673,6 +4676,9 @@ public final class BukkitAgentActions implements AgentActions {
                 case INVENTORY_FULL -> MutationResult.of(false, "INVENTORY_FULL",
                         "Non terminée : les récompenses de " + questId + " ne tiennent pas dans l'inventaire de "
                                 + target.getName() + ". Rien n'a été accordé.");
+                case NOT_ACTIVE -> MutationResult.of(false, "NOT_ACTIVE",
+                        "Quête quotidienne/hebdomadaire non active pour " + target.getName() + " : " + questId
+                                + " — rien n'a été accordé.");
             });
         });
     }

@@ -553,7 +553,8 @@ public final class StoryService implements PluginService {
     private void onCurrentQuestForced(Player player, StoryDefinition story, ActiveStoryProgress progress, int index,
                                       NamespacedKey currentQuestId, CompleteOutcome complete, boolean wasStarted,
                                       int total, CompletableFuture<StoryAdvanceReport> result) {
-        if (complete == CompleteOutcome.UNKNOWN_QUEST) {
+        if (complete == CompleteOutcome.UNKNOWN_QUEST || complete == CompleteOutcome.NOT_ACTIVE) {
+            // NOT_ACTIVE (issue #15) : quête périodique non attribuée — une Story ne peut pas en dépendre.
             logger.warn("[admin] story advance « {} » : la quête courante « {} » est inconnue du moteur de quête.",
                     story.id(), currentQuestId);
             result.complete(StoryAdvanceReport.unknownCurrentQuest(story.id(), currentQuestId, index, total));

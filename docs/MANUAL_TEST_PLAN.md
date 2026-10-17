@@ -6762,6 +6762,27 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-347 — XP RPG seule : plus de progression de niveaux Minecraft (issue #183, PENDING MANUAL VALIDATION)
+
+**Préparation** : DEV après déploiement #183 ; `config.yml` du serveur contient
+`progression.vanilla-xp-progression: false` et plus de `keep-vanilla-xp`. Un compte joueur en survie, noter son niveau vanilla (barre verte)
+et son niveau RPG (`/skills`).
+
+1.  Tuer un zombie, casser un minerai de charbon, cuire un objet au four et le retirer, pêcher un
+    poisson, faire reproduire deux vaches : **Attendu** aucune orbe verte, barre vanilla inchangée ;
+    l'action bar annonce `+N XP RPG (…)` pour combat / minage / pêche.
+2.  Commercer avec un villageois, lancer une fiole d'expérience (créatif pour l'obtenir) : **Attendu**
+    aucune XP vanilla gagnée.
+3.  Terminer une quête avec une récompense `EXPERIENCE` (ex. Lily) : **Attendu** chat `+ N XP RPG`,
+    `/skills` Global augmenté de N (+ `quest-completion-xp`), barre vanilla inchangée.
+4.  Mourir : **Attendu** niveau RPG et XP partielle identiques dans `/skills` après réapparition ;
+    aucune orbe lâchée. Se reconnecter, puis après un redémarrage DEV : mêmes valeurs, aucun gain en double.
+5.  Joueur qui avait des niveaux vanilla : **Attendu** niveaux toujours là (ni convertis ni effacés),
+    utilisables à la table d'enchantement / l'enclume ; aucune nouvelle orbe ne les recharge.
+6.  Donner un avis : faut-il effacer les anciens niveaux ? que faire des enchantements ?
+
+**Reset** : aucun ; rien n'a été modifié dans les données du joueur.
+
 ### TC-345 — Atelier d'artisan : recettes à ingrédients et/ou pièces (issue #18, PENDING MANUAL VALIDATION)
 
 **Préparation** : PlugAdmin (DEV) → « Prix et coûts », compte avec « Économie — écriture ». Créer, nature

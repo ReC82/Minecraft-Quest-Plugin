@@ -159,6 +159,8 @@ public final class QuestProgressEngine implements PluginService {
     private @Nullable HeartBonusService heartBonusService;
     /** Tables de récompenses aléatoires (issue #177) ; {@code null} = tirages indisponibles. */
     private @Nullable RewardTables rewardTables;
+    /** Issue #183 : XP RPG ou vanilla pour les récompenses {@code EXPERIENCE}. */
+    private volatile ExperienceRewardSink experienceRewards = ExperienceRewardSink.VANILLA;
 
     /**
      * Issue #318 : registre des objets custom, pour connaître l'objet remis par une récompense
@@ -188,6 +190,10 @@ public final class QuestProgressEngine implements PluginService {
     /** Issue #177 : branché après la construction (le catalogue de récompenses naît plus tard). */
     public void setRewardTables(RewardTables rewardTables) {
         this.rewardTables = rewardTables;
+    }
+
+    public void setExperienceRewardSink(ExperienceRewardSink experienceRewards) {
+        this.experienceRewards = experienceRewards == null ? ExperienceRewardSink.VANILLA : experienceRewards;
     }
 
     public void setHeartBonusService(HeartBonusService heartBonusService) {
@@ -1525,7 +1531,7 @@ public final class QuestProgressEngine implements PluginService {
                     return null;
                 });
 
-        List<Component> rewardLines = grantRewards(player, quest);
+        List<Component> rewardLines = grantRewards(player, quest, progress.rewardGrantId());
         rewardLines.addAll(drawLines);
         showQuestCompleted(player, quest, rewardLines);
         notifyChanged(playerId);
@@ -1771,13 +1777,16 @@ public final class QuestProgressEngine implements PluginService {
      * maintenant annoncerait un gain avant d'avoir la moindre preuve qu'il a eu lieu. Le message
      * part donc plus tard, depuis {@link #payMoneyReward}, et seulement si la base a confirmé.</p>
      */
-    private List<Component> grantRewards(Player player, QuestDefinition quest) {
+    private List<Component> grantRewards(Player player, QuestDefinition quest, String grantId) {
         List<Component> lines = new ArrayList<>();
+        int experienceIndex = 0;
         for (QuestReward reward : quest.rewards()) {
             switch (reward) {
                 case ExperienceReward r -> {
-                    player.giveExp(r.amount());
-                    lines.add(messagesService.current().format("quest.reward-line-experience",
+                    // Une clé par récompense EXPERIENCE : deux lignes d'XP d'une même quête ne se dédupliquent pas.
+                    boolean rpg = experienceRewards.grant(player, r.amount(), grantId + "#" + experienceIndex++);
+                    lines.add(messagesService.current().format(
+                            rpg ? "quest.reward-line-rpg-experience" : "quest.reward-line-experience",
                             Placeholder.unparsed("amount", String.valueOf(r.amount()))));
                 }
                 case ItemReward r -> {

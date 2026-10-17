@@ -219,6 +219,22 @@ class ConfigFileCompleterTest {
     }
 
     @Test
+    void retiredVanillaXpKeyIsReplacedAndAChosenValueSurvivesRestarts() throws Exception {
+        Path file = writeConfig("progression:\n  keep-vanilla-xp: true\n");
+        ConfigFileCompleter.complete(file, bundledTemplate(), NOPLogger.NOP_LOGGER);
+        YamlConfiguration result = YamlConfiguration.loadConfiguration(file.toFile());
+        assertFalse(result.isSet("progression.keep-vanilla-xp"), "#183 : ancienne clé retirée, plus jamais lue");
+        assertFalse(result.getBoolean("progression.vanilla-xp-progression", true),
+                "#183 : la progression de niveaux Minecraft est supprimée par défaut");
+
+        Path chosen = writeConfig("progression:\n  vanilla-xp-progression: true\n");
+        ConfigFileCompleter.complete(chosen, bundledTemplate(), NOPLogger.NOP_LOGGER);
+        ConfigFileCompleter.complete(chosen, bundledTemplate(), NOPLogger.NOP_LOGGER);
+        assertTrue(YamlConfiguration.loadConfiguration(chosen.toFile()).getBoolean("progression.vanilla-xp-progression"),
+                "un retour à l'XP vanilla choisi par l'administrateur n'est jamais rebasculé");
+    }
+
+    @Test
     void theKeyedMergeIsIdempotent() throws Exception {
         Path file = writeConfig(SERVER_LIKE);
         ConfigFileCompleter.complete(file, bundledTemplate(), NOPLogger.NOP_LOGGER);

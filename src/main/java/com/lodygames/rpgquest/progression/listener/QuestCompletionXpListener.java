@@ -12,8 +12,8 @@ import org.slf4j.Logger;
 
 /**
  * Accorde une XP RPG (piste {@code GLOBAL}) une seule fois par quête
- * terminée, en plus de l'éventuelle récompense {@code experience} vanilla de
- * la quête (mission point 10 : les deux systèmes restent indépendants). Ne
+ * terminée, en plus de l'éventuelle récompense {@code EXPERIENCE} de la quête
+ * (vanilla ou RPG selon {@code progression.vanilla-xp-progression}, issue #183). Ne
  * modifie rien dans le package {@code quest} : branché sur {@link
  * QuestProgressEngine#onProgressChanged}, qui notifie après <b>tout</b>
  * changement de progression (pas seulement une fin de quête) — {@link

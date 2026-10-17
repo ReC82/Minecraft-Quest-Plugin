@@ -5672,6 +5672,14 @@ Détail : [docs/ECONOMY.md](ECONOMY.md#catalogue-des-prix-et-coûts-issue-336). 
 
 Persistance : `player_skills`, `xp_grants` (dédup anti-farm), `player_placed_blocks` (SQLite, migration V8). Détail complet (courbe, anti-farm, sources d'XP) : [docs/PROGRESSION.md](PROGRESSION.md).
 
+**Pas de progression de niveaux Minecraft (issue #183).** `progression.vanilla-xp-progression: false` (défaut ;
+l'ancienne clé `keep-vanilla-xp` est retirée du fichier au démarrage) : plus aucune orbe à la mort des mobs et des joueurs, à la
+casse, au four, à la pêche, à la reproduction ni des fioles, et tout gain d'orbe restant (villageois, meule…)
+vaut 0. La récompense de quête `EXPERIENCE` devient de l'XP RPG `GLOBAL` (une fois par complétion, chat
+`+ N XP RPG`). Les anciens niveaux vanilla ne sont ni convertis ni effacés ; enchantement et enclume
+coûtent toujours des niveaux vanilla (aucune gratuité, aucun remplacement) ; `/xp` admin hors périmètre.
+`true` rétablit l'ancien comportement. Détail et inventaire des effets : PROGRESSION.md « XP vanilla ».
+
 ### Portail — `/lien` (liaison du compte web, #53)
 
 | Commande | Type | Permission | Effet |

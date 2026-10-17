@@ -542,7 +542,8 @@ public final class ConfigValidator {
                             + "\" (valides : action_bar, boss_bar, off).");
         }
 
-        boolean keepVanillaXp = progression.getBoolean("keep-vanilla-xp", true);
+        // Issue #183 : false = aucune progression de niveaux Minecraft (remplace keep-vanilla-xp).
+        boolean keepVanillaXp = progression.getBoolean("vanilla-xp-progression", false);
 
         int questCompletionXp = nonNegativeInt(progression, "quest-completion-xp", 50);
         int combatKillXp = nonNegativeInt(progression, "sources.combat-kill-xp", 15);
@@ -570,7 +571,7 @@ public final class ConfigValidator {
     }
 
     private static ProgressionConfig defaultProgression() {
-        return new ProgressionConfig(100L, 1.15, 100, 0.5, 60, DisplayMode.ACTION_BAR, true, 50, 15, 5, 4, 10, 100, 0);
+        return new ProgressionConfig(100L, 1.15, 100, 0.5, 60, DisplayMode.ACTION_BAR, false, 50, 15, 5, 4, 10, 100, 0);
     }
 
     private static BackpackConfig validateBackpacks(ConfigurationSection section) throws ConfigValidationException {

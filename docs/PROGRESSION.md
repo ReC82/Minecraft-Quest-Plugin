@@ -114,13 +114,69 @@ strictement dominante :
 En mode `boss_bar`, la barre affiche la progression dans le niveau courant
 et disparaît automatiquement 3 secondes après le dernier gain.
 
-## XP vanilla (mission point 10)
+## XP vanilla — suppression de la progression de niveaux Minecraft (issue #183)
 
-`progression.keep-vanilla-xp: true` (défaut) laisse l'XP/niveau vanilla
-intacte — nécessaire pour les enchantements, totalement indépendante de
-cette progression RPG. Passer à `false` supprime l'XP vanilla des sources
-interceptées par ce système (combat, minage, agriculture, pêche) sans rien
-changer d'autre (four, `/xp`, etc. restent inchangés).
+Décision propriétaire du 04/10/2026 : la seule progression du joueur est
+l'XP RPG. `progression.vanilla-xp-progression: false` est le **défaut**
+(clé ajoutée au `config.yml` du serveur par la complétion au démarrage).
+L'ancienne clé `progression.keep-vanilla-xp` (défaut `true`) n'est plus lue :
+elle est retirée du fichier au démarrage, avec une ligne de journal. Écrire
+`vanilla-xp-progression: true` rétablit l'ancien comportement ; ce choix
+n'est jamais rebasculé.
+
+Avec `false`, `progression.listener.VanillaXpBlockListener` (priorité
+`HIGHEST`, aucune tâche répétitive, aucun scan d'entités) :
+
+| Source vanilla | Effet |
+|---|---|
+| Mort d'un mob **ou d'un joueur** (`EntityDeathEvent`, y compris profil de mob avec `xp-reward`) | aucune orbe |
+| Casse de bloc (minerais, sculk…) | aucune orbe |
+| Retrait d'un four / haut fourneau / fumoir (`FurnaceExtractEvent`) | aucune orbe |
+| Pêche | aucune orbe |
+| Reproduction d'animaux | aucune orbe |
+| Fiole d'expérience lancée | aucune orbe |
+| Toute autre orbe ramassée (commerce villageois, meule, autre plugin…) — `PlayerExpChangeEvent` | gain ramené à 0 |
+| Commandes admin `/xp`, `/experience` | **hors périmètre, volontairement** (outil explicite d'un administrateur) |
+
+Récompense de quête `EXPERIENCE` : devient de l'**XP RPG** (piste
+`GLOBAL`, `QuestExperienceRewards`), dédupliquée par jeton de complétion
+(`quest_reward:<jeton>#<rang>`) — une remise rejouée ne paie jamais deux fois.
+Le chat annonce `+ N XP RPG`. Elle s'ajoute à `quest-completion-xp`
+(inchangé). Avec `vanilla-xp-progression: true`, elle redevient de l'XP vanilla.
+
+Les messages de gain de l'action bar disent `+N XP RPG (Combat)`.
+
+### Politique de migration des joueurs existants
+
+- Les niveaux/XP vanilla déjà acquis ne sont **ni convertis en XP RPG ni
+  effacés** : aucune donnée joueur n'est modifiée. Ils restent utilisables
+  (enchantement, enclume) jusqu'à épuisement, et se perdent à la mort comme
+  en vanilla (aucune orbe n'est alors lâchée).
+- L'XP RPG existante (`player_skills`) est inchangée.
+- Effacer les anciens niveaux, ou les convertir, est une **décision du
+  propriétaire** non prise : rien n'est implémenté.
+
+### Enchantements, enclume, raccommodage — comportement réellement affecté
+
+Aucun de ces blocs n'est désactivé ni rendu gratuit (pas de système de
+remplacement, issue #183) ; ce qui change est qu'aucun niveau ne se gagne :
+
+- **Table d'enchantement** : coûte des niveaux vanilla (1 à 3 + lapis) →
+  utilisable seulement avec d'anciens niveaux.
+- **Enclume** (réparation, fusion, enchantement par livre) : coûte des
+  niveaux → idem. Renommer coûte aussi 1 niveau en vanilla ; les outils de
+  RPGQuest qui passent par une enclume (nom de balise de voyage, de
+  chantier, outil de ville) fixent déjà leur coût à 0 et ne sont pas touchés.
+- **Meule** : retire les enchantements, ne coûte rien ; ses orbes ne donnent
+  plus rien.
+- **Raccommodage (Mending)** : répare avec des orbes → inerte, plus aucune
+  orbe n'apparaissant.
+- Le **niveau RPG** ne sert jamais de monnaie d'enchantement. Un futur coût
+  d'enchantement (autres points, métiers #182) reste à décider.
+
+L'affichage natif de la barre d'XP n'est **pas** réutilisé pour le RPG
+(elle montre les anciens niveaux vanilla figés) ; le niveau RPG est affiché
+par `/hud`, `/skills` et l'action bar (#184).
 
 ## Hooks de déblocage (mission point 11)
 

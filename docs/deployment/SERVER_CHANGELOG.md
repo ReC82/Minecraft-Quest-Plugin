@@ -48,6 +48,35 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Progression : XP RPG seule, suppression de la progression de niveaux Minecraft (#183)
+
+### Changement
+
+JAR seul. Nouvelle clé `progression.vanilla-xp-progression: false` ajoutée au `config.yml` serveur par la
+complétion au démarrage ; l'ancienne clé `progression.keep-vanilla-xp` n'est plus lue et en est retirée. Plus aucune
+orbe à la mort des mobs / joueurs, à la casse, au four, à la pêche, à la reproduction ni des fioles ; tout
+gain d'orbe restant vaut 0. La récompense de quête `EXPERIENCE` devient de l'XP RPG `GLOBAL` (une fois par
+complétion). Messages `+N XP RPG`. Anciens niveaux vanilla ni convertis ni effacés.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest (`scripts/deploy-verygames.sh -y`), redémarrer DEV. Aucune migration de schéma,
+aucun fichier à copier, PlugAdmin inchangé. Aucune donnée joueur modifiée.
+
+### Sauvegarde préalable
+
+Celles des scripts (JAR précédent daté, `data.db`).
+
+### Validation
+
+`config.yml` distant : `progression.vanilla-xp-progression: false`, plus de `keep-vanilla-xp` ; en jeu TC-347 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR sauvegardé ; pour retrouver l'XP vanilla sans rollback, écrire
+`progression.vanilla-xp-progression: true` dans le `config.yml` serveur puis `/rpgquest reload` (ce choix
+n'est jamais rebasculé). Le JAR précédent relit `keep-vanilla-xp` absent comme `true` : XP vanilla.
+
 ## 2026-10-17 - Économie : affichage des pièces et du niveau RPG en jeu, prototype `/hud` (#184)
 
 ### Changement

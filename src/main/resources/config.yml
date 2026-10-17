@@ -135,12 +135,16 @@ progression:
   # sur une même compétence sont ignorés jusqu'à la minute suivante.
   max-grants-per-minute: 60
   display-mode: action_bar       # action_bar | boss_bar | off
-  # L'XP/niveau vanilla (enchantements) reste intacte et indépendante de
-  # cette progression RPG (mission point 10) : ne désactiver que si un autre
-  # système gère déjà l'XP vanilla.
-  keep-vanilla-xp: true
+  # Issue #183 (décision du 04/10/2026) : false = aucune progression de
+  # niveaux Minecraft (plus d'orbes ni de gain d'XP vanilla) ; la récompense
+  # de quête EXPERIENCE devient de l'XP RPG (piste globale). Les niveaux
+  # vanilla déjà acquis ne sont ni convertis ni effacés. true = ancien
+  # comportement (XP vanilla intacte, EXPERIENCE = XP vanilla). Remplace
+  # l'ancienne clé keep-vanilla-xp, retirée au démarrage. Voir
+  # docs/PROGRESSION.md, « XP vanilla ».
+  vanilla-xp-progression: false
   # XP RPG (piste globale) accordée une seule fois à la fin de chaque quête,
-  # en plus de la récompense « experience » vanilla éventuelle de la quête.
+  # en plus de la récompense « EXPERIENCE » éventuelle de la quête.
   quest-completion-xp: 50
   # Plafond des cœurs de vie maximum gagnés par récompense de quête « HEART »
   # (issue #166). 0 = aucun plafond de gameplay (seul le plafond serveur

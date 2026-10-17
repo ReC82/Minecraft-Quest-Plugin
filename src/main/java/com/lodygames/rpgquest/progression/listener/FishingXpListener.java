@@ -28,9 +28,6 @@ public final class FishingXpListener implements Listener {
         if (event.isCancelled() || current.fishingCatchXp() <= 0) {
             return;
         }
-        if (!current.keepVanillaXp()) {
-            event.setExpToDrop(0);
-        }
         if (event.getState() != PlayerFishEvent.State.CAUGHT_FISH) {
             return;
         }

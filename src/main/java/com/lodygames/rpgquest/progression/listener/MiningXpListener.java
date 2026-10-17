@@ -48,9 +48,6 @@ public final class MiningXpListener implements Listener {
         if (event.isCancelled() || current.miningBlockXp() <= 0) {
             return;
         }
-        if (!current.keepVanillaXp()) {
-            event.setExpToDrop(0);
-        }
 
         Block block = event.getBlock();
         if (block.getBlockData() instanceof Ageable) {

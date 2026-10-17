@@ -39,9 +39,6 @@ public final class FarmingXpListener implements Listener {
         if (event.isCancelled() || current.farmingHarvestXp() <= 0) {
             return;
         }
-        if (!current.keepVanillaXp()) {
-            event.setExpToDrop(0);
-        }
 
         Block block = event.getBlock();
         if (!(block.getBlockData() instanceof Ageable ageable)) {

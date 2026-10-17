@@ -110,12 +110,14 @@ import com.lodygames.rpgquest.player.StarterKitListener;
 import com.lodygames.rpgquest.player.StarterToolKitService;
 import com.lodygames.rpgquest.progression.PlacedBlockTracker;
 import com.lodygames.rpgquest.progression.ProgressionService;
+import com.lodygames.rpgquest.progression.QuestExperienceRewards;
 import com.lodygames.rpgquest.progression.listener.CombatXpListener;
 import com.lodygames.rpgquest.progression.listener.ExplorationXpListener;
 import com.lodygames.rpgquest.progression.listener.FarmingXpListener;
 import com.lodygames.rpgquest.progression.listener.FishingXpListener;
 import com.lodygames.rpgquest.progression.listener.MiningXpListener;
 import com.lodygames.rpgquest.progression.listener.QuestCompletionXpListener;
+import com.lodygames.rpgquest.progression.listener.VanillaXpBlockListener;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.resource.ResourceNodeBreakListener;
 import com.lodygames.rpgquest.resource.ResourceNodeRegistry;
@@ -571,6 +573,9 @@ public final class RPGQuestBootstrap {
                 .map(def -> net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().stripTags(def.displayName()))
                 .filter(name -> !name.isBlank()));
         progressionService.setActionBar(actionBarFeedback);
+        // Issue #183 : la récompense EXPERIENCE devient de l'XP RPG quand l'XP vanilla est supprimée.
+        questProgressEngine.setExperienceRewardSink(new QuestExperienceRewards(
+                progressionService, () -> configService.current().progression()));
         // Issue #184 : prototype HUD pièces / niveau RPG, lu sur le portefeuille et la piste GLOBAL.
         playerHudService = new PlayerHudService(plugin, economyService, progressionService, actionBarFeedback,
                 () -> configService.current().hud(), plugin.getSLF4JLogger());
@@ -635,6 +640,9 @@ public final class RPGQuestBootstrap {
                 progressionService, () -> configService.current().progression())));
         registry.start(new PlayerListenerService(plugin, new FishingXpListener(
                 progressionService, () -> configService.current().progression())));
+        // Issue #183 : plus aucune progression de niveaux Minecraft (orbes, gains d'XP vanilla).
+        registry.start(new PlayerListenerService(plugin, new VanillaXpBlockListener(
+                () -> configService.current().progression())));
         registry.start(new PlayerListenerService(plugin, new ExplorationXpListener(
                 progressionService, zoneRegistry, () -> configService.current().progression())));
 

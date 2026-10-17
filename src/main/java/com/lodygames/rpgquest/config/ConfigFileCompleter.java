@@ -64,6 +64,17 @@ public final class ConfigFileCompleter {
             new RetiredDefault("npc-hints.height-offset", 2.2, 0.6),
             new RetiredDefault("npc-hints.period-ticks", 20, 10));
 
+    /**
+     * Clés retirées du plugin, supprimées du fichier car plus jamais lues (un administrateur qui les
+     * modifierait croirait changer quelque chose). Seulement des réglages, jamais des données.
+     *
+     * <p>#183 : {@code progression.keep-vanilla-xp} (défaut {@code true}) est remplacée par {@code
+     * progression.vanilla-xp-progression} (défaut {@code false}). Une nouvelle clé plutôt qu'une
+     * {@link RetiredDefault} : un booléen ne distingue pas l'ancien défaut d'un choix, et un {@code
+     * true} remis à la main serait rebasculé à chaque démarrage.</p>
+     */
+    private static final List<String> RETIRED_KEYS = List.of("progression.keep-vanilla-xp");
+
     record RetiredDefault(String path, Object oldValue, Object newValue) {
 
         boolean matches(Object current) {
@@ -99,6 +110,7 @@ public final class ConfigFileCompleter {
         changed |= mergeAdditiveLists(template, existing);
         changed |= mergeKeyedLists(template, existing, logger);
         changed |= replaceRetiredDefaults(existing, logger);
+        changed |= removeRetiredKeys(existing, logger);
         if (existing.getInt("config-version", 0) != CURRENT_VERSION) {
             existing.set("config-version", CURRENT_VERSION);
             changed = true;
@@ -208,6 +220,18 @@ public final class ConfigFileCompleter {
                 existing.set(retired.path(), retired.newValue());
                 logger.info("config.yml : {} portait l'ancienne valeur par défaut {} — remplacée par la "
                         + "nouvelle valeur par défaut {}.", retired.path(), retired.oldValue(), retired.newValue());
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private static boolean removeRetiredKeys(YamlConfiguration existing, Logger logger) {
+        boolean changed = false;
+        for (String path : RETIRED_KEYS) {
+            if (existing.isSet(path)) {
+                logger.info("config.yml : {} ({}) n'est plus lue par le plugin — clé retirée.", path, existing.get(path));
+                existing.set(path, null);
                 changed = true;
             }
         }

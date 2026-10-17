@@ -48,6 +48,28 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-17 - Salles de préparation du Hub : protections seaux et feu (#107)
+
+### Changement
+
+JAR seul, **pas de migration**, aucune configuration. Dans le monde Hub (`hub.world`), un joueur
+sans droit de construction ne peut plus vider/remplir un seau sur le décor (traire une vache reste
+permis) ni allumer un feu ; la propagation et la combustion du feu sont toujours annulées. Les
+établis restent utilisables. Aucun bloc n'est posé ni modifié au déploiement.
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y` (sauvegarde datée du JAR), puis redémarrage. Ne pas téléverser
+`config.yml` ; ne pas toucher aux données joueurs ni au monde.
+
+### Validation
+
+Démarrage sans erreur. TC-355 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et redémarrer : seules les nouvelles protections disparaissent.
+
 ## 2026-10-17 - Capacité progressive des coffres personnels (#106)
 
 ### Changement

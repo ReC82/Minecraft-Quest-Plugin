@@ -9,24 +9,35 @@ import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.zone.ZoneProtectionListener;
+import com.lodygames.rpgquest.zone.ZoneRegistry;
+import com.lodygames.rpgquest.zone.model.ZoneDefinition;
+import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Cow;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enderman;
 import org.bukkit.entity.TraderLlama;
 import org.bukkit.entity.WanderingTrader;
 import org.bukkit.entity.Zombie;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockBurnEvent;
+import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerBucketFillEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
@@ -36,6 +47,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
+import org.slf4j.helpers.NOPLogger;
 
 /**
  * Couvre les protections d'événement du monde Hub (dégâts/PvP, protection des entités, casse/pose
@@ -61,6 +73,7 @@ class HubWorldProtectionListenerTest {
     private World other;
     private DatabaseManager database;
     private HubWorldProtectionListener listener;
+    private NpcIdentityService npcIdentityService;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -71,7 +84,7 @@ class HubWorldProtectionListenerTest {
 
         database = new DatabaseManager(tempDir.resolve("test.db"));
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        NpcIdentityService npcIdentityService = new NpcIdentityService(
+        npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
 
         listener = new HubWorldProtectionListener(() -> HUB_CONFIG, npcIdentityService, bypass);
@@ -448,5 +461,141 @@ class HubWorldProtectionListenerTest {
         listener.onBreak(event);
 
         assertTrue(event.isCancelled());
+    }
+
+    // ---- Salle de craft (issue #107) : établis utilisables, jamais détruits -------------------------
+
+    @Test
+    void aNormalPlayerCanUseAHubCraftingTableEvenInsideAProtectedZone() throws Exception {
+        // Les deux listeners réels du Hub : protections du monde + zone cuboïde aux drapeaux par
+        // défaut (conteneurs publics fermés). L'établi n'est pas un conteneur : son clic droit passe.
+        ZoneRegistry zones = new ZoneRegistry(tempDir.resolve("zones"), NOPLogger.NOP_LOGGER);
+        zones.create(new ZoneDefinition("central_village", "world_hub", -10, 0, -10, 10, 255, 10, ZoneFlags.defaults()));
+        ZoneProtectionListener zoneListener = new ZoneProtectionListener(zones, npcIdentityService, bypass);
+        PlayerMock player = server.addPlayer();
+        Block table = hub.getBlockAt(0, 64, 0);
+        table.setType(Material.CRAFTING_TABLE);
+        Block chest = hub.getBlockAt(2, 64, 0);
+        chest.setType(Material.CHEST);
+
+        PlayerInteractEvent onTable = rightClick(player, table);
+        zoneListener.onInteract(onTable);
+        PlayerInteractEvent onChest = rightClick(player, chest);
+        zoneListener.onInteract(onChest);
+
+        assertFalse(onTable.isCancelled(), "l'établi du Hub doit s'ouvrir pour un joueur normal");
+        assertTrue(onChest.isCancelled(), "témoin : un conteneur public reste fermé par la zone");
+    }
+
+    @Test
+    void aHubCraftingTableCannotBeBrokenByANormalPlayer() {
+        PlayerMock player = server.addPlayer();
+        Block table = hub.getBlockAt(0, 64, 0);
+        table.setType(Material.CRAFTING_TABLE);
+        BlockBreakEvent event = new BlockBreakEvent(table, player);
+
+        listener.onBreak(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void emptyingABucketInTheHubIsRefusedToANormalPlayer() {
+        PlayerMock player = server.addPlayer();
+        PlayerBucketEmptyEvent event = new PlayerBucketEmptyEvent(player, hub.getBlockAt(0, 65, 0),
+                hub.getBlockAt(0, 64, 0), BlockFace.UP, Material.LAVA_BUCKET, new ItemStack(Material.BUCKET), EquipmentSlot.HAND);
+
+        listener.onBucketEmpty(event);
+
+        assertTrue(event.isCancelled(), "vider un seau revient à poser un bloc");
+    }
+
+    @Test
+    void aHubBuilderCanEmptyABucket() {
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.world_hub", true);
+        PlayerBucketEmptyEvent event = new PlayerBucketEmptyEvent(builder, hub.getBlockAt(0, 65, 0),
+                hub.getBlockAt(0, 64, 0), BlockFace.UP, Material.WATER_BUCKET, new ItemStack(Material.BUCKET), EquipmentSlot.HAND);
+
+        listener.onBucketEmpty(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void fillingABucketFromTheHubDecorIsRefusedButMilkingIsAllowed() {
+        PlayerMock player = server.addPlayer();
+        Block water = hub.getBlockAt(0, 64, 0);
+        PlayerBucketFillEvent fromWater = new PlayerBucketFillEvent(player, water, water, BlockFace.UP,
+                Material.BUCKET, new ItemStack(Material.WATER_BUCKET), EquipmentSlot.HAND);
+        PlayerBucketFillEvent milking = new PlayerBucketFillEvent(player, water, water, BlockFace.UP,
+                Material.BUCKET, new ItemStack(Material.MILK_BUCKET), EquipmentSlot.HAND);
+
+        listener.onBucketFill(fromWater);
+        listener.onBucketFill(milking);
+
+        assertTrue(fromWater.isCancelled(), "ramasser l'eau d'une fontaine abîme le décor");
+        assertFalse(milking.isCancelled(), "traire une vache ne modifie aucun bloc");
+    }
+
+    @Test
+    void bucketsInAnotherWorldAreNeverTouched() {
+        PlayerMock player = server.addPlayer();
+        PlayerBucketEmptyEvent event = new PlayerBucketEmptyEvent(player, other.getBlockAt(0, 65, 0),
+                other.getBlockAt(0, 64, 0), BlockFace.UP, Material.LAVA_BUCKET, new ItemStack(Material.BUCKET), EquipmentSlot.HAND);
+
+        listener.onBucketEmpty(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void fireNeverBurnsAHubCraftingTable() {
+        Block table = hub.getBlockAt(0, 64, 0);
+        table.setType(Material.CRAFTING_TABLE);
+        BlockBurnEvent event = new BlockBurnEvent(table, hub.getBlockAt(1, 64, 0));
+
+        listener.onBurn(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void fireSpreadAndPlayerIgnitionAreRefusedInTheHub() {
+        PlayerMock player = server.addPlayer();
+        Block target = hub.getBlockAt(0, 65, 0);
+        BlockIgniteEvent spread = new BlockIgniteEvent(target, BlockIgniteEvent.IgniteCause.SPREAD, hub.getBlockAt(1, 65, 0));
+        BlockIgniteEvent byPlayer = new BlockIgniteEvent(target, BlockIgniteEvent.IgniteCause.FLINT_AND_STEEL, player);
+
+        listener.onIgnite(spread);
+        listener.onIgnite(byPlayer);
+
+        assertTrue(spread.isCancelled());
+        assertTrue(byPlayer.isCancelled());
+    }
+
+    @Test
+    void aHubBuilderMayLightADecorativeFire() {
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.world_hub", true);
+        BlockIgniteEvent event = new BlockIgniteEvent(hub.getBlockAt(0, 65, 0),
+                BlockIgniteEvent.IgniteCause.FLINT_AND_STEEL, builder);
+
+        listener.onIgnite(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void fireInAnotherWorldIsNeverTouched() {
+        BlockBurnEvent event = new BlockBurnEvent(other.getBlockAt(0, 64, 0), other.getBlockAt(1, 64, 0));
+
+        listener.onBurn(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    private static PlayerInteractEvent rightClick(PlayerMock player, Block block) {
+        return new PlayerInteractEvent(player, Action.RIGHT_CLICK_BLOCK, null, block, BlockFace.UP, EquipmentSlot.HAND);
     }
 }

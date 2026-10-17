@@ -20,6 +20,7 @@ documents ci-dessous détaillent chacun un sous-système spécifique.
 | [PROGRESSION.md](PROGRESSION.md) | Compétences, XP, niveaux. |
 | [BACKPACKS.md](BACKPACKS.md) | Backpacks et avantages (entitlements). |
 | [PERSONAL_VAULTS.md](PERSONAL_VAULTS.md) | Coffres personnels partagés entre les Hubs — socle (#104). |
+| [HUB_SERVICES.md](HUB_SERVICES.md) | Services de Hub : salle des coffres et salle de craft vanilla, règles de protection (#107). |
 | [STORE.md](STORE.md) | Boutique web-api et livraisons en jeu. |
 | [WEB_API.md](WEB_API.md) | API web (endpoints, authentification, snapshot). |
 | [CLIENT_MOD.md](CLIENT_MOD.md) | Compatibilité avec le mod client. |

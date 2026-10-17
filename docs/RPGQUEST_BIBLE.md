@@ -5866,6 +5866,19 @@ joueur**, relues à chaque ouverture :
 PlugAdmin. Un coffre verrouillé refuse l'ouverture avec un message générique ; verrouiller ou réduire
 ne supprime jamais de contenu. Détail : [docs/PERSONAL_VAULTS.md](PERSONAL_VAULTS.md).
 
+### Salles de préparation du Hub — coffres et craft (#107)
+
+Services **logiques** d'un Hub, sans bâtiment ni coordonnée imposés : **stockage personnel** (coffres
+liés par `/rpgadmin vault bind`, ci-dessus — aucun second stockage) et **craft vanilla** (établis
+Minecraft posés par un constructeur du Hub). Aucune commande ni configuration propre. Dans tout le
+monde Hub, un joueur sans droit de construction **utilise** un établi (une zone `public-containers:
+false` ne le bloque pas : ce n'est pas un conteneur) mais ne peut ni le casser, ni vider/remplir un
+seau (traire une vache reste permis), ni allumer un feu ; propagation et combustion du feu y sont
+toujours annulées. Un constructeur (`rpgquest.build.hub.<monde>` / `.*` / `rpgquest.admin.world`)
+garde seaux et feu décoratif (qui ne se propage pas). Le craft vanilla reste distinct de l'artisan
+RPG (#18, catalogue `type: CRAFT`). Pistons non bloqués à l'échelle du Hub. Détail et checklist d'un
+nouveau Hub : [docs/HUB_SERVICES.md](HUB_SERVICES.md).
+
 ---
 
 ## 14. WorldEdit

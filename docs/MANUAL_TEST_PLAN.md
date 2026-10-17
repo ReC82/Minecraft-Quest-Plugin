@@ -6766,6 +6766,30 @@ résolution et interface habituelles, sans resource pack.
 
 **Reset** : `/hud off` ; reprendre les pièces données au point 3 si besoin (`/money admin take`).
 
+### TC-355 — Salles de préparation du Hub : coffre → craft → Wild (issue #107, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR #107 sur **DEV**. Un compte constructeur du Hub (OP ou
+`rpgquest.build.hub.world_hub`) et un compte joueur de test `<joueur>` **sans** droit de construction
+ni mode bypass. Un seau d'eau, un seau de lave et un briquet dans l'inventaire de `<joueur>`.
+
+1.  Avec le constructeur, dans `world_hub` : poser un coffre **vide** et deux établis côte à côte, puis
+    `/rpgadmin vault bind vault_01` sur le coffre. Ajouter un panneau « Coffre personnel ».
+2.  Avec `<joueur>` : clic droit sur le coffre. **Attendu** : « Coffre personnel vault_01 » ; y prendre
+    ou déposer un objet.
+3.  Clic droit sur un établi. **Attendu** : la grille de craft vanilla 3×3 s'ouvre ; fabriquer une
+    pioche en bois.
+4.  Essayer de casser l'établi. **Attendu** : rien ne se casse. Vider le seau de lave puis le seau
+    d'eau à côté de l'établi. **Attendu** : refusé, seaux toujours pleins. Briquet sur le sol à côté de
+    l'établi. **Attendu** : aucun feu.
+5.  Si une zone protégée couvre la salle (`/rpgadmin zone info`) : refaire l'étape 3. **Attendu** :
+    l'établi s'ouvre toujours.
+6.  Rejoindre le portail Wild. **Attendu** : téléportation normale ; l'objet du coffre est toujours
+    dans `vault_01` au retour.
+7.  Donner un avis : la salle se comprend-elle sans explication ? Faut-il plus de signalétique ?
+
+**Reset** : avec le constructeur, `/rpgadmin vault unbind` sur le coffre de test puis casser coffre,
+établis et panneau (ou les garder s'ils deviennent la vraie salle).
+
 ### TC-354 — Capacité progressive des coffres personnels (issue #106, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR #106 sur **DEV**. Un compte admin (OP, `rpgquest.admin.world` +

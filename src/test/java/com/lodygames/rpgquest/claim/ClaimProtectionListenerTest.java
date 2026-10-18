@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.NpcBindingRepository;
+import com.lodygames.rpgquest.database.NpcIdRepository;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
@@ -20,7 +23,14 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Cow;
+import org.bukkit.entity.Pig;
+import org.bukkit.entity.Villager;
+import org.bukkit.event.entity.EntityInteractEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerBucketFillEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
@@ -63,6 +73,7 @@ class ClaimProtectionListenerTest {
     private DatabaseManager database;
     private ProgressionService progressionService;
     private ClaimService claimService;
+    private NpcIdentityService npcIdentityService;
     private ClaimProtectionListener listener;
     private PlayerMock owner;
     private PlayerMock member;
@@ -95,7 +106,9 @@ class ClaimProtectionListenerTest {
         claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService,
                 progressionService, variableRepository);
         claimService.start();
-        listener = new ClaimProtectionListener(claimService, bypass);
+        npcIdentityService = new NpcIdentityService(
+                plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
+        listener = new ClaimProtectionListener(claimService, npcIdentityService, bypass);
 
         owner = addPlayer();
         member = addPlayer();
@@ -276,6 +289,184 @@ class ClaimProtectionListenerTest {
                 stranger, cow, EntityDamageEvent.DamageCause.ENTITY_ATTACK, 5.0);
 
         listener.onEntityDamage(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    // ---- Issue #531 : PHYSICAL (dalles, terre labourée) ------------------------------------
+
+    private PlayerInteractEvent stepOn(PlayerMock player, Material type) {
+        Block block = world.getBlockAt(0, 64, 0);
+        block.setType(type);
+        return new PlayerInteractEvent(player, Action.PHYSICAL, null, block, BlockFace.SELF, null);
+    }
+
+    @Test
+    void pressurePlateStepByAStrangerIsCancelledEvenWithoutAHand() {
+        PlayerInteractEvent event = stepOn(stranger, Material.STONE_PRESSURE_PLATE);
+
+        listener.onInteract(event);
+
+        assertTrue(event.isCancelled(), "PHYSICAL n'a pas de main : il doit être traité avant le filtre de main");
+    }
+
+    @Test
+    void pressurePlateStepByAStrangerIsAllowedWhenRedstoneIsMadePublic() throws Exception {
+        claimService.setAllowPublicRedstone(owner.getUniqueId(), "home", true).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        PlayerInteractEvent event = stepOn(stranger, Material.STONE_PRESSURE_PLATE);
+
+        listener.onInteract(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void farmlandTramplingByAStrangerIsCancelledEvenWhenRedstoneIsPublic() throws Exception {
+        claimService.setAllowPublicRedstone(owner.getUniqueId(), "home", true).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        PlayerInteractEvent event = stepOn(stranger, Material.FARMLAND);
+
+        listener.onInteract(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void farmlandTramplingByAMemberIsAllowed() {
+        PlayerInteractEvent event = stepOn(member, Material.FARMLAND);
+
+        listener.onInteract(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void farmlandTramplingOutsideTheClaimIsAllowed() {
+        Block block = world.getBlockAt(1000, 64, 1000);
+        block.setType(Material.FARMLAND);
+        PlayerInteractEvent event = new PlayerInteractEvent(stranger, Action.PHYSICAL, null, block, BlockFace.SELF, null);
+
+        listener.onInteract(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void farmlandTramplingByAMountRiddenByAStrangerIsCancelled() {
+        Pig pig = world.spawn(new Location(world, 0.5, 65, 0.5), Pig.class);
+        pig.addPassenger(stranger);
+        Block block = world.getBlockAt(0, 64, 0);
+        block.setType(Material.FARMLAND);
+        EntityInteractEvent event = new EntityInteractEvent(pig, block);
+
+        listener.onEntityStep(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void farmlandTramplingByAMountRiddenByTheOwnerOrRiderlessIsAllowed() {
+        Block block = world.getBlockAt(0, 64, 0);
+        block.setType(Material.FARMLAND);
+        Pig riderless = world.spawn(new Location(world, 0.5, 65, 0.5), Pig.class);
+        EntityInteractEvent riderlessEvent = new EntityInteractEvent(riderless, block);
+        listener.onEntityStep(riderlessEvent);
+        assertFalse(riderlessEvent.isCancelled(), "aucun joueur à qui imputer le piétinement");
+
+        Pig ridden = world.spawn(new Location(world, 0.5, 65, 0.5), Pig.class);
+        ridden.addPassenger(owner);
+        EntityInteractEvent ownerEvent = new EntityInteractEvent(ridden, block);
+        listener.onEntityStep(ownerEvent);
+        assertFalse(ownerEvent.isCancelled());
+    }
+
+    // ---- Issue #531 : seaux ------------------------------------------------------------------
+
+    @Test
+    void lavaBucketEmptiedByAStrangerInsideTheClaimIsCancelled() {
+        Block target = world.getBlockAt(0, 64, 0);
+        target.setType(Material.AIR);
+        PlayerBucketEmptyEvent event = new PlayerBucketEmptyEvent(stranger, target, target.getRelative(BlockFace.DOWN),
+                BlockFace.UP, Material.LAVA_BUCKET, new ItemStack(Material.LAVA_BUCKET), EquipmentSlot.HAND);
+
+        listener.onBucketEmpty(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void waterBucketFilledByAStrangerInsideTheClaimIsCancelledButAllowedForAMember() {
+        Block water = world.getBlockAt(0, 64, 0);
+        water.setType(Material.WATER);
+        PlayerBucketFillEvent strangerEvent = new PlayerBucketFillEvent(stranger, water, water,
+                BlockFace.UP, Material.BUCKET, new ItemStack(Material.WATER_BUCKET), EquipmentSlot.HAND);
+        listener.onBucketFill(strangerEvent);
+        assertTrue(strangerEvent.isCancelled());
+
+        PlayerBucketFillEvent memberEvent = new PlayerBucketFillEvent(member, water, water,
+                BlockFace.UP, Material.BUCKET, new ItemStack(Material.WATER_BUCKET), EquipmentSlot.HAND);
+        listener.onBucketFill(memberEvent);
+        assertFalse(memberEvent.isCancelled());
+    }
+
+    // ---- Issue #531 : interactions avec les entités -------------------------------------------
+
+    @Test
+    void animalInteractionByAStrangerIsCancelledOnBothHands() {
+        Cow cow = world.spawn(new Location(world, 0.5, 64, 0.5), Cow.class);
+        PlayerInteractEntityEvent mainHand = new PlayerInteractEntityEvent(stranger, cow, EquipmentSlot.HAND);
+        PlayerInteractEntityEvent offHand = new PlayerInteractEntityEvent(stranger, cow, EquipmentSlot.OFF_HAND);
+
+        listener.onInteractEntity(mainHand);
+        listener.onInteractEntity(offHand);
+
+        assertTrue(mainHand.isCancelled(), "traite, tonte, nourriture, laisse... refusées à un non-membre");
+        assertTrue(offHand.isCancelled(), "la main secondaire ne doit pas permettre la même action");
+    }
+
+    @Test
+    void animalInteractionByAMemberOrOutsideTheClaimIsAllowed() {
+        Cow inside = world.spawn(new Location(world, 0.5, 64, 0.5), Cow.class);
+        PlayerInteractEntityEvent memberEvent = new PlayerInteractEntityEvent(member, inside, EquipmentSlot.HAND);
+        listener.onInteractEntity(memberEvent);
+        assertFalse(memberEvent.isCancelled());
+
+        Cow outside = world.spawn(new Location(world, 1000.5, 64, 1000.5), Cow.class);
+        PlayerInteractEntityEvent outsideEvent = new PlayerInteractEntityEvent(stranger, outside, EquipmentSlot.HAND);
+        listener.onInteractEntity(outsideEvent);
+        assertFalse(outsideEvent.isCancelled());
+    }
+
+    @Test
+    void rpgQuestNpcInsideTheClaimStaysUsableByAStranger() throws Exception {
+        Villager npc = world.spawn(new Location(world, 0.5, 64, 0.5), Villager.class);
+        npcIdentityService.tag(npc, "claim_guard").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        PlayerInteractEntityEvent event = new PlayerInteractEntityEvent(stranger, npc, EquipmentSlot.HAND);
+
+        listener.onInteractEntity(event);
+
+        assertFalse(event.isCancelled(), "dialogues et quêtes des PNJ RPGQuest restent accessibles");
+    }
+
+    @Test
+    void plainVillagerTradeByAStrangerIsCancelled() {
+        Villager villager = world.spawn(new Location(world, 0.5, 64, 0.5), Villager.class);
+        PlayerInteractEntityEvent event = new PlayerInteractEntityEvent(stranger, villager, EquipmentSlot.HAND);
+
+        listener.onInteractEntity(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void entityInteractionByABypassingAdminIsAllowed() {
+        stranger.setOp(true);
+        bypass.enable(stranger);
+        Cow cow = world.spawn(new Location(world, 0.5, 64, 0.5), Cow.class);
+        PlayerInteractEntityEvent event = new PlayerInteractEntityEvent(stranger, cow, EquipmentSlot.HAND);
+
+        listener.onInteractEntity(event);
 
         assertFalse(event.isCancelled());
     }

@@ -5157,7 +5157,7 @@ Type : Joueur (propriétaire uniquement) — Permission : `rpgquest.claim`
 But : autoriser ou non les non-membres à utiliser boutons/leviers/portes/dalles de pression du claim où le joueur se trouve.
 Syntaxe : `/claim flag redstone <true|false>`
 Exemple : `/claim flag redstone true`
-Effet : seule protection réellement configurable (les autres — blocs, conteneurs, animaux, armor stands, explosions, pistons traversant la frontière — sont fixes, non configurables).
+Effet : seule protection réellement configurable (les autres — blocs, conteneurs, seaux, piétinement des cultures, animaux et interactions d'entités, cadres, armor stands, explosions, pistons traversant la frontière — sont fixes, non configurables).
 Persistance : oui — SQLite (flags du claim).
 
 ### Protections (résumé, non configurables sauf redstone)
@@ -5166,9 +5166,13 @@ Persistance : oui — SQLite (flags du claim).
 |---|---|---|
 | Blocs (casse/pose) | non | Bloqué pour tout non-membre |
 | Conteneurs | non | Bloqué pour tout non-membre |
+| Seaux (vider/remplir) — #531 | non | Bloqué pour tout non-membre |
+| Terre labourée / œufs de tortue (piétinement, aussi à dos de monture) — #531 | non | Bloqué pour tout non-membre, silencieux |
 | Animaux (dégâts) | non | Bloqué pour tout non-membre |
+| Interactions avec les entités (traire, tondre, nourrir, laisse, monter, villageois, cadres...) — #531 | non | Bloqué pour tout non-membre ; joueurs et PNJ RPGQuest/Citizens toujours utilisables |
+| Cadres et tableaux (retirer l'objet, casser) — #531 | non | Bloqué pour tout non-membre |
 | Armor stands | non | Bloqué pour tout non-membre |
-| Redstone | **oui** (`/claim flag redstone`) | Membre uniquement par défaut |
+| Redstone (y compris dalles de pression et fils piétinés) | **oui** (`/claim flag redstone`) | Membre uniquement par défaut |
 | Explosions | non | Toujours bloquées (destruction de bloc empêchée) |
 | Pistons traversant la frontière | non | Toujours bloqué |
 

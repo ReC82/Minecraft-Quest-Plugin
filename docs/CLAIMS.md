@@ -93,9 +93,13 @@ faites avant toute écriture en base ; un refus ne modifie rien.
 |---|---|---|
 | Blocs (casse/pose) | non | Bloqué pour tout non-membre |
 | Conteneurs (coffres, tonneaux, fourneaux...) | non | Bloqué pour tout non-membre |
+| Seaux (vider ou remplir : eau, lave, neige poudreuse...) — issue #531 | non | Bloqué pour tout non-membre (ces actions n'émettent ni casse ni pose de bloc) |
+| Terre labourée et œufs de tortue (piétinement) — issue #531 | non | Bloqué pour tout non-membre, y compris quand il chevauche une monture ; une entité sans cavalier joueur reste vanilla. Silencieux |
 | Animaux (dégâts) | non | Bloqué pour tout non-membre |
+| Interactions avec les entités (traire, tondre, nourrir, laisse, renommer, monter, échanger avec un villageois, tourner un cadre...) — issue #531 | non | Bloqué pour tout non-membre, deux mains comprises. **Exceptions** : les joueurs et les PNJ RPGQuest/Citizens (identité PDC ou liaison Citizens, jamais le nom) restent utilisables pour les dialogues et les quêtes |
+| Cadres et tableaux (retirer l'objet, casser) — issue #531 | non | Bloqué pour tout non-membre |
 | Armor stands (dégâts et manipulation d'équipement) | non | Bloqué pour tout non-membre |
-| Redstone (boutons, leviers, portes/trappes/portails en bois, dalles de pression) | **oui** (`/claim flag redstone`) | Membre uniquement par défaut ; public si activé |
+| Redstone (boutons, leviers, portes/trappes/portails en bois, dalles de pression, fils) | **oui** (`/claim flag redstone`) | Membre uniquement par défaut ; public si activé. Le déclenchement en marchant dessus (dalles, fils) est refusé silencieusement |
 | Explosions | non | Toujours bloquées (creeper, TNT... l'entité se consume normalement, seule la destruction de bloc est empêchée) |
 | Pistons traversant la frontière | non | Toujours bloqué dès qu'un claim est concerné d'un côté ou de l'autre |
 

@@ -1,0 +1,30 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ajouter une capacité · PlugAdmin (maquette #541)</title>
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap-icons/bootstrap-icons.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/plugadmin.css">
+<link rel="stylesheet" href="maquette.css">
+</head><body>
+<input type="checkbox" id="nav-toggle" class="nav-toggle" hidden>
+<header class="topbar">
+  <label for="nav-toggle" class="burger" aria-label="Menu"><i class="bi bi-list ic"></i></label>
+  <div class="brand"><span class="brand-mark">PA</span><span class="brand-t">Plug<strong>Admin</strong></span><span class="env-chip">DEV</span></div>
+  <div class="topbar-r"><span class="srv-chip srv-ok"><i class="bi bi-wifi ic"></i><span>ONLINE</span></span></div>
+</header>
+<div class="shell">
+  <label for="nav-toggle" class="scrim" aria-hidden="true"></label>
+  <nav class="side"><div class="nav-group"><p class="nav-group-t">Pilotage</p><a class="navlink" href="#"><i class="bi bi-grid-1x2 ic nav-ic"></i><span>Accueil</span></a><a class="navlink" href="#"><i class="bi bi-speedometer2 ic nav-ic"></i><span>Dashboard</span></a><a class="navlink" href="#"><i class="bi bi-clock-history ic nav-ic"></i><span>Historique</span></a></div><div class="nav-group"><p class="nav-group-t">Jeu</p><a class="navlink" href="#"><i class="bi bi-people ic nav-ic"></i><span>Joueurs</span></a><a class="navlink" href="#"><i class="bi bi-person-badge ic nav-ic"></i><span>PNJ</span></a><a class="navlink" href="#"><i class="bi bi-signpost-split ic nav-ic"></i><span>Voyages</span></a><a class="navlink" href="#"><i class="bi bi-globe ic nav-ic"></i><span>Villes</span></a><a class="navlink active" href="#"><i class="bi bi-bug ic nav-ic"></i><span>Mobs spéciaux & boss</span></a><a class="navlink" href="#"><i class="bi bi-lightning-charge ic nav-ic"></i><span>Capacités</span> <em class="nav-soon">nouveau</em></a><a class="navlink" href="#"><i class="bi bi-gift ic nav-ic"></i><span>Récompenses</span></a><a class="navlink" href="#"><i class="bi bi-journal-text ic nav-ic"></i><span>Quêtes</span></a><a class="navlink" href="#"><i class="bi bi-chat-dots ic nav-ic"></i><span>Dialogues</span></a></div><div class="nav-group"><p class="nav-group-t">Contenu</p><a class="navlink" href="#"><i class="bi bi-cloud-upload ic nav-ic"></i><span>Changements en attente</span></a><a class="navlink" href="#"><i class="bi bi-stars ic nav-ic"></i><span>Créer avec une IA</span></a></div><div class="nav-group"><p class="nav-group-t">Aide</p><a class="navlink" href="#"><i class="bi bi-book ic nav-ic"></i><span>Documentation</span></a><a class="navlink" href="#"><i class="bi bi-activity ic nav-ic"></i><span>Diagnostics</span></a></div></nav>
+  <main class="main">
+  <p class="mq-banner"><strong>Maquette statique #541</strong> — aucune donnée réelle, aucun bouton actif. À valider par le propriétaire avant le lot #542.</p>
+  <p class="muted" style="font-size:12.5px;margin:0 0 8px"><a href="#">Mobs spéciaux &amp; boss</a> › <a href="profil.html">Zombie des Éboulements</a> › Ajouter une capacité</p>
+<div class="pagehead"><div class="ph-l"><div class="ph-title"><i class="bi bi-plus-circle ic"></i><h1>Ajouter une capacité</h1></div>
+<p class="sub">Cocher une ou plusieurs capacités. Seules les capacités cochées demanderont des réglages, déjà remplis avec les valeurs « Normal ».</p></div></div>
+<div class="stepper"><span class="on">1. Choisir</span><span>2. Régler</span><span>3. Vérifier et enregistrer</span></div>
+<div class="cap-filters"><div class="search"><input type="search" placeholder="Rechercher" aria-label="Rechercher"></div>
+<a class="chip on" href="#">Compatibles ZOMBIE</a><a class="chip" href="#">Toutes</a></div>
+<div class="pick"><label class="pick-row disabled"><input type="checkbox" disabled><span><strong>Saut et pluie de gravier</strong><br><span class="why">Déjà dans ce profil.</span></span></label><label class="pick-row disabled"><input type="checkbox" disabled><span><strong>Enragé</strong><br><span class="why">Déjà dans ce profil (une seule par profil).</span></span></label><label class="pick-row disabled"><input type="checkbox" disabled><span><strong>Onde sismique</strong><br><span class="why">Prévue (#545) — pas encore disponible.</span></span></label><label class="pick-row checked"><input type="checkbox" checked><span><strong>Division</strong><br><span class="why">Se divise quand elle est touchée. Compatible ZOMBIE.</span></span></label><label class="pick-row disabled"><input type="checkbox" disabled><span><strong>Explosion renforcée</strong><br><span class="why">Sans effet : un ZOMBIE n'explose pas.</span></span></label><label class="pick-row"><input type="checkbox"><span><strong>Explosif au contact</strong><br><span class="why">Poursuit et explose au contact (le mob meurt).</span></span></label></div>
+<div class="savebar"><span class="muted">1 capacité cochée · le profil en aura 4.</span><a class="btn secondary sm" href="profil.html">Annuler</a><a class="btn sm" href="#">Continuer : régler</a></div>
+  </main>
+</div>
+</body></html>

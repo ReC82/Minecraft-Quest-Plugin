@@ -1,0 +1,95 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capacités · PlugAdmin (maquette #541)</title>
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap-icons/bootstrap-icons.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/plugadmin.css">
+<link rel="stylesheet" href="maquette.css">
+</head><body>
+<input type="checkbox" id="nav-toggle" class="nav-toggle" hidden>
+<header class="topbar">
+  <label for="nav-toggle" class="burger" aria-label="Menu"><i class="bi bi-list ic"></i></label>
+  <div class="brand"><span class="brand-mark">PA</span><span class="brand-t">Plug<strong>Admin</strong></span><span class="env-chip">DEV</span></div>
+  <div class="topbar-r"><span class="srv-chip srv-ok"><i class="bi bi-wifi ic"></i><span>ONLINE</span></span></div>
+</header>
+<div class="shell">
+  <label for="nav-toggle" class="scrim" aria-hidden="true"></label>
+  <nav class="side"><div class="nav-group"><p class="nav-group-t">Pilotage</p><a class="navlink" href="#"><i class="bi bi-grid-1x2 ic nav-ic"></i><span>Accueil</span></a><a class="navlink" href="#"><i class="bi bi-speedometer2 ic nav-ic"></i><span>Dashboard</span></a><a class="navlink" href="#"><i class="bi bi-clock-history ic nav-ic"></i><span>Historique</span></a></div><div class="nav-group"><p class="nav-group-t">Jeu</p><a class="navlink" href="#"><i class="bi bi-people ic nav-ic"></i><span>Joueurs</span></a><a class="navlink" href="#"><i class="bi bi-person-badge ic nav-ic"></i><span>PNJ</span></a><a class="navlink" href="#"><i class="bi bi-signpost-split ic nav-ic"></i><span>Voyages</span></a><a class="navlink" href="#"><i class="bi bi-globe ic nav-ic"></i><span>Villes</span></a><a class="navlink" href="#"><i class="bi bi-bug ic nav-ic"></i><span>Mobs spéciaux & boss</span></a><a class="navlink active" href="#"><i class="bi bi-lightning-charge ic nav-ic"></i><span>Capacités</span> <em class="nav-soon">nouveau</em></a><a class="navlink" href="#"><i class="bi bi-gift ic nav-ic"></i><span>Récompenses</span></a><a class="navlink" href="#"><i class="bi bi-journal-text ic nav-ic"></i><span>Quêtes</span></a><a class="navlink" href="#"><i class="bi bi-chat-dots ic nav-ic"></i><span>Dialogues</span></a></div><div class="nav-group"><p class="nav-group-t">Contenu</p><a class="navlink" href="#"><i class="bi bi-cloud-upload ic nav-ic"></i><span>Changements en attente</span></a><a class="navlink" href="#"><i class="bi bi-stars ic nav-ic"></i><span>Créer avec une IA</span></a></div><div class="nav-group"><p class="nav-group-t">Aide</p><a class="navlink" href="#"><i class="bi bi-book ic nav-ic"></i><span>Documentation</span></a><a class="navlink" href="#"><i class="bi bi-activity ic nav-ic"></i><span>Diagnostics</span></a></div></nav>
+  <main class="main">
+  <p class="mq-banner"><strong>Maquette statique #541</strong> — aucune donnée réelle, aucun bouton actif. À valider par le propriétaire avant le lot #542.</p>
+  <div class="pagehead"><div class="ph-l"><div class="ph-title"><i class="bi bi-lightning-charge ic"></i><h1>Capacités</h1></div>
+<p class="sub">Le catalogue des capacités que l'on peut donner à un mob spécial ou à un boss. Une capacité est un <strong>type</strong> : chaque profil choisit les siennes et règle ses propres valeurs dans la page « Mobs spéciaux &amp; boss ». Rien ne se modifie ici.</p></div>
+<div class="ph-actions"><a class="btn secondary sm" href="#"><i class="bi bi-bug ic"></i> Mobs spéciaux &amp; boss</a></div></div>
+<div class="cap-filters">
+ <div class="search"><input type="search" placeholder="Rechercher une capacité (ex. gravier, renforts)" aria-label="Rechercher"></div>
+ <a class="chip on" href="#">Toutes · 15</a><a class="chip" href="#">Attaque</a><a class="chip" href="#">Défense</a>
+ <a class="chip" href="#">Invocation</a><a class="chip" href="#">Contrôle</a>
+ <select aria-label="Compatible avec"><option>Compatible avec : toute créature</option><option>ZOMBIE</option><option>CREEPER</option></select>
+ <select aria-label="État"><option>État : tous</option><option>Disponibles</option><option>En développement</option><option>Prévues</option></select>
+</div>
+<h2 class="cap-sec-t">Disponibles en jeu · 5</h2><div class="cap-grid"><article class="cap-card">
+<div class="cap-head"><span class="cap-ic off"><i class="bi bi-fire"></i></span>
+<div><div class="cap-name">Enragé</div><div class="cap-cat">Défense · seuil de vie</div></div><span style="margin-left:auto"><span class="pill ok">Disponible</span></span></div>
+<p class="cap-desc">Sous un seuil de vie, devient plus rapide et plus fort, une seule fois, avec un signal visible.</p><ul class="cap-facts"><li><span class="k">Déclencheur</span><span>vie sous X %</span></li><li><span class="k">Compatible</span><span>toutes les créatures</span></li></ul>
+<div class="cap-foot"><span class="badge text-bg-secondary">Utilisée par 1 profil</span><span style="flex:1"></span><a class="btn sm" href="fiche.html"><i class="bi bi-eye ic"></i> Voir la fiche</a></div></article><article class="cap-card">
+<div class="cap-head"><span class="cap-ic inv"><i class="bi bi-people"></i></span>
+<div><div class="cap-name">Invocation de renforts</div><div class="cap-cat">Invocation</div></div><span style="margin-left:auto"><span class="pill ok">Disponible</span></span></div>
+<p class="cap-desc">Quand il est blessé, a une chance d'appeler des renforts, avec délai et plafond de renforts vivants.</p><ul class="cap-facts"><li><span class="k">Déclencheur</span><span>coup reçu</span></li><li><span class="k">Compatible</span><span>toutes les créatures</span></li></ul>
+<div class="cap-foot"><span class="badge text-bg-secondary">Utilisée par 1 profil</span><span style="flex:1"></span><a class="btn sm" href="fiche.html"><i class="bi bi-eye ic"></i> Voir la fiche</a></div></article><article class="cap-card">
+<div class="cap-head"><span class="cap-ic inv"><i class="bi bi-diagram-3"></i></span>
+<div><div class="cap-name">Division</div><div class="cap-cat">Invocation</div></div><span style="margin-left:auto"><span class="pill ok">Disponible</span></span></div>
+<p class="cap-desc">Se divise en copies d'elle-même quand elle est touchée, avec profondeur et nombre bornés.</p><ul class="cap-facts"><li><span class="k">Déclencheur</span><span>coup reçu</span></li><li><span class="k">Compatible</span><span>toutes les créatures</span></li></ul>
+<div class="cap-foot"><span class="badge text-bg-secondary">Utilisée par 1 profil</span><span style="flex:1"></span><a class="btn sm" href="fiche.html"><i class="bi bi-eye ic"></i> Voir la fiche</a></div></article><article class="cap-card">
+<div class="cap-head"><span class="cap-ic off"><i class="bi bi-radioactive"></i></span>
+<div><div class="cap-name">Explosion renforcée</div><div class="cap-cat">Attaque</div></div><span style="margin-left:auto"><span class="pill ok">Disponible</span></span></div>
+<p class="cap-desc">Ses explosions sont plus grandes. Protections des claims et du Hub respectées par l'explosion.</p><ul class="cap-facts"><li><span class="k">Déclencheur</span><span>explosion</span></li><li><span class="k">Compatible</span><span>créatures qui explosent (creeper)</span></li></ul>
+<div class="cap-foot"><span class="badge text-bg-secondary">Utilisée par 1 profil</span><span style="flex:1"></span><a class="btn sm" href="fiche.html"><i class="bi bi-eye ic"></i> Voir la fiche</a></div></article><article class="cap-card">
+<div class="cap-head"><span class="cap-ic off"><i class="bi bi-bullseye"></i></span>
+<div><div class="cap-name">Explosif au contact</div><div class="cap-cat">Attaque</div></div><span style="margin-left:auto"><span class="pill ok">Disponible</span></span></div>
+<p class="cap-desc">Poursuit le joueur le plus proche et explose à son contact (s'autodétruit).</p><ul class="cap-facts"><li><span class="k">Déclencheur</span><span>joueur à portée</span></li><li><span class="k">Compatible</span><span>toutes les créatures</span></li></ul>
+<div class="cap-foot"><span class="badge text-bg-secondary">Utilisée par 1 profil</span><span style="flex:1"></span><a class="btn sm" href="fiche.html"><i class="bi bi-eye ic"></i> Voir la fiche</a></div></article></div>
+<h2 class="cap-sec-t">En développement · 1</h2><div class="cap-grid"><article class="cap-card">
+<div class="cap-head"><span class="cap-ic ctl"><i class="bi bi-cloud-hail"></i></span>
+<div><div class="cap-name">Saut et pluie de gravier</div><div class="cap-cat">Attaque · combat</div></div><span style="margin-left:auto"><span class="pill warn">En développement</span></span></div>
+<p class="cap-desc">En combat, saute puis fait tomber du gravier autour du joueur. Esquivable, sans bloc posé ni objet récupérable.</p><ul class="cap-facts"><li><span class="k">Déclencheur</span><span>en combat, au hasard</span></li><li><span class="k">Compatible</span><span>créatures terrestres</span></li></ul>
+<div class="cap-foot"><span style="flex:1"></span><a class="btn sm" href="fiche.html"><i class="bi bi-eye ic"></i> Voir la fiche</a></div></article></div>
+<h2 class="cap-sec-t">Prévues · 9</h2><div class="cap-grid"><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic ctl"><i class="bi bi-bullseye"></i></span>
+<div><div class="cap-name">Onde sismique</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #545 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic off"><i class="bi bi-lightning"></i></span>
+<div><div class="cap-name">Éclair en chaîne</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #546 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic def"><i class="bi bi-heart-pulse"></i></span>
+<div><div class="cap-name">Totem de soin</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #547 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic off"><i class="bi bi-arrow-right-circle"></i></span>
+<div><div class="cap-name">Charge du béhémoth</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #548 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic ctl"><i class="bi bi-tornado"></i></span>
+<div><div class="cap-name">Puits gravitationnel</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #549 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic ctl"><i class="bi bi-virus"></i></span>
+<div><div class="cap-name">Spores parasites</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #550 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic off"><i class="bi bi-crosshair"></i></span>
+<div><div class="cap-name">Marque du chasseur</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #551 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic def"><i class="bi bi-shield-shaded"></i></span>
+<div><div class="cap-name">Mue protectrice</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #552 — non jouable</span></div></article><article class="cap-card planned">
+<div class="cap-head"><span class="cap-ic inv"><i class="bi bi-megaphone"></i></span>
+<div><div class="cap-name">Tambour de guerre</div><div class="cap-cat">Idée validée, à développer</div></div><span style="margin-left:auto"><span class="pill pill--neutral">Prévue</span></span></div>
+<p class="cap-desc">Fiche détaillée au démarrage du ticket.</p><ul class="cap-facts"></ul>
+<div class="cap-foot"><span style="flex:1"></span><span class="muted" style="font-size:12px">Ticket #553 — non jouable</span></div></article></div>
+  </main>
+</div>
+</body></html>

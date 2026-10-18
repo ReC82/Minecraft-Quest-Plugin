@@ -142,6 +142,39 @@ public final class RewardDefinitionForm {
         return null;
     }
 
+    /**
+     * Inverse de {@link #fill} : paramètres d'une action envoyée → champs du formulaire, pour
+     * réafficher tel quel un envoi refusé par le serveur (issue #474, comme les tables en #177).
+     */
+    public static Map<String, String> formOf(Map<String, String> params) {
+        Map<String, String> form = new LinkedHashMap<>();
+        for (String key : List.of("reward_key", "label", "create", "expected_version", "perk_key", "perk_tier")) {
+            form.put(key, trim(params.get(key)));
+        }
+        if ("true".equals(trim(params.get("enabled")))) {
+            form.put("enabled", "true");
+        }
+        int i = 0;
+        for (String line : trim(params.get("items")).split(";")) {
+            if (line.isBlank() || i >= MAX_ITEMS) {
+                continue;
+            }
+            String[] parts = line.split("\\+");
+            int at = parts[0].lastIndexOf('@');
+            form.put("item_id_" + i, at < 0 ? parts[0] : parts[0].substring(0, at));
+            form.put("item_amount_" + i, at < 0 ? "1" : parts[0].substring(at + 1));
+            for (int p = 1; p < parts.length; p++) {
+                if (parts[p].startsWith("ench=")) {
+                    form.put("item_ench_" + i, parts[p].substring(5).replace(':', ' ').replace(",", ", "));
+                } else if (parts[p].startsWith("potion=")) {
+                    form.put("item_potion_" + i, parts[p].substring(7));
+                }
+            }
+            i++;
+        }
+        return form;
+    }
+
     /** {@code reward.definition.duplicate}. */
     static String fillDuplicate(Map<String, String> form, Map<String, String> params) {
         String source = trim(form.get("reward_key")).toLowerCase(Locale.ROOT);

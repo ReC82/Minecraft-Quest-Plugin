@@ -11280,6 +11280,7 @@ public final class AgentPages {
                 .append(compactRefresh(session, agentId, "reward.catalog.status", "Rafraîchir",
                         loaded.isPresent() ? "btn-outline-primary" : "btn-warning", REWARDS_PATH))
                 .append("</div>");
+        sb.append(rewardPendingBanner(agentId));
         if (loaded.isEmpty()) {
             return sb.append(Ui.empty("gift", "État pas encore chargé — cliquer sur « Rafraîchir »."))
                     .toString();
@@ -11305,7 +11306,8 @@ public final class AgentPages {
         Map<String, String> rewardNames = new java.util.LinkedHashMap<>();
         rewards.forEach(o -> rewardNames.put(str(asMap(o).get("key")), rewardDisplayName(asMap(o))));
         Map<String, String> draft = refusedTableForm(session, agentId, q);
-        sb.append(rewardDefinitionsSection(session, agentId, d, rewards, canWrite && editorReady));
+        sb.append(rewardDefinitionsSection(session, agentId, d, rewards, canWrite && editorReady,
+                refusedDefinitionForm(session, agentId, q)));
         boolean tablesWritable = !rewards.isEmpty();
         sb.append("<div class=\"npc-catbar mt-4\"><span class=\"npc-catbar-t\">Tables de tirage</span>");
         if (canWrite && tablesWritable) {
@@ -11442,6 +11444,20 @@ public final class AgentPages {
             sb.append("<option value=\"").append(Http.esc(material)).append("\" label=\"")
                     .append(Http.esc(MaterialNames.french(material))).append("\">");
         }
+        sb.append("</datalist><datalist id=\"dl-reward-enchants\">");
+        // #474 : nom français, niveau maximal, objets acceptés et exclusivités, lus par panel.js.
+        for (Map<String, Object> e : enchantmentInfo(d)) {
+            String key = str(e.get("key"));
+            int max = intOf(e.get("maxLevel"));
+            sb.append("<option value=\"").append(Http.esc(key)).append("\" label=\"")
+                    .append(Http.esc(EnchantmentNames.french(key) + (max > 0 ? " (max " + EnchantmentNames.level(max) + ")"
+                            : ""))).append("\" data-name=\"").append(Http.esc(EnchantmentNames.french(key)))
+                    .append("\" data-max=\"").append(max).append("\" data-items=\"")
+                    .append(Http.esc(String.join(",", asList(e.get("items")).stream().map(AgentPages::str).toList())))
+                    .append("\" data-conflicts=\"")
+                    .append(Http.esc(String.join(",", asList(e.get("conflicts")).stream().map(AgentPages::str).toList())))
+                    .append("\">");
+        }
         sb.append("</datalist><datalist id=\"dl-reward-potions\">");
         asList(d.get("potions")).forEach(p -> sb.append("<option value=\"").append(Http.esc(str(p))).append("\">"));
         return sb.append("</datalist>").toString();
@@ -11449,7 +11465,8 @@ public final class AgentPages {
 
     /** Catalogue des récompenses : fiches éditables (#474), ou liste en lecture sans le droit d'écrire. */
     private String rewardDefinitionsSection(Session session, String agentId, Map<String, Object> d,
-                                            List<Object> rewards, boolean canWrite) {
+                                            List<Object> rewards, boolean canWrite, Map<String, String> draft) {
+        boolean createDraft = draft != null && "true".equals(draft.get("create"));
         StringBuilder sb = new StringBuilder("<div class=\"npc-catbar mt-3\"><span class=\"npc-catbar-t\">")
                 .append("Récompenses (").append(rewards.size()).append(")</span>");
         if (canWrite) {
@@ -11462,9 +11479,10 @@ public final class AgentPages {
                 + "donne rien, un boss ne la déclare plus) ; les gains déjà obtenus restent remis. Pas de suppression : "
                 + "désactiver suffit et ne casse aucune référence.</p>");
         if (canWrite) {
-            sb.append("<div class=\"collapse\" id=\"rd-new\"><div class=\"card card-body npc-formcard\">")
+            sb.append("<div class=\"collapse").append(createDraft ? " show" : "")
+                    .append("\" id=\"rd-new\"><div class=\"card card-body npc-formcard\">")
                     .append("<p class=\"npc-fs-h\">Nouvelle récompense</p>")
-                    .append(rewardDefinitionForm(session, agentId, null, "rd-new", d))
+                    .append(rewardDefinitionForm(session, agentId, null, "rd-new", d, createDraft ? draft : null))
                     .append("</div></div>");
         }
         if (rewards.isEmpty()) {
@@ -11472,13 +11490,15 @@ public final class AgentPages {
                     : "Aucune récompense.")).toString();
         }
         for (Object o : rewards) {
-            sb.append(rewardDefinitionCard(session, agentId, asMap(o), d, canWrite));
+            Map<String, Object> r = asMap(o);
+            boolean mine = draft != null && !createDraft && str(r.get("key")).equals(draft.get("reward_key"));
+            sb.append(rewardDefinitionCard(session, agentId, r, d, canWrite, mine ? draft : null));
         }
         return sb.toString();
     }
 
     private String rewardDefinitionCard(Session session, String agentId, Map<String, Object> r, Map<String, Object> d,
-                                        boolean canWrite) {
+                                        boolean canWrite, Map<String, String> draft) {
         String key = str(r.get("key"));
         boolean enabled = !Boolean.FALSE.equals(r.get("enabled"));
         String uid = "rd-" + key.replaceAll("[^a-z0-9_-]", "_");
@@ -11487,7 +11507,7 @@ public final class AgentPages {
         sb.append("<div><strong>").append(Http.esc(str(r.get("label")))).append("</strong> <code>").append(Http.esc(key))
                 .append("</code> ").append(enabled ? "<span class=\"badge text-bg-success\">active</span>"
                         : "<span class=\"badge text-bg-secondary\">désactivée</span>")
-                .append("</div><div>").append(Http.esc(str(r.get("summary")))).append("</div>");
+                .append("</div><div>").append(Http.esc(rewardContentText(r))).append("</div>");
         sb.append("<div class=\"muted small\">").append(usages.isEmpty()
                 ? "Utilisée par aucune table ni aucun boss pour l'instant."
                 : "Utilisée par : " + Http.esc(String.join(", ", usages.stream().map(AgentPages::str).toList())) + ".")
@@ -11526,8 +11546,9 @@ public final class AgentPages {
                     .append("<div class=\"form-text mb-2\">La copie est créée <strong>désactivée</strong>, avec le même "
                             + "contenu : la modifier, puis l'activer.</div>")
                     .append("<button class=\"btn sm\" type=\"submit\">Créer la copie</button></form></div>");
-            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-edit\"><div class=\"card card-body "
-                    + "npc-formcard\">").append(rewardDefinitionForm(session, agentId, r, uid + "-f", d))
+            sb.append("<div class=\"collapse mt-2").append(draft != null ? " show" : "").append("\" id=\"").append(uid)
+                    .append("-edit\"><div class=\"card card-body npc-formcard\">")
+                    .append(rewardDefinitionForm(session, agentId, r, uid + "-f", d, draft))
                     .append("</div></div>");
         }
         return sb.append("</div>").toString();
@@ -11541,74 +11562,71 @@ public final class AgentPages {
     /** Lignes d'objets proposées : celles de la récompense, plus deux vides (neuf au plus). */
     private static final int REWARD_ITEM_BLANK_ROWS = 2;
 
-    /** Formulaire de récompense, création ({@code existing == null}) ou modification. */
+    /**
+     * Formulaire de récompense, création ({@code existing == null}) ou modification. {@code draft} = un
+     * envoi refusé (champs du formulaire), réaffiché tel quel avec la raison (issue #474, comme les
+     * tables en #177). Enchantements : sélecteur guidé de {@code panel.js} (nom français, niveau 1 à
+     * max, compatibilités) qui écrit dans le champ texte {@code item_ench_<i>} ; sans JavaScript, ce
+     * champ reste saisissable à la main et le serveur revalide tout.
+     */
     private String rewardDefinitionForm(Session session, String agentId, Map<String, Object> existing, String uid,
-                                        Map<String, Object> d) {
+                                        Map<String, Object> d, Map<String, String> draft) {
         boolean create = existing == null;
-        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">");
+        Map<String, String> v = draft != null ? draft : definitionFormValues(existing);
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\" "
+                + "data-reward-def-form data-submit-once>");
+        if (draft != null) {
+            sb.append("<div class=\"alert alert-danger py-2\" role=\"alert\" data-refused-form><strong>Refusé, rien "
+                    + "n'a été enregistré :</strong> ").append(Http.esc(draft.getOrDefault("_error", "")))
+                    .append("<br>Vos saisies sont conservées ci-dessous : corriger puis renvoyer.</div>");
+        }
         sb.append(rewardHiddenFields(session, agentId, "reward.definition.save"));
         sb.append("<input type=\"hidden\" name=\"create\" value=\"").append(create).append("\">");
         if (!create) {
+            // Version ACTUELLE de la récompense : le renvoi après un refus porte sur l'état réel.
             sb.append("<input type=\"hidden\" name=\"reward_key\" value=\"").append(Http.esc(str(existing.get("key"))))
                     .append("\"><input type=\"hidden\" name=\"expected_version\" value=\"")
                     .append(Http.esc(str(existing.get("version")))).append("\">");
         }
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-l\">Nom de la "
                 + "récompense</label><input class=\"form-control\" id=\"").append(uid).append("-l\" name=\"label\" "
-                + "required maxlength=\"120\" value=\"").append(Http.esc(create ? "" : str(existing.get("label"))))
+                + "required maxlength=\"120\" value=\"").append(Http.esc(v.getOrDefault("label", "")))
                 .append("\">").append(fieldHelp("Nom montré au joueur quand il la reçoit (« Récompense reçue : … »).",
                         "Épée du héros", "aucun (obligatoire)", null)).append("</div>");
         if (create) {
             sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">Identifiant "
                     + "(facultatif)</label><input class=\"form-control\" id=\"").append(uid).append("-id\" "
-                    + "name=\"reward_key\" maxlength=\"64\" pattern=\"[a-z0-9_\\-]{0,64}\">")
+                    + "name=\"reward_key\" maxlength=\"64\" pattern=\"[a-z0-9_\\-]{0,64}\" value=\"")
+                    .append(Http.esc(v.getOrDefault("reward_key", ""))).append("\">")
                     .append(fieldHelp("Ce que les tables et les boss utilisent pour la désigner. Vide : tiré du nom "
                             + "(« Épée du héros » → <code>epee_du_heros</code>). Ne change plus ensuite.",
                             "epee_du_heros", "tiré du nom", null)).append("</div>");
         }
-        boolean enabled = create || !Boolean.FALSE.equals(existing.get("enabled"));
+        boolean enabled = "true".equals(v.get("enabled"));
         sb.append("<div class=\"form-check form-switch mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
                 + "role=\"switch\" id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
                 .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
                 .append("-en\">Récompense active (peut être gagnée)</label></div>");
-        List<Object> items = create ? List.of() : asList(existing.get("items"));
+        int filled = 0;
+        for (int i = 0; i < com.lodygames.rpgquest.panel.agent.RewardDefinitionForm.MAX_ITEMS; i++) {
+            if (!v.getOrDefault("item_id_" + i, "").isBlank() || !v.getOrDefault("item_ench_" + i, "").isBlank()
+                    || !v.getOrDefault("item_potion_" + i, "").isBlank()) {
+                filled = i + 1;
+            }
+        }
         int rows = Math.min(com.lodygames.rpgquest.panel.agent.RewardDefinitionForm.MAX_ITEMS,
-                Math.max(3, items.size() + REWARD_ITEM_BLANK_ROWS));
+                Math.max(3, filled + REWARD_ITEM_BLANK_ROWS));
         sb.append("<p class=\"form-label mb-1\">Objets remis (tous ensemble)</p><div class=\"form-text mb-1\">Taper pour "
-                + "chercher un objet (nom français ou identifiant). Enchantements : « nom niveau » séparés par des "
-                + "virgules, sur l'objet — ou <em>stockés</em> dans un livre enchanté (ENCHANTED_BOOK). Potion : "
-                + "seulement sur POTION, SPLASH_POTION, LINGERING_POTION ou TIPPED_ARROW. Vider l'objet pour retirer "
-                + "la ligne.</div>");
+                + "chercher un objet (nom français ou identifiant). Enchantements : taper un nom (« tranchant », "
+                + "« solidité »…), choisir le niveau puis « Ajouter » — sur l'objet, ou <em>stockés</em> dans un livre "
+                + "enchanté. Potion : seulement sur POTION, SPLASH_POTION, LINGERING_POTION ou TIPPED_ARROW. Vider "
+                + "l'objet pour retirer la ligne.</div>");
         for (int i = 0; i < rows; i++) {
-            Map<String, Object> item = i < items.size() ? asMap(items.get(i)) : Map.of();
-            String itemId = str(item.get("item"));
-            sb.append("<div class=\"row g-2 mb-2 pb-2 border-bottom align-items-start\">")
-                    .append("<div class=\"col-12 col-md-5\"><input class=\"form-control\" type=\"text\" name=\"item_id_")
-                    .append(i).append("\" aria-label=\"Objet ").append(i + 1).append("\" value=\"").append(Http.esc(itemId))
-                    .append("\" list=\"dl-reward-items\" autocomplete=\"off\" placeholder=\"Objet…\">")
-                    .append(itemId.isEmpty() || itemId.indexOf(':') >= 0 ? ""
-                            : "<div class=\"form-text mt-0\">" + Http.esc(MaterialNames.french(itemId)) + "</div>")
-                    .append("</div><div class=\"col-4 col-md-1\"><input class=\"form-control\" type=\"number\" min=\"1\" "
-                            + "max=\"64\" name=\"item_amount_").append(i).append("\" aria-label=\"Quantité objet ")
-                    .append(i + 1).append("\" value=\"").append(Http.esc(item.isEmpty() ? "" : str(item.get("amount"))))
-                    .append("\" placeholder=\"1\"></div>")
-                    .append("<div class=\"col-8 col-md-4\"><input class=\"form-control\" type=\"text\" name=\"item_ench_")
-                    .append(i).append("\" aria-label=\"Enchantements objet ").append(i + 1).append("\" value=\"")
-                    .append(Http.esc(str(item.get("enchantments")).replace(":", " ").replace(",", ", ")))
-                    .append("\" placeholder=\"Enchantements (sharpness 3)\"></div>")
-                    .append("<div class=\"col-12 col-md-2\"><input class=\"form-control\" type=\"text\" name=\"item_potion_")
-                    .append(i).append("\" aria-label=\"Potion objet ").append(i + 1).append("\" value=\"")
-                    .append(Http.esc(str(item.get("potion")))).append("\" list=\"dl-reward-potions\" "
-                            + "autocomplete=\"off\" placeholder=\"Potion\"></div></div>");
+            sb.append(rewardItemRow(uid, i, v.getOrDefault("item_id_" + i, ""), v.getOrDefault("item_amount_" + i, ""),
+                    v.getOrDefault("item_ench_" + i, ""), v.getOrDefault("item_potion_" + i, "")));
         }
-        List<Object> enchantments = asList(d.get("enchantments"));
-        if (!enchantments.isEmpty()) {
-            sb.append("<details class=\"mb-2 small\"><summary>Enchantements connus du serveur (")
-                    .append(enchantments.size()).append(")</summary><p class=\"mb-0\">")
-                    .append(Http.esc(String.join(", ", enchantments.stream().map(AgentPages::str).toList())))
-                    .append("</p></details>");
-        }
-        String perkKey = create ? "" : str(existing.get("perkKey"));
+        sb.append(enchantmentsHelp(d));
+        String perkKey = v.getOrDefault("perk_key", "");
         sb.append("<details class=\"mb-2\"").append(perkKey.isEmpty() ? "" : " open").append("><summary>Avancé : "
                 + "avantage persistant</summary><div class=\"form-text\">Un avantage est enregistré sur le joueur (clé + "
                 + "palier) et lu par un système du jeu qui le connaît. Laisser vide si vous ne savez pas : seuls les "
@@ -11617,14 +11635,135 @@ public final class AgentPages {
                         + "aria-label=\"Clé de l'avantage\" placeholder=\"clé\" value=\"").append(Http.esc(perkKey))
                 .append("\"></div><div class=\"col-6\"><input class=\"form-control\" name=\"perk_tier\" maxlength=\"64\" "
                         + "aria-label=\"Palier de l'avantage\" placeholder=\"palier\" value=\"")
-                .append(Http.esc(create ? "" : str(existing.get("perkTier")))).append("\"></div></div></details>");
+                .append(Http.esc(v.getOrDefault("perk_tier", ""))).append("\"></div></div></details>");
         if (!create) {
-            sb.append("<div class=\"form-text mb-2\">Contenu actuel : ").append(Http.esc(str(existing.get("summary"))))
+            sb.append("<div class=\"form-text mb-2\">Contenu actuel : ").append(Http.esc(rewardContentText(existing)))
                     .append(". Modifier change aussi ce que remettront les gains déjà obtenus et pas encore reçus.</div>");
         }
-        sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
-                .append(create ? "Créer la récompense" : "Enregistrer").append("</button></form>");
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\" data-submit-label=\"Envoi en cours…\">")
+                .append(Icons.icon("save")).append(create ? "Créer la récompense" : "Enregistrer").append("</button></form>");
         return sb.toString();
+    }
+
+    /**
+     * Une ligne d'objet : objet (nom français affiché sous le champ, issue #474), quantité,
+     * enchantements (sélecteur guidé + champ texte soumis), potion.
+     */
+    private static String rewardItemRow(String uid, int i, String itemId, String amount, String ench, String potion) {
+        String row = uid + "-i" + i;
+        return "<div class=\"row g-2 mb-2 pb-2 border-bottom align-items-start\" data-reward-item-row>"
+                + "<div class=\"col-12 col-md-5\"><input class=\"form-control\" type=\"text\" name=\"item_id_" + i
+                + "\" aria-label=\"Objet " + (i + 1) + "\" value=\"" + Http.esc(itemId) + "\" list=\"dl-reward-items\" "
+                + "autocomplete=\"off\" placeholder=\"Objet…\" data-reward-item>"
+                + "<div class=\"form-text mt-0\" data-item-picked>" + itemPickedHtml(itemId) + "</div></div>"
+                + "<div class=\"col-4 col-md-1\"><input class=\"form-control\" type=\"number\" min=\"1\" max=\"64\" "
+                + "name=\"item_amount_" + i + "\" aria-label=\"Quantité objet " + (i + 1) + "\" value=\""
+                + Http.esc(amount) + "\" placeholder=\"1\"></div>"
+                + "<div class=\"col-8 col-md-4\" data-ench-box>"
+                + "<input class=\"form-control\" type=\"text\" name=\"item_ench_" + i + "\" id=\"" + row + "-e\" "
+                + "aria-label=\"Enchantements objet " + (i + 1) + "\" value=\"" + Http.esc(ench) + "\" "
+                + "placeholder=\"Enchantements (sharpness 3)\" data-ench-store>"
+                + "<div class=\"d-flex flex-wrap gap-1 mt-1\" data-ench-chips aria-live=\"polite\"></div>"
+                + "<div class=\"ench-pick mt-1\" data-ench-pick-box hidden><div class=\"combo\" data-combo>"
+                + "<input class=\"form-control form-control-sm combo-input\" type=\"text\" list=\"dl-reward-enchants\" "
+                + "autocomplete=\"off\" role=\"combobox\" aria-expanded=\"false\" aria-autocomplete=\"list\" "
+                + "aria-label=\"Chercher un enchantement pour l'objet " + (i + 1) + "\" "
+                + "placeholder=\"Ajouter un enchantement…\" data-ench-pick></div>"
+                + "<div class=\"d-flex gap-1 mt-1\"><select class=\"form-select form-select-sm\" aria-label=\"Niveau\" "
+                + "data-ench-level disabled><option value=\"\">Niveau</option></select>"
+                + "<button class=\"btn btn-sm secondary\" type=\"button\" data-ench-add disabled>Ajouter</button></div>"
+                + "<div class=\"form-text mt-1\" data-ench-info aria-live=\"polite\"></div></div></div>"
+                + "<div class=\"col-12 col-md-2\"><input class=\"form-control\" type=\"text\" name=\"item_potion_" + i
+                + "\" aria-label=\"Potion objet " + (i + 1) + "\" value=\"" + Http.esc(potion) + "\" "
+                + "list=\"dl-reward-potions\" autocomplete=\"off\" placeholder=\"Potion\"></div></div>";
+    }
+
+    /** Nom français d'un objet sous son champ, identifiant en complément (même rendu que panel.js). */
+    static String itemPickedHtml(String itemId) {
+        String id = itemId == null ? "" : itemId.trim();
+        if (id.isEmpty()) {
+            return "";
+        }
+        if (id.indexOf(':') >= 0) {
+            return "<strong>Objet RPGQuest</strong> · <code>" + Http.esc(id) + "</code>";
+        }
+        return "<strong>" + Http.esc(MaterialNames.french(id.toUpperCase(java.util.Locale.ROOT))) + "</strong> · <code>"
+                + Http.esc(id) + "</code>";
+    }
+
+    /** Une récompense chargée → champs du formulaire (même forme qu'un envoi). Création : par défaut. */
+    private static Map<String, String> definitionFormValues(Map<String, Object> existing) {
+        Map<String, String> v = new java.util.LinkedHashMap<>();
+        if (existing == null) {
+            v.put("enabled", "true");
+            return v;
+        }
+        v.put("reward_key", str(existing.get("key")));
+        v.put("label", str(existing.get("label")));
+        if (!Boolean.FALSE.equals(existing.get("enabled"))) {
+            v.put("enabled", "true");
+        }
+        List<Object> items = asList(existing.get("items"));
+        for (int i = 0; i < items.size(); i++) {
+            Map<String, Object> item = asMap(items.get(i));
+            v.put("item_id_" + i, str(item.get("item")));
+            v.put("item_amount_" + i, str(item.get("amount")));
+            v.put("item_ench_" + i, str(item.get("enchantments")).replace(":", " ").replace(",", ", "));
+            v.put("item_potion_" + i, str(item.get("potion")));
+        }
+        v.put("perk_key", str(existing.get("perkKey")));
+        v.put("perk_tier", str(existing.get("perkTier")));
+        return v;
+    }
+
+    /**
+     * Liste des enchantements du serveur, en français, avec leur niveau maximal (issue #474). Remplace
+     * l'ancienne liste brute d'identifiants anglais.
+     */
+    private static String enchantmentsHelp(Map<String, Object> d) {
+        List<Map<String, Object>> info = enchantmentInfo(d);
+        if (info.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<details class=\"mb-2 small\"><summary>Enchantements connus du serveur (")
+                .append(info.size()).append(")</summary><ul class=\"mb-0 ench-help\">");
+        for (Map<String, Object> e : info) {
+            String key = str(e.get("key"));
+            int max = intOf(e.get("maxLevel"));
+            sb.append("<li><strong>").append(Http.esc(EnchantmentNames.french(key))).append("</strong> <code>")
+                    .append(Http.esc(key)).append("</code>")
+                    .append(max > 0 ? " · niveau " + (max == 1 ? "I seulement" : "I à " + EnchantmentNames.level(max)) : "")
+                    .append("</li>");
+        }
+        return sb.append("</ul></details>").toString();
+    }
+
+    /**
+     * Enchantements du dernier relevé : détaillés si le plugin les fournit ({@code enchantmentInfo},
+     * #474), sinon la simple liste d'identifiants d'un plugin plus ancien (niveau inconnu).
+     */
+    static List<Map<String, Object>> enchantmentInfo(Map<String, Object> d) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        List<Object> detailed = asList(d.get("enchantmentInfo"));
+        if (!detailed.isEmpty()) {
+            detailed.forEach(o -> out.add(asMap(o)));
+            return out;
+        }
+        for (Object key : asList(d.get("enchantments"))) {
+            out.add(Map.of("key", str(key)));
+        }
+        return out;
+    }
+
+    private static int intOf(Object o) {
+        if (o instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(str(o).trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private static String rewardModesHelp() {
@@ -11714,7 +11853,7 @@ public final class AgentPages {
     }
 
     /** Types dont le formulaire refusé par le panel est réaffiché tel quel (issue #177). */
-    public static final Set<String> KEEPS_REFUSED_FORM = Set.of("reward.table.save");
+    public static final Set<String> KEEPS_REFUSED_FORM = Set.of("reward.table.save", "reward.definition.save");
 
     /** Fenêtre pendant laquelle un refus du plugin peut encore être réaffiché ({@code ?refused=}). */
     private static final java.time.Duration REFUSED_FORM_WINDOW = java.time.Duration.ofMinutes(30);
@@ -11726,7 +11865,19 @@ public final class AgentPages {
      * cet agent, de ce type, envoyée par cet utilisateur, terminée sans succès et récente.
      */
     Map<String, String> refusedTableForm(Session session, String agentId, Map<String, String> q) {
-        Optional<Map<String, String>> kept = session.takeRefusedForm("reward.table.save");
+        return refusedForm(session, agentId, q, "reward.table.save",
+                com.lodygames.rpgquest.panel.agent.RewardTableForm::formOf);
+    }
+
+    /** Même chose pour une récompense du catalogue (issue #474) : la saisie n'est jamais perdue. */
+    Map<String, String> refusedDefinitionForm(Session session, String agentId, Map<String, String> q) {
+        return refusedForm(session, agentId, q, "reward.definition.save",
+                com.lodygames.rpgquest.panel.agent.RewardDefinitionForm::formOf);
+    }
+
+    private Map<String, String> refusedForm(Session session, String agentId, Map<String, String> q, String type,
+                                            java.util.function.Function<Map<String, String>, Map<String, String>> formOf) {
+        Optional<Map<String, String>> kept = session.takeRefusedForm(type);
         if (kept.isPresent()) {
             return kept.get();
         }
@@ -11735,13 +11886,12 @@ public final class AgentPages {
             return null;
         }
         return store.action(id)
-                .filter(a -> agentId.equals(a.agentId()) && "reward.table.save".equals(a.type())
+                .filter(a -> agentId.equals(a.agentId()) && type.equals(a.type())
                         && session.username().equals(a.createdBy()) && a.status().terminal()
                         && a.status() != AgentActionStatus.SUCCESS
                         && a.createdAt().isAfter(java.time.Instant.now().minus(REFUSED_FORM_WINDOW)))
                 .map(a -> {
-                    Map<String, String> form = new java.util.LinkedHashMap<>(
-                            com.lodygames.rpgquest.panel.agent.RewardTableForm.formOf(a.params()));
+                    Map<String, String> form = new java.util.LinkedHashMap<>(formOf.apply(a.params()));
                     form.put("_error", a.status() == AgentActionStatus.EXPIRED
                             ? "le serveur n'a pas répondu à temps."
                             : str(a.resultMessage()).isBlank() ? "refus du serveur." : str(a.resultMessage()));
@@ -11755,6 +11905,16 @@ public final class AgentPages {
      * « Gemme rare — 3 × Diamant, 1 × Livre enchanté (sharpness 3) » (issue #177).
      */
     static String rewardDisplayName(Map<String, Object> r) {
+        String what = rewardContentText(r);
+        return str(r.get("label")) + (Boolean.FALSE.equals(r.get("enabled")) ? " (désactivée)" : "")
+                + (what.isBlank() ? "" : " — " + what);
+    }
+
+    /**
+     * Ce que donne une récompense, en français : « 3 × Diamant, 1 × Livre enchanté (Tranchant III) »
+     * (issues #177, #474). Sans objet lisible : le résumé du serveur.
+     */
+    static String rewardContentText(Map<String, Object> r) {
         List<String> parts = new ArrayList<>();
         for (Object o : asList(r.get("items"))) {
             Map<String, Object> item = asMap(o);
@@ -11767,12 +11927,7 @@ public final class AgentPages {
             StringBuilder part = new StringBuilder(amount.isBlank() ? "1" : amount).append(" × ")
                     .append(name.isBlank() ? itemId : name);
             List<String> extras = new ArrayList<>();
-            Object ench = item.get("enchantments");
-            if (ench instanceof Map<?, ?> map) {
-                map.forEach((k, lvl) -> extras.add(k + " " + lvl));
-            } else if (!str(ench).isBlank()) {
-                extras.add(str(ench).replace(':', ' ').replace(",", ", "));
-            }
+            extras.addAll(enchantmentLabels(item.get("enchantments")));
             if (!str(item.get("potion")).isBlank()) {
                 extras.add("potion " + str(item.get("potion")));
             }
@@ -11785,9 +11940,65 @@ public final class AgentPages {
             parts.add("avantage " + str(r.get("perkKey")) + (str(r.get("perkTier")).isBlank() ? ""
                     : " " + str(r.get("perkTier"))));
         }
-        String what = parts.isEmpty() ? str(r.get("summary")) : String.join(", ", parts);
-        return str(r.get("label")) + (Boolean.FALSE.equals(r.get("enabled")) ? " (désactivée)" : "")
-                + (what.isBlank() ? "" : " — " + what);
+        return parts.isEmpty() ? str(r.get("summary")) : String.join(", ", parts);
+    }
+
+    /** {@code {sharpness: 3}} ou {@code "sharpness:3,unbreaking:1"} → « Tranchant III », « Solidité I ». */
+    static List<String> enchantmentLabels(Object ench) {
+        List<String> labels = new ArrayList<>();
+        if (ench instanceof Map<?, ?> map) {
+            map.forEach((k, lvl) -> labels.add(enchantmentLabel(str(k), str(lvl))));
+        } else {
+            for (String part : str(ench).split(",")) {
+                String[] kv = part.trim().split("[: ]+");
+                if (kv.length == 2) {
+                    labels.add(enchantmentLabel(kv[0], kv[1]));
+                } else if (!part.isBlank()) {
+                    labels.add(part.trim());
+                }
+            }
+        }
+        return labels;
+    }
+
+    private static String enchantmentLabel(String key, String level) {
+        try {
+            return EnchantmentNames.label(key, Integer.parseInt(level.trim()));
+        } catch (NumberFormatException e) {
+            return EnchantmentNames.french(key) + " " + level;
+        }
+    }
+
+    /** Types dont une action en cours rend la page Récompenses momentanément en retard sur le serveur. */
+    private static boolean rewardActionType(String type) {
+        return type.startsWith("reward.") || "boss.community.status".equals(type);
+    }
+
+    /**
+     * Opération en cours sur le catalogue (issue #474) : dit ce qui se passe et que la page se mettra à
+     * jour seule. Chaque action suivie porte {@code data-pa-track-action} : {@code panel.js} recharge
+     * la page dès que le serveur l'a confirmée (et que la file est au repos).
+     */
+    String rewardPendingBanner(String agentId) {
+        List<AgentActionRow> open = store.recentActions(agentId, 50).stream()
+                .filter(a -> !a.status().terminal() && rewardActionType(a.type())).toList();
+        if (open.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"alert alert-info py-2 d-flex flex-wrap align-items-center "
+                + "gap-2\" role=\"status\" aria-live=\"polite\" data-reward-pending><span class=\"spinner-border "
+                + "spinner-border-sm\" aria-hidden=\"true\"></span><span><strong>Opération en cours :</strong> ");
+        List<String> labels = new ArrayList<>();
+        for (AgentActionRow a : open) {
+            labels.add(AgentActionCatalog.spec(a.type()).map(AgentActionCatalog.Spec::label).orElse(a.type()));
+        }
+        sb.append(Http.esc(String.join(", ", new java.util.LinkedHashSet<>(labels))))
+                .append(". La page se met à jour toute seule dès la confirmation du serveur : inutile de renvoyer "
+                        + "le formulaire.</span>");
+        for (AgentActionRow a : open) {
+            sb.append("<span hidden data-pa-track-action=\"").append(Http.esc(a.id())).append("\"></span>");
+        }
+        return sb.append("</div>").toString();
     }
 
     private static String copyId(String id) {
@@ -11799,7 +12010,9 @@ public final class AgentPages {
         return "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
                 + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
                 + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
-                + "<input type=\"hidden\" name=\"return\" value=\"" + REWARDS_PATH + "\">";
+                + "<input type=\"hidden\" name=\"return\" value=\"" + REWARDS_PATH + "\">"
+                // #474 : jeton à usage unique, un double clic n'empile pas deux actions.
+                + "<input type=\"hidden\" name=\"submit_token\" value=\"" + java.util.UUID.randomUUID() + "\">";
     }
 
     /**

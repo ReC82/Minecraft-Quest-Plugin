@@ -118,8 +118,23 @@
       showToast(el);
       var actionId = el.getAttribute("data-toast-action");
       if (actionId && el.getAttribute("data-toast-group") === "pending") {
-        pendingToasts.push({ el: el, actionId: actionId, sawPending: false });
+        // Rendu « en cours » par le serveur : la vue de cette page précède donc le résultat. Une
+        // action rapide terminée avant le premier relevé doit aussi recharger la vue (issue #474 :
+        // récompense créée mais visible seulement après « Rafraîchir »). Le garde
+        // alreadyReloadedFor empêche toute boucle.
+        pendingToasts.push({ el: el, actionId: actionId, sawPending: true });
       }
+    }
+    // Issue #474 : opérations en cours annoncées par la page (bannière « Opération en cours ») —
+    // suivies comme un toast, la page se recharge dès leur confirmation.
+    var tracked = document.querySelectorAll("[data-pa-track-action]");
+    for (var t = 0; t < tracked.length; t++) {
+      var trackedId = tracked[t].getAttribute("data-pa-track-action");
+      var known = false;
+      for (var p = 0; p < pendingToasts.length; p++) {
+        if (pendingToasts[p].actionId === trackedId) { known = true; break; }
+      }
+      if (trackedId && !known) { pendingToasts.push({ el: tracked[t], actionId: trackedId, sawPending: true }); }
     }
   }
 
@@ -256,8 +271,11 @@
             updateToast(entry, match);
             // Issue #177 : une table refusée par le serveur revient avec le formulaire tel qu'il a été
             // envoyé — la page est rouverte avec ?refused=<action>, le serveur relit l'envoi refusé.
-            if (match.group === "failed" && match.type === "reward.table.save"
-                && document.querySelector("form[data-chance-form]") && !alreadyReloadedFor(entry.actionId)) {
+            // Issue #474 : même chose pour une récompense du catalogue.
+            var refusedForm = match.type === "reward.table.save" ? "form[data-chance-form]"
+              : match.type === "reward.definition.save" ? "form[data-reward-def-form]" : null;
+            if (match.group === "failed" && refusedForm
+                && document.querySelector(refusedForm) && !alreadyReloadedFor(entry.actionId)) {
               markReloadedFor([entry.actionId]);
               reopenWithRefusedForm(entry.actionId);
               return;
@@ -1834,6 +1852,8 @@
     run("initOpsState", initOpsState);
     run("initDrawer", initDrawer);
     run("initRowLinks", initRowLinks);
+    run("initSubmitOnce", initSubmitOnce);
+    run("initRewardItems", initRewardItems);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.
     window.addEventListener("load", upgradeToasts);
@@ -2027,5 +2047,253 @@
     document.addEventListener("DOMContentLoaded", init);
   } else {
     init();
+  }
+
+  // Issue #474 — un formulaire porteur d'un jeton (submit_token) ne part qu'une fois : bouton grisé,
+  // libellé « Envoi en cours… ». Le serveur refuse de toute façon un jeton déjà utilisé.
+  function initSubmitOnce() {
+    var tokens = document.querySelectorAll("form input[name=submit_token]");
+    for (var i = 0; i < tokens.length; i++) {
+      (function (form) {
+        if (form.getAttribute("data-once-ready") === "1") { return; }
+        form.setAttribute("data-once-ready", "1");
+        form.addEventListener("submit", function (ev) {
+          if (form.getAttribute("data-sent") === "1") { ev.preventDefault(); return; }
+          form.setAttribute("data-sent", "1");
+          var buttons = form.querySelectorAll("button[type=submit]");
+          window.setTimeout(function () {
+            for (var b = 0; b < buttons.length; b++) {
+              buttons[b].disabled = true;
+              buttons[b].textContent = buttons[b].getAttribute("data-submit-label") || "Envoi en cours…";
+            }
+          }, 0);
+        });
+      })(tokens[i].form);
+    }
+    if (tokens.length === 0) { return; }
+    // Retour arrière (cache de page) : le formulaire réaffiché doit pouvoir repartir, avec un jeton neuf.
+    window.addEventListener("pageshow", function (ev) {
+      if (ev.persisted) { window.location.reload(); }
+    });
+  }
+
+  /** Objets connus (identifiant → nom français), lus dans la datalist rendue par le serveur. */
+  function rewardItemNames() {
+    var map = {};
+    var dl = document.getElementById("dl-reward-items");
+    var opts = dl ? dl.querySelectorAll("option") : [];
+    for (var i = 0; i < opts.length; i++) {
+      var v = opts[i].getAttribute("value");
+      if (v) { map[v.toUpperCase()] = opts[i].getAttribute("label") || v; }
+    }
+    return map;
+  }
+
+  /** Enchantements du serveur : nom français, niveau max, objets acceptés, exclusivités. */
+  function enchantInfo() {
+    var map = {};
+    var dl = document.getElementById("dl-reward-enchants");
+    var opts = dl ? dl.querySelectorAll("option") : [];
+    for (var i = 0; i < opts.length; i++) {
+      var key = opts[i].getAttribute("value");
+      if (!key) { continue; }
+      var items = opts[i].getAttribute("data-items") || "";
+      var conflicts = opts[i].getAttribute("data-conflicts") || "";
+      map[key] = {
+        name: opts[i].getAttribute("data-name") || key,
+        max: parseInt(opts[i].getAttribute("data-max") || "0", 10) || 0,
+        items: items ? items.split(",") : [],
+        conflicts: conflicts ? conflicts.split(",") : []
+      };
+    }
+    return map;
+  }
+
+  // Pas de `var` de module ici : ce bloc suit l'appel synchrone d'init(), une variable n'y serait
+  // pas encore affectée. Les fonctions, elles, sont remontées.
+  function roman(n) {
+    var r = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+    return n >= 1 && n < r.length ? r[n] : String(n);
+  }
+
+  /** « sharpness 3, unbreaking 1 » → [{key, level}] (même lecture que RewardDefinitionForm). */
+  function parseEnchants(raw) {
+    var out = [];
+    var parts = String(raw || "").toLowerCase().split(/[,;]/);
+    for (var i = 0; i < parts.length; i++) {
+      var m = /^\s*(?:minecraft:)?([a-z0-9_]{1,64})\s*[ :=]\s*(\d{1,2})\s*$/.exec(parts[i]);
+      if (m) { out.push({ key: m[1], level: parseInt(m[2], 10) }); }
+      else if (parts[i].trim()) { out.push({ key: parts[i].trim(), level: 0, raw: true }); }
+    }
+    return out;
+  }
+
+  function writeEnchants(list) {
+    return list.map(function (e) { return e.raw ? e.key : e.key + " " + e.level; }).join(", ");
+  }
+
+  /**
+   * Ligne d'objet du catalogue des récompenses (issue #474) : nom français de l'objet choisi sous son
+   * champ, et sélecteur d'enchantements guidé — recherche par nom français ou identifiant, niveau 1
+   * à max réel du serveur, objets acceptés et incompatibilités. Le sélecteur écrit dans le champ
+   * texte soumis (item_ench_<i>) ; le serveur revalide tout.
+   */
+  function initRewardItems() {
+    var rows = document.querySelectorAll("[data-reward-item-row]");
+    if (rows.length === 0) { return; }
+    var names = rewardItemNames();
+    var info = enchantInfo();
+    for (var i = 0; i < rows.length; i++) { setupRewardItemRow(rows[i], names, info); }
+  }
+
+  function itemPickedHtml(id, names) {
+    var v = String(id || "").trim();
+    if (!v) { return ""; }
+    if (v.indexOf(":") !== -1) { return "<strong>Objet RPGQuest</strong> · <code>" + esc(v) + "</code>"; }
+    var name = names[v.toUpperCase()];
+    if (!name) { return '<span class="text-danger">Absent de la liste des objets du serveur</span> · <code>' + esc(v) + "</code>"; }
+    return "<strong>" + esc(name) + "</strong> · <code>" + esc(v) + "</code>";
+  }
+
+  function setupRewardItemRow(row, names, info) {
+    var itemInput = row.querySelector("[data-reward-item]");
+    var picked = row.querySelector("[data-item-picked]");
+    var box = row.querySelector("[data-ench-box]");
+    var store = box ? box.querySelector("[data-ench-store]") : null;
+    var chips = box ? box.querySelector("[data-ench-chips]") : null;
+    var pickBox = box ? box.querySelector("[data-ench-pick-box]") : null;
+    var pick = box ? box.querySelector("[data-ench-pick]") : null;
+    var level = box ? box.querySelector("[data-ench-level]") : null;
+    var add = box ? box.querySelector("[data-ench-add]") : null;
+    var out = box ? box.querySelector("[data-ench-info]") : null;
+    var guided = store && chips && pickBox && pick && level && add && Object.keys(info).length > 0;
+
+    function item() { return itemInput ? itemInput.value.trim().toUpperCase() : ""; }
+    function itemName() { var it = item(); return names[it] || it; }
+    function isBook() { return item() === "ENCHANTED_BOOK" || item() === "BOOK"; }
+    function applies(e) {
+      var it = item();
+      if (!it || it.indexOf(":") !== -1 || isBook() || !e || e.items.length === 0) { return null; }
+      return e.items.indexOf(it) !== -1;
+    }
+    function nameOf(key) { return info[key] ? info[key].name : key; }
+
+    function showItem(always) {
+      if (!picked || !itemInput) { return; }
+      var v = itemInput.value.trim();
+      if (always || !v || names[v.toUpperCase()] || v.indexOf(":") !== -1) { picked.innerHTML = itemPickedHtml(v, names); }
+    }
+
+    function renderChips() {
+      if (!guided) { return; }
+      var list = parseEnchants(store.value);
+      var html = "";
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        var meta = info[e.key];
+        var notes = [];
+        if (e.raw || !meta) { notes.push("inconnu de ce serveur"); }
+        if (meta && meta.max && e.level > meta.max) { notes.push("au-delà du niveau normal (max " + roman(meta.max) + ")"); }
+        if (meta && applies(meta) === false) { notes.push("ne s'applique pas à " + itemName()); }
+        for (var j = 0; j < list.length; j++) {
+          if (j !== i && meta && meta.conflicts.indexOf(list[j].key) !== -1) { notes.push("incompatible avec " + nameOf(list[j].key)); }
+        }
+        html += '<span class="badge ' + (notes.length ? "text-bg-warning" : "text-bg-light border") + ' ench-chip">'
+          + esc(e.raw ? e.key : nameOf(e.key) + " " + roman(e.level))
+          + (e.raw ? "" : ' <code class="small">' + esc(e.key) + "</code>")
+          + (notes.length ? ' <span class="small">⚠ ' + esc(notes.join(" · ")) + "</span>" : "")
+          + ' <button type="button" class="btn-close btn-close-sm ms-1" data-ench-del="' + i + '" aria-label="Retirer '
+          + esc(e.raw ? e.key : nameOf(e.key)) + '"></button></span>';
+      }
+      chips.innerHTML = html;
+    }
+
+    function chosenKey() {
+      var v = pick.value.trim().toLowerCase();
+      if (info[v]) { return v; }
+      for (var k in info) {
+        if (Object.prototype.hasOwnProperty.call(info, k) && info[k].name.toLowerCase() === v) { return k; }
+      }
+      return "";
+    }
+
+    var shownKey = "";
+    function describe() {
+      var key = chosenKey();
+      var e = info[key];
+      level.disabled = !e;
+      add.disabled = !e;
+      if (!e) {
+        shownKey = "";
+        level.innerHTML = '<option value="">Niveau</option>';
+        out.textContent = pick.value.trim() ? "Choisir un enchantement dans la liste (nom français ou identifiant)." : "";
+        return;
+      }
+      // Les niveaux ne sont reconstruits qu'au changement d'enchantement : le « change » natif émis
+      // à la sortie du champ ne doit pas remettre à I un niveau déjà choisi.
+      if (key !== shownKey) {
+        shownKey = key;
+        level.innerHTML = '<option value="">Niveau</option>';
+        var max = e.max > 0 ? e.max : 10;
+        for (var l = 1; l <= max; l++) {
+          level.insertAdjacentHTML("beforeend", '<option value="' + l + '">' + roman(l) + (l === max && e.max ? " (max)" : "") + "</option>");
+        }
+        level.value = "1";
+      }
+      var parts = [e.name + " — niveau " + (e.max === 1 ? "I seulement" : e.max ? "I à " + roman(e.max) : "1 à 10")];
+      var ok = applies(e);
+      if (isBook()) { parts.push("stocké dans le livre (s'applique ensuite à l'objet de son choix)"); }
+      else if (ok === true) { parts.push("✓ s'applique à " + itemName()); }
+      else if (ok === false) { parts.push("⚠ ne s'applique pas à " + itemName() + " : accepté, mais sans effet en jeu — ou choisir un livre enchanté"); }
+      if (e.items.length) {
+        var sample = e.items.slice(0, 4).map(function (it) { return names[it] || it; });
+        parts.push("objets acceptés : " + sample.join(", ") + (e.items.length > 4 ? "… (" + e.items.length + " au total)" : ""));
+      }
+      if (e.conflicts.length) { parts.push("incompatible avec : " + e.conflicts.map(nameOf).join(", ")); }
+      var current = parseEnchants(store.value);
+      for (var c = 0; c < current.length; c++) {
+        if (e.conflicts.indexOf(current[c].key) !== -1) { parts.push("⚠ déjà choisi : " + nameOf(current[c].key) + ", incompatible"); }
+      }
+      out.textContent = parts.join(" · ");
+    }
+
+    function addChosen() {
+      var key = chosenKey();
+      var lvl = parseInt(level.value || "1", 10);
+      if (!key || !lvl) { return; }
+      var list = parseEnchants(store.value).filter(function (e) { return e.key !== key; });
+      list.push({ key: key, level: lvl });
+      store.value = writeEnchants(list);
+      pick.value = "";
+      describe();
+      renderChips();
+      try { store.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) { /* ignore */ }
+      pick.focus();
+    }
+
+    if (itemInput) {
+      itemInput.addEventListener("input", function () { showItem(false); renderChips(); if (guided) { describe(); } });
+      itemInput.addEventListener("change", function () { showItem(true); renderChips(); if (guided) { describe(); } });
+    }
+    if (!guided) { return; }
+    // Sélecteur guidé : le champ texte reste le champ soumis, masqué derrière les puces.
+    store.hidden = true;
+    pickBox.hidden = false;
+    pick.addEventListener("input", describe);
+    pick.addEventListener("change", describe);
+    pick.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" && chosenKey()) { ev.preventDefault(); addChosen(); }
+    });
+    add.addEventListener("click", addChosen);
+    chips.addEventListener("click", function (ev) {
+      var del = ev.target.closest ? ev.target.closest("[data-ench-del]") : null;
+      if (!del) { return; }
+      var list = parseEnchants(store.value);
+      list.splice(parseInt(del.getAttribute("data-ench-del"), 10), 1);
+      store.value = writeEnchants(list);
+      renderChips();
+      describe();
+    });
+    renderChips();
   }
 })();

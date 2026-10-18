@@ -180,8 +180,8 @@ class OpsAutoRefreshTest {
         assertTrue(js.contains("function dropOneShotResultFlags()"));
         assertTrue(js.contains("run(\"dropOneShotResultFlags\", dropOneShotResultFlags)"),
                 "branché à l'initialisation, après l'affichage des toasts");
-        assertTrue(js.contains("ONE_SHOT_FLAGS = [\"ok\", \"err\", \"toast\"]"),
-                "les trois drapeaux de résultat sont retirés de l'URL");
+        assertTrue(js.contains("ONE_SHOT_FLAGS = [\"ok\", \"err\", \"toast\", \"refused\"]"),
+                "les drapeaux de résultat (dont le refus réaffiché, #177) sont retirés de l'URL");
         assertTrue(js.contains("history.replaceState"),
                 "on remplace l'entrée d'historique, sans recharger ni rejouer la requête");
 

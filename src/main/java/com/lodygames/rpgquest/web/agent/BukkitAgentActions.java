@@ -1312,7 +1312,34 @@ public final class BukkitAgentActions implements AgentActions {
                 .forEach(p -> potions.add(p.getKey().getKey()));
         java.util.Collections.sort(enchantments);
         java.util.Collections.sort(potions);
-        return new RewardReferenceView(custom, List.copyOf(enchantments), List.copyOf(potions));
+        return new RewardReferenceView(custom, List.copyOf(enchantments), List.copyOf(potions), enchantmentDetails());
+    }
+
+    /** Niveau maximal, objets acceptés et exclusivités de chaque enchantement du registre (#474). */
+    private static List<AgentActions.RewardEnchantmentView> enchantmentDetails() {
+        List<org.bukkit.enchantments.Enchantment> all = new ArrayList<>();
+        io.papermc.paper.registry.RegistryAccess.registryAccess()
+                .getRegistry(io.papermc.paper.registry.RegistryKey.ENCHANTMENT).forEach(all::add);
+        all.sort(java.util.Comparator.comparing(e -> e.getKey().getKey()));
+        List<AgentActions.RewardEnchantmentView> details = new ArrayList<>();
+        for (org.bukkit.enchantments.Enchantment e : all) {
+            List<String> items = new ArrayList<>();
+            List<String> conflicts = new ArrayList<>();
+            try {
+                e.getSupportedItems().values().forEach(k -> items.add(k.key().value().toUpperCase(java.util.Locale.ROOT)));
+                for (org.bukkit.enchantments.Enchantment other : all) {
+                    if (other != e && e.conflictsWith(other)) {
+                        conflicts.add(other.getKey().getKey());
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // enchantement de datapack mal formé : niveau seul, la saisie reste possible
+            }
+            java.util.Collections.sort(items);
+            details.add(new AgentActions.RewardEnchantmentView(e.getKey().getKey(), e.getMaxLevel(),
+                    List.copyOf(items), List.copyOf(conflicts)));
+        }
+        return List.copyOf(details);
     }
 
     @Override

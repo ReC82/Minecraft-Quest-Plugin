@@ -1309,7 +1309,20 @@ public interface AgentActions {
      * Valeurs connues du serveur pour l'éditeur de récompenses (issue #474) : objets custom,
      * enchantements, types de potion.
      */
-    record RewardReferenceView(List<String> customItems, List<String> enchantments, List<String> potions) {
+    record RewardReferenceView(List<String> customItems, List<String> enchantments, List<String> potions,
+                               List<RewardEnchantmentView> enchantmentDetails) {
+
+        RewardReferenceView(List<String> customItems, List<String> enchantments, List<String> potions) {
+            this(customItems, enchantments, potions, List.of());
+        }
+    }
+
+    /**
+     * Un enchantement tel que ce serveur le connaît (issue #474, retour du 18/10) : niveau maximal,
+     * objets qui l'acceptent ({@code DIAMOND_SWORD}…) et enchantements exclusifs. Sert à guider la
+     * saisie dans PlugAdmin ; la validation d'écriture reste celle du serveur.
+     */
+    record RewardEnchantmentView(String key, int maxLevel, List<String> supportedItems, List<String> conflicts) {
     }
 
     /**

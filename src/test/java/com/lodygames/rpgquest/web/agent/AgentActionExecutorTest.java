@@ -661,6 +661,19 @@ class AgentActionExecutorTest {
         assertEquals(Boolean.FALSE, status.details().get("available"));
     }
 
+    /** Issue #474 (retour du 18/10) : niveau max, objets acceptés et exclusivités vont à PlugAdmin. */
+    @Test
+    void rewardCatalogStatusCarriesEnchantmentDetails() {
+        actions.rewardCatalog = new AgentActions.RewardCatalogView(true, true, true, false, List.of(), List.of(),
+                List.of(), Map.of(), "", new AgentActions.RewardReferenceView(List.of(), List.of("sharpness"),
+                List.of(), List.of(new AgentActions.RewardEnchantmentView("sharpness", 5, List.of("DIAMOND_SWORD"),
+                List.of("smite")))));
+        AgentActionOutcome status = run(new AgentAction("rc-e", "reward.catalog.status", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, status.status());
+        assertEquals(List.of(Map.of("key", "sharpness", "maxLevel", 5, "items", List.of("DIAMOND_SWORD"),
+                "conflicts", List.of("smite"))), status.details().get("enchantmentInfo"));
+    }
+
     @Test
     void tableEntriesAreParsedExactly() {
         List<AgentActions.RewardTableEntryInput> out = new java.util.ArrayList<>();
@@ -1906,6 +1919,15 @@ class AgentActionExecutorTest {
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
+        /** Issue #474 : relevé du catalogue renvoyé tel quel ({@code null} = comportement par défaut). */
+        AgentActions.RewardCatalogView rewardCatalog;
+
+        @Override
+        public CompletableFuture<RewardCatalogView> rewardCatalogStatus() {
+            return rewardCatalog == null ? AgentActions.super.rewardCatalogStatus()
+                    : CompletableFuture.completedFuture(rewardCatalog);
+        }
+
         List<List<String>> lastMobPlacement;
         /** Issue #246 : ce que la capture a réellement reçu. */
         BuildingCaptureRequest lastCaptureRequest;

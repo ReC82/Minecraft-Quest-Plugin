@@ -4640,7 +4640,7 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
 |---|---|---|
 | Usage typique | Village ↔ zones d'aventure, **même monde ou entre mondes**, via une **destination** précise (position exacte) | Passage rapide **entre deux mondes** (ex. Hub → monde `wild`), sans position précise — juste « le spawn (ou une zone aléatoire sûre) du monde destination » |
 | Canalisation | Oui, délai configurable (3 s par défaut), annulée si mouvement/dégâts/déconnexion | Non (voir `WorldPortalTeleportListener`) |
-| Conditions d'accès | Permission, quête, niveau, coût en pièces (optionnels) | Aucune condition (activation immédiate à l'entrée de la zone, si le portail est activé) |
+| Conditions d'accès | Permission, quête, niveau RPG (#532), coût en pièces (optionnels) | Aucune condition (activation immédiate à l'entrée de la zone, si le portail est activé) |
 | Destination | `Destination` nommée (monde, x, y, z, yaw, pitch exacts), réutilisable par plusieurs portails | Juste un nom de monde + une `DestinationStrategy` (`WORLD_SPAWN` ou `RANDOM_SAFE`) |
 | Cooldown persisté | Oui (par joueur/portail, SQLite `portal_cooldowns`, migration V6) | Non documenté dans le code lu — aucun cooldown constaté dans `WorldPortalDefinition` |
 | Fichiers | `plugins/RPGQuest/portals/<id>.yml` + `plugins/RPGQuest/destinations/<id>.yml` | `plugins/RPGQuest/world-portals/<id>.yml` (registre `WorldPortalRegistry`) |
@@ -5778,7 +5778,9 @@ casse, au four, à la pêche, à la reproduction ni des fioles, et tout gain d'o
 vaut 0. La récompense de quête `EXPERIENCE` devient de l'XP RPG `GLOBAL` (une fois par complétion, chat
 `+ N XP RPG`). Les anciens niveaux vanilla ne sont ni convertis ni effacés ; enchantement et enclume
 coûtent toujours des niveaux vanilla (aucune gratuité, aucun remplacement) ; `/xp` admin hors périmètre.
-`true` rétablit l'ancien comportement. Détail et inventaire des effets : PROGRESSION.md « XP vanilla ».
+Les conditions `required-level` des portails et des offres marchandes lisent le **niveau RPG `GLOBAL`** (issue #532 ;
+affichées « niveau RPG » dans le menu marchand, `/rpgadmin portal info` et PlugAdmin) ; aucun changement de format YAML.
+`true` rétablit l'ancien comportement (XP et `required-level` vanilla). Détail et inventaire des effets : PROGRESSION.md « XP vanilla ».
 
 ### Portail — `/lien` (liaison du compte web, #53)
 

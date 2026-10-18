@@ -64,7 +64,7 @@ cooldown-seconds: 5
 required-permission: rpgquest.portal.forest   # optionnel
 required-quest: rpgquest:first_steps          # optionnel
 required-quest-state: COMPLETED               # optionnel, COMPLETED par défaut si omis
-required-level: 5                              # optionnel (niveau d'expérience vanilla)
+required-level: 5                              # optionnel (niveau RPG GLOBAL ; vanilla si progression.vanilla-xp-progression: true — #532)
 cost: 10                                        # optionnel (pièces, voir docs/ECONOMY.md)
 ```
 

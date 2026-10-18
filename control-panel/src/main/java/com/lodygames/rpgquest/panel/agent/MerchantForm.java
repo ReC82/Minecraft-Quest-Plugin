@@ -111,7 +111,7 @@ public final class MerchantForm {
         if (!level.isEmpty()) {
             Integer lv = intOrNull(level);
             if (lv == null || lv < 0 || lv > 10_000) {
-                return n + "niveau requis : nombre entier entre 0 et 10000 (vide = aucun).";
+                return n + "niveau RPG requis : nombre entier entre 0 et 10000 (vide = aucun).";
             }
         }
         if (!permission.isEmpty() && !PERMISSION.matcher(permission).matches()) {

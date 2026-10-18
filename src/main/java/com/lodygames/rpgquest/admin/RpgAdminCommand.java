@@ -637,7 +637,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (portal.requiredLevel() != null) {
             player.sendMessage(MM.deserialize(
-                    "<white>Niveau requis :</white> <gray><lvl></gray>", Placeholder.unparsed("lvl", String.valueOf(portal.requiredLevel()))));
+                    "<white>Niveau RPG requis :</white> <gray><lvl></gray>", Placeholder.unparsed("lvl", String.valueOf(portal.requiredLevel()))));
         }
         if (portal.cost() != null) {
             player.sendMessage(MM.deserialize(

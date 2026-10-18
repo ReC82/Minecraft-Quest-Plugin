@@ -144,6 +144,12 @@ Récompense de quête `EXPERIENCE` : devient de l'**XP RPG** (piste
 Le chat annonce `+ N XP RPG`. Elle s'ajoute à `quest-completion-xp`
 (inchangé). Avec `vanilla-xp-progression: true`, elle redevient de l'XP vanilla.
 
+Conditions `required-level` des portails et des offres marchandes (issue #532) :
+elles comparent le **niveau RPG `GLOBAL`** (cache mémoire de `ProgressionService`,
+aucun accès SQL), via la règle unique `RequiredLevelRule`. Avec
+`vanilla-xp-progression: true`, elles relisent le niveau vanilla. Le niveau RPG
+commence à 1 : `required-level: 1` (ou moins) est toujours satisfait.
+
 Les messages de gain de l'action bar disent `+N XP RPG (Combat)`.
 
 ### Politique de migration des joueurs existants

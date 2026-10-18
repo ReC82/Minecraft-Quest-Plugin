@@ -1,0 +1,61 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fiche portail · PlugAdmin (maquette #331/#228)</title>
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap-icons/bootstrap-icons.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/plugadmin.css">
+<link rel="stylesheet" href="maquette.css">
+</head><body>
+<input type="checkbox" id="nav-toggle" class="nav-toggle" hidden>
+<header class="topbar">
+  <label for="nav-toggle" class="burger" aria-label="Menu"><i class="bi bi-list ic"></i></label>
+  <div class="brand"><span class="brand-mark">PA</span><span class="brand-t">Plug<strong>Admin</strong></span><span class="env-chip">DEV</span></div>
+  <div class="topbar-r"><span class="srv-chip srv-ok"><i class="bi bi-wifi ic"></i><span>ONLINE</span></span></div>
+</header>
+<div class="shell">
+  <label for="nav-toggle" class="scrim" aria-hidden="true"></label>
+  <nav class="side"><div class="nav-group"><p class="nav-group-t">Vue d'ensemble</p><a class="navlink" href="#"><i class="bi bi-grid-1x2 ic nav-ic"></i><span>Accueil</span></a><a class="navlink" href="#"><i class="bi bi-clock-history ic nav-ic"></i><span>Historique</span></a></div><div class="nav-group"><p class="nav-group-t">Monde</p><a class="navlink" href="#"><i class="bi bi-globe-americas ic nav-ic"></i><span>Mondes</span> <em class="nav-soon">nouveau</em></a><a class="navlink active" href="#"><i class="bi bi-door-open ic nav-ic"></i><span>Portails</span> <em class="nav-soon">nouveau</em></a><a class="navlink" href="#"><i class="bi bi-signpost-split ic nav-ic"></i><span>Voyages</span></a></div><div class="nav-group"><p class="nav-group-t">RPGQuest</p><a class="navlink" href="#"><i class="bi bi-people ic nav-ic"></i><span>Joueurs</span></a><a class="navlink" href="#"><i class="bi bi-person-badge ic nav-ic"></i><span>PNJ</span></a><a class="navlink" href="#"><i class="bi bi-buildings ic nav-ic"></i><span>Villes</span></a><a class="navlink" href="#"><i class="bi bi-journal-text ic nav-ic"></i><span>Quêtes</span></a><a class="navlink" href="#"><i class="bi bi-chat-dots ic nav-ic"></i><span>Dialogues</span></a></div><div class="nav-group"><p class="nav-group-t">Bâtiments</p><a class="navlink" href="#"><i class="bi bi-stars ic nav-ic"></i><span>Atelier de création</span></a><a class="navlink" href="#"><i class="bi bi-collection ic nav-ic"></i><span>Bibliothèque</span></a><a class="navlink" href="#"><i class="bi bi-geo-alt ic nav-ic"></i><span>Emplacements</span></a></div><div class="nav-group"><p class="nav-group-t">Ressources</p><a class="navlink" href="#"><i class="bi bi-book ic nav-ic"></i><span>Documentation</span></a><a class="navlink" href="#"><i class="bi bi-activity ic nav-ic"></i><span>Diagnostics</span></a></div></nav>
+  <main class="main">
+  <p class="mq-banner"><strong>Maquette statique #331 / #228</strong> — aucune donnée envoyée, aucun bouton actif. Les données de <code>world_hub</code>, <code>wild</code>, <code>claims</code>, <code>hub_to_wild</code> et <code>hub_to_claims</code> sont celles relues sur DEV le 18/10 ; « Terres gelées » est un exemple fictif.</p>
+<div class="pagehead"><div class="ph-l"><div class="ph-title"><i class="bi bi-door-open ic"></i><h1>Portail vers les Terres gelées <small class="text-muted">terres_gelees_aller</small></h1></div>
+<p class="sub">Exemple de fiche. Chaque bloc s'enregistre séparément ; le portail reste en brouillon tant que vous ne l'activez pas.</p></div><div class="ph-actions"><a class="btn sm secondary" href="portails.html"><i class="bi bi-arrow-left ic"></i> Portails</a></div></div>
+<div class="p-trio">
+<section class="card w-sec"><h2 class="w-h"><span class="num">1</span> Emplacement</h2><p><strong>Portail Terres gelées</strong> <code>buildsite_0012</code></p>
+<p class="muted">world_hub · 744 66 −670 · face nord<br>Zone d'activation : 3 large × 4 haut × 1 profond (déduite de la construction)</p>
+<div class="btnrow"><a class="btn sm secondary" href="#"><i class="bi bi-geo-alt ic"></i> Voir dans Emplacements</a><button class="btn sm secondary">Changer…</button></div></section>
+<section class="card w-sec"><h2 class="w-h"><span class="num">2</span> Construction</h2><p><strong>Arche de pierre noire</strong> (Bibliothèque, v2)</p><p class="muted">Posée le — · zone de passage fournie par le modèle</p>
+<div class="btnrow"><button class="btn sm secondary">Remplacer l'arche</button><button class="btn sm secondary">Délier (ne démolit rien)</button></div></section>
+<section class="card w-sec"><h2 class="w-h"><span class="num">3</span> Téléportation</h2><p>vers <strong>terres_gelees</strong> · point fixe 0 65 0 · face sud</p><p class="muted">Aller simple · retour : aucun portail lié</p>
+<div class="btnrow"><a class="btn sm secondary" href="#dest"><i class="bi bi-pencil ic"></i> Modifier</a></div></section></div>
+
+<div class="w-cols"><div>
+<section class="card w-sec" id="dest"><h2 class="w-h"><i class="bi bi-geo"></i> Destination</h2><div class="form-grid">
+<label>Monde d'arrivée<select><option>terres_gelees (non chargé)</option><option>wild</option><option>claims</option></select></label>
+<label>Arrivée<select><option>Point fixe</option><option>Point d'arrivée du monde</option><option>Aléatoire sûr</option><option>Claim du joueur</option></select></label>
+<label>Point fixe<input value="0, 65, 0" readonly><span class="field-help">« Prendre ma position » en jeu ou un emplacement.</span></label><label>Regard à l'arrivée<select><option>Sud</option><option>Nord</option></select></label>
+<label>Si le monde est absent ou non chargé<select><option>Refuser avec un message</option><option>Charger puis téléporter</option></select></label><label>Si l'arrivée est dangereuse<select><option>Chercher un point sûr à 8 blocs, sinon refuser</option></select></label>
+<label class="full">Sens<select><option>Aller simple</option><option>Aller-retour : créer le portail retour (brouillon distinct)</option></select></label></div></section>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-shield-check"></i> Conditions d'accès <span class="muted small">(vérifiées par le serveur)</span></h2>
+<ul class="cond-list"><li><span class="cond">Niveau RPG au moins <b>10</b></span><span class="muted">Refus : « Revenez au niveau 10. »</span><a href="#" class="small">modifier</a></li>
+<li><span class="cond">Quête <b>Premiers pas</b> terminée</span><span class="muted">Refus : « Parlez d'abord au Guide. »</span><a href="#" class="small">modifier</a></li>
+<li><span class="cond">Attente entre deux passages : <b>30 s</b></span><span class="muted">Message : « Encore %s s. »</span><a href="#" class="small">modifier</a></li></ul>
+<div class="btnrow"><button class="btn sm secondary"><i class="bi bi-plus ic"></i> Ajouter une condition</button></div>
+<p class="field-help">Choix proposés : niveau RPG, quête (état), objet RPGQuest, variable joueur (zone débloquée…), permission, palier de claim, attente. Pas de texte libre.</p></section>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-chat-square-text"></i> Messages et avertissement</h2>
+<div class="msg-row"><span class="k">Avertissement avant de traverser</span><div class="dlg-mock"><p><b style="color:#5ec8ff">Attention !</b> Vous vous apprêtez à entrer dans les Terres gelées. Cette région est dangereuse. Vous pourriez perdre vos objets en mourant. Voulez-vous continuer ?</p><div class="dlg-btns"><span>Entrer</span><span>Entrer et ne plus afficher</span><span>Annuler</span></div></div></div>
+<p class="field-help">Fenêtre de dialogue Minecraft (comme l'avertissement du Wild). Texte modifié avec l'éditeur de style (couleurs, gras, aperçu). « Ne plus afficher » mémorisé par joueur et par portail.</p>
+<ul class="msg-list"><li><span class="k">Bienvenue</span><span>« Bienvenue dans les Terres gelées. »</span></li><li><span class="k">Monde indisponible</span><span>« Ce passage est fermé pour le moment. »</span></li><li><span class="k">Réussite</span><span>(aucun)</span></li><li><span class="k">Attente</span><span>« Encore %s s. »</span></li></ul></section>
+</div><div>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-activity"></i> Vérification</h2>
+<ul class="checks-list"><li class="ok"><i class="bi bi-check-circle"></i> Emplacement trouvé dans world_hub</li><li class="ok"><i class="bi bi-check-circle"></i> Zone sans chevauchement avec hub_to_wild</li>
+<li class="err"><i class="bi bi-x-circle"></i> Monde d'arrivée non chargé — <a href="monde-fiche.html">le charger</a></li><li class="ok"><i class="bi bi-check-circle"></i> Conditions valides (quête et niveau connus)</li><li class="warn"><i class="bi bi-exclamation-circle"></i> Point d'arrivée non vérifié (monde non chargé)</li></ul>
+<div class="btnrow"><button class="btn sm secondary"><i class="bi bi-clipboard-check ic"></i> Vérifier sans appliquer</button></div></section>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-person-check"></i> Essai contrôlé</h2><label>Joueur connecté<select><option>LoDyMcFly</option></select></label>
+<div class="btnrow"><button class="btn sm secondary">Simuler les conditions</button></div><p class="muted">Résultat : <b>REFUSÉ</b> — niveau RPG 7 &lt; 10.</p>
+<button class="btn sm secondary" disabled>Téléporter pour test…</button><p class="field-help">Permission dédiée + confirmation forte ; jamais vers une destination non vérifiée.</p></section>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-toggle-on"></i> Activation</h2><p><span class="pill pill--neutral">Brouillon</span></p><button class="btn sm" disabled>Activer</button>
+<p class="field-help">Bouton grisé tant que la vérification signale un problème. Désactiver garde le bâtiment et la configuration ; supprimer le portail ne démolit jamais l'arche ni l'emplacement.</p></section>
+</div></div>
+  </main>
+</div>
+</body></html>

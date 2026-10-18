@@ -48,6 +48,25 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-18 - Récompenses : formulaire de table guidé, refus sans perte de saisie (#177)
+
+### Changement
+
+PlugAdmin seul. Formulaire de table (Récompenses) : bouton grisé tant que la table serait refusée, avec la
+raison ; somme ≤ 100 % seulement en « Une récompense au plus » ; formulaire réaffiché intact après tout
+refus ; nom et quantité de chaque récompense choisie.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft (JAR inchangé, `entitlements.yml` inchangé, aucune migration).
+PlugAdmin redéployé le 18/10 14:29 (`5bbb112`, `scripts/plugadmin/deploy.sh`).
+
+### Rollback
+
+Version précédente `/opt/plugadmin/releases/20261018-142042/` (`de191bd`, gardée par `deploy.sh`) : aucune donnée à reprendre.
+
+---
+
 ## 2026-10-18 - required-level des portails et offres marchandes lit le niveau RPG (#532)
 
 ### Changement

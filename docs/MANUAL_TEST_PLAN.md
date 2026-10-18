@@ -6665,6 +6665,27 @@ récompenses (TC-336). Rien n'est écrit tant que « Créer la table » n'est pa
 6.  Ne pas cliquer « Créer la table » pour de vrai si l'on ne veut pas de table de test sur DEV ; sinon la
     désactiver ensuite.
 
+### TC-359 — Récompense : enchantements guidés, rafraîchissement automatique, envoi unique (issue #474, retour du 18/10, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de la PR #474 « retour UX » sur **DEV**, catalogue créé (TC-336). Ne pas
+activer l'interrupteur général. Ne pas modifier les récompenses de test existantes (`test_pomme`,
+`test_pomme_copie`, `test_livre_enchante`) : utiliser une nouvelle récompense **désactivée**.
+
+1.  Récompenses → Rafraîchir → **Nouvelle récompense**. Objet 1 : taper « livre », choisir ENCHANTED_BOOK.
+    **Attendu** : sous le champ, « Livre enchanté · ENCHANTED_BOOK ».
+2.  Sous « Ajouter un enchantement… », taper « tranch ». **Attendu** : suggestion « Tranchant (max V) »
+    pendant la saisie ; la choisir → niveaux I à V, objets acceptés, « incompatible avec : … ». Choisir III,
+    « Ajouter » → puce « Tranchant III ». Taper « châtiment », ajouter → les deux puces signalent
+    l'incompatibilité ; retirer Châtiment (×). Taper « sharp » : même suggestion (identifiant).
+3.  Nom « Test — Livre 2 », activation décochée → **Créer la récompense**. **Attendu** : bouton grisé « Envoi en
+    cours… », bannière « Opération en cours », puis la page se recharge **seule** : carte « Test — Livre 2 »
+    « 1 × Livre enchanté (Tranchant III) » et compteur augmenté, **sans** cliquer « Rafraîchir ».
+4.  Double clic rapide sur un bouton de création : **une seule** carte créée.
+5.  Refus : nouvelle récompense avec un enchantement inconnu tapé à la main (désactiver JavaScript, ou saisir
+    `inconnu 2` via un client sans JS) → « Refusé, rien n'a été enregistré » et le formulaire rouvert avec le nom,
+    l'objet et la saisie d'enchantements.
+6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
+
 ### TC-332 — Modifier un boss à plusieurs biomes depuis PlugAdmin (issue #461, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.

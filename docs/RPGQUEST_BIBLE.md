@@ -192,6 +192,14 @@ qui ne la déclare plus, déclaration manuelle refusée), droits déjà ouverts 
 Actions agent `reward.catalog.init`, `reward.catalog.toggle`, `reward.definition.save`,
 `reward.definition.duplicate`, `reward.definition.toggle` — mêmes garanties que les tables (validation par le vrai
 chargeur avant écriture, écriture atomique, `ROLLED_BACK`, `STALE`, `UNCHANGED`, commentaires conservés).
+Retour du 18/10 : **enchantements guidés** — taper un nom français ou un identifiant (« tranchant », « sharp »),
+choisir le niveau (I au maximum réel du serveur) puis « Ajouter » ; objets qui l'acceptent, enchantements
+incompatibles et avertissement si l'objet choisi ne l'accepte pas (le livre enchanté le stocke), données du
+registre du serveur (`reward.catalog.status` → `enchantmentInfo`, noms français tenus par PlugAdmin) ; nom
+français de l'objet gardé sous son champ ; fiches en français (« 1 × Livre enchanté (Tranchant III) »). Après
+envoi : bouton grisé « Envoi en cours… », jeton à usage unique (un double clic ne crée qu'une action), bannière
+« Opération en cours » et page **rechargée seule** dès la confirmation du serveur (cartes et compteurs à jour sans
+« Rafraîchir ») ; après un refus (panel ou serveur) le formulaire de récompense revient rempli tel qu'envoyé.
 Détail : [REWARD_ENTITLEMENTS.md §10.8](REWARD_ENTITLEMENTS.md#108-catalogue-administré-depuis-plugadmin-474).
 
 ---

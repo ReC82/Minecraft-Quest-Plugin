@@ -330,3 +330,13 @@ Les droits **déjà ouverts** restent remis (le contenu est résolu à la remise
 ne casse aucune référence. Interrupteur général : voir §10.5 (désactivé = aucun tirage ni nouveau droit, droits
 en attente conservés jusqu'à la réactivation).
 
+**Saisie guidée (retour propriétaire du 18/10).** Le relevé `reward.catalog.status` ajoute `enchantmentInfo` :
+pour chaque enchantement du registre Paper, `key`, `maxLevel`, `items` (objets acceptés, `getSupportedItems`) et
+`conflicts` (`conflictsWith`). PlugAdmin en tire le sélecteur (nom français tenu dans `EnchantmentNames`, repli
+sur l'identifiant embelli pour un enchantement inconnu, niveau I à `maxLevel`, avertissements « ne s'applique
+pas à … » / « incompatible avec … ») ; un plugin plus ancien sans ce champ garde la simple liste d'identifiants.
+Ces indications ne changent pas la validation d'écriture : le serveur accepte toujours un niveau 1 à 10 et
+refuse un enchantement inconnu. Formulaires `reward.*` : champ `submit_token` à usage unique (un renvoi retombe
+sur l'action déjà créée) ; refus de `reward.definition.save` → formulaire réaffiché (`?refused=<action>` ou
+session), comme les tables (#177).
+

@@ -1,0 +1,41 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Créer un portail · PlugAdmin (maquette #331/#228)</title>
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap-icons/bootstrap-icons.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/plugadmin.css">
+<link rel="stylesheet" href="maquette.css">
+</head><body>
+<input type="checkbox" id="nav-toggle" class="nav-toggle" hidden>
+<header class="topbar">
+  <label for="nav-toggle" class="burger" aria-label="Menu"><i class="bi bi-list ic"></i></label>
+  <div class="brand"><span class="brand-mark">PA</span><span class="brand-t">Plug<strong>Admin</strong></span><span class="env-chip">DEV</span></div>
+  <div class="topbar-r"><span class="srv-chip srv-ok"><i class="bi bi-wifi ic"></i><span>ONLINE</span></span></div>
+</header>
+<div class="shell">
+  <label for="nav-toggle" class="scrim" aria-hidden="true"></label>
+  <nav class="side"><div class="nav-group"><p class="nav-group-t">Vue d'ensemble</p><a class="navlink" href="#"><i class="bi bi-grid-1x2 ic nav-ic"></i><span>Accueil</span></a><a class="navlink" href="#"><i class="bi bi-clock-history ic nav-ic"></i><span>Historique</span></a></div><div class="nav-group"><p class="nav-group-t">Monde</p><a class="navlink" href="#"><i class="bi bi-globe-americas ic nav-ic"></i><span>Mondes</span> <em class="nav-soon">nouveau</em></a><a class="navlink active" href="#"><i class="bi bi-door-open ic nav-ic"></i><span>Portails</span> <em class="nav-soon">nouveau</em></a><a class="navlink" href="#"><i class="bi bi-signpost-split ic nav-ic"></i><span>Voyages</span></a></div><div class="nav-group"><p class="nav-group-t">RPGQuest</p><a class="navlink" href="#"><i class="bi bi-people ic nav-ic"></i><span>Joueurs</span></a><a class="navlink" href="#"><i class="bi bi-person-badge ic nav-ic"></i><span>PNJ</span></a><a class="navlink" href="#"><i class="bi bi-buildings ic nav-ic"></i><span>Villes</span></a><a class="navlink" href="#"><i class="bi bi-journal-text ic nav-ic"></i><span>Quêtes</span></a><a class="navlink" href="#"><i class="bi bi-chat-dots ic nav-ic"></i><span>Dialogues</span></a></div><div class="nav-group"><p class="nav-group-t">Bâtiments</p><a class="navlink" href="#"><i class="bi bi-stars ic nav-ic"></i><span>Atelier de création</span></a><a class="navlink" href="#"><i class="bi bi-collection ic nav-ic"></i><span>Bibliothèque</span></a><a class="navlink" href="#"><i class="bi bi-geo-alt ic nav-ic"></i><span>Emplacements</span></a></div><div class="nav-group"><p class="nav-group-t">Ressources</p><a class="navlink" href="#"><i class="bi bi-book ic nav-ic"></i><span>Documentation</span></a><a class="navlink" href="#"><i class="bi bi-activity ic nav-ic"></i><span>Diagnostics</span></a></div></nav>
+  <main class="main">
+  <p class="mq-banner"><strong>Maquette statique #331 / #228</strong> — aucune donnée envoyée, aucun bouton actif. Les données de <code>world_hub</code>, <code>wild</code>, <code>claims</code>, <code>hub_to_wild</code> et <code>hub_to_claims</code> sont celles relues sur DEV le 18/10 ; « Terres gelées » est un exemple fictif.</p>
+<div class="pagehead"><div class="ph-l"><div class="ph-title"><i class="bi bi-plus-circle ic"></i><h1>Créer un portail</h1></div>
+<p class="sub">Le portail est créé en <strong>brouillon</strong> : il ne téléporte personne avant l'activation.</p></div><div class="ph-actions"><a class="btn sm secondary" href="portails.html"><i class="bi bi-x-lg ic"></i> Annuler</a></div></div>
+<div class="stepper"><span class="on">A. Emplacement</span><span>B. Construction</span><span>C. Destination</span><span>D. Messages</span><span>E. Conditions</span><span>F. Vérifier</span></div>
+<section class="card w-sec"><div class="form-grid"><label>Nom affiché<input value="Portail vers les Terres gelées"></label><label>Identifiant permanent<input value="terres_gelees_aller"><span class="field-help">Ne change plus ensuite.</span></label></div></section>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-geo-alt"></i> Où se trouve le portail ?</h2>
+<p class="muted">Marquez le lieu en jeu avec l'<strong>outil d'emplacement des bâtiments</strong> (houe en fer, <code>/rpgadmin buildsite tool</code>), puis choisissez-le ici. Aucun nouvel outil.</p>
+<div class="pick">
+<label class="pick-row checked"><input type="radio" name="s" checked><div><b>Portail Terres gelées</b> <code>buildsite_0012</code><br><span class="why">world_hub · 744 66 −670 · face nord · libre · marqué il y a 5 min</span></div></label>
+<label class="pick-row"><input type="radio" name="s"><div><b>Place du marché</b> <code>buildsite_0004</code><br><span class="why">world_hub · occupé par « Fontaine » — un portail peut aussi utiliser un emplacement occupé</span></div></label>
+<label class="pick-row disabled"><input type="radio" name="s" disabled><div><b>Estrade d'Elias</b> <code>buildsite_0009</code><br><span class="why">déjà utilisé par un autre portail</span></div></label></div>
+<div class="form-grid"><label>Zone d'activation<select><option>Déduite de la construction choisie (étape B)</option><option>Dimensions autour de l'emplacement</option></select></label>
+<label>Dimensions (si pas de construction)<input value="3 large × 4 haut × 1 profond"></label></div></section>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-bricks"></i> Étape B — aperçu des choix</h2><div class="opt-grid">
+<label class="opt on"><input type="radio" name="b" checked><i class="bi bi-collection"></i><b>Bibliothèque</b><span>Modèles marqués « portail »</span></label>
+<label class="opt"><input type="radio" name="b"><i class="bi bi-stars"></i><b>Atelier IA</b><span>Description → plan → aperçu ; coût affiché et confirmé</span></label>
+<label class="opt"><input type="radio" name="b"><i class="bi bi-file-earmark-arrow-up"></i><b>Fichier .schem</b><span>Import (#245)</span></label>
+<label class="opt"><input type="radio" name="b"><i class="bi bi-hand-index"></i><b>Aucune</b><span>Je construis à la main</span></label></div>
+<p class="field-help">La pose utilise l'aperçu, l'orientation et les contrôles de chevauchement des bâtiments existants. Poser une arche n'active jamais le portail.</p></section>
+<div class="savebar"><span class="muted">Brouillon enregistré à chaque étape.</span><button class="btn sm"><i class="bi bi-arrow-right ic"></i> Étape suivante</button></div>
+  </main>
+</div>
+</body></html>

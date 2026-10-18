@@ -1,0 +1,56 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Créer un monde · PlugAdmin (maquette #331/#228)</title>
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap-icons/bootstrap-icons.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/plugadmin.css">
+<link rel="stylesheet" href="maquette.css">
+</head><body>
+<input type="checkbox" id="nav-toggle" class="nav-toggle" hidden>
+<header class="topbar">
+  <label for="nav-toggle" class="burger" aria-label="Menu"><i class="bi bi-list ic"></i></label>
+  <div class="brand"><span class="brand-mark">PA</span><span class="brand-t">Plug<strong>Admin</strong></span><span class="env-chip">DEV</span></div>
+  <div class="topbar-r"><span class="srv-chip srv-ok"><i class="bi bi-wifi ic"></i><span>ONLINE</span></span></div>
+</header>
+<div class="shell">
+  <label for="nav-toggle" class="scrim" aria-hidden="true"></label>
+  <nav class="side"><div class="nav-group"><p class="nav-group-t">Vue d'ensemble</p><a class="navlink" href="#"><i class="bi bi-grid-1x2 ic nav-ic"></i><span>Accueil</span></a><a class="navlink" href="#"><i class="bi bi-clock-history ic nav-ic"></i><span>Historique</span></a></div><div class="nav-group"><p class="nav-group-t">Monde</p><a class="navlink active" href="#"><i class="bi bi-globe-americas ic nav-ic"></i><span>Mondes</span> <em class="nav-soon">nouveau</em></a><a class="navlink" href="#"><i class="bi bi-door-open ic nav-ic"></i><span>Portails</span> <em class="nav-soon">nouveau</em></a><a class="navlink" href="#"><i class="bi bi-signpost-split ic nav-ic"></i><span>Voyages</span></a></div><div class="nav-group"><p class="nav-group-t">RPGQuest</p><a class="navlink" href="#"><i class="bi bi-people ic nav-ic"></i><span>Joueurs</span></a><a class="navlink" href="#"><i class="bi bi-person-badge ic nav-ic"></i><span>PNJ</span></a><a class="navlink" href="#"><i class="bi bi-buildings ic nav-ic"></i><span>Villes</span></a><a class="navlink" href="#"><i class="bi bi-journal-text ic nav-ic"></i><span>Quêtes</span></a><a class="navlink" href="#"><i class="bi bi-chat-dots ic nav-ic"></i><span>Dialogues</span></a></div><div class="nav-group"><p class="nav-group-t">Bâtiments</p><a class="navlink" href="#"><i class="bi bi-stars ic nav-ic"></i><span>Atelier de création</span></a><a class="navlink" href="#"><i class="bi bi-collection ic nav-ic"></i><span>Bibliothèque</span></a><a class="navlink" href="#"><i class="bi bi-geo-alt ic nav-ic"></i><span>Emplacements</span></a></div><div class="nav-group"><p class="nav-group-t">Ressources</p><a class="navlink" href="#"><i class="bi bi-book ic nav-ic"></i><span>Documentation</span></a><a class="navlink" href="#"><i class="bi bi-activity ic nav-ic"></i><span>Diagnostics</span></a></div></nav>
+  <main class="main">
+  <p class="mq-banner"><strong>Maquette statique #331 / #228</strong> — aucune donnée envoyée, aucun bouton actif. Les données de <code>world_hub</code>, <code>wild</code>, <code>claims</code>, <code>hub_to_wild</code> et <code>hub_to_claims</code> sont celles relues sur DEV le 18/10 ; « Terres gelées » est un exemple fictif.</p>
+<div class="pagehead"><div class="ph-l"><div class="ph-title"><i class="bi bi-plus-circle ic"></i><h1>Créer un monde</h1></div>
+<p class="sub">Seules les options réellement prises en charge par Paper 1.21.11 et Multiverse-Core 5.7.3 sont proposées. Rien n'est créé avant la confirmation finale.</p></div><div class="ph-actions"><a class="btn sm secondary" href="mondes.html"><i class="bi bi-x-lg ic"></i> Annuler</a></div></div>
+<div class="stepper"><span class="on">1. Nom et type</span><span>2. Terrain</span><span>3. Réglages</span><span>4. Résumé</span></div>
+<section class="card w-sec"><div class="form-grid">
+<label>Nom affiché<input value="Terres gelées"></label>
+<label>Identifiant du dossier<input value="terres_gelees"><span class="field-help">Minuscules, chiffres, _ et -. Calculé depuis le nom ; vérifié libre sur le serveur.</span></label>
+<div class="full"><p class="lbl">Dimension</p><div class="opt-grid">
+<label class="opt on"><input type="radio" name="d" checked><i class="bi bi-globe-europe-africa"></i><b>Monde normal</b><span>Ciel, jour et nuit</span></label>
+<label class="opt"><input type="radio" name="d"><i class="bi bi-fire"></i><b>Nether</b><span>Génération Nether uniquement</span></label>
+<label class="opt"><input type="radio" name="d"><i class="bi bi-moon-stars"></i><b>End</b><span>Génération End uniquement</span></label></div></div>
+<div class="full"><p class="lbl">Terrain</p><div class="opt-grid">
+<label class="opt"><input type="radio" name="t"><b>Normal</b><span>Comme une partie solo</span></label>
+<label class="opt on"><input type="radio" name="t" checked><b>Plat</b><span>Couches personnalisables</span></label>
+<label class="opt"><input type="radio" name="t"><b>Amplifié</b><span>Montagnes extrêmes</span></label>
+<label class="opt"><input type="radio" name="t"><b>Grands biomes</b><span>Biomes 4× plus grands</span></label></div>
+<p class="field-help">Nether et End n'ont qu'une génération : le choix du terrain est alors masqué.</p></div>
+<label>Graine (facultatif)<input placeholder="vide = aléatoire, conservée ensuite"></label>
+<label class="sw"><input type="checkbox"> Générer les structures (villages, temples…)</label>
+</div></section>
+<section class="card w-sec"><h2 class="w-h"><i class="bi bi-layers"></i> Monde plat</h2>
+<div class="presets"><a class="chip" href="#">Classique</a><a class="chip on" href="#">Neige</a><a class="chip" href="#">Désert</a><a class="chip" href="#">Vide (une plateforme)</a></div>
+<table class="ptable layers"><thead><tr><th>Couche (du bas vers le haut)</th><th>Épaisseur</th><th></th></tr></thead><tbody>
+<tr><td>Bedrock</td><td>1</td><td><a href="#" class="small">retirer</a></td></tr><tr><td>Terre</td><td>2</td><td><a href="#" class="small">retirer</a></td></tr><tr><td>Bloc de neige</td><td>1</td><td><a href="#" class="small">retirer</a></td></tr></tbody></table>
+<div class="btnrow"><button class="btn sm secondary"><i class="bi bi-plus ic"></i> Ajouter une couche</button></div>
+<div class="form-grid"><label>Biome<select><option>Plaines enneigées</option><option>Plaines</option><option>Désert</option></select></label>
+<label>Hauteur du sol<input value="4 blocs" readonly></label></div></section>
+<div class="savebar"><span class="muted">La création peut figer le serveur quelques secondes : une seule à la fois.</span><button class="btn sm"><i class="bi bi-arrow-right ic"></i> Continuer</button></div>
+<section class="card w-sec recap"><h2 class="w-h"><i class="bi bi-card-checklist"></i> Résumé avant création (étape 4)</h2>
+<ul class="safe-list"><li><i class="bi bi-check2 bi"></i>Monde normal, terrain plat (bedrock, 2 terre, neige), biome plaines enneigées, sans structures</li>
+<li><i class="bi bi-check2 bi"></i>Aucun rôle Hub / Wild / Claims · aucun portail créé · waypoints désactivés</li>
+<li><i class="bi bi-check2 bi"></i>Chargé automatiquement au redémarrage</li></ul>
+<label class="sw"><input type="checkbox"> Je confirme la création du monde <code>terres_gelees</code></label>
+<div class="btnrow"><button class="btn sm" disabled><i class="bi bi-globe ic"></i> Créer le monde</button></div>
+<p class="field-help">États affichés ensuite : En cours → Prêt (après relecture) ou Échec avec la raison.</p></section>
+  </main>
+</div>
+</body></html>

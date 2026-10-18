@@ -1544,6 +1544,16 @@ public final class AgentActionExecutor {
             details.put("initialText", view.initialText());
             details.put("customItems", view.references().customItems());
             details.put("enchantments", view.references().enchantments());
+            List<Map<String, Object>> enchantmentInfo = new ArrayList<>();
+            for (AgentActions.RewardEnchantmentView e : view.references().enchantmentDetails()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("key", e.key());
+                row.put("maxLevel", e.maxLevel());
+                row.put("items", e.supportedItems());
+                row.put("conflicts", e.conflicts());
+                enchantmentInfo.add(row);
+            }
+            details.put("enchantmentInfo", enchantmentInfo);
             details.put("potions", view.references().potions());
             return AgentActionOutcome.success(action.id(), Integer.toString(view.tables().size()),
                     view.tables().size() + " table(s), " + rewards.size() + " récompense(s) au catalogue.", details);

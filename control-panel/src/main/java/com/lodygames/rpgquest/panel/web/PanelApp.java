@@ -5819,7 +5819,25 @@ public final class PanelApp {
             }
             outgoing = enriched.params();
         }
+        // Issue #474 : un formulaire porteur d'un jeton n'est mis en file qu'une fois. Un double clic
+        // ou un renvoi retombe sur l'action déjà créée (son toast la suit), sans en empiler une autre.
+        String submitToken = form.getOrDefault("submit_token", "").trim();
+        if (!submitToken.isEmpty()) {
+            Optional<String> already = session.reserveSubmitToken(submitToken);
+            if (already.isPresent()) {
+                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                        "DENIED", "formulaire déjà envoyé (jeton réutilisé)", rid);
+                Http.redirect(exchange, already.get().isEmpty()
+                        ? withError(returnPath, agentId, form.get("player"),
+                                "Ce formulaire vient déjà d'être envoyé : rien n'a été envoyé en double.")
+                        : appendContext(returnPath, agentId, v.params().get("player")) + "&toast=" + enc(already.get()));
+                return;
+            }
+        }
         String id = agentStore.createAction(agentId, type, outgoing, session.username());
+        if (!submitToken.isEmpty()) {
+            session.bindSubmitToken(submitToken, id);
+        }
         audit.record(session.username(), "agent.action.create",
                 "agent=" + agentId + " type=" + type + " action=" + id, "PENDING",
                 safeParams(outgoing), rid);

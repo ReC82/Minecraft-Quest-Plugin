@@ -36,6 +36,12 @@ public final class Session {
      * jeton CSRF, un seul par type.
      */
     private final Map<String, Map<String, String>> refusedForms = new ConcurrentHashMap<>();
+    /**
+     * Jetons de formulaire déjà envoyés → action créée ({@code ""} = envoi en cours), issue #474 :
+     * un double clic ou un renvoi n'empile jamais une seconde action. Borné, en mémoire seulement.
+     */
+    private final Map<String, String> submittedForms = new LinkedHashMap<>();
+    private static final int MAX_SUBMITTED_FORMS = 200;
 
     Session(String id, String userId, String username, String role, String csrfToken, Instant now) {
         this.id = id;
@@ -119,5 +125,27 @@ public final class Session {
     /** Le formulaire refusé de ce type, une seule fois. */
     public Optional<Map<String, String>> takeRefusedForm(String type) {
         return Optional.ofNullable(refusedForms.remove(type));
+    }
+
+    /**
+     * Réserve le jeton d'un formulaire. Vide = premier envoi (à lier ensuite par
+     * {@link #bindSubmitToken}) ; sinon l'action déjà créée par ce jeton, ou {@code ""} si le premier
+     * envoi est encore en cours de traitement.
+     */
+    public synchronized Optional<String> reserveSubmitToken(String token) {
+        String previous = submittedForms.get(token);
+        if (previous != null) {
+            return Optional.of(previous);
+        }
+        submittedForms.put(token, "");
+        while (submittedForms.size() > MAX_SUBMITTED_FORMS) {
+            submittedForms.remove(submittedForms.keySet().iterator().next());
+        }
+        return Optional.empty();
+    }
+
+    /** L'action créée par le premier envoi de ce jeton. */
+    public synchronized void bindSubmitToken(String token, String actionId) {
+        submittedForms.put(token, actionId);
     }
 }

@@ -327,6 +327,112 @@ class RewardTablesPageTest {
         assertTrue(queued.contains("epee_du_heros"), queued);
     }
 
+    // ---- Retour propriétaire du 18/10 : catalogue des récompenses ---------------------------------
+
+    static String status474WithEnchantments() {
+        String base = status474(true, false);
+        return base.substring(0, base.length() - 1) + ",\"enchantmentInfo\":["
+                + "{\"key\":\"sharpness\",\"maxLevel\":5,\"items\":[\"DIAMOND_SWORD\",\"IRON_AXE\"],"
+                + "\"conflicts\":[\"smite\"]},"
+                + "{\"key\":\"smite\",\"maxLevel\":5,\"items\":[\"DIAMOND_SWORD\"],\"conflicts\":[\"sharpness\"]},"
+                + "{\"key\":\"mending\",\"maxLevel\":1,\"items\":[\"DIAMOND_SWORD\"],\"conflicts\":[]}]}";
+    }
+
+    @Test
+    void enchantmentsAreOfferedInFrenchWithTheirRealLevelsItemsAndConflicts() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474WithEnchantments());
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("<option value=\"sharpness\" label=\"Tranchant (max V)\" data-name=\"Tranchant\" "
+                + "data-max=\"5\" data-items=\"DIAMOND_SWORD,IRON_AXE\" data-conflicts=\"smite\">"), page);
+        assertTrue(page.contains("label=\"Raccommodage (max I)\""), "niveau unique");
+        assertTrue(page.contains("data-ench-pick") && page.contains("list=\"dl-reward-enchants\""),
+                "suggestions pendant la saisie");
+        assertTrue(page.contains("data-ench-level") && page.contains("data-ench-add"), "choix du niveau");
+        assertTrue(page.contains("<strong>Tranchant</strong> <code>sharpness</code> · niveau I à V"),
+                "aide en français, plus une liste brute d'identifiants");
+        assertTrue(page.contains("1 × Livre enchanté (Tranchant III)"), "contenu de la fiche en français");
+        assertTrue(page.contains("data-item-picked><strong>Livre enchanté</strong> · <code>ENCHANTED_BOOK</code>"),
+                "nom français de l'objet choisi, identifiant en complément");
+    }
+
+    @Test
+    void anOlderPluginStillGetsTheEnchantmentList() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474(true, false));
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("<option value=\"unbreaking\" label=\"Solidité\""), page);
+    }
+
+    @Test
+    void aRewardRefusedByThePanelComesBackWhole() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474(true, false));
+        String token = csrf(get("/rewards?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=reward.definition.save&agent=" + TestConfig.AGENT_ID
+                + "&return=/rewards&create=true&label=" + URLEncoder.encode("Test — Livre", StandardCharsets.UTF_8)
+                + "&reward_key=test_livre&item_id_0=ENCHANTED_BOOK&item_amount_0=1&item_ench_0=sharp");
+        assertFalse(pollActions().contains("reward.definition.save"), "rien envoyé au serveur");
+
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("data-refused-form"), page);
+        assertTrue(page.contains("class=\"collapse show\" id=\"rd-new\""), "formulaire de création rouvert");
+        assertTrue(page.contains("value=\"Test — Livre\""), "nom conservé");
+        assertTrue(page.contains("name=\"reward_key\" maxlength=\"64\" pattern=\"[a-z0-9_\\-]{0,64}\" value=\"test_livre\""),
+                "identifiant conservé");
+        assertFalse(page.contains("id=\"rd-new-en\" name=\"enabled\" value=\"true\" checked"),
+                "activation décochée conservée");
+        assertTrue(page.contains("name=\"item_id_0\" aria-label=\"Objet 1\" value=\"ENCHANTED_BOOK\""), "objet conservé");
+        assertTrue(page.contains("value=\"sharp\""), "saisie d'enchantement conservée");
+        assertFalse(get("/rewards?agent=" + TestConfig.AGENT_ID).body().contains("data-refused-form"),
+                "réaffiché une seule fois");
+    }
+
+    @Test
+    void aRewardRefusedByThePluginReopensItsCardWithWhatWasSent() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474(true, false));
+        String token = csrf(get("/rewards?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=reward.definition.save&agent=" + TestConfig.AGENT_ID
+                + "&return=/rewards&create=false&reward_key=book&expected_version=1a1b1c1d&label=Grimoire"
+                + "&item_id_0=ENCHANTED_BOOK&item_amount_0=2&item_ench_0=" + URLEncoder.encode("sharpness 9",
+                StandardCharsets.UTF_8));
+        String id = answerQueued("FAILED", "Refusé par le serveur : niveau trop élevé.");
+
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID + "&refused=" + id).body();
+        assertTrue(page.contains("niveau trop élevé"), page);
+        assertTrue(page.contains("class=\"collapse mt-2 show\" id=\"rd-book-edit\""), "fiche rouverte");
+        assertTrue(page.contains("value=\"Grimoire\""), "nom envoyé, pas l'ancien");
+        assertTrue(page.contains("value=\"sharpness 9\""), "enchantement envoyé");
+        assertTrue(page.contains("name=\"item_amount_0\" aria-label=\"Quantité objet 1\" value=\"2\""), "quantité envoyée");
+    }
+
+    @Test
+    void aDoubleSubmissionQueuesOneActionAndFollowsTheFirst() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status474(true, false));
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        Matcher t = Pattern.compile("name=\"submit_token\" value=\"([0-9a-f-]{36})\"").matcher(page);
+        assertTrue(t.find(), "jeton de formulaire");
+        String body = "_csrf=" + csrf(page) + "&submit_token=" + t.group(1) + "&type=reward.definition.save&agent="
+                + TestConfig.AGENT_ID + "&return=/rewards&create=true&label=Pomme&item_id_0=APPLE&item_amount_0=1";
+        String first = post("/agents/action", body).headers().firstValue("Location").orElse("");
+        String second = post("/agents/action", body).headers().firstValue("Location").orElse("");
+        String queued = pollActions();
+        assertEquals(1, queued.split("reward.definition.save", -1).length - 1, queued);
+        String firstToast = first.replaceAll(".*[?&]toast=([^&]+).*", "$1");
+        assertTrue(second.contains("toast=" + firstToast), "le renvoi suit l'action déjà créée : " + second);
+
+        String after = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(after.contains("Opération en cours") && after.contains("Enregistrer une récompense"), after);
+        assertTrue(after.contains("data-pa-track-action=\"" + firstToast + "\""), "suivie jusqu'à confirmation");
+    }
+
     private String pollActions() throws Exception {
         return client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)

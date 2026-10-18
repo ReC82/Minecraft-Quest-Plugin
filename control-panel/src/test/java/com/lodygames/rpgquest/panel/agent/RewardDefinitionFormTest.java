@@ -88,4 +88,26 @@ class RewardDefinitionFormTest {
                 Map.of("enabled", "true", "confirm", "yes"));
         assertEquals("true", on.params().get("enabled"));
     }
+
+    /** Retour du 18/10 : un envoi refusé par le serveur revient champ par champ, comme saisi. */
+    @Test
+    void sentParamsComeBackAsTheFormThatProducedThem() {
+        AgentActionCatalog.Validation v = save(form("reward_key", "livre", "item_id_0", "ENCHANTED_BOOK",
+                "item_amount_0", "2", "item_ench_0", "sharpness 3, unbreaking 1", "item_id_1", "POTION",
+                "item_potion_1", "strength", "perk_key", "vip", "perk_tier", "or"));
+        assertTrue(v.valid(), v.error());
+        Map<String, String> back = RewardDefinitionForm.formOf(v.params());
+        assertEquals("livre", back.get("reward_key"));
+        assertEquals("Épée du Héros !", back.get("label"));
+        assertEquals("true", back.get("enabled"));
+        assertEquals("ENCHANTED_BOOK", back.get("item_id_0"));
+        assertEquals("2", back.get("item_amount_0"));
+        assertEquals("sharpness 3, unbreaking 1", back.get("item_ench_0"));
+        assertEquals("POTION", back.get("item_id_1"));
+        assertEquals("strength", back.get("item_potion_1"));
+        assertEquals("vip", back.get("perk_key"));
+        AgentActionCatalog.Validation again = save(back);
+        assertTrue(again.valid(), again.error());
+        assertEquals(v.params().get("items"), again.params().get("items"), "renvoi identique");
+    }
 }

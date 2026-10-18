@@ -48,6 +48,29 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-18 - Récompenses : enchantements guidés, rafraîchissement automatique, envoi unique (#474)
+
+### Changement
+
+JAR + PlugAdmin, **pas de migration**, aucun changement de format YAML ni de configuration. Le relevé
+`reward.catalog.status` décrit les enchantements du serveur (niveau max, objets acceptés, incompatibilités) ;
+PlugAdmin propose un sélecteur en français, garde le nom français des objets, recharge la page Récompenses dès
+la confirmation du serveur, n'envoie un formulaire qu'une fois (jeton) et réaffiche une récompense refusée telle
+qu'envoyée.
+
+### Action serveur
+
+Remplacer uniquement le JAR RPGQuest (script officiel `deploy-verygames.sh`, sauvegarde datée), redémarrer DEV ;
+redéployer PlugAdmin (`scripts/plugadmin/deploy.sh`). `entitlements.yml` **non modifié** : les récompenses de test
+du propriétaire restent telles quelles, interrupteur général toujours désactivé.
+
+### Rollback
+
+JAR précédent depuis la sauvegarde datée du script ; PlugAdmin depuis `/opt/plugadmin/releases/<précédente>/`.
+Aucune donnée à reprendre.
+
+---
+
 ## 2026-10-18 - Récompenses : formulaire de table guidé, refus sans perte de saisie (#177)
 
 ### Changement

@@ -1313,6 +1313,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   recharge pas après écriture, l'ancienne version est remise à l'octet près (`ROLLED_BACK`) ; une
   modification conserve drops, récompenses et capacités non éditées (Explosion renforcée, Explosive,
   Division) et est refusée (`CURRENT_UNREADABLE`) si le profil actuel ne se relit pas.
+  Refonte de présentation (#169, 18/10, PENDING MANUAL VALIDATION) : trois vues `/mobs` (Profils),
+  `/mobs/community`, `/mobs/spawns` ; résumé compact ; compteurs « en jeu / dont test / boss
+  communautaire actif » avec leur périmètre ; nettoyage des instances de test confirmé avec sa portée
+  (boss communautaires de test exclus) ; `community-bosses.yml` / `spawn-settings.yml` ignorés par le
+  chargeur de profils ; refus avant envoi visibles dans `/actions` (filtre « Refusées avant envoi »).
 - **Boss communautaires du Wild** (issue #175, première version, PENDING MANUAL VALIDATION) — type
   de boss QUEST/COMMUNITY + poids sur les profils BOSS ; scheduler unique (`mobs/community-bosses.yml`,
   désactivé par défaut, 15 min, 1 boss max) construit sur `SpecialMobService` ; placement sûr dans les

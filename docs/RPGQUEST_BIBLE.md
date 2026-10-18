@@ -5486,6 +5486,41 @@ Réglé depuis le Control Panel (`mobs/spawn-settings.yml`, jamais édité à la
 5. Les profils `BOSS` sont **exclus** de ce tirage automatique, sans exception.
 6. Aucun nouveau tirage au chargement de chunk ni à la reconnexion (seul un vrai spawn naturel `CreatureSpawnEvent` déclenche un tirage).
 
+### Page « Mobs spéciaux & boss » : trois vues (issue #169, refonte du 18/10/2026)
+
+La page PlugAdmin est découpée en trois onglets, chacun à sa propre adresse (une action renvoie sur la
+vue d'où elle part) :
+
+- **Profils** (`/mobs`) : catalogue avec recherche et filtres en premier ; « Nouveau profil » et
+  « Modèles, IA et import » en tête, les relevés (« Rafraîchir », « Listes Minecraft »,
+  « Récompenses ») à droite. Dans chaque fiche : « Modifier » (action principale), « Exporter »,
+  « Modifier avec une IA », « Activer / Désactiver », puis un bloc **Tester « <profil> »** qui ne fait
+  apparaître qu'une instance de ce profil. En bas, la zone rouge **Instances de test** annonce combien
+  d'instances seront supprimées (par profil) et n'envoie rien sans la case de confirmation.
+- **Boss communautaires** (`/mobs/community`) : état du scheduler, apparition de test, boss actifs et
+  victoires ; réglages, tables de récompenses (lien vers *Récompenses*) et explications repliés.
+- **Apparitions des mobs spéciaux** (`/mobs/spawns`) : tirage aléatoire du Wild et profils tirés.
+
+Un résumé compact (profils, tirage, instances de test, boss communautaires actifs) et les éventuels
+**profils rejetés** restent visibles sur les trois vues.
+
+**Compteurs** : « N en jeu » = créatures du profil repérées depuis le **dernier démarrage** du
+serveur (apparues ou retrouvées au chargement de leur zone), pas encore mortes ; « dont X de test » =
+instances de test chargées que le nettoyage supprimerait ; « boss communautaire actif » = état
+**enregistré** (`state/community-bosses.yml`), zones non chargées comprises. Un boss actif peut donc
+afficher « 0 en jeu » tant que sa zone n'a pas été rechargée depuis le redémarrage.
+
+`mob.test.clear` ne supprime que les instances de test chargées, **jamais** un mob naturel, un boss
+réel ni un boss communautaire de test (celui-ci se retire depuis l'onglet « Boss communautaires »,
+qui libère son verrou). Les fichiers de réglages de `mobs/` (`community-bosses.yml`,
+`spawn-settings.yml`) ne sont plus lus comme des profils (ils apparaissaient en « Profils rejetés ») et
+aucun profil ne peut porter leur nom.
+
+**Historique** (`/actions`) : le filtre **« Refusées avant envoi »** liste les demandes refusées par
+PlugAdmin avant la file (confirmation manquante, valeur invalide, conflit…) — date, action, cible,
+motif, acteur — lues dans le journal d'audit existant (aucune migration), distinctes des actions
+réellement exécutées.
+
 ### Boss communautaires du Wild (issue #175, première version)
 
 Un profil `BOSS` porte désormais un **type de boss** (`boss-mode`), distinct du choix SPECIAL/BOSS :
@@ -5494,7 +5529,7 @@ le Wild). `community-weight` (entier ≥ 1, défaut 1) pondère le tirage entre 
 Les deux champs se règlent dans l'éditeur de profil (« Type de boss », « Poids »).
 
 Réglages globaux — `mobs/community-bosses.yml`, édité depuis PlugAdmin (page « Mobs spéciaux & boss »,
-section **Boss communautaires du Wild**), jamais à la main :
+onglet **Boss communautaires**), jamais à la main :
 
 | Clé | Défaut | Rôle |
 |---|---|---|

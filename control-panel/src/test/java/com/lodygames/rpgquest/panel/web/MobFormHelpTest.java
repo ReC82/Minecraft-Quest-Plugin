@@ -79,7 +79,9 @@ class MobFormHelpTest {
         start();
         login();
         runListWithSuccess();
-        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+        // Issue #169 : le tirage du Wild a sa propre vue, les profils la leur.
+        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body()
+                + get("/mobs/spawns?agent=" + TestConfig.AGENT_ID).body();
 
         // L'aide est un bloc rendu dans le flux, et les méta-données sont étiquetées.
         assertTrue(page.contains("class=\"form-text\""), "aide rendue sous le champ");
@@ -296,7 +298,7 @@ class MobFormHelpTest {
         start();
         login();
         runListWithSuccess();
-        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/mobs/spawns?agent=" + TestConfig.AGENT_ID).body();
 
         // Valeurs réelles du serveur (0.05 / 20), pas les défauts du moteur (1 / aucun).
         assertTrue(page.contains("name=\"chance\" \n") || page.contains("value=\"0.05\""),

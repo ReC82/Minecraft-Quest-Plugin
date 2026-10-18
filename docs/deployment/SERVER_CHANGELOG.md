@@ -48,6 +48,31 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-18 - Mobs : page /mobs en trois vues, réglages hors profils, refus visibles (#169)
+
+### Changement
+
+JAR + PlugAdmin, **pas de migration**, aucun format YAML modifié. Le plugin ne lit plus
+`mobs/community-bosses.yml` ni `mobs/spawn-settings.yml` comme des profils (fin des « Profils rejetés »
+sur DEV) ; `mob.list` détaille ses compteurs (en jeu, dont test, boss communautaires actifs) ;
+`mob.test.clear` laisse les boss communautaires de test à leur propre retrait. PlugAdmin : /mobs en
+trois onglets (Profils, Boss communautaires, Apparitions), nettoyage confirmé avec sa portée, refus avant
+envoi listés dans l'historique (journal d'audit existant).
+
+### Action serveur
+
+Remplacer uniquement le JAR RPGQuest (script officiel `deploy-verygames.sh`, sauvegarde datée), redémarrer
+DEV ; redéployer PlugAdmin (`scripts/plugadmin/deploy.sh`). `mobs/community-bosses.yml`,
+`mobs/spawn-settings.yml`, les profils et `state/community-bosses.yml` **non modifiés** ; aucune
+apparition ni suppression déclenchée.
+
+### Rollback
+
+JAR précédent depuis la sauvegarde datée du script ; PlugAdmin depuis `/opt/plugadmin/releases/<précédente>/`.
+Aucune donnée à reprendre.
+
+---
+
 ## 2026-10-18 - Récompenses : enchantements guidés, rafraîchissement automatique, envoi unique (#474)
 
 ### Changement

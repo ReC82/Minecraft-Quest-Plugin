@@ -58,7 +58,7 @@ class CommunityBossPageTest {
     void sectionInvitesToLoadTheStatusBeforeAnyReading() throws Exception {
         start();
         login();
-        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/mobs/community?agent=" + TestConfig.AGENT_ID).body();
         assertTrue(page.contains("Boss communautaires du Wild"), "section présente");
         assertTrue(page.contains("Rafraîchir l&#39;état") || page.contains("Rafraîchir l'état"), "bouton de relevé");
         assertTrue(page.contains("État pas encore chargé"), "aucun état inventé");
@@ -69,7 +69,7 @@ class CommunityBossPageTest {
         start();
         login();
         runAction("boss.community.status", STATUS);
-        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/mobs/community?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("actives"), "scheduler actif");
         assertTrue(page.contains("dans 10 min"), "prochain essai relatif à l'horloge du serveur");
@@ -104,7 +104,7 @@ class CommunityBossPageTest {
                 + "\"participants\":[{\"uuid\":\"u1\",\"name\":\"Alice\",\"eligible\":true,\"reason\":\"\"},"
                 + "{\"uuid\":\"u2\",\"name\":\"Carol\",\"eligible\":false,\"reason\":\"trop loin du boss (143 blocs, 100 au plus)\"}],"
                 + "\"rewardKeys\":[\"boss_ogre\"],\"rewardStatus\":\"1 droit(s) déclaré(s) pour 1 joueur(s) éligible(s).\"}]}");
-        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/mobs/community?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("Victoires récentes et participants"));
         assertTrue(page.contains("dernier coup : Bob"));
@@ -129,7 +129,7 @@ class CommunityBossPageTest {
                 + "\"totalChance\":\"37,5 %\",\"explanation\":\"aucun gain : 62,5 %.\",\"entries\":["
                 + "{\"id\":\"gem\",\"rewardKey\":\"gem\",\"rewardLabel\":\"Gemme\",\"rewardKnown\":true,\"chance\":\"12,5 %\"},"
                 + "{\"id\":\"x\",\"rewardKey\":\"nope\",\"rewardLabel\":\"nope\",\"rewardKnown\":false,\"chance\":\"25 %\"}]}]}");
-        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+        String page = get("/mobs/community?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("Tables de récompenses aléatoires"), page);
         assertTrue(page.contains("Butin de l&#39;ogre") || page.contains("Butin de l'ogre"), page);
@@ -160,7 +160,7 @@ class CommunityBossPageTest {
         start();
         login();
         runAction("boss.community.status", STATUS);
-        assertTrue(get("/mobs?agent=" + TestConfig.AGENT_ID).body()
+        assertTrue(get("/mobs/community?agent=" + TestConfig.AGENT_ID).body()
                 .contains("Aucun boss communautaire vaincu depuis le dernier démarrage"));
     }
 
@@ -172,7 +172,7 @@ class CommunityBossPageTest {
     }
 
     private void runAction(String type, String details) throws Exception {
-        String token = csrf(get("/mobs?agent=" + TestConfig.AGENT_ID).body());
+        String token = csrf(get("/mobs/community?agent=" + TestConfig.AGENT_ID).body());
         post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent=" + TestConfig.AGENT_ID
                 + "&return=/mobs");
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))

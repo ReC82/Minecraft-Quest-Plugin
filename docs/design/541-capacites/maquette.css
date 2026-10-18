@@ -1,0 +1,95 @@
+/* Maquette #541 — composants proposés pour la page Capacités et les cartes de capacités du profil.
+   Statique, non servi par PlugAdmin. S'appuie sur plugadmin.css (tokens --primary, --line…). */
+.mq-banner{margin:0 0 16px;padding:8px 12px;border:1px dashed var(--warn);border-radius:8px;background:var(--warn-soft);
+  color:#7a4d06;font-size:12.5px}
+.cap-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.cap-filters .search{flex:1 1 240px;max-width:340px;position:relative}
+.cap-filters .search input{width:100%;padding:8px 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface)}
+.cap-filters select{padding:7px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);font-size:13px}
+.cap-sec-t{margin:22px 0 10px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-faint)}
+.cap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.cap-card{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px;box-shadow:var(--shadow-s)}
+.cap-card.planned{background:var(--surface-2);border-style:dashed}
+.cap-head{display:flex;align-items:center;gap:10px}
+.cap-ic{flex:0 0 36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--primary-soft);
+  color:var(--primary);font-size:18px}
+.cap-ic.off{background:var(--err-soft);color:var(--err)}
+.cap-ic.def{background:var(--ok-soft);color:var(--ok)}
+.cap-ic.inv{background:var(--info-soft);color:var(--info)}
+.cap-ic.ctl{background:var(--warn-soft);color:var(--warn)}
+.cap-name{font-weight:700;font-size:14.5px;line-height:1.25}
+.cap-cat{font-size:11.5px;color:var(--txt-faint)}
+.cap-desc{margin:0;font-size:13px;color:var(--txt-2)}
+.cap-facts{margin:0;padding:0;list-style:none;font-size:12px;color:var(--txt-2)}
+.cap-facts li{display:flex;gap:6px;align-items:baseline}
+.cap-facts .k{color:var(--txt-faint);min-width:84px}
+.cap-foot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:auto;padding-top:6px}
+.cap-foot .btn{margin-top:0}
+
+/* Fiche capacité */
+.cap-hero{display:flex;flex-wrap:wrap;gap:14px;align-items:center;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:14px 16px;margin:0 0 14px}
+.cap-hero .cap-ic{flex-basis:48px;height:48px;font-size:24px}
+.cap-steps{margin:0;padding-left:1.2rem;font-size:13.5px}
+.cap-steps li{margin:3px 0}
+.cap-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.cap-cols>div{min-width:0}
+@media(min-width:1100px){.cap-cols{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}}
+.ptable{width:100%;border-collapse:collapse;font-size:13px}
+.ptable th,.ptable td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.ptable th{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--txt-faint)}
+.ptable td.n{white-space:nowrap}
+.safe-list{margin:0;padding:0;list-style:none;font-size:13px}
+.safe-list li{display:flex;gap:8px;margin:4px 0}
+.safe-list .bi{color:var(--ok)}
+.presets{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Profil : cartes des capacités actives */
+.prof-sum{display:grid;grid-template-columns:1fr;gap:8px;margin:0 0 14px}
+.prof-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;background:var(--surface);border:1px solid var(--line);
+  border-radius:10px;padding:10px 14px}
+.prof-row .t{font-weight:700;min-width:120px}
+.prof-row .v{flex:1 1 240px;color:var(--txt-2);font-size:13px}
+.prof-row .btn{margin-top:0}
+.ab-list{display:flex;flex-direction:column;gap:10px}
+.ab-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.ab-card.off{opacity:.62;background:var(--surface-2)}
+.ab-card.editing{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.ab-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.ab-ord{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--surface-3);
+  font-size:12px;font-weight:800;color:var(--txt-2)}
+.ab-name{font-weight:700}
+.ab-sum{flex:1 1 100%;margin:4px 0 0;font-size:13px;color:var(--txt-2)}
+.ab-acts{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.ab-acts .btn{margin-top:0}
+.ab-edit{margin-top:10px;padding-top:6px;border-top:1px solid var(--line)}
+.ab-edit .form-grid label{margin-top:10px}
+.ab-edit input,.ab-edit select{width:100%;padding:7px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface)}
+.switch{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--txt-2);margin:0}
+.switch input{width:auto}
+.ab-add{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
+.ab-add .btn{margin-top:0}
+.checks{margin:12px 0 0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:13px}
+.checks li{margin:3px 0}
+.savebar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;
+  margin-top:16px;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.savebar .btn{margin-top:0}
+.savebar .muted{margin-right:auto;font-size:12.5px}
+
+/* Ajout : liste à cocher */
+.pick{display:flex;flex-direction:column;gap:8px}
+.pick-row{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.pick-row input{margin-top:4px;width:auto}
+.pick-row.disabled{opacity:.55;background:var(--surface-2)}
+.pick-row.checked{border-color:var(--primary);background:var(--primary-soft)}
+.pick-row .why{font-size:12px;color:var(--txt-faint)}
+.stepper{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;font-size:12.5px}
+.stepper span{padding:4px 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--txt-2)}
+.stepper span.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:700}
+@media(max-width:700px){
+  .form-grid{grid-template-columns:1fr}
+  .ab-acts{margin-left:0;width:100%}
+  .prof-row .t{min-width:0;flex:1 1 100%}
+  .cap-filters .search{max-width:none}
+}

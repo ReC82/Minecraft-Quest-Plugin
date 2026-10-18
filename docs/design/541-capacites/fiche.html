@@ -1,0 +1,51 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saut et pluie de gravier · PlugAdmin (maquette #541)</title>
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/bootstrap-icons/bootstrap-icons.min.css">
+<link rel="stylesheet" href="../../../control-panel/src/main/resources/assets/plugadmin.css">
+<link rel="stylesheet" href="maquette.css">
+</head><body>
+<input type="checkbox" id="nav-toggle" class="nav-toggle" hidden>
+<header class="topbar">
+  <label for="nav-toggle" class="burger" aria-label="Menu"><i class="bi bi-list ic"></i></label>
+  <div class="brand"><span class="brand-mark">PA</span><span class="brand-t">Plug<strong>Admin</strong></span><span class="env-chip">DEV</span></div>
+  <div class="topbar-r"><span class="srv-chip srv-ok"><i class="bi bi-wifi ic"></i><span>ONLINE</span></span></div>
+</header>
+<div class="shell">
+  <label for="nav-toggle" class="scrim" aria-hidden="true"></label>
+  <nav class="side"><div class="nav-group"><p class="nav-group-t">Pilotage</p><a class="navlink" href="#"><i class="bi bi-grid-1x2 ic nav-ic"></i><span>Accueil</span></a><a class="navlink" href="#"><i class="bi bi-speedometer2 ic nav-ic"></i><span>Dashboard</span></a><a class="navlink" href="#"><i class="bi bi-clock-history ic nav-ic"></i><span>Historique</span></a></div><div class="nav-group"><p class="nav-group-t">Jeu</p><a class="navlink" href="#"><i class="bi bi-people ic nav-ic"></i><span>Joueurs</span></a><a class="navlink" href="#"><i class="bi bi-person-badge ic nav-ic"></i><span>PNJ</span></a><a class="navlink" href="#"><i class="bi bi-signpost-split ic nav-ic"></i><span>Voyages</span></a><a class="navlink" href="#"><i class="bi bi-globe ic nav-ic"></i><span>Villes</span></a><a class="navlink" href="#"><i class="bi bi-bug ic nav-ic"></i><span>Mobs spéciaux & boss</span></a><a class="navlink active" href="#"><i class="bi bi-lightning-charge ic nav-ic"></i><span>Capacités</span> <em class="nav-soon">nouveau</em></a><a class="navlink" href="#"><i class="bi bi-gift ic nav-ic"></i><span>Récompenses</span></a><a class="navlink" href="#"><i class="bi bi-journal-text ic nav-ic"></i><span>Quêtes</span></a><a class="navlink" href="#"><i class="bi bi-chat-dots ic nav-ic"></i><span>Dialogues</span></a></div><div class="nav-group"><p class="nav-group-t">Contenu</p><a class="navlink" href="#"><i class="bi bi-cloud-upload ic nav-ic"></i><span>Changements en attente</span></a><a class="navlink" href="#"><i class="bi bi-stars ic nav-ic"></i><span>Créer avec une IA</span></a></div><div class="nav-group"><p class="nav-group-t">Aide</p><a class="navlink" href="#"><i class="bi bi-book ic nav-ic"></i><span>Documentation</span></a><a class="navlink" href="#"><i class="bi bi-activity ic nav-ic"></i><span>Diagnostics</span></a></div></nav>
+  <main class="main">
+  <p class="mq-banner"><strong>Maquette statique #541</strong> — aucune donnée réelle, aucun bouton actif. À valider par le propriétaire avant le lot #542.</p>
+  <p class="muted" style="font-size:12.5px;margin:0 0 8px"><a href="catalogue.html">Capacités</a> › Saut et pluie de gravier</p>
+<div class="cap-hero"><span class="cap-ic ctl"><i class="bi bi-cloud-hail"></i></span>
+<div style="flex:1 1 260px"><div class="cap-name" style="font-size:19px">Saut et pluie de gravier</div>
+<div class="cap-cat">Attaque · uniquement en combat · identifiant technique <code>JUMP_GRAVEL_RAIN</code></div></div>
+<span class="pill warn">En développement (#544)</span></div>
+<div class="cap-cols"><div>
+<section class="form-section"><p class="fs-h"><i class="bi bi-play-circle ic"></i> Ce que voit le joueur</p>
+<ol class="cap-steps"><li>Le mob se bat contre un joueur (il l'a pris pour cible et l'a touché ou a été touché il y a moins de 10 s).</li>
+<li>Au hasard (chance + délai), il s'accroupit : son de gravier et particules au sol sous le joueur.</li>
+<li>Il saute à la verticale. À l'atterrissage réel (pas dans l'eau ni la lave), du gravier tombe autour du joueur.</li>
+<li>Le gravier qui touche un joueur fait des dégâts. En touchant le sol, il <strong>disparaît</strong> : aucun bloc posé, rien à ramasser.</li></ol></section>
+<section class="form-section"><p class="fs-h"><i class="bi bi-sliders ic"></i> Réglages (valeurs propres à chaque mob)</p>
+<p class="fs-d">Ces valeurs se règlent dans le profil du mob. Les bornes sont vérifiées par le plugin : une valeur hors bornes est refusée avec la raison.</p>
+<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Réglage</th><th>Par défaut</th><th>Bornes</th><th>Explication</th></tr></thead><tbody><tr><td>Chance par essai</td><td class='n'><strong>15 %</strong></td><td class='n'>1 – 100 %</td><td>Testée toutes les 2 s tant que le combat dure.</td></tr><tr><td>Délai entre deux sauts</td><td class='n'><strong>12 s</strong></td><td class='n'>5 – 120 s</td><td>Aucun saut tant que le délai court.</td></tr><tr><td>Hauteur du saut</td><td class='n'><strong>1,2</strong></td><td class='n'>0,6 – 2,0</td><td>Impulsion verticale (≈ 2 à 6 blocs).</td></tr><tr><td>Portée de déclenchement</td><td class='n'><strong>8 blocs</strong></td><td class='n'>3 – 16</td><td>Le joueur visé doit être à cette distance.</td></tr><tr><td>Blocs de gravier</td><td class='n'><strong>6</strong></td><td class='n'>1 – 12</td><td>Par atterrissage. Plafond serveur : 64 en même temps.</td></tr><tr><td>Rayon de la pluie</td><td class='n'><strong>3 blocs</strong></td><td class='n'>1 – 6</td><td>Autour de la position du joueur visé.</td></tr><tr><td>Hauteur de chute</td><td class='n'><strong>8 blocs</strong></td><td class='n'>4 – 16</td><td>Plus haut = plus de temps pour esquiver.</td></tr><tr><td>Dégâts par bloc</td><td class='n'><strong>2 (1 cœur)</strong></td><td class='n'>0 – 6</td><td>0 = visuel seulement.</td></tr><tr><td>Avertissement</td><td class='n'><strong>1 s</strong></td><td class='n'>0,5 – 3 s</td><td>Son + particules au sol avant la chute.</td></tr></tbody></table></div></section>
+</div><div>
+<section class="form-section"><p class="fs-h"><i class="bi bi-shield-check ic"></i> Garanties</p><ul class="safe-list">
+<li><i class="bi bi-check-circle-fill"></i>Jamais hors combat ni au repos.</li>
+<li><i class="bi bi-check-circle-fill"></i>Le mob n'est jamais blessé par son propre gravier ; deux mobs ne mélangent pas leurs pluies.</li>
+<li><i class="bi bi-check-circle-fill"></i>Aucun bloc posé ni cassé, aucun objet lâché.</li>
+<li><i class="bi bi-check-circle-fill"></i>Rien dans le Hub, un claim, une zone protégée ; les PNJ ne sont jamais visés.</li>
+<li><i class="bi bi-check-circle-fill"></i>Tout disparaît si le mob meurt, est retiré ou si sa zone se décharge, et au redémarrage.</li></ul></section>
+<section class="form-section"><p class="fs-h"><i class="bi bi-puzzle ic"></i> Compatibilité</p>
+<p class="fs-d" style="margin:0">Créatures terrestres qui attaquent (zombie, squelette, araignée…). Refusée pour les créatures volantes ou aquatiques. Se combine avec Enragé et Invocation de renforts ; un seul « saut » à la fois par mob.</p></section>
+<section class="form-section"><p class="fs-h"><i class="bi bi-magic ic"></i> Préréglages (copiés dans le profil)</p>
+<p class="fs-d">Un préréglage remplit les valeurs une fois ; le profil garde ensuite ses propres valeurs.</p>
+<div class="presets"><span class="chip">Doux · 3 blocs, 1 dégât</span><span class="chip on">Normal · 6 blocs, 2 dégâts</span><span class="chip">Brutal · 10 blocs, 4 dégâts</span></div></section>
+<section class="form-section"><p class="fs-h"><i class="bi bi-bug ic"></i> Profils qui l'utilisent · 1</p>
+<p class="fs-d" style="margin:0"><a href="profil.html">Zombie des Éboulements</a> <span class="pill pill--neutral">tirage naturel désactivé</span></p></section>
+</div></div>
+  </main>
+</div>
+</body></html>

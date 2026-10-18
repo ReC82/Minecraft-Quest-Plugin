@@ -69,6 +69,14 @@
     return !!document.querySelector("[data-pa-selfrefresh]");
   }
 
+  function reopenWithRefusedForm(actionId) {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      params.set("refused", actionId);
+      window.location.href = window.location.pathname + "?" + params.toString();
+    } catch (e) { /* URL non manipulable : le refus reste affiché dans le toast */ }
+  }
+
   function runReload() {
     // Les identifiants sont marqués AVANT toute sortie : sans cela, la vue se réarmerait au
     // prochain cycle et on retomberait dans une boucle.
@@ -152,7 +160,7 @@
    * Drapeaux de résultat à USAGE UNIQUE portés par l'URL après une redirection POST :
    * `ok` / `err` (résultat synchrone) et `toast` (action agent à suivre).
    */
-  var ONE_SHOT_FLAGS = ["ok", "err", "toast"];
+  var ONE_SHOT_FLAGS = ["ok", "err", "toast", "refused"];
 
   /**
    * Les retire de l'URL une fois le toast rendu (correctif #95).
@@ -246,6 +254,14 @@
             stillPending = true;
           } else if (match) {
             updateToast(entry, match);
+            // Issue #177 : une table refusée par le serveur revient avec le formulaire tel qu'il a été
+            // envoyé — la page est rouverte avec ?refused=<action>, le serveur relit l'envoi refusé.
+            if (match.group === "failed" && match.type === "reward.table.save"
+                && document.querySelector("form[data-chance-form]") && !alreadyReloadedFor(entry.actionId)) {
+              markReloadedFor([entry.actionId]);
+              reopenWithRefusedForm(entry.actionId);
+              return;
+            }
             // Vue pending -> succès pendant cette page : la vue serveur peut être périmée.
             // Sauf sur une vue qui se réconcilie seule (/ops) : y armer un rechargement
             // détruirait la saisie en cours, et ses blocs se remettent déjà à jour tout seuls.
@@ -1848,9 +1864,95 @@
     return text + " %";
   }
 
+  var RESERVED_TABLE_IDS = ["y", "n", "yes", "no", "on", "off", "true", "false", "null"];
+
+  /** Même règle que RewardTableForm#slug : « Butin de l'Ogre ! » → « butin_de_l_ogre ». */
+  function tableSlug(label) {
+    var plain = String(label || "");
+    try { plain = plain.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch (e) { /* ignore */ }
+    plain = plain.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return plain.length > 32 ? plain.substring(0, 32).replace(/_+$/, "") : plain;
+  }
+
+  /** Catalogue des récompenses (clé → nom et quantités), lu dans la datalist rendue par le serveur. */
+  function rewardCatalog() {
+    var map = {};
+    var dl = document.getElementById("dl-reward-catalog");
+    var opts = dl ? dl.querySelectorAll("option") : [];
+    for (var i = 0; i < opts.length; i++) {
+      var key = opts[i].getAttribute("value");
+      if (key) { map[key] = opts[i].getAttribute("label") || key; }
+    }
+    return map;
+  }
+
+  /** Même rendu que AgentPages#rewardPickedHtml : nom et quantité d'abord, identifiant ensuite. */
+  function pickedHtml(key, catalog) {
+    var k = String(key || "").trim().toLowerCase();
+    if (!k) { return ""; }
+    if (!Object.prototype.hasOwnProperty.call(catalog, k)) {
+      return '<span class="text-danger">Récompense absente du catalogue</span> · <code>' + esc(key) + "</code>";
+    }
+    return "<strong>" + esc(catalog[k]) + "</strong> · <code>" + esc(key) + "</code>";
+  }
+
+  /**
+   * Première raison pour laquelle le serveur refuserait la table (mêmes règles que
+   * RewardTableForm#fill), ou "" si elle est envoyable. Le serveur revalide tout.
+   */
+  function tableProblem(form, catalog) {
+    var labelInput = form.querySelector("[data-rt-label]");
+    var label = labelInput ? labelInput.value.trim() : "";
+    if (!label) { return "Donner un nom à la table."; }
+    if (label.length > 120) { return "Nom de la table : 120 caractères au plus."; }
+    var idInput = form.querySelector("[data-rt-id]");
+    if (idInput) {
+      var id = idInput.value.trim().toLowerCase() || tableSlug(label);
+      if (!id) { return "Impossible de tirer un identifiant de ce nom : en saisir un (ex. butin_ogre)."; }
+      if (!/^[a-z0-9_-]{1,32}$/.test(id)) {
+        return "Identifiant : minuscules, chiffres, _ ou - (32 caractères au plus), ex. butin_ogre.";
+      }
+      if (RESERVED_TABLE_IDS.indexOf(id) !== -1) {
+        return "« " + id + " » ne peut pas servir d'identifiant : choisir par exemple « " + id + "_coffre ».";
+      }
+    }
+    var rows = form.querySelectorAll("[data-chance-row]");
+    var count = 0;
+    var total = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var rewardInput = rows[i].querySelector("[data-rt-reward]");
+      var chanceInput = rows[i].querySelector("input[data-chance]");
+      var reward = rewardInput ? rewardInput.value.trim().toLowerCase() : "";
+      var raw = chanceInput ? chanceInput.value.trim() : "";
+      if (!reward && !raw) { continue; }
+      var line = "Ligne " + (i + 1) + " : ";
+      if (!reward) { return line + "choisir une récompense (ou vider aussi sa chance pour retirer la ligne)."; }
+      if (!Object.prototype.hasOwnProperty.call(catalog, reward)) {
+        return line + "« " + reward + " » n'est pas dans le catalogue, la choisir dans la liste.";
+      }
+      if (!raw) { return line + "indiquer la chance en %."; }
+      var h = hundredths(raw);
+      if (h === null) { return line + "la chance doit être entre 0,01 et 100 %, deux décimales au plus (ex. 12,5)."; }
+      count++;
+      total += h;
+    }
+    if (count === 0) { return "Ajouter au moins une récompense."; }
+    var mode = form.querySelector("input[data-chance-mode]:checked");
+    if (!mode) { return "Choisir comment la table est tirée."; }
+    if (mode.value === "single" && total > 10000) {
+      return "« Une récompense au plus » : le total fait " + percentText(total)
+        + ", 100 % au plus. Baisser des chances, ou choisir « Chaque récompense tentée séparément ».";
+    }
+    return "";
+  }
+
   function setupChanceTotal(form) {
     var out = form.querySelector("[data-chance-total]");
     if (!out) { return; }
+    var catalog = rewardCatalog();
+    var submit = form.querySelector("[data-rt-submit]");
+    var why = form.querySelector("[data-rt-why]");
+    if (submit && why && why.id) { submit.setAttribute("aria-describedby", why.id); }
     function update() {
       var total = 0;
       var inputs = form.querySelectorAll("input[data-chance]");
@@ -1869,9 +1971,27 @@
           + " (chaque ligne est tirée à part ; le total peut dépasser 100 %).";
       }
       out.classList.toggle("text-danger", single && total > 10000);
+      // Bouton grisé tant que le serveur refuserait, et la raison écrite juste à côté.
+      if (submit) {
+        var problem = tableProblem(form, catalog);
+        submit.disabled = problem !== "";
+        if (why) { why.textContent = problem; }
+      }
     }
-    form.addEventListener("input", update);
-    form.addEventListener("change", update);
+    function showPicked(ev, always) {
+      var input = ev.target;
+      if (!input || !input.hasAttribute || !input.hasAttribute("data-rt-reward")) { return; }
+      var col = input.closest ? input.closest("[data-chance-row]") : null;
+      var picked = col ? col.querySelector("[data-rt-picked]") : null;
+      if (!picked) { return; }
+      var key = input.value.trim().toLowerCase();
+      // Pendant la recherche, on n'affiche que ce qui est reconnu ; à la sélection, toujours.
+      if (always || !key || Object.prototype.hasOwnProperty.call(catalog, key)) {
+        picked.innerHTML = pickedHtml(input.value, catalog);
+      }
+    }
+    form.addEventListener("input", function (ev) { showPicked(ev, false); update(); });
+    form.addEventListener("change", function (ev) { showPicked(ev, true); update(); });
     update();
   }
 

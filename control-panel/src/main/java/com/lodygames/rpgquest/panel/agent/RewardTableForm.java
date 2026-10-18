@@ -123,6 +123,33 @@ public final class RewardTableForm {
         return null;
     }
 
+    /**
+     * Inverse de {@link #fill} : les paramètres d'un {@code reward.table.save} refusé par le serveur
+     * redeviennent les champs du formulaire, pour le réafficher tel qu'il a été envoyé (issue #177).
+     */
+    public static Map<String, String> formOf(Map<String, String> params) {
+        Map<String, String> form = new java.util.LinkedHashMap<>();
+        for (String key : List.of("table_id", "label", "mode", "create", "expected_version")) {
+            form.put(key, trim(params.get(key)));
+        }
+        if ("true".equals(trim(params.get("enabled")))) {
+            form.put("enabled", "true");
+        }
+        int i = 0;
+        for (String entry : trim(params.get("entries")).split(";")) {
+            int eq = entry.indexOf('=');
+            int at = entry.lastIndexOf('@');
+            if (eq <= 0 || at <= eq || i >= MAX_ENTRIES) {
+                continue;
+            }
+            form.put("entry_id_" + i, entry.substring(0, eq));
+            form.put("entry_reward_" + i, entry.substring(eq + 1, at));
+            form.put("entry_chance_" + i, entry.substring(at + 1).replace('.', ','));
+            i++;
+        }
+        return form;
+    }
+
     /** {@code reward.table.duplicate} : identifiant source, nouvel identifiant, nom facultatif. */
     static String fillDuplicate(Map<String, String> form, Map<String, String> params) {
         String source = trim(form.get("table_id")).toLowerCase(Locale.ROOT);

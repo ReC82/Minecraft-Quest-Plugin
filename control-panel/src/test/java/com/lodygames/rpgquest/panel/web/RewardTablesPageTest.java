@@ -146,6 +146,106 @@ class RewardTablesPageTest {
         assertFalse(pollActions().contains("reward.table.save"));
     }
 
+    // ---- Retour propriétaire du 18/10 : formulaire de table ------------------------------------------
+
+    @Test
+    void eachChosenRewardShowsItsNameAndQuantityThenItsKey() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status(true, true, true, "[]", "[" + TABLE + "]"));
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("data-rt-picked><strong>Gemme rare — 2 × DIAMOND</strong> · <code>gem</code>"), page);
+        assertTrue(page.contains("data-rt-submit") && page.contains("data-rt-why"), "bouton et raison pour panel.js");
+    }
+
+    @Test
+    void aFormRefusedByThePanelComesBackWhole() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status(true, true, true, "[]", "[" + TABLE + "]"));
+        String token = csrf(get("/rewards?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=reward.table.save&agent=" + TestConfig.AGENT_ID
+                + "&return=/rewards&create=true&label=" + URLEncoder.encode("Coffre du marais", StandardCharsets.UTF_8)
+                + "&table_id=coffre_marais&mode=single"
+                + "&entry_reward_0=gem&entry_chance_0=70&entry_reward_1=book&entry_chance_1=50");
+        assertFalse(pollActions().contains("reward.table.save"), "rien envoyé au serveur");
+
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Refusé, rien n&#39;a été enregistré") || page.contains("Refusé, rien n'a été enregistré"),
+                page);
+        assertTrue(page.contains("120 %"), "raison du refus");
+        assertTrue(page.contains("class=\"collapse show\" id=\"rt-new\""), "formulaire de création rouvert");
+        assertTrue(page.contains("data-rt-label value=\"Coffre du marais\""), "nom conservé");
+        assertTrue(page.contains("data-rt-id value=\"coffre_marais\""), "identifiant conservé");
+        assertTrue(page.contains("id=\"rt-new-m-single\" value=\"single\" data-chance-mode checked"), "mode conservé");
+        assertFalse(page.contains("id=\"rt-new-en\" name=\"enabled\" value=\"true\" checked"),
+                "activation décochée conservée");
+        assertTrue(page.contains("name=\"entry_reward_1\" aria-label=\"Récompense ligne 2\" value=\"book\""), page);
+        assertTrue(page.contains("data-chance value=\"70\"") && page.contains("data-chance value=\"50\""),
+                "chances conservées");
+
+        String again = get("/rewards?agent=" + TestConfig.AGENT_ID).body();
+        assertFalse(again.contains("data-refused-form"), "réaffiché une seule fois");
+    }
+
+    @Test
+    void aSaveRefusedByThePluginReopensTheTableWithWhatWasSent() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status(true, true, true, "[]", "[" + TABLE + "]"));
+        String token = csrf(get("/rewards?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=reward.table.save&agent=" + TestConfig.AGENT_ID
+                + "&return=/rewards&create=false&table_id=butin_ogre&expected_version=1a2b3c4d"
+                + "&label=" + URLEncoder.encode("Butin modifié", StandardCharsets.UTF_8) + "&mode=independent"
+                + "&entry_id_0=gem&entry_reward_0=gem&entry_chance_0=90&entry_reward_1=book&entry_chance_1=30");
+        String id = answerQueued("FAILED", "Refusé par le serveur, rien n'a été écrit : récompense inconnue.");
+
+        String page = get("/rewards?agent=" + TestConfig.AGENT_ID + "&refused=" + id).body();
+        assertTrue(page.contains("data-refused-form"), page);
+        assertTrue(page.contains("récompense inconnue"), "message du plugin");
+        assertTrue(page.contains("class=\"collapse mt-2 show\" id=\"rt-butin_ogre-edit\""), "fiche rouverte");
+        assertTrue(page.contains("data-rt-label value=\"Butin modifié\""), "nom envoyé, pas l'ancien");
+        assertTrue(page.contains("id=\"rt-butin_ogre-f-m-independent\" value=\"independent\" data-chance-mode checked"),
+                "mode envoyé");
+        assertTrue(page.contains("data-chance value=\"90\"") && page.contains("data-chance value=\"30\""), page);
+        assertTrue(page.contains("Total : 120 % (chaque ligne est tirée à part"), "120 % accepté en indépendant");
+
+        assertFalse(get("/rewards?agent=" + TestConfig.AGENT_ID).body().contains("data-refused-form"),
+                "sans ?refused, la page normale");
+        assertFalse(get("/rewards?agent=" + TestConfig.AGENT_ID + "&refused=00000000-0000-0000-0000-000000000000")
+                .body().contains("data-refused-form"), "action inconnue ignorée");
+    }
+
+    @Test
+    void anIndependentTableAbove100PercentIsSent() throws Exception {
+        start();
+        login();
+        runAction("reward.catalog.status", status(true, true, true, "[]", "[" + TABLE + "]"));
+        String token = csrf(get("/rewards?agent=" + TestConfig.AGENT_ID).body());
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token + "&type=reward.table.save&agent="
+                + TestConfig.AGENT_ID + "&return=/rewards&create=true&label=Coffre&mode=independent&enabled=true"
+                + "&entry_reward_0=gem&entry_chance_0=70&entry_reward_1=book&entry_chance_1=50");
+        assertFalse(java.net.URLDecoder.decode(res.headers().firstValue("Location").orElse(""), StandardCharsets.UTF_8)
+                .contains("err="));
+        assertTrue(pollActions().contains("gem=gem@70;book=book@50"));
+    }
+
+    /** Répond à la première action en file ; renvoie son identifiant. */
+    private String answerQueued(String status, String message) throws Exception {
+        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"").matcher(pollActions());
+        if (!m.find()) {
+            throw new IllegalStateException("aucune action en file");
+        }
+        client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + m.group(1) + "/result"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"status\":\"" + status + "\",\"message\":\""
+                        + message + "\",\"details\":{}}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        return m.group(1);
+    }
+
     // ---- Issue #474 : catalogue administré depuis PlugAdmin ----------------------------------------
 
     static final String PREVIEW = "\"# Catalogue des récompenses\\nenabled: false\\nrewards: {}\\ntables: {}\\n\"";

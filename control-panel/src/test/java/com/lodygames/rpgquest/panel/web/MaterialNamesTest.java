@@ -56,6 +56,8 @@ class MaterialNamesTest {
         assertEquals("Porte en sapin", MaterialNames.french("SPRUCE_DOOR"));
         assertEquals("Minerai de cuivre", MaterialNames.french("COPPER_ORE"));
         assertEquals("Lingot de fer", MaterialNames.french("IRON_INGOT"));
+        assertEquals("Diamant", MaterialNames.french("DIAMOND"));
+        assertEquals("Émeraude", MaterialNames.french("EMERALD"));
         assertEquals("Bloc de diamant", MaterialNames.french("DIAMOND_BLOCK"));
     }
 

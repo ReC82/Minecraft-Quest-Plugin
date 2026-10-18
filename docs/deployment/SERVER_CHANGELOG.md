@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-18 - Protections de claim : animaux, seaux, dalles de pression et cultures (#531)
+
+### Changement
+
+JAR seul, **pas de migration**, aucune configuration. Dans un claim, un joueur non membre (sans
+mode bypass admin) ne déclenche plus dalles de pression ni fils (sauf redstone publique), ne
+piétine plus la terre labourée (à pied ou à dos de monture), ne peut plus interagir avec les
+entités du claim (traite, tonte, laisse, monture, villageois, cadres) — les PNJ RPGQuest/Citizens
+restent utilisables —, ni vider ou remplir un seau.
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y --wait-ci` (sauvegarde datée du JAR), puis redémarrage. Ne pas
+téléverser `config.yml` ; ne pas toucher aux données joueurs ni au monde.
+
+### Validation
+
+Démarrage sans erreur. TC-356 (PENDING MANUAL VALIDATION).
+
+**Effectué le 2026-10-18 (DEV)** : merge `c0f2b0d` (PR #534), JAR SHA-256 `9812280a…` vérifié par
+retéléchargement, sauvegarde `rpgquest-20261018T003622Z-predeploy.jar` (= #107), DEV redémarré (0 joueur) et ONLINE, RPGQuest actif.
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et redémarrer : seules les nouvelles protections disparaissent.
+
+---
+
 ## 2026-10-17 - Salles de préparation du Hub : protections seaux et feu (#107)
 
 ### Changement

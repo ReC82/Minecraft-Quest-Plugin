@@ -5073,9 +5073,19 @@ public final class BukkitAgentActions implements AgentActions {
             for (SpecialMobLoadIssue issue : report.issues()) {
                 issues.add(issue.file() + " : " + issue.message());
             }
+            // Issue #169 : un boss communautaire de test se retire par son propre service (verrou) ; il
+            // n'entre donc pas dans le compte des instances que « Nettoyer les instances de test » supprime.
+            java.util.function.Predicate<UUID> community = communityBosses == null ? id -> false
+                    : communityBosses::isActiveInstance;
+            List<MobPopulationView> populations = new ArrayList<>();
+            for (SpecialMobDefinition def : report.loaded()) {
+                SpecialMobService.Population p = mobService.populationBreakdown(def.id(), community);
+                populations.add(new MobPopulationView(def.id().asString(), p.tracked(), p.loaded(), p.test(),
+                        communityBosses == null ? -1 : communityBosses.activeInstancesOf(def.id().asString())));
+            }
             return done(new MobCatalogView(List.copyOf(profiles),
                     new MobSpawnSettingsView(settings.enabled(), settings.chance(), settings.maxSimultaneousSpecial()),
-                    !issues.isEmpty(), List.copyOf(issues)));
+                    !issues.isEmpty(), List.copyOf(issues), List.copyOf(populations)));
         });
     }
 
@@ -5362,7 +5372,8 @@ public final class BukkitAgentActions implements AgentActions {
     @Override
     public CompletableFuture<MutationResult> mobTestClear() {
         return onMain(() -> {
-            int removed = mobService.clearTestInstances();
+            int removed = communityBosses == null ? mobService.clearTestInstances()
+                    : mobService.clearTestInstances(communityBosses::isActiveInstance);
             return done(new MutationResult(true, "CLEARED", removed + " instance(s) de test supprimée(s).", List.of()));
         });
     }

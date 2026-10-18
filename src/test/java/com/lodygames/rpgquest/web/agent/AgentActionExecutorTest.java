@@ -572,6 +572,45 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void mobListReportsTheScopeOfEachCounterAndTheTestInstancesToClear() {
+        // Issue #169 : « vivants : 0 » contre « 1 boss actif » — chaque compteur dit son périmètre.
+        actions.mobCatalog = new AgentActions.MobCatalogView(List.of(
+                mobSummary("rpgquest:zombie_speedy", "SPECIAL", 5),
+                mobSummary("rpgquest:boss_zombie_entrainement", "BOSS", 0)),
+                new AgentActions.MobSpawnSettingsView(true, 1.0, null), false, List.of(), List.of(
+                new AgentActions.MobPopulationView("rpgquest:zombie_speedy", 5, 4, 2, 0),
+                new AgentActions.MobPopulationView("rpgquest:boss_zombie_entrainement", 0, 0, 0, 1)));
+
+        AgentActionOutcome out = run(new AgentAction("mlp", "mob.list", Map.of()));
+
+        assertEquals(AgentActionOutcome.SUCCESS, out.status(), out.message());
+        assertEquals(2, out.details().get("testInstances"));
+        List<?> rows = (List<?>) out.details().get("profiles");
+        Map<?, ?> speedy = (Map<?, ?>) rows.get(0);
+        assertEquals(5, speedy.get("alivePopulation"));
+        assertEquals(4, speedy.get("loadedPopulation"));
+        assertEquals(2, speedy.get("testPopulation"));
+        Map<?, ?> boss = (Map<?, ?>) rows.get(1);
+        assertEquals(0, boss.get("alivePopulation"));
+        assertEquals(1, boss.get("communityActive"));
+    }
+
+    @Test
+    void mobListFromAnOlderPluginViewHasNoScopeFields() {
+        actions.mobCatalog = new AgentActions.MobCatalogView(List.of(mobSummary("rpgquest:a", "SPECIAL", 1)),
+                new AgentActions.MobSpawnSettingsView(true, 1.0, null), false, List.of());
+        AgentActionOutcome out = run(new AgentAction("mlo", "mob.list", Map.of()));
+        assertFalse(out.details().containsKey("testInstances"), "nombre inconnu : jamais un 0 inventé");
+        assertFalse(((Map<?, ?>) ((List<?>) out.details().get("profiles")).get(0)).containsKey("testPopulation"));
+    }
+
+    private static AgentActions.MobProfileSummary mobSummary(String id, String category, int alive) {
+        return new AgentActions.MobProfileSummary(id, category, true, "ZOMBIE", id, 0.5, List.of("wild"),
+                List.of(), List.of(), null, null, null, null, null, null, null, null, null, null, null, alive,
+                null, null, null, null, null, null, null, null, List.of(), "QUEST", 1, List.of());
+    }
+
+    @Test
     void mobDefinitionUpdateSplitsMultiValuedListsOnLineBreaksAndRejectsInjectedValues() {
         // Issue #461 : la multisélection non retouchée soumettait « swamp\r\nplains ».
         AgentActionOutcome ok = run(new AgentAction("ml0", "mob.definition.update",
@@ -2824,10 +2863,12 @@ class AgentActionExecutorTest {
                     "Borne posée et appariée."));
         }
 
+        MobCatalogView mobCatalog = new MobCatalogView(List.of(), new MobSpawnSettingsView(true, 1.0, null), false,
+                List.of());
+
         @Override
         public CompletableFuture<MobCatalogView> mobDefinitions() {
-            return CompletableFuture.completedFuture(
-                    new MobCatalogView(List.of(), new MobSpawnSettingsView(true, 1.0, null), false, List.of()));
+            return CompletableFuture.completedFuture(mobCatalog);
         }
 
         @Override

@@ -2142,8 +2142,24 @@ public interface AgentActions {
     record MobSpawnSettingsView(boolean enabled, double chance, Integer maxSimultaneousSpecial) {
     }
 
+    /**
+     * Issue #169 : périmètre des compteurs d'un profil. {@code tracked} = repérés depuis le dernier
+     * démarrage et pas morts (zones déchargées depuis comprises) ; {@code loaded} = présents dans une
+     * zone chargée ; {@code test} = instances de test chargées que {@code mob.test.clear} supprimerait ;
+     * {@code communityActive} = boss communautaires actifs d'après l'état enregistré (zones non chargées
+     * comprises, -1 si le service n'existe pas).
+     */
+    record MobPopulationView(String id, int tracked, int loaded, int test, int communityActive) {
+    }
+
     record MobCatalogView(List<MobProfileSummary> profiles, MobSpawnSettingsView spawnSettings,
-                          boolean hasIssues, List<String> issues) {
+                          boolean hasIssues, List<String> issues, List<MobPopulationView> populations) {
+
+        /** Forme antérieure à #169 (refonte /mobs), sans détail des compteurs. */
+        public MobCatalogView(List<MobProfileSummary> profiles, MobSpawnSettingsView spawnSettings,
+                              boolean hasIssues, List<String> issues) {
+            this(profiles, spawnSettings, hasIssues, issues, List.of());
+        }
     }
 
     CompletableFuture<MobCatalogView> mobDefinitions();

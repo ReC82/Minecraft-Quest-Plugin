@@ -392,11 +392,20 @@ public final class SpecialMobService implements PluginService, Listener {
 
     /** Supprime uniquement les instances de test encore vivantes (toutes définitions). Jamais un mob ordinaire. */
     public int clearTestInstances() {
+        return clearTestInstances(id -> false);
+    }
+
+    /**
+     * Issue #169 : idem, en laissant en place les entités désignées par {@code keep} (les boss
+     * communautaires de test, retirés par leur propre service pour libérer leur verrou). Seules les
+     * entités chargées sont atteignables : une instance dans une zone non chargée reste en jeu.
+     */
+    public int clearTestInstances(java.util.function.Predicate<UUID> keep) {
         int removed = 0;
         for (SpecialMobDefinition def : registry.definitions()) {
             for (UUID entityId : aliveEntityIds(def.id())) {
                 Entity entity = Bukkit.getEntity(entityId);
-                if (entity == null || !isTestInstance(entity)) {
+                if (entity == null || !isTestInstance(entity) || keep.test(entityId)) {
                     continue;
                 }
                 untrack(def.id(), entityId);
@@ -571,6 +580,34 @@ public final class SpecialMobService implements PluginService, Listener {
 
     public int populationOf(NamespacedKey definitionId) {
         return population.getOrDefault(definitionId, Set.of()).size();
+    }
+
+    /**
+     * Issue #169 : ce que recouvre le compteur d'un profil. {@code tracked} = entités repérées depuis le
+     * dernier démarrage (apparues, ou retrouvées au chargement de leur zone) et pas encore mortes, y
+     * compris celles dont la zone s'est déchargée depuis ; {@code loaded} = celles réellement présentes
+     * dans une zone chargée en ce moment ; {@code test} = parmi elles, les instances de test que
+     * {@link #clearTestInstances(java.util.function.Predicate)} supprimerait avec le même {@code keep}.
+     */
+    public record Population(int tracked, int loaded, int test) {
+    }
+
+    /** Thread principal uniquement ({@link Bukkit#getEntity}). */
+    public Population populationBreakdown(NamespacedKey definitionId, java.util.function.Predicate<UUID> keep) {
+        Set<UUID> ids = aliveEntityIds(definitionId);
+        int loaded = 0;
+        int test = 0;
+        for (UUID id : ids) {
+            Entity entity = Bukkit.getEntity(id);
+            if (entity == null || !entity.isValid()) {
+                continue;
+            }
+            loaded++;
+            if (isTestInstance(entity) && !keep.test(id)) {
+                test++;
+            }
+        }
+        return new Population(ids.size(), loaded, test);
     }
 
     /** Copie défensive des identifiants d'entités vivantes pour une définition (utilisé par les sweeps de capacités). */

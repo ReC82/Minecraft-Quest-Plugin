@@ -176,6 +176,10 @@ public final class SpecialMobDefinitionStore {
      * fichier retiré pour une création) : jamais de fichier illisible laissé en place.
      */
     private Result writeAndReload(Path target, SpecialMobDefinition definition, String code, String message) {
+        if (SpecialMobLoader.isReservedFileName(target.getFileName().toString())) {
+            return Result.fail("INVALID", "Identifiant « " + definition.id().getKey() + " » réservé aux réglages "
+                    + "de mobs/ : choisir un autre identifiant (aucun fichier modifié).");
+        }
         String text = SpecialMobDefinitionYaml.render(definition);
         String invalid = validateRendered(target.getFileName().toString(), text, definition);
         if (invalid != null) {
@@ -272,7 +276,7 @@ public final class SpecialMobDefinitionStore {
     private Path existingFileFor(NamespacedKey id) {
         for (String ext : new String[] {".yml", ".yaml"}) {
             Path direct = directory.resolve(id.getKey() + ext);
-            if (Files.exists(direct)) {
+            if (Files.exists(direct) && !SpecialMobLoader.isReservedFileName(direct.getFileName().toString())) {
                 return direct;
             }
         }
@@ -281,6 +285,9 @@ public final class SpecialMobDefinitionStore {
         }
         try (var stream = Files.newDirectoryStream(directory, "*.y*ml")) {
             for (Path file : stream) {
+                if (SpecialMobLoader.isReservedFileName(file.getFileName().toString())) {
+                    continue;
+                }
                 YamlConfiguration yaml = new YamlConfiguration();
                 try {
                     yaml.load(file.toFile());

@@ -21,6 +21,30 @@ import java.util.Set;
 public final class ActionsPages {
 
     public static final int PAGE_SIZE = 25;
+    /** Issue #169 : filtre des demandes refusées par le panel avant tout envoi à l'agent. */
+    static final String REFUSED_SLUG = "refused";
+
+    /**
+     * Une demande refusée par le panel <strong>avant</strong> la file (confirmation manquante,
+     * paramètre invalide, conflit…) : lue dans le journal d'audit existant, jamais présentée comme une
+     * action agent ni comme un échec d'exécution.
+     */
+    public record Refusal(Instant at, String actor, String type, String target, String reason) {
+
+        /** {@code target} d'audit : {@code agent=… type=… player=…} → type et cible lisibles. */
+        public static Refusal of(Instant at, String actor, String auditTarget, String reason) {
+            String type = "";
+            StringBuilder target = new StringBuilder();
+            for (String part : nz(auditTarget).split(" ")) {
+                if (part.startsWith("type=")) {
+                    type = part.substring(5);
+                } else if (!part.startsWith("agent=") && !part.isBlank()) {
+                    target.append(target.isEmpty() ? "" : " · ").append(part);
+                }
+            }
+            return new Refusal(at, nz(actor), type, target.toString(), nz(reason));
+        }
+    }
 
     private ActionsPages() {
     }
@@ -31,9 +55,14 @@ public final class ActionsPages {
      * @param search  texte de recherche (peut être vide)
      * @param page    page 1-indexée
      */
-    public record Query(ActionView.Group group, ActionView.Domain domain, String search, int page) {
+    public record Query(ActionView.Group group, ActionView.Domain domain, String search, int page, boolean refused) {
+
+        public Query(ActionView.Group group, ActionView.Domain domain, String search, int page) {
+            this(group, domain, search, page, false);
+        }
 
         public static Query parse(Map<String, String> q) {
+            boolean refused = REFUSED_SLUG.equals(q.getOrDefault("status", ""));
             ActionView.Group g = ActionView.Group.fromSlug(q.getOrDefault("status", "")).orElse(null);
             ActionView.Domain d = ActionView.Domain.fromSlug(q.getOrDefault("domain", "")).orElse(null);
             String s = q.getOrDefault("q", "").trim();
@@ -43,11 +72,11 @@ public final class ActionsPages {
             } catch (NumberFormatException ignored) {
                 // page 1
             }
-            return new Query(g, d, s, p);
+            return new Query(g, d, s, p, refused);
         }
 
         String statusSlug() {
-            return group == null ? "all" : group.slug();
+            return refused ? REFUSED_SLUG : group == null ? "all" : group.slug();
         }
 
         String domainSlug() {
@@ -96,6 +125,13 @@ public final class ActionsPages {
     // ---- liste -----------------------------------------------------------------------
 
     public static String list(List<AgentActionRow> all, Query q, Instant now) {
+        return list(all, List.of(), q, now);
+    }
+
+    public static String list(List<AgentActionRow> all, List<Refusal> refusals, Query q, Instant now) {
+        if (q.refused()) {
+            return refusedList(refusals, q, now);
+        }
         List<AgentActionRow> filtered = new ArrayList<>();
         Set<ActionView.Domain> present = new LinkedHashSet<>();
         for (AgentActionRow a : all) {
@@ -115,7 +151,7 @@ public final class ActionsPages {
         sb.append(Ui.pageHeader("history", "Historique des actions",
                 "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
 
-        sb.append(searchAndFilters(q, present, total));
+        sb.append(searchAndFilters(q, present, total, refusals.size()));
 
         if (pageRows.isEmpty()) {
             sb.append(Ui.empty("history", total == 0
@@ -154,7 +190,38 @@ public final class ActionsPages {
         return hay.toString().toLowerCase(Locale.ROOT).contains(needle);
     }
 
-    private static String searchAndFilters(Query q, Set<ActionView.Domain> present, int total) {
+    /** Issue #169 : les refus avant envoi, distincts des actions exécutées (aucune fiche agent). */
+    private static String refusedList(List<Refusal> refusals, Query q, Instant now) {
+        String needle = q.search() == null ? "" : q.search().toLowerCase(Locale.ROOT);
+        List<Refusal> rows = refusals.stream().filter(r -> needle.isBlank() || (r.type() + " "
+                + ActionView.humanLabel(r.type()) + " " + r.target() + " " + r.reason() + " " + r.actor())
+                .toLowerCase(Locale.ROOT).contains(needle)).limit(200).toList();
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("history", "Historique des actions",
+                "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
+        sb.append(searchAndFilters(q, Set.of(), rows.size(), refusals.size()));
+        sb.append(Ui.banner("info", "Demandes <strong>refusées par PlugAdmin avant tout envoi</strong> au serveur "
+                + "(confirmation manquante, valeur invalide, conflit…) : rien n'a été exécuté en jeu."));
+        if (rows.isEmpty()) {
+            return sb.append(Ui.empty("history", "Aucun refus ne correspond à ces critères.")).toString();
+        }
+        sb.append("<div class=\"table-responsive\"><table class=\"table align-middle actions-table actions-refused\">")
+                .append("<thead><tr><th>Date</th><th>Action demandée</th><th>Cible</th><th>Motif du refus</th>"
+                        + "<th>Acteur</th></tr></thead><tbody>");
+        for (Refusal r : rows) {
+            sb.append("<tr><td class=\"nowrap\"><span title=\"").append(Http.esc(r.at().toString())).append("\">")
+                    .append(Http.esc(ActionView.relativeTime(r.at(), now))).append("</span></td><td>")
+                    .append(r.type().isEmpty() ? "<span class=\"muted\">—</span>"
+                            : Http.esc(ActionView.humanLabel(r.type())) + " " + Ui.id(r.type()))
+                    .append("</td><td>").append(r.target().isEmpty() ? "<span class=\"muted\">—</span>"
+                            : Http.esc(r.target()))
+                    .append("</td><td>").append(Ui.pill("refusé", "warn", "")).append(' ').append(Http.esc(r.reason()))
+                    .append("</td><td class=\"muted nowrap\">").append(Http.esc(r.actor())).append("</td></tr>");
+        }
+        return sb.append("</tbody></table></div>").toString();
+    }
+
+    private static String searchAndFilters(Query q, Set<ActionView.Domain> present, int total, int refusedCount) {
         StringBuilder sb = new StringBuilder();
 
         // Recherche (GET) — conserve les filtres actifs
@@ -177,24 +244,31 @@ public final class ActionsPages {
         sb.append(statusPill(q, ActionView.Group.SUCCESS, "Succès"));
         sb.append(statusPill(q, ActionView.Group.PENDING, "En cours"));
         sb.append(statusPill(q, ActionView.Group.FAILED, "Échec"));
+        boolean on = q.refused();
+        sb.append("<li class=\"nav-item\"><a class=\"nav-link").append(on ? " active" : "").append("\"")
+                .append(on ? " aria-current=\"page\"" : "").append(" href=\"").append(q.href("status", REFUSED_SLUG))
+                .append("\">Refusées avant envoi (").append(refusedCount).append(")</a></li>");
         sb.append("</ul>");
 
-        // Domaine — puces (seulement ceux réellement présents, + « Tous »)
-        sb.append("<div class=\"actions-domains\">");
-        sb.append(domainChip(q, null, "Tous", "filter"));
-        for (ActionView.Domain d : ActionView.Domain.values()) {
-            if (present.contains(d)) {
-                sb.append(domainChip(q, d, d.label(), d.icon()));
-            }
-        }
-        sb.append("</div>");
+        // Domaine — puces (seulement ceux réellement présents, + « Tous »), sauf pour les refus.
 
-        sb.append("<p class=\"count-note\">").append(total).append(total > 1 ? " actions" : " action").append("</p>");
+        if (!q.refused()) {
+            sb.append("<div class=\"actions-domains\">");
+            sb.append(domainChip(q, null, "Tous", "filter"));
+            for (ActionView.Domain d : ActionView.Domain.values()) {
+                if (present.contains(d)) {
+                    sb.append(domainChip(q, d, d.label(), d.icon()));
+                }
+            }
+            sb.append("</div>");
+        }
+        sb.append("<p class=\"count-note\">").append(total).append(q.refused() ? (total > 1 ? " refus" : " refus")
+                : total > 1 ? " actions" : " action").append("</p>");
         return sb.toString();
     }
 
     private static String statusPill(Query q, ActionView.Group g, String label) {
-        boolean on = q.group() == g;
+        boolean on = !q.refused() && q.group() == g;
         return "<li class=\"nav-item\"><a class=\"nav-link" + (on ? " active" : "")
                 + "\"" + (on ? " aria-current=\"page\"" : "") + " href=\""
                 + q.href("status", g == null ? "all" : g.slug()) + "\">" + Http.esc(label) + "</a></li>";

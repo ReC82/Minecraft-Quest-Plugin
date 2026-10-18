@@ -86,12 +86,12 @@ class MobImportPageTest {
     @Test
     void createProfileAndEveryProfileExposeTheTemplateImportAndAiPaths() throws Exception {
         String page = get("/mobs?agent=" + AGENT).body();
-        assertTrue(page.contains("Modèles, IA et import de fichier"), "accès depuis la barre du catalogue");
+        assertTrue(page.contains("Modèles, IA et import"), "accès depuis la barre du catalogue");
         assertTrue(page.contains("/mobs/template?agent=" + AGENT + "&amp;kind=special"), "modèle SPECIAL dans « Nouveau profil »");
         assertTrue(page.contains("&amp;kind=boss-quest") && page.contains("&amp;kind=boss-community"), "modèles BOSS");
-        assertTrue(page.contains("Exporter ce profil") && page.contains("&amp;profile=rpgquest:swamp_king"));
+        assertTrue(page.contains(">Exporter</a>") && page.contains("&amp;profile=rpgquest:swamp_king"));
         assertTrue(page.contains("Modifier avec une IA") && page.contains("/mobs/import?agent=" + AGENT + "&amp;from=rpgquest:swamp_king"));
-        assertTrue(page.contains("ne montre pas tout"), "le formulaire ne prétend pas tout couvrir");
+        assertTrue(page.contains("ne couvre pas le butin"), "le formulaire ne prétend pas tout couvrir");
     }
 
     @Test

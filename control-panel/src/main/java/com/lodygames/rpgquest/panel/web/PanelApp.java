@@ -345,6 +345,11 @@ public final class PanelApp {
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",
                 Permission.MOB_READ, agentPages::mobs));
         // Issue #214 : modèles complets, prompt IA, import vérifié d'un fichier de profil, génération.
+        // Issue #169 : vues distinctes « Boss communautaires » et « Apparitions des mobs spéciaux ».
+        route("/mobs/community", exchange -> handleBusinessPage(exchange, "/mobs", "Boss communautaires",
+                Permission.MOB_READ, agentPages::mobsCommunity));
+        route("/mobs/spawns", exchange -> handleBusinessPage(exchange, "/mobs", "Apparitions des mobs spéciaux",
+                Permission.MOB_READ, agentPages::mobsSpawns));
         route("/mobs/import", this::handleMobImport);
         route("/mobs/template", this::handleMobTemplate);
         // Issues #177 / #474 — catalogue des récompenses et tables de tirage. Lecture : ECONOMY_READ ;
@@ -4520,7 +4525,12 @@ public final class PanelApp {
             return;
         }
         ActionsPages.Query query = ActionsPages.Query.parse(Http.query(exchange));
-        String body = ActionsPages.list(allRecentActions(500), query, now);
+        // Issue #169 : les refus avant envoi viennent du journal d'audit existant (aucune migration).
+        List<ActionsPages.Refusal> refusals = audit.recent(1000).stream()
+                .filter(e -> "agent.action.create".equals(e.action()) && "DENIED".equals(e.result()))
+                .map(e -> ActionsPages.Refusal.of(e.ts(), e.actor(), e.target(), e.details()))
+                .toList();
+        String body = ActionsPages.list(allRecentActions(500), refusals, query, now);
         Http.html(exchange, 200, renderPage("Historique des actions", session, "/actions", body));
     }
 
@@ -5683,6 +5693,8 @@ public final class PanelApp {
         String type = rawType.isEmpty() ? "player.variable.get" : rawType;
         String agentId = form.getOrDefault("agent", "").trim();
         String returnPath = safeReturnPath(form.getOrDefault("return", defaultReturn), defaultReturn);
+        // Issue #169 : un refus avant envoi se retrouve dans l'historique avec sa cible.
+        String auditTarget = "agent=" + agentId + " type=" + type + auditTargetHint(form);
 
         Optional<com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Spec> spec =
                 com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec(type);
@@ -5718,7 +5730,7 @@ public final class PanelApp {
             String conflict = agentPages.questCatalogConflict(agentId, v.params().getOrDefault("id", ""),
                     form.get("based_on"));
             if (conflict != null) {
-                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                audit.record(session.username(), "agent.action.create", auditTarget,
                         "DENIED", "catalogue modifié depuis l'ouverture du formulaire", rid);
                 Http.redirect(exchange, withError(returnPath, agentId, null, conflict)
                         + "&focus=" + enc(AgentPages.cleanFocus(v.params().get("id"))));
@@ -5732,7 +5744,7 @@ public final class PanelApp {
             String conflict = agentPages.waypointRenameConflict(agentId, waypointId,
                     v.params().getOrDefault("displayName", ""));
             if (conflict != null) {
-                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                audit.record(session.username(), "agent.action.create", auditTarget,
                         "DENIED", "nom de lieu déjà pris ou inchangé", rid);
                 Http.redirect(exchange, withError(returnPath, agentId, null, conflict)
                         + "&focus=" + enc(AgentPages.cleanFocus(waypointId)));
@@ -5740,7 +5752,7 @@ public final class PanelApp {
             }
         }
         if (!v.valid()) {
-            audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+            audit.record(session.username(), "agent.action.create", auditTarget,
                     "DENIED", v.error(), rid);
             if (AgentPages.KEEPS_REFUSED_FORM.contains(type)) {
                 session.keepRefusedForm(type, form, v.error()); // #177 : saisies réaffichées telles quelles
@@ -5753,7 +5765,7 @@ public final class PanelApp {
                 .stream().anyMatch(a -> !a.status().terminal()
                         && ("player.op".equals(a.type()) || "player.deop".equals(a.type()))
                         && a.params().getOrDefault("player", "").equalsIgnoreCase(v.params().getOrDefault("player", "")))) {
-            audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+            audit.record(session.username(), "agent.action.create", auditTarget,
                     "DENIED", "changement d'OP déjà en attente pour ce joueur", rid);
             Http.redirect(exchange, withError(returnPath, agentId, form.get("player"),
                     "Un changement d'OP est déjà en cours pour ce joueur : rien n'a été envoyé en double."));
@@ -5768,7 +5780,7 @@ public final class PanelApp {
                     .flatMap(Optional::stream).filter(p -> p.buildingId().equals(buildingId))
                     .map(p -> p.siteId()).toList();
             if (!usedOn.isEmpty()) {
-                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                audit.record(session.username(), "agent.action.create", auditTarget,
                         "DENIED", "bâtiment posé sur " + String.join(", ", usedOn), rid);
                 Http.redirect(exchange, withError(returnPath, agentId, null, "« " + buildingId
                         + " » est posé sur " + String.join(", ", usedOn) + " : retirez-le d'abord de "
@@ -5784,7 +5796,7 @@ public final class PanelApp {
             boolean occupied = sites.placementFor(siteId).isPresent()
                     || sites.find(siteId).map(st -> "OCCUPIED".equals(st.status())).orElse(false);
             if (occupied) {
-                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                audit.record(session.username(), "agent.action.create", auditTarget,
                         "DENIED", "emplacement occupé : " + siteId, rid);
                 Http.redirect(exchange, withError(returnPath, agentId, null, "Un bâtiment est encore posé "
                         + "sur « " + siteId + " » : retirez-le d'abord (« Retirer le bâtiment et restaurer "
@@ -5797,7 +5809,7 @@ public final class PanelApp {
         // mutation du mauvais PNJ à cause d'un état de formulaire périmé côté navigateur.
         String npcCtx = form.getOrDefault("npc_ctx", "").trim().toLowerCase(java.util.Locale.ROOT);
         if (!npcCtx.isEmpty() && !npcCtx.equals(v.params().getOrDefault("npc_id", ""))) {
-            audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+            audit.record(session.username(), "agent.action.create", auditTarget,
                     "DENIED", "contexte PNJ incohérent (ctx=" + npcCtx + " id=" + v.params().get("npc_id") + ")", rid);
             Http.redirect(exchange, withError(returnPath, agentId, null,
                     "Contexte de PNJ incohérent — recharger la page et réessayer."));
@@ -5813,7 +5825,7 @@ public final class PanelApp {
                     : enrichPublishBatch(outgoing);
             if (enriched.error() != null) {
                 audit.record(session.username(), "agent.action.create",
-                        "agent=" + agentId + " type=" + type, "DENIED", enriched.error(), rid);
+                        auditTarget, "DENIED", enriched.error(), rid);
                 Http.redirect(exchange, withError(returnPath, agentId, null, enriched.error()));
                 return;
             }
@@ -5825,7 +5837,7 @@ public final class PanelApp {
         if (!submitToken.isEmpty()) {
             Optional<String> already = session.reserveSubmitToken(submitToken);
             if (already.isPresent()) {
-                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                audit.record(session.username(), "agent.action.create", auditTarget,
                         "DENIED", "formulaire déjà envoyé (jeton réutilisé)", rid);
                 Http.redirect(exchange, already.get().isEmpty()
                         ? withError(returnPath, agentId, form.get("player"),
@@ -6142,12 +6154,34 @@ public final class PanelApp {
         // légitimement vouloir y revenir.
         paths.add("/content/import");
         paths.add("/mobs/import");
+        paths.add("/mobs/community");
+        paths.add("/mobs/spawns");
         paths.add("/ai/studio");
         paths.add("/npcs/diagnostic");
         paths.add("/npcs/encounters");
         paths.add("/npcs/spots");
         paths.add("/quests/catalogs");
         return java.util.Set.copyOf(paths);
+    }
+
+    /** Clés de formulaire qui désignent la cible d'une action (jamais un contenu ni un secret). */
+    private static final List<String> AUDIT_TARGET_KEYS = List.of("player", "mob_id", "npc_id", "quest_id",
+            "dialogue_id", "id", "target", "waypointId", "key");
+
+    /** Issue #169 : « cible=… » d'une ligne d'audit, bornée et sans caractère de contrôle. */
+    static String auditTargetHint(Map<String, String> form) {
+        StringBuilder sb = new StringBuilder();
+        for (String k : AUDIT_TARGET_KEYS) {
+            String v = form.get(k);
+            if (v != null && !v.isBlank()) {
+                String clean = v.strip().replaceAll("[\\p{Cntrl}\\s]+", "_");
+                sb.append(' ').append(k).append('=').append(clean.length() > 64 ? clean.substring(0, 64) + "…" : clean);
+            }
+            if (sb.length() > 160) {
+                break;
+            }
+        }
+        return sb.toString();
     }
 
     private static String safeReturnPath(String requested, String fallback) {

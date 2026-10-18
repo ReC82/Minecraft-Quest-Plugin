@@ -10325,114 +10325,274 @@ public final class AgentPages {
         return label + " " + Ui.id(id);
     }
 
-    // ---- Mobs spéciaux / boss (issue #169, lot 1) ----------------------------------------------
+    // ---- Mobs spéciaux / boss (issue #169, lot 1 ; refonte de la présentation 18/10) -----------
 
+    /** Issue #169 : trois vues distinctes, une adresse chacune (retour d'action compris). */
+    static final String MOBS_PATH = "/mobs";
+    static final String MOBS_COMMUNITY_PATH = "/mobs/community";
+    static final String MOBS_SPAWNS_PATH = "/mobs/spawns";
+
+    /** Vue « Profils » : catalogue, recherche, actions sur un profil, instances de test. */
     public String mobs(Session session, Map<String, String> q) {
+        return mobsPage(session, q, MOBS_PATH);
+    }
+
+    /** Vue « Boss communautaires » : état, apparition de test, boss actifs, victoires, réglages. */
+    public String mobsCommunity(Session session, Map<String, String> q) {
+        return mobsPage(session, q, MOBS_COMMUNITY_PATH);
+    }
+
+    /** Vue « Apparitions des mobs spéciaux » : tirage aléatoire du Wild et profils concernés. */
+    public String mobsSpawns(Session session, Map<String, String> q) {
+        return mobsPage(session, q, MOBS_SPAWNS_PATH);
+    }
+
+    private String mobsPage(Session session, Map<String, String> q, String view) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("mob", "Mobs spéciaux & boss",
-                "Profils appliqués aux spawns naturels du Wild (ou à une instance de test) — jamais de "
-                        + "YAML ni de commande à écrire pour en créer ou en tester un.", ""));
+                "Créer, modifier et tester des créatures du Wild, sans YAML ni commande.", ""));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
         boolean canWrite = perms.can(session.effective(), Permission.MOB_WRITE);
         boolean canTest = perms.can(session.effective(), Permission.MOB_TEST_SPAWN);
-        sb.append(agentPicker(agentId, "/mobs", ""));
+        sb.append(agentPicker(agentId, view, ""));
+        Optional<Map<String, Object>> mobList = latestDetails(agentId, "mob.list");
+        Optional<Map<String, Object>> community = latestDetails(agentId, "boss.community.status");
+        sb.append(mobsSummary(mobList, community));
+        // Les profils rejetés restent visibles quelle que soit la vue : jamais masqués par la navigation.
+        mobList.filter(d -> Boolean.TRUE.equals(d.get("hasIssues"))).ifPresent(d -> {
+            StringBuilder issues = new StringBuilder();
+            for (Object o : asList(d.get("issues"))) {
+                issues.append("<div>").append(Http.esc(str(o))).append("</div>");
+            }
+            sb.append(Ui.banner("warning", "<strong>Profils rejetés au chargement :</strong>" + issues));
+        });
+        sb.append(mobsTabs(agentId, view));
+        List<String> onlinePlayers = latestDetails(agentId, "player.list")
+                .map(x -> asList(x.get("players"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("name"))).filter(n -> !n.isEmpty()).toList();
+        switch (view) {
+            case MOBS_COMMUNITY_PATH -> sb.append(communityBossSection(session, agentId, canWrite, canTest,
+                    onlinePlayers, community));
+            case MOBS_SPAWNS_PATH -> sb.append(mobSpawnsView(session, agentId, canWrite, mobList));
+            default -> sb.append(mobProfilesView(session, agentId, canWrite, canTest, onlinePlayers, mobList));
+        }
+        return sb.toString();
+    }
 
-        // Issue #172 : catalogues réels du serveur, émis une fois pour toute la page (ils alimentent
-        // le formulaire de création ET ceux d'édition).
+    /** Résumé compact des états, d'après les derniers relevés (jamais un chiffre inventé). */
+    private static String mobsSummary(Optional<Map<String, Object>> mobList, Optional<Map<String, Object>> community) {
+        StringBuilder sb = new StringBuilder("<div class=\"cards mob-summary\">");
+        if (mobList.isPresent()) {
+            List<Map<String, Object>> profiles = asList(mobList.get().get("profiles")).stream().map(AgentPages::asMap)
+                    .toList();
+            long bosses = profiles.stream().filter(p -> "BOSS".equals(str(p.get("category")))).count();
+            long disabled = profiles.stream().filter(p -> !Boolean.TRUE.equals(p.get("enabled"))).count();
+            sb.append(Ui.statCard("mob", String.valueOf(profiles.size()), "profils",
+                    "", Http.esc(bosses + " boss · " + (profiles.size() - bosses) + " spéciaux"
+                            + (disabled > 0 ? " · " + disabled + " désactivé(s)" : ""))));
+            Map<String, Object> s = asMap(mobList.get().get("spawnSettings"));
+            boolean on = Boolean.TRUE.equals(s.get("enabled"));
+            sb.append(Ui.statCard("target", on ? "actif" : "en pause", "tirage du Wild", on ? "ok" : "warn",
+                    Http.esc("chance globale " + str(s.get("chance")))));
+            Object tests = mobList.get().get("testInstances");
+            sb.append(Ui.statCard("target", tests == null ? "?" : str(tests), "instances de test",
+                    tests != null && asLong(tests) > 0 ? "warn" : "",
+                    tests == null ? "plugin antérieur : nombre inconnu" : "en zone chargée"));
+        } else {
+            sb.append(Ui.statCard("mob", "—", "profils", "", "relevé pas encore chargé"));
+        }
+        if (community.isPresent() && Boolean.TRUE.equals(community.get().get("available"))) {
+            Map<String, Object> c = community.get();
+            boolean on = Boolean.TRUE.equals(c.get("enabled"));
+            sb.append(Ui.statCard("mob", asList(c.get("instances")).size() + " / " + str(c.get("maxActive")),
+                    "boss communautaires actifs", "", on ? "apparitions automatiques actives"
+                            : "apparitions automatiques en pause"));
+        }
+        return sb.append("</div>").toString();
+    }
+
+    private static String mobsTabs(String agentId, String active) {
+        StringBuilder sb = new StringBuilder("<ul class=\"nav nav-pills mob-tabs\">");
+        String[][] tabs = {{MOBS_PATH, "Profils"}, {MOBS_COMMUNITY_PATH, "Boss communautaires"},
+                {MOBS_SPAWNS_PATH, "Apparitions des mobs spéciaux"}};
+        for (String[] t : tabs) {
+            boolean on = t[0].equals(active);
+            sb.append("<li class=\"nav-item\"><a class=\"nav-link").append(on ? " active\" aria-current=\"page" : "")
+                    .append("\" href=\"").append(t[0]).append("?agent=").append(Http.esc(agentId)).append("\">")
+                    .append(Http.esc(t[1])).append("</a></li>");
+        }
+        return sb.append("</ul>").toString();
+    }
+
+    /** Bloc repliable des explications longues : lues à la demande, jamais en travers du parcours. */
+    private static String mobFold(String title, String bodyHtml) {
+        return "<details class=\"mob-fold\"><summary>" + Icons.icon("info") + Http.esc(title) + "</summary>"
+                + "<div class=\"mob-fold-b\">" + bodyHtml + "</div></details>";
+    }
+
+    private String mobProfilesView(Session session, String agentId, boolean canWrite, boolean canTest,
+                                   List<String> onlinePlayers, Optional<Map<String, Object>> details) {
+        StringBuilder sb = new StringBuilder();
+        // Issue #172 : catalogues réels du serveur, émis une fois (formulaires de création et d'édition).
         sb.append(mobCatalogDatalists(agentId));
         sb.append(bossRewardDatalist(agentId));
         boolean catalogsLoaded = latestDetails(agentId, "mob.catalogs").isPresent();
         if (!catalogsLoaded) {
-            sb.append(Ui.banner("warn", "Les catalogues Minecraft (entités, particules, sons, biomes) "
-                    + "ne sont pas encore chargés : les champs correspondants restent en saisie libre. "
-                    + "Cliquer sur <strong>« Catalogues Minecraft »</strong> ci-dessous pour les récupérer "
-                    + "depuis le serveur."));
+            sb.append(Ui.banner("warn", "Les listes Minecraft (entités, particules, sons, biomes) ne sont pas "
+                    + "encore chargées : les champs correspondants restent en saisie libre. Cliquer sur "
+                    + "<strong>« Listes Minecraft »</strong> pour les récupérer depuis le serveur."));
         }
-        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue</span>");
-        sb.append(compactRefresh(session, agentId, "mob.list", "Rafraîchir", "btn-outline-primary", "/mobs"));
-        sb.append(compactRefresh(session, agentId, "mob.catalogs", "Catalogues Minecraft",
-                catalogsLoaded ? "btn-outline-secondary" : "btn-warning", "/mobs"));
-        if (perms.can(session.effective(), Permission.ECONOMY_READ)) {
-            // Issue #177 : alimente la liste « Récompenses de participation » (récompenses + tirages).
-            sb.append(compactRefresh(session, agentId, "reward.catalog.status", "Récompenses et tirages",
-                    latestDetails(agentId, "reward.catalog.status").isPresent() ? "btn-outline-secondary"
-                            : "btn-warning", "/mobs"));
-        }
+        // Hiérarchie : action principale, secondaires, puis relevés discrets à droite.
+        sb.append("<div class=\"mob-toolbar\"><div class=\"mob-toolbar-main\">");
         if (canWrite) {
-            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+            sb.append("<button class=\"btn sm\" type=\"button\" data-bs-toggle=\"collapse\" "
                     + "data-bs-target=\"#mob-new-def\" aria-expanded=\"false\" aria-controls=\"mob-new-def\">")
                     .append(Icons.icon("plus")).append("Nouveau profil</button>");
-        }
-        if (canWrite) {
             // Issue #214 : modèle complet, import d'un fichier rempli (par une IA ou à la main), génération.
-            sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/mobs/import?agent=").append(Http.esc(agentId))
-                    .append("\">").append(Icons.icon("export")).append("Modèles, IA et import de fichier</a>");
+            sb.append("<a class=\"btn secondary sm\" href=\"/mobs/import?agent=").append(Http.esc(agentId))
+                    .append("\">").append(Icons.icon("export")).append("Modèles, IA et import</a>");
         }
-        if (canTest) {
-            sb.append(compactRefresh(session, agentId, "mob.test.clear", "Nettoyer les instances de test",
-                    "btn-outline-danger", "/mobs"));
+        sb.append("</div><div class=\"mob-toolbar-side\">");
+        sb.append(compactRefresh(session, agentId, "mob.list", "Rafraîchir", "secondary sm", MOBS_PATH));
+        sb.append(compactRefresh(session, agentId, "mob.catalogs", "Listes Minecraft",
+                catalogsLoaded ? "secondary sm" : "btn-warning", MOBS_PATH));
+        if (perms.can(session.effective(), Permission.ECONOMY_READ)) {
+            // Issue #177 : alimente la liste « Récompenses de participation » (récompenses + tirages).
+            sb.append(compactRefresh(session, agentId, "reward.catalog.status", "Récompenses",
+                    latestDetails(agentId, "reward.catalog.status").isPresent() ? "secondary sm"
+                            : "btn-warning", MOBS_PATH));
         }
-        sb.append("</div>");
+        sb.append("</div></div>");
         if (canWrite) {
             sb.append("<div class=\"collapse\" id=\"mob-new-def\"><div class=\"card card-body npc-formcard\">");
             sb.append(MobImportPages.shortcuts(agentId));
             sb.append(mobDefForm(session, agentId, null, "mob-new-def"));
             sb.append("</div></div>");
         }
-
-        List<String> onlinePlayers = latestDetails(agentId, "player.list")
-                .map(x -> asList(x.get("players"))).orElse(List.of())
-                .stream().map(o -> str(asMap(o).get("name"))).filter(n -> !n.isEmpty()).toList();
-        sb.append(communityBossSection(session, agentId, canWrite, canTest, onlinePlayers));
-
-        Optional<Map<String, Object>> details = latestDetails(agentId, "mob.list");
         if (details.isEmpty()) {
-            sb.append(Ui.empty("mob", "Aucun catalogue chargé — cliquer sur « Rafraîchir »."));
-            return sb.toString();
+            return sb.append(Ui.empty("mob", "Aucun catalogue chargé — cliquer sur « Rafraîchir ».")).toString();
         }
         Map<String, Object> d = details.get();
         List<Object> profiles = asList(d.get("profiles"));
-        Map<String, Object> spawnSettings = asMap(d.get("spawnSettings"));
-
-        if (Boolean.TRUE.equals(d.get("hasIssues"))) {
-            StringBuilder issues = new StringBuilder();
-            for (Object o : asList(d.get("issues"))) {
-                issues.append("<div>").append(Http.esc(str(o))).append("</div>");
-            }
-            sb.append(Ui.banner("warning", "<strong>Profils rejetés au chargement :</strong>" + issues));
-        }
-
-        sb.append(Ui.sectionTitle("mob", "Tirage aléatoire dans le Wild"));
-        sb.append("<p class=\"muted\">« Chance globale » filtre d'abord <strong>chaque</strong> spawn naturel "
-                + "éligible avant même d'examiner les profils ; seuls les profils dont le tirage individuel "
-                + "réussit ensuite participent, et si plusieurs réussissent en même temps, un tirage pondéré "
-                + "explicite (poids = leur propre chance) choisit lequel s'applique. Les profils BOSS n'entrent "
-                + "jamais dans ce tirage.</p>");
-        sb.append(spawnSettingsForm(session, agentId, spawnSettings, canWrite));
-
-        sb.append(Ui.sectionTitle("mob", "Profils (" + profiles.size() + ")"));
         if (profiles.isEmpty()) {
             sb.append(Ui.empty("mob", "Aucun profil : créer le premier avec « Nouveau profil »."));
-            return sb.toString();
+        } else {
+            // Issue #172 : recherche nom/ID + filtres, même composant que les autres catalogues du panel.
+            sb.append(listControls("mobs", "Rechercher un profil (nom ou identifiant)…",
+                    filterBtn("", "Tous", true) + filterBtn("boss", "Boss", false)
+                            + filterBtn("special", "Mob spécial", false)
+                            + filterBtn("disabled", "Désactivés", false)));
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"profil\">")
+                    .append(profiles.size()).append(" profil(s)</p>");
+            sb.append("<div class=\"accordion npc-accordion\" id=\"mob-accordion\">");
+            int i = 0;
+            for (Object o : profiles) {
+                sb.append(renderMobAccordionItem(session, agentId, asMap(o), i++, canWrite, canTest, onlinePlayers));
+            }
+            sb.append("</div>");
         }
-        // Issue #172 : recherche nom/ID + filtres Boss / Mob spécial / désactivés, comme les autres
-        // catalogues du panel (même composant, même ergonomie).
-        sb.append(listControls("mobs", "Rechercher un profil (nom ou identifiant)\u2026",
-                filterBtn("", "Tous", true) + filterBtn("boss", "Boss", false)
-                        + filterBtn("special", "Mob spécial", false)
-                        + filterBtn("disabled", "Désactivés", false)));
-        sb.append("<p class=\"count-note\" data-count-note data-noun=\"profil\">")
-                .append(profiles.size()).append(" profil(s)</p>");
-        sb.append("<div class=\"accordion npc-accordion\" id=\"mob-accordion\">");
-        int i = 0;
+        sb.append(mobFold("Comment lire les compteurs « en jeu »", "<p><strong>En jeu</strong> : créatures de ce "
+                + "profil repérées par le serveur <strong>depuis son dernier démarrage</strong> (apparues, ou "
+                + "retrouvées quand leur zone s'est chargée) et pas encore mortes. Une créature restée dans une zone "
+                + "que personne n'a rechargée depuis le redémarrage n'y figure pas encore : elle existe toujours et "
+                + "sera comptée dès que sa zone se chargera.</p><p><strong>Boss communautaire actif</strong> : lu dans "
+                + "l'état enregistré des boss communautaires, zones non chargées comprises. C'est pourquoi un boss "
+                + "peut être « actif » alors que le profil affiche « 0 en jeu » : il attend dans une zone non "
+                + "chargée.</p><p><strong>Plafond</strong> d'un profil : il limite les apparitions naturelles ; une "
+                + "apparition de test ne le respecte pas, et peut donc le dépasser.</p>"));
+        if (canTest) {
+            sb.append(mobTestClearCard(session, agentId, d, profiles));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Issue #169 : le nettoyage dit sa portée <strong>avant</strong> d'être envoyé — combien, de quels
+     * profils, ce qu'il ne touche pas — et ne part qu'avec la case cochée (le navigateur l'exige,
+     * le panel et le plugin le revérifient). Rien à supprimer : pas de bouton.
+     */
+    private String mobTestClearCard(Session session, String agentId, Map<String, Object> d, List<Object> profiles) {
+        StringBuilder sb = new StringBuilder("<div class=\"mob-danger-zone\" id=\"mob-test-clear\">");
+        sb.append("<p class=\"npc-fs-h\">Instances de test</p>");
+        Object total = d.get("testInstances");
+        StringBuilder perProfile = new StringBuilder();
         for (Object o : profiles) {
-            sb.append(renderMobAccordionItem(session, agentId, asMap(o), i++, canWrite, canTest, onlinePlayers));
+            Map<String, Object> p = asMap(o);
+            long n = asLong(p.get("testPopulation"));
+            if (n > 0) {
+                perProfile.append(perProfile.isEmpty() ? "" : ", ")
+                        .append(Http.esc(MiniText.plain(str(p.get("displayName"))))).append(" × ").append(n);
+            }
         }
-        sb.append("</div>");
+        String keeps = "Les mobs spéciaux apparus naturellement, les boss réels et les boss communautaires de test "
+                + "(retirés depuis l'onglet « Boss communautaires ») ne sont jamais touchés.";
+        if (total != null && asLong(total) == 0) {
+            return sb.append("<p class=\"muted mb-0\">Aucune instance de test en jeu au dernier relevé "
+                    + "(« Rafraîchir » pour le mettre à jour).</p></div>").toString();
+        }
+        String scope = total == null
+                ? "Nombre inconnu : le plugin installé ne le transmet pas encore. Toutes les instances de test "
+                        + "des zones chargées seront supprimées."
+                : asLong(total) + " instance(s) de test en zone chargée au dernier relevé : " + perProfile + ".";
+        sb.append("<p class=\"mb-1\">").append(total == null ? Http.esc(scope) : scope).append("</p>")
+                .append("<p class=\"muted small\">").append(keeps)
+                .append(" Une instance dans une zone non chargée reste en place.</p>");
+        sb.append("<form method=\"post\" action=\"/agents/action\" class=\"mob-danger-form\">")
+                .append(hiddenActionFields(session, agentId, "mob.test.clear", MOBS_PATH))
+                .append(confirmBox(total == null ? "Je confirme : supprimer les instances de test"
+                        : "Je confirme : supprimer ces " + asLong(total) + " instance(s) de test"))
+                .append("<button class=\"btn danger sm\" type=\"submit\">").append(Icons.icon("trash"))
+                .append("Nettoyer les instances de test</button></form>");
+        return sb.append("</div>").toString();
+    }
+
+    /** Vue « Apparitions des mobs spéciaux » : interrupteur global, chance, plafond, profils tirés. */
+    private String mobSpawnsView(Session session, String agentId, boolean canWrite,
+                                 Optional<Map<String, Object>> details) {
+        StringBuilder sb = new StringBuilder("<div class=\"mob-toolbar\"><div class=\"mob-toolbar-main\"></div>"
+                + "<div class=\"mob-toolbar-side\">")
+                .append(compactRefresh(session, agentId, "mob.list", "Rafraîchir", "secondary sm", MOBS_SPAWNS_PATH))
+                .append("</div></div>");
+        if (details.isEmpty()) {
+            return sb.append(Ui.empty("mob", "Aucun relevé chargé — cliquer sur « Rafraîchir ».")).toString();
+        }
+        Map<String, Object> d = details.get();
+        sb.append("<div class=\"mob-cols\"><div class=\"mob-col\">");
+        sb.append("<p class=\"npc-fs-h\">Tirage aléatoire du Wild</p>");
+        sb.append(spawnSettingsForm(session, agentId, asMap(d.get("spawnSettings")), canWrite));
+        sb.append(mobFold("Comment fonctionne le tirage", "<p>« Chance globale » filtre d'abord <strong>chaque"
+                + "</strong> apparition naturelle éligible, avant même d'examiner les profils. Seuls les profils dont "
+                + "le tirage individuel (leur « chance d'apparition ») réussit ensuite participent ; si plusieurs "
+                + "réussissent en même temps, un tirage pondéré (poids = leur propre chance) choisit lequel "
+                + "s'applique.</p><p>Les profils <strong>Boss</strong> n'entrent jamais dans ce tirage : un boss de "
+                + "quête apparaît sur demande, un boss communautaire par son propre calendrier (onglet « Boss "
+                + "communautaires »).</p>"));
+        sb.append("</div><div class=\"mob-col\">");
+        sb.append("<p class=\"npc-fs-h\">Profils tirés au hasard</p>");
+        List<Map<String, Object>> specials = asList(d.get("profiles")).stream().map(AgentPages::asMap)
+                .filter(p -> !"BOSS".equals(str(p.get("category")))).toList();
+        if (specials.isEmpty()) {
+            sb.append(Ui.empty("mob", "Aucun profil « Mob spécial » : rien n'est tiré au hasard."));
+        } else {
+            sb.append(Ui.tableOpen("Profil", "Chance", "Plafond", "En jeu"));
+            for (Map<String, Object> p : specials) {
+                boolean enabled = Boolean.TRUE.equals(p.get("enabled"));
+                String max = str(p.get("maxPopulation"));
+                sb.append("<tr><td>").append(Http.esc(MiniText.plain(str(p.get("displayName")))))
+                        .append(enabled ? "" : " <span class=\"badge text-bg-secondary\">désactivé</span>")
+                        .append("</td><td>").append(Http.esc(str(p.get("spawnChance")))).append("</td><td>")
+                        .append(max.isBlank() || "null".equals(max) ? "aucun" : Http.esc(max)).append("</td><td>")
+                        .append(Http.esc(str(p.get("alivePopulation")))).append("</td></tr>");
+            }
+            sb.append(Ui.tableClose());
+            sb.append("<p class=\"muted small\">Chance, plafond et zones se règlent dans la fiche du profil "
+                    + "(onglet « Profils » → Modifier).</p>");
+        }
+        sb.append("</div></div>");
         return sb.toString();
     }
 
@@ -10452,28 +10612,18 @@ public final class AgentPages {
     // ---- Boss communautaires (issue #175) --------------------------------------------------------
 
     /**
-     * Issue #175 — tableau « Boss communautaires » : état du scheduler, réglages, boss actifs (lieu,
-     * biome, waypoint), apparition de test immédiate et retrait avec confirmation. Rien n'est inventé :
-     * sans relevé {@code boss.community.status}, la section invite à le charger.
+     * Issue #175 — vue « Boss communautaires » : état du scheduler, apparition de test, boss actifs
+     * (lieu, biome, waypoint) et retrait avec confirmation, victoires, puis réglages et explications
+     * repliés (#169). Rien n'est inventé : sans relevé {@code boss.community.status}, la vue invite à le charger.
      */
     private String communityBossSection(Session session, String agentId, boolean canWrite, boolean canTest,
-                                        List<String> onlinePlayers) {
+                                        List<String> onlinePlayers, Optional<Map<String, Object>> loaded) {
         StringBuilder sb = new StringBuilder();
-        sb.append(Ui.sectionTitle("mob", "Boss communautaires du Wild"));
-        sb.append("<p class=\"muted\">Un boss communautaire apparaît <strong>tout seul</strong> dans le Wild, "
-                + "<strong>même si tous les joueurs sont au Hub ou dans leurs Claims</strong> : le serveur choisit "
-                + "un endroit sûr à 40–96 blocs d'un waypoint du Wild (ou d'un joueur qui s'y trouve), jamais sur "
-                + "un joueur, ni dans le Hub, les Claims, une ville ou une zone protégée. Sans aucun waypoint dans "
-                + "le Wild, rien n'apparaît et la raison s'affiche dans « Dernier essai ». Tout le serveur est prévenu (nom, biome, waypoint le plus proche) et les joueurs "
-                + "qui se connectent plus tard reçoivent un rappel. À sa mort, il lâche les objets de son profil "
-                + "et chaque joueur qui l'a touché depuis sa dernière mort, encore vivant, dans le même monde et "
-                + "assez près de lui (distance réglable plus bas, 100 blocs par défaut), reçoit les "
-                + "<strong>récompenses de participation</strong> du profil (droits à récompense, remise sûre).</p>");
-        sb.append("<div class=\"npc-catbar\">")
+        sb.append("<div class=\"mob-toolbar\"><div class=\"mob-toolbar-main\"><span class=\"npc-catbar-t\">"
+                        + "Boss communautaires du Wild</span></div><div class=\"mob-toolbar-side\">")
                 .append(compactRefresh(session, agentId, "boss.community.status", "Rafraîchir l'état",
-                        "btn-outline-primary", "/mobs"))
-                .append("</div>");
-        Optional<Map<String, Object>> loaded = latestDetails(agentId, "boss.community.status");
+                        "secondary sm", MOBS_COMMUNITY_PATH))
+                .append("</div></div>");
         if (loaded.isEmpty()) {
             return sb.append(Ui.empty("mob", "État pas encore chargé — cliquer sur « Rafraîchir l'état ».")).toString();
         }
@@ -10490,12 +10640,14 @@ public final class AgentPages {
                 .filter(p -> "COMMUNITY".equals(str(p.get("bossMode"))) && Boolean.TRUE.equals(p.get("enabled")))
                 .count();
 
+        sb.append("<div class=\"mob-cols\"><div class=\"mob-col\">");
         sb.append("<div class=\"card card-body mb-3\">");
         sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Apparitions automatiques</span> ")
                 .append(enabled ? "<span class=\"badge text-bg-success\">actives</span>"
                         : "<span class=\"badge text-bg-secondary\">en pause</span>").append("</p>");
         sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Boss actifs</span> ")
-                .append(instances.size()).append(" / ").append(Http.esc(str(d.get("maxActive")))).append("</p>");
+                .append(instances.size()).append(" / ").append(Http.esc(str(d.get("maxActive"))))
+                .append(" <span class=\"muted small\">(état enregistré, zones non chargées comprises)</span></p>");
         Object nextDue = d.get("nextDue");
         sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Prochain essai</span> ")
                 .append(!enabled ? "aucun (en pause)" : nextDue == null ? "pas encore planifié"
@@ -10511,19 +10663,15 @@ public final class AgentPages {
         }
         if (communityProfiles == 0) {
             sb.append(Ui.banner("warn", "Aucun profil n'est encore un <strong>boss communautaire</strong> : "
-                    + "ouvrir un profil <strong>Boss</strong> ci-dessous, « Modifier », puis choisir le mode "
-                    + "« Boss communautaire »."));
+                    + "onglet « Profils », ouvrir un profil <strong>Boss</strong>, « Modifier », puis choisir le "
+                    + "type « Boss communautaire »."));
         }
         sb.append("</div>");
-
-        if (canWrite) {
-            sb.append(communityBossSettingsForm(session, agentId, d));
-        }
         if (canTest) {
             sb.append(communityBossTestForm(session, agentId, profiles, onlinePlayers));
         }
-
-        sb.append("<p class=\"npc-fs-h mt-3\">Boss actifs en ce moment</p>");
+        sb.append("</div><div class=\"mob-col\">");
+        sb.append("<p class=\"npc-fs-h\">Boss actifs en ce moment</p>");
         if (instances.isEmpty()) {
             sb.append(Ui.empty("mob", "Aucun boss communautaire actif."));
         } else {
@@ -10534,11 +10682,31 @@ public final class AgentPages {
             sb.append("</div>");
         }
         if (canTest && instances.stream().map(AgentPages::asMap).anyMatch(i -> Boolean.TRUE.equals(i.get("test")))) {
-            sb.append(communityBossRemoveForm(session, agentId, "tests", "Retirer toutes les apparitions de test",
-                    "Je confirme : retirer les boss de test (sans récompense)"));
+            long tests = instances.stream().map(AgentPages::asMap).filter(i -> Boolean.TRUE.equals(i.get("test"))).count();
+            sb.append("<div class=\"mob-danger-zone\">").append(communityBossRemoveForm(session, agentId, "tests",
+                    "Retirer toutes les apparitions de test",
+                    "Je confirme : retirer les " + tests + " boss de test (sans récompense, les boss réels restent)"))
+                    .append("</div>");
         }
         sb.append(communityBossDefeats(asList(d.get("recentDefeats")), now));
+        sb.append("</div></div>");
+
+        if (canWrite) {
+            sb.append("<details class=\"mob-fold\"><summary>").append(Icons.icon("wrench"))
+                    .append("Réglages des apparitions automatiques</summary><div class=\"mob-fold-b\">")
+                    .append(communityBossSettingsForm(session, agentId, d)).append("</div></details>");
+        }
         sb.append(rewardTablesSection(d.get("rewardTables")));
+        sb.append(mobFold("Comment fonctionnent les boss communautaires", "<p>Un boss communautaire apparaît "
+                + "<strong>tout seul</strong> dans le Wild, <strong>même si tous les joueurs sont au Hub ou dans leurs "
+                + "Claims</strong> : le serveur choisit un endroit sûr à 40–96 blocs d'un waypoint du Wild (ou d'un "
+                + "joueur qui s'y trouve), jamais sur un joueur, ni dans le Hub, les Claims, une ville ou une zone "
+                + "protégée. Sans aucun waypoint dans le Wild, rien n'apparaît et la raison s'affiche dans « Dernier "
+                + "essai ».</p><p>Tout le serveur est prévenu (nom, biome, waypoint le plus proche) et les joueurs qui "
+                + "se connectent plus tard reçoivent un rappel. À sa mort, il lâche les objets de son profil et chaque "
+                + "joueur qui l'a touché depuis sa dernière mort, encore vivant, dans le même monde et assez près de "
+                + "lui (distance réglable, 100 blocs par défaut), reçoit les <strong>récompenses de participation"
+                + "</strong> du profil (remise sûre, jamais deux fois).</p>"));
         return sb.toString();
     }
 
@@ -12174,21 +12342,20 @@ public final class AgentPages {
      * lecture — mode explicite, chance de chaque entrée et explication des chances réelles.
      */
     private String rewardTablesSection(Object raw) {
-        StringBuilder sb = new StringBuilder("<p class=\"npc-fs-h mt-3\">Tables de récompenses aléatoires "
-                + "(quêtes et boss)</p>");
         if (raw == null) {
-            return sb.append(Ui.empty("gift", "Le serveur n'envoie pas encore les tables (plugin antérieur à #177)."))
-                    .toString();
+            return "";
         }
         List<Object> tables = asList(raw);
-        sb.append("<p class=\"muted small\">Définies dans la section <code>tables</code> de "
-                + "<code>entitlements.yml</code> du serveur. Une quête les tire avec la récompense « Tirage au sort », "
-                + "un boss avec <code>table:&lt;id&gt;</code> dans ses récompenses de participation. Chaque gain devient "
-                + "un droit à récompense (fiche joueur → Monnaie → Droits à récompense), remis une seule fois. "
-                + "Créer, modifier, dupliquer ou désactiver une table : <a href=\"/rewards\">Récompenses "
-                + "aléatoires</a>.</p>");
+        // Issue #169 : un lien vers Récompenses, les tables en lecture repliées, aucune syntaxe de fichier.
+        StringBuilder sb = new StringBuilder("<details class=\"mob-fold\"><summary>").append(Icons.icon("gift"))
+                .append("Tables de récompenses aléatoires (").append(tables.size()).append(")</summary>")
+                .append("<div class=\"mob-fold-b\">");
+        sb.append("<p class=\"muted small\">Un boss les tire quand une entrée « Tirage : … » figure dans ses "
+                + "récompenses de participation (fiche du profil → Modifier). Chaque gain est remis une seule fois. "
+                + "Créer, modifier ou désactiver une table : <a href=\"/rewards\">Récompenses</a>.</p>");
         if (tables.isEmpty()) {
-            return sb.append(Ui.empty("gift", "Aucune table chargée sur le serveur.")).toString();
+            return sb.append(Ui.empty("gift", "Aucune table chargée sur le serveur.")).append("</div></details>")
+                    .toString();
         }
         sb.append("<div class=\"list-group mb-3\">");
         for (Object o : tables) {
@@ -12216,7 +12383,7 @@ public final class AgentPages {
             sb.append("</ul><div class=\"muted small\">").append(Http.esc(str(t.get("explanation"))))
                     .append("</div></div>");
         }
-        return sb.append("</div>").toString();
+        return sb.append("</div></div></details>").toString();
     }
 
     /** Issue #176 : traçabilité des dernières victoires — participants, verdicts, droits déclarés. */
@@ -12426,11 +12593,16 @@ public final class AgentPages {
                 + "</form>";
     }
 
+    /** Champs communs des formulaires de la vue « Boss communautaires » (retour sur cette vue). */
     private static String hiddenActionFields(Session session, String agentId, String type) {
+        return hiddenActionFields(session, agentId, type, MOBS_COMMUNITY_PATH);
+    }
+
+    private static String hiddenActionFields(Session session, String agentId, String type, String returnPath) {
         return "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
                 + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
                 + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
-                + "<input type=\"hidden\" name=\"return\" value=\"/mobs\">";
+                + "<input type=\"hidden\" name=\"return\" value=\"" + Http.esc(returnPath) + "\">";
     }
 
     /** « dans 12 min » / « il y a 3 h » à partir d'un écart en millisecondes (horloge du serveur). */
@@ -12458,7 +12630,7 @@ public final class AgentPages {
         sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
         sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"type\" value=\"mob.spawn-settings.set\">");
-        sb.append("<input type=\"hidden\" name=\"return\" value=\"/mobs\">");
+        sb.append("<input type=\"hidden\" name=\"return\" value=\"").append(MOBS_SPAWNS_PATH).append("\">");
         sb.append("<div class=\"npc-fs\">");
         sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" "
                 + "id=\"mob-ss-en\" name=\"enabled\" value=\"true\"").append(enabled ? " checked" : "")
@@ -12522,42 +12694,53 @@ public final class AgentPages {
         sb.append(enabled ? "" : "<span class=\"badge text-bg-secondary\">désactivé</span> ");
         sb.append(Http.esc(MiniText.plain(str(m.get("displayName"))))).append(" <code class=\"ms-1\">")
                 .append(Http.esc(id)).append("</code>");
-        sb.append(" <span class=\"muted ms-2\">").append(Http.esc(str(m.get("entityType")))).append(" · vivants : ")
-                .append(Http.esc(str(m.get("alivePopulation")))).append("</span>");
+        sb.append(" <span class=\"muted ms-2\">").append(Http.esc(str(m.get("entityType")))).append(" · ")
+                .append(Http.esc(mobCountsLabel(m))).append("</span>");
         sb.append("</button></h2>");
         sb.append("<div id=\"").append(collapseId).append("\" class=\"accordion-collapse collapse\" "
                 + "aria-labelledby=\"").append(headingId).append("\" data-bs-parent=\"#mob-accordion\">");
         sb.append("<div class=\"accordion-body\">");
 
         sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Chance d'apparition</span> ")
-                .append(Http.esc(str(m.get("spawnChance")))).append("</p>");
+                .append(boss ? "jamais tiré au hasard (boss)" : Http.esc(str(m.get("spawnChance")))).append("</p>");
+        String max = str(m.get("maxPopulation"));
+        if (!boss && !max.isBlank() && !"null".equals(max)) {
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Plafond naturel</span> ").append(Http.esc(max))
+                    .append("</p>");
+        }
         List<Object> abilities = asList(m.get("abilitiesSummary"));
         if (!abilities.isEmpty()) {
             sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Capacités</span> ").append(join(abilities)).append("</p>");
         }
 
+        // Issue #169 : une action principale (Modifier), des secondaires discrètes, l'activation à part.
+        sb.append("<div class=\"mob-actions\">");
+        if (canWrite) {
+            sb.append("<button class=\"btn sm\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#mob-edit-").append(index).append("\" aria-expanded=\"false\">")
+                    .append(Icons.icon("edit")).append("Modifier</button>");
+        }
         // Issue #214 : le formulaire n'édite pas tout (drops, capacités avancées) — le fichier complet, si.
         if (!str(m.get("yaml")).isBlank()) {
-            sb.append("<p class=\"field-help\">Le formulaire « Modifier » ne montre pas tout (butin, capacités "
-                    + "avancées) : <strong>Exporter ce profil</strong> donne le fichier complet, et « Modifier avec une "
-                    + "IA » le fait retoucher puis réimporter, avec les différences à relire.</p>");
-            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/mobs/template?agent=").append(Http.esc(agentId))
+            sb.append("<a class=\"btn secondary sm\" href=\"/mobs/template?agent=").append(Http.esc(agentId))
                     .append("&amp;profile=").append(Http.esc(id)).append("\">").append(Icons.icon("export"))
-                    .append("Exporter ce profil</a> ");
+                    .append("Exporter</a>");
             if (canWrite) {
-                sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/mobs/import?agent=").append(Http.esc(agentId))
+                sb.append("<a class=\"btn secondary sm\" href=\"/mobs/import?agent=").append(Http.esc(agentId))
                         .append("&amp;from=").append(Http.esc(id)).append("\">").append(Icons.icon("edit"))
-                        .append("Modifier avec une IA</a> ");
+                        .append("Modifier avec une IA</a>");
             }
         }
         if (canWrite) {
-            sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"button\" data-bs-toggle=\"collapse\" "
-                    + "data-bs-target=\"#mob-edit-").append(index).append("\" aria-expanded=\"false\">")
-                    .append(Icons.icon("edit")).append("Modifier</button> ");
-            sb.append(toggleForm(session, agentId, id, enabled));
+            sb.append("<span class=\"mob-actions-sep\"></span>").append(toggleForm(session, agentId, id, enabled));
+        }
+        sb.append("</div>");
+        if (!str(m.get("yaml")).isBlank()) {
+            sb.append("<p class=\"field-help\">« Modifier » ne couvre pas le butin ni les capacités avancées : "
+                    + "« Modifier avec une IA » les retouche, avec les différences à relire avant import.</p>");
         }
         if (canTest) {
-            sb.append(' ').append(testSpawnForm(session, agentId, id, onlinePlayers));
+            sb.append(testSpawnForm(session, agentId, id, displayName, onlinePlayers));
         }
 
         if (canWrite) {
@@ -12571,6 +12754,25 @@ public final class AgentPages {
         return sb.toString();
     }
 
+    /**
+     * Issue #169 : chaque compteur dit son périmètre — « en jeu » (repérés depuis le démarrage), dont
+     * les instances de test, et pour un boss communautaire l'état enregistré (zones non chargées
+     * comprises). Un plugin antérieur ne transmet que le premier : on n'invente pas les autres.
+     */
+    static String mobCountsLabel(Map<String, Object> m) {
+        StringBuilder sb = new StringBuilder(str(m.get("alivePopulation"))).append(" en jeu");
+        if (m.get("testPopulation") != null && asLong(m.get("testPopulation")) > 0) {
+            sb.append(" (dont ").append(asLong(m.get("testPopulation"))).append(" de test)");
+        }
+        if (m.get("communityActive") != null && asLong(m.get("communityActive")) > 0) {
+            sb.append(" · ").append(asLong(m.get("communityActive"))).append(" boss communautaire actif");
+            if (asLong(m.get("communityActive")) > asLong(m.get("alivePopulation"))) {
+                sb.append(" (zone non chargée)");
+            }
+        }
+        return sb.toString();
+    }
+
     private String toggleForm(Session session, String agentId, String id, boolean enabled) {
         return "<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">"
                 + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
@@ -12579,34 +12781,37 @@ public final class AgentPages {
                 + "<input type=\"hidden\" name=\"mob_id\" value=\"" + Http.esc(id) + "\">"
                 + "<input type=\"hidden\" name=\"return\" value=\"/mobs\">"
                 + "<input type=\"hidden\" name=\"enabled\" value=\"" + (enabled ? "false" : "true") + "\">"
-                + "<button class=\"btn btn-sm " + (enabled ? "btn-outline-warning" : "btn-outline-success") + "\" type=\"submit\">"
+                + "<button class=\"btn secondary sm\" type=\"submit\">"
                 + (enabled ? "Désactiver" : "Activer") + "</button></form>";
     }
 
-    private String testSpawnForm(Session session, String agentId, String id, List<String> onlinePlayers) {
-        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">");
-        sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
-        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
-        sb.append("<input type=\"hidden\" name=\"type\" value=\"mob.test.spawn\">");
+    /** Issue #169 : l'apparition de test nomme le profil choisi et vit dans sa fiche, à part des réglages. */
+    private String testSpawnForm(Session session, String agentId, String id, String displayName,
+                                 List<String> onlinePlayers) {
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"mob-test\">");
+        sb.append(hiddenActionFields(session, agentId, "mob.test.spawn", MOBS_PATH));
         sb.append("<input type=\"hidden\" name=\"mob_id\" value=\"").append(Http.esc(id)).append("\">");
-        sb.append("<input type=\"hidden\" name=\"return\" value=\"/mobs\">");
         sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
+        String fieldId = "mob-tp-" + Integer.toHexString(id.hashCode());
+        sb.append("<p class=\"npc-fs-h\">Tester « ").append(Http.esc(displayName)).append(" »</p>");
+        sb.append("<div class=\"mob-test-row\"><label class=\"form-label mb-0\" for=\"").append(fieldId)
+                .append("\">Près de</label>");
         if (onlinePlayers.isEmpty()) {
-            sb.append("<input type=\"text\" name=\"player\" class=\"form-control form-control-sm d-inline-block\" "
-                    + "style=\"width:9rem\" placeholder=\"Pseudo exact\" required>");
+            sb.append("<input type=\"text\" id=\"").append(fieldId).append("\" name=\"player\" "
+                    + "class=\"form-control form-control-sm\" placeholder=\"Pseudo exact\" required>");
         } else {
-            sb.append("<select name=\"player\" class=\"form-select form-select-sm d-inline-block\" style=\"width:9rem\">");
+            sb.append("<select id=\"").append(fieldId).append("\" name=\"player\" class=\"form-select form-select-sm\">");
             for (String p : onlinePlayers) {
                 sb.append("<option value=\"").append(Http.esc(p)).append("\">").append(Http.esc(p)).append("</option>");
             }
             sb.append("</select>");
         }
-        sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
-                .append(Icons.icon("target")).append("Apparaître (test, Wild)</button>");
-        sb.append("<div class=\"form-text\">Fait apparaître une instance près du joueur choisi. Celui-ci doit "
-                + "être <strong>connecté</strong> et <strong>dans le monde Wild</strong>, sinon l'action est "
-                + "refusée avec la raison. L'instance est marquée comme test et reste supprimable par "
-                + "« Nettoyer les instances de test ».</div>");
+        sb.append("<button class=\"btn secondary sm\" type=\"submit\">")
+                .append(Icons.icon("target")).append("Faire apparaître une instance de test</button></div>");
+        sb.append("<div class=\"form-text\">Une seule instance, à 3–10 blocs du joueur, qui doit être "
+                + "<strong>connecté</strong> et <strong>dans le monde Wild</strong> (sinon l'action est refusée avec la "
+                + "raison). Elle est marquée « test » : « Nettoyer les instances de test », en bas de page, la "
+                + "supprime sans toucher aux mobs naturels.</div>");
         sb.append("</form>");
         return sb.toString();
     }
@@ -12669,9 +12874,10 @@ public final class AgentPages {
                 .append("</select>")
                 .append(fieldHelp("Décide si le profil entre dans le tirage aléatoire du Wild. "
                         + "<strong>Spécial</strong> : remplace parfois un mob qui apparaît naturellement. "
-                        + "<strong>Boss</strong> : n'apparaît jamais tout seul — il se fait apparaître "
-                        + "volontairement (bouton de test, commande) et reçoit en plus une barre de vie visible "
-                        + "à 48 blocs et une aura de particules rafraîchie chaque seconde.",
+                        + "<strong>Boss</strong> : jamais tiré au hasard parmi les apparitions naturelles ; selon "
+                        + "son « Type de boss », il apparaît sur demande (boss de quête, test) ou selon le calendrier "
+                        + "des boss communautaires. Il reçoit en plus une barre de vie visible à 48 blocs et une "
+                        + "aura de particules rafraîchie chaque seconde.",
                         "Spécial pour une variante de mob courante, Boss pour une rencontre unique",
                         "Spécial", null))
                 .append("</div>");
@@ -12684,7 +12890,7 @@ public final class AgentPages {
                 .append("</select>")
                 .append(fieldHelp("Utilisé seulement si la catégorie est <strong>Boss</strong>. "
                         + "<strong>Boss communautaire</strong> : le serveur le fait apparaître de temps en temps dans "
-                        + "le Wild (réglages dans « Boss communautaires du Wild » en haut de la page), dans les "
+                        + "le Wild (réglages dans l'onglet « Boss communautaires »), dans les "
                         + "mondes et biomes choisis plus bas. <strong>Boss de quête</strong> : jamais automatique.",
                         "Boss communautaire pour un ogre que tout le serveur chasse", "Boss de quête", null))
                 .append("</div>");
@@ -12716,7 +12922,7 @@ public final class AgentPages {
                         + "(distance réglée dans « Boss communautaires », 100 blocs par défaut ; un joueur mort pendant "
                         + "le combat doit le retoucher). Remise sûre : inventaire plein = la récompense attend, jamais "
                         + "deux fois. Vide = aucune récompense (seulement les drops). Une entrée « Tirage : … » "
-                        + "(<code>table:&lt;id&gt;</code>) fait un <strong>tirage au sort</strong> de cette table, une "
+                        + "fait un <strong>tirage au sort</strong> de cette table, une "
                         + "fois par joueur éligible (résultat individuel, figé) — tables gérées dans "
                         + "<a href=\"/rewards\">Récompenses</a>. Récompenses désactivées sur le serveur : "
                         + "rien n'est attribué et les joueurs en sont avertis.",

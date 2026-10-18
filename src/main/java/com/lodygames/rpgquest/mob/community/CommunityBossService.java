@@ -721,6 +721,16 @@ public final class CommunityBossService implements PluginService, Listener {
                 + (deferred ? " (sa zone n'est pas chargée : il disparaîtra dès qu'elle le sera)." : "."), instance);
     }
 
+    /** Issue #169 : vrai si cette entité est un boss communautaire actif (verrou tenu, zone chargée ou non). */
+    public boolean isActiveInstance(UUID entityId) {
+        return instances.containsKey(entityId);
+    }
+
+    /** Issue #169 : boss communautaires actifs de ce profil, d'après l'état enregistré (zones non chargées comprises). */
+    public int activeInstancesOf(String profileId) {
+        return (int) instances.values().stream().filter(i -> i.profileId().equals(profileId)).count();
+    }
+
     /** Retire toutes les apparitions de test encore actives. */
     public Outcome removeTestInstances() {
         int count = 0;

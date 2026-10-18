@@ -7036,3 +7036,25 @@ En jeu, un compte avec quelques LodyCoins (`/money`), de la place, 16 pierres ta
 
 **Reset** : supprimer le PNJ / dialogue de test et les catalogues d'essai depuis PlugAdmin ; les échanges
 n'ont touché que le solde et l'inventaire du compte de test.
+
+### TC-356 — Claim : animaux, seaux, dalles de pression et cultures protégés des non-membres (issue #531, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #531 déployé ; deux comptes **sans** mode admin : A propriétaire d'un claim
+(redstone publique **désactivée**, réglage par défaut), B non-membre. Dans le claim de A : une dalle
+de pression reliée à une lampe, une terre labourée semée, une vache, un mouton, un cadre avec un
+objet, un villageois ordinaire, un cochon sellé, un PNJ RPGQuest (ex. un PNJ taggé). **Durée** : 10 minutes.
+
+1.  B marche sur la dalle → la lampe ne s'allume pas, **aucun** message (pas de spam).
+2.  B saute sur la terre labourée → elle reste labourée, la graine reste ; même essai à dos du
+    cochon (B le monte hors du claim puis entre) → terre intacte.
+3.  B clique droit la vache avec un seau → pas de lait ; tond le mouton → pas de laine ; nourrit /
+    met en laisse / renomme un animal → refusé ; ouvre l'échange du villageois → refusé ; monte le
+    cochon sellé du claim → refusé.
+4.  B tourne ou retire l'objet du cadre, puis frappe le cadre → objet et cadre intacts.
+5.  B vide un seau de lave et un seau d'eau dans le claim → rien n'est versé ; B remplit un seau
+    dans un point d'eau du claim → l'eau reste, le seau reste vide.
+6.  B parle au PNJ RPGQuest du claim → le dialogue s'ouvre normalement.
+7.  Non-régression A (et un membre ajouté par `/claim trust`) : dalle, piétinement, traite, tonte,
+    seaux, cadre, échange → comportement vanilla. `/claim flag redstone true` → B déclenche la dalle,
+    mais ne piétine toujours pas la terre labourée.
+8.  Hors claim : B fait les mêmes actions → comportement vanilla.

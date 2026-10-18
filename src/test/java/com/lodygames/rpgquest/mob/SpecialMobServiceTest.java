@@ -408,6 +408,35 @@ class SpecialMobServiceTest {
         assertEquals(3, event.getDrops().get(0).getAmount(), "un événement de mort annulé ne doit pas voir ses drops remplacés");
     }
 
+    // ---- Instances de test (issue #169) -----------------------------------------------------
+
+    @Test
+    void clearTestInstancesRemovesOnlyTestInstancesAndKeepsTheExcludedOnes() {
+        SpecialMobService service = newService(fixedRandom(0.0));
+        SpecialMobDefinition def = registry.find(SIMPLE_ID).orElseThrow();
+        LivingEntity natural = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
+        service.apply(natural, def);
+        LivingEntity test = (LivingEntity) world.spawnEntity(new Location(world, 2, 64, 0), EntityType.ZOMBIE);
+        service.applyTestInstance(test, def);
+        LivingEntity communityTest = (LivingEntity) world.spawnEntity(new Location(world, 4, 64, 0), EntityType.ZOMBIE);
+        service.applyTestInstance(communityTest, def);
+        LivingEntity vanilla = (LivingEntity) world.spawnEntity(new Location(world, 6, 64, 0), EntityType.ZOMBIE);
+        java.util.function.Predicate<java.util.UUID> community = communityTest.getUniqueId()::equals;
+
+        SpecialMobService.Population before = service.populationBreakdown(SIMPLE_ID, community);
+        assertEquals(3, before.tracked());
+        assertEquals(3, before.loaded());
+        assertEquals(1, before.test(), "le boss communautaire de test se retire par son propre service");
+
+        assertEquals(1, service.clearTestInstances(community));
+
+        assertTrue(test.isDead() || !test.isValid(), "l'instance de test est supprimée");
+        assertTrue(natural.isValid(), "un mob spécial naturel n'est jamais supprimé");
+        assertTrue(communityTest.isValid(), "le boss communautaire de test reste (verrou)");
+        assertTrue(vanilla.isValid(), "un mob ordinaire n'est jamais touché");
+        assertEquals(new SpecialMobService.Population(2, 2, 0), service.populationBreakdown(SIMPLE_ID, community));
+    }
+
     // ---- Reload ---------------------------------------------------------------------------
 
     @Test

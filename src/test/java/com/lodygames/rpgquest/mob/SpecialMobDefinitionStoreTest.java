@@ -36,6 +36,22 @@ class SpecialMobDefinitionStoreTest {
     }
 
     @Test
+    void aProfileNamedLikeASettingsFileIsRefusedAndTheSettingsAreUntouched() throws Exception {
+        // Issue #169 : mobs/community-bosses.yml porte les réglages du scheduler, jamais un profil.
+        String settings = "enabled: true\ninterval-minutes: 15\n";
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("community-bosses.yml"), settings);
+        SpecialMobDefinitionStore store = new SpecialMobDefinitionStore(dir);
+
+        SpecialMobDefinitionStore.Result r = store.create(def("community-bosses", "X", 0.1, MobCategory.BOSS, true));
+
+        assertFalse(r.ok());
+        assertEquals("INVALID", r.code());
+        assertEquals(settings, Files.readString(dir.resolve("community-bosses.yml")));
+        assertEquals("NOT_FOUND", store.update(def("spawn-settings", "X", 0.1, MobCategory.SPECIAL, true)).code());
+    }
+
+    @Test
     void createWritesAFileThatReloadsIdentically() {
         SpecialMobDefinitionStore store = new SpecialMobDefinitionStore(dir);
         SpecialMobDefinitionStore.Result r = store.create(def("swamp_king", "Roi des Marais", 1.0, MobCategory.BOSS, true));

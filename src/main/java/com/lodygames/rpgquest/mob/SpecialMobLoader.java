@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
@@ -26,7 +27,19 @@ import org.bukkit.configuration.file.YamlConfiguration;
  */
 public final class SpecialMobLoader {
 
+    /**
+     * Issue #169 : fichiers de réglages rangés dans {@code mobs/} à côté des profils (réglages des boss
+     * communautaires, tirage du Wild). Ce ne sont pas des profils : les lire comme tels les faisait
+     * apparaître en « Profils rejetés » (id, entity-type, name, spawn-chance manquants) sur DEV.
+     */
+    public static final Set<String> RESERVED_FILE_NAMES = Set.of("community-bosses.yml", "spawn-settings.yml");
+
     private final SpecialMobDefinitionParser parser = new SpecialMobDefinitionParser();
+
+    /** Vrai pour un fichier de réglages de {@code mobs/}, jamais lu ni écrit comme un profil. */
+    public static boolean isReservedFileName(String fileName) {
+        return fileName != null && RESERVED_FILE_NAMES.contains(fileName.toLowerCase(Locale.ROOT));
+    }
 
     /** Scanne {@code directory} pour les fichiers {@code *.yml}/{@code *.yaml} (absent = 0 variante, pas une erreur). */
     public SpecialMobLoadReport loadDirectory(Path directory) {
@@ -85,7 +98,8 @@ public final class SpecialMobLoader {
 
     private boolean isYamlFile(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        return Files.isRegularFile(path) && (name.endsWith(".yml") || name.endsWith(".yaml"));
+        return Files.isRegularFile(path) && (name.endsWith(".yml") || name.endsWith(".yaml"))
+                && !isReservedFileName(name);
     }
 
     private SpecialMobLoadReport crossValidate(List<ParsedMob> parsedMobs, List<SpecialMobLoadIssue> issues) {

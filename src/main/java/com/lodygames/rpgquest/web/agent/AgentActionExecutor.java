@@ -756,7 +756,10 @@ public final class AgentActionExecutor {
 
     private CompletableFuture<AgentActionOutcome> mobList(AgentAction action) {
         return actions.mobDefinitions().thenApply(view -> {
+            Map<String, AgentActions.MobPopulationView> populations = new LinkedHashMap<>();
+            view.populations().forEach(pop -> populations.put(pop.id(), pop));
             List<Map<String, Object>> rows = new ArrayList<>();
+            int testInstances = 0;
             for (AgentActions.MobProfileSummary p : view.profiles()) {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("id", p.id());
@@ -780,6 +783,13 @@ public final class AgentActionExecutor {
                 row.put("xpReward", p.xpReward());
                 row.put("maxPopulation", p.maxPopulation());
                 row.put("alivePopulation", p.alivePopulation());
+                AgentActions.MobPopulationView pop = populations.get(p.id());
+                if (pop != null) { // Issue #169 : périmètre de chaque compteur, dit tel quel dans PlugAdmin.
+                    row.put("loadedPopulation", pop.loaded());
+                    row.put("testPopulation", pop.test());
+                    row.put("communityActive", pop.communityActive());
+                    testInstances += pop.test();
+                }
                 row.put("enragedHealthFraction", p.enragedHealthFraction());
                 row.put("enragedSpeedMultiplier", p.enragedSpeedMultiplier());
                 row.put("enragedDamageMultiplier", p.enragedDamageMultiplier());
@@ -805,6 +815,9 @@ public final class AgentActionExecutor {
             details.put("spawnSettings", settings);
             details.put("hasIssues", view.hasIssues());
             details.put("issues", view.issues());
+            if (!populations.isEmpty()) {
+                details.put("testInstances", testInstances);
+            }
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " profil(s) de mob spécial/boss.", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));

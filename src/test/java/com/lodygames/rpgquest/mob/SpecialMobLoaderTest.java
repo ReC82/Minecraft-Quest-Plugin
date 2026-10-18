@@ -61,6 +61,21 @@ class SpecialMobLoaderTest {
     }
 
     @Test
+    void settingsFilesOfTheMobsDirectoryAreNeverReadAsProfiles(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        // Issue #169 : sur DEV, « Profils rejetés : community-bosses.yml : « id » est obligatoire… ».
+        java.nio.file.Files.writeString(dir.resolve("community-bosses.yml"), "enabled: true\ninterval-minutes: 15\n");
+        java.nio.file.Files.writeString(dir.resolve("spawn-settings.yml"), "enabled: true\nchance: 1.0\n");
+        java.nio.file.Files.writeString(dir.resolve("good.yml"), mob("rpgquest:good"));
+
+        SpecialMobLoadReport report = loader.loadDirectory(dir);
+
+        assertEquals(1, report.loaded().size());
+        assertEquals(0, report.issues().size(), report.issues().toString());
+        assertTrue(SpecialMobLoader.isReservedFileName("Community-Bosses.yml"));
+    }
+
+    @Test
     void missingDirectoryYieldsEmptyReportNotAnError() {
         SpecialMobLoadReport report = loader.loadDirectory(java.nio.file.Path.of("does-not-exist"));
         assertEquals(0, report.loaded().size());

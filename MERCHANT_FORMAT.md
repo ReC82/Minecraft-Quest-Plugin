@@ -38,7 +38,7 @@ offers:
     required-permission: rpgquest.vip
     required-quest: rpgquest:first_steps
     required-quest-state: COMPLETED   # par défaut si omis : COMPLETED
-    required-level: 5                  # niveau d'expérience vanilla (Player#getLevel())
+    required-level: 5                  # niveau RPG GLOBAL (vanilla si progression.vanilla-xp-progression: true, #532)
 ```
 
 ## Nature du catalogue et fermeture (issue #17)

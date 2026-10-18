@@ -7058,3 +7058,21 @@ objet, un villageois ordinaire, un cochon sellé, un PNJ RPGQuest (ex. un PNJ ta
     seaux, cadre, échange → comportement vanilla. `/claim flag redstone true` → B déclenche la dalle,
     mais ne piétine toujours pas la terre labourée.
 8.  Hors claim : B fait les mêmes actions → comportement vanilla.
+
+### TC-357 — required-level des portails et offres marchandes lit le niveau RPG (issue #532, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR + PlugAdmin #532 déployés ; `progression.vanilla-xp-progression: false` (défaut) ;
+un compte joueur **sans** mode admin, niveau vanilla 0 (barre verte vide) ; `base-xp: 100` (défaut :
+niveau RPG 2 = 100 XP `GLOBAL`). **Durée** : 10 minutes.
+
+1.  PlugAdmin → Marchands : sur un marchand d'essai, ajouter une offre avec **Niveau RPG min.** = 2 ;
+    la fiche affiche « niveau RPG 2 ». Ouvrir le marchand en jeu : la lore dit « Requiert le niveau RPG 2 ».
+2.  Admin : `/skills admin set <joueur> GLOBAL 0` (niveau RPG 1). Le joueur clique l'offre → refus
+    « Il te manque le niveau requis pour cette offre. », aucun débit.
+3.  Admin : `/skills admin set <joueur> GLOBAL 100` (niveau RPG 2). Le joueur rouvre et clique l'offre
+    → échange accepté alors que son niveau vanilla est toujours 0.
+4.  Portail d'essai : ajouter `required-level: 2` dans `plugins/RPGQuest/portals/<id>.yml`, puis
+    redémarrer DEV (les portails ne sont relus qu'au démarrage). `/rpgadmin portal info <id>` affiche « Niveau RPG requis : 2 ». Refaire 2 et 3 :
+    refus « Il te manque le niveau requis pour ce portail. » au niveau RPG 1, téléportation au niveau 2.
+5.  Non-régression (optionnel) : avec `vanilla-xp-progression: true` et redémarrage, la condition relit
+    le niveau vanilla (`/xp set <joueur> 2 levels` requis). Remettre `false` ensuite.

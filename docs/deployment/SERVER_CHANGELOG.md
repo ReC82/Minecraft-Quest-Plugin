@@ -48,6 +48,32 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-18 - required-level des portails et offres marchandes lit le niveau RPG (#532)
+
+### Changement
+
+JAR + PlugAdmin, **pas de migration**, aucun changement de format YAML ni de configuration. Avec
+`progression.vanilla-xp-progression: false` (défaut, actif sur DEV), `required-level` d'un portail
+ou d'une offre marchande compare le niveau RPG `GLOBAL` au lieu du niveau vanilla figé depuis #183 ;
+avec `true`, le niveau vanilla reste la référence. Messages de refus inchangés ; affichage
+« niveau RPG » (menu marchand, `/rpgadmin portal info`, PlugAdmin Marchands).
+
+### Action serveur
+
+`scripts/deploy-verygames.sh -y --wait-ci` (sauvegarde datée du JAR), puis redémarrage ;
+`scripts/plugadmin/deploy.sh` pour le libellé PlugAdmin. Ne pas téléverser `config.yml` ; ne pas
+toucher aux données joueurs.
+
+### Validation
+
+Démarrage sans erreur. TC-357 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR `*-predeploy.jar` et redémarrer : `required-level` relit le niveau vanilla.
+
+---
+
 ## 2026-10-18 - Protections de claim : animaux, seaux, dalles de pression et cultures (#531)
 
 ### Changement

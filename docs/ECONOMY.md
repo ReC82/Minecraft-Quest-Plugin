@@ -74,7 +74,8 @@ aucune notion de PNJ. Voir `dialogues/merchant.yml` pour un exemple complet
 reliant les deux.
 
 Chaque offre peut porter des conditions cumulatives (permission, quête,
-niveau d'expérience vanilla) ; une offre non satisfaite reste visible mais
+niveau RPG `GLOBAL`, ou niveau vanilla si `progression.vanilla-xp-progression:
+true` — issue #532) ; une offre non satisfaite reste visible mais
 refuse l'échange avec un message explicite au clic.
 
 **Achat** (le marchand vend) : le débit est tenté avant de donner l'objet ;

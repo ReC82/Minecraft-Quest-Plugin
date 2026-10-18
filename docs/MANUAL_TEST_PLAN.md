@@ -6686,6 +6686,27 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-360 — Page /mobs en trois vues, compteurs, nettoyage confirmé, refus dans l'historique (issue #169, retour du 18/10, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de la PR #557 sur **DEV**. N'active rien, ne fait apparaître aucun
+boss. Déjà acquis (ne pas refaire) : Zombie Runner présent, nom coloré, attaque, vitesse accrue.
+
+1.  PlugAdmin → Mobs spéciaux & boss → **Rafraîchir**. **Attendu** : résumé compact en haut (profils,
+    tirage du Wild, instances de test, boss communautaires actifs), onglets Profils / Boss communautaires /
+    Apparitions des mobs spéciaux, catalogue et recherche tout de suite visibles ; **plus de bandeau
+    « Profils rejetés » citant `community-bosses.yml`**.
+2.  Fiche Zombie Runner : « Modifier » mis en avant, Exporter / Modifier avec une IA / Désactiver en
+    secondaire, bloc « Tester « Zombie Runner » » séparé. En-tête : « N en jeu (dont X de test) ».
+3.  Fiche Zombie d'entraînement : « 0 en jeu · 1 boss communautaire actif (zone non chargée) » tant que sa
+    zone n'a pas été rechargée ; « Comment lire les compteurs » l'explique.
+4.  Zone rouge « Instances de test » : nombre et profils concernés affichés **avant** clic ; le bouton ne part
+    pas sans la case. (Le nettoyage lui-même n'est à lancer que si tu le souhaites : il ne supprime que les
+    instances de test chargées.)
+5.  Historique → **Refusées avant envoi** : une demande refusée (ex. ancienne version sans case) apparaît avec
+    date, action, motif et acteur, distincte des actions exécutées. Recherche et bouton alignés.
+6.  Onglets Boss communautaires et Apparitions : réglages et explications repliés, lien « Récompenses »,
+    aucune mention de fichier YAML. Vérifier aussi sur téléphone (390 px).
+
 ### TC-332 — Modifier un boss à plusieurs biomes depuis PlugAdmin (issue #461, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.

@@ -126,6 +126,16 @@ class RewardTableEditorTest {
     }
 
     @Test
+    void anIndependentTableMayExceed100Percent() {
+        // Retour propriétaire du 18/10 : seul le mode « single » plafonne la somme à 100 %.
+        RewardTableEditor.Outcome outcome = editor.save(table("many", RewardTable.Mode.INDEPENDENT, true,
+                new RewardTable.Entry("a", "gem", 7000), new RewardTable.Entry("b", "book", 5000)), null, true);
+
+        assertTrue(outcome.success(), outcome.message());
+        assertEquals(12_000, applied.get().findTable("many").orElseThrow().totalChance());
+    }
+
+    @Test
     void aRefusedReloadPutsTheOldFileBackByteForByte() throws Exception {
         byte[] before = Files.readAllBytes(file);
         reloadRefuses.set(true);

@@ -5742,6 +5742,9 @@ public final class PanelApp {
         if (!v.valid()) {
             audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
                     "DENIED", v.error(), rid);
+            if (AgentPages.KEEPS_REFUSED_FORM.contains(type)) {
+                session.keepRefusedForm(type, form, v.error()); // #177 : saisies réaffichées telles quelles
+            }
             Http.redirect(exchange, withError(returnPath, agentId, form.get("player"), v.error()));
             return;
         }

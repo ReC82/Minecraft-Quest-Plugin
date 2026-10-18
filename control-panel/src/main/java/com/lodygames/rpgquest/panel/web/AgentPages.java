@@ -11303,9 +11303,8 @@ public final class AgentPages {
             sb.append(rewardItemDatalists(agentId, d));
         }
         Map<String, String> rewardNames = new java.util.LinkedHashMap<>();
-        rewards.forEach(o -> rewardNames.put(str(asMap(o).get("key")), str(asMap(o).get("label"))
-                + (Boolean.FALSE.equals(asMap(o).get("enabled")) ? " (désactivée)" : "")
-                + (str(asMap(o).get("summary")).isBlank() ? "" : " — " + str(asMap(o).get("summary")))));
+        rewards.forEach(o -> rewardNames.put(str(asMap(o).get("key")), rewardDisplayName(asMap(o))));
+        Map<String, String> draft = refusedTableForm(session, agentId, q);
         sb.append(rewardDefinitionsSection(session, agentId, d, rewards, canWrite && editorReady));
         boolean tablesWritable = !rewards.isEmpty();
         sb.append("<div class=\"npc-catbar mt-4\"><span class=\"npc-catbar-t\">Tables de tirage</span>");
@@ -11317,9 +11316,11 @@ public final class AgentPages {
         sb.append("</div>");
         sb.append(rewardModesHelp());
         if (canWrite && tablesWritable) {
-            sb.append("<div class=\"collapse\" id=\"rt-new\"><div class=\"card card-body npc-formcard\">")
+            Map<String, String> createDraft = draft != null && "true".equals(draft.get("create")) ? draft : null;
+            sb.append("<div class=\"collapse").append(createDraft != null ? " show" : "")
+                    .append("\" id=\"rt-new\"><div class=\"card card-body npc-formcard\">")
                     .append("<p class=\"npc-fs-h\">Nouvelle table</p>")
-                    .append(rewardTableForm(session, agentId, null, "rt-new", rewardNames))
+                    .append(rewardTableForm(session, agentId, null, "rt-new", rewardNames, createDraft))
                     .append("</div></div>");
         }
         List<Object> tables = asList(d.get("tables"));
@@ -11330,7 +11331,10 @@ public final class AgentPages {
                     : "Aucune table : créer d'abord une récompense, puis une table qui la fait gagner."));
         }
         for (Object o : tables) {
-            sb.append(rewardTableCard(session, agentId, asMap(o), canWrite && tablesWritable, rewardNames));
+            Map<String, Object> t = asMap(o);
+            boolean mine = draft != null && !"true".equals(draft.get("create"))
+                    && str(t.get("id")).equals(draft.get("table_id"));
+            sb.append(rewardTableCard(session, agentId, t, canWrite && tablesWritable, rewardNames, mine ? draft : null));
         }
         return sb.toString();
     }
@@ -11422,11 +11426,8 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder("<datalist id=\"dl-reward-catalog\">");
         for (Object o : rewards) {
             Map<String, Object> r = asMap(o);
-            String summary = str(r.get("summary"));
             sb.append("<option value=\"").append(Http.esc(str(r.get("key")))).append("\" label=\"")
-                    .append(Http.esc(str(r.get("label")) + (Boolean.FALSE.equals(r.get("enabled")) ? " (désactivée)" : "")
-                            + (summary.isBlank() ? "" : " — " + summary)))
-                    .append("\">");
+                    .append(Http.esc(rewardDisplayName(r))).append("\">");
         }
         return sb.append("</datalist>").toString();
     }
@@ -11644,7 +11645,7 @@ public final class AgentPages {
     }
 
     private String rewardTableCard(Session session, String agentId, Map<String, Object> t, boolean canWrite,
-                                   Map<String, String> rewardNames) {
+                                   Map<String, String> rewardNames, Map<String, String> draft) {
         String id = str(t.get("id"));
         boolean enabled = Boolean.TRUE.equals(t.get("enabled"));
         String uid = "rt-" + id.replaceAll("[^a-z0-9_-]", "");
@@ -11705,10 +11706,88 @@ public final class AgentPages {
                     .append("<div class=\"form-text mb-2\">La copie est créée <strong>désactivée</strong>, avec les "
                             + "mêmes récompenses et chances : la modifier, puis l'activer.</div>")
                     .append("<button class=\"btn sm\" type=\"submit\">Créer la copie</button></form></div>");
-            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-edit\"><div class=\"card card-body npc-formcard\">")
-                    .append(rewardTableForm(session, agentId, t, uid + "-f", rewardNames)).append("</div></div>");
+            sb.append("<div class=\"collapse mt-2").append(draft != null ? " show" : "").append("\" id=\"").append(uid)
+                    .append("-edit\"><div class=\"card card-body npc-formcard\">")
+                    .append(rewardTableForm(session, agentId, t, uid + "-f", rewardNames, draft)).append("</div></div>");
         }
         return sb.append("</div>").toString();
+    }
+
+    /** Types dont le formulaire refusé par le panel est réaffiché tel quel (issue #177). */
+    public static final Set<String> KEEPS_REFUSED_FORM = Set.of("reward.table.save");
+
+    /** Fenêtre pendant laquelle un refus du plugin peut encore être réaffiché ({@code ?refused=}). */
+    private static final java.time.Duration REFUSED_FORM_WINDOW = java.time.Duration.ofMinutes(30);
+
+    /**
+     * Le dernier envoi de table refusé, à réafficher (issue #177) : soit refusé par le panel avant la
+     * file (gardé une fois dans la session), soit refusé par le plugin — {@code ?refused=<action>},
+     * que {@code panel.js} ajoute quand le toast de l'action passe en échec. Seulement une action de
+     * cet agent, de ce type, envoyée par cet utilisateur, terminée sans succès et récente.
+     */
+    Map<String, String> refusedTableForm(Session session, String agentId, Map<String, String> q) {
+        Optional<Map<String, String>> kept = session.takeRefusedForm("reward.table.save");
+        if (kept.isPresent()) {
+            return kept.get();
+        }
+        String id = q.getOrDefault("refused", "").trim();
+        if (id.isEmpty()) {
+            return null;
+        }
+        return store.action(id)
+                .filter(a -> agentId.equals(a.agentId()) && "reward.table.save".equals(a.type())
+                        && session.username().equals(a.createdBy()) && a.status().terminal()
+                        && a.status() != AgentActionStatus.SUCCESS
+                        && a.createdAt().isAfter(java.time.Instant.now().minus(REFUSED_FORM_WINDOW)))
+                .map(a -> {
+                    Map<String, String> form = new java.util.LinkedHashMap<>(
+                            com.lodygames.rpgquest.panel.agent.RewardTableForm.formOf(a.params()));
+                    form.put("_error", a.status() == AgentActionStatus.EXPIRED
+                            ? "le serveur n'a pas répondu à temps."
+                            : str(a.resultMessage()).isBlank() ? "refus du serveur." : str(a.resultMessage()));
+                    return form;
+                })
+                .orElse(null);
+    }
+
+    /**
+     * Nom d'une récompense du catalogue avec ce qu'elle donne, quantités comprises :
+     * « Gemme rare — 3 × Diamant, 1 × Livre enchanté (sharpness 3) » (issue #177).
+     */
+    static String rewardDisplayName(Map<String, Object> r) {
+        List<String> parts = new ArrayList<>();
+        for (Object o : asList(r.get("items"))) {
+            Map<String, Object> item = asMap(o);
+            String itemId = str(item.get("item"));
+            if (itemId.isBlank()) {
+                continue;
+            }
+            String amount = str(item.get("amount"));
+            String name = itemId.contains(":") ? itemId : MaterialNames.french(itemId);
+            StringBuilder part = new StringBuilder(amount.isBlank() ? "1" : amount).append(" × ")
+                    .append(name.isBlank() ? itemId : name);
+            List<String> extras = new ArrayList<>();
+            Object ench = item.get("enchantments");
+            if (ench instanceof Map<?, ?> map) {
+                map.forEach((k, lvl) -> extras.add(k + " " + lvl));
+            } else if (!str(ench).isBlank()) {
+                extras.add(str(ench).replace(':', ' ').replace(",", ", "));
+            }
+            if (!str(item.get("potion")).isBlank()) {
+                extras.add("potion " + str(item.get("potion")));
+            }
+            if (!extras.isEmpty()) {
+                part.append(" (").append(String.join(", ", extras)).append(')');
+            }
+            parts.add(part.toString());
+        }
+        if (!str(r.get("perkKey")).isBlank()) {
+            parts.add("avantage " + str(r.get("perkKey")) + (str(r.get("perkTier")).isBlank() ? ""
+                    : " " + str(r.get("perkTier"))));
+        }
+        String what = parts.isEmpty() ? str(r.get("summary")) : String.join(", ", parts);
+        return str(r.get("label")) + (Boolean.FALSE.equals(r.get("enabled")) ? " (désactivée)" : "")
+                + (what.isBlank() ? "" : " — " + what);
     }
 
     private static String copyId(String id) {
@@ -11723,29 +11802,42 @@ public final class AgentPages {
                 + "<input type=\"hidden\" name=\"return\" value=\"" + REWARDS_PATH + "\">";
     }
 
-    /** Formulaire de table, création ({@code existing == null}) ou modification. */
+    /**
+     * Formulaire de table, création ({@code existing == null}) ou modification. {@code draft} = un
+     * envoi refusé par le serveur (champs du formulaire) : il est réaffiché tel quel, avec le refus
+     * (issue #177). {@code panel.js} grise le bouton tant que le formulaire est invalide et dit
+     * pourquoi ; sans JavaScript, le bouton reste actif et le serveur revalide tout.
+     */
     private String rewardTableForm(Session session, String agentId, Map<String, Object> existing, String uid,
-                                   Map<String, String> rewardNames) {
+                                   Map<String, String> rewardNames, Map<String, String> draft) {
         boolean create = existing == null;
-        String mode = create ? "single" : str(existing.get("mode"));
+        Map<String, String> v = draft != null ? draft : tableFormValues(existing);
+        String mode = "independent".equals(v.get("mode")) ? "independent" : "single";
         StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\" "
                 + "data-chance-form>");
+        if (draft != null) {
+            sb.append("<div class=\"alert alert-danger py-2\" role=\"alert\" data-refused-form><strong>Refusé, rien "
+                    + "n'a été enregistré :</strong> ").append(Http.esc(draft.getOrDefault("_error", "")))
+                    .append("<br>Vos saisies sont conservées ci-dessous : corriger puis renvoyer.</div>");
+        }
         sb.append(rewardHiddenFields(session, agentId, "reward.table.save"));
         sb.append("<input type=\"hidden\" name=\"create\" value=\"").append(create).append("\">");
         if (!create) {
+            // Version ACTUELLE de la table : le refus vient d'être montré, le renvoi porte sur l'état réel.
             sb.append("<input type=\"hidden\" name=\"table_id\" value=\"").append(Http.esc(str(existing.get("id"))))
                     .append("\"><input type=\"hidden\" name=\"expected_version\" value=\"")
                     .append(Http.esc(str(existing.get("version")))).append("\">");
         }
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-l\">Nom de la table</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-l\" name=\"label\" required "
-                        + "maxlength=\"120\" value=\"").append(Http.esc(create ? "" : str(existing.get("label"))))
+                        + "maxlength=\"120\" data-rt-label value=\"").append(Http.esc(v.getOrDefault("label", "")))
                 .append("\">").append(fieldHelp("Nom montré au joueur au moment du tirage.", "Butin de l'ogre",
                         "aucun (obligatoire)", null)).append("</div>");
         if (create) {
             sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">Identifiant "
                     + "(facultatif)</label><input class=\"form-control\" id=\"").append(uid).append("-id\" "
-                    + "name=\"table_id\" maxlength=\"32\" pattern=\"[a-z0-9_\\-]{0,32}\">")
+                    + "name=\"table_id\" maxlength=\"32\" pattern=\"[a-z0-9_\\-]{0,32}\" data-rt-id value=\"")
+                    .append(Http.esc(v.getOrDefault("table_id", ""))).append("\">")
                     .append(fieldHelp("Ce que les quêtes et boss utilisent pour désigner la table. Vide : tiré du nom "
                             + "(« Butin de l'ogre » → <code>butin_de_l_ogre</code>). Ne change plus ensuite.",
                             "butin_ogre", "tiré du nom", null)).append("</div>");
@@ -11754,37 +11846,42 @@ public final class AgentPages {
                 .append(modeRadio(uid, "single", mode, "Une récompense au plus",
                         "Le joueur gagne une seule récompense de la liste, ou rien. Total ≤ 100 %."))
                 .append(modeRadio(uid, "independent", mode, "Chaque récompense tentée séparément",
-                        "Chaque ligne est tirée à part : plusieurs gains possibles, ou aucun."))
+                        "Chaque ligne est tirée à part : plusieurs gains possibles, ou aucun. Le total peut dépasser "
+                                + "100 % (chaque chance reste entre 0,01 et 100 %)."))
                 .append("</fieldset>");
-        boolean enabled = create || Boolean.TRUE.equals(existing.get("enabled"));
+        boolean enabled = "true".equals(v.get("enabled"));
         sb.append("<div class=\"form-check form-switch mb-2\"><input class=\"form-check-input\" type=\"checkbox\" "
                 + "role=\"switch\" id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
                 .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
                 .append("-en\">Table active (tirée par les quêtes et boss qui l'utilisent)</label></div>");
-        List<Object> entries = create ? List.of() : asList(existing.get("entries"));
+        int filled = 0;
+        for (int i = 0; i < com.lodygames.rpgquest.panel.agent.RewardTableForm.MAX_ENTRIES; i++) {
+            if (!v.getOrDefault("entry_reward_" + i, "").isBlank() || !v.getOrDefault("entry_chance_" + i, "").isBlank()) {
+                filled = i + 1;
+            }
+        }
         int rows = Math.min(com.lodygames.rpgquest.panel.agent.RewardTableForm.MAX_ENTRIES,
-                Math.max(REWARD_TABLE_MIN_ROWS, entries.size() + REWARD_TABLE_BLANK_ROWS));
+                Math.max(REWARD_TABLE_MIN_ROWS, filled + REWARD_TABLE_BLANK_ROWS));
         sb.append("<p class=\"form-label mb-1\">Récompenses et chances</p>")
                 .append("<div class=\"form-text mb-1\">Choisir une récompense du catalogue (taper pour chercher) et sa "
                         + "chance en %. Vider les deux champs d'une ligne pour la retirer.</div>");
         int total = 0;
         for (int i = 0; i < rows; i++) {
-            Map<String, Object> entry = i < entries.size() ? asMap(entries.get(i)) : Map.of();
-            String chance = str(entry.get("chanceValue")).replace('.', ',');
+            String reward = v.getOrDefault("entry_reward_" + i, "");
+            String chance = v.getOrDefault("entry_chance_" + i, "");
             Integer h = com.lodygames.rpgquest.panel.agent.RewardTableForm.hundredthsOf(chance);
             total += h == null ? 0 : h;
             sb.append("<div class=\"row g-2 mb-1 align-items-center\" data-chance-row>")
                     .append("<input type=\"hidden\" name=\"entry_id_").append(i).append("\" value=\"")
-                    .append(Http.esc(str(entry.get("id")))).append("\">")
+                    .append(Http.esc(v.getOrDefault("entry_id_" + i, ""))).append("\">")
                     .append("<div class=\"col-12 col-md-8\"><div class=\"combo\" data-combo><input class=\"form-control "
                             + "combo-input\" type=\"text\" name=\"entry_reward_").append(i)
                     .append("\" aria-label=\"Récompense ligne ").append(i + 1).append("\" value=\"")
-                    .append(Http.esc(str(entry.get("rewardKey")))).append("\" list=\"dl-reward-catalog\" "
+                    .append(Http.esc(reward)).append("\" list=\"dl-reward-catalog\" data-rt-reward "
                             + "autocomplete=\"off\" role=\"combobox\" aria-expanded=\"false\" aria-autocomplete=\"list\" "
                             + "placeholder=\"Récompense…\"></div>")
-                    .append(entry.isEmpty() ? "" : "<div class=\"form-text mt-0\">" + Http.esc(rewardNames.getOrDefault(
-                            str(entry.get("rewardKey")), "récompense absente du catalogue")) + "</div>")
-                    .append("</div>")
+                    .append("<div class=\"form-text mt-0\" data-rt-picked>").append(rewardPickedHtml(reward, rewardNames))
+                    .append("</div></div>")
                     .append("<div class=\"col-8 col-md-3\"><div class=\"input-group\"><input class=\"form-control\" "
                             + "type=\"text\" inputmode=\"decimal\" name=\"entry_chance_").append(i)
                     .append("\" aria-label=\"Chance ligne ").append(i + 1).append(" en pour cent\" maxlength=\"6\" "
@@ -11793,9 +11890,51 @@ public final class AgentPages {
         }
         sb.append("<p class=\"mt-2 mb-2\" data-chance-total aria-live=\"polite\">")
                 .append(Http.esc(chanceTotalText(total, mode))).append("</p>");
-        sb.append("<button class=\"btn btn-primary\" type=\"submit\">").append(Icons.icon("save"))
-                .append(create ? "Créer la table" : "Enregistrer").append("</button></form>");
+        sb.append("<div class=\"d-flex flex-wrap align-items-center gap-2\"><button class=\"btn btn-primary\" "
+                + "type=\"submit\" data-rt-submit>").append(Icons.icon("save"))
+                .append(create ? "Créer la table" : "Enregistrer").append("</button>")
+                .append("<span class=\"small text-danger\" id=\"").append(uid).append("-why\" data-rt-why "
+                        + "aria-live=\"polite\"></span></div></form>");
         return sb.toString();
+    }
+
+    /** Une table chargée → champs du formulaire (même forme qu'un envoi). Création : valeurs par défaut. */
+    private static Map<String, String> tableFormValues(Map<String, Object> existing) {
+        Map<String, String> v = new java.util.LinkedHashMap<>();
+        if (existing == null) {
+            v.put("mode", "single");
+            v.put("enabled", "true");
+            return v;
+        }
+        v.put("label", str(existing.get("label")));
+        v.put("mode", str(existing.get("mode")));
+        if (Boolean.TRUE.equals(existing.get("enabled"))) {
+            v.put("enabled", "true");
+        }
+        List<Object> entries = asList(existing.get("entries"));
+        for (int i = 0; i < entries.size(); i++) {
+            Map<String, Object> entry = asMap(entries.get(i));
+            v.put("entry_id_" + i, str(entry.get("id")));
+            v.put("entry_reward_" + i, str(entry.get("rewardKey")));
+            v.put("entry_chance_" + i, str(entry.get("chanceValue")).replace('.', ','));
+        }
+        return v;
+    }
+
+    /**
+     * Ce qu'une ligne a choisi, lisible : nom et quantité d'abord, identifiant en complément
+     * (issue #177). Même rendu que {@code panel.js} recalcule à la sélection.
+     */
+    static String rewardPickedHtml(String key, Map<String, String> rewardNames) {
+        if (key == null || key.isBlank()) {
+            return "";
+        }
+        String name = rewardNames.get(key.trim().toLowerCase(java.util.Locale.ROOT));
+        if (name == null) {
+            return "<span class=\"text-danger\">Récompense absente du catalogue</span> · <code>" + Http.esc(key)
+                    + "</code>";
+        }
+        return "<strong>" + Http.esc(name) + "</strong> · <code>" + Http.esc(key) + "</code>";
     }
 
     private static String modeRadio(String uid, String value, String current, String label, String help) {

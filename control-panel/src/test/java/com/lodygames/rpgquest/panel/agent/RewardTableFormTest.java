@@ -99,4 +99,40 @@ class RewardTableFormTest {
         assertEquals("0,1 %", RewardTableForm.percentText(10));
         assertEquals("0 %", RewardTableForm.percentText(0));
     }
+
+    @Test
+    void theSumRuleDependsOnTheMode() {
+        // « Une récompense au plus » : 120 % refusé ; « chaque récompense tentée » : 120 % accepté.
+        assertTrue(validate(form("entry_reward_0", "gem", "entry_chance_0", "70", "entry_reward_1", "book",
+                "entry_chance_1", "50")).error().contains("120 %"));
+        AgentActionCatalog.Validation independent = validate(form("mode", "independent",
+                "entry_reward_0", "gem", "entry_chance_0", "70", "entry_reward_1", "book", "entry_chance_1", "50"));
+        assertTrue(independent.valid(), independent.error());
+        assertEquals("gem=gem@70;book=book@50", independent.params().get("entries"));
+        // Chaque chance reste bornée, quel que soit le mode.
+        assertTrue(validate(form("mode", "independent", "entry_reward_0", "gem", "entry_chance_0", "100,01"))
+                .error().contains("0,01 et 100"));
+        assertTrue(validate(form("mode", "independent", "entry_reward_0", "gem", "entry_chance_0", "100")).valid());
+    }
+
+    @Test
+    void aRefusedSaveBecomesTheFormItWasSentFrom() {
+        Map<String, String> form = RewardTableForm.formOf(Map.of("table_id", "ogre", "label", "Butin",
+                "mode", "independent", "enabled", "false", "create", "false", "expected_version", "1a2b3c4d",
+                "entries", "gem=gem@12.5;book_2=book@40"));
+        assertEquals("ogre", form.get("table_id"));
+        assertEquals("Butin", form.get("label"));
+        assertEquals("independent", form.get("mode"));
+        assertNull(form.get("enabled"), "case décochée = absente, comme un vrai envoi");
+        assertEquals("gem", form.get("entry_id_0"));
+        assertEquals("12,5", form.get("entry_chance_0"));
+        assertEquals("book_2", form.get("entry_id_1"));
+        assertEquals("book", form.get("entry_reward_1"));
+        assertEquals("40", form.get("entry_chance_1"));
+        // Renvoyé tel quel, il redonne exactement les mêmes paramètres.
+        Map<String, String> again = new LinkedHashMap<>(form);
+        AgentActionCatalog.Validation v = validate(again);
+        assertTrue(v.valid(), v.error());
+        assertEquals("gem=gem@12.5;book_2=book@40", v.params().get("entries"));
+    }
 }

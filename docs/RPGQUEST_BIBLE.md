@@ -166,7 +166,12 @@ PlugAdmin : page **Récompenses** (`/rewards`, droit « Économie — lecture »
 écriture ») : état du fichier expliqué (absent, refusé avec ses erreurs, désactivé), catalogue des récompenses en
 lecture, tables **créées, modifiées, dupliquées (copie désactivée), activées / désactivées** sans YAML — récompenses
 choisies dans le catalogue (liste recherchable), mode expliqué en mots simples, total des chances et chance de ne
-rien gagner affichés pendant la saisie. Actions agent `reward.catalog.status`, `reward.table.save`,
+rien gagner affichés pendant la saisie. Bouton « Créer la table » / « Enregistrer » **grisé** tant que le
+formulaire serait refusé, la raison écrite à côté, réactivé dès la correction ; somme ≤ 100 % en « Une récompense
+au plus », somme libre en « Chaque récompense tentée séparément » (chaque chance entre 0,01 et 100 %), même règle
+côté panel et plugin. Après **tout** refus (panel ou serveur), le formulaire revient rempli tel qu'il a été envoyé
+(nom, identifiant, mode, activation, récompenses, chances) avec la raison. Chaque récompense choisie affiche son nom
+et ce qu'elle donne (« Gemme rare — 3 × Diamant »), l'identifiant en complément. Actions agent `reward.catalog.status`, `reward.table.save`,
 `reward.table.duplicate`, `reward.table.toggle` : seule la section `tables` est réécrite, le texte final est relu
 par le vrai chargeur **avant** écriture (rien n'est écrit sinon), écriture atomique, rechargement immédiat et
 ancienne version remise à l'octet près si le serveur la refuse ; un formulaire périmé (table changée entre-temps)

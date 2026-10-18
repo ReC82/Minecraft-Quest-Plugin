@@ -6646,6 +6646,25 @@ depuis #474, créé et rempli depuis PlugAdmin (TC-336), sans fichier à écrire
 8.  Désactiver la table depuis PlugAdmin puis terminer la quête / tuer le boss. **Attendu** : « Tirage « id »
     indisponible » côté quête **et** côté boss, aucun gain.
 
+### TC-358 — Formulaire de table : bouton grisé, règle des 100 %, refus sans perte (issue #177, retour du 18/10, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de la PR #177 « formulaire de table » sur **DEV**, catalogue avec au moins deux
+récompenses (TC-336). Rien n'est écrit tant que « Créer la table » n'est pas cliqué avec un formulaire valide.
+
+1.  Récompenses → Rafraîchir → **Nouvelle table**. **Attendu** : « Créer la table » grisé, à côté « Donner un nom à
+    la table. ». Saisir un nom → « Ajouter au moins une récompense. ».
+2.  Ligne 1 : taper une partie du nom, choisir une récompense. **Attendu** : sous le champ, le **nom et la
+    quantité** (« Gemme rare — 3 × Diamant ») puis l'identifiant en petit.
+3.  Deux récompenses à 70 et 50 en « Une récompense au plus ». **Attendu** : bouton grisé, raison « le total fait
+    120 %, 100 % au plus ». Passer à « Chaque récompense tentée séparément » → bouton **réactivé**, raison effacée.
+    Mettre une chance à 101 → grisé (« entre 0,01 et 100 % ») ; remettre 50 → réactivé.
+4.  Identifiant « yes » → grisé avec la raison ; le vider → réactivé.
+5.  Refus du serveur : modifier une table, et pendant que la fiche est ouverte, la modifier depuis un autre onglet
+    (formulaire périmé), puis Enregistrer dans le premier. **Attendu** : la page revient avec « Refusé, rien n'a été
+    enregistré : … » et la fiche **rouverte avec vos saisies** (nom, mode, activation, récompenses, chances).
+6.  Ne pas cliquer « Créer la table » pour de vrai si l'on ne veut pas de table de test sur DEV ; sinon la
+    désactiver ensuite.
+
 ### TC-332 — Modifier un boss à plusieurs biomes depuis PlugAdmin (issue #461, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.

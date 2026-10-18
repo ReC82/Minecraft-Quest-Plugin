@@ -194,6 +194,10 @@ public final class MaterialNames {
         m.put("LAVA_BUCKET", "Seau de lave");
         m.put("MILK_BUCKET", "Seau de lait");
         m.put("BREAD", "Pain");
+        // Gemmes seules (#177 : nom des récompenses) ; les composés (DIAMOND_SWORD, EMERALD_ORE) restent à compose().
+        m.put("DIAMOND", "Diamant");
+        m.put("EMERALD", "Émeraude");
+        m.put("COAL", "Charbon");
         m.put("APPLE", "Pomme");
         m.put("GOLDEN_APPLE", "Pomme dorée");
         m.put("ENCHANTED_GOLDEN_APPLE", "Pomme dorée enchantée");

@@ -69,6 +69,16 @@
 
 **Points d'attention à ne pas perdre :** risque de sauvegarde des coffres ouverts lors d'un crash (#104/#105), commande `/money pay` contradictoire avec la politique P2P envisagée (#138/#139), nécessité d'une validation sans mutation dangereuse de l'XP pour #532, et limites explicites des interactions claims #531.
 
+## Audits du 18 octobre — portes de décision
+
+| Chantier | Rapport / état | Suite autorisée |
+|---|---|---|
+| [#331](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/331) + [#228](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/228) | Audit complet du 18/10 à 18:02 ; [étude et 6 maquettes](https://github.com/ReC82/Minecraft-Quest-Plugin/blob/chore/257-ci-github-actions/docs/design/331-mondes-portails/ETUDE.md). Deux moteurs de portails coexistent ; Multiverse recommandé comme gestionnaire de mondes ; emplacements #213 à réutiliser. **Q1–Q7 en attente de décision propriétaire.** | Tickets **#560–#570 créés, NON en file**. Après validation : commencer par #560 (W1 lecture mondes) et #564 (P1 lecture portails) ; aucune création de monde sans confirmation explicite (Q4). |
+| [#540](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/540) / [#541](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/541) | Audit des capacités + 4 maquettes, étude Q1–Q11. | #542 et suivants **bloqués par validation propriétaire**. |
+| #0 tri superviseur 18:14 | 195 tickets ouverts selon Claude, aucune entrée éligible sans arbitrages ; aucune mise en file ni livraison. | Ne pas lancer de sessions de tri sans retour propriétaire. |
+
+**Questions stratégiques à arbitrer pour mondes et portails :** Q1 gestion Multiverse des nouveaux mondes ; Q2 convergence des deux moteurs vers world-portals ; Q3 lien portail → emplacement plutôt qu'un champ usage ; Q4 autorisation et nom du monde de test DEV ; Q5 politique des portails vanilla Nether/End ; Q6 exclusion de la suppression des fichiers de monde ; Q7 séparation entre gestion des mondes et affectation des rôles Hub/Wild/Claims. Ne pas adopter ces choix implicitement.
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

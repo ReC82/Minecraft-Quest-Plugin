@@ -2063,6 +2063,8 @@
           var buttons = form.querySelectorAll("button[type=submit]");
           window.setTimeout(function () {
             for (var b = 0; b < buttons.length; b++) {
+              buttons[b].setAttribute("data-once-label", "1");
+              buttons[b].paOnceHtml = buttons[b].innerHTML;
               buttons[b].disabled = true;
               buttons[b].textContent = buttons[b].getAttribute("data-submit-label") || "Envoi en cours…";
             }
@@ -2071,9 +2073,19 @@
       })(tokens[i].form);
     }
     if (tokens.length === 0) { return; }
-    // Retour arrière (cache de page) : le formulaire réaffiché doit pouvoir repartir, avec un jeton neuf.
+    // Retour arrière (cache de page) : boutons réactivés. Le jeton, lui, reste consommé : un renvoi
+    // du même formulaire retombe côté serveur sur l'action déjà créée, jamais sur un doublon.
     window.addEventListener("pageshow", function (ev) {
-      if (ev.persisted) { window.location.reload(); }
+      if (!ev.persisted) { return; }
+      var sent = document.querySelectorAll("form[data-sent]");
+      for (var f = 0; f < sent.length; f++) {
+        sent[f].removeAttribute("data-sent");
+        var buttons = sent[f].querySelectorAll("button[type=submit][data-once-label]");
+        for (var b = 0; b < buttons.length; b++) {
+          buttons[b].disabled = false;
+          if (buttons[b].paOnceHtml) { buttons[b].innerHTML = buttons[b].paOnceHtml; }
+        }
+      }
     });
   }
 

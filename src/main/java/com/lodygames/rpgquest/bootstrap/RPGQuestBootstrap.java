@@ -754,7 +754,7 @@ public final class RPGQuestBootstrap {
                 progressionService, variableRepository);
         registry.start(claimService);
         claimTeleportService = new ClaimTeleportService(plugin, claimService);
-        registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService, adminBypassMode)));
+        registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService, npcIdentityService, adminBypassMode)));
         registry.start(new PlayerListenerService(plugin, new ClaimWandListener(claimSelectionService)));
         ClaimsWorldRulesListener claimsWorldRulesListener =
                 new ClaimsWorldRulesListener(plugin, claimService, () -> configService.current().claims(),

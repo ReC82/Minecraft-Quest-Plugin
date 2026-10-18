@@ -24,6 +24,7 @@ import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -169,6 +170,26 @@ class PortalServiceTest {
         awaitTicks(10);
 
         assertFalse(portalService.isChanneling(player.getUniqueId()));
+    }
+
+    @Test
+    void requiredLevelReadsTheSharedLevelRuleNotTheFrozenVanillaLevel() throws Exception {
+        portalRegistry.create(basicPortal("gate", "village", 0, 0, null, null, 2, null));
+        PlayerMock player = addPlayer();
+        player.setLevel(0); // depuis #183 le niveau vanilla ne progresse plus
+        AtomicInteger rpgLevel = new AtomicInteger(1);
+        portalService.setRequiredLevelRule(p -> rpgLevel.get());
+
+        portalService.handleMove(player, insideZone());
+        awaitTicks(20);
+        assertEquals(new Location(world, 0.5, 61, 0.5), player.getLocation(), "niveau RPG 1 < 2 : refusé");
+
+        rpgLevel.set(2);
+        player.teleport(new Location(world, 0.5, 61, 0.5));
+        portalService.handleMove(player, player.getLocation());
+        portalService.handleMove(player, insideZone());
+        awaitUntil(() -> Math.floor(player.getLocation().getY()) == 65.0);
+        assertEquals(65, (int) Math.floor(player.getLocation().getY()), "niveau RPG 2 : téléporté malgré le niveau vanilla 0");
     }
 
     @Test

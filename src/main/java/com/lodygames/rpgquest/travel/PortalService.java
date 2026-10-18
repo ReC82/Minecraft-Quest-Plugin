@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.database.PortalCooldownRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.economy.TransactionType;
+import com.lodygames.rpgquest.progression.RequiredLevelRule;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.travel.model.Destination;
 import com.lodygames.rpgquest.travel.model.PortalDefinition;
@@ -55,6 +56,7 @@ public final class PortalService implements PluginService {
     private final QuestProgressEngine questProgressEngine;
     private final PortalCooldownRepository cooldownRepository;
     private final Logger logger;
+    private volatile RequiredLevelRule requiredLevelRule = RequiredLevelRule.VANILLA;
 
     private final Map<UUID, ChannelingSession> channeling = new ConcurrentHashMap<>();
     private final Map<UUID, String> currentPortalByPlayer = new ConcurrentHashMap<>();
@@ -70,6 +72,11 @@ public final class PortalService implements PluginService {
         this.questProgressEngine = questProgressEngine;
         this.cooldownRepository = cooldownRepository;
         this.logger = plugin.getSLF4JLogger();
+    }
+
+    /** Issue #532 : règle partagée de {@code required-level} (niveau RPG ou vanilla selon la config). */
+    public void setRequiredLevelRule(RequiredLevelRule requiredLevelRule) {
+        this.requiredLevelRule = Objects.requireNonNull(requiredLevelRule, "requiredLevelRule");
     }
 
     @Override
@@ -177,7 +184,7 @@ public final class PortalService implements PluginService {
             player.sendMessage(MM.deserialize("<red>Il te manque la permission requise pour ce portail.</red>"));
             return;
         }
-        if (portal.requiredLevel() != null && player.getLevel() < portal.requiredLevel()) {
+        if (!requiredLevelRule.meets(player, portal.requiredLevel())) {
             player.sendMessage(MM.deserialize("<red>Il te manque le niveau requis pour ce portail.</red>"));
             return;
         }

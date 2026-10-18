@@ -17,10 +17,12 @@ import com.lodygames.rpgquest.economy.price.PriceDefinition.PriceItem;
 import com.lodygames.rpgquest.economy.price.PriceType;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.delivery.ItemDelivery;
+import com.lodygames.rpgquest.progression.RequiredLevelRule;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -76,6 +78,7 @@ public final class MerchantTradeService implements PluginService {
     private final QuestProgressEngine questProgressEngine;
     private final PriceCatalogService priceCatalog;
     private final Logger logger;
+    private volatile RequiredLevelRule requiredLevelRule = RequiredLevelRule.VANILLA;
 
     private final Map<UUID, MerchantSession> sessions = new ConcurrentHashMap<>();
 
@@ -95,6 +98,11 @@ public final class MerchantTradeService implements PluginService {
         this.customItemRegistry = customItemRegistry;
         this.questProgressEngine = questProgressEngine;
         this.logger = plugin.getSLF4JLogger();
+    }
+
+    /** Issue #532 : règle partagée de {@code required-level} (niveau RPG ou vanilla selon la config). */
+    public void setRequiredLevelRule(RequiredLevelRule requiredLevelRule) {
+        this.requiredLevelRule = Objects.requireNonNull(requiredLevelRule, "requiredLevelRule");
     }
 
     @Override
@@ -400,7 +408,7 @@ public final class MerchantTradeService implements PluginService {
                     Placeholder.unparsed("state", offer.requiredQuestState().name())));
         }
         if (offer.requiredLevel() != null) {
-            lore.add(MM.deserialize("<gray>Requiert le niveau <level></gray>",
+            lore.add(MM.deserialize("<gray>Requiert le niveau RPG <level></gray>",
                     Placeholder.unparsed("level", String.valueOf(offer.requiredLevel()))));
         }
     }
@@ -413,7 +421,7 @@ public final class MerchantTradeService implements PluginService {
             sendDenied(player, "<red>Il te manque la permission requise pour cette offre.</red>");
             return;
         }
-        if (offer.requiredLevel() != null && player.getLevel() < offer.requiredLevel()) {
+        if (!requiredLevelRule.meets(player, offer.requiredLevel())) {
             sendDenied(player, "<red>Il te manque le niveau requis pour cette offre.</red>");
             return;
         }

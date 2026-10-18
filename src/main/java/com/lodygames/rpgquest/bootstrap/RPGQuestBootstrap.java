@@ -711,6 +711,11 @@ public final class RPGQuestBootstrap {
         registry.start(priceCatalogService);
         merchantTradeService = new MerchantTradeService(
                 plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine, priceCatalogService);
+        // Issue #532 : required-level lit le niveau RPG (piste GLOBAL) tant que l'XP vanilla est supprimée.
+        com.lodygames.rpgquest.progression.RequiredLevelRule requiredLevelRule =
+                com.lodygames.rpgquest.progression.RequiredLevelRule.configured(
+                        progressionService, () -> configService.current().progression());
+        merchantTradeService.setRequiredLevelRule(requiredLevelRule);
         registry.start(merchantTradeService);
         registry.start(new PlayerListenerService(plugin, merchantTradeService.listener()));
 
@@ -724,6 +729,7 @@ public final class RPGQuestBootstrap {
         PortalCooldownRepository portalCooldownRepository = new PortalCooldownRepository(databaseService.databaseManager());
         portalService = new PortalService(
                 plugin, portalRegistry, destinationRegistry, economyService, questProgressEngine, portalCooldownRepository);
+        portalService.setRequiredLevelRule(requiredLevelRule);
         registry.start(portalService);
         registry.start(new PlayerListenerService(plugin, portalService.listener()));
 

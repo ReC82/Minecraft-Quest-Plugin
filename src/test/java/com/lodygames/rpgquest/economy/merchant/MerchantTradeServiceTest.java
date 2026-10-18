@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
@@ -117,6 +118,11 @@ class MerchantTradeServiceTest {
                     price: 1
                     required-quest: rpgquest:first_steps
                     required-quest-state: COMPLETED
+                  - direction: SELL_TO_PLAYER
+                    material: GOLD_INGOT
+                    quantity: 1
+                    price: 1
+                    required-level: 2
                 """);
         YamlMerchantRegistry merchantRegistry = new YamlMerchantRegistry(merchantsDir, plugin.getSLF4JLogger());
         merchantRegistry.start();
@@ -211,6 +217,27 @@ class MerchantTradeServiceTest {
 
         assertEquals(10L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
         assertEquals(0, countMaterial(player, Material.EMERALD));
+    }
+
+    @Test
+    void offerRequiredLevelReadsTheSharedLevelRuleNotTheFrozenVanillaLevel() throws Exception {
+        PlayerMock player = addPlayer();
+        player.setLevel(0); // depuis #183 le niveau vanilla ne progresse plus
+        walletRepository.credit(player.getUniqueId(), 10, "TEST", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        AtomicInteger rpgLevel = new AtomicInteger(1);
+        tradeService.setRequiredLevelRule(p -> rpgLevel.get());
+
+        tradeService.openShop(player, MERCHANT_ID);
+        tradeService.handleClick(player, 4); // offre GOLD_INGOT, required-level: 2
+        awaitAsyncWork();
+        assertEquals(0, countMaterial(player, Material.GOLD_INGOT), "niveau RPG 1 < 2 : refusé");
+
+        rpgLevel.set(2);
+        tradeService.openShop(player, MERCHANT_ID);
+        tradeService.handleClick(player, 4);
+        awaitAsyncWork();
+        assertEquals(1, countMaterial(player, Material.GOLD_INGOT), "niveau RPG 2 : accepté malgré le niveau vanilla 0");
+        assertEquals(9L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
     @Test

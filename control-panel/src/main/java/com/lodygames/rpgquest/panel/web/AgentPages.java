@@ -11017,7 +11017,7 @@ public final class AgentPages {
             conditions.add("quête " + str(o.get("requiredQuest")) + " (" + str(o.get("requiredQuestState")) + ")");
         }
         if (!str(o.get("requiredLevel")).isEmpty()) {
-            conditions.add("niveau " + str(o.get("requiredLevel")));
+            conditions.add("niveau RPG " + str(o.get("requiredLevel")));
         }
         if (!str(o.get("requiredPermission")).isEmpty()) {
             conditions.add("permission " + str(o.get("requiredPermission")));
@@ -11226,7 +11226,7 @@ public final class AgentPages {
                     .append('>').append(s[1]).append("</option>");
         }
         sb.append("</select></div><div class=\"col-6 col-md-2\"><label class=\"form-label small mb-0\" for=\"").append(p)
-                .append("-lv\">Niveau min.</label><input class=\"form-control\" type=\"number\" min=\"0\" id=\"").append(p)
+                .append("-lv\">Niveau RPG min.</label><input class=\"form-control\" type=\"number\" min=\"0\" id=\"").append(p)
                 .append("-lv\" name=\"of_level_").append(i).append("\" value=\"")
                 .append(Http.esc(str(o.get("requiredLevel")))).append("\"></div>")
                 .append("<div class=\"col-12 col-md-3\"><label class=\"form-label small mb-0\" for=\"").append(p)

@@ -6686,6 +6686,23 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-366 — Atelier : historique du projet isolé, import d'un plan d'ailleurs explicite (issue #308, PENDING MANUAL VALIDATION)
+
+**Prérequis** : PlugAdmin #308 déployé (aucun JAR, aucune migration). Compte avec `AI_USE`. **Aucun
+appel à l'IA** dans ce test ; **ne pas** cliquer « Enregistrer dans la bibliothèque ». **Durée** : 5 minutes.
+
+1.  Bâtiments → Atelier → ouvrir **Estrade d'Elias** (projet neuf, sans plan). Déplier **« Historique de ce
+    projet »** → « Aucune version de plan pour ce projet : il est neuf. », sans `bibliotheque_du_hub`.
+2.  La section **« Importer un plan d'un autre projet ou de l'historique global »** est repliée ; la
+    déplier : `bibliotheque_du_hub` y figure, avec « Examiner avant import ». Taper `biblio` →
+    **Rechercher** : la liste se restreint.
+3.  **Examiner avant import** : la provenance, les dimensions, l'entrée et les incompatibilités avec les
+    limites de l'Estrade s'affichent ; recharger la page → toujours aucune version dans l'historique.
+4.  (Optionnel, crée une version dans l'Estrade) **Importer comme nouvelle version de ce projet** → la
+    copie s'ouvre ; le brief de l'Estrade est inchangé ; le projet d'origine (s'il y en a un) garde ses
+    versions. Si la copie n'est pas souhaitée : Détails techniques → « Retirer cette version de la liste ».
+5.  Ouvrir **Maison de Lily** : son historique ne montre que ses propres versions.
+
 ### TC-365 — Recherche d'objet et de bloc dans l'éditeur de quêtes : « pump » → PUMPKIN, carottes plantées (issue #142, PENDING MANUAL VALIDATION)
 
 Prérequis : PlugAdmin issu de la PR de #142 sur **DEV** (plugin inchangé). Navigateur seulement, rien n'est

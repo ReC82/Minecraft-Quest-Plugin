@@ -1704,8 +1704,29 @@ Parcours guidé : Décrire → Proposer un plan (IA, facturé) → Vérifier (gr
 bibliothèque. Une seule action principale à la fois ; les problèmes de vérification sont dits en français
 avec une piste ; « Améliorer avec l'IA » crée une nouvelle version. L'enregistrement n'utilise **jamais**
 le remplacement : un nom technique déjà pris est signalé et doit être changé. Tout le technique (plan
-brut, codes, mesures, coupes, versions, reprise depuis l'historique) est replié dans « Détails techniques »,
+brut, codes, mesures, coupes, versions) est replié dans « Détails techniques »,
 avec « Copier le diagnostic » (sans clé ni secret).
+
+**Historique du projet et import d'un plan d'ailleurs (issue #308).** Deux sections distinctes sous la
+fiche :
+
+- **« Historique de ce projet — versions du plan (n) »** : uniquement les versions dont le `project_id`
+  est ce projet. Un projet neuf affiche « Aucune version de plan pour ce projet : il est neuf. » — un plan
+  d'un autre bâtiment n'y apparaît jamais.
+- **« Importer un plan d'un autre projet ou de l'historique global »**, replié par défaut : recherche
+  (nom technique, nom ou identifiant d'action) parmi les actions de l'agent qui portent un plan et
+  n'appartiennent à aucun brouillon, ou identifiant d'action collé (plan d'un autre projet, ancien
+  brouillon d'emplacement sans projet). **« Examiner avant import »** n'écrit rien et montre la provenance
+  (historique global / projet « X » / ancien brouillon sans projet), l'action source, nom technique, nom,
+  dimensions, entrée, les limites du projet et les **incompatibilités** (emprise, hauteur, entrée, nom
+  technique). Seul **« Importer comme nouvelle version de ce projet »** écrit : une **copie** (origine
+  « Récupéré depuis une action »), sans appel à l'IA ni facturation ; la source n'est ni déplacée ni
+  modifiée (un ancien brouillon sans projet n'est plus rattaché d'office), le brief et la conception du
+  projet restent les siens, et le verdict d'une action déjà rattachée reste à sa source. Importer deux
+  fois le même plan dans le même projet ramène à la première copie. Contrôles côté serveur : permission
+  `AI_USE`, projet et action du même agent ; l'import est tracé au journal d'audit
+  (`building.plan.draft.recover`, avec brouillon et projet source). Depuis la fiche d'une action,
+  « Examiner l'import dans ce projet » mène au même examen.
 
 Les garanties de #256 s'appliquent aux projets : redirection après chaque soumission, jeton à usage unique
 sur les gestes payants, versions et contrôle de concurrence, vérifications rattachées à leur version,
@@ -1771,7 +1792,7 @@ panel.
 | **Enregistrer** | non | nouvelle **version** du plan ; les précédentes restent consultables |
 | **Auditer** / **Prévisualiser** | non | `building.plan.audit` / `building.plan.preview` sur la version enregistrée ; le résultat s'affiche **dans le brouillon** |
 | **Générer** | non | `building.generate` sur la version enregistrée ; « Remplacer » n'est jamais coché d'office |
-| **Récupérer** | non | crée un brouillon depuis une action d'audit, d'aperçu ou de génération existante |
+| **Récupérer** | non | crée un brouillon depuis une action d'audit, d'aperçu ou de génération existante ; dans l'Atelier, après examen et toujours comme copie (#308) |
 | **Retirer de la liste** | non | archive le brouillon, sans rien effacer |
 
 Règles qui garantissent qu'aucun clic de navigation ne coûte un appel :

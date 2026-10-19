@@ -292,7 +292,7 @@ class WorkshopFlowTest {
         answer(store.action(auditId).orElseThrow(), AUDIT_OK);
         String page = get(project).body();
         String recovered = location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
-                + "&_action=recover&id=" + id(project) + "&action_id=" + auditId));
+                + "&_action=recover&id=" + id(project) + "&action_id=" + auditId + "&confirm=1"));
 
         gesture(get(recovered).body(), "generate");
 
@@ -612,14 +612,126 @@ class WorkshopFlowTest {
         answer(store.action(auditId).orElseThrow(), AUDIT_OK);
 
         String actionPage = get("/actions/" + auditId).body();
-        assertTrue(actionPage.contains("Reprendre ce plan"), excerpt(actionPage));
-        String recovered = location(post("/buildings/workshop/project", "_csrf=" + csrf(actionPage)
+        assertTrue(actionPage.contains("Examiner l&#39;import dans ce projet")
+                || actionPage.contains("Examiner l'import dans ce projet"), excerpt(actionPage));
+        // #308 : depuis la fiche d'action, on passe par l'examen ; seule la confirmation copie.
+        String examined = location(post("/buildings/workshop/project", "_csrf=" + csrf(actionPage)
                 + "&_action=recover&id=" + id(project) + "&action_id=" + auditId));
+        assertTrue(examined.contains("import=" + auditId), examined);
+        assertTrue(drafts().forProject(TestConfig.AGENT_ID, id(project)).isEmpty(), "rien copié sans confirmation");
+        String recovered = location(post("/buildings/workshop/project", "_csrf=" + csrf(actionPage)
+                + "&_action=recover&id=" + id(project) + "&action_id=" + auditId + "&confirm=1"));
 
         String main = mainCard(get(recovered).body());
         assertTrue(main.contains("Enregistrer dans la bibliothèque"), "le verdict d'origine est repris : " + main);
         assertEquals(0, aiCalls.get());
         assertTrue(get("/actions/" + auditId).body().contains("Retour à ce brouillon"));
+    }
+
+    // ---- #308 : historique du projet isolé, import d'ailleurs explicite ------------------------
+
+    /** Un projet neuf a un historique vide ; les plans orphelins de l'agent sont dans l'import, replié. */
+    @Test
+    void aNewProjectHasAnEmptyHistoryAndOrphanPlansStayInTheSeparateImport() throws Exception {
+        start();
+        String orphan = store.createAction(TestConfig.AGENT_ID, "building.plan.audit",
+                Map.of("plan", PLAN.replace("id: bibliotheque_v2", "id: bibliotheque_du_hub")), "owner");
+        answer(store.action(orphan).orElseThrow(), AUDIT_OK);
+        String project = createProject("Estrade d'Elias", BRIEF);
+
+        for (int pass = 0; pass < 2; pass++) {
+            String page = get(project).body();
+            String history = section(page, "id=\"ws-history\"");
+            assertTrue(history.contains("il est neuf"), history);
+            assertFalse(history.contains("bibliotheque_du_hub"), "un plan étranger n'est jamais dans l'historique");
+            String imports = section(page, "id=\"ws-import\"");
+            assertTrue(imports.contains("bibliotheque_du_hub"), imports);
+            assertTrue(imports.contains("Examiner avant import"), imports);
+            assertFalse(imports.startsWith("<details class=\"npc-registry\" id=\"ws-import\" open"),
+                    "l'import est replié par défaut");
+            assertTrue(drafts().forProject(TestConfig.AGENT_ID, id(project)).isEmpty());
+            restart();
+        }
+    }
+
+    /** L'examen montre provenance, dimensions, orientation et incompatibilités — sans rien écrire. */
+    @Test
+    void theImportPreviewShowsProvenanceAndConflictsWithoutWritingAnything() throws Exception {
+        start();
+        String auditId = store.createAction(TestConfig.AGENT_ID, "building.plan.audit",
+                Map.of("plan", PLAN.replace("front: WEST", "front: NORTH").replace("y: 14", "y: 30")), "owner");
+        String project = createProject("Estrade d'Elias", BRIEF);
+
+        String page = get(project + "&import=" + auditId).body();
+
+        String imports = section(page, "id=\"ws-import\"");
+        assertTrue(imports.contains("Examen avant import"), imports);
+        assertTrue(imports.contains("historique global"), imports);
+        assertTrue(imports.contains("19 × 30 × 19"), imports);
+        assertTrue(imports.contains("dépasse la hauteur maximale du projet (14)"), imports);
+        assertTrue(imports.contains("Entrée orientée NORTH ; le projet attend WEST."), imports);
+        assertTrue(imports.contains("Importer comme nouvelle version de ce projet"), imports);
+        assertTrue(drafts().forProject(TestConfig.AGENT_ID, id(project)).isEmpty(), "examiner n'écrit rien");
+        assertEquals(0, aiCalls.get());
+    }
+
+    /** Importer le plan d'un autre projet : une copie tracée ; la source et son verdict restent à elle. */
+    @Test
+    void importingFromAnotherProjectCopiesAndLeavesTheSourceUntouched() throws Exception {
+        start();
+        String lily = propose(createProject("Maison de Lily", BRIEF));
+        BuildingPlanDraft source = drafts().find(draftId(lily)).orElseThrow();
+        String auditId = latest("building.plan.audit").id();
+        assertEquals(source.id(), drafts().linkOf(auditId).orElseThrow().draftId());
+        int calls = aiCalls.get();
+        String estrade = createProject("Estrade d'Elias", "Une estrade simple en chêne.");
+
+        String preview = section(get(estrade + "&import=" + auditId).body(), "id=\"ws-import\"");
+        assertTrue(preview.contains("Maison de Lily"), "la provenance nomme le projet source : " + preview);
+        String page = get(estrade).body();
+        String copied = location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=recover&id=" + id(estrade) + "&action_id=" + auditId + "&confirm=1"));
+        String again = location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=recover&id=" + id(estrade) + "&action_id=" + auditId + "&confirm=1"));
+
+        BuildingPlanDraft copy = drafts().find(draftId(copied)).orElseThrow();
+        assertEquals(id(estrade), copy.projectId());
+        assertEquals(BuildingPlanDraft.Origin.RECOVERED, copy.origin());
+        assertEquals(source.plan(), copy.plan());
+        assertEquals(copy.id(), draftId(again), "un second import ramène à la même copie");
+        assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, id(estrade)).size());
+        BuildingPlanDraft after = drafts().find(source.id()).orElseThrow();
+        assertEquals(id(lily), after.projectId(), "la source ne change pas de projet");
+        assertEquals(source.version(), after.version());
+        assertEquals(source.id(), drafts().linkOf(auditId).orElseThrow().draftId(), "le verdict reste à la source");
+        assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, id(lily)).size());
+        assertTrue(get(estrade).body().contains("Une estrade simple en chêne."), "le brief de destination est gardé");
+        assertEquals(calls, aiCalls.get(), "aucun appel à l'IA");
+    }
+
+    /** Le serveur refuse le plan d'un autre agent, même avec un identifiant forgé. */
+    @Test
+    void aForeignAgentsPlanIsRefusedServerSide() throws Exception {
+        start();
+        String foreign = store.createAction("autre-agent", "building.plan.audit", Map.of("plan", PLAN), "owner");
+        String project = createProject("Estrade d'Elias", BRIEF);
+        String page = get(project).body();
+
+        String refused = location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=recover&id=" + id(project) + "&action_id=" + foreign + "&confirm=1"));
+
+        assertTrue(decoded(refused).contains("rien n'a été importé"), decoded(refused));
+        assertTrue(drafts().forProject(TestConfig.AGENT_ID, id(project)).isEmpty());
+        assertFalse(get(project + "&import=" + foreign).body().contains("Examen avant import"));
+    }
+
+    /** Le bloc {@code <details>} qui commence par {@code marker}. */
+    private static String section(String page, String marker) {
+        int at = page.indexOf(marker);
+        assertTrue(at > 0, "section introuvable : " + marker);
+        int start = page.lastIndexOf("<details", at);
+        int end = page.indexOf("</details>", at);
+        return page.substring(start, end);
     }
 
     @Test

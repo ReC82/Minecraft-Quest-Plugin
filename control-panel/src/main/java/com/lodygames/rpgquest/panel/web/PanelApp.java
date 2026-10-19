@@ -1381,16 +1381,26 @@ public final class PanelApp {
                 == com.lodygames.rpgquest.panel.building.CatalogState.State.UNKNOWN
                 && agentPages.buildingLibraryDirectory(agentId).find(project.get().buildingId()).isPresent();
         boolean ownBuilding = producedByProject(drafts, project.get().buildingId());
+        // #308 : l'import d'un plan étranger au projet — recherche et examen avant toute copie.
+        Map<String, String> q = "GET".equalsIgnoreCase(exchange.getRequestMethod()) ? Http.query(exchange) : Map.of();
+        String importQuery = q.getOrDefault("iq", "").trim();
+        String importId = q.getOrDefault("import", "").trim();
+        Optional<com.lodygames.rpgquest.panel.building.PlanImportPreview> importPreview =
+                importId.isEmpty() ? Optional.empty() : importPreview(agentId, project.get(), importId);
+        if (!importId.isEmpty() && importPreview.isEmpty() && (error == null || error.isBlank())) {
+            error = "L'action « " + importId + " » ne contient pas de plan de bâtiment de cet agent : "
+                    + "rien à importer.";
+        }
         var view = new WorkshopPages.ProjectView(session, agentId, project.get(), aiBuildingStudio.usableProviders(),
                 permissions.can(session.effective(), Permission.BUILDING_WRITE), drafts, draft,
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT),
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.PREVIEW),
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE),
                 draft == null ? List.of() : planDrafts.revisions(draft.id()),
-                planWorkbench.recoverable(agentId, 10), UUID.randomUUID().toString(), notice, error,
+                planWorkbench.recoverable(agentId, importQuery, 10), UUID.randomUUID().toString(), notice, error,
                 conflictText, idTaken, isoView, isoCut, designRuns.latest(project.get().id()),
                 referenceImages.list(project.get().id()), catalog, ownBuilding,
-                designDocs.history(project.get().id()), designText);
+                designDocs.history(project.get().id()), designText, importQuery, importPreview);
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -1991,42 +2001,73 @@ public final class PanelApp {
     }
 
     /**
-     * Reprendre le plan d'une action existante dans ce projet, <strong>sans appel à l'IA</strong>.
-     * Idempotent ; l'action d'origine est rattachée à la version créée, donc son verdict s'affiche.
+     * Ce que montre l'examen d'un import (#308) : la provenance et les incompatibilités du plan d'une
+     * action de cet agent. Vide si l'action n'existe pas, est d'un autre agent ou ne porte pas de plan.
+     */
+    private Optional<com.lodygames.rpgquest.panel.building.PlanImportPreview> importPreview(
+            String agentId, com.lodygames.rpgquest.panel.building.BuildingProject project, String actionId) {
+        Optional<AgentActionRow> row = agentStore.action(actionId).filter(r -> r.agentId().equals(agentId));
+        Optional<String> plan = row.flatMap(BuildingPlanWorkbench::planOf);
+        if (plan.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<BuildingPlanDraft> owner = planDrafts.linkOf(actionId).flatMap(l -> planDrafts.find(l.draftId()))
+                .or(() -> planDrafts.recoveredFrom(actionId));
+        Optional<com.lodygames.rpgquest.panel.building.BuildingProject> ownerProject = owner
+                .map(BuildingPlanDraft::projectId).filter(id -> !id.isEmpty()).flatMap(planProjects::find)
+                .filter(p -> p.agentId().equals(agentId));
+        return Optional.of(com.lodygames.rpgquest.panel.building.PlanImportPreview.of(row.get(), plan.get(),
+                project, owner, ownerProject, planDrafts.recoveredInto(project.id(), actionId)));
+    }
+
+    /**
+     * Importer dans ce projet le plan d'une action, <strong>sans appel à l'IA</strong> (#256, #308).
+     *
+     * <p>Sans {@code confirm=1}, rien n'est écrit : on renvoie vers l'examen (provenance, dimensions,
+     * incompatibilités). Confirmé, c'est toujours une <strong>copie</strong> — une nouvelle version
+     * de ce projet ; la source (action, brouillon, autre projet) n'est ni déplacée ni modifiée, et ni
+     * brief ni conception ne sont repris. Idempotent par projet. L'action n'est rattachée à la copie
+     * que si elle n'appartient encore à aucun brouillon : son verdict s'affiche alors.</p>
      */
     private PlanOutcome planRecover(Session session, String agentId,
                                     com.lodygames.rpgquest.panel.building.BuildingProject project,
                                     Map<String, String> f) {
         String actionId = f.getOrDefault("action_id", "").trim();
-        Optional<BuildingPlanDraft> already = planDrafts.recoveredFrom(actionId)
-                .or(() -> planDrafts.linkOf(actionId).flatMap(l -> planDrafts.find(l.draftId())));
-        if (already.isPresent()) {
-            BuildingPlanDraft d = already.get();
-            if (d.projectId().isEmpty()) {
-                planDrafts.attachDraft(d.id(), project.id());
-                d = planDrafts.find(d.id()).orElse(d);
-            }
-            return PlanOutcome.redirect(projectLocation(d.projectId(), d.id(),
-                    "Ce plan avait déjà été repris : le voici.", null));
-        }
-        Optional<AgentActionRow> row = actionId.isEmpty() ? Optional.empty()
-                : agentStore.action(actionId).filter(r -> r.agentId().equals(agentId));
-        Optional<String> plan = row.flatMap(BuildingPlanWorkbench::planOf);
-        if (plan.isEmpty()) {
+        var preview = actionId.isEmpty() ? Optional.<com.lodygames.rpgquest.panel.building.PlanImportPreview>empty()
+                : importPreview(agentId, project, actionId);
+        if (preview.isEmpty()) {
             return PlanOutcome.redirect(projectLocation(project.id(), "", null, "L'action « " + actionId
-                    + " » ne contient pas de plan de bâtiment : rien n'a été repris."));
+                    + " » ne contient pas de plan de bâtiment : rien n'a été importé."));
         }
-        BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId, "", plan.get(),
+        if (preview.get().ownedHere()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), preview.get().sourceDraftId(),
+                    "Ce plan est déjà une version de ce projet : le voici.", null));
+        }
+        if (!preview.get().importedDraftId().isEmpty()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), preview.get().importedDraftId(),
+                    "Ce plan avait déjà été importé dans ce projet : le voici.", null));
+        }
+        if (!"1".equals(f.getOrDefault("confirm", "").trim())) {
+            return PlanOutcome.redirect(WorkshopPages.BASE + "/project?id=" + enc(project.id()) + "&import="
+                    + enc(actionId) + "#ws-import");
+        }
+        AgentActionRow row = agentStore.action(actionId).orElseThrow();
+        String plan = BuildingPlanWorkbench.planOf(row).orElseThrow();
+        BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId, "", plan,
                 BuildingPlanDraft.Origin.RECOVERED, "", actionId, "", "", "", "", "", "", project.maxWidth(),
                 project.maxHeight(), session.username(), project.id()));
-        BuildingPlanDraftStore.Check.ofActionType(row.get().type())
-                .ifPresent(check -> planDrafts.link(created.id(), actionId, check, 1));
+        if (preview.get().sourceDraftId().isEmpty()) {
+            BuildingPlanDraftStore.Check.ofActionType(row.type())
+                    .ifPresent(check -> planDrafts.link(created.id(), actionId, check, 1));
+        }
         planProjects.touch(project.id(), session.username());
         audit.record(session.username(), "building.plan.draft.recover", "project=" + project.id() + " draft="
-                + created.id() + " action=" + actionId, "OK", "aucun appel IA",
+                + created.id() + " action=" + actionId + " source_draft=" + preview.get().sourceDraftId()
+                + " source_project=" + preview.get().sourceProjectId(), "OK", "copie, aucun appel IA",
                 UUID.randomUUID().toString().substring(0, 8));
         return PlanOutcome.redirect(projectLocation(project.id(), created.id(),
-                "Plan repris depuis l'historique — sans appel à l'IA.", null));
+                "Plan importé comme nouvelle version de ce projet — copie, source inchangée, sans appel à l'IA.",
+                null));
     }
 
     private PlanOutcome planArchive(Session session, com.lodygames.rpgquest.panel.building.BuildingProject project,

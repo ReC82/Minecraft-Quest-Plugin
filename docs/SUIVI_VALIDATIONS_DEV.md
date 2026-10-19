@@ -116,6 +116,14 @@
 
 **Réserve :** `item.catalogs` ne distingue pas encore tous les blocs posables parmi les objets ; le champ Bloc peut proposer aussi des objets non posables comme `DIAMOND_SWORD`. Une sélection admissible n'est donc pas une garantie complète de plaçabilité ; à auditer séparément si constat de validation erronée en jeu.
 
+## Livraison #308 — 19 octobre : historique Atelier et import explicite
+
+| Ticket / test | État DEV | Validation attendue |
+|---|---|---|
+| [#308](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/308) · **TC-366** | **Livré PlugAdmin DEV**, PR #601 merge `fb06e63`, CI verte ; **validation manuelle propriétaire en attente** | **Atelier → fiche de projet** : la section « Historique de ce projet » ne contient que les versions associées à son `project_id`. **Estrade d'Elias** comporte maintenant **9 versions propres** (pas un projet vide) ; aucune version de `bibliotheque_du_hub` ne doit y être confondue. Section séparée et repliée « Importer un plan d'un autre projet ou de l'historique global » ; recherche `biblio` et **« Examiner avant import » sans écriture** pour afficher provenance, dimensions, compatibilités ; **ne pas confirmer l'import juste pour tester l'aperçu**. Vérifier aussi l'historique isolé de Maison de Lily. Un import confirmé serait une copie traçable, jamais déplacement ni transfert du brief. Aucun appel IA ni écriture de contenu pendant la livraison. |
+ 
+**Limite #308 :** la recherche intégrée liste les plans orphelins de l'historique global ; l'import depuis **un autre projet** requiert encore l'identifiant de son action (champ ou lien de fiche d'action). Ne pas présenter cela comme un navigateur complet interprojets.
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

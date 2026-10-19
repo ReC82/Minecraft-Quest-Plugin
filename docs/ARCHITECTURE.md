@@ -1794,6 +1794,43 @@ sans corriger la logique fonctionnelle « à l'aveugle » (consigne explicite de
     test manuel « faire apparaître chaque variante »), pas un second chemin
     de spawn naturel.
 
+### Capacités composables (issue #542, socle de l'EPIC #540)
+
+Les points ci-dessus nommant `ExplosiveOnAttackAbilityService` et
+`SplitOnHitAbilityListener` décrivent l'état d'avant #542 ; leurs règles
+(population bornée, explosion réelle, profondeur en PDC) sont reprises
+telles quelles par les exécuteurs `mob.ability.*Executor`.
+
+-   **Un registre, une source** — `mob.ability.MobAbilityCatalog` porte,
+    pour chaque `MobAbilityType`, un `AbilityDescriptor` (libellé, résumé,
+    catégorie, statut, déclencheurs, paramètres typés et bornés
+    `AbilityParam`, préréglages Doux/Normal/Brutal, budget d'entités,
+    `WorldMutation.NONE`) et la conversion valeurs ↔ record. Parseur, rendu
+    disque et contrat #214 (`SpecialMobSchema`) en sont des vues ; le
+    `switch` de `entryFor` est exhaustif. Mode d'emploi :
+    `docs/development/ADDING_MOB_ABILITY.md`.
+-   **Format plat étendu, aucun fichier réécrit** (Q1 de #541) — champs
+    communs `enabled`, `chance`, `cooldown-seconds` au même niveau que
+    `type`, écrits seulement s'ils diffèrent du défaut (`AbilityOptions`).
+    `MobAbilityGoldenTest` vérifie que les profils livrés et de type DEV se
+    réécrivent octet pour octet.
+-   **Un seul moteur** — `AbilityEngine` (listener + une tâche d'1 s)
+    remplace cinq listeners/services et deux tâches. Il présente chaque
+    occasion (`AbilityTrigger`) aux instances actives
+    (`MobAbilityRules#activeAbilities` : activées, première de leur type)
+    dans l'ordre du profil, et tient lui-même délai et chance
+    (`AbilityContext#passesGate` / `#markActivated`). Les délais et
+    `CombatState` sont oubliés à la mort, au retrait du monde
+    (`EntityRemoveFromWorldEvent`) et à l'arrêt.
+-   **Politique centrale** — `AbilityWorldPolicy` : aucune apparition par
+    capacité dans le monde du Hub, un claim ou une zone qui interdit les
+    hostiles ; cibles = joueurs survie/aventure non PNJ. `AbilityLimits` :
+    3 renforts/s/monde, 32 actions en cours, une action par mob.
+-   **Règles de profil** (`MobAbilityRules`) — 5 capacités au plus, pas de
+    doublon, capacité « en développement » seulement hors tirage naturel ;
+    refus à l'import et à l'enregistrement PlugAdmin, simple avertissement
+    au chargement d'un ancien fichier.
+
 ## `progression` (XP RPG multi-compétences)
 
 -   **Le niveau n'est jamais persisté séparément de l'XP totale** —

@@ -120,6 +120,51 @@ max-population: 2      # limite le nombre d'individus vivants simultanément
     vanilla, jamais upgradées, donc jamais elles-mêmes capables de
     déclencher cette capacité (issue #171).
 
+### Champs communs et règles de composition (issue #542)
+
+Facultatifs, au même niveau que `type` dans chaque entrée ; absents = comportement d'avant #542, et
+ils ne sont écrits par PlugAdmin que s'ils diffèrent du défaut (un profil existant n'est jamais
+réécrit autrement) :
+
+| clé | défaut | rôle |
+|---|---|---|
+| `enabled` | `true` | `false` = capacité gardée avec ses réglages, jamais déclenchée |
+| `chance` | `1` | chance de se déclencher à chaque occasion, 0 exclu à 1 |
+| `cooldown-seconds` | `0` | secondes minimum entre deux déclenchements d'un même mob |
+
+Pour `SUMMON_ON_DAMAGE`, `chance` et `cooldown-seconds` restent **obligatoires** (même nom, même sens
+qu'avant). Nouveau réglage `despawn-with-owner` (défaut `false` : les renforts restent à la mort de
+l'invocateur, comme avant ; `true` : ils disparaissent avec lui).
+
+Règles : **5 capacités au plus** par profil, **chaque type une seule fois**. Un import ou un
+enregistrement PlugAdmin qui les enfreint est refusé ; un ancien fichier qui en contient en double se
+charge quand même (avertissement dans la console) et **seule la première instance agit** — y compris
+pour `STRONGER_EXPLOSION`, dont deux entrées se multipliaient avant (aucun profil livré n'en a deux).
+
+Sécurité (toutes capacités) : aucune apparition de renfort ou de division dans le monde du Hub, dans
+un claim ou dans une zone RPGQuest qui interdit les hostiles ; `EXPLOSIVE_ON_ATTACK` ne vise plus ni
+un PNJ ni un joueur en créatif ou spectateur ; au plus 3 renforts par seconde et par monde ; aucune
+capacité ne pose ni ne casse de bloc.
+
+```yaml
+abilities:
+  - type: ENRAGED
+    health-fraction: 0.3
+    speed-multiplier: 1.3
+    damage-multiplier: 1.5
+    cooldown-seconds: 0      # facultatif
+  - type: SUMMON_ON_DAMAGE
+    summon-entity-type: ZOMBIE
+    amount: 2
+    chance: 0.25
+    cooldown-seconds: 20
+    max-alive: 4
+    despawn-with-owner: true # facultatif (défaut false)
+    enabled: false           # gardée mais inactive
+```
+
+Ajouter un nouveau type de capacité : `docs/development/ADDING_MOB_ABILITY.md`.
+
 ## Tirage aléatoire Wild : throttle global (`mobs/spawn-settings.yml`)
 
 Fichier séparé, édité depuis le Control Panel (jamais à la main) — voir

@@ -6686,6 +6686,23 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-364 — Boss communautaires : « Près de » propose un joueur connecté dans le Wild (issue #169, retour du 19/10, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de la PR #582 sur **DEV** (plugin inchangé). Les étapes 1–3 ne font que lire :
+aucune apparition, aucun nettoyage.
+
+1.  Se connecter en jeu et aller dans le **Wild**. PlugAdmin → **Mobs spéciaux & boss → Boss communautaires** →
+    sous « Apparition de test », **Actualiser les joueurs connectés**. **Attendu** : la liste « Près de » propose
+    ton pseudo en plus de « N'importe où dans le Wild », et la phrase sous le champ dit « 1 joueur(s) dans le Wild
+    (monde « wild ») au relevé du … ».
+2.  Revenir au Hub, **Actualiser les joueurs connectés**. **Attendu** : ton pseudo n'est plus proposé ; la phrase
+    dit « Aucun joueur connecté dans le Wild » et « Hors du Wild, donc non proposés : <pseudo> (world_hub) ».
+3.  La page **Joueurs** et ce sélecteur montrent le même état (même relevé : « Actualiser » sur l'une met l'autre
+    à jour).
+4.  Reprise du test **#177** (distribution des récompenses), **directement à l'étape d'apparition ciblée** : de
+    retour dans le Wild, choisir ton pseudo dans « Près de » → **Apparition de test**. Les contrôles #177 déjà
+    réussis ne sont pas à refaire.
+
 ### TC-363 — Page Portails en lecture seule : hub_to_wild, hub_to_claims, gardes, diagnostics (issue #564, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de la PR de #564 sur **DEV**. Aucune action de cette page ne modifie un

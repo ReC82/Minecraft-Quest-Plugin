@@ -48,6 +48,7 @@ import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import com.lodygames.rpgquest.permission.RpgPermissions;
+import com.lodygames.rpgquest.variable.VariableTypes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -2909,12 +2910,18 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             }
             String key = args[4];
             resolveTargetPlayer(sender, args[3], (uuid, name) -> variableRepository.get(uuid, key)
-                    .thenAccept(opt -> runOnMainThread(() -> sender.sendMessage(MM.deserialize(
+                    .thenAccept(opt -> runOnMainThread(() -> {
+                        sender.sendMessage(MM.deserialize(
                             opt.isPresent()
                                     ? "<white><p></white> <gray>: variable</gray> <yellow><k></yellow> <gray>=</gray> <white><v></white>"
                                     : "<white><p></white> <gray>: variable</gray> <yellow><k></yellow> <gray>absente (équivaut à non définie).</gray>",
                             Placeholder.unparsed("p", name), Placeholder.unparsed("k", key),
-                            Placeholder.unparsed("v", opt.orElse(""))))))
+                            Placeholder.unparsed("v", opt.orElse(""))));
+                        // Issue #320 : une valeur stockée hors type est signalée, jamais corrigée.
+                        VariableTypes.storedValueDiagnostic(key, opt.orElse(null)).ifPresent(problem ->
+                                sender.sendMessage(MM.deserialize("<red><m></red>",
+                                        Placeholder.unparsed("m", problem))));
+                    }))
                     .exceptionally(error -> {
                         plugin.getSLF4JLogger().error("Échec de /rpgadmin player variable get {} {}", args[3], key, error);
                         runOnMainThread(() -> sender.sendMessage(MM.deserialize("<red>Échec (voir la console).</red>")));
@@ -2935,6 +2942,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             }
             String key = args[4];
             String value = args[5];
+            // Issue #320 : une variable connue du jeu n'accepte que son type ; la valeur antérieure reste.
+            Optional<String> typeProblem = VariableTypes.problem(key, value);
+            if (typeProblem.isPresent()) {
+                sender.sendMessage(MM.deserialize("<red><m></red> <gray>Rien n'a été écrit.</gray>",
+                        Placeholder.unparsed("m", typeProblem.get())));
+                return;
+            }
             resolveTargetPlayer(sender, args[3], (uuid, name) -> variableRepository.get(uuid, key)
                     .thenCompose(old -> variableRepository.set(uuid, key, value).thenApply(v -> old))
                     .thenAccept(old -> runOnMainThread(() -> {

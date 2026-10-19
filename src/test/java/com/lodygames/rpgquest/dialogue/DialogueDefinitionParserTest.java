@@ -248,6 +248,28 @@ class DialogueDefinitionParserTest {
     }
 
     @Test
+    void setVariableOnAKnownBooleanOnlyAcceptsTrueOrFalse() {
+        DialogueDefinitionParser.ParseResult bad = parser.parse("lasagne.yml", load(minimalDialogueWithChoice("""
+                      - text: "Choix"
+                        actions:
+                          - type: SET_VARIABLE
+                            key: CLAIM_TIER_1
+                            value: lasagne
+                """)));
+        assertFalse(bad.isSuccess(), "issue #320");
+        assertTrue(bad.issues().stream().anyMatch(i -> i.message().contains("true ou false")), () -> "issues: " + bad.issues());
+
+        DialogueDefinitionParser.ParseResult free = parser.parse("free.yml", load(minimalDialogueWithChoice("""
+                      - text: "Choix"
+                        actions:
+                          - type: SET_VARIABLE
+                            key: met_lily
+                            value: lasagne
+                """)));
+        assertTrue(free.isSuccess(), () -> "une variable narrative libre reste libre : " + free.issues());
+    }
+
+    @Test
     void giveStarterKitActionIsParsed() {
         DialogueDefinitionParser.ParseResult result = parser.parse("give-starter-kit.yml", load(minimalDialogueWithChoice("""
                       - text: "Demander mon kit de départ"

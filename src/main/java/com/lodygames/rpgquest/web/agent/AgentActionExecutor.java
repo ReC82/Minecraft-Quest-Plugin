@@ -7,6 +7,7 @@ import com.lodygames.rpgquest.encounter.EncounterTemplateParser;
 import com.lodygames.rpgquest.mob.community.CommunityBossSettings;
 import com.lodygames.rpgquest.player.PlayerResetService.ResetScope;
 import com.lodygames.rpgquest.quest.model.QuestState;
+import com.lodygames.rpgquest.variable.VariableTypes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -277,6 +278,16 @@ public final class AgentActionExecutor {
             String message = opt.isPresent()
                     ? name + " : " + key + " = " + value
                     : name + " : " + key + " absente (équivaut à non définie).";
+            // Issue #320 : une valeur stockée hors type est signalée, jamais corrigée en silence.
+            String expected = VariableTypes.expected(key);
+            if (!expected.isEmpty()) {
+                details.put("expected", expected);
+            }
+            Optional<String> invalid = VariableTypes.storedValueDiagnostic(key, value);
+            if (invalid.isPresent()) {
+                details.put("type_problem", invalid.get());
+                message = message + " — " + invalid.get();
+            }
             return AgentActionOutcome.success(action.id(), value, message, details);
         }));
     }

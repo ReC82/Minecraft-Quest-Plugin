@@ -32,6 +32,9 @@ class AgentActionExecutorTest {
         if (RONDOUDOU.equals(uuid) && "CLAIM_TIER_1".equals(key)) {
             return CompletableFuture.completedFuture(Optional.of("false"));
         }
+        if (RONDOUDOU.equals(uuid) && "CLAIM_TIER_2".equals(key)) {
+            return CompletableFuture.completedFuture(Optional.of("lasagne"));
+        }
         return CompletableFuture.completedFuture(Optional.empty());
     };
 
@@ -307,6 +310,19 @@ class AgentActionExecutorTest {
         assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
         assertEquals("false", outcome.value());
         assertEquals(Boolean.TRUE, outcome.details().get("present"));
+    }
+
+    @Test
+    void aStoredValueOutsideItsTypeIsReportedAsItIsWithoutCorrection() {
+        AgentActionOutcome outcome = run(new AgentAction("a7", "player.variable.get",
+                Map.of("player", "Rondoudou9000", "key", "CLAIM_TIER_2")));
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("lasagne", outcome.value(), "la valeur réelle est rendue telle quelle");
+        assertEquals("true ou false", outcome.details().get("expected"));
+        assertTrue(String.valueOf(outcome.details().get("type_problem")).contains("non débloquée"), "issue #320");
+        AgentActionOutcome valid = run(new AgentAction("a8", "player.variable.get",
+                Map.of("player", "Rondoudou9000", "key", "CLAIM_TIER_1")));
+        assertFalse(valid.details().containsKey("type_problem"));
     }
 
     @Test
@@ -1472,6 +1488,14 @@ class AgentActionExecutorTest {
                 Map.of("player", "Rondoudou9000", "key", "CLAIM_TIER_1", "value", "lasagne")));
         assertEquals(AgentActionOutcome.REJECTED, lasagne.status(), "issue #319");
         assertNull(actions.lastVariableValue, "rien n'est écrit");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("v3b", "player.variable.set",
+                Map.of("player", "Rondoudou9000", "key", "CLAIM_TIER_1", "value", "TRUE"))).status(), "issue #320");
+        assertNull(actions.lastVariableValue, "rien n'est écrit");
+        AgentActionOutcome free = run(new AgentAction("v3c", "player.variable.set",
+                Map.of("player", "Rondoudou9000", "key", "tutorial_started", "value", "lasagne")));
+        assertEquals(AgentActionOutcome.SUCCESS, free.status(), "variable libre : " + free.message());
+        assertEquals("lasagne", actions.lastVariableValue);
+        actions.lastVariableValue = null;
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("v4", "player.variable.set",
                 Map.of("player", "Rondoudou9000", "key", "STARTER_KIT_TIER", "value", "true"))).status());
         AgentActionOutcome ok = run(new AgentAction("v5", "player.variable.set",

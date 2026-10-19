@@ -25,6 +25,7 @@ import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.RewardType;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
+import com.lodygames.rpgquest.variable.VariableTypes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -618,6 +619,12 @@ final class QuestDefinitionParser {
                 }
                 if (value == null) {
                     errors.add(context + ": « value » est obligatoire.");
+                    yield null;
+                }
+                // Issue #320 : une variable connue du jeu (CLAIM_TIER_1…) n'accepte que son type.
+                Optional<String> typeProblem = VariableTypes.problem(key, value);
+                if (typeProblem.isPresent()) {
+                    errors.add(context + ": " + typeProblem.get());
                     yield null;
                 }
                 yield new VariableReward(key, value);

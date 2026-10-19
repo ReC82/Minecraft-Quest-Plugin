@@ -88,6 +88,14 @@
 
 **Séquence** : le chat de tests peut valider TC-362 sans mutation (simple rafraîchissement). TC-361 comporte des profils de démonstration et ne doit pas modifier les 8 profils courants. Conserver les validations antérieures et ne pas fermer les tickets avant preuve propriétaire.
 
+## Livraison #564 — 19 octobre : Portails en lecture seule
+
+| Ticket / test | État DEV | Validation et réserves |
+|---|---|---|
+| [#564](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/564) · **TC-363** | **Livré DEV, attente validation propriétaire** ; PR #579 merge `46c01a1` (JAR + PlugAdmin), correctif visuel PR #580 merge `209a5b2` (PlugAdmin) | PlugAdmin → **Monde → Portails** : deux fiches actives `hub_to_wild` et `hub_to_claims`, origine/destination réelles, stratégie RANDOM_SAFE ou CLAIM_HOME, gardes d'entrée et diagnostics ; vérifier lisibilité desktop/mobile, absence de boutons mutatifs, comparaison avertissement Wild en jeu et non-régression des deux passages. Relevé réel `portal.list` = 2 actifs, aucun problème. **Aucun portail de zone** sur DEV. **Ne pas modifier ni réinitialiser les portails existants.** #565–#570 restent bloqués par nouvel accord. |
+
+**Limite identifiée à surveiller dans les prochains lots :** `WorldPortalRegistry.portalAt` examine un portail avant son filtre `enabled` ; si deux zones se chevauchent, un portail désactivé peut masquer un portail actif. Le diagnostic de chevauchement est désormais exposé, mais le comportement n'est **pas corrigé** par #564. Ajouter un test de non-régression lors du lot mutatif #565, avant de permettre la création/activation de zones nouvelles. Aucun conflit observé sur DEV au dernier relevé.
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

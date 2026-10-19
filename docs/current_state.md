@@ -6,6 +6,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Page « Portails » en lecture seule (#564, 19/10/2026)** — PlugAdmin `/portals` (groupe « Monde »),
+> permission `PORTAL_READ`, action agent `portal.list` seule : world-portals (`hub_to_wild`, `hub_to_claims`)
+> et portails de zone (ancien format), zone, destination, arrivée RANDOM_SAFE / CLAIM_HOME, gardes Wild/Claims
+> appliqués, diagnostics. Aucune création, modification, activation ni téléportation. Pas de migration.
+
 > **Page « Mondes » en lecture seule (#560, 19/10/2026)** — PlugAdmin `/worlds` (groupe « Monde »,
 > avec Voyages), permission `WORLD_READ`, action agent `world.list` seule : mondes chargés ou connus de
 > Multiverse-Core (facultatif, `softdepend`), gestionnaire, rôle Hub/Wild/Claims, badge Essentiel,

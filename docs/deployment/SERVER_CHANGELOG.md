@@ -48,6 +48,31 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - PlugAdmin : page « Portails » en lecture seule (#564)
+
+### Changement
+
+JAR + PlugAdmin. Nouvelle action agent `portal.list` (lecture seule) et page `/portals`. **Pas de migration**,
+aucune clé de configuration, aucun fichier écrit sur le serveur ; `world-portals/hub_to_wild.yml` et
+`hub_to_claims.yml` sont seulement lus (en mémoire, par le registre déjà chargé).
+
+### Action serveur
+
+Remplacer le JAR RPGQuest et redéployer PlugAdmin. Ne toucher à aucun portail, monde, bâtiment ni donnée
+joueur.
+
+### Sauvegarde préalable
+
+JAR actuel (script de déploiement).
+
+### Validation
+
+PlugAdmin → Monde → Portails → Rafraîchir les portails : `hub_to_wild` et `hub_to_claims`, actifs, 0 problème.
+
+### Rollback
+
+Remettre le JAR précédent et redéployer PlugAdmin au commit précédent ; rien d'autre à défaire.
+
 ## 2026-10-19 - PlugAdmin : page « Mondes » en lecture seule (#560)
 
 ### Changement

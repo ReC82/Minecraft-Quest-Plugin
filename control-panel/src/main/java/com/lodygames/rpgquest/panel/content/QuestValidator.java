@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel.content;
 
+import com.lodygames.rpgquest.panel.agent.KnownVariableTypes;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -202,6 +203,11 @@ public final class QuestValidator {
             }
             if ("MONEY".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
                 moneyRewardWarnings(out, ctx, r.get("amount"));
+            }
+            if ("VARIABLE".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
+                // Issue #320 : une variable connue du jeu (CLAIM_TIER_1…) n'accepte que son type.
+                KnownVariableTypes.problem(r.getOrDefault("key", "").trim(), r.getOrDefault("value", ""))
+                        .ifPresent(problem -> out.add(Diagnostic.error(ctx, problem)));
             }
             if ("HEART".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
                 heartRewardChecks(out, ctx, r.get("amount"), r.get("key"));

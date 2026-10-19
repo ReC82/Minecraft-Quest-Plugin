@@ -30,6 +30,12 @@ repositories {
     maven("https://maven.enginehub.org/repo/") {
         name = "enginehub"
     }
+    // Multiverse-Core 5 : API en compileOnly, lecture seule des mondes (issue #560) — voir
+    // com.lodygames.rpgquest.world.multiverse.MultiverseWorldSource.
+    maven("https://repo.onarandombox.com/multiverse-releases") {
+        name = "multiverse"
+        content { includeGroup("org.mvplugins.multiverse.core") }
+    }
 }
 
 configurations {
@@ -78,6 +84,12 @@ dependencies {
     // plugin démarre et fonctionne normalement SANS LuckPerms, et le pont se déclare alors
     // indisponible avec son motif plutôt que d'échouer.
     compileOnly("net.luckperms:api:5.4")
+    // Issue #560 (#331-W1) — Multiverse-Core, version installée sur DEV. compileOnly STRICT et
+    // non transitif : fourni à l'exécution par le plugin s'il est installé (softdepend), jamais
+    // empaqueté. Tous les appels sont confinés à world.multiverse.MultiverseApiReader.
+    compileOnly("org.mvplugins.multiverse.core:multiverse-core:5.7.3") {
+        isTransitive = false
+    }
 
     // WorldEdit (issue #213, lot « placement ») : moteur de schematics, FOURNI PAR LE SERVEUR.
     // Version alignée sur celle réellement installée en DEV (7.4.1, vérifiée par `/version

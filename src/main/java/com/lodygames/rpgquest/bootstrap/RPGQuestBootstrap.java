@@ -1312,6 +1312,10 @@ public final class RPGQuestBootstrap {
                 task -> plugin.getServer().getScheduler().runTask(plugin, task),
                 System::currentTimeMillis, plugin.getLogger())));
         agentActions.setQuestCatalogs(questCatalogEngine);
+        // Issue #560 (#331-W1) : page Mondes en lecture seule. Multiverse-Core est facultatif ; absent,
+        // la source se déclare indisponible et seuls les mondes chargés sont décrits.
+        agentActions.setWorldSources(worldService, worldPortalRegistry, configService::current,
+                new com.lodygames.rpgquest.world.multiverse.MultiverseWorldSource());
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
         registry.start(new PlayerListenerService(plugin, operatorNotices));

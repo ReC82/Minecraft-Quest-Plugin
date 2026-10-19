@@ -1524,6 +1524,14 @@ public interface AgentActions {
                                List<String> customItems, List<MerchantPriceRefView> prices, String currency) {
     }
 
+    /**
+     * Mondes du serveur -- action {@code world.list} (issue #560). Lecture seule ; la vue est
+     * indisponible ({@code available=false}) sur un plugin qui ne sait pas la produire.
+     */
+    default CompletableFuture<com.lodygames.rpgquest.world.WorldOverview.View> worldList() {
+        return CompletableFuture.completedFuture(com.lodygames.rpgquest.world.WorldOverview.View.unavailable());
+    }
+
     default CompletableFuture<MerchantCatalogView> merchantCatalogStatus() {
         return CompletableFuture.completedFuture(new MerchantCatalogView(false, List.of(), List.of(), List.of(),
                 List.of(), ""));

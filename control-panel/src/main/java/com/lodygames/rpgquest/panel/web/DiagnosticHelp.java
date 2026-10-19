@@ -227,6 +227,62 @@ public final class DiagnosticHelp {
                 "Rien à faire si Multiverse-Core n'est pas utilisé sur ce serveur.", "mondes");
     }
 
+    // ---- Portails (issue #564, relevé portal.list) ----------------------------------
+    static {
+        add("PORTAL_FILE_SKIPPED", Level.ERROR, "Fichier de portail ignoré",
+                "{detail}",
+                "Ce portail n'existe pas en jeu : le fichier n'a pas pu être lu.",
+                "Corrigez le fichier indiqué (champ manquant, coordonnées min/max inversées, stratégie inconnue) sur le serveur, puis rechargez.", "portails");
+        add("PORTAL_DESTINATION_NOT_LOADED", Level.ERROR, "Monde de destination non chargé",
+                "{detail}",
+                "Un joueur qui entre dans ce portail n'est pas téléporté et reste sur place.",
+                "Chargez le monde d'arrivée (voir la page Mondes), ou désactivez le portail en attendant.", "portails");
+        add("PORTAL_SOURCE_NOT_LOADED", Level.WARNING, "Monde de départ non chargé",
+                "{detail}",
+                "Le portail existe mais aucun joueur ne peut l'atteindre.",
+                "Chargez le monde de départ, ou désactivez le portail.", "portails");
+        add("PORTAL_DUPLICATE_ID", Level.ERROR, "Identifiant de portail en double",
+                "{detail}",
+                "Les commandes n'atteignent que le premier fichier ; chaque zone reste pourtant active en jeu.",
+                "Gardez un seul fichier par identifiant sur le serveur (ne rien supprimer sans décision du propriétaire).", "portails");
+        add("PORTAL_OVERLAP", Level.WARNING, "Zones de portail superposées",
+                "{detail}",
+                "Là où les zones se recouvrent, un seul portail est consulté — même s'il est désactivé.",
+                "Séparez les zones d'activation des deux portails.", "portails");
+        add("PORTAL_OVERLAP_ENGINES", Level.WARNING, "Portail de zone superposé",
+                "{detail}",
+                "Un joueur peut déclencher à la fois le portail entre mondes et le portail de zone.",
+                "Séparez les deux zones d'activation.", "portails");
+        add("PORTAL_FILE_NAME_MISMATCH", Level.WARNING, "Nom de fichier et identifiant différents",
+                "{detail}",
+                "Activer, désactiver ou supprimer ce portail par commande viserait un autre fichier.",
+                "Renommez le fichier en <identifiant>.yml sur le serveur, lors d'une maintenance.", "portails");
+        add("PORTAL_CLAIM_HOME_OUTSIDE_CLAIMS", Level.WARNING, "Arrivée sur claim hors du monde des claims",
+                "{detail}",
+                "Le garde d'accès aux Claims (palier et Pierre de retour) ne s'applique pas à ce portail.",
+                "Faites mener ce portail au monde des claims, ou choisissez une autre arrivée.", "portails");
+        add("PORTAL_ZONE_DESTINATION_UNKNOWN", Level.ERROR, "Destination de portail inconnue",
+                "{detail}",
+                "La téléportation échoue : la destination nommée n'existe pas.",
+                "Créez la destination (/rpgadmin destination) ou corrigez le portail.", "portails");
+        add("PORTAL_ZONE_NO_DESTINATION", Level.WARNING, "Portail sans destination",
+                "{detail}",
+                "Le portail ne téléporte personne.",
+                "Reliez une destination au portail (/rpgadmin portal).", "portails");
+        add("PORTAL_DISABLED", Level.INFO, "Portail désactivé",
+                "{detail}",
+                "Entrer dans sa zone ne téléporte personne.",
+                "Rien à faire si c'est voulu.", "portails");
+        add("PORTAL_SAME_WORLD", Level.INFO, "Portail vers son propre monde",
+                "{detail}",
+                "Le joueur reste dans le même monde.",
+                "Rien à faire si c'est voulu.", "portails");
+        add("PORTAL_LEGACY_FORMAT", Level.INFO, "Portail de zone (ancien format)",
+                "{detail}",
+                "Ce portail fonctionne ; il rejoindra le format unique des portails dans un lot ultérieur.",
+                "Rien à faire pour l'instant.", "portails");
+    }
+
     private DiagnosticHelp() {
     }
 

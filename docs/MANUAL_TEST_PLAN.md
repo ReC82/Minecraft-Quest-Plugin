@@ -6686,6 +6686,25 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-363 — Page Portails en lecture seule : hub_to_wild, hub_to_claims, gardes, diagnostics (issue #564, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de la PR de #564 sur **DEV**. Aucune action de cette page ne modifie un
+portail ni ne téléporte : on peut tout essayer.
+
+1.  PlugAdmin → **Monde → Portails** → **Rafraîchir les portails**. **Attendu** : 2 cartes, `hub_to_claims` et
+    `hub_to_wild`, « Actif », 0 problème, aucune carte « Ancien format » (aucun portail de zone sur DEV).
+2.  `hub_to_wild` : départ `world_hub` 737, 66, -673 → 740, 69, -673 ; arrivée `wild` · point sûr aléatoire ;
+    pastille **Avertissement Wild**. `hub_to_claims` : 730, 66, -676 → 732, 69, -676 ; `claims` · claim du joueur,
+    sinon point sûr ; pastille **Accès Claims + retour**.
+3.  Fiche `hub_to_wild` : rayon 500–5000 et 20 tentatives (ou les valeurs de `travel.random-safe-arrival` de DEV),
+    textes de l'avertissement identiques à la fenêtre vue en jeu en entrant dans le portail ; le lien `wild`
+    ouvre la fiche du monde dans **Mondes**.
+4.  Fiche `hub_to_claims` : règles CLAIM_TIER_1 / claim principal, Pierre de retour, OP sans effet hors bypass.
+5.  Non-régression en jeu : traverser `hub_to_wild` (avertissement, puis Wild) et `hub_to_claims` (refus sans
+    palier, ou arrivée sur son claim) — comportement identique à avant.
+6.  Vérifier qu'aucun bouton ne crée, ne modifie, n'active ni ne téléporte (carte et fiche) ; téléphone (390 px)
+    lisible, sans défilement horizontal de la page.
+
 ### TC-362 — Page Mondes en lecture seule : six mondes, gestionnaires, rôles, éléments liés (issue #560, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de la PR de #560 sur **DEV**. Aucune action de cette page ne modifie un

@@ -44,7 +44,7 @@ public enum Role {
     ADMIN("Administrateur", EnumSet.of(
             Permission.DASHBOARD_VIEW,
             Permission.PLAYERS_READ, Permission.PLAYER_MODERATE, Permission.PLAYER_BUILD_WRITE,
-            Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
+            Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
             // Issue #156 : débloquer une instance du Hub restée sans borne est un geste
             // d'exploitation ciblé, pas une modification de l'équilibrage du réseau.
             Permission.TRAVEL_PAIR_WRITE, Permission.WAYPOINT_WRITE,
@@ -82,7 +82,7 @@ public enum Role {
             Permission.SETTINGS_READ, Permission.SETTINGS_WRITE)),
 
     TESTER("Testeur", EnumSet.of(
-            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ,
+            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET,
@@ -97,7 +97,7 @@ public enum Role {
             Permission.BUILDING_READ)),
 
     BUILDER("Builder", EnumSet.of(
-            Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.CONTENT_READ,
+            Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ, Permission.CONTENT_READ,
             Permission.DIAGNOSTICS_READ, Permission.DOCS_READ, Permission.MOB_READ,
             // Issue #213 : un emplacement de construction est un repère de construction — c'est
             // exactement ce que ce rôle a besoin de consulter. Lecture seule : il ne renomme ni ne
@@ -114,7 +114,7 @@ public enum Role {
             Permission.ACTION_CONTENT_RELOAD, Permission.MOB_READ, Permission.MOB_WRITE)),
 
     READ_ONLY("Lecture seule", EnumSet.of(
-            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ,
+            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ, Permission.MOB_READ,
             // Issue #95 : l'état synthétique, oui ; la console, non — elle est plus bavarde

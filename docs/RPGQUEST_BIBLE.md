@@ -4658,6 +4658,30 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
 | Cooldown persisté | Oui (par joueur/portail, SQLite `portal_cooldowns`, migration V6) | Non documenté dans le code lu — aucun cooldown constaté dans `WorldPortalDefinition` |
 | Fichiers | `plugins/RPGQuest/portals/<id>.yml` + `plugins/RPGQuest/destinations/<id>.yml` | `plugins/RPGQuest/world-portals/<id>.yml` (registre `WorldPortalRegistry`) |
 
+### Page PlugAdmin « Portails » en lecture seule (issue #564, #228-P1)
+
+- **Monde → Portails** (`/portals`), permission panel `PORTAL_READ` (Propriétaire, Administrateur,
+  Testeur, Builder, Lecture seule). Une seule action agent : `portal.list` (« Rafraîchir les
+  portails »), **lecture seule** — aucune action `portal.*` ne crée, ne modifie, n'active ni ne
+  téléporte ; aucun bouton mutatif, même désactivé.
+- Un seul modèle (`travel.PortalOverview`) pour les deux systèmes ci-dessus : portails simples
+  (`world-portals/`, ceux de DEV : `hub_to_wild`, `hub_to_claims`) puis portails classiques
+  (`portals/`), marqués **Ancien format** (décision Q2 de l'étude #331/#228).
+- Par portail : id, nom affiché **déduit** de la destination (aucun nom stocké), actif/désactivé,
+  fichier, monde de départ et rôle, coins min/max et taille de la zone, monde d'arrivée (chargé ou
+  non, lien `/worlds`), arrivée et ses réglages (`travel.random-safe-arrival` pour `RANDOM_SAFE`,
+  `claims.arrival.*` + 40 tentatives pour `CLAIM_HOME`), déclenchement, **gardes réellement
+  appliqués** (avertissement Wild avec ses textes actuels si la destination est exactement
+  `travel.wild-world` ; accès Claims + Pierre de retour si elle est exactement `claims.world` — même
+  prédicat `appliesTo` que les gardes en jeu), conditions d'un portail classique.
+- Diagnostics (`/docs/portails`) : `PORTAL_FILE_SKIPPED` (fichier ignoré au chargement, désormais
+  relevé par `WorldPortalRegistry.skippedFiles()` sans changer ce qui est chargé),
+  `PORTAL_DESTINATION_NOT_LOADED`, `PORTAL_SOURCE_NOT_LOADED`, `PORTAL_DUPLICATE_ID`, `PORTAL_OVERLAP`
+  (seul le premier fichier par ordre alphabétique est consulté, même désactivé), `PORTAL_OVERLAP_ENGINES`,
+  `PORTAL_FILE_NAME_MISMATCH`, `PORTAL_CLAIM_HOME_OUTSIDE_CLAIMS`, `PORTAL_ZONE_DESTINATION_UNKNOWN`,
+  `PORTAL_ZONE_NO_DESTINATION`, `PORTAL_DISABLED`, `PORTAL_SAME_WORLD`, `PORTAL_LEGACY_FORMAT`.
+- Téléportations, avertissements et conditions d'accès **inchangés** (tests de non-régression).
+
 ### `/rpgadmin portal` — commandes
 Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.md](TRAVEL.md). Page docs-site : aucune.
 

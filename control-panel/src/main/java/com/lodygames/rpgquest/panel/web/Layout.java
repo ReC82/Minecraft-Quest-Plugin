@@ -41,9 +41,10 @@ public final class Layout {
                         new NavItem("Agents", "/agents", "agents", Permission.DIAGNOSTICS_READ, true),
                         new NavItem("Historique", "/actions", "history", Permission.DIAGNOSTICS_READ, true))),
                 // Issue #560 (#331-W1) — groupe « Monde » de l'étude #331/#228 : Mondes, puis Voyages
-                // (déplacé, même URL). Portails rejoindra ce groupe avec #564.
+                // (déplacé, même URL), et Portails (#564, lecture seule).
                 new NavGroup("Monde", List.of(
                         new NavItem("Mondes", "/worlds", "world", Permission.WORLD_READ, true),
+                        new NavItem("Portails", "/portals", "portal", Permission.PORTAL_READ, true),
                         new NavItem("Voyages", "/travel", "travel", Permission.TRAVEL_READ, true))),
                 new NavGroup("RPGQuest", List.of(
                         new NavItem("Joueurs", "/players", "players", Permission.PLAYERS_READ, true),

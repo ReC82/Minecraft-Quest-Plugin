@@ -52,6 +52,12 @@ public enum Permission {
      * éléments liés. Ne permet ni de créer, ni de charger, ni de décharger, ni de régler un monde.
      */
     WORLD_READ,
+    /**
+     * Consultation lecture seule des portails (issue #564, #228-P1) : zone, destination, arrivée,
+     * gardes Wild/Claims et diagnostics. Ne permet ni de créer, ni de modifier, ni d'activer, ni de
+     * tester un portail.
+     */
+    PORTAL_READ,
     /** Consultation des profils de mob spécial/boss + throttle Wild (issue #169). */
     MOB_READ,
     /** Créer/modifier/activer-désactiver un profil de mob spécial/boss, régler le throttle Wild (issue #169). */

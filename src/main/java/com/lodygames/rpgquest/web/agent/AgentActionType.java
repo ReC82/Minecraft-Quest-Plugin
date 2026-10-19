@@ -603,7 +603,14 @@ public enum AgentActionType {
      * rôle Hub/Wild/Claims, mondes essentiels, éléments liés et problèmes. Lecture seule : aucune
      * création, aucun chargement, aucun déchargement, aucun réglage.
      */
-    WORLD_LIST("world.list");
+    WORLD_LIST("world.list"),
+    /**
+     * Issue #564 (#228-P1) — tous les portails (entre mondes {@code world-portals/} et de zone
+     * {@code portals/}, ancien format), zone, destination, stratégie d'arrivée, gardes Wild/Claims
+     * réellement appliqués et diagnostics. Lecture seule : rien n'est créé, modifié, activé ni
+     * téléporté.
+     */
+    PORTAL_LIST("portal.list");
 
     private final String wire;
 

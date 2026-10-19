@@ -288,4 +288,22 @@ class WorldPortalRegistryTest {
             throw new RuntimeException(e);
         }
     }
+
+    @Test
+    void reloadReportsSourceFilesAndSkippedFilesWithoutChangingWhatIsLoaded() throws IOException {
+        Path dir = tempDir.resolve("world-portals");
+        Files.writeString(dir.resolve("a_hub_to_wild.yml"), String.join("\n", "id: hub_to_wild", "world: world_hub",
+                "min: {x: 1, y: 2, z: 3}", "max: {x: 4, y: 5, z: 6}", "destination-world: wild"));
+        Files.writeString(dir.resolve("broken.yml"), String.join("\n", "id: broken", "world: world_hub",
+                "min: {x: 9, y: 2, z: 3}", "max: {x: 4, y: 5, z: 6}", "destination-world: wild"));
+        Files.writeString(dir.resolve("no_dest.yml"), String.join("\n", "id: no_dest", "world: world_hub"));
+
+        registry.reload();
+
+        assertEquals(1, registry.portals().size(), "les fichiers invalides restent ignorés, comme avant");
+        assertEquals(java.util.List.of("a_hub_to_wild.yml"), registry.sourceFiles());
+        assertEquals(java.util.List.of("broken.yml", "no_dest.yml"),
+                registry.skippedFiles().stream().map(PortalLoadIssue::file).toList());
+        assertTrue(registry.skippedFiles().get(1).message().contains("destination-world"));
+    }
 }

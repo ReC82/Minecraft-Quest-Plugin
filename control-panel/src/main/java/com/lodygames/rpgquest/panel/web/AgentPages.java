@@ -11155,6 +11155,22 @@ public final class AgentPages {
                 row.map(r -> when(at(r))).orElse(""), str(q.get("world")).trim()));
     }
 
+    /** Page {@code /portals} (issue #564) : lecture seule, rendu dans {@link PortalPages}. */
+    public String portals(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        if (agent.isEmpty()) {
+            return PortalPages.render(new PortalPages.View("", null, noAgent(), "", "", ""));
+        }
+        String agentId = agent.get().id();
+        Optional<AgentActionRow> row = store.latestSuccessfulActionOfType(agentId, "portal.list");
+        Map<String, Object> details = row.flatMap(this::detailsOf).orElse(null);
+        String header = agentPicker(agentId, PortalPages.PATH, "")
+                + listCatbar("Portails", compactRefresh(session, agentId, "portal.list", "Rafraîchir les portails",
+                details == null ? "btn-warning" : "btn-outline-primary", PortalPages.PATH));
+        return PortalPages.render(new PortalPages.View(agentId, details, header,
+                row.map(r -> when(at(r))).orElse(""), str(q.get("portal")).trim(), str(q.get("file")).trim()));
+    }
+
     /** Objets (Minecraft + RPGQuest), prix du catalogue central et quêtes, pour les champs de saisie. */
     private String merchantDatalists(String agentId, Map<String, Object> d) {
         StringBuilder sb = new StringBuilder("<datalist id=\"dl-merchant-items\">");

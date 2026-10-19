@@ -6848,8 +6848,10 @@ Prérequis : JAR et PlugAdmin issus de #461 sur **DEV**. Ne lance aucun boss.
 2.  « Modèles, IA et import de fichier » → « Boss communautaire » : copier le prompt dans une IA, demander
     « Crée un boss zombie d'entraînement facile : id boss_zombie_entrainement, nom Zombie d'entraînement,
     20 PV, 2 dégâts, vitesse 0,20, monde wild, aucune capacité, aucune récompense ».
-3.  Coller la réponse dans l'étape 3, « Vérifier ». **Attendu** : « Nouveau profil », fichier exact affiché,
-    aucune erreur ; « Créer ce profil » → toast réussi, profil dans la liste, **aucun boss apparu**.
+3.  Coller la réponse dans l'étape 3, « Vérifier ». **Attendu** (correctif du 19/10) : le bouton se grise
+    (« Envoi en cours… »), « Vérification en cours » puis, **sans recharger ni cliquer**, le résultat
+    s'affiche seul en quelques secondes ; un double clic ne crée qu'une vérification. Puis « Nouveau profil »,
+    fichier exact affiché, aucune erreur ; « Créer ce profil » → toast réussi, profil dans la liste, **aucun boss apparu**.
 4.  Réimporter le même fichier avec `health: 40`. **Attendu** : différences `health 20.0 → 40.0`, case
     « remplacer » obligatoire ; « Annuler » ne change rien ; confirmer remplace (sauvegarde `mob-backups/`).
 5.  Ajouter `fly-speed: 3` au fichier. **Attendu** : refus lisible « Propriété inconnue », rien d'écrit.

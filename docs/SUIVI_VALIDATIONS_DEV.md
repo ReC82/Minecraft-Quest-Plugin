@@ -124,6 +124,12 @@
  
 **Limite #308 :** la recherche intégrée liste les plans orphelins de l'historique global ; l'import depuis **un autre projet** requiert encore l'identifiant de son action (champ ou lien de fiche d'action). Ne pas présenter cela comme un navigateur complet interprojets.
 
+## Livraison #128 — 19 octobre : attente de resynchronisation visible
+
+| Ticket / test | État DEV | Validation attendue |
+|---|---|---|
+| [#128](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/128) · **TC-367** | **Livré PlugAdmin DEV**, PR #604 merge 7053211, CI verte ; **validation navigateur propriétaire en attente** | Après une mutation réversible d'un PNJ : toast conservé « Modification enregistrée. Mise à jour de l'affichage en cours… » jusqu'au rechargement automatique, puis toast unique « Affichage à jour » ; F5 ne rejoue pas le message ; cas délai dépassé (30 s) et panel injoignable avec « Réessayer » ; pas de bruit des actions automatiques dans la cloche ; page Exploitation exclue. Tester ordinateur + téléphone sans modifier de PNJ critique. **Limite : « Affichage à jour » signifie file au repos, pas vérification explicite de la nouvelle donnée dans le catalogue.** |
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

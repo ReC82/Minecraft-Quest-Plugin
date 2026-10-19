@@ -3764,9 +3764,7 @@ public final class AgentPages {
         }
         sb.append(Ui.searchToolbar("cities", "Rechercher une ville (nom, monde, identifiant)…", ""));
 
-        List<String> onlinePlayers = latestDetails(agentId, "player.list")
-                .map(x -> asList(x.get("players"))).orElse(List.of())
-                .stream().map(o -> str(asMap(o).get("name"))).filter(s -> !s.isEmpty()).toList();
+        List<String> onlinePlayers = onlinePlayers(agentId).names();
         List<com.lodygames.rpgquest.panel.content.SourceCatalog.QuestSource> sourceQuests = sourceCatalog.quests();
         Map<String, String> npcChoices = cityNpcChoices(agentId);
         if (canWrite) {
@@ -9900,6 +9898,36 @@ public final class AgentPages {
                 .flatMap(this::detailsOf);
     }
 
+    /**
+     * Issue #169 (19/10) : joueurs connectés d'après le relevé le plus récent, celui de la page Joueurs
+     * ({@code player.catalog}) ou {@code player.list}, rangés dans / hors du monde Wild du heartbeat.
+     */
+    private OnlinePlayers onlinePlayers(String agentId) {
+        return OnlinePlayers.of(reading(agentId, "player.catalog"), reading(agentId, "player.list"),
+                heartbeatWorldName(agentId, "wild"));
+    }
+
+    private OnlinePlayers.Reading reading(String agentId, String type) {
+        return store.latestSuccessfulActionOfType(agentId, type)
+                .flatMap(row -> detailsOf(row).map(d -> new OnlinePlayers.Reading(d, at(row))))
+                .orElse(null);
+    }
+
+    /** Nom du monde tenant ce rôle ({@code hub}, {@code claims}, {@code wild}) dans le dernier heartbeat. */
+    private String heartbeatWorldName(String agentId, String role) {
+        return store.latestHeartbeat(agentId).map(hb -> {
+            String worldsJson = hb.worldsJson();
+            if (worldsJson == null || worldsJson.isBlank()) {
+                return "";
+            }
+            try {
+                return cleanName(asMap(Json.parseObject(worldsJson).get(role)).get("name"));
+            } catch (RuntimeException e) {
+                return "";
+            }
+        }).orElse("");
+    }
+
     private Optional<AgentActionRow> latestForPlayer(String agentId, String type, String player) {
         // Issue #317 : la dernière action de CE type pour CE joueur. Se contenter de la dernière du
         // type (puis filtrer) cachait le résultat d'un joueur dès qu'un autre en avait un plus récent.
@@ -10371,14 +10399,12 @@ public final class AgentPages {
             sb.append(Ui.banner("warning", "<strong>Profils rejetés au chargement :</strong>" + issues));
         });
         sb.append(mobsTabs(agentId, view));
-        List<String> onlinePlayers = latestDetails(agentId, "player.list")
-                .map(x -> asList(x.get("players"))).orElse(List.of())
-                .stream().map(o -> str(asMap(o).get("name"))).filter(n -> !n.isEmpty()).toList();
+        OnlinePlayers online = onlinePlayers(agentId);
         switch (view) {
             case MOBS_COMMUNITY_PATH -> sb.append(communityBossSection(session, agentId, canWrite, canTest,
-                    onlinePlayers, community));
+                    online, community));
             case MOBS_SPAWNS_PATH -> sb.append(mobSpawnsView(session, agentId, canWrite, mobList));
-            default -> sb.append(mobProfilesView(session, agentId, canWrite, canTest, onlinePlayers, mobList));
+            default -> sb.append(mobProfilesView(session, agentId, canWrite, canTest, online.names(), mobList));
         }
         return sb.toString();
     }
@@ -10617,7 +10643,7 @@ public final class AgentPages {
      * repliés (#169). Rien n'est inventé : sans relevé {@code boss.community.status}, la vue invite à le charger.
      */
     private String communityBossSection(Session session, String agentId, boolean canWrite, boolean canTest,
-                                        List<String> onlinePlayers, Optional<Map<String, Object>> loaded) {
+                                        OnlinePlayers onlinePlayers, Optional<Map<String, Object>> loaded) {
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"mob-toolbar\"><div class=\"mob-toolbar-main\"><span class=\"npc-catbar-t\">"
                         + "Boss communautaires du Wild</span></div><div class=\"mob-toolbar-side\">")
@@ -12582,7 +12608,7 @@ public final class AgentPages {
     }
 
     private String communityBossTestForm(Session session, String agentId, List<Object> profiles,
-                                         List<String> onlinePlayers) {
+                                         OnlinePlayers onlinePlayers) {
         StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form mt-4\">");
         sb.append(hiddenActionFields(session, agentId, "boss.community.test.spawn"));
         sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
@@ -12601,10 +12627,11 @@ public final class AgentPages {
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"cb-t-pl\">Près de</label>")
                 .append("<select class=\"form-select\" id=\"cb-t-pl\" name=\"player\">")
                 .append("<option value=\"\">N'importe où dans le Wild (comme le serveur)</option>");
-        for (String p : onlinePlayers) {
-            sb.append("<option value=\"").append(Http.esc(p)).append("\">").append(Http.esc(p)).append("</option>");
+        for (OnlinePlayers.Player p : onlinePlayers.inWild()) {
+            sb.append("<option value=\"").append(Http.esc(p.name())).append("\">").append(Http.esc(p.name()))
+                    .append("</option>");
         }
-        sb.append("</select></div>");
+        sb.append("</select>").append(nearPlayerHelp(onlinePlayers)).append("</div>");
         sb.append("<div class=\"form-text mb-2\">Fait apparaître un boss <strong>tout de suite</strong>, avec la "
                 + "vraie annonce (marquée « test »). Ne change pas l'heure du prochain essai automatique et ne compte "
                 + "pas dans le maximum. « N'importe où » : comme le serveur, à 40–96 blocs d'un waypoint du Wild, "
@@ -12612,7 +12639,49 @@ public final class AgentPages {
                 + "connecté et dans le Wild.</div>");
         sb.append("</div><button class=\"btn btn-outline-primary\" type=\"submit\">").append(Icons.icon("target"))
                 .append("Apparition de test</button></form>");
+        // Formulaire à part (jamais imbriqué) : même relevé que la page Joueurs.
+        sb.append("<div class=\"mt-2\">").append(compactRefresh(session, agentId, "player.catalog",
+                "Actualiser les joueurs connectés", "secondary sm", MOBS_COMMUNITY_PATH)).append("</div>");
         return sb.toString();
+    }
+
+    /**
+     * Issue #169 (19/10) : dit pourquoi « Près de » ne propose personne, ou qui reste hors du Wild, et
+     * de quand date la liste — elle ne se met à jour qu'au relevé suivant.
+     */
+    private static String nearPlayerHelp(OnlinePlayers online) {
+        StringBuilder sb = new StringBuilder("<div class=\"form-text\" data-near-players>");
+        if (!online.loaded()) {
+            return sb.append("Liste des joueurs connectés pas encore chargée : cliquer sur « Actualiser les "
+                    + "joueurs connectés » ci-dessous (ou « Actualiser » sur la page Joueurs).</div>").toString();
+        }
+        String wild = online.wildKnown() ? "le Wild (monde « " + Http.esc(online.wildWorld()) + " »)" : "le Wild";
+        List<OnlinePlayers.Player> inWild = online.inWild();
+        if (online.players().isEmpty()) {
+            sb.append("Aucun joueur n'était connecté au relevé du ").append(when(online.at())).append(".");
+        } else if (inWild.isEmpty()) {
+            sb.append("Aucun joueur connecté dans ").append(wild).append(" au relevé du ")
+                    .append(when(online.at())).append(".");
+        } else {
+            sb.append(inWild.size()).append(" joueur(s) dans ").append(wild).append(" au relevé du ")
+                    .append(when(online.at())).append(".");
+        }
+        List<OnlinePlayers.Player> outside = online.outsideWild();
+        if (!outside.isEmpty()) {
+            sb.append(" Hors du Wild, donc non proposés : ");
+            for (int i = 0; i < outside.size(); i++) {
+                OnlinePlayers.Player p = outside.get(i);
+                sb.append(i == 0 ? "" : ", ").append(Http.esc(p.name())).append(" (")
+                        .append(p.world().isEmpty() ? "monde inconnu" : Http.esc(p.world())).append(")");
+            }
+            sb.append(".");
+        }
+        if (!online.wildKnown()) {
+            sb.append(" Le monde Wild n'est pas encore connu (aucun heartbeat lu) : tous les connectés sont "
+                    + "proposés et le serveur refusera un joueur hors du Wild.");
+        }
+        return sb.append(" La liste ne se met pas à jour toute seule : « Actualiser les joueurs connectés » "
+                + "après une connexion ou un changement de monde.</div>").toString();
     }
 
     private String communityBossRemoveForm(Session session, String agentId, String target, String label,

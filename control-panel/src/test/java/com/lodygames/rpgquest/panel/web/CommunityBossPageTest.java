@@ -165,6 +165,48 @@ class CommunityBossPageTest {
     }
 
     @Test
+    void nearPlayerOffersAnOnlinePlayerFromThePlayersPageReadingInTheWild() throws Exception {
+        start();
+        login();
+        runAction("boss.community.status", STATUS);
+        runAction("player.catalog", "{\"players\":[{\"uuid\":\"u1\",\"name\":\"LoDyMcFly\",\"online\":true,"
+                + "\"world\":\"wild\"},{\"uuid\":\"u2\",\"name\":\"Bob\",\"online\":true,\"world\":\"world_hub\"},"
+                + "{\"uuid\":\"u3\",\"name\":\"Carol\",\"online\":false}]}");
+        String page = get("/mobs/community?agent=" + TestConfig.AGENT_ID).body();
+        String select = page.substring(page.indexOf("id=\"cb-t-pl\""), page.indexOf("</select>", page.indexOf("id=\"cb-t-pl\"")));
+
+        assertTrue(select.contains("<option value=\"LoDyMcFly\">"), "joueur en ligne dans le Wild proposé");
+        assertFalse(select.contains("Bob"), "joueur hors du Wild non proposé");
+        assertFalse(select.contains("Carol"), "joueur hors ligne non proposé");
+        assertTrue(page.contains("1 joueur(s) dans le Wild"), "décompte expliqué");
+        assertTrue(page.contains("Bob (world_hub)"), "joueur hors Wild nommé avec son monde");
+        assertTrue(page.contains("Actualiser les joueurs connectés"), "relevé disponible sur la vue");
+        assertTrue(page.contains("value=\"player.catalog\""), "même relevé que la page Joueurs");
+    }
+
+    @Test
+    void nearPlayerExplainsWhenNoOneIsInTheWild() throws Exception {
+        start();
+        login();
+        runAction("boss.community.status", STATUS);
+        runAction("player.catalog", "{\"players\":[{\"uuid\":\"u2\",\"name\":\"Bob\",\"online\":true,"
+                + "\"world\":\"world_hub\"}]}");
+        String page = get("/mobs/community?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Aucun joueur connecté dans le Wild"), page);
+        assertTrue(page.contains("Hors du Wild, donc non proposés : Bob (world_hub)"));
+    }
+
+    @Test
+    void nearPlayerExplainsMissingPlayerData() throws Exception {
+        start();
+        login();
+        runAction("boss.community.status", STATUS);
+        String page = get("/mobs/community?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Liste des joueurs connectés pas encore chargée"), "données absentes expliquées");
+        assertTrue(page.contains("N'importe où dans le Wild"), "le choix sans joueur reste possible");
+    }
+
+    @Test
     void relativeTimesReadNaturally() {
         org.junit.jupiter.api.Assertions.assertEquals("dans 15 min", AgentPages.relative(15 * 60_000L));
         org.junit.jupiter.api.Assertions.assertEquals("il y a 2 h", AgentPages.relative(-2 * 3_600_000L));
@@ -202,7 +244,8 @@ class CommunityBossPageTest {
         jar.clear();
         store.saveHeartbeat(new com.lodygames.rpgquest.panel.agent.HeartbeatRecord(
                 TestConfig.AGENT_ID, "dev", Instant.now(), Instant.now().toString(), "1",
-                "RPGQuest", "0.1.0-SNAPSHOT", "ONLINE", 0, 20, 60, "{}", "{}"));
+                "RPGQuest", "0.1.0-SNAPSHOT", "ONLINE", 0, 20, 60,
+                "{\"wild\":{\"name\":\"wild\",\"loaded\":true}}", "{}"));
     }
 
     private void login() throws Exception {

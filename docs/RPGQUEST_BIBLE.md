@@ -5571,6 +5571,12 @@ PlugAdmin avant la file (confirmation manquante, valeur invalide, conflit…) �
 motif, acteur — lues dans le journal d'audit existant (aucune migration), distinctes des actions
 réellement exécutées.
 
+Sur la fiche d'une action (`/actions/<id>`), le bouton **« Copier le résultat brut »** (#583) copie le
+JSON complet du bloc « Corps brut du résultat » (y compris `action_id` et `details`), tel quel, et
+affiche « Copié — N caractères ». Si le presse-papiers est refusé ou indisponible, le texte est
+sélectionné et un message invite à le copier à la main (Ctrl+C, appui long sur téléphone). La copie
+est locale au navigateur : aucune requête, aucune réexécution. Sans résultat, la fiche l'indique.
+
 ### Boss communautaires du Wild (issue #175, première version)
 
 Un profil `BOSS` porte désormais un **type de boss** (`boss-mode`), distinct du choix SPECIAL/BOSS :

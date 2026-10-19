@@ -266,6 +266,51 @@ class ActionsCenterTest {
         assertEquals(404, get("/actions/deadbeef-0000-0000-0000-000000000000").statusCode());
     }
 
+    // ---- Issue #583 : copier le corps brut du résultat ------------------------------------
+
+    @Test
+    void rawResultBlockOffersCopyButtonWithExactText() throws Exception {
+        start();
+        loginOwner();
+        for (String status : new String[] {"SUCCESS", "FAILED"}) {
+            String id = createAction("&type=player.list");
+            settleAgent(id, status, "a <b> & 'c'");
+            String d = main(get("/actions/" + id).body());
+            assertTrue(d.contains("data-copy-from=\"action-result-raw\""), "bouton de copie (" + status + ")");
+            assertTrue(d.contains("Copier le résultat brut"));
+            assertTrue(d.contains("type=\"button\" data-copy-from"), "bouton natif : clavier, jamais un submit");
+            assertTrue(d.contains("id=\"action-result-raw-status\" role=\"status\" aria-live=\"polite\""));
+            String raw = unescape(between(d, "<pre id=\"action-result-raw\" tabindex=\"0\" "
+                    + "aria-label=\"Corps brut du résultat\">", "</pre>"));
+            assertTrue(raw.startsWith("{") && raw.endsWith("}"), "JSON complet, sans balisage : " + raw);
+            assertTrue(raw.contains(id), "action_id présent");
+            assertTrue(raw.contains("a <b> & 'c'"), "texte brut, aucune troncature ni balise HTML");
+            assertTrue(d.contains("&lt;b&gt; &amp;"), "échappé dans le HTML");
+        }
+    }
+
+    @Test
+    void pendingActionSaysThereIsNoRawResultToCopy() throws Exception {
+        start();
+        loginOwner();
+        String id = createAction("&type=player.list");
+        String d = main(get("/actions/" + id).body());
+        assertTrue(d.contains("Aucun corps brut"));
+        assertFalse(d.contains("data-copy-from="), "rien à copier sans résultat");
+    }
+
+    private static String between(String s, String start, String end) {
+        int i = s.indexOf(start);
+        assertTrue(i >= 0, "bloc brut introuvable");
+        int j = s.indexOf(end, i + start.length());
+        return s.substring(i + start.length(), j);
+    }
+
+    private static String unescape(String html) {
+        return html.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+                .replace("&#39;", "'").replace("&amp;", "&");
+    }
+
     // ---- Issue #266 : ouvrir une action depuis sa ligne ---------------------------------
 
     @Test

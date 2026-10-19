@@ -1601,7 +1601,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   avec `DIAGNOSTICS_READ`) : dropdown des 8 dernières actions + badge (actions en cours + échecs
   < 24 h) + lien « Voir toutes les actions ». **Page `/actions`** : recherche + filtres statut
   (Tous/Succès/En cours/Échec) + domaine (Joueurs/PNJ/Quêtes/Stories/Dialogues/Items/Serveur/
-  Autres), table desktop + cartes mobile, pagination 25/page ; détail `/actions/<id>`. Source de
+  Autres), table desktop + cartes mobile, pagination 25/page ; détail `/actions/<id>` (bouton « Copier le résultat brut », #583). Source de
   vérité inchangée : table `agent_action`. Polling léger via `/agents/actions.json` (enrichi),
   pas de WebSocket.
 - **Refonte ciblée de la page `/npcs` (issue #89)** *(branche `feat/control-panel-admin-tools`)* —

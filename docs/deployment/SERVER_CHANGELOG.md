@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - Portails : guide nommé, conditions clarifiées, résultats vides (#564, retours TC-363)
+
+### Changement
+
+`portal.list` cite le PNJ guide (`hub.guide-npc-id`) sous son nom affiché actuel dans la règle du garde Claims
+(Elias sur DEV ; repli lisible si non résolu) et précise qu'aucune condition n'est configurée sur le portail
+lui-même alors que les règles du serveur restent appliquées. PlugAdmin `/portals` affiche un message explicite
+quand la recherche ou un filtre ne donne aucun portail. Lecture seule inchangée : aucun portail, PNJ ni
+progression touché ; téléportations et gardes en jeu inchangés.
+
+### Action serveur
+
+Remplacer uniquement le JAR RPGQuest ; redéployer PlugAdmin. Aucune migration, aucune configuration.
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261019T135011Z-predeploy.jar` (sauvegarde de `deploy-verygames.sh`) ; PlugAdmin
+précédent conservé par `deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Déploiement
+
+Effectué le 19/10 à 15:50 : `scripts/deploy-verygames.sh -y --wait-ci` (CI verte sur `67a556c`), SHA-256 distant
+re-téléchargé = local (`39fdaf9c…`), un redémarrage (`verygames-restart.sh`), DEV ONLINE ; `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`portal.list` réel sur DEV : « 2 portail(s), 2 actif(s) », règle Claims « … vers Elias (PNJ guide « guide ») »,
+0 problème. PlugAdmin : TC-363-bis.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis un redémarrage ; remettre le PlugAdmin précédent (aucune donnée écrite).
+
+---
+
 ## 2026-10-19 - Mondes : noms de mobs lisibles et total des joueurs connectés (#560, retours TC-362)
 
 ### Changement

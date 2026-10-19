@@ -2164,8 +2164,24 @@ public interface AgentActions {
      * zone chargée ; {@code test} = instances de test chargées que {@code mob.test.clear} supprimerait ;
      * {@code communityActive} = boss communautaires actifs d'après l'état enregistré (zones non chargées
      * comprises, -1 si le service n'existe pas).
+     *
+     * <p>Issue #542 : {@code unloaded} = instances suivies dont la zone s'est déchargée, avec leur
+     * dernière position ; {@code unknown} = suivies, ni chargées ni vues se décharger (état inconnu).</p>
      */
-    record MobPopulationView(String id, int tracked, int loaded, int test, int communityActive) {
+    record MobPopulationView(String id, int tracked, int loaded, int test, int communityActive,
+                             List<MobUnloadedInstanceView> unloaded, int unknown) {
+
+        public MobPopulationView {
+            unloaded = List.copyOf(unloaded);
+        }
+
+        public MobPopulationView(String id, int tracked, int loaded, int test, int communityActive) {
+            this(id, tracked, loaded, test, communityActive, List.of(), 0);
+        }
+    }
+
+    /** Issue #542 : où se trouvait une instance comptée au déchargement de sa zone ({@code since} ISO-8601). */
+    record MobUnloadedInstanceView(String uuid, String world, int x, int y, int z, boolean test, String since) {
     }
 
     record MobCatalogView(List<MobProfileSummary> profiles, MobSpawnSettingsView spawnSettings,

@@ -578,7 +578,9 @@ class AgentActionExecutorTest {
                 mobSummary("rpgquest:zombie_speedy", "SPECIAL", 5),
                 mobSummary("rpgquest:boss_zombie_entrainement", "BOSS", 0)),
                 new AgentActions.MobSpawnSettingsView(true, 1.0, null), false, List.of(), List.of(
-                new AgentActions.MobPopulationView("rpgquest:zombie_speedy", 5, 4, 2, 0),
+                new AgentActions.MobPopulationView("rpgquest:zombie_speedy", 5, 4, 2, 0, List.of(
+                        new AgentActions.MobUnloadedInstanceView("11111111-2222-3333-4444-555555555555", "wild",
+                                10, 64, -20, true, "2026-10-19T14:16:00Z")), 0),
                 new AgentActions.MobPopulationView("rpgquest:boss_zombie_entrainement", 0, 0, 0, 1)));
 
         AgentActionOutcome out = run(new AgentAction("mlp", "mob.list", Map.of()));
@@ -590,6 +592,14 @@ class AgentActionExecutorTest {
         assertEquals(5, speedy.get("alivePopulation"));
         assertEquals(4, speedy.get("loadedPopulation"));
         assertEquals(2, speedy.get("testPopulation"));
+        // Issue #542 : 5 suivis = 4 chargés + 1 en zone non chargée, désigné précisément.
+        assertEquals(1, speedy.get("unloadedPopulation"));
+        assertEquals(0, speedy.get("unknownPopulation"));
+        Map<?, ?> away = (Map<?, ?>) ((List<?>) speedy.get("unloadedInstances")).get(0);
+        assertEquals("11111111-2222-3333-4444-555555555555", away.get("uuid"));
+        assertEquals("wild", away.get("world"));
+        assertEquals(-20, away.get("z"));
+        assertEquals(true, away.get("test"));
         Map<?, ?> boss = (Map<?, ?>) rows.get(1);
         assertEquals(0, boss.get("alivePopulation"));
         assertEquals(1, boss.get("communityActive"));

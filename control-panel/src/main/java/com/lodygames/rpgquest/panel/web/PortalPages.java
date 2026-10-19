@@ -71,10 +71,11 @@ public final class PortalPages {
         long legacy = portals.stream().filter(PortalPages::legacy).count();
         long withIssue = portals.stream().filter(PortalPages::hasProblem).count();
         String chips = AgentPages.filterBtn("", "Tous · " + portals.size(), true)
-                + AgentPages.filterBtn("active", "Actifs · " + active, false)
-                + AgentPages.filterBtn("disabled", "Désactivés · " + (portals.size() - active), false)
-                + AgentPages.filterBtn("legacy", "Ancien format · " + legacy, false)
-                + AgentPages.filterBtn("issue", "Avec problème · " + withIssue, false);
+                + AgentPages.filterBtn("active", "Actifs · " + active, false, "Aucun portail actif")
+                + AgentPages.filterBtn("disabled", "Désactivés · " + (portals.size() - active), false,
+                        "Aucun portail désactivé")
+                + AgentPages.filterBtn("legacy", "Ancien format · " + legacy, false, "Aucun portail à l'ancien format")
+                + AgentPages.filterBtn("issue", "Avec problème · " + withIssue, false, "Aucun portail avec problème");
         sb.append(AgentPages.listControls("portals", "Rechercher un portail ou un monde", chips));
         sb.append("<p class=\"muted small\">Les mondes de départ et d'arrivée se consultent dans la page <a href=\"")
                 .append(WorldPages.PATH).append("?agent=").append(enc(agentId)).append("\">Mondes</a>.</p>");
@@ -85,7 +86,7 @@ public final class PortalPages {
         for (Map<String, Object> p : portals) {
             sb.append(card(agentId, p));
         }
-        sb.append("</div>");
+        sb.append("</div>").append(AgentPages.filterEmpty("portals", "Aucun portail"));
         sb.append("<p class=\"muted small w-small-note\">Les portails actifs sont repris tels quels depuis les "
                 + "fichiers du serveur : leurs règles Wild et Claims restent appliquées par le serveur. La création "
                 + "et la modification feront l'objet d'un lot séparé.</p>");

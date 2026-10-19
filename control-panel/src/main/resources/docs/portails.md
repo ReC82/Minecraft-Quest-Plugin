@@ -30,8 +30,16 @@ Pour chaque portail, la fiche montre :
    - **Avertissement Wild** pour tout portail qui mène au monde `travel.wild-world` : fenêtre de
      confirmation, choix « ne plus afficher », textes actuels montrés au joueur ;
    - **Accès Claims + retour** pour tout portail qui mène au monde `claims.world` : premier terrain
-     débloqué ou claim déjà possédé, Pierre de retour garantie, OP sans effet hors mode bypass ;
+     débloqué ou claim déjà possédé, Pierre de retour garantie, OP sans effet hors mode bypass. Un
+     joueur refusé est orienté vers Jo et vers le PNJ guide du village (`hub.guide-npc-id`), cité
+     sous son **nom affiché actuel** (ex. Elias) ; si ce nom ne se résout pas, la fiche l'indique ;
    - les **conditions** d'un portail de zone.
+
+Un portail entre mondes n'a **aucune condition propre** (niveau, quête, permission) : la ligne
+« Déclenchement » le précise, mais les règles du bloc 3 (Wild, Claims) restent appliquées.
+
+La recherche et les filtres (Actifs, Désactivés, Ancien format, Avec problème) affichent un message
+explicite quand aucun portail ne correspond (ex. « Aucun portail désactivé. »).
 
 Le **nom** affiché (« Portail vers le Wild ») est déduit de la destination : aucun nom n'est encore
 enregistré dans les fichiers.

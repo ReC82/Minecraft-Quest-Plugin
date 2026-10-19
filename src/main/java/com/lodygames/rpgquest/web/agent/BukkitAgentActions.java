@@ -2215,11 +2215,18 @@ public final class BukkitAgentActions implements AgentActions {
     private com.lodygames.rpgquest.travel.YamlPortalRegistry zonePortals;
     private com.lodygames.rpgquest.travel.YamlDestinationRegistry zoneDestinations;
 
-    /** Portails de zone ({@code portals/}, ancien format) et leurs destinations nommées. */
+    private java.util.function.Function<String, Optional<String>> npcNames = id -> Optional.empty();
+
+    /**
+     * Portails de zone ({@code portals/}, ancien format), leurs destinations nommées, et les noms
+     * affichés actuels des PNJ (le guide cité par le garde Claims, #475).
+     */
     public void setPortalSources(com.lodygames.rpgquest.travel.YamlPortalRegistry portals,
-                                 com.lodygames.rpgquest.travel.YamlDestinationRegistry destinations) {
+                                 com.lodygames.rpgquest.travel.YamlDestinationRegistry destinations,
+                                 java.util.function.Function<String, Optional<String>> npcNames) {
         this.zonePortals = portals;
         this.zoneDestinations = destinations;
+        this.npcNames = npcNames;
     }
 
     @Override
@@ -2248,7 +2255,14 @@ public final class BukkitAgentActions implements AgentActions {
                 cfg.randomSafeArrival(),
                 new com.lodygames.rpgquest.travel.PortalOverview.ClaimArrival(claims.arrivalMinRadius(),
                         claims.arrivalMaxRadius(), claims.arrivalSpacing(),
-                        com.lodygames.rpgquest.claim.ClaimArrivalResolver.ATTEMPTS));
+                        com.lodygames.rpgquest.claim.ClaimArrivalResolver.ATTEMPTS),
+                guideNpc(cfg.hub().guideNpcId()));
+    }
+
+    private com.lodygames.rpgquest.travel.PortalOverview.GuideNpc guideNpc(String npcId) {
+        String name = npcId == null || npcId.isBlank() ? null
+                : npcNames.apply(npcId).filter(n -> !n.isBlank()).orElse(null);
+        return new com.lodygames.rpgquest.travel.PortalOverview.GuideNpc(npcId, name);
     }
 
     private com.lodygames.rpgquest.world.WorldOverview.Inputs worldInputs() {

@@ -635,7 +635,11 @@
         // combinés en ET. Rétro-compatible : un seul groupe = comportement historique.
         var chipBoxes = document.querySelectorAll('[data-filter-chips="' + cssEsc(scope) + '"]');
         var note = document.querySelector("[data-count-note]");
+        // Message « aucun résultat » facultatif (#564) : base = data-empty de la puce active, sinon
+        // celle du bloc ; la recherche ajoute « ne correspond à « … » ». textContent : jamais de HTML.
+        var emptyBox = document.querySelector('[data-filter-empty="' + cssEsc(scope) + '"]');
         var active = [];
+        var activeEmpty = [];
 
         function apply() {
           var q = (input.value || "").trim().toLowerCase();
@@ -653,6 +657,14 @@
             el.hidden = !show;
             if (show) { shown++; }
           }
+          if (emptyBox) {
+            var base = emptyBox.getAttribute("data-empty") || "Aucun résultat";
+            for (var e = 0; e < activeEmpty.length; e++) {
+              if (activeEmpty[e]) { base = activeEmpty[e]; break; }
+            }
+            emptyBox.textContent = base + (q ? " ne correspond à « " + (input.value || "").trim() + " »." : ".");
+            emptyBox.hidden = !(items.length > 0 && shown === 0);
+          }
           if (note) {
             var noun = note.getAttribute("data-noun") || "résultat";
             note.textContent = shown + " " + noun + (shown > 1 ? "s" : "");
@@ -669,11 +681,13 @@
               var chips = box.querySelectorAll("[data-filter-chip]");
               if (active[bi] === val || val === "") {
                 active[bi] = null;
+                activeEmpty[bi] = null;
                 for (var c = 0; c < chips.length; c++) {
                   chips[c].classList.toggle("on", chips[c].getAttribute("data-filter-chip") === "");
                 }
               } else {
                 active[bi] = val;
+                activeEmpty[bi] = chip.getAttribute("data-empty");
                 for (var c2 = 0; c2 < chips.length; c2++) { chips[c2].classList.toggle("on", chips[c2] === chip); }
               }
               apply();

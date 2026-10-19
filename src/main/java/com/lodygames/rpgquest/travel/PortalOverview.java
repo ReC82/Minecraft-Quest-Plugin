@@ -46,6 +46,13 @@ public final class PortalOverview {
     }
 
     /**
+     * PNJ guide du village ({@code hub.guide-npc-id}) cité par le garde Claims : {@code name} est son
+     * nom affiché <em>actuel</em> (balises retirées), {@code null} s'il ne se résout pas.
+     */
+    public record GuideNpc(String npcId, String name) {
+    }
+
+    /**
      * Tout ce que la collecte a relevé.
      *
      * @param worldPortalFiles fichier d'origine de chaque portail de {@code worldPortals}, même rang
@@ -55,7 +62,7 @@ public final class PortalOverview {
                          List<PortalLoadIssue> worldPortalSkipped, List<PortalDefinition> zonePortals,
                          List<PortalLoadIssue> zonePortalIssues, List<Destination> destinations,
                          Map<String, String> loadedWorlds, Roles roles, RandomSafeArrivalConfig randomSafe,
-                         ClaimArrival claimArrival) {
+                         ClaimArrival claimArrival, GuideNpc guide) {
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -136,7 +143,7 @@ public final class PortalOverview {
             guards.add(wildGuard());
         }
         if (ClaimWorldAccessGuard.appliesTo(p, in.roles().claims())) {
-            guards.add(claimsGuard());
+            guards.add(claimsGuard(in.guide()));
         }
         List<Issue> issues = new ArrayList<>();
         if (!p.enabled()) {
@@ -197,7 +204,7 @@ public final class PortalOverview {
                 p.world(), sourceLoaded, role(p.world(), in.roles()),
                 p.minX(), p.minY(), p.minZ(), p.maxX(), p.maxY(), p.maxZ(),
                 p.destinationWorld(), destLoaded, role(p.destinationWorld(), in.roles()), "", "",
-                p.destinationStrategy().name(), arrival(p, in), worldPortalTrigger(),
+                p.destinationStrategy().name(), arrival(p, in), worldPortalTrigger(!guards.isEmpty()),
                 List.copyOf(guards), List.of(), List.copyOf(issues));
     }
 
@@ -221,11 +228,16 @@ public final class PortalOverview {
         };
     }
 
-    private static List<String> worldPortalTrigger() {
+    private static List<String> worldPortalTrigger(boolean guarded) {
         return List.of(
                 "Téléportation immédiate en entrant dans la zone (de l'extérieur vers l'intérieur), sans attente ni coût.",
                 "Répit de 2 secondes après une arrivée ou une connexion : pas de renvoi en boucle.",
-                "Aucune condition de niveau, de quête ni de permission sur ce type de portail.");
+                guarded
+                        ? "Aucune condition de niveau, de quête ni de permission n'est configurée sur le portail "
+                                + "lui-même ; les règles du serveur (bloc « Règles appliquées par le serveur ») "
+                                + "s'appliquent quand même."
+                        : "Aucune condition de niveau, de quête ni de permission n'est configurée sur le portail, "
+                                + "et aucune règle du serveur ne s'applique à sa destination.");
     }
 
     private static Guard wildGuard() {
@@ -244,15 +256,27 @@ public final class PortalOverview {
                         new Text("Après confirmation", WildEntryWarningService.PREPARING_TEXT)));
     }
 
-    private static Guard claimsGuard() {
+    private static Guard claimsGuard(GuideNpc guide) {
         return new Guard("CLAIMS_ACCESS", "Accès au monde des claims", List.of(
                 "Entrée réservée au joueur qui a débloqué son premier terrain (variable CLAIM_TIER_1) "
-                        + "ou qui possède déjà un claim principal ; sinon il reste sur place et est orienté vers le Guide.",
+                        + "ou qui possède déjà un claim principal ; sinon il reste sur place et un message "
+                        + "l'envoie vers Jo (acte de propriété) et vers " + guideLabel(guide) + ".",
                 "Moyen de retour garanti : une Pierre de retour est remise avant le départ ; entrée refusée si "
                         + "l'inventaire est plein ou si le retour au Hub ne se résout pas.",
                 "Être OP ne suffit pas : seul le mode bypass administrateur (/rpgadmin bypass on + "
                         + RpgPermissions.BYPASS_CLAIM_WORLD + " ou rpgquest.admin.world) passe outre."),
                 List.of());
+    }
+
+    /** Le guide tel que le message en jeu le nomme ; repli lisible quand son nom ne se résout pas. */
+    private static String guideLabel(GuideNpc guide) {
+        if (guide == null || guide.npcId() == null || guide.npcId().isBlank()) {
+            return "le guide du village (aucun PNJ guide configuré : hub.guide-npc-id)";
+        }
+        if (guide.name() == null || guide.name().isBlank()) {
+            return "le guide du village (PNJ « " + guide.npcId() + " », nom affiché introuvable)";
+        }
+        return guide.name() + " (PNJ guide « " + guide.npcId() + " »)";
     }
 
     // ---- Portails de zone (ancien format) -------------------------------------------------------

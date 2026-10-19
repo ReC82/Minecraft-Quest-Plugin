@@ -1317,7 +1317,8 @@ public final class RPGQuestBootstrap {
         agentActions.setWorldSources(worldService, worldPortalRegistry, configService::current,
                 new com.lodygames.rpgquest.world.multiverse.MultiverseWorldSource());
         // Issue #564 (#228-P1) : page Portails en lecture seule — mêmes registres que le jeu.
-        agentActions.setPortalSources(portalRegistry, destinationRegistry);
+        agentActions.setPortalSources(portalRegistry, destinationRegistry,
+                id -> questProgressEngine.npcNameResolver().apply(id));
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
         registry.start(new PlayerListenerService(plugin, operatorNotices));

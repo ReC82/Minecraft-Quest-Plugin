@@ -26,16 +26,30 @@ class PortalOverviewTest {
     private static final WorldPortalDefinition HUB_TO_CLAIMS = new WorldPortalDefinition("hub_to_claims", "world_hub",
             730, 66, -676, 732, 69, -676, "claims", true, DestinationStrategy.CLAIM_HOME);
 
+    private static final PortalOverview.GuideNpc ELIAS = new PortalOverview.GuideNpc("guide", "Elias");
+
     private static PortalOverview.Inputs inputs(List<WorldPortalDefinition> portals, List<String> files,
                                                 List<PortalLoadIssue> skipped, List<PortalDefinition> zones,
                                                 List<Destination> destinations, Map<String, String> loaded) {
+        return inputs(portals, files, skipped, zones, destinations, loaded, ELIAS);
+    }
+
+    private static PortalOverview.Inputs inputs(List<WorldPortalDefinition> portals, List<String> files,
+                                                List<PortalLoadIssue> skipped, List<PortalDefinition> zones,
+                                                List<Destination> destinations, Map<String, String> loaded,
+                                                PortalOverview.GuideNpc guide) {
         return new PortalOverview.Inputs(portals, files, skipped, zones, List.of(), destinations, loaded, ROLES,
-                new RandomSafeArrivalConfig(500, 5000, 20), new PortalOverview.ClaimArrival(200, 3000, 64, 40));
+                new RandomSafeArrivalConfig(500, 5000, 20), new PortalOverview.ClaimArrival(200, 3000, 64, 40), guide);
     }
 
     private static PortalOverview.View dev() {
         return PortalOverview.build(inputs(List.of(HUB_TO_CLAIMS, HUB_TO_WILD),
                 List.of("hub_to_claims.yml", "hub_to_wild.yml"), List.of(), List.of(), List.of(), ALL_LOADED));
+    }
+
+    private static String claimsEntryRule(PortalOverview.GuideNpc guide) {
+        return PortalOverview.build(inputs(List.of(HUB_TO_CLAIMS), List.of("hub_to_claims.yml"), List.of(), List.of(),
+                List.of(), ALL_LOADED, guide)).portals().get(0).guards().get(0).rules().get(0);
     }
 
     private static List<String> codes(PortalOverview.Entry e) {
@@ -75,6 +89,32 @@ class PortalOverviewTest {
         assertTrue(claims.guards().get(0).rules().stream().anyMatch(r -> r.contains("Pierre de retour")));
         assertTrue(claims.guards().get(0).rules().stream().anyMatch(r -> r.contains("rpgquest.bypass.claimworld")));
         assertTrue(claims.issues().isEmpty(), claims.issues().toString());
+    }
+
+    @Test
+    void claimsGuardNamesTheCurrentGuideNpcNeverTheOldGuideLabel() {
+        String rule = claimsEntryRule(ELIAS);
+        assertTrue(rule.contains("Elias (PNJ guide « guide »)"), rule);
+        assertFalse(rule.contains("le Guide"), rule);
+        assertTrue(claimsEntryRule(new PortalOverview.GuideNpc("guide", null))
+                .contains("le guide du village (PNJ « guide », nom affiché introuvable)"));
+        assertTrue(claimsEntryRule(new PortalOverview.GuideNpc("", null)).contains("aucun PNJ guide configuré"));
+        assertTrue(claimsEntryRule(null).contains("aucun PNJ guide configuré"));
+    }
+
+    @Test
+    void triggerSaysNoConditionOnThePortalButServerRulesStillApply() {
+        PortalOverview.View view = dev();
+        for (PortalOverview.Entry e : view.portals()) {
+            String last = e.trigger().get(e.trigger().size() - 1);
+            assertTrue(last.contains("configurée sur le portail lui-même"), last);
+            assertTrue(last.contains("(bloc « Règles appliquées par le serveur ») s'appliquent quand même"), last);
+        }
+        var plain = new WorldPortalDefinition("hub_to_lobby", "world_hub", 0, 0, 0, 1, 1, 1, "lobby", true,
+                DestinationStrategy.WORLD_SPAWN);
+        PortalOverview.Entry e = PortalOverview.build(inputs(List.of(plain), List.of("hub_to_lobby.yml"), List.of(),
+                List.of(), List.of(), Map.of("world_hub", "0, 0, 0", "lobby", "0, 0, 0"))).portals().get(0);
+        assertTrue(e.trigger().get(2).contains("aucune règle du serveur ne s'applique"), e.trigger().get(2));
     }
 
     @Test

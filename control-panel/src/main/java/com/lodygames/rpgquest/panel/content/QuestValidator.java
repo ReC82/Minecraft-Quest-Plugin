@@ -388,7 +388,7 @@ public final class QuestValidator {
                                 + "posable, ou un objet équivalent)."));
                     } else if (ref.sourceKnown(f.selectSource()) && !ref.isValueKnown(f.selectSource(), v)) {
                         out.add(Diagnostic.warning(ctx, "« " + f.label() + " » : valeur « " + v.trim()
-                                + " » hors des valeurs connues. Le serveur refusera un " + f.selectSource()
+                                + " » hors des valeurs connues. Le serveur refusera un " + sourceNoun(f.selectSource())
                                 + " réellement invalide au chargement."));
                     } else if (!ref.sourceKnown(f.selectSource())) {
                         out.add(Diagnostic.info(ctx, "Impossible de vérifier « " + f.label() + " » : aucun relevé de référence."));
@@ -448,6 +448,17 @@ public final class QuestValidator {
     }
 
     /** Les champs dont la valeur est un matériau Minecraft (icône ou objet). */
+    /** Nom français de la source dans un message (« un bloc », pas « un block »). */
+    private static String sourceNoun(String source) {
+        return switch (source == null ? "" : source) {
+            case "material" -> "matériau";
+            case "block" -> "bloc";
+            case "entity" -> "type d'entité";
+            case "world" -> "monde";
+            default -> source;
+        };
+    }
+
     private static boolean isMaterialSource(String source) {
         return "material".equals(source) || "icon".equals(source);
     }

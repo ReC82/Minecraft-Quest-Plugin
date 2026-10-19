@@ -266,6 +266,17 @@ class ContentEditorPagesTest {
     }
 
     @Test
+    void blockObjectivesShareTheMaterialListAndAcceptBlocks() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+        // #142 : BREAK_BLOCK / PLACE_BLOCK réutilisent dl-material, marqués pour accepter CARROTS…
+        assertTrue(Pattern.compile("data-combo data-combo-blocks><input[^>]*list=\"dl-material\"")
+                .matcher(body).find(), "champ Bloc marqué, sur la liste partagée");
+        assertTrue(Pattern.compile("class=\"combo\" data-combo><input[^>]*list=\"dl-material\"")
+                .matcher(body).find(), "l'icône et les objets restent sans marqueur");
+    }
+
+    @Test
     void validObjectiveAndRewardSaveToSource() throws Exception {
         start(true);
         String token = csrf(get("/quests/new").body());

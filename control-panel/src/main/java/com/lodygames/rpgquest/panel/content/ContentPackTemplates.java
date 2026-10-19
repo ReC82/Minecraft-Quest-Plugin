@@ -436,7 +436,8 @@ public final class ContentPackTemplates {
             case DOUBLE -> "1.0";
             case LIST -> "[]";
             case SELECT -> "entity".equals(f.selectSource()) ? "ZOMBIE"
-                    : "material".equals(f.selectSource()) || "icon".equals(f.selectSource()) ? "STONE"
+                    : "material".equals(f.selectSource()) || "icon".equals(f.selectSource())
+                            || "block".equals(f.selectSource()) ? "STONE"
                     : "npc".equals(f.selectSource()) ? "guide"
                     : "world".equals(f.selectSource()) ? "world_hub" : "exemple";
             default -> "exemple";

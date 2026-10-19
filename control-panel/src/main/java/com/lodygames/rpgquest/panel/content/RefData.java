@@ -327,6 +327,9 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             // #196 : le vrai catalogue du serveur dès qu'il est relevé ; sinon le repli curé,
             // signalé comme tel par l'interface.
             case "material", "icon" -> materials();
+            // #142 : objectifs BREAK_BLOCK / PLACE_BLOCK — un bloc posé ou cassé peut n'avoir
+            // aucune forme d'objet (CARROTS, POTATOES, WALL_TORCH…).
+            case "block" -> blocks();
             case "category" -> CATEGORIES;
             case "npc" -> npcs;
             case "quest" -> quests;
@@ -343,7 +346,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             // #196 : on ne prétend « connaître » les matériaux que si le relevé serveur
             // existe. Avec le seul repli curé, un matériau absent de la liste est tout à
             // fait légitime : le dire WARNING serait un faux positif.
-            case "material" -> itemCatalog.known();
+            case "material", "block" -> itemCatalog.known();
             case "npc" -> npcsKnown;
             case "quest" -> questsKnown;
             case "world" -> worldsKnown;
@@ -360,6 +363,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
         return switch (source == null ? "" : source) {
             case "entity" -> contains(ENTITIES, value);
             case "material" -> contains(materials(), value);
+            case "block" -> contains(blocks(), value);
             case "npc" -> isNpcKnown(value);
             case "quest" -> isQuestKnown(value);
             case "world" -> isWorldKnown(value);
@@ -376,6 +380,26 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
      */
     public List<String> materials() {
         return itemCatalog.known() ? itemCatalog.items() : MATERIALS;
+    }
+
+    /**
+     * Issue #142 — blocs proposés aux objectifs {@code BREAK_BLOCK} / {@code PLACE_BLOCK}.
+     *
+     * <p>Le plugin compare le type du bloc lui-même ({@code event.getBlock().getType()}), pas un
+     * objet : casser des carottes plantées compte {@code CARROTS}, qui n'a aucune forme d'objet.
+     * Les objets du relevé (dont les blocs posables) sont donc complétés par ses blocs sans forme
+     * d'objet, ici valeurs légitimes et non plus refus. Sans relevé : le repli curé, plus les
+     * cultures les plus courantes.</p>
+     */
+    public List<String> blocks() {
+        List<String> all = new java.util.ArrayList<>(itemCatalog.known() ? itemCatalog.items() : MATERIALS);
+        for (String block : itemCatalog.known() ? itemCatalog.blocksWithoutItem() : FALLBACK_CROP_BLOCKS) {
+            if (!all.contains(block)) {
+                all.add(block);
+            }
+        }
+        java.util.Collections.sort(all);
+        return List.copyOf(all);
     }
 
     /** Le catalogue affiché vient-il réellement du serveur ? */
@@ -465,5 +489,12 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             "BLAZE_ROD", "GHAST_TEAR", "SLIME_BALL", "LEATHER", "FEATHER", "EGG", "MILK_BUCKET",
             "IRON_SWORD", "DIAMOND_SWORD", "IRON_PICKAXE", "DIAMOND_PICKAXE", "IRON_AXE", "SHIELD",
             "BOW", "ARROW", "TORCH", "CHEST", "FURNACE", "CRAFTING_TABLE", "OAK_SAPLING", "PAPER",
-            "BOOK", "WRITABLE_BOOK", "MAP", "COMPASS", "CLOCK", "GOLDEN_APPLE", "ENCHANTED_GOLDEN_APPLE");
+            "BOOK", "WRITABLE_BOOK", "MAP", "COMPASS", "CLOCK", "GOLDEN_APPLE", "ENCHANTED_GOLDEN_APPLE",
+            // #142 : objets de récolte demandés par les quêtes de Lily, absents du premier extrait.
+            "PUMPKIN", "CARVED_PUMPKIN", "PUMPKIN_SEEDS", "PUMPKIN_PIE", "MELON", "MELON_SLICE",
+            "SUGAR", "COCOA_BEANS", "SWEET_BERRIES", "BEETROOT_SEEDS");
+
+    /** Cultures plantées, sans forme d'objet : repli de {@link #blocks()} tant qu'aucun relevé n'existe. */
+    public static final List<String> FALLBACK_CROP_BLOCKS = List.of(
+            "WHEAT", "CARROTS", "POTATOES", "BEETROOTS", "COCOA", "SWEET_BERRY_BUSH");
 }

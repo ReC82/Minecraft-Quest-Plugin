@@ -6686,6 +6686,25 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-365 — Recherche d'objet et de bloc dans l'éditeur de quêtes : « pump » → PUMPKIN, carottes plantées (issue #142, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de la PR de #142 sur **DEV** (plugin inchangé). Navigateur seulement, rien n'est
+enregistré si l'on n'appuie pas sur « Enregistrer » ; durée : 3 minutes.
+
+1.  `/quests` : le bouton **« Objets Minecraft »** doit être gris (catalogue déjà relevé). S'il est orange, cliquer
+    dessus une fois.
+2.  `/quests/new` → champ **Icône** : taper `Pump`, puis `pumpk`, puis `pu`. **Attendu** : `PUMPKIN` proposé à
+    chaque fois (avec `CARVED_PUMPKIN`, `PUMPKIN_PIE`…), quelle que soit la casse.
+3.  Ajouter un objectif **Collecter un objet** → champ **Objet** : taper `pu` → `PUMPKIN` proposé. Choisir
+    `PUMPKIN`, cliquer **Vérifier** : **aucun** avertissement « hors des valeurs connues ».
+4.  Changer l'objectif en **Casser des blocs** → champ **Bloc** : taper `carot` → `CARROTS` (carottes plantées)
+    proposé **sans** la mention « aucune forme d'objet ». Choisir `CARROTS`, **Vérifier** : aucune erreur.
+5.  Contre-épreuve : revenir sur **Collecter un objet** et saisir `CARROTS` → **Vérifier** : erreur expliquée
+    « existe comme bloc mais n'a aucune forme d'objet » (on ne ramasse que `CARROT`).
+6.  Icône `spi` : seuls des objets (`SPIDER_EYE`…) apparaissent, aucune entité (`SPIDER`, `CAVE_SPIDER`).
+7.  Téléphone (390 px) : la liste s'affiche comme avant.
+8.  En jeu (plus tard) : une quête « Casser 3 CARROTS » progresse en cassant des carottes plantées.
+
 ### TC-364 — Boss communautaires : « Près de » propose un joueur connecté dans le Wild (issue #169, retour du 19/10, PENDING MANUAL VALIDATION)
 
 Prérequis : PlugAdmin issu de la PR #582 sur **DEV** (plugin inchangé). Les étapes 1–3 ne font que lire :

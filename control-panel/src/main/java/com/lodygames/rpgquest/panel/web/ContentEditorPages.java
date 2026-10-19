@@ -629,8 +629,12 @@ public final class ContentEditorPages {
                 switch (fld.type()) {
                     case INT, DOUBLE -> sb.append(number(name, fld.label(), fld.help(), val, fld.required(),
                             fld.type() == Descriptors.FieldType.INT, on));
+                    // #142 : un objectif de bloc accepte aussi les blocs sans forme d'objet ;
+                    // la liste reste dl-material (pas de second catalogue d'un millier d'entrées),
+                    // seul l'avertissement « aucune forme d'objet » est retiré par panel.js.
                     case SELECT -> sb.append(text(name, fld.label(), fld.help(), val, fld.required(), false,
-                            null, datalistId(fld.selectSource()), on));
+                            null, datalistId(fld.selectSource()), on,
+                            "block".equals(fld.selectSource()) ? " data-combo-blocks" : ""));
                     // Issue #185 : saisie texte « a, b » ; la liste YAML est produite à l'écriture.
                     // Issue #240 : si la source est relevée (les mondes du serveur), une case par
                     // valeur connue — plus besoin de connaître les identifiants techniques.
@@ -1044,6 +1048,13 @@ public final class ContentEditorPages {
      */
     private static String text(String name, String label, String help, String value, boolean required,
                                boolean readOnly, String extraClass, String datalist, boolean enabled) {
+        return text(name, label, help, value, required, readOnly, extraClass, datalist, enabled, "");
+    }
+
+    /** @param comboAttrs attributs ajoutés au conteneur {@code data-combo} (ex. {@code " data-combo-blocks"}). */
+    private static String text(String name, String label, String help, String value, boolean required,
+                               boolean readOnly, String extraClass, String datalist, boolean enabled,
+                               String comboAttrs) {
         String id = "f-" + name.replace('.', '-');
         boolean combo = datalist != null;
         StringBuilder sb = new StringBuilder();
@@ -1051,7 +1062,7 @@ public final class ContentEditorPages {
         sb.append("<label for=\"").append(id).append("\">").append(Http.esc(label))
                 .append(required ? " <span aria-hidden=\"true\">*</span>" : "").append("</label>");
         if (combo) {
-            sb.append("<div class=\"combo\" data-combo>");
+            sb.append("<div class=\"combo\" data-combo").append(comboAttrs).append(">");
         }
         sb.append("<input type=\"text\" id=\"").append(id).append("\" name=\"").append(Http.esc(name)).append("\" value=\"")
                 .append(Http.esc(value)).append("\"");
@@ -1279,7 +1290,7 @@ public final class ContentEditorPages {
     private static String datalistId(String source) {
         return switch (source == null ? "" : source) {
             case "entity" -> "dl-entity";
-            case "material", "icon" -> "dl-material";
+            case "material", "icon", "block" -> "dl-material";
             case "category" -> "dl-category";
             case "npc" -> "dl-npc";
             case "quest" -> "dl-quest";

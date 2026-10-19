@@ -824,11 +824,15 @@
     input.setAttribute("data-combo-ready", "1");
 
     var options = [];
+    // #142 : objectif BREAK_BLOCK / PLACE_BLOCK — un bloc sans forme d'objet (CARROTS…) y est
+    // une valeur normale, pas une option à signaler.
+    var acceptsBlocks = box.hasAttribute("data-combo-blocks");
     var opts = dl.querySelectorAll("option");
     for (var k = 0; k < opts.length; k++) {
       var v = opts[k].getAttribute("value") || "";
       if (!v) { continue; }
       var lbl = opts[k].getAttribute("label") || opts[k].textContent || "";
+      if (acceptsBlocks) { lbl = lbl.replace(/ — aucun objet$/, ""); }
       options.push({
         value: v,
         label: lbl && lbl !== v ? lbl : "",
@@ -836,7 +840,7 @@
         // comme objet (ni icône, ni récompense possible) ; « creative » = objet réel mais non
         // obtenable en jeu normal, donc douteux en récompense. Ce sont des avertissements : rien
         // n'est retiré de la liste.
-        noItem: opts[k].getAttribute("data-noitem") === "1",
+        noItem: !acceptsBlocks && opts[k].getAttribute("data-noitem") === "1",
         creative: opts[k].getAttribute("data-creative") === "1"
       });
     }

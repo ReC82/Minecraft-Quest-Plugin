@@ -197,14 +197,38 @@ class AgentActionCatalogTest {
 
     @Test
     void contentMutationsDeclareTheCatalogsTheyInvalidate() {
-        assertEquals(java.util.List.of("npc.list"),
+        assertEquals(java.util.List.of("npc.list", "dialogue.list"),
                 AgentActionCatalog.spec("npc.definition.update").orElseThrow().refreshTypes());
         assertEquals(java.util.List.of("npc.list", "npc.citizens.list"),
                 AgentActionCatalog.spec("npc.citizens.link").orElseThrow().refreshTypes());
-        assertEquals(java.util.List.of("dialogue.list"),
+        assertEquals(java.util.List.of("dialogue.list", "npc.list"),
                 AgentActionCatalog.spec("dialogue.definition.create").orElseThrow().refreshTypes());
         assertTrue(AgentActionCatalog.spec("player.variable.get").orElseThrow().refreshTypes().isEmpty(),
                 "une lecture n'invalide aucun catalogue");
+    }
+
+    /**
+     * Issue #129 — dépendances croisées entre catalogues. dialogue.list dérive des définitions PNJ
+     * (id + dialogue déclaré) et des donneurs de quête ; npc.list résume le dialogue et les quêtes
+     * chargés de chaque PNJ. Une action qui change une source doit invalider les deux vues.
+     */
+    @Test
+    void crossCatalogDependenciesAreDeclaredOnEveryMutationThatChangesTheirSources() {
+        for (String type : java.util.List.of("npc.definition.create", "npc.definition.update",
+                "npc.definition.delete", "npc.citizens.provision", "npc.citizens.delete", "quest.giver.set")) {
+            assertTrue(AgentActionCatalog.spec(type).orElseThrow().refreshTypes().contains("dialogue.list"),
+                    type + " change les PNJ liés aux dialogues : dialogue.list doit être ré-enfilé");
+        }
+        for (String type : java.util.List.of("dialogue.definition.create", "dialogue.node.create",
+                "dialogue.node.update", "dialogue.choice.add", "dialogue.choice.update", "dialogue.choice.delete",
+                "content.publish", "content.publish.batch", "content.publish.rollback",
+                "content.definition.delete")) {
+            assertTrue(AgentActionCatalog.spec(type).orElseThrow().refreshTypes().contains("npc.list"),
+                    type + " change le résumé dialogue/quêtes des fiches PNJ : npc.list doit être ré-enfilé");
+        }
+        // Cosmétique Citizens : ni dialogue ni définition touchés, aucun relevé de dialogue inutile.
+        assertFalse(AgentActionCatalog.spec("npc.citizens.lookclose").orElseThrow().refreshTypes()
+                .contains("dialogue.list"));
     }
 
     @Test

@@ -6691,8 +6691,9 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
 **Prérequis** : PlugAdmin #308 déployé (aucun JAR, aucune migration). Compte avec `AI_USE`. **Aucun
 appel à l'IA** dans ce test ; **ne pas** cliquer « Enregistrer dans la bibliothèque ». **Durée** : 5 minutes.
 
-1.  Bâtiments → Atelier → ouvrir **Estrade d'Elias** (projet neuf, sans plan). Déplier **« Historique de ce
-    projet »** → « Aucune version de plan pour ce projet : il est neuf. », sans `bibliotheque_du_hub`.
+1.  Bâtiments → Atelier → ouvrir **Estrade d'Elias** (`hub_estrade_elias`, 9 versions sur DEV au 19/10).
+    Déplier **« Historique de ce projet »** → seulement ses versions, aucune `bibliotheque_du_hub`.
+    (Optionnel) un projet tout juste créé affiche « Aucune version de plan pour ce projet : il est neuf. »
 2.  La section **« Importer un plan d'un autre projet ou de l'historique global »** est repliée ; la
     déplier : `bibliotheque_du_hub` y figure, avec « Examiner avant import ». Taper `biblio` →
     **Rechercher** : la liste se restreint.

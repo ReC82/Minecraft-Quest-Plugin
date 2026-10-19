@@ -6710,6 +6710,22 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
 7.  PlugAdmin → Dialogues ou Quêtes : une action `SET_VARIABLE` / récompense `VARIABLE` `CLAIM_TIER_1` =
     `lasagne` → erreur de validation, publication impossible.
 
+### TC-370 — PlugAdmin : /dialogues à jour après rattachement / changement / retrait du dialogue d'une fiche PNJ (issue #129, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de la PR #614 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 5 minutes.
+Travailler **uniquement sur un PNJ de test** et deux **dialogues de test** (jamais un PNJ ou dialogue joué) ; noter
+l'état initial du PNJ pour le remettre à la fin.
+
+1.  `/dialogues` : repérer les deux dialogues de test A et B, tous deux marqués **« sans PNJ »**.
+2.  `/npcs` → PNJ de test → **Modifier** → champ **Dialogue** = A → **Enregistrer**. Ne rien toucher : la page
+    se recharge seule (toast « Mise à jour de l'affichage en cours… »).
+3.  **Attendu** : la fiche PNJ affiche le dialogue A. Aller sur `/dialogues` **sans F5 ni « Rafraîchir »** :
+    A n'est plus « sans PNJ » (le PNJ de test est listé dans sa section PNJ) ; B l'est toujours.
+4.  Remplacer A par B sur la fiche → `/dialogues` : A redevient « sans PNJ », B est lié au PNJ de test.
+5.  Vider le champ Dialogue → `/dialogues` : B redevient « sans PNJ ». Les diagnostics de `/dialogues/diagnostic`
+    et la page Diagnostics suivent les mêmes changements.
+6.  Remettre le PNJ de test dans son état initial.
+
 ### TC-369 — PlugAdmin : un nœud ajouté apparaît dans le graphe sans F5 (issue #130, PENDING MANUAL VALIDATION)
 
 Prérequis : PlugAdmin issu de la PR de #130 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 3 minutes.

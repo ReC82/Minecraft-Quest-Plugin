@@ -145,6 +145,12 @@
 |---|---|---|
 | [#128](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/128) · **TC-367** | **Livré PlugAdmin DEV**, PR #604 merge 7053211, CI verte ; **validation navigateur propriétaire en attente** | Après une mutation réversible d'un PNJ : toast conservé « Modification enregistrée. Mise à jour de l'affichage en cours… » jusqu'au rechargement automatique, puis toast unique « Affichage à jour » ; F5 ne rejoue pas le message ; cas délai dépassé (30 s) et panel injoignable avec « Réessayer » ; pas de bruit des actions automatiques dans la cloche ; page Exploitation exclue. Tester ordinateur + téléphone sans modifier de PNJ critique. **Limite : « Affichage à jour » signifie file au repos, pas vérification explicite de la nouvelle donnée dans le catalogue.** |
 
+## Livraison #320 — 19 octobre : variables métier typées (CLAIM_TIER_1 = lasagne)
+
+| Ticket / test | État DEV | Validation attendue |
+|---|---|---|
+| [#320](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/320) · **TC-368** | **À tester** — JAR + PlugAdmin `409b3e8` (PR #610) déployés DEV le 19/10 22:35, DEV redémarré, 33 quêtes / 13 dialogues relus chargés (`quest.list`, `dialogue.list`) ; CI verte ; aucune migration, aucune variable joueur modifiée | PlugAdmin → Joueurs → fiche → Outils : sélecteur vrai/faux pour `CLAIM_TIER_1`… ; formulaire libre : `CLAIM_TIER_1` = `lasagne` **refusé**, valeur antérieure inchangée à la relecture ; `met_lily` = `lasagne` accepté. Console : `/rpgadmin player variable set <joueur> CLAIM_TIER_1 TRUE` refusé. Une valeur hors type déjà stockée est **signalée** à la lecture (lue comme non débloquée), jamais corrigée automatiquement. **Prochaine action simple** : sur un joueur d'essai, dérouler TC-368 étapes 1 à 5 (10 min). |
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |
@@ -175,6 +181,8 @@
 9. **#169 (/mobs)** : le compteur « en jeu » ne voit que les créatures repérées depuis le dernier démarrage (zones rechargées) ; un boss communautaire peut donc être « actif » avec « 0 en jeu ». Suite possible à décider : formulaire n'affichant que les champs pertinents (catégorie/type) et retour de test avec position. **19/10** : « Près de » (apparition de test) lit maintenant le même relevé que la page Joueurs (`player.catalog`) ; la liste ne se rafraîchit pas seule (« Actualiser les joueurs connectés »). Le test #177 de distribution reprend à l'apparition ciblée. — **19/10 (#542)** : ce compteur est désormais scindé en « en zone chargée / en zone non chargée / introuvables », avec position des instances hors zone chargée ; ces positions sont en mémoire seulement (perdues au redémarrage). Les persister serait une décision de schéma, non prise.
 10. **#540 capacités de mobs** : Q1–Q11 approuvées le 19/10 ; **#542 livré** (socle) ; défauts TC-361 du 19/10 (poursuite, blocs détruits) corrigés, **TC-361-bis à tester**. #543→#553 restent hors file sans nouvel accord du propriétaire. #230 : contrat générique repris par #542 ; effets de terrain reportés derrière une politique de mutation dédiée (Q11). Constat #542 : sur DEV, les profils d'exemple n'ont plus de capacités (à rétablir ou non, décision propriétaire). Défaut préexistant signalé : l'ordre des listes `worlds`/`biomes`/`zones` d'un profil peut changer à l'enregistrement (ensemble non ordonné), sans effet en jeu.
 11. **#331 / #228 mondes et portails** : Q1–Q7 approuvées le 19/10 ; **#560 et #564 livrés (lecture seule, 19/10)** ; #561–#563 et #565–#570 restent hors file sans nouvel accord. Aucun monde réel créé sans son accord explicite (nom + moment, gel bref du serveur à la création). `hub_to_wild` / `hub_to_claims` ne sont pas modifiés par ces lots sans confirmation.
+
+12. **Variables typées #320** : registre plugin `variable.VariableTypes` + copie panel `KnownVariableTypes`, à faire évoluer **ensemble**. Choix non tranché par le ticket et laissé tel quel : `STARTER_TOOL_KIT_AVAILABLE` absent **ou** illisible = kit disponible (comportement historique, pas un déblocage d'autorisation) — à changer seulement sur décision. Le passage `CLAIM_TIER_<n>` → entier reste un plan (`docs/audits/claim-tier-entier.md`).
 
 ## Autorisations propriétaire — 19/10/2026
 

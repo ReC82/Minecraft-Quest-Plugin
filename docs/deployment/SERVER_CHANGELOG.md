@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - Variables métier typées : CLAIM_TIER_1 = lasagne refusée partout (#320)
+
+### Changement
+
+JAR + PlugAdmin `409b3e8`. Registre `variable.VariableTypes` (booléens `true`/`false` exacts :
+`CLAIM_TIER_<n>`, préférences « ne plus afficher », `RUNE_RAPPEL_GRANTED`, `STARTER_TOOL_KIT_AVAILABLE`,
+`WEB_PROFILE_HIDDEN`, `VAULT_UNLOCK_<ID>` ; `STARTER_KIT_TIER` 1–99 ; `VAULT_SLOTS_<ID>` 9…54). Une valeur
+hors type est refusée par l'outil PlugAdmin (sélecteur vrai/faux), `/rpgadmin player variable set`,
+l'action de dialogue `SET_VARIABLE` et la récompense de quête `VARIABLE` (fichier refusé au chargement).
+Une valeur hors type déjà en base est signalée à la lecture, jamais corrigée. Variables libres inchangées.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest (aucune migration, aucune configuration) et redéployer PlugAdmin. Avant un
+déploiement de contenu : aucun `SET_VARIABLE`/`VARIABLE` sur une clé connue ne doit poser autre chose
+que sa valeur typée (vérifié pour le contenu du dépôt et de PlugAdmin le 19/10).
+
+### Sauvegarde préalable
+
+`rpgquest-20261019T203403Z-predeploy.jar` (sauvegarde datée de `deploy-verygames.sh`).
+
+### Déploiement
+
+19/10 22:34 : `scripts/deploy-verygames.sh -y`, redémarrage DEV (0 joueur), `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`quest.list` 33 quêtes (dont `guard_tier1..5`, `crystal_hunt`), `dialogue.list` 13 dialogues (dont `jo`) ;
+en jeu : TC-368.
+
+### Rollback
+
+Remettre le JAR sauvegardé puis redémarrer ; PlugAdmin : release précédente. Aucune donnée à restaurer.
+
 ## 2026-10-19 - Mobs : compteurs « en jeu » par périmètre et instances hors zone chargée (#542, retour TC-361)
 
 ### Changement

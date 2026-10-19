@@ -108,6 +108,14 @@
 |---|---|---|
 | [#360](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/360) — PNJ récurrents | **Correctif ancien #364 `83cf83d` déjà servi** ; aucune modification de code dans le rapport du 19/10 ; **validation visuelle propriétaire attendue** | Capture réelle DEV 1280/390 : 3 modèles continus, 15 occurrences Wild, aucun débordement de page ni tableau ; boutons Gérer visibles, cartes mobiles, résumé biomes. Le rapport vérifie aussi à 1440 et sur ouverture Gérer. Aucun développement supplémentaire nécessaire à ce stade. |
 
+## Livraison #142 — 19 octobre : recherche de matériaux et blocs
+
+| Ticket / test | État DEV | Validation attendue |
+|---|---|---|
+| [#142](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/142) · **TC-365** | **Livré PlugAdmin DEV**, PR #599 merge `74eab3c2`, CI verte ; **validation propriétaire en attente** | **Acquis avant PR (#196)** : `item.catalogs` dispose de 1504 items et la recherche partielle `pump` → `PUMPKIN` fonctionnait depuis le 05/10. **Correctif nouveau** : `BREAK_BLOCK`/`PLACE_BLOCK` utilisent une source incluant les types de blocs sans forme item (`CARROTS`, `POTATOES`, `COCOA`…), validés côté formulaire et serveur. Repli local ajoute `PUMPKIN`. **TC-365** : vérifier `pump` dans Icône/Collecter, `CARROTS` dans Casser des blocs (accepté) et dans Collecter (refus attendu), le comportement de recherche mobile ; partie en jeu facultative/ultérieure. Aucun contenu créé ni modifié par Claude ; JAR Minecraft inchangé. |
+
+**Réserve :** `item.catalogs` ne distingue pas encore tous les blocs posables parmi les objets ; le champ Bloc peut proposer aussi des objets non posables comme `DIAMOND_SWORD`. Une sélection admissible n'est donc pas une garantie complète de plaçabilité ; à auditer séparément si constat de validation erronée en jeu.
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

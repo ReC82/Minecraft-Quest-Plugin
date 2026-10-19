@@ -203,6 +203,92 @@ class MobImportPageTest {
         assertEquals(0, count("mob.definition.import.apply"));
     }
 
+    /** Bug du 19/10 : vérification SUCCESS/VALID mais page restée sur « en cours » (meta refresh inopérant). */
+    @Test
+    void aPendingCheckIsFollowedByPanelJsAndReloadsOnAnyEnd() throws Exception {
+        post("/mobs/import", "step=check&agent=" + AGENT + "&yaml=" + enc("id: lent\n"));
+        AgentActionRow check = latest("mob.definition.import.check");
+        String page = get("/mobs/import?agent=" + AGENT + "&check=" + check.id()).body();
+        assertTrue(page.contains("Vérification en cours"));
+        assertTrue(page.contains("data-pa-track-action=\"" + check.id() + "\" data-pa-track-reload=\"terminal\""), page);
+        assertFalse(page.contains("http-equiv=\"refresh\""), "plus de meta refresh : il ne rechargeait pas la page");
+        assertTrue(page.contains("href=\"/mobs/import?agent=" + AGENT + "&amp;check=" + check.id() + "\">Actualiser maintenant"),
+                "lien manuel sans ancre");
+        assertTrue(textarea(page, "f-mob-yaml").contains("id: lent"), "brouillon conservé pendant l'attente");
+
+        String panelJs = get("/assets/panel.js").body();
+        assertTrue(panelJs.contains("data-pa-track-reload") && panelJs.contains("reloadOnTerminal"));
+    }
+
+    @Test
+    void aCheckFinishedBeforeTheFirstPageShowsItsResultDirectly() throws Exception {
+        post("/mobs/import", "step=check&agent=" + AGENT + "&yaml=" + enc("id: rapide\n"));
+        AgentActionRow check = latest("mob.definition.import.check");
+        result(check, "{\"valid\":true,\"errors\":[],\"warnings\":[],\"id\":\"rpgquest:rapide\",\"category\":\"SPECIAL\","
+                + "\"bossMode\":\"\",\"displayName\":\"Rapide\",\"entityType\":\"ZOMBIE\",\"canonical\":\"id: rapide\\n\","
+                + "\"existingFile\":\"\",\"existingCanonical\":\"\",\"existingSha\":\"\"}");
+        String page = get("/mobs/import?agent=" + AGENT + "&check=" + check.id()).body();
+        assertTrue(page.contains("Créer ce profil") && page.contains("Nouveau profil"));
+        assertFalse(page.contains("Vérification en cours") || page.contains("data-pa-track-reload"));
+    }
+
+    @Test
+    void aSlowCheckSaysTheServerIsNotAnsweringButKeepsWaiting() {
+        String id = store.createAction(AGENT, "mob.definition.import.check", Map.of("yaml", "id: x"), "test");
+        AgentActionRow row = store.action(id).orElseThrow();
+        MobImportPages.View v = new MobImportPages.View(AGENT, null, "special", "", "id: x", "", row, java.util.Optional.empty());
+        String fresh = MobImportPages.pendingCheck(v, row, row.createdAt().plusSeconds(5));
+        assertTrue(fresh.contains("Vérification en cours") && !fresh.contains("Revenir au fichier"));
+        String slow = MobImportPages.pendingCheck(v, row, row.createdAt().plus(MobImportPages.SLOW_CHECK).plusSeconds(1));
+        assertTrue(slow.contains("ne répond pas encore") && slow.contains("Revenir au fichier"));
+        assertTrue(slow.contains("data-pa-track-reload=\"terminal\""), "on continue d'attendre");
+    }
+
+    @Test
+    void anExpiredOrFailedCheckOffersRetryAndKeepsTheDraft() throws Exception {
+        post("/mobs/import", "step=check&agent=" + AGENT + "&yaml=" + enc("id: perdu\n"));
+        AgentActionRow expired = latest("mob.definition.import.check");
+        store.recordResult(expired.id(), AGENT, AgentActionStatus.EXPIRED, "", "", "{}", Instant.now());
+        String page = get("/mobs/import?agent=" + AGENT + "&check=" + expired.id()).body();
+        assertTrue(page.contains("Délai dépassé") && page.contains("Revoir le fichier et vérifier à nouveau"));
+        assertFalse(page.contains("Créer ce profil") || page.contains("data-pa-track-action=\"" + expired.id()));
+        assertTrue(textarea(page, "f-mob-yaml").contains("id: perdu"), "brouillon conservé");
+
+        post("/mobs/import", "step=check&agent=" + AGENT + "&yaml=" + enc("id: casse\n"));
+        AgentActionRow failed = latest("mob.definition.import.check");
+        store.recordResult(failed.id(), AGENT, AgentActionStatus.FAILED, "ERROR", "lecteur indisponible", "{}", Instant.now());
+        page = get("/mobs/import?agent=" + AGENT + "&check=" + failed.id()).body();
+        assertTrue(page.contains("La vérification n'a pas pu avoir lieu") && page.contains("lecteur indisponible"));
+        assertTrue(page.contains("Retour aux profils") && textarea(page, "f-mob-yaml").contains("id: casse"));
+    }
+
+    @Test
+    void aDoubleClickOnVerifyOrCreateSendsOneActionOnly() throws Exception {
+        String importPage = get("/mobs/import?agent=" + AGENT).body();
+        Matcher token = Pattern.compile("name=\"submit_token\" value=\"([^\"]+)\"").matcher(importPage);
+        assertTrue(token.find(), "le formulaire « Vérifier » porte un jeton");
+        String form = "step=check&agent=" + AGENT + "&submit_token=" + token.group(1) + "&yaml=" + enc("id: double\n");
+        post("/mobs/import", form);
+        HttpResponse<String> again = post("/mobs/import", form);
+        AgentActionRow check = latest("mob.definition.import.check");
+        assertEquals(1, count("mob.definition.import.check"), "un seul envoi");
+        assertTrue(again.headers().firstValue("Location").orElse("").contains("check=" + check.id()),
+                "le second clic retombe sur la vérification déjà lancée");
+
+        result(check, "{\"valid\":true,\"errors\":[],\"warnings\":[],\"id\":\"rpgquest:double\",\"category\":\"SPECIAL\","
+                + "\"bossMode\":\"\",\"displayName\":\"D\",\"entityType\":\"ZOMBIE\",\"canonical\":\"id: double\\n\","
+                + "\"existingFile\":\"\",\"existingCanonical\":\"\",\"existingSha\":\"\"}");
+        String page = get("/mobs/import?agent=" + AGENT + "&check=" + check.id()).body();
+        Matcher applyToken = Pattern.compile("value=\"apply\">\\s*<input type=\"hidden\" name=\"submit_token\" value=\"([^\"]+)\"")
+                .matcher(page);
+        assertTrue(applyToken.find(), "le formulaire « Créer » porte un jeton");
+        String apply = "step=apply&agent=" + AGENT + "&check=" + check.id() + "&submit_token=" + applyToken.group(1);
+        post("/mobs/import", apply);
+        HttpResponse<String> second = post("/mobs/import", apply);
+        assertEquals(1, count("mob.definition.import.apply"));
+        assertTrue(second.headers().firstValue("Location").orElse("").startsWith("/mobs?agent="));
+    }
+
     @Test
     void importActionsNeedTheMobWritePermission() {
         assertEquals(Permission.MOB_WRITE, AgentActionCatalog.spec("mob.definition.import.check").orElseThrow().permission());

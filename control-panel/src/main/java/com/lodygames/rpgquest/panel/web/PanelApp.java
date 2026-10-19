@@ -5318,7 +5318,24 @@ public final class PanelApp {
         if (apply) {
             params.put("check_id", checkId);
         }
+        // Même jeton à usage unique que #474 : un double clic retombe sur l'action déjà créée.
+        String submitToken = form.getOrDefault("submit_token", "").trim();
+        if (!submitToken.isEmpty()) {
+            Optional<String> already = session.reserveSubmitToken(submitToken);
+            if (already.isPresent()) {
+                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                        "DENIED", "formulaire déjà envoyé (jeton réutilisé)", rid);
+                Http.redirect(exchange, already.get().isEmpty()
+                        ? back + "&err=" + enc("Ce formulaire vient déjà d'être envoyé : rien n'a été envoyé en double.")
+                        : apply ? "/mobs?agent=" + enc(agentId) + "&toast=" + enc(already.get())
+                        : back + "&check=" + enc(already.get()) + "#mob-import-check");
+                return;
+            }
+        }
         String id = agentStore.createAction(agentId, type, params, session.username());
+        if (!submitToken.isEmpty()) {
+            session.bindSubmitToken(submitToken, id);
+        }
         audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type + " action=" + id,
                 "PENDING", safeParams(params), rid);
         LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId

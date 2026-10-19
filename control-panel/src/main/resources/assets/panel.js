@@ -134,7 +134,12 @@
       for (var p = 0; p < pendingToasts.length; p++) {
         if (pendingToasts[p].actionId === trackedId) { known = true; break; }
       }
-      if (trackedId && !known) { pendingToasts.push({ el: tracked[t], actionId: trackedId, sawPending: true }); }
+      // Issue #214 : data-pa-track-reload="terminal" — la vue attend CE résultat (vérification d'un
+      // import) : rechargement immédiat dès la fin, succès ou échec, sans attendre que la file soit au repos.
+      if (trackedId && !known) {
+        pendingToasts.push({ el: tracked[t], actionId: trackedId, sawPending: true,
+          reloadOnTerminal: tracked[t].getAttribute("data-pa-track-reload") === "terminal" });
+      }
     }
   }
 
@@ -263,6 +268,14 @@
           var match = null;
           for (var k = 0; data.actions && k < data.actions.length; k++) {
             if (data.actions[k].idFull === entry.actionId) { match = data.actions[k]; break; }
+          }
+          if (entry.reloadOnTerminal && (!match || match.group !== "pending")) {
+            // Absente des dernières actions relevées : elle est forcément plus ancienne que celles-ci,
+            // donc terminée — la page serveur dira dans quel état. Un seul rechargement par action.
+            if (alreadyReloadedFor(entry.actionId)) { pendingToasts.splice(i, 1); continue; }
+            markReloadedFor([entry.actionId]);
+            try { window.location.reload(); } catch (e) { window.location.href = window.location.href; }
+            return;
           }
           if (match && match.group === "pending") {
             entry.sawPending = true;

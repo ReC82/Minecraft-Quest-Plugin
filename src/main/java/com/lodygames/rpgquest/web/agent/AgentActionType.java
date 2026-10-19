@@ -597,7 +597,13 @@ public enum AgentActionType {
      * Issue #369 — supprime un catalogue après sauvegarde dans {@code quest-catalog-backups/}. Refusé
      * s'il est attribué à un modèle, sauf {@code detach=true} (la référence est retirée des modèles).
      */
-    QUEST_CATALOG_DELETE("quest.catalog.delete");
+    QUEST_CATALOG_DELETE("quest.catalog.delete"),
+    /**
+     * Issue #560 (#331-W1) — tous les mondes (chargés ou connus de Multiverse-Core), gestionnaire,
+     * rôle Hub/Wild/Claims, mondes essentiels, éléments liés et problèmes. Lecture seule : aucune
+     * création, aucun chargement, aucun déchargement, aucun réglage.
+     */
+    WORLD_LIST("world.list");
 
     private final String wire;
 

@@ -4707,6 +4707,28 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
 
 ## 7. Mondes
 
+### Page PlugAdmin « Mondes » en lecture seule (issue #560, #331-W1)
+
+- **Monde → Mondes** (`/worlds`), permission panel `WORLD_READ` (Propriétaire, Administrateur,
+  Testeur, Builder, Lecture seule). Le groupe de navigation « Monde » contient aussi **Voyages**
+  (même URL `/travel`, déplacé depuis « RPGQuest »).
+- Une seule action agent : `world.list` (« Rafraîchir les mondes »), **lecture seule**. Aucune action
+  `world.*` ne crée, ne charge, ne décharge, n'importe ni ne règle un monde ; aucun bouton mutatif,
+  même désactivé.
+- Par monde : chargé, joueurs, dimension, génération (type, graine, structures, générateur),
+  difficulté, PvP, point d'arrivée, chargement au démarrage ; **gestionnaire** (Multiverse-Core,
+  RPGQuest `plugins/RPGQuest/worlds.yml` — cas de `wild` —, ou serveur pour le monde principal et ses
+  `_nether` / `_the_end`) ; **rôle** Hub / Wild / Claims lu dans `hub.world`, `travel.wild-world`,
+  `claims.world` (aucun rôle par défaut) ; badge **Essentiel** (monde principal ou monde à rôle) ;
+  **éléments liés** (world-portals au départ / à l'arrivée, emplacements de bâtiment, waypoints et
+  génération automatique, profils de mob qui citent le monde, emplacements PNJ, villes) ;
+  **problèmes** (`WORLD_ROLE_NOT_LOADED`, `WORLD_PORTAL_TO_UNLOADED`, `WORLD_TWO_MANAGERS`…, aide
+  `/docs/mondes`).
+- **Multiverse-Core facultatif** (`softdepend`, API 5.7.3 en `compileOnly`, appels confinés à
+  `world.multiverse.MultiverseApiReader`, getters uniquement). Absent / désactivé / incompatible : la
+  page liste les mondes chargés vus par le serveur et l'indique.
+
+
 Vérifié dans `RpgAdminCommand.java` (`handleWorld*`), `hub/HubWorldRulesService.java`, `config.yml`, et [VERYGAMES.md](deployment/VERYGAMES.md).
 
 ### Spawn Minecraft vs Multiverse vs RPGQuest — bien distinguer

@@ -6,6 +6,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Page « Mondes » en lecture seule (#560, 19/10/2026)** — PlugAdmin `/worlds` (groupe « Monde »,
+> avec Voyages), permission `WORLD_READ`, action agent `world.list` seule : mondes chargés ou connus de
+> Multiverse-Core (facultatif, `softdepend`), gestionnaire, rôle Hub/Wild/Claims, badge Essentiel,
+> éléments liés, problèmes. Aucune création, chargement, déchargement ni réglage de monde. Pas de migration.
+
 > **Salles de préparation du Hub (#107, 17/10/2026)** — services logiques d'un Hub définis dans
 > [HUB_SERVICES.md](HUB_SERVICES.md) : salle des coffres = coffres personnels #104/#105/#106 (aucun
 > second stockage), salle de craft = établis vanilla utilisables par tous. `HubWorldProtectionListener`

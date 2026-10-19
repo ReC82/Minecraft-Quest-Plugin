@@ -7089,7 +7089,7 @@ public final class AgentPages {
      * pour /quests, /stories, /dialogues. Le champ pilote {@code data-filter-input="<scope>"} ; les
      * cartes portent {@code data-filter-item="<scope>"} et {@code data-filter-cat}.
      */
-    private static String listControls(String scope, String placeholder, String chipsHtml) {
+    static String listControls(String scope, String placeholder, String chipsHtml) {
         StringBuilder sb = new StringBuilder("<div class=\"npc-controls\">");
         sb.append("<div class=\"input-group npc-search\"><span class=\"input-group-text\">")
                 .append(Icons.icon("search")).append("</span>")
@@ -7151,7 +7151,7 @@ public final class AgentPages {
         return out;
     }
 
-    private static String filterBtn(String value, String label, boolean on) {
+    static String filterBtn(String value, String label, boolean on) {
         return "<button type=\"button\" class=\"pa-chip" + (on ? " on" : "") + "\" data-filter-chip=\""
                 + Http.esc(value) + "\">" + Http.esc(label) + "</button>";
     }
@@ -11137,6 +11137,22 @@ public final class AgentPages {
             }
         }
         return sb.toString();
+    }
+
+    /** Page {@code /worlds} (issue #560) : lecture seule, rendu dans {@link WorldPages}. */
+    public String worlds(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        if (agent.isEmpty()) {
+            return WorldPages.render(new WorldPages.View("", null, noAgent(), "", ""));
+        }
+        String agentId = agent.get().id();
+        Optional<AgentActionRow> row = store.latestSuccessfulActionOfType(agentId, "world.list");
+        Map<String, Object> details = row.flatMap(this::detailsOf).orElse(null);
+        String header = agentPicker(agentId, WorldPages.PATH, "")
+                + listCatbar("Mondes", compactRefresh(session, agentId, "world.list", "Rafraîchir les mondes",
+                details == null ? "btn-warning" : "btn-outline-primary", WorldPages.PATH));
+        return WorldPages.render(new WorldPages.View(agentId, details, header,
+                row.map(r -> when(at(r))).orElse(""), str(q.get("world")).trim()));
     }
 
     /** Objets (Minecraft + RPGQuest), prix du catalogue central et quêtes, pour les champs de saisie. */

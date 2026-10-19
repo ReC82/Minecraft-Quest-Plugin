@@ -2182,6 +2182,85 @@ public final class BukkitAgentActions implements AgentActions {
                 "admin_bypass_max_minutes", String.valueOf(s.adminBypassMaxMinutes()));
     }
 
+    // ---- Mondes (issue #560, #331-W1) — LECTURE SEULE -------------------------------------------
+    // Aucun appel ici ne crée, ne charge, ne décharge ni ne règle un monde (ni Bukkit, ni Multiverse).
+
+    private com.lodygames.rpgquest.world.WorldService worldService;
+    private com.lodygames.rpgquest.travel.WorldPortalRegistry worldPortals;
+    private Supplier<com.lodygames.rpgquest.config.PluginConfig> worldConfig;
+    private Supplier<com.lodygames.rpgquest.world.WorldOverview.ExternalSource> multiverseWorlds;
+
+    public void setWorldSources(com.lodygames.rpgquest.world.WorldService worldService,
+                                com.lodygames.rpgquest.travel.WorldPortalRegistry portals,
+                                Supplier<com.lodygames.rpgquest.config.PluginConfig> config,
+                                Supplier<com.lodygames.rpgquest.world.WorldOverview.ExternalSource> multiverse) {
+        this.worldService = worldService;
+        this.worldPortals = portals;
+        this.worldConfig = config;
+        this.multiverseWorlds = multiverse;
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.WorldOverview.View> worldList() {
+        if (worldService == null || worldPortals == null || worldConfig == null || multiverseWorlds == null) {
+            return AgentActions.super.worldList();
+        }
+        // Mondes, joueurs et Multiverse = état Bukkit -> thread principal. Les autres sources sont
+        // des caches mémoire déjà chargés : aucun accès disque ni SQL ici.
+        return onMain(() -> done(com.lodygames.rpgquest.world.WorldOverview.build(worldInputs())));
+    }
+
+    private com.lodygames.rpgquest.world.WorldOverview.Inputs worldInputs() {
+        var cfg = worldConfig.get();
+        List<org.bukkit.World> worlds = plugin.getServer().getWorlds();
+        List<com.lodygames.rpgquest.world.WorldOverview.LoadedWorld> loaded = new ArrayList<>();
+        for (org.bukkit.World w : worlds) {
+            org.bukkit.Location spawn = w.getSpawnLocation();
+            org.bukkit.generator.ChunkGenerator generator = w.getGenerator();
+            loaded.add(new com.lodygames.rpgquest.world.WorldOverview.LoadedWorld(w.getName(),
+                    w.getEnvironment().name(), worldTypeOf(w), w.getSeed(), w.canGenerateStructures(),
+                    w.getPlayerCount(), w.getDifficulty().name(), w.getPVP(), w.isHardcore(),
+                    spawn.getBlockX(), spawn.getBlockY(), spawn.getBlockZ(),
+                    generator == null ? null : generator.getClass().getName()));
+        }
+        var portals = worldPortals.portals().stream()
+                .map(p -> new com.lodygames.rpgquest.world.WorldOverview.PortalLink(p.id(), p.world(),
+                        p.destinationWorld(), p.enabled(), p.destinationStrategy().name()))
+                .toList();
+        var sites = buildingSiteService == null ? List.<com.lodygames.rpgquest.world.WorldOverview.Place>of()
+                : buildingSiteService.all().stream()
+                .map(s -> new com.lodygames.rpgquest.world.WorldOverview.Place(s.id(), s.name(), s.world())).toList();
+        var waypoints = waypointService == null ? List.<com.lodygames.rpgquest.world.WorldOverview.Place>of()
+                : waypointService.all().stream()
+                .map(w -> new com.lodygames.rpgquest.world.WorldOverview.Place(w.id(), w.displayName(), w.world()))
+                .toList();
+        var mobs = mobRegistry == null ? List.<com.lodygames.rpgquest.world.WorldOverview.MobLink>of()
+                : mobRegistry.definitions().stream()
+                .map(d -> new com.lodygames.rpgquest.world.WorldOverview.MobLink(d.id().toString(),
+                        d.displayName(), d.allowedWorlds()))
+                .toList();
+        var spots = npcSpots == null ? List.<com.lodygames.rpgquest.world.WorldOverview.Place>of()
+                : npcSpots.all().stream()
+                .map(s -> new com.lodygames.rpgquest.world.WorldOverview.Place(s.id(), s.name(), s.world())).toList();
+        var cities = cityRegistry == null ? List.<com.lodygames.rpgquest.world.WorldOverview.Place>of()
+                : cityRegistry.all().stream()
+                .map(c -> new com.lodygames.rpgquest.world.WorldOverview.Place(c.id(), c.name(), c.world())).toList();
+        return new com.lodygames.rpgquest.world.WorldOverview.Inputs(loaded,
+                worlds.isEmpty() ? "" : worlds.get(0).getName(), multiverseWorlds.get(),
+                worldService.managedNames(),
+                new com.lodygames.rpgquest.world.WorldOverview.Roles(cfg.hub().world(), cfg.travel().wildWorld(),
+                        cfg.claims().world()),
+                new com.lodygames.rpgquest.world.WorldOverview.WaypointPolicy(cfg.travel().waypoint().enabled(),
+                        cfg.travel().waypoint().hubEnabled()),
+                portals, sites, waypoints, mobs, spots, cities);
+    }
+
+    @SuppressWarnings("deprecation") // seule lecture du type de terrain exposée par l'API Paper 1.21.11
+    private static String worldTypeOf(org.bukkit.World world) {
+        org.bukkit.WorldType type = world.getWorldType();
+        return type == null ? null : type.name();
+    }
+
     public void setCities(com.lodygames.rpgquest.city.CityRegistry registry,
                           com.lodygames.rpgquest.city.CityDiscoveryService discovery,
                           com.lodygames.rpgquest.city.PendingCityRegistry pendings,

@@ -109,6 +109,11 @@ public final class WorldService implements PluginService {
         return managedWorlds.contains(name.toLowerCase(Locale.ROOT));
     }
 
+    /** Noms déclarés dans {@code worlds.yml} (issue #560, lecture seule ; thread principal). */
+    public List<String> managedNames() {
+        return List.copyOf(managedWorlds);
+    }
+
     /** Tous les mondes actuellement chargés sur le serveur, gérés par RPGQuest ou non. */
     public List<World> loadedWorlds() {
         return plugin.getServer().getWorlds();

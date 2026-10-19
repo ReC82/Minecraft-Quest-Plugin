@@ -217,6 +217,7 @@ public final class AgentActionExecutor {
                 case PRICE_DUPLICATE -> priceDuplicate(action);
                 case PRICE_TOGGLE -> priceToggle(action);
                 case MERCHANT_CATALOG_STATUS -> merchantCatalogStatus(action);
+                case WORLD_LIST -> worldList(action);
                 case MERCHANT_SAVE -> merchantSave(action);
                 case MERCHANT_DUPLICATE -> merchantDuplicate(action);
                 case MERCHANT_TOGGLE -> merchantToggle(action);
@@ -1989,6 +1990,24 @@ public final class AgentActionExecutor {
     private static final java.util.Set<String> MERCHANT_QUEST_STATES = java.util.Arrays.stream(
             com.lodygames.rpgquest.quest.model.QuestState.values()).map(Enum::name)
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+    // ---- Mondes (issue #560, #331-W1) ---------------------------------------------------------
+
+    /** {@code world.list} : lecture pure, rien n'est créé, chargé, déchargé ni réglé. */
+    private CompletableFuture<AgentActionOutcome> worldList(AgentAction action) {
+        return actions.worldList().thenApply(view -> {
+            if (!view.available()) {
+                return AgentActionOutcome.failed(action.id(), "Mondes indisponibles sur ce serveur.");
+            }
+            Map<String, Object> details = WorldListDetails.of(view);
+            long loaded = view.worlds().stream().filter(com.lodygames.rpgquest.world.WorldOverview.Entry::loaded)
+                    .count();
+            String summary = view.worlds().size() + " monde(s), " + loaded + " chargé(s)"
+                    + (view.multiverse().available() ? " — Multiverse-Core " + view.multiverse().version()
+                    : " — sans Multiverse-Core");
+            return AgentActionOutcome.success(action.id(), String.valueOf(view.worlds().size()), summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
 
     private CompletableFuture<AgentActionOutcome> merchantCatalogStatus(AgentAction action) {
         return actions.merchantCatalogStatus().thenApply(view -> {

@@ -191,6 +191,42 @@ public final class DiagnosticHelp {
                 "Corrigez l'identifiant de la quête, ou créez la quête manquante.", "stories-depannage");
     }
 
+    // ---- Mondes (issue #560, relevé world.list) -------------------------------------
+    static {
+        add("WORLD_ROLE_NOT_LOADED", Level.ERROR, "Monde à rôle non chargé",
+                "{detail}",
+                "Les joueurs ne peuvent pas rejoindre ce Hub, Wild ou Claims ; les portails qui y mènent échouent.",
+                "Vérifiez le nom dans la configuration (hub.world, travel.wild-world, claims.world) et que le "
+                        + "monde existe sur le serveur, puis redémarrez.", "mondes");
+        add("WORLD_MANAGED_NOT_LOADED", Level.WARNING, "Monde RPGQuest non rechargé",
+                "{detail}",
+                "Ce monde n'est pas accessible tant qu'il n'est pas rechargé.",
+                "Consultez la console au démarrage : le dossier du monde a peut-être été déplacé ou renommé.",
+                "mondes");
+        add("WORLD_TWO_MANAGERS", Level.WARNING, "Monde déclaré deux fois",
+                "{detail}",
+                "Deux plugins rechargent le même monde : ses réglages peuvent diverger selon celui qui passe en "
+                        + "dernier.",
+                "Ne rien changer sans décision : un seul gestionnaire doit être gardé (voir l'étude #331).",
+                "mondes");
+        add("WORLD_PORTAL_FROM_UNLOADED", Level.WARNING, "Portail dans un monde non chargé",
+                "{detail}",
+                "Le portail existe mais aucun joueur ne peut l'atteindre.",
+                "Chargez le monde ou désactivez le portail.", "mondes");
+        add("WORLD_PORTAL_TO_UNLOADED", Level.ERROR, "Portail vers un monde non chargé",
+                "{detail}",
+                "Un joueur qui entre dans ce portail ne sera pas téléporté.",
+                "Chargez le monde d'arrivée, ou désactivez le portail en attendant.", "mondes");
+        add("WORLD_AUTOLOAD_NOT_LOADED", Level.INFO, "Monde Multiverse non chargé",
+                "{detail}",
+                "Le monde sera chargé au prochain redémarrage s'il n'y a pas d'erreur.",
+                "Si le monde reste non chargé après un redémarrage, consultez la console.", "mondes");
+        add("WORLD_MULTIVERSE_ABSENT", Level.INFO, "Multiverse-Core non lu",
+                "{detail}",
+                "Les mondes non chargés ne peuvent pas être listés.",
+                "Rien à faire si Multiverse-Core n'est pas utilisé sur ce serveur.", "mondes");
+    }
+
     private DiagnosticHelp() {
     }
 

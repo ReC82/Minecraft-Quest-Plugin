@@ -377,6 +377,8 @@ public final class AgentActionCatalog {
         // Issue #178 — villes. La CRÉATION n'a pas d'action : le centre se désigne en jeu avec
         // l'outil de ville. Toutes les mutations invalident le relevé, relu automatiquement.
         add("city.list", Permission.TRAVEL_READ, false, false, "Rafraîchir les villes");
+        // Issue #560 (#331-W1) — mondes en lecture seule. Aucune action world.* mutative n'existe.
+        add("world.list", Permission.WORLD_READ, false, false, "Rafraîchir les mondes");
         addContentWrite("city.rename", Permission.CITY_WRITE, "Renommer une ville", "city.list");
         addContentWrite("city.resize", Permission.CITY_WRITE, "Régler la taille d'une ville", "city.list");
         addContentWrite("city.active", Permission.CITY_WRITE, "Activer / désactiver une ville", "city.list");

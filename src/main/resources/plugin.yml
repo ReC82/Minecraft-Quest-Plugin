@@ -22,6 +22,9 @@ softdepend:
   # le plugin démarre exactement comme avant et la pose de bâtiments est refusée avec son motif.
   # softdepend et non depend : RPGQuest n'a aucune raison de ne pas démarrer sans lui.
   - WorldEdit
+  # Multiverse-Core (issue #560) : jamais requis. Présent, la page Mondes de PlugAdmin lit ses mondes
+  # (chargés ou non) ; absent, elle se limite aux mondes chargés vus par le serveur. Lecture seule.
+  - Multiverse-Core
 
 libraries:
   - org.xerial:sqlite-jdbc:3.53.2.1

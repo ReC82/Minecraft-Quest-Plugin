@@ -9,6 +9,7 @@
  *   - initNotifications() : rafraîchit la cloche de la topbar (badge + liste) par un polling
  *                           léger de /agents/actions.json — accéléré tant qu'une action est en cours ;
  *   - initCopy()          : copie d'un identifiant technique ([data-copy]) ;
+ *   - initCopyBlock()     : copie d'un bloc brut ([data-copy-from]) avec retour visible (#583) ;
  *   - initFilters()       : filtrage progressif des listes de cartes ;
  *   - initOpsAnnounce()   : compteur, aperçu et modèles rapides de l'annonce globale (#95) ;
  *   - initOpsConsole()    : console de logs en lecture seule — recherche, filtres de niveau,
@@ -621,6 +622,72 @@
       var el = ev.target && ev.target.matches && ev.target.matches("[data-copy]") ? ev.target : null;
       if (el) { ev.preventDefault(); copyText(el.getAttribute("data-copy") || el.textContent, el); }
     });
+  }
+
+  /* ---- Copie d'un bloc de texte brut (#583) ---------------------------------------- */
+
+  /*
+   * [data-copy-from="<id>"] copie le textContent exact de l'élément <id> (pas de balisage, pas de
+   * troncature) et annonce le résultat dans [data-copy-status]. Purement local : aucune requête.
+   * Presse-papiers refusé ou absent : le texte est sélectionné pour une copie manuelle.
+   */
+  function initCopyBlock() {
+    document.addEventListener("click", function (ev) {
+      var btn = ev.target.closest ? ev.target.closest("[data-copy-from]") : null;
+      if (!btn) { return; }
+      var src = document.getElementById(btn.getAttribute("data-copy-from"));
+      var status = document.getElementById(btn.getAttribute("data-copy-status") || "");
+      if (!src) { return; }
+      var text = src.textContent;
+      var ok = function () { copyBlockStatus(status, true, "Copié — " + text.length + " caractères."); };
+      var ko = function () {
+        selectContents(src);
+        copyBlockStatus(status, false, "Copie automatique impossible (presse-papiers indisponible ou refusé). "
+          + "Le texte est sélectionné : Ctrl+C, ou appui long puis « Copier » sur téléphone.");
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(ok, function () { execCopy(text) ? ok() : ko(); });
+          return;
+        }
+      } catch (e) { /* repli */ }
+      if (execCopy(text)) { ok(); } else { ko(); }
+    });
+  }
+
+  function execCopy(text) {
+    var ta = document.createElement("textarea");
+    try {
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      return document.execCommand("copy") === true;
+    } catch (e) {
+      return false;
+    } finally {
+      if (ta.parentNode) { ta.parentNode.removeChild(ta); }
+    }
+  }
+
+  function selectContents(el) {
+    try {
+      el.focus();
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) { /* la sélection manuelle reste possible */ }
+  }
+
+  function copyBlockStatus(status, ok, message) {
+    if (!status) { return; }
+    status.textContent = message;
+    status.classList.toggle("ok", ok);
+    status.classList.toggle("err", !ok);
   }
 
   /* ---- Filtrage progressif des listes de cartes ---------------------------------- */
@@ -1855,6 +1922,7 @@
     run("dropOneShotResultFlags", dropOneShotResultFlags);
     run("initNotifications", initNotifications);
     run("initCopy", initCopy);
+    run("initCopyBlock", initCopyBlock);
     run("initFilters", initFilters);
     run("initFocus", initFocus);
     run("initCombo", initCombo);

@@ -384,6 +384,9 @@ depuis un CDN — le panel ne dépend d'aucun accès Internet au runtime.
   same-origin`, 20 s au repos (3 s tant qu'une action est en cours), avec un garde-fou de durée.
   Pas de WebSocket. `401`/`403` arrêtent le polling proprement.
 - `/actions/<id>` : l'id est validé (`[0-9a-fA-F-]{8,36}`) avant lecture ; inconnu → `404`.
+- « Copier le résultat brut » (#583) : `panel.js` lit le `textContent` du `<pre>` déjà échappé
+  côté serveur et l'écrit dans le presse-papiers — aucune requête, aucun JS inline, aucune donnée
+  au-delà de ce que la fiche affiche déjà sous `DIAGNOSTICS_READ`.
 
 ## Kill-switch
 

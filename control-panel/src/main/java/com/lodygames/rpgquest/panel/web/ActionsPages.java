@@ -423,8 +423,20 @@ public final class ActionsPages {
         if (!json.isEmpty()) {
             sb.append("<div class=\"form-section\"><p class=\"fs-h\">").append(Icons.icon("docs"))
                     .append("Corps brut du résultat</p>");
-            sb.append("<div class=\"codeblock\"><pre>").append(Http.esc(json)).append("</pre></div>");
+            // #583 : copie du texte brut exact (textContent du <pre>, aucun balisage), côté client
+            // uniquement — aucune requête, aucune réexécution. Repli : sélection pour copie manuelle.
+            sb.append("<div class=\"copy-bar\"><button class=\"btn secondary sm\" type=\"button\" "
+                    + "data-copy-from=\"action-result-raw\" data-copy-status=\"action-result-raw-status\">")
+                    .append(Icons.icon("copy")).append("Copier le résultat brut</button>")
+                    .append("<span class=\"copy-status\" id=\"action-result-raw-status\" role=\"status\" "
+                            + "aria-live=\"polite\"></span></div>");
+            sb.append("<div class=\"codeblock\"><pre id=\"action-result-raw\" tabindex=\"0\" "
+                    + "aria-label=\"Corps brut du résultat\">").append(Http.esc(json)).append("</pre></div>");
             sb.append("<p class=\"field-help\">Diagnostic — sans secret (voir protocole agent #51).</p></div>");
+        } else {
+            sb.append("<div class=\"form-section\"><p class=\"fs-h\">").append(Icons.icon("docs"))
+                    .append("Corps brut du résultat</p><p class=\"muted\">Aucun corps brut : l'agent n'a pas "
+                            + "(encore) renvoyé de résultat pour cette action, rien à copier.</p></div>");
         }
         return sb.toString();
     }

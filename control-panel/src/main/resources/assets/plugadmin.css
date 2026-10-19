@@ -276,6 +276,11 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 .codeblock pre{margin:0;background:#0f1729;border:1px solid #1e2b45;border-radius:10px;
   padding:14px 16px;overflow-x:auto;color:#dbe4f3;font-size:12.5px;line-height:1.55;white-space:pre}
 .diff pre{background:#0f1729}
+/* #583 : bouton de copie d'un bloc brut + retour lisible (passe à la ligne sur téléphone). */
+.copy-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:8px}
+.copy-status{font-size:13px;color:var(--txt-2)}
+.copy-status.ok{color:var(--ok)}
+.copy-status.err{color:var(--err)}
 .diff .di-add{color:#7ee0a1} .diff .di-del{color:#ff9d9d} .diff .di-ctx{color:#9fb0cc}
 /* ---- issue #47 : diff source ↔ DEV ---- */
 /* Hauteur bornée : un diff long ne doit pas repousser le reste de la fiche hors de l'écran.

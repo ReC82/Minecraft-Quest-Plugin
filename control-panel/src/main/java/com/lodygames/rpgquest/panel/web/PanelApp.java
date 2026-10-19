@@ -364,6 +364,9 @@ public final class PanelApp {
         // les écritures passent par /agents/action (merchant.*, ECONOMY_WRITE).
         route("/merchants", exchange -> handleBusinessPage(exchange, "/merchants", "Marchands",
                 Permission.ECONOMY_READ, agentPages::merchants));
+        // Issue #560 (#331-W1) — mondes en LECTURE SEULE : seul « Rafraîchir » (world.list) est exposé.
+        route("/worlds", exchange -> handleBusinessPage(exchange, "/worlds", "Mondes",
+                Permission.WORLD_READ, agentPages::worlds));
         // Issue #332 — dialogues, version simple : une liste, un éditeur, « Enregistrer » puis
         // « Mettre en jeu » par la publication à chaud (#47). L'ancien écran reste en « Détails
         // techniques ».

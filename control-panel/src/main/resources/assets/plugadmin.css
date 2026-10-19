@@ -1572,3 +1572,40 @@ pre.mob-cell{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85e
   .mob-test-row .form-select,.mob-test-row .form-control{max-width:none;flex:1 1 100%}
   .actions-search{max-width:none}
 }
+
+/* ---- Mondes (issue #560, #331-W1) — d'après les maquettes docs/design/331-mondes-portails ---- */
+.w-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.w-card{display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:12px 14px;box-shadow:var(--shadow-s);min-width:0}
+.w-card.muted-card{background:var(--surface-2);border-style:dashed}
+.w-head{display:flex;align-items:flex-start;gap:10px}
+.w-ic{flex:0 0 36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:18px}
+.w-ic.ov{background:var(--ok-soft);color:var(--ok)}
+.w-ic.ne{background:var(--err-soft);color:var(--err)}
+.w-ic.en{background:var(--info-soft);color:var(--info)}
+.w-name{font-weight:700;font-size:15px;word-break:break-all}
+.w-sub{font-size:12px;color:var(--txt-faint)}
+.w-pills{margin-left:auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.w-roles{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px}
+.role{padding:2px 9px;border-radius:999px;font-weight:700;font-size:11.5px;border:1px solid var(--line)}
+.role.hub{background:#efe9ff;color:#5b3fc4}.role.wild{background:var(--ok-soft);color:var(--ok)}
+.role.claims{background:var(--info-soft);color:var(--info)}.role.none{background:var(--surface-3);color:var(--txt-faint)}
+.mgr{color:var(--txt-faint)}
+.w-facts{margin:0;padding:0;list-style:none;font-size:12.5px;color:var(--txt-2)}
+.w-facts li{display:flex;gap:6px}.w-facts .k{color:var(--txt-faint);min-width:58px}
+.w-note{margin:0;font-size:12px;color:var(--txt-2);background:var(--surface-2);border-radius:8px;padding:6px 8px}
+.w-note-err{background:var(--err-soft);color:var(--err)}
+.w-foot{margin-top:auto}.w-foot .btn{margin-top:0}
+.w-small-note{margin-top:14px}
+.w-title{font-size:20px;font-weight:800;display:flex;flex-wrap:wrap;align-items:center;gap:8px;word-break:break-all}
+.w-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.w-cols>div{min-width:0;display:flex;flex-direction:column;gap:14px}
+@media(min-width:1100px){.w-cols{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}}
+.w-sec{padding:14px 16px;margin:0}
+.w-h{font-size:15px;font-weight:800;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.w-dl{margin:0;display:grid;grid-template-columns:1fr;gap:6px}
+.w-dl div{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px}.w-dl dt{min-width:110px;color:var(--txt-faint);font-weight:600}
+.w-dl dd{margin:0;min-width:0;word-break:break-all}
+.w-links{margin:0;padding:0;list-style:none;font-size:13px}.w-links li{display:flex;gap:8px;margin:5px 0}
+.w-links .bi{color:var(--txt-faint)}.w-links span{min-width:0}
+@media(max-width:700px){.w-pills{flex-direction:row;flex-wrap:wrap}}

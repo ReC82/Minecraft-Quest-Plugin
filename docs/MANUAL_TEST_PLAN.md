@@ -6686,6 +6686,24 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-362 — Page Mondes en lecture seule : six mondes, gestionnaires, rôles, éléments liés (issue #560, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de la PR de #560 sur **DEV**. Aucune action de cette page ne modifie un
+monde : on peut tout essayer.
+
+1.  PlugAdmin → **Monde → Mondes** → **Rafraîchir les mondes**. **Attendu** : 6 cartes — `world`, `world_hub`,
+    `wild`, `claims`, `world_nether`, `world_the_end` — toutes « Chargé ».
+2.  `wild` : rôle **Wild**, « géré par RPGQuest (worlds.yml) », badge **Essentiel**, « arrivée de hub_to_wild ».
+    `world_hub` : rôle **Hub**, « géré par Multiverse », « départ de 2 portail(s) ». `claims` : rôle **Claims**.
+    `world` : « Aucun rôle », « géré par le serveur (monde principal) », **Essentiel**. Nether / End : aucun
+    rôle, pas de badge.
+3.  Ouvrir la fiche de `world_hub` : graine, structures, difficulté, PvP, point d'arrivée ; éléments liés
+    `hub_to_wild` (point sûr aléatoire) et `hub_to_claims` (claim du joueur), emplacements de bâtiment et
+    emplacements PNJ de DEV. Comparer la graine avec `/seed` en jeu dans `world_hub`.
+4.  Se placer dans `world_hub` en jeu, Rafraîchir : « Joueurs 1 » sur la carte du Hub.
+5.  Vérifier qu'aucun bouton ne crée, ne charge, ne décharge ni ne modifie un monde (carte et fiche).
+6.  Téléphone (390 px) : liste et fiche lisibles, pas de défilement horizontal de la page.
+
 ### TC-361 — Socle des capacités de mobs : profils inchangés, capacités identiques, sécurité, doublons refusés (issue #542, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR #575 (`e4f7432`) sur **DEV** ; PlugAdmin inchangé. Claude n'a modifié aucun

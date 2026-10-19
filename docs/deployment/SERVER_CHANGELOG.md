@@ -48,6 +48,31 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - PlugAdmin : page « Mondes » en lecture seule (#560)
+
+### Changement
+
+JAR + PlugAdmin. Nouvelle action agent `world.list` (lecture seule) et page `/worlds`. `plugin.yml` gagne
+`Multiverse-Core` en `softdepend` (aucun effet si absent ; présent, il est chargé avant RPGQuest, ce qui est
+déjà le cas sur DEV). **Pas de migration**, aucune clé de configuration, aucun fichier écrit sur le serveur.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest et redéployer PlugAdmin. Ne toucher à aucun monde, à `worlds.yml` (RPGQuest ou
+Multiverse), aux portails ni aux bâtiments.
+
+### Sauvegarde préalable
+
+JAR actuel (script de déploiement).
+
+### Validation
+
+PlugAdmin → Monde → Mondes → Rafraîchir les mondes : les 6 mondes de DEV, `wild` « géré par RPGQuest ».
+
+### Rollback
+
+Remettre le JAR précédent et redéployer PlugAdmin au commit précédent ; rien d'autre à défaire.
+
 ## 2026-10-19 - Mobs : socle des capacités composables (#542)
 
 ### Changement

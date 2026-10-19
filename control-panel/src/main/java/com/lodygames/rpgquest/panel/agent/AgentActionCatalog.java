@@ -461,9 +461,10 @@ public final class AgentActionCatalog {
         // Issue #194 : suppression de la copie SERVEUR d'une quête/story. Mutation sensible —
         // confirmation exigée — et les catalogues impactés sont ré-enfilés, sans quoi le contenu
         // supprimé resterait affiché et donnerait l'impression de « réapparaître ».
+        // Issue #129 : npc.list aussi — chaque fiche PNJ résume les quêtes et le dialogue chargés.
         addSensitiveWrite("content.definition.delete", Permission.CONTENT_DELETE, false,
                 "Supprimer une définition de quête/story/dialogue sur le serveur",
-                "quest.list", "story.list", "dialogue.list");
+                "quest.list", "story.list", "dialogue.list", "npc.list");
         // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,
         // aucun catalogue à réenfiler.
         add("content.export", Permission.CONTENT_EXPORT, false, false, "Exporter le contenu (pack versionné)");
@@ -482,23 +483,30 @@ public final class AgentActionCatalog {
         // impactés sont ré-enfilés pour que l'état se réconcilie sans « Rafraîchir + F5 ».
         addSensitiveWrite("content.publish", Permission.CONTENT_PUBLISH, false,
                 "Publier une ressource de contenu sur DEV",
-                "content.dev.state", "quest.list", "story.list", "dialogue.list");
+                "content.dev.state", "quest.list", "story.list", "dialogue.list", "npc.list");
         // Issue #427 — un pack (ou toute sélection) publié en UNE opération : un seul rechargement
         // de l'ensemble, tout ou rien. Même droit que la publication unitaire, dont c'est la forme
         // groupée ; « dry_run=true » fait juger le lot par le moteur sans rien laisser en jeu.
         addSensitiveWrite("content.publish.batch", Permission.CONTENT_PUBLISH, false,
                 "Publier un lot de contenu (pack) sur DEV",
-                "content.dev.state", "quest.list", "story.list", "dialogue.list");
+                "content.dev.state", "quest.list", "story.list", "dialogue.list", "npc.list");
         addSensitiveWrite("content.publish.rollback", Permission.CONTENT_ROLLBACK, false,
                 "Défaire une publication de contenu sur DEV",
-                "content.dev.state", "quest.list", "story.list", "dialogue.list");
+                "content.dev.state", "quest.list", "story.list", "dialogue.list", "npc.list");
         // Écritures de contenu (V2 déclarative des PNJ) — réversibles, jamais de YAML brut. Chaque
         // succès ré-enfile le(s) relevé(s) de catalogue impacté(s) pour que la vue métier se
         // réconcilie sans « Rafraîchir catalogue + F5 ».
-        addContentWrite("npc.definition.create", Permission.NPC_WRITE, "Créer une définition PNJ", "npc.list");
-        addContentWrite("npc.definition.update", Permission.NPC_WRITE, "Modifier une définition PNJ", "npc.list");
+        // Issue #129 — dépendances croisées : le relevé dialogue.list calcule côté serveur les PNJ
+        // liés à chaque dialogue (badge « sans PNJ », diagnostics) à partir des définitions PNJ
+        // (id + dialogue déclaré) et des donneurs de quête. Toute action qui change l'un ou l'autre
+        // invalide donc AUSSI dialogue.list. Inversement, npc.list résume le dialogue et les quêtes
+        // chargés de chaque PNJ : les écritures de dialogue et les publications l'invalident.
+        addContentWrite("npc.definition.create", Permission.NPC_WRITE, "Créer une définition PNJ",
+                "npc.list", "dialogue.list");
+        addContentWrite("npc.definition.update", Permission.NPC_WRITE, "Modifier une définition PNJ",
+                "npc.list", "dialogue.list");
         addContentWrite("quest.giver.set", Permission.QUEST_GIVER_WRITE, "Attribuer une quête à un PNJ",
-                "npc.list", "quest.list");
+                "npc.list", "quest.list", "dialogue.list");
         // Issue #213 — édition de la fiche d'un emplacement : réversible, donc pas de case à cocher.
         addContentWrite("building.site.rename", Permission.BUILDING_WRITE,
                 "Renommer un emplacement de construction", "building.site.list");
@@ -612,7 +620,7 @@ public final class AgentActionCatalog {
         addOrchestratedWrite("npc.citizens.provision", Permission.NPC_SPAWN_WRITE,
                 List.of(Permission.NPC_WRITE, Permission.NPC_BIND_WRITE),
                 "Créer un PNJ (définition + apparition + liaison + skin)",
-                "npc.list", "npc.citizens.list");
+                "npc.list", "npc.citizens.list", "dialogue.list");
         // Issue #381 — emplacements de PNJ. La réservation se fait EN JEU (outil « Emplacements PNJ ») :
         // aucune action ne crée un emplacement depuis des coordonnées tapées. Placer déplace ou fait
         // apparaître une entité réelle : sensible, avec confirmation. Supprimer retire un repère
@@ -652,14 +660,19 @@ public final class AgentActionCatalog {
                 "Regarder les joueurs à proximité", "npc.list", "npc.citizens.list");
         addSensitiveWrite("npc.citizens.wander", Permission.NPC_SPAWN_WRITE, false,
                 "Promenade du PNJ", "npc.list", "npc.citizens.list");
+        // Issue #129 : npc.list aussi — la fiche PNJ compte les nœuds, choix et quêtes de son dialogue.
         addContentWrite("dialogue.definition.create", Permission.DIALOGUE_WRITE, "Créer un dialogue (squelette)",
-                "dialogue.list");
-        addContentWrite("dialogue.node.create", Permission.DIALOGUE_WRITE, "Ajouter un nœud", "dialogue.list");
-        addContentWrite("dialogue.node.update", Permission.DIALOGUE_WRITE, "Modifier un nœud", "dialogue.list");
-        addContentWrite("dialogue.choice.add", Permission.DIALOGUE_WRITE, "Ajouter un choix", "dialogue.list");
-        addContentWrite("dialogue.choice.update", Permission.DIALOGUE_WRITE, "Modifier un choix", "dialogue.list");
+                "dialogue.list", "npc.list");
+        addContentWrite("dialogue.node.create", Permission.DIALOGUE_WRITE, "Ajouter un nœud",
+                "dialogue.list", "npc.list");
+        addContentWrite("dialogue.node.update", Permission.DIALOGUE_WRITE, "Modifier un nœud",
+                "dialogue.list", "npc.list");
+        addContentWrite("dialogue.choice.add", Permission.DIALOGUE_WRITE, "Ajouter un choix",
+                "dialogue.list", "npc.list");
+        addContentWrite("dialogue.choice.update", Permission.DIALOGUE_WRITE, "Modifier un choix",
+                "dialogue.list", "npc.list");
         addSensitiveWrite("dialogue.choice.delete", Permission.DIALOGUE_WRITE, false, "Supprimer un choix",
-                "dialogue.list");
+                "dialogue.list", "npc.list");
         addContentWrite("mob.definition.create", Permission.MOB_WRITE, "Créer un profil de mob spécial/boss", "mob.list");
         addContentWrite("mob.definition.update", Permission.MOB_WRITE, "Modifier un profil de mob spécial/boss", "mob.list");
         addContentWrite("mob.definition.toggle", Permission.MOB_WRITE, "Activer/désactiver un profil", "mob.list");

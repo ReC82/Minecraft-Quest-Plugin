@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -352,9 +353,12 @@ class DialoguesCatalogTest {
 
         agentResult(actionId, "{\"action_id\":\"" + actionId + "\",\"status\":\"SUCCESS\",\"message\":\"nœud ajouté\"}");
         assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1, "dialogue.list ré-enfilé : la file n'est pas au repos");
-        String listId = pollOneActionId();
+        String listId = pollActionIdOfType("dialogue.list");
         agentResult(listId, "{\"action_id\":\"" + listId + "\",\"status\":\"SUCCESS\",\"value\":\"1\","
                 + "\"message\":\"1 dialogue\",\"details\":" + miraDetails(true) + "}");
+        // Issue #129 : la fiche PNJ résume les nœuds de son dialogue — npc.list est ré-enfilé aussi.
+        String npcListId = pollActionIdOfType("npc.list");
+        agentResult(npcListId, "{\"action_id\":\"" + npcListId + "\",\"status\":\"SUCCESS\",\"message\":\"ok\"}");
         assertEquals(0, pendingFor(TestConfig.AGENT_ID), "file au repos : panel.js recharge la page");
 
         // Ce que montre le rechargement automatique (même URL), sans F5 ni « Rafraîchir ».
@@ -376,13 +380,18 @@ class DialoguesCatalogTest {
         return ((Number) body.get("pending")).intValue();
     }
 
-    private String pollOneActionId() throws Exception {
+    @SuppressWarnings("unchecked")
+    private String pollActionIdOfType(String type) throws Exception {
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());
-        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"").matcher(poll.body());
-        assertTrue(m.find(), "une action attendue par l'agent");
-        return m.group(1);
+        for (Object o : (List<Object>) Json.parseObject(poll.body()).get("actions")) {
+            Map<String, Object> a = (Map<String, Object>) o;
+            if (type.equals(a.get("type"))) {
+                return String.valueOf(a.get("id"));
+            }
+        }
+        throw new AssertionError("aucune action en attente de type " + type);
     }
 
     private void agentResult(String id, String body) throws Exception {

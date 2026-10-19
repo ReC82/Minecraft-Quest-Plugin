@@ -106,6 +106,38 @@ class CatalogResyncTest {
                 "le relevé auto n'apparaît pas dans la cloche");
     }
 
+    /**
+     * Issue #129 : rattacher, remplacer ou détacher le dialogue d'une fiche PNJ rend aussi /dialogues
+     * périmé (badge « sans PNJ » calculé à partir des définitions) — npc.list ET dialogue.list sont
+     * ré-enfilés à chaque fois, par le mécanisme mutualisé.
+     */
+    @Test
+    void npcDialogueReferenceChangeAlsoRefreshesTheDialogueCatalog() throws Exception {
+        start();
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        for (String dialogueParam : List.of("&dialogue_id=rpgquest:mira_first_map",
+                "&dialogue_id=rpgquest:mira_second_map", "&dialogue_id=")) {
+            HttpResponse<String> update = post("/agents/action", "_csrf=" + token
+                    + "&type=npc.definition.update&agent=" + TestConfig.AGENT_ID
+                    + "&return=/npcs&npc_id=mira_cartographer&display_name=Mira" + dialogueParam);
+            assertEquals(303, update.statusCode());
+            assertFalse(update.headers().firstValue("Location").orElse("").contains("err="), dialogueParam);
+            String updateId = firstPendingActionIdOfType("npc.definition.update");
+            postResult(updateId, "{\"action_id\":\"" + updateId + "\",\"status\":\"SUCCESS\",\"message\":\"ok\"}");
+
+            Map<String, Object> types = countOpenTypes();
+            assertEquals(1, ((Number) types.getOrDefault("npc.list", 0)).intValue(), dialogueParam);
+            assertEquals(1, ((Number) types.getOrDefault("dialogue.list", 0)).intValue(),
+                    "/dialogues resynchronisé après " + dialogueParam);
+
+            // L'agent répond aux relevés : la file revient au repos avant la modification suivante.
+            for (String refreshId : pollPending()) {
+                postResult(refreshId, "{\"action_id\":\"" + refreshId + "\",\"status\":\"SUCCESS\",\"message\":\"ok\"}");
+            }
+            assertTrue(countOpenTypes().isEmpty(), "file au repos après " + dialogueParam);
+        }
+    }
+
     @Test
     void citizensLinkRefreshesBothNpcAndCitizensCatalogsAndDedupes() throws Exception {
         start();

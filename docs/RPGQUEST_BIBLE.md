@@ -4250,10 +4250,21 @@ idempotent) ; le centre de notifications les masque. Côté navigateur,
 est retombée au repos. Résultat : après « Enregistrer » (fiche PNJ, dialogue,
 liaison Citizens…), la fiche, la liste générale et les diagnostics reflètent
 le nouvel état **sans F5 et sans clic manuel sur « Rafraîchir catalogue »**.
-Correspondances : `npc.definition.*` → `npc.list` ; `npc.citizens.link/create`
-→ `npc.list` + `npc.citizens.list` ; `dialogue.*` → `dialogue.list` ;
-`quest.giver.set` → `npc.list` + `quest.list` ; `player.ban/unban` →
-`player.catalog`.
+Correspondances : `npc.definition.create/update` → `npc.list` + `dialogue.list` ;
+`npc.citizens.link/create` → `npc.list` + `npc.citizens.list` ;
+`npc.citizens.provision` → `npc.list` + `npc.citizens.list` + `dialogue.list` ;
+`dialogue.*` → `dialogue.list` + `npc.list` ; `quest.giver.set` → `npc.list` +
+`quest.list` + `dialogue.list` ; `content.publish*` / `content.definition.delete`
+→ relevés de contenu + `npc.list` ; `player.ban/unban` → `player.catalog`.
+
+**Dépendances croisées (issue #129).** Le relevé `dialogue.list` calcule côté
+serveur les PNJ liés à chaque dialogue (badge « sans PNJ », diagnostic
+« Dialogue sans PNJ porteur ») à partir des définitions PNJ (identifiant +
+dialogue déclaré) et des donneurs de quête ; la fiche PNJ (`npc.list`) résume
+à son tour le dialogue et les quêtes chargés. Toute action qui change une de
+ces sources invalide donc **les deux** vues : rattacher, remplacer ou détacher
+le dialogue d'une fiche PNJ met à jour `/npcs` **et** `/dialogues` sans F5.
+`AgentActionCatalogTest` vérifie ces déclarations action par action.
 
 ### Confirmations et saisie des formulaires PlugAdmin (issues #111 / #113 / #117 / #118)
 

@@ -47,6 +47,40 @@ class DialogueCatalogTest {
         assertFalse(byId.get("orphan").reachable());
     }
 
+    /**
+     * Issue #129 : le badge « sans PNJ » de /dialogues suit la référence {@code dialogue} des
+     * définitions PNJ — rattacher, remplacer puis détacher donne chaque fois le bon résultat, à
+     * condition que le relevé soit recalculé (le panel le ré-enfile après npc.definition.update).
+     */
+    @Test
+    void linkedNpcsFollowTheDialogueDeclaredByTheNpcDefinition() {
+        List<LogicalDialogue> dialogues = List.of(
+                new LogicalDialogue("rpgquest:mira_first_map", "start", List.of(node("start", ""))),
+                new LogicalDialogue("rpgquest:mira_second_map", "start", List.of(node("start", ""))));
+        Set<String> canonical = Set.of("mira_cartographer");
+
+        var detached = linkedByDialogue(DialogueCatalog.build(dialogues, List.of(), List.of(), canonical, Set.of()));
+        assertEquals(List.of(), detached.get("rpgquest:mira_first_map"), "avant : sans PNJ");
+
+        var attached = linkedByDialogue(DialogueCatalog.build(dialogues, List.of(),
+                List.of(new NpcDialogueDecl("mira_cartographer", "rpgquest:mira_first_map")), canonical, Set.of()));
+        assertEquals(List.of("mira_cartographer"), attached.get("rpgquest:mira_first_map"), "rattaché");
+        assertEquals(List.of(), attached.get("rpgquest:mira_second_map"));
+
+        var replaced = linkedByDialogue(DialogueCatalog.build(dialogues, List.of(),
+                List.of(new NpcDialogueDecl("mira_cartographer", "rpgquest:mira_second_map")), canonical, Set.of()));
+        assertEquals(List.of(), replaced.get("rpgquest:mira_first_map"), "l'ancien redevient sans PNJ");
+        assertEquals(List.of("mira_cartographer"), replaced.get("rpgquest:mira_second_map"), "le nouveau est lié");
+
+        var removed = linkedByDialogue(DialogueCatalog.build(dialogues, List.of(), List.of(), canonical, Set.of()));
+        assertEquals(List.of(), removed.get("rpgquest:mira_second_map"), "détaché : sans PNJ");
+    }
+
+    private static java.util.Map<String, List<String>> linkedByDialogue(DialogueCatalog.View view) {
+        return view.dialogues().stream().collect(java.util.stream.Collectors.toMap(
+                DialogueCatalog.DialogueSummary::id, DialogueCatalog.DialogueSummary::linkedNpcIds));
+    }
+
     @Test
     void reachabilityMarksOrphanNodes() {
         LogicalDialogue d = new LogicalDialogue("rpgquest:guard", "start",

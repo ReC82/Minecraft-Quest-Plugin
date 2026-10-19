@@ -31,7 +31,7 @@ import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 /**
- * Premiers tests de {@link ExplosiveOnAttackAbilityService} (issue #190) : la poursuite d'un
+ * Premiers tests de {@link ExplosiveOnAttackExecutor}, via {@link AbilityEngine#tick()} (issue #190) : la poursuite d'un
  * joueur par une base passive (type {@code PIG}, ex. le Cochon Creeper) via
  * {@code org.bukkit.entity.Mob#getPathfinder()} (API publique Paper, sans NMS), en plus du
  * déclenchement de l'explosion déjà existant mais jusqu'ici non testé directement.
@@ -41,9 +41,9 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
  * par {@code apply()}, n'est pas implémenté par cette version de MockBukkit (limitation déjà
  * documentée ailleurs dans le projet) et ferait échouer tout test l'utilisant ; {@code
  * onChunkLoad} ne l'appelle pas et suffit pour alimenter le suivi de population dont dépend
- * {@code aliveEntityIds} (donc {@code sweep()}).</p>
+ * {@code aliveEntityIds} (donc {@code tick()}).</p>
  */
-class ExplosiveOnAttackAbilityServiceTest {
+class ExplosiveOnAttackExecutorTest {
 
     private static final NamespacedKey PIG_ID = new NamespacedKey("rpgquest", "test_creeper_pig");
 
@@ -55,7 +55,7 @@ class ExplosiveOnAttackAbilityServiceTest {
     private World world;
     private SpecialMobRegistry registry;
     private SpecialMobService service;
-    private ExplosiveOnAttackAbilityService abilityService;
+    private AbilityEngine engine;
     private SpecialMobDefinition definition;
 
     @BeforeEach
@@ -90,7 +90,7 @@ class ExplosiveOnAttackAbilityServiceTest {
 
         MobSpawnSettingsStore spawnSettingsStore = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
         service = new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), spawnSettingsStore);
-        abilityService = new ExplosiveOnAttackAbilityService(plugin, registry, service);
+        engine = new AbilityEngine(plugin, registry, service, AbilityWorldPolicy.unrestricted());
     }
 
     @AfterEach
@@ -119,7 +119,7 @@ class ExplosiveOnAttackAbilityServiceTest {
         PlayerMock player = server.addPlayer();
         player.teleport(new Location(world, 1, 64, 0)); // 1 bloc : dans trigger-range-blocks (3.0)
 
-        abilityService.sweep();
+        engine.tick();
 
         assertTrue(pig.isDead(), "un joueur à portée de déclenchement doit provoquer l'explosion (donc la mort de l'entité)");
     }
@@ -133,9 +133,35 @@ class ExplosiveOnAttackAbilityServiceTest {
         PlayerMock player = server.addPlayer();
         player.teleport(new Location(world, 10, 64, 0));
 
-        abilityService.sweep();
+        engine.tick();
 
         assertFalse(pig.isDead(), "hors de trigger-range-blocks, aucune explosion ne doit se déclencher");
+    }
+
+    @Test
+    void creativePlayerWithinTriggerRangeIsNeverATarget() {
+        // Issue #542 (décision Q9 de #541) : ni joueur en créatif, ni spectateur, ni PNJ.
+        LivingEntity pig = spawnTaggedPig(new Location(world, 0, 64, 0));
+        PlayerMock player = server.addPlayer();
+        player.setGameMode(org.bukkit.GameMode.CREATIVE);
+        player.teleport(new Location(world, 1, 64, 0));
+
+        engine.tick();
+
+        assertFalse(pig.isDead(), "un joueur en créatif ne doit jamais déclencher l'explosion");
+    }
+
+    @Test
+    void npcPlayerWithinTriggerRangeIsNeverATarget() {
+        LivingEntity pig = spawnTaggedPig(new Location(world, 0, 64, 0));
+        PlayerMock npc = server.addPlayer();
+        npc.teleport(new Location(world, 1, 64, 0));
+        engine = new AbilityEngine(plugin, registry, service, new AbilityWorldPolicy(
+                () -> null, (w, x, y, z) -> false, (w, x, y, z) -> false, e -> e.equals(npc)));
+
+        engine.tick();
+
+        assertFalse(pig.isDead(), "un PNJ de type joueur (Citizens) ne doit jamais déclencher l'explosion");
     }
 
     @Test
@@ -144,7 +170,7 @@ class ExplosiveOnAttackAbilityServiceTest {
         PlayerMock player = server.addPlayer();
         player.teleport(new Location(world, 100, 64, 0)); // très loin : hors portée de perception
 
-        abilityService.sweep();
+        engine.tick();
 
         assertFalse(pig.isDead(), "un joueur hors de portée ne doit déclencher ni poursuite ni explosion");
     }

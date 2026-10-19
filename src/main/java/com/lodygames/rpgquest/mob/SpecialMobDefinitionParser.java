@@ -1,15 +1,10 @@
 package com.lodygames.rpgquest.mob;
 
+import com.lodygames.rpgquest.mob.ability.MobAbilityCatalog;
 import com.lodygames.rpgquest.mob.model.BossMode;
-import com.lodygames.rpgquest.mob.model.EnragedAbility;
-import com.lodygames.rpgquest.mob.model.ExplosiveOnAttackAbility;
 import com.lodygames.rpgquest.mob.model.MobAbility;
-import com.lodygames.rpgquest.mob.model.MobAbilityType;
 import com.lodygames.rpgquest.mob.model.MobCategory;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
-import com.lodygames.rpgquest.mob.model.SplitOnHitAbility;
-import com.lodygames.rpgquest.mob.model.StrongerExplosionAbility;
-import com.lodygames.rpgquest.mob.model.SummonOnDamageAbility;
 import com.lodygames.rpgquest.resource.model.CustomItemDrop;
 import com.lodygames.rpgquest.resource.model.ResourceDrop;
 import com.lodygames.rpgquest.resource.model.VanillaItemDrop;
@@ -346,128 +341,9 @@ final class SpecialMobDefinitionParser {
         return abilities;
     }
 
+    /** Issue #542 : le contrat de chaque capacité vit dans {@link MobAbilityCatalog}, plus ici. */
     private MobAbility parseAbility(ConfigurationSection section, String context, List<String> errors) {
-        String rawType = section.getString("type");
-        if (rawType == null || rawType.isBlank()) {
-            errors.add(context + ": « type » est obligatoire.");
-            return null;
-        }
-        MobAbilityType type;
-        try {
-            type = MobAbilityType.valueOf(rawType.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            errors.add(context + ": capacité inconnue « " + rawType + " » (valides : "
-                    + List.of(MobAbilityType.values()) + ").");
-            return null;
-        }
-
-        return switch (type) {
-            case STRONGER_EXPLOSION -> {
-                Double multiplier = parsePositiveDoubleRequired(section, "radius-multiplier", context, errors);
-                yield multiplier == null ? null : new StrongerExplosionAbility(multiplier);
-            }
-            case EXPLOSIVE_ON_ATTACK -> {
-                Double power = parsePositiveDoubleRequired(section, "power", context, errors);
-                boolean setFire = section.getBoolean("set-fire", false);
-                Double range = parsePositiveDoubleRequired(section, "trigger-range-blocks", context, errors);
-                yield (power == null || range == null) ? null
-                        : new ExplosiveOnAttackAbility(power.floatValue(), setFire, range);
-            }
-            case SPLIT_ON_HIT -> {
-                Integer maxDepth = parsePositiveIntRequired(section, "max-depth", context, errors);
-                Integer maxChildren = parsePositiveIntRequired(section, "max-children-per-hit", context, errors);
-                // Optionnelle : les profils antérieurs à l'issue #190 n'ont pas « max-alive-per-parent »
-                // -- défaut 2 (voir SplitOnHitAbility#SplitOnHitAbility(int, int)).
-                Integer maxAlivePerParent = section.isSet("max-alive-per-parent")
-                        ? parsePositiveIntRequired(section, "max-alive-per-parent", context, errors)
-                        : 2;
-                yield (maxDepth == null || maxChildren == null || maxAlivePerParent == null) ? null
-                        : new SplitOnHitAbility(maxDepth, maxChildren, maxAlivePerParent);
-            }
-            case ENRAGED -> {
-                Double healthFraction = parseExclusiveFractionRequired(section, "health-fraction", context, errors);
-                Double speedMultiplier = parsePositiveDoubleRequired(section, "speed-multiplier", context, errors);
-                Double damageMultiplier = parsePositiveDoubleRequired(section, "damage-multiplier", context, errors);
-                yield (healthFraction == null || speedMultiplier == null || damageMultiplier == null) ? null
-                        : new EnragedAbility(healthFraction, speedMultiplier, damageMultiplier);
-            }
-            case SUMMON_ON_DAMAGE -> {
-                EntityType summonedEntityType = parseEntityTypeRequired(section, "summon-entity-type", context, errors);
-                Integer amount = parsePositiveIntRequired(section, "amount", context, errors);
-                Double chance = parseChanceRequired(section, "chance", context, errors);
-                Integer cooldownSeconds = parseNonNegativeIntRequired(section, "cooldown-seconds", context, errors);
-                Integer maxAlive = parsePositiveIntRequired(section, "max-alive", context, errors);
-                yield (summonedEntityType == null || amount == null || chance == null || cooldownSeconds == null
-                        || maxAlive == null) ? null
-                        : new SummonOnDamageAbility(summonedEntityType, amount, chance, cooldownSeconds, maxAlive);
-            }
-        };
-    }
-
-    private Double parseExclusiveFractionRequired(ConfigurationSection section, String key, String context, List<String> errors) {
-        if (!section.isSet(key) || !(section.isDouble(key) || section.isInt(key))) {
-            errors.add(context + ": « " + key + " » est obligatoire et doit être un nombre.");
-            return null;
-        }
-        double value = section.getDouble(key);
-        if (value <= 0 || value >= 1) {
-            errors.add(context + ": « " + key + " » doit être strictement compris entre 0 et 1, valeur trouvée : " + value);
-            return null;
-        }
-        return value;
-    }
-
-    private Double parseChanceRequired(ConfigurationSection section, String key, String context, List<String> errors) {
-        if (!section.isSet(key) || !(section.isDouble(key) || section.isInt(key))) {
-            errors.add(context + ": « " + key + " » est obligatoire et doit être un nombre.");
-            return null;
-        }
-        double value = section.getDouble(key);
-        if (value <= 0 || value > 1) {
-            errors.add(context + ": « " + key + " » doit être compris entre 0 (exclu) et 1, valeur trouvée : " + value);
-            return null;
-        }
-        return value;
-    }
-
-    private Integer parseNonNegativeIntRequired(ConfigurationSection section, String key, String context, List<String> errors) {
-        if (!section.isSet(key) || !section.isInt(key)) {
-            errors.add(context + ": « " + key + " » est obligatoire et doit être un entier.");
-            return null;
-        }
-        int value = section.getInt(key);
-        if (value < 0) {
-            errors.add(context + ": « " + key + " » ne peut pas être négatif, valeur trouvée : " + value);
-            return null;
-        }
-        return value;
-    }
-
-    private EntityType parseEntityTypeRequired(ConfigurationSection section, String key, String context, List<String> errors) {
-        String raw = section.getString(key);
-        if (raw == null || raw.isBlank()) {
-            errors.add(context + ": « " + key + " » est obligatoire.");
-            return null;
-        }
-        EntityType entityType = EntityType.fromName(raw.toLowerCase(Locale.ROOT));
-        if (entityType == null || !entityType.isAlive()) {
-            errors.add(context + ": « " + key + " » invalide ou non vivant : \"" + raw + "\".");
-            return null;
-        }
-        return entityType;
-    }
-
-    private Double parsePositiveDoubleRequired(ConfigurationSection section, String key, String context, List<String> errors) {
-        if (!section.isSet(key) || !(section.isDouble(key) || section.isInt(key))) {
-            errors.add(context + ": « " + key + " » est obligatoire et doit être un nombre.");
-            return null;
-        }
-        double value = section.getDouble(key);
-        if (value <= 0) {
-            errors.add(context + ": « " + key + " » doit être strictement positif, valeur trouvée : " + value);
-            return null;
-        }
-        return value;
+        return MobAbilityCatalog.parse(section, context, errors);
     }
 
     private Integer parsePositiveIntRequired(ConfigurationSection section, String key, String context, List<String> errors) {

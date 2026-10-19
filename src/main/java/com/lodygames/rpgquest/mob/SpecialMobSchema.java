@@ -1,5 +1,8 @@
 package com.lodygames.rpgquest.mob;
 
+import com.lodygames.rpgquest.mob.ability.AbilityParam;
+import com.lodygames.rpgquest.mob.ability.MobAbilityCatalog;
+import com.lodygames.rpgquest.mob.ability.MobAbilityRules;
 import com.lodygames.rpgquest.mob.model.BossMode;
 import com.lodygames.rpgquest.mob.model.MobAbilityType;
 import com.lodygames.rpgquest.mob.model.MobCategory;
@@ -20,8 +23,8 @@ import java.util.Set;
  * ({@link #topLevelKeys}, {@link #abilityKeys}, {@link #DROP_KEYS}). Un test confronte ces clés à
  * celles que le parseur lit (lecture de son source) : une clé ajoutée au parseur sans être décrite
  * ici fait échouer la construction, si bien que le modèle ne peut pas devenir plus pauvre que le
- * moteur. Le switch de {@link #abilityFields} est exhaustif : une nouvelle capacité ne compile pas
- * tant qu'elle n'y est pas décrite.</p>
+ * moteur. Les capacités sont décrites par {@link MobAbilityCatalog} (issue #542) : une nouvelle capacité
+ * apparaît ici d'elle-même.</p>
  */
 public final class SpecialMobSchema {
 
@@ -120,56 +123,26 @@ public final class SpecialMobSchema {
         return keys;
     }
 
-    /** Les paramètres d'une capacité, sans la clé {@code type}. */
+    /**
+     * Les paramètres propres d'une capacité, sans la clé {@code type} ni les champs communs qu'elle ne
+     * déclare pas. Issue #542 : vue de {@link MobAbilityCatalog}, plus aucune liste codée ici.
+     */
     public static List<Field> abilityFields(MobAbilityType type) {
-        return switch (type) {
-            case STRONGER_EXPLOSION -> List.of(
-                    new Field("radius-multiplier", true, Scope.ALL, "1.5", List.of(
-                            "Multiplie le rayon de SES explosions, > 0. N'a d'effet que si la créature explose (CREEPER).")));
-            case EXPLOSIVE_ON_ATTACK -> List.of(
-                    new Field("power", true, Scope.ALL, "2.0", List.of("Puissance de l'explosion, > 0 (TNT = 4.0).")),
-                    new Field("set-fire", false, Scope.ALL, "false", List.of("true = l'explosion met le feu. Absent = false.")),
-                    new Field("trigger-range-blocks", true, Scope.ALL, "2.0", List.of(
-                            "Distance (blocs, > 0) à laquelle elle explose près de sa cible.")));
-            case SPLIT_ON_HIT -> List.of(
-                    new Field("max-depth", true, Scope.ALL, "2", List.of("Générations de divisions au plus, entier ≥ 1.")),
-                    new Field("max-children-per-hit", true, Scope.ALL, "2", List.of("Copies créées par coup reçu, entier ≥ 1.")),
-                    new Field("max-alive-per-parent", false, Scope.ALL, "2", List.of(
-                            "Copies directes vivantes en même temps pour un même parent, entier ≥ 1. Absent = 2.")));
-            case ENRAGED -> List.of(
-                    new Field("health-fraction", true, Scope.ALL, "0.3", List.of(
-                            "Seuil de vie qui déclenche la rage, strictement entre 0 et 1 (0.3 = sous 30 %).")),
-                    new Field("speed-multiplier", true, Scope.ALL, "1.3", List.of("Multiplicateur de vitesse en rage, > 0.")),
-                    new Field("damage-multiplier", true, Scope.ALL, "1.5", List.of("Multiplicateur de dégâts en rage, > 0.")));
-            case SUMMON_ON_DAMAGE -> List.of(
-                    new Field("summon-entity-type", true, Scope.ALL, "ZOMBIE", List.of("Créature invoquée en renfort (vivante).")),
-                    new Field("amount", true, Scope.ALL, "2", List.of("Renforts par invocation, entier ≥ 1.")),
-                    new Field("chance", true, Scope.ALL, "0.25", List.of("Chance d'invoquer à chaque coup reçu, de 0 (exclu) à 1.")),
-                    new Field("cooldown-seconds", true, Scope.ALL, "20", List.of("Délai minimum entre deux invocations, entier ≥ 0.")),
-                    new Field("max-alive", true, Scope.ALL, "4", List.of(
-                            "Renforts vivants au plus pour ce mob, entier ≥ 1 (plafond obligatoire, jamais d'invocation sans fin).")));
-        };
+        return MobAbilityCatalog.ownParams(type).stream()
+                .map(p -> new Field(p.key(), p.required(), Scope.ALL, p.example(), List.of(p.help())))
+                .toList();
     }
 
-    /** Explication d'une capacité, une ligne. */
+    /** Explication d'une capacité, une ligne (résumé de son descripteur). */
     public static String abilityDoc(MobAbilityType type) {
-        return switch (type) {
-            case STRONGER_EXPLOSION -> "Explosion plus grande (creeper).";
-            case EXPLOSIVE_ON_ATTACK -> "Explose au contact de sa cible (s'auto-détruit).";
-            case SPLIT_ON_HIT -> "Se divise en copies d'elle-même quand elle est touchée.";
-            case ENRAGED -> "Devient plus rapide et plus forte sous un seuil de vie (une seule fois).";
-            case SUMMON_ON_DAMAGE -> "Invoque des renforts quand elle subit des dégâts.";
-        };
+        return MobAbilityCatalog.descriptor(type).summary();
     }
 
-    /** Clés acceptées par capacité, {@code type} compris. */
+    /** Clés acceptées par capacité, {@code type} et champs communs compris. */
     public static Map<MobAbilityType, Set<String>> abilityKeys() {
         Map<MobAbilityType, Set<String>> out = new LinkedHashMap<>();
         for (MobAbilityType type : MobAbilityType.values()) {
-            Set<String> keys = new LinkedHashSet<>();
-            keys.add("type");
-            abilityFields(type).forEach(f -> keys.add(f.key()));
-            out.put(type, Set.copyOf(keys));
+            out.put(type, MobAbilityCatalog.acceptedKeys(type));
         }
         return out;
     }
@@ -221,6 +194,12 @@ public final class SpecialMobSchema {
 
     private static void appendAbilities(StringBuilder sb) {
         sb.append("# Pour en utiliser : décommenter « abilities: » puis une ou plusieurs entrées complètes.\n");
+        sb.append("# ").append(MobAbilityRules.MAX_ABILITIES_PER_PROFILE)
+                .append(" capacités au plus, chacune une seule fois.\n");
+        sb.append("# Champs communs, facultatifs, à ajouter sous « type » d'une entrée :\n");
+        for (AbilityParam common : MobAbilityCatalog.COMMON_PARAMS) {
+            sb.append("# • ").append(common.key()).append(" — ").append(common.help()).append('\n');
+        }
         sb.append("# abilities:\n");
         for (MobAbilityType type : MobAbilityType.values()) {
             sb.append("#   # ").append(abilityDoc(type)).append('\n');

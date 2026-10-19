@@ -1,0 +1,27 @@
+# Profil de mob spécial RPGQuest — généré / édité via le Control Panel (issue #172).
+id: rpgquest:splitting_zombie
+category: SPECIAL
+enabled: true
+entity-type: ZOMBIE
+name: "<dark_purple><bold>Zombie Fissible</bold></dark_purple>"
+spawn-chance: 0.02
+worlds: []
+biomes: []
+zones: []
+health: 25.0
+damage: 4.0
+speed: 0.25
+particle: ITEM_SLIME
+sound: ENTITY.ZOMBIE.AMBIENT
+abilities:
+  - type: SPLIT_ON_HIT
+    max-depth: 2
+    max-children-per-hit: 2
+    max-alive-per-parent: 2
+drops:
+  - material: ROTTEN_FLESH
+    weight: 100
+    min-amount: 1
+    max-amount: 2
+xp-reward: 12
+max-population: 12

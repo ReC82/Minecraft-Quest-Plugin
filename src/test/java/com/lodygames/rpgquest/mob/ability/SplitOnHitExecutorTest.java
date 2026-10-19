@@ -37,7 +37,7 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
  */
 @SuppressWarnings("removal") // EntityDamageByEntityEvent(Entity, Entity, DamageCause, double) : voir
 // ZoneProtectionListenerTest pour la justification de cette dépréciation acceptée en test.
-class SplitOnHitAbilityListenerTest {
+class SplitOnHitExecutorTest {
 
     private static final NamespacedKey SPLIT_ID = new NamespacedKey("rpgquest", "splitting_test");
 
@@ -49,7 +49,7 @@ class SplitOnHitAbilityListenerTest {
     private World world;
     private SpecialMobRegistry registry;
     private SpecialMobService service;
-    private SplitOnHitAbilityListener listener;
+    private AbilityEngine listener;
     private SpecialMobDefinition definition;
 
     @BeforeEach
@@ -85,7 +85,7 @@ class SplitOnHitAbilityListenerTest {
 
         MobSpawnSettingsStore spawnSettingsStore = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
         service = new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), spawnSettingsStore);
-        listener = new SplitOnHitAbilityListener(service);
+        listener = new AbilityEngine(plugin, registry, service, AbilityWorldPolicy.unrestricted());
     }
 
     @AfterEach
@@ -194,6 +194,21 @@ class SplitOnHitAbilityListenerTest {
         assertEquals(before + 2, after,
                 "4 coups non mortels répétés sur le même parent ne doivent jamais produire plus que "
                         + "max-alive-per-parent (2 par défaut) enfants directs vivants, jamais 8");
+    }
+
+    @Test
+    void neverSplitsInsideAProtectedArea() {
+        // Issue #542 : toute apparition par une capacité passe par AbilityWorldPolicy (Hub, claims, zones).
+        listener = new AbilityEngine(plugin, registry, service, new AbilityWorldPolicy(
+                () -> null, (w, x, y, z) -> true, (w, x, y, z) -> false, e -> false));
+        LivingEntity parent = spawnParent();
+        PlayerMock attacker = server.addPlayer();
+        int before = world.getEntitiesByClass(Zombie.class).size();
+
+        listener.onDamage(new EntityDamageByEntityEvent(
+                attacker, parent, EntityDamageEvent.DamageCause.ENTITY_ATTACK, 5.0));
+
+        assertEquals(before, world.getEntitiesByClass(Zombie.class).size(), "aucune division dans un claim");
     }
 
     @Test

@@ -5257,18 +5257,19 @@ public final class BukkitAgentActions implements AgentActions {
                         + " » ne se relit pas : modification refusée pour ne perdre ni drops ni "
                         + "capacités. Restaurer d'abord le fichier mobs/ (voir Diagnostics)."));
             }
-            current.ifPresent(c -> c.abilities().stream()
-                    .filter(a -> !(a instanceof EnragedAbility) && !(a instanceof SummonOnDamageAbility))
-                    .forEach(abilities::add));
+            EnragedAbility enraged = null;
             if (enragedHealthFraction != null || enragedSpeedMultiplier != null || enragedDamageMultiplier != null) {
-                abilities.add(new EnragedAbility(enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier));
+                enraged = new EnragedAbility(enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier);
             }
+            SummonOnDamageAbility summon = null;
             if (summonEntityType != null || summonAmount != null || summonChance != null
                     || summonCooldownSeconds != null || summonMaxAlive != null) {
                 org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(
                         summonEntityType == null ? "" : summonEntityType.toLowerCase(Locale.ROOT));
-                abilities.add(new SummonOnDamageAbility(type, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive));
+                summon = new SummonOnDamageAbility(type, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive);
             }
+            abilities.addAll(mergeFormAbilities(current.map(SpecialMobDefinition::abilities).orElse(List.of()),
+                    enraged, summon));
 
             SpecialMobDefinition definition = new SpecialMobDefinition(
                     resolveKey(id), MobCategory.valueOf(category.toUpperCase(Locale.ROOT)), enabled,
@@ -5288,6 +5289,10 @@ public final class BukkitAgentActions implements AgentActions {
                     participationRewards != null ? participationRewards
                             : current.map(SpecialMobDefinition::participationRewards).orElse(List.of()));
 
+            List<String> abilityProblems = com.lodygames.rpgquest.mob.ability.MobAbilityRules.violations(definition);
+            if (!abilityProblems.isEmpty()) {
+                return done(MutationResult.of(false, "INVALID_ABILITIES", String.join(" ", abilityProblems)));
+            }
             SpecialMobDefinitionStore.Result r = create
                     ? mobDefinitionStore.create(definition) : mobDefinitionStore.update(definition);
             mobRegistry.reload();
@@ -5304,6 +5309,44 @@ public final class BukkitAgentActions implements AgentActions {
         } catch (IllegalArgumentException | NullPointerException e) {
             return done(MutationResult.of(false, "INVALID", e.getMessage()));
         }
+    }
+
+    /**
+     * Issue #542 : le formulaire n'édite qu'Enragé et Renforts. Chacun reprend <strong>sa place</strong>
+     * dans le profil (avant, tous deux passaient en fin de liste) et ce que le formulaire ne connaît pas
+     * — champs communs (enabled, chance d'Enragé…), {@code despawn-with-owner} — est conservé : enregistrer
+     * sans rien changer réécrit le même fichier. Champs du formulaire vides = capacité retirée (inchangé).
+     */
+    public static List<MobAbility> mergeFormAbilities(List<MobAbility> current, EnragedAbility enraged,
+                                               SummonOnDamageAbility summon) {
+        List<MobAbility> out = new ArrayList<>();
+        boolean enragedPlaced = false;
+        boolean summonPlaced = false;
+        for (MobAbility ability : current) {
+            if (ability instanceof EnragedAbility old) {
+                if (enraged != null && !enragedPlaced) {
+                    out.add(new EnragedAbility(enraged.healthFraction(), enraged.speedMultiplier(),
+                            enraged.damageMultiplier(), old.options()));
+                    enragedPlaced = true;
+                }
+            } else if (ability instanceof SummonOnDamageAbility old) {
+                if (summon != null && !summonPlaced) {
+                    out.add(new SummonOnDamageAbility(summon.summonedEntityType(), summon.amount(), summon.maxAlive(),
+                            old.despawnWithOwner(), new com.lodygames.rpgquest.mob.model.AbilityOptions(
+                                    old.options().enabled(), summon.chance(), summon.cooldownSeconds())));
+                    summonPlaced = true;
+                }
+            } else {
+                out.add(ability);
+            }
+        }
+        if (enraged != null && !enragedPlaced) {
+            out.add(enraged);
+        }
+        if (summon != null && !summonPlaced) {
+            out.add(summon);
+        }
+        return out;
     }
 
     @Override

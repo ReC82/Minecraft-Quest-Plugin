@@ -141,10 +141,11 @@ class SpecialMobImportTest {
         while (m.find()) {
             read.add(m.group(1));
         }
+        // Issue #542 : les clés des capacités ne sont plus lues par le parseur mais par MobAbilityCatalog,
+        // dont SpecialMobSchema.abilityKeys() est une vue directe (voir MobAbilityCatalogTest).
         Set<String> described = new HashSet<>(SpecialMobSchema.topLevelKeys());
-        SpecialMobSchema.abilityKeys().values().forEach(described::addAll);
         described.addAll(SpecialMobSchema.DROP_KEYS);
-        assertTrue(read.size() > 30, "lecture du parseur : " + read);
+        assertTrue(read.size() > 25, "lecture du parseur : " + read);
         Set<String> missing = new HashSet<>(read);
         missing.removeAll(described);
         assertEquals(Set.of(), missing, "clés lues par le parseur mais absentes du modèle");

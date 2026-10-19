@@ -143,7 +143,7 @@ class CommunityBossServiceTest {
     /**
      * Identité PDC posée comme {@link SpecialMobService#apply} le ferait, sans l'appeler :
      * {@code LivingEntityMock#setRemoveWhenFarAway} n'est pas implémenté par MockBukkit (même
-     * contournement que {@code SplitOnHitAbilityListenerTest}).
+     * contournement que {@code SplitOnHitExecutorTest}).
      */
     private void tagAsProfile(LivingEntity entity, String profileId) {
         entity.getPersistentDataContainer().set(mobService.pdcKey(), PersistentDataType.STRING, profileId);

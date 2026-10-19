@@ -14,7 +14,12 @@ package com.lodygames.rpgquest.mob.model;
  * pouvait produire bien plus que {@code maxChildrenPerHit} descendants directs pour un seul
  * parent. {@code maxAlivePerParent} plafonne ce total, indépendamment du nombre de coups reçus.</p>
  */
-public record SplitOnHitAbility(int maxDepth, int maxChildrenPerHit, int maxAlivePerParent) implements MobAbility {
+public record SplitOnHitAbility(int maxDepth, int maxChildrenPerHit, int maxAlivePerParent, AbilityOptions options)
+        implements MobAbility {
+
+    public SplitOnHitAbility(int maxDepth, int maxChildrenPerHit, int maxAlivePerParent) {
+        this(maxDepth, maxChildrenPerHit, maxAlivePerParent, AbilityOptions.DEFAULTS);
+    }
 
     /** Rétro-compatible : les profils antérieurs à l'issue #190 n'ont pas {@code maxAlivePerParent}. */
     public SplitOnHitAbility(int maxDepth, int maxChildrenPerHit) {
@@ -31,6 +36,7 @@ public record SplitOnHitAbility(int maxDepth, int maxChildrenPerHit, int maxAliv
         if (maxAlivePerParent < 1) {
             throw new IllegalArgumentException("maxAlivePerParent doit être au moins 1 : " + maxAlivePerParent);
         }
+        options = options == null ? AbilityOptions.DEFAULTS : options;
     }
 
     @Override

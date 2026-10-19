@@ -87,11 +87,8 @@ import com.lodygames.rpgquest.mob.MobSpawnSettingsStore;
 import com.lodygames.rpgquest.mob.SpecialMobDefinitionStore;
 import com.lodygames.rpgquest.mob.SpecialMobRegistry;
 import com.lodygames.rpgquest.mob.SpecialMobService;
-import com.lodygames.rpgquest.mob.ability.EnragedAbilityService;
-import com.lodygames.rpgquest.mob.ability.ExplosiveOnAttackAbilityService;
-import com.lodygames.rpgquest.mob.ability.SplitOnHitAbilityListener;
-import com.lodygames.rpgquest.mob.ability.StrongerExplosionAbilityListener;
-import com.lodygames.rpgquest.mob.ability.SummonOnDamageAbilityListener;
+import com.lodygames.rpgquest.mob.ability.AbilityEngine;
+import com.lodygames.rpgquest.mob.ability.AbilityWorldPolicy;
 import com.lodygames.rpgquest.mod.ModCompatService;
 import com.lodygames.rpgquest.npc.NpcCatalogSources;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
@@ -533,11 +530,17 @@ public final class RPGQuestBootstrap {
         mobService = new SpecialMobService(
                 plugin, mobRegistry, zoneRegistry, customItemRegistry, plugin.getSLF4JLogger(), mobSpawnSettingsStore);
         registry.start(mobService);
-        registry.start(new PlayerListenerService(plugin, new StrongerExplosionAbilityListener(mobService)));
-        registry.start(new PlayerListenerService(plugin, new SplitOnHitAbilityListener(mobService)));
-        registry.start(new ExplosiveOnAttackAbilityService(plugin, mobRegistry, mobService));
-        registry.start(new EnragedAbilityService(plugin, mobRegistry, mobService));
-        registry.start(new PlayerListenerService(plugin, new SummonOnDamageAbilityListener(plugin, mobService)));
+        // Issue #542 : un seul moteur pour toutes les capacités de mobs. La politique lit le Hub, les
+        // claims (service créé plus loin : lu à chaque appel) et les zones au moment de décider.
+        AbilityWorldPolicy abilityWorldPolicy = new AbilityWorldPolicy(
+                () -> configService.current().hub().world(),
+                (world, x, y, z) -> claimService != null && claimService.claimAt(world, x, y, z).isPresent(),
+                (world, x, y, z) -> zoneRegistry.zoneAt(world, x, y, z)
+                        .map(zone -> !zone.flags().allowHostileSpawn()).orElse(false),
+                entity -> npcIdentityService.isCitizensNpc(entity) || npcIdentityService.currentId(entity).isPresent());
+        AbilityEngine abilityEngine = new AbilityEngine(plugin, mobRegistry, mobService, abilityWorldPolicy);
+        registry.start(abilityEngine);
+        registry.start(new PlayerListenerService(plugin, abilityEngine));
 
         equipmentBehaviorService = new EquipmentBehaviorService(plugin, customItemRegistry, configService);
         registry.start(equipmentBehaviorService);

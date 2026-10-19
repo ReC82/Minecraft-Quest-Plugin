@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.mob;
 
+import com.lodygames.rpgquest.mob.ability.MobAbilityRules;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
@@ -76,7 +77,7 @@ public final class SpecialMobLoader {
         }
         List<SpecialMobLoadIssue> merged = new ArrayList<>(ioIssues);
         merged.addAll(report.issues());
-        return new SpecialMobLoadReport(report.loaded(), merged);
+        return new SpecialMobLoadReport(report.loaded(), merged, report.warnings());
     }
 
     /** Entrée testable directement avec des sections déjà parsées, sans toucher au disque. */
@@ -109,6 +110,7 @@ public final class SpecialMobLoader {
                 .collect(Collectors.groupingBy(pm -> pm.definition().id(), LinkedHashMap::new, Collectors.toList()));
 
         List<SpecialMobDefinition> survivors = new ArrayList<>();
+        List<SpecialMobLoadIssue> warnings = new ArrayList<>();
         for (var entry : byId.entrySet()) {
             if (entry.getValue().size() > 1) {
                 String files = entry.getValue().stream().map(ParsedMob::fileName).collect(Collectors.joining(", "));
@@ -117,11 +119,14 @@ public final class SpecialMobLoader {
                             "id de mob spécial dupliqué « " + entry.getKey() + " » (aussi présent dans : " + files + ")."));
                 }
             } else {
-                survivors.add(entry.getValue().get(0).definition());
+                ParsedMob survivor = entry.getValue().get(0);
+                survivors.add(survivor.definition());
+                MobAbilityRules.loadWarnings(survivor.definition())
+                        .forEach(w -> warnings.add(new SpecialMobLoadIssue(survivor.fileName(), w)));
             }
         }
 
-        return new SpecialMobLoadReport(survivors, allIssues);
+        return new SpecialMobLoadReport(survivors, allIssues, warnings);
     }
 
     private record ParsedMob(String fileName, SpecialMobDefinition definition) {

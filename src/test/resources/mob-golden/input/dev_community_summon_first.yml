@@ -1,0 +1,25 @@
+# Profil type DEV : boss communautaire, Renforts AVANT Enragé, entiers écrits sans décimale.
+id: rpgquest:hill_ogre
+category: BOSS
+boss-mode: COMMUNITY
+community-weight: 3
+participation-rewards:
+  - "table:boss_loot"
+entity-type: HUSK
+name: "Ogre des collines"
+spawn-chance: 0
+worlds: [wild]
+biomes: []
+zones: []
+health: 300
+abilities:
+  - type: SUMMON_ON_DAMAGE
+    summon-entity-type: husk
+    amount: 1
+    chance: 1
+    cooldown-seconds: 0
+    max-alive: 2
+  - type: ENRAGED
+    health-fraction: 0.5
+    speed-multiplier: 1.1
+    damage-multiplier: 1.2

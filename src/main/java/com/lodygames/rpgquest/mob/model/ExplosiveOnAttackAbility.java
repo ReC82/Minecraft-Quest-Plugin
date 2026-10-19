@@ -7,7 +7,12 @@ package com.lodygames.rpgquest.mob.model;
  * cochon n'a aucun comportement d'attaque, l'API publique Paper ne permet
  * pas de lui en greffer un sans IA de pathfinding personnalisée).
  */
-public record ExplosiveOnAttackAbility(float power, boolean setFire, double triggerRangeBlocks) implements MobAbility {
+public record ExplosiveOnAttackAbility(float power, boolean setFire, double triggerRangeBlocks, AbilityOptions options)
+        implements MobAbility {
+
+    public ExplosiveOnAttackAbility(float power, boolean setFire, double triggerRangeBlocks) {
+        this(power, setFire, triggerRangeBlocks, AbilityOptions.DEFAULTS);
+    }
 
     public ExplosiveOnAttackAbility {
         if (power <= 0) {
@@ -16,6 +21,7 @@ public record ExplosiveOnAttackAbility(float power, boolean setFire, double trig
         if (triggerRangeBlocks <= 0) {
             throw new IllegalArgumentException("triggerRangeBlocks doit être strictement positif : " + triggerRangeBlocks);
         }
+        options = options == null ? AbilityOptions.DEFAULTS : options;
     }
 
     @Override

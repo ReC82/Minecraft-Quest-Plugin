@@ -1,0 +1,25 @@
+# Profil de mob spécial RPGQuest — généré / édité via le Control Panel (issue #172).
+id: rpgquest:red_creeper
+category: SPECIAL
+enabled: true
+entity-type: CREEPER
+name: "<red><bold>Creeper Rouge</bold></red>"
+spawn-chance: 0.02
+worlds: []
+biomes: []
+zones: []
+health: 30.0
+damage: 6.0
+speed: 1.0
+particle: FLAME
+sound: ENTITY.CREEPER.PRIMED
+abilities:
+  - type: STRONGER_EXPLOSION
+    radius-multiplier: 1.5
+drops:
+  - material: GUNPOWDER
+    weight: 100
+    min-amount: 1
+    max-amount: 3
+xp-reward: 10
+max-population: 8

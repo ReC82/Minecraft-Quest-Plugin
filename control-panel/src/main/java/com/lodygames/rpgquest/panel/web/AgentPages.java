@@ -7601,6 +7601,13 @@ public final class AgentPages {
         };
     }
 
+    /**
+     * Page de l'éditeur de graphe des dialogues (issue #130) : ses formulaires y reviennent, sans quoi
+     * la resynchronisation rechargeait la liste simple {@code /dialogues} et le nœud ajouté restait
+     * invisible.
+     */
+    static final String DIALOGUES_TECH_PATH = "/dialogues/diagnostic";
+
     public String dialogues(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
@@ -7615,18 +7622,18 @@ public final class AgentPages {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
-        sb.append(agentPicker(agentId, "/dialogues", ""));
+        sb.append(agentPicker(agentId, DIALOGUES_TECH_PATH, ""));
 
         sb.append("<h2>Catalogue</h2>");
-        String dlgBar = compactRefresh(session, agentId, "dialogue.list", "Dialogues", "btn-outline-primary", "/dialogues");
+        String dlgBar = compactRefresh(session, agentId, "dialogue.list", "Dialogues", "btn-outline-primary", DIALOGUES_TECH_PATH);
         if (perms.can(session.effective(), Permission.CONTENT_READ)) {
-            dlgBar += compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/dialogues");
+            dlgBar += compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", DIALOGUES_TECH_PATH);
             dlgBar += compactRefresh(session, agentId, "content.dev.state", "État DEV",
                     devContentIndex(agentId).available() ? "btn-outline-secondary" : "btn-warning",
-                    "/dialogues");
+                    DIALOGUES_TECH_PATH);
         }
         if (perms.can(session.effective(), Permission.NPC_READ)) {
-            dlgBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/dialogues");
+            dlgBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", DIALOGUES_TECH_PATH);
         }
         sb.append(listCatbar("Catalogue", dlgBar));
 
@@ -7642,6 +7649,7 @@ public final class AgentPages {
         List<Object> loadIssues = details.map(x -> asList(x.get("loadIssues"))).orElse(List.of());
         List<Object> missing = details.map(x -> asList(x.get("declaredButMissing"))).orElse(List.of());
         List<MergedRow> merged = mergeDialogueRows(agentId, runtimeDialogues);
+        String focus = cleanFocus(q.get("focus"));
 
         // Un dialogue « déclaré mais absent » côté serveur qui existe déjà dans la source éditable
         // n'est pas une erreur : il est en attente de rechargement (comme « Source uniquement »).
@@ -7715,7 +7723,7 @@ public final class AgentPages {
             int di = 0;
             for (MergedRow mr : merged) {
                 sb.append(renderDialogueAccordionItem(mr.data(), di++, questTitles, session, agentId,
-                        canWrite, mr.state(), devContentIndex(agentId)));
+                        canWrite, mr.state(), devContentIndex(agentId), focus));
             }
             sb.append("</div>");
         }
@@ -7852,7 +7860,8 @@ public final class AgentPages {
      */
     private String renderDialogueAccordionItem(Map<String, Object> dg, int idx, Map<String, String> questTitles,
                                                Session session, String agentId, boolean canWrite, CatalogState state,
-                                               com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex) {
+                                               com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex,
+                                               String focus) {
         String id = str(dg.get("id"));
         String key = str(dg.get("key"));
         String start = str(dg.get("startNodeId"));
@@ -7868,6 +7877,8 @@ public final class AgentPages {
         // L'édition guidée (nœuds / choix) passe par des actions agent qui ciblent un dialogue
         // *chargé* par le serveur : elle n'a pas de sens pour un dialogue « Source uniquement ».
         boolean canEdit = canWrite && !sourceOnly;
+        // Issue #130 : le dialogue qu'on vient de modifier est rouvert, graphe déplié, après la resync.
+        boolean open = !focus.isEmpty() && focus.equals(dialoguePlainKey(key.isEmpty() ? id : key));
 
         boolean anyErr = warnings.stream().anyMatch(w -> "error".equals(str(asMap(w).get("severity"))));
         boolean anyWarn = !warnings.isEmpty();
@@ -7880,9 +7891,9 @@ public final class AgentPages {
                 .append(cat).append("\" data-filter-text=\"").append(ftext)
                 .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
-        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
-                + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
-                .append(slug).append("\">");
+        sb.append("<button class=\"accordion-button").append(open ? "" : " collapsed")
+                .append(" npc-head\" type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
+                .append("\" aria-expanded=\"").append(open).append("\" aria-controls=\"").append(slug).append("\">");
         sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(Http.esc(human))
                 .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
         sb.append("<span class=\"npc-head-badges\">");
@@ -7904,8 +7915,8 @@ public final class AgentPages {
         sb.append(dialogueHealthPill(warnings));
         sb.append("</span></button></h3>");
 
-        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
-                .append("data-bs-parent=\"#dialogues-accordion\"><div class=\"accordion-body npc-detail\">");
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse").append(open ? " show" : "")
+                .append("\" data-bs-parent=\"#dialogues-accordion\"><div class=\"accordion-body npc-detail\">");
 
         if (sourceOnly) {
             sb.append("<p class=\"muted\">").append(Icons.icon("history"))
@@ -7967,7 +7978,8 @@ public final class AgentPages {
 
         // ---- GRAPHE (replié par défaut) ----
         sb.append(detailSection("dialogues", "Graphe des nœuds"));
-        sb.append("<details class=\"dlg-graph-wrap\"><summary>Afficher le graphe — ").append(nodes.size())
+        sb.append(open ? "<details open class=\"dlg-graph-wrap\">" : "<details class=\"dlg-graph-wrap\">")
+                .append("<summary>Afficher le graphe — ").append(nodes.size())
                 .append(" nœud(s)</summary><div class=\"dlg-graph\">");
         for (Object o : nodes) {
             sb.append(dialogueNodeCard(asMap(o), id, nodeIds, questTitles, session, agentId, canEdit));
@@ -7988,7 +8000,7 @@ public final class AgentPages {
 
             sb.append(publishSection(session, agentId, "dialogues", dialogueSlug,
 
-                    id.isEmpty() ? dialogueSlug : id, devIndex, "/dialogues"));
+                    id.isEmpty() ? dialogueSlug : id, devIndex, DIALOGUES_TECH_PATH));
 
         }
 
@@ -8161,8 +8173,7 @@ public final class AgentPages {
     private String dialogueNodeUpdateForm(Session session, String agentId, String dialogueId, String nodeId,
                                           String speaker, String text) {
         StringBuilder sb = new StringBuilder("<details class=\"dlg-edit\"><summary>Modifier ce nœud (locuteur / texte)</summary>");
-        sb.append(formStart(session, agentId, "dialogue.node.update", "/dialogues", ""));
-        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append(dialogueFormStart(session, agentId, "dialogue.node.update", dialogueId));
         sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
         sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" value=\"")
                 .append(Http.esc(speaker)).append("\" maxlength=\"128\">");
@@ -8181,8 +8192,7 @@ public final class AgentPages {
     private String dialogueChoiceAddForm(Session session, String agentId, String dialogueId, String nodeId,
                                          List<String> nodeIds) {
         StringBuilder sb = new StringBuilder("<details class=\"dlg-edit\"><summary>Ajouter un choix à ce nœud</summary>");
-        sb.append(formStart(session, agentId, "dialogue.choice.add", "/dialogues", ""));
-        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append(dialogueFormStart(session, agentId, "dialogue.choice.add", dialogueId));
         sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
         sb.append("<label>Texte du choix</label><input type=\"text\" name=\"choice_text\" maxlength=\"512\" "
                 + "placeholder=\"D'accord\">");
@@ -8224,8 +8234,7 @@ public final class AgentPages {
 
         StringBuilder sb = new StringBuilder("<details class=\"dlg-edit dlg-edit-choice\"><summary>"
                 + (simple ? "Modifier / supprimer" : "Modifier ce choix") + "</summary>");
-        sb.append(formStart(session, agentId, "dialogue.choice.update", "/dialogues", ""));
-        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append(dialogueFormStart(session, agentId, "dialogue.choice.update", dialogueId));
         sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
 
@@ -8296,8 +8305,7 @@ public final class AgentPages {
         sb.append("<button class=\"btn\" type=\"submit\">Enregistrer le choix</button></form>");
 
         if (simple) {
-            sb.append(formStart(session, agentId, "dialogue.choice.delete", "/dialogues", ""));
-            sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+            sb.append(dialogueFormStart(session, agentId, "dialogue.choice.delete", dialogueId));
             sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
             sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
             sb.append(mutationConsent("dialogue.choice.delete",
@@ -8410,8 +8418,7 @@ public final class AgentPages {
         sb.append("<p class=\"faint\" style=\"font-size:12px\">Crée un nœud simple avec un unique choix « fermer ». "
                 + "Il n'est relié à aucun choix existant (nœud orphelin) : ajouter ensuite un choix « → " + Http.esc(
                 MiniText.prettifyId(dialogueId)) + " » vers lui depuis un autre nœud.</p>");
-        sb.append(formStart(session, agentId, "dialogue.node.create", "/dialogues", ""));
-        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append(dialogueFormStart(session, agentId, "dialogue.node.create", dialogueId));
         sb.append("<label>Id du nœud (minuscules, « _ - »)</label><input type=\"text\" name=\"node_id\" "
                 + "pattern=\"[a-z0-9_][a-z0-9_-]{0,63}\" placeholder=\"farewell\">");
         sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" maxlength=\"128\" placeholder=\"Garde\">");
@@ -8569,6 +8576,16 @@ public final class AgentPages {
                     + "valeur pour obtenir un bout de terrain »."));
         }
         return sb.toString();
+    }
+
+    /**
+     * Début d'un formulaire d'édition guidée d'un dialogue (issue #130) : retour sur l'éditeur de graphe,
+     * dialogue rouvert ({@code focus}) pour que la resynchronisation montre la modification.
+     */
+    private String dialogueFormStart(Session session, String agentId, String type, String dialogueId) {
+        return formStart(session, agentId, type, DIALOGUES_TECH_PATH, "")
+                + "<input type=\"hidden\" name=\"dialogue_id\" value=\"" + Http.esc(dialogueId) + "\">"
+                + "<input type=\"hidden\" name=\"focus\" value=\"" + Http.esc(dialoguePlainKey(dialogueId)) + "\">";
     }
 
     private String formStart(Session session, String agentId, String type, String page, String player) {

@@ -296,6 +296,75 @@ class DialoguesCatalogTest {
         assertEquals(303, ok.statusCode());
     }
 
+    private static String miraDetails(boolean withInvestigate) {
+        String start = "{\"id\":\"start\",\"speaker\":\"Mira\",\"text\":\"Bonjour.\",\"start\":true,"
+                + "\"reachable\":true,\"choices\":[{\"text\":\"Au revoir\",\"nextNodeId\":\"\","
+                + "\"actions\":[{\"kind\":\"CLOSE\",\"target\":\"\",\"value\":\"\",\"raw\":\"CLOSE\"}],"
+                + "\"conditions\":[]}]}";
+        String investigate = ",{\"id\":\"investigate\",\"speaker\":\"Mira\",\"text\":\"Une balise.\","
+                + "\"start\":false,\"reachable\":false,\"choices\":[{\"text\":\"Fermer\",\"nextNodeId\":\"\","
+                + "\"actions\":[{\"kind\":\"CLOSE\",\"target\":\"\",\"value\":\"\",\"raw\":\"CLOSE\"}],"
+                + "\"conditions\":[]}]}";
+        int nodes = withInvestigate ? 2 : 1;
+        String warnings = withInvestigate
+                ? "[{\"code\":\"NODE_UNREACHABLE\",\"severity\":\"info\","
+                        + "\"message\":\"le nœud « investigate » est inaccessible.\"}]"
+                : "[]";
+        return "{\"total\":1,\"withWarnings\":" + (withInvestigate ? 1 : 0) + ",\"nodeTotal\":" + nodes + ","
+                + "\"loadIssues\":[],\"declaredButMissing\":[],\"dialogues\":[{"
+                + "\"id\":\"rpgquest:mira_first_map\",\"key\":\"mira_first_map\",\"startNodeId\":\"start\","
+                + "\"linkedNpcIds\":[\"mira\"],\"nodeCount\":" + nodes + ",\"choiceCount\":" + nodes + ","
+                + "\"referencedQuestIds\":[],\"startsQuestIds\":[],\"warnings\":" + warnings + ","
+                + "\"nodes\":[" + start + (withInvestigate ? investigate : "") + "]}]}";
+    }
+
+    /**
+     * Issue #130 : après « Ajouter un nœud », l'utilisateur revient sur l'éditeur de graphe (et non sur la
+     * liste simple /dialogues), le dialogue rouvert ; la resynchronisation automatique (relevé
+     * dialogue.list ré-enfilé) suffit alors à montrer le nouveau nœud, son compteur et son diagnostic.
+     */
+    @Test
+    void addedNodeShowsUpOnTheGraphPageAfterTheAutomaticResync() throws Exception {
+        start();
+        runListWithSuccess(miraDetails(false));
+        String before = get("/dialogues/diagnostic?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(before.contains("Afficher le graphe — 1 nœud(s)"));
+        assertTrue(before.contains("name=\"return\" value=\"/dialogues/diagnostic\""),
+                "les formulaires du graphe reviennent sur l'éditeur de graphe");
+        assertTrue(before.contains("name=\"focus\" value=\"mira_first_map\""), "le dialogue édité sera rouvert");
+        assertFalse(before.contains("<details open class=\"dlg-graph-wrap\""), "sans focus, rien n'est déplié d'office");
+
+        HttpResponse<String> created = post("/agents/action", "_csrf=" + csrf(before)
+                + "&type=dialogue.node.create&agent=" + TestConfig.AGENT_ID + "&return=/dialogues/diagnostic"
+                + "&focus=mira_first_map&dialogue_id=" + enc("rpgquest:mira_first_map")
+                + "&node_id=investigate&speaker=Mira&text=" + enc("Une balise."));
+        assertEquals(303, created.statusCode());
+        String location = created.headers().firstValue("Location").orElse("");
+        assertTrue(location.startsWith("/dialogues/diagnostic?agent="), location);
+        assertTrue(location.contains("&focus=mira_first_map") && location.contains("&toast="), location);
+        String actionId = location.substring(location.indexOf("&toast=") + "&toast=".length());
+
+        // La page rendue suit l'action (toast « en cours ») : panel.js rechargera dès la file au repos.
+        String waiting = get(location).body();
+        assertTrue(waiting.contains("data-toast-action=\"" + actionId + "\""), "toast suivi par panel.js");
+        assertTrue(waiting.contains("aria-expanded=\"true\"") && waiting.contains("accordion-collapse collapse show"),
+                "dialogue rouvert");
+
+        agentResult(actionId, "{\"action_id\":\"" + actionId + "\",\"status\":\"SUCCESS\",\"message\":\"nœud ajouté\"}");
+        assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1, "dialogue.list ré-enfilé : la file n'est pas au repos");
+        String listId = pollOneActionId();
+        agentResult(listId, "{\"action_id\":\"" + listId + "\",\"status\":\"SUCCESS\",\"value\":\"1\","
+                + "\"message\":\"1 dialogue\",\"details\":" + miraDetails(true) + "}");
+        assertEquals(0, pendingFor(TestConfig.AGENT_ID), "file au repos : panel.js recharge la page");
+
+        // Ce que montre le rechargement automatique (même URL), sans F5 ni « Rafraîchir ».
+        String after = get(location).body();
+        assertTrue(after.contains("Afficher le graphe — 2 nœud(s)"), "compteur à jour");
+        assertTrue(after.contains("<details open class=\"dlg-graph-wrap\">"), "graphe du dialogue édité déplié");
+        assertTrue(after.contains("investigate") && after.contains("inaccessible"), "nouveau nœud visible");
+        assertTrue(after.contains("NODE_UNREACHABLE"), "diagnostic immédiat du nœud orphelin");
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private static String enc(String v) {
@@ -305,6 +374,24 @@ class DialoguesCatalogTest {
     private int pendingFor(String agent) throws Exception {
         Map<String, Object> body = Json.parseObject(get("/agents/actions.json?agent=" + agent).body());
         return ((Number) body.get("pending")).intValue();
+    }
+
+    private String pollOneActionId() throws Exception {
+        HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());
+        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"").matcher(poll.body());
+        assertTrue(m.find(), "une action attendue par l'agent");
+        return m.group(1);
+    }
+
+    private void agentResult(String id, String body) throws Exception {
+        HttpResponse<String> res = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + id + "/result"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, res.statusCode());
     }
 
     private void runListWithSuccess(String details) throws Exception {

@@ -6710,6 +6710,21 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
 7.  PlugAdmin → Dialogues ou Quêtes : une action `SET_VARIABLE` / récompense `VARIABLE` `CLAIM_TIER_1` =
     `lasagne` → erreur de validation, publication impossible.
 
+### TC-369 — PlugAdmin : un nœud ajouté apparaît dans le graphe sans F5 (issue #130, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de la PR de #130 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 3 minutes.
+Travailler sur un **dialogue de test** (jamais un dialogue joué), par ex. un squelette créé pour l'occasion.
+
+1.  Dialogues → **Détails techniques** (`/dialogues/diagnostic`) → déplier le dialogue de test → « Afficher le
+    graphe — N nœud(s) » → noter N.
+2.  « Ajouter un nœud à ce dialogue » : id `test_130`, locuteur quelconque, un texte → **Ajouter le nœud**.
+3.  **Attendu** : on reste sur `/dialogues/diagnostic` (pas la liste simple), le dialogue de test est déjà déplié ;
+    le toast suit l'action puis « Mise à jour de l'affichage en cours… » ; la page se recharge **seule**.
+4.  Après rechargement : le même dialogue est déplié, le graphe ouvert affiche « N+1 nœud(s) », le nœud `test_130`
+    apparaît marqué **inaccessible**, le diagnostic « Nœud jamais atteint » est visible. Aucun F5.
+5.  Modifier le texte de `test_130` (« Modifier ce nœud ») → même retour sur le dialogue déplié avec le nouveau texte.
+6.  Nettoyage : supprimer le dialogue de test (ou le nœud par l'éditeur simple), selon l'usage habituel.
+
 ### TC-367 — PlugAdmin : attente visible pendant la mise à jour automatique après une modification (issue #128, PENDING MANUAL VALIDATION)
 
 Prérequis : PlugAdmin issu de la PR de #128 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 3 minutes.

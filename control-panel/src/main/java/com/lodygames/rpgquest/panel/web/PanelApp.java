@@ -6222,6 +6222,7 @@ public final class PanelApp {
         paths.add("/mobs/spawns");
         paths.add("/ai/studio");
         paths.add("/npcs/diagnostic");
+        paths.add(AgentPages.DIALOGUES_TECH_PATH);
         paths.add("/npcs/encounters");
         paths.add("/npcs/spots");
         paths.add("/quests/catalogs");

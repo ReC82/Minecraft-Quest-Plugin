@@ -6180,6 +6180,9 @@ Prérequis : PlugAdmin issu de #412 sur DEV. Renommer **un seul** lieu de test, 
 8.  Avancé : diagnostic du Hub, couverture, fiches de bornes, instances (filtre), Waystones,
     tableaux techniques — tous présents.
 9.  Téléphone (≈ 390 px) : aucun défilement horizontal, boutons utilisables au doigt.
+10. (Complément 19/10, PR #606) Sous la liste des lieux, « Voir aussi : Mondes · Portails » ouvre
+    les deux autres pages du groupe Monde ; dans la fiche d'un lieu, « Informations techniques »
+    → « Voir ce monde » ouvre la fiche de son monde dans la page Mondes.
 
 ### TC-321 — Catalogues de quêtes : parcours simplifié (issue #414, PENDING MANUAL VALIDATION)
 

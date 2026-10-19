@@ -386,6 +386,23 @@ class PlayersPageTest {
                 Map.of("player", UUID_STEVE, "key", "STARTER_KIT_TIER", "value", "2", "confirm", "true")).valid());
     }
 
+    // ---- Issue #320 : sélecteur vrai/faux, valeur stockée hors type signalée ------------------
+
+    @Test
+    void knownBooleansAreWrittenWithATrueFalseSelectorAndAStoredLasagneIsFlagged() throws Exception {
+        start();
+        seedCatalog(CATALOG);
+        done("player.variable.get", UUID_STEVE, "SUCCESS", "Steve : CLAIM_TIER_1 = <b>lasagne</b>",
+                "{\"key\":\"CLAIM_TIER_1\",\"present\":true,\"value\":\"<b>lasagne</b>\"}", java.time.Instant.now());
+        String page = get("/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_STEVE + "&tab=outils").body();
+        assertTrue(page.contains("<option value=\"true\">"), "sélecteur vrai/faux");
+        assertTrue(page.contains("<option value=\"CLAIM_TIER_1\">CLAIM_TIER_1</option>"));
+        assertTrue(page.contains("le jeu la lit comme non débloquée") || page.contains("Le jeu la lit comme non débloquée"),
+                "valeur hors type signalée");
+        assertFalse(page.contains("<b>lasagne</b>"), "valeur stockée échappée");
+        assertTrue(page.contains("VAULT_SLOTS_&lt;ID&gt;"), "les types connus sont listés");
+    }
+
     private void start() throws Exception {
         String db = tmp.resolve("cp.db").toString();
         app = new PanelApp(TestConfig.withAgent(db, "http://127.0.0.1:1/admin/v1"),

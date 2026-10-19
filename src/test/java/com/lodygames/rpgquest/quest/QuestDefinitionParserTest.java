@@ -213,6 +213,34 @@ class QuestDefinitionParserTest {
     }
 
     @Test
+    void aVariableRewardOnAKnownBooleanOnlyAcceptsTrueOrFalse() {
+        QuestDefinitionParser.ParseResult bad = parser.parse("lasagne.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: VARIABLE
+                    key: CLAIM_TIER_1
+                    value: lasagne
+                """)));
+        assertFalse(bad.isSuccess(), "issue #320");
+        assertTrue(bad.issues().stream().anyMatch(i -> i.message().contains("true ou false")), () -> "issues: " + bad.issues());
+
+        QuestDefinitionParser.ParseResult ok = parser.parse("tier.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: VARIABLE
+                    key: CLAIM_TIER_1
+                    value: "true"
+                """)));
+        assertTrue(ok.isSuccess(), () -> "issues: " + ok.issues());
+
+        QuestDefinitionParser.ParseResult free = parser.parse("free.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: VARIABLE
+                    key: woodcutter_reputation
+                    value: lasagne
+                """)));
+        assertTrue(free.isSuccess(), () -> "une variable narrative libre reste libre : " + free.issues());
+    }
+
+    @Test
     void unknownRewardTypeIsRejected() {
         QuestDefinitionParser.ParseResult result = parser.parse("bad-reward-type.yml", load(minimalQuestWithStepsAnd("""
                 rewards:

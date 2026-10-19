@@ -266,8 +266,8 @@ Détail complet : [docs/ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md). Outil
 | `/rpgadmin quest reset <joueur> <quest-id>` | Supprime progression + compteurs → quête rejouable (`resetQuest`). | en ligne **ou** hors ligne | **n'annule pas** les récompenses déjà données (XP, objets, variables, effets de commande) — limite documentée. |
 | `/rpgadmin story advance <joueur> <storyId>` | Démarre la story si besoin, `forceComplete` de sa quête courante, avance d'un cran (accepte la suivante ou termine la story). Le message dit quelle étape tester. | en ligne | via `forceComplete`, une seule fois par quête |
 | `/rpgadmin story complete <joueur> <storyId>` | Enchaîne `advance` jusqu'au bout, dans l'ordre, borné. | en ligne | via `forceComplete`, une seule fois par quête |
-| `/rpgadmin player variable get <joueur> <clé>` | Lit `player_variables` (lecture pure). Clé absente signalée. | en ligne **ou** hors ligne | — |
-| `/rpgadmin player variable set <joueur> <clé> <valeur>` | Écrit la clé. Avertissement + journalisation (ancienne/nouvelle valeur). | en ligne **ou** hors ligne | **exige `rpgquest.admin.debug` en plus** |
+| `/rpgadmin player variable get <joueur> <clé>` | Lit `player_variables` (lecture pure). Clé absente signalée ; valeur stockée hors type signalée (#320), jamais corrigée. | en ligne **ou** hors ligne | — |
+| `/rpgadmin player variable set <joueur> <clé> <valeur>` | Écrit la clé. Avertissement + journalisation (ancienne/nouvelle valeur). Variable connue (#320) : valeur hors type refusée, l'ancienne reste. | en ligne **ou** hors ligne | **exige `rpgquest.admin.debug` en plus** |
 | `/rpgadmin claim grant-tier <joueur> <TIER_n>` (issue #179) | Fait directement grandir le claim principal déjà posé (`ClaimService#upgradeTier`), sans passer par une quête. | en ligne | n/a (pas une récompense de quête — voir `/rpgadmin quest complete guard_tierN` pour tester la quête elle-même, récompenses incluses) |
 
 `story advance`/`complete` ne touchent jamais une quête non référencée par la story ciblée. Pour un état vraiment propre : `/rpgadmin player resetnew … confirm`, `/rpgadmin story resetwithquests …`, ou `/rpgadmin player variable set … CLAIM_TIER_1 false`.
@@ -3842,8 +3842,17 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
     ou chat, même mécanisme que l'avertissement du Wild), préférence `BETA_WARNING_HIDDEN`.
 -   OP/DEOP (#316) : `player.OperatorNoticeService`, message privé après changement relu ; absent :
     résumé de l'état final à la connexion (`OP_NOTICE_STATE`). Messages `player.op-*`.
--   Variables typées (#319) : `web.agent.VariableTypes` (`CLAIM_TIER_<n>`, préférences = `true`/`false` ;
-    `STARTER_KIT_TIER` = entier 1–99). Plan `CLAIM_TIER` entier : `docs/audits/claim-tier-entier.md`.
+-   Variables typées (#319, #320) : registre `variable.VariableTypes` (copie panel
+    `panel.agent.KnownVariableTypes`, à faire évoluer ensemble). Booléens `true`/`false` exacts :
+    `CLAIM_TIER_<n>`, `WILD_ENTRY_WARNING_HIDDEN`, `BETA_WARNING_HIDDEN`, `RUNE_RAPPEL_GRANTED`,
+    `STARTER_TOOL_KIT_AVAILABLE`, `WEB_PROFILE_HIDDEN`, `VAULT_UNLOCK_<ID>` ; `STARTER_KIT_TIER` = entier 1–99 ;
+    `VAULT_SLOTS_<ID>` = 9…54 par 9. Validé sur **toutes** les écritures : outil PlugAdmin (sélecteur vrai/faux),
+    `/rpgadmin player variable set`, action de dialogue `SET_VARIABLE` et récompense de quête `VARIABLE`
+    (refus au chargement et dans les validateurs du panel). Lecture : valeur stockée hors type signalée par
+    `player.variable.get` (`details.type_problem`) et `/rpgadmin player variable get`, lue comme non débloquée
+    (seul `true` exact compte, même règle pour Jo `VARIABLE_EQUALS` et le portail des claims), **jamais
+    corrigée automatiquement**. Absente ≠ `false`. Toute autre variable reste libre. Plan `CLAIM_TIER` entier :
+    `docs/audits/claim-tier-entier.md`.
 -   Droits : matrice `docs/PERMISSIONS.md` (#27).
 
 ### Dialogues dans PlugAdmin (issue #332)

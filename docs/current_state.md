@@ -179,7 +179,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > (LodyCoins, propagé partout), avertissement bêta à la connexion (#28, « OK » / « OK et ne plus
 > afficher »), rubrique Administration (réglages du mode bypass, #35) ; `settings.yml` écrit et
 > relu par le plugin. OP/DEOP : message privé au joueur (#316). Joueurs : résultats de reset datés et
-> par joueur (#317), variables relues et typées (#319, migration `CLAIM_TIER` préparée seulement).
+> par joueur (#317), variables relues et typées (#319 ; #320 : registre partagé, validé sur commande, PlugAdmin, dialogues et récompenses, valeur stockée hors type signalée sans correction ; migration `CLAIM_TIER` préparée seulement).
 > Matrice des droits : `docs/PERMISSIONS.md` (#27).
 >
 > **Dialogues et Joueurs simplifiés dans PlugAdmin (#332, #328, 13/10/2026)** — dialogues : liste

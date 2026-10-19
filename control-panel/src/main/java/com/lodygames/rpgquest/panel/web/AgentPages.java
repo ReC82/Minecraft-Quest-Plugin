@@ -6,6 +6,7 @@ import com.lodygames.rpgquest.panel.agent.AgentActionStatus;
 import com.lodygames.rpgquest.panel.agent.AgentIdentity;
 import com.lodygames.rpgquest.panel.agent.AgentRegistry;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
+import com.lodygames.rpgquest.panel.agent.KnownVariableTypes;
 import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.authz.PermissionService;
 import com.lodygames.rpgquest.panel.dialogue.MinecraftTextWidth;
@@ -1388,28 +1389,56 @@ public final class AgentPages {
         if (present && value.isEmpty()) {
             value = cleanNull(best.resultValue());
         }
+        // Issue #320 : valeur stockée hors type (CLAIM_TIER_1 = lasagne) — signalée, jamais corrigée.
+        String typeProblem = present ? KnownVariableTypes.problem(key, value).map(problem -> Ui.banner("warn",
+                Http.esc(problem + " Le jeu la lit comme non débloquée ; rien n'est corrigé automatiquement : réécris "
+                        + "la valeur explicitement."))).orElse("") : "";
         return "<div class=\"pl-varstate\"><span class=\"pl-varstate-k\">Valeur actuelle sur le serveur</span> <code>"
                 + Http.esc(key) + "</code> = " + (present ? "<strong>" + Http.esc(value) + "</strong>"
                         : "<em>absente</em> (jamais posée)")
-                + " <span class=\"muted\">— relue le " + when(at(best)) + "</span></div>";
+                + " <span class=\"muted\">— relue le " + when(at(best)) + "</span></div>" + typeProblem;
     }
 
     private String playerVariableWrite(Session session, String agentId, String uuid) {
         StringBuilder sb = new StringBuilder("<p class=\"fs-h\">Écrire une variable</p>");
         sb.append(Ui.banner("warn", "Outil de test : écrire une variable ne rejoue pas la progression qui "
                 + "l'aurait posée (aucune récompense, aucune étape)."));
+        // Issue #320 : les variables booléennes connues se posent avec un sélecteur vrai/faux.
+        sb.append(formStart(session, agentId, "player.variable.set", "/players", uuid));
+        sb.append("<label class=\"form-label\">Variable vrai/faux connue du jeu</label><select class=\"form-select\" "
+                + "name=\"key\">");
+        for (String k : KnownVariableTypes.BOOLEAN_KEYS) {
+            sb.append("<option value=\"").append(Http.esc(k)).append("\">").append(Http.esc(k)).append("</option>");
+        }
+        sb.append("</select><label class=\"form-label\">Nouvelle valeur</label><select class=\"form-select\" "
+                + "name=\"value\"><option value=\"true\">true (débloqué / oui)</option>"
+                + "<option value=\"false\">false (non / déjà reçu)</option></select>");
+        sb.append(confirmBox("Je comprends que c'est un outil de test."));
+        sb.append("<button class=\"btn sm\" type=\"submit\">Écrire puis relire</button></form>");
+        sb.append("<p class=\"fs-h\">Autre variable (texte libre)</p>");
         sb.append(formStart(session, agentId, "player.variable.set", "/players", uuid));
         sb.append("<label class=\"form-label\">Nom de la variable</label><input class=\"form-control\" list=\"varkeys-")
-                .append(Http.esc(uuid)).append("-w\" name=\"key\" value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
+                .append(Http.esc(uuid)).append("-w\" name=\"key\" value=\"\" required autocomplete=\"off\" placeholder=\"ex. met_lily\">");
         sb.append(variableKeys(uuid + "-w"));
         sb.append("<label class=\"form-label\">Nouvelle valeur</label><input class=\"form-control\" type=\"text\" "
                 + "name=\"value\" value=\"\" required autocomplete=\"off\" placeholder=\"valeur à écrire\">");
-        sb.append("<p class=\"form-text\">CLAIM_TIER_1, CLAIM_TIER_2… : <code>true</code> ou <code>false</code>. "
-                + "STARTER_KIT_TIER : un nombre entier (1, 2, 3…). Toute autre valeur est refusée pour ces clés.</p>");
+        sb.append(knownTypesHelp());
         sb.append(confirmBox("Je comprends que c'est un outil de test."));
         sb.append("<button class=\"btn sm\" type=\"submit\">Écrire puis relire</button></form>");
         sb.append(variableKnownValue(agentId, uuid));
         return sb.toString();
+    }
+
+    /** Issue #320 — les types connus, tirés du registre ; toute autre variable reste libre. */
+    private static String knownTypesHelp() {
+        StringBuilder sb = new StringBuilder("<p class=\"form-text\">Variables connues du jeu — toute autre valeur "
+                + "est refusée, la valeur antérieure reste :</p><ul class=\"form-text\">");
+        for (KnownVariableTypes.KnownVariable v : KnownVariableTypes.registry()) {
+            sb.append("<li><code>").append(Http.esc(v.label())).append("</code> : ").append(Http.esc(v.expected()))
+                    .append(" — ").append(Http.esc(v.description())).append("</li>");
+        }
+        return sb.append("</ul><p class=\"form-text\">Toute autre variable (jalon de scénario…) est libre : "
+                + "sa valeur est écrite telle quelle.</p>").toString();
     }
 
     private static String variableKeys(String id) {

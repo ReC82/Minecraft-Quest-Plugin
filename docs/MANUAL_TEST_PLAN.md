@@ -6689,6 +6689,27 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-368 — Variables typées : CLAIM_TIER_1 = lasagne refusée partout, valeur hors type signalée (issue #320, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR + PlugAdmin #320 déployés ; un joueur d'essai (pas une progression réelle à conserver).
+**Durée** : 10 minutes. Aucune quête à rejouer : c'est un outil de debug.
+
+1.  PlugAdmin → Joueurs → fiche → Outils. **Attendu** : « Variable vrai/faux connue du jeu » avec une liste
+    (`CLAIM_TIER_1`…) et un sélecteur `true` / `false` ; en dessous, « Autre variable (texte libre) » et la
+    liste des types connus.
+2.  Formulaire libre : `CLAIM_TIER_1` = `lasagne` → **refus** « « lasagne » n'est pas valide pour
+    CLAIM_TIER_1 : true ou false. Rien n'a été écrit. » ; « Lire » rend la valeur antérieure inchangée.
+3.  Sélecteur : `CLAIM_TIER_1` = `true` puis `false` → écrit puis relu ; une variable absente reste
+    affichée « absente », jamais « false ».
+4.  Formulaire libre : `met_lily` = `lasagne` → accepté (variable narrative libre).
+5.  Console : `/rpgadmin player variable set <joueur> CLAIM_TIER_1 TRUE` → refus, rien écrit ;
+    `/rpgadmin player variable get <joueur> CLAIM_TIER_1` → valeur antérieure.
+6.  (Si une valeur hors type existe déjà en base, ex. ancien `lasagne`.) « Lire » ou `/rpgadmin player
+    variable get` → la valeur réelle + un avertissement « le jeu la lit comme non débloquée » ; Jo ne propose
+    pas l'acte, le portail des claims refuse ; rien n'est corrigé tant qu'on ne réécrit pas `true`/`false`.
+7.  PlugAdmin → Dialogues ou Quêtes : une action `SET_VARIABLE` / récompense `VARIABLE` `CLAIM_TIER_1` =
+    `lasagne` → erreur de validation, publication impossible.
+
 ### TC-367 — PlugAdmin : attente visible pendant la mise à jour automatique après une modification (issue #128, PENDING MANUAL VALIDATION)
 
 Prérequis : PlugAdmin issu de la PR de #128 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 3 minutes.

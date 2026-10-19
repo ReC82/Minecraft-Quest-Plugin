@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.claim;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
@@ -117,6 +118,27 @@ class ClaimServiceTest {
         T result = future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         server.getScheduler().performTicks(2);
         return result;
+    }
+
+    /**
+     * Issue #320 — une valeur hors type déjà stockée (« lasagne », « TRUE ») n'ouvre jamais le
+     * premier terrain : même lecture exacte que la condition {@code VARIABLE_EQUALS "true"} de Jo,
+     * et la valeur n'est pas corrigée par la lecture. Absente reste distincte de « false ».
+     */
+    @Test
+    void aClaimTierValueOutsideItsTypeIsReadAsLockedAndLeftUntouched() throws Exception {
+        PlayerMock player = server.addPlayer();
+        profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        PlayerVariableRepository variables = new PlayerVariableRepository(database);
+        assertFalse(claimService.hasClaimTierOne(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS), "absente");
+        for (String stored : new String[] {"lasagne", "TRUE", " true", "1"}) {
+            variables.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, stored).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            assertFalse(claimService.hasClaimTierOne(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS), stored);
+            assertEquals(stored, variables.get(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY)
+                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow(), "aucune correction silencieuse");
+        }
+        variables.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, "true").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(claimService.hasClaimTierOne(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
     @Test

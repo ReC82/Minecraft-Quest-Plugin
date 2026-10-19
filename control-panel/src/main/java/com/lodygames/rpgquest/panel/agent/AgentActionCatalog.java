@@ -883,14 +883,10 @@ public final class AgentActionCatalog {
                 if (value.isEmpty() || value.length() > 256) {
                     return Validation.fail("Valeur manquante ou trop longue (max 256).");
                 }
-                // Issue #319 : mêmes types que le plugin (VariableTypes), vérifiés des deux côtés.
-                String v = value.trim();
-                if (key.matches("CLAIM_TIER_\\d+|WILD_ENTRY_WARNING_HIDDEN|BETA_WARNING_HIDDEN|RUNE_RAPPEL_GRANTED")
-                        && !"true".equals(v) && !"false".equals(v)) {
-                    return Validation.fail("« " + v + " » n'est pas valide pour " + key + " : true ou false.");
-                }
-                if ("STARTER_KIT_TIER".equals(key) && !v.matches("[1-9]\\d?")) {
-                    return Validation.fail("« " + v + " » n'est pas valide pour STARTER_KIT_TIER : un nombre entier de 1 à 99.");
+                // Issues #319, #320 : mêmes types que le plugin (VariableTypes), vérifiés des deux côtés.
+                Optional<String> typeProblem = KnownVariableTypes.problem(key, value);
+                if (typeProblem.isPresent()) {
+                    return Validation.fail(typeProblem.get() + " Rien n'a été écrit.");
                 }
                 params.put("key", key);
                 params.put("value", value);

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel.content;
 
+import com.lodygames.rpgquest.panel.agent.KnownVariableTypes;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -149,6 +150,13 @@ public final class DialogueValidator {
                 out.add(Diagnostic.error(ctx, "État de quête inconnu « " + value + " ». États "
                         + "acceptés : " + String.join(", ", QUEST_STATES) + "."));
             }
+        }
+
+        // Issue #320 : une variable connue du jeu (CLAIM_TIER_1…) n'accepte que son type ; le
+        // plugin refuserait de toute façon ce dialogue au chargement.
+        if ("SET_VARIABLE".equalsIgnoreCase(type)) {
+            KnownVariableTypes.problem(entry.getOrDefault("key", "").trim(), entry.getOrDefault("value", ""))
+                    .ifPresent(problem -> out.add(Diagnostic.error(ctx, problem)));
         }
 
         Set<String> allowed = new LinkedHashSet<>();

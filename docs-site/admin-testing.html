@@ -180,6 +180,14 @@
     <pre><code>/rpgadmin player variable set &lt;joueur&gt; VAULT_UNLOCK_VAULT_02 true
 /rpgadmin player variable set &lt;joueur&gt; VAULT_SLOTS_VAULT_01 54</code></pre>
     <p class="text-body-secondary">Droit supplémentaire : <code>rpgquest.admin.debug</code>. Test TC-354.</p>
+    <p>
+      <strong>Variables typées (#320).</strong> Les variables connues du jeu n'acceptent que leur type :
+      <code>CLAIM_TIER_&lt;n&gt;</code>, <code>VAULT_UNLOCK_&lt;ID&gt;</code> et les préférences « ne plus afficher »
+      valent exactement <code>true</code> ou <code>false</code>, <code>STARTER_KIT_TIER</code> un entier de 1 à 99,
+      <code>VAULT_SLOTS_&lt;ID&gt;</code> 9 à 54. Une autre valeur est refusée (commande, outil PlugAdmin, dialogue,
+      récompense de quête) et la valeur antérieure reste. Une valeur hors type déjà stockée est signalée à la lecture,
+      lue comme non débloquée, jamais corrigée automatiquement. Les autres variables restent libres.
+    </p>
   </section>
 
   <section class="my-5">

@@ -34,11 +34,13 @@ import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.model.QuestState;
+import com.lodygames.rpgquest.variable.VariableTypes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -419,6 +421,12 @@ final class DialogueDefinitionParser {
                 String value = section.getString("value");
                 if (key == null || key.isBlank()) {
                     errors.add(context + ": « key » est obligatoire.");
+                    yield null;
+                }
+                // Issue #320 : une variable connue du jeu (CLAIM_TIER_1…) n'accepte que son type.
+                Optional<String> typeProblem = VariableTypes.problem(key, value == null ? "" : value);
+                if (typeProblem.isPresent()) {
+                    errors.add(context + ": " + typeProblem.get());
                     yield null;
                 }
                 yield new SetVariableAction(key, value == null ? "" : value);

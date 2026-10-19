@@ -83,7 +83,9 @@ public final class Icons {
             // Issue #166 : récompense « Cœur supplémentaire » (.bi-heart-fill vérifié dans la police).
             Map.entry("heart", "heart-fill"),
             Map.entry("lock", "lock"),
-            Map.entry("clock", "clock"));
+            Map.entry("clock", "clock"),
+            // Issue #564 — portails (groupe « Monde »).
+            Map.entry("portal", "door-open"));
 
     /** {@code <i class="bi bi-…">} avec la classe utilitaire {@code ic}. Repli discret sur « info ». */
     public static String icon(String name) {

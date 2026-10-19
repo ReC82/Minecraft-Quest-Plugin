@@ -213,6 +213,9 @@ public final class WorldPages {
         }
         if (maps(l.get("portalsFrom")).isEmpty() && maps(l.get("portalsTo")).isEmpty()) {
             sb.append(li("box-arrow-right", "Aucun portail entre mondes"));
+        } else {
+            sb.append(li("door-open", "Zones, arrivées et règles des portails : <a href=\"/portals" + a
+                    + "\">Portails</a>"));
         }
         sb.append(li("geo-alt", placesText(maps(l.get("sites")), "emplacement(s) de bâtiment")
                 + " · <a href=\"/buildings/sites" + a + "\">Emplacements</a>"));

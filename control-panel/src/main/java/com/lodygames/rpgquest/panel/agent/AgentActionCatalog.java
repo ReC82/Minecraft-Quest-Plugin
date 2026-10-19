@@ -379,6 +379,8 @@ public final class AgentActionCatalog {
         add("city.list", Permission.TRAVEL_READ, false, false, "Rafraîchir les villes");
         // Issue #560 (#331-W1) — mondes en lecture seule. Aucune action world.* mutative n'existe.
         add("world.list", Permission.WORLD_READ, false, false, "Rafraîchir les mondes");
+        // Issue #564 (#228-P1) — portails en lecture seule. Aucune action portal.* mutative n'existe.
+        add("portal.list", Permission.PORTAL_READ, false, false, "Rafraîchir les portails");
         addContentWrite("city.rename", Permission.CITY_WRITE, "Renommer une ville", "city.list");
         addContentWrite("city.resize", Permission.CITY_WRITE, "Régler la taille d'une ville", "city.list");
         addContentWrite("city.active", Permission.CITY_WRITE, "Activer / désactiver une ville", "city.list");

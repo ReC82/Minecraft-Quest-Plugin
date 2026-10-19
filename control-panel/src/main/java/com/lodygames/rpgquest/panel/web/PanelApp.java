@@ -367,6 +367,9 @@ public final class PanelApp {
         // Issue #560 (#331-W1) — mondes en LECTURE SEULE : seul « Rafraîchir » (world.list) est exposé.
         route("/worlds", exchange -> handleBusinessPage(exchange, "/worlds", "Mondes",
                 Permission.WORLD_READ, agentPages::worlds));
+        // Issue #564 (#228-P1) — portails en LECTURE SEULE : seul « Rafraîchir » (portal.list) est exposé.
+        route("/portals", exchange -> handleBusinessPage(exchange, "/portals", "Portails",
+                Permission.PORTAL_READ, agentPages::portals));
         // Issue #332 — dialogues, version simple : une liste, un éditeur, « Enregistrer » puis
         // « Mettre en jeu » par la publication à chaud (#47). L'ancien écran reste en « Détails
         // techniques ».

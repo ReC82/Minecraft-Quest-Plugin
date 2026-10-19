@@ -48,6 +48,44 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - Mobs : socle des capacités composables (#542)
+
+### Changement
+
+JAR seul (`e4f7432`, PR #575), **pas de migration**, aucune clé de configuration, PlugAdmin inchangé. Un moteur
+unique (`AbilityEngine`) remplace les cinq listeners/services de capacités ; nouvelles clés **facultatives**
+dans les entrées `abilities` (`enabled`, `chance`, `cooldown-seconds` ; `despawn-with-owner` pour les renforts),
+jamais écrites quand elles valent leur défaut : aucun profil n'est réécrit. 5 capacités au plus et pas de
+doublon (refus à l'import et à l'enregistrement ; avertissement console pour un ancien fichier). Aucune
+apparition par capacité dans le Hub, un claim ou une zone sans hostiles ; Explosif au contact ignore PNJ et
+joueurs en créatif ; 3 renforts par seconde et par monde au plus.
+
+### Action serveur
+
+Remplacer uniquement le JAR RPGQuest (script officiel `deploy-verygames.sh -y --wait-ci`, CI verte sur
+`e4f7432`), redémarrer DEV. `mobs/*.yml`, `mobs/community-bosses.yml`, `mobs/spawn-settings.yml`,
+`state/community-bosses.yml`, `data.db`, `config.yml` **non modifiés** ; aucune apparition déclenchée.
+
+### Sauvegarde préalable
+
+`~/.local/share/rpgquest/verygames-backups/rpgquest-20261019T082350Z-predeploy.jar` (JAR `f2be026`, 3 636 472 o).
+
+### Déploiement
+
+19/10/2026 10:24 : JAR transféré (3 675 485 o, SHA-256 `19cb5f01c98e0820bbc203856db821b89876c94ae8fdeb160a802eeb60aa7b55`,
+identique après re-téléchargement), un redémarrage RCON, serveur ONLINE.
+
+### Validation
+
+Agent ONLINE après redémarrage ; `mob.list` : 8 profils, 0 problème. Validation en jeu : TC-361, PENDING MANUAL VALIDATION.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis un redémarrage. Aucune donnée à reprendre (l'ancien JAR ignore
+les nouvelles clés facultatives).
+
+---
+
 ## 2026-10-18 - Mobs : page /mobs en trois vues, réglages hors profils, refus visibles (#169)
 
 ### Changement

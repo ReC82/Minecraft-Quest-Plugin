@@ -6686,6 +6686,55 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-361 — Socle des capacités de mobs : profils inchangés, capacités identiques, sécurité, doublons refusés (issue #542, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR #575 (`e4f7432`) sur **DEV** ; PlugAdmin inchangé. Claude n'a modifié aucun
+profil, activé aucun spawn, lancé aucun boss. **À savoir** : sur DEV, aucun profil n'a aujourd'hui de
+capacité (les copies DEV de Cochon Creeper, Creeper Rouge, Creeper Doré et Zombie Fissible les ont perdues
+avant ce lot) ; les étapes 3 et 4 passent donc par deux profils de test `zz542_*`, de type **BOSS de quête**
+(jamais tirés au hasard).
+
+1.  PlugAdmin → Mobs spéciaux & boss → **Rafraîchir**. **Attendu** : les 8 mêmes profils, aucun « Profils
+    rejetés » (vérifié par Claude après redémarrage : 8 profils, 0 problème).
+2.  Importer ce profil (Modèles, IA et import → coller) :
+    ```yaml
+    id: zz542_fissible
+    category: BOSS
+    boss-mode: QUEST
+    entity-type: ZOMBIE
+    name: "Test 542 fissible"
+    spawn-chance: 0.0
+    worlds: []
+    biomes: []
+    zones: []
+    health: 40
+    abilities:
+      - type: SPLIT_ON_HIT
+        max-depth: 1
+        max-children-per-hit: 2
+      - type: ENRAGED
+        health-fraction: 0.3
+        speed-multiplier: 1.3
+        damage-multiplier: 1.5
+    ```
+    **Attendu** : import accepté ; **Exporter** redonne exactement ces capacités, sans ligne `enabled`,
+    `chance` ni `cooldown-seconds` ajoutée.
+3.  Dans le Wild, **en survie** : « Tester » `zz542_fissible`, le frapper → 2 copies au premier coup, plus de
+    nouvelles copies ensuite (plafond 2) ; sous 30 % de vie → particules + rugissement, plus rapide.
+4.  Importer `zz542_cochon` : même en-tête, `entity-type: PIG`, `name: "Test 542 cochon"` et
+    ```yaml
+    abilities:
+      - type: EXPLOSIVE_ON_ATTACK
+        power: 1.0
+        set-fire: false
+        trigger-range-blocks: 2.0
+    ```
+    « Tester » : **en créatif**, le cochon ne vous poursuit pas et n'explose pas ; **en survie**, il vous
+    poursuit et explose (puissance faible, loin de toute construction).
+5.  Doublon refusé : importer un profil `zz542_doublon` avec **deux** entrées `- type: ENRAGED`. **Attendu** :
+    refus « Capacité « Enragé » (ENRAGED) en double : une seule par profil. », rien n'est écrit.
+6.  Après le test : nettoyer les instances de test et **désactiver** `zz542_fissible` et `zz542_cochon`.
+
 ### TC-360 — Page /mobs en trois vues, compteurs, nettoyage confirmé, refus dans l'historique (issue #169, retour du 18/10, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de la PR #557 sur **DEV**. N'active rien, ne fait apparaître aucun

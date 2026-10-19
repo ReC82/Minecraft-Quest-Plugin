@@ -273,8 +273,8 @@
             // Absente des dernières actions relevées : elle est forcément plus ancienne que celles-ci,
             // donc terminée — la page serveur dira dans quel état. Un seul rechargement par action.
             if (alreadyReloadedFor(entry.actionId)) { pendingToasts.splice(i, 1); continue; }
-            markReloadedFor([entry.actionId]);
-            try { window.location.reload(); } catch (e) { window.location.href = window.location.href; }
+            reloadPlan.ids.push(entry.actionId);
+            runReload();
             return;
           }
           if (match && match.group === "pending") {

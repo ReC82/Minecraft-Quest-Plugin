@@ -51,6 +51,7 @@ public final class WorldPages {
             sb.append("<p class=\"muted small\">Relevé du serveur : ").append(v.releveHtml()).append("</p>");
         }
         List<Map<String, Object>> worlds = maps(v.details().get("worlds"));
+        sb.append(onlineLine(v.details().get("onlinePlayers"), worlds));
         Map<String, Object> mv = map(v.details().get("multiverse"));
         if (!v.selected().isEmpty()) {
             return sb.append(fiche(v, worlds, mv)).toString();
@@ -60,6 +61,25 @@ public final class WorldPages {
         }
         sb.append(list(v.agentId(), worlds, mv));
         return sb.toString();
+    }
+
+    /**
+     * Total des joueurs connectés, relevé au même instant que les compteurs par monde : si leur somme
+     * en diffère, le relevé le dit au lieu d'afficher des « 0 » trompeurs. Absent (ancien plugin) → rien.
+     */
+    static String onlineLine(Object onlinePlayers, List<Map<String, Object>> worlds) {
+        if (!(onlinePlayers instanceof Number total)) {
+            return "";
+        }
+        int inWorlds = worlds.stream().map(w -> w.get("players")).filter(Number.class::isInstance)
+                .mapToInt(n -> ((Number) n).intValue()).sum();
+        StringBuilder sb = new StringBuilder("<p class=\"muted small\">")
+                .append(total.intValue()).append(" joueur(s) connecté(s) sur le serveur à ce relevé");
+        if (inWorlds != total.intValue()) {
+            sb.append(" — <strong>attention</strong> : les mondes n'en comptent que ").append(inWorlds)
+                    .append(". Rafraîchir les mondes ; si l'écart persiste, le signaler.");
+        }
+        return sb.append("</p>").toString();
     }
 
     // ---- Liste ----------------------------------------------------------------------------------
@@ -418,7 +438,8 @@ public final class WorldPages {
             return "0 " + noun;
         }
         List<String> names = places.stream().limit(5).map(p -> {
-            String name = str(p.get("name"));
+            // Noms de mob, waypoint ou ville : souvent stylés en MiniMessage → texte lisible, échappé.
+            String name = MiniText.plain(str(p.get("name")));
             return Http.esc(name.isEmpty() ? str(p.get("id")) : name);
         }).toList();
         return places.size() + " " + noun + " : " + String.join(", ", names) + (places.size() > 5 ? "…" : "");

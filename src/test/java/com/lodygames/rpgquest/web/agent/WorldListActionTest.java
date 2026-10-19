@@ -34,7 +34,7 @@ class WorldListActionTest {
                 "world", WorldOverview.ExternalSource.unavailable("Multiverse-Core n'est pas installé"), List.of(),
                 new WorldOverview.Roles("world", "wild", ""), new WorldOverview.WaypointPolicy(true, true),
                 List.of(new WorldOverview.PortalLink("hub_to_wild", "world", "wild", true, "RANDOM_SAFE")),
-                List.of(), List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of(), 2);
         var view = WorldOverview.build(in);
         AgentActionOutcome out = run(new StubAgentActions() {
             @Override
@@ -44,6 +44,8 @@ class WorldListActionTest {
         });
         assertEquals(AgentActionOutcome.SUCCESS, out.status(), out.message());
         assertTrue(out.message().contains("sans Multiverse-Core"), out.message());
+        assertTrue(out.message().contains("2 joueur(s) connecté(s)"), out.message());
+        assertEquals(2, out.details().get("onlinePlayers"), "total serveur, même instant que les compteurs");
         List<Map<String, Object>> worlds = (List<Map<String, Object>>) out.details().get("worlds");
         assertEquals(2, worlds.size());
         Map<String, Object> world = worlds.get(0);

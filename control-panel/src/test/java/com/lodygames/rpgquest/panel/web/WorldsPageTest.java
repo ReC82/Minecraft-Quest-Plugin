@@ -121,6 +121,39 @@ class WorldsPageTest {
     }
 
     @Test
+    void styledMobNamesAreShownAsReadableEscapedText() throws Exception {
+        start();
+        login();
+        String wildLinks = "{\"portalsFrom\":[],\"portalsTo\":[],\"sites\":[],\"waypoints\":0,\"autoWaypoints\":false,"
+                + "\"mobs\":[{\"id\":\"rpgquest:boss_zombie\",\"name\":\"<dark_green><bold>Zombie d'entraînement</bold>"
+                + "</dark_green>\"},{\"id\":\"rpgquest:sans_nom\",\"name\":\"<red></red>\"},{\"id\":\"rpgquest:piege\","
+                + "\"name\":\"<gold>&lt;script&gt; <i>x</i>\"}],\"npcSpots\":[],\"cities\":[]}";
+        String releve = "{\"mainWorld\":\"world\",\"roles\":{\"hub\":\"\",\"wild\":\"wild\",\"claims\":\"\"},"
+                + "\"multiverse\":{\"available\":true,\"version\":\"5.7.3\",\"reason\":\"\"},\"worlds\":["
+                + world("wild", "NORMAL", true, "RPGQUEST", false, "[\"WILD\"]", true, wildLinks, "[]")
+                + "],\"issues\":[]}";
+        runAction("world.list", releve);
+        String wild = get("/worlds?agent=" + TestConfig.AGENT_ID + "&world=wild").body();
+        assertTrue(wild.contains("Zombie d&#39;entraînement") || wild.contains("Zombie d'entraînement"), wild);
+        assertFalse(wild.contains("&lt;dark_green&gt;") || wild.contains("<dark_green>")
+                || wild.contains("&lt;bold&gt;"), "balises MiniMessage brutes affichées");
+        assertTrue(wild.contains("rpgquest:sans_nom"), "nom vide après nettoyage → identifiant");
+        assertFalse(wild.contains("<script>"), "jamais de HTML non échappé");
+    }
+
+    @Test
+    void theOnlineTotalIsShownAndAMismatchWithWorldCountersIsFlagged() {
+        var worlds = java.util.List.<Map<String, Object>>of(Map.of("name", "wild", "players", 1),
+                Map.of("name", "world_hub", "players", 0), Map.of("name", "claims"));
+        String ok = WorldPages.onlineLine(1, worlds);
+        assertTrue(ok.contains("1 joueur(s) connecté(s) sur le serveur"), ok);
+        assertFalse(ok.contains("attention"), ok);
+        String mismatch = WorldPages.onlineLine(2, worlds);
+        assertTrue(mismatch.contains("attention") && mismatch.contains("n'en comptent que 1"), mismatch);
+        assertTrue(WorldPages.onlineLine(null, worlds).isEmpty(), "ancien plugin : rien d'inventé");
+    }
+
+    @Test
     void noMutatingWorldActionIsExposedAnywhereOnThePage() throws Exception {
         start();
         login();

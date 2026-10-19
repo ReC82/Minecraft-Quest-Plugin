@@ -33,6 +33,7 @@ final class WorldListDetails {
             worlds.add(entry(e));
         }
         details.put("worlds", worlds);
+        details.put("onlinePlayers", view.onlinePlayers());
         details.put("issues", issues(view.issues()));
         return details;
     }

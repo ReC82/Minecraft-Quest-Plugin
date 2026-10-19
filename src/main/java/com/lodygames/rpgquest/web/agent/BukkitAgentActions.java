@@ -2293,7 +2293,7 @@ public final class BukkitAgentActions implements AgentActions {
                         cfg.claims().world()),
                 new com.lodygames.rpgquest.world.WorldOverview.WaypointPolicy(cfg.travel().waypoint().enabled(),
                         cfg.travel().waypoint().hubEnabled()),
-                portals, sites, waypoints, mobs, spots, cities);
+                portals, sites, waypoints, mobs, spots, cities, plugin.getServer().getOnlinePlayers().size());
     }
 
     @SuppressWarnings("deprecation") // seule lecture du type de terrain exposée par l'API Paper 1.21.11

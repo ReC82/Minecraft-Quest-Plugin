@@ -87,7 +87,7 @@ public final class WorldOverview {
     public record Inputs(List<LoadedWorld> loaded, String mainWorld, ExternalSource multiverse,
                          Collection<String> rpgquestManaged, Roles roles, WaypointPolicy waypoints,
                          List<PortalLink> portals, List<Place> sites, List<Place> waypointPlaces,
-                         List<MobLink> mobs, List<Place> npcSpots, List<Place> cities) {
+                         List<MobLink> mobs, List<Place> npcSpots, List<Place> cities, int onlinePlayers) {
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -115,12 +115,16 @@ public final class WorldOverview {
                         List<Issue> issues) {
     }
 
-    /** Résultat complet de {@code world.list}. */
+    /**
+     * Résultat complet de {@code world.list}. {@code onlinePlayers} = joueurs connectés sur tout le
+     * serveur au même instant que les compteurs par monde : leur somme doit lui être égale.
+     */
     public record View(boolean available, String mainWorld, Roles roles, ExternalSource multiverse,
-                       List<Entry> worlds, List<Issue> issues) {
+                       List<Entry> worlds, List<Issue> issues, int onlinePlayers) {
 
         public static View unavailable() {
-            return new View(false, "", new Roles("", "", ""), ExternalSource.unavailable(""), List.of(), List.of());
+            return new View(false, "", new Roles("", "", ""), ExternalSource.unavailable(""), List.of(), List.of(),
+                    0);
         }
     }
 
@@ -161,7 +165,7 @@ public final class WorldOverview {
                     "Multiverse-Core n'est pas lisible (" + in.multiverse().reason() + ") : seuls les mondes "
                             + "chargés sont affichés, d'après le serveur."));
         }
-        return new View(true, in.mainWorld(), in.roles(), in.multiverse(), entries, issues);
+        return new View(true, in.mainWorld(), in.roles(), in.multiverse(), entries, issues, in.onlinePlayers());
     }
 
     private static Entry entry(String name, LoadedWorld bukkit, ExternalWorld mv, boolean managed, Inputs in) {

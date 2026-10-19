@@ -8,8 +8,8 @@
 * Branche Git : `docs/360-verification` (rapport + registre) → `chore/257-ci-github-actions`
 * Commit actuel si disponible : intégration `a9580e9` ; correctif d'origine PR #364 `83cf83d`
 * Début de la tâche : 2026-10-19 18:31:37
-* Fin de la tâche : 2026-10-19 18:33:29
-* Durée totale : à lire comme la différence des deux horodatages ci-dessus (session courte, vérification seule)
+* Fin de la tâche : 2026-10-19 18:33:45
+* Durée totale : 00:02:08
 
 ## Demande
 Session autonome lqorch : reprendre #360 (ticket ouvert alors que le correctif #364 est livré depuis le

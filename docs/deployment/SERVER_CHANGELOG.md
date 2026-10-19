@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - Mobs : compteurs « en jeu » par périmètre et instances hors zone chargée (#542, retour TC-361)
+
+### Changement
+
+JAR + PlugAdmin. Le compteur d'un profil (« N en jeu ») comptait les créatures repérées depuis le
+démarrage, zones déchargées comprises, alors que « instances de test » ne compte que les zones chargées :
+d'où « 1 en jeu » contre « 0 ». Désormais : « X en zone chargée (dont T de test) · Y en zone non
+chargée · Z introuvable(s) », et la fiche du profil liste les instances hors zone chargée (UUID, monde,
+position au déchargement, test ou non). Une variante retirée du monde **sans mourir** (`EntityRemoveEvent`
+hors déchargement) est maintenant décomptée et journalisée. `mob.list` gagne `unloadedPopulation`,
+`unknownPopulation`, `unloadedInstances` (5 au plus par profil). Aucun format, aucune clé de
+configuration, aucun profil modifié ; positions en mémoire seulement (perdues au redémarrage, comme la
+population).
+
+### Action serveur
+
+Remplacer le JAR RPGQuest (aucune migration) et redéployer PlugAdmin (`scripts/plugadmin/deploy.sh`).
+
+### Sauvegarde préalable
+
+JAR actuel (sauvegarde datée de `deploy-verygames.sh`) ; PlugAdmin : sauvegarde du script.
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` depuis un arbre propre, un redémarrage, puis `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+Agent ONLINE, `mob.list` sans profil rejeté, champs `unloadedPopulation` présents ; en jeu : TC-361-ter.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer ; `scripts/plugadmin/rollback.sh` (aucune donnée écrite).
+
+---
+
 ## 2026-10-19 - Portails : guide nommé, conditions clarifiées, résultats vides (#564, retours TC-363)
 
 ### Changement

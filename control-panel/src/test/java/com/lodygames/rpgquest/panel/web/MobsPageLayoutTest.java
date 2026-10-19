@@ -35,10 +35,12 @@ class MobsPageLayoutTest {
             + "{\"id\":\"rpgquest:zombie_speedy\",\"category\":\"SPECIAL\",\"enabled\":true,\"entityType\":\"ZOMBIE\","
             + "\"displayName\":\"<aqua>Zombie Runner</aqua>\",\"spawnChance\":0.5,\"maxPopulation\":3,"
             + "\"alivePopulation\":5,\"loadedPopulation\":5,\"testPopulation\":2,\"communityActive\":0,"
+            + "\"unloadedPopulation\":0,\"unknownPopulation\":0,\"unloadedInstances\":[],"
             + "\"abilitiesSummary\":[],\"bossMode\":\"QUEST\",\"yaml\":\"id: x\"},"
             + "{\"id\":\"rpgquest:boss_zombie_entrainement\",\"category\":\"BOSS\",\"enabled\":true,"
             + "\"entityType\":\"ZOMBIE\",\"displayName\":\"Zombie d'entraînement\",\"spawnChance\":0.0,"
             + "\"alivePopulation\":0,\"loadedPopulation\":0,\"testPopulation\":0,\"communityActive\":1,"
+            + "\"unloadedPopulation\":0,\"unknownPopulation\":0,\"unloadedInstances\":[],"
             + "\"abilitiesSummary\":[],\"bossMode\":\"COMMUNITY\",\"yaml\":\"id: y\"}],"
             + "\"spawnSettings\":{\"enabled\":true,\"chance\":1.0,\"maxSimultaneousSpecial\":null},"
             + "\"hasIssues\":false,\"issues\":[]";
@@ -98,10 +100,38 @@ class MobsPageLayoutTest {
         runAction("mob.list", PROFILES + ",\"testInstances\":2}");
         String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("5 en jeu (dont 2 de test)"), page);
-        assertTrue(page.contains("0 en jeu · 1 boss communautaire actif (zone non chargée)"), "1 actif contre 0 en jeu");
+        assertTrue(page.contains("5 en zone chargée (dont 2 de test)"), page);
+        assertTrue(page.contains("0 en zone chargée · 1 boss communautaire actif (zone non chargée)"),
+                "1 actif contre 0 en zone chargée");
         assertTrue(page.contains("Comment lire les compteurs"), "périmètres expliqués");
         assertTrue(page.contains("Tester « Zombie Runner »"), "apparition de test rattachée au profil");
+    }
+
+    @Test
+    void anInstanceInAnUnloadedZoneIsCountedApartAndDesignatedPrecisely() throws Exception {
+        // Issue #542 (retour TC-361) : « 1 en jeu » contre « 0 instance de test » sans explication.
+        start();
+        login();
+        String pig = "{\"profiles\":[{\"id\":\"rpgquest:zz542_cochon\",\"category\":\"BOSS\",\"enabled\":false,"
+                + "\"entityType\":\"PIG\",\"displayName\":\"Cochon test\",\"spawnChance\":0.0,"
+                + "\"alivePopulation\":1,\"loadedPopulation\":0,\"testPopulation\":0,\"communityActive\":0,"
+                + "\"unloadedPopulation\":1,\"unknownPopulation\":0,\"unloadedInstances\":[{\"uuid\":"
+                + "\"11111111-2222-3333-4444-555555555555\",\"world\":\"wild\",\"x\":120,\"y\":63,\"z\":-40,"
+                + "\"test\":true,\"since\":\"2026-10-19T14:16:00Z\"}],\"abilitiesSummary\":[],"
+                + "\"bossMode\":\"QUEST\",\"yaml\":\"id: z\"}],"
+                + "\"spawnSettings\":{\"enabled\":true,\"chance\":1.0,\"maxSimultaneousSpecial\":null},"
+                + "\"hasIssues\":false,\"issues\":[],\"testInstances\":0}";
+        runAction("mob.list", pig);
+        String page = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("0 en zone chargée · 1 en zone non chargée"), page);
+        assertTrue(page.contains("11111111-2222-3333-4444-555555555555"), "UUID donné");
+        assertTrue(page.contains("monde <code>wild</code>, x 120 y 63 z -40"), "position au déchargement");
+        assertTrue(page.contains("2026-10-19 14:16 UTC"));
+        int zone = page.indexOf("id=\"mob-test-clear\"");
+        String card = page.substring(zone, page.indexOf("</div>", zone));
+        assertTrue(card.contains("Aucune instance de test en zone chargée"), card);
+        assertTrue(card.contains("1 instance(s) de test en zone non chargée (Cochon test × 1)"), card);
     }
 
     @Test
@@ -127,7 +157,7 @@ class MobsPageLayoutTest {
         login();
         runAction("mob.list", PROFILES + ",\"testInstances\":0}");
         String none = get("/mobs?agent=" + TestConfig.AGENT_ID).body();
-        assertTrue(none.contains("Aucune instance de test en jeu"));
+        assertTrue(none.contains("Aucune instance de test en zone chargée"));
         assertFalse(none.contains("value=\"mob.test.clear\""));
 
         runAction("mob.list", PROFILES + "}");

@@ -19,8 +19,9 @@ import org.bukkit.entity.Player;
  *   <li><b>Cibles</b> : seulement un joueur en survie ou aventure, vivant, qui n'est pas un PNJ
  *       (décision Q9 de #541 : ni PNJ Citizens, ni joueur en créatif, ni spectateur).</li>
  *   <li><b>Terrain</b> : aucune capacité ne pose ni ne casse de bloc ({@link AbilityDescriptor.WorldMutation#NONE}).
- *       Les explosions restent de vraies explosions, soumises aux protections existantes
- *       ({@code EntityExplodeEvent}).</li>
+ *       Les explosions restent de vraies explosions (dégâts aux entités, protections existantes), mais
+ *       sans casse de bloc : {@code breakBlocks = false} et liste de blocs vidée par
+ *       {@link AbilityEngine#onEntityExplode} (retours TC-361).</li>
  * </ul>
  */
 public final class AbilityWorldPolicy {

@@ -5749,8 +5749,8 @@ Cinq `abilities` réellement implémentées (enum `MobAbilityType`, vérifié da
 
 | type | champs requis | rôle |
 |---|---|---|
-| `STRONGER_EXPLOSION` | `radius-multiplier` (> 0) | multiplie le rayon d'une explosion vanilla qui prime |
-| `EXPLOSIVE_ON_ATTACK` | `power` (> 0), `set-fire`, `trigger-range-blocks` (> 0) | rend une entité passive agressive : explosion réelle en approche, puis mort de l'entité |
+| `STRONGER_EXPLOSION` | `radius-multiplier` (> 0) | multiplie le rayon d'une explosion vanilla qui prime — dégâts aux entités seulement, **aucun bloc détruit** (retours TC-361) |
+| `EXPLOSIVE_ON_ATTACK` | `power` (> 0), `set-fire`, `trigger-range-blocks` (> 0) | rend une entité passive agressive : poursuite (Pathfinder, vitesse de base × 1,25) d'un joueur en survie/aventure à 16 blocs ou moins, réévaluée chaque seconde (passer de créatif à survie suffit), puis explosion en approche et mort de l'entité ; `set-fire` ne règle que le feu — l'explosion ne détruit **jamais** de bloc (retours TC-361) |
 | `SPLIT_ON_HIT` | `max-depth` (≥ 1), `max-children-per-hit` (≥ 1), `max-alive-per-parent` (≥ 1, optionnel, défaut 2 — issue #190) | fait apparaître des enfants à chaque coup non mortel ; `max-alive-per-parent` plafonne séparément le nombre d'enfants vivants d'un même parent, pour que des coups répétés sur la même entité avant sa mort ne produisent pas plus de descendants que ce plafond |
 | `ENRAGED` | `health-fraction` (0 < x < 1), `speed-multiplier` (> 0), `damage-multiplier` (> 0) | sous le seuil de vie, signal visuel (particule + son) puis bascule en rage une seule fois (jamais réappliqué/cumulé) |
 | `SUMMON_ON_DAMAGE` | `summon-entity-type`, `amount` (> 0), `chance` (0 < x ≤ 1), `cooldown-seconds` (≥ 0), `max-alive` (> 0) ; `despawn-with-owner` (optionnel, défaut `false` — issue #542) | invoque des renforts sur dégâts effectifs, cooldown + plafond de renforts vivants ; jamais de cascade (les renforts invoqués sont de simples mobs vanilla, jamais eux-mêmes des mobs spéciaux) |
@@ -5762,7 +5762,8 @@ Cinq `abilities` réellement implémentées (enum `MobAbilityType`, vérifié da
 un ancien fichier avec un doublon se charge avec un avertissement console et seule la première
 instance agit. Aucune apparition par capacité dans le Hub, un claim ou une zone qui interdit les
 hostiles ; `EXPLOSIVE_ON_ATTACK` ignore PNJ et joueurs en créatif/spectateur ; 3 renforts/s/monde au
-plus ; aucune modification du terrain. Détail : [SPECIAL_MOB_FORMAT.md](../SPECIAL_MOB_FORMAT.md),
+plus ; aucune modification du terrain : une explosion de mob spécial portant une capacité explosive
+active a toujours sa liste de blocs vidée (`EntityExplodeEvent`), il n'existe aucune option de destruction. Détail : [SPECIAL_MOB_FORMAT.md](../SPECIAL_MOB_FORMAT.md),
 développeurs : [docs/development/ADDING_MOB_ABILITY.md](development/ADDING_MOB_ABILITY.md).
 
 Le boss de quête (spawn à l'acceptation, identité liée joueur/quête/cycle, objectif de victoire, localisation biome/waypoint) est un développement séparé, pas encore implémenté — ne jamais le présenter comme disponible.

@@ -13,13 +13,21 @@ import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import org.bukkit.ExplosionResult;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.EntityType;
+import org.bukkit.block.Block;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Mob;
+import org.bukkit.entity.Player;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.persistence.PersistentDataType;
 import org.junit.jupiter.api.AfterEach;
@@ -57,6 +65,26 @@ class ExplosiveOnAttackExecutorTest {
     private SpecialMobService service;
     private AbilityEngine engine;
     private SpecialMobDefinition definition;
+    private final List<String> explosions = new ArrayList<>();
+    private final List<String> moves = new ArrayList<>();
+
+    /** Enregistre les effets Paper au lieu de les jouer (MockBukkit n'implémente pas le Pathfinder). */
+    private final ExplosiveOnAttackExecutor.WorldActions recorder = new ExplosiveOnAttackExecutor.WorldActions() {
+        @Override
+        public void explode(LivingEntity source, float power, boolean setFire, boolean breakBlocks) {
+            explosions.add("power=" + power + " setFire=" + setFire + " breakBlocks=" + breakBlocks);
+        }
+
+        @Override
+        public void moveTo(Mob mob, Player target, double speedMultiplier) {
+            moves.add(target.getName() + "@" + speedMultiplier);
+        }
+    };
+
+    private AbilityEngine recordingEngine() {
+        return new AbilityEngine(plugin, registry, service, AbilityWorldPolicy.unrestricted(),
+                ThreadLocalRandom.current(), System::currentTimeMillis, recorder);
+    }
 
     @BeforeEach
     void setUp() throws Exception {
@@ -128,7 +156,9 @@ class ExplosiveOnAttackExecutorTest {
     void playerWithinSenseRangeButBeyondTriggerRangeNeverExplodes() {
         // Hors de trigger-range-blocks (3.0) mais dans le rayon de perception (16.0, voir
         // SENSE_RANGE_BLOCKS) : doit se mettre en chemin vers le joueur (Pathfinder, API publique
-        // Paper), jamais exploser avant d'être réellement à portée.
+        // Paper), jamais exploser avant d'être réellement à portée. Effets enregistrés : MockBukkit
+        // n'implémente pas le Pathfinder (le test était ignoré avant les retours TC-361).
+        engine = recordingEngine();
         LivingEntity pig = spawnTaggedPig(new Location(world, 0, 64, 0));
         PlayerMock player = server.addPlayer();
         player.teleport(new Location(world, 10, 64, 0));
@@ -136,6 +166,8 @@ class ExplosiveOnAttackExecutorTest {
         engine.tick();
 
         assertFalse(pig.isDead(), "hors de trigger-range-blocks, aucune explosion ne doit se déclencher");
+        assertTrue(explosions.isEmpty());
+        assertEquals(1, moves.size(), "dans le rayon de perception, l'entité se met en chemin");
     }
 
     @Test
@@ -173,5 +205,79 @@ class ExplosiveOnAttackExecutorTest {
         engine.tick();
 
         assertFalse(pig.isDead(), "un joueur hors de portée ne doit déclencher ni poursuite ni explosion");
+    }
+
+    // ---- Retours TC-361 (#542) : terrain préservé et poursuite réelle ---------------------------
+
+    @Test
+    void explosionNeverBreaksBlocks() {
+        engine = recordingEngine();
+        LivingEntity pig = spawnTaggedPig(new Location(world, 0, 64, 0));
+        PlayerMock player = server.addPlayer();
+        player.teleport(new Location(world, 1, 64, 0));
+
+        engine.tick();
+
+        assertEquals(List.of("power=3.0 setFire=false breakBlocks=false"), explosions,
+                "l'explosion d'une capacité ne doit jamais casser de bloc");
+        assertTrue(pig.isDead());
+    }
+
+    @Test
+    void survivalPlayerInSenseRangeIsChasedAtARealSpeedMultiplier() {
+        // Apparition directement en survie : poursuite dès la première seconde.
+        engine = recordingEngine();
+        spawnTaggedPig(new Location(world, 0, 64, 0));
+        PlayerMock player = server.addPlayer();
+        player.teleport(new Location(world, 10, 64, 0));
+
+        engine.tick();
+
+        assertEquals(List.of(player.getName() + "@" + ExplosiveOnAttackExecutor.CHASE_SPEED_MULTIPLIER), moves);
+        assertTrue(ExplosiveOnAttackExecutor.CHASE_SPEED_MULTIPLIER >= 1.0,
+                "Pathfinder#moveTo attend un multiplicateur, pas la valeur de l'attribut MOVEMENT_SPEED");
+        assertTrue(explosions.isEmpty());
+    }
+
+    @Test
+    void sameInstanceStartsChasingWhenThePlayerSwitchesFromCreativeToSurvival() {
+        engine = recordingEngine();
+        LivingEntity pig = spawnTaggedPig(new Location(world, 0, 64, 0));
+        PlayerMock player = server.addPlayer();
+        player.setGameMode(org.bukkit.GameMode.CREATIVE);
+        player.teleport(new Location(world, 10, 64, 0));
+
+        engine.tick();
+        assertTrue(moves.isEmpty(), "un joueur en créatif n'est jamais poursuivi");
+
+        player.setGameMode(org.bukkit.GameMode.SURVIVAL);
+        engine.tick();
+
+        assertEquals(1, moves.size(), "la même instance doit poursuivre dès le retour en survie");
+        assertFalse(pig.isDead());
+    }
+
+    @Test
+    void explodeEventOfAnExplosiveSpecialMobKeepsEveryBlock() {
+        LivingEntity pig = spawnTaggedPig(new Location(world, 0, 64, 0));
+        Block sand = world.getBlockAt(1, 63, 0);
+        EntityExplodeEvent event = new EntityExplodeEvent(pig, pig.getLocation(), new ArrayList<>(List.of(sand)),
+                1.0f, ExplosionResult.DESTROY);
+
+        engine.onEntityExplode(event);
+
+        assertTrue(event.blockList().isEmpty(), "aucun bloc ne doit être détruit par une capacité explosive");
+    }
+
+    @Test
+    void explodeEventOfAnOrdinaryEntityIsLeftAlone() {
+        LivingEntity creeper = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.CREEPER);
+        Block sand = world.getBlockAt(1, 63, 0);
+        EntityExplodeEvent event = new EntityExplodeEvent(creeper, creeper.getLocation(),
+                new ArrayList<>(List.of(sand)), 1.0f, ExplosionResult.DESTROY);
+
+        engine.onEntityExplode(event);
+
+        assertEquals(1, event.blockList().size(), "une explosion vanilla hors capacité n'est pas modifiée ici");
     }
 }

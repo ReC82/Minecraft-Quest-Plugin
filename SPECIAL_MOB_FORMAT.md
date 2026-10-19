@@ -83,17 +83,23 @@ max-population: 2      # limite le nombre d'individus vivants simultanément
 ## Capacités (`abilities`)
 
 -   `STRONGER_EXPLOSION` (`radius-multiplier` > 0) — multiplie le rayon d'une
-    explosion vanilla qui prime (`ExplosionPrimeEvent`).
+    explosion vanilla qui prime (`ExplosionPrimeEvent`). Dégâts aux entités
+    seulement : aucun bloc détruit (retours TC-361).
 -   `EXPLOSIVE_ON_ATTACK` (`power` > 0, `set-fire`, `trigger-range-blocks` >
     0) — rend agressive une entité normalement passive : un balayage
     périodique (1 s) détecte un joueur à portée et déclenche une explosion
-    réelle (`World#createExplosion`, respecte les zones/claims comme toute
-    explosion), puis l'entité meurt. **Poursuite (issue #190)** : tant qu'un
+    réelle (`World#createExplosion` avec `breakBlocks = false` : dégâts aux
+    entités, **aucun bloc détruit** ; `set-fire` ne règle que le feu), puis
+    l'entité meurt. **Poursuite (issue #190)** : tant qu'un
     joueur éligible est à moins de 16 blocs (hors de `trigger-range-blocks`),
     l'entité se met en chemin vers lui via
     `org.bukkit.entity.Mob#getPathfinder()` (API publique Paper, aucun NMS) —
     changer les statistiques d'une base passive ne lui donne aucune IA de
-    poursuite par elle-même, ce chemin est recalculé à chaque balayage.
+    poursuite par elle-même, ce chemin est recalculé à chaque balayage, à
+    la vitesse de base × 1,25 (retours TC-361 : la valeur de l'attribut,
+    0,25, était passée à tort comme multiplicateur et le cochon semblait
+    immobile). Un joueur qui passe de créatif à survie est poursuivi dès la
+    seconde suivante.
     N'affecte jamais les animaux ordinaires (uniquement les entités taguées
     avec cette capacité).
 -   `SPLIT_ON_HIT` (`max-depth` ≥ 1, `max-children-per-hit` ≥ 1,
@@ -144,7 +150,9 @@ pour `STRONGER_EXPLOSION`, dont deux entrées se multipliaient avant (aucun prof
 Sécurité (toutes capacités) : aucune apparition de renfort ou de division dans le monde du Hub, dans
 un claim ou dans une zone RPGQuest qui interdit les hostiles ; `EXPLOSIVE_ON_ATTACK` ne vise plus ni
 un PNJ ni un joueur en créatif ou spectateur ; au plus 3 renforts par seconde et par monde ; aucune
-capacité ne pose ni ne casse de bloc.
+capacité ne pose ni ne casse de bloc — garde centrale : l'`EntityExplodeEvent` d'un mob spécial
+portant une capacité explosive active a toujours sa liste de blocs vidée ; aucune option de
+destruction n'existe.
 
 ```yaml
 abilities:

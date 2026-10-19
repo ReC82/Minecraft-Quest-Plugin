@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - Mobs : explosion sans bloc détruit et poursuite réelle (#542, retours TC-361)
+
+### Changement
+
+`EXPLOSIVE_ON_ATTACK` explose avec `breakBlocks = false` (avant : `true`, 4 blocs de sable détruits au
+test du 19/10) et poursuit à la vitesse de base × 1,25 (avant : la valeur de l'attribut, 0,25, passée
+comme multiplicateur — cochon quasi immobile). Garde centrale : l'`EntityExplodeEvent` d'un mob spécial
+portant une capacité explosive active (`EXPLOSIVE_ON_ATTACK`, `STRONGER_EXPLOSION`) a sa liste de blocs
+vidée. Aucun format, aucune clé de configuration, aucun profil modifié.
+
+### Action serveur
+
+Remplacer uniquement le JAR RPGQuest ; aucune migration (schéma inchangé). Les 4 blocs de sable détruits
+ne sont **pas** restaurés (positions et état d'origine inconnus).
+
+### Sauvegarde préalable
+
+JAR actuel (sauvegarde datée de `deploy-verygames.sh`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` depuis un arbre propre, puis un redémarrage.
+
+### Validation
+
+Agent ONLINE, `mob.list` sans profil rejeté ; en jeu : TC-361-bis.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer (aucune donnée écrite par ce changement).
+
+---
+
 ## 2026-10-19 - PlugAdmin : page « Portails » en lecture seule (#564)
 
 ### Changement

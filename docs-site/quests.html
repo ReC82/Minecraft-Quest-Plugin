@@ -79,8 +79,8 @@ rewards:                    # optionnel
     <table class="table table-sm align-middle">
       <thead><tr><th>Type</th><th>Champs</th><th>Déclenché par</th></tr></thead>
       <tbody>
-        <tr><td><code>BREAK_BLOCK</code></td><td><code>material</code>, <code>amount</code></td><td>Casser ce bloc.</td></tr>
-        <tr><td><code>PLACE_BLOCK</code></td><td><code>material</code>, <code>amount</code></td><td>Poser ce bloc.</td></tr>
+        <tr><td><code>BREAK_BLOCK</code></td><td><code>material</code>, <code>amount</code></td><td>Casser ce bloc. Le type du bloc lui-même : <code>CARROTS</code> pour des carottes plantées (pas <code>CARROT</code>).</td></tr>
+        <tr><td><code>PLACE_BLOCK</code></td><td><code>material</code>, <code>amount</code></td><td>Poser ce bloc (type du bloc posé, ex. <code>WALL_TORCH</code> pour une torche murale).</td></tr>
         <tr><td><code>KILL_ENTITY</code></td><td><code>entity</code>, <code>amount</code></td><td>Tuer cette entité.</td></tr>
         <tr><td><code>COLLECT_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Ramasser cet objet au sol.</td></tr>
         <tr><td><code>CRAFT_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Fabriquer cet objet (établi ou grille de l'inventaire). Compte le nombre d'objets réellement fabriqués : 4 planches = +4, shift-clic = total rangé dans l'inventaire.</td></tr>

@@ -101,7 +101,8 @@ class EditorDescriptorsTest {
                 // « waypointCountMode » n'est pas un relevé serveur : ce sont les deux valeurs de
                 // l'énumération CountMode du moteur (issue #185), servies telles quelles. « countMode »
                 // est la même énumération, libellée en français ; « city » est le relevé city.list (#178).
-                assertTrue(Set.of("entity", "material", "icon", "npc", "quest", "world",
+                // « block » (#142) : matériaux + blocs sans forme d'objet du relevé item.catalogs.
+                assertTrue(Set.of("entity", "material", "block", "icon", "npc", "quest", "world",
                         "waypointCountMode", "countMode", "city", "reward-table").contains(src),
                         d.kind() + "/" + f.name() + " : source de liste inconnue « " + src + " »");
             }

@@ -945,6 +945,15 @@ ceux-là ne peuvent être ni l'un ni l'autre, et le panel le dit explicitement
 (« WATER existe comme bloc mais n'a aucune forme d'objet dans cette version ») au lieu de répondre
 « matériau inconnu », qui enverrait chercher une faute de frappe inexistante.
 
+**Objectifs de bloc (#142).** `BREAK_BLOCK` et `PLACE_BLOCK` comparent le type du **bloc**
+(`event.getBlock().getType()`), pas un objet : casser des carottes plantées compte `CARROTS`, qui n'a
+aucune forme d'objet. Leur champ **Bloc** utilise donc la source `block` = `items` **+**
+`blocksWithoutItem` : ces blocs y sont proposés normalement (sans la mention « aucune forme d'objet »)
+et ne sont plus refusés à « Vérifier ». Icône, `COLLECT_ITEM`, `CRAFT_ITEM`, récompenses et remises
+restent sur `items` : `CARROTS` y est toujours refusé avec son motif. Même liste HTML partagée
+(`dl-material`), aucun second catalogue envoyé. Sans relevé, le repli de dépannage contient aussi les
+récoltes courantes (`PUMPKIN`, `MELON`…) et, pour les blocs, les cultures plantées.
+
 **Noms français.** Le Control Panel ne peut pas lire les fichiers de langue du jeu (aucune
 dépendance Bukkit). `MaterialNames` compose donc les libellés à partir de la structure des
 identifiants — `DIAMOND_SWORD` → « Épée en diamant », `OAK_PLANKS` → « Planches de chêne »,

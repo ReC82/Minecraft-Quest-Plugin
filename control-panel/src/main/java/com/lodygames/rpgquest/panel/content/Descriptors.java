@@ -32,7 +32,8 @@ public final class Descriptors {
      * @param type         type de saisie
      * @param help         aide contextuelle courte
      * @param selectSource si {@code type == SELECT} : source des options — {@code "entity"},
-     *                     {@code "material"}, {@code "npc"}, {@code "quest"}, {@code "world"}
+     *                     {@code "material"}, {@code "block"} (#142 : matériau ou bloc sans forme
+     *                     d'objet), {@code "npc"}, {@code "quest"}, {@code "world"}
      * @param required     champ obligatoire
      */
     public record Field(String name, String label, FieldType type, String help, String selectSource,
@@ -148,12 +149,12 @@ public final class Descriptors {
                                     + "(« STICK »).", true), AMOUNT)),
             new Descriptor("BREAK_BLOCK", "Casser des blocs", "edit",
                     "Casser N blocs d'un type donné.",
-                    List.of(Field.select("material", "Bloc", "material",
+                    List.of(Field.select("material", "Bloc", "block",
                             "Chercher par nom français (« terre ») ou par identifiant "
                                     + "(« DIRT »).", true), AMOUNT)),
             new Descriptor("PLACE_BLOCK", "Poser des blocs", "plus",
                     "Poser N blocs d'un type donné.",
-                    List.of(Field.select("material", "Bloc", "material",
+                    List.of(Field.select("material", "Bloc", "block",
                             "Chercher par nom français (« terre ») ou par identifiant "
                                     + "(« DIRT »).", true), AMOUNT)),
             new Descriptor("DELIVER_ITEM_TO_NPC", "Rapporter des objets à un PNJ", "gift",

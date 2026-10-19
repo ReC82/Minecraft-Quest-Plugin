@@ -163,7 +163,7 @@ class OpsAutoRefreshTest {
         // Invariant partagé avec CatalogResyncTest : un seul point de rechargement dans tout le fichier.
         assertEquals(1, countOf(js, "window.location.reload()"),
                 "un seul mécanisme de rechargement, donc un seul endroit à garder");
-        String runReload = functionBody(js, "function runReload()");
+        String runReload = functionBody(js, "function runReload(");
         assertTrue(runReload.contains("selfRefreshingView()"),
                 "ce point unique doit épargner une vue qui se réconcilie seule");
         assertTrue(js.contains("data-pa-selfrefresh"), "le marqueur est lu côté script");

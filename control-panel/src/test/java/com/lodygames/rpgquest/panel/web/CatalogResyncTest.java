@@ -176,6 +176,11 @@ class CatalogResyncTest {
         assertTrue(js.contains("data.pending === 0"), "recharge quand la file est au repos");
         // Un seul point de rechargement, dans le tick de polling — pas un reload par bouton.
         assertEquals(1, js.split("window.location.reload\\(\\)", -1).length - 1, "un seul appel reload");
+        // Issue #128 : l'attente est visible (cycle complet couvert par src/test/js/resync-feedback.test.js).
+        assertTrue(js.contains("Mise à jour de l'affichage en cours"), "attente annoncée dans le toast de l'action");
+        assertTrue(js.contains("runReload(\"ok\")") && js.contains("runReload(\"late\")"),
+                "issue transmise à la page rechargée : à jour ou délai dépassé");
+        assertTrue(js.contains("data-pa-sync-retry"), "échec ou délai : bouton Réessayer");
     }
 
     // ---- helpers ---------------------------------------------------------------------------

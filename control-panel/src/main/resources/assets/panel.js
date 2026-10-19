@@ -5,7 +5,8 @@
  *
  * Modules :
  *   - initToasts()        : affiche les toasts Bootstrap (feedback d'action) et met à jour
- *                           en place un toast d'action « en cours » quand elle se résout ;
+ *                           en place un toast d'action « en cours » quand elle se résout, puis
+ *                           annonce la mise à jour automatique de l'affichage (#128) ;
  *   - initNotifications() : rafraîchit la cloche de la topbar (badge + liste) par un polling
  *                           léger de /agents/actions.json — accéléré tant qu'une action est en cours ;
  *   - initCopy()          : copie d'un identifiant technique ([data-copy]) ;
@@ -24,6 +25,7 @@
   var SLOW_MS = 20000;   // rythme de repos du centre de notifications
   var FAST_MS = 3000;    // rythme tant qu'une action est « en cours »
   var MAX_TICKS = 400;   // garde-fou : ~ 2 h au rythme lent
+  var RESYNC_MS = 30000; // délai max d'attente de la resynchronisation avant rechargement (#128 : signalé)
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -43,7 +45,10 @@
    * (les relevés `*.list` ré-enfilés côté serveur sont donc pris en compte). Aucun `location.reload()`
    * dispersé par bouton : un seul mécanisme, pour toutes les pages métier.
    */
-  var reloadPlan = { armed: false, deadline: 0, ids: [] };
+  var reloadPlan = { armed: false, deadline: 0, ids: [], els: [] };
+
+  /** Issue #128 : issue de la resynchronisation, transmise à la page rechargée (un seul toast final). */
+  var SYNC_OUTCOME_KEY = "pa-sync-outcome";
 
   function reloadedActionIds() {
     try { return (window.sessionStorage.getItem("pa-reloaded-actions") || "").split(",").filter(Boolean); }
@@ -78,12 +83,21 @@
     } catch (e) { /* URL non manipulable : le refus reste affiché dans le toast */ }
   }
 
-  function runReload() {
+  /**
+   * @param outcome issue annoncée après rechargement (issue #128) : "ok" (file au repos, affichage à
+   *                jour), "late" (délai dépassé, l'affichage peut être en retard) ; absent = aucun
+   *                toast final (rechargement demandé par l'utilisateur ou attente d'un résultat précis).
+   */
+  function runReload(outcome) {
     // Les identifiants sont marqués AVANT toute sortie : sans cela, la vue se réarmerait au
     // prochain cycle et on retomberait dans une boucle.
     if (reloadPlan.ids.length) { markReloadedFor(reloadPlan.ids); }
     reloadPlan.armed = false;
     if (selfRefreshingView()) { return; }
+    if (outcome) {
+      try { window.sessionStorage.setItem(SYNC_OUTCOME_KEY, outcome); }
+      catch (e) { /* pas de sessionStorage : la page rechargée reste juste, sans toast final */ }
+    }
     try { window.location.reload(); } catch (e) { window.location.href = window.location.href; }
   }
 
@@ -107,9 +121,110 @@
     }
   }
 
+  /* ---- Resynchronisation visible (issue #128) ------------------------------------------ */
+
+  /**
+   * Après une mutation réussie, la page attend que le serveur ait relu ses catalogues avant de se
+   * recharger. Pendant cette attente, le toast DE L'ACTION (jamais un second) le dit : la modification
+   * est enregistrée, l'affichage se met à jour. Après le rechargement, un unique toast final confirme
+   * « Affichage à jour » ou signale un délai dépassé, avec « Réessayer ». Les relevés techniques
+   * (`created_by=auto`) restent invisibles : on ne parle que de la modification de l'utilisateur.
+   */
+  function mkEl(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) { node.className = cls; }
+    if (text != null) { node.textContent = text; }
+    return node;
+  }
+
+  /** Bouton « Réessayer », sur sa propre ligne sous le message. */
+  function retryButton() {
+    var row = mkEl("div", "pa-sync-actions");
+    var button = mkEl("button", "btn secondary sm pa-sync-retry", "Réessayer");
+    button.setAttribute("type", "button");
+    button.setAttribute("data-pa-sync-retry", "");
+    button.addEventListener("click", function () { runReload(); });
+    row.appendChild(button);
+    return row;
+  }
+
+  /** Ligne d'état ajoutée sous le résultat d'un toast d'action : "running" ou "failed". */
+  function setSyncState(toast, state) {
+    var body = toast.querySelector ? toast.querySelector(".toast-body") : null;
+    if (!body) { return; } // bannière « Opération en cours » : elle dit déjà que la page se met à jour
+    toast.setAttribute("data-toast-sync", state);
+    var line = body.querySelector("[data-toast-sync-line]");
+    if (!line) {
+      line = mkEl("div", "pa-sync");
+      line.setAttribute("data-toast-sync-line", "");
+      line.setAttribute("role", "status");
+      body.appendChild(line);
+    }
+    line.innerHTML = "";
+    if (state === "running") {
+      var spin = mkEl("span", "spinner-border spinner-border-sm");
+      spin.setAttribute("aria-hidden", "true");
+      line.appendChild(spin);
+      line.appendChild(mkEl("span", "pa-sync-text", "Modification enregistrée. Mise à jour de l'affichage en cours…"));
+    } else {
+      line.appendChild(mkEl("span", "pa-sync-text",
+        "Mise à jour de l'affichage interrompue : le panel ne répond plus. La modification reste enregistrée."));
+      line.appendChild(retryButton());
+    }
+  }
+
+  /** Toast final après le rechargement automatique : "ok" ou "late". */
+  function syncOutcomeToast(outcome) {
+    var ok = outcome === "ok";
+    var toast = mkEl("div", "toast pa-toast");
+    toast.setAttribute("role", ok ? "status" : "alert");
+    toast.setAttribute("aria-live", ok ? "polite" : "assertive");
+    toast.setAttribute("aria-atomic", "true");
+    toast.setAttribute("data-toast-group", ok ? "success" : "warning");
+    toast.setAttribute("data-toast-sync", ok ? "done" : "late");
+    toast.setAttribute("data-bs-autohide", ok ? "true" : "false");
+    toast.setAttribute("data-bs-delay", "4000");
+    var header = mkEl("div", "toast-header");
+    var ic = mkEl("span", "toast-ic " + (ok ? "text-success" : "text-warning"));
+    var i = mkEl("i", "bi " + (ok ? "bi-check-circle" : "bi-exclamation-triangle"));
+    i.setAttribute("aria-hidden", "true");
+    ic.appendChild(i);
+    header.appendChild(ic);
+    header.appendChild(mkEl("strong", "me-auto", ok ? "Affichage à jour" : "Mise à jour plus longue que prévu"));
+    var close = mkEl("button", "btn-close");
+    close.setAttribute("type", "button");
+    close.setAttribute("data-bs-dismiss", "toast");
+    close.setAttribute("aria-label", "Fermer");
+    header.appendChild(close);
+    toast.appendChild(header);
+    var body = mkEl("div", "toast-body");
+    var text = mkEl("span", null, ok ? "La page montre la modification enregistrée."
+      : "La modification est enregistrée, mais le serveur n'a pas fini de relire ses données : "
+        + "l'affichage peut encore être en retard.");
+    text.setAttribute("data-toast-body", "");
+    body.appendChild(text);
+    if (!ok) { body.appendChild(retryButton()); }
+    toast.appendChild(body);
+    return toast;
+  }
+
+  function showSyncOutcome(root) {
+    var outcome = null;
+    try {
+      outcome = window.sessionStorage.getItem(SYNC_OUTCOME_KEY);
+      if (outcome) { window.sessionStorage.removeItem(SYNC_OUTCOME_KEY); }
+    } catch (e) { return; }
+    if (outcome !== "ok" && outcome !== "late") { return; }
+    var toast = syncOutcomeToast(outcome);
+    toast.setAttribute("data-toast-ready", "1");
+    root.appendChild(toast);
+    showToast(toast);
+  }
+
   function initToasts() {
     var root = document.getElementById("toast-root");
     if (!root) { return; }
+    showSyncOutcome(root);
     var seeds = document.querySelectorAll(".pa-toast");
     for (var i = 0; i < seeds.length; i++) {
       var el = seeds[i];
@@ -144,7 +259,7 @@
     }
   }
 
-  function updateToast(entry, item) {
+  function updateToast(entry, item, syncing) {
     var el = entry.el;
     el.setAttribute("data-toast-group", item.group);
     var icon = el.querySelector(".toast-ic");
@@ -164,7 +279,10 @@
     var time = el.querySelector("[data-toast-time]");
     if (time && item.age) { time.textContent = item.age; }
     // Une fois résolue : succès -> auto-fermeture douce ; échec -> reste jusqu'à fermeture.
-    if (item.group === "success") {
+    // Succès suivi d'une resynchronisation (#128) : le toast reste et annonce la mise à jour.
+    if (syncing) {
+      setSyncState(el, "running");
+    } else if (item.group === "success") {
       window.setTimeout(function () {
         var t = window.bootstrap && window.bootstrap.Toast ? window.bootstrap.Toast.getOrCreateInstance(el) : null;
         if (t) { t.hide(); }
@@ -282,7 +400,12 @@
             entry.sawPending = true;
             stillPending = true;
           } else if (match) {
-            updateToast(entry, match);
+            // Vue pending -> succès pendant cette page : la vue serveur peut être périmée.
+            // Sauf sur une vue qui se réconcilie seule (/ops) : y armer un rechargement
+            // détruirait la saisie en cours, et ses blocs se remettent déjà à jour tout seuls.
+            var willResync = entry.sawPending && match.group === "success" && !selfRefreshingView()
+                && !alreadyReloadedFor(entry.actionId);
+            updateToast(entry, match, willResync);
             // Issue #177 : une table refusée par le serveur revient avec le formulaire tel qu'il a été
             // envoyé — la page est rouverte avec ?refused=<action>, le serveur relit l'envoi refusé.
             // Issue #474 : même chose pour une récompense du catalogue.
@@ -294,14 +417,11 @@
               reopenWithRefusedForm(entry.actionId);
               return;
             }
-            // Vue pending -> succès pendant cette page : la vue serveur peut être périmée.
-            // Sauf sur une vue qui se réconcilie seule (/ops) : y armer un rechargement
-            // détruirait la saisie en cours, et ses blocs se remettent déjà à jour tout seuls.
-            if (entry.sawPending && match.group === "success" && !selfRefreshingView()
-                && !alreadyReloadedFor(entry.actionId)) {
+            if (willResync) {
               reloadPlan.armed = true;
-              reloadPlan.deadline = Date.now() + 30000;
+              reloadPlan.deadline = Date.now() + RESYNC_MS;
               if (reloadPlan.ids.indexOf(entry.actionId) === -1) { reloadPlan.ids.push(entry.actionId); }
+              reloadPlan.els.push(entry.el);
             }
             pendingToasts.splice(i, 1);
           }
@@ -309,12 +429,20 @@
 
         if (reloadPlan.armed) {
           var idle = typeof data.pending === "number" ? data.pending === 0 : !stillPending;
-          if (idle || Date.now() > reloadPlan.deadline) { runReload(); return; }
+          if (idle) { runReload("ok"); return; }
+          if (Date.now() > reloadPlan.deadline) { runReload("late"); return; }
           schedule(FAST_MS);
           return;
         }
         schedule(stillPending ? FAST_MS : SLOW_MS);
       }).catch(function () {
+        // Issue #128 : panel injoignable pendant une resynchronisation — on réessaie vite jusqu'au
+        // délai, puis on le dit dans le toast de l'action, avec « Réessayer » (jamais en silence).
+        if (reloadPlan.armed) {
+          if (Date.now() <= reloadPlan.deadline) { schedule(FAST_MS); return; }
+          reloadPlan.armed = false;
+          for (var f = 0; f < reloadPlan.els.length; f++) { setSyncState(reloadPlan.els[f], "failed"); }
+        }
         schedule(SLOW_MS);
       });
     }

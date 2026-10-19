@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.panel.json.Json;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -90,24 +91,47 @@ public final class BuildingPlanWorkbench {
 
     /**
      * Les actions récentes qui portent un plan et qu'aucun brouillon ne contient encore : ce sont
-     * les plans qu'on peut reprendre sans rappeler le modèle.
+     * les plans qu'on peut importer sans rappeler le modèle. C'est l'historique GLOBAL de l'agent,
+     * jamais celui d'un projet (#308).
      */
     public List<AgentActionRow> recoverable(String agentId, int limit) {
+        return recoverable(agentId, "", limit);
+    }
+
+    /**
+     * Idem, filtré (#308) : {@code query} est cherché, sans casse, dans l'identifiant d'action et
+     * dans l'identifiant et le nom du bâtiment du plan. Vide = pas de filtre.
+     */
+    public List<AgentActionRow> recoverable(String agentId, String query, int limit) {
         List<AgentActionRow> out = new ArrayList<>();
         if (agentId == null || agentId.isBlank()) {
             return out;
         }
+        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         for (AgentActionRow row : agents.recentActions(agentId, 500)) {
             if (out.size() >= limit) {
                 break;
             }
-            if (Check.ofActionType(row.type()).isPresent() && planOf(row).isPresent()
+            Optional<String> plan = planOf(row);
+            if (plan.isPresent() && matches(row, plan.get(), needle)
                     && drafts.linkOf(row.id()).isEmpty()
                     && drafts.recoveredFrom(row.id()).isEmpty()) {
                 out.add(row);
             }
         }
         return out;
+    }
+
+    private static boolean matches(AgentActionRow row, String plan, String needle) {
+        if (needle.isEmpty()) {
+            return true;
+        }
+        if (row.id().toLowerCase(Locale.ROOT).contains(needle)) {
+            return true;
+        }
+        PlanImportPreview.Summary summary = PlanImportPreview.summaryOf(plan);
+        return summary.buildingId().toLowerCase(Locale.ROOT).contains(needle)
+                || summary.name().toLowerCase(Locale.ROOT).contains(needle);
     }
 
     /** Le plan transporté par une action d'audit, d'aperçu ou de génération. */

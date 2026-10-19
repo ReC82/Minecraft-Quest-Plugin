@@ -372,6 +372,24 @@ public final class BuildingPlanDraftStore {
         }
     }
 
+    /**
+     * La version de CE projet déjà importée depuis cette action (#308) : importer deux fois le même
+     * plan dans le même projet ramène à la première copie, un autre projet garde la sienne.
+     */
+    public Optional<BuildingPlanDraft> recoveredInto(String projectId, String actionId) {
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT * FROM building_plan_draft WHERE project_id = ? AND source_action_id = ? "
+                        + "AND archived = 0 ORDER BY created_at LIMIT 1")) {
+            ps.setString(1, nz(projectId));
+            ps.setString(2, nz(actionId));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(read(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture d'un import impossible (" + actionId + ")", e);
+        }
+    }
+
     /** La version réparée par le moteur depuis cet audit, s'il en existe une (#282, idempotence). */
     public Optional<BuildingPlanDraft> repairedFrom(String actionId) {
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(

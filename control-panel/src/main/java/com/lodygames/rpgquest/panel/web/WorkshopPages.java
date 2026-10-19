@@ -21,6 +21,7 @@ import com.lodygames.rpgquest.panel.building.CatalogState;
 import com.lodygames.rpgquest.panel.building.BuildingVoxels;
 import com.lodygames.rpgquest.panel.building.IsometricView;
 import com.lodygames.rpgquest.panel.building.PlanDiagnosis;
+import com.lodygames.rpgquest.panel.building.PlanImportPreview;
 import com.lodygames.rpgquest.panel.building.SaveFailure;
 import com.lodygames.rpgquest.panel.building.PlanVerdictText;
 import com.lodygames.rpgquest.panel.http.Http;
@@ -211,7 +212,8 @@ public final class WorkshopPages {
                               Optional<BuildingDesignRunStore.Run> designRun,
                               List<ReferenceImageStore.Info> images, CatalogState catalog,
                               boolean ownBuilding, List<BuildingDesignDocStore.Doc> designs,
-                              String designConflict) {
+                              String designConflict, String importQuery,
+                              Optional<PlanImportPreview> importPreview) {
     }
 
     /** Les étapes du parcours, dans l'ordre. */
@@ -266,9 +268,9 @@ public final class WorkshopPages {
         sb.append("</form></details>");
         sb.append(imagesCard(v));
 
-        if (v.drafts().size() > 1) {
-            sb.append(draftList(v));
-        }
+        // #308 : l'historique de CE projet, puis — à part, replié — l'import d'un plan venu d'ailleurs.
+        sb.append(draftList(v));
+        sb.append(importCard(v));
         sb.append(technicalDetails(v));
         return sb.toString();
     }
@@ -1001,10 +1003,19 @@ public final class WorkshopPages {
 
     // ---- Versions --------------------------------------------------------------------------
 
+    /**
+     * L'historique de ce projet : ses seules versions (#308). Un projet neuf le dit, plutôt que
+     * d'afficher des plans d'ailleurs.
+     */
     private static String draftList(ProjectView v) {
-        StringBuilder sb = new StringBuilder("<details class=\"npc-registry\"><summary>")
-                .append(Icons.icon("history")).append("Versions du plan (").append(v.drafts().size())
-                .append(")</summary><ul class=\"tight\">");
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry\" id=\"ws-history\"><summary>")
+                .append(Icons.icon("history")).append("Historique de ce projet — versions du plan (")
+                .append(v.drafts().size()).append(")</summary>");
+        if (v.drafts().isEmpty()) {
+            return sb.append("<p class=\"faint\">Aucune version de plan pour ce projet : il est neuf. Les "
+                    + "plans d'autres projets ne s'affichent jamais ici.</p></details>").toString();
+        }
+        sb.append("<ul class=\"tight\">");
         for (BuildingPlanDraft d : v.drafts()) {
             boolean open = v.draft() != null && v.draft().id().equals(d.id());
             sb.append("<li>").append(open ? "<strong>" : "").append(Http.esc(d.origin().label()))
@@ -1025,7 +1036,7 @@ public final class WorkshopPages {
     /**
      * Ce qui sert à l'assistance et aux administrateurs, jamais au parcours principal : plan brut et
      * modifiable, résultat brut de la vérification, coupes techniques, versions, réponse du modèle,
-     * reprise d'un plan depuis une action — et « Copier le diagnostic ».
+     * et « Copier le diagnostic ».
      */
     private static String technicalDetails(ProjectView v) {
         StringBuilder sb = new StringBuilder("<details class=\"npc-registry ws-tech\"><summary class=\"muted\">")
@@ -1083,7 +1094,6 @@ public final class WorkshopPages {
             }
             sb.append(archiveForm(v));
         }
-        sb.append(recovery(v));
         return sb.append("</details>").toString();
     }
 
@@ -1159,29 +1169,103 @@ public final class WorkshopPages {
                 + Icons.icon("trash") + "Retirer cette version de la liste</button></form>";
     }
 
-    /** Reprendre un plan déjà vérifié ou enregistré, depuis une action — sans appel à l'IA. */
-    private static String recovery(ProjectView v) {
-        StringBuilder sb = new StringBuilder("<details class=\"npc-registry\"><summary class=\"muted\">Reprendre "
-                + "un plan depuis l'historique des actions (sans appel à l'IA)</summary>");
-        for (AgentActionRow row : v.recoverable()) {
-            String building = BuildingPlanDraft.buildingIdOf(BuildingPlanWorkbench.planOf(row).orElse(""));
-            sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"inline\">")
-                    .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "recover"))
-                    .append(hidden("id", v.project().id())).append(hidden("action_id", row.id()))
-                    .append("<p>").append(building.isEmpty() ? "plan" : Ui.id(building)).append(" · ")
-                    .append(Http.esc(WHEN.format(row.createdAt()))).append(" · <a href=\"/actions/")
-                    .append(Http.esc(row.id())).append("\">").append(Http.esc(shortId(row.id())))
-                    .append("</a> <button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">Reprendre ce "
-                            + "plan</button></p></form>");
-        }
-        sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
-                .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "recover"))
+    // ---- Import d'un plan d'ailleurs (#308) ----------------------------------------------------
+
+    /**
+     * Importer un plan d'un autre projet ou de l'historique global des actions : une démarche
+     * distincte de l'historique du projet, repliée par défaut, avec recherche et provenance. Rien
+     * n'est copié sans l'examen préalable, et la copie ne touche jamais la source.
+     */
+    private static String importCard(ProjectView v) {
+        boolean open = v.importPreview().isPresent() || !v.importQuery().isEmpty();
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry\" id=\"ws-import\"")
+                .append(open ? " open" : "").append("><summary class=\"muted\">").append(Icons.icon("open"))
+                .append("Importer un plan d'un autre projet ou de l'historique global</summary>")
+                .append("<p class=\"field-help\">Ces plans <strong>n'appartiennent pas</strong> à ce projet. "
+                        + "Importer en fait une <strong>copie</strong>, nouvelle version de ce projet : la source "
+                        + "n'est ni déplacée ni modifiée, le brief et la conception de ce projet restent les "
+                        + "siens. Aucun appel à l'IA, aucune facturation.</p>");
+        v.importPreview().ifPresent(p -> sb.append(importPreview(v, p)));
+        sb.append("<form method=\"get\" action=\"").append(BASE).append("/project#ws-import\" class=\"actform\">")
                 .append(hidden("id", v.project().id()))
-                .append("<div class=\"field\"><label for=\"ws-action\">Identifiant d'action</label>")
-                .append("<input id=\"ws-action\" type=\"text\" name=\"action_id\" spellcheck=\"false\"></div>")
+                .append("<div class=\"field\"><label for=\"ws-iq\">Rechercher (nom technique, nom ou identifiant "
+                        + "d'action)</label><input id=\"ws-iq\" type=\"search\" name=\"iq\" value=\"")
+                .append(Http.esc(v.importQuery())).append("\" spellcheck=\"false\"></div>")
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                .append(Icons.icon("search")).append("Rechercher</button></div></form>");
+        if (v.recoverable().isEmpty()) {
+            sb.append("<p class=\"faint\">").append(v.importQuery().isEmpty()
+                    ? "Aucun plan orphelin dans l'historique global des actions."
+                    : "Aucun plan orphelin ne correspond à cette recherche.").append("</p>");
+        } else {
+            sb.append("<p class=\"faint\">Plans de l'historique global, rattachés à aucun projet :</p>"
+                    + "<ul class=\"tight\">");
+            for (AgentActionRow row : v.recoverable()) {
+                String building = BuildingPlanDraft.buildingIdOf(BuildingPlanWorkbench.planOf(row).orElse(""));
+                sb.append("<li>").append(building.isEmpty() ? "plan" : Ui.id(building)).append(" · ")
+                        .append(Http.esc(WHEN.format(row.createdAt()))).append(" · action <a href=\"/actions/")
+                        .append(Http.esc(row.id())).append("\">").append(Http.esc(shortId(row.id())))
+                        .append("</a> <a class=\"btn btn-sm btn-outline-primary\" href=\"").append(importUrl(v, row.id()))
+                        .append("\">Examiner avant import</a></li>");
+            }
+            sb.append("</ul>");
+        }
+        sb.append("<form method=\"get\" action=\"").append(BASE).append("/project#ws-import\" class=\"actform\">")
+                .append(hidden("id", v.project().id()))
+                .append("<div class=\"field\"><label for=\"ws-action\">Ou identifiant d'action (plan d'un autre "
+                        + "projet, ancien brouillon sans projet…)</label>")
+                .append("<input id=\"ws-action\" type=\"text\" name=\"import\" spellcheck=\"false\"></div>")
                 .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">"
-                        + "Reprendre</button></div></form>");
+                        + "Examiner</button></div></form>");
         return sb.append("</details>").toString();
+    }
+
+    /** L'examen avant import : provenance, contenu, incompatibilités — puis la confirmation. */
+    private static String importPreview(ProjectView v, PlanImportPreview p) {
+        StringBuilder sb = new StringBuilder("<div class=\"card\"><div class=\"card-body\">")
+                .append(detail("info", "Examen avant import")).append("<dl class=\"npc-dl\">");
+        row(sb, "Provenance", Http.esc(p.provenance()));
+        row(sb, "Action source", "<a href=\"/actions/" + Http.esc(p.actionId()) + "\">" + Http.esc(p.actionId())
+                + "</a> — " + Http.esc(p.actionType()) + " — " + Http.esc(WHEN.format(p.createdAt())));
+        row(sb, "Nom technique", p.buildingId().isEmpty() ? "<span class=\"faint\">absent</span>" : Ui.id(p.buildingId()));
+        row(sb, "Nom", p.name().isEmpty() ? "<span class=\"faint\">absent</span>" : Http.esc(p.name()));
+        row(sb, "Dimensions", Http.esc(p.dimensions()));
+        row(sb, "Entrée", p.front().isEmpty() ? "<span class=\"faint\">non précisée</span>" : Http.esc(p.front()));
+        row(sb, "Limites de ce projet", Http.esc(v.project().maxWidth() + " de large, " + v.project().maxHeight()
+                + " de haut, entrée " + v.project().front()));
+        sb.append("</dl>");
+        if (p.conflicts().isEmpty()) {
+            sb.append("<p class=\"faint\">Aucune incompatibilité avec les limites de ce projet.</p>");
+        } else {
+            sb.append("<p><strong>Incompatibilités avec ce projet</strong> — l'import reste possible, la "
+                    + "vérification les signalera :</p><ul class=\"tight\">");
+            p.conflicts().forEach(c -> sb.append("<li>").append(Http.esc(c)).append("</li>"));
+            sb.append("</ul>");
+        }
+        if (p.ownedHere()) {
+            return sb.append("<p>Ce plan est déjà une version de ce projet : <a href=\"")
+                    .append(projectUrl(v.project().id(), p.sourceDraftId()))
+                    .append("\">l'ouvrir</a>.</p></div></div>").toString();
+        }
+        if (!p.importedDraftId().isEmpty()) {
+            return sb.append("<p>Ce plan a déjà été importé dans ce projet : <a href=\"")
+                    .append(projectUrl(v.project().id(), p.importedDraftId()))
+                    .append("\">ouvrir la copie</a>.</p></div></div>").toString();
+        }
+        sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"inline\">")
+                .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "recover"))
+                .append(hidden("id", v.project().id())).append(hidden("action_id", p.actionId()))
+                .append(hidden("confirm", "1"))
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
+                .append(Icons.icon("open")).append("Importer comme nouvelle version de ce projet</button> ")
+                .append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"").append(projectUrl(v.project().id(), ""))
+                .append("\">Annuler</a></div></form>");
+        return sb.append("</div></div>").toString();
+    }
+
+    private static String importUrl(ProjectView v, String actionId) {
+        return BASE + "/project?id=" + Http.esc(v.project().id()) + "&amp;import=" + Http.esc(actionId)
+                + "#ws-import";
     }
 
     /** Le diagnostic à copier : identifiants, état, vérification, plan — jamais de clé ni de secret. */
@@ -1240,8 +1324,8 @@ public final class WorkshopPages {
                     + "\">" + Icons.icon("back") + "Le reprendre dans l'Atelier</a>");
         }
         StringBuilder sb = new StringBuilder("<div class=\"banner info\">").append(Icons.icon("info"))
-                .append("<div>Cette action contient un plan de bâtiment complet. Le reprendre dans un projet "
-                        + "de l'Atelier <strong>n'appelle pas l'IA</strong>.");
+                .append("<div>Cette action contient un plan de bâtiment complet. L'importer dans un projet "
+                        + "de l'Atelier en fait une copie, après examen, et <strong>n'appelle pas l'IA</strong>.");
         if (projects.isEmpty()) {
             sb.append(" <a href=\"").append(BASE).append("/new\">Créez d'abord un projet</a>, puis revenez ici.");
         } else {
@@ -1254,7 +1338,7 @@ public final class WorkshopPages {
                         .append("</option>");
             }
             sb.append("</select> <button class=\"btn btn-sm btn-primary\" type=\"submit\">")
-                    .append(Icons.icon("open")).append("Reprendre ce plan</button></form>");
+                    .append(Icons.icon("open")).append("Examiner l'import dans ce projet</button></form>");
         }
         return sb.append("</div></div>").toString();
     }

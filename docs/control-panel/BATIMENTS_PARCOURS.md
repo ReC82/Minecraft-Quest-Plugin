@@ -41,7 +41,12 @@ Parcours :
 
 Toujours disponibles mais **repliés** dans « Détails techniques » : plan brut modifiable, codes et mesures
 de la vérification, coupes en caractères (diagnostic — ce n'est pas un aperçu, cf. #273), anciennes
-versions, réponse du modèle, reprise depuis l'historique, **« Copier le diagnostic »**.
+versions, réponse du modèle, **« Copier le diagnostic »**.
+
+Sous la fiche, deux sections distinctes (#308) : **« Historique de ce projet »** (ses seules versions ;
+« il est neuf » s'il n'en a aucune) et, repliée, **« Importer un plan d'un autre projet ou de l'historique
+global »** — recherche, « Examiner avant import » (provenance, dimensions, entrée, incompatibilités, rien
+d'écrit), puis « Importer comme nouvelle version de ce projet » : une copie, source inchangée, sans IA.
 
 ## Ce que l'ancien parcours devient
 
@@ -66,6 +71,7 @@ versions, réponse du modèle, reprise depuis l'historique, **« Copier le diagn
 |---|---|
 | Brouillons existants récupérés (Bibliothèque du Hub, `buildsite_0009`) | `WorkshopFlowTest.aSiteBriefAndItsDraftsAreImportedWithoutTouchingTheSite`, `BuildingProjectStoreTest` (migration d'une base #256) |
 | Reprise depuis l'ancien historique, sans IA | `WorkshopFlowTest.aPlanIsRecoveredFromAnActionIntoAProjectWithoutCallingTheAi` |
+| Historique du projet isolé, import explicite et copie (#308) | `WorkshopFlowTest.aNewProjectHasAnEmptyHistoryAndOrphanPlansStayInTheSeparateImport`, `…theImportPreviewShowsProvenanceAndConflictsWithoutWritingAnything`, `…importingFromAnotherProjectCopiesAndLeavesTheSourceUntouched`, `…aForeignAgentsPlanIsRefusedServerSide`, `PlanImportPreviewTest` |
 | Même bâtiment sur plusieurs emplacements, retraits indépendants | `BuildingPlacementServiceTest.theSameBuildingOnTwoSitesGivesTwoIndependentPlacements` |
 | Aucun appel facturé en naviguant, en tournant ou en coupant l'aperçu | `WorkshopFlowTest.aPaidPlanBecomesAVersionAndNoNavigationCallsTheAiAgain`, `…aVerificationAlsoDrawsTheBuildingFromTheServerGrid` |
 | Aucun écrasement en bibliothèque | `WorkshopFlowTest.savingInTheLibraryNeverReplacesAnything`, `…aTakenLibraryNameBlocksSavingAndSaysWhatToDo` |

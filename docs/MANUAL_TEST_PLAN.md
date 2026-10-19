@@ -6722,6 +6722,23 @@ portail ni ne téléporte : on peut tout essayer.
 6.  Vérifier qu'aucun bouton ne crée, ne modifie, n'active ni ne téléporte (carte et fiche) ; téléphone (390 px)
     lisible, sans défilement horizontal de la page.
 
+### TC-363-bis — Retours sur la page Portails : guide nommé, conditions clarifiées, résultats vides (issue #564, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR + PlugAdmin `67a556c` (PR #591) sur DEV. **Revalidation CIBLÉE** : ces 3 points seulement ;
+les acquis de TC-363 (liste, fiches, rafraîchissement, recherche « wild », filtre Désactivés, mobile) ne sont pas
+à refaire. **Durée** : 3 minutes, PlugAdmin seul, aucune action en jeu.
+
+1.  PlugAdmin → **Monde → Portails** → **Rafraîchir les portails** → fiche `hub_to_claims`, bloc **3 · Règles
+    appliquées par le serveur**. **Attendu** : « … un message l'envoie vers Jo (acte de propriété) et vers
+    **Elias** (PNJ guide « guide ») » — plus de « le Guide ». (Si le guide est renommé dans PNJ, le nouveau nom
+    apparaît après Rafraîchir.)
+2.  Même fiche, bloc **2 · Téléportation → Déclenchement**, dernière ligne. **Attendu** : « Aucune condition de
+    niveau, de quête ni de permission n'est configurée sur le portail lui-même ; les règles du serveur (bloc
+    « Règles appliquées par le serveur ») s'appliquent quand même. » Idem sur `hub_to_wild`.
+3.  Retour à la liste : filtre **Désactivés · 0** → **Attendu** « Aucun portail désactivé. » ; puis taper
+    `zzz` dans la recherche avec le filtre **Tous** → « Aucun portail ne correspond à « zzz ». » ; effacer la
+    recherche → les 2 cartes reviennent, le message disparaît.
+
 ### TC-362 — Page Mondes en lecture seule : six mondes, gestionnaires, rôles, éléments liés (issue #560, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de la PR de #560 sur **DEV**. Aucune action de cette page ne modifie un

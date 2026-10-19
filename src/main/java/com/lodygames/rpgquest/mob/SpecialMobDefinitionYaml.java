@@ -1,12 +1,8 @@
 package com.lodygames.rpgquest.mob;
 
-import com.lodygames.rpgquest.mob.model.EnragedAbility;
-import com.lodygames.rpgquest.mob.model.ExplosiveOnAttackAbility;
+import com.lodygames.rpgquest.mob.ability.MobAbilityCatalog;
 import com.lodygames.rpgquest.mob.model.MobAbility;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
-import com.lodygames.rpgquest.mob.model.SplitOnHitAbility;
-import com.lodygames.rpgquest.mob.model.StrongerExplosionAbility;
-import com.lodygames.rpgquest.mob.model.SummonOnDamageAbility;
 import com.lodygames.rpgquest.resource.model.CustomItemDrop;
 import com.lodygames.rpgquest.resource.model.ResourceDrop;
 import com.lodygames.rpgquest.resource.model.VanillaItemDrop;
@@ -90,38 +86,7 @@ public final class SpecialMobDefinitionYaml {
         }
         sb.append("abilities:\n");
         for (MobAbility ability : abilities) {
-            switch (ability) {
-                case StrongerExplosionAbility a -> {
-                    sb.append("  - type: STRONGER_EXPLOSION\n");
-                    sb.append("    radius-multiplier: ").append(a.radiusMultiplier()).append('\n');
-                }
-                case ExplosiveOnAttackAbility a -> {
-                    sb.append("  - type: EXPLOSIVE_ON_ATTACK\n");
-                    sb.append("    power: ").append(a.power()).append('\n');
-                    sb.append("    set-fire: ").append(a.setFire()).append('\n');
-                    sb.append("    trigger-range-blocks: ").append(a.triggerRangeBlocks()).append('\n');
-                }
-                case SplitOnHitAbility a -> {
-                    sb.append("  - type: SPLIT_ON_HIT\n");
-                    sb.append("    max-depth: ").append(a.maxDepth()).append('\n');
-                    sb.append("    max-children-per-hit: ").append(a.maxChildrenPerHit()).append('\n');
-                    sb.append("    max-alive-per-parent: ").append(a.maxAlivePerParent()).append('\n');
-                }
-                case EnragedAbility a -> {
-                    sb.append("  - type: ENRAGED\n");
-                    sb.append("    health-fraction: ").append(a.healthFraction()).append('\n');
-                    sb.append("    speed-multiplier: ").append(a.speedMultiplier()).append('\n');
-                    sb.append("    damage-multiplier: ").append(a.damageMultiplier()).append('\n');
-                }
-                case SummonOnDamageAbility a -> {
-                    sb.append("  - type: SUMMON_ON_DAMAGE\n");
-                    sb.append("    summon-entity-type: ").append(a.summonedEntityType().name()).append('\n');
-                    sb.append("    amount: ").append(a.amount()).append('\n');
-                    sb.append("    chance: ").append(a.chance()).append('\n');
-                    sb.append("    cooldown-seconds: ").append(a.cooldownSeconds()).append('\n');
-                    sb.append("    max-alive: ").append(a.maxAlive()).append('\n');
-                }
-            }
+            MobAbilityCatalog.render(ability, sb);
         }
     }
 

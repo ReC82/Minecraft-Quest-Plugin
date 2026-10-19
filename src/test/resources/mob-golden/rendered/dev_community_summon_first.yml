@@ -1,0 +1,27 @@
+# Profil de mob spécial RPGQuest — généré / édité via le Control Panel (issue #172).
+id: rpgquest:hill_ogre
+category: BOSS
+enabled: true
+boss-mode: COMMUNITY
+community-weight: 3
+participation-rewards:
+  - "table:boss_loot"
+entity-type: HUSK
+name: "Ogre des collines"
+spawn-chance: 0.0
+worlds:
+  - "wild"
+biomes: []
+zones: []
+health: 300.0
+abilities:
+  - type: SUMMON_ON_DAMAGE
+    summon-entity-type: HUSK
+    amount: 1
+    chance: 1.0
+    cooldown-seconds: 0
+    max-alive: 2
+  - type: ENRAGED
+    health-fraction: 0.5
+    speed-multiplier: 1.1
+    damage-multiplier: 1.2

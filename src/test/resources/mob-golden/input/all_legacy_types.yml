@@ -1,0 +1,18 @@
+# Les trois types anciens avec valeurs « difficiles » (flottant, clés facultatives absentes).
+id: rpgquest:legacy_mix
+entity-type: CREEPER
+name: "Mélange"
+spawn-chance: 0.01
+worlds: []
+biomes: []
+zones: []
+creeper-explosion-radius: 4
+abilities:
+  - type: STRONGER_EXPLOSION
+    radius-multiplier: 2
+  - type: EXPLOSIVE_ON_ATTACK
+    power: 2.3
+    trigger-range-blocks: 2
+  - type: SPLIT_ON_HIT
+    max-depth: 1
+    max-children-per-hit: 3

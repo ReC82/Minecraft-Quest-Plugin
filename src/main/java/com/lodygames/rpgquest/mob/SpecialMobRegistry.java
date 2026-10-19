@@ -81,6 +81,9 @@ public final class SpecialMobRegistry implements PluginService {
         for (SpecialMobLoadIssue issue : report.issues()) {
             logger.warn("[{}] {}", issue.file(), issue.message());
         }
+        for (SpecialMobLoadIssue warning : report.warnings()) {
+            logger.warn("[{}] Avertissement : {}", warning.file(), warning.message());
+        }
     }
 
     private void ensureExamplesExist() {

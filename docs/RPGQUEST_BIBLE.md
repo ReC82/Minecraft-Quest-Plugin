@@ -5707,7 +5707,17 @@ Cinq `abilities` réellement implémentées (enum `MobAbilityType`, vérifié da
 | `EXPLOSIVE_ON_ATTACK` | `power` (> 0), `set-fire`, `trigger-range-blocks` (> 0) | rend une entité passive agressive : explosion réelle en approche, puis mort de l'entité |
 | `SPLIT_ON_HIT` | `max-depth` (≥ 1), `max-children-per-hit` (≥ 1), `max-alive-per-parent` (≥ 1, optionnel, défaut 2 — issue #190) | fait apparaître des enfants à chaque coup non mortel ; `max-alive-per-parent` plafonne séparément le nombre d'enfants vivants d'un même parent, pour que des coups répétés sur la même entité avant sa mort ne produisent pas plus de descendants que ce plafond |
 | `ENRAGED` | `health-fraction` (0 < x < 1), `speed-multiplier` (> 0), `damage-multiplier` (> 0) | sous le seuil de vie, signal visuel (particule + son) puis bascule en rage une seule fois (jamais réappliqué/cumulé) |
-| `SUMMON_ON_DAMAGE` | `summon-entity-type`, `amount` (> 0), `chance` (0 < x ≤ 1), `cooldown-seconds` (≥ 0), `max-alive` (> 0) | invoque des renforts sur dégâts effectifs, cooldown + plafond de renforts vivants ; jamais de cascade (les renforts invoqués sont de simples mobs vanilla, jamais eux-mêmes des mobs spéciaux) |
+| `SUMMON_ON_DAMAGE` | `summon-entity-type`, `amount` (> 0), `chance` (0 < x ≤ 1), `cooldown-seconds` (≥ 0), `max-alive` (> 0) ; `despawn-with-owner` (optionnel, défaut `false` — issue #542) | invoque des renforts sur dégâts effectifs, cooldown + plafond de renforts vivants ; jamais de cascade (les renforts invoqués sont de simples mobs vanilla, jamais eux-mêmes des mobs spéciaux) |
+
+**Socle composable (issue #542).** Chaque entrée accepte aussi trois champs communs facultatifs :
+`enabled` (défaut `true` ; `false` = gardée mais inactive), `chance` (défaut `1`), `cooldown-seconds`
+(défaut `0`) — jamais écrits s'ils valent leur défaut, donc aucun profil existant n'est réécrit.
+**5 capacités au plus, chaque type une seule fois** : refus à l'import et à l'enregistrement PlugAdmin ;
+un ancien fichier avec un doublon se charge avec un avertissement console et seule la première
+instance agit. Aucune apparition par capacité dans le Hub, un claim ou une zone qui interdit les
+hostiles ; `EXPLOSIVE_ON_ATTACK` ignore PNJ et joueurs en créatif/spectateur ; 3 renforts/s/monde au
+plus ; aucune modification du terrain. Détail : [SPECIAL_MOB_FORMAT.md](../SPECIAL_MOB_FORMAT.md),
+développeurs : [docs/development/ADDING_MOB_ABILITY.md](development/ADDING_MOB_ABILITY.md).
 
 Le boss de quête (spawn à l'acceptation, identité liée joueur/quête/cycle, objectif de victoire, localisation biome/waypoint) est un développement séparé, pas encore implémenté — ne jamais le présenter comme disponible.
 

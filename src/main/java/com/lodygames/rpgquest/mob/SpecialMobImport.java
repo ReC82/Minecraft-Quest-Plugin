@@ -1,9 +1,10 @@
 package com.lodygames.rpgquest.mob;
 
+import com.lodygames.rpgquest.mob.ability.MobAbilityCatalog;
+import com.lodygames.rpgquest.mob.ability.MobAbilityRules;
 import com.lodygames.rpgquest.mob.model.MobAbility;
 import com.lodygames.rpgquest.mob.model.MobAbilityType;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
-import com.lodygames.rpgquest.mob.model.StrongerExplosionAbility;
 import com.lodygames.rpgquest.resource.model.CustomItemDrop;
 import com.lodygames.rpgquest.resource.model.ResourceDrop;
 import java.util.ArrayList;
@@ -84,6 +85,8 @@ public final class SpecialMobImport {
         parsed.issues().forEach(issue -> errors.add(issue.message()));
         SpecialMobDefinition definition = parsed.definition();
         if (definition != null) {
+            // Issue #542 : 5 capacités au plus, pas de doublon, rien « en développement » en tirage naturel.
+            errors.addAll(MobAbilityRules.violations(definition));
             references(definition, refs, errors, warnings);
             compatibility(definition, warnings);
         }
@@ -135,7 +138,7 @@ public final class SpecialMobImport {
         List<Map<?, ?>> abilities = yaml.getMapList("abilities");
         for (int i = 0; i < abilities.size(); i++) {
             Map<?, ?> entry = abilities.get(i);
-            MobAbilityType type = abilityType(entry.get("type"));
+            MobAbilityType type = MobAbilityCatalog.typeOf(entry.get("type"));
             if (type == null) {
                 continue; // le parseur dit déjà pourquoi
             }
@@ -152,17 +155,6 @@ public final class SpecialMobImport {
                     errors.add("drops[" + i + "] : propriété inconnue « " + key + " ».");
                 }
             }
-        }
-    }
-
-    private static MobAbilityType abilityType(Object raw) {
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return MobAbilityType.valueOf(String.valueOf(raw).toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return null;
         }
     }
 
@@ -213,9 +205,10 @@ public final class SpecialMobImport {
     /** Combinaisons acceptées par le parseur mais sans effet : dites, jamais refusées. */
     private static void compatibility(SpecialMobDefinition d, List<String> warnings) {
         for (MobAbility ability : d.abilities()) {
-            if (ability instanceof StrongerExplosionAbility && d.entityType() != EntityType.CREEPER) {
-                warnings.add("STRONGER_EXPLOSION n'a d'effet que sur une créature qui explose (CREEPER) : "
-                        + d.entityType() + " n'explose pas.");
+            Set<EntityType> effectiveOn = MobAbilityCatalog.descriptor(ability.type()).effectiveOn();
+            if (!effectiveOn.isEmpty() && !effectiveOn.contains(d.entityType())) {
+                warnings.add(ability.type() + " n'a d'effet que sur " + effectiveOn + " : " + d.entityType()
+                        + " n'est pas concerné.");
             }
         }
         if (d.category() == com.lodygames.rpgquest.mob.model.MobCategory.BOSS && d.spawnChance() > 0) {

@@ -1,0 +1,38 @@
+# Profil de mob spécial RPGQuest — généré / édité via le Control Panel (issue #172).
+id: rpgquest:boss_zombie_0001
+category: BOSS
+enabled: true
+boss-mode: QUEST
+community-weight: 1
+entity-type: ZOMBIE
+name: "<dark_red>Chef zombie</dark_red>"
+spawn-chance: 0.0
+worlds:
+  - "wild"
+biomes:
+  - "swamp"
+zones: []
+health: 120.0
+damage: 8.5
+speed: 0.3
+armor: 4.0
+knockback-resistance: 0.4
+scale: 1.3
+abilities:
+  - type: ENRAGED
+    health-fraction: 0.35
+    speed-multiplier: 1.3
+    damage-multiplier: 1.75
+  - type: SUMMON_ON_DAMAGE
+    summon-entity-type: ZOMBIE
+    amount: 2
+    chance: 0.25
+    cooldown-seconds: 20
+    max-alive: 4
+drops:
+  - material: EMERALD
+    weight: 100
+    min-amount: 1
+    max-amount: 3
+xp-reward: 200
+max-population: 1

@@ -70,7 +70,7 @@ public final class SpecialMobService implements PluginService, Listener {
     public static final String PDC_KEY_NAME = "special-mob-id";
     public static final String SPLIT_DEPTH_KEY_NAME = "special-mob-split-depth";
     /** Issue #190 : UUID du parent direct, posé sur chaque enfant {@code SPLIT_ON_HIT} pour compter
-     * ses enfants vivants indépendamment du nombre de coups reçus (voir {@code SplitOnHitAbilityListener}). */
+     * ses enfants vivants indépendamment du nombre de coups reçus (voir {@code mob.ability.SplitOnHitExecutor}). */
     public static final String SPLIT_PARENT_KEY_NAME = "special-mob-split-parent";
     public static final String TEST_INSTANCE_KEY_NAME = "special-mob-test-instance";
 

@@ -1,0 +1,22 @@
+# Profil de mob spécial RPGQuest — généré / édité via le Control Panel (issue #172).
+id: rpgquest:legacy_mix
+category: SPECIAL
+enabled: true
+entity-type: CREEPER
+name: "Mélange"
+spawn-chance: 0.01
+worlds: []
+biomes: []
+zones: []
+creeper-explosion-radius: 4.0
+abilities:
+  - type: STRONGER_EXPLOSION
+    radius-multiplier: 2.0
+  - type: EXPLOSIVE_ON_ATTACK
+    power: 2.3
+    set-fire: false
+    trigger-range-blocks: 2.0
+  - type: SPLIT_ON_HIT
+    max-depth: 1
+    max-children-per-hit: 3
+    max-alive-per-parent: 2

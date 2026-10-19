@@ -6686,6 +6686,22 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-367 — PlugAdmin : attente visible pendant la mise à jour automatique après une modification (issue #128, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin issu de la PR de #128 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 3 minutes.
+Choisir une modification **réversible** (ex. PNJ → renommer le nom affiché d'un PNJ de test puis remettre l'ancien).
+
+1.  Enregistrer la modification. **Attendu** : le toast en haut à droite dit « En attente de confirmation de l'agent ».
+2.  Quand le serveur confirme : le **même** toast affiche le résultat, puis la ligne « Modification enregistrée. Mise à
+    jour de l'affichage en cours… » avec un petit sablier tournant. Il ne disparaît pas tout seul ; aucun second toast.
+3.  Quelques secondes plus tard, la page se recharge **seule** (pas de F5) et montre la modification ; un toast
+    « **Affichage à jour** » apparaît puis se ferme seul. La cloche ne montre pas de relevé technique en plus.
+4.  Appuyer sur F5 : aucun toast « Affichage à jour » ne réapparaît.
+5.  Téléphone (390 px) : refaire 1 à 3 (remettre l'ancien nom) → même suite de messages, lisible.
+6.  (Rare, non provoqué) Si le serveur met plus de 30 s : après rechargement, toast orange « Mise à jour plus longue
+    que prévu » avec **Réessayer** ; si le panel ne répond plus : le toast dit « Mise à jour de l'affichage
+    interrompue » avec **Réessayer**. Ces deux cas sont couverts par `control-panel/src/test/js/resync-feedback.test.js`.
+
 ### TC-366 — Atelier : historique du projet isolé, import d'un plan d'ailleurs explicite (issue #308, PENDING MANUAL VALIDATION)
 
 **Prérequis** : PlugAdmin #308 déployé (aucun JAR, aucune migration). Compte avec `AI_USE`. **Aucun

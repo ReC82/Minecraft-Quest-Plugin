@@ -251,7 +251,20 @@ final class TravelPages {
         }
         sb.append("</ul>");
         sb.append(pager(page, pageCount, n -> placesUrl(ctx, q, n)));
+        sb.append(seeAlso(ctx));
         return sb.toString();
+    }
+
+    /** Renvoi vers les deux autres pages du groupe « Monde », comme {@link WorldPages} renvoie vers celle-ci. */
+    static String seeAlso(Ctx ctx) {
+        String a = "?agent=" + enc(ctx.agentId());
+        return "<p class=\"muted small\">Voir aussi : <a href=\"" + WorldPages.PATH + a + "\">Mondes</a> (les mondes "
+                + "du serveur) · <a href=\"" + PortalPages.PATH + a + "\">Portails</a> (passer d'un monde à l'autre).</p>";
+    }
+
+    /** Fiche du monde dans la page « Mondes ». */
+    private static String worldUrl(Ctx ctx, String world) {
+        return WorldPages.PATH + "?agent=" + enc(ctx.agentId()) + "&world=" + enc(world);
     }
 
     private static String placeSearch(Ctx ctx, Survey s, PlaceQuery q) {
@@ -343,7 +356,7 @@ final class TravelPages {
         }
         sb.append("<section class=\"qc-card\"><h2>").append(Icons.icon("travel")).append("Comment y aller</h2>")
                 .append("<p class=\"tv-text\">").append(howToGo(s, p)).append("</p></section>");
-        sb.append(placeTechnical(s, p));
+        sb.append(placeTechnical(ctx, p));
         return sb.toString();
     }
 
@@ -394,11 +407,12 @@ final class TravelPages {
         return sb.append("</form></section>").toString();
     }
 
-    private static String placeTechnical(Survey s, Place p) {
+    private static String placeTechnical(Ctx ctx, Place p) {
         StringBuilder sb = new StringBuilder("<details class=\"qc-card qc-advanced\"><summary>Informations techniques</summary>");
         sb.append("<dl class=\"qc-facts\">");
         fact(sb, "Identifiant", "<code>" + Http.esc(p.id()) + "</code>");
-        fact(sb, "Monde", "<code>" + Http.esc(p.world()) + "</code>");
+        fact(sb, "Monde", "<code>" + Http.esc(p.world()) + "</code>" + (p.world().isEmpty() ? ""
+                : " · <a href=\"" + Http.esc(worldUrl(ctx, p.world())) + "\">Voir ce monde</a>"));
         fact(sb, "Biome", p.biomeKey().isEmpty() ? "—" : "<code>" + Http.esc(p.biomeKey()) + "</code>");
         fact(sb, "Zone (instance)", p.biomeInstance().isEmpty() ? "—" : "<code>" + Http.esc(p.biomeInstance()) + "</code>");
         fact(sb, "Coordonnées", "<code>" + p.x() + ", " + p.y() + ", " + p.z() + "</code>");

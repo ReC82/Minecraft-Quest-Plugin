@@ -110,6 +110,9 @@ class TravelCatalogTest {
         assertFalse(page.contains("name=\"type\" value=\"waypoint.rename\""),
                 "plus de formulaire niché dans une ligne : le renommage vit dans la fiche");
         assertFalse(page.contains("onchange") || page.contains("<script>"), "aucun script en ligne (CSP)");
+        assertTrue(page.contains("Voir aussi : <a href=\"/worlds?agent=") && page.contains(">Mondes</a>")
+                && page.contains("<a href=\"/portals?agent=") && page.contains(">Portails</a>"),
+                "renvoi vers les autres pages du groupe Monde (#560, #564)");
     }
 
     @Test
@@ -182,6 +185,8 @@ class TravelCatalogTest {
         assertTrue(page.contains("<code>wp_hub_foret</code>") && page.contains("<code>12, 64, -8</code>")
                 && page.contains("<code>beacon-1</code>"), "identifiant, coordonnées et borne conservés");
         assertTrue(page.contains("pas une vérification sur place"), "enregistré ≠ vérifié sur place");
+        assertTrue(page.contains("/worlds?agent=") && page.contains("&amp;world=hub\">Voir ce monde</a>"),
+                "le monde du lieu mène à sa fiche dans la page Mondes");
     }
 
     @Test

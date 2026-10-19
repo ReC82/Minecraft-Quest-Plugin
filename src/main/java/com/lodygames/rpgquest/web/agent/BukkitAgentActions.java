@@ -2210,6 +2210,47 @@ public final class BukkitAgentActions implements AgentActions {
         return onMain(() -> done(com.lodygames.rpgquest.world.WorldOverview.build(worldInputs())));
     }
 
+    // ---- Portails (issue #564, #228-P1) -------------------------------------------------------
+
+    private com.lodygames.rpgquest.travel.YamlPortalRegistry zonePortals;
+    private com.lodygames.rpgquest.travel.YamlDestinationRegistry zoneDestinations;
+
+    /** Portails de zone ({@code portals/}, ancien format) et leurs destinations nommées. */
+    public void setPortalSources(com.lodygames.rpgquest.travel.YamlPortalRegistry portals,
+                                 com.lodygames.rpgquest.travel.YamlDestinationRegistry destinations) {
+        this.zonePortals = portals;
+        this.zoneDestinations = destinations;
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.travel.PortalOverview.View> portalList() {
+        if (worldPortals == null || worldConfig == null || zonePortals == null || zoneDestinations == null) {
+            return AgentActions.super.portalList();
+        }
+        // Mondes chargés = état Bukkit -> thread principal. Les registres de portails sont des
+        // caches mémoire déjà chargés : aucun accès disque, aucun rechargement, aucune écriture.
+        return onMain(() -> done(com.lodygames.rpgquest.travel.PortalOverview.build(portalInputs())));
+    }
+
+    private com.lodygames.rpgquest.travel.PortalOverview.Inputs portalInputs() {
+        var cfg = worldConfig.get();
+        Map<String, String> loaded = new LinkedHashMap<>();
+        for (org.bukkit.World w : plugin.getServer().getWorlds()) {
+            org.bukkit.Location spawn = w.getSpawnLocation();
+            loaded.put(w.getName(), spawn.getBlockX() + ", " + spawn.getBlockY() + ", " + spawn.getBlockZ());
+        }
+        var claims = cfg.claims();
+        return new com.lodygames.rpgquest.travel.PortalOverview.Inputs(worldPortals.portals(),
+                worldPortals.sourceFiles(), worldPortals.skippedFiles(), zonePortals.portals(),
+                zonePortals.lastReport().issues(), zoneDestinations.destinations(), loaded,
+                new com.lodygames.rpgquest.travel.PortalOverview.Roles(cfg.hub().world(), cfg.travel().wildWorld(),
+                        claims.world()),
+                cfg.randomSafeArrival(),
+                new com.lodygames.rpgquest.travel.PortalOverview.ClaimArrival(claims.arrivalMinRadius(),
+                        claims.arrivalMaxRadius(), claims.arrivalSpacing(),
+                        com.lodygames.rpgquest.claim.ClaimArrivalResolver.ATTEMPTS));
+    }
+
     private com.lodygames.rpgquest.world.WorldOverview.Inputs worldInputs() {
         var cfg = worldConfig.get();
         List<org.bukkit.World> worlds = plugin.getServer().getWorlds();

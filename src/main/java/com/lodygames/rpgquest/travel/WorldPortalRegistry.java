@@ -50,6 +50,10 @@ public final class WorldPortalRegistry implements PluginService {
 
     private volatile List<WorldPortalDefinition> portals = List.of();
     private volatile Map<String, List<WorldPortalDefinition>> byWorld = Map.of();
+    /** Issue #564 : fichier d'origine de chaque portail, même ordre que {@link #portals}. */
+    private volatile List<String> sourceFiles = List.of();
+    /** Issue #564 : fichiers ignorés au dernier {@link #reload()} et la raison — lecture seule. */
+    private volatile List<PortalLoadIssue> skippedFiles = List.of();
 
     public WorldPortalRegistry(Path portalsDirectory, Logger logger) {
         this.portalsDirectory = portalsDirectory;
@@ -73,6 +77,8 @@ public final class WorldPortalRegistry implements PluginService {
 
     public void reload() {
         List<WorldPortalDefinition> loaded = new ArrayList<>();
+        List<String> origins = new ArrayList<>();
+        List<PortalLoadIssue> skipped = new ArrayList<>();
         List<Path> files;
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(portalsDirectory, this::isYamlFile)) {
             files = new ArrayList<>();
@@ -93,12 +99,16 @@ public final class WorldPortalRegistry implements PluginService {
                         yaml.getInt("max.x"), yaml.getInt("max.y"), yaml.getInt("max.z"),
                         requireString(yaml, "destination-world"), yaml.getBoolean("enabled", true),
                         parseStrategy(yaml.getString("destination-strategy", DestinationStrategy.WORLD_SPAWN.name()))));
+                origins.add(file.getFileName().toString());
             } catch (IOException | InvalidConfigurationException | IllegalArgumentException e) {
                 logger.warn("Portail simple ignoré ({}) : {}", file.getFileName(), e.getMessage());
+                skipped.add(new PortalLoadIssue(file.getFileName().toString(), String.valueOf(e.getMessage())));
             }
         }
 
         this.portals = List.copyOf(loaded);
+        this.sourceFiles = List.copyOf(origins);
+        this.skippedFiles = List.copyOf(skipped);
         Map<String, List<WorldPortalDefinition>> index = new HashMap<>();
         for (WorldPortalDefinition portal : loaded) {
             index.computeIfAbsent(portal.world(), w -> new ArrayList<>()).add(portal);
@@ -130,6 +140,16 @@ public final class WorldPortalRegistry implements PluginService {
 
     public List<WorldPortalDefinition> portals() {
         return portals;
+    }
+
+    /** Nom du fichier d'où vient chaque portail de {@link #portals()}, au même rang (issue #564). */
+    public List<String> sourceFiles() {
+        return sourceFiles;
+    }
+
+    /** Fichiers de {@code world-portals/} ignorés au dernier chargement, avec la raison (issue #564). */
+    public List<PortalLoadIssue> skippedFiles() {
+        return skippedFiles;
     }
 
     public List<WorldPortalDefinition> portalsInWorld(String world) {

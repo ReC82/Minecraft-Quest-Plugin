@@ -1532,6 +1532,14 @@ public interface AgentActions {
         return CompletableFuture.completedFuture(com.lodygames.rpgquest.world.WorldOverview.View.unavailable());
     }
 
+    /**
+     * Portails du serveur -- action {@code portal.list} (issue #564). Lecture seule ; la vue est
+     * indisponible ({@code available=false}) sur un plugin qui ne sait pas la produire.
+     */
+    default CompletableFuture<com.lodygames.rpgquest.travel.PortalOverview.View> portalList() {
+        return CompletableFuture.completedFuture(com.lodygames.rpgquest.travel.PortalOverview.View.unavailable());
+    }
+
     default CompletableFuture<MerchantCatalogView> merchantCatalogStatus() {
         return CompletableFuture.completedFuture(new MerchantCatalogView(false, List.of(), List.of(), List.of(),
                 List.of(), ""));

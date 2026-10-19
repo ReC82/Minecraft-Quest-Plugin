@@ -100,9 +100,17 @@ public final class WildEntryWarningService implements WorldPortalEntryGuard, Lis
         this.presenter = presenter;
     }
 
+    /**
+     * Ce garde s'applique-t-il à ce portail ? Même règle en jeu et dans la page Portails de
+     * PlugAdmin (issue #564) : la destination est exactement {@code travel.wild-world}.
+     */
+    public static boolean appliesTo(WorldPortalDefinition portal, String wildWorld) {
+        return portal.destinationWorld().equals(wildWorld);
+    }
+
     @Override
     public boolean allowEntry(Player player, WorldPortalDefinition portal) {
-        if (!portal.destinationWorld().equals(wildWorld.get())) {
+        if (!appliesTo(portal, wildWorld.get())) {
             return true; // pas un portail vers le Wild : jamais concerné.
         }
         UUID playerId = player.getUniqueId();

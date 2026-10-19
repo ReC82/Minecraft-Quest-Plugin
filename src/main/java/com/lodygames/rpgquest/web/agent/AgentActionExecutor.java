@@ -218,6 +218,7 @@ public final class AgentActionExecutor {
                 case PRICE_TOGGLE -> priceToggle(action);
                 case MERCHANT_CATALOG_STATUS -> merchantCatalogStatus(action);
                 case WORLD_LIST -> worldList(action);
+                case PORTAL_LIST -> portalList(action);
                 case MERCHANT_SAVE -> merchantSave(action);
                 case MERCHANT_DUPLICATE -> merchantDuplicate(action);
                 case MERCHANT_TOGGLE -> merchantToggle(action);
@@ -2006,6 +2007,23 @@ public final class AgentActionExecutor {
                     + (view.multiverse().available() ? " — Multiverse-Core " + view.multiverse().version()
                     : " — sans Multiverse-Core");
             return AgentActionOutcome.success(action.id(), String.valueOf(view.worlds().size()), summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Portails (issue #564, #228-P1) -------------------------------------------------------
+
+    /** {@code portal.list} : lecture pure, aucun portail créé, modifié, activé, aucun joueur téléporté. */
+    private CompletableFuture<AgentActionOutcome> portalList(AgentAction action) {
+        return actions.portalList().thenApply(view -> {
+            if (!view.available()) {
+                return AgentActionOutcome.failed(action.id(), "Portails indisponibles sur ce serveur.");
+            }
+            long active = view.portals().stream().filter(com.lodygames.rpgquest.travel.PortalOverview.Entry::enabled)
+                    .count();
+            String summary = view.portals().size() + " portail(s), " + active + " actif(s)"
+                    + (view.issues().isEmpty() ? "" : " — " + view.issues().size() + " fichier(s) ignoré(s)");
+            return AgentActionOutcome.success(action.id(), String.valueOf(view.portals().size()), summary,
+                    PortalListDetails.of(view));
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

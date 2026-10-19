@@ -82,9 +82,17 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
         this.bypass = bypass;
     }
 
+    /**
+     * Ce garde s'applique-t-il à ce portail ? Même règle en jeu et dans la page Portails de
+     * PlugAdmin (issue #564) : la destination est exactement {@code claims.world}.
+     */
+    public static boolean appliesTo(WorldPortalDefinition portal, String claimsWorld) {
+        return portal.destinationWorld().equals(claimsWorld);
+    }
+
     @Override
     public boolean allowEntry(Player player, WorldPortalDefinition portal) {
-        if (!portal.destinationWorld().equals(config.get().world())) {
+        if (!appliesTo(portal, config.get().world())) {
             return true; // pas un portail vers le monde des claims : jamais concerné.
         }
         UUID playerId = player.getUniqueId();

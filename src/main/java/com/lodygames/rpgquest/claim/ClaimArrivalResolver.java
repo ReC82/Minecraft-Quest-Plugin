@@ -38,7 +38,8 @@ import org.bukkit.entity.Player;
  */
 public final class ClaimArrivalResolver implements WorldPortalTeleportListener.ArrivalResolver {
 
-    private static final int ATTEMPTS = 40;
+    /** Tentatives de recherche d'une arrivée hors claim — aussi affichées par la page Portails (#564). */
+    public static final int ATTEMPTS = 40;
 
     private final ClaimService claimService;
     private final Supplier<ClaimConfig> config;

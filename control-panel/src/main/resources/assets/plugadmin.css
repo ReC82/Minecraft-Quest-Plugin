@@ -621,7 +621,8 @@ a.home-tile:hover .home-tile-cta{opacity:1}
 .pa-toast[data-toast-group="pending"]{border-left:3px solid var(--primary)}
 .pa-toast[data-toast-group="warning"]{border-left:3px solid var(--warn)}
 .pa-toast .pa-sync{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;color:var(--bs-secondary-color,#555)}
-.pa-toast .pa-sync-retry{margin-top:6px}
+.pa-toast .pa-sync-text{flex:1 1 0;min-width:0}
+.pa-toast .pa-sync-actions{flex-basis:100%;margin-top:6px}
 
 /* -- Cloche + panneau off-canvas de notifications (fix #93 bug 1) -- */
 .notif-center{position:relative;display:inline-flex}

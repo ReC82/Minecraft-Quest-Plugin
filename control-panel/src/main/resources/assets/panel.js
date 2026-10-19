@@ -137,12 +137,15 @@
     return node;
   }
 
+  /** Bouton « Réessayer », sur sa propre ligne sous le message. */
   function retryButton() {
-    var button = mkEl("button", "btn btn-sm btn-outline-primary pa-sync-retry", "Réessayer");
+    var row = mkEl("div", "pa-sync-actions");
+    var button = mkEl("button", "btn secondary sm pa-sync-retry", "Réessayer");
     button.setAttribute("type", "button");
     button.setAttribute("data-pa-sync-retry", "");
     button.addEventListener("click", function () { runReload(); });
-    return button;
+    row.appendChild(button);
+    return row;
   }
 
   /** Ligne d'état ajoutée sous le résultat d'un toast d'action : "running" ou "failed". */
@@ -162,9 +165,9 @@
       var spin = mkEl("span", "spinner-border spinner-border-sm");
       spin.setAttribute("aria-hidden", "true");
       line.appendChild(spin);
-      line.appendChild(mkEl("span", null, "Modification enregistrée. Mise à jour de l'affichage en cours…"));
+      line.appendChild(mkEl("span", "pa-sync-text", "Modification enregistrée. Mise à jour de l'affichage en cours…"));
     } else {
-      line.appendChild(mkEl("span", null,
+      line.appendChild(mkEl("span", "pa-sync-text",
         "Mise à jour de l'affichage interrompue : le panel ne répond plus. La modification reste enregistrée."));
       line.appendChild(retryButton());
     }

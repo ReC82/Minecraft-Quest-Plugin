@@ -79,6 +79,15 @@
 
 **Questions stratégiques à arbitrer pour mondes et portails :** Q1 gestion Multiverse des nouveaux mondes ; Q2 convergence des deux moteurs vers world-portals ; Q3 lien portail → emplacement plutôt qu'un champ usage ; Q4 autorisation et nom du monde de test DEV ; Q5 politique des portails vanilla Nether/End ; Q6 exclusion de la suppression des fichiers de monde ; Q7 séparation entre gestion des mondes et affectation des rôles Hub/Wild/Claims. Ne pas adopter ces choix implicitement.
 
+## Livraisons du 19 octobre — capacités / mondes
+
+| Ticket / test | État DEV | Test et réserves |
+|---|---|---|
+| [#542](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/542) · **TC-361** | **Socle livré**, PR #575 merge `e4f7432`, JAR DEV, CI verte ; **validation en jeu en attente** | Moteur composable pour 5 capacités existantes, 5 max par mob, interdiction des doublons, nettoyages, politiques de zones et compatibilité YAML. Vérifier 8 profils/0 rejet puis 2 **nouveaux profils temporaires désactivés**, division/rage, exclusions créatif/PNJ, refus doublon ; ne pas écraser de profils actuels. **Constat préalable important** : 4 profils DEV `creeper_pig`, `red_creeper`, `golden_creeper`, `splitting_zombie` sont privés de leur bloc `abilities` déjà avant #542 ; **restauration à décider**, ne pas attribuer la disparition au patch ni corriger sans examen des versions/sauvegardes. #543 bloqué jusqu'au retour propriétaire. |
+| [#560](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/560) · **TC-362** | **Page `/worlds` lecture seule livrée**, PR #577 merge `294514e`, JAR+PlugAdmin DEV, CI verte ; **validation UI en attente** | PlugAdmin → Monde → Mondes : **6 mondes chargés** constatés par `world.list` ; `wild` RPGQuest/Wild, `world_hub` Multiverse/Hub avec 2 portails sortants, `claims` Multiverse/Claims, `world`/Nether/End gérés par serveur. Vérifier cartes, états/gestionnaires/éléments liés, filtres mobile/desktop, aucun contrôle mutatif. **Aucun monde créé**, `lody_test_flat` absent. #564 déjà autorisé, lecture seule ; #561–#563 et #565+ pas autorisés. |
+
+**Séquence** : le chat de tests peut valider TC-362 sans mutation (simple rafraîchissement). TC-361 comporte des profils de démonstration et ne doit pas modifier les 8 profils courants. Conserver les validations antérieures et ne pas fermer les tickets avant preuve propriétaire.
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

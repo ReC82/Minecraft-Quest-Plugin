@@ -59,6 +59,8 @@ public final class AgentActionExecutor {
      * plafond de 64 Kio de {@code POST /agent/v1/actions/{id}/result}, marge pour l'enveloppe JSON.
      */
     private static final int MAX_EXPORT_BYTES = 56 * 1024;
+    /** Issue #542 : instances non chargées détaillées par profil dans {@code mob.list} (le total reste exact). */
+    private static final int MAX_UNLOADED_INSTANCES_LISTED = 5;
 
     private final PlayerDirectory players;
     private final PlayerVariables variables;
@@ -790,6 +792,23 @@ public final class AgentActionExecutor {
                     row.put("loadedPopulation", pop.loaded());
                     row.put("testPopulation", pop.test());
                     row.put("communityActive", pop.communityActive());
+                    // Issue #542 : où sont les instances comptées mais pas chargées, et combien sont introuvables.
+                    row.put("unloadedPopulation", pop.unloaded().size());
+                    row.put("unknownPopulation", pop.unknown());
+                    List<Map<String, Object>> unloaded = new ArrayList<>();
+                    for (AgentActions.MobUnloadedInstanceView u : pop.unloaded().stream()
+                            .limit(MAX_UNLOADED_INSTANCES_LISTED).toList()) {
+                        Map<String, Object> at = new LinkedHashMap<>();
+                        at.put("uuid", u.uuid());
+                        at.put("world", u.world());
+                        at.put("x", u.x());
+                        at.put("y", u.y());
+                        at.put("z", u.z());
+                        at.put("test", u.test());
+                        at.put("since", u.since());
+                        unloaded.add(at);
+                    }
+                    row.put("unloadedInstances", unloaded);
                     testInstances += pop.test();
                 }
                 row.put("enragedHealthFraction", p.enragedHealthFraction());

@@ -38,8 +38,10 @@ import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityRemoveEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.EntitiesLoadEvent;
+import org.bukkit.event.world.EntitiesUnloadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
@@ -64,6 +66,13 @@ import org.slf4j.Logger;
  * redémarrage, la population en mémoire repart à zéro ; elle est reconstruite
  * au fil de l'eau via {@link #onChunkLoad} qui redécouvre les entités déjà
  * taguées PDC dans les chunks qui se chargent.</p>
+ *
+ * <p><strong>Issue #542 (compteurs)</strong> : une variante retirée du monde <em>sans</em> mourir
+ * ({@code remove()} d'un autre plugin, transformation, despawn forcé…) quitte aussi la population
+ * ({@link #onRemove}) — sinon son UUID y restait jusqu'au redémarrage et le compteur du profil ne
+ * redescendait jamais. Au déchargement de sa zone, sa dernière position est retenue en mémoire
+ * ({@link #onEntitiesUnload}) pour que PlugAdmin puisse dire <em>où</em> est une instance comptée
+ * mais pas chargée, plutôt qu'un « 1 en jeu » inexplicable.</p>
  */
 public final class SpecialMobService implements PluginService, Listener {
 
@@ -92,6 +101,7 @@ public final class SpecialMobService implements PluginService, Listener {
     private final NamespacedKey testInstanceKey;
 
     private final Map<NamespacedKey, Set<UUID>> population = new ConcurrentHashMap<>();
+    private final Map<UUID, UnloadedInstance> unloadedInstances = new ConcurrentHashMap<>();
     private final Map<NamespacedKey, LongAdder> spawnCounts = new ConcurrentHashMap<>();
     private final Map<String, LongAdder> abilityTriggerCounts = new ConcurrentHashMap<>();
     private final Map<UUID, BossBar> bossBars = new ConcurrentHashMap<>();
@@ -148,6 +158,7 @@ public final class SpecialMobService implements PluginService, Listener {
         bossBars.clear();
         bossBarViewers.clear();
         population.clear();
+        unloadedInstances.clear();
     }
 
     public NamespacedKey pdcKey() {
@@ -220,11 +231,59 @@ public final class SpecialMobService implements PluginService, Listener {
         for (Entity entity : entities) {
             specialMobId(entity).ifPresent(id -> {
                 trackAlive(id, entity.getUniqueId());
+                unloadedInstances.remove(entity.getUniqueId());
                 registry.find(id)
                         .filter(def -> def.category() == MobCategory.BOSS && entity instanceof LivingEntity)
                         .ifPresent(def -> ensureBossBar((LivingEntity) entity, def));
             });
         }
+    }
+
+    /**
+     * Issue #542 : une variante suivie dont la zone se décharge reste comptée (elle existe toujours,
+     * enregistrée dans son chunk) ; on retient sa dernière position pour pouvoir la désigner. Aucune
+     * lecture de chunk : uniquement les entités que le serveur décharge lui-même.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onEntitiesUnload(EntitiesUnloadEvent event) {
+        for (Entity entity : event.getEntities()) {
+            specialMobId(entity).ifPresent(id -> {
+                UUID entityId = entity.getUniqueId();
+                if (!population.getOrDefault(id, Set.of()).contains(entityId)) {
+                    return;
+                }
+                Location at = entity.getLocation();
+                unloadedInstances.put(entityId, new UnloadedInstance(entityId, id.asString(),
+                        at.getWorld() == null ? "?" : at.getWorld().getName(),
+                        at.getBlockX(), at.getBlockY(), at.getBlockZ(), isTestInstance(entity),
+                        java.time.Instant.now()));
+            });
+        }
+    }
+
+    /**
+     * Issue #542 : toute sortie définitive du monde décompte la variante, mort ou non. Le déchargement
+     * de zone ({@code UNLOAD}) n'en est pas une : l'entité existe toujours et sera retrouvée au
+     * rechargement. Une sortie autre que la mort est journalisée : c'est elle qui laissait un compteur
+     * bloqué.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onRemove(EntityRemoveEvent event) {
+        EntityRemoveEvent.Cause cause = event.getCause();
+        if (cause == EntityRemoveEvent.Cause.UNLOAD || cause == EntityRemoveEvent.Cause.PLAYER_QUIT) {
+            return;
+        }
+        Entity entity = event.getEntity();
+        specialMobId(entity).ifPresent(id -> {
+            UUID entityId = entity.getUniqueId();
+            if (cause != EntityRemoveEvent.Cause.DEATH
+                    && population.getOrDefault(id, Set.of()).contains(entityId)) {
+                logger.info("Mob spécial « {} » ({}) retiré du monde sans mourir (cause {}) : décompté.",
+                        id, entityId, cause);
+            }
+            untrack(id, entityId);
+            removeBossBar(entityId);
+        });
     }
 
     /**
@@ -576,6 +635,7 @@ public final class SpecialMobService implements PluginService, Listener {
         if (alive != null) {
             alive.remove(entityId);
         }
+        unloadedInstances.remove(entityId);
     }
 
     public int populationOf(NamespacedKey definitionId) {
@@ -588,8 +648,33 @@ public final class SpecialMobService implements PluginService, Listener {
      * compris celles dont la zone s'est déchargée depuis ; {@code loaded} = celles réellement présentes
      * dans une zone chargée en ce moment ; {@code test} = parmi elles, les instances de test que
      * {@link #clearTestInstances(java.util.function.Predicate)} supprimerait avec le même {@code keep}.
+     *
+     * <p>Issue #542 : {@code unloaded} = suivies mais pas chargées, avec leur dernière position connue
+     * (zone déchargée depuis) ; {@link #unknown()} = suivies, ni chargées ni vues se décharger — leur
+     * état réel n'est pas connu (ne devrait plus arriver ; jamais remis à zéro pour le masquer).</p>
      */
-    public record Population(int tracked, int loaded, int test) {
+    public record Population(int tracked, int loaded, int test, List<UnloadedInstance> unloaded) {
+
+        public Population {
+            unloaded = List.copyOf(unloaded);
+        }
+
+        public Population(int tracked, int loaded, int test) {
+            this(tracked, loaded, test, List.of());
+        }
+
+        public int unknown() {
+            return Math.max(0, tracked - loaded - unloaded.size());
+        }
+    }
+
+    /**
+     * Issue #542 : variante comptée dont la zone s'est déchargée — UUID, profil, monde, position du
+     * bloc et marquage test au moment du déchargement. Mémoire seulement : repart à vide au redémarrage
+     * (comme la population, reconstruite au rechargement des zones).
+     */
+    public record UnloadedInstance(UUID entityId, String definitionId, String world, int x, int y, int z,
+                                   boolean test, java.time.Instant since) {
     }
 
     /** Thread principal uniquement ({@link Bukkit#getEntity}). */
@@ -597,9 +682,14 @@ public final class SpecialMobService implements PluginService, Listener {
         Set<UUID> ids = aliveEntityIds(definitionId);
         int loaded = 0;
         int test = 0;
+        List<UnloadedInstance> unloaded = new ArrayList<>();
         for (UUID id : ids) {
             Entity entity = Bukkit.getEntity(id);
             if (entity == null || !entity.isValid()) {
+                UnloadedInstance last = unloadedInstances.get(id);
+                if (last != null) {
+                    unloaded.add(last);
+                }
                 continue;
             }
             loaded++;
@@ -607,7 +697,7 @@ public final class SpecialMobService implements PluginService, Listener {
                 test++;
             }
         }
-        return new Population(ids.size(), loaded, test);
+        return new Population(ids.size(), loaded, test, unloaded);
     }
 
     /** Copie défensive des identifiants d'entités vivantes pour une définition (utilisé par les sweeps de capacités). */

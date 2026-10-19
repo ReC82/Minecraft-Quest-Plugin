@@ -919,6 +919,15 @@ public final class AgentPages {
         return plainWhen(millis);
     }
 
+    /** Instant ISO-8601 du plugin → même forme que {@link #plainWhen} ; illisible → tel quel. */
+    private static String isoWhen(String iso) {
+        try {
+            return plainWhen(java.time.Instant.parse(iso).toEpochMilli());
+        } catch (java.time.format.DateTimeParseException e) {
+            return iso;
+        }
+    }
+
     private static String plainWhen(Long millis) {
         if (millis == null || millis <= 0) {
             return "jamais";
@@ -10542,15 +10551,24 @@ public final class AgentPages {
             }
             sb.append("</div>");
         }
-        sb.append(mobFold("Comment lire les compteurs « en jeu »", "<p><strong>En jeu</strong> : créatures de ce "
-                + "profil repérées par le serveur <strong>depuis son dernier démarrage</strong> (apparues, ou "
-                + "retrouvées quand leur zone s'est chargée) et pas encore mortes. Une créature restée dans une zone "
-                + "que personne n'a rechargée depuis le redémarrage n'y figure pas encore : elle existe toujours et "
-                + "sera comptée dès que sa zone se chargera.</p><p><strong>Boss communautaire actif</strong> : lu dans "
-                + "l'état enregistré des boss communautaires, zones non chargées comprises. C'est pourquoi un boss "
-                + "peut être « actif » alors que le profil affiche « 0 en jeu » : il attend dans une zone non "
-                + "chargée.</p><p><strong>Plafond</strong> d'un profil : il limite les apparitions naturelles ; une "
-                + "apparition de test ne le respecte pas, et peut donc le dépasser.</p>"));
+        sb.append(mobFold("Comment lire les compteurs « en jeu »", "<p>Chaque profil compte les créatures repérées "
+                + "par le serveur <strong>depuis son dernier démarrage</strong> (apparues, ou retrouvées quand leur "
+                + "zone s'est chargée) et pas encore mortes ni retirées, en trois parts :</p><ul>"
+                + "<li><strong>En zone chargée</strong> : présentes maintenant près d'un joueur. C'est le seul "
+                + "périmètre de « instances de test » et de « Nettoyer les instances de test ».</li>"
+                + "<li><strong>En zone non chargée</strong> : toujours en jeu, mais leur zone s'est déchargée "
+                + "(plus aucun joueur à proximité). Leur dernière position est donnée dans la fiche du profil ; "
+                + "elles reviennent « en zone chargée » quand un joueur s'en approche.</li>"
+                + "<li><strong>Introuvables</strong> : comptées, mais ni chargées ni vues se décharger. Ne devrait "
+                + "pas arriver : à signaler.</li></ul>"
+                + "<p>Une créature restée dans une zone que personne n'a rechargée depuis le redémarrage n'est "
+                + "comptée nulle part : elle existe toujours et réapparaît dans le compte dès que sa zone se "
+                + "charge. Désactiver un profil ne retire pas ses créatures déjà en jeu.</p>"
+                + "<p><strong>Boss communautaire actif</strong> : lu dans l'état enregistré des boss communautaires, "
+                + "zones non chargées comprises. C'est pourquoi un boss peut être « actif » alors que le profil "
+                + "affiche « 0 en zone chargée » : il attend dans une zone non chargée.</p><p><strong>Plafond"
+                + "</strong> d'un profil : il limite les apparitions naturelles ; une apparition de test ne le "
+                + "respecte pas, et peut donc le dépasser.</p>"));
         if (canTest) {
             sb.append(mobTestClearCard(session, agentId, d, profiles));
         }
@@ -10577,9 +10595,11 @@ public final class AgentPages {
         }
         String keeps = "Les mobs spéciaux apparus naturellement, les boss réels et les boss communautaires de test "
                 + "(retirés depuis l'onglet « Boss communautaires ») ne sont jamais touchés.";
+        // Issue #542 : une instance de test en zone non chargée est comptée dans sa fiche, pas ici — le dire.
+        String outOfReach = unloadedTestNote(profiles);
         if (total != null && asLong(total) == 0) {
-            return sb.append("<p class=\"muted mb-0\">Aucune instance de test en jeu au dernier relevé "
-                    + "(« Rafraîchir » pour le mettre à jour).</p></div>").toString();
+            return sb.append("<p class=\"muted mb-0\">Aucune instance de test en zone chargée au dernier relevé "
+                    + "(« Rafraîchir » pour le mettre à jour).").append(outOfReach).append("</p></div>").toString();
         }
         String scope = total == null
                 ? "Nombre inconnu : le plugin installé ne le transmet pas encore. Toutes les instances de test "
@@ -10587,7 +10607,7 @@ public final class AgentPages {
                 : asLong(total) + " instance(s) de test en zone chargée au dernier relevé : " + perProfile + ".";
         sb.append("<p class=\"mb-1\">").append(total == null ? Http.esc(scope) : scope).append("</p>")
                 .append("<p class=\"muted small\">").append(keeps)
-                .append(" Une instance dans une zone non chargée reste en place.</p>");
+                .append(" Une instance dans une zone non chargée reste en place.").append(outOfReach).append("</p>");
         sb.append("<form method=\"post\" action=\"/agents/action\" class=\"mob-danger-form\">")
                 .append(hiddenActionFields(session, agentId, "mob.test.clear", MOBS_PATH))
                 .append(confirmBox(total == null ? "Je confirme : supprimer les instances de test"
@@ -10595,6 +10615,24 @@ public final class AgentPages {
                 .append("<button class=\"btn danger sm\" type=\"submit\">").append(Icons.icon("trash"))
                 .append("Nettoyer les instances de test</button></form>");
         return sb.append("</div>").toString();
+    }
+
+    /** Issue #542 : instances de test listées hors zone chargée (hors de portée du nettoyage), par profil. */
+    private static String unloadedTestNote(List<Object> profiles) {
+        StringBuilder names = new StringBuilder();
+        long count = 0;
+        for (Object o : profiles) {
+            Map<String, Object> p = asMap(o);
+            long n = asList(p.get("unloadedInstances")).stream()
+                    .filter(u -> Boolean.TRUE.equals(asMap(u).get("test"))).count();
+            if (n > 0) {
+                count += n;
+                names.append(names.isEmpty() ? "" : ", ")
+                        .append(Http.esc(MiniText.plain(str(p.get("displayName"))))).append(" × ").append(n);
+            }
+        }
+        return count == 0 ? "" : " " + count + " instance(s) de test en zone non chargée (" + names
+                + ") : hors de portée du nettoyage, position dans la fiche du profil.";
     }
 
     /** Vue « Apparitions des mobs spéciaux » : interrupteur global, chance, plafond, profils tirés. */
@@ -10633,7 +10671,7 @@ public final class AgentPages {
                         .append(enabled ? "" : " <span class=\"badge text-bg-secondary\">désactivé</span>")
                         .append("</td><td>").append(Http.esc(str(p.get("spawnChance")))).append("</td><td>")
                         .append(max.isBlank() || "null".equals(max) ? "aucun" : Http.esc(max)).append("</td><td>")
-                        .append(Http.esc(str(p.get("alivePopulation")))).append("</td></tr>");
+                        .append(Http.esc(mobCountsLabel(p))).append("</td></tr>");
             }
             sb.append(Ui.tableClose());
             sb.append("<p class=\"muted small\">Chance, plafond et zones se règlent dans la fiche du profil "
@@ -12834,6 +12872,7 @@ public final class AgentPages {
         if (!abilities.isEmpty()) {
             sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Capacités</span> ").append(join(abilities)).append("</p>");
         }
+        sb.append(mobUnloadedInstances(m));
 
         // Issue #169 : une action principale (Modifier), des secondaires discrètes, l'activation à part.
         sb.append("<div class=\"mob-actions\">");
@@ -12880,11 +12919,29 @@ public final class AgentPages {
      * Issue #169 : chaque compteur dit son périmètre — « en jeu » (repérés depuis le démarrage), dont
      * les instances de test, et pour un boss communautaire l'état enregistré (zones non chargées
      * comprises). Un plugin antérieur ne transmet que le premier : on n'invente pas les autres.
+     *
+     * <p>Issue #542 : quand le plugin donne le détail, « en jeu » est scindé — en zone chargée (le même
+     * périmètre que « instances de test »), en zone non chargée (comptés, pas atteignables), introuvables
+     * (comptés, état inconnu). Plus de « 1 en jeu » contre « 0 instance de test » sans explication.</p>
      */
     static String mobCountsLabel(Map<String, Object> m) {
-        StringBuilder sb = new StringBuilder(str(m.get("alivePopulation"))).append(" en jeu");
-        if (m.get("testPopulation") != null && asLong(m.get("testPopulation")) > 0) {
-            sb.append(" (dont ").append(asLong(m.get("testPopulation"))).append(" de test)");
+        StringBuilder sb;
+        if (m.get("loadedPopulation") != null && m.get("unloadedPopulation") != null) {
+            sb = new StringBuilder().append(asLong(m.get("loadedPopulation"))).append(" en zone chargée");
+            if (asLong(m.get("testPopulation")) > 0) {
+                sb.append(" (dont ").append(asLong(m.get("testPopulation"))).append(" de test)");
+            }
+            if (asLong(m.get("unloadedPopulation")) > 0) {
+                sb.append(" · ").append(asLong(m.get("unloadedPopulation"))).append(" en zone non chargée");
+            }
+            if (asLong(m.get("unknownPopulation")) > 0) {
+                sb.append(" · ").append(asLong(m.get("unknownPopulation"))).append(" introuvable(s)");
+            }
+        } else {
+            sb = new StringBuilder(str(m.get("alivePopulation"))).append(" en jeu");
+            if (m.get("testPopulation") != null && asLong(m.get("testPopulation")) > 0) {
+                sb.append(" (dont ").append(asLong(m.get("testPopulation"))).append(" de test)");
+            }
         }
         if (m.get("communityActive") != null && asLong(m.get("communityActive")) > 0) {
             sb.append(" · ").append(asLong(m.get("communityActive"))).append(" boss communautaire actif");
@@ -12892,6 +12949,51 @@ public final class AgentPages {
                 sb.append(" (zone non chargée)");
             }
         }
+        return sb.toString();
+    }
+
+    /**
+     * Issue #542 : les instances comptées mais hors zone chargée, désignées précisément (UUID, monde,
+     * position au déchargement, test ou non). Lecture seule : rien ne les charge ni ne les supprime ;
+     * « Nettoyer les instances de test » ne les atteint pas tant que leur zone n'est pas rechargée.
+     */
+    static String mobUnloadedInstances(Map<String, Object> m) {
+        long unloaded = asLong(m.get("unloadedPopulation"));
+        long unknown = asLong(m.get("unknownPopulation"));
+        if (unloaded <= 0 && unknown <= 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"mob-unloaded\"><p class=\"meta-line\">"
+                + "<span class=\"meta-k\">Hors zone chargée</span> ");
+        List<Object> listed = asList(m.get("unloadedInstances"));
+        if (unloaded > 0) {
+            sb.append(unloaded).append(" instance(s) comptée(s) dont la zone s'est déchargée — elles existent "
+                    + "toujours et reviennent dans « en zone chargée » quand un joueur s'en approche.");
+        }
+        if (unknown > 0) {
+            sb.append(unloaded > 0 ? " " : "").append(unknown).append(" introuvable(s) : comptée(s) depuis le "
+                    + "démarrage, mais ni chargée(s) ni vue(s) se décharger — état réel inconnu, à signaler.");
+        }
+        sb.append("</p>");
+        if (!listed.isEmpty()) {
+            sb.append("<ul class=\"small mb-1\">");
+            for (Object o : listed) {
+                Map<String, Object> u = asMap(o);
+                sb.append("<li>").append(Boolean.TRUE.equals(u.get("test")) ? "instance de test" : "instance")
+                        .append(" <code>").append(Http.esc(str(u.get("uuid")))).append("</code> — monde <code>")
+                        .append(Http.esc(str(u.get("world")))).append("</code>, x ").append(asLong(u.get("x")))
+                        .append(" y ").append(asLong(u.get("y"))).append(" z ").append(asLong(u.get("z")))
+                        .append(" <span class=\"muted\">(déchargée le ")
+                        .append(Http.esc(isoWhen(str(u.get("since"))))).append(")</span></li>");
+            }
+            sb.append("</ul>");
+            if (listed.size() < unloaded) {
+                sb.append("<p class=\"muted small mb-1\">Liste limitée aux ").append(listed.size())
+                        .append(" premières.</p>");
+            }
+        }
+        sb.append("<p class=\"field-help\">Positions retenues depuis le dernier démarrage du serveur seulement. "
+                + "Désactiver un profil ne retire pas ses entités déjà en jeu.</p></div>");
         return sb.toString();
     }
 

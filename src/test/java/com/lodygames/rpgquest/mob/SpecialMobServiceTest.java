@@ -25,6 +25,9 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityRemoveEvent;
+import org.bukkit.event.world.EntitiesUnloadEvent;
+import org.bukkit.persistence.PersistentDataType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -435,6 +438,118 @@ class SpecialMobServiceTest {
         assertTrue(communityTest.isValid(), "le boss communautaire de test reste (verrou)");
         assertTrue(vanilla.isValid(), "un mob ordinaire n'est jamais touché");
         assertEquals(new SpecialMobService.Population(2, 2, 0), service.populationBreakdown(SIMPLE_ID, community));
+    }
+
+    // ---- Compteurs : mort, retrait, déchargement, redémarrage (issue #542) ---------------------
+
+    /**
+     * Comme {@code ExplosiveOnAttackExecutorTest} : identité PDC (+ marquage test) puis redécouverte,
+     * jamais {@code apply()} ({@code LivingEntityMock#setRemoveWhenFarAway} non implémenté).
+     */
+    private LivingEntity spawnTagged(SpecialMobService service, Location at, boolean test) {
+        LivingEntity entity = (LivingEntity) world.spawnEntity(at, EntityType.ZOMBIE);
+        entity.getPersistentDataContainer().set(service.pdcKey(), PersistentDataType.STRING, SIMPLE_ID.asString());
+        if (test) {
+            entity.getPersistentDataContainer().set(new NamespacedKey(plugin, SpecialMobService.TEST_INSTANCE_KEY_NAME),
+                    PersistentDataType.BYTE, (byte) 1);
+        }
+        service.onEntitiesLoad(new org.bukkit.event.world.EntitiesLoadEvent(entity.getLocation().getChunk(),
+                List.of(entity)));
+        return entity;
+    }
+
+    @Test
+    void lethalDamageLikeTheExplosiveAbilityRemovesTheInstanceFromEveryCounter() {
+        // ExplosiveOnAttackExecutor tue la source par entity.damage(vie + 1) après l'explosion.
+        SpecialMobService service = newService(fixedRandom(0.0));
+        service.start();
+        LivingEntity test = spawnTagged(service, new Location(world, 0, 64, 0), true);
+        assertEquals(new SpecialMobService.Population(1, 1, 1), service.populationBreakdown(SIMPLE_ID, id -> false));
+
+        test.damage(test.getHealth() + 1.0);
+
+        assertTrue(test.isDead());
+        assertEquals(new SpecialMobService.Population(0, 0, 0), service.populationBreakdown(SIMPLE_ID, id -> false));
+        assertEquals(0, service.populationOf(SIMPLE_ID));
+    }
+
+    @Test
+    void removalWithoutDeathUntracksButAZoneUnloadDoesNot() {
+        SpecialMobService service = newService(fixedRandom(0.0));
+        LivingEntity kept = spawnTagged(service, new Location(world, 0, 64, 0), false);
+        LivingEntity removed = spawnTagged(service, new Location(world, 2, 64, 0), false);
+
+        service.onRemove(new EntityRemoveEvent(kept, EntityRemoveEvent.Cause.UNLOAD));
+        service.onRemove(new EntityRemoveEvent(removed, EntityRemoveEvent.Cause.PLUGIN));
+
+        assertEquals(java.util.Set.of(kept.getUniqueId()), service.aliveEntityIds(SIMPLE_ID),
+                "un déchargement garde l'instance ; un retrait définitif sans mort la décompte");
+    }
+
+    @Test
+    void unloadedInstanceKeepsItsLastPositionUntilItsZoneReloads() {
+        SpecialMobService service = newService(fixedRandom(0.0));
+        LivingEntity test = spawnTagged(service, new Location(world, 40.5, 70, -12.5), true);
+
+        service.onEntitiesUnload(new EntitiesUnloadEvent(test.getLocation().getChunk(), List.of(test)));
+        service.onRemove(new EntityRemoveEvent(test, EntityRemoveEvent.Cause.UNLOAD));
+        test.remove(); // ce que le serveur fait au déchargement : l'entité n'est plus atteignable
+
+        SpecialMobService.Population away = service.populationBreakdown(SIMPLE_ID, id -> false);
+        assertEquals(1, away.tracked());
+        assertEquals(0, away.loaded());
+        assertEquals(0, away.test(), "« Nettoyer » n'atteint pas une zone non chargée");
+        assertEquals(0, away.unknown());
+        SpecialMobService.UnloadedInstance at = away.unloaded().get(0);
+        assertEquals(test.getUniqueId(), at.entityId());
+        assertEquals("world", at.world());
+        assertEquals(40, at.x());
+        assertEquals(70, at.y());
+        assertEquals(-13, at.z());
+        assertTrue(at.test());
+
+    }
+
+    @Test
+    void reloadingTheZoneClearsTheLastKnownPosition() {
+        SpecialMobService service = newService(fixedRandom(0.0));
+        LivingEntity test = spawnTagged(service, new Location(world, 0, 64, 0), true);
+        service.onEntitiesUnload(new EntitiesUnloadEvent(test.getLocation().getChunk(), List.of(test)));
+        service.onEntitiesLoad(new org.bukkit.event.world.EntitiesLoadEvent(test.getLocation().getChunk(), List.of(test)));
+
+        test.remove(); // disparue ensuite sans événement : plus de position périmée, état inconnu
+
+        SpecialMobService.Population p = service.populationBreakdown(SIMPLE_ID, id -> false);
+        assertTrue(p.unloaded().isEmpty(), "rechargée : la position du déchargement est oubliée");
+        assertEquals(1, p.unknown());
+    }
+
+    @Test
+    void restartForgetsEverythingAndReloadingTheZoneCountsTheInstanceOnceAgain() {
+        SpecialMobService service = newService(fixedRandom(0.0));
+        LivingEntity test = spawnTagged(service, new Location(world, 0, 64, 0), true);
+        service.onEntitiesUnload(new EntitiesUnloadEvent(test.getLocation().getChunk(), List.of(test)));
+
+        service.stop();
+        assertEquals(new SpecialMobService.Population(0, 0, 0), service.populationBreakdown(SIMPLE_ID, id -> false));
+
+        service.onEntitiesLoad(new org.bukkit.event.world.EntitiesLoadEvent(test.getLocation().getChunk(), List.of(test)));
+        service.onEntitiesLoad(new org.bukkit.event.world.EntitiesLoadEvent(test.getLocation().getChunk(), List.of(test)));
+        assertEquals(new SpecialMobService.Population(1, 1, 1), service.populationBreakdown(SIMPLE_ID, id -> false),
+                "PDC relue au chargement, jamais comptée deux fois");
+    }
+
+    @Test
+    void anInstanceGoneWithoutAnyEventIsReportedUnknownNeverHidden() {
+        SpecialMobService service = newService(fixedRandom(0.0));
+        LivingEntity test = spawnTagged(service, new Location(world, 0, 64, 0), true);
+
+        test.remove(); // listener non enregistré : aucun événement ne parvient au service
+
+        SpecialMobService.Population p = service.populationBreakdown(SIMPLE_ID, id -> false);
+        assertEquals(1, p.tracked());
+        assertEquals(0, p.loaded());
+        assertEquals(1, p.unknown(), "écart dit tel quel, jamais remis à zéro");
     }
 
     // ---- Reload ---------------------------------------------------------------------------

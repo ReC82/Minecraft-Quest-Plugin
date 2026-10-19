@@ -5554,11 +5554,16 @@ vue d'où elle part) :
 Un résumé compact (profils, tirage, instances de test, boss communautaires actifs) et les éventuels
 **profils rejetés** restent visibles sur les trois vues.
 
-**Compteurs** : « N en jeu » = créatures du profil repérées depuis le **dernier démarrage** du
-serveur (apparues ou retrouvées au chargement de leur zone), pas encore mortes ; « dont X de test » =
-instances de test chargées que le nettoyage supprimerait ; « boss communautaire actif » = état
-**enregistré** (`state/community-bosses.yml`), zones non chargées comprises. Un boss actif peut donc
-afficher « 0 en jeu » tant que sa zone n'a pas été rechargée depuis le redémarrage.
+**Compteurs** (issue #542) : les créatures du profil repérées depuis le **dernier démarrage** du
+serveur (apparues ou retrouvées au chargement de leur zone), pas encore mortes ni retirées, en trois
+parts — « X en zone chargée » (dont « T de test » : celles que le nettoyage supprimerait, même périmètre
+que le résumé « instances de test »), « Y en zone non chargée » (toujours en jeu, zone déchargée depuis :
+la fiche du profil donne UUID, monde, position au déchargement et marquage test), « Z introuvable(s) »
+(comptées mais ni chargées ni vues se décharger : à signaler). Une créature retirée du monde sans mourir
+(autre plugin, transformation…) est décomptée et journalisée. Désactiver un profil ne retire pas ses
+créatures déjà en jeu. « Boss communautaire actif » = état **enregistré** (`state/community-bosses.yml`),
+zones non chargées comprises : un boss actif peut afficher « 0 en zone chargée » tant que sa zone n'a pas
+été rechargée depuis le redémarrage. Un plugin antérieur n'envoie que le total : « N en jeu ».
 
 `mob.test.clear` ne supprime que les instances de test chargées, **jamais** un mob naturel, un boss
 réel ni un boss communautaire de test (celui-ci se retire depuis l'onglet « Boss communautaires »,

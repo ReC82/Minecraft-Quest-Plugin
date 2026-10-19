@@ -5214,8 +5214,13 @@ public final class BukkitAgentActions implements AgentActions {
             List<MobPopulationView> populations = new ArrayList<>();
             for (SpecialMobDefinition def : report.loaded()) {
                 SpecialMobService.Population p = mobService.populationBreakdown(def.id(), community);
+                List<MobUnloadedInstanceView> unloaded = p.unloaded().stream()
+                        .map(u -> new MobUnloadedInstanceView(u.entityId().toString(), u.world(), u.x(), u.y(), u.z(),
+                                u.test(), u.since().toString()))
+                        .toList();
                 populations.add(new MobPopulationView(def.id().asString(), p.tracked(), p.loaded(), p.test(),
-                        communityBosses == null ? -1 : communityBosses.activeInstancesOf(def.id().asString())));
+                        communityBosses == null ? -1 : communityBosses.activeInstancesOf(def.id().asString()),
+                        unloaded, p.unknown()));
             }
             return done(new MobCatalogView(List.copyOf(profiles),
                     new MobSpawnSettingsView(settings.enabled(), settings.chance(), settings.maxSimultaneousSpecial()),

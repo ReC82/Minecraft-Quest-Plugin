@@ -6771,6 +6771,28 @@ Prérequis : JAR **et** PlugAdmin issus de la PR `fix/560-mondes-noms-joueurs` s
 3.  Si la carte `wild` affiche 0 alors que vous êtes dans le Wild : noter l'heure, la ligne affichée (avec ou
     sans « attention ») et l'état de la page **Joueurs** rafraîchie dans la même minute, et le signaler dans #560.
 
+### TC-361-ter — Compteurs « en jeu » : zone chargée, zone non chargée, introuvables (issue #542, retour du 19/10, PENDING MANUAL VALIDATION)
+
+Contexte : le 19/10, `zz542_cochon` affichait « 1 en jeu » alors que le résumé et l'encadré « Instances
+de test » disaient 0. Les deux compteurs n'avaient pas le même périmètre (repérés depuis le démarrage,
+zones déchargées comprises / instances de test en zone chargée) et rien ne le disait. Prérequis : JAR +
+PlugAdmin du correctif `fix/542-compteurs-instances` sur **DEV**. **Revalidation ciblée des compteurs
+seulement** ; ne pas refaire TC-361-bis ni TC-361. Ne pas réactiver `zz542_*`, ne pas toucher au boss
+communautaire réel.
+
+1.  PlugAdmin → Mobs spéciaux & boss → **Rafraîchir**. **Attendu** : chaque fiche affiche « X en zone
+    chargée », suivi s'il y a lieu de « · Y en zone non chargée » / « · Z introuvable(s) » ; le résumé
+    « instances de test » est égal à la somme des « dont T de test ». Après le redémarrage du déploiement,
+    une créature dont la zone n'a pas été rechargée n'est comptée nulle part (normal, expliqué dans
+    « Comment lire les compteurs »).
+2.  En jeu, dans le Wild, aller là où se trouvent des mobs spéciaux (ou attendre une apparition naturelle),
+    **Rafraîchir** : ils apparaissent « en zone chargée ». Partir loin (ou au Hub) jusqu'au déchargement de
+    la zone, **Rafraîchir** : **Attendu** : « en zone non chargée » et, dans la fiche, « Hors zone
+    chargée » avec UUID, monde, position et date.
+3.  Si une fiche affiche « introuvable(s) » : le signaler (copier la fiche) — ne rien nettoyer.
+4.  Encadré « Instances de test » : s'il reste une instance de test en zone non chargée, la phrase le dit
+    (« hors de portée du nettoyage, position dans la fiche du profil »).
+
 ### TC-361-bis — Revalidation ciblée : poursuite créatif → survie, apparition en survie, explosion sans bloc détruit (issue #542, retours du 19/10, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR du correctif `fix/542-poursuite-explosion-sans-blocs` sur **DEV** ; PlugAdmin
@@ -6848,8 +6870,9 @@ boss. Déjà acquis (ne pas refaire) : Zombie Runner présent, nom coloré, atta
     Apparitions des mobs spéciaux, catalogue et recherche tout de suite visibles ; **plus de bandeau
     « Profils rejetés » citant `community-bosses.yml`**.
 2.  Fiche Zombie Runner : « Modifier » mis en avant, Exporter / Modifier avec une IA / Désactiver en
-    secondaire, bloc « Tester « Zombie Runner » » séparé. En-tête : « N en jeu (dont X de test) ».
-3.  Fiche Zombie d'entraînement : « 0 en jeu · 1 boss communautaire actif (zone non chargée) » tant que sa
+    secondaire, bloc « Tester « Zombie Runner » » séparé. En-tête : « N en zone chargée (dont X de test) »
+    (#542 ; « N en jeu » avec un plugin antérieur).
+3.  Fiche Zombie d'entraînement : « 0 en zone chargée · 1 boss communautaire actif (zone non chargée) » tant que sa
     zone n'a pas été rechargée ; « Comment lire les compteurs » l'explique.
 4.  Zone rouge « Instances de test » : nombre et profils concernés affichés **avant** clic ; le bouton ne part
     pas sans la case. (Le nettoyage lui-même n'est à lancer que si tu le souhaites : il ne supprime que les

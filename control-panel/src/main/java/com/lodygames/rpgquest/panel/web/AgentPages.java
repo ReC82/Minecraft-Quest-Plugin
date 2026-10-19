@@ -8945,7 +8945,10 @@ public final class AgentPages {
             if (row.resultStatus() == null || row.resultStatus().isBlank()) {
                 return "<meta http-equiv=\"refresh\" content=\"4\">" + Ui.banner("info",
                         (dryRun ? "Vérification" : "Mise en jeu") + " en cours sur DEV… Cette page se"
-                                + " met à jour toute seule dans quelques secondes.");
+                                + " met à jour toute seule dans quelques secondes.")
+                        // Le meta refresh seul ne suffit pas (bug #214 du 19/10) : panel.js suit l'action.
+                        + "<span hidden data-pa-track-action=\"" + Http.esc(row.id())
+                        + "\" data-pa-track-reload=\"terminal\"></span>";
             }
             Optional<Map<String, Object>> details = detailsOf(row);
             boolean ok = details.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false);

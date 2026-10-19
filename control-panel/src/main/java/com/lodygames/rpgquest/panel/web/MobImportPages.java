@@ -6,9 +6,12 @@ import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.mob.MobAiPrompt;
 import com.lodygames.rpgquest.panel.mob.MobImportContext;
 import com.lodygames.rpgquest.panel.mob.MobProfileDiff;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Issue #214 — « Mobs spéciaux & boss → Modèles, IA et import de fichier ».
@@ -24,6 +27,9 @@ public final class MobImportPages {
     public record View(String agentId, MobImportContext ctx, String kind, String fromProfile, String yaml,
                        String notice, AgentActionRow check, Optional<Map<String, Object>> checkDetails) {
     }
+
+    /** Au-delà, la vérification attend visiblement trop : on le dit, sans cesser d'attendre. */
+    static final Duration SLOW_CHECK = Duration.ofSeconds(60);
 
     private MobImportPages() {
     }
@@ -174,6 +180,7 @@ public final class MobImportPages {
                 + "résultat.</p>");
         sb.append("<form method=\"post\" action=\"/mobs/import\" class=\"actform\" enctype=\"multipart/form-data\">%CSRF%")
                 .append("<input type=\"hidden\" name=\"step\" value=\"check\">")
+                .append("<input type=\"hidden\" name=\"submit_token\" value=\"").append(UUID.randomUUID()).append("\">")
                 .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(v.agentId())).append("\">");
         sb.append("<div class=\"field full\"><label for=\"f-mob-file\">Fichier du profil</label>"
                 + "<input id=\"f-mob-file\" type=\"file\" name=\"yaml_file\" accept=\".yml,.yaml,text/yaml\">"
@@ -194,15 +201,16 @@ public final class MobImportPages {
         StringBuilder sb = new StringBuilder("<section class=\"card\" id=\"mob-import-check\">");
         sb.append(Ui.sectionTitle("check", "Vérification par le serveur"));
         if (!row.status().terminal()) {
-            sb.append("<meta http-equiv=\"refresh\" content=\"3\">");
-            sb.append(Ui.banner("info", "Vérification en cours sur le serveur… la page se met à jour toute seule."));
-            return sb.append("</section>").toString();
+            return sb.append(pendingCheck(v, row, Instant.now())).append("</section>").toString();
         }
         Map<String, Object> d = v.checkDetails().orElse(null);
         if (row.status() != AgentActionStatus.SUCCESS || d == null) {
-            sb.append(Ui.banner("error", "La vérification n'a pas pu avoir lieu"
-                    + (row.resultMessage() == null || row.resultMessage().isBlank() ? "" : " : " + Http.esc(row.resultMessage()))
-                    + ". Rien n'a été écrit."));
+            String why = row.resultMessage() == null || row.resultMessage().isBlank() ? "" : " : " + Http.esc(row.resultMessage());
+            sb.append(Ui.banner("error", row.status() == AgentActionStatus.EXPIRED
+                    ? "<strong>Délai dépassé</strong> : le serveur Minecraft n'a pas répondu à temps (arrêté ou "
+                    + "déconnecté ?). Rien n'a été écrit."
+                    : "<strong>La vérification n'a pas pu avoir lieu</strong>" + why + ". Rien n'a été écrit."));
+            sb.append(retryButtons(v));
             return sb.append("</section>").toString();
         }
         List<String> errors = strings(d.get("errors"));
@@ -247,6 +255,7 @@ public final class MobImportPages {
                 + "en jeu gardent leurs anciennes valeurs. Les réglages des boss communautaires ne changent pas.</p>");
         sb.append("<form method=\"post\" action=\"/mobs/import\" class=\"actform\">%CSRF%")
                 .append("<input type=\"hidden\" name=\"step\" value=\"apply\">")
+                .append("<input type=\"hidden\" name=\"submit_token\" value=\"").append(UUID.randomUUID()).append("\">")
                 .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(v.agentId())).append("\">")
                 .append("<input type=\"hidden\" name=\"check\" value=\"").append(Http.esc(row.id())).append("\">");
         if (exists) {
@@ -259,6 +268,47 @@ public final class MobImportPages {
                 .append("<a class=\"btn secondary\" href=\"/mobs/import?agent=").append(Http.esc(v.agentId()))
                 .append("\">Annuler (rien n'est écrit)</a></div></form>");
         return sb.append("</section>").toString();
+    }
+
+    /**
+     * Vérification encore sans réponse. {@code panel.js} suit l'action ({@code data-pa-track-action})
+     * et recharge la page dès qu'elle est terminée, succès OU échec (correctif du 19/10 : l'ancien
+     * {@code <meta refresh>} ne rechargeait pas la page, restée sur « en cours » après le succès).
+     */
+    static String pendingCheck(View v, AgentActionRow row, Instant now) {
+        StringBuilder sb = new StringBuilder();
+        boolean slow = row.createdAt() != null && Duration.between(row.createdAt(), now).compareTo(SLOW_CHECK) > 0;
+        sb.append("<div class=\"alert ").append(slow ? "alert-warning" : "alert-info")
+                .append(" py-2 d-flex flex-wrap align-items-center gap-2\" role=\"status\" aria-live=\"polite\">")
+                .append("<span class=\"spinner-border spinner-border-sm\" aria-hidden=\"true\"></span><span>");
+        if (slow) {
+            sb.append("<strong>Le serveur ne répond pas encore</strong> (plus d'une minute). Il est peut-être arrêté "
+                    + "ou en redémarrage : la page continue d'attendre et se mettra à jour toute seule. Votre fichier "
+                    + "est conservé dans l'étape 3.");
+        } else {
+            sb.append("<strong>Vérification en cours sur le serveur…</strong> La page affiche le résultat toute "
+                    + "seule dès la réponse : inutile de renvoyer le fichier.");
+        }
+        sb.append("</span><span hidden data-pa-track-action=\"").append(Http.esc(row.id()))
+                .append("\" data-pa-track-reload=\"terminal\"></span></div>");
+        sb.append("<div class=\"btnrow\"><a class=\"btn secondary sm\" href=\"").append(checkUrl(v, row))
+                .append("\">Actualiser maintenant</a>");
+        if (slow) {
+            sb.append("<a class=\"btn secondary sm\" href=\"#mob-import-file\">Revenir au fichier</a>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    /** Après un échec : corriger le brouillon (conservé dans l'étape 3) ou revenir aux profils. */
+    private static String retryButtons(View v) {
+        return "<div class=\"btnrow\"><a class=\"btn sm\" href=\"#mob-import-file\">Revoir le fichier et vérifier à "
+                + "nouveau</a><a class=\"btn secondary sm\" href=\"/mobs?agent=" + Http.esc(v.agentId())
+                + "\">Retour aux profils</a></div><p class=\"field-help\">Le fichier envoyé est conservé dans l'étape 3 "
+                + "ci-dessous.</p>";
+    }
+
+    private static String checkUrl(View v, AgentActionRow row) {
+        return "/mobs/import?agent=" + Http.esc(v.agentId()) + "&amp;check=" + Http.esc(row.id());
     }
 
     private static String diffTable(String before, String after) {

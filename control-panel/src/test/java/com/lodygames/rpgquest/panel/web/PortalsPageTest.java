@@ -97,6 +97,19 @@ class PortalsPageTest {
     }
 
     @Test
+    void anEmptySearchOrFilterResultHasAnExplicitMessage() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE);
+        String page = get("/portals?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("data-filter-empty=\"portals\" data-empty=\"Aucun portail\""),
+                "message vide de recherche, caché tant qu'une carte s'affiche");
+        assertTrue(page.contains("<p class=\"empty\" role=\"status\" hidden data-filter-empty"));
+        assertTrue(page.contains("data-filter-chip=\"disabled\" data-empty=\"Aucun portail désactivé\""));
+        assertTrue(page.contains("data-filter-chip=\"issue\" data-empty=\"Aucun portail avec problème\""));
+    }
+
+    @Test
     void theFicheShowsGuardTextsAndLinksToTheWorldsPage() throws Exception {
         start();
         login();

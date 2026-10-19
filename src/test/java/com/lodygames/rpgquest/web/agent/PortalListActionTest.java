@@ -37,7 +37,7 @@ class PortalListActionTest {
                 List.of("hub_to_wild.yml"), List.of(new PortalLoadIssue("broken.yml", "id manquant")), List.of(),
                 List.of(), List.of(), Map.of("world_hub", "0, 64, 0"),
                 new PortalOverview.Roles("world_hub", "wild", "claims"), new RandomSafeArrivalConfig(500, 5000, 20),
-                new PortalOverview.ClaimArrival(200, 3000, 64, 40)));
+                new PortalOverview.ClaimArrival(200, 3000, 64, 40), new PortalOverview.GuideNpc("guide", "Elias")));
         AgentActionOutcome out = run(new StubAgentActions() {
             @Override
             public CompletableFuture<PortalOverview.View> portalList() {

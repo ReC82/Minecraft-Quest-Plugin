@@ -7150,8 +7150,26 @@ public final class AgentPages {
     }
 
     static String filterBtn(String value, String label, boolean on) {
+        return filterBtn(value, label, on, "");
+    }
+
+    /**
+     * Puce de filtre avec son message « aucun résultat » (ex. « Aucun portail désactivé »), affiché
+     * par le bloc {@link #filterEmpty} quand la puce est active et que rien ne s'affiche (#564).
+     */
+    static String filterBtn(String value, String label, boolean on, String emptyText) {
         return "<button type=\"button\" class=\"pa-chip" + (on ? " on" : "") + "\" data-filter-chip=\""
-                + Http.esc(value) + "\">" + Http.esc(label) + "</button>";
+                + Http.esc(value) + "\"" + (emptyText.isEmpty() ? "" : " data-empty=\"" + Http.esc(emptyText) + "\"")
+                + ">" + Http.esc(label) + "</button>";
+    }
+
+    /**
+     * Message « aucun résultat » d'une liste filtrée ({@code scope} de {@link #listControls}) : caché
+     * tant qu'au moins une carte s'affiche ; {@code emptyText} sert quand aucune puce n'en fournit.
+     */
+    static String filterEmpty(String scope, String emptyText) {
+        return "<p class=\"empty\" role=\"status\" hidden data-filter-empty=\"" + Http.esc(scope)
+                + "\" data-empty=\"" + Http.esc(emptyText) + "\">" + Http.esc(emptyText) + ".</p>";
     }
 
     /**

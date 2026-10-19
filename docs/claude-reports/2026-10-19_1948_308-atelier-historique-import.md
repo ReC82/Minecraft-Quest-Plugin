@@ -8,8 +8,8 @@
 * Branche Git : `fix/308-workshop-history-import` (PR #601) fusionnée dans `chore/257-ci-github-actions` ; rapport : `docs/308-rapport`
 * Commit actuel si disponible : merge `fb06e63` (code `aa94a5f`)
 * Début de la tâche : 2026-10-19 19:17:41
-* Fin de la tâche : 2026-10-19 19:52:30
-* Durée totale : 00:34:49
+* Fin de la tâche : 2026-10-19 19:50:37
+* Durée totale : 00:32:56
 
 ## Demande
 Ticket #308 (session autonome lqorch) : sur un projet neuf (« Estrade d'Elias », `d2ebe398…`),

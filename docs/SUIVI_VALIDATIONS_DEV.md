@@ -96,6 +96,12 @@
 
 **Limite identifiée à surveiller dans les prochains lots :** `WorldPortalRegistry.portalAt` examine un portail avant son filtre `enabled` ; si deux zones se chevauchent, un portail désactivé peut masquer un portail actif. Le diagnostic de chevauchement est désormais exposé, mais le comportement n'est **pas corrigé** par #564. Ajouter un test de non-régression lors du lot mutatif #565, avant de permettre la création/activation de zones nouvelles. Aucun conflit observé sur DEV au dernier relevé.
 
+## Livraison #583 — 19 octobre : copier le résultat brut des actions
+
+| Ticket / test | État DEV | Validation attendue |
+|---|---|---|
+| [#583](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/583) | **Livré PlugAdmin DEV**, PR #594 merge `054769d`, CI verte ; **validation navigateur propriétaire en attente** | Historique → détail action SUCCESS ou FAILED → **Copier le résultat brut** : texte intégral JSON sans troncature ni balise, retour « Copié — N caractères » et collage ; vérifier ordinateur et téléphone ; si presse-papiers refusé, sélection et message pour copie manuelle. Action PENDING : « Aucun corps brut » et aucun bouton. Aucun appel ni mutation serveur ; aucun changement du JAR Minecraft. |
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

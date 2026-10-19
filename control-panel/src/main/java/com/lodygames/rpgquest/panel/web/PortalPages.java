@@ -52,13 +52,14 @@ public final class PortalPages {
             sb.append("<p class=\"muted small\">Relevé du serveur : ").append(v.releveHtml()).append("</p>");
         }
         List<Map<String, Object>> portals = maps(v.details().get("portals"));
+        // .p-scope : césure aux espaces (les cartes de /worlds coupent n'importe où, utile pour des noms de monde).
         if (!v.selected().isEmpty()) {
-            return sb.append(fiche(v, portals)).toString();
+            return sb.append("<div class=\"p-scope\">").append(fiche(v, portals)).append("</div>").toString();
         }
         for (Map<String, Object> issue : maps(v.details().get("issues"))) {
             sb.append(issueHtml(issue, "le serveur"));
         }
-        sb.append(list(v.agentId(), portals));
+        sb.append("<div class=\"p-scope\">").append(list(v.agentId(), portals)).append("</div>");
         return sb.toString();
     }
 

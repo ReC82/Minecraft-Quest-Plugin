@@ -1609,3 +1609,7 @@ pre.mob-cell{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85e
 .w-links{margin:0;padding:0;list-style:none;font-size:13px}.w-links li{display:flex;gap:8px;margin:5px 0}
 .w-links .bi{color:var(--txt-faint)}.w-links span{min-width:0}
 @media(max-width:700px){.w-pills{flex-direction:row;flex-wrap:wrap}}
+
+/* ---- Portails (issue #564) : mêmes cartes que Mondes, césure aux espaces pour les textes ---- */
+.p-scope .w-name,.p-scope .w-title,.p-scope .w-dl dd{word-break:normal;overflow-wrap:anywhere}
+.p-scope .w-h .role{white-space:nowrap}

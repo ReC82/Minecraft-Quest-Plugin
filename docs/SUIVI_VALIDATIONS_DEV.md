@@ -107,6 +107,13 @@
 7. **#475** : enquête DEV suggère qu'« Explorateur » était déjà listé mais non identifié comme quête de kit ; **l'absence initiale n'a pas été reproduite**. Un vrai test utilisateur après correctif est indispensable.
 8. **#214** : le zombie déjà créé en jeu prouve que les profils et le spawn existent, **pas** que le nouveau flux export → IA → import est validé.
 
+## Autorisations propriétaire — 19/10/2026
+
+- **#541 / #540 capacités mobs** : Q1–Q11 approuvées et consignées sur [#541](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/541). **#542 SEUL** autorisé à passer en file : socle des capacités composables, compatibilité et sécurité. Max 5 capacités/profil, pas de doublon ; « en combat » = cible joueur et coup récent (10 s) ; préréglages copiés ; terrain durable exclu. **#543+ restent sous jalon propriétaire.**
+- **#331 / #228 mondes-portails** : Q1–Q7 approuvées et consignées sur [#331](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/331) et [#228](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/228). **Autorisé : #560 (lecture mondes), puis #564 (lecture portails)**. Tous les lots mutatifs **#561–#563 et #565–#570 attendent nouvel accord**.
+- **`lody_test_flat`** : nom choisi comme candidat pour un futur monde de test, **PAS de création autorisée**. Attendre autorisation à date/heure explicite ; aucune modification des mondes, portails, constructions existants.
+- Le chat de tests poursuivra séparément les validations en cours ; ne pas convertir approbation d'architecture en validation manuelle du code.
+
 ## Mode opératoire pour la tenue du registre
 
 Après **chaque** livraison Claude ou séance de jeu, modifier ce fichier dans le même commit/PR ou un commit documentaire séparé :

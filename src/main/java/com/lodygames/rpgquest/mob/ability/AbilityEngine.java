@@ -9,8 +9,10 @@ import com.lodygames.rpgquest.mob.model.MobAbilityType;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -28,6 +30,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.ExplosionPrimeEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -54,6 +57,10 @@ public final class AbilityEngine implements PluginService, Listener {
 
     static final long TICK_PERIOD_TICKS = 20L; // 1 s : la cadence des deux balayages d'avant #542.
 
+    /** Capacités dont l'effet est une explosion : terrain toujours préservé (voir {@link #onEntityExplode}). */
+    static final Set<MobAbilityType> EXPLOSIVE_TYPES =
+            EnumSet.of(MobAbilityType.STRONGER_EXPLOSION, MobAbilityType.EXPLOSIVE_ON_ATTACK);
+
     private final Plugin plugin;
     private final SpecialMobRegistry registry;
     private final SpecialMobService service;
@@ -73,6 +80,11 @@ public final class AbilityEngine implements PluginService, Listener {
 
     AbilityEngine(Plugin plugin, SpecialMobRegistry registry, SpecialMobService service, AbilityWorldPolicy policy,
                   RandomGenerator random, LongSupplier clock) {
+        this(plugin, registry, service, policy, random, clock, ExplosiveOnAttackExecutor.PAPER);
+    }
+
+    AbilityEngine(Plugin plugin, SpecialMobRegistry registry, SpecialMobService service, AbilityWorldPolicy policy,
+                  RandomGenerator random, LongSupplier clock, ExplosiveOnAttackExecutor.WorldActions explosiveActions) {
         this.plugin = plugin;
         this.registry = registry;
         this.service = service;
@@ -80,7 +92,7 @@ public final class AbilityEngine implements PluginService, Listener {
         this.random = random;
         this.clock = clock;
         register(new StrongerExplosionExecutor());
-        register(new ExplosiveOnAttackExecutor(policy));
+        register(new ExplosiveOnAttackExecutor(policy, explosiveActions));
         register(new SplitOnHitExecutor(service, policy));
         register(new EnragedExecutor(plugin));
         register(new SummonOnDamageExecutor(plugin, policy, limits, clock));
@@ -129,6 +141,28 @@ public final class AbilityEngine implements PluginService, Listener {
             return;
         }
         service.specialMobDefinition(living).ifPresent(def -> dispatch(AbilityTrigger.EXPLOSION_PRIME, living, def, event));
+    }
+
+    /**
+     * Retours TC-361 — garde de terrain : l'explosion d'un mob spécial dont une capacité explosive est
+     * active ne casse aucun bloc ({@link AbilityDescriptor.WorldMutation#NONE}), quel que soit le chemin
+     * (creeper vanilla renforcé, explosion d'« Explosif au contact »). Identité lue en PDC, jamais le nom.
+     * Priorité HIGHEST : après les protections Hub/claims/zones, qui ne font que retirer des blocs.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        service.specialMobDefinition(event.getEntity())
+                .filter(AbilityEngine::hasActiveExplosiveAbility)
+                .ifPresent(def -> event.blockList().clear());
+    }
+
+    static boolean hasActiveExplosiveAbility(SpecialMobDefinition def) {
+        for (MobAbility ability : MobAbilityRules.activeAbilities(def.abilities())) {
+            if (EXPLOSIVE_TYPES.contains(ability.type())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Coup échangé entre un mob spécial et un joueur (mêlée ou projectile) : alimente {@link CombatState}. */

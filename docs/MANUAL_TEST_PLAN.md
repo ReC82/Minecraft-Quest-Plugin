@@ -6740,6 +6740,24 @@ monde : on peut tout essayer.
 5.  Vérifier qu'aucun bouton ne crée, ne charge, ne décharge ni ne modifie un monde (carte et fiche).
 6.  Téléphone (390 px) : liste et fiche lisibles, pas de défilement horizontal de la page.
 
+### TC-361-bis — Revalidation ciblée : poursuite créatif → survie, apparition en survie, explosion sans bloc détruit (issue #542, retours du 19/10, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR du correctif `fix/542-poursuite-explosion-sans-blocs` sur **DEV** ; PlugAdmin
+inchangé. Déjà acquis au 19/10 (ne pas refaire) : `zz542_cochon` passif en créatif, explosion au contact en
+survie, division bornée et rage. Claude n'a modifié ni `zz542_cochon` ni aucun profil, ni restauré les
+4 blocs de sable détruits lors du premier essai (positions et état d'origine inconnus).
+
+1.  Dans le Wild, sur du sable ou de la terre, loin de toute construction, **en créatif** : « Tester »
+    `zz542_cochon`, s'éloigner de 6 à 10 blocs. **Attendu** : le cochon ne vous suit pas.
+2.  Sur la **même instance**, passer en **survie** (`/gamemode survival`), rester immobile à 6–10 blocs.
+    **Attendu** : dans les 1 à 2 secondes, le cochon marche vers vous d'un pas net (≈ vitesse d'un zombie),
+    puis explose à 2 blocs.
+3.  Après l'explosion : **aucun bloc détruit** (pas de cratère, sable intact) ; vous subissez des dégâts ;
+    pas de feu.
+4.  Déjà en survie : « Tester » à nouveau `zz542_cochon` à 6–10 blocs. **Attendu** : poursuite immédiate
+    sans changer de mode, puis explosion sans bloc détruit.
+5.  Nettoyer les instances de test.
+
 ### TC-361 — Socle des capacités de mobs : profils inchangés, capacités identiques, sécurité, doublons refusés (issue #542, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR #575 (`e4f7432`) sur **DEV** ; PlugAdmin inchangé. Claude n'a modifié aucun

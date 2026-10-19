@@ -13,7 +13,8 @@ Cliquer sur **Rafraîchir les mondes** relit le serveur (action `world.list`).
 
 Pour chaque monde :
 
-- **Chargé / Non chargé** et le nombre de joueurs présents ;
+- **Chargé / Non chargé** et le nombre de joueurs présents (relevé au moment du rafraîchissement, pas en
+  direct ; le haut de page rappelle le total des joueurs connectés au même instant et signale un écart) ;
 - la **dimension** (monde normal, Nether, End) et la **génération** (normale, plate, amplifiée,
   grands biomes) ; la graine et les structures dans la fiche ;
 - le **gestionnaire** : *Multiverse* (déclaré dans Multiverse-Core), *RPGQuest* (créé par

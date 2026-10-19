@@ -6740,6 +6740,20 @@ monde : on peut tout essayer.
 5.  Vérifier qu'aucun bouton ne crée, ne charge, ne décharge ni ne modifie un monde (carte et fiche).
 6.  Téléphone (390 px) : liste et fiche lisibles, pas de défilement horizontal de la page.
 
+### TC-362-bis — Revalidation ciblée : noms de mobs lisibles et compteur de joueurs (issue #560, retours du 19/10, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR **et** PlugAdmin issus de la PR `fix/560-mondes-noms-joueurs` sur **DEV**. Déjà acquis au 19/10
+(ne pas refaire) : liste, recherche, filtre par rôle, fiches Wild/Hub/Nether, rafraîchissement, graine Wild =
+`/seed`, fiche Hub sur téléphone.
+
+1.  PlugAdmin → **Monde → Mondes** → **Rafraîchir les mondes** → fiche `wild` → éléments liés, ligne des mobs.
+    **Attendu** : noms lisibles (« Zombie d'entraînement »…), **aucune** balise `<dark_green>`, `<bold>`… visible.
+2.  Se connecter en jeu et se placer dans le **Wild**, puis **Rafraîchir les mondes**. **Attendu** : sous
+    « Relevé du serveur », « 1 joueur(s) connecté(s) sur le serveur à ce relevé » **et** la carte `wild` affiche
+    « Joueurs 1 », sans ligne « attention ».
+3.  Si la carte `wild` affiche 0 alors que vous êtes dans le Wild : noter l'heure, la ligne affichée (avec ou
+    sans « attention ») et l'état de la page **Joueurs** rafraîchie dans la même minute, et le signaler dans #560.
+
 ### TC-361-bis — Revalidation ciblée : poursuite créatif → survie, apparition en survie, explosion sans bloc détruit (issue #542, retours du 19/10, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR du correctif `fix/542-poursuite-explosion-sans-blocs` sur **DEV** ; PlugAdmin

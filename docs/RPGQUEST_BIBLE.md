@@ -4739,6 +4739,10 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
 - Une seule action agent : `world.list` (« Rafraîchir les mondes »), **lecture seule**. Aucune action
   `world.*` ne crée, ne charge, ne décharge, n'importe ni ne règle un monde ; aucun bouton mutatif,
   même désactivé.
+- Le relevé donne aussi `onlinePlayers`, le total des joueurs connectés lu au même instant que les
+  compteurs par monde ; la page l'affiche et signale « attention » si la somme des mondes en diffère.
+  Les noms des éléments liés (mobs, waypoints, villes) sont affichés en texte lisible, balises
+  MiniMessage retirées (#560, retours du 19/10).
 - Par monde : chargé, joueurs, dimension, génération (type, graine, structures, générateur),
   difficulté, PvP, point d'arrivée, chargement au démarrage ; **gestionnaire** (Multiverse-Core,
   RPGQuest `plugins/RPGQuest/worlds.yml` — cas de `wild` —, ou serveur pour le monde principal et ses

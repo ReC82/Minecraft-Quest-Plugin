@@ -48,6 +48,37 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-19 - Mondes : noms de mobs lisibles et total des joueurs connectés (#560, retours TC-362)
+
+### Changement
+
+`world.list` renvoie en plus `onlinePlayers` (joueurs connectés sur tout le serveur, lu au même instant
+que les compteurs par monde) et le cite dans son message. La page PlugAdmin `/worlds` affiche ce total et
+signale un écart avec la somme des mondes ; les noms des éléments liés (mobs, waypoints, villes) sont
+affichés sans balises MiniMessage. Lecture seule inchangée : aucun monde, portail ni contenu touché.
+
+### Action serveur
+
+Remplacer uniquement le JAR RPGQuest ; redéployer PlugAdmin. Aucune migration, aucune configuration.
+
+### Sauvegarde préalable
+
+JAR actuel (sauvegarde datée de `deploy-verygames.sh`) ; PlugAdmin précédent conservé par `deploy.sh`.
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` depuis un arbre propre, puis un redémarrage ; `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`world.list` cite « N joueur(s) connecté(s) » ; en jeu : TC-362-bis.
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer ; remettre le PlugAdmin précédent (aucune donnée écrite).
+
+---
+
 ## 2026-10-19 - Mobs : explosion sans bloc détruit et poursuite réelle (#542, retours TC-361)
 
 ### Changement

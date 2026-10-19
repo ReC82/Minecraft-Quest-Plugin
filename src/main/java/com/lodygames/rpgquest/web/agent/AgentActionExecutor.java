@@ -2005,7 +2005,7 @@ public final class AgentActionExecutor {
                     .count();
             String summary = view.worlds().size() + " monde(s), " + loaded + " chargé(s)"
                     + (view.multiverse().available() ? " — Multiverse-Core " + view.multiverse().version()
-                    : " — sans Multiverse-Core");
+                    : " — sans Multiverse-Core") + " — " + view.onlinePlayers() + " joueur(s) connecté(s)";
             return AgentActionOutcome.success(action.id(), String.valueOf(view.worlds().size()), summary, details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }

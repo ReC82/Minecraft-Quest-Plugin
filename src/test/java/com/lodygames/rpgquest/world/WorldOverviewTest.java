@@ -46,7 +46,7 @@ class WorldOverviewTest {
                 List.of(new Place("wp1", "Forêt", "wild"), new Place("wp2", "Plaine", "wild")),
                 List.of(new MobLink("rpgquest:ogre", "Ogre", Set.of("wild")), new MobLink("rpgquest:any", "Tous", Set.of())),
                 List.of(new Place("spot1", "Comptoir", "world_hub")),
-                List.of(new Place("city1", "Julius", "wild")));
+                List.of(new Place("city1", "Julius", "wild")), 0);
     }
 
     private static ExternalSource devMultiverse() {
@@ -123,7 +123,7 @@ class WorldOverviewTest {
     void unknownRoleWorldAppearsAsUnknownManager() {
         var in = new WorldOverview.Inputs(List.of(loaded("world", "NORMAL")), "world", ExternalSource.unavailable("x"),
                 List.of(), new WorldOverview.Roles("", "wild_typo", ""), new WorldOverview.WaypointPolicy(true, false),
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), 0);
         var view = WorldOverview.build(in);
         Entry typo = find(view, "wild_typo");
         assertEquals(Manager.UNKNOWN, typo.manager());

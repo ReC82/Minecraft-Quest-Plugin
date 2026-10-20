@@ -11281,11 +11281,43 @@ public final class AgentPages {
         Map<String, Object> details = row.flatMap(this::detailsOf).orElse(null);
         String header = agentPicker(agentId, WorldPages.PATH, "")
                 + listCatbar("Mondes", compactRefresh(session, agentId, "world.list", "Rafraîchir les mondes",
-                details == null ? "btn-warning" : "btn-outline-primary", WorldPages.PATH));
+                details == null ? "btn-warning" : "btn-outline-primary", WorldPages.PATH)
+                + (perms.can(session.effective(), Permission.WORLD_CREATE)
+                        ? " <a class=\"btn btn-sm btn-outline-primary\" href=\"" + WorldCreatePages.href(agentId) + "\">"
+                        + Icons.icon("plus") + "Créer un monde</a>" : ""));
         String selected = str(q.get("world")).trim();
         return WorldPages.render(new WorldPages.View(agentId, details, header,
                 row.map(r -> when(at(r))).orElse(""), selected,
                 details == null || selected.isEmpty() ? "" : worldSettings(session, agentId, selected, details, q)));
+    }
+
+    /**
+     * Page {@code /worlds/create} (issue #562) : dernières options lues, aperçu et création désignés
+     * par l'URL ({@code preview}, {@code applied}), acceptés seulement s'ils visent ce même agent.
+     */
+    public String worldCreate(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        if (agent.isEmpty()) {
+            return WorldCreatePages.render(WorldCreatePages.View.noAgent(noAgent()));
+        }
+        String agentId = agent.get().id();
+        Optional<AgentActionRow> options = store.latestSuccessfulActionOfType(agentId, "world.create.options");
+        AgentActionRow pending = store.recentActions(agentId, 50).stream()
+                .filter(r -> "world.create.options".equals(r.type()) && !r.status().terminal())
+                .findFirst().orElse(null);
+        AgentActionRow preview = worldCreateRow(agentId, "world.create.preview", q.get("preview"));
+        AgentActionRow applied = worldCreateRow(agentId, "world.create.apply", q.get("applied"));
+        return WorldCreatePages.render(new WorldCreatePages.View(agentId, agentPicker(agentId, WorldCreatePages.PATH, ""),
+                options.flatMap(this::detailsOf).orElse(null), options.map(r -> when(at(r))).orElse(""), pending,
+                preview, preview == null ? null : detailsOf(preview).orElse(null), applied,
+                applied == null ? null : detailsOf(applied).orElse(null)));
+    }
+
+    private AgentActionRow worldCreateRow(String agentId, String type, String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        return store.action(id.trim()).filter(a -> type.equals(a.type()) && agentId.equals(a.agentId())).orElse(null);
     }
 
     /**

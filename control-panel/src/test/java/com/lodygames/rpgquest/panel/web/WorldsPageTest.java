@@ -166,7 +166,10 @@ class WorldsPageTest {
                 assertFalse(m.group(1).startsWith("world.") && !m.group(1).equals("world.list"),
                         "action mutative exposée : " + m.group(1));
             }
-            assertFalse(page.contains("Créer un monde") || page.contains("Décharger") || page.contains(">Charger<"));
+            assertFalse(page.contains("Décharger") || page.contains(">Charger<"));
+            // Issue #562 : « Créer un monde » n'est qu'un lien vers sa page dédiée (aperçu + confirmation,
+            // WORLD_CREATE), jamais une action envoyée depuis /worlds — voir WorldCreatePageTest.
+            assertFalse(page.contains("action=\"/worlds/create"), "aucun formulaire de création sur /worlds");
         }
     }
 

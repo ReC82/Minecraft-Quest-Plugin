@@ -1336,6 +1336,29 @@ public final class RPGQuestBootstrap {
                                     cfg.hub().world(), cfg.travel().wildWorld(), cfg.claims().world());
                         }),
                 worldSettingsAudit, java.time.Clock.systemUTC()));
+        // Issue #562 (#331-W3) : création de monde via Multiverse-Core. Rien n'est créé au démarrage :
+        // seule l'action world.create.apply crée, après aperçu et confirmation dans PlugAdmin.
+        com.lodygames.rpgquest.world.create.WorldCreationAuditLog worldCreateAudit =
+                new com.lodygames.rpgquest.world.create.WorldCreationAuditLog(
+                        plugin.getDataFolder().toPath().resolve("world-create-audit.yml"),
+                        task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
+                        plugin.getSLF4JLogger());
+        worldCreateAudit.load();
+        agentActions.setWorldCreation(new com.lodygames.rpgquest.world.create.WorldCreationService(
+                new com.lodygames.rpgquest.world.create.BukkitWorldCreationGateway(plugin.getServer(),
+                        new com.lodygames.rpgquest.world.multiverse.MultiverseWorldCreator(),
+                        () -> {
+                            var cfg = configService.current();
+                            java.util.Set<String> roles = new java.util.LinkedHashSet<>();
+                            for (String w : java.util.List.of(cfg.hub().world(), cfg.travel().wildWorld(),
+                                    cfg.claims().world())) {
+                                if (w != null && !w.isBlank()) {
+                                    roles.add(w);
+                                }
+                            }
+                            return roles;
+                        }),
+                worldCreateAudit, java.time.Clock.systemUTC()));
         // Issue #564 (#228-P1) : page Portails en lecture seule — mêmes registres que le jeu.
         agentActions.setPortalSources(portalRegistry, destinationRegistry,
                 id -> questProgressEngine.npcNameResolver().apply(id));

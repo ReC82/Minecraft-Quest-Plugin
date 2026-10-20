@@ -11,6 +11,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > et portails de zone (ancien format), zone, destination, arrivée RANDOM_SAFE / CLAIM_HOME, gardes Wild/Claims
 > appliqués, diagnostics. Aucune création, modification, activation ni téléportation. Pas de migration.
 
+> **Créer un monde (#562, 20/10/2026)** — PlugAdmin `/worlds/create`, permission `WORLD_CREATE`
+> (propriétaire) : options `world.create.options`, aperçu sans création `world.create.preview`, création
+> confirmée `world.create.apply` via Multiverse-Core seulement (dimension, terrain normal/plat/amplifié/
+> grands biomes, graine, structures, monde plat : préréglage, couches et biome validés au registre →
+> `generatorSettings`). Jeton idempotent, une création à la fois, relecture, journal
+> `world-create-audit.yml`. Aucun rôle, portail, waypoint ni règle. **Aucun monde réellement créé** :
+> TC-375 en attente d'accord du propriétaire. Pas de migration.
+
 > **Réglages d'un monde existant (#561, 20/10/2026)** — fiche `/worlds?world=…`, section « Réglages » :
 > relecture `world.settings.get` (`WORLD_READ`), aperçu sans écriture `world.settings.preview` puis
 > application confirmée `world.settings.apply` (`WORLD_WRITE`, propriétaire). Difficulté, PvP, monstres,

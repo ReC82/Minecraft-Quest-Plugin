@@ -628,6 +628,24 @@ public enum AgentActionType {
      */
     WORLD_SETTINGS_APPLY("world.settings.apply"),
     /**
+     * Issue #562 (#331-W3) — ce que la page « Créer un monde » propose : Multiverse-Core disponible
+     * ou non, noms déjà pris (mondes chargés, connus de Multiverse, dossiers), mondes essentiels,
+     * préréglages de monde plat, biomes et blocs du registre, dernières demandes. Lecture seule.
+     */
+    WORLD_CREATE_OPTIONS("world.create.options"),
+    /**
+     * Issue #562 — aperçu <strong>sans écriture</strong> d'une création : identifiant du dossier,
+     * options réellement passées à Multiverse-Core, résumé, refus en français et empreinte.
+     */
+    WORLD_CREATE_PREVIEW("world.create.preview"),
+    /**
+     * Issue #562 — crée le monde d'un aperçu, après confirmation explicite, via Multiverse-Core
+     * uniquement. Une seule création à la fois ; un jeton déjà traité n'est jamais rejoué ; refusé
+     * sans rien créer si la demande diffère de l'aperçu ou si le nom est pris. Aucun rôle, portail,
+     * waypoint ni règle n'est attribué au nouveau monde. Relit ensuite le monde et journalise.
+     */
+    WORLD_CREATE_APPLY("world.create.apply"),
+    /**
      * Issue #564 (#228-P1) — tous les portails (entre mondes {@code world-portals/} et de zone
      * {@code portals/}, ancien format), zone, destination, stratégie d'arrivée, gardes Wild/Claims
      * réellement appliqués et diagnostics. Lecture seule : rien n'est créé, modifié, activé ni

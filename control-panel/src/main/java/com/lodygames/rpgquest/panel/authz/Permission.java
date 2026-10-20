@@ -60,6 +60,13 @@ public enum Permission {
      */
     WORLD_WRITE,
     /**
+     * Créer un monde (issue #562, #331-W3) via Multiverse-Core : aperçu puis création confirmée,
+     * une seule à la fois. Ne permet ni d'importer, ni de charger, ni de décharger, ni de supprimer,
+     * ni de régénérer un monde, ni de lui donner un rôle Hub / Wild / Claims. Sensible : réservé au
+     * propriétaire par défaut (attribuable par groupe).
+     */
+    WORLD_CREATE,
+    /**
      * Consultation lecture seule des portails (issue #564, #228-P1) : zone, destination, arrivée,
      * gardes Wild/Claims et diagnostics. Ne permet ni de créer, ni de modifier, ni d'activer, ni de
      * tester un portail.

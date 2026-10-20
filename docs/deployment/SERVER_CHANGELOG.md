@@ -78,6 +78,13 @@ Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
 Route `/worlds/settings/read` servie. Test en jeu : TC-374 (au choix du propriétaire pour les étapes qui
 modifient un monde).
 
+**Effectué le 20/10/2026** (`f069e32`, PR #624) : JAR transféré par `deploy-verygames.sh` (sauvegarde
+`rpgquest-20261020T094740Z-predeploy.jar`, 3 769 006 o, plus petite que le nouveau JAR de 3 832 186 o),
+PlugAdmin redéployé (`/health` 200, `WorldSettingsPages` dans le JAR servi), DEV redémarré par
+`verygames-restart.sh` après le départ du seul autre joueur connecté. `world.list` avant/après :
+identique (6 mondes, gestionnaire, difficulté, PvP, arrivée). `world.settings.get` relu sur `wild`
+(Bukkit, 58 règles) et `world_hub` (Multiverse, rôle HUB) : lecture seule, **aucun réglage appliqué**.
+
 ### Rollback
 
 Remettre le JAR et PlugAdmin précédents (sauvegardes du script). Le fichier `world-settings-audit.yml`

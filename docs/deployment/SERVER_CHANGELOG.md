@@ -77,6 +77,14 @@ Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
 `world.list` relu avant et après : mêmes mondes. Création réelle : TC-375, **en attente d'accord du
 propriétaire** (aucun monde créé par Claude).
 
+**Effectué le 20/10/2026** (`a0e5268`, PR #628) : JAR transféré par `deploy-verygames.sh -y --wait-ci`
+(CI verte, 3 888 174 o, SHA-256 `72c75e02…2440` ; sauvegarde `rpgquest-20261020T105115Z-predeploy.jar`,
+3 832 186 o), PlugAdmin redéployé (`WorldCreatePages` dans le JAR servi), DEV redémarré par
+`verygames-restart.sh` après le départ du seul autre joueur. `world.list` avant/après : identique
+(6 mondes). Lecture seule sur DEV : `world.create.options` (Multiverse-Core disponible, 65 biomes,
+1166 blocs) et 3 aperçus `world.create.preview` (refus « wild » essentiel, refus bloc inconnu, aperçu
+plat Neige valide). **Aucun monde créé** ; `world-create-audit.yml` non créé.
+
 ### Rollback
 
 Remettre le JAR et PlugAdmin précédents (sauvegardes du script). `world-create-audit.yml` peut rester

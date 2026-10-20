@@ -42,9 +42,9 @@ public final class WorldPages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("world", "Mondes",
                 "Tous les mondes du serveur, leur gestionnaire et ce qui en dépend. Un monde n'a aucun rôle "
-                        + "(Hub, Wild, Claims) tant que la configuration ne le désigne pas. Rien n'est créé, chargé, "
-                        + "déchargé ni supprimé d'ici ; les réglages d'un monde chargé se modifient dans sa fiche, après "
-                        + "aperçu et confirmation.", ""));
+                        + "(Hub, Wild, Claims) tant que la configuration ne le désigne pas. Rien n'est chargé, déchargé ni "
+                        + "supprimé d'ici ; les réglages d'un monde chargé se modifient dans sa fiche et un nouveau monde "
+                        + "se crée par « Créer un monde », toujours après aperçu et confirmation.", ""));
         sb.append(v.headerHtml());
         if (v.agentId().isEmpty()) {
             return sb.toString();

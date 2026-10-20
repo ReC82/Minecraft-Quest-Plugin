@@ -375,6 +375,13 @@ public final class PanelApp {
         route("/worlds/settings/read", this::handleWorldSettingsRead);
         route("/worlds/settings/preview", this::handleWorldSettingsPreview);
         route("/worlds/settings/apply", this::handleWorldSettingsApply);
+        // Issue #562 (#331-W3) — créer un monde : options et aperçu (rien n'est créé), puis création
+        // confirmée. Tout exige WORLD_CREATE, contrôlé ici côté serveur et par le catalogue.
+        route(WorldCreatePages.PATH, exchange -> handleBusinessPage(exchange, WorldCreatePages.PATH, "Créer un monde",
+                Permission.WORLD_CREATE, agentPages::worldCreate));
+        route(WorldCreatePages.PATH + "/options", this::handleWorldCreateOptions);
+        route(WorldCreatePages.PATH + "/preview", this::handleWorldCreatePreview);
+        route(WorldCreatePages.PATH + "/apply", this::handleWorldCreateApply);
         // Issue #564 (#228-P1) — portails en LECTURE SEULE : seul « Rafraîchir » (portal.list) est exposé.
         route("/portals", exchange -> handleBusinessPage(exchange, "/portals", "Portails",
                 Permission.PORTAL_READ, agentPages::portals));
@@ -5004,6 +5011,167 @@ public final class PanelApp {
         Http.redirect(exchange, post.back() + "&preview=" + enc(id) + "#" + WorldSettingsPages.ANCHOR);
     }
 
+    // ================================================================================
+    //  Création d'un monde (issue #562, #331-W3)
+    // ================================================================================
+
+    private record CreatePost(Session session, Map<String, String> form, String agentId, String back) {
+    }
+
+    /** POST commun : session, CSRF, permission WORLD_CREATE, agent connu ; {@code null} si déjà répondu. */
+    private CreatePost createPost(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return null;
+        }
+        Session session = maybe.get();
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.redirect(exchange, WorldCreatePages.PATH);
+            return null;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return null;
+        }
+        if (!permissions.can(session.effective(), Permission.WORLD_CREATE)) {
+            audit.record(session.username(), "world.create", "name=" + trimTo(form.getOrDefault("name", ""), 64),
+                    "DENIED", "permission WORLD_CREATE manquante", UUID.randomUUID().toString().substring(0, 8));
+            forbidden(exchange, session, WorldPages.PATH);
+            return null;
+        }
+        String agentId = form.getOrDefault("agent", "").trim();
+        if (agentId.isEmpty() || agentRegistry.byId(agentId).isEmpty()) {
+            Http.redirect(exchange, WorldCreatePages.PATH + "?err=" + enc("Serveur de jeu inconnu."));
+            return null;
+        }
+        return new CreatePost(session, form, agentId, WorldCreatePages.PATH + "?agent=" + enc(agentId));
+    }
+
+    private void handleWorldCreateOptions(HttpExchange exchange) throws IOException {
+        CreatePost post = createPost(exchange);
+        if (post == null) {
+            return;
+        }
+        boolean open = agentStore.recentActions(post.agentId(), 50).stream()
+                .anyMatch(a -> "world.create.options".equals(a.type()) && !a.status().terminal());
+        if (!open) {
+            String id = agentStore.createAction(post.agentId(), "world.create.options", Map.of(),
+                    post.session().username());
+            audit.record(post.session().username(), "agent.action.create", "agent=" + post.agentId()
+                    + " type=world.create.options action=" + id, "PENDING", "",
+                    UUID.randomUUID().toString().substring(0, 8));
+        }
+        Http.redirect(exchange, post.back() + "#" + WorldCreatePages.ANCHOR);
+    }
+
+    /** Aperçu : validation complète par le serveur, rien n'est créé. */
+    private void handleWorldCreatePreview(HttpExchange exchange) throws IOException {
+        CreatePost post = createPost(exchange);
+        if (post == null) {
+            return;
+        }
+        Session session = post.session();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("world.create.preview", post.form());
+        if (!v.valid()) {
+            audit.record(session.username(), "agent.action.create", "agent=" + post.agentId()
+                    + " type=world.create.preview", "DENIED", v.error(), rid);
+            Http.redirect(exchange, post.back() + "&err=" + enc(v.error()) + "#" + WorldCreatePages.ANCHOR);
+            return;
+        }
+        String submitToken = post.form().getOrDefault("submit_token", "").trim();
+        if (!submitToken.isEmpty()) {
+            Optional<String> already = session.reserveSubmitToken(submitToken);
+            if (already.isPresent()) {
+                Http.redirect(exchange, post.back() + (already.get().isEmpty() ? "" : "&preview=" + enc(already.get()))
+                        + "#" + WorldCreatePages.ANCHOR);
+                return;
+            }
+        }
+        String id = agentStore.createAction(post.agentId(), "world.create.preview", v.params(), session.username());
+        if (!submitToken.isEmpty()) {
+            session.bindSubmitToken(submitToken, id);
+        }
+        audit.record(session.username(), "agent.action.create", "agent=" + post.agentId()
+                + " type=world.create.preview action=" + id, "PENDING", safeParams(v.params()), rid);
+        Http.redirect(exchange, post.back() + "&preview=" + enc(id) + "#" + WorldCreatePages.ANCHOR);
+    }
+
+    /**
+     * Création confirmée. Ce qui part au serveur, ce sont les paramètres ET l'empreinte de l'aperçu
+     * enregistré ici (jamais ceux du navigateur) ; l'auteur est la session ; le jeton est l'identifiant
+     * de l'aperçu, que le plugin ne traite qu'une fois. Un aperçu ne sert qu'une fois, dans les
+     * {@link #WORLD_SETTINGS_PREVIEW_TTL} qui suivent.
+     */
+    private void handleWorldCreateApply(HttpExchange exchange) throws IOException {
+        CreatePost post = createPost(exchange);
+        if (post == null) {
+            return;
+        }
+        Session session = post.session();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String previewId = post.form().getOrDefault("preview", "").trim();
+        String back = post.back() + "&preview=" + enc(previewId);
+        String target = "agent=" + post.agentId() + " type=world.create.apply preview=" + previewId;
+        if (!"true".equals(post.form().get("confirm"))) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "confirmation absente", rid);
+            Http.redirect(exchange, back + "&err=" + enc("Cocher la confirmation pour créer le monde. Rien n'a été créé.")
+                    + "#" + WorldCreatePages.ANCHOR);
+            return;
+        }
+        Optional<AgentActionRow> preview = agentStore.action(previewId)
+                .filter(a -> "world.create.preview".equals(a.type()) && a.agentId().equals(post.agentId())
+                        && a.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS);
+        Map<String, Object> details = preview.flatMap(agentPages::actionDetails).orElse(Map.of());
+        if (preview.isEmpty() || !Boolean.TRUE.equals(details.get("ok"))) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "aperçu introuvable ou refusé", rid);
+            Http.redirect(exchange, post.back() + "&err=" + enc("Aperçu introuvable ou refusé : refaire l'aperçu. "
+                    + "Rien n'a été créé.") + "#" + WorldCreatePages.ANCHOR);
+            return;
+        }
+        if (preview.get().createdAt() == null
+                || preview.get().createdAt().plus(WORLD_SETTINGS_PREVIEW_TTL).isBefore(Instant.now())) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "aperçu trop ancien", rid);
+            Http.redirect(exchange, back + "&err=" + enc("Aperçu de plus de 15 minutes : le refaire pour revérifier "
+                    + "les noms pris. Rien n'a été créé.") + "#" + WorldCreatePages.ANCHOR);
+            return;
+        }
+        boolean alreadySent = agentStore.recentActions(post.agentId(), 100).stream()
+                .anyMatch(a -> "world.create.apply".equals(a.type()) && previewId.equals(a.params().get("token")));
+        String submitToken = post.form().getOrDefault("submit_token", "").trim();
+        Optional<String> reserved = submitToken.isEmpty() ? Optional.empty() : session.reserveSubmitToken(submitToken);
+        if (alreadySent || reserved.isPresent()) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "aperçu déjà envoyé", rid);
+            String existing = reserved.filter(r -> !r.isEmpty()).orElse("");
+            Http.redirect(exchange, back + (existing.isEmpty() ? "" : "&applied=" + enc(existing)) + "&err="
+                    + enc("Cette création a déjà été envoyée : rien n'a été envoyé en double.") + "#"
+                    + WorldCreatePages.ANCHOR);
+            return;
+        }
+        Map<String, String> input = new LinkedHashMap<>(preview.get().params());
+        input.put("expected", String.valueOf(details.getOrDefault("fingerprint", "")));
+        input.put("token", previewId);
+        input.put("actor", session.username());
+        input.put("confirm", "true");
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("world.create.apply", input);
+        if (!v.valid()) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", v.error(), rid);
+            Http.redirect(exchange, back + "&err=" + enc(v.error()) + "#" + WorldCreatePages.ANCHOR);
+            return;
+        }
+        String id = agentStore.createAction(post.agentId(), "world.create.apply", v.params(), session.username());
+        if (!submitToken.isEmpty()) {
+            session.bindSubmitToken(submitToken, id);
+        }
+        audit.record(session.username(), "agent.action.create", target + " action=" + id, "PENDING",
+                "world=" + details.get("world"), rid);
+        LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + post.agentId()
+                + " type=world.create.apply action=" + id + " world=" + details.get("world") + " by="
+                + session.username());
+        Http.redirect(exchange, back + "&applied=" + enc(id) + "#" + WorldCreatePages.ANCHOR);
+    }
+
     /**
      * Application confirmée. Ce qui part au serveur, ce sont les valeurs ET l'empreinte de l'aperçu
      * enregistré ici (jamais celles du navigateur) ; l'auteur est la session. Un aperçu ne s'applique
@@ -5980,6 +6148,15 @@ public final class PanelApp {
         if (!hasAllPermissions(session, spec.get())) {
             audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "permission manquante", rid);
             forbidden(exchange, session, returnPath);
+            return;
+        }
+        if ("world.create.preview".equals(type) || "world.create.apply".equals(type)) {
+            // Issue #562 : une création de monde part TOUJOURS de la page « Créer un monde » (aperçu
+            // enregistré, confirmation, auteur = session, jeton), jamais d'un formulaire générique.
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED",
+                    "création de monde hors de sa page", rid);
+            Http.redirect(exchange, withError(returnPath, agentId, null,
+                    "La création d'un monde se fait depuis la page Mondes → Créer un monde."));
             return;
         }
         if ("world.settings.preview".equals(type) || "world.settings.apply".equals(type)) {

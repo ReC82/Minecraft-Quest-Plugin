@@ -388,6 +388,12 @@ public final class AgentActionCatalog {
                 "Aperçu des réglages d'un monde (rien n'est écrit)");
         addSensitiveWrite("world.settings.apply", Permission.WORLD_WRITE, false,
                 "Appliquer des réglages à un monde", "world.list");
+        // Issue #562 (#331-W3) — créer un monde : options et aperçu sans écriture, puis création
+        // confirmée (WORLD_CREATE). Les routes /worlds/create/* sont le seul chemin prévu.
+        add("world.create.options", Permission.WORLD_CREATE, false, false, "Lire les options de création de monde");
+        add("world.create.preview", Permission.WORLD_CREATE, false, false,
+                "Aperçu de la création d'un monde (rien n'est créé)");
+        addSensitiveWrite("world.create.apply", Permission.WORLD_CREATE, false, "Créer un monde", "world.list");
         // Issue #564 (#228-P1) — portails en lecture seule. Aucune action portal.* mutative n'existe.
         add("portal.list", Permission.PORTAL_READ, false, false, "Rafraîchir les portails");
         addContentWrite("city.rename", Permission.CITY_WRITE, "Renommer une ville", "city.list");
@@ -2410,6 +2416,12 @@ public final class AgentActionCatalog {
                     return Validation.fail(error);
                 }
             }
+            case "world.create.options", "world.create.preview", "world.create.apply" -> {
+                String error = worldCreateParams(type, form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
             case "mob.definition.toggle" -> {
                 String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);
                 if (!MOB_ID.matcher(mobId).matches()) {
@@ -2919,6 +2931,107 @@ public final class AgentActionCatalog {
             }
         }
         return Validation.ok(params);
+    }
+
+    /** Issue #562 — bornes miroir de {@code WorldCreationPlanner}, que le plugin revalide entièrement. */
+    public static final int MAX_WORLD_LAYERS = 16;
+    private static final Pattern WORLD_CREATE_ID = Pattern.compile("[a-z0-9_.:-]{1,96}");
+    private static final Pattern WORLD_CREATE_TOKEN = Pattern.compile("[A-Za-z0-9_-]{6,64}");
+    private static final java.util.Set<String> WORLD_DIMENSIONS = java.util.Set.of("NORMAL", "NETHER", "THE_END");
+    private static final java.util.Set<String> WORLD_TERRAINS = java.util.Set.of("NORMAL", "FLAT", "AMPLIFIED",
+            "LARGE_BIOMES");
+    private static final java.util.Set<String> WORLD_FLAT_PRESETS = java.util.Set.of("CLASSIQUE", "NEIGE", "DESERT",
+            "VIDE");
+
+    /**
+     * Paramètres de {@code world.create.*} ; {@code null} si valides, sinon le message d'erreur. Le
+     * formulaire masque le terrain hors monde normal et les options de monde plat hors terrain plat :
+     * ce qui est masqué n'est pas transmis (un champ caché reste envoyé par le navigateur).
+     */
+    private static String worldCreateParams(String type, Map<String, String> form, Map<String, String> params) {
+        if ("world.create.options".equals(type)) {
+            return null;
+        }
+        String name = trim(form.get("name"));
+        if (name.isEmpty() || name.length() > 64 || name.indexOf('\n') >= 0 || name.indexOf('\r') >= 0) {
+            return "Nom du monde manquant ou trop long (64 caractères au plus).";
+        }
+        String environment = trim(form.get("environment")).toUpperCase(java.util.Locale.ROOT);
+        environment = environment.isEmpty() ? "NORMAL" : environment;
+        if (!WORLD_DIMENSIONS.contains(environment)) {
+            return "Dimension inconnue.";
+        }
+        String terrain = "NORMAL".equals(environment) ? trim(form.get("terrain")).toUpperCase(java.util.Locale.ROOT)
+                : "NORMAL";
+        terrain = terrain.isEmpty() ? "NORMAL" : terrain;
+        if (!WORLD_TERRAINS.contains(terrain)) {
+            return "Type de terrain inconnu.";
+        }
+        String seed = trim(form.get("seed"));
+        if (seed.length() > 32 || seed.indexOf('\n') >= 0) {
+            return "Graine trop longue (32 caractères au plus).";
+        }
+        params.put("name", name);
+        params.put("environment", environment);
+        params.put("terrain", terrain);
+        if (!seed.isEmpty()) {
+            params.put("seed", seed);
+        }
+        params.put("structures", "true".equals(trim(form.get("structures"))) ? "true" : "false");
+        if ("FLAT".equals(terrain)) {
+            String preset = trim(form.get("flat_preset")).toUpperCase(java.util.Locale.ROOT);
+            if (!preset.isEmpty()) {
+                if (!WORLD_FLAT_PRESETS.contains(preset)) {
+                    return "Préréglage de monde plat inconnu.";
+                }
+                params.put("flat_preset", preset);
+            }
+            String biome = trim(form.get("biome")).toLowerCase(java.util.Locale.ROOT);
+            if (!biome.isEmpty()) {
+                if (!WORLD_CREATE_ID.matcher(biome).matches()) {
+                    return "Biome invalide.";
+                }
+                params.put("biome", biome);
+            }
+            for (int i = 1; i <= MAX_WORLD_LAYERS; i++) {
+                String block = trim(form.get("layer." + i + ".block")).toLowerCase(java.util.Locale.ROOT);
+                if (block.isEmpty()) {
+                    continue;
+                }
+                String height = trim(form.get("layer." + i + ".height"));
+                if (!WORLD_CREATE_ID.matcher(block).matches()) {
+                    return "Couche " + i + " : bloc invalide.";
+                }
+                if (!height.matches("[0-9]{1,3}") || Integer.parseInt(height) < 1 || Integer.parseInt(height) > 384) {
+                    return "Couche " + i + " : épaisseur entre 1 et 384.";
+                }
+                params.put("layer." + i + ".block", block);
+                params.put("layer." + i + ".height", height);
+            }
+        }
+        if ("world.create.preview".equals(type)) {
+            return null;
+        }
+        String expected = trim(form.get("expected"));
+        if (!WORLD_SETTINGS_FINGERPRINT.matcher(expected).matches()) {
+            return "Aperçu de référence manquant : refaire l'aperçu.";
+        }
+        String token = trim(form.get("token"));
+        if (!WORLD_CREATE_TOKEN.matcher(token).matches()) {
+            return "Jeton de demande manquant : refaire l'aperçu.";
+        }
+        String actor = trim(form.get("actor"));
+        if (actor.isEmpty() || actor.length() > 64) {
+            return "Auteur de la création manquant.";
+        }
+        if (!"true".equals(form.get("confirm"))) {
+            return "Confirmation explicite manquante.";
+        }
+        params.put("expected", expected);
+        params.put("token", token);
+        params.put("actor", actor);
+        params.put("confirm", "true");
+        return null;
     }
 
     /** Issue #561 — clé d'un réglage demandé, miroir du plugin qui revalide tout. */

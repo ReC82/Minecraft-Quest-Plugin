@@ -8,12 +8,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Issue #560 (#331-W1) — page « Mondes » en <strong>lecture seule</strong> : la liste des mondes
- * (cartes) et la fiche d'un monde, d'après le dernier relevé {@code world.list}.
+ * Issue #560 (#331-W1) — page « Mondes » : la liste des mondes (cartes) et la fiche d'un monde,
+ * d'après le dernier relevé {@code world.list}.
  *
- * <p>Aucune action mutative n'est exposée : pas de bouton de création, de chargement, de
- * déchargement ni de réglage, pas même désactivé. Le seul formulaire de la page est
- * « Rafraîchir », qui relit le serveur.</p>
+ * <p>Aucune création, aucun chargement, aucun déchargement ni aucune suppression n'est exposé, pas
+ * même désactivé. Depuis l'issue #561, la fiche porte la section « Réglages »
+ * ({@link WorldSettingsPages}) : relecture, aperçu sans écriture, puis application confirmée.</p>
  */
 public final class WorldPages {
 
@@ -25,9 +25,14 @@ public final class WorldPages {
      * @param headerHtml  sélecteur d'agent + barre « Rafraîchir » (HTML sûr)
      * @param releveHtml  date du relevé (HTML sûr, peut être vide)
      * @param selected    monde dont afficher la fiche ({@code ""} = la liste)
+     * @param settingsHtml section « Réglages » de la fiche (issue #561, HTML sûr, peut être vide)
      */
     public record View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
-                       String selected) {
+                       String selected, String settingsHtml) {
+
+        public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml, String selected) {
+            this(agentId, details, headerHtml, releveHtml, selected, "");
+        }
     }
 
     private WorldPages() {
@@ -37,8 +42,9 @@ public final class WorldPages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("world", "Mondes",
                 "Tous les mondes du serveur, leur gestionnaire et ce qui en dépend. Un monde n'a aucun rôle "
-                        + "(Hub, Wild, Claims) tant que la configuration ne le désigne pas. Page en lecture seule : "
-                        + "rien n'est créé, chargé, déchargé ni modifié d'ici.", ""));
+                        + "(Hub, Wild, Claims) tant que la configuration ne le désigne pas. Rien n'est créé, chargé, "
+                        + "déchargé ni supprimé d'ici ; les réglages d'un monde chargé se modifient dans sa fiche, après "
+                        + "aperçu et confirmation.", ""));
         sb.append(v.headerHtml());
         if (v.agentId().isEmpty()) {
             return sb.toString();
@@ -193,8 +199,9 @@ public final class WorldPages {
                 .append(dl("PvP", yesNo(w.get("pvp"), "autorisé", "interdit")))
                 .append(dl("Point d'arrivée", w.get("spawn") == null ? "inconnu" : str(w.get("spawn"))))
                 .append(dl("Chargement au démarrage", autoLoadLabel(w)))
-                .append("</dl><p class=\"field-help\">Lecture seule. La modification des réglages fera l'objet d'un "
-                        + "lot séparé.</p></section>");
+                .append("</dl><p class=\"field-help\">D'après la liste des mondes. Valeurs relues en détail et "
+                        + "modification : section <a href=\"#").append(WorldSettingsPages.ANCHOR)
+                .append("\">Réglages</a>.</p></section>");
         sb.append("</div><div>");
         sb.append(linksSection(v.agentId(), map(w.get("links"))));
         sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("users"))
@@ -214,6 +221,7 @@ public final class WorldPages {
         }
         sb.append("<p class=\"field-help\">").append(Http.esc(multiverseLine(mv))).append("</p></section>");
         sb.append("</div></div>");
+        sb.append(v.settingsHtml());
         return sb.toString();
     }
 

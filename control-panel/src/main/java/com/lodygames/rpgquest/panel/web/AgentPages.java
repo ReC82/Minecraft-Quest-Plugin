@@ -11282,8 +11282,43 @@ public final class AgentPages {
         String header = agentPicker(agentId, WorldPages.PATH, "")
                 + listCatbar("Mondes", compactRefresh(session, agentId, "world.list", "Rafraîchir les mondes",
                 details == null ? "btn-warning" : "btn-outline-primary", WorldPages.PATH));
+        String selected = str(q.get("world")).trim();
         return WorldPages.render(new WorldPages.View(agentId, details, header,
-                row.map(r -> when(at(r))).orElse(""), str(q.get("world")).trim()));
+                row.map(r -> when(at(r))).orElse(""), selected,
+                details == null || selected.isEmpty() ? "" : worldSettings(session, agentId, selected, details, q)));
+    }
+
+    /**
+     * Issue #561 — section « Réglages » de la fiche : dernière relecture réussie de CE monde, relecture
+     * en attente, et l'aperçu / l'application désignés par l'URL ({@code preview}, {@code applied}),
+     * acceptés seulement s'ils visent ce même agent et ce même monde.
+     */
+    private String worldSettings(Session session, String agentId, String world, Map<String, Object> list,
+                                 Map<String, String> q) {
+        boolean loaded = asList(list.get("worlds")).stream().map(AgentPages::asMap)
+                .anyMatch(w -> world.equals(str(w.get("name"))) && Boolean.TRUE.equals(w.get("loaded")));
+        Optional<AgentActionRow> reading = store.successfulActionsOfType(agentId, "world.settings.get", 50).stream()
+                .filter(r -> world.equals(r.params().get("world"))).findFirst();
+        AgentActionRow pending = store.recentActions(agentId, 50).stream()
+                .filter(r -> "world.settings.get".equals(r.type()) && world.equals(r.params().get("world"))
+                        && !r.status().terminal())
+                .findFirst().orElse(null);
+        AgentActionRow preview = worldSettingsRow(agentId, world, "world.settings.preview", q.get("preview"));
+        AgentActionRow applied = worldSettingsRow(agentId, world, "world.settings.apply", q.get("applied"));
+        return WorldSettingsPages.render(new WorldSettingsPages.View(agentId, world, loaded,
+                perms.can(session.effective(), Permission.WORLD_WRITE), reading.orElse(null),
+                reading.flatMap(this::detailsOf).orElse(null), pending, preview,
+                preview == null ? null : detailsOf(preview).orElse(null), applied,
+                applied == null ? null : detailsOf(applied).orElse(null),
+                reading.map(r -> when(at(r))).orElse("")));
+    }
+
+    private AgentActionRow worldSettingsRow(String agentId, String world, String type, String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        return store.action(id.trim()).filter(a -> type.equals(a.type()) && agentId.equals(a.agentId())
+                && world.equals(a.params().get("world"))).orElse(null);
     }
 
     /** Page {@code /portals} (issue #564) : lecture seule, rendu dans {@link PortalPages}. */

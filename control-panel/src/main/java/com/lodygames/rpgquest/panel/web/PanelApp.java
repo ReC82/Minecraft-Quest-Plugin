@@ -370,6 +370,11 @@ public final class PanelApp {
         // Issue #560 (#331-W1) — mondes en LECTURE SEULE : seul « Rafraîchir » (world.list) est exposé.
         route("/worlds", exchange -> handleBusinessPage(exchange, "/worlds", "Mondes",
                 Permission.WORLD_READ, agentPages::worlds));
+        // Issue #561 (#331-W2) — réglages d'un monde existant : relecture (WORLD_READ), aperçu sans
+        // écriture puis application confirmée (WORLD_WRITE). Aucune création ni (dé)chargement.
+        route("/worlds/settings/read", this::handleWorldSettingsRead);
+        route("/worlds/settings/preview", this::handleWorldSettingsPreview);
+        route("/worlds/settings/apply", this::handleWorldSettingsApply);
         // Issue #564 (#228-P1) — portails en LECTURE SEULE : seul « Rafraîchir » (portal.list) est exposé.
         route("/portals", exchange -> handleBusinessPage(exchange, "/portals", "Portails",
                 Permission.PORTAL_READ, agentPages::portals));
@@ -4902,6 +4907,186 @@ public final class PanelApp {
     }
 
     // ================================================================================
+    //  Réglages d'un monde (issue #561, #331-W2)
+    // ================================================================================
+
+    /** Durée de validité d'un aperçu : au-delà, refaire l'aperçu avant d'appliquer. */
+    private static final Duration WORLD_SETTINGS_PREVIEW_TTL = Duration.ofMinutes(15);
+
+    private record WorldPost(Session session, Map<String, String> form, String agentId, String world, String back) {
+    }
+
+    /** POST commun : session, CSRF, permission, agent connu, nom de monde ; {@code null} si déjà répondu. */
+    private WorldPost worldPost(HttpExchange exchange, Permission needed) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return null;
+        }
+        Session session = maybe.get();
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.redirect(exchange, WorldPages.PATH);
+            return null;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return null;
+        }
+        if (!permissions.can(session.effective(), needed)) {
+            audit.record(session.username(), "world.settings", "world=" + form.getOrDefault("world", ""), "DENIED",
+                    "permission " + needed + " manquante", UUID.randomUUID().toString().substring(0, 8));
+            forbidden(exchange, session, WorldPages.PATH);
+            return null;
+        }
+        String agentId = form.getOrDefault("agent", "").trim();
+        if (agentId.isEmpty() || agentRegistry.byId(agentId).isEmpty()) {
+            Http.redirect(exchange, WorldPages.PATH + "?err=" + enc("Serveur de jeu inconnu."));
+            return null;
+        }
+        String world = form.getOrDefault("world", "").trim();
+        String back = WorldPages.PATH + "?agent=" + enc(agentId) + "&world=" + enc(world);
+        return new WorldPost(session, form, agentId, world, back);
+    }
+
+    private void handleWorldSettingsRead(HttpExchange exchange) throws IOException {
+        WorldPost post = worldPost(exchange, Permission.WORLD_READ);
+        if (post == null) {
+            return;
+        }
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("world.settings.get",
+                Map.of("world", post.world()));
+        if (!v.valid()) {
+            Http.redirect(exchange, post.back() + "&err=" + enc(v.error()));
+            return;
+        }
+        boolean open = agentStore.recentActions(post.agentId(), 50).stream()
+                .anyMatch(a -> "world.settings.get".equals(a.type()) && post.world().equals(a.params().get("world"))
+                        && !a.status().terminal());
+        if (!open) {
+            String id = agentStore.createAction(post.agentId(), "world.settings.get", v.params(), post.session().username());
+            audit.record(post.session().username(), "agent.action.create", "agent=" + post.agentId()
+                    + " type=world.settings.get action=" + id, "PENDING", "world=" + post.world(),
+                    UUID.randomUUID().toString().substring(0, 8));
+        }
+        Http.redirect(exchange, post.back() + "#" + WorldSettingsPages.ANCHOR);
+    }
+
+    /** Aperçu sans écriture : seules les valeurs choisies (non vides) partent au serveur. */
+    private void handleWorldSettingsPreview(HttpExchange exchange) throws IOException {
+        WorldPost post = worldPost(exchange, Permission.WORLD_WRITE);
+        if (post == null) {
+            return;
+        }
+        Session session = post.session();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("world.settings.preview", post.form());
+        if (!v.valid()) {
+            audit.record(session.username(), "agent.action.create", "agent=" + post.agentId()
+                    + " type=world.settings.preview", "DENIED", v.error(), rid);
+            Http.redirect(exchange, post.back() + "&err=" + enc(v.error()) + "#" + WorldSettingsPages.ANCHOR);
+            return;
+        }
+        String submitToken = post.form().getOrDefault("submit_token", "").trim();
+        if (!submitToken.isEmpty()) {
+            Optional<String> already = session.reserveSubmitToken(submitToken);
+            if (already.isPresent()) {
+                Http.redirect(exchange, already.get().isEmpty() ? post.back() + "#" + WorldSettingsPages.ANCHOR
+                        : post.back() + "&preview=" + enc(already.get()) + "#" + WorldSettingsPages.ANCHOR);
+                return;
+            }
+        }
+        String id = agentStore.createAction(post.agentId(), "world.settings.preview", v.params(), session.username());
+        if (!submitToken.isEmpty()) {
+            session.bindSubmitToken(submitToken, id);
+        }
+        audit.record(session.username(), "agent.action.create", "agent=" + post.agentId()
+                + " type=world.settings.preview action=" + id, "PENDING", safeParams(v.params()), rid);
+        Http.redirect(exchange, post.back() + "&preview=" + enc(id) + "#" + WorldSettingsPages.ANCHOR);
+    }
+
+    /**
+     * Application confirmée. Ce qui part au serveur, ce sont les valeurs ET l'empreinte de l'aperçu
+     * enregistré ici (jamais celles du navigateur) ; l'auteur est la session. Un aperçu ne s'applique
+     * qu'une fois, et seulement dans les {@link #WORLD_SETTINGS_PREVIEW_TTL} qui suivent.
+     */
+    private void handleWorldSettingsApply(HttpExchange exchange) throws IOException {
+        WorldPost post = worldPost(exchange, Permission.WORLD_WRITE);
+        if (post == null) {
+            return;
+        }
+        Session session = post.session();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String previewId = post.form().getOrDefault("preview", "").trim();
+        String back = post.back() + "&preview=" + enc(previewId);
+        String target = "agent=" + post.agentId() + " type=world.settings.apply world=" + post.world();
+        if (!"true".equals(post.form().get("confirm"))) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "confirmation absente", rid);
+            Http.redirect(exchange, back + "&err=" + enc("Cocher la confirmation pour appliquer. Rien n'a été écrit.")
+                    + "#" + WorldSettingsPages.ANCHOR);
+            return;
+        }
+        Optional<AgentActionRow> preview = agentStore.action(previewId)
+                .filter(a -> "world.settings.preview".equals(a.type()) && a.agentId().equals(post.agentId())
+                        && post.world().equals(a.params().get("world"))
+                        && a.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS);
+        Map<String, Object> details = preview.flatMap(agentPages::actionDetails).orElse(Map.of());
+        if (preview.isEmpty() || !(details.get("changes") instanceof List<?> changes)) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "aperçu introuvable", rid);
+            Http.redirect(exchange, post.back() + "&err=" + enc("Aperçu introuvable ou refusé : refaire l'aperçu. "
+                    + "Rien n'a été écrit.") + "#" + WorldSettingsPages.ANCHOR);
+            return;
+        }
+        if (preview.get().createdAt() == null
+                || preview.get().createdAt().plus(WORLD_SETTINGS_PREVIEW_TTL).isBefore(Instant.now())) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "aperçu trop ancien", rid);
+            Http.redirect(exchange, back + "&err=" + enc("Aperçu de plus de 15 minutes : le refaire pour relire les "
+                    + "valeurs actuelles. Rien n'a été écrit.") + "#" + WorldSettingsPages.ANCHOR);
+            return;
+        }
+        boolean alreadySent = agentStore.recentActions(post.agentId(), 100).stream()
+                .anyMatch(a -> "world.settings.apply".equals(a.type()) && previewId.equals(a.params().get("preview_id")));
+        String submitToken = post.form().getOrDefault("submit_token", "").trim();
+        Optional<String> reserved = submitToken.isEmpty() ? Optional.empty() : session.reserveSubmitToken(submitToken);
+        if (alreadySent || reserved.isPresent()) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", "aperçu déjà appliqué", rid);
+            String existing = reserved.filter(r -> !r.isEmpty()).orElse("");
+            Http.redirect(exchange, back + (existing.isEmpty() ? "" : "&applied=" + enc(existing)) + "&err="
+                    + enc("Cet aperçu a déjà été envoyé : rien n'a été envoyé en double.") + "#" + WorldSettingsPages.ANCHOR);
+            return;
+        }
+        Map<String, String> input = new LinkedHashMap<>();
+        input.put("world", post.world());
+        List<String> summary = new java.util.ArrayList<>();
+        for (Object o : changes) {
+            if (o instanceof Map<?, ?> c && "APPLY".equals(String.valueOf(c.get("status")))) {
+                String key = String.valueOf(c.get("key"));
+                input.put("set." + key, String.valueOf(c.get("proposed")));
+                summary.add(key + ":" + c.get("current") + "→" + c.get("proposed"));
+            }
+        }
+        input.put("expected", String.valueOf(details.getOrDefault("fingerprint", "")));
+        input.put("actor", session.username());
+        input.put("confirm", "true");
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("world.settings.apply", input);
+        if (!v.valid()) {
+            audit.record(session.username(), "agent.action.create", target, "DENIED", v.error(), rid);
+            Http.redirect(exchange, back + "&err=" + enc(v.error()) + "#" + WorldSettingsPages.ANCHOR);
+            return;
+        }
+        Map<String, String> params = new LinkedHashMap<>(v.params());
+        params.put("preview_id", previewId);
+        String id = agentStore.createAction(post.agentId(), "world.settings.apply", params, session.username());
+        if (!submitToken.isEmpty()) {
+            session.bindSubmitToken(submitToken, id);
+        }
+        audit.record(session.username(), "agent.action.create", target + " action=" + id, "PENDING",
+                String.join(", ", summary), rid);
+        LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + post.agentId()
+                + " type=world.settings.apply action=" + id + " by=" + session.username());
+        Http.redirect(exchange, post.back() + "&applied=" + enc(id) + "#" + WorldSettingsPages.ANCHOR);
+    }
+
+    // ================================================================================
     //  Dialogues, version simple (issue #332)
     // ================================================================================
 
@@ -5795,6 +5980,15 @@ public final class PanelApp {
         if (!hasAllPermissions(session, spec.get())) {
             audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "permission manquante", rid);
             forbidden(exchange, session, returnPath);
+            return;
+        }
+        if ("world.settings.preview".equals(type) || "world.settings.apply".equals(type)) {
+            // Issue #561 : un réglage de monde part TOUJOURS de la fiche du monde (aperçu enregistré,
+            // confirmation, auteur = session), jamais d'un formulaire générique.
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED",
+                    "réglage de monde hors de la fiche", rid);
+            Http.redirect(exchange, withError(returnPath, agentId, null,
+                    "Les réglages d'un monde se modifient depuis sa fiche (page Mondes)."));
             return;
         }
         Optional<AgentIdentity> agent = agentRegistry.byId(agentId);

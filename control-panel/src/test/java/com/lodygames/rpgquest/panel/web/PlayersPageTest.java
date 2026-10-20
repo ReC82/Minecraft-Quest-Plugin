@@ -226,6 +226,33 @@ class PlayersPageTest {
                 StandardCharsets.UTF_8).contains("déjà en cours"));
     }
 
+    // ---- Issue #27 : le bloc « Droits en jeu » suit son action jusqu'à la fin -----------------
+
+    @Test
+    void aPendingRightsReadIsFollowedUntilItsEndThenShowsItsFailure() throws Exception {
+        start();
+        seedCatalog(CATALOG);
+        String id = store.createAction(TestConfig.AGENT_ID, "mc.rights.read", Map.of("player", UUID_LODY), "owner");
+        String url = "/players?agent=" + TestConfig.AGENT_ID + "&player=" + UUID_LODY + "&tab=moderation";
+
+        String pending = sheet(get(url).body());
+        assertTrue(pending.contains("Droits en jeu") && pending.contains("en cours…"), pending);
+        assertTrue(pending.contains("data-pa-track-action=\"" + id + "\" data-pa-track-reload=\"terminal\""),
+                "le bloc local se recharge à la fin de SON action, succès ou échec");
+
+        store.recordResult(id, TestConfig.AGENT_ID, com.lodygames.rpgquest.panel.agent.AgentActionStatus.FAILED,
+                "", "Lecture impossible : LuckPerms ne répond pas.",
+                "{\"action_id\":\"" + id + "\",\"status\":\"FAILED\",\"details\":{}}", java.time.Instant.now());
+        String failed = sheet(get(url).body());
+        assertTrue(failed.contains("Lecture impossible : LuckPerms ne répond pas."), "échec affiché dans le bloc");
+        assertFalse(failed.contains("en cours…") || failed.contains("data-pa-track-action=\"" + id), failed);
+
+        // Un toast suivant déjà la même action hérite de l'attente du bloc (sinon : toast « échec »,
+        // bloc toujours « en cours »).
+        String panelJs = get("/assets/panel.js").body();
+        assertTrue(panelJs.contains("if (onTerminal) { pendingToasts[p].reloadOnTerminal = true; }"));
+    }
+
     // ---- infra ----------------------------------------------------------------------------
 
     private void seedCatalog(String detailsJson) throws Exception {

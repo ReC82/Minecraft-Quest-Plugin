@@ -247,15 +247,21 @@
     var tracked = document.querySelectorAll("[data-pa-track-action]");
     for (var t = 0; t < tracked.length; t++) {
       var trackedId = tracked[t].getAttribute("data-pa-track-action");
-      var known = false;
-      for (var p = 0; p < pendingToasts.length; p++) {
-        if (pendingToasts[p].actionId === trackedId) { known = true; break; }
-      }
       // Issue #214 : data-pa-track-reload="terminal" — la vue attend CE résultat (vérification d'un
       // import) : rechargement immédiat dès la fin, succès ou échec, sans attendre que la file soit au repos.
+      var onTerminal = tracked[t].getAttribute("data-pa-track-reload") === "terminal";
+      var known = false;
+      for (var p = 0; p < pendingToasts.length; p++) {
+        if (pendingToasts[p].actionId === trackedId) {
+          // Issue #27 : un toast suit déjà l'action — il hérite de l'attente du bloc, sinon un échec
+          // mettait à jour le toast seul et le bloc de la page restait « en cours ».
+          if (onTerminal) { pendingToasts[p].reloadOnTerminal = true; }
+          known = true;
+          break;
+        }
+      }
       if (trackedId && !known) {
-        pendingToasts.push({ el: tracked[t], actionId: trackedId, sawPending: true,
-          reloadOnTerminal: tracked[t].getAttribute("data-pa-track-reload") === "terminal" });
+        pendingToasts.push({ el: tracked[t], actionId: trackedId, sawPending: true, reloadOnTerminal: onTerminal });
       }
     }
   }

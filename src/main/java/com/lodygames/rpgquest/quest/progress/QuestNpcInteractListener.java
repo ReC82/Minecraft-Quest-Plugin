@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.quest.progress;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import java.util.Optional;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 
@@ -29,7 +30,9 @@ final class QuestNpcInteractListener implements Listener {
         this.npcIdentityService = npcIdentityService;
     }
 
-    @EventHandler(ignoreCancelled = true)
+    // LOW : l'objectif progresse AVANT l'ouverture du dialogue du même clic (priorité NORMAL), qui
+    // affiche donc l'état à jour — quête rendue, plus « Où en est ma tâche ? » (#13, TC-306).
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onInteract(PlayerInteractEntityEvent event) {
         if (npcIdentityService.isCitizensNpc(event.getRightClicked())) {
             return;

@@ -76,6 +76,12 @@ Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
 `quest.player.status` (lecture) : quête de LoDyMcFly toujours ACTIVE, à l'étape `report_to_bandit` dès
 sa reconnexion. En jeu : TC-306, revalidation ciblée R1–R3.
 
+**Effectué le 20/10/2026** (`fff1a57`, PR #633) : `deploy-verygames.sh -y --wait-ci` (CI verte sur
+`fff1a57`), JAR 3 888 875 o, SHA-256 `751cc189…575d` retéléchargé identique ; sauvegarde
+`rpgquest-20261020T142059Z-predeploy.jar` (3 888 174 o, `72c75e02…2440` = JAR `a0e5268`). DEV redémarré
+par `verygames-restart.sh` (seul LoDyMcFly connecté). Lecture après redémarrage : 33 quêtes chargées ;
+« Les toiles du sous-bois » de LoDyMcFly ACTIVE à `report_to_bandit` (0/1), rien versé.
+
 ### Rollback
 
 Remettre le JAR précédent (sauvegarde du script). Une quête déjà passée à l'étape de retour y reste,

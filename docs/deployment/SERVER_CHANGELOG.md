@@ -69,6 +69,14 @@ ni progression touchée.
 Remettre le JAR sauvegardé par `deploy-verygames.sh` et redémarrer ; PlugAdmin : release précédente
 sous `/opt/plugadmin/releases/`. Aucune donnée à restaurer (aucune écriture nouvelle).
 
+### Déploiement
+
+Effectué le 2026-10-20 : `scripts/deploy-verygames.sh -y` depuis `118de98e` (JAR 3 896 272 o, SHA-256
+`5cd84c38…3219f`, re-téléchargé et identique ; backup `rpgquest-20261020T170253Z-predeploy.jar`,
+3 889 567 o, `0694d0c4…9f7da`), `scripts/verygames-restart.sh` (seul LoDyMcFly en ligne), DEV de nouveau
+ONLINE ; `scripts/plugadmin/deploy.sh` (DEPLOYED `118de98e`). `quest.list` relu : 33 quêtes, 4 modèles
+avec `period`, bloc `periodic` = 2 / 1 / 04:00 / lundi / Europe/Paris (inchangé).
+
 ## 2026-10-20 - PlugAdmin : « Lire ses droits en jeu » ne finit plus en NullPointerException (#27, TC-376)
 
 ### Changement

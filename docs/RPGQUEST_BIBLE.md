@@ -4092,7 +4092,10 @@ définition à un PNJ Citizens existant** (`npc.citizens.list` /
 et de **créer physiquement un PNJ Citizens depuis une définition** puis de le
 lier (`npc.citizens.create`, issue #81 phase 2 — nom = `displayName`, monde de
 la liste blanche RPGQuest, position bornée, rollback du PNJ créé si la liaison
-échoue). Actions agent `npc.definition.create` / `npc.definition.update` /
+échoue). Coordonnées X / Y / Z (apparition, déplacement, création complète) : **décimales libres**
+comme l'écran F3 (`743.222`, négatives comprises — plus de pas imposé de 0,5, #81), transmises
+telles quelles sans arrondi ; coller « `x y z` » copié de F3 dans un champ remplit les trois ; le
+serveur PlugAdmin et le plugin revalident (nombre fini, |X|,|Z| ≤ 29 999 984, Y borné). Actions agent `npc.definition.create` / `npc.definition.update` /
 `quest.giver.set` / `npc.citizens.link` / `npc.citizens.create`, jamais de YAML
 brut ni de commande console. `/rpgadmin npc tag` valide et
 autocomplète l'id sur le même registre canonique (#66). La
@@ -4899,6 +4902,16 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
   difficulté Paisible refusée (supprimerait mobs spéciaux et boss), monstres coupés = avertissement.
   Mode de jeu refusé tant que des joueurs sont dans le monde (Multiverse le leur imposerait). Bordure
   ou point d'arrivée refusés si l'arrivée sortait de la bordure.
+- **Nom affiché d'un monde** (issue #81) : réglage « Nom affiché » de la même section, même parcours
+  (aperçu → confirmation → relecture → journal). Il remplace le libellé du monde dans PlugAdmin (pages
+  PNJ, Mondes, Portails, Voyages) ; **l'identifiant technique ne change jamais** (configuration,
+  portails, PNJ, quêtes intacts). Chemin d'écriture unique : l'**alias Multiverse-Core**
+  (`MultiverseWorld#setAlias`, son `worlds.yml`) quand Multiverse connaît le monde, sinon le fichier
+  RPGQuest **`plugins/RPGQuest/world-names.yml`** (section `display-names`, écrit hors du thread
+  principal ; `wild` sur DEV). 1 à 32 caractères, sans `< > & §` ni code couleur ; « `-` » retire le
+  nom choisi. Sans nom choisi, PlugAdmin affiche les **défauts** Hub / Claims / Wild (selon le rôle
+  configuré), « Monde principal », Nether, End, sinon l'identifiant. Un seul résolveur côté panel
+  (`WorldNames`, lu dans le dernier relevé `world.list`, champ `alias`).
 - **Journal** : `plugins/RPGQuest/world-settings-audit.yml` (qui, quand, monde, avant / demandé / relu,
   300 dernières applications, écrit hors du thread principal) affiché dans « Dernières modifications » ;
   PlugAdmin journalise aussi chaque demande (`audit_log`).

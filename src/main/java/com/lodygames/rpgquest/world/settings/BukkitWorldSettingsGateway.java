@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.world.settings;
 
+import com.lodygames.rpgquest.world.WorldDisplayNames;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -36,12 +37,23 @@ public final class BukkitWorldSettingsGateway implements WorldSettingsGateway {
     private final Server server;
     private final MultiverseSettingsPort multiverse;
     private final Supplier<Roles> roles;
+    private final WorldDisplayNames displayNames;
     private final Set<String> multiverseDirty = new HashSet<>();
 
-    public BukkitWorldSettingsGateway(Server server, MultiverseSettingsPort multiverse, Supplier<Roles> roles) {
+    /**
+     * @param displayNames noms d'affichage des mondes hors Multiverse (#81) ; {@code null} = nom
+     *                     affiché indisponible pour ces mondes
+     */
+    public BukkitWorldSettingsGateway(Server server, MultiverseSettingsPort multiverse, Supplier<Roles> roles,
+                                      WorldDisplayNames displayNames) {
         this.server = server;
         this.multiverse = multiverse;
         this.roles = roles;
+        this.displayNames = displayNames;
+    }
+
+    public BukkitWorldSettingsGateway(Server server, MultiverseSettingsPort multiverse, Supplier<Roles> roles) {
+        this(server, multiverse, roles, null);
     }
 
     @Override
@@ -60,11 +72,11 @@ public final class BukkitWorldSettingsGateway implements WorldSettingsGateway {
         List<String> notes = new ArrayList<>();
 
         if (mvError != null) {
-            for (String key : List.of("difficulty", "pvp", "monsters", "animals", "gamemode", "spawn")) {
+            for (String key : List.of("alias", "difficulty", "pvp", "monsters", "animals", "gamemode", "spawn")) {
                 unavailable.put(key, mvError + " : réglage non modifiable tant que Multiverse ne répond pas.");
             }
         } else if (mv != null) {
-            for (String key : List.of("difficulty", "pvp", "monsters", "animals", "gamemode", "spawn")) {
+            for (String key : List.of("alias", "difficulty", "pvp", "monsters", "animals", "gamemode", "spawn")) {
                 if (mv.containsKey(key)) {
                     values.put(key, mv.get(key));
                     writers.put(key, WorldSettingsSnapshot.WRITER_MULTIVERSE);
@@ -85,6 +97,13 @@ public final class BukkitWorldSettingsGateway implements WorldSettingsGateway {
                         + "proposée pourrait être annulée.");
             }
         } else {
+            if (displayNames == null) {
+                unavailable.put("alias", "Ce monde n'est pas géré par Multiverse-Core et aucun fichier de noms "
+                        + "RPGQuest n'est disponible.");
+            } else {
+                values.put("alias", displayNames.get(world.getName()).orElse(WorldDisplayNames.NONE));
+                writers.put("alias", WorldSettingsSnapshot.WRITER_RPGQUEST);
+            }
             values.put("difficulty", world.getDifficulty().name());
             writers.put("difficulty", WorldSettingsSnapshot.WRITER_BUKKIT);
             putRule(world, "pvp", "pvp", values, writers, unavailable);
@@ -129,6 +148,10 @@ public final class BukkitWorldSettingsGateway implements WorldSettingsGateway {
                     multiverseDirty.add(world.getName());
                 }
                 return error;
+            }
+            if (WorldSettingsSnapshot.WRITER_RPGQUEST.equals(change.writer())) {
+                return displayNames == null ? "Fichier des noms de mondes indisponible."
+                        : displayNames.set(world.getName(), value);
             }
             if (WorldSettingsSnapshot.WRITER_GAMERULE.equals(change.writer())) {
                 String rule = key.startsWith(WorldSetting.RULE_PREFIX) ? key.substring(WorldSetting.RULE_PREFIX.length())

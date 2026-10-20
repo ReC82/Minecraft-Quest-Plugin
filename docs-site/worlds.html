@@ -161,6 +161,15 @@
       refuse la difficulté Paisible. Chaque application est notée dans
       <code>plugins/RPGQuest/world-settings-audit.yml</code> et dans « Dernières modifications ».
     </p>
+    <h3 class="h5 mt-4">Nom affiché d'un monde (issue #81)</h3>
+    <p class="text-body-secondary">
+      Le réglage <strong>Nom affiché</strong> (même section, même aperçu et même confirmation) choisit le
+      nom que PlugAdmin montre pour ce monde dans les pages PNJ, Mondes, Portails et Voyages.
+      L'identifiant technique (<code>world_hub</code>, <code>wild</code>…) ne change jamais. Le nom est
+      enregistré comme <strong>alias Multiverse-Core</strong> si Multiverse gère le monde, sinon dans
+      <code>plugins/RPGQuest/world-names.yml</code>. Saisir <code>-</code> revient au nom par défaut :
+      Hub, Claims ou Wild selon le rôle du monde.
+    </p>
   </section>
 
   <section class="my-5">

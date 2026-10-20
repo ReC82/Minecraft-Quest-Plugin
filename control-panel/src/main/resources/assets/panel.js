@@ -11,6 +11,7 @@
  *                           léger de /agents/actions.json — accéléré tant qu'une action est en cours ;
  *   - initCopy()          : copie d'un identifiant technique ([data-copy]) ;
  *   - initCopyBlock()     : copie d'un bloc brut ([data-copy-from]) avec retour visible (#583) ;
+ *   - initXyzPaste()      : coller « x y z » (écran F3) dans un champ X/Y/Z remplit les trois (#81) ;
  *   - initFilters()       : filtrage progressif des listes de cartes ;
  *   - initOpsAnnounce()   : compteur, aperçu et modèles rapides de l'annonce globale (#95) ;
  *   - initOpsConsole()    : console de logs en lecture seule — recherche, filtres de niveau,
@@ -756,6 +757,36 @@
       if (ev.key !== "Enter" && ev.key !== " " && ev.key !== "Spacebar") { return; }
       var el = ev.target && ev.target.matches && ev.target.matches("[data-copy]") ? ev.target : null;
       if (el) { ev.preventDefault(); copyText(el.getAttribute("data-copy") || el.textContent, el); }
+    });
+  }
+
+  /* ---- Coordonnées F3 collées d'un coup (#81) -------------------------------------- */
+
+  /*
+   * Dans un bloc [data-xyz], coller un texte qui contient exactement trois nombres (« 743.222 67
+   * -713.699 », « XYZ: 743.222 / 67.00000 / -713.699 ») remplit X, Y et Z. Autre texte : collage
+   * normal. Purement local ; le serveur revalide toujours les trois valeurs.
+   */
+  function xyzFromText(text) {
+    var nums = String(text || "").match(/-?\d+(?:\.\d+)?/g);
+    return nums && nums.length === 3 ? nums : null;
+  }
+
+  function initXyzPaste() {
+    document.addEventListener("paste", function (ev) {
+      var input = ev.target;
+      var box = input && input.closest ? input.closest("[data-xyz]") : null;
+      if (!box) { return; }
+      var data = ev.clipboardData || window.clipboardData;
+      var nums = xyzFromText(data ? data.getData("text") : "");
+      if (!nums) { return; }
+      var fields = ["x", "y", "z"].map(function (n) { return box.querySelector('input[name="' + n + '"]'); });
+      if (fields.some(function (f) { return !f || f.disabled; })) { return; }
+      ev.preventDefault();
+      fields.forEach(function (f, i) {
+        f.value = nums[i];
+        try { f.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) { /* ignore */ }
+      });
     });
   }
 
@@ -2062,6 +2093,7 @@
     run("initNotifications", initNotifications);
     run("initCopy", initCopy);
     run("initCopyBlock", initCopyBlock);
+    run("initXyzPaste", initXyzPaste);
     run("initFilters", initFilters);
     run("initFocus", initFocus);
     run("initCombo", initCombo);

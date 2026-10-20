@@ -1319,8 +1319,15 @@ public final class RPGQuestBootstrap {
         agentActions.setQuestCatalogs(questCatalogEngine);
         // Issue #560 (#331-W1) : page Mondes en lecture seule. Multiverse-Core est facultatif ; absent,
         // la source se déclare indisponible et seuls les mondes chargés sont décrits.
+        // Issue #81 : noms d'affichage des mondes hors Multiverse (les autres utilisent l'alias Multiverse).
+        com.lodygames.rpgquest.world.WorldDisplayNames worldDisplayNames =
+                new com.lodygames.rpgquest.world.WorldDisplayNames(
+                        plugin.getDataFolder().toPath().resolve("world-names.yml"),
+                        task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
+                        plugin.getSLF4JLogger());
+        worldDisplayNames.load();
         agentActions.setWorldSources(worldService, worldPortalRegistry, configService::current,
-                new com.lodygames.rpgquest.world.multiverse.MultiverseWorldSource());
+                new com.lodygames.rpgquest.world.multiverse.MultiverseWorldSource(), worldDisplayNames);
         // Issue #561 (#331-W2) : réglages d'un monde existant. Rien n'est appliqué au démarrage :
         // seule l'action world.settings.apply écrit, après aperçu et confirmation dans PlugAdmin.
         com.lodygames.rpgquest.world.settings.WorldSettingsAuditLog worldSettingsAudit =
@@ -1336,7 +1343,7 @@ public final class RPGQuestBootstrap {
                             var cfg = configService.current();
                             return new com.lodygames.rpgquest.world.settings.BukkitWorldSettingsGateway.Roles(
                                     cfg.hub().world(), cfg.travel().wildWorld(), cfg.claims().world());
-                        }),
+                        }, worldDisplayNames),
                 worldSettingsAudit, java.time.Clock.systemUTC()));
         // Issue #562 (#331-W3) : création de monde via Multiverse-Core. Rien n'est créé au démarrage :
         // seule l'action world.create.apply crée, après aperçu et confirmation dans PlugAdmin.

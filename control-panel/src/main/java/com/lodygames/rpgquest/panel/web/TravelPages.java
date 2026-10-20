@@ -18,8 +18,8 @@ import java.util.Set;
  *
  * <p>Trois vues simples d'abord — <strong>Lieux</strong>, <strong>Bornes</strong>,
  * <strong>À vérifier</strong> — puis un onglet <strong>Avancé</strong> qui garde, inchangé, tout le
- * diagnostic du réseau. Le vocabulaire visible est celui du joueur (« lieu », « borne », « Village »,
- * « Monde sauvage ») ; identifiants, instances, coordonnées et dates ISO restent accessibles dans
+ * diagnostic du réseau. Le vocabulaire visible est celui du joueur (« lieu », « borne », et les noms
+ * affichés des mondes de {@link WorldNames} — Hub et Wild par défaut, #81) ; identifiants, instances, coordonnées et dates ISO restent accessibles dans
  * « Informations techniques ».</p>
  *
  * <p>Aucune donnée ni action nouvelle : tout vient du relevé {@code travel.catalog}, et les seuls
@@ -57,9 +57,9 @@ final class TravelPages {
         }
     }
 
-    /** Filtre simple des lieux : le Village (Hub), le Monde sauvage, les autres mondes. */
+    /** Filtre simple des lieux : le Hub, le Wild, les autres mondes (libellés : {@link Survey#kindLabel}). */
     enum Kind {
-        ALL("", "Tous"), HUB("hub", "Village"), WILD("wild", "Monde sauvage"), OTHER("autre", "Autres");
+        ALL("", "Tous"), HUB("hub", "Hub"), WILD("wild", "Wild"), OTHER("autre", "Autres");
 
         final String wire;
         final String label;
@@ -99,7 +99,27 @@ final class TravelPages {
                    boolean inProgress, int nearestBeacon, Long nextRetryEpochMs) {
     }
 
-    record Survey(List<Place> places, List<Beacon> beacons, List<Missing> missing, TravelNetworkDiagnostic diag) {
+    /** {@code names} : noms affichés des mondes (#81), un seul résolveur pour toutes les pages. */
+    record Survey(List<Place> places, List<Beacon> beacons, List<Missing> missing, TravelNetworkDiagnostic diag,
+                  WorldNames names) {
+        /** Nom affiché du Hub (alias choisi, sinon « Hub »). */
+        String hubName() {
+            return names.ofRole("HUB");
+        }
+
+        /** Nom affiché du Wild (alias choisi, sinon « Wild »). */
+        String wildName() {
+            return names.ofRole("WILD");
+        }
+
+        String kindLabel(Kind k) {
+            return switch (k) {
+                case HUB -> hubName();
+                case WILD -> wildName();
+                default -> k.label;
+            };
+        }
+
         Place place(String id) {
             return id == null ? null : places.stream().filter(p -> p.id().equalsIgnoreCase(id)).findFirst().orElse(null);
         }
@@ -154,7 +174,7 @@ final class TravelPages {
     record PlaceQuery(String search, Kind kind, boolean recentFirst, int page) {
     }
 
-    static Survey parse(Map<String, Object> d) {
+    static Survey parse(Map<String, Object> d, WorldNames names) {
         List<Place> places = new ArrayList<>();
         for (Object o : list(d.get("waypoints"))) {
             Map<String, Object> m = map(o);
@@ -181,7 +201,7 @@ final class TravelPages {
                     m.get("nextRetryEpochMs") instanceof Number n ? n.longValue() : null));
         }
         return new Survey(List.copyOf(places), List.copyOf(beacons), List.copyOf(missing),
-                TravelNetworkDiagnostic.from(d));
+                TravelNetworkDiagnostic.from(d), names == null ? WorldNames.DEFAULTS : names);
     }
 
     // =====================================================================================
@@ -275,7 +295,7 @@ final class TravelPages {
         sb.append("<select class=\"form-select\" name=\"kind\" aria-label=\"Monde\">");
         for (Kind k : Kind.values()) {
             sb.append("<option value=\"").append(k.wire).append("\"").append(k == q.kind() ? " selected" : "")
-                    .append(">").append(Http.esc(k == Kind.ALL ? "Tous les mondes" : k.label)).append("</option>");
+                    .append(">").append(Http.esc(k == Kind.ALL ? "Tous les mondes" : s.kindLabel(k))).append("</option>");
         }
         sb.append("</select>");
         sb.append("<select class=\"form-select\" name=\"sort\" aria-label=\"Classement\">")
@@ -297,7 +317,7 @@ final class TravelPages {
                 continue;
             }
             if (!needle.isEmpty()) {
-                String hay = fold(p.name() + " " + worldName(p.world()) + " " + p.world() + " "
+                String hay = fold(p.name() + " " + s.names().name(p.world()) + " " + p.world() + " "
                         + biomeName(p.biomeKey()) + " " + p.biomeKey() + " " + p.id());
                 if (!hay.contains(needle)) {
                     continue;
@@ -315,7 +335,7 @@ final class TravelPages {
         StringBuilder sb = new StringBuilder("<li class=\"qc-row tv-row\">");
         sb.append("<div class=\"qc-row-main\"><a class=\"qc-row-title\" href=\"").append(Http.esc(href)).append("\">")
                 .append(Http.esc(displayName(p))).append("</a>");
-        sb.append("<span class=\"qc-row-sub\">").append(Icons.icon("world")).append(Http.esc(worldName(p.world())))
+        sb.append("<span class=\"qc-row-sub\">").append(Icons.icon("world")).append(Http.esc(s.names().name(p.world())))
                 .append(p.biomeKey().isEmpty() ? "" : " · " + Http.esc(biomeName(p.biomeKey()))).append("</span></div>");
         sb.append("<div class=\"qc-row-side\">").append(placeChip(s, p));
         sb.append("<a class=\"btn secondary sm\" href=\"").append(Http.esc(href)).append("\">")
@@ -344,7 +364,7 @@ final class TravelPages {
                 .append(Icons.icon("back")).append("Tous les lieux</a></p>");
         sb.append("<header class=\"qc-head\"><div class=\"qc-head-main\"><h1 class=\"qc-title\">")
                 .append(Http.esc(displayName(p))).append("</h1>").append(placeChip(s, p)).append("</div>");
-        sb.append("<p class=\"qc-lead\">").append(Http.esc(worldName(p.world())))
+        sb.append("<p class=\"qc-lead\">").append(Http.esc(s.names().name(p.world())))
                 .append(p.biomeKey().isEmpty() ? "" : " · " + Http.esc(biomeName(p.biomeKey()))).append("</p></header>");
 
         if (ctx.pendingRenames().contains(p.id().toLowerCase(Locale.ROOT))) {
@@ -363,12 +383,13 @@ final class TravelPages {
     private static String howToGo(Survey s, Place p) {
         return switch (s.kindOf(p.world())) {
             case HUB -> p.hasBeacon()
-                    ? "Une borne du Village mène à ce lieu : les joueurs qui l'ont découvert peuvent y voyager."
+                    ? "Une borne du " + s.hubName() + " mène à ce lieu : les joueurs qui l'ont découvert peuvent y voyager."
                     : "Ce lieu n'a pas encore de borne. Elle sera posée toute seule la prochaine fois qu'un joueur "
                             + "passera par là (voir l'onglet « À vérifier »).";
-            case WILD -> "Dans le Monde sauvage, on voyage avec les Waystones que les joueurs découvrent, pas avec des "
+            case WILD -> "Dans le " + s.wildName() + ", on voyage avec les Waystones que les joueurs découvrent, pas avec des "
                     + "bornes. C'est normal que ce lieu n'en ait pas.";
-            case OTHER, ALL -> "Ce lieu n'est ni dans le Village ni dans le Monde sauvage : aucune borne n'y est posée.";
+            case OTHER, ALL -> "Ce lieu n'est ni dans le " + s.hubName() + " ni dans le " + s.wildName()
+                    + " : aucune borne n'y est posée.";
         };
     }
 
@@ -379,7 +400,7 @@ final class TravelPages {
         for (Place other : s.places()) {
             if (!other.id().equals(p.id()) && !other.name().isBlank()) {
                 String key = other.name().replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
-                taken.put(key, List.of(other.name() + " (" + worldName(other.world()) + ")"));
+                taken.put(key, List.of(other.name() + " (" + s.names().name(other.world()) + ")"));
             }
         }
         StringBuilder sb = new StringBuilder("<section class=\"qc-card tv-rename\" id=\"renommer\"><h2>")
@@ -438,11 +459,11 @@ final class TravelPages {
     // =====================================================================================
 
     static String beacons(Ctx ctx, Survey s, int requestedPage) {
-        StringBuilder sb = new StringBuilder("<p class=\"tv-intro\">Une borne est le bloc du Village sur lequel on clique "
-                + "pour voyager vers un lieu. Les lieux du Monde sauvage n'en ont pas : on y voyage par les Waystones.</p>");
+        StringBuilder sb = new StringBuilder("<p class=\"tv-intro\">Une borne est le bloc du " + Http.esc(s.hubName())
+                + " sur lequel on clique pour voyager vers un lieu. Les lieux du " + Http.esc(s.wildName()) + " n'en ont pas : on y voyage par les Waystones.</p>");
         if (s.beacons().isEmpty()) {
             return sb.append(Ui.empty("travel", "Aucune borne pour l'instant. Elles sont posées automatiquement quand "
-                    + "les joueurs explorent le Village.")).toString();
+                    + "les joueurs explorent le " + Http.esc(s.hubName()) + ".")).toString();
         }
         Map<String, TravelNetworkDiagnostic.BeaconRow> rows = new HashMap<>();
         if (s.diag().available()) {
@@ -470,7 +491,7 @@ final class TravelPages {
         boolean anomaly = diag != null && diag.hasAnomaly();
         StringBuilder sb = new StringBuilder("<li><details class=\"qc-row tv-beacon\"><summary>");
         sb.append("<span class=\"qc-row-main\"><span class=\"qc-row-title\">").append(Http.esc(beaconTitle(s, b)))
-                .append("</span><span class=\"qc-row-sub\">").append(Icons.icon("world")).append(Http.esc(worldName(b.world())))
+                .append("</span><span class=\"qc-row-sub\">").append(Icons.icon("world")).append(Http.esc(s.names().name(b.world())))
                 .append(b.autoGenerated() ? " · posée par l'exploration" : " · posée par un administrateur")
                 .append("</span></span>");
         sb.append("<span class=\"qc-row-side\">")
@@ -506,12 +527,13 @@ final class TravelPages {
         StringBuilder sb = new StringBuilder();
         if (s.generationDisabled()) {
             sb.append(Ui.banner("err", "La pose automatique des bornes est <strong>désactivée</strong> dans la "
-                    + "configuration du serveur : aucune nouvelle borne n'apparaîtra dans le Village."));
+                    + "configuration du serveur : aucune nouvelle borne n'apparaîtra dans le " + Http.esc(s.hubName())
+                    + "."));
         }
         if (!s.missing().isEmpty()) {
             sb.append("<section class=\"qc-card\"><h2>").append(Icons.icon("warning"))
-                    .append(Http.esc(s.missing().size() == 1 ? "1 lieu du Village n'a pas encore de borne"
-                            : s.missing().size() + " lieux du Village n'ont pas encore de borne")).append("</h2>");
+                    .append(Http.esc(s.missing().size() == 1 ? "1 lieu du " + s.hubName() + " n'a pas encore de borne"
+                            : s.missing().size() + " lieux du " + s.hubName() + " n'ont pas encore de borne")).append("</h2>");
             sb.append("<p class=\"tv-text\">Pas d'urgence : la borne est posée toute seule la prochaine fois qu'un "
                     + "joueur passe par ce lieu. ")
                     .append(ctx.canPair() ? "Tu peux aussi la poser tout de suite." : "")
@@ -536,7 +558,7 @@ final class TravelPages {
         if (s.toCheck() == 0) {
             sb.append("<div class=\"empty qc-empty\">").append(Icons.icon("check"))
                     .append("<p><strong>Tout va bien : rien à vérifier.</strong></p>")
-                    .append("<p>Chaque lieu du Village a sa borne.</p></div>");
+                    .append("<p>Chaque lieu du ").append(Http.esc(s.hubName())).append(" a sa borne.</p></div>");
         }
         sb.append(goodToKnow(s));
         return sb.toString();
@@ -596,7 +618,7 @@ final class TravelPages {
             if (!w.discoveryKnown() || w.total() == 0) {
                 continue;
             }
-            String world = worldName(w.world());
+            String world = s.names().name(w.world());
             notes.add(w.noneDiscovered()
                     ? world + " : " + count(w.total(), "Waystone existe", "Waystones existent")
                             + ", aucune n'a encore été découverte. C'est normal au début : une Waystone sert au "
@@ -618,27 +640,13 @@ final class TravelPages {
 
     static String advanced(String diagnosticHtml) {
         return "<p class=\"tv-intro\">Pour comprendre le réseau en détail : statistiques, distances, fiches de chaque "
-                + "borne et zones du Village. Une ligne ici est ce que le serveur a enregistré au dernier relevé, pas "
+                + "borne et zones du Hub. Une ligne ici est ce que le serveur a enregistré au dernier relevé, pas "
                 + "une vérification sur place dans le monde.</p>" + diagnosticHtml;
     }
 
     // =====================================================================================
     //  Vocabulaire
     // =====================================================================================
-
-    /** Nom d'un monde pour un joueur, sans le nom technique (celui-ci reste dans « Informations techniques »). */
-    static String worldName(String world) {
-        String w = world == null ? "" : world.trim();
-        return switch (w.toLowerCase(Locale.ROOT)) {
-            case "world_hub", "hub" -> "Village";
-            case "claims" -> "Terrains des joueurs";
-            case "wild" -> "Monde sauvage";
-            case "world" -> "Monde principal";
-            case "world_nether" -> "Nether";
-            case "world_the_end" -> "End";
-            default -> MiniText.prettifyId(w);
-        };
-    }
 
     private static final Map<String, String> BIOMES = Map.ofEntries(
             Map.entry("plains", "Plaine"), Map.entry("sunflower_plains", "Plaine de tournesols"),
@@ -703,7 +711,7 @@ final class TravelPages {
         for (Place p : s.places()) {
             if (!p.id().equalsIgnoreCase(placeId) && fold(p.name()).equals(wanted)) {
                 return "Le nom « " + newName.trim() + " » est déjà pris par un autre lieu ("
-                        + worldName(p.world()) + ") : choisis-en un autre. Rien n'a été envoyé.";
+                        + s.names().name(p.world()) + ") : choisis-en un autre. Rien n'a été envoyé.";
             }
         }
         return null;

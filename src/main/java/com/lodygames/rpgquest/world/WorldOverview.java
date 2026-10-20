@@ -39,10 +39,18 @@ public final class WorldOverview {
                               int spawnX, int spawnY, int spawnZ, String customGenerator) {
     }
 
-    /** Un monde tel que Multiverse-Core le décrit (chargé ou non). Valeurs {@code null} = non lisibles. */
+    /**
+     * Un monde tel que Multiverse-Core le décrit (chargé ou non). Valeurs {@code null} = non lisibles.
+     * {@code alias} : alias Multiverse sans codes couleur, {@code null} ou vide = aucun (issue #81).
+     */
     public record ExternalWorld(String name, boolean loaded, String environment, String generator,
                                 String generatorSettings, Long seed, String difficulty, Boolean pvp,
-                                Boolean autoLoad) {
+                                Boolean autoLoad, String alias) {
+
+        public ExternalWorld(String name, boolean loaded, String environment, String generator,
+                             String generatorSettings, Long seed, String difficulty, Boolean pvp, Boolean autoLoad) {
+            this(name, loaded, environment, generator, generatorSettings, seed, difficulty, pvp, autoLoad, null);
+        }
     }
 
     /**
@@ -95,11 +103,27 @@ public final class WorldOverview {
     public record MobLink(String id, String name, Set<String> worlds) {
     }
 
-    /** Tout ce que la collecte a relevé. */
+    /**
+     * Tout ce que la collecte a relevé. {@code displayNames} : noms d'affichage RPGQuest des mondes
+     * hors Multiverse ({@link WorldDisplayNames}, clé en minuscules).
+     */
     public record Inputs(List<LoadedWorld> loaded, String mainWorld, ExternalSource multiverse,
                          Collection<String> rpgquestManaged, Roles roles, WaypointPolicy waypoints,
                          List<PortalLink> portals, List<Place> sites, List<Place> waypointPlaces,
-                         List<MobLink> mobs, List<Place> npcSpots, List<Place> cities, int onlinePlayers) {
+                         List<MobLink> mobs, List<Place> npcSpots, List<Place> cities, int onlinePlayers,
+                         Map<String, String> displayNames) {
+
+        public Inputs {
+            displayNames = displayNames == null ? Map.of() : Map.copyOf(displayNames);
+        }
+
+        public Inputs(List<LoadedWorld> loaded, String mainWorld, ExternalSource multiverse,
+                      Collection<String> rpgquestManaged, Roles roles, WaypointPolicy waypoints,
+                      List<PortalLink> portals, List<Place> sites, List<Place> waypointPlaces,
+                      List<MobLink> mobs, List<Place> npcSpots, List<Place> cities, int onlinePlayers) {
+            this(loaded, mainWorld, multiverse, rpgquestManaged, roles, waypoints, portals, sites, waypointPlaces, mobs,
+                    npcSpots, cities, onlinePlayers, Map.of());
+        }
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -118,13 +142,15 @@ public final class WorldOverview {
      *
      * @param roles     rôles LodyQuests : {@code HUB}, {@code WILD}, {@code CLAIMS} (vide = aucun rôle)
      * @param essential monde principal ou monde à rôle : jamais déchargé ni supprimé
+     * @param alias     nom affiché choisi par l'administrateur (#81) : alias Multiverse si Multiverse
+     *                  connaît le monde, sinon nom RPGQuest ; {@code ""} = aucun (PlugAdmin prend son défaut)
      */
     public record Entry(String name, boolean loaded, Manager manager, boolean main, boolean essential,
                         List<String> roles, boolean multiverseKnown, boolean rpgquestManaged,
                         String environment, String worldType, Long seed, Boolean structures,
                         Integer players, String difficulty, Boolean pvp, Boolean hardcore, String spawn,
                         String generator, String generatorSettings, Boolean autoLoad, Links links,
-                        List<Issue> issues) {
+                        List<Issue> issues, String alias) {
     }
 
     /**
@@ -237,7 +263,13 @@ public final class WorldOverview {
                 isLoaded ? bukkit.hardcore() : null,
                 isLoaded ? bukkit.spawnX() + ", " + bukkit.spawnY() + ", " + bukkit.spawnZ() : null,
                 generator(bukkit, mv), mv == null || blank(mv.generatorSettings()) ? null : mv.generatorSettings(),
-                mv == null ? null : mv.autoLoad(), links, List.copyOf(issues));
+                mv == null ? null : mv.autoLoad(), links, List.copyOf(issues), alias(name, mv, in));
+    }
+
+    /** Un seul gestionnaire du nom affiché, comme pour les réglages : Multiverse s'il connaît le monde. */
+    private static String alias(String name, ExternalWorld mv, Inputs in) {
+        String alias = mv != null ? mv.alias() : in.displayNames().get(key(name));
+        return alias == null ? "" : alias.strip();
     }
 
     /**

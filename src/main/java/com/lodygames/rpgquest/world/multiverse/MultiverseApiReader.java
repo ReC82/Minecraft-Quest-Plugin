@@ -24,7 +24,8 @@ final class MultiverseApiReader {
             out.add(new WorldOverview.ExternalWorld(w.getName(), w.isLoaded(),
                     w.getEnvironment() == null ? null : w.getEnvironment().name(),
                     w.getGenerator(), w.getGeneratorSettings(), w.getSeed(),
-                    w.getDifficulty() == null ? null : w.getDifficulty().name(), w.getPvp(), w.isAutoLoad()));
+                    w.getDifficulty() == null ? null : w.getDifficulty().name(), w.getPvp(), w.isAutoLoad(),
+                    w.getColourlessAlias()));
         }
         return out;
     }

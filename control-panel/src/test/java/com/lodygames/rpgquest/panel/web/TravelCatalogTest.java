@@ -100,7 +100,7 @@ class TravelCatalogTest {
         assertTrue(page.contains(">Lieux</a>") && page.contains(">Bornes</a>") && page.contains(">À vérifier <span")
                 && page.contains(">Avancé</a>"), "les quatre onglets");
         assertTrue(page.contains("Forêt du Hub") && page.contains("Clairière perdue"), "noms lisibles");
-        assertTrue(page.contains("Village · Forêt"), "monde et biome traduits");
+        assertTrue(page.contains("Hub · Forêt"), "monde et biome traduits");
         assertTrue(page.contains(">Borne prête<") && page.contains(">Sans borne<"), "un seul état par lieu du Village");
         assertTrue(page.contains("focus=wp_hub_foret\">" ) && page.contains("Renommer</a>"),
                 "« Renommer » mène à la fiche du lieu");
@@ -157,7 +157,7 @@ class TravelCatalogTest {
         String first = page("");
         assertTrue(first.contains("Lieu 00") && !first.contains("Lieu 29"), "25 lieux par page");
         assertTrue(first.contains("Page 1 sur 2") && first.contains("&amp;p=2"), "pagination simple");
-        assertTrue(first.contains("Monde sauvage · Plaine"), "biome traduit");
+        assertTrue(first.contains("Wild · Plaine"), "biome traduit");
         String second = page("&p=2");
         assertTrue(second.contains("Lieu 29") && !second.contains("Lieu 00"));
     }
@@ -269,8 +269,8 @@ class TravelCatalogTest {
         runCatalogWithSuccess(TRAVEL_DETAILS);
         String page = page("&tab=verifier");
 
-        assertTrue(page.contains("1 lieu du Village n&#39;a pas encore de borne")
-                || page.contains("1 lieu du Village n'a pas encore de borne"), "langage naturel");
+        assertTrue(page.contains("1 lieu du Hub n&#39;a pas encore de borne")
+                || page.contains("1 lieu du Hub n'a pas encore de borne"), "langage naturel");
         assertTrue(page.contains("Pas d&#39;urgence") || page.contains("Pas d'urgence"),
                 "ce qui se résout tout seul est dit");
         assertTrue(page.contains("Aucun joueur n&#39;y est repassé") || page.contains("Aucun joueur n'y est repassé"),

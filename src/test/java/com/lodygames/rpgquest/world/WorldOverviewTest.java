@@ -138,4 +138,23 @@ class WorldOverviewTest {
         assertEquals(Manager.RPGQUEST, find(view, "wild").manager());
         assertEquals("WORLD_TWO_MANAGERS", find(view, "wild").issues().get(0).code());
     }
+
+    // ---- Issue #81 : nom affiché ---------------------------------------------------------------
+
+    @Test
+    void aliasComesFromMultiverseWhenItKnowsTheWorldElseFromRpgQuestNames() {
+        ExternalSource mvSource = new ExternalSource(true, "5.7.3", "", List.of(mv("world", true),
+                new ExternalWorld("world_hub", true, "NORMAL", "", "", 42L, "EASY", true, true, "Village des Lody"),
+                new ExternalWorld("claims", true, "NORMAL", "", "", 42L, "EASY", true, true, "")));
+        var base = inputs(DEV_LOADED, mvSource, DEV_PORTALS);
+        var in = new WorldOverview.Inputs(base.loaded(), base.mainWorld(), base.multiverse(), base.rpgquestManaged(),
+                base.roles(), base.waypoints(), base.portals(), base.sites(), base.waypointPlaces(), base.mobs(),
+                base.npcSpots(), base.cities(), base.onlinePlayers(),
+                java.util.Map.of("wild", "Terres sauvages", "world_hub", "ignoré : Multiverse gère ce monde"));
+        var view = WorldOverview.build(in);
+        assertEquals("Village des Lody", find(view, "world_hub").alias());
+        assertEquals("Terres sauvages", find(view, "wild").alias());
+        assertEquals("", find(view, "claims").alias(), "aucun alias : PlugAdmin prend son défaut");
+        assertEquals("wild", find(view, "wild").name(), "identifiant technique inchangé");
+    }
 }

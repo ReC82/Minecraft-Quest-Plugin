@@ -28,7 +28,16 @@ public final class PortalPages {
      * @param file       fichier du portail choisi, pour départager deux portails de même id
      */
     public record View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
-                       String selected, String file) {
+                       String selected, String file, WorldNames names) {
+
+        public View {
+            names = names == null ? WorldNames.DEFAULTS : names;
+        }
+
+        public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
+                    String selected, String file) {
+            this(agentId, details, headerHtml, releveHtml, selected, file, WorldNames.DEFAULTS);
+        }
     }
 
     private PortalPages() {
@@ -59,13 +68,13 @@ public final class PortalPages {
         for (Map<String, Object> issue : maps(v.details().get("issues"))) {
             sb.append(issueHtml(issue, "le serveur"));
         }
-        sb.append("<div class=\"p-scope\">").append(list(v.agentId(), portals)).append("</div>");
+        sb.append("<div class=\"p-scope\">").append(list(v.agentId(), portals, v.names())).append("</div>");
         return sb.toString();
     }
 
     // ---- Liste ----------------------------------------------------------------------------------
 
-    private static String list(String agentId, List<Map<String, Object>> portals) {
+    private static String list(String agentId, List<Map<String, Object>> portals, WorldNames names) {
         StringBuilder sb = new StringBuilder();
         long active = portals.stream().filter(p -> bool(p.get("enabled"))).count();
         long legacy = portals.stream().filter(PortalPages::legacy).count();
@@ -84,7 +93,7 @@ public final class PortalPages {
         }
         sb.append("<div class=\"w-grid\">");
         for (Map<String, Object> p : portals) {
-            sb.append(card(agentId, p));
+            sb.append(card(agentId, p, names));
         }
         sb.append("</div>").append(AgentPages.filterEmpty("portals", "Aucun portail"));
         sb.append("<p class=\"muted small w-small-note\">Les portails actifs sont repris tels quels depuis les "
@@ -93,7 +102,7 @@ public final class PortalPages {
         return sb.toString();
     }
 
-    private static String card(String agentId, Map<String, Object> p) {
+    private static String card(String agentId, Map<String, Object> p, WorldNames names) {
         String id = str(p.get("id"));
         boolean enabled = bool(p.get("enabled"));
         List<String> cats = new ArrayList<>();
@@ -107,15 +116,16 @@ public final class PortalPages {
         StringBuilder sb = new StringBuilder("<article class=\"w-card").append(enabled ? "" : " muted-card")
                 .append("\" data-filter-item=\"portals\" data-filter-cat=\"").append(String.join(" ", cats))
                 .append("\" data-filter-text=\"").append(Http.esc(id + " " + str(p.get("name")) + " "
-                        + str(p.get("world")) + " " + str(p.get("destinationWorld")))).append("\">");
+                        + str(p.get("world")) + " " + str(p.get("destinationWorld")) + " "
+                        + names.name(str(p.get("world"))) + " " + names.name(str(p.get("destinationWorld"))))).append("\">");
         sb.append("<div class=\"w-head\"><span class=\"w-ic ov\">").append(Icons.icon("portal"))
                 .append("</span><div><div class=\"w-name\">").append(Http.esc(str(p.get("name"))))
                 .append("</div><div class=\"w-sub\"><code>").append(Http.esc(id)).append("</code></div></div>")
                 .append("<div class=\"w-pills\">").append(statePill(p)).append(legacyPill(p)).append("</div></div>");
-        sb.append("<ul class=\"w-facts\"><li><span class=\"k\">Départ</span><span><code>")
-                .append(Http.esc(str(p.get("world")))).append("</code> ").append(Http.esc(str(p.get("min"))))
+        sb.append("<ul class=\"w-facts\"><li><span class=\"k\">Départ</span><span>")
+                .append(worldName(names, str(p.get("world")))).append(" ").append(Http.esc(str(p.get("min"))))
                 .append(" → ").append(Http.esc(str(p.get("max")))).append("</span></li>")
-                .append("<li><span class=\"k\">Arrivée</span><span>").append(destinationHtml(p)).append(" · ")
+                .append("<li><span class=\"k\">Arrivée</span><span>").append(destinationHtml(p, names)).append(" · ")
                 .append(Http.esc(strategyLabel(str(p.get("strategy"))))).append("</span></li></ul>");
         List<Map<String, Object>> guards = maps(p.get("guards"));
         List<Map<String, Object>> conditions = maps(p.get("conditions"));
@@ -165,7 +175,7 @@ public final class PortalPages {
         sb.append("<div class=\"w-cols\"><div>");
         sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("target"))
                 .append("1 · Emplacement</h3><dl class=\"w-dl\">")
-                .append(dlHtml("Monde de départ", worldHtml(a, str(p.get("world")), str(p.get("worldRole")),
+                .append(dlHtml("Monde de départ", worldHtml(v.names(), a, str(p.get("world")), str(p.get("worldRole")),
                         bool(p.get("worldLoaded")))))
                 .append(dl("Coin minimum", str(p.get("min"))))
                 .append(dl("Coin maximum", str(p.get("max"))))
@@ -178,7 +188,7 @@ public final class PortalPages {
                 .append("2 · Téléportation</h3><dl class=\"w-dl\">")
                 .append(dlHtml("Monde d'arrivée", str(p.get("destinationWorld")).isEmpty()
                         ? "<span class=\"muted\">inconnu</span>"
-                        : worldHtml(a, str(p.get("destinationWorld")), str(p.get("destinationRole")),
+                        : worldHtml(v.names(), a, str(p.get("destinationWorld")), str(p.get("destinationRole")),
                         bool(p.get("destinationLoaded")))));
         if (!str(p.get("destinationId")).isEmpty()) {
             sb.append(dlHtml("Destination nommée", "<code>" + Http.esc(str(p.get("destinationId"))) + "</code>"));
@@ -277,10 +287,17 @@ public final class PortalPages {
 
     // ---- Briques --------------------------------------------------------------------------------
 
-    private static String worldHtml(String agentQuery, String world, String role, boolean loaded) {
+    /** Nom affiché du monde (#81) puis son identifiant technique, inchangé. */
+    private static String worldName(WorldNames names, String world) {
+        String shown = names.name(world);
+        return shown.equals(world) ? "<code>" + Http.esc(world) + "</code>"
+                : Http.esc(shown) + " <code>" + Http.esc(world) + "</code>";
+    }
+
+    private static String worldHtml(WorldNames names, String agentQuery, String world, String role, boolean loaded) {
         StringBuilder sb = new StringBuilder("<a href=\"").append(WorldPages.PATH).append(agentQuery)
-                .append("&amp;world=").append(enc(world)).append("\"><code>").append(Http.esc(world))
-                .append("</code></a>");
+                .append("&amp;world=").append(enc(world)).append("\">").append(worldName(names, world))
+                .append("</a>");
         if (!role.isEmpty()) {
             sb.append(" <span class=\"role ").append(Http.esc(role.toLowerCase(java.util.Locale.ROOT))).append("\">")
                     .append(Http.esc(roleLabel(role))).append("</span>");
@@ -290,12 +307,12 @@ public final class PortalPages {
         return sb.toString();
     }
 
-    private static String destinationHtml(Map<String, Object> p) {
+    private static String destinationHtml(Map<String, Object> p, WorldNames names) {
         String world = str(p.get("destinationWorld"));
         if (world.isEmpty()) {
             return "<span class=\"muted\">inconnue</span>";
         }
-        return "<code>" + Http.esc(world) + "</code>" + (Boolean.FALSE.equals(p.get("destinationLoaded"))
+        return worldName(names, world) + (Boolean.FALSE.equals(p.get("destinationLoaded"))
                 ? " <em>(non chargé)</em>" : "");
     }
 

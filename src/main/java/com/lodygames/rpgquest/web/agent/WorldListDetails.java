@@ -41,6 +41,7 @@ final class WorldListDetails {
     private static Map<String, Object> entry(WorldOverview.Entry e) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("name", e.name());
+        row.put("alias", e.alias());
         row.put("loaded", e.loaded());
         row.put("manager", e.manager().name());
         row.put("main", e.main());

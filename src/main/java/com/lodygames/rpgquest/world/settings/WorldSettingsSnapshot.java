@@ -31,6 +31,8 @@ public record WorldSettingsSnapshot(String world, boolean multiverse, List<Strin
     public static final String WRITER_MULTIVERSE = "MULTIVERSE";
     public static final String WRITER_BUKKIT = "BUKKIT";
     public static final String WRITER_GAMERULE = "GAMERULE";
+    /** Fichier RPGQuest {@code world-names.yml} (nom affiché d'un monde hors Multiverse, issue #81). */
+    public static final String WRITER_RPGQUEST = "RPGQUEST";
 
     /** Une règle de jeu : {@code type} {@code BOOLEAN} ou {@code INTEGER}, valeur canonique. */
     public record Rule(String name, String type, String value) {

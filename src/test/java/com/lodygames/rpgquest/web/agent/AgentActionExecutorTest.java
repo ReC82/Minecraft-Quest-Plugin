@@ -45,6 +45,66 @@ class AgentActionExecutorTest {
         return executor.execute(action).join();
     }
 
+    // ---- mc.rights.read (issue #27 : NullPointerException sur une lecture réussie) ------------
+
+    @Test
+    @DisplayName("mc.rights.read réussit quand LuckPerms est disponible (motif null)")
+    void rightsReadSucceedsWhenTheBridgeIsAvailable() {
+        AgentActionOutcome outcome = run(new AgentAction("r1", "mc.rights.read",
+                Map.of("player", RONDOUDOU.toString())));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status(), outcome.message());
+        assertEquals("AVAILABLE", outcome.value());
+        assertEquals(RONDOUDOU, actions.lastRightsReadPlayer);
+        assertEquals(true, outcome.details().get("bridgeAvailable"));
+        assertTrue(outcome.details().containsKey("reason"), "le motif absent reste visible, à null");
+        assertNull(outcome.details().get("reason"));
+        assertEquals(List.of("rpgquest.build.hub.world_hub (monde world_hub) ← rpgq-abc"),
+                outcome.details().get("effective"));
+        assertTrue(com.lodygames.rpgquest.web.Json.write(outcome.toJson()).contains("\"reason\":null"));
+    }
+
+    @Test
+    void rightsReadReportsAnUnavailableBridgeAsARealState() {
+        actions.bridgeAvailable = false;
+
+        AgentActionOutcome outcome = run(new AgentAction("r2", "mc.rights.read",
+                Map.of("player", "Rondoudou9000")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status(), outcome.message());
+        assertEquals("UNAVAILABLE", outcome.value());
+        assertEquals("LuckPerms n'est pas installé.", outcome.details().get("reason"));
+    }
+
+    @Test
+    void rightsReadOfAnUnknownPlayerFailsWithoutReachingTheDomain() {
+        AgentActionOutcome outcome = run(new AgentAction("r3", "mc.rights.read",
+                Map.of("player", "Inconnu42")));
+
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertTrue(outcome.message().contains("Joueur inconnu"), outcome.message());
+        assertNull(actions.lastRightsReadPlayer);
+    }
+
+    @Test
+    @DisplayName("Une erreur inattendue donne un message français et des détails, jamais un nom d'exception nu")
+    void anUnexpectedErrorIsExplainedWithDetails() {
+        actions.rightsReadFailure = new NullPointerException("valeur absente");
+
+        AgentActionOutcome outcome = run(new AgentAction("r4", "mc.rights.read",
+                Map.of("player", RONDOUDOU.toString())));
+
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertEquals("AGENT_INTERNAL_ERROR", outcome.value());
+        assertTrue(outcome.message().contains("« mc.rights.read »"), outcome.message());
+        assertEquals("AGENT_INTERNAL_ERROR", outcome.details().get("code"));
+        assertEquals("mc.rights.read", outcome.details().get("action"));
+        assertEquals("NullPointerException", outcome.details().get("error"));
+        assertEquals("valeur absente", outcome.details().get("errorMessage"));
+        assertTrue(String.valueOf(outcome.details().get("where")).startsWith("AgentActionExecutorTest"),
+                String.valueOf(outcome.details().get("where")));
+    }
+
     // ---- building.placement.capture (issue #246) -------------------------------------------
 
     @Test
@@ -3040,8 +3100,15 @@ class AgentActionExecutorTest {
         java.util.List<String> preserved = java.util.List.of();
         boolean syncOk = true;
 
+        RuntimeException rightsReadFailure;
+        UUID lastRightsReadPlayer;
+
         @Override
         public CompletableFuture<McRightsView> mcRightsRead(UUID playerId) {
+            lastRightsReadPlayer = playerId;
+            if (rightsReadFailure != null) {
+                throw rightsReadFailure;
+            }
             return CompletableFuture.completedFuture(new McRightsView(true,
                     bridgeAvailable ? "1 droit(s) géré(s) porté(s)." : "Pont indisponible.",
                     bridgeAvailable, bridgeAvailable ? null : "LuckPerms n'est pas installé.",

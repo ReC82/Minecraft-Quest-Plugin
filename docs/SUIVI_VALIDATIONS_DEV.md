@@ -196,3 +196,7 @@ Après **chaque** livraison Claude ou séance de jeu, modifier ce fichier dans l
 - quand tout le périmètre est vérifié, proposer la fermeture puis reporter la clôture effective dans le tableau/historique.
 
 **Responsabilités :** Claude met à jour ce registre après ses livraisons ; ChatGPT l'actualise après les tests que le propriétaire décrit ici. **Aucun agent ne doit déclarer un test manuel réussi sans preuve fournie par le propriétaire.**
+
+## Décision du 20 octobre 2026 — #543
+
+Le propriétaire autorise uniquement le développement du ticket [#543](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/543) (interface des capacités des mobs). Aucun profil existant sur DEV ne doit être modifié, aucune capacité ni apparition activée automatiquement. Les tickets #544 à #553 restent en attente d'une nouvelle décision. Claude peut implémenter et tester le code avec des données fictives isolées ; les tests manuels demeurent en attente.

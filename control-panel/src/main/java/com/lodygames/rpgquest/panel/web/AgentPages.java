@@ -8669,6 +8669,12 @@ public final class AgentPages {
         if (!effects.isEmpty()) {
             sb.append("<br><span class=\"muted\">").append(Http.esc(MiniText.prettifyTokens(join(effects)))).append("</span>");
         }
+        if (!row.status().terminal()) {
+            // Issue #27 : le bloc suit SON action et la page se recharge dès sa fin, succès OU échec —
+            // sinon la notification annonçait l'échec pendant que ce bloc restait « en cours ».
+            sb.append("<span hidden data-pa-track-action=\"").append(Http.esc(row.id()))
+                    .append("\" data-pa-track-reload=\"terminal\"></span>");
+        }
         return sb.append("</p>").toString();
     }
 

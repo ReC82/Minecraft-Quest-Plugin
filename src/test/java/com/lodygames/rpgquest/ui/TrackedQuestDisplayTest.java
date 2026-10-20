@@ -7,11 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.progress.ObjectiveProgressView;
 import com.lodygames.rpgquest.quest.progress.QuestStepProgressView;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
@@ -47,6 +50,9 @@ class TrackedQuestDisplayTest {
         MockBukkit.unmock();
     }
 
+    private static final List<QuestObjective> OBJECTIVES = List.of(new KillEntityObjective(EntityType.SPIDER, 5));
+    private static final Function<String, Optional<String>> NO_NAMES = id -> Optional.empty();
+
     private QuestDefinition quest(String title) {
         return new QuestDefinition(
                 new NamespacedKey("rpgquest", "premiers_pas"),
@@ -69,13 +75,15 @@ class TrackedQuestDisplayTest {
         QuestStepProgressView step = new QuestStepProgressView("kill_spiders",
                 List.of(new ObjectiveProgressView("Tuer SPIDER", 2, 5)));
 
-        display.update(player, quest("Premiers pas"), step);
+        display.update(player, quest("Premiers pas"), step, OBJECTIVES, NO_NAMES);
 
         BossBar bar = player.getBossBars().iterator().next();
         String plain = PlainTextComponentSerializer.plainText().serialize(bar.name());
         assertFalse(plain.contains("</gray>"), "aucune balise littérale résiduelle : " + plain);
         assertFalse(plain.contains("<"), "aucune balise MiniMessage non interprétée : " + plain);
-        assertTrue(plain.contains("Tuer SPIDER"), "le libellé humain de l'objectif doit apparaître : " + plain);
+        assertTrue(plain.contains("Spider"), "nom traduit (clé vanilla), pas SPIDER : " + plain);
+        assertFalse(plain.contains("SPIDER"), plain);
+        assertTrue(plain.endsWith(" 2/5"), "le compteur reste visible : " + plain);
         assertFalse(plain.contains("kill_spiders"), "jamais l'id technique brut affiché : " + plain);
     }
 
@@ -84,9 +92,9 @@ class TrackedQuestDisplayTest {
         TrackedQuestDisplay display = new TrackedQuestDisplay(true);
         QuestDefinition quest = quest("Premiers pas");
         display.update(player, quest, new QuestStepProgressView("kill_spiders",
-                List.of(new ObjectiveProgressView("Tuer SPIDER", 1, 5))));
+                List.of(new ObjectiveProgressView("Tuer SPIDER", 1, 5))), OBJECTIVES, NO_NAMES);
         display.update(player, quest, new QuestStepProgressView("kill_spiders",
-                List.of(new ObjectiveProgressView("Tuer SPIDER", 3, 5))));
+                List.of(new ObjectiveProgressView("Tuer SPIDER", 3, 5))), OBJECTIVES, NO_NAMES);
 
         assertEquals(1, player.getBossBars().size(), "une seule bossbar par joueur, jamais dupliquée");
         BossBar bar = player.getBossBars().iterator().next();
@@ -97,26 +105,29 @@ class TrackedQuestDisplayTest {
     void clearRemovesTheBossBar() {
         TrackedQuestDisplay display = new TrackedQuestDisplay(true);
         display.update(player, quest("Premiers pas"), new QuestStepProgressView("kill_spiders",
-                List.of(new ObjectiveProgressView("Tuer SPIDER", 1, 5))));
+                List.of(new ObjectiveProgressView("Tuer SPIDER", 1, 5))), OBJECTIVES, NO_NAMES);
         display.clear(player);
         assertTrue(player.getBossBars().isEmpty());
     }
 
     @Test
-    void fallsBackToTheStepIdOnlyWhenNoObjectiveDescriptionIsAvailable() {
+    void neverFallsBackToTheStepIdWhenNoObjectiveIsAvailable() {
         TrackedQuestDisplay display = new TrackedQuestDisplay(true);
-        display.update(player, quest("Premiers pas"), new QuestStepProgressView("kill_spiders", List.of()));
+        display.update(player, quest("Premiers pas"), new QuestStepProgressView("kill_spiders", List.of()),
+                List.of(), NO_NAMES);
 
         BossBar bar = player.getBossBars().iterator().next();
         String plain = PlainTextComponentSerializer.plainText().serialize(bar.name());
-        assertTrue(plain.contains("kill_spiders"), "repli sur l'id technique seulement si aucune description n'existe");
+        // Issue #71 : plus aucun repli sur l'id technique -- le titre seul reste affiché.
+        assertFalse(plain.contains("kill_spiders"), "jamais l'id technique, même sans objectif : " + plain);
+        assertEquals("Premiers pas", plain);
     }
 
     @Test
     void disabledDisplayNeverShowsAnyBossBar() {
         TrackedQuestDisplay display = new TrackedQuestDisplay(false);
         display.update(player, quest("Premiers pas"), new QuestStepProgressView("kill_spiders",
-                List.of(new ObjectiveProgressView("Tuer SPIDER", 1, 5))));
+                List.of(new ObjectiveProgressView("Tuer SPIDER", 1, 5))), OBJECTIVES, NO_NAMES);
         assertTrue(player.getBossBars().isEmpty(), "journal.tracker-enabled=false doit rester purement cosmétique");
     }
 }

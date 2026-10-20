@@ -583,9 +583,10 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     encore avoir accepté la quête ne l'effacent — seule une action
     explicite du joueur (re-clic droit) le fait.
 -   **`TrackedQuestDisplay`** — bossbar Adventure (`BossBar.bossBar(...)`,
-    pas de scoreboard/équipe legacy) montrant le nom de la quête suivie,
-    l'étape courante et une barre de progression (somme des compteurs
-    d'objectifs de l'étape / somme des montants requis). N'affiche rien
+    pas de scoreboard/équipe legacy) montrant un résumé borné composé par
+    `TrackedQuestSummary` (#71) : titre, « Étape i/n », objectif unique
+    avec compteur ou « k/n objectifs », largeur estimée ≤ 300 px ; barre =
+    avancée de l'objectif unique ou part d'objectifs terminés. N'affiche rien
     tant que la quête suivie n'est pas `ACTIVE` (rien à montrer), mais ne
     touche jamais au suivi lui-même dans ce cas (voir point précédent).
     Contrôlée par `config.yml` → `journal.tracker-enabled` (`true` par

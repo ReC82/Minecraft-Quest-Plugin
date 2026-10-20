@@ -7668,3 +7668,23 @@ de planches → seule la quantité rangée compte ; à 18/20, shift-clic de 4 b�
 déconnexion/reconnexion → pas de recomptage.
 
 **Couverture automatisée** : `QuestCraftObjectiveTest` (9 cas).
+
+### TC-380 — Bossbar de suivi compacte, sans identifiant technique (issue #71, PENDING MANUAL VALIDATION)
+
+Aucune quête à créer ni à réinitialiser : utiliser les quêtes **déjà actives** du compte de test.
+
+1.  Journal → quête active « **Marchandise du désert** » → clic droit (Suivre). **Attendu** : bossbar
+    `Marchandise du désert — Cactus (à remettre à <nom du marchand>) 0/12` (ou `Cactus (à remettre) 0/12`
+    si le nom est long) ; jamais `CACTUS` ni `encounter_merchant` ; le nombre déjà remis est le même que dans le journal.
+2.  Suivre « **Le Garde — Palier 2** » (4 objectifs). **Attendu** : `Le Garde — Palier 2 — k/4 objectifs`, une seule
+    ligne qui tient dans l'écran ; aucune liste `Tuer SPIDER · …`.
+3.  Tuer un mob compté par cette quête. **Attendu** : ActionBar `Araignée 3/5` (nom en français), la bossbar passe à
+    `k+1/4 objectifs` seulement quand un objectif est terminé.
+4.  **Petite fenêtre** : réduire la fenêtre Minecraft (≈ 854×480) et passer l'échelle d'interface au maximum
+    (Options → Vidéo → Échelle de l'interface). **Attendu** : le texte de la bossbar reste entier à l'écran (titre
+    éventuellement raccourci par « … », compteur toujours entier).
+5.  Recharger le journal, se déconnecter/reconnecter. **Attendu** : bossbar identique, aucune progression modifiée.
+
+**Couverture automatisée** : `TrackedQuestSummaryTest` (16 cas dont 1/4/10/20 objectifs et titre long),
+`TrackedQuestDisplayTest` (5), `QuestProgressEngineTest#objectiveProgressIsShownViaActionBarNotChat`. Les cas
+10 et 20 objectifs ne sont testés qu'en automatique (aucune quête réelle n'en a autant).

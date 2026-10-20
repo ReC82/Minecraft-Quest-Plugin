@@ -377,7 +377,8 @@ public final class QuestJournalService implements QuestJournalUi {
             trackedDisplay.clear(player);
             return;
         }
-        trackedDisplay.update(player, questOpt.get(), stepView.get());
+        trackedDisplay.update(player, questOpt.get(), stepView.get(),
+                objectivesOf(questOpt.get(), stepView.get().stepId()), questProgressEngine.npcNameResolver());
     }
 
     // ---- Vue liste ----------------------------------------------------------

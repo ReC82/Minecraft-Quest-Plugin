@@ -6,6 +6,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Bossbar de suivi compacte (#71, 20/10/2026)** — `ui.TrackedQuestSummary` : la bossbar de la quête
+> suivie n'affiche plus la liste concaténée des objectifs (« Tuer SPIDER · Tuer ZOMBIE · … ») mais un
+> résumé borné : titre (raccourci avec « … » si besoin), « Étape 2/3 » si plusieurs étapes, puis
+> l'objectif unique (« Araignée 2/5 », nom traduit côté client) ou « 3/5 objectifs ». Largeur estimée
+> (police vanilla) ≤ 300 px, l'écran minimal Minecraft faisant 320 px quelle que soit l'échelle GUI ;
+> le compteur n'est jamais tronqué ; remplissage = objectifs terminés / total. ActionBar de
+> progression : même libellé traduit (`ObjectiveLabels`), plus « Tuer ZOMBIE ». Pas de config, pas
+> de migration.
+
 > **Page « Portails » en lecture seule (#564, 19/10/2026)** — PlugAdmin `/portals` (groupe « Monde »),
 > permission `PORTAL_READ`, action agent `portal.list` seule : world-portals (`hub_to_wild`, `hub_to_claims`)
 > et portails de zone (ancien format), zone, destination, arrivée RANDOM_SAFE / CLAIM_HOME, gardes Wild/Claims

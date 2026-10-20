@@ -7688,3 +7688,20 @@ Aucune quête à créer ni à réinitialiser : utiliser les quêtes **déjà act
 **Couverture automatisée** : `TrackedQuestSummaryTest` (16 cas dont 1/4/10/20 objectifs et titre long),
 `TrackedQuestDisplayTest` (5), `QuestProgressEngineTest#objectiveProgressIsShownViaActionBarNotChat`. Les cas
 10 et 20 objectifs ne sont testés qu'en automatique (aucune quête réelle n'en a autant).
+
+### TC-381 — Clic droit sur Bûcheron Bob → accepter « La requête du bûcheron » (issue #80, PENDING MANUAL VALIDATION)
+
+Bob existe déjà (Citizens #49, Hub 743/67/-714) : ne pas le recréer, ne pas démarrer la quête par commande.
+La quête `rpgquest:woodcutters_request` exige `rpgquest:first_steps` (Premiers pas, au Garde).
+
+1.  Clic droit sur Bob. **Attendu** : le dialogue « Bûcheron Bob » s'ouvre (accueil + « Du travail ? », « Qui es-tu ? », « Au revoir »).
+2.  Premiers pas **pas encore terminée** : « Du travail ? ». **Attendu** : Bob renvoie au Garde (« Termine d'abord Premiers pas… ») ; rien ne démarre.
+3.  Premiers pas terminée : « Du travail ? ». **Attendu** : offre qui nomme « La requête du bûcheron » ; « Plus tard » / « Refuser » ne démarrent rien ;
+    « Commencer (j'accepte) » démarre la quête (chat + journal, objectif bûches de chêne).
+4.  Recliquer sur Bob pendant la coupe. **Attendu** : « Où en est ma tâche ? » visible, plus d'offre.
+5.  Couper 20 bûches de chêne puis clic droit sur Bob. **Attendu** : quête terminée sur ce clic (30 XP, 16 planches de chêne), une seule fois ;
+    la quête étant renouvelable, Bob propose de nouveau « Du travail ? ».
+
+**Couverture automatisée** : `BundledDialoguesValidityTest#theWoodcutterOffersHisQuestFromTheDialogueTheClickOpens`
+(giver de la quête = clé du dialogue ouvert au clic, START_QUEST gardé par QUEST_AVAILABLE, prérequis expliqué),
+`BundledDialoguesValidityTest` (chargement, libellés ≤ largeur de bouton, démarrage toujours annoncé), `BundledExamplesDriftTest`.

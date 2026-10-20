@@ -191,12 +191,17 @@ public final class WorldSettingsPages {
                         .append(name).append("\" min=\"1\" max=\"59999968\" step=\"1\" placeholder=\"inchangé (")
                         .append(Http.esc(current)).append(")\"><span class=\"field-help\">59999968 = pas de bordure.</span>");
                 case "border_center" -> sb.append(text(id, name, "x, z — inchangé (" + current + ")"));
+                case "alias" -> sb.append(text(id, name, "inchangé (" + valueLabel(key, current) + ")"))
+                        .append("<span class=\"field-help\">Nom montré dans PlugAdmin (PNJ, Mondes, Portails, Voyages) ; "
+                                + "l'identifiant <code>").append(Http.esc(v.world())).append("</code> ne change pas. "
+                                + "« - » revient au nom par défaut (Hub, Claims, Wild…). 32 caractères au plus, "
+                                + "sans &lt; &gt; &amp; ni §.</span>");
                 case "spawn" -> sb.append(text(id, name, "x, y, z, orientation — inchangé (" + spawnLabel(current) + ")"))
                         .append("<span class=\"field-help\">Ou « prendre la position » d'un joueur présent dans ce monde "
                                 + "ci-dessous.</span>");
                 default -> sb.append(text(id, name, "inchangé"));
             }
-            if (!"border_size".equals(key) && !"spawn".equals(key)) {
+            if (!"border_size".equals(key) && !"spawn".equals(key) && !"alias".equals(key)) {
                 sb.append("<span class=\"field-help\">Actuel : ").append(Http.esc(valueLabel(key, current))).append("</span>");
             }
             sb.append("</label>");
@@ -381,7 +386,7 @@ public final class WorldSettingsPages {
 
     /** Ordre et libellés de la fiche, miroir de {@code WorldSetting} côté plugin. */
     static final String[][] SETTINGS = {
-            {"difficulty", "Difficulté"}, {"pvp", "PvP (combat entre joueurs)"},
+            {"alias", "Nom affiché"}, {"difficulty", "Difficulté"}, {"pvp", "PvP (combat entre joueurs)"},
             {"monsters", "Apparition des monstres"}, {"animals", "Apparition des animaux"},
             {"gamemode", "Mode de jeu à l'arrivée"}, {"advance_time", "Jour et nuit qui avancent"},
             {"time", "Heure du monde"}, {"advance_weather", "Météo qui change"}, {"weather", "Météo actuelle"},
@@ -405,6 +410,7 @@ public final class WorldSettingsPages {
             return "—";
         }
         return switch (key) {
+            case "alias" -> "-".equals(value) ? "aucun — nom par défaut" : value;
             case "difficulty" -> switch (value) {
                 case "PEACEFUL" -> "Paisible";
                 case "EASY" -> "Facile";
@@ -457,6 +463,7 @@ public final class WorldSettingsPages {
             case "MULTIVERSE" -> "Multiverse-Core";
             case "BUKKIT" -> "serveur";
             case "GAMERULE" -> "règle de jeu";
+            case "RPGQUEST" -> "RPGQuest (world-names.yml)";
             default -> "—";
         };
     }

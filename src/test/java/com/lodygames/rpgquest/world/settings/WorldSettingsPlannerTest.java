@@ -166,4 +166,49 @@ class WorldSettingsPlannerTest {
         m.putAll(over);
         return m;
     }
+
+    // ---- Issue #81 : nom affiché ---------------------------------------------------------------
+
+    private static WorldSettingsSnapshot withAlias(String alias, String writer) {
+        Map<String, String> values = new LinkedHashMap<>(WorldSettingsFixtures.bukkitValues());
+        values.put("alias", alias);
+        Map<String, String> writers = new LinkedHashMap<>(WorldSettingsFixtures.writers(false));
+        writers.put("alias", writer);
+        return new WorldSettingsSnapshot("wild", false, List.of("WILD"), 0, -64, 320, values, writers, Map.of(),
+                WorldSettingsFixtures.rules(), List.of());
+    }
+
+    @Test
+    void displayNameIsNormalizedAndKeepsTheTechnicalId() {
+        Change c = only(withAlias("-", WorldSettingsSnapshot.WRITER_RPGQUEST), "alias", "  Terres   sauvages ");
+        assertEquals(Status.APPLY, c.status());
+        assertEquals("-", c.current(), "aucun nom personnalisé = défaut");
+        assertEquals("Terres sauvages", c.proposed());
+        assertEquals("RPGQUEST", c.writer());
+        assertTrue(c.effect().contains("« wild » ne change pas"), c.effect());
+        assertTrue(c.effect().contains("world-names.yml"), c.effect());
+    }
+
+    @Test
+    void displayNameUnchangedResetAndInvalidValues() {
+        WorldSettingsSnapshot named = withAlias("Bois", WorldSettingsSnapshot.WRITER_MULTIVERSE);
+        assertEquals(Status.UNCHANGED, only(named, "alias", " Bois ").status());
+        Change reset = only(named, "alias", "-");
+        assertEquals(Status.APPLY, reset.status());
+        assertEquals("-", reset.proposed());
+        assertTrue(reset.effect().contains("nom par défaut"), reset.effect());
+        assertTrue(reset.effect().contains("Multiverse-Core"), reset.effect());
+        for (String bad : List.of("<red>Bois", "&cBois", "§cBois", "Bo\u0007is", "x".repeat(33))) {
+            Change c = only(named, "alias", bad);
+            assertEquals(Status.REFUSED, c.status(), bad);
+            assertNull(c.proposed());
+            assertTrue(c.reason().startsWith("Nom attendu"), c.reason());
+        }
+    }
+
+    @Test
+    void displayNameChangesTheFingerprint() {
+        assertNotEquals(WorldSettingsPlanner.fingerprint(withAlias("-", "RPGQUEST")),
+                WorldSettingsPlanner.fingerprint(withAlias("Bois", "RPGQUEST")));
+    }
 }

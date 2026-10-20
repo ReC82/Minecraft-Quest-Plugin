@@ -2202,11 +2202,14 @@ public final class BukkitAgentActions implements AgentActions {
     private Supplier<com.lodygames.rpgquest.config.PluginConfig> worldConfig;
     private volatile Supplier<com.lodygames.rpgquest.config.PeriodicQuestConfig> periodicQuestSettings;
     private Supplier<com.lodygames.rpgquest.world.WorldOverview.ExternalSource> multiverseWorlds;
+    private com.lodygames.rpgquest.world.WorldDisplayNames worldDisplayNames;
 
     public void setWorldSources(com.lodygames.rpgquest.world.WorldService worldService,
                                 com.lodygames.rpgquest.travel.WorldPortalRegistry portals,
                                 Supplier<com.lodygames.rpgquest.config.PluginConfig> config,
-                                Supplier<com.lodygames.rpgquest.world.WorldOverview.ExternalSource> multiverse) {
+                                Supplier<com.lodygames.rpgquest.world.WorldOverview.ExternalSource> multiverse,
+                                com.lodygames.rpgquest.world.WorldDisplayNames displayNames) {
+        this.worldDisplayNames = displayNames;
         this.worldService = worldService;
         this.worldPortals = portals;
         this.worldConfig = config;
@@ -2401,7 +2404,8 @@ public final class BukkitAgentActions implements AgentActions {
                         cfg.claims().world()),
                 new com.lodygames.rpgquest.world.WorldOverview.WaypointPolicy(cfg.travel().waypoint().enabled(),
                         cfg.travel().waypoint().hubEnabled(), cfg.travel().waypoint().worlds()),
-                portals, sites, waypoints, mobs, spots, cities, plugin.getServer().getOnlinePlayers().size());
+                portals, sites, waypoints, mobs, spots, cities, plugin.getServer().getOnlinePlayers().size(),
+                worldDisplayNames == null ? Map.of() : worldDisplayNames.all());
     }
 
     @SuppressWarnings("deprecation") // seule lecture du type de terrain exposée par l'API Paper 1.21.11

@@ -163,4 +163,72 @@ class BukkitWorldSettingsGatewayTest {
         assertEquals(Optional.of("12,70,-4,45"), gateway(MultiverseSettingsPort.none()).playerPosition("terres", "Lody"));
         assertTrue(gateway(MultiverseSettingsPort.none()).playerPosition("autre", "Lody").isEmpty());
     }
+
+    // ---- Issue #81 : nom affiché ---------------------------------------------------------------
+
+    @Test
+    void displayNameOfAWorldOutsideMultiverseGoesToTheRpgQuestFileOnly(@org.junit.jupiter.api.io.TempDir
+                                                                         java.nio.file.Path dir) {
+        var names = new com.lodygames.rpgquest.world.WorldDisplayNames(dir.resolve("world-names.yml"), Runnable::run,
+                org.slf4j.LoggerFactory.getLogger("test"));
+        var gw = new BukkitWorldSettingsGateway(server, MultiverseSettingsPort.none(),
+                () -> new BukkitWorldSettingsGateway.Roles("world_hub", "terres", "claims"), names);
+        var s = gw.read("terres").orElseThrow();
+        assertEquals("-", s.values().get("alias"));
+        assertEquals("RPGQUEST", s.writers().get("alias"));
+        var change = WorldSettingsPlanner.plan(s, Map.of("alias", "Terres sauvages")).changes().get(0);
+        assertNull(gw.write("terres", change));
+        assertNull(gw.persist("terres"), "aucun enregistrement Multiverse");
+        assertEquals("Terres sauvages", gw.read("terres").orElseThrow().values().get("alias"), "relu");
+        assertEquals("-", gw.read("autre").orElseThrow().values().get("alias"), "autre monde intact");
+        assertEquals("terres", gw.read("terres").orElseThrow().world(), "identifiant technique inchangé");
+        assertTrue(server.getWorld("terres") != null);
+
+        var reloaded = new com.lodygames.rpgquest.world.WorldDisplayNames(dir.resolve("world-names.yml"),
+                Runnable::run, org.slf4j.LoggerFactory.getLogger("test"));
+        reloaded.load();
+        assertEquals(Optional.of("Terres sauvages"), reloaded.get("TERRES"), "conservé au redémarrage");
+
+        var reset = WorldSettingsPlanner.plan(gw.read("terres").orElseThrow(), Map.of("alias", "-")).changes().get(0);
+        assertNull(gw.write("terres", reset));
+        assertEquals("-", gw.read("terres").orElseThrow().values().get("alias"), "retour au nom par défaut");
+    }
+
+    @Test
+    void displayNameOfAMultiverseWorldIsItsMultiverseAlias() {
+        List<String> calls = new ArrayList<>();
+        MultiverseSettingsPort mv = new MultiverseSettingsPort() {
+            @Override
+            public Optional<Map<String, String>> read(String world) {
+                return Optional.of(Map.of("alias", "-", "difficulty", "EASY", "pvp", "true", "monsters", "true",
+                        "animals", "true", "gamemode", "SURVIVAL", "spawn", "0,64,0,0", "allow_weather", "true"));
+            }
+
+            @Override
+            public String write(String world, String key, String value) {
+                calls.add(world + ":" + key + "=" + value);
+                return null;
+            }
+
+            @Override
+            public String save() {
+                calls.add("save");
+                return null;
+            }
+        };
+        var gw = gateway(mv);
+        var s = gw.read("terres").orElseThrow();
+        assertEquals("MULTIVERSE", s.writers().get("alias"));
+        var change = WorldSettingsPlanner.plan(s, Map.of("alias", "Village")).changes().get(0);
+        assertNull(gw.write("terres", change));
+        assertNull(gw.persist("terres"));
+        assertEquals(List.of("terres:alias=Village", "save"), calls);
+    }
+
+    @Test
+    void withoutNameFileTheDisplayNameOfANonMultiverseWorldIsUnavailable() {
+        var s = gateway(MultiverseSettingsPort.none()).read("terres").orElseThrow();
+        assertFalse(s.values().containsKey("alias"));
+        assertTrue(s.unavailable().containsKey("alias"));
+    }
 }

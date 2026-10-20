@@ -206,6 +206,27 @@ class WorldSettingsPageTest {
     }
 
     @Test
+    void displayNameIsEditableWithItsDefaultAndPreviewedLikeAnyOtherSetting() throws Exception {
+        Client owner = login(TestConfig.OWNER_USERNAME, TestConfig.OWNER_PASSWORD);
+        owner.result("world.list", releveWithTerres());
+        owner.post("/worlds/settings/read", "_csrf=" + owner.csrf(FICHE) + "&agent=" + TestConfig.AGENT_ID + "&world=terres");
+        AgentActionRow get = store.latestActionOfType(TestConfig.AGENT_ID, "world.settings.get").orElseThrow();
+        owner.complete(get.id(), READING.replace("\"values\":{", "\"values\":{\"alias\":\"-\",")
+                .replace("\"writers\":{", "\"writers\":{\"alias\":\"RPGQUEST\","));
+        String page = owner.get(FICHE).body();
+        assertTrue(page.contains("Nom affiché") && page.contains("aucun — nom par défaut"), "valeur relue");
+        assertTrue(page.contains("RPGQuest (world-names.yml)"), "chemin d'écriture annoncé");
+        assertTrue(page.contains("name=\"set.alias\""), "champ du nom affiché");
+        assertTrue(page.contains("l'identifiant <code>terres</code> ne change pas"), page);
+        owner.post("/worlds/settings/preview", "_csrf=" + owner.csrf(FICHE) + "&agent=" + TestConfig.AGENT_ID
+                + "&world=terres&submit_token=tok-alias-1&set.alias=" + URLEncoder.encode("Terres sauvages",
+                StandardCharsets.UTF_8));
+        AgentActionRow preview = store.latestActionOfType(TestConfig.AGENT_ID, "world.settings.preview").orElseThrow();
+        assertEquals(Map.of("world", "terres", "set.alias", "Terres sauvages"), preview.params(),
+                "même chemin que les autres réglages (aperçu, puis confirmation)");
+    }
+
+    @Test
     void catalogBoundsMirrorThePlugin() {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("world", "terres");

@@ -121,6 +121,22 @@ class WorldsPageTest {
     }
 
     @Test
+    void displayNamesComeFromTheSurveyAndDefaultToHubClaimsWild() throws Exception {
+        start();
+        login();
+        runAction("world.list", RELEVE.replace("{\"name\":\"world_hub\",", "{\"name\":\"world_hub\",\"alias\":\"Village des Lody\","));
+        String page = get("/worlds?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Village des Lody <code>world_hub</code>"), "alias choisi + identifiant inchangé");
+        assertTrue(page.contains("Wild <code>wild</code>"), "défaut Wild");
+        assertTrue(page.contains("Claims <code>claims</code>"), "défaut Claims");
+        assertFalse(page.contains("Monde sauvage") || page.contains("Terrains des joueurs"), "anciens libellés imposés");
+        String hub = get("/worlds?agent=" + TestConfig.AGENT_ID + "&world=world_hub").body();
+        assertTrue(hub.contains("Village des Lody (choisi)"), "nom affiché dans la fiche");
+        String wild = get("/worlds?agent=" + TestConfig.AGENT_ID + "&world=wild").body();
+        assertTrue(wild.contains("Wild (par défaut"), "défaut expliqué");
+    }
+
+    @Test
     void styledMobNamesAreShownAsReadableEscapedText() throws Exception {
         start();
         login();

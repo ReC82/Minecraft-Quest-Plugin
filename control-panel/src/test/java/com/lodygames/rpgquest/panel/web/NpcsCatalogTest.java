@@ -1437,8 +1437,8 @@ class NpcsCatalogTest {
         runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION);
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
         String form = formAround(page, "value=\"npc.citizens.move\"");
-        assertTrue(form.contains("Village (world_hub)"), "monde lisible");
-        assertTrue(form.contains("value=\"12.3\"") || form.contains("value=\"12.2\""), "position préremplie");
+        assertTrue(form.contains("Hub (world_hub)"), "monde lisible");
+        assertTrue(form.contains("value=\"12.25\""), "position préremplie à la précision F3, sans arrondi");
         assertTrue(form.contains("value=\"north\">Le nord") && form.contains("value=\"up\">Vers le haut"));
         assertTrue(form.contains("value=\"\" selected>Sans changement"), "orientation gardée par défaut");
         assertTrue(form.contains("Confirmer le déplacement</label>"), "case de confirmation libellée");

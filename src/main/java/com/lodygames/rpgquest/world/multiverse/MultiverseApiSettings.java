@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.world.multiverse;
 
+import com.lodygames.rpgquest.world.WorldDisplayNames;
 import com.lodygames.rpgquest.world.settings.WorldSettingsPlanner;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -33,6 +34,8 @@ final class MultiverseApiSettings {
             return Optional.empty();
         }
         Map<String, String> out = new LinkedHashMap<>();
+        String alias = w.getAlias();
+        out.put("alias", alias == null || alias.isBlank() ? WorldDisplayNames.NONE : alias);
         if (w.getDifficulty() != null) {
             out.put("difficulty", w.getDifficulty().name());
         }
@@ -59,6 +62,7 @@ final class MultiverseApiSettings {
             return "Multiverse-Core ne connaît pas le monde « " + name + " »";
         }
         Try<Void> attempt = switch (key) {
+            case "alias" -> w.setAlias(WorldDisplayNames.NONE.equals(value) ? "" : value);
             case "difficulty" -> w.setDifficulty(Difficulty.valueOf(value));
             case "pvp" -> w.setPvp(Boolean.parseBoolean(value));
             case "gamemode" -> w.setGameMode(GameMode.valueOf(value.toUpperCase(Locale.ROOT)));

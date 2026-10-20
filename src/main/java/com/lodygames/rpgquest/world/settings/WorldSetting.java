@@ -17,6 +17,11 @@ import java.util.Optional;
  */
 public enum WorldSetting {
 
+    /**
+     * Nom affiché dans PlugAdmin (issue #81) : alias Multiverse-Core si Multiverse connaît le monde,
+     * sinon {@code plugins/RPGQuest/world-names.yml}. L'identifiant technique ne change jamais.
+     */
+    ALIAS("alias", "Nom affiché", null),
     DIFFICULTY("difficulty", "Difficulté", null),
     PVP("pvp", "PvP (combat entre joueurs)", "pvp"),
     MONSTERS("monsters", "Apparition des monstres", "spawn_monsters"),

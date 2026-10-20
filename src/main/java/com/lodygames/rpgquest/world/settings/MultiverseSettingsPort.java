@@ -8,7 +8,7 @@ import java.util.Optional;
  * facultatif : l'implémentation réelle ({@code world.multiverse.MultiverseWorldSettings}) vérifie sa
  * présence et rend « inconnu » s'il est absent, désactivé ou incompatible.
  *
- * <p>Clés lues : {@code difficulty}, {@code pvp}, {@code monsters}, {@code animals},
+ * <p>Clés lues : {@code alias} (#81, {@code -} = aucun), {@code difficulty}, {@code pvp}, {@code monsters}, {@code animals},
  * {@code gamemode}, {@code spawn} (forme canonique de {@link WorldSettingsPlanner#spawnValue}) et
  * {@code allow_weather} (information seulement). Appels sur le thread principal.</p>
  */

@@ -4286,7 +4286,7 @@ public final class AgentPages {
                     .append("<div class=\"npc-catbar\">").append(refresh).append("</div>").toString();
         }
         Map<String, Object> d = latest.get();
-        TravelPages.Survey survey = TravelPages.parse(d);
+        TravelPages.Survey survey = TravelPages.parse(d, worldNames(agentId));
         Instant now = Instant.now();
         long generatedAt = d.get("generatedAtEpochMs") instanceof Number n ? n.longValue() : 0L;
         Instant surveyedAt = generatedAt > 0 ? Instant.ofEpochMilli(generatedAt)
@@ -4335,7 +4335,7 @@ public final class AgentPages {
 
     /** Issue #412 — message de refus d'un renommage (nom pris ou inchangé), ou {@code null}. */
     public String waypointRenameConflict(String agentId, String waypointId, String displayName) {
-        return latestDetails(agentId, "travel.catalog").map(TravelPages::parse)
+        return latestDetails(agentId, "travel.catalog").map(d -> TravelPages.parse(d, worldNames(agentId)))
                 .map(s -> TravelPages.renameConflict(s, waypointId, displayName)).orElse(null);
     }
 
@@ -4910,19 +4910,30 @@ public final class AgentPages {
     //  ne sont simplement plus expliquées sous chaque bouton.
     // ================================================================================
 
-    /** Libellé lisible d'un monde. Le nom technique reste visible entre parenthèses. */
-    static String worldLabel(String world) {
-        String w = world == null ? "" : world.trim();
-        String human = switch (w.toLowerCase(Locale.ROOT)) {
-            case "world_hub", "hub" -> "Village";
-            case "claims" -> "Terrains des joueurs";
-            case "wild" -> "Monde sauvage";
-            case "world" -> "Monde principal";
-            case "world_nether" -> "Nether";
-            case "world_the_end" -> "End";
-            default -> "";
-        };
-        return human.isEmpty() ? w : human + " (" + w + ")";
+    /** Résolveur des noms de mondes (#81), mémorisé {@value #WORLD_NAMES_TTL_MS} ms par agent. */
+    private record CachedWorldNames(long at, WorldNames names) {
+    }
+
+    private static final long WORLD_NAMES_TTL_MS = 2_000;
+    private final Map<String, CachedWorldNames> worldNamesCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Noms affichés des mondes d'après le dernier relevé {@code world.list} de cet agent (alias
+     * choisis dans la page Mondes, sinon Hub / Claims / Wild). Jamais d'identifiant modifié.
+     */
+    WorldNames worldNames(String agentId) {
+        if (agentId == null || agentId.isEmpty()) {
+            return WorldNames.DEFAULTS;
+        }
+        long now = System.currentTimeMillis();
+        CachedWorldNames cached = worldNamesCache.get(agentId);
+        if (cached != null && now - cached.at() < WORLD_NAMES_TTL_MS) {
+            return cached.names();
+        }
+        WorldNames names = store.latestSuccessfulActionOfType(agentId, "world.list").flatMap(this::detailsOf)
+                .map(WorldNames::of).orElse(WorldNames.DEFAULTS);
+        worldNamesCache.put(agentId, new CachedWorldNames(now, names));
+        return names;
     }
 
     public String npcs(Session session, Map<String, String> q) {
@@ -5168,15 +5179,12 @@ public final class AgentPages {
         return "npc-" + id.replaceAll("[^a-z0-9_-]", "-");
     }
 
-    /** Position courte : « Village · 12 / 64 / -30 ». */
-    private static String npcPlace(Map<String, Object> c) {
+    /** Position courte : « Hub · 12 / 64 / -30 ». */
+    private static String npcPlace(Map<String, Object> c, WorldNames names) {
         if (c == null || cleanNull(str(c.get("world"))).isEmpty()) {
             return "";
         }
-        String world = str(c.get("world"));
-        String label = worldLabel(world);
-        int paren = label.indexOf(" (");
-        return (paren > 0 ? label.substring(0, paren) : label) + " · " + coord(c.get("x")) + " / "
+        return names.name(str(c.get("world"))) + " · " + coord(c.get("x")) + " / "
                 + coord(c.get("y")) + " / " + coord(c.get("z"));
     }
 
@@ -5206,7 +5214,7 @@ public final class AgentPages {
         if (!roleText.isEmpty()) {
             sb.append("<span class=\"npc-role\">").append(Http.esc(roleText)).append("</span>");
         }
-        String place = npcPlace(card.citizens());
+        String place = npcPlace(card.citizens(), worldNames(agentId));
         if (!place.isEmpty()) {
             sb.append("<span class=\"npc-loc\">").append(Icons.icon("world")).append(Http.esc(place)).append("</span>");
         }
@@ -5505,7 +5513,7 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder(formStart(session, agentId, "npc.citizens.move", "/npcs", "")
                 .replaceFirst("<form ", "<form data-submit-once "));
         sb.append(npcHidden(card.id()));
-        sb.append(worldSelect(uid, curWorld, spawnWorlds, false));
+        sb.append(worldSelect(uid, curWorld, spawnWorlds, false, worldNames(agentId)));
         sb.append(xyzFields(uid, c, true));
         sb.append("<div class=\"form-grid2\">");
         sb.append("<div><label for=\"").append(uid).append("-facing\">Regarde vers</label>")
@@ -5537,7 +5545,8 @@ public final class AgentPages {
     }
 
     /** Liste des mondes, libellés lisibles. {@code withAuto} ajoute « près du Guide » en tête. */
-    private static String worldSelect(String uid, String current, List<String> worlds, boolean required) {
+    private static String worldSelect(String uid, String current, List<String> worlds, boolean required,
+                                      WorldNames names) {
         StringBuilder sb = new StringBuilder("<label for=\"").append(uid).append("-world\">Monde</label>");
         if (worlds.isEmpty() && current.isEmpty()) {
             return sb.append("<input class=\"form-control\" id=\"").append(uid)
@@ -5551,26 +5560,46 @@ public final class AgentPages {
             boolean sel = w.equalsIgnoreCase(current);
             known |= sel;
             sb.append("<option value=\"").append(Http.esc(w)).append("\"").append(sel ? " selected" : "")
-                    .append(">").append(Http.esc(worldLabel(w))).append("</option>");
+                    .append(">").append(Http.esc(names.label(w))).append("</option>");
         }
         if (!known && !current.isEmpty()) {
             sb.append("<option value=\"").append(Http.esc(current)).append("\" selected>")
-                    .append(Http.esc(worldLabel(current))).append("</option>");
+                    .append(Http.esc(names.label(current))).append("</option>");
         }
         return sb.append("</select>").toString();
     }
 
-    /** X / Y / Z, préremplis depuis la position connue si {@code prefill}. */
-    private static String xyzFields(String uid, Map<String, Object> c, boolean prefill) {
-        StringBuilder sb = new StringBuilder("<div class=\"form-grid3\">");
+    /**
+     * X / Y / Z, préremplis depuis la position connue si {@code prefill}. Issue #81 : toute valeur
+     * décimale est acceptée ({@code step="any"}), comme l'écran F3 (743.222) ; elle est transmise
+     * telle quelle, sans arrondi au demi-bloc. Coller « x y z » (copie de F3) dans l'un des champs
+     * remplit les trois ({@code data-xyz}, panel.js).
+     */
+    static String xyzFields(String uid, Map<String, Object> c, boolean prefill) {
+        StringBuilder sb = new StringBuilder("<div class=\"form-grid3\" data-xyz>");
         for (String[] axis : new String[][] {{"x", "X"}, {"y", "Y"}, {"z", "Z"}}) {
-            String value = prefill && c != null ? coord(c.get(axis[0])) : "";
+            String value = prefill && c != null ? coordInput(c.get(axis[0])) : "";
             sb.append("<div><label for=\"").append(uid).append("-").append(axis[0]).append("\">")
                     .append(axis[1]).append("</label><input class=\"form-control\" id=\"").append(uid).append("-")
-                    .append(axis[0]).append("\" type=\"number\" step=\"0.5\" name=\"").append(axis[0])
-                    .append("\" value=\"").append(Http.esc(value)).append("\" required></div>");
+                    .append(axis[0]).append("\" type=\"number\" step=\"any\" inputmode=\"decimal\" name=\"")
+                    .append(axis[0]).append("\" value=\"").append(Http.esc(value)).append("\" required></div>");
         }
-        return sb.append("</div>").toString();
+        return sb.append("</div><p class=\"form-text\">Décimales acceptées, comme dans l'écran F3 (ex. 743.222). "
+                + "Coller « 743.222 67 -713.699 » dans X remplit les trois champs.</p>").toString();
+    }
+
+    /** Coordonnée préremplie dans un champ : précision de F3 (millième), sans zéros inutiles. */
+    static String coordInput(Object raw) {
+        String v = str(raw);
+        if (v.isEmpty() || "null".equals(v)) {
+            return "";
+        }
+        try {
+            return new java.math.BigDecimal(Double.parseDouble(v)).setScale(3, java.math.RoundingMode.HALF_UP)
+                    .stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException e) {
+            return "";
+        }
     }
 
     // ---- Promenade ----------------------------------------------------------------------------
@@ -5680,7 +5709,7 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder(formStart(session, agentId, "npc.citizens.create", "/npcs", "")
                 .replaceFirst("<form ", "<form data-submit-once "));
         sb.append(npcHidden(card.id()));
-        sb.append(worldSelect(uid, "", spawnWorlds, true));
+        sb.append(worldSelect(uid, "", spawnWorlds, true, worldNames(agentId)));
         sb.append(xyzFields(uid, null, false));
         sb.append(mutationConsent("npc.citizens.create", "Confirmer l'apparition", null));
         sb.append("<button class=\"btn\" type=\"submit\" data-busy-label=\"Envoi…\">Faire apparaître</button>");
@@ -5842,7 +5871,7 @@ public final class AgentPages {
             }
             Map<String, Object> c = card.citizens();
             if (c != null && Boolean.TRUE.equals(c.get("wanderEnabled")) && !cleanNull(str(c.get("wanderWorld"))).isEmpty()) {
-                dlRow(sb, "Départ de la promenade", Http.esc(worldLabel(str(c.get("wanderWorld")))) + " · "
+                dlRow(sb, "Départ de la promenade", Http.esc(worldNames(agentId).label(str(c.get("wanderWorld")))) + " · "
                         + coord(c.get("wanderX")) + " / " + coord(c.get("wanderY")) + " / " + coord(c.get("wanderZ"))
                         + " · rayon " + Http.esc(cleanNull(str(c.get("wanderXRange")))));
             }
@@ -5936,7 +5965,7 @@ public final class AgentPages {
         String rawName = cleanName(c.get("name"));
         String label = rawName.isEmpty() ? "PNJ sans nom #" + numeric : MiniText.plain(rawName);
         String slug = "fc-" + idx + "-" + digits;
-        String place = npcPlace(c);
+        String place = npcPlace(c, worldNames(agentId));
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"npcs\" data-filter-cat=\"todo\" "
                 + "data-filter-text=\"").append(Http.esc(label + " " + numeric)).append("\" data-res-id=\"citizens-")
@@ -6021,7 +6050,7 @@ public final class AgentPages {
                 .append(uid).append("-place\"><option value=\"auto\" selected>À côté du Guide, au village</option>")
                 .append("<option value=\"here\">À une position précise</option></select>");
         sb.append("<div data-switch-for=\"").append(uid).append("-place\" data-switch-value=\"here\" hidden>");
-        sb.append(worldSelect(uid, "", spawnWorlds, true).replace("name=\"world\"", "name=\"world\" disabled"));
+        sb.append(worldSelect(uid, "", spawnWorlds, true, worldNames(agentId)).replace("name=\"world\"", "name=\"world\" disabled"));
         sb.append(xyzFields(uid, null, false).replace("required", "required disabled"));
         sb.append("<p class=\"form-text\">Astuce : en jeu, la touche F3 affiche votre position.</p>");
         sb.append("</div>");
@@ -6319,7 +6348,7 @@ public final class AgentPages {
         asMap(d.get("npcs")).forEach((id, name) -> npcs.put(id, MiniText.plain(str(name))));
         List<Map<String, Object>> spots = asList(d.get("spots")).stream().map(AgentPages::asMap).toList();
         sb.append(spotOverview(spots));
-        sb.append(spotFilters(agentId, q, spots));
+        sb.append(spotFilters(agentId, q, spots, worldNames(agentId)));
         List<Map<String, Object>> shown = spotFilter(spots, q);
         String preselect = cleanNull(q.getOrDefault("npc", "")).toLowerCase(java.util.Locale.ROOT);
         sb.append(spotList(session, agentId, shown, npcs, canSpawn, canDelete, preselect, spots.size()));
@@ -6363,7 +6392,8 @@ public final class AgentPages {
     }
 
     /** Filtres GET (monde, état, recherche) : aucune écriture, simple lecture du relevé. */
-    private static String spotFilters(String agentId, Map<String, String> q, List<Map<String, Object>> spots) {
+    private static String spotFilters(String agentId, Map<String, String> q, List<Map<String, Object>> spots,
+                                      WorldNames names) {
         String world = cleanNull(q.getOrDefault("world", ""));
         String status = cleanNull(q.getOrDefault("status", ""));
         String text = cleanNull(q.getOrDefault("q", ""));
@@ -6377,7 +6407,7 @@ public final class AgentPages {
                         + "name=\"world\"><option value=\"\">Tous</option>");
         spots.stream().map(sp -> str(sp.get("world"))).distinct().sorted().forEach(w -> sb.append("<option value=\"")
                 .append(Http.esc(w)).append("\"").append(w.equals(world) ? " selected" : "").append(">")
-                .append(Http.esc(worldLabel(w))).append("</option>"));
+                .append(Http.esc(names.label(w))).append("</option>"));
         sb.append("</select></div><div><label for=\"spot-status\">État</label><select class=\"form-select\" "
                 + "id=\"spot-status\" name=\"status\"><option value=\"\">Tous</option>");
         SPOT_STATUSES.forEach(st -> sb.append("<option value=\"").append(st).append("\"")
@@ -6439,7 +6469,7 @@ public final class AgentPages {
                 .append(encounterCell("Emplacement", "enc-main", "<strong>" + Http.esc(name) + "</strong><br>"
                         + Ui.id(id) + "<br><small class=\"muted\">par " + Http.esc(cleanNull(str(sp.get("createdBy"))))
                         + "</small>"))
-                .append(encounterCell("Position", "", Http.esc(worldLabel(str(sp.get("world")))) + "<br><code>"
+                .append(encounterCell("Position", "", Http.esc(worldNames(agentId).label(str(sp.get("world")))) + "<br><code>"
                         + Http.esc(pos) + "</code><br><small class=\"muted\">regard " + Http.esc(directionLabel(sp.get("yaw")))
                         + " · <code>/tp @s " + Http.esc(pos) + "</code></small>"))
                 .append(encounterCell("PNJ", "", npcHtml))
@@ -6672,7 +6702,7 @@ public final class AgentPages {
                 : "<span class=\"badge text-bg-warning\">désactivées</span> (<code>encounters.enabled</code>)");
         List<String> worlds = asList(d.get("worlds")).stream().map(AgentPages::str).toList();
         dlRow(sb, "Mondes concernés", worlds.isEmpty() ? "<span class=\"badge text-bg-warning\">aucun</span>"
-                : Http.esc(String.join(", ", worlds.stream().map(AgentPages::worldLabel).toList())));
+                : Http.esc(String.join(", ", worlds.stream().map(worldNames(agentId)::label).toList())));
         dlRow(sb, "Plafond par monde", Http.esc(str(d.get("maxPerWorld"))));
         dlRow(sb, "Modèles chargés", Http.esc(String.valueOf(asList(d.get("templates")).size())));
         dlRow(sb, "Occurrences", Http.esc(String.valueOf(asList(d.get("sites")).size())));
@@ -6924,7 +6954,7 @@ public final class AgentPages {
         int i = 0;
         int worldIndex = 0;
         for (Map.Entry<String, List<Map<String, Object>>> world : byWorld.entrySet()) {
-            sb.append("<h3 class=\"h6 mt-3\">").append(Http.esc(worldLabel(world.getKey()))).append(" — ")
+            sb.append("<h3 class=\"h6 mt-3\">").append(Http.esc(worldNames(agentId).label(world.getKey()))).append(" — ")
                     .append(world.getValue().size()).append("</h3>");
             String listId = "enc-sites-" + worldIndex++;
             if (world.getValue().size() >= ENCOUNTER_FILTER_THRESHOLD) {
@@ -11453,7 +11483,8 @@ public final class AgentPages {
                 + listCatbar("Portails", compactRefresh(session, agentId, "portal.list", "Rafraîchir les portails",
                 details == null ? "btn-warning" : "btn-outline-primary", PortalPages.PATH));
         return PortalPages.render(new PortalPages.View(agentId, details, header,
-                row.map(r -> when(at(r))).orElse(""), str(q.get("portal")).trim(), str(q.get("file")).trim()));
+                row.map(r -> when(at(r))).orElse(""), str(q.get("portal")).trim(), str(q.get("file")).trim(),
+                worldNames(agentId)));
     }
 
     /** Objets (Minecraft + RPGQuest), prix du catalogue central et quêtes, pour les champs de saisie. */

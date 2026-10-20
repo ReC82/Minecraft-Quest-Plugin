@@ -60,12 +60,12 @@ public final class WorldPages {
         sb.append(onlineLine(v.details().get("onlinePlayers"), worlds));
         Map<String, Object> mv = map(v.details().get("multiverse"));
         if (!v.selected().isEmpty()) {
-            return sb.append(fiche(v, worlds, mv)).toString();
+            return sb.append(fiche(v, worlds, mv, WorldNames.of(v.details()))).toString();
         }
         for (Map<String, Object> issue : maps(v.details().get("issues"))) {
             sb.append(issueHtml(issue, "le serveur"));
         }
-        sb.append(list(v.agentId(), worlds, mv));
+        sb.append(list(v.agentId(), worlds, mv, WorldNames.of(v.details())));
         return sb.toString();
     }
 
@@ -90,7 +90,8 @@ public final class WorldPages {
 
     // ---- Liste ----------------------------------------------------------------------------------
 
-    private static String list(String agentId, List<Map<String, Object>> worlds, Map<String, Object> mv) {
+    private static String list(String agentId, List<Map<String, Object>> worlds, Map<String, Object> mv,
+                               WorldNames names) {
         StringBuilder sb = new StringBuilder();
         long loaded = worlds.stream().filter(w -> bool(w.get("loaded"))).count();
         long withRole = worlds.stream().filter(w -> !list(w.get("roles")).isEmpty()).count();
@@ -108,7 +109,7 @@ public final class WorldPages {
         }
         sb.append("<div class=\"w-grid\">");
         for (Map<String, Object> w : worlds) {
-            sb.append(card(agentId, w));
+            sb.append(card(agentId, w, names));
         }
         sb.append("</div>");
         sb.append("<p class=\"muted small w-small-note\">« inconnu » s'affiche quand une donnée ne peut pas être "
@@ -116,8 +117,9 @@ public final class WorldPages {
         return sb.toString();
     }
 
-    private static String card(String agentId, Map<String, Object> w) {
+    private static String card(String agentId, Map<String, Object> w, WorldNames names) {
         String name = str(w.get("name"));
+        String shown = names.name(name);
         boolean loaded = bool(w.get("loaded"));
         List<String> cats = new ArrayList<>();
         cats.add(loaded ? "loaded" : "unloaded");
@@ -132,10 +134,11 @@ public final class WorldPages {
         }
         StringBuilder sb = new StringBuilder("<article class=\"w-card").append(loaded ? "" : " muted-card")
                 .append("\" data-filter-item=\"worlds\" data-filter-cat=\"").append(String.join(" ", cats))
-                .append("\" data-filter-text=\"").append(Http.esc(name + " " + rolesText(w))).append("\">");
+                .append("\" data-filter-text=\"").append(Http.esc(name + " " + shown + " " + rolesText(w))).append("\">");
         sb.append("<div class=\"w-head\">").append(dimensionIcon(str(w.get("environment"))))
-                .append("<div><div class=\"w-name\">").append(Http.esc(name)).append("</div><div class=\"w-sub\">")
-                .append(Http.esc(generationLine(w))).append("</div></div><div class=\"w-pills\">")
+                .append("<div><div class=\"w-name\">").append(Http.esc(shown))
+                .append(shown.equals(name) ? "" : " <code>" + Http.esc(name) + "</code>")
+                .append("</div><div class=\"w-sub\">").append(Http.esc(generationLine(w))).append("</div></div><div class=\"w-pills\">")
                 .append(loadedPill(loaded)).append(essentialPill(w)).append("</div></div>");
         sb.append("<div class=\"w-roles\">").append(rolesHtml(w)).append("<span class=\"mgr\">")
                 .append(Http.esc(managerLabel(w))).append("</span></div>");
@@ -164,7 +167,7 @@ public final class WorldPages {
 
     // ---- Fiche ----------------------------------------------------------------------------------
 
-    private static String fiche(View v, List<Map<String, Object>> worlds, Map<String, Object> mv) {
+    private static String fiche(View v, List<Map<String, Object>> worlds, Map<String, Object> mv, WorldNames names) {
         String back = "<a class=\"btn sm secondary\" href=\"" + PATH + "?agent=" + enc(v.agentId()) + "\">"
                 + Icons.icon("back") + "Tous les mondes</a>";
         Map<String, Object> w = worlds.stream().filter(x -> str(x.get("name")).equals(v.selected())).findFirst()
@@ -175,7 +178,10 @@ public final class WorldPages {
         }
         String name = str(w.get("name"));
         StringBuilder sb = new StringBuilder("<div class=\"btnrow mb-3\">").append(back).append("</div>");
-        sb.append("<div class=\"w-title\" role=\"heading\" aria-level=\"2\">").append(Http.esc(name)).append(" ").append(loadedPill(bool(w.get("loaded"))))
+        String shown = names.name(name);
+        sb.append("<div class=\"w-title\" role=\"heading\" aria-level=\"2\">").append(Http.esc(shown))
+                .append(shown.equals(name) ? "" : " <code>" + Http.esc(name) + "</code>").append(" ")
+                .append(loadedPill(bool(w.get("loaded"))))
                 .append(essentialPill(w)).append("</div>");
         sb.append("<div class=\"w-cols\"><div>");
         sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("lock"))
@@ -195,6 +201,8 @@ public final class WorldPages {
         sb.append("</dl></section>");
         sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("info"))
                 .append("Réglages actuels</h3><dl class=\"w-dl\">")
+                .append(dl("Nom affiché", shown + (names.hasCustomName(name) ? " (choisi)"
+                        : " (par défaut — à choisir dans Réglages)")))
                 .append(dl("Difficulté", difficultyLabel(w.get("difficulty"))))
                 .append(dl("PvP", yesNo(w.get("pvp"), "autorisé", "interdit")))
                 .append(dl("Point d'arrivée", w.get("spawn") == null ? "inconnu" : str(w.get("spawn"))))

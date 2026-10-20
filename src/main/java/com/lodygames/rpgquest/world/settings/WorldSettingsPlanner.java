@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.world.settings;
 
+import com.lodygames.rpgquest.world.WorldDisplayNames;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -154,6 +155,7 @@ public final class WorldSettingsPlanner {
                     .orElse(null);
         }
         return switch (WorldSetting.byKey(key).orElse(null)) {
+            case ALIAS -> WorldDisplayNames.normalize(v);
             case DIFFICULTY -> oneOf(v, DIFFICULTIES);
             case GAMEMODE -> oneOf(v, GAMEMODES);
             case WEATHER -> oneOf(v, WEATHERS);
@@ -173,6 +175,8 @@ public final class WorldSettingsPlanner {
                     .orElse("Valeur invalide.");
         }
         return switch (WorldSetting.byKey(key).orElseThrow()) {
+            case ALIAS -> "Nom attendu : 1 à " + WorldDisplayNames.MAX_LENGTH + " caractères, sans < > & ni §, "
+                    + "ou « " + WorldDisplayNames.NONE + " » pour revenir au nom par défaut.";
             case DIFFICULTY -> "Difficulté attendue : Paisible, Facile, Normale ou Difficile.";
             case GAMEMODE -> "Mode attendu : Survie, Aventure, Créatif ou Spectateur.";
             case WEATHER -> "Météo attendue : dégagée, pluie ou orage.";
@@ -262,12 +266,19 @@ public final class WorldSettingsPlanner {
 
     private static String effect(WorldSettingsSnapshot s, String key, String proposed) {
         boolean on = "true".equals(proposed);
-        String persist = WorldSettingsSnapshot.WRITER_MULTIVERSE.equals(s.writers().get(key))
-                ? " Enregistré dans Multiverse-Core (conservé au redémarrage)." : "";
+        String writer = s.writers().get(key);
+        String persist = WorldSettingsSnapshot.WRITER_MULTIVERSE.equals(writer)
+                ? " Enregistré dans Multiverse-Core (conservé au redémarrage)."
+                : WorldSettingsSnapshot.WRITER_RPGQUEST.equals(writer)
+                ? " Enregistré dans plugins/RPGQuest/world-names.yml (conservé au redémarrage)." : "";
         if (key.startsWith(WorldSetting.RULE_PREFIX)) {
             return "La règle prend la valeur " + proposed + " dans ce monde seulement (conservée au redémarrage).";
         }
         return switch (WorldSetting.byKey(key).orElseThrow()) {
+            case ALIAS -> (WorldDisplayNames.NONE.equals(proposed)
+                    ? "Le nom personnalisé est retiré : PlugAdmin revient au nom par défaut."
+                    : "PlugAdmin affichera « " + proposed + " » pour ce monde (PNJ, Mondes, Portails, Voyages).")
+                    + " L'identifiant technique « " + s.world() + " » ne change pas." + persist;
             case DIFFICULTY -> "Difficulté changée immédiatement pour tous les joueurs de ce monde." + persist;
             case PVP -> (on ? "Les joueurs pourront se blesser entre eux dans ce monde."
                     : "Les joueurs ne pourront plus se blesser entre eux dans ce monde.") + persist;

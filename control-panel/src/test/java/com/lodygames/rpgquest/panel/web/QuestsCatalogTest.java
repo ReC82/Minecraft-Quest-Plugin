@@ -192,6 +192,74 @@ class QuestsCatalogTest {
         assertTrue(page.contains("Aucun catalogue chargé"));
     }
 
+    // ---- Issue #15 lot 2 : onglets Quotidiennes / Hebdomadaires ------------------------------
+
+    private static String periodicQuest(String id, String title, String period) {
+        return "{\"id\":\"rpgquest:" + id + "\",\"title\":\"" + title + "\",\"category\":\"" + period + "\","
+                + "\"repeatable\":true,\"period\":\"" + period + "\",\"prerequisites\":[],"
+                + "\"steps\":[{\"id\":\"s\",\"objectiveDetails\":[{\"kind\":\"BREAK_BLOCK\",\"target\":\"OAK_LOG\","
+                + "\"amount\":16,\"raw\":\"x\"}]}],\"rewards\":[],\"rewardDetails\":[]}";
+    }
+
+    private static final String PERIODIC_DETAILS = "{\"quests\":["
+            + periodicQuest("daily_demo_bucheron", "Bois du jour", "daily") + ","
+            + periodicQuest("weekly_demo_expedition", "Expédition de la semaine", "weekly") + ","
+            + "{\"id\":\"rpgquest:first_steps\",\"title\":\"Premiers pas\",\"category\":\"tutorial\","
+            + "\"repeatable\":false,\"prerequisites\":[],\"steps\":[],\"rewards\":[],\"rewardDetails\":[]}],"
+            + "\"periodic\":{\"enabled\":true,\"timezone\":\"Europe/Paris\",\"resetTime\":\"04:00\","
+            + "\"weeklyResetDay\":\"MONDAY\",\"dailyCount\":2,\"weeklyCount\":1,\"expiredReward\":false}}";
+
+    @Test
+    void periodicModelsHaveTheirOwnTabsWithTheServerSettingsShownReadOnly() throws Exception {
+        start();
+        runListWithSuccess("quest.list", "quests", PERIODIC_DETAILS);
+
+        String all = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(all.contains("aria-label=\"Type de quêtes\"") && all.contains(">Principales<"), "barre d'onglets");
+        assertTrue(all.contains("&amp;tab=daily\">Quotidiennes (1)</a>")
+                && all.contains("&amp;tab=weekly\">Hebdomadaires (1)</a>"), "compteurs des onglets");
+        assertTrue(all.contains("data-period-badge>Quotidienne<"), "badge sur la fiche dans « Toutes »");
+        assertTrue(all.contains("data-filter-cat=\"ok daily\""), "un modèle n'est pas classé « principale »");
+        assertFalse(all.contains("data-periodic-overview"), "pas de réglages sur l'onglet « Toutes »");
+
+        String daily = get("/quests?agent=" + TestConfig.AGENT_ID + "&tab=daily").body();
+        assertTrue(daily.contains("data-periodic-overview=\"daily\""));
+        assertFalse(daily.contains(">Principales<"), "pas de puces de type sur un onglet périodique");
+        assertTrue(daily.contains("2 par jour") && daily.contains("chaque jour à 04:00 (Europe/Paris)")
+                && daily.contains("expire, sans récompense"), "réglages du serveur affichés");
+        assertTrue(daily.contains("Valeurs de démonstration"), "valeurs signalées comme non définitives");
+        assertTrue(daily.contains("Seulement 1 modèle(s) actif(s) pour 2 quête(s) par joueur"), daily);
+        assertTrue(daily.contains("href=\"/quests/new?period=daily\""), "création préréglée");
+        assertTrue(daily.contains("data-res-id=\"rpgquest:daily_demo_bucheron\""), "fiche du modèle (aperçu)");
+        assertFalse(daily.contains("data-res-id=\"rpgquest:weekly_demo_expedition\"")
+                || daily.contains("data-res-id=\"rpgquest:first_steps\""), "seuls les modèles quotidiens");
+        assertFalse(daily.contains("name=\"periodic-quests\"") || daily.contains("action=\"/quests/periodic"),
+                "aucun formulaire ne modifie les réglages");
+
+        String weekly = get("/quests?agent=" + TestConfig.AGENT_ID + "&tab=weekly").body();
+        assertTrue(weekly.contains("1 par semaine") && weekly.contains("chaque lundi à 04:00 (Europe/Paris)"), weekly);
+        assertTrue(weekly.contains("Autant de modèles actifs que de quêtes attribuées"), weekly);
+    }
+
+    @Test
+    void periodicTabSaysWhenServerSettingsAreUnknown() throws Exception {
+        start();
+        runListWithSuccess("quest.list", "quests", QUEST_DETAILS);
+        String daily = get("/quests?agent=" + TestConfig.AGENT_ID + "&tab=daily").body();
+        assertTrue(daily.contains("Réglages du serveur pas encore relevés"));
+        assertTrue(daily.contains("Aucun modèle actif sur le serveur"));
+        assertTrue(daily.contains("Aucun modèle de quête quotidienne pour le moment."));
+    }
+
+    @Test
+    void createButtonPresetsTheEditorAsAPeriodicModel() throws Exception {
+        start();
+        String editor = get("/quests/new?period=weekly").body();
+        assertTrue(editor.contains("<option value=\"weekly\" selected>"), "période préréglée");
+        assertTrue(java.util.regex.Pattern.compile("name=\"repeatable\" value=\"on\" checked").matcher(editor).find(),
+                "un modèle périodique est répétable");
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private static String section(String page) {

@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Bossbar de suivi compacte, sans identifiant technique (#71, TC-380)
+
+### Changement
+
+Affichage seul. La bossbar de la quête suivie n'affiche plus la liste concaténée des objectifs
+(« Tuer SPIDER · Tuer ZOMBIE · … », « Remettre CACTUS à encounter_merchant ») mais un résumé borné :
+titre (raccourci « … » si besoin), « Étape i/n », puis l'objectif unique avec son compteur (nom traduit
+par le client) ou « k/n objectifs ». L'ActionBar de progression utilise le même libellé traduit.
+
+### Action serveur
+
+Aucune action manuelle autre que le remplacement du JAR. Pas de configuration (seule clé :
+`journal.tracker-enabled`, inchangée), pas de migration, aucune quête, progression ni récompense touchée.
+
+### Sauvegarde préalable
+
+`rpgquest-20261020T193757Z-predeploy.jar` (3 898 517 o, = JAR du lot #34, code `118de98e`).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` depuis le worktree au merge `97f98e45` (PR #651), JAR 3 905 404 o,
+SHA-256 `0151b3eb…daaf1e`, retéléchargé par FTP et identique ; `scripts/verygames-restart.sh`
+(seul LoDyMcFly en ligne), DEV de nouveau ONLINE, `plugins` : RPGQuest vert.
+
+### Validation
+
+TC-380 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`. Aucune donnée à restaurer.
+
+---
+
 ## 2026-10-20 - Tania propose de nouveau la quête de test `help_recolte` (#34, TC-378 / TC-379)
 
 ### Changement

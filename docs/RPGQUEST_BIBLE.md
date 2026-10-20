@@ -5859,6 +5859,23 @@ plus ; aucune modification du terrain : une explosion de mob spécial portant un
 active a toujours sa liste de blocs vidée (`EntityExplodeEvent`), il n'existe aucune option de destruction. Détail : [SPECIAL_MOB_FORMAT.md](../SPECIAL_MOB_FORMAT.md),
 développeurs : [docs/development/ADDING_MOB_ABILITY.md](development/ADDING_MOB_ABILITY.md).
 
+**PlugAdmin — page « Capacités » et cartes du profil (issue #543).** Menu **Capacités** (juste sous
+« Mobs spéciaux & boss », adresse `/mobs/abilities`, lecture `MOB_READ`) : catalogue des types publié
+par le plugin (action agent `mob.ability.catalog`, aussi jointe à `mob.list`), filtres catégorie / état /
+créature compatible, et une fiche par type (réglages avec bornes et défauts, préréglages Doux / Normal /
+Brutal, garanties, profils qui l'utilisent). Dans **Modifier le profil**, les capacités sont des
+**cartes** : seules les capacités configurées s'affichent, avec une phrase-résumé ; chaque carte se
+désactive (valeurs gardées), se retire, se réordonne (↑↓, ou champ « Ordre » sans JavaScript) et se
+règle dans « Modifier les réglages » (champs communs sous « Réglages avancés »). **Ajouter une
+capacité** ouvre une liste à cocher : capacités déjà présentes, prévues, en développement sur un
+profil au tirage naturel, ou plafond de 5 atteint sont grisées avec la raison ; une capacité cochée
+arrive remplie avec le préréglage « Normal », **copié** dans le profil. Enregistrer envoie la liste
+complète et ordonnée (`abilities`), revalidée par le plugin avec les mêmes messages qu'un fichier ;
+enregistrer sans rien changer réécrit les mêmes lignes. Les anciens champs Enragé / Renforts du
+formulaire n'existent plus (le plugin les accepte encore d'un ancien panel). Aucune capacité, aucun
+profil, aucune apparition n'est activé automatiquement ; les réglages de mondes et d'apparition
+restent dans le profil.
+
 Le boss de quête (spawn à l'acceptation, identité liée joueur/quête/cycle, objectif de victoire, localisation biome/waypoint) est un développement séparé, pas encore implémenté — ne jamais le présenter comme disponible.
 
 ---

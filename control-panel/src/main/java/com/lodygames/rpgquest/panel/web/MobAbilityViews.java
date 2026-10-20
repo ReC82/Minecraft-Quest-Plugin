@@ -150,9 +150,8 @@ final class MobAbilityViews {
             if (v == null) {
                 continue;
             }
-            boolean common = Boolean.TRUE.equals(p.get("common"));
-            // Champ commun à sa valeur par défaut : rien à dire.
-            if (common && number(v).equals(number(p.get("defaultValue")))) {
+            // Réglage facultatif à sa valeur par défaut (champ commun, « non » par défaut…) : rien à dire.
+            if (!Boolean.TRUE.equals(p.get("required")) && number(v).equals(number(p.get("defaultValue")))) {
                 continue;
             }
             parts.add(str(p.get("label")) + " " + (v instanceof Boolean b ? (b ? "oui" : "non") : number(v)));

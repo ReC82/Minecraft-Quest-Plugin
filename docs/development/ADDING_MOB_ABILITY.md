@@ -91,6 +91,10 @@ Obligatoire :
 - Un test d'exécuteur MockBukkit (voir `SplitOnHitExecutorTest`, `AbilityEngineTest`) : déclenchement,
   non-déclenchement (annulé, hors portée, désactivée), plafond, zone protégée, nettoyage.
 - `MobAbilityGoldenTest` doit rester vert : les profils existants ne changent pas.
+- PlugAdmin (#543) : rien à coder — la page « Capacités » et les cartes du profil se dérivent du
+  descripteur. Régénérer la copie du catalogue des tests du panel :
+  `RPGQUEST_REGEN_FIXTURES=1 ./gradlew :test --tests '*MobAbilityCatalogFixtureTest'`
+  (sinon ce test échoue, volontairement).
 
 ## 5. Documentation
 

@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - PlugAdmin : page Capacités et cartes de capacités des profils de mob (#543)
+
+### Changement
+
+JAR + PlugAdmin (branche `feature/543-capacites-plugadmin`). Nouvelle action agent en lecture
+`mob.ability.catalog` (catalogue joint aussi à `mob.list`) ; `mob.definition.create/update` acceptent
+la liste structurée `abilities`. PlugAdmin : menu « Capacités », cartes de capacités dans le profil.
+Format des profils inchangé ; aucun profil réécrit, activé ni créé.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** redéploiement de PlugAdmin
+(`scripts/plugadmin/deploy.sh`). Aucune migration `data.db`, aucune clé de configuration. Ne pas
+toucher `mobs/*.yml`.
+
+### Sauvegarde préalable
+
+Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y --wait-ci` puis redémarrage via le script RCON ; `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`mob.list` : mêmes profils, `abilityCatalog` présent ; page `/mobs/abilities` servie.
+`PENDING MANUAL VALIDATION` : TC-373.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` (JAR précédent) et redéploiement PlugAdmin du commit précédent ;
+aucune donnée à reprendre (un profil enregistré par les cartes reste lisible par l'ancien JAR).
+
 ## 2026-10-20 - Waypoints : mondes autorisés et interdits à la génération (#136)
 
 ### Changement

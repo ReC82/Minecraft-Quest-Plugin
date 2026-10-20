@@ -6716,6 +6716,33 @@ les étapes 1, 2, 4 et 7 ; l'étape 3 en demande un (facultatif). **Durée** : 1
     ses versions, sa conception et son historique sont intacts ; aucun bâtiment posé n'a bougé.
 
 
+### TC-373 — PlugAdmin : page « Capacités » et cartes de capacités d'un profil (issue #543, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR **et** PlugAdmin issus de la PR #543 sur DEV. Claude n'a modifié, créé, activé ni fait
+apparaître aucun profil ou mob. **Ne pas modifier les profils existants pour ce test** (dont `zz542_*`) :
+créer un profil de test jetable, de type **BOSS de quête** (jamais tiré au hasard), puis le supprimer ou le
+désactiver.
+
+1.  Menu **Capacités** (sous « Mobs spéciaux & boss »). **Attendu** : 5 capacités (Explosion renforcée,
+    Explosif au contact, Division, Enragé, Renforts), chacune avec type, déclenchement, effet sur, profils
+    qui l'utilisent. Filtre « Explosion » → 2 ; « Compatible avec » ZOMBIE → 4. Sur téléphone, aucun
+    défilement horizontal.
+2.  « Voir la fiche » de **Renforts** : réglages avec bornes et défauts, préréglages Doux/Normal/Brutal,
+    garanties (aucun bloc, Hub/claims/zones), profils qui l'utilisent.
+3.  Mobs spéciaux & boss → **Nouveau profil** `zz543_test`, BOSS, ZOMBIE, chance 0 → dans « Capacités »,
+    **Ajouter une capacité** : cocher Enragé et Division. **Attendu** : leurs réglages s'ouvrent, déjà
+    remplis (Normal) ; Explosion renforcée indique « Sans effet sur un ZOMBIE ». Créer.
+4.  Modifier `zz543_test` : 2 cartes avec une phrase-résumé ; Enragé et Division sont grisées dans
+    « Ajouter une capacité » (« Déjà dans ce profil »). Monter Division (↑), décocher « Active » sur
+    Enragé, préréglage **Brutal** sur Division, enregistrer. **Attendu** : succès ; « Exporter ce profil »
+    montre Division avant Enragé, `enabled: false` sous Enragé, ses valeurs gardées.
+5.  Ajouter Renforts sans « Créature invoquée » → refus lisible « Capacité n°3 « Renforts » : … est
+    obligatoire », rien n'est écrit. Saisir 2 dans « Seuil de vie » d'Enragé → refus avec la borne.
+6.  Cocher « Retirer » sur Division, enregistrer → l'export n'a plus que Enragé.
+7.  Non-régression : ouvrir **Modifier** sur un profil existant sans rien changer et **ne pas** enregistrer
+    (aucune réécriture demandée par ce test) ; « Modèles, IA et import » fonctionne comme avant.
+8.  Supprimer / désactiver `zz543_test`.
+
 ### TC-372 — Waypoints : mondes autorisés et interdits à la génération (issue #136, PENDING MANUAL VALIDATION)
 
 **Prérequis** : JAR #136 déployé et serveur redémarré. **Durée** : 10 minutes (15 avec l'étape 5).

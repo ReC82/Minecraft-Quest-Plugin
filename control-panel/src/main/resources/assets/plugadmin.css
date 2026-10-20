@@ -1688,7 +1688,7 @@ pre.mob-cell{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85e
 .ab-add>summary::-webkit-details-marker{display:none}
 .pick{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .pick-row{padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;min-width:0}
-.pick-l{display:flex;gap:12px;align-items:flex-start;margin:0;cursor:pointer}
+.pick-l{display:flex;gap:12px;align-items:flex-start;margin:0;cursor:pointer;font-weight:400}
 .pick-l input{margin-top:4px;width:auto;flex:0 0 auto}
 .pick-row.disabled{opacity:.6;background:var(--surface-2)}
 .pick-row.disabled .pick-l{cursor:default}

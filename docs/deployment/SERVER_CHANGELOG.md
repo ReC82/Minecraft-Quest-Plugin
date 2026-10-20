@@ -48,6 +48,42 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - PlugAdmin : « Lire ses droits en jeu » ne finit plus en NullPointerException (#27, TC-376)
+
+### Changement
+
+`mc.rights.read` échouait à chaque lecture réussie (LuckPerms disponible → détail `reason = null`, refusé
+par `Map.copyOf` dans `AgentActionOutcome`). Les détails d'un résultat d'action acceptent désormais
+`null`. Toute erreur inattendue de l'agent renvoie un message français et des détails (`code`
+`AGENT_INTERNAL_ERROR`, `action`, `error`, `errorMessage`, `where`). Texte d'aide ajouté sur la fiche
+joueur (lecture fonctionnelle hors ligne, lecture seule).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement + redéploiement PlugAdmin (AWS). Aucune configuration, aucune
+migration de schéma, aucun fichier de contenu.
+
+### Sauvegarde préalable
+
+JAR précédent : `~/.local/share/rpgquest/verygames-backups/rpgquest-20261020T153902Z-predeploy.jar`
+(3 888 875 o, SHA-256 `751cc189…7575d`). PlugAdmin : ancienne app sous `/opt/plugadmin/releases/`.
+
+### Déploiement
+
+Effectué le 2026-10-20 : `scripts/deploy-verygames.sh -y` depuis `c92687f` (JAR 3 889 567 o, SHA-256
+`0694d0c4…9f7da`, re-téléchargé et identique), `scripts/verygames-restart.sh` (seul LoDyMcFly en ligne),
+DEV de nouveau ONLINE 17:40 ; `scripts/plugadmin/deploy.sh` (DEPLOYED `c92687f`, CI verte).
+
+### Validation
+
+Lecture seule via l'agent, 17:40 : `mc.rights.read` Rondoudou9000 (hors ligne) et LoDyMcFly → SUCCESS
+« Aucun droit géré porté par ce joueur », `reason: null`. Validation en jeu : TC-376, PENDING MANUAL
+VALIDATION.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` avec le backup ci-dessus puis redémarrage ; `scripts/plugadmin/rollback.sh`.
+
 ## 2026-10-20 - Quêtes : étape déjà pleine rechargée enfin close (#13, TC-306)
 
 ### Changement

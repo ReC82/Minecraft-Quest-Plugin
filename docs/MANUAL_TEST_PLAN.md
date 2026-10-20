@@ -7625,3 +7625,46 @@ groupe, ni OP, ni whitelist, ni lien de compte.
 3.  (Si une lecture échoue un jour, par exemple LuckPerms indisponible) **Attendu** : le bloc passe à « échec » avec le message,
     au même moment que la notification — plus de notification « échec » à côté d'un bloc « en cours ».
 4.  Utilisateurs → compte lié → « Lire l'état réel en jeu » : « Dernier relevé » passe aussi seul de « en cours… » au résultat.
+
+### TC-378 — Craft de planches compté +4 avec la quête de Tania `help_recolte` (issue #34, PENDING MANUAL VALIDATION)
+
+Prérequis : `quests/help_recolte.yml` et `dialogues/help.yml` publiés sur DEV (#34, 20/10/2026), JAR ≥ `1ba3b89`
+(correctif #34, déjà en ligne). Le choix « Ton stock de bois » de Tania est **temporaire** (voir le commentaire en tête de
+`dialogues/help.yml`). Aucune progression n'est forcée : la quête se prend normalement.
+
+1.  Hub → parler à **Tania** (PNJ Citizens n°2). **Attendu** : accueil « Bonjour ! Je suis Tania. … », choix
+    « Ton stock de bois » et « Au revoir ». Le nom affiché est « Tania » (plus « Help »).
+2.  « Ton stock de bois ». **Attendu** : offre (5 bûches puis des planches), « Quête : Le stock de Tania », boutons
+    « Commencer (j'accepte) » et « Pas maintenant ». Rien n'est encore démarré.
+3.  « Commencer (j'accepte) ». **Attendu** : message de quête commencée « Le stock de Tania » ; journal : quête active,
+    description « Tania a besoin de bois pour refaire quelques caisses. ».
+4.  Ramasser **5 bûches de chêne** (étape 1, `COLLECT_ITEM`). **Attendu** : 5/5, l'étape « fabriquer_planches »
+    devient l'étape en cours. Ne pas fabriquer de planches avant : un craft fait pendant l'étape 1 ne compte pas.
+5.  Établi ou grille 2×2 : **1 bûche**, **clic simple** sur le résultat (curseur vide). **Attendu** : le premier
+    contrôle passe à **4/4 d'un coup** (+4, pas +1), l'étape se termine, la quête se termine **une seule fois** :
+    +25 XP et 3 pains.
+6.  Reparler à Tania pendant la quête (si l'étape 5 n'est pas encore faite) : « Ton stock de bois » mène au rappel
+    « Merci de t'en occuper ! … », sans nouvelle offre.
+
+**Reset** : rien à remettre — la quête est `repeatable: true` sans délai, elle se reprend auprès de Tania.
+
+### TC-379 — Crafts multiples (shift-clic, plusieurs lots) sur un objectif `CRAFT_ITEM` (issue #34, PENDING MANUAL VALIDATION)
+
+Distinct de TC-378 : **ne modifie pas** `help_recolte`. Reprend les cas de TC-015.
+
+**A — avec `help_recolte` (objectif de 4, renouvelable)**, après avoir ramassé les 5 bûches à chaque reprise :
+1.  **3 bûches**, **shift-clic** sur le résultat. **Attendu** : 4/4 (12 planches fabriquées, compteur plafonné à 4,
+    jamais au-delà), étape et quête terminées une seule fois, récompenses reçues une seule fois.
+2.  Reprise suivante : curseur tenant **un autre objet** (ex. une pierre), clic simple sur le résultat. **Attendu** :
+    rien n'est fabriqué, compteur inchangé (0/4). Puis vider le curseur, clic simple → 4/4.
+3.  Reprise suivante : inventaire **plein** (aucune case libre, aucune pile de planches incomplète), shift-clic.
+    **Attendu** : rien n'est rangé, compteur inchangé. Libérer une case → shift-clic → 4/4.
+
+**B — cumul au-delà d'un lot (+12, 18/20 → 20/20)** : il faut un objectif plus grand que 4. Créer une quête de test
+**séparée** dans PlugAdmin (Quêtes → nouvelle quête, catégorie `test`, un objectif `CRAFT_ITEM` `OAK_PLANKS` × 20), la
+rendre accessible comme le propriétaire le souhaite, puis dérouler les étapes 1 à 7 de **TC-015** :
+1 bûche clic simple → 4/20 ; second craft → 8/20 ; 3 bûches shift-clic → +12 ; inventaire plein sauf une pile partielle
+de planches → seule la quantité rangée compte ; à 18/20, shift-clic de 4 bûches → 20/20 sans dépassement ;
+déconnexion/reconnexion → pas de recomptage.
+
+**Couverture automatisée** : `QuestCraftObjectiveTest` (9 cas).

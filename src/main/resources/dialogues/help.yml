@@ -1,0 +1,67 @@
+# Dialogue de Tania (PNJ « help », Citizens n°2, nom affiché « Tania ») — issue #34.
+#
+# Sur DEV, Tania n'avait plus AUCUN dialogue depuis le 13/10/2026 (dialogues/help.yml supprimé
+# depuis PlugAdmin, pierre tombale content-tombstones/dialogues/help.yml). Ce fichier lui rend un
+# accueil neutre (« greeting ») et, TEMPORAIREMENT, l'accès à la quête de test
+# rpgquest:help_recolte pour dérouler TC-378 (craft de planches compté +4).
+#
+# ┌─ TEMPORAIRE (#34) ─────────────────────────────────────────────────────────────────────────┐
+# │ Le choix « Ton stock de bois » du nœud greeting et les nœuds help_offer / help_progress     │
+# │ servent UNIQUEMENT au test de #34. Pour les retirer : supprimer ce choix et ces deux nœuds  │
+# │ (rien d'autre n'y renvoie), puis republier — ou supprimer tout le fichier depuis           │
+# │ PlugAdmin pour revenir à l'état d'avant (Tania sans dialogue).                              │
+# └─────────────────────────────────────────────────────────────────────────────────────────────┘
+#
+# Acceptation normale : choix → offre → « Commencer (j'accepte) » (START_QUEST, visible seulement
+# si la quête est disponible pour ce joueur). Aucune complétion ni remise automatique.
+id: rpgquest:help
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "%npc_name%"
+    text: "<white>Bonjour ! Je suis %npc_name%.</white> <gray>Je range les caisses du village.</gray>"
+    choices:
+      # TEMPORAIRE (#34) — accès à la quête de test, à retirer après validation.
+      - text: "<yellow>Ton stock de bois</yellow>"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:help_recolte
+            state: ACTIVE
+            negate: true
+        next: help_offer
+      # TEMPORAIRE (#34) — même accès pendant la quête, pour revoir la consigne.
+      - text: "<yellow>Ton stock de bois</yellow>"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:help_recolte
+            state: ACTIVE
+        next: help_progress
+      - text: "<gray>Au revoir</gray>"
+        actions:
+          - type: CLOSE
+
+  # TEMPORAIRE (#34)
+  help_offer:
+    speaker: "%npc_name%"
+    text: "<white>J'ai un petit problème de stock.</white> <gray>Peux-tu ramasser 5 bûches de chêne puis fabriquer quelques planches ?</gray><newline><white>Quête :</white> <green>Le stock de Tania</green>"
+    choices:
+      - text: "Commencer (j'accepte)"
+        conditions:
+          - type: QUEST_AVAILABLE
+            quest: rpgquest:help_recolte
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:help_recolte
+          - type: CLOSE
+      - text: "<gray>Pas maintenant.</gray>"
+        next: greeting
+
+  # TEMPORAIRE (#34)
+  help_progress:
+    speaker: "%npc_name%"
+    text: "<white>Merci de t'en occuper !</white> <gray>Ramasse d'abord 5 bûches de chêne, puis fabrique des planches à l'établi.</gray>"
+    choices:
+      - text: "<gray>J'y retourne.</gray>"
+        actions:
+          - type: CLOSE

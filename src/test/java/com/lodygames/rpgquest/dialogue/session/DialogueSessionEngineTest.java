@@ -827,6 +827,60 @@ class DialogueSessionEngineTest {
         return (view == null || view.getTopInventory() == null) ? 0 : view.getTopInventory().getSize();
     }
 
+    private static final NamespacedKey TANIA = new NamespacedKey("rpgquest", "help");
+    private static final NamespacedKey HELP_RECOLTE = new NamespacedKey("rpgquest", "help_recolte");
+
+    /**
+     * Issue #34 : le VRAI dialogue temporaire de Tania et la VRAIE quête restaurée, tels qu'embarqués
+     * dans le JAR. Acceptation normale : choix « Ton stock de bois » → offre → « Commencer (j'accepte) »
+     * démarre la quête ; une fois active, l'offre n'est plus proposée (pas de second démarrage).
+     */
+    @Test
+    void taniaTemporaryChoiceOffersThenStartsHelpRecolteOnlyOnExplicitAccept() throws Exception {
+        for (String file : List.of("quests/help_recolte.yml", "dialogues/help.yml")) {
+            try (var in = getClass().getResourceAsStream("/" + file)) {
+                Files.write(tempDir.resolve(file), in.readAllBytes());
+            }
+        }
+        questEngine.reload();
+        assertTrue(dialogueEngine.reload().issues().isEmpty(), () -> "help.yml : " + dialogueEngine.lastReport().issues());
+        PlayerMock player = addPlayer();
+
+        sessionEngine.open(player, TANIA);
+        awaitRendered();
+        assertEquals("greeting", renderer.lastNode.id());
+        int stock = renderer.lastVisibleChoices.stream()
+                .filter(c -> c.label().contains("Ton stock de bois")).findFirst().orElseThrow().index();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, TANIA, "greeting", stock);
+        awaitRendered();
+        assertEquals("help_offer", renderer.lastNode.id());
+        assertEquals(QuestState.NOT_STARTED,
+                questProgressEngine.stateOf(player.getUniqueId(), HELP_RECOLTE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                "ouvrir l'offre ne démarre rien");
+
+        int accept = renderer.lastVisibleChoices.stream()
+                .filter(c -> c.label().contains("Commencer (j'accepte)")).findFirst().orElseThrow().index();
+        sessionEngine.onChoiceSelected(player, TANIA, "help_offer", accept);
+        QuestState state = QuestState.NOT_STARTED;
+        for (int i = 0; i < 200 && state != QuestState.ACTIVE; i++) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(10);
+            state = questProgressEngine.stateOf(player.getUniqueId(), HELP_RECOLTE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+        assertEquals(QuestState.ACTIVE, state);
+
+        renderer.lastNode = null;
+        sessionEngine.open(player, TANIA);
+        awaitRendered();
+        int again = renderer.lastVisibleChoices.stream()
+                .filter(c -> c.label().contains("Ton stock de bois")).findFirst().orElseThrow().index();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, TANIA, "greeting", again);
+        awaitRendered();
+        assertEquals("help_progress", renderer.lastNode.id(), "quête active : rappel de consigne, pas de nouvelle offre");
+    }
+
     private PlayerMock addPlayer() throws Exception {
         PlayerMock player = server.addPlayer();
         profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);

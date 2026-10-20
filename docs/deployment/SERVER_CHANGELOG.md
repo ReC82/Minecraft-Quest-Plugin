@@ -48,6 +48,31 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Tania propose de nouveau la quête de test `help_recolte` (#34, TC-378 / TC-379)
+
+### Changement
+
+Contenu seul. `quests/help_recolte.yml` (présent sur DEV, absent du dépôt) est restauré dans le dépôt à
+l'identique de DEV — même id `rpgquest:help_recolte`, mêmes étapes, objectifs (5 OAK_LOG puis 4 OAK_PLANKS)
+et récompenses (25 XP, 3 BREAD) — avec `giver: help`, le titre « Le stock de Tania » et la description
+qui cite `%npc_name:help%`. Nouveau `dialogues/help.yml` pour Tania (PNJ `help`, sans dialogue depuis le
+13/10) : accueil neutre + choix **temporaire** « Ton stock de bois » → offre → « Commencer (j'accepte) ».
+
+### Action serveur
+
+Deux fichiers via `deploy-verygames.sh --also` (sauvegardés avant remplacement ; `dialogues/help.yml`
+n'existait pas, d'où `--allow-no-backup`), JAR reconstruit depuis la branche d'intégration et
+redémarrage. Aucune configuration, aucune migration, aucun PNJ (ni `npcs/help.yml`, ni Citizens), aucune
+progression touchés. La pierre tombale `content-tombstones/dialogues/help.yml` reste en place (elle
+n'empêche que le réamorçage d'un exemple du JAR ; `help.yml` n'en est pas un).
+
+### Rollback
+
+Quête : remettre `extra-<horodatage>/RPGQuest/quests/help_recolte.yml` du dossier de sauvegarde.
+Dialogue : supprimer `dialogues/help.yml` depuis PlugAdmin (Dialogues → help → Supprimer) — Tania revient
+à « sans dialogue ». Pour ne retirer que l'accès temporaire : supprimer le choix « Ton stock de bois » et
+les nœuds `help_offer` / `help_progress`, puis republier.
+
 ## 2026-10-20 - Quêtes quotidiennes / hebdomadaires : suivi lisible et onglets PlugAdmin (#15 lot 2, TC-377)
 
 ### Changement

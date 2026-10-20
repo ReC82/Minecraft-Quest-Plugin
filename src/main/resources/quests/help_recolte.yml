@@ -1,0 +1,40 @@
+# Quête de test « Le stock de Tania » (issue #34) — source restaurée le 20/10/2026 depuis la
+# définition chargée sur DEV (RPGQuest/quests/help_recolte.yml), qui n'existait pas dans le dépôt.
+#
+# À l'identique de DEV : même id technique rpgquest:help_recolte, mêmes étapes, objectifs et
+# récompenses. Seuls changements, tous visibles et réversibles :
+#   - giver: help  — le PNJ « help » (nom affiché « Tania ») est déclaré donneur ;
+#   - le titre dit « Tania » au lieu de « Help » (écrit en clair : le titre est aussi affiché par
+#     la barre de suivi et les titres d'écran, qui ne résolvent pas %npc_name:…%) ;
+#   - la description cite le PNJ par %npc_name:help% (journal : nom affiché actuel, #475).
+# Retour arrière : republier la copie sauvegardée par deploy-verygames.sh
+# (RPGQuest/backups/…-extra-…/quests/help_recolte.yml).
+#
+# Pas un exemple du JAR (absent de BUNDLED_EXAMPLES) : n'arrive sur un serveur que publié.
+id: rpgquest:help_recolte
+title: "<green>Le stock de Tania</green>"
+description: "<gray>%npc_name:help% a besoin de bois pour refaire quelques caisses.</gray>"
+category: test
+icon: OAK_LOG
+repeatable: true
+giver: help
+
+steps:
+  - id: ramasser_bois
+    objectives:
+      - type: COLLECT_ITEM
+        material: OAK_LOG
+        amount: 5
+
+  - id: fabriquer_planches
+    objectives:
+      - type: CRAFT_ITEM
+        material: OAK_PLANKS
+        amount: 4
+
+rewards:
+  - type: EXPERIENCE
+    amount: 25
+  - type: ITEM
+    material: BREAD
+    amount: 3

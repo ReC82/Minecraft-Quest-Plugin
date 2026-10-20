@@ -2306,7 +2306,7 @@ public final class BukkitAgentActions implements AgentActions {
                 new com.lodygames.rpgquest.world.WorldOverview.Roles(cfg.hub().world(), cfg.travel().wildWorld(),
                         cfg.claims().world()),
                 new com.lodygames.rpgquest.world.WorldOverview.WaypointPolicy(cfg.travel().waypoint().enabled(),
-                        cfg.travel().waypoint().hubEnabled()),
+                        cfg.travel().waypoint().hubEnabled(), cfg.travel().waypoint().worlds()),
                 portals, sites, waypoints, mobs, spots, cities, plugin.getServer().getOnlinePlayers().size());
     }
 

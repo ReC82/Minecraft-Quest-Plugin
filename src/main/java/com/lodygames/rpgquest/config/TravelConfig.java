@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.config;
 
+import java.util.Map;
 import org.bukkit.Material;
 
 /**
@@ -61,11 +62,27 @@ public record TravelConfig(String wildWorld, RuneConfig rune, WaystoneConfig way
      *       ({@code hub.world}) — décision actée remplaçant l'exclusion historique du Hub
      *       (#136/#137). {@code false} désactive uniquement la génération Hub, jamais celle du
      *       Wild.</li>
+     *   <li>{@code worlds} (issue #136) : liste explicite {@code nom du monde -> enabled} qui prime
+     *       sur les rôles ci-dessus (voir {@code waypoint.WaypointWorldEligibility}) — permet
+     *       d'activer un second monde d'exploration, ou de couper le Wild/Hub, sans code. Tout
+     *       monde ni listé ni à rôle reste interdit ; le monde des claims l'est toujours.</li>
      * </ul>
      */
     public record WaypointConfig(boolean enabled, long regionSize, int minDistance, int maxDistance,
                                  int candidateAttempts, long moveThrottleMillis, int minimumSpacing,
-                                 int modelVersion, boolean hubEnabled) {
+                                 int modelVersion, boolean hubEnabled, Map<String, Boolean> worlds) {
+
+        public WaypointConfig {
+            worlds = worlds == null ? Map.of() : Map.copyOf(worlds);
+        }
+
+        /** Compatibilité des sites d'appel antérieurs à l'issue #136 (aucun monde listé explicitement). */
+        public WaypointConfig(boolean enabled, long regionSize, int minDistance, int maxDistance,
+                               int candidateAttempts, long moveThrottleMillis, int minimumSpacing, int modelVersion,
+                               boolean hubEnabled) {
+            this(enabled, regionSize, minDistance, maxDistance, candidateAttempts, moveThrottleMillis,
+                    minimumSpacing, modelVersion, hubEnabled, Map.of());
+        }
 
         /** Compatibilité des sites d'appel antérieurs à l'issue #149 (hubEnabled par défaut true, décision actée). */
         public WaypointConfig(boolean enabled, long regionSize, int minDistance, int maxDistance,
@@ -75,7 +92,7 @@ public record TravelConfig(String wildWorld, RuneConfig rune, WaystoneConfig way
         }
 
         public static WaypointConfig defaults() {
-            return new WaypointConfig(true, 256L, 24, 72, 12, 1500L, 80, 1, true);
+            return new WaypointConfig(true, 256L, 24, 72, 12, 1500L, 80, 1, true, Map.of());
         }
     }
 

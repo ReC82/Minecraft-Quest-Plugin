@@ -321,6 +321,20 @@ travel:
     # la génération Hub, jamais celle de travel.wild-world. Les claims restent exclus (le monde
     # dédié claims.world n'est jamais éligible, qu'il s'agisse du Wild ou du Hub).
     hub-enabled: true
+    # Mondes explicitement autorisés/interdits à la génération automatique (issue #136, voir
+    # waypoint.WaypointWorldEligibility). Une entrée « nom-du-monde: { enabled: true|false } » prime
+    # sur travel.wild-world et hub-enabled ci-dessus. Tout monde ni listé ici, ni Wild, ni Hub est
+    # INTERDIT par défaut ; claims.world l'est toujours (enabled: true y est refusé au chargement).
+    # Désactiver un monde ne supprime aucun waypoint existant (toujours découvrables, gérés via
+    # PlugAdmin) : seule la génération de nouveaux s'arrête. Un Nether/End autorisé reste refusé
+    # tant qu'aucune stratégie de placement adaptée n'existe (avertissement dans la console).
+    # Exemple :
+    #   worlds:
+    #     wild_2:
+    #       enabled: true
+    #     world_hub:
+    #       enabled: false
+    worlds: {}
   beacon:
     # Bornes du réseau de voyage (issues #132/#150/#149, voir travel.beacon.TravelBeaconService) :
     # même support qu'un waypoint, mais bloc de diamant + bouton en bois (essence configurable).

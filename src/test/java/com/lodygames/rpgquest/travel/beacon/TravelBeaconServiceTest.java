@@ -126,6 +126,7 @@ class TravelBeaconServiceTest {
         waypointService = new WaypointService(plugin, waypointRepository, new WaypointIdentityResolver(),
                 new WaypointGenerationPlanner(), new WaypointModelRegistry(1, new WaypointModelV1()),
                 WaypointPlacementGuard.ALLOW_ALL, this::travelConfig);
+        waypointService.useWorldRoles(() -> "world_hub", () -> "claims");
 
         ZoneRegistry zoneRegistry = new ZoneRegistry(tempDir.resolve("zones"), plugin.getSLF4JLogger());
         zoneRegistry.start();

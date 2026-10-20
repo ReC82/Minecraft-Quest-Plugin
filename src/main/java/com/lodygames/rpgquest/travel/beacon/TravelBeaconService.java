@@ -521,11 +521,12 @@ public final class TravelBeaconService implements PluginService {
     void handleHubMovement(Player player, Location to) {
         TravelConfig cfg = travelConfig.get();
         TravelConfig.WaypointConfig wc = cfg.waypoint();
-        if (!wc.enabled() || !wc.hubEnabled() || to.getWorld() == null) {
+        if (to.getWorld() == null) {
             return;
         }
         String hub = hubWorld.get();
-        if (hub == null || !to.getWorld().getName().equals(hub)) {
+        if (hub == null || !to.getWorld().getName().equals(hub)
+                || !waypointService.generationDecision(hub).allowed()) {
             return;
         }
         UUID playerId = player.getUniqueId();

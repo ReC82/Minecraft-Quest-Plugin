@@ -817,6 +817,55 @@ class ConfigValidatorTest {
         assertTrue(exception.getMessage().contains("matériau inconnu"));
     }
 
+    @Test
+    void waypointWorldsAreAnExplicitAllowListAndClaimsCanNeverBeEnabled() throws Exception {
+        assertTrue(ConfigValidator.validate(load("")).travel().waypoint().worlds().isEmpty(),
+                "sans section : aucun monde listé, rôles Wild/Hub inchangés");
+
+        var worlds = ConfigValidator.validate(load("""
+                travel:
+                  waypoint:
+                    worlds:
+                      wild_2:
+                        enabled: true
+                      world_hub:
+                        enabled: false
+                """)).travel().waypoint().worlds();
+        assertEquals(java.util.Map.of("wild_2", true, "world_hub", false), worlds);
+
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                travel:
+                  waypoint:
+                    worlds:
+                      wild_2: true
+                """)), "une entrée sans « enabled: » est refusée");
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                travel:
+                  waypoint:
+                    worlds:
+                      wild_2:
+                        enabled: oui
+                """)));
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                claims:
+                  world: claims
+                travel:
+                  waypoint:
+                    worlds:
+                      claims:
+                        enabled: true
+                """)), "le monde des claims n'est jamais éligible");
+        assertFalse(ConfigValidator.validate(load("""
+                claims:
+                  world: claims
+                travel:
+                  waypoint:
+                    worlds:
+                      claims:
+                        enabled: false
+                """)).travel().waypoint().worlds().get("claims"));
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

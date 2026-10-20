@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.world;
 
+import com.lodygames.rpgquest.waypoint.WaypointWorldEligibility;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -67,8 +68,19 @@ public final class WorldOverview {
     public record Roles(String hub, String wild, String claims) {
     }
 
-    /** Politique de génération automatique des waypoints (#136/#137/#149), codée par rôle. */
-    public record WaypointPolicy(boolean enabled, boolean hubEnabled) {
+    /**
+     * Politique de génération automatique des waypoints (#136/#137/#149) : rôles + liste explicite
+     * {@code travel.waypoint.worlds}, évaluée par {@link WaypointWorldEligibility}.
+     */
+    public record WaypointPolicy(boolean enabled, boolean hubEnabled, Map<String, Boolean> worlds) {
+
+        public WaypointPolicy {
+            worlds = worlds == null ? Map.of() : Map.copyOf(worlds);
+        }
+
+        public WaypointPolicy(boolean enabled, boolean hubEnabled) {
+            this(enabled, hubEnabled, Map.of());
+        }
     }
 
     /** Un portail entre mondes ({@code world-portals/*.yml}). */
@@ -252,8 +264,9 @@ public final class WorldOverview {
         List<PortalLink> to = in.portals().stream().filter(p -> name.equalsIgnoreCase(p.destinationWorld())).toList();
         List<Place> sites = in.sites().stream().filter(s -> name.equalsIgnoreCase(s.world())).toList();
         int waypoints = (int) in.waypointPlaces().stream().filter(w -> name.equalsIgnoreCase(w.world())).count();
-        boolean auto = in.waypoints().enabled()
-                && (roles.contains("WILD") || (roles.contains("HUB") && in.waypoints().hubEnabled()));
+        WaypointPolicy policy = in.waypoints();
+        boolean auto = WaypointWorldEligibility.evaluate(policy.enabled(), policy.hubEnabled(), policy.worlds(),
+                in.roles().wild(), in.roles().hub(), in.roles().claims(), name).allowed();
         List<MobLink> mobs = in.mobs().stream()
                 .filter(m -> m.worlds().stream().anyMatch(name::equalsIgnoreCase)).toList();
         List<Place> spots = in.npcSpots().stream().filter(s -> name.equalsIgnoreCase(s.world())).toList();

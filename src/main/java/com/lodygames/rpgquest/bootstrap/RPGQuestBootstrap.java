@@ -884,6 +884,9 @@ public final class RPGQuestBootstrap {
                 () -> configService.current().travel());
         // Issue #215 : le dernier waypoint activé par bouton, persisté comme variable joueur.
         waypointService.useLastWaypointStore(variableRepository);
+        // Issue #136 : politique de mondes (Hub autorisé par hub-enabled, Claims toujours exclu).
+        waypointService.useWorldRoles(() -> configService.current().hub().world(),
+                () -> configService.current().claims().world());
         registry.start(waypointService);
 
         // Issue #185 : l'objectif « découvrir N waypoints » se branche ICI, et nulle part ailleurs.

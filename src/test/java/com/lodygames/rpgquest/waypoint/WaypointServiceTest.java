@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.waypoint.render.WaypointModelRegistry;
 import com.lodygames.rpgquest.waypoint.render.WaypointModelV1;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -40,6 +41,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
+import org.mockbukkit.mockbukkit.world.WorldMock;
 
 /**
  * Issue #124 : couvre {@link WaypointService} — génération unique par instance de biome, concurrence
@@ -62,12 +64,15 @@ class WaypointServiceTest {
     private WaypointRepository repository;
     private WaypointService service;
 
+    /** Issue #136 : {@code travel.waypoint.worlds}, modifiable par test sans reconstruire le service. */
+    private Map<String, Boolean> listedWorlds = Map.of();
+
     private TravelConfig config() {
         // move-throttle 0 : on pilote handleMovement directement dans les tests.
         return new TravelConfig("wild",
                 new RuneConfig(10, 1800),
                 new WaystoneConfig(1000L, 1.0, 300, 16, 1),
-                new WaypointConfig(true, REGION, 16, 40, 24, 0L, 8, 1));
+                new WaypointConfig(true, REGION, 16, 40, 24, 0L, 8, 1, true, listedWorlds));
     }
 
     @BeforeEach
@@ -100,13 +105,17 @@ class WaypointServiceTest {
 
     /** Plateforme de pierre + 3 blocs d'air, biome imposé, autour d'un centre. */
     private void prepareArea(int centerX, int centerZ, Biome biome, int radius) {
+        prepareArea(wild, centerX, centerZ, biome, radius);
+    }
+
+    private void prepareArea(World world, int centerX, int centerZ, Biome biome, int radius) {
         for (int x = centerX - radius; x <= centerX + radius; x++) {
             for (int z = centerZ - radius; z <= centerZ + radius; z++) {
-                wild.getBlockAt(x, 64, z).setType(Material.STONE);
-                wild.getBlockAt(x, 65, z).setType(Material.AIR);
-                wild.getBlockAt(x, 66, z).setType(Material.AIR);
-                wild.getBlockAt(x, 67, z).setType(Material.AIR);
-                wild.setBiome(x, z, biome);
+                world.getBlockAt(x, 64, z).setType(Material.STONE);
+                world.getBlockAt(x, 65, z).setType(Material.AIR);
+                world.getBlockAt(x, 66, z).setType(Material.AIR);
+                world.getBlockAt(x, 67, z).setType(Material.AIR);
+                world.setBiome(x, z, biome);
             }
         }
     }
@@ -670,6 +679,85 @@ class WaypointServiceTest {
 
         assertTrue(service.all().isEmpty(), "aucun waypoint créé sans emplacement valable");
         assertNotNull(service); // pas de crash, pas de boucle : le test se termine.
+    }
+
+    // ---- Issue #136 : mondes autorisés / interdits ---------------------------------------------
+
+    /** Entre dans une zone préparée de {@code world} et laisse le temps à une génération éventuelle. */
+    private void enterPreparedZone(World world, int centerX, int centerZ) throws Exception {
+        prepareArea(world, centerX, centerZ, Biome.FOREST, 48);
+        PlayerMock walker = addPlayer();
+        Location entry = new Location(world, centerX + 0.5, 65, centerZ + 0.5);
+        walker.teleport(entry);
+        service.handleMovement(walker, entry);
+        server.getScheduler().performTicks(20);
+        Thread.sleep(200);
+        server.getScheduler().performTicks(20);
+    }
+
+    private long waypointsIn(String world) {
+        return service.all().stream().filter(w -> w.world().equals(world)).count();
+    }
+
+    @Test
+    void anUnlistedWorldNeverGeneratesAWaypoint() throws Exception {
+        World other = server.addSimpleWorld("evenement");
+        enterPreparedZone(other, 384, 384);
+
+        assertEquals(0, waypointsIn("evenement"), "monde inconnu : interdit par défaut");
+        assertTrue(repository.loadAll().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
+
+    @Test
+    void aSecondListedWorldGeneratesWithoutCodeChange() throws Exception {
+        listedWorlds = Map.of("wild_2", true);
+        World second = server.addSimpleWorld("wild_2");
+        prepareArea(second, 384, 384, Biome.FOREST, 48);
+        PlayerMock walker = addPlayer();
+        Location entry = new Location(second, 384.5, 65, 384.5);
+        walker.teleport(entry);
+        service.handleMovement(walker, entry);
+
+        await(() -> waypointsIn("wild_2") == 1);
+    }
+
+    @Test
+    void disablingAWorldStopsGenerationButKeepsItsWaypoints() throws Exception {
+        Waypoint existing = generateAround(384, 384, Biome.FOREST);
+        listedWorlds = Map.of("wild", false);
+
+        enterPreparedZone(wild, 1024, 1024);
+
+        assertEquals(1, waypointsIn("wild"), "aucune nouvelle génération dans un monde désactivé");
+        assertTrue(service.byId(existing.id()).isPresent(), "le waypoint existant est conservé");
+        assertEquals(1, repository.loadAll().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void theHubIsLeftToTheBeaconServiceAndClaimsAreNeverEligible() throws Exception {
+        World hub = server.addSimpleWorld("world_hub");
+        World claims = server.addSimpleWorld("claims");
+        service.useWorldRoles(() -> "world_hub", () -> "claims");
+        listedWorlds = Map.of("claims", true); // refusé au chargement ; la garde tient quand même.
+
+        enterPreparedZone(hub, 384, 384);
+        enterPreparedZone(claims, 384, 384);
+
+        assertEquals(0, waypointsIn("world_hub"), "le Hub passe par TravelBeaconService (#149), jamais par ici");
+        assertEquals(0, waypointsIn("claims"));
+        assertTrue(service.generationDecision("world_hub").allowed(), "Hub autorisé par hub-enabled");
+        assertFalse(service.generationDecision("claims").allowed());
+    }
+
+    @Test
+    void anAllowedNetherIsRefusedForLackOfAPlacementStrategy() throws Exception {
+        listedWorlds = Map.of("nether_evt", true);
+        WorldMock nether = server.addSimpleWorld("nether_evt");
+        nether.setEnvironment(World.Environment.NETHER);
+
+        enterPreparedZone(nether, 384, 384);
+
+        assertEquals(0, waypointsIn("nether_evt"));
     }
 
     // ---- Diagnostic et réparation (issue #153) ---------------------------------------------

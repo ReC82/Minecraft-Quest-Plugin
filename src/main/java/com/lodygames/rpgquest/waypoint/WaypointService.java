@@ -103,6 +103,44 @@ public final class WaypointService implements PluginService {
     private final ConcurrentHashMap<UUID, String> lastActivatedByPlayer = new ConcurrentHashMap<>();
     private volatile com.lodygames.rpgquest.database.PlayerVariableRepository lastWaypointStore;
 
+    /** Issue #136 : mondes à rôle lus à chaque évaluation (un reload change la politique sans redémarrage). */
+    private volatile Supplier<String> hubWorld = () -> null;
+    private volatile Supplier<String> claimsWorld = () -> null;
+    /** Mondes autorisés mais de dimension incompatible déjà signalés (un seul avertissement par monde). */
+    private final Set<String> unsupportedDimensionWarned = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Issue #136 : branche {@code hub.world} et {@code claims.world} dans la politique d'éligibilité.
+     * Sans eux, seuls {@code travel.wild-world} et {@code travel.waypoint.worlds} autorisent.
+     */
+    public void useWorldRoles(Supplier<String> hub, Supplier<String> claims) {
+        this.hubWorld = hub;
+        this.claimsWorld = claims;
+    }
+
+    /** Issue #136 : décision d'éligibilité de ce monde à la génération automatique, selon la config courante. */
+    public WaypointWorldEligibility.Decision generationDecision(String worldName) {
+        return WaypointWorldEligibility.evaluate(config.get(), hubWorld.get(), claimsWorld.get(), worldName);
+    }
+
+    /**
+     * Garde unique, évaluée avant toute recherche d'emplacement : politique de mondes, puis dimension
+     * (Nether/End refusés proprement tant que la stratégie de surface de #124 est la seule).
+     */
+    private boolean generationAllowed(World world) {
+        if (!generationDecision(world.getName()).allowed()) {
+            return false;
+        }
+        if (WaypointWorldEligibility.supportsSurfacePlacement(world.getEnvironment())) {
+            return true;
+        }
+        if (unsupportedDimensionWarned.add(world.getName())) {
+            logger.warn("Waypoints autorisés dans « {} » mais sa dimension ({}) n'a pas de stratégie de "
+                    + "placement : aucune génération dans ce monde.", world.getName(), world.getEnvironment());
+        }
+        return false;
+    }
+
     /** Branche la persistance du dernier waypoint activé (issue #215) ; sans elle, rien n'est retenu. */
     public void useLastWaypointStore(com.lodygames.rpgquest.database.PlayerVariableRepository store) {
         this.lastWaypointStore = store;
@@ -236,7 +274,7 @@ public final class WaypointService implements PluginService {
      */
     public void ensureGenerated(World world, Location entry) {
         WaypointConfig wc = config.get().waypoint();
-        if (!wc.enabled() || world == null) {
+        if (world == null || !generationAllowed(world)) {
             return;
         }
         int bx = entry.getBlockX();
@@ -272,7 +310,9 @@ public final class WaypointService implements PluginService {
             return;
         }
         World world = to.getWorld();
-        if (!world.getName().equals(config.get().wildWorld())) {
+        // Issue #136 : tout monde autorisé, sauf le Hub — piloté par TravelBeaconService (#149), qui
+        // apparie une borne à chaque waypoint et rappelle ensureGenerated.
+        if (world.getName().equals(hubWorld.get()) || !generationAllowed(world)) {
             return;
         }
         UUID playerId = player.getUniqueId();

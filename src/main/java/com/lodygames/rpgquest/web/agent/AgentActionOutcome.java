@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.web.agent;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -12,7 +13,10 @@ import java.util.Map;
  * @param status     {@code SUCCESS} / {@code FAILED} / {@code REJECTED}
  * @param value      valeur principale lisible (ex. la valeur d'une variable), ou {@code null}
  * @param message    message humain non secret
- * @param details    détails structurés non secrets (peut être vide)
+ * @param details    détails structurés non secrets (peut être vide). Une valeur {@code null} est
+ *                   admise et sérialisée {@code null} : « pas de motif » est une réponse légitime, et
+ *                   un {@code Map.copyOf} la refusait par un {@code NullPointerException} qui
+ *                   masquait le vrai résultat (issue #27, lecture des droits en jeu)
  * @param finishedAt horodatage de fin côté serveur
  */
 public record AgentActionOutcome(
@@ -28,7 +32,7 @@ public record AgentActionOutcome(
     public static final String REJECTED = "REJECTED";
 
     public AgentActionOutcome {
-        details = details == null ? Map.of() : Map.copyOf(details);
+        details = details == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(details));
         finishedAt = finishedAt == null ? Instant.now() : finishedAt;
     }
 

@@ -706,6 +706,9 @@ public final class AgentPages {
                 + "distinctes : changer l'une ne change pas les autres. La whitelist n'empêche quelqu'un d'entrer que "
                 + "si elle est activée sur le serveur — le résultat d'un ajout le précise.</p>");
         if (r.mcRights()) {
+            sb.append("<p class=\"form-text\">« Lire ses droits en jeu » interroge LuckPerms sur le serveur : "
+                    + "droits gérés par les groupes PlugAdmin que porte ce joueur, avec leur groupe d'origine. "
+                    + "Fonctionne aussi quand le joueur est déconnecté. Lecture seule : rien n'est modifié.</p>");
             sb.append(readForm(session, agentId, "mc.rights.read", "/players", uuid, "Lire ses droits en jeu"));
             latestForPlayer(agentId, "mc.rights.read", uuid).ifPresent(row -> sb.append(readResult("Droits en jeu", row)));
         }

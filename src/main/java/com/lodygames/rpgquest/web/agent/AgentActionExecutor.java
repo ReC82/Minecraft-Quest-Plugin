@@ -211,10 +211,10 @@ public final class AgentActionExecutor {
                 case REWARD_TABLE_DUPLICATE -> rewardTableDuplicate(action);
                 case REWARD_TABLE_TOGGLE -> rewardTableToggle(action);
                 case REWARD_CATALOG_INIT -> actions.rewardCatalogInit().thenApply(r -> toOutcome(action, r))
-                        .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                        .exceptionally(err -> unexpectedFailure(action, err));
                 case REWARD_CATALOG_TOGGLE -> actions.rewardCatalogToggle(isTrue(action.param("enabled")))
                         .thenApply(r -> toOutcome(action, r))
-                        .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                        .exceptionally(err -> unexpectedFailure(action, err));
                 case REWARD_DEFINITION_SAVE -> rewardDefinitionSave(action);
                 case REWARD_DEFINITION_DUPLICATE -> rewardDefinitionDuplicate(action);
                 case REWARD_DEFINITION_TOGGLE -> rewardDefinitionToggle(action);
@@ -320,7 +320,7 @@ public final class AgentActionExecutor {
             details.put("players", rows);
             return AgentActionOutcome.success(action.id(), String.valueOf(list.size()),
                     list.size() + " joueur(s) connecté(s).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code player.catalog} (#96) : annuaire complet (en ligne + hors ligne déjà venus). */
@@ -371,7 +371,7 @@ public final class AgentActionExecutor {
             details.put("truncated", bounded > 0 && rows.size() >= bounded);
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " joueur(s) connus (" + online + " en ligne, " + banned + " banni(s)).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code player.ban} (#96) : bannit un joueur en ligne ou hors ligne. Raison obligatoire. */
@@ -430,7 +430,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " quête(s) chargée(s).", details));
         } catch (RuntimeException e) {
-            return done(AgentActionOutcome.failed(action.id(), "Échec : " + e.getClass().getSimpleName()));
+            return done(unexpectedFailure(action, e));
         }
     }
 
@@ -564,7 +564,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " story(s) chargée(s).", details));
         } catch (RuntimeException e) {
-            return done(AgentActionOutcome.failed(action.id(), "Échec : " + e.getClass().getSimpleName()));
+            return done(unexpectedFailure(action, e));
         }
     }
 
@@ -583,7 +583,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " objet(s) personnalisé(s).", details));
         } catch (RuntimeException e) {
-            return done(AgentActionOutcome.failed(action.id(), "Échec : " + e.getClass().getSimpleName()));
+            return done(unexpectedFailure(action, e));
         }
     }
 
@@ -598,8 +598,7 @@ public final class AgentActionExecutor {
         }
         return actions.pairHubBeacon(waypointId)
                 .thenApply(r -> mutationOutcome(action, r, "waypointId", waypointId))
-                .exceptionally(e -> AgentActionOutcome.failed(action.id(),
-                        "Échec : " + e.getClass().getSimpleName()));
+                .exceptionally(e -> unexpectedFailure(action, e));
     }
 
     /** Issue #134 — {@code waypoint.rename} : un refus (doublon, nom invalide) est une issue normale. */
@@ -612,7 +611,7 @@ public final class AgentActionExecutor {
         }
         return actions.renameWaypoint(waypointId, displayName)
                 .thenApply(r -> mutationOutcome(action, r, "waypointId", waypointId))
-                .exceptionally(e -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(e)));
+                .exceptionally(e -> unexpectedFailure(action, e));
     }
 
     private CompletableFuture<AgentActionOutcome> travelCatalog(AgentAction action) {
@@ -706,7 +705,7 @@ public final class AgentActionExecutor {
                     view.waypointCount() + " waypoint(s), " + view.beaconCount() + " borne(s) ("
                             + unpairedRows.size() + " sans borne appariée dans le Hub).",
                     details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Mobs spéciaux / boss (issue #169, lot 1) ---------------------------------------------
@@ -741,7 +740,7 @@ public final class AgentActionExecutor {
                     + " particules, " + view.sounds().size() + " sons, " + view.biomes().size() + " biomes";
             return AgentActionOutcome.success(action.id(), String.valueOf(view.entityTypes().size()),
                     summary, details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -764,7 +763,7 @@ public final class AgentActionExecutor {
                     + view.minecraftVersion();
             return AgentActionOutcome.success(action.id(), String.valueOf(view.items().size()),
                     summary, details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -787,7 +786,7 @@ public final class AgentActionExecutor {
                     "Paramètre « id » manquant ou invalide."));
         }
         return actions.contentDefinitionDelete(kind, id).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> mobList(AgentAction action) {
@@ -877,7 +876,7 @@ public final class AgentActionExecutor {
             }
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " profil(s) de mob spécial/boss.", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> mobDefinitionWrite(AgentAction action, boolean create) {
@@ -964,7 +963,7 @@ public final class AgentActionExecutor {
                 parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
                 bossMode, communityWeight, participationRewards, abilities);
         return future.thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Liste JSON d'objets du formulaire (#543), ou {@code null} si elle est illisible ou trop longue. */
@@ -1021,7 +1020,7 @@ public final class AgentActionExecutor {
                     : v.existingFile().isEmpty() ? "Nouveau profil « " + v.id() + " » prêt à être créé."
                     : "Le profil « " + v.id() + " » existe : relire les différences avant de le remplacer.";
             return AgentActionOutcome.success(action.id(), v.valid() ? "VALID" : "INVALID", summary, details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code mob.definition.import.apply} (#214) : écrit ce profil seul ; aucune apparition. */
@@ -1036,7 +1035,7 @@ public final class AgentActionExecutor {
         }
         return actions.mobImportApply(yaml, isTrue(action.param("replace")), expected)
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Champs de placement d'un profil de mob : paramètre, libellé du formulaire (issue #461). */
@@ -1059,7 +1058,7 @@ public final class AgentActionExecutor {
         }
         boolean enabled = isTrue(action.param("enabled"));
         return actions.mobDefinitionToggle(id, enabled).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> mobSpawnSettingsSet(AgentAction action) {
@@ -1070,7 +1069,7 @@ public final class AgentActionExecutor {
         }
         Integer max = parseOptionalInt(action.param("max_simultaneous_special"));
         return actions.mobSpawnSettingsSet(enabled, chance, max).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> mobTestSpawn(AgentAction action) {
@@ -1083,12 +1082,12 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « player » manquant."));
         }
         return actions.mobTestSpawn(definitionId, player).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> mobTestClear(AgentAction action) {
         return actions.mobTestClear().thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Boss communautaires (issue #175) ------------------------------------------------------
@@ -1185,7 +1184,7 @@ public final class AgentActionExecutor {
             details.put("rewardTables", tables);
             return AgentActionOutcome.success(action.id(), String.valueOf(instances.size()),
                     instances.size() + " boss communautaire(s) actif(s).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> communityBossSettingsSet(AgentAction action) {
@@ -1225,7 +1224,7 @@ public final class AgentActionExecutor {
         Boolean surfaceOnly = optionalBoolean(action.param("surface_only"));
         return actions.communityBossSettingsSet(enabled, interval, max, radius, glow, glowRadius, surfaceOnly)
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> communityBossTestSpawn(AgentAction action) {
@@ -1238,7 +1237,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « player » invalide."));
         }
         return actions.communityBossTestSpawn(profile, player).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> communityBossRemove(AgentAction action) {
@@ -1248,7 +1247,7 @@ public final class AgentActionExecutor {
                     "Paramètre « target » invalide (identifiant de boss ou « tests »)."));
         }
         return actions.communityBossRemove(target).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- server.announce / server.logs.tail (issue #95) ----------------------------------
@@ -1295,7 +1294,7 @@ public final class AgentActionExecutor {
             }
             return AgentActionOutcome.success(action.id(), String.valueOf(result.recipients()),
                     result.message(), details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code server.logs.tail} (#95) — lecture bornée du tampon de console. Aucun effet de bord. */
@@ -1335,7 +1334,7 @@ public final class AgentActionExecutor {
                     : view.lines().size() + " ligne(s) de console, curseur " + view.lastSequence();
             return AgentActionOutcome.success(action.id(), String.valueOf(view.lastSequence()),
                     summary, details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- content.reload / content.reload.preview (issue #131) ----------------------------
@@ -1395,7 +1394,7 @@ public final class AgentActionExecutor {
                 return AgentActionOutcome.failed(action.id(), view.message());
             }
             return AgentActionOutcome.success(action.id(), view.runtimeHash(), view.message(), details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Administration de joueur (issue #210) -------------------------------------------
@@ -1478,7 +1477,7 @@ public final class AgentActionExecutor {
                     ? AgentActionOutcome.success(action.id(), "OK", view.message(), details)
                     : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "REFUSED", view.message(),
                             details, java.time.Instant.now());
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- PNJ récurrents (issue #13 étape 2) ------------------------------------------------------
@@ -1564,7 +1563,7 @@ public final class AgentActionExecutor {
             }
             return AgentActionOutcome.success(action.id(), String.valueOf(sites.size()),
                     templates.size() + " modèle(s), " + sites.size() + " occurrence(s).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Tables de tirage (#177), même forme dans {@code boss.community.status} et {@code reward.catalog.status}. */
@@ -1652,7 +1651,7 @@ public final class AgentActionExecutor {
             details.put("potions", view.references().potions());
             return AgentActionOutcome.success(action.id(), Integer.toString(view.tables().size()),
                     view.tables().size() + " table(s), " + rewards.size() + " récompense(s) au catalogue.", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -1689,7 +1688,7 @@ public final class AgentActionExecutor {
         return actions.rewardTableSave(id, label, mode.toLowerCase(java.util.Locale.ROOT), isTrue(action.param("enabled")),
                         entries, expected, isTrue(action.param("create")))
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Remplit {@code out} ; renvoie le message de refus, ou {@code null} si tout est valide. */
@@ -1747,7 +1746,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_label » : une ligne, 120 caractères au plus."));
         }
         return actions.rewardTableDuplicate(source, target, label).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> rewardTableToggle(AgentAction action) {
@@ -1756,7 +1755,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « table_id » invalide."));
         }
         return actions.rewardTableToggle(id, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Catalogue des récompenses : éditeur (issue #474) ----------------------------------------
@@ -1806,7 +1805,7 @@ public final class AgentActionExecutor {
         return actions.rewardDefinitionSave(key, label, isTrue(action.param("enabled")), items, perkKey, perkTier,
                         expected, isTrue(action.param("create")))
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Remplit {@code out} ; renvoie le message de refus, ou {@code null} (liste vide acceptée). */
@@ -1884,7 +1883,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_label » : une ligne, 120 caractères au plus."));
         }
         return actions.rewardDefinitionDuplicate(source, target, label).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> rewardDefinitionToggle(AgentAction action) {
@@ -1893,7 +1892,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « reward_key » invalide."));
         }
         return actions.rewardDefinitionToggle(key, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Catalogue des prix et coûts (issue #336) -----------------------------------------------
@@ -1943,7 +1942,7 @@ public final class AgentActionExecutor {
             details.put("currency", view.currency());
             return AgentActionOutcome.success(action.id(), Integer.toString(prices.size()),
                     prices.size() + " prix au catalogue, " + merchants.size() + " marchand(s).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -1995,7 +1994,7 @@ public final class AgentActionExecutor {
         return actions.priceSave(key, label, type, items.get(0), coins, ingredients, isTrue(action.param("demo")),
                         isTrue(action.param("enabled")), expected, isTrue(action.param("create")))
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code ITEM@quantité;…} → {@code out} ; renvoie le message de refus, ou {@code null} (vide accepté). */
@@ -2047,7 +2046,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_label » : une ligne, 120 caractères au plus."));
         }
         return actions.priceDuplicate(source, target, label).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> priceToggle(AgentAction action) {
@@ -2056,7 +2055,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « price_key » invalide."));
         }
         return actions.priceToggle(key, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Catalogues de marchands (issue #17) ---------------------------------------------------
@@ -2097,7 +2096,7 @@ public final class AgentActionExecutor {
                     : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "NOT_LOADED",
                             "Le monde « " + world + " » n'est pas chargé : aucun réglage à relire.", details,
                             java.time.Instant.now());
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code world.settings.preview} : aperçu, aucune écriture. */
@@ -2127,7 +2126,7 @@ public final class AgentActionExecutor {
                             details)
                     : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "NOT_LOADED", p.message(), details,
                             java.time.Instant.now());
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -2164,7 +2163,7 @@ public final class AgentActionExecutor {
                 default -> new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, a.result().name(), a.message(),
                         details, java.time.Instant.now());
             };
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Paramètres {@code set.<clé>} ; {@code null} si une clé ou une valeur est hors bornes. */
@@ -2199,7 +2198,7 @@ public final class AgentActionExecutor {
                     : "Création impossible : " + o.context().multiverseReason() + ".";
             return AgentActionOutcome.success(action.id(), String.valueOf(o.context().multiverseAvailable()), summary,
                     WorldCreateDetails.options(o));
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code world.create.preview} : validation complète, rien n'est créé. */
@@ -2215,7 +2214,7 @@ public final class AgentActionExecutor {
             String message = p.ok() ? "Aperçu valide pour « " + p.world() + " ». Rien n'a été créé."
                     : p.errors().size() + " problème(s) à corriger. Rien n'a été créé.";
             return AgentActionOutcome.success(action.id(), p.world(), message, WorldCreateDetails.plan(p));
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -2251,7 +2250,7 @@ public final class AgentActionExecutor {
                     ? AgentActionOutcome.success(action.id(), c.world(), c.message(), details)
                     : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, c.result().name(), c.message(),
                             details, java.time.Instant.now());
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Demande lue dans les paramètres ; {@code null} si un champ est hors bornes. */
@@ -2315,7 +2314,7 @@ public final class AgentActionExecutor {
                     + (view.multiverse().available() ? " — Multiverse-Core " + view.multiverse().version()
                     : " — sans Multiverse-Core") + " — " + view.onlinePlayers() + " joueur(s) connecté(s)";
             return AgentActionOutcome.success(action.id(), String.valueOf(view.worlds().size()), summary, details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Portails (issue #564, #228-P1) -------------------------------------------------------
@@ -2332,7 +2331,7 @@ public final class AgentActionExecutor {
                     + (view.issues().isEmpty() ? "" : " — " + view.issues().size() + " fichier(s) ignoré(s)");
             return AgentActionOutcome.success(action.id(), String.valueOf(view.portals().size()), summary,
                     PortalListDetails.of(view));
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> merchantCatalogStatus(AgentAction action) {
@@ -2385,7 +2384,7 @@ public final class AgentActionExecutor {
             details.put("currency", view.currency());
             return AgentActionOutcome.success(action.id(), Integer.toString(merchants.size()),
                     merchants.size() + " marchand(s), " + view.issues().size() + " fichier(s) refusé(s).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -2424,7 +2423,7 @@ public final class AgentActionExecutor {
         }
         return actions.merchantSave(id, title, type, isTrue(action.param("enabled")), offers, expected, create)
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Une offre par ligne, champs séparés par {@code |} ; renvoie le message de refus ou {@code null}. */
@@ -2515,7 +2514,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_title » : une ligne, 120 caractères au plus."));
         }
         return actions.merchantDuplicate(id, target, title).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> merchantToggle(AgentAction action) {
@@ -2524,7 +2523,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « merchant_id » invalide."));
         }
         return actions.merchantToggle(id, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> merchantDelete(AgentAction action) {
@@ -2537,7 +2536,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_version » invalide."));
         }
         return actions.merchantDelete(id, expected).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Droits à récompense (issue #422) --------------------------------------------------------
@@ -2609,7 +2608,7 @@ public final class AgentActionExecutor {
             details.put("rewards", rewards);
             return AgentActionOutcome.success(action.id(), Integer.toString(rows.size()),
                     rows.size() + " droit(s) à récompense.", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code entitlement.declare} : {@code player}, {@code reward}, {@code reference} obligatoires. */
@@ -2640,7 +2639,7 @@ public final class AgentActionExecutor {
         }
         return actions.revokeRewardEntitlement(key, reason)
                 .thenApply(r -> mutationOutcome(action, r, "key", key))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> encounterSiteAction(AgentAction action, String operation) {
@@ -2650,13 +2649,13 @@ public final class AgentActionExecutor {
         }
         return actions.encounterSiteAction(operation, siteId)
                 .thenApply(r -> mutationOutcome(action, r, "siteId", siteId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> encounterMutation(AgentAction action,
                                                                    CompletableFuture<AgentActions.MutationResult> f) {
         return f.thenApply(r -> mutationOutcome(action, r, "type", action.type()))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Modèles de PNJ récurrents (issue #13 étape 3) ----------------------------------------
@@ -2701,7 +2700,7 @@ public final class AgentActionExecutor {
         }
         return actions.encounterTemplateSave(parsed.template(), create)
                 .thenApply(r -> mutationOutcome(action, r, "templateId", parsed.template().id()))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> encounterTemplateToggle(AgentAction action) {
@@ -2713,7 +2712,7 @@ public final class AgentActionExecutor {
         }
         return actions.encounterTemplateToggle(id, Boolean.parseBoolean(enabled))
                 .thenApply(r -> mutationOutcome(action, r, "templateId", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> encounterTemplateDelete(AgentAction action) {
@@ -2724,7 +2723,7 @@ public final class AgentActionExecutor {
         boolean acknowledge = "true".equals(trimOrNull(action.param("acknowledge_sites")));
         return actions.encounterTemplateDelete(id, acknowledge)
                 .thenApply(r -> mutationOutcome(action, r, "templateId", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private static String encounterTemplateId(AgentAction action) {
@@ -2799,7 +2798,7 @@ public final class AgentActionExecutor {
             }
             return AgentActionOutcome.success(action.id(), String.valueOf(catalogs.size()),
                     catalogs.size() + " catalogue(s).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -2853,7 +2852,7 @@ public final class AgentActionExecutor {
                     : actions.questCatalogAssign(catalogId, templateIds).thenApply(a -> combine(r, a)));
         }
         return saved.thenApply(r -> mutationOutcome(action, r, "catalogId", catalogId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -2879,7 +2878,7 @@ public final class AgentActionExecutor {
         boolean detach = "true".equals(trimOrNull(action.param("detach")));
         return actions.questCatalogDelete(id, detach)
                 .thenApply(r -> mutationOutcome(action, r, "catalogId", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Entier si possible ; sinon la chaîne brute, que le parseur refusera avec un message clair. */
@@ -3239,7 +3238,7 @@ public final class AgentActionExecutor {
             details.put("total", view.total());
             return AgentActionOutcome.success(action.id(), String.valueOf(view.total()),
                     view.total() + " emplacement(s) de construction.", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Villes (issue #178) ------------------------------------------------------------------
@@ -3300,7 +3299,7 @@ public final class AgentActionExecutor {
             details.put("total", rows.size());
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " ville(s).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Issue #322 — PNJ central et arrivée, à plat dans la ligne de la ville. */
@@ -3355,7 +3354,7 @@ public final class AgentActionExecutor {
         }
         return call.apply(id)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> cityResize(AgentAction action) {
@@ -3417,7 +3416,7 @@ public final class AgentActionExecutor {
         }
         return actions.buildingSiteRename(id, name)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -3439,7 +3438,7 @@ public final class AgentActionExecutor {
         }
         return actions.buildingSiteDescribe(id, description)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -3464,7 +3463,7 @@ public final class AgentActionExecutor {
         }
         return actions.buildingSiteBrief(id, brief)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -3521,8 +3520,7 @@ public final class AgentActionExecutor {
                     return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(),
                             r.message(), details, java.time.Instant.now());
                 })
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
-                        "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -3577,8 +3575,7 @@ public final class AgentActionExecutor {
                     return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, v.code(),
                             v.message(), details, java.time.Instant.now());
                 })
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
-                        "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -3640,8 +3637,7 @@ public final class AgentActionExecutor {
                     return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, v.code(),
                             v.message(), details, java.time.Instant.now());
                 })
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
-                        "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -3693,7 +3689,7 @@ public final class AgentActionExecutor {
         }
         return actions.buildingSiteFacing(id, facing)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> buildingSiteDelete(AgentAction action) {
@@ -3704,7 +3700,7 @@ public final class AgentActionExecutor {
         }
         return actions.buildingSiteDelete(id)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code building.definition.retire} (#284) : refus nommés, archivage, aucun effacement. */
@@ -3721,7 +3717,7 @@ public final class AgentActionExecutor {
         String by = trimOrNull(action.param("by"));
         return actions.buildingDefinitionRetire(id, by == null ? "panel" : by)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> buildingDefinitionList(AgentAction action) {
@@ -3754,7 +3750,7 @@ public final class AgentActionExecutor {
             details.put("engineReason", view.engineReason());
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " bâtiment(s) en bibliothèque.", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -3808,7 +3804,7 @@ public final class AgentActionExecutor {
                             ? "motif non précisé." : view.refusals().get(0));
             return AgentActionOutcome.success(action.id(), view.placeable() ? "ok" : "ko",
                     summary, details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> buildingPlacementPlace(AgentAction action) {
@@ -3833,7 +3829,7 @@ public final class AgentActionExecutor {
         return actions.buildingPlacementPlace(siteId, buildingId,
                         placedBy == null ? "panel" : placedBy)
                 .thenApply(r -> mutationOutcome(action, r, "id", siteId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> buildingPlacementRollback(AgentAction action) {
@@ -3848,7 +3844,7 @@ public final class AgentActionExecutor {
         }
         return actions.buildingPlacementRollback(siteId)
                 .thenApply(r -> mutationOutcome(action, r, "id", siteId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Réorienter, remplacer, journal (issue #234) --------------------------------------------
@@ -3905,8 +3901,7 @@ public final class AgentActionExecutor {
                                             ? "motif non précisé" : view.refusals().get(0)),
                             details);
                 })
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
-                        "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> buildingReorient(AgentAction action) {
@@ -3927,8 +3922,7 @@ public final class AgentActionExecutor {
         return actions.buildingReorient(siteId, facing, actorOf(action),
                         trimOrNull(action.param("token")))
                 .thenApply(r -> mutationOutcome(action, r, "id", siteId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
-                        "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> buildingReplace(AgentAction action) {
@@ -3954,8 +3948,7 @@ public final class AgentActionExecutor {
         return actions.buildingReplace(siteId, buildingId, facing, actorOf(action),
                         trimOrNull(action.param("token")))
                 .thenApply(r -> mutationOutcome(action, r, "id", siteId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
-                        "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Capture d'une construction posée (issue #246) -----------------------------------------
@@ -3980,7 +3973,7 @@ public final class AgentActionExecutor {
                             : "Capture refusée : " + (view.refusals().isEmpty()
                                     ? "motif non précisé" : view.refusals().get(0)),
                     details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> buildingCapture(AgentAction action) {
@@ -3999,7 +3992,7 @@ public final class AgentActionExecutor {
         }
         return actions.buildingCapture(request, actorOf(action), token)
                 .thenApply(r -> mutationOutcome(action, r, "new_id", request.newId()))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code null} si l'emplacement ou une marge est invalide ; l'identité est validée par le service. */
@@ -4064,8 +4057,7 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), view.siteId(),
                     rows.size() + " opération(s) enregistrée(s) pour " + view.siteId() + ".",
                     details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(),
-                "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Orientation demandée, validée contre la liste fermée des quatre points cardinaux. */
@@ -4119,7 +4111,7 @@ public final class AgentActionExecutor {
             details.put("runtimeHash", view.runtimeHash());
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " fichier(s) de contenu sur DEV.", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> contentDevRead(AgentAction action) {
@@ -4142,7 +4134,7 @@ public final class AgentActionExecutor {
                             : view.text().length() + " caractères lus depuis DEV.";
             return AgentActionOutcome.success(action.id(),
                     view.present() ? "present" : "absent", summary, details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> contentPublish(AgentAction action) {
@@ -4179,7 +4171,7 @@ public final class AgentActionExecutor {
         return actions.contentPublish(kind, slug, yaml, expectedDevSha.trim(),
                         trimOrNull(action.param("expected_id")))
                 .thenApply(view -> publishOutcome(action, view))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Taille totale maximale des YAML d'un lot : un pack d'histoire en utilise quelques dizaines de Ko. */
@@ -4227,7 +4219,7 @@ public final class AgentActionExecutor {
         }
         return actions.contentPublishBatch(items, dryRun)
                 .thenApply(view -> batchOutcome(action, view))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private AgentActionOutcome batchOutcome(AgentAction action, AgentActions.ContentPublishBatchView view) {
@@ -4281,7 +4273,7 @@ public final class AgentActionExecutor {
         return actions.contentPublishRollback(kind, slug, trimOrNull(action.param("backup")),
                         trimOrNull(action.param("expected_id")))
                 .thenApply(view -> publishOutcome(action, view))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -4411,7 +4403,7 @@ public final class AgentActionExecutor {
             details.put("withWarnings", view.withWarnings());
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " PNJ RPGQuest (" + view.withWarnings() + " avec avertissement).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> npcCitizensList(AgentAction action) {
@@ -4476,7 +4468,7 @@ public final class AgentActionExecutor {
             details.put("linked", view.linked());
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " PNJ Citizens (" + view.available() + " libre(s)).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> npcCitizensLink(AgentAction action) {
@@ -4491,7 +4483,7 @@ public final class AgentActionExecutor {
                     "Paramètre « citizens_id » manquant ou invalide (entier positif)."));
         }
         return actions.citizensLink(npcId, citizensId).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -4509,7 +4501,7 @@ public final class AgentActionExecutor {
         String expectDialogue = trimOrNull(action.param("expect_dialogue"));
         return actions.npcDefinitionDelete(npcId, expectDialogue == null ? "" : expectDialogue)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code npc.citizens.unlink} (#226) : retire la liaison, laisse vivre le PNJ Citizens. */
@@ -4528,7 +4520,7 @@ public final class AgentActionExecutor {
         }
         return actions.npcCitizensUnlink(npcId, citizensId)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -4552,7 +4544,7 @@ public final class AgentActionExecutor {
         }
         return actions.npcCitizensDelete(npcId, citizensId)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private static Integer parsePositiveInt(String raw) {
@@ -4579,7 +4571,7 @@ public final class AgentActionExecutor {
         }
         return actions.citizensRename(npcId, name)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -4599,7 +4591,7 @@ public final class AgentActionExecutor {
         }
         return actions.npcIdentityRename(npcId, name)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code npc.citizens.move} : déplace un PNJ existant, sans le recréer ni le faire apparaître. */
@@ -4630,7 +4622,7 @@ public final class AgentActionExecutor {
         return actions.citizensRelocate(npcId, world, x, y, z,
                         yaw == null ? null : yaw.floatValue(), pitch == null ? null : pitch.floatValue())
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -4660,7 +4652,7 @@ public final class AgentActionExecutor {
         }
         return actions.citizensLookClose(npcId, enabled, range)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -4686,7 +4678,7 @@ public final class AgentActionExecutor {
             boolean returnHome = Boolean.TRUE.equals(parseExplicitBoolean(action.param("return_home")));
             return actions.citizensWanderStop(npcId, returnHome)
                     .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                    .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                    .exceptionally(err -> unexpectedFailure(action, err));
         }
         String world = trimOrNull(action.param("world"));
         if (world != null && !WORLD_NAME.matcher(world).matches()) {
@@ -4717,7 +4709,7 @@ public final class AgentActionExecutor {
         boolean confirmReplace = Boolean.TRUE.equals(parseExplicitBoolean(action.param("confirm_replace")));
         return actions.citizensWander(npcId, enabled, world, x, y, z, xRange, yRange, confirmReplace)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -4780,7 +4772,7 @@ public final class AgentActionExecutor {
         }
         return actions.citizensSkin(npcId, value, byPlayerName)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- Emplacements de PNJ (issue #381) -------------------------------------------------------
@@ -4822,7 +4814,7 @@ public final class AgentActionExecutor {
             details.put("generatedAt", view.generatedAtEpochMs());
             return AgentActionOutcome.success(action.id(), Integer.toString(rows.size()),
                     rows.size() + " emplacement(s) de PNJ.", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private static String npcSpotId(AgentAction action) {
@@ -4848,7 +4840,7 @@ public final class AgentActionExecutor {
         }
         return actions.npcSpotRename(id, name)
                 .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> npcSpotOrient(AgentAction action) {
@@ -4865,7 +4857,7 @@ public final class AgentActionExecutor {
         }
         return actions.npcSpotOrient(id, yaw.floatValue(), pitch.floatValue())
                 .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> npcSpotSimple(
@@ -4876,7 +4868,7 @@ public final class AgentActionExecutor {
         }
         return op.apply(id)
                 .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> npcSpotPlace(AgentAction action) {
@@ -4890,7 +4882,7 @@ public final class AgentActionExecutor {
         }
         return actions.npcSpotPlace(id, npcId)
                 .thenApply(r -> mutationOutcome(action, r, "spot_id", id))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> npcSpotCapture(AgentAction action) {
@@ -4906,7 +4898,7 @@ public final class AgentActionExecutor {
         String by = trimOrNull(action.param("by"));
         return actions.npcSpotCapture(npcId, name, by == null ? "panel" : by)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** Projection commune d'un {@link AgentActions.MutationResult} en issue d'action. */
@@ -4980,7 +4972,7 @@ public final class AgentActionExecutor {
                     return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(), r.message(),
                             details, java.time.Instant.now());
                 })
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> npcCitizensCreate(AgentAction action) {
@@ -5023,7 +5015,7 @@ public final class AgentActionExecutor {
                     return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(), r.message(),
                             details, java.time.Instant.now());
                 })
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private static Double parseFinite(String raw) {
@@ -5101,7 +5093,7 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " dialogue(s) (" + view.withWarnings() + " avec avertissement, "
                             + view.loadIssues().size() + " fichier(s) rejeté(s)).", details);
-        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }).exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private static List<Map<String, Object>> warningMaps(List<AgentActions.DialogueWarning> warnings) {
@@ -5161,7 +5153,7 @@ public final class AgentActionExecutor {
         }
         return actions.dialogueDefinitionCreate(key.toLowerCase(java.util.Locale.ROOT), speaker, text)
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     // ---- dialogue.node.* / dialogue.choice.* (éditeur guidé — issue #82 phase 1) --------------
@@ -5191,7 +5183,7 @@ public final class AgentActionExecutor {
                 ? actions.dialogueNodeCreate(dialogueId, id, speaker, text)
                 : actions.dialogueNodeUpdate(dialogueId, id, speaker, text);
         return future.thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> dialogueChoiceAdd(AgentAction action) {
@@ -5216,7 +5208,7 @@ public final class AgentActionExecutor {
         }
         return actions.dialogueChoiceAdd(dialogueId, nodeId, choiceText, next, close)
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> dialogueChoiceUpdate(AgentAction action) {
@@ -5262,7 +5254,7 @@ public final class AgentActionExecutor {
         return actions.dialogueChoiceUpdate(dialogueId, nodeId, index, choiceText, next, close,
                         questAction, questCondition)
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /**
@@ -5346,7 +5338,7 @@ public final class AgentActionExecutor {
         }
         return actions.dialogueChoiceDelete(dialogueId, nodeId, index)
                 .thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     /** {@code dialogue_id} normalisé en {@code namespace:key} minuscule, ou {@code null} si invalide. */
@@ -5568,7 +5560,7 @@ public final class AgentActionExecutor {
                 ? actions.npcDefinitionCreate(id, displayName, dialogueId, role, enabled)
                 : actions.npcDefinitionUpdate(id, displayName, dialogueId, role, enabled);
         return future.thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private CompletableFuture<AgentActionOutcome> questGiverSet(AgentAction action) {
@@ -5581,7 +5573,7 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
         }
         return actions.questGiverSet(questId, npcId).thenApply(r -> toOutcome(action, r))
-                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+                .exceptionally(err -> unexpectedFailure(action, err));
     }
 
     private static String trimOrEmpty(String value) {
@@ -5610,7 +5602,7 @@ public final class AgentActionExecutor {
                         "Joueur inconnu (jamais connecté) : « " + safe(playerRef) + " »."));
             }
             return body.run(resolved.get().uuid(), resolved.get().name());
-        }).exceptionally(error -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(error)));
+        }).exceptionally(error -> unexpectedFailure(action, error));
     }
 
     /** Comme {@link #withResolvedUuid} — même signature, nom explicite pour les actions « joueur en ligne requis ». */
@@ -5674,11 +5666,49 @@ public final class AgentActionExecutor {
         return trimmed.length() > 64 ? trimmed.substring(0, 64) + "…" : trimmed;
     }
 
-    private static String rootName(Throwable error) {
+    /**
+     * Erreur <strong>inattendue</strong> pendant une action (issue #27) : jamais un nom d'exception
+     * nu. Le message dit en français quelle action a échoué, et les détails portent de quoi
+     * diagnostiquer sans accès au journal du serveur — classe, message et premier emplacement
+     * RPGQuest de la cause racine. Aucun de ces champs ne contient de secret : ce sont des noms de
+     * classes et des messages d'exception du plugin.
+     */
+    static AgentActionOutcome unexpectedFailure(AgentAction action, Throwable error) {
+        Throwable root = rootCause(error);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("code", "AGENT_INTERNAL_ERROR");
+        details.put("action", action.type());
+        details.put("error", root.getClass().getSimpleName());
+        details.put("errorMessage", truncate(root.getMessage(), 300));
+        details.put("where", firstPluginFrame(root));
+        return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "AGENT_INTERNAL_ERROR",
+                "Échec : erreur interne de l'agent RPGQuest pendant « " + action.type() + " » ("
+                        + root.getClass().getSimpleName() + "). Détails techniques ci-dessous ; "
+                        + "vérifiez l'état réel avant de relancer une modification.",
+                details, java.time.Instant.now());
+    }
+
+    private static Throwable rootCause(Throwable error) {
         Throwable cursor = error;
         while (cursor.getCause() != null && cursor.getCause() != cursor) {
             cursor = cursor.getCause();
         }
-        return cursor.getClass().getSimpleName();
+        return cursor;
+    }
+
+    /** Premier cadre {@code com.lodygames.rpgquest} de la pile, ou {@code null} s'il n'y en a pas. */
+    private static String firstPluginFrame(Throwable error) {
+        for (StackTraceElement frame : error.getStackTrace()) {
+            if (frame.getClassName().startsWith("com.lodygames.rpgquest.")) {
+                String className = frame.getClassName();
+                return className.substring(className.lastIndexOf('.') + 1) + "." + frame.getMethodName()
+                        + ":" + frame.getLineNumber();
+            }
+        }
+        return null;
+    }
+
+    private static String truncate(String text, int max) {
+        return text == null || text.length() <= max ? text : text.substring(0, max) + "…";
     }
 }

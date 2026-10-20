@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Quêtes : étape déjà pleine rechargée enfin close (#13, TC-306)
+
+### Changement
+
+JAR seul (branche `fix/13-etape-pleine-bloquee`). Au chargement d'un joueur, une étape non finale dont
+tous les objectifs sont déjà remplis passe à l'étape suivante (rien n'est accordé) ; un passage
+d'étape efface les compteurs résiduels de la nouvelle étape (même transaction) ; une action du joueur
+sur une étape déjà pleine la termine normalement (remise unique). Débloque « Les toiles du sous-bois »
+de LoDyMcFly (chasse 6/6 restée à l'étape 1 depuis une reprise du 15/10).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis). Aucune migration `data.db`, aucune clé de
+configuration, aucun fichier de quête ni de dialogue modifié. Ne toucher à aucune progression de joueur.
+
+### Sauvegarde préalable
+
+Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y --wait-ci` puis redémarrage via le script RCON.
+
+### Validation
+
+`quest.player.status` (lecture) : quête de LoDyMcFly toujours ACTIVE, à l'étape `report_to_bandit` dès
+sa reconnexion. En jeu : TC-306, revalidation ciblée R1–R3.
+
+### Rollback
+
+Remettre le JAR précédent (sauvegarde du script). Une quête déjà passée à l'étape de retour y reste,
+ce qui est l'état attendu.
+
+---
+
 ## 2026-10-20 - Mondes : outil de création d'un monde depuis PlugAdmin (#562)
 
 ### Changement

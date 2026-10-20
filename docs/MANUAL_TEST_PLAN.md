@@ -6715,6 +6715,21 @@ les étapes 1, 2, 4 et 7 ; l'étape 3 en demande un (facultatif). **Durée** : 1
 7.  Non-régression : un projet créé avant #305 (ex. « Estrade d'Elias », 13) affiche X = 13 et Z = 13,
     ses versions, sa conception et son historique sont intacts ; aucun bâtiment posé n'a bougé.
 
+
+### TC-372 — Waypoints : mondes autorisés et interdits à la génération (issue #136, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR #136 déployé et serveur redémarré. **Durée** : 10 minutes (15 avec l'étape 5).
+
+1.  Console au démarrage : aucune erreur de configuration ; `config.yml` du serveur contient
+    `travel.waypoint.worlds: {}` (ajouté par la complétion automatique).
+2.  PlugAdmin → Monde → Mondes : génération automatique de waypoints **active** pour le Wild et le
+    Hub, **désactivée** pour Claims et pour tout autre monde.
+3.  Non-régression Wild : entrer dans une zone de biome sans waypoint → un waypoint apparaît comme avant.
+4.  Non-régression Hub : entrer dans une zone de biome du Hub sans waypoint → waypoint + borne appariée.
+5.  (Facultatif, modifie `config.yml` de DEV) mettre `travel.waypoint.worlds: { wild: { enabled: false } }`,
+    `/rpgquest reload`, entrer dans une nouvelle zone du Wild → **aucun** nouveau waypoint ; un waypoint
+    existant du Wild reste visible et son bouton répond ; `/worlds` affiche « désactivée » pour le Wild.
+    Remettre `worlds: {}` puis `/rpgquest reload` → la génération reprend.
 ### TC-368 — Variables typées : CLAIM_TIER_1 = lasagne refusée partout, valeur hors type signalée (issue #320, PENDING MANUAL VALIDATION)
 
 **Prérequis** : JAR + PlugAdmin #320 déployés ; un joueur d'essai (pas une progression réelle à conserver).

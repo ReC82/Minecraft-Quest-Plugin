@@ -144,6 +144,34 @@
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Mondes où des waypoints apparaissent</h2>
+    <p class="text-body-secondary">
+      Issue #136 : les waypoints ne sont générés automatiquement que dans les mondes autorisés. Par défaut :
+      le Wild (<code>travel.wild-world</code>) et le Hub (<code>hub.world</code>, si
+      <code>travel.waypoint.hub-enabled: true</code>) sont autorisés ; le monde des Claims ne l'est
+      <strong>jamais</strong> ; <strong>tout autre monde est interdit</strong> tant qu'il n'est pas listé.
+      Pour activer un second monde d'exploration, ou couper un monde, sans toucher au code :
+    </p>
+<pre class="bg-body-tertiary p-3 rounded"><code>travel:
+  waypoint:
+    worlds:
+      wild_2:
+        enabled: true    # génération autorisée
+      world_hub:
+        enabled: false   # prime sur hub-enabled</code></pre>
+    <p class="text-body-secondary">
+      Une entrée de <code>worlds</code> prime sur les rôles ; <code>enabled: true</code> sur le monde des
+      Claims est refusé au chargement. Désactiver un monde ne supprime aucun waypoint : ceux qui existent
+      restent découvrables et se gèrent depuis PlugAdmin, seule la génération de nouveaux s'arrête. Un
+      Nether ou un End autorisé reste refusé (avertissement console) tant qu'aucune stratégie de placement
+      adaptée n'existe. Les bornes du réseau de voyage restent générées dans le Hub seulement
+      (<code>travel.beacon.hub-generation.enabled</code>). La page <code>/worlds</code> affiche pour chaque
+      monde si la génération automatique y est active. Changement pris en compte par
+      <code>/rpgquest reload</code> ou au redémarrage.
+    </p>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Voir les portails dans PlugAdmin</h2>
     <p class="text-body-secondary">
       PlugAdmin → <strong>Monde → Portails</strong> (<code>/portals</code>) liste tous les portails, en

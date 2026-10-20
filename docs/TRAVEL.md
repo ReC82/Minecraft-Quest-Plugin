@@ -542,6 +542,10 @@ En résumé :
 - **Config** : `travel.waypoint.{enabled,region-size,min-distance,max-distance,candidate-attempts,move-throttle-millis,minimum-spacing,model-version,hub-enabled}`
   (`hub-enabled`, issue #149, étend ce même mécanisme au monde Hub configuré — voir
   « Réseau de voyage / bornes » ci-dessous).
+- **Mondes éligibles (issue #136)** : `travel.waypoint.worlds.<nom>.enabled` (allowlist, prime sur
+  les rôles) ; Wild et Hub (`hub-enabled`) autorisés par défaut, Claims jamais, tout autre monde
+  interdit. Règle unique `waypoint.WaypointWorldEligibility`, vérifiée avant toute recherche ;
+  waypoints existants d'un monde désactivé conservés ; Nether/End refusés faute de stratégie.
 - **Pas de commande** dédiée dans ce MVP (`WaypointService` expose `all()` / `byId()` /
   `discoveryCount()` pour une future lecture PlugAdmin).
 

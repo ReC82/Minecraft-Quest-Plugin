@@ -1338,7 +1338,17 @@ public final class PanelApp {
                 Http.redirect(exchange, WorkshopPages.BASE + "?err=" + enc("Projet introuvable : rien n'a été fait."));
                 return;
             }
-            PlanOutcome outcome = switch (f.getOrDefault("_action", "").trim()) {
+            String gesture = f.getOrDefault("_action", "").trim();
+            // #655 : description et façade d'entrée contradictoires — aucune IA ne peut réussir, et
+            // chaque appel serait facturé pour rien. Refus à coût nul, la volonté de l'administrateur
+            // tranche dans « Le bâtiment souhaité ».
+            Optional<String> orientation = PAID_WORKSHOP_GESTURES.contains(gesture)
+                    ? com.lodygames.rpgquest.panel.building.BriefOrientation.conflict(project.get())
+                    : Optional.empty();
+            PlanOutcome outcome = orientation.isPresent()
+                    ? PlanOutcome.redirect(projectLocation(project.get().id(), f.get("draft"), null,
+                            orientation.get() + " Rien n'a été demandé à l'IA."))
+                    : switch (gesture) {
                 case "project_save" -> projectSave(session, project.get(), f);
                 case "propose" -> planPropose(session, agentId, project.get(), f);
                 case "correct" -> planCorrect(session, agentId, project.get(), f);
@@ -1369,6 +1379,10 @@ public final class PanelApp {
                 q.getOrDefault("draft", "").trim(), q.get("ok"), q.get("err"), null,
                 parseIntOr(q.get("view"), -1), parseIntOr(q.get("cut"), -1));
     }
+
+    /** Les gestes de l'Atelier qui appellent une IA, donc facturés (#655). */
+    private static final java.util.Set<String> PAID_WORKSHOP_GESTURES =
+            java.util.Set.of("propose", "correct", "design", "restart", "design_write");
 
     /** Issue d'une soumission : une redirection, ou un conflit à montrer sur place. */
     private record PlanOutcome(String location, String error, String conflictText, String designText) {
@@ -1403,9 +1417,11 @@ public final class PanelApp {
         List<BuildingPlanDraft> drafts = planDrafts.forProject(agentId, project.get().id());
         // Sans brouillon désigné, la version la plus récente : reprendre un projet, c'est reprendre là
         // où on en était.
+        // #655 : sauf si la dernière conception automatique a retenu une version — c'est elle le résultat.
+        var latestRun = designRuns.latest(project.get().id());
         BuildingPlanDraft draft = planDrafts.find(draftId)
                 .filter(d -> !d.archived() && project.get().id().equals(d.projectId()))
-                .orElse(drafts.isEmpty() ? null : drafts.get(0));
+                .orElse(WorkshopPages.defaultDraft(drafts, latestRun));
         var none = new BuildingPlanWorkbench.CheckState(BuildingPlanWorkbench.Status.NONE, Optional.empty(), 0, false);
         // #290 : l'état RÉEL du bâtiment dans la bibliothèque — retrait, relevé, enregistrement — et
         // non le seul succès de la version affichée.
@@ -1432,7 +1448,7 @@ public final class PanelApp {
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE),
                 draft == null ? List.of() : planDrafts.revisions(draft.id()),
                 planWorkbench.recoverable(agentId, importQuery, 10), UUID.randomUUID().toString(), notice, error,
-                conflictText, idTaken, isoView, isoCut, designRuns.latest(project.get().id()),
+                conflictText, idTaken, isoView, isoCut, latestRun,
                 referenceImages.list(project.get().id()), catalog, ownBuilding,
                 designDocs.history(project.get().id()), designText, importQuery, importPreview);
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,

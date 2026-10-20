@@ -233,6 +233,35 @@ public final class WorkshopPages {
                 + (draftId == null || draftId.isBlank() ? "" : "&amp;draft=" + Http.esc(draftId));
     }
 
+    /**
+     * La version montrée quand l'URL n'en désigne aucune (#655).
+     *
+     * <p>D'ordinaire la plus récente : reprendre un projet, c'est reprendre là où on en était. Mais
+     * une conception automatique terminée qui a <strong>retenu</strong> une version — la dernière
+     * conforme — l'emporte, tant qu'aucune version n'a été créée après elle. Le 20/10/2026, la
+     * session « Exigeant » de la Boulangerie a obtenu un plan conforme, puis dix corrections d'une
+     * critique ratée ont empilé des versions refusées : la page rouvrait sur la dernière, « un point
+     * est à corriger », et le plan conforme restait introuvable.</p>
+     */
+    public static BuildingPlanDraft defaultDraft(List<BuildingPlanDraft> drafts,
+                                                 Optional<BuildingDesignRunStore.Run> run) {
+        if (drafts == null || drafts.isEmpty()) {
+            return null;
+        }
+        BuildingPlanDraft latest = drafts.get(0);
+        if (run == null || run.isEmpty() || run.get().running() || run.get().finalDraftId().isBlank()) {
+            return latest;
+        }
+        BuildingDesignRunStore.Run r = run.get();
+        boolean newerWork = drafts.stream().anyMatch(d -> d.createdAt() != null && r.updatedAt() != null
+                && d.createdAt().isAfter(r.updatedAt()));
+        if (newerWork) {
+            return latest;
+        }
+        return drafts.stream().filter(d -> d.id().equals(r.finalDraftId()) && !d.archived()).findFirst()
+                .orElse(latest);
+    }
+
     public static String project(ProjectView v) {
         BuildingProject p = v.project();
         StringBuilder sb = new StringBuilder();
@@ -240,6 +269,9 @@ public final class WorkshopPages {
                 + "cette page.", "<a class=\"btn btn-outline-secondary\" href=\"" + BASE + "\">"
                 + Icons.icon("back") + "Atelier</a>"));
         banners(sb, v.notice(), v.error());
+        Optional<String> orientation = com.lodygames.rpgquest.panel.building.BriefOrientation.conflict(p);
+        orientation.ifPresent(c -> sb.append(Ui.banner("warning", "<strong>Façade d'entrée contradictoire : "
+                + "les gestes payants sont suspendus.</strong> " + Http.esc(c))));
         if (v.draft() != null && v.draft().origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR) {
             sb.append(Ui.banner("info", "<strong>Version réparée automatiquement par le moteur du serveur, "
                     + "sans appel à l'IA.</strong> La version d'origine reste disponible.<br>"
@@ -257,7 +289,8 @@ public final class WorkshopPages {
         sb.append(previewCard(v, step));
 
         // ---- Le bâtiment souhaité : ouvert tant qu'il n'est pas décrit ---------------------------
-        sb.append("<details class=\"npc-registry\"").append(step == Step.DESCRIBE ? " open" : "")
+        sb.append("<details class=\"npc-registry\"")
+                .append(step == Step.DESCRIBE || orientation.isPresent() ? " open" : "")
                 .append("><summary>").append(Icons.icon("edit")).append("Le bâtiment souhaité</summary>");
         sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">");
         sb.append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "project_save"))
@@ -798,9 +831,13 @@ public final class WorkshopPages {
         }
         if (audit.status() == Status.PENDING) {
             sb.append("<h2 class=\"h5\">Vérification en cours…</h2><p>Le serveur répond en général en "
-                    + "quelques secondes.</p><a class=\"btn btn-outline-secondary\" href=\"")
+                    + "quelques secondes. La page affiche le résultat d'elle-même dès qu'il arrive, "
+                    + "réussi ou non.</p><a class=\"btn btn-outline-secondary\" href=\"")
                     .append(projectUrl(v.project().id(), v.draft().id())).append("\">")
                     .append(Icons.icon("refresh")).append("Rafraîchir</a>");
+            // #655 : suivi jusqu'à l'état terminal, sans clic — même mécanisme que l'import de mobs (#214).
+            audit.row().ifPresent(row -> sb.append("<span hidden data-pa-track-action=\"")
+                    .append(Http.esc(row.id())).append("\" data-pa-track-reload=\"terminal\"></span>"));
             return sb.toString();
         }
         BuildingPlanVerdict verdict = currentVerdict(v);

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel.ai;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -555,7 +556,7 @@ public final class BuildingPromptBuilder {
                 Emprise maximale : %d blocs en x (largeur), %d blocs en z (longueur) — deux limites
                 distinctes : size.x ≤ %d ET size.z ≤ %d, sans les échanger
                 Hauteur maximale : %d blocs (size.y)
-
+                %s
                 IDENTIFIANT À UTILISER
 
                 id: %s
@@ -570,7 +571,49 @@ public final class BuildingPromptBuilder {
                 Produis maintenant le plan YAML, et rien d'autre.
                 """.formatted(demand.siteId(), demand.siteName(), demand.facing(), demand.facing(),
                 demand.maxWidth(), demand.maxDepth(), demand.maxWidth(), demand.maxDepth(),
-                demand.maxHeight(), demand.suggestedId(), demand.brief(), designSection(demand));
+                demand.maxHeight(), frame(demand.facing(), demand.maxHeight()), demand.suggestedId(),
+                demand.brief(), designSection(demand));
+    }
+
+    /**
+     * Le repère PROPRE à ce bâtiment (#655) : la traduction des façades relatives en points
+     * cardinaux, et la dernière coordonnée y permise, calculées ici plutôt que laissées au modèle.
+     * Le 20/10/2026, la Boulangerie (« front: EAST ») a reçu « facade: EAST », puis une correction
+     * qui envoyait la fenêtre SUD sur RIGHT — le nord —, et quatre toits posés en y=10 dans un
+     * volume haut de 10. Le prompt général disait déjà la règle ; il ne donnait pas la réponse.
+     */
+    static String frame(String facing, int maxHeight) {
+        String front = facing == null ? "" : facing.trim().toUpperCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder();
+        if (List.of("NORTH", "EAST", "SOUTH", "WEST").contains(front)) {
+            sb.append("\nREPÈRE DE CE BÂTIMENT (front: ").append(front).append(") — « facade » prend UNIQUEMENT "
+                    + "ces quatre mots :\n")
+                    .append("  FRONT = façade ").append(compass(front)).append(" (l'entrée) · BACK = ")
+                    .append(compass(turn(front, 2))).append(" · LEFT = ").append(compass(turn(front, 1)))
+                    .append(" · RIGHT = ").append(compass(turn(front, 3))).append('\n')
+                    .append("  Jamais « facade: ").append(front).append(" » ni un autre point cardinal : le "
+                            + "plan serait refusé.\n");
+        }
+        if (maxHeight > 0) {
+            sb.append("  Coordonnées y permises : de 0 à size.y - 1, soit y ≤ ").append(maxHeight - 1)
+                    .append(" au plus. Le toit (« gable ») DOIT tenir dedans : s'il commence au-dessus "
+                            + "des murs, arrête les murs plus bas — un toit en y = ").append(maxHeight)
+                    .append(" sort du volume.\n");
+        }
+        sb.append("  Briques rouges : « minecraft:bricks » (avec un s) ; « minecraft:brick » est un objet, "
+                + "pas un bloc.\n");
+        return sb.toString();
+    }
+
+    private static final List<String> CLOCKWISE = List.of("NORTH", "EAST", "SOUTH", "WEST");
+
+    /** {@code quarter} quarts de tour dans le sens horaire (LEFT = 1 depuis l'extérieur, cf. Facade). */
+    private static String turn(String front, int quarter) {
+        return CLOCKWISE.get((CLOCKWISE.indexOf(front) + quarter) % 4);
+    }
+
+    private static String compass(String front) {
+        return com.lodygames.rpgquest.panel.building.BriefOrientation.label(front);
     }
 
     /** La conception détaillée à traduire, quand elle existe (#289). */

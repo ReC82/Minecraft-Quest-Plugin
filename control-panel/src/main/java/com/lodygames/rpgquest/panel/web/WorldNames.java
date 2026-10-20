@@ -47,7 +47,8 @@ public final class WorldNames {
                 if (!(o instanceof Map<?, ?> w) || !(w.get("name") instanceof String name)) {
                     continue;
                 }
-                if (w.get("alias") instanceof String alias && !alias.isBlank()) {
+                if (w.get("alias") instanceof String alias && !alias.isBlank()
+                        && !alias.strip().equalsIgnoreCase(name.strip())) {
                     aliases.put(key(name), alias.strip());
                 }
                 if (w.get("roles") instanceof List<?> r && !r.isEmpty()) {

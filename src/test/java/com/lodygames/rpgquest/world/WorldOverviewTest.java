@@ -145,7 +145,7 @@ class WorldOverviewTest {
     void aliasComesFromMultiverseWhenItKnowsTheWorldElseFromRpgQuestNames() {
         ExternalSource mvSource = new ExternalSource(true, "5.7.3", "", List.of(mv("world", true),
                 new ExternalWorld("world_hub", true, "NORMAL", "", "", 42L, "EASY", true, true, "Village des Lody"),
-                new ExternalWorld("claims", true, "NORMAL", "", "", 42L, "EASY", true, true, "")));
+                new ExternalWorld("claims", true, "NORMAL", "", "", 42L, "EASY", true, true, "claims")));
         var base = inputs(DEV_LOADED, mvSource, DEV_PORTALS);
         var in = new WorldOverview.Inputs(base.loaded(), base.mainWorld(), base.multiverse(), base.rpgquestManaged(),
                 base.roles(), base.waypoints(), base.portals(), base.sites(), base.waypointPlaces(), base.mobs(),
@@ -154,7 +154,7 @@ class WorldOverviewTest {
         var view = WorldOverview.build(in);
         assertEquals("Village des Lody", find(view, "world_hub").alias());
         assertEquals("Terres sauvages", find(view, "wild").alias());
-        assertEquals("", find(view, "claims").alias(), "aucun alias : PlugAdmin prend son défaut");
+        assertEquals("", find(view, "claims").alias(), "alias = identifiant (Multiverse sans alias) : PlugAdmin prend son défaut");
         assertEquals("wild", find(view, "wild").name(), "identifiant technique inchangé");
     }
 }

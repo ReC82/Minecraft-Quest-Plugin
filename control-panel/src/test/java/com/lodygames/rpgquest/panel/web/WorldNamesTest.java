@@ -20,7 +20,7 @@ class WorldNamesTest {
             "roles", Map.of("hub", "world_hub", "wild", "terres", "claims", "claims"),
             "worlds", List.of(world("world", "", List.of()), world("world_hub", "Village des Lody", List.of("HUB")),
                     world("terres", "", List.of("WILD")), world("claims", "  ", List.of("CLAIMS")),
-                    world("lody_flat", "", List.of())));
+                    world("lody_flat", "", List.of()), world("world_nether", "world_nether", List.of())));
 
     @Test
     void aliasChosenByTheAdministratorWins() {
@@ -39,6 +39,8 @@ class WorldNamesTest {
         assertEquals("lody_flat", names.name("lody_flat"), "monde sans rôle ni alias : son identifiant");
         assertEquals("lody_flat", names.label("lody_flat"), "pas de répétition entre parenthèses");
         assertFalse(names.hasCustomName("terres"));
+        assertEquals("Nether", names.name("world_nether"), "alias = identifiant (relevé DEV 21/10) : défaut");
+        assertFalse(names.hasCustomName("world_nether"));
         assertEquals("Village des Lody", names.ofRole("HUB"));
         assertEquals("Wild", names.ofRole("WILD"));
     }

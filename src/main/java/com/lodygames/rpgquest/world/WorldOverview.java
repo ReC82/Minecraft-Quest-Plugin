@@ -269,7 +269,8 @@ public final class WorldOverview {
     /** Un seul gestionnaire du nom affiché, comme pour les réglages : Multiverse s'il connaît le monde. */
     private static String alias(String name, ExternalWorld mv, Inputs in) {
         String alias = mv != null ? mv.alias() : in.displayNames().get(key(name));
-        return alias == null ? "" : alias.strip();
+        // Un « alias » égal à l'identifiant n'est pas un nom choisi : PlugAdmin garde son défaut.
+        return alias == null || alias.isBlank() || alias.strip().equalsIgnoreCase(name) ? "" : alias.strip();
     }
 
     /**

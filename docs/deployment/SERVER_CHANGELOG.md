@@ -48,6 +48,27 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Quêtes quotidiennes / hebdomadaires : suivi lisible et onglets PlugAdmin (#15 lot 2, TC-377)
+
+### Changement
+
+Journal : onglets périodiques avec avancement dans le titre (« Quotidiennes : 1/2 terminée »), résumé
+complet, rangées « À faire » / « Terminées » visibles sans survol, comptées sur les attributions réelles
+du joueur. PlugAdmin : onglets Quotidiennes / Hebdomadaires de la page Quêtes, réglages
+`periodic-quests` affichés en lecture seule, création préréglée. `quest.list` expose `period` et
+`periodic`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement + redéploiement PlugAdmin (AWS). Aucune configuration modifiée
+(`periodic-quests` inchangé), aucune migration de schéma, aucun fichier de contenu, aucune attribution
+ni progression touchée.
+
+### Rollback
+
+Remettre le JAR sauvegardé par `deploy-verygames.sh` et redémarrer ; PlugAdmin : release précédente
+sous `/opt/plugadmin/releases/`. Aucune donnée à restaurer (aucune écriture nouvelle).
+
 ## 2026-10-20 - PlugAdmin : « Lire ses droits en jeu » ne finit plus en NullPointerException (#27, TC-376)
 
 ### Changement

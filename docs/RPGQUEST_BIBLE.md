@@ -582,7 +582,28 @@ valeurs de démonstration) :
 | `periodic-quests.daily-count` | `2` | Quêtes quotidiennes par joueur (0 à 9). |
 | `periodic-quests.weekly-count` | `1` | Quêtes hebdomadaires par joueur (0 à 9). |
 
-Hors périmètre de ce lot (préparé, non implémenté) : onglets PlugAdmin dédiés, difficulté selon le
+**Suivi joueur (lot 2, retour TC-350).** L'onglet se lit **sans survol** : le titre de la fenêtre
+porte l'avancement (« Quotidiennes : 1/2 terminée »), l'emplacement 5 (indicateur de page, inutile
+ici) affiche le résumé complet « Quotidiennes : 1/2 terminée — 1 restante » et le temps avant les
+nouvelles quêtes, et le contenu est découpé en deux rangées : **« À faire »** ouverte par une vitre
+jaune, puis **« Terminées »** ouverte par une vitre verte, dont les quêtes **brillent**. Les
+compteurs viennent des **attributions réelles** du joueur pour la période en cours (jamais du
+nombre de modèles ni de `daily-count`) ; une attribution pas encore démarrée compte comme « pas
+encore commencée ». Les terminées restent consultables jusqu'au reset et n'apparaissent jamais dans
+« Quêtes terminées » (quêtes classiques). Les onglets du haut rappellent le résumé en infobulle.
+
+**PlugAdmin (lot 2).** Page **Quêtes** : onglets **Toutes les quêtes / Quotidiennes (n) /
+Hebdomadaires (n)** (`/quests?tab=daily|weekly`). Un onglet périodique liste ses modèles (fiche
+dépliable = aperçu, éditeur guidé habituel), affiche **en lecture seule** les réglages
+`periodic-quests` du serveur (nombre par joueur, heure et jour de renouvellement, fuseau, « expire,
+sans récompense ») relevés par `quest.list`, signale un modèle enregistré mais pas encore publié et
+un nombre de modèles actifs insuffisant, et propose « Créer une quête quotidienne / hebdomadaire »
+(`/quests/new?period=…`, période et « répétable » préréglés). L'action agent `quest.list` expose
+`period` par quête et un bloc `periodic` (`enabled`, `timezone`, `resetTime`, `weeklyResetDay`,
+`dailyCount`, `weeklyCount`, `expiredReward`). PlugAdmin ne modifie pas ces réglages.
+
+Hors périmètre (préparé, non implémenté) : réglages modifiables depuis PlugAdmin, activation par
+modèle, difficulté selon le
 niveau, nombre variable, personnalisation par monde/ville/réputation. Un reset joueur
 (`/rpgadmin player resetnew`) efface la progression mais **pas** les attributions : il ne permet pas
 de regagner les récompenses du jour.

@@ -262,6 +262,13 @@ rewards:                    # optionnel
       une quête finie ne rapporte qu'une fois par période. <code>repeatable: false</code>,
       <code>cooldown</code> et <code>prerequisites</code> sont refusés sur un modèle périodique.
     </p>
+    <p class="text-body-secondary">
+      Dans le journal, le titre de l'onglet affiche l'avancement (« Quotidiennes : 1/2 terminée ») et
+      les quêtes sont rangées en deux rangées : « À faire » (vitre jaune) puis « Terminées » (vitre
+      verte, quêtes brillantes), comptées sur les quêtes réellement attribuées au joueur. Dans
+      PlugAdmin, la page Quêtes a des onglets « Quotidiennes » et « Hebdomadaires » : modèles, réglages
+      du serveur en lecture seule, bouton de création préréglé.
+    </p>
     <pre class="rpgq-code"><code># quests/daily_demo_bucheron.yml — modèle de démonstration
 id: rpgquest:daily_demo_bucheron
 title: "&lt;gold&gt;Bois du jour&lt;/gold&gt;"

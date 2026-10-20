@@ -1,0 +1,106 @@
+id: boulangerie_hub
+name: "Boulangerie de Central"
+kind: habitable
+front: EAST
+size:
+  x: 11
+  y: 10
+  z: 11
+anchor:
+  x: 5
+  y: 0
+  z: 5
+steps:
+  - op: box
+    from: [1, 0, 1]
+    to: [9, 0, 9]
+    block: minecraft:oak_planks
+  - op: walls
+    from: [1, 1, 1]
+    to: [9, 4, 9]
+    block: minecraft:birch_planks
+  - op: pillars
+    from: [1, 1, 1]
+    to: [9, 4, 9]
+    spacing: 4
+    block: minecraft:stripped_oak_log
+  - op: gable
+    from: [1, 5, 1]
+    to: [9, 8, 9]
+    axis: x
+    fill: minecraft:spruce_planks
+    block: minecraft:spruce_stairs
+  - op: window
+    facade: LEFT
+    offset: 5
+    y: 2
+    width: 3
+    height: 2
+    block: minecraft:glass_pane
+  - op: window
+    facade: RIGHT
+    offset: 5
+    y: 2
+    width: 2
+    height: 2
+    block: minecraft:glass_pane
+  - op: clear
+    from: [0, 1, 1]
+    to: [1, 3, 2]
+  - op: box
+    from: [6, 1, 5]
+    to: [8, 1, 5]
+    block: minecraft:oak_slab
+  - op: box
+    from: [0, 1, 6]
+    block: minecraft:crafting_table
+  - op: box
+    from: [0, 1, 7]
+    to: [0, 1, 8]
+    block: minecraft:barrel
+  - op: light
+    from: [3, 5, 3]
+    block: minecraft:lantern
+  - op: light
+    from: [7, 5, 7]
+    block: minecraft:lantern
+  - op: box
+    from: [0, 0, 0]
+    block: minecraft:stone_bricks
+  - op: box
+    from: [1, 0, 0]
+    block: minecraft:oak_leaves
+  - op: box
+    from: [4, 4, 1]
+    to: [7, 4, 1]
+    block: minecraft:white_terracotta
+  - op: box
+    from: [5, 4, 1]
+    block: minecraft:orange_terracotta
+  - op: box
+    from: [6, 4, 1]
+    block: minecraft:orange_terracotta
+  - op: box
+    from: [8, 1, 9]
+    to: [9, 2, 9]
+    block: minecraft:bricks
+  - op: box
+    from: [8, 1, 9]
+    block: minecraft:smoker
+  - op: box
+    from: [8, 3, 9]
+    to: [8, 9, 9]
+    block: minecraft:stone_bricks
+  - op: light
+    from: [4, 0, 1]
+    block: minecraft:lantern
+  - op: light
+    from: [5, 0, 1]
+    block: minecraft:lantern
+  - op: box
+    from: [3, 6, 3]
+    block: "minecraft:iron_chain[axis=y,waterlogged=false]"
+  - op: box
+    from: [7, 6, 7]
+    block: "minecraft:iron_chain[axis=y,waterlogged=false]"
+

@@ -225,11 +225,13 @@ public final class BuildingGenerator {
         // #282 : le serveur connaît la faute ; s'il sait la corriger sans risque, il le dit — avec
         // le plan corrigé et vérifié — au lieu de renvoyer l'administrateur vers l'IA.
         List<String> ignored = new ArrayList<>();
-        Optional<BuildingPlan> loose = BuildingPlanYaml.readUnvalidated(planYaml, ignored);
+        // #655 : une façade d'instruction en point cardinal se traduit exactement depuis « front ».
+        List<String> readNotes = new ArrayList<>();
+        Optional<BuildingPlan> loose = BuildingPlanYaml.readForRepair(planYaml, ignored, readNotes);
         if (loose.isEmpty()) {
             return raw;
         }
-        PlanRepair.Outcome outcome = PlanRepair.repair(loose.get(), limits);
+        PlanRepair.Outcome outcome = PlanRepair.repair(loose.get(), limits, readNotes);
         if (!outcome.repaired()) {
             return raw;
         }

@@ -51,12 +51,39 @@ public final class PlanRepair {
 
     /**
      * Les bornes du projet : l'atelier sait jusqu'où un bâtiment a le droit de grandir, le plan
-     * ne le sait pas.
+     * ne le sait pas. 0 = pas de borne connue sur cet axe.
+     *
+     * @param maxWidth  limite en X (largeur)
+     * @param maxDepth  limite en Z (longueur / profondeur), indépendante de X depuis #305
+     * @param maxHeight limite en Y (hauteur)
      */
-    public record Limits(int maxWidth, int maxHeight) {
+    public record Limits(int maxWidth, int maxDepth, int maxHeight) {
+
+        /** Forme antérieure à #305 : une limite horizontale carrée, X = Z. */
+        public Limits(int maxWidth, int maxHeight) {
+            this(maxWidth, maxWidth, maxHeight);
+        }
 
         public static Limits none() {
-            return new Limits(0, 0);
+            return new Limits(0, 0, 0);
+        }
+
+        /**
+         * Les axes que ce volume dépasse (#305), un libellé par axe, vide s'il tient. Un axe sans
+         * borne ou une taille inconnue (0) ne dépasse jamais.
+         */
+        public List<String> exceeded(int sizeX, int sizeY, int sizeZ) {
+            List<String> out = new ArrayList<>();
+            if (maxWidth > 0 && sizeX > maxWidth) {
+                out.add("size.x = " + sizeX + " pour une largeur maximale (X) de " + maxWidth);
+            }
+            if (maxDepth > 0 && sizeZ > maxDepth) {
+                out.add("size.z = " + sizeZ + " pour une longueur maximale (Z) de " + maxDepth);
+            }
+            if (maxHeight > 0 && sizeY > maxHeight) {
+                out.add("size.y = " + sizeY + " pour une hauteur maximale (Y) de " + maxHeight);
+            }
+            return out;
         }
     }
 
@@ -164,7 +191,7 @@ public final class PlanRepair {
         }
         int sx = grow(plan.sizeX(), needX, limits.maxWidth());
         int sy = grow(plan.sizeY(), needY, limits.maxHeight());
-        int sz = grow(plan.sizeZ(), needZ, limits.maxWidth());
+        int sz = grow(plan.sizeZ(), needZ, limits.maxDepth());
         if (sx != plan.sizeX() || sy != plan.sizeY() || sz != plan.sizeZ()) {
             changes.add("Volume porté de " + plan.sizeX() + " × " + plan.sizeY() + " × "
                     + plan.sizeZ() + " à " + sx + " × " + sy + " × " + sz

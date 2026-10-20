@@ -324,6 +324,28 @@ class BuildingGeneratorTest {
         assertTrue(library.find("hub_library").isEmpty());
     }
 
+    /** #305 : le plan fait 9 × 7 × 8 (X × Z × Y) ; chaque limite du projet est jugée à part. */
+    @Test
+    @DisplayName("Un plan qui dépasse la longueur Z du projet est refusé même si X tient, axe nommé")
+    void aPlanBeyondTheProjectDepthIsRefusedEvenIfItsWidthFits() {
+        BuildingGenerator.Verdict fits = generator.inspect(LIBRARY_PLAN, new PlanRepair.Limits(13, 7, 8));
+        assertTrue(fits.ok(), fits.message());
+
+        BuildingGenerator.Verdict deep = generator.inspect(LIBRARY_PLAN, new PlanRepair.Limits(13, 6, 8));
+        assertFalse(deep.ok());
+        assertEquals(BuildingGenerator.PROJECT_LIMITS_EXCEEDED, deep.code());
+        assertTrue(deep.message().contains("size.z = 7 pour une longueur maximale (Z) de 6"), deep.message());
+        assertFalse(deep.message().contains("size.x"), "X tient : il n'est pas cité");
+        assertEquals(null, deep.repair(), "agrandir ne rapetisse rien : aucune réparation proposée");
+
+        BuildingGenerator.Verdict wide = generator.inspect(LIBRARY_PLAN, new PlanRepair.Limits(8, 13, 8));
+        assertTrue(wide.message().contains("size.x = 9 pour une largeur maximale (X) de 8"), wide.message());
+        assertTrue(generator.preview(LIBRARY_PLAN, new PlanRepair.Limits(13, 6, 8)).hasPreview(),
+                "l'aperçu reste dessiné pour montrer ce qui déborde");
+        assertTrue(generator.inspect(LIBRARY_PLAN, PlanRepair.Limits.none()).ok(), "sans limite connue, rien ne change");
+        assertTrue(gateway.files.isEmpty());
+    }
+
     @Test
     @DisplayName("L'inspection porte les mesures prises sur la grille, pour la boucle de correction")
     void inspectionCarriesTheMeasurementsTakenOnTheGrid() {

@@ -2732,12 +2732,13 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml) {
-        return buildingPlanAudit(planYaml, 0, 0);
+        return buildingPlanAudit(planYaml, 0, 0, 0);
     }
 
     @Override
     public CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml,
                                                                        int maxWidth,
+                                                                       int maxDepth,
                                                                        int maxHeight) {
         if (buildingGenerator == null) {
             return done(new BuildingPlanVerdictView(false, "UNAVAILABLE",
@@ -2748,7 +2749,7 @@ public final class BukkitAgentActions implements AgentActions {
         // rien à faire sur le thread principal : elle n'y gagnerait rien et y coûterait un tick.
         return CompletableFuture.supplyAsync(() -> {
             var v = buildingGenerator.inspect(planYaml,
-                    new com.lodygames.rpgquest.building.plan.PlanRepair.Limits(maxWidth, maxHeight));
+                    new com.lodygames.rpgquest.building.plan.PlanRepair.Limits(maxWidth, maxDepth, maxHeight));
             return new BuildingPlanVerdictView(v.ok(), v.code(), v.message(), v.buildingId(),
                     v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(), v.codes(),
                     v.warnings(), v.exists(), metricsOf(v.metrics()), repairOf(v.repair()));
@@ -2759,12 +2760,13 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml) {
-        return buildingPlanPreview(planYaml, 0, 0);
+        return buildingPlanPreview(planYaml, 0, 0, 0);
     }
 
     @Override
     public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml,
                                                                          int maxWidth,
+                                                                         int maxDepth,
                                                                          int maxHeight) {
         if (buildingGenerator == null) {
             return done(new BuildingPlanPreviewView(false, "UNAVAILABLE",
@@ -2773,7 +2775,7 @@ public final class BukkitAgentActions implements AgentActions {
         }
         return CompletableFuture.supplyAsync(() -> {
             var exam = buildingGenerator.preview(planYaml,
-                    new com.lodygames.rpgquest.building.plan.PlanRepair.Limits(maxWidth, maxHeight));
+                    new com.lodygames.rpgquest.building.plan.PlanRepair.Limits(maxWidth, maxDepth, maxHeight));
             var v = exam.verdict();
             var p = exam.preview();
             return new BuildingPlanPreviewView(v.ok(), v.code(), v.message(), v.buildingId(),

@@ -3267,7 +3267,7 @@ public final class AgentActionExecutor {
                             + BUILD_PLAN_MAX + "."));
         }
         return actions.buildingPlanAudit(plan, intParam(action, "max_width"),
-                        intParam(action, "max_height"))
+                        depthParam(action), intParam(action, "max_height"))
                 .thenApply(v -> {
                     Map<String, Object> details = new LinkedHashMap<>();
                     details.put("code", v.code());
@@ -3322,7 +3322,7 @@ public final class AgentActionExecutor {
                             + BUILD_PLAN_MAX + "."));
         }
         return actions.buildingPlanPreview(plan, intParam(action, "max_width"),
-                        intParam(action, "max_height"))
+                        depthParam(action), intParam(action, "max_height"))
                 .thenApply(v -> {
                     Map<String, Object> details = new LinkedHashMap<>();
                     details.put("code", v.code());
@@ -3364,6 +3364,15 @@ public final class AgentActionExecutor {
                 })
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(),
                         "Échec : " + rootName(err)));
+    }
+
+    /**
+     * La longueur maximale (Z) du projet (#305). Un panel antérieur n'envoie que {@code max_width} :
+     * sa limite était carrée, elle vaut alors aussi pour Z.
+     */
+    private static int depthParam(AgentAction action) {
+        int depth = intParam(action, "max_depth");
+        return depth > 0 ? depth : intParam(action, "max_width");
     }
 
     /** Un paramètre entier optionnel : 0 s'il est absent ou illisible. */

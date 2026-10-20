@@ -62,9 +62,13 @@ public record PlanImportPreview(String actionId, String actionType, Instant crea
         String front = plan.front();
         String buildingId = plan.buildingId();
         List<String> conflicts = new ArrayList<>();
-        if (target.maxWidth() > 0 && (size[0] > target.maxWidth() || size[2] > target.maxWidth())) {
-            conflicts.add("Emprise " + size[0] + "×" + size[2] + " : dépasse la largeur maximale du projet ("
+        if (target.maxWidth() > 0 && size[0] > target.maxWidth()) {
+            conflicts.add("Largeur (X) " + size[0] + " : dépasse la largeur maximale du projet ("
                     + target.maxWidth() + ").");
+        }
+        if (target.maxDepth() > 0 && size[2] > target.maxDepth()) {
+            conflicts.add("Longueur (Z) " + size[2] + " : dépasse la longueur maximale du projet ("
+                    + target.maxDepth() + ").");
         }
         if (target.maxHeight() > 0 && size[1] > target.maxHeight()) {
             conflicts.add("Hauteur " + size[1] + " : dépasse la hauteur maximale du projet ("
@@ -106,7 +110,7 @@ public record PlanImportPreview(String actionId, String actionType, Instant crea
     /** Les dimensions x × y × z, ou « inconnues ». */
     public String dimensions() {
         return sizeX == 0 && sizeY == 0 && sizeZ == 0 ? "inconnues"
-                : sizeX + " × " + sizeY + " × " + sizeZ + " (largeur × hauteur × profondeur)";
+                : sizeX + " × " + sizeZ + " × " + sizeY + " (largeur X × longueur Z × hauteur Y)";
     }
 
     static int[] sizeOf(String plan) {

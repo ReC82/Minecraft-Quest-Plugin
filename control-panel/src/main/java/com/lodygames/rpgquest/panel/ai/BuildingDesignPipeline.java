@@ -235,7 +235,8 @@ public final class BuildingDesignPipeline {
             this.project = project;
             this.quality = Quality.of(run.quality());
             this.demand = new BuildingPromptBuilder.Demand(project.id(), project.name(), project.front(),
-                    project.brief(), project.maxWidth(), project.maxHeight(), project.buildingId());
+                    project.brief(), project.maxWidth(), project.maxDepth(), project.maxHeight(),
+                    project.buildingId());
             this.spent = run.spentCalls();
             this.references = referencesOf(project.id());
         }
@@ -411,7 +412,7 @@ public final class BuildingDesignPipeline {
             BuildingPlanDraft created = drafts.create(new BuildingPlanDraftStore.NewDraft(run.agentId(), "",
                     p.hasPlan() ? p.plan() : "", origin, parentId, "", p.providerId(), p.providerLabel(),
                     p.model(), p.usage(), p.rawResponse(), p.extractionNote(), demand.maxWidth(),
-                    demand.maxHeight(), run.createdBy(), project.id()));
+                    demand.maxDepth(), demand.maxHeight(), run.createdBy(), project.id()));
             projects.touch(project.id(), run.createdBy());
             // #289 : la critique dit d'abord ce qui manquait au brief et à la conception — c'est
             // gardé dans le journal, consultable, au lieu de se perdre avec la réponse brute.

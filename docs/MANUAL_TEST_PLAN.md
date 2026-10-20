@@ -6689,6 +6689,32 @@ activer l'interrupteur général. Ne pas modifier les récompenses de test exist
     l'objet et la saisie d'enchantements.
 6.  Désactivée par défaut pour l'essai ; la désactiver de nouveau si elle a été activée par erreur.
 
+### TC-371 — Atelier : largeur X, longueur Z et hauteur Y indépendantes, emprise rectangulaire (issue #305, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR + PlugAdmin #305 déployés ; un compte PlugAdmin avec `AI_USE` ; un emplacement
+rectangulaire libre (par ex. 15 × 11) pour l'étape 6. **Aucun appel IA payant n'est nécessaire** pour
+les étapes 1, 2, 4 et 7 ; l'étape 3 en demande un (facultatif). **Durée** : 15 minutes.
+
+1.  Atelier → Nouveau projet « Estrade 305 », ouvrir « Taille et nom technique » : trois champs
+    **Largeur maximale — X**, **Longueur / profondeur maximale — Z**, **Hauteur maximale — Y**, avec
+    l'explication des axes. Saisir 13 / 9 / 7, créer.
+2.  Rouvrir la fiche (F5, puis après déconnexion/reconnexion) : « Le bâtiment souhaité » affiche 13, 9, 7.
+    Modifier Z à 11, enregistrer, recharger → 13 / 11 / 7. Saisir Z = 3 → refus « Longueur maximale (Z)
+    invalide… », rien n'est enregistré. Remettre 9.
+3.  (Facultatif, 1 appel IA) « Créer un plan avec l'IA » → dans « Détails techniques », la version porte
+    les limites ; la vérification part avec `max_depth = 9` (fiche de l'action `building.plan.audit`).
+4.  Sans IA : dans le plan brut d'une version (ou en important un plan), mettre `size.z` à 11 en gardant
+    `size.x` ≤ 13, enregistrer la modification → la vérification refuse avec « size.z = 11 pour une
+    longueur maximale (Z) de 9 » ; X n'est pas cité. Remettre `size.z` ≤ 9 → le refus disparaît.
+5.  Carte « Enregistrer » d'un plan conforme : « Produit : … de large (X) × … de long (Z) × … de haut (Y)
+    — limites du projet : X ≤ 13, Z ≤ 9, Y ≤ 7 ». Bibliothèque : dimensions « (largeur × profondeur ×
+    hauteur) » cohérentes après enregistrement.
+6.  Poser le bâtiment rectangulaire sur un emplacement orienté de façon à imposer 90° puis 270° :
+    l'aperçu de pose montre une emprise X/Z **échangée** dans le monde, le contrôle de collisions
+    reste actif, aucun bloc coupé ; le projet garde 13 / 9 / 7.
+7.  Non-régression : un projet créé avant #305 (ex. « Estrade d'Elias », 13) affiche X = 13 et Z = 13,
+    ses versions, sa conception et son historique sont intacts ; aucun bâtiment posé n'a bougé.
+
 ### TC-368 — Variables typées : CLAIM_TIER_1 = lasagne refusée partout, valeur hors type signalée (issue #320, PENDING MANUAL VALIDATION)
 
 **Prérequis** : JAR + PlugAdmin #320 déployés ; un joueur d'essai (pas une progression réelle à conserver).

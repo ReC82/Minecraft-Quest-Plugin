@@ -87,6 +87,9 @@ public final class WorkshopAutopilot {
         if (draft.maxWidth() > 0) {
             form.put("max_width", String.valueOf(draft.maxWidth()));
         }
+        if (draft.maxDepth() > 0) {
+            form.put("max_depth", String.valueOf(draft.maxDepth()));
+        }
         if (draft.maxHeight() > 0) {
             form.put("max_height", String.valueOf(draft.maxHeight()));
         }
@@ -143,7 +146,7 @@ public final class WorkshopAutopilot {
         BuildingPlanDraft created = drafts.create(new BuildingPlanDraftStore.NewDraft(d.agentId(),
                 d.siteId(), repair.get().plan(), BuildingPlanDraft.Origin.ENGINE_REPAIR, d.id(),
                 actionId, "", "Moteur RPGQuest", "", "", "", repair.get().note(), d.maxWidth(),
-                d.maxHeight(), AUTHOR, d.projectId()));
+                d.maxDepth(), d.maxHeight(), AUTHOR, d.projectId()));
         String rid = UUID.randomUUID().toString().substring(0, 8);
         audit.record(AUTHOR, "building.plan.engine_repair", "draft=" + d.id() + " repaired=" + created.id()
                         + " audit=" + actionId, "OK",

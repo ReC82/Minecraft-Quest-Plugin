@@ -1053,8 +1053,10 @@ public final class AgentActionCatalog {
                 }
                 // #282 : les bornes du projet, pour que la réparation déterministe du plugin
                 // puisse agrandir le volume au lieu d'araser un toit. Optionnelles, entières.
+                // #305 : « max_depth » (Z) distinct de « max_width » (X) ; le plugin refuse un plan
+                // qui dépasse l'une d'elles.
                 if (!"building.generate".equals(type)) {
-                    for (String key : new String[] {"max_width", "max_height"}) {
+                    for (String key : new String[] {"max_width", "max_depth", "max_height"}) {
                         String raw = trim(form.get(key));
                         if (raw.isEmpty()) {
                             continue;

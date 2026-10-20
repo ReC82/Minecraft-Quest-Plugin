@@ -178,12 +178,21 @@ public final class WorkshopPages {
                 + "tourné pour que son entrée suive l'orientation de l'emplacement.</p></div>");
         sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Taille et nom technique "
                 + "(facultatif)</summary>");
-        sb.append("<div class=\"field\"><label for=\"ws-w\">Largeur et profondeur maximales (blocs)</label>")
-                .append("<input id=\"ws-w\" type=\"number\" name=\"max_width\" min=\"5\" max=\"64\" value=\"")
-                .append(Http.esc(v.getOrDefault("max_width", "19"))).append("\"></div>");
-        sb.append("<div class=\"field\"><label for=\"ws-h\">Hauteur maximale, toit compris (blocs)</label>")
-                .append("<input id=\"ws-h\" type=\"number\" name=\"max_height\" min=\"4\" max=\"64\" value=\"")
-                .append(Http.esc(v.getOrDefault("max_height", "14"))).append("\"></div>");
+        // #305 : trois limites distinctes, pour une emprise rectangulaire (13 × 9 × 7, pas 13 × 13).
+        String width = v.getOrDefault("max_width", "19");
+        sb.append("<p class=\"field-help\">Les axes sont ceux du plan, vus avec l'entrée devant soi : la "
+                + "largeur (X) court le long de la façade d'entrée, la longueur (Z) va de l'entrée vers le fond, "
+                + "la hauteur (Y) compte le toit. À la pose, une rotation peut échanger X et Z dans le monde ; "
+                + "les dimensions du projet, elles, ne changent pas.</p>");
+        sb.append("<div class=\"field\"><label for=\"ws-w\">Largeur maximale — X (blocs)</label>")
+                .append("<input id=\"ws-w\" type=\"number\" name=\"max_width\" min=\"5\" max=\"64\" step=\"1\" "
+                        + "required value=\"").append(Http.esc(width)).append("\"></div>");
+        sb.append("<div class=\"field\"><label for=\"ws-d\">Longueur / profondeur maximale — Z (blocs)</label>")
+                .append("<input id=\"ws-d\" type=\"number\" name=\"max_depth\" min=\"5\" max=\"64\" step=\"1\" "
+                        + "required value=\"").append(Http.esc(v.getOrDefault("max_depth", width))).append("\"></div>");
+        sb.append("<div class=\"field\"><label for=\"ws-h\">Hauteur maximale, toit compris — Y (blocs)</label>")
+                .append("<input id=\"ws-h\" type=\"number\" name=\"max_height\" min=\"4\" max=\"64\" step=\"1\" "
+                        + "required value=\"").append(Http.esc(v.getOrDefault("max_height", "14"))).append("\"></div>");
         sb.append("<div class=\"field\"><label for=\"ws-id\">Nom technique dans la bibliothèque</label>")
                 .append("<input id=\"ws-id\" type=\"text\" name=\"building_id\" spellcheck=\"false\" value=\"")
                 .append(Http.esc(v.getOrDefault("building_id", ""))).append("\" placeholder=\"")
@@ -257,8 +266,8 @@ public final class WorkshopPages {
             sb.append(hidden("draft", v.draft().id()));
         }
         sb.append(projectFields(Map.of("name", p.name(), "brief", p.brief(), "front", p.front(),
-                "max_width", String.valueOf(p.maxWidth()), "max_height", String.valueOf(p.maxHeight()),
-                "building_id", p.buildingId())));
+                "max_width", String.valueOf(p.maxWidth()), "max_depth", String.valueOf(p.maxDepth()),
+                "max_height", String.valueOf(p.maxHeight()), "building_id", p.buildingId())));
         sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
                 .append(Icons.icon("save")).append("Enregistrer les modifications</button></div>");
         if (!p.sourceSiteId().isEmpty()) {
@@ -828,8 +837,12 @@ public final class WorkshopPages {
         sb.append("<h2 class=\"h5\">").append(Icons.icon(divergence.isPresent() ? "warning" : "check"))
                 .append(Http.esc(PlanVerdictText.headline(verdict, divergence.isPresent()))).append("</h2>");
         if (verdict.blocks() > 0) {
-            sb.append("<p class=\"muted\">").append(verdict.sizeX()).append(" × ").append(verdict.sizeZ())
-                    .append(" blocs au sol, ").append(verdict.sizeY()).append(" de haut.</p>");
+            // #305 : dimensions produites ET limites du projet, axe par axe, sans ambiguïté.
+            BuildingProject p = v.project();
+            sb.append("<p class=\"muted\">Produit : ").append(Http.esc(BuildingProject.limitsLabel(
+                    verdict.sizeX(), verdict.sizeZ(), verdict.sizeY()))).append(" — limites du projet : X ≤ ")
+                    .append(p.maxWidth()).append(", Z ≤ ").append(p.maxDepth()).append(", Y ≤ ")
+                    .append(p.maxHeight()).append(".</p>");
         }
         divergence.ifPresent(d -> sb.append(Ui.banner("warning", Http.esc(d))));
         if (v.idTaken() && v.ownBuilding()) {
@@ -1231,8 +1244,7 @@ public final class WorkshopPages {
         row(sb, "Nom", p.name().isEmpty() ? "<span class=\"faint\">absent</span>" : Http.esc(p.name()));
         row(sb, "Dimensions", Http.esc(p.dimensions()));
         row(sb, "Entrée", p.front().isEmpty() ? "<span class=\"faint\">non précisée</span>" : Http.esc(p.front()));
-        row(sb, "Limites de ce projet", Http.esc(v.project().maxWidth() + " de large, " + v.project().maxHeight()
-                + " de haut, entrée " + v.project().front()));
+        row(sb, "Limites de ce projet", Http.esc(v.project().limitsLabel() + ", entrée " + v.project().front()));
         sb.append("</dl>");
         if (p.conflicts().isEmpty()) {
             sb.append("<p class=\"faint\">Aucune incompatibilité avec les limites de ce projet.</p>");
@@ -1274,7 +1286,8 @@ public final class WorkshopPages {
         BuildingProject p = v.project();
         sb.append("Projet : ").append(p.name()).append(" (").append(p.id()).append(")\n")
                 .append("Nom technique : ").append(p.buildingId()).append(" ; entrée : ").append(p.front())
-                .append(" ; max ").append(p.maxWidth()).append("×").append(p.maxHeight()).append('\n');
+                .append(" ; max X×Z×Y ").append(p.maxWidth()).append("×").append(p.maxDepth()).append("×")
+                .append(p.maxHeight()).append('\n');
         BuildingPlanDraft d = v.draft();
         if (d == null) {
             return sb.append("Aucune version de plan.\n").toString();

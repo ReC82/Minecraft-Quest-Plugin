@@ -806,10 +806,12 @@ public interface AgentActions {
 
     /**
      * Même audit, en donnant au moteur les bornes du projet (issue #282) : la réparation
-     * déterministe peut alors agrandir le volume au lieu d'araser un toit. 0 = pas de borne connue.
+     * déterministe peut alors agrandir le volume au lieu d'araser un toit, et un plan qui dépasse
+     * une limite est refusé en nommant l'axe (#305). 0 = pas de borne connue sur cet axe.
      */
     default CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml,
                                                                        int maxWidth,
+                                                                       int maxDepth,
                                                                        int maxHeight) {
         return buildingPlanAudit(planYaml);
     }
@@ -857,6 +859,7 @@ public interface AgentActions {
     /** Même aperçu, avec les bornes du projet pour la réparation déterministe (issue #282). */
     default CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml,
                                                                          int maxWidth,
+                                                                         int maxDepth,
                                                                          int maxHeight) {
         return buildingPlanPreview(planYaml);
     }

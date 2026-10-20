@@ -47,26 +47,36 @@ public final class BuildingPromptBuilder {
      * @param facing    orientation enregistrée de l'emplacement — c'est elle que le plan doit
      *                  prendre comme façade de référence, sinon le bâtiment sera posé de travers
      * @param brief     le brief architectural de l'administrateur
-     * @param maxWidth  emprise maximale autorisée en X et Z, en blocs
-     * @param maxHeight hauteur maximale autorisée
+     * @param maxWidth  emprise maximale autorisée en X (largeur), en blocs
+     * @param maxDepth  emprise maximale autorisée en Z (longueur), en blocs — indépendante de X
+     *                  depuis #305
+     * @param maxHeight hauteur maximale autorisée (Y)
      */
     public record Demand(String siteId, String siteName, String facing, String brief,
-                         int maxWidth, int maxHeight, String buildingId, String design) {
+                         int maxWidth, int maxDepth, int maxHeight, String buildingId, String design) {
 
         /** Sans conception détaillée (#289) : le plan part du seul brief. */
         public Demand(String siteId, String siteName, String facing, String brief, int maxWidth,
+                      int maxDepth, int maxHeight, String buildingId) {
+            this(siteId, siteName, facing, brief, maxWidth, maxDepth, maxHeight, buildingId, "");
+        }
+
+        /** Forme antérieure à #305 : emprise carrée, X = Z. */
+        public Demand(String siteId, String siteName, String facing, String brief, int maxWidth,
                       int maxHeight, String buildingId) {
-            this(siteId, siteName, facing, brief, maxWidth, maxHeight, buildingId, "");
+            this(siteId, siteName, facing, brief, maxWidth, maxWidth, maxHeight, buildingId, "");
         }
 
         /** La même demande, avec la conception détaillée à traduire (#289). */
         public Demand withDesign(String text) {
-            return new Demand(siteId, siteName, facing, brief, maxWidth, maxHeight, buildingId, text);
+            return new Demand(siteId, siteName, facing, brief, maxWidth, maxDepth, maxHeight, buildingId,
+                    text);
         }
 
         /** La même demande, avec un brief complété (écueils d'une conception neuve). */
         public Demand withBrief(String text) {
-            return new Demand(siteId, siteName, facing, text, maxWidth, maxHeight, buildingId, design);
+            return new Demand(siteId, siteName, facing, text, maxWidth, maxDepth, maxHeight, buildingId,
+                    design);
         }
 
         /**
@@ -89,6 +99,7 @@ public final class BuildingPromptBuilder {
                     : facing.trim().toUpperCase(Locale.ROOT);
             brief = brief == null ? "" : brief.trim();
             maxWidth = Math.min(64, Math.max(5, maxWidth));
+            maxDepth = Math.min(64, Math.max(5, maxDepth));
             maxHeight = Math.min(64, Math.max(4, maxHeight));
         }
 
@@ -541,8 +552,9 @@ public final class BuildingPromptBuilder {
                 Référence : %s
                 Nom : %s
                 Façade d'entrée : %s  ← déclare « front: %s » dans ton plan
-                Emprise maximale : %d blocs en x, %d blocs en z
-                Hauteur maximale : %d blocs
+                Emprise maximale : %d blocs en x (largeur), %d blocs en z (longueur) — deux limites
+                distinctes : size.x ≤ %d ET size.z ≤ %d, sans les échanger
+                Hauteur maximale : %d blocs (size.y)
 
                 IDENTIFIANT À UTILISER
 
@@ -557,8 +569,8 @@ public final class BuildingPromptBuilder {
                 %s
                 Produis maintenant le plan YAML, et rien d'autre.
                 """.formatted(demand.siteId(), demand.siteName(), demand.facing(), demand.facing(),
-                demand.maxWidth(), demand.maxWidth(), demand.maxHeight(),
-                demand.suggestedId(), demand.brief(), designSection(demand));
+                demand.maxWidth(), demand.maxDepth(), demand.maxWidth(), demand.maxDepth(),
+                demand.maxHeight(), demand.suggestedId(), demand.brief(), designSection(demand));
     }
 
     /** La conception détaillée à traduire, quand elle existe (#289). */
@@ -630,7 +642,8 @@ public final class BuildingPromptBuilder {
     public static String designUserPrompt(Demand demand) {
         return """
                 PROJET : %s (identifiant %s)
-                Façade d'entrée : %s. Emprise maximale : %d × %d blocs, hauteur maximale : %d blocs.
+                Façade d'entrée : %s. Emprise maximale : %d blocs en x (largeur) × %d blocs en z
+                (longueur), hauteur maximale : %d blocs en y.
 
                 LE BÂTIMENT SOUHAITÉ, DÉCRIT PAR L'ADMINISTRATEUR (à respecter intégralement)
 
@@ -653,7 +666,7 @@ public final class BuildingPromptBuilder {
                 8. CORRESPONDANCE AVEC LE BRIEF — chaque exigence du brief, et l'endroit exact de la
                    conception qui la satisfait, ou la raison pour laquelle elle ne l'est pas.
                 """.formatted(demand.siteName(), demand.suggestedId(), demand.facing(),
-                demand.maxWidth(), demand.maxWidth(), demand.maxHeight(), demand.brief());
+                demand.maxWidth(), demand.maxDepth(), demand.maxHeight(), demand.brief());
     }
 
     /**

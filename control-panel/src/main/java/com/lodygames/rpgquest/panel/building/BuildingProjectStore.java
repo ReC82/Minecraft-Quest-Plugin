@@ -20,6 +20,10 @@ import java.util.UUID;
  * <p>Additif : une table nouvelle, aucune table existante modifiée. Les brouillons de plan (#256)
  * pointent vers leur projet par une colonne {@code project_id} ajoutée à côté de {@code site_id}
  * (voir {@link BuildingPlanDraftStore}) — l'ancien rattachement à un emplacement reste lisible.</p>
+ *
+ * <p>#305 : la colonne {@code max_depth} (longueur en Z) est ajoutée aux bases existantes, vide. Une
+ * ligne antérieure garde sa limite carrée : {@code max_width} vaut alors pour X et pour Z. Aucune
+ * ligne n'est réécrite à la migration.</p>
  */
 public final class BuildingProjectStore {
 
@@ -36,6 +40,7 @@ public final class BuildingProjectStore {
                 front TEXT NOT NULL,
                 max_width INTEGER NOT NULL,
                 max_height INTEGER NOT NULL,
+                max_depth INTEGER,
                 source_site_id TEXT,
                 version INTEGER NOT NULL,
                 archived INTEGER NOT NULL DEFAULT 0,
@@ -48,9 +53,28 @@ public final class BuildingProjectStore {
     private static final String CREATE_SOURCE_INDEX =
             "CREATE INDEX IF NOT EXISTS idx_building_project_source ON building_project(agent_id, source_site_id)";
 
-    /** Ce qu'on sait d'un projet à sa création ou à sa modification. */
+    /** Bornes communes aux trois limites, formulaire et serveur (#305). */
+    public static final int MIN_WIDTH = 5;
+    public static final int MIN_HEIGHT = 4;
+    public static final int MAX_SIDE = 64;
+    /** Valeur d'un champ de limite illisible : refusée par {@link Fields#refusal()}. */
+    public static final int NOT_A_NUMBER = Integer.MIN_VALUE;
+
+    /**
+     * Ce qu'on sait d'un projet à sa création ou à sa modification.
+     *
+     * @param maxWidth  limite en X (largeur)
+     * @param maxDepth  limite en Z (longueur / profondeur), indépendante de X depuis #305
+     * @param maxHeight limite en Y (hauteur)
+     */
     public record Fields(String name, String brief, String buildingId, String front, int maxWidth,
-                         int maxHeight) {
+                         int maxDepth, int maxHeight) {
+
+        /** Forme antérieure à #305 : une limite carrée, X = Z. */
+        public Fields(String name, String brief, String buildingId, String front, int maxWidth,
+                      int maxHeight) {
+            this(name, brief, buildingId, front, maxWidth, maxWidth, maxHeight);
+        }
 
         public Fields {
             name = name == null ? "" : name.trim();
@@ -59,8 +83,19 @@ public final class BuildingProjectStore {
             brief = brief == null ? "" : brief.replace("\r\n", "\n").replace('\r', '\n').trim();
             buildingId = buildingId == null ? "" : buildingId.trim().toLowerCase(java.util.Locale.ROOT);
             front = BuildingProject.normaliseFront(front);
-            maxWidth = Math.min(64, Math.max(5, maxWidth));
-            maxHeight = Math.min(64, Math.max(4, maxHeight));
+        }
+
+        /**
+         * Les mêmes champs, limites ramenées dans les bornes — pour une reprise automatique (import
+         * d'un emplacement), jamais pour un formulaire : un formulaire hors bornes est refusé.
+         */
+        public Fields clamped() {
+            return new Fields(name, brief, buildingId, front, clamp(maxWidth, MIN_WIDTH),
+                    clamp(maxDepth, MIN_WIDTH), clamp(maxHeight, MIN_HEIGHT));
+        }
+
+        private static int clamp(int value, int min) {
+            return Math.min(MAX_SIDE, Math.max(min, value));
         }
 
         /** Ce qui empêche d'enregistrer ces champs, ou vide. Jamais de troncature silencieuse. */
@@ -76,12 +111,28 @@ public final class BuildingProjectStore {
                 return Optional.of("Description trop longue : " + brief.length() + " caractères pour "
                         + BuildingProject.MAX_BRIEF + " au plus. Rien n'a été coupé ni enregistré.");
             }
+            // #305 : chaque limite est jugée à part et le refus nomme l'axe — jamais recadrée en douce.
+            Optional<String> axis = axisRefusal("Largeur maximale (X)", maxWidth, MIN_WIDTH)
+                    .or(() -> axisRefusal("Longueur maximale (Z)", maxDepth, MIN_WIDTH))
+                    .or(() -> axisRefusal("Hauteur maximale (Y)", maxHeight, MIN_HEIGHT));
+            if (axis.isPresent()) {
+                return axis;
+            }
             if (!BuildingProject.BUILDING_ID.matcher(buildingId).matches()) {
                 return Optional.of("Identifiant de bibliothèque invalide : « " + buildingId + " » "
                         + "(3 à 48 caractères : minuscules, chiffres ou « _ »).");
             }
             return Optional.empty();
         }
+    }
+
+    private static Optional<String> axisRefusal(String label, int value, int min) {
+        if (value < min || value > MAX_SIDE) {
+            String got = value == NOT_A_NUMBER ? "ce n'est pas un nombre entier" : value + " blocs";
+            return Optional.of(label + " invalide (" + got + ") : un entier de " + min + " à " + MAX_SIDE
+                    + " blocs est attendu.");
+        }
+        return Optional.empty();
     }
 
     /** Issue d'une modification. */
@@ -94,6 +145,10 @@ public final class BuildingProjectStore {
         try (Connection c = connect(); Statement s = c.createStatement()) {
             s.execute(CREATE);
             s.execute(CREATE_SOURCE_INDEX);
+            // #305 — migration ADDITIVE : vide pour les projets existants, relus en carré.
+            if (!hasColumn(c, "building_project", "max_depth")) {
+                s.execute("ALTER TABLE building_project ADD COLUMN max_depth INTEGER");
+            }
         } catch (SQLException e) {
             throw new IllegalStateException("Impossible d'initialiser les projets d'atelier dans " + dbPath, e);
         }
@@ -104,8 +159,8 @@ public final class BuildingProjectStore {
         String now = STAMP.format(Instant.now());
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement("""
                 INSERT INTO building_project (id, agent_id, name, brief, building_id, front, max_width,
-                    max_height, source_site_id, version, archived, created_by, created_at, updated_by,
-                    updated_at) VALUES (?,?,?,?,?,?,?,?,?,1,0,?,?,?,?)
+                    max_height, max_depth, source_site_id, version, archived, created_by, created_at,
+                    updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?,?,?,?)
                 """)) {
             int i = 1;
             ps.setString(i++, id);
@@ -116,6 +171,7 @@ public final class BuildingProjectStore {
             ps.setString(i++, f.front());
             ps.setInt(i++, f.maxWidth());
             ps.setInt(i++, f.maxHeight());
+            ps.setInt(i++, f.maxDepth());
             ps.setString(i++, sourceSiteId == null ? "" : sourceSiteId);
             ps.setString(i++, by);
             ps.setString(i++, now);
@@ -132,7 +188,7 @@ public final class BuildingProjectStore {
     public UpdateOutcome update(String id, int expectedVersion, Fields f, String by) {
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement("""
                 UPDATE building_project SET name = ?, brief = ?, building_id = ?, front = ?,
-                    max_width = ?, max_height = ?, version = version + 1, updated_by = ?, updated_at = ?
+                    max_width = ?, max_height = ?, max_depth = ?, version = version + 1, updated_by = ?, updated_at = ?
                 WHERE id = ? AND version = ? AND archived = 0
                 """)) {
             int i = 1;
@@ -142,6 +198,7 @@ public final class BuildingProjectStore {
             ps.setString(i++, f.front());
             ps.setInt(i++, f.maxWidth());
             ps.setInt(i++, f.maxHeight());
+            ps.setInt(i++, f.maxDepth());
             ps.setString(i++, by);
             ps.setString(i++, STAMP.format(Instant.now()));
             ps.setString(i++, id);
@@ -235,10 +292,23 @@ public final class BuildingProjectStore {
     private static BuildingProject read(ResultSet rs) throws SQLException {
         return new BuildingProject(rs.getString("id"), rs.getString("agent_id"), rs.getString("name"),
                 rs.getString("brief"), rs.getString("building_id"), rs.getString("front"),
-                rs.getInt("max_width"), rs.getInt("max_height"), rs.getString("source_site_id"),
+                rs.getInt("max_width"), rs.getInt("max_depth"), rs.getInt("max_height"),
+                rs.getString("source_site_id"),
                 rs.getInt("version"), rs.getInt("archived") != 0, rs.getString("created_by"),
                 instant(rs.getString("created_at")), rs.getString("updated_by"),
                 instant(rs.getString("updated_at")));
+    }
+
+    private static boolean hasColumn(Connection c, String table, String column) throws SQLException {
+        try (Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static Instant instant(String raw) {

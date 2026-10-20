@@ -100,9 +100,13 @@ public final class BuildingGenerator {
      * {@code metrics} donnent au modèle les chiffres qui contredisent son intention — « tu crois
      * avoir mis des fenêtres, la grille en compte zéro ».</p>
      *
-     * @param code       {@code OK}, {@code PLAN_INVALID} ou {@code ARCHITECTURE_REFUSED}
+     * @param code       {@code OK}, {@code PLAN_INVALID}, {@code ARCHITECTURE_REFUSED} ou
+     *                   {@link #PROJECT_LIMITS_EXCEEDED}
      * @param exists     un bâtiment de cet identifiant est déjà dans la bibliothèque
      */
+    /** Code du refus d'un plan plus grand que les limites de son projet (#305). */
+    public static final String PROJECT_LIMITS_EXCEEDED = "PROJECT_LIMITS_EXCEEDED";
+
     public record Verdict(boolean ok, String code, String message, String buildingId,
                           String kind, int sizeX, int sizeY, int sizeZ, int blocks,
                           List<String> codes, List<String> warnings, boolean exists,
@@ -210,6 +214,11 @@ public final class BuildingGenerator {
      */
     private Examination examine(String planYaml, PlanRepair.Limits limits) {
         Examination raw = examineAsIs(planYaml);
+        Optional<Examination> outOfBounds = beyondLimits(raw, limits);
+        if (outOfBounds.isPresent()) {
+            // Agrandir ne rapetisse rien : la réparation n'a rien à proposer ici.
+            return outOfBounds.get();
+        }
         if (raw.verdict().ok()) {
             return raw;
         }
@@ -227,6 +236,28 @@ public final class BuildingGenerator {
         return new Examination(raw.verdict().withRepair(new Repair(
                 BuildingPlanYaml.write(outcome.plan()), outcome.changes(), outcome.after(),
                 outcome.accepted())), raw.preview());
+    }
+
+    /**
+     * Le plan dépasse-t-il les limites du projet (#305) ? Chaque axe est jugé à part : un plan de
+     * 11 blocs en Z est refusé sur un projet 13 × 9 même si X tient. Le refus nomme l'axe dépassé ;
+     * l'aperçu est conservé, pour qu'on voie ce qui déborde.
+     */
+    static Optional<Examination> beyondLimits(Examination raw, PlanRepair.Limits limits) {
+        Verdict v = raw.verdict();
+        List<String> axes = limits == null ? List.of() : limits.exceeded(v.sizeX(), v.sizeY(), v.sizeZ());
+        if (axes.isEmpty()) {
+            return Optional.empty();
+        }
+        String message = "Plan refusé : il dépasse les limites du projet — " + String.join(" ; ", axes)
+                + ". Réduis la dimension en cause (et les zones qui s'y étendent) sans toucher aux autres."
+                + (v.ok() ? "" : "\n" + v.message());
+        List<String> codes = new ArrayList<>();
+        codes.add(PROJECT_LIMITS_EXCEEDED);
+        codes.addAll(v.codes());
+        return Optional.of(new Examination(new Verdict(false, PROJECT_LIMITS_EXCEEDED, message,
+                v.buildingId(), v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(), codes,
+                v.warnings(), v.exists(), v.metrics()), raw.preview()));
     }
 
     private Examination examineAsIs(String planYaml) {

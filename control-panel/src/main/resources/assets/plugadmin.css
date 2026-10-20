@@ -1713,6 +1713,8 @@ pre.mob-cell{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85e
 .wc-form:has(input[name=terrain]:not([value=FLAT]):checked) .wc-flat{display:none}
 .wc-flat{border:1px solid var(--line);border-radius:10px;padding:8px 12px}
 .wc-flat legend{font-size:13px;font-weight:700;float:none;width:auto;padding:0 4px;margin:0}
-.wc-layers{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,1fr);gap:0 12px}
+.wc-layers{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,1fr);gap:0 12px;max-width:640px}
+.wc-layers label{display:flex;flex-direction:column;margin:0 0 6px}
+.wc-layers input{width:100%}
 .wc-code{white-space:normal;word-break:break-all}
 @media (max-width:640px){.wc-choice{flex-basis:100%}}

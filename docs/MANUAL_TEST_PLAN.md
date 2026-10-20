@@ -7580,3 +7580,16 @@ ne modifie ni groupe, ni OP, ni whitelist, ni lien de compte. Ne rien synchronis
 5.  (Optionnel) Historique → détail de l'action : en cas d'erreur inattendue, le message est désormais en
     français (« erreur interne de l'agent RPGQuest pendant « mc.rights.read » … ») avec des détails
     `code`, `action`, `error`, `errorMessage`, `where` — jamais un nom d'exception seul.
+
+### TC-376-bis — PlugAdmin : le bloc « Droits en jeu » passe à l'état final avec la notification (issue #27, PENDING MANUAL VALIDATION)
+
+Prérequis : PlugAdmin `7b8b4b1` (PR #641) sur DEV (JAR inchangé `c92687f`). Action **en lecture seule** : ne modifie ni
+groupe, ni OP, ni whitelist, ni lien de compte.
+
+1.  Joueurs → fiche de **LoDyMcFly** (connecté, OP) → onglet Modération → « Lire ses droits en jeu ».
+    **Attendu** : pendant l'attente, le bloc « Droits en jeu » affiche « en cours… » ; dès la fin de l'action, la page se
+    recharge seule et le bloc montre le résultat final (succès, daté) — il ne reste jamais « en cours » une fois l'action finie.
+2.  Même chose sur **Rondoudou9000** (hors ligne). **Attendu** : même transition, résultat réussi.
+3.  (Si une lecture échoue un jour, par exemple LuckPerms indisponible) **Attendu** : le bloc passe à « échec » avec le message,
+    au même moment que la notification — plus de notification « échec » à côté d'un bloc « en cours ».
+4.  Utilisateurs → compte lié → « Lire l'état réel en jeu » : « Dernier relevé » passe aussi seul de « en cours… » au résultat.

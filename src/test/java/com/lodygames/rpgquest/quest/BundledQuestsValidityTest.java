@@ -3,6 +3,10 @@ package com.lodygames.rpgquest.quest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.quest.model.CollectItemObjective;
+import com.lodygames.rpgquest.quest.model.CraftItemObjective;
+import com.lodygames.rpgquest.quest.model.ExperienceReward;
+import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestReward;
@@ -11,6 +15,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.EntityType;
 import org.junit.jupiter.api.Test;
@@ -118,5 +123,32 @@ class BundledQuestsValidityTest {
                             && v.key().equals(expectedVariable) && v.value().equals("true"));
             assertTrue(grantsEntitlement, "le palier " + tier + " doit accorder l'entitlement " + expectedVariable);
         }
+    }
+
+    /**
+     * Issue #34 : la quête de test de Tania, restaurée depuis la définition chargée sur DEV (absente
+     * du dépôt). Même id technique, mêmes étapes, objectifs et récompenses que DEV — seuls le donneur
+     * et le nom visible (« Tania » au lieu de « Help ») changent.
+     */
+    @Test
+    void helpRecolteIsRestoredIdenticalToTheDevDefinition() {
+        QuestDefinition quest = loader.loadDirectory(BUNDLED_QUESTS_DIR).loaded().stream()
+                .filter(q -> q.id().equals(new NamespacedKey("rpgquest", "help_recolte")))
+                .findFirst().orElseThrow();
+
+        assertEquals("test", quest.category());
+        assertEquals(Material.OAK_LOG, quest.icon());
+        assertTrue(quest.repeatable());
+        assertTrue(quest.prerequisites().isEmpty());
+        assertEquals("help", quest.giver());
+        assertEquals(List.of("ramasser_bois", "fabriquer_planches"),
+                quest.steps().stream().map(step -> step.id()).toList());
+        assertEquals(List.of(new CollectItemObjective(Material.OAK_LOG, 5)), quest.steps().get(0).objectives());
+        assertEquals(List.of(new CraftItemObjective(Material.OAK_PLANKS, 4)), quest.steps().get(1).objectives());
+        assertEquals(List.of(new ExperienceReward(25), new ItemReward(Material.BREAD, 3)), quest.rewards());
+
+        assertTrue(quest.title().base().contains("Tania"), quest.title().base());
+        assertTrue(quest.description().base().contains("%npc_name:help%"), quest.description().base());
+        assertTrue(!(quest.title().base() + quest.description().base()).contains("Help"), "plus de « Help » visible");
     }
 }

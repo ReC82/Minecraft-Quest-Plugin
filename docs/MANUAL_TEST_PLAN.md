@@ -7722,3 +7722,29 @@ Ne déplacer, renommer ni recréer aucun PNJ (Bob = Citizens #49) ; ne modifier 
 **Couverture automatisée** : `WorldSettingsPlannerTest` (normalisation, refus, empreinte), `BukkitWorldSettingsGatewayTest` (alias Multiverse vs
 `world-names.yml`, relecture, autre monde intact, persistance), `WorldOverviewTest` (source de l'alias, alias = identifiant ignoré),
 `WorldNamesTest`, `WorldsPageTest`, `WorldSettingsPageTest`, `NpcCoordinatesTest` (743.222 / négatifs acceptés, invalides refusés, `step="any"`).
+
+### TC-383 — Atelier : Boulangerie de Central, orientation, réparations sûres et boucle bornée (issue #655, PENDING MANUAL VALIDATION)
+
+Projet réel `96a24bba` (« Boulangerie de Central »). Aucune action n'a été faite sur ce projet par la livraison. Les étapes 1 à 3 sont **gratuites** ;
+l'étape 5 est la seule payante, à faire seulement si vous le décidez.
+
+1.  PlugAdmin → **Atelier** → « Boulangerie de Central » (sans paramètre de version dans l'URL).
+    **Attendu** : la page s'ouvre sur la version **35ce1e1a** (« Plan conforme »), la version retenue par la conception « Exigeant » du 20/10,
+    et non plus sur la dernière version refusée (f8540b38). Le journal de la conception est inchangé.
+2.  **Attendu** : bandeau orange « Façade d'entrée contradictoire : les gestes payants sont suspendus » — la description place l'entrée
+    à l'OUEST, la façade choisie est EST ; « Le bâtiment souhaité » est ouvert.
+    Cliquer « Créer / Améliorer avec l'IA » ou lancer la conception automatique : **attendu** « … Rien n'a été demandé à l'IA. », aucun appel.
+3.  Dans « Le bâtiment souhaité », trancher : soit Façade d'entrée = **Ouest** (ce que dit la description), soit corriger la description.
+    Enregistrer. **Attendu** : le bandeau disparaît, les gestes payants redeviennent disponibles.
+4.  Sur n'importe quelle version, « Vérifier le bâtiment ». **Attendu** : « Vérification en cours… » puis la page se recharge **seule**
+    sur le résultat, réussi ou non (sans cliquer « Rafraîchir »).
+5.  *(Payant, facultatif)* Conception automatique « Soigné » ou « Exigeant ». **Attendu** dans le journal : les fautes sûres (façade en point
+    cardinal, `minecraft:brick`, toit à y=10, marches d'entrée inutiles, entrée à sauter, entrée absente) sont réparées par « Réparation par le
+    moteur (gratuit) » ; une critique qui casse le plan conforme n'a droit qu'à une correction, puis « retour à la version conforme » ;
+    jamais plus d'appels que l'enveloppe ; la page finit sur le plan retenu.
+6.  Enregistrer le plan retenu dans la bibliothèque, puis le poser en jeu sur un emplacement de test. **Attendu** : on entre à pied par la
+    façade d'entrée (2 blocs de haut, sans saut), toit fermé, intérieur éclairé.
+
+**Couverture automatisée** : `Boulangerie655Test` (6 plans réels : d852629f, d54a87b1, 73affe8a, 14b2493d, 739ea04b, 35ce1e1a — sans aucun
+appel payant), `BriefOrientationTest`, `BuildingPromptFrame655Test`, `WorkshopDefaultDraft655Test`, `BuildingDesignPipelineTest`
+(critique ratée bornée à 5 appels au lieu de 12, diagnostic répété), `WorkshopFlowTest` (gestes payants suspendus, suivi terminal).

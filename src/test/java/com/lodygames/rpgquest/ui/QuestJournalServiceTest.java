@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.ui;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -812,7 +813,7 @@ class QuestJournalServiceTest {
         clickTopSlot(player, QuestJournalService.TAB_DAILY_SLOT, ClickType.LEFT);
         waitUntil(() -> listTabOf(player) == JournalTab.DAILY);
         String lore = String.join("\n", loreText(player.getOpenInventory().getTopInventory()
-                .getItem(QuestJournalService.CONTENT_SLOTS[0])));
+                .getItem(QuestJournalService.CONTENT_SLOTS[1])));
         assertTrue(lore.contains("À faire aujourd'hui"), lore);
         assertTrue(lore.contains("Nouvelles quêtes dans"), lore);
 
@@ -822,6 +823,57 @@ class QuestJournalServiceTest {
         assertNotNull(empty, "aucune hebdomadaire publiée : l'onglet le dit au lieu de rester vide");
         assertTrue(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(empty.getItemMeta().displayName())
                 .contains("Aucune quête"));
+    }
+
+    @Test
+    void periodicTabShowsItsProgressWithoutHoverAndKeepsCompletedQuestsApart() throws Exception {
+        for (String id : List.of("daily_a", "daily_b")) {
+            Files.writeString(questsDir.resolve(id + ".yml"), questYaml("rpgquest:" + id, "Corvée " + id)
+                    .replace("category: test", "category: daily\nperiod: daily"));
+        }
+        questEngine.reload();
+        service.setPeriodicQuests(new com.lodygames.rpgquest.quest.periodic.PeriodicQuestService(plugin, questEngine,
+                progressEngine, new com.lodygames.rpgquest.database.PeriodicQuestAssignmentRepository(database),
+                variableRepository, com.lodygames.rpgquest.config.PeriodicQuestConfig::defaults,
+                java.time.Instant::now, Runnable::run, plugin.getSLF4JLogger()));
+        PlayerMock player = addPlayer();
+        NamespacedKey done = new NamespacedKey("rpgquest", "daily_a");
+        NamespacedKey toDo = new NamespacedKey("rpgquest", "daily_b");
+        service.open(player);
+        waitUntil(() -> java.util.stream.Stream.of(done, toDo).allMatch(id -> progressRepository
+                .find(player.getUniqueId(), id).join().map(r -> r.state() == QuestState.ACTIVE).orElse(false)));
+        setState(player, done, QuestState.COMPLETED);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+
+        clickTopSlot(player, QuestJournalService.TAB_DAILY_SLOT, ClickType.LEFT);
+        waitUntil(() -> listTabOf(player) == JournalTab.DAILY);
+        var view = player.getOpenInventory();
+        var plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText();
+        assertEquals("Quotidiennes : 1/2 terminée", plain.serialize(view.title()), "résumé dans le titre, sans survol");
+        var inventory = view.getTopInventory();
+        assertTrue(plain.serialize(inventory.getItem(5).getItemMeta().displayName())
+                .contains("1/2 terminée — 1 restante"), "résumé complet à la place de l'indicateur de page");
+
+        assertEquals(PeriodicJournalEntries.TO_DO_HEADER, inventory.getItem(QuestJournalService.CONTENT_SLOTS[0]).getType());
+        var pending = inventory.getItem(QuestJournalService.CONTENT_SLOTS[1]);
+        assertTrue(plain.serialize(pending.getItemMeta().displayName()).contains("Corvée daily_b"));
+        assertNotEquals(Boolean.TRUE, pending.getItemMeta().getEnchantmentGlintOverride());
+        assertNull(inventory.getItem(QuestJournalService.CONTENT_SLOTS[2]));
+
+        assertEquals(PeriodicJournalEntries.COMPLETED_HEADER, inventory.getItem(QuestJournalService.CONTENT_SLOTS[9]).getType(),
+                "les terminées ont leur propre rangée");
+        var completed = inventory.getItem(QuestJournalService.CONTENT_SLOTS[10]);
+        assertTrue(plain.serialize(completed.getItemMeta().displayName()).contains("Corvée daily_a"));
+        assertEquals(Boolean.TRUE, completed.getItemMeta().getEnchantmentGlintOverride(), "une terminée brille");
+        assertTrue(String.join("\n", loreText(inventory.getItem(QuestJournalService.TAB_DAILY_SLOT)))
+                .contains("1/2 terminée — 1 restante"), "l'onglet du haut porte aussi le résumé");
+
+        clickTopSlot(player, QuestJournalService.CONTENT_SLOTS[0], ClickType.LEFT);
+        assertEquals(JournalTab.DAILY, listTabOf(player), "un en-tête de section n'ouvre rien");
+
+        showAndAwait(player, JournalTab.COMPLETED);
+        assertNull(player.getOpenInventory().getTopInventory().getItem(QuestJournalService.CONTENT_SLOTS[0]),
+                "une quotidienne terminée ne se mélange pas aux quêtes classiques terminées");
     }
 
     private void writeQuests(int count) throws Exception {

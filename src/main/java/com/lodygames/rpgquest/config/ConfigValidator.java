@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.progression.model.SkillType;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -47,6 +48,10 @@ public final class ConfigValidator {
         RandomSafeArrivalConfig randomSafeArrival = validateRandomSafeArrival(section);
         HubConfig hub = validateHub(section);
         TravelConfig travel = validateTravel(section);
+        if (claims.world() != null && Boolean.TRUE.equals(travel.waypoint().worlds().get(claims.world()))) {
+            throw new ConfigValidationException("« travel.waypoint.worlds." + claims.world()
+                    + ".enabled » ne peut pas valoir true : le monde des claims n'accepte jamais de waypoint généré.");
+        }
         StarterToolKitConfig starterToolKit = validateStarterToolKit(section);
         WildConfig wild = validateWild(section);
         NpcHintConfig npcHints = validateNpcHints(section);
@@ -987,7 +992,32 @@ public final class ConfigValidator {
         boolean hubEnabled = waypoint.getBoolean("hub-enabled", defaults.hubEnabled());
 
         return new TravelConfig.WaypointConfig(enabled, regionSize, minDistance, maxDistance,
-                candidateAttempts, moveThrottleMillis, minimumSpacing, modelVersion, hubEnabled);
+                candidateAttempts, moveThrottleMillis, minimumSpacing, modelVersion, hubEnabled,
+                validateWaypointWorlds(waypoint.get("worlds")));
+    }
+
+    /**
+     * Issue #136 : {@code travel.waypoint.worlds.<nom>.enabled}. Une entrée sans {@code enabled}
+     * booléen est refusée plutôt que lue comme « interdit » en silence.
+     */
+    private static Map<String, Boolean> validateWaypointWorlds(Object raw) throws ConfigValidationException {
+        if (raw == null) {
+            return Map.of();
+        }
+        if (!(raw instanceof ConfigurationSection worlds)) {
+            throw new ConfigValidationException(
+                    "« travel.waypoint.worlds » doit être une section « nom-du-monde: { enabled: true|false } ».");
+        }
+        Map<String, Boolean> result = new LinkedHashMap<>();
+        for (String name : worlds.getKeys(false)) {
+            ConfigurationSection entry = worlds.getConfigurationSection(name);
+            if (name.isBlank() || entry == null || !entry.isBoolean("enabled")) {
+                throw new ConfigValidationException("« travel.waypoint.worlds." + name
+                        + " » doit contenir « enabled: true » ou « enabled: false ».");
+            }
+            result.put(name, entry.getBoolean("enabled"));
+        }
+        return result;
     }
 
     private static TravelConfig.BeaconConfig validateBeacon(ConfigurationSection beacon) throws ConfigValidationException {

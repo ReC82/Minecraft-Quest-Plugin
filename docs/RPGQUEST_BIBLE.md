@@ -4980,7 +4980,18 @@ sont des repères physiques persistants, partagés, générés **par instance r�
   fonctionnelle anti-enfermement de proximité est **hors périmètre** → issue #122.
 - **Config** : `travel.waypoint.*` dans `config.yml` (`enabled`, `region-size`, `min-distance`,
   `max-distance`, `candidate-attempts`, `move-throttle-millis`, `minimum-spacing`, `model-version`,
-  `hub-enabled` — issue #149, étend ce mécanisme au Hub, voir ci-dessous).
+  `hub-enabled` — issue #149, étend ce mécanisme au Hub, voir ci-dessous, `worlds` — issue #136).
+- **Mondes éligibles (issue #136)** : `waypoint.WaypointWorldEligibility` est la seule règle,
+  évaluée avant toute recherche d'emplacement. Ordre : `enabled: false` coupe tout → `claims.world`
+  toujours interdit (`worlds.<claims>.enabled: true` refusé au chargement) → entrée explicite
+  `travel.waypoint.worlds.<nom>.enabled` (prime sur les rôles) → `travel.wild-world` autorisé →
+  `hub.world` autorisé si `hub-enabled` → **tout autre monde interdit par défaut**. Un second monde
+  d'exploration s'active donc sans code (`worlds: { wild_2: { enabled: true } }`). Désactiver un monde
+  ne supprime rien : waypoints et découvertes existants conservés, seule la génération s'arrête. La
+  dimension est lue sur le monde réel : un Nether/End autorisé est refusé (avertissement console
+  unique) faute de stratégie de placement adaptée. Le Hub reste piloté par `TravelBeaconService`
+  (waypoint + borne), tout autre monde autorisé par `WaypointService#handleMovement`. Clé ajoutée
+  vide (`worlds: {}`) par `ConfigFileCompleter`. Voir `docs-site/worlds.html`.
 - **Persistance** : tables `waypoints` (définition monde) et `waypoint_discoveries` (progression
   joueur) — migration V18, séparation stricte, aucun couplage MariaDB supplémentaire.
 - **Hors périmètre MVP** : téléportation / fast travel, coût, menus, waypoint de quête, éditeur

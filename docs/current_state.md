@@ -1264,7 +1264,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   une borne **distincte** (jamais à la même position) est appariée à proximité une fois ce waypoint
   réellement persisté (anneau configurable, verrou mono-vol + retry borné — jamais de doublon même
   avec plusieurs joueurs/après redémarrage) ; gating indépendant `travel.waypoint.hub-enabled` /
-  `travel.beacon.hub-generation.enabled` ; jamais dans le Wild ; les claims restent exclus ; les
+  `travel.beacon.hub-generation.enabled` ; jamais dans le Wild ; les claims restent exclus
+  (**#136** : mondes éligibles déclaratifs `travel.waypoint.worlds.<nom>.enabled`, tout monde non
+  listé hors Wild/Hub interdit, Nether/End refusés, waypoints existants jamais supprimés) ; les
   waypoints/découvertes déjà existants du Wild ne sont jamais affectés. **Noms de waypoints
   (#133/#135)** : nom d'affichage humain unique et persistant (`waypoints.display_name`), biome
   relégué en métadonnée secondaire — réserve statique bundlée (`waypoint-names.txt` via

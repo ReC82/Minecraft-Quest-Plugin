@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Waypoints : mondes autorisés et interdits à la génération (#136)
+
+### Changement
+
+JAR seul (branche `feature/136-mondes-waypoints`). Nouvelle clé `travel.waypoint.worlds`
+(`nom-du-monde: { enabled: true|false }`) : allowlist qui prime sur `travel.wild-world` /
+`hub-enabled`. Par défaut rien ne change : Wild et Hub autorisés, Claims exclu ; tout autre monde
+(nouveau monde Multiverse, Nether…) désormais explicitement interdit tant qu'il n'est pas listé.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis). `ConfigFileCompleter` ajoute `worlds: {}` au
+`config.yml` du serveur — ne pas téléverser `config.yml`. Aucune migration `data.db`, aucun
+waypoint supprimé ni modifié.
+
+### Sauvegarde préalable
+
+Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh` puis redémarrage via le script RCON.
+
+### Validation
+
+Console : aucune erreur de chargement de configuration ; `config.yml` contient `travel.waypoint.worlds: {}` ;
+PlugAdmin `/worlds` : génération automatique active pour Hub et Wild, inactive pour Claims.
+`PENDING MANUAL VALIDATION` : génération en jeu dans le Wild et le Hub inchangée.
+
+### Rollback
+
+Remettre le JAR sauvegardé ; la clé `worlds: {}` laissée dans `config.yml` est ignorée par l'ancien JAR.
+
+---
+
 ## 2026-10-20 - Atelier : largeur X, longueur Z et hauteur Y indépendantes (#305)
 
 ### Changement

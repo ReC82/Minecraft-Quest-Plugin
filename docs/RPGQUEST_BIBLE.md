@@ -4798,14 +4798,14 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
 
 ## 7. Mondes
 
-### Page PlugAdmin « Mondes » en lecture seule (issue #560, #331-W1)
+### Page PlugAdmin « Mondes » (issue #560, #331-W1)
 
 - **Monde → Mondes** (`/worlds`), permission panel `WORLD_READ` (Propriétaire, Administrateur,
   Testeur, Builder, Lecture seule). Le groupe de navigation « Monde » contient aussi **Voyages**
   (même URL `/travel`, déplacé depuis « RPGQuest »).
-- Une seule action agent : `world.list` (« Rafraîchir les mondes »), **lecture seule**. Aucune action
-  `world.*` ne crée, ne charge, ne décharge, n'importe ni ne règle un monde ; aucun bouton mutatif,
-  même désactivé.
+- Action agent de liste : `world.list` (« Rafraîchir les mondes »), **lecture seule**. Aucune action
+  `world.*` ne crée, ne charge, ne décharge ni n'importe un monde ; les réglages d'un monde chargé
+  (#561) se font dans sa fiche, voir ci-dessous.
 - Le relevé donne aussi `onlinePlayers`, le total des joueurs connectés lu au même instant que les
   compteurs par monde ; la page l'affiche et signale « attention » si la somme des mondes en diffère.
   Les noms des éléments liés (mobs, waypoints, villes) sont affichés en texte lisible, balises
@@ -4822,6 +4822,45 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
 - **Multiverse-Core facultatif** (`softdepend`, API 5.7.3 en `compileOnly`, appels confinés à
   `world.multiverse.MultiverseApiReader`, getters uniquement). Absent / désactivé / incompatible : la
   page liste les mondes chargés vus par le serveur et l'indique.
+
+### Réglages d'un monde existant depuis PlugAdmin (issue #561, #331-W2)
+
+- Fiche d'un monde (`/worlds?world=<nom>`) → section **Réglages**. Relecture : permission `WORLD_READ`,
+  action agent `world.settings.get`. Aperçu et application : permission **`WORLD_WRITE`** (Propriétaire
+  par défaut, attribuable par groupe), actions `world.settings.preview` (aucune écriture) puis
+  `world.settings.apply` (sensible). Le formulaire générique `/agents/action` refuse ces deux actions :
+  tout réglage part de la fiche.
+- Réglages : difficulté, PvP, apparition des monstres, apparition des animaux, mode de jeu à l'arrivée,
+  jour/nuit qui avancent, heure, météo qui change, météo actuelle, centre et diamètre de la bordure, point
+  d'arrivée (saisi ou « prendre la position » d'un joueur présent dans ce monde, relevée à l'aperçu), et
+  les **règles de jeu lues au runtime** dans le registre du serveur (noms 1.21.11, booléens et entiers).
+- **Un seul chemin d'écriture par réglage** : Multiverse-Core quand il connaît le monde (difficulté,
+  PvP, monstres, animaux, mode de jeu, point d'arrivée, enregistrés dans son `worlds.yml`), sinon API
+  Bukkit (difficulté, point d'arrivée) ou règle de jeu (`pvp`, `spawn_monsters`). Heure, météo, bordure
+  et règles avancées : API Bukkit / règles du monde, conservées dans le monde. Sans Multiverse, animaux
+  et mode de jeu sont indisponibles (raison affichée) ; Multiverse installé mais illisible → ses
+  réglages deviennent indisponibles, jamais écrits par un autre chemin. `wild` (géré par RPGQuest,
+  `worlds.yml`) passe par l'API Bukkit. Les règles `pvp`, `spawn_monsters`, `advance_time`,
+  `advance_weather` ne sont modifiables que par leur réglage dédié.
+- Parcours : valeurs réelles relues → choix champ par champ (tout vaut « inchangé » par défaut) →
+  **aperçu** (actuel → proposé, chemin d'écriture, effet attendu, verdict À appliquer / Inchangé /
+  Refusé, empreinte de l'état relu) → **case de confirmation** → application. L'application reprend les
+  valeurs, l'empreinte et l'auteur de l'aperçu enregistré dans PlugAdmin (jamais ceux du navigateur),
+  une seule fois, dans les 15 minutes (`submit_token` + garde par aperçu). Le plugin revérifie
+  confirmation, auteur et empreinte : si une valeur a changé depuis l'aperçu, **rien n'est écrit**.
+  Il écrit un réglage à la fois, s'arrête au premier échec, **relit** tout et affiche avant / demandé /
+  relu (Confirmé, Écart, Échec, Non tenté).
+- **Protections LodyQuests prioritaires** (refus motivés, jamais contournés) : Hub — heure, météo,
+  jour/nuit et météo qui changent refusés (jour et météo permanents de `HubWorldRulesService`), PvP
+  activé et monstres autorisés refusés ; Claims — PvP activé et monstres autorisés refusés ; Wild —
+  difficulté Paisible refusée (supprimerait mobs spéciaux et boss), monstres coupés = avertissement.
+  Mode de jeu refusé tant que des joueurs sont dans le monde (Multiverse le leur imposerait). Bordure
+  ou point d'arrivée refusés si l'arrivée sortait de la bordure.
+- **Journal** : `plugins/RPGQuest/world-settings-audit.yml` (qui, quand, monde, avant / demandé / relu,
+  300 dernières applications, écrit hors du thread principal) affiché dans « Dernières modifications » ;
+  PlugAdmin journalise aussi chaque demande (`audit_log`).
+- Rien n'est appliqué au démarrage, au rechargement, à l'ouverture de la page ni au déploiement. Aucune
+  création, aucun chargement/déchargement, import, régénération ni suppression de monde.
 
 
 Vérifié dans `RpgAdminCommand.java` (`handleWorld*`), `hub/HubWorldRulesService.java`, `config.yml`, et [VERYGAMES.md](deployment/VERYGAMES.md).

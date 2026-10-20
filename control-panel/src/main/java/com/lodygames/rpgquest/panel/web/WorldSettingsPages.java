@@ -27,6 +27,7 @@ public final class WorldSettingsPages {
      * @param pending  relecture encore en attente ({@code null} = aucune)
      * @param preview  aperçu demandé ({@code ?preview=}), {@code null} sinon
      * @param applied  application demandée ({@code ?applied=}), {@code null} sinon
+     * @param readAt   date de la relecture (HTML sûr, déjà échappé)
      */
     public record View(String agentId, String world, boolean loaded, boolean canWrite, AgentActionRow reading,
                        Map<String, Object> readingDetails, AgentActionRow pending, AgentActionRow preview,
@@ -66,7 +67,7 @@ public final class WorldSettingsPages {
             sb.append("<p class=\"muted\">Les réglages réels de ce monde n'ont pas encore été relus sur le serveur.</p>");
             return sb.append(readButton(v, "Lire les réglages réels", true)).toString();
         }
-        sb.append("<p class=\"muted small\">Relu sur le serveur : ").append(Http.esc(v.readAt()))
+        sb.append("<p class=\"muted small\">Relu sur le serveur : ").append(v.readAt())
                 .append(bool(snap.get("multiverse")) ? " · monde géré par Multiverse-Core" : " · monde hors Multiverse-Core")
                 .append(" · ").append(Http.esc(str(snap.get("players")))).append(" joueur(s) présent(s)</p>");
         for (String note : strings(snap.get("notes"))) {

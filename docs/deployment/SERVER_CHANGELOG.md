@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Mondes : réglages d'un monde existant avec aperçu, confirmation et relecture (#561)
+
+### Changement
+
+JAR + PlugAdmin (branche `feature/561-reglages-mondes`). Actions agent `world.settings.get` (lecture),
+`world.settings.preview` (aucune écriture) et `world.settings.apply` (après confirmation dans la fiche
+monde, permission `WORLD_WRITE`). Nouveau fichier tenu par le plugin, créé seulement à la première
+application : `plugins/RPGQuest/world-settings-audit.yml`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** redéploiement de PlugAdmin
+(`scripts/plugadmin/deploy.sh`). Aucune migration `data.db`, aucune clé de configuration. **Aucun réglage
+de monde n'est appliqué** par le déploiement ni au démarrage : ne toucher ni `plugins/RPGQuest/worlds.yml`
+ni le `worlds.yml` de Multiverse-Core.
+
+### Sauvegarde préalable
+
+Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y --wait-ci` puis redémarrage via le script RCON ; `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`world.list` relu avant et après : mêmes mondes, mêmes difficulté / PvP / point d'arrivée / gestionnaire.
+Route `/worlds/settings/read` servie. Test en jeu : TC-374 (au choix du propriétaire pour les étapes qui
+modifient un monde).
+
+### Rollback
+
+Remettre le JAR et PlugAdmin précédents (sauvegardes du script). Le fichier `world-settings-audit.yml`
+peut rester (ignoré par l'ancienne version).
+
 ## 2026-10-20 - PlugAdmin : page Capacités et cartes de capacités des profils de mob (#543)
 
 ### Changement

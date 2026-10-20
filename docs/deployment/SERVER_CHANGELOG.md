@@ -76,6 +76,11 @@ Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
 `mob.list` : mêmes profils, `abilityCatalog` présent ; page `/mobs/abilities` servie.
 `PENDING MANUAL VALIDATION` : TC-373.
 
+**Effectué le 20/10/2026 ~10:58–11:00** (merge `f5e942f`) : JAR en ligne 3 769 006 o (== local, SHA-256
+`3f132d3c…e332` relu par FTP), sauvegarde `rpgquest-20261020T085819Z-predeploy.jar`, un redémarrage RCON →
+ONLINE ; `mob.list` (claude-543) : 10 profils, 0 problème, catalogue 5 types, `zz542_*` intacts ;
+PlugAdmin redéployé, `/mobs/abilities` → 303 /login (route servie).
+
 ### Rollback
 
 `scripts/rollback-verygames.sh` (JAR précédent) et redéploiement PlugAdmin du commit précédent ;

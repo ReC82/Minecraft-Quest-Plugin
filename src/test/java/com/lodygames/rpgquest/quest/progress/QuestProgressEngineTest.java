@@ -489,7 +489,9 @@ class QuestProgressEngineTest {
 
         String actionBar = PlainTextComponentSerializer.plainText().serialize(player.nextActionBar());
         assertTrue(actionBar.contains("1/2"), () -> "actionbar attendu avec 1/2, obtenu : " + actionBar);
-        assertTrue(actionBar.contains("Tuer ZOMBIE"), () -> "la description de l'objectif doit apparaître : " + actionBar);
+        // Issue #71 : nom traduit côté client (clé vanilla), jamais l'identifiant « ZOMBIE ».
+        assertTrue(actionBar.contains("Zombie"), () -> "le nom de la cible doit apparaître : " + actionBar);
+        assertFalse(actionBar.contains("ZOMBIE"), () -> "aucun identifiant technique : " + actionBar);
         assertNull(player.nextMessage(), "aucun message de progression d'objectif ne doit apparaître dans le chat");
     }
 

@@ -1730,7 +1730,7 @@ public final class QuestProgressEngine implements PluginService {
      * quoi en faire — c'est le reproche exact du retour utilisateur d'onboarding. Les objectifs de
      * la première étape sont donc envoyés dans le chat, où ils restent lisibles et consultables.</p>
      *
-     * <p>Aucune règle dupliquée : le libellé d'un objectif vient de {@link #describeObjective}, le
+     * <p>Aucune règle dupliquée : le libellé d'un objectif vient de {@link ObjectiveLabels}, le
      * même que l'ActionBar de progression et le journal, et la quantité de
      * {@link QuestObjective#requiredAmount}. Les textes vivent dans {@code messages.yml}.</p>
      */
@@ -1833,7 +1833,7 @@ public final class QuestProgressEngine implements PluginService {
         String title = questEngine.find(ref.questId()).map(q -> q.title().base()).orElse(ref.questId().getKey());
         Component message = messagesService.current().format("quest.objective-progress-named",
                 Placeholder.parsed("quest", title),
-                Placeholder.unparsed("objective", describeObjective(ref.objective())),
+                Placeholder.component("objective", ObjectiveLabels.targetName(ref.objective(), npcNames)),
                 Placeholder.unparsed("current", String.valueOf(current)),
                 Placeholder.unparsed("total", String.valueOf(total)));
         String key = ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex();
@@ -1849,8 +1849,10 @@ public final class QuestProgressEngine implements PluginService {
         if (!player.isOnline()) {
             return;
         }
+        // Issue #71 : même libellé qu'au démarrage (#238) et que le journal — « Araignée 3/5 »,
+        // traduit côté client, jamais « Tuer SPIDER » ni l'identifiant d'un PNJ.
         Component message = messagesService.current().format("quest.objective-progress",
-                Placeholder.unparsed("objective", describeObjective(objective)),
+                Placeholder.component("objective", ObjectiveLabels.targetName(objective, npcNames)),
                 Placeholder.unparsed("current", String.valueOf(current)),
                 Placeholder.unparsed("total", String.valueOf(total)));
         // #69 / #209 : par le canal partagé, la progression n'est plus écrasée par l'XP du même kill.

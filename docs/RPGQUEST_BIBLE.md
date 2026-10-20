@@ -531,6 +531,27 @@ construit à partir des descriptions déjà humanisées de chaque objectif de l'
 technique seulement si aucune description n'est disponible. Les ids internes ne sont jamais
 modifiés — correction d'affichage uniquement.
 
+**Composition bornée (issue #71, retour propriétaire du 20/10)** — la liste concaténée débordait dès
+4 objectifs et montrait encore des identifiants (`Tuer SPIDER`, `Remettre CACTUS à encounter_merchant`).
+La bossbar (`ui.TrackedQuestSummary`) affiche désormais un **résumé** :
+
+| Cas | Bossbar |
+|---|---|
+| 1 objectif comptable | `Titre — Araignée 2/5` |
+| 1 remise à un PNJ nommé | `Titre — Cactus (à remettre à Marchand) 0/12` ; si le nom ne tient pas : `Cactus (à remettre) 0/12` |
+| 1 objectif binaire (parler, lieu) | `Titre — Parler à Garde` (pas de « 0/1 ») |
+| 2 objectifs ou plus | `Titre — 3/5 objectifs` |
+| quête à plusieurs étapes | `Titre — Étape 2/3 · …` |
+
+Règles : noms d'entités/objets traduits par le client (clé vanilla, `ObjectiveLabels`), noms de PNJ
+résolus (16 caractères au plus) ou omis, jamais d'id ; le titre (balises retirées, `%npc_name:…%`
+résolu) est seul raccourci, avec « … » ; largeur estimée ≤ 300 px (police par défaut ; un nom
+traduit est estimé d'après sa clé + 40 %), l'écran minimal Minecraft faisant 320 px de large quelle
+que soit l'échelle GUI. Barre de progression : avancée de l'objectif unique, sinon part d'objectifs
+terminés (jamais une somme d'unités hétérogènes). Les compteurs individuels restent dans l'ActionBar
+à chaque progression (même libellé traduit : « Zombie 1/2 ») et dans le journal. Aucune clé de
+configuration ajoutée : `journal.tracker-enabled` reste le seul réglage.
+
 ### Quêtes quotidiennes et hebdomadaires (issue #15)
 
 Type : système joueur (journal) + contenu administrable (`quests/`) + configuration (`config.yml > periodic-quests`).

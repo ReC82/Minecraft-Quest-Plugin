@@ -142,6 +142,14 @@
 
 **Priorité de sécurité** : pour #320 ne pas confondre correction de saisie/validation des booléens actuels avec le changement de modèle `CLAIM_TIER_n` → `CLAIM_TIER` entier demandé dans #319 ; aucun plan de migration appliqué ni approuvé. Pour #129/#130, ne pas tester sur les dialogues ou PNJ de production.
 
+## Livraisons du 20 octobre — emprises rectangulaires et tri
+
+| Ticket / test | Statut réel | Validation et précautions |
+|---|---|---|
+| [#305](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/305) · **TC-371** | **Livré DEV**, PR #617 merge `e5b1cc0e`, JAR Minecraft + PlugAdmin déployés, CI verte ; **test propriétaire en attente** | **Atelier** : limites indépendantes **X largeur, Z longueur, Y hauteur**, ex. projet 13 × 9 × 7 ; cohérence création/édition/brouillon/prompt IA/examen/aperçu/réparation ; dépassement `size.z=11` pour Z max 9 refusé explicitement via `PROJECT_LIMITS_EXCEEDED`. **Migration additive PlugAdmin** : colonnes `max_depth` NULL pour anciens projets/brouillons, lecture rétrocompatible `Z=X` ; aucune ligne existante ni aucun bâtiment/plan modifié ; aucun appel IA payant. TC-371 : contrôles sans IA avant essai facultatif de pose rectangulaire orientée ; pas de placement sans accord propriétaire. **Limites connues :** pas de plafond de volume total indépendant ; vérification avant publication, pas nouvelle limite dans `building.generate`. |
+| [#136](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/136) | **Mis en file par tri #0 du 20/10 04:02**, pas de livraison attestée par ces rapports | Prochaine tâche : liste déclarative des mondes autorisés pour générer des waypoints. Préserver les comportements Hub/Wild, Claims non autorisé par défaut, aucun waypoint existant supprimé ; nouveaux mondes interdits par défaut. #137 (UI de gestion) seulement après #136. |
+| #0 — tri 20/10 04:02 | **Tri documentaire, aucun code ni déploiement** | Selon Claude, 193 tickets ouverts lors du tri ; #305 et #136 sélectionnés. #543–#553, #561–#563 et #565–#570 restent sous autorisation propriétaire ; tickets déjà livrés mais ouverts ne doivent pas être redéveloppés sans preuve d'écart. |
+
 ## Historique des tests propriétaire réellement effectués
 
 | Date | Ticket | Résultat observé | Portée de la validation |

@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
@@ -1101,6 +1102,143 @@ class QuestProgressEngineTest {
         assertEquals(CompleteOutcome.INVENTORY_FULL, future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
         assertTrue(engine.activeStepView(player.getUniqueId(), ITEM_QUEST).isEmpty(), "aucune progression fictive en mémoire");
         assertTrue(progressRepository.find(player.getUniqueId(), ITEM_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
+
+    // ---- Issue #13, TC-306 : étape déjà pleine rechargée, plus jamais close ------------------
+
+    private static final NamespacedKey SPIDER_QUEST = new NamespacedKey("rpgquest", "tc306_spiders");
+
+    /** Copie de quests/encounter_bandit_spiders.yml (chasse puis retour au PNJ récurrent). */
+    private void writeSpiderQuest() throws Exception {
+        Files.writeString(questsDir.resolve("tc306_spiders.yml"), """
+                id: rpgquest:tc306_spiders
+                title: "Les toiles du sous-bois"
+                description: "Six araignées puis retour au Brigand."
+                category: encounter
+                giver: encounter_bandit
+                repeatable: true
+                cooldown: 20h
+                steps:
+                  - id: clear_spiders
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: SPIDER
+                        amount: 6
+                  - id: report_to_bandit
+                    objectives:
+                      - type: TALK_TO_NPC
+                        npc: encounter_bandit
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 25
+                  - type: ITEM
+                    material: ARROW
+                    amount: 16
+                """);
+        engine.reloadQuestDefinitions();
+    }
+
+    /**
+     * État réel de LoDyMcFly sur DEV (20/10) : quête reprise avant le correctif de startQuest, donc
+     * compteurs de l'exécution précédente restés en base — chasse 6/6 ET retour 1/1 — avec l'état
+     * ACTIVE à l'étape de chasse. Rechargée, l'étape restait pleine sans jamais se clore.
+     */
+    private PlayerMock playerStuckAtFullSpiderStep() throws Exception {
+        writeSpiderQuest();
+        PlayerMock player = addPlayer();
+        UUID id = player.getUniqueId();
+        progressRepository.upsertState(id, SPIDER_QUEST, QuestState.ACTIVE, "clear_spiders").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        progressRepository.setObjectiveProgress(id, SPIDER_QUEST, "clear_spiders", 0, 6).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        progressRepository.setObjectiveProgress(id, SPIDER_QUEST, "report_to_bandit", 0, 1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.unloadForPlayer(id);
+        engine.loadForPlayer(id).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        return player;
+    }
+
+    private int arrows(PlayerMock player) {
+        return player.getInventory().all(Material.ARROW).values().stream().mapToInt(ItemStack::getAmount).sum();
+    }
+
+    @Test
+    void aReloadedFullHuntStepAdvancesToTheReturnStepWithoutPayingAnything() throws Exception {
+        PlayerMock player = playerStuckAtFullSpiderStep();
+        UUID id = player.getUniqueId();
+
+        var record = progressRepository.find(id, SPIDER_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(QuestState.ACTIVE, record.state());
+        assertEquals("report_to_bandit", record.currentStepId(), "la chasse 6/6 doit ouvrir l'étape de retour");
+        assertTrue(progressRepository.findObjectiveProgress(id, SPIDER_QUEST, "report_to_bandit")
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(),
+                "le « 1/1 » résiduel de l'exécution précédente ne doit pas rendre la quête tout seul");
+        assertEquals(0, arrows(player), "passer d'étape n'accorde rien : la remise attend le PNJ");
+    }
+
+    @Test
+    void talkingToTheEncounterNpcThenCompletesTheQuestAndPaysOnce() throws Exception {
+        PlayerMock player = playerStuckAtFullSpiderStep();
+        int expBefore = player.getTotalExperience();
+
+        engine.handleTalkToNpc(player, "encounter_bandit");
+        engine.handleTalkToNpc(player, "encounter_bandit"); // double clic
+        server.getScheduler().performTicks(2);
+
+        assertEquals(QuestState.COMPLETED, activeState(player, SPIDER_QUEST));
+        assertEquals(16, arrows(player), "16 flèches, une seule fois");
+        assertTrue(player.getTotalExperience() > expBefore);
+
+        // Reconnexion / redémarrage : rien n'est rejoué.
+        engine.unloadForPlayer(player.getUniqueId());
+        engine.loadForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        engine.handleTalkToNpc(player, "encounter_bandit");
+        assertEquals(QuestState.COMPLETED, activeState(player, SPIDER_QUEST));
+        assertEquals(16, arrows(player));
+        assertEquals(QuestProgressEngine.Availability.Status.ON_COOLDOWN,
+                engine.availability(player.getUniqueId(), SPIDER_QUEST, false)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).status(),
+                "le délai de 20 h part de cette complétion");
+    }
+
+    @Test
+    void aReloadedFullLastStepIsNeverPaidAtLoginButClosesOnThePlayersNextAction() throws Exception {
+        writeItemRewardQuest();
+        PlayerMock player = addPlayer();
+        UUID id = player.getUniqueId();
+        progressRepository.upsertState(id, ITEM_QUEST, QuestState.ACTIVE, "kill_step").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        progressRepository.setObjectiveProgress(id, ITEM_QUEST, "kill_step", 0, 1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.unloadForPlayer(id);
+        engine.loadForPlayer(id).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+
+        assertEquals(QuestState.ACTIVE, activeState(player, ITEM_QUEST), "aucune remise sans action du joueur");
+        assertFalse(player.getInventory().contains(Material.IRON_INGOT));
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        assertEquals(QuestState.COMPLETED, activeState(player, ITEM_QUEST));
+        assertEquals(3, player.getInventory().all(Material.IRON_INGOT).values().stream().mapToInt(ItemStack::getAmount).sum(),
+                "remise unique malgré deux actions");
+    }
+
+    @Test
+    void advancingAStepClearsTheStaleCountersOfTheNextStep() throws Exception {
+        writeSpiderQuest();
+        PlayerMock player = addPlayer();
+        UUID id = player.getUniqueId();
+        engine.accept(player, SPIDER_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        progressRepository.setObjectiveProgress(id, SPIDER_QUEST, "report_to_bandit", 0, 1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        for (int i = 0; i < 6; i++) {
+            engine.handleKillEntity(player, EntityType.SPIDER);
+        }
+        engine.unloadForPlayer(id);
+        engine.loadForPlayer(id).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+
+        assertEquals(QuestState.ACTIVE, activeState(player, SPIDER_QUEST), "le retour au PNJ reste à faire");
+        assertEquals(0, arrows(player));
     }
 
     private PlayerMock addPlayer() throws Exception {

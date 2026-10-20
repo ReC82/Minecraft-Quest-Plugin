@@ -380,6 +380,7 @@ public final class QuestProgressEngine implements PluginService {
                         Player online = plugin.getServer().getPlayer(playerId);
                         if (online != null) {
                             runOnMainThread(() -> {
+                                advanceSatisfiedSteps(online);
                                 refreshCumulativeDiscoveryObjectives(online);
                                 // Issue #318 : une remise restée en attente de place (avant une
                                 // reconnexion ou un redémarrage) est retentée dès le retour.
@@ -391,6 +392,30 @@ public final class QuestProgressEngine implements PluginService {
             logger.error("Impossible de charger la progression de quêtes pour {}", playerId, error);
             return null;
         });
+    }
+
+    /**
+     * #13 (TC-306) : une quête rechargée dont l'étape courante est déjà entièrement remplie restait
+     * bloquée — plus aucun événement ne la faisait progresser (compteur plein) et rien ne testait la
+     * fin d'étape. Seules les étapes <strong>non finales</strong> sont avancées ici : passer à
+     * l'étape suivante n'accorde rien, alors qu'une remise attend toujours une action du joueur
+     * (voir {@link #handleCandidates}). Lit la carte courante sur le thread principal.
+     */
+    void advanceSatisfiedSteps(Player player) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(player.getUniqueId());
+        if (playerActive == null || !player.isOnline()) {
+            return;
+        }
+        for (ActiveQuestProgress progress : List.copyOf(playerActive.values())) {
+            if (progress.state() != QuestState.ACTIVE) {
+                continue;
+            }
+            questEngine.find(progress.questId()).ifPresent(quest -> {
+                if (progress.currentStepIndex() + 1 < quest.steps().size()) {
+                    checkStepCompletion(player, quest, progress);
+                }
+            });
+        }
     }
 
     public void unloadForPlayer(UUID playerId) {
@@ -1354,6 +1379,7 @@ public final class QuestProgressEngine implements PluginService {
         }
 
         List<ObjectiveRef> progressing = new ArrayList<>();
+        List<ObjectiveRef> satisfied = new ArrayList<>();
         for (ObjectiveRef ref : candidates) {
             ActiveQuestProgress progress = playerActive.get(ref.questId());
             if (progress == null || progress.state() != QuestState.ACTIVE) {
@@ -1363,6 +1389,7 @@ public final class QuestProgressEngine implements PluginService {
                 continue;
             }
             if (progress.counter(ref.objectiveIndex()) >= requiredAmount(ref.objective())) {
+                satisfied.add(ref);
                 continue;
             }
             progressing.add(ref);
@@ -1375,6 +1402,16 @@ public final class QuestProgressEngine implements PluginService {
             int required = requiredAmount(ref.objective());
             int updated = Math.min(required, progress.counter(ref.objectiveIndex()) + Math.max(1, step));
             applyObjectiveCounter(player, ref, progress, updated, required, named);
+        }
+        // #13 (TC-306) : l'objectif visé était déjà plein, mais son étape n'a jamais été close
+        // (compteur rechargé d'une exécution précédente). L'action du joueur termine l'étape par le
+        // chemin normal ; remise unique garantie par la bascule mémoire de turnIn.
+        for (ObjectiveRef ref : satisfied) {
+            ActiveQuestProgress progress = playerActive.get(ref.questId());
+            if (progress != null && progress.state() == QuestState.ACTIVE
+                    && progress.currentStepIndex() == ref.stepIndex()) {
+                questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
+            }
         }
         notifyChanged(playerId);
     }
@@ -1426,7 +1463,7 @@ public final class QuestProgressEngine implements PluginService {
             // Issue #185 : la nouvelle étape peut porter un objectif cumulatif déjà satisfait.
             runOnMainThread(() -> refreshCumulativeDiscoveryObjectives(player));
             String nextStepId = quest.steps().get(nextIndex).id();
-            repository.upsertState(playerId, quest.id(), QuestState.ACTIVE, nextStepId).exceptionally(error -> {
+            repository.advanceToStep(playerId, quest.id(), nextStepId).exceptionally(error -> {
                 logger.error("Impossible de persister l'avancement d'étape pour {} ({})", quest.id(), playerId, error);
                 return null;
             });

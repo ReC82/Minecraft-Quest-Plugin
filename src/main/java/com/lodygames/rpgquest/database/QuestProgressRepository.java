@@ -42,6 +42,8 @@ public final class QuestProgressRepository {
             "DELETE FROM quest_progress WHERE player_uuid = ? AND quest_id = ?";
     private static final String DELETE_OBJECTIVE_PROGRESS =
             "DELETE FROM quest_objective_progress WHERE player_uuid = ? AND quest_id = ?";
+    private static final String DELETE_STEP_OBJECTIVE_PROGRESS =
+            "DELETE FROM quest_objective_progress WHERE player_uuid = ? AND quest_id = ? AND step_id = ?";
     private static final String DELETE_ALL_STATE =
             "DELETE FROM quest_progress WHERE player_uuid = ?";
     private static final String DELETE_ALL_OBJECTIVE_PROGRESS =
@@ -113,6 +115,35 @@ public final class QuestProgressRepository {
                     statement.executeUpdate();
                 }
                 writeState(connection, playerUuid, questId, QuestState.ACTIVE, firstStepId);
+                connection.commit();
+                return null;
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(previousAutoCommit);
+            }
+        });
+    }
+
+    /**
+     * Passe une quête active à l'étape {@code nextStepId} et efface, dans <strong>la même</strong>
+     * transaction, tout compteur déjà enregistré pour cette étape. Une étape commence toujours à
+     * zéro : un compteur laissé par une exécution précédente d'une quête répétable (avant le
+     * correctif de {@link #startQuest}) ne peut donc plus la déclarer remplie d'avance (#13, TC-306).
+     */
+    public CompletableFuture<Void> advanceToStep(UUID playerUuid, NamespacedKey questId, String nextStepId) {
+        return database.execute(connection -> {
+            boolean previousAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement statement = connection.prepareStatement(DELETE_STEP_OBJECTIVE_PROGRESS)) {
+                    statement.setString(1, playerUuid.toString());
+                    statement.setString(2, questId.toString());
+                    statement.setString(3, nextStepId);
+                    statement.executeUpdate();
+                }
+                writeState(connection, playerUuid, questId, QuestState.ACTIVE, nextStepId);
                 connection.commit();
                 return null;
             } catch (SQLException | RuntimeException e) {

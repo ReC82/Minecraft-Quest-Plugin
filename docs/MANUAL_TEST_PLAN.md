@@ -5846,6 +5846,20 @@ positions). Un compte joueur sans mode admin. **Durée** : 30 minutes.
 10. `/rpgadmin quest reset <joueur> rpgquest:encounter_bandit_spiders` → l'offre réapparaît tout de
     suite.
 
+**Revalidation ciblée après le correctif du 20/10/2026 (échec constaté à l'étape 4)** — sans
+réinitialiser la quête de LoDyMcFly (6/6 conservé) :
+
+R1. Se connecter après le déploiement : le chat annonce l'étape suivante (« Parler à Brigand des
+    bois ») ; le journal montre l'étape de retour et non plus « Spider 6/6 ».
+R2. Clic droit sur un Brigand des bois (n'importe lequel) → la quête se termine **au clic** :
+    « Quête terminée », 25 XP + 16 flèches. Le dialogue qui s'ouvre propose « Encore du travail ? »
+    (plus « Où en est ma tâche ? »).
+R3. Recliquer, double-cliquer, se reconnecter : aucune seconde récompense ; le journal affiche
+    « À refaire dans … » (recharge 20 h).
+
+Cause : quête reprise le 15/10 avant le correctif `f322fd9e` (17/10) — les compteurs de la première
+exécution étaient restés en base et l'étape de chasse rechargée pleine ne se fermait jamais.
+
 
 ### TC-307 — PNJ récurrents, étape 5 : journal des quêtes de rencontre (issue #13, PENDING MANUAL VALIDATION)
 

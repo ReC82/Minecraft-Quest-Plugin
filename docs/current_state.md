@@ -173,7 +173,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > quête `cooldown:` (anti-farm, 20 h ici, refus `ON_COOLDOWN` avec temps restant) ; PlugAdmin
 > `/quests` filtre « Secondaires / Rencontres » et champ délai dans l'éditeur. **Étape 5** : le
 > journal `/quests` étiquette les quêtes de rencontre et affiche le temps restant avant de refaire
-> une quête renouvelable ; le content pack exporte `cooldown`. Pas fait : registre des PNJ croisés
+> une quête renouvelable ; le content pack exporte `cooldown`. **Correctif TC-306 (20/10)** : une
+> étape non finale rechargée déjà pleine passe à la suivante au chargement, chaque étape repart à
+> zéro (compteurs résiduels effacés au passage), une action sur une étape déjà pleine la clôt
+> normalement ; TALK_TO_NPC progresse avant l'ouverture du dialogue. Pas fait : registre des PNJ croisés
 > par joueur. Référence : `docs/ENCOUNTERS.md`. Validation : PENDING (TC-303 jeu,
 > TC-304/TC-305 PlugAdmin, TC-306 quêtes secondaires, TC-307 journal).
 >

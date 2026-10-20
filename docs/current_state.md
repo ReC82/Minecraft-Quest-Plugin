@@ -67,8 +67,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > démonstration), quête non finie expirée sans récompense, compteurs remis à zéro à chaque
 > (re)démarrage d'une quête (`QuestProgressRepository#startQuest`, profite aussi aux quêtes
 > répétables #13). Journal : onglets « Quêtes quotidiennes » / « Quêtes hebdomadaires » (barre du
-> haut réorganisée). 4 modèles de démonstration seedés. **Pas encore** : onglets PlugAdmin
-> (lot 2). Validation en jeu : PENDING (TC-350).
+> haut réorganisée). 4 modèles de démonstration seedés. Validation en jeu du lot 1 : faite par le
+> propriétaire le 20/10 (TC-350, progression et récompense), suivi à améliorer → lot 2.
+> **Lot 2 (20/10/2026)** — suivi joueur : `PeriodicProgress` compte sur les attributions réelles
+> de la période ; onglet = titre « Quotidiennes : 1/2 terminée », résumé complet en slot 5,
+> rangées « À faire » (vitre jaune) / « Terminées » (vitre verte, quêtes brillantes)
+> (`PeriodicJournalEntries#layout`). PlugAdmin : onglets Quotidiennes / Hebdomadaires de `/quests`
+> (`QuestPeriodicView`, réglages en lecture seule), `/quests/new?period=`, `quest.list` expose
+> `period` + bloc `periodic`. Pas de migration. Validation en jeu : PENDING (TC-377).
 
 > **Accueil du Guide allégé, fenêtres de dialogue plus larges, détails du journal paginés (#475,
 > 2e retour du 17/10/2026)** — `guide.yml` : l'accueil ne montre plus matériaux, compteurs ni

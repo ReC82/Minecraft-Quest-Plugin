@@ -69,7 +69,15 @@ public interface AgentActions {
     record QuestSummary(String id, String title, String category, boolean repeatable,
                         List<String> prerequisites, List<QuestStepSummary> steps, List<String> rewards,
                         List<RewardSummary> rewardDetails, String giverId, String giverName,
-                        long cooldownSeconds) {
+                        long cooldownSeconds, String period) {
+
+        /** Quête non périodique (constructeur d'avant l'issue #15 lot 2). */
+        QuestSummary(String id, String title, String category, boolean repeatable, List<String> prerequisites,
+                     List<QuestStepSummary> steps, List<String> rewards, List<RewardSummary> rewardDetails,
+                     String giverId, String giverName, long cooldownSeconds) {
+            this(id, title, category, repeatable, prerequisites, steps, rewards, rewardDetails, giverId, giverName,
+                    cooldownSeconds, null);
+        }
 
         /** Sans délai de ré-acceptation (constructeur historique). */
         QuestSummary(String id, String title, String category, boolean repeatable, List<String> prerequisites,
@@ -140,6 +148,14 @@ public interface AgentActions {
     }
 
     List<QuestSummary> questDefinitions();
+
+    /**
+     * Issue #15 lot 2 : réglages {@code periodic-quests} en vigueur (lecture seule, pour que
+     * PlugAdmin les affiche). Vide si la façade n'en dispose pas.
+     */
+    default java.util.Optional<com.lodygames.rpgquest.config.PeriodicQuestConfig> periodicQuestSettings() {
+        return java.util.Optional.empty();
+    }
 
     /** État d'une quête pour un joueur : {@code NOT_STARTED} / {@code ACTIVE} / {@code COMPLETED} / … */
     record QuestPlayerState(String questId, String title, String state,

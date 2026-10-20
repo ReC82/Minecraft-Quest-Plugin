@@ -16,6 +16,7 @@ import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestPeriod;
+import com.lodygames.rpgquest.quest.periodic.PeriodicProgress;
 import com.lodygames.rpgquest.quest.periodic.PeriodicQuestService;
 import com.lodygames.rpgquest.quest.model.QuestReward;
 import com.lodygames.rpgquest.quest.model.QuestState;
@@ -28,6 +29,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -397,10 +399,8 @@ public final class QuestJournalService implements QuestJournalUi {
         CompletableFuture<Map<NamespacedKey, QuestState>> statesFuture = questProgressEngine.allStates(playerId);
         CompletableFuture<Map<NamespacedKey, Duration>> cooldownsFuture = readCooldowns(playerId);
         CompletableFuture<Optional<Long>> balanceFuture = readBalance(playerId);
-        CompletableFuture<Optional<PeriodicQuestService.PeriodView>> periodFuture = shownTab.period() == null
-                ? CompletableFuture.completedFuture(Optional.empty())
-                : periodicQuests.view(playerId, shownTab.period()).thenApply(Optional::of);
-        CompletableFuture.allOf(statesFuture, cooldownsFuture, balanceFuture, periodFuture).thenRun(() -> runOnMainThread(() -> {
+        CompletableFuture<Map<QuestPeriod, PeriodicQuestService.PeriodView>> periodsFuture = readPeriods(playerId);
+        CompletableFuture.allOf(statesFuture, cooldownsFuture, balanceFuture, periodsFuture).thenRun(() -> runOnMainThread(() -> {
             if (!isLatestRender(playerId, ticket)) {
                 return;
             }
@@ -408,27 +408,46 @@ public final class QuestJournalService implements QuestJournalUi {
             Map<NamespacedKey, QuestState> states = statesFuture.join();
             Map<NamespacedKey, Duration> cooldowns = cooldownsFuture.join();
             Optional<Long> balance = balanceFuture.join();
-            Optional<PeriodicQuestService.PeriodView> period = periodFuture.join();
-            List<NamespacedKey> matching = period.map(PeriodicJournalEntries::questIds)
-                    .orElseGet(() -> journalEntries(playerId, tab, states));
+            Map<QuestPeriod, PeriodicProgress> progress = new EnumMap<>(QuestPeriod.class);
+            periodsFuture.join().forEach((p, view) ->
+                    progress.put(p, PeriodicProgress.of(p, view.assignments(), states)));
+            Optional<PeriodicQuestService.PeriodView> period = Optional.ofNullable(tab.period())
+                    .map(periodsFuture.join()::get);
+            Optional<PeriodicProgress> shownProgress = period.map(view -> progress.get(view.period()));
 
-            int pageCount = JournalPagination.pageCount(matching.size());
+            List<NamespacedKey> matching = shownProgress.map(PeriodicJournalEntries::layout)
+                    .orElseGet(() -> journalEntries(playerId, tab, states));
+            int pageCount = shownProgress.isPresent() ? 1 : JournalPagination.pageCount(matching.size());
             int page = JournalPagination.clampPage(requestedPage, pageCount);
-            List<NamespacedKey> pageIds = JournalPagination.pageOf(matching, page);
+            List<NamespacedKey> pageIds = shownProgress.isPresent() ? matching : JournalPagination.pageOf(matching, page);
 
             JournalInventoryHolder holder = new JournalInventoryHolder(JournalKind.LIST);
-            Inventory inventory = Bukkit.createInventory(holder, LIST_SIZE, MM.deserialize(TITLE_LIST));
+            // Retour TC-350 : sur un onglet périodique, le titre porte l'avancement, lisible sans survol.
+            Component title = shownProgress.map(p -> (Component) Component.text(p.shortSummary()))
+                    .orElseGet(() -> MM.deserialize(TITLE_LIST));
+            Inventory inventory = Bukkit.createInventory(holder, LIST_SIZE, title);
             holder.bind(inventory);
 
-            renderChrome(inventory, tab, page, pageCount, balance);
+            renderChrome(inventory, tab, page, pageCount, balance, progress);
+            if (shownProgress.isPresent() && !pageIds.isEmpty()) {
+                inventory.setItem(PAGE_INDICATOR_SLOT,
+                        PeriodicJournalEntries.summaryIcon(shownProgress.get(), period.get(), Instant.now()));
+                inventory.setItem(CONTENT_SLOTS[0], PeriodicJournalEntries.toDoHeader(shownProgress.get()));
+                inventory.setItem(CONTENT_SLOTS[PeriodicJournalEntries.completedHeaderIndex(shownProgress.get())],
+                        PeriodicJournalEntries.completedHeader(shownProgress.get()));
+            }
             for (int i = 0; i < pageIds.size(); i++) {
                 NamespacedKey questId = pageIds.get(i);
+                if (questId == null) {
+                    continue;
+                }
                 Optional<QuestDefinition> quest = questEngine.find(questId);
                 if (quest.isEmpty()) {
                     inventory.setItem(CONTENT_SLOTS[i], unavailableIcon());
                     continue;
                 }
-                QuestState state = states.getOrDefault(questId, QuestState.NOT_STARTED);
+                QuestState state = shownProgress.map(p -> p.stateOf(questId))
+                        .orElseGet(() -> states.getOrDefault(questId, QuestState.NOT_STARTED));
                 boolean tracked = questId.equals(trackedByPlayer.get(playerId));
                 ItemStack icon = buildIcon(playerId, quest.get(), state, cooldownOf(cooldowns, questId), tracked);
                 if (period.isPresent()) {
@@ -451,6 +470,20 @@ public final class QuestJournalService implements QuestJournalUi {
             logger.error("Impossible de construire le journal de quêtes pour {}", playerId, error);
             return null;
         });
+    }
+
+    /**
+     * Issue #15 : les attributions de la période en cours, quotidienne et hebdomadaire — l'onglet
+     * affiché s'en sert pour ses sections, les onglets du haut pour leur résumé. Vide si la
+     * fonction est désactivée. Une simple lecture : n'attribue ni ne démarre rien.
+     */
+    private CompletableFuture<Map<QuestPeriod, PeriodicQuestService.PeriodView>> readPeriods(UUID playerId) {
+        if (!periodicEnabled()) {
+            return CompletableFuture.completedFuture(Map.of());
+        }
+        CompletableFuture<PeriodicQuestService.PeriodView> daily = periodicQuests.view(playerId, QuestPeriod.DAILY);
+        CompletableFuture<PeriodicQuestService.PeriodView> weekly = periodicQuests.view(playerId, QuestPeriod.WEEKLY);
+        return daily.thenCombine(weekly, (d, w) -> Map.of(QuestPeriod.DAILY, d, QuestPeriod.WEEKLY, w));
     }
 
     /**
@@ -515,13 +548,15 @@ public final class QuestJournalService implements QuestJournalUi {
         };
     }
 
-    private void renderChrome(Inventory inventory, JournalTab tab, int page, int pageCount, Optional<Long> balance) {
+    private void renderChrome(Inventory inventory, JournalTab tab, int page, int pageCount, Optional<Long> balance,
+                              Map<QuestPeriod, PeriodicProgress> progress) {
         inventory.setItem(TAB_IN_PROGRESS_SLOT, tabIcon("Quêtes en cours", Material.BOOK, tab == JournalTab.IN_PROGRESS));
         inventory.setItem(TAB_COMPLETED_SLOT, tabIcon("Quêtes terminées", Material.ENCHANTED_BOOK, tab == JournalTab.COMPLETED));
         if (periodicEnabled()) {
-            inventory.setItem(TAB_DAILY_SLOT, tabIcon(QuestPeriod.DAILY.label(), Material.CLOCK, tab == JournalTab.DAILY));
-            inventory.setItem(TAB_WEEKLY_SLOT, tabIcon(QuestPeriod.WEEKLY.label(), Material.RECOVERY_COMPASS,
-                    tab == JournalTab.WEEKLY));
+            inventory.setItem(TAB_DAILY_SLOT, periodicTabIcon(QuestPeriod.DAILY, Material.CLOCK, tab == JournalTab.DAILY,
+                    progress.get(QuestPeriod.DAILY)));
+            inventory.setItem(TAB_WEEKLY_SLOT, periodicTabIcon(QuestPeriod.WEEKLY, Material.RECOVERY_COMPASS,
+                    tab == JournalTab.WEEKLY, progress.get(QuestPeriod.WEEKLY)));
         }
         if (page > 0) {
             inventory.setItem(PREV_PAGE_SLOT, navIcon(Material.ARROW, "« Page précédente"));
@@ -602,6 +637,18 @@ public final class QuestJournalService implements QuestJournalUi {
         ItemMeta meta = stack.getItemMeta();
         meta.displayName(MM.deserialize("<yellow><label></yellow>", Placeholder.unparsed("label", label)));
         stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /** Onglet périodique : son avancement sous le libellé (« Quotidiennes : 1/2 terminée — 1 restante »). */
+    private ItemStack periodicTabIcon(QuestPeriod period, Material material, boolean active, PeriodicProgress progress) {
+        ItemStack stack = tabIcon(period.label(), material, active);
+        if (progress != null && progress.total() > 0) {
+            ItemMeta meta = stack.getItemMeta();
+            meta.lore(List.of(MM.deserialize("<gray><summary></gray>",
+                    Placeholder.unparsed("summary", progress.summary()))));
+            stack.setItemMeta(meta);
+        }
         return stack;
     }
 
@@ -716,6 +763,9 @@ public final class QuestJournalService implements QuestJournalUi {
             return;
         }
         NamespacedKey questId = session.pageQuests().get(contentIndex);
+        if (questId == null) {
+            return; // en-tête de section ou case vide d'un onglet périodique
+        }
         if (rightClick) {
             toggleTracking(player, questId);
             showList(player, session.tab(), session.page());

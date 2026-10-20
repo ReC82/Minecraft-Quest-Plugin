@@ -4819,7 +4819,7 @@ public final class PanelApp {
             }
             Map<String, String> query = Http.query(exchange);
             boolean saved = "1".equals(query.get("saved"));
-            result = "quests".equals(kind) ? contentEditor.questPage(ref, slug, saved, query.get("giver"))
+            result = "quests".equals(kind) ? contentEditor.questPage(ref, slug, saved, query.get("giver"), query.get("period"))
                     : contentEditor.storyPage(ref, slug, saved);
         }
 

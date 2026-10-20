@@ -81,6 +81,15 @@ public final class ContentEditorPages {
      * PNJ) préremplit le champ « PNJ donneur » d'une quête neuve. Ignoré en édition.
      */
     public Result questPage(RefData ref, String slug, boolean saved, String giverPrefill) {
+        return questPage(ref, slug, saved, giverPrefill, null);
+    }
+
+    /**
+     * Idem ; {@code periodPrefill} ({@code daily} / {@code weekly}, issue #15 lot 2 : boutons
+     * « Créer une quête quotidienne / hebdomadaire » des onglets de la page Quêtes) prérègle une
+     * quête neuve en modèle périodique, forcément répétable. Ignoré en édition.
+     */
+    public Result questPage(RefData ref, String slug, boolean saved, String giverPrefill, String periodPrefill) {
         QuestDraft draft;
         String expectedSha = "";
         List<String> sourceProblems = List.of();
@@ -89,6 +98,12 @@ public final class ContentEditorPages {
             String giver = giverPrefill == null ? "" : giverPrefill.trim().toLowerCase(Locale.ROOT);
             if (NPC_REF.matcher(giver).matches()) {
                 draft.giver = giver;
+            }
+            String period = QuestPeriodicView.normalizeTab(periodPrefill);
+            if (!period.isEmpty()) {
+                draft.period = period;
+                draft.category = period;
+                draft.repeatable = true;
             }
         } else {
             Optional<ContentWorkspace.ContentFile> cf = workspace.read("quests", slug);

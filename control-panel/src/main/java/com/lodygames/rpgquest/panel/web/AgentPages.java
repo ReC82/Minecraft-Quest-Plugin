@@ -133,6 +133,58 @@ public final class AgentPages {
         return out;
     }
 
+    /**
+     * Issue #15 lot 2 : un serveur antérieur au lot 2 ne dit pas qu'une quête est périodique dans
+     * {@code quest.list} (ni ses réglages {@code periodic}) ; la période vient alors de la source
+     * éditable. Un serveur à jour fait foi : son silence veut dire « quête ordinaire ».
+     */
+    private List<MergedRow> withSourcePeriods(List<MergedRow> rows, boolean runtimeReportsPeriods) {
+        if (runtimeReportsPeriods) {
+            return rows;
+        }
+        Map<String, String> sourcePeriods = new LinkedHashMap<>();
+        for (SourceCatalog.QuestSource qs : sourceCatalog.quests()) {
+            if (qs.draft() != null && qs.draft().period != null && !qs.draft().period.isBlank()) {
+                sourcePeriods.putIfAbsent(qs.plainId(), qs.draft().period.trim().toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        List<MergedRow> out = new ArrayList<>();
+        for (MergedRow row : rows) {
+            String period = sourcePeriods.get(QuestYaml.plainId(str(row.data().get("id"))));
+            if (period == null || row.data().containsKey("period")) {
+                out.add(row);
+            } else {
+                Map<String, Object> data = new LinkedHashMap<>(row.data());
+                data.put("period", period);
+                out.add(new MergedRow(data, row.state()));
+            }
+        }
+        return out;
+    }
+
+    /** Barre d'onglets #15 et, sur un onglet périodique, ses réglages et l'état de ses modèles. */
+    private static String periodicTabs(String agentId, String player, String tab, List<MergedRow> quests,
+                                       Map<String, Object> settings, boolean canEdit) {
+        List<QuestPeriodicView.Model> daily = new ArrayList<>();
+        List<QuestPeriodicView.Model> weekly = new ArrayList<>();
+        for (MergedRow row : quests) {
+            String period = QuestPeriodicView.periodOf(row.data());
+            QuestPeriodicView.Model model = new QuestPeriodicView.Model(str(row.data().get("id")),
+                    row.state() != CatalogState.SOURCE_ONLY);
+            if (QuestPeriodicView.DAILY.equals(period)) {
+                daily.add(model);
+            } else if (QuestPeriodicView.WEEKLY.equals(period)) {
+                weekly.add(model);
+            }
+        }
+        String html = QuestPeriodicView.tabs(agentId, player, tab, daily.size(), weekly.size());
+        if (!tab.isEmpty()) {
+            html += QuestPeriodicView.overview(tab, settings,
+                    QuestPeriodicView.DAILY.equals(tab) ? daily : weekly, canEdit);
+        }
+        return html;
+    }
+
     /** Idem {@link #mergeQuestRows} pour {@code story.list} + {@code stories/*.yml}. */
     private List<MergedRow> mergeStoryRows(List<Object> runtimeStories) {
         Map<String, Map<String, Object>> runtimeById = new LinkedHashMap<>();
@@ -179,6 +231,9 @@ public final class AgentPages {
         }
         m.put("giverId", d.giver == null ? "" : d.giver.trim());
         m.put("giverName", "");
+        if (d.period != null && !d.period.isBlank()) {
+            m.put("period", d.period.trim().toLowerCase(java.util.Locale.ROOT)); // issue #15
+        }
         List<Object> prereq = new ArrayList<>();
         for (String p : d.prerequisites) {
             if (p != null && !p.isBlank()) {
@@ -1606,8 +1661,14 @@ public final class AgentPages {
         String agentId = agent.get().id();
         String player = cleanPlayer(q.get("player"));
         sb.append(agentPicker(agentId, "/quests", player));
+        // Issue #15 lot 2 : onglets Toutes / Quotidiennes / Hebdomadaires, insérés ici une fois le
+        // catalogue fusionné (leurs compteurs en dépendent).
+        int periodicTabsAt = sb.length();
+        String periodTab = QuestPeriodicView.normalizeTab(q.get("tab"));
 
-        sb.append("<h2>Catalogue</h2>");
+        sb.append("<h2>").append(periodTab.isEmpty() ? "Catalogue"
+                : "Modèles " + (QuestPeriodicView.DAILY.equals(periodTab) ? "quotidiens" : "hebdomadaires"))
+                .append("</h2>");
         String questBar = compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-primary", "/quests");
         if (perms.can(session.effective(), Permission.NPC_READ)) {
             questBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/quests");
@@ -1641,7 +1702,13 @@ public final class AgentPages {
                     + "récupérer la liste complète depuis le serveur."));
         }
         List<Object> runtimeQuests = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
-        List<MergedRow> merged = mergeQuestRows(runtimeQuests);
+        Map<String, Object> periodicSettings = latestDetails(agentId, "quest.list")
+                .map(d -> d.get("periodic")).filter(Map.class::isInstance).map(AgentPages::asMap).orElse(null);
+        List<MergedRow> allQuests = withSourcePeriods(mergeQuestRows(runtimeQuests), periodicSettings != null);
+        sb.insert(periodicTabsAt, periodicTabs(agentId, player, periodTab, allQuests, periodicSettings,
+                canEditQuests));
+        List<MergedRow> merged = periodTab.isEmpty() ? allQuests : allQuests.stream()
+                .filter(m -> periodTab.equals(QuestPeriodicView.periodOf(m.data()))).toList();
         // Issue #241 : la quête « ouverte » (fiche dépliée, actions qui la ciblent) survit à la
         // sélection d'un joueur et aux actions, par le paramètre « focus ».
         java.util.Set<String> runtimeKeys = new java.util.LinkedHashSet<>();
@@ -1652,7 +1719,10 @@ public final class AgentPages {
         List<String> questIdList = rowData.stream().map(o -> str(asMap(o).get("id"))).toList();
         java.util.Set<String> knownQuestKeys = idKeySet(questIdList);
         java.util.Set<String> knownNpcKeys = npcKeySet(agentId);
-        if (merged.isEmpty()) {
+        if (merged.isEmpty() && !periodTab.isEmpty()) {
+            sb.append(Ui.empty("Aucun modèle de quête " + QuestPeriodicView.label(periodTab).toLowerCase(java.util.Locale.ROOT)
+                    + " pour le moment."));
+        } else if (merged.isEmpty()) {
             sb.append(Ui.empty("Aucun catalogue chargé — aucune quête dans la source éditable ni dans le dernier "
                     + "relevé du serveur. Créer une quête, ou cliquer sur « Rafraîchir le catalogue »."));
         } else {
@@ -1667,11 +1737,13 @@ public final class AgentPages {
                             + filterBtn("warn", "À vérifier", false)));
             // Issue #13 : second groupe de puces, combiné en ET avec le premier — les quêtes
             // secondaires renouvelables des PNJ récurrents (« Rencontres ») d'un côté, le reste de l'autre.
-            sb.append("<div class=\"npc-filters\" data-filter-chips=\"quests\" aria-label=\"Type de quête\">")
-                    .append(filterBtn("", "Tous types", true))
-                    .append(filterBtn("main", "Principales", false))
-                    .append(filterBtn("side", "Secondaires / Rencontres", false))
-                    .append("</div>");
+            if (periodTab.isEmpty()) { // sur un onglet #15, tous les modèles sont du même type
+                sb.append("<div class=\"npc-filters\" data-filter-chips=\"quests\" aria-label=\"Type de quête\">")
+                        .append(filterBtn("", "Tous types", true))
+                        .append(filterBtn("main", "Principales", false))
+                        .append(filterBtn("side", "Secondaires / Rencontres", false))
+                        .append("</div>");
+            }
             sb.append("<p class=\"count-note\" data-count-note data-noun=\"qu\u00eate\">" + merged.size() + " qu\u00eate(s)</p>");
             sb.append("<div class=\"accordion npc-accordion\" id=\"quests-accordion\">");
             int qi = 0;
@@ -1778,8 +1850,10 @@ public final class AgentPages {
                 + " " + catalogStateKeywords(state));
         StringBuilder sb = new StringBuilder();
         boolean encounter = isEncounterQuest(category, giverId);
+        // Issue #15 : un modèle quotidien / hebdomadaire n'est ni « principale » ni « rencontre ».
+        String period = QuestPeriodicView.periodOf(qd);
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"quests\" data-filter-cat=\"")
-                .append(anyWarn ? "warn" : "ok").append(encounter ? " side" : " main")
+                .append(anyWarn ? "warn" : "ok").append(!period.isEmpty() ? " " + period : encounter ? " side" : " main")
                 .append("\" data-filter-text=\"").append(ftext)
                 .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
@@ -1790,6 +1864,10 @@ public final class AgentPages {
         sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(MiniText.html(title))
                 .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
         sb.append("<span class=\"npc-head-badges\">");
+        if (!period.isEmpty()) {
+            sb.append("<span class=\"badge text-bg-info\" data-period-badge>")
+                    .append(QuestPeriodicView.label(period)).append("</span>");
+        }
         if (!category.isEmpty()) {
             sb.append("<span class=\"badge text-bg-secondary\">")
                     .append(Http.esc(MiniText.prettifyId(category))).append("</span>");

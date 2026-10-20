@@ -7358,6 +7358,29 @@ rapport de session). Compte **LoDyMcFly tel quel**, kit de départ déjà reçu 
 4.  Redemander aussitôt (même après déconnexion/reconnexion). **Attendu** : à nouveau la réponse de
     l'étape 1, jamais un second kit.
 
+### TC-377 — Quêtes périodiques : résumé lisible sans survol, terminées à part, onglets PlugAdmin (issue #15, lot 2, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin issus de la PR #15 lot 2 sur **DEV**. Compte **LoDyMcFly tel quel**.
+**Acquis TC-350 à ne pas refaire** : progression « Bois du jour » 16/16, fin automatique, 20 XP et
++5 LodyCoins, solde 105, état « Terminée ». **Aucun reset, aucune réattribution.** Revalidation
+ciblée :
+
+1.  Journal → horloge « Quêtes quotidiennes ». **Attendu** : le **titre de la fenêtre** indique
+    « Quotidiennes : N/2 terminée(s) » d'après tes quêtes du jour (ex. « 1/2 terminée » si seul
+    « Bois du jour » est fini) ; l'objet en haut au centre (horloge) indique « … — N restante(s) ».
+2.  Sans survoler : 1re rangée ouverte par une **vitre jaune** (« À faire ») avec les quêtes non
+    finies ; rangée suivante ouverte par une **vitre verte** (« Terminées ») avec les quêtes finies,
+    qui **brillent**. « Bois du jour » reste visible dans « Terminées » jusqu'à 04:00.
+3.  Onglet « Quêtes terminées » (quêtes classiques). **Attendu** : aucune quête quotidienne.
+4.  Boussole « Quêtes hebdomadaires ». **Attendu** : même présentation, « Hebdomadaires : 0/1 terminée »
+    (ou 1/1 si l'expédition est finie).
+5.  PlugAdmin → Quêtes, cliquer « Rafraîchir Quêtes », puis l'onglet **Quotidiennes**. **Attendu** :
+    les 3 modèles de démonstration, réglages affichés « 2 par jour », « chaque jour à 04:00
+    (Europe/Paris) », « expire, sans récompense », mention « Valeurs de démonstration » ; aucun
+    champ pour les modifier. Onglet **Hebdomadaires** : « chaque lundi à 04:00 ». Bouton « Créer une
+    quête quotidienne » → éditeur avec « Quotidienne » et « répétable » préréglés (ne pas enregistrer).
+6.  Sur téléphone (ou fenêtre étroite) : les trois onglets restent visibles (retour à la ligne).
+
 ### TC-350 — Quêtes quotidiennes et hebdomadaires dans le journal (issue #15, lot 1, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de la PR #15 lot 1 sur **DEV** (schéma V42 appliqué au démarrage), section

@@ -379,6 +379,15 @@ public final class AgentActionCatalog {
         add("city.list", Permission.TRAVEL_READ, false, false, "Rafraîchir les villes");
         // Issue #560 (#331-W1) — mondes en lecture seule. Aucune action world.* mutative n'existe.
         add("world.list", Permission.WORLD_READ, false, false, "Rafraîchir les mondes");
+        // Issue #561 (#331-W2) — réglages d'un monde existant : relecture (WORLD_READ), aperçu sans
+        // écriture puis application confirmée (WORLD_WRITE). Jamais de création, chargement,
+        // déchargement ni suppression de monde. Les routes /worlds/settings/* sont le seul chemin
+        // prévu ; le contrôle est le même ici pour tout autre chemin de création d'action.
+        add("world.settings.get", Permission.WORLD_READ, false, false, "Relire les réglages d'un monde");
+        add("world.settings.preview", Permission.WORLD_WRITE, false, false,
+                "Aperçu des réglages d'un monde (rien n'est écrit)");
+        addSensitiveWrite("world.settings.apply", Permission.WORLD_WRITE, false,
+                "Appliquer des réglages à un monde", "world.list");
         // Issue #564 (#228-P1) — portails en lecture seule. Aucune action portal.* mutative n'existe.
         add("portal.list", Permission.PORTAL_READ, false, false, "Rafraîchir les portails");
         addContentWrite("city.rename", Permission.CITY_WRITE, "Renommer une ville", "city.list");
@@ -2395,6 +2404,12 @@ public final class AgentActionCatalog {
                     params.put("replace", "true".equals(trim(form.get("replace"))) ? "true" : "false");
                 }
             }
+            case "world.settings.get", "world.settings.preview", "world.settings.apply" -> {
+                String error = worldSettingsParams(type, form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
             case "mob.definition.toggle" -> {
                 String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);
                 if (!MOB_ID.matcher(mobId).matches()) {
@@ -2904,6 +2919,67 @@ public final class AgentActionCatalog {
             }
         }
         return Validation.ok(params);
+    }
+
+    /** Issue #561 — clé d'un réglage demandé, miroir du plugin qui revalide tout. */
+    private static final Pattern WORLD_SETTING_PARAM = Pattern.compile("set\\.(?:rule\\.)?[a-z0-9_]{1,64}");
+    private static final Pattern WORLD_SETTINGS_FINGERPRINT = Pattern.compile("[0-9a-f]{24}");
+    /** Miroir de {@code WorldSettingsPlanner.MAX_CHANGES}. */
+    public static final int MAX_WORLD_SETTINGS = 30;
+
+    /** Paramètres de {@code world.settings.*} ; {@code null} si valides, sinon le message d'erreur. */
+    private static String worldSettingsParams(String type, Map<String, String> form, Map<String, String> params) {
+        String world = trim(form.get("world"));
+        if (!WORLD_NAME.matcher(world).matches()) {
+            return "Nom de monde manquant ou invalide.";
+        }
+        params.put("world", world);
+        if ("world.settings.get".equals(type)) {
+            return null;
+        }
+        int count = 0;
+        for (Map.Entry<String, String> e : new java.util.TreeMap<>(form).entrySet()) {
+            if (!e.getKey().startsWith("set.")) {
+                continue;
+            }
+            String value = trim(e.getValue());
+            if (value.isEmpty()) {
+                continue; // champ laissé « inchangé »
+            }
+            if (!WORLD_SETTING_PARAM.matcher(e.getKey()).matches() || value.length() > 64 || value.indexOf('\n') >= 0) {
+                return "Réglage demandé invalide : " + safe(e.getKey()) + ".";
+            }
+            params.put(e.getKey(), value);
+            count++;
+        }
+        if (count > MAX_WORLD_SETTINGS) {
+            return "Trop de réglages dans une seule demande (maximum " + MAX_WORLD_SETTINGS + ").";
+        }
+        if ("world.settings.preview".equals(type)) {
+            String player = trim(form.get("spawn_player"));
+            if (!player.isEmpty()) {
+                if (!MINECRAFT_NAME.matcher(player).matches()) {
+                    return "Pseudo invalide pour « prendre ma position ».";
+                }
+                params.put("spawn_player", player);
+            }
+            return count == 0 && player.isEmpty() ? "Aucun réglage modifié : choisir au moins une nouvelle valeur." : null;
+        }
+        if (count == 0) {
+            return "Aucun réglage à appliquer.";
+        }
+        String expected = trim(form.get("expected"));
+        if (!WORLD_SETTINGS_FINGERPRINT.matcher(expected).matches()) {
+            return "Aperçu de référence manquant : refaire l'aperçu.";
+        }
+        String actor = trim(form.get("actor"));
+        if (actor.isEmpty() || actor.length() > 64) {
+            return "Auteur de la modification manquant.";
+        }
+        params.put("expected", expected);
+        params.put("actor", actor);
+        params.put("confirm", "true");
+        return null;
     }
 
     private static String trim(String value) {

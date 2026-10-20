@@ -139,7 +139,27 @@
       gestionnaire (Multiverse-Core, RPGQuest <code>worlds.yml</code> ou serveur), rôle Hub / Wild /
       Claims, badge « Essentiel », portails, emplacements, waypoints, mobs, emplacements PNJ et villes
       liés, problèmes détectés. Sans Multiverse-Core, seuls les mondes chargés apparaissent. Créer,
-      charger, décharger ou régler un monde ne se fait pas depuis cette page.
+      charger ou décharger un monde ne se fait pas depuis cette page.
+    </p>
+    <h3 class="h5 mt-4">Régler un monde existant (issue #561)</h3>
+    <p class="text-body-secondary">
+      Dans la fiche d'un monde chargé, la section <strong>Réglages</strong> montre les valeurs
+      <strong>relues sur le serveur</strong> : difficulté, PvP, apparition des monstres et des animaux,
+      mode de jeu à l'arrivée, heure et météo, bordure, point d'arrivée et règles de jeu (liste lue sur
+      le serveur). Pour modifier (permission <code>WORLD_WRITE</code>, propriétaire par défaut) :
+    </p>
+    <ol class="text-body-secondary">
+      <li>« Modifier des réglages » : chaque champ vaut <em>inchangé</em> ; ne choisir que ce qui doit changer.</li>
+      <li>« Prévisualiser » : rien n'est écrit. Le tableau montre valeur actuelle → proposée, qui écrit
+        (Multiverse-Core ou serveur), l'effet attendu et le verdict.</li>
+      <li>Cocher la confirmation puis « Appliquer et relire ». Le serveur refuse si quelque chose a changé
+        depuis l'aperçu, puis relit chaque valeur et affiche l'écart éventuel.</li>
+    </ol>
+    <p class="text-body-secondary">
+      Les protections LodyQuests passent avant : au Hub, l'heure et la météo restent figées et le PvP ou
+      les monstres ne peuvent pas être activés ; dans Claims, PvP et monstres restent interdits ; le Wild
+      refuse la difficulté Paisible. Chaque application est notée dans
+      <code>plugins/RPGQuest/world-settings-audit.yml</code> et dans « Dernières modifications ».
     </p>
   </section>
 

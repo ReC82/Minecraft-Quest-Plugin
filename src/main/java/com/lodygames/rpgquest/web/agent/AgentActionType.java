@@ -610,6 +610,24 @@ public enum AgentActionType {
      */
     WORLD_LIST("world.list"),
     /**
+     * Issue #561 (#331-W2) — réglages <strong>réellement relus</strong> d'un monde chargé (difficulté,
+     * PvP, apparitions, mode de jeu, heure, météo, bordure, point d'arrivée, règles de jeu lues dans le
+     * registre du serveur), chemin d'écriture de chacun, refus imposés par les rôles Hub/Wild/Claims et
+     * dernières modifications journalisées. Lecture seule.
+     */
+    WORLD_SETTINGS_GET("world.settings.get"),
+    /**
+     * Issue #561 — aperçu <strong>sans écriture</strong> d'une demande de réglages : valeur actuelle,
+     * valeur proposée, chemin d'écriture, effet attendu, verdict et empreinte de l'état relu.
+     */
+    WORLD_SETTINGS_PREVIEW("world.settings.preview"),
+    /**
+     * Issue #561 — applique les réglages d'un aperçu, après confirmation explicite. Refusé sans rien
+     * écrire si l'état a changé depuis l'aperçu (empreinte), si un réglage est refusé ou si le monde
+     * n'est pas chargé ; relit ensuite les valeurs réelles et journalise avant / demandé / relu.
+     */
+    WORLD_SETTINGS_APPLY("world.settings.apply"),
+    /**
      * Issue #564 (#228-P1) — tous les portails (entre mondes {@code world-portals/} et de zone
      * {@code portals/}, ancien format), zone, destination, stratégie d'arrivée, gardes Wild/Claims
      * réellement appliqués et diagnostics. Lecture seule : rien n'est créé, modifié, activé ni

@@ -11,6 +11,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > et portails de zone (ancien format), zone, destination, arrivée RANDOM_SAFE / CLAIM_HOME, gardes Wild/Claims
 > appliqués, diagnostics. Aucune création, modification, activation ni téléportation. Pas de migration.
 
+> **Réglages d'un monde existant (#561, 20/10/2026)** — fiche `/worlds?world=…`, section « Réglages » :
+> relecture `world.settings.get` (`WORLD_READ`), aperçu sans écriture `world.settings.preview` puis
+> application confirmée `world.settings.apply` (`WORLD_WRITE`, propriétaire). Difficulté, PvP, monstres,
+> animaux, mode de jeu, heure, météo, bordure, point d'arrivée, règles de jeu lues au runtime ; un seul
+> chemin d'écriture (Multiverse-Core sinon Bukkit), protections Hub/Claims/Wild prioritaires, empreinte
+> d'aperçu, relecture, journal `world-settings-audit.yml`. Rien appliqué au démarrage. Pas de migration.
+
 > **Page « Mondes » en lecture seule (#560, 19/10/2026)** — PlugAdmin `/worlds` (groupe « Monde »,
 > avec Voyages), permission `WORLD_READ`, action agent `world.list` seule : mondes chargés ou connus de
 > Multiverse-Core (facultatif, `softdepend`), gestionnaire, rôle Hub/Wild/Claims, badge Essentiel,

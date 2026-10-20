@@ -2210,6 +2210,42 @@ public final class BukkitAgentActions implements AgentActions {
         return onMain(() -> done(com.lodygames.rpgquest.world.WorldOverview.build(worldInputs())));
     }
 
+    // ---- Réglages d'un monde (issue #561, #331-W2) ---------------------------------------------
+    // Seul world.settings.apply écrit, après aperçu et confirmation ; état Bukkit -> thread principal.
+
+    private com.lodygames.rpgquest.world.settings.WorldSettingsService worldSettings;
+
+    public void setWorldSettings(com.lodygames.rpgquest.world.settings.WorldSettingsService service) {
+        this.worldSettings = service;
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.settings.WorldSettingsService.Reading> worldSettingsRead(
+            String world) {
+        if (worldSettings == null) {
+            return AgentActions.super.worldSettingsRead(world);
+        }
+        return onMain(() -> done(worldSettings.read(world)));
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.settings.WorldSettingsService.Preview> worldSettingsPreview(
+            String world, Map<String, String> requested, String spawnFromPlayer) {
+        if (worldSettings == null) {
+            return AgentActions.super.worldSettingsPreview(world, requested, spawnFromPlayer);
+        }
+        return onMain(() -> done(worldSettings.preview(world, requested, spawnFromPlayer)));
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.settings.WorldSettingsService.Application> worldSettingsApply(
+            String world, Map<String, String> requested, String expectedFingerprint, String actor) {
+        if (worldSettings == null) {
+            return AgentActions.super.worldSettingsApply(world, requested, expectedFingerprint, actor);
+        }
+        return onMain(() -> done(worldSettings.apply(world, requested, expectedFingerprint, actor)));
+    }
+
     // ---- Portails (issue #564, #228-P1) -------------------------------------------------------
 
     private com.lodygames.rpgquest.travel.YamlPortalRegistry zonePortals;

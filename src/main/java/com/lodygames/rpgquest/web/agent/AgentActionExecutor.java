@@ -224,6 +224,9 @@ public final class AgentActionExecutor {
                 case PRICE_TOGGLE -> priceToggle(action);
                 case MERCHANT_CATALOG_STATUS -> merchantCatalogStatus(action);
                 case WORLD_LIST -> worldList(action);
+                case WORLD_SETTINGS_GET -> worldSettingsGet(action);
+                case WORLD_SETTINGS_PREVIEW -> worldSettingsPreview(action);
+                case WORLD_SETTINGS_APPLY -> worldSettingsApply(action);
                 case PORTAL_LIST -> portalList(action);
                 case MERCHANT_SAVE -> merchantSave(action);
                 case MERCHANT_DUPLICATE -> merchantDuplicate(action);
@@ -2067,6 +2070,116 @@ public final class AgentActionExecutor {
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     // ---- Mondes (issue #560, #331-W1) ---------------------------------------------------------
+
+    // ---- Réglages d'un monde (issue #561, #331-W2) -------------------------------------------------
+
+    private static final java.util.regex.Pattern SETTING_PARAM =
+            java.util.regex.Pattern.compile("set\\.((?:rule\\.)?[a-z0-9_]{1,64})");
+    private static final java.util.regex.Pattern FINGERPRINT = java.util.regex.Pattern.compile("[0-9a-f]{24}");
+    private static final java.util.regex.Pattern SPAWN_PLAYER = java.util.regex.Pattern.compile("[A-Za-z0-9_]{3,16}");
+
+    /** {@code world.settings.get} : relecture seule. */
+    private CompletableFuture<AgentActionOutcome> worldSettingsGet(AgentAction action) {
+        String world = trimOrNull(action.param("world"));
+        if (world == null || !WORLD_NAME.matcher(world).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Nom de monde manquant ou invalide."));
+        }
+        return actions.worldSettingsRead(world).thenApply(r -> {
+            if (r == null) {
+                return AgentActionOutcome.failed(action.id(), "Réglages de monde indisponibles sur ce serveur.");
+            }
+            Map<String, Object> details = WorldSettingsDetails.reading(world, r);
+            return r.snapshot().isPresent()
+                    ? AgentActionOutcome.success(action.id(), world, "Réglages relus sur « " + world + " ».", details)
+                    : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "NOT_LOADED",
+                            "Le monde « " + world + " » n'est pas chargé : aucun réglage à relire.", details,
+                            java.time.Instant.now());
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code world.settings.preview} : aperçu, aucune écriture. */
+    private CompletableFuture<AgentActionOutcome> worldSettingsPreview(AgentAction action) {
+        String world = trimOrNull(action.param("world"));
+        if (world == null || !WORLD_NAME.matcher(world).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Nom de monde manquant ou invalide."));
+        }
+        Map<String, String> requested = requestedSettings(action);
+        String player = trimOrNull(action.param("spawn_player"));
+        if (player != null && !SPAWN_PLAYER.matcher(player).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Pseudo invalide pour « prendre ma position »."));
+        }
+        if (requested == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Réglages demandés invalides (clé ou valeur)."));
+        }
+        if (requested.isEmpty() && player == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Aucun réglage demandé."));
+        }
+        return actions.worldSettingsPreview(world, requested, player).thenApply(p -> {
+            if (p == null) {
+                return AgentActionOutcome.failed(action.id(), "Réglages de monde indisponibles sur ce serveur.");
+            }
+            Map<String, Object> details = WorldSettingsDetails.preview(world, p);
+            return p.plan().isPresent()
+                    ? AgentActionOutcome.success(action.id(), String.valueOf(p.plan().get().applicable()), p.message(),
+                            details)
+                    : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "NOT_LOADED", p.message(), details,
+                            java.time.Instant.now());
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code world.settings.apply} : la confirmation, l'auteur et l'empreinte de l'aperçu sont
+     * exigés ici aussi (défense en profondeur après le contrôle WORLD_WRITE de PlugAdmin).
+     */
+    private CompletableFuture<AgentActionOutcome> worldSettingsApply(AgentAction action) {
+        String world = trimOrNull(action.param("world"));
+        if (world == null || !WORLD_NAME.matcher(world).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Nom de monde manquant ou invalide."));
+        }
+        if (!"true".equals(action.param("confirm"))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Confirmation explicite manquante : rien n'a été écrit."));
+        }
+        String actor = trimOrNull(action.param("actor"));
+        if (actor == null || actor.length() > 64) {
+            return done(AgentActionOutcome.rejected(action.id(), "Auteur manquant : rien n'a été écrit."));
+        }
+        String expected = trimOrNull(action.param("expected"));
+        if (expected == null || !FINGERPRINT.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Aperçu de référence manquant : rien n'a été écrit."));
+        }
+        Map<String, String> requested = requestedSettings(action);
+        if (requested == null || requested.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Aucun réglage valide à appliquer : rien n'a été écrit."));
+        }
+        return actions.worldSettingsApply(world, requested, expected, actor).thenApply(a -> {
+            if (a == null) {
+                return AgentActionOutcome.failed(action.id(), "Réglages de monde indisponibles sur ce serveur.");
+            }
+            Map<String, Object> details = WorldSettingsDetails.application(a);
+            return switch (a.result()) {
+                case APPLIED -> AgentActionOutcome.success(action.id(), a.result().name(), a.message(), details);
+                default -> new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, a.result().name(), a.message(),
+                        details, java.time.Instant.now());
+            };
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Paramètres {@code set.<clé>} ; {@code null} si une clé ou une valeur est hors bornes. */
+    private static Map<String, String> requestedSettings(AgentAction action) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : action.params().entrySet()) {
+            if (!e.getKey().startsWith("set.")) {
+                continue;
+            }
+            java.util.regex.Matcher m = SETTING_PARAM.matcher(e.getKey());
+            String value = e.getValue() == null ? "" : e.getValue().trim();
+            if (!m.matches() || value.isEmpty() || value.length() > 64 || value.indexOf('\n') >= 0) {
+                return null;
+            }
+            out.put(m.group(1), value);
+        }
+        return out.size() > com.lodygames.rpgquest.world.settings.WorldSettingsPlanner.MAX_CHANGES ? null : out;
+    }
 
     /** {@code world.list} : lecture pure, rien n'est créé, chargé, déchargé ni réglé. */
     private CompletableFuture<AgentActionOutcome> worldList(AgentAction action) {

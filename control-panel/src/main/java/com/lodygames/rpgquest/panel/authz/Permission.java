@@ -53,6 +53,13 @@ public enum Permission {
      */
     WORLD_READ,
     /**
+     * Régler un monde existant (issue #561, #331-W2) : aperçu puis application confirmée de la
+     * difficulté, du PvP, des apparitions, du mode de jeu à l'arrivée, de l'heure, de la météo, de la
+     * bordure, du point d'arrivée et des règles de jeu. Ne permet ni de créer, ni de charger, ni de
+     * décharger, ni de supprimer un monde. Réservé au propriétaire par défaut (attribuable par groupe).
+     */
+    WORLD_WRITE,
+    /**
      * Consultation lecture seule des portails (issue #564, #228-P1) : zone, destination, arrivée,
      * gardes Wild/Claims et diagnostics. Ne permet ni de créer, ni de modifier, ni d'activer, ni de
      * tester un portail.

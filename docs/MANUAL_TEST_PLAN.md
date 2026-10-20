@@ -6716,6 +6716,35 @@ les étapes 1, 2, 4 et 7 ; l'étape 3 en demande un (facultatif). **Durée** : 1
     ses versions, sa conception et son historique sont intacts ; aucun bâtiment posé n'a bougé.
 
 
+### TC-374 — PlugAdmin : réglages d'un monde existant, aperçu, confirmation et relecture (issue #561, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR **et** PlugAdmin issus de la PR #561 sur DEV, compte Propriétaire. Claude n'a appliqué
+**aucun** réglage sur DEV. Les étapes 5 à 7 **modifient réellement un monde** : c'est le choix du
+propriétaire ; choisir un réglage réversible (ex. règle `keep_inventory` de `wild`) et noter la valeur
+de départ pour la remettre.
+
+1.  Mondes → fiche `wild` → section **Réglages** → « Lire les réglages réels ». **Attendu** : tableau des
+    valeurs réelles (difficulté, PvP, monstres, heure, météo, bordure, point d'arrivée…) avec « Écrit
+    par » (`serveur` / `règle de jeu` pour `wild`) ; « Apparition des animaux » et « Mode de jeu » indiqués
+    indisponibles avec la raison ; « Règles de jeu du monde » listées (noms 1.21.11) ; encadré
+    « Protections LodyQuests » (Wild). Sur téléphone : aucun défilement horizontal.
+2.  Même lecture sur `world_hub` : « Écrit par » = Multiverse-Core pour difficulté, PvP, monstres,
+    animaux, mode de jeu, arrivée. Comparer 2 ou 3 valeurs avec `/mv info world_hub` en jeu.
+3.  Hub → « Modifier des réglages » → Heure du monde = Minuit → « Prévisualiser ». **Attendu** : verdict
+    **Refusé** (« Hub : jour et météo permanents… »), aucun bouton Appliquer. Rien n'a changé en jeu.
+4.  `wild` → Difficulté = Paisible → Prévisualiser → **Refusé** (mobs spéciaux et boss). Aperçu avec une
+    seule valeur choisie : seule cette ligne apparaît (pas de « groupe » implicite).
+5.  (Choix du propriétaire) `wild` → Règles de jeu avancées → `keep_inventory` = Oui → Prévisualiser :
+    actuel Non → proposé Oui, « règle de jeu ». Cocher la confirmation → « Appliquer et relire ».
+    **Attendu** : « Appliqué et confirmé par relecture », ligne Confirmé (Avant Non, Relu après Oui) ; en
+    jeu dans `wild` : `/gamerule keep_inventory` = true ; dans `world_hub` : inchangé.
+6.  Revenir en arrière (navigateur) et recliquer « Appliquer et relire » sur le même aperçu → « déjà été
+    envoyé », rien n'est renvoyé. « Dernières modifications » liste l'application (date, auteur, avant →
+    après).
+7.  Remettre `keep_inventory` à sa valeur de départ par le même parcours.
+8.  Avec un compte Administrateur (sans WORLD_WRITE) : la section montre les valeurs mais aucun
+    formulaire de modification.
+
 ### TC-373 — PlugAdmin : page « Capacités » et cartes de capacités d'un profil (issue #543, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR **et** PlugAdmin issus de la PR #543 sur DEV. Claude n'a modifié, créé, activé ni fait

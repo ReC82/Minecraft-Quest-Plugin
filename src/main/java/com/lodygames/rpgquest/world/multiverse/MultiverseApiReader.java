@@ -25,8 +25,17 @@ final class MultiverseApiReader {
                     w.getEnvironment() == null ? null : w.getEnvironment().name(),
                     w.getGenerator(), w.getGeneratorSettings(), w.getSeed(),
                     w.getDifficulty() == null ? null : w.getDifficulty().name(), w.getPvp(), w.isAutoLoad(),
-                    w.getColourlessAlias()));
+                    alias(w)));
         }
         return out;
+    }
+
+    /**
+     * Alias sans couleurs, {@code null} si aucun : {@code getColourlessAlias()} renvoie le nom du
+     * monde quand l'alias est vide (relevé DEV du 21/10, #81), ce qui masquerait les défauts.
+     */
+    private static String alias(MultiverseWorld w) {
+        String raw = w.getAlias();
+        return raw == null || raw.isBlank() ? null : w.getColourlessAlias();
     }
 }

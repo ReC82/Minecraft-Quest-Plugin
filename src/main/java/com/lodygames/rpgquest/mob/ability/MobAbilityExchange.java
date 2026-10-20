@@ -77,7 +77,13 @@ public final class MobAbilityExchange {
         }
         out.put("params", params);
         Map<String, Object> presets = new LinkedHashMap<>();
-        d.presets().forEach((name, values) -> presets.put(name, jsonValues(values)));
+        // Ordre des réglages du descripteur (les préréglages sont des Map.of, d'ordre instable).
+        d.presets().forEach((name, values) -> {
+            Map<String, Object> ordered = new LinkedHashMap<>();
+            d.params().stream().filter(p -> values.containsKey(p.key()))
+                    .forEach(p -> ordered.put(p.key(), jsonValue(values.get(p.key()))));
+            presets.put(name, ordered);
+        });
         out.put("presets", presets);
         return out;
     }

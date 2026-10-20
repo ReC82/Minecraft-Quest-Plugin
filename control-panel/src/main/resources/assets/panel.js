@@ -18,6 +18,7 @@
  *   - initOpsState()      : rafraîchit l'état du serveur et suit une opération de redémarrage
  *                           jusqu'à son terme, bloc par bloc, sans jamais recharger la page (#95) ;
  *   - initDrawer()        : ferme le tiroir mobile au clic sur un lien.
+ *   - initAbilityCards()  : cartes de capacités d'un profil de mob — monter/descendre, préréglages (#543).
  *
  * Pas de WebSocket (MVP #93). Le polling s'arrête tout seul (garde-fou de durée).
  */
@@ -2081,9 +2082,79 @@
     run("initRowLinks", initRowLinks);
     run("initSubmitOnce", initSubmitOnce);
     run("initRewardItems", initRewardItems);
+    run("initAbilityCards", initAbilityCards);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.
     window.addEventListener("load", upgradeToasts);
+  }
+
+  // Issue #543 — cartes de capacités d'un profil de mob. Sans JavaScript, l'ordre se règle avec le
+  // champ « Ordre » et les préréglages restent masqués (les champs sont déjà remplis). Ici : boutons
+  // monter/descendre qui déplacent la carte et renumérotent, et préréglages qui COPIENT leurs valeurs
+  // dans les champs de la carte (rien n'est partagé entre profils). Le serveur revalide tout.
+  function initAbilityCards() {
+    var lists = document.querySelectorAll("[data-ab-list]");
+    for (var i = 0; i < lists.length; i++) { setupAbilityList(lists[i]); }
+    var presetBoxes = document.querySelectorAll("[data-ab-presets]");
+    for (var j = 0; j < presetBoxes.length; j++) { presetBoxes[j].hidden = false; }
+    document.addEventListener("click", function (ev) {
+      var btn = ev.target.closest ? ev.target.closest("[data-ab-preset]") : null;
+      if (!btn) { return; }
+      var values;
+      try { values = JSON.parse(btn.getAttribute("data-ab-preset")); } catch (e) { return; }
+      var form = btn.form || btn.closest("form");
+      var prefix = btn.getAttribute("data-ab-prefix");
+      if (!form || !prefix) { return; }
+      Object.keys(values).forEach(function (key) {
+        var field = form.elements.namedItem(prefix + key);
+        if (!field || field.length !== undefined && !field.tagName) { return; }
+        field.value = String(values[key]);
+        try { field.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) { /* ignore */ }
+      });
+      var chips = btn.parentNode.querySelectorAll("[data-ab-preset]");
+      for (var k = 0; k < chips.length; k++) { chips[k].classList.toggle("on", chips[k] === btn); }
+    });
+  }
+
+  function setupAbilityList(list) {
+    function cards() { return list.querySelectorAll(":scope > [data-ab-card]"); }
+    function renumber() {
+      var all = cards();
+      for (var i = 0; i < all.length; i++) {
+        var pos = all[i].querySelector("[data-ab-pos]");
+        var ord = all[i].querySelector("[data-ab-ord]");
+        if (pos) { pos.value = String(i + 1); }
+        if (ord) { ord.textContent = String(i + 1); }
+        var up = all[i].querySelector("[data-ab-move=up]");
+        var down = all[i].querySelector("[data-ab-move=down]");
+        if (up) { up.hidden = false; up.disabled = i === 0; }
+        if (down) { down.hidden = false; down.disabled = i === all.length - 1; }
+        var posLabel = pos ? pos.closest(".ab-pos") : null;
+        if (posLabel) { posLabel.hidden = true; }
+      }
+    }
+    list.addEventListener("click", function (ev) {
+      var btn = ev.target.closest ? ev.target.closest("[data-ab-move]") : null;
+      if (!btn) { return; }
+      var card = btn.closest("[data-ab-card]");
+      if (!card) { return; }
+      if (btn.getAttribute("data-ab-move") === "up" && card.previousElementSibling) {
+        list.insertBefore(card, card.previousElementSibling);
+      } else if (btn.getAttribute("data-ab-move") === "down" && card.nextElementSibling) {
+        list.insertBefore(card.nextElementSibling, card);
+      }
+      renumber();
+      btn.focus();
+      try { list.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) { /* ignore */ }
+    });
+    list.addEventListener("change", function (ev) {
+      var t = ev.target;
+      if (t && t.name && /^ab_\d+_enabled$/.test(t.name)) {
+        var card = t.closest("[data-ab-card]");
+        if (card) { card.classList.toggle("off", !t.checked); }
+      }
+    });
+    renumber();
   }
 
   // Issue #177 — éditeur de tables de récompenses : total des chances recalculé à la saisie, avec

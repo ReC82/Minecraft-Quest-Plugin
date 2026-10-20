@@ -13345,78 +13345,96 @@ public final class AgentPages {
                         "l'XP vanilla est lâchée, sans modification")));
         sb.append("</div>");
 
-        // #190 : repliées par défaut (<details> natif, sans JS) pour raccourcir le formulaire par
-        // défaut -- ouvertes automatiquement en modification si la capacité est déjà active.
-        boolean hasEnraged = existing != null && existing.get("enragedHealthFraction") != null;
-        sb.append("<details").append(hasEnraged ? " open" : "").append("><summary class=\"npc-fs-h\">Capacité : Enragé</summary>");
-        sb.append("<div class=\"npc-fs\">");
-        sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
-                .append("-rg-en\" name=\"enraged_enabled\" value=\"true\"").append(hasEnraged ? " checked" : "")
-                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-rg-en\">Activer cette capacité</label></div>");
-        sb.append("<p class=\"form-text\">Sous un seuil de vie, le mob passe en rage : vitesse et dégâts "
-                + "multipliés, une seule fois au franchissement du seuil (jamais cumulé coup après coup). "
-                + "<strong>Les trois réglages ci-dessous sont obligatoires dès que la case est cochée</strong> — "
-                + "le moteur n'a aucune valeur de repli, l'enregistrement est refusé s'il en manque un.</p>");
-        sb.append(numField(uid, "enraged_health_fraction", "Seuil de vie déclencheur", existing, "0.01",
-                fieldHelp("Fraction de la vie maximum sous laquelle la rage se déclenche : 0.3 = sous 30 % de "
-                                + "vie. <strong>Strictement entre 0 et 1</strong> — ni 0 ni 1 ne sont acceptés.",
-                        "0.3", "Obligatoire si la capacité est activée", null)));
-        sb.append(numField(uid, "enraged_speed_multiplier", "Multiplicateur de vitesse en rage", existing, "0.1",
-                fieldHelp("Multiplie la vitesse une fois enragé. 1 = vitesse inchangée, 1.5 = moitié plus "
-                                + "rapide. Doit être strictement supérieur à 0.",
-                        "1.5", "Obligatoire si la capacité est activée", null)));
-        sb.append(numField(uid, "enraged_damage_multiplier", "Multiplicateur de dégâts en rage", existing, "0.1",
-                fieldHelp("Multiplie les dégâts une fois enragé. 1 = dégâts inchangés, 2 = dégâts doublés. "
-                                + "Doit être strictement supérieur à 0.",
-                        "2", "Obligatoire si la capacité est activée", null)));
-        sb.append("</div></details>");
-
-        boolean hasSummon = existing != null && existing.get("summonEntityType") != null;
-        sb.append("<details").append(hasSummon ? " open" : "")
-                .append("><summary class=\"npc-fs-h\">Capacité : Invocation de renforts</summary>");
-        sb.append("<div class=\"npc-fs\">");
-        sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
-                .append("-sm-en\" name=\"summon_enabled\" value=\"true\"").append(hasSummon ? " checked" : "")
-                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-sm-en\">Activer cette capacité</label></div>");
-        sb.append("<p class=\"form-text\">Quand le mob subit des dégâts <strong>effectifs</strong> (coup non "
-                + "annulé, dégâts réellement supérieurs à 0), il peut invoquer des renforts. Jamais de "
-                + "cascade : les renforts eux-mêmes n'invoquent rien. <strong>Les cinq réglages ci-dessous "
-                + "sont obligatoires dès que la case est cochée</strong> — le moteur n'a aucune valeur de "
-                + "repli, l'enregistrement est refusé s'il en manque un.</p>");
-        String summonType = str(existing == null ? null : existing.get("summonEntityType"));
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sm-t\">Type de renfort</label>")
-                .append("<input class=\"form-control\" id=\"").append(uid).append("-sm-t\" type=\"text\" name=\"summon_entity_type\" "
-                        + "value=\"").append(Http.esc("null".equals(summonType) ? "" : summonType))
-                .append("\" list=\"dl-mob-entity\" autocomplete=\"off\">")
-                .append(fieldHelp("Créature invoquée en renfort. Doit être une entité <strong>vivante</strong> "
-                        + "(un projectile ou un wagonnet est refusé). Même liste que le type d'entité du profil.",
-                        "ZOMBIE", "Obligatoire si la capacité est activée", null))
-                .append("</div>");
-        sb.append(numField(uid, "summon_amount", "Nombre de renforts par déclenchement", existing, "1",
-                fieldHelp("Combien de renforts apparaissent à chaque invocation réussie. Nombre entier "
-                                + "strictement supérieur à 0.",
-                        "2", "Obligatoire si la capacité est activée", null)));
-        sb.append(numField(uid, "summon_chance", "Probabilité par coup reçu", existing, "0.01",
-                fieldHelp("Chance de déclencher l'invocation à chaque coup effectivement reçu : 0.25 = une "
-                                + "fois sur quatre en moyenne. <strong>Supérieur à 0 et au plus 1</strong> — 0 est "
-                                + "refusé (une capacité qui ne se déclenche jamais), 1 signifie à chaque coup.",
-                        "0.25", "Obligatoire si la capacité est activée", null)));
-        sb.append(numField(uid, "summon_cooldown_seconds", "Délai minimum entre deux invocations", existing, "1",
-                fieldHelp("Temps d'attente en <strong>secondes</strong> avant qu'une nouvelle invocation soit "
-                                + "possible, même si le tirage réussit. Nombre entier, 0 ou plus : "
-                                + "<strong>0 = aucun délai</strong>, chaque coup peut invoquer.",
-                        "10", "Obligatoire si la capacité est activée", null)));
-        sb.append(numField(uid, "summon_max_alive", "Renforts vivants simultanés", existing, "1",
-                fieldHelp("Plafond de renforts encore en vie <strong>pour ce mob précis</strong> : au plafond, "
-                                + "plus aucune invocation jusqu'à ce que certains meurent. Nombre entier "
-                                + "strictement supérieur à 0.",
-                        "4", "Obligatoire si la capacité est activée", null)));
-        sb.append("</div></details>");
+        // Issue #543 : cartes des capacités configurées + « Ajouter une capacité », entièrement dérivées
+        // du catalogue publié par le plugin. Sans catalogue (plugin antérieur), les deux capacités de
+        // l'ancien formulaire sont renvoyées telles quelles en champs cachés : rien n'est perdu.
+        Optional<MobAbilityViews.Catalog> abilityCatalog = abilityCatalog(agentId);
+        if (abilityCatalog.isPresent()) {
+            sb.append(MobAbilityViews.formSection(uid, agentId, abilityCatalog.get(), existing));
+        } else {
+            sb.append(Ui.banner("warn", "Catalogue des capacités pas encore relevé : cliquer sur "
+                    + "<strong>« Rafraîchir »</strong> pour modifier les capacités. Elles sont conservées "
+                    + "telles quelles en enregistrant ce formulaire."));
+            sb.append(legacyAbilityFields(existing));
+        }
 
         sb.append("<button class=\"btn btn-primary\" type=\"submit\">")
                 .append(Icons.icon("save")).append(update ? "Enregistrer" : "Créer").append("</button>");
         sb.append("</form>");
         return sb.toString();
+    }
+
+    /** Ancien contrat (avant #543) : Enragé / Renforts recopiés pour ne pas les retirer. */
+    private static String legacyAbilityFields(Map<String, Object> existing) {
+        if (existing == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        String[][] groups = {{"enraged_enabled", "enragedHealthFraction", "enraged_health_fraction",
+                "enragedSpeedMultiplier", "enraged_speed_multiplier", "enragedDamageMultiplier", "enraged_damage_multiplier"},
+            {"summon_enabled", "summonEntityType", "summon_entity_type", "summonAmount", "summon_amount",
+                "summonChance", "summon_chance", "summonCooldownSeconds", "summon_cooldown_seconds",
+                "summonMaxAlive", "summon_max_alive"}};
+        for (String[] g : groups) {
+            if (existing.get(g[1]) == null) {
+                continue;
+            }
+            sb.append("<input type=\"hidden\" name=\"").append(g[0]).append("\" value=\"true\">");
+            for (int i = 1; i < g.length; i += 2) {
+                sb.append("<input type=\"hidden\" name=\"").append(g[i + 1]).append("\" value=\"")
+                        .append(Http.esc(str(existing.get(g[i])))).append("\">");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Issue #543 — catalogue des capacités : celui joint au dernier {@code mob.list} (rafraîchi après
+     * chaque enregistrement), sinon le dernier {@code mob.ability.catalog}.
+     */
+    private Optional<MobAbilityViews.Catalog> abilityCatalog(String agentId) {
+        Optional<MobAbilityViews.Catalog> fromList = latestDetails(agentId, "mob.list")
+                .flatMap(d -> MobAbilityViews.catalog(asMap(d.get("abilityCatalog"))));
+        return fromList.isPresent() ? fromList
+                : latestDetails(agentId, "mob.ability.catalog").flatMap(MobAbilityViews::catalog);
+    }
+
+    /** Issue #543 — page « Capacités » : catalogue filtrable, ou fiche d'un type ({@code ?type=}). */
+    public String mobAbilities(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("ability", "Capacités",
+                "Ce que les mobs spéciaux et les boss savent faire, et comment chaque capacité se règle.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        sb.append(agentPicker(agentId, MobAbilityViews.PATH, ""));
+        sb.append(mobCatalogDatalists(agentId));
+        sb.append("<div class=\"mob-toolbar\"><div class=\"mob-toolbar-main\"><a class=\"btn secondary sm\" href=\"")
+                .append(MOBS_PATH).append("?agent=").append(Http.esc(agentId)).append("\">").append(Icons.icon("mob"))
+                .append("Profils de mobs</a></div><div class=\"mob-toolbar-side\">")
+                .append(compactRefresh(session, agentId, "mob.ability.catalog", "Rafraîchir", "secondary sm",
+                        MobAbilityViews.PATH))
+                .append(compactRefresh(session, agentId, "mob.list", "Profils", "secondary sm", MobAbilityViews.PATH))
+                .append("</div></div>");
+        Optional<MobAbilityViews.Catalog> catalog = abilityCatalog(agentId);
+        if (catalog.isEmpty()) {
+            return sb.append(Ui.empty("ability", "Catalogue pas encore relevé — cliquer sur « Rafraîchir »."))
+                    .toString();
+        }
+        List<Map<String, Object>> profiles = latestDetails(agentId, "mob.list")
+                .map(d -> asList(d.get("profiles")).stream().map(AgentPages::asMap).toList())
+                .orElse(List.of());
+        String type = str(q.get("type"));
+        if (!type.isBlank()) {
+            Optional<Map<String, Object>> t = catalog.get().type(type);
+            if (t.isEmpty()) {
+                return sb.append(Ui.banner("warn", "Capacité inconnue : « " + Http.esc(type) + " ».")).toString();
+            }
+            return sb.append(MobAbilityViews.detailBody(agentId, t.get(), profiles)).toString();
+        }
+        return sb.append(MobAbilityViews.catalogueBody(agentId, catalog.get(), profiles, q)).toString();
     }
 
     private static String option(String value, String current, String label) {

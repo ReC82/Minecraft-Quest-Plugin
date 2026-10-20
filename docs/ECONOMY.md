@@ -151,7 +151,8 @@ reconnu par son PersistentDataContainer — jamais par son nom.
 
 Refusés (le fichier entier, jamais à moitié) : montant négatif ou non entier
 (borne 1 000 000 000 contre une faute de frappe), quantité hors 1–64, objet
-inconnu, fabrication sans ingrédient, ingrédient en double ou égal au résultat,
+inconnu, fabrication sans ingrédient **ni** pièce (une recette « pièces seules » est
+permise, #18), ingrédient en double ou égal au résultat,
 ingrédients sur une vente, et toute **boucle d'enrichissement** entre prix actifs,
 calculée exactement sur le prix unitaire, tous marchands confondus :
 

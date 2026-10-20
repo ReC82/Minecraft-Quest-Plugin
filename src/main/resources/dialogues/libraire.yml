@@ -5,6 +5,8 @@
 # - « Obtenir mon journal » (re)donne l'objet rpgquest:journal_quetes, gratuitement, à
 #   chaque fois qu'il manque (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais
 #   perdu (voir item.SoulboundItemService) — l'option redevient invisible dès qu'il est en poche.
+# - « Ouvrir la boutique » (#17) ouvre le catalogue marchand rpgquest:village_merchant (vente et
+#   rachat, merchants/village_merchant.yml) ; ses prix et offres se gèrent dans PlugAdmin > Marchands.
 id: rpgquest:libraire
 start: greeting
 
@@ -21,6 +23,10 @@ nodes:
           - type: RUN_SAFE_COMMAND
             command: "customitem give %player% rpgquest:journal_quetes 1"
         next: journal_given
+      - text: "Ouvrir la boutique"
+        actions:
+          - type: OPEN_MERCHANT
+            merchant: rpgquest:village_merchant
       - text: "Merci !"
         actions:
           - type: CLOSE

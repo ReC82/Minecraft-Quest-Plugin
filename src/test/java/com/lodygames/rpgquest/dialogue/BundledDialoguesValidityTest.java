@@ -186,6 +186,23 @@ class BundledDialoguesValidityTest {
         }
     }
 
+    /** Issue #17 : le Libraire du Hub ouvre la boutique du village, et rien d'autre sur ce choix. */
+    @Test
+    void theLibrarianOpensTheVillageShop() {
+        DialogueLoadReport report = loader.load(Map.of("libraire.yml", read("/dialogues/libraire.yml")));
+        DialogueDefinition libraire = report.loaded().get(0);
+
+        var shopChoices = libraire.nodes().get("greeting").choices().stream()
+                .filter(c -> c.actions().stream()
+                        .anyMatch(a -> a instanceof com.lodygames.rpgquest.dialogue.model.OpenMerchantAction))
+                .toList();
+
+        assertEquals(1, shopChoices.size(), "une seule entrée de boutique sur l'accueil du Libraire");
+        assertEquals(List.of(new com.lodygames.rpgquest.dialogue.model.OpenMerchantAction(
+                        new NamespacedKey("rpgquest", "village_merchant"))), shopChoices.get(0).actions());
+        assertTrue(shopChoices.get(0).conditions().isEmpty(), "la boutique est proposée à tous les joueurs");
+    }
+
     // ================================================================================
     //  Issue #235 — onboarding : plus aucune mutation de gameplay derrière un libellé vague
     // ================================================================================

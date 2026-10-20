@@ -234,6 +234,39 @@ class Estrade472Test {
         assertTrue(v.message().contains("facade: FRONT"), v.message());
     }
 
+    // ---- Avec les limites réelles du projet DEV (#305 est passé depuis) ----------------------
+
+    /**
+     * « L'estrade d'Elias » sur DEV : max_width 7, max_height 6, max_depth vide (projet créé avant
+     * #305), relu en carré — donc 7 en Z. C'est avec ces limites que l'Atelier vérifie le plan.
+     */
+    static final PlanRepair.Limits PROJECT_LIMITS = new PlanRepair.Limits(7, 6);
+
+    @Test
+    void theEstradePassesWithTheLimitsOfTheDevProject() {
+        BuildingGenerator.Examination e = generator.preview(ESTRADE, PROJECT_LIMITS);
+        assertTrue(e.verdict().ok(), e.verdict().message());
+        assertTrue(e.hasPreview(), "l'aperçu est produit");
+        assertEquals(7, e.verdict().sizeX());
+        assertEquals(6, e.verdict().sizeZ());
+    }
+
+    @Test
+    void theEstradePassesWithAnExplicitDepthOfSixToo() {
+        // Le même projet ressaisi après #305 avec sa vraie emprise : 7 (X) × 6 (Z), hauteur 4.
+        BuildingGenerator.Verdict v = generator.inspect(ESTRADE, new PlanRepair.Limits(7, 6, 4));
+        assertTrue(v.ok(), v.message());
+    }
+
+    @Test
+    void theRealPlansAreNeverRefusedForTheProjectLimits() {
+        for (int i = 1; i <= 3; i++) {
+            BuildingGenerator.Verdict v = generator.inspect(
+                    VerticalCirculation282Test.fixture("estrade_elias_472_v" + i + ".yml"), PROJECT_LIMITS);
+            assertFalse(v.codes().contains(BuildingGenerator.PROJECT_LIMITS_EXCEEDED), "v" + i + " : " + v.message());
+        }
+    }
+
     // ---- Les garde-fous restent ------------------------------------------------------------
 
     @Test

@@ -7497,6 +7497,14 @@ et son niveau RPG (`/skills`).
 **aucun ingrédient**, 12 pièces ; `demo_recette_mixte` = 1 × IRON_SWORD contre 2 × IRON_INGOT + 1 × STICK,
 5 pièces. En jeu : un compte avec quelques LodyCoins, 3 blés, 1 lingot de fer, 1 bâton.
 
+**Préparation proposée le 20/10 (commentaire #18, à appliquer seulement après accord)** : les trois prix
+ci-dessus avec les libellés « Pain de l'artisan », « Lanterne de l'artisan », « Épée en fer de l'artisan »
+(`prices.yml` validé par le vrai chargeur, 0 erreur) ; accès en jeu par **Lucien** (Citizens n°14,
+`world_hub` ≈ 722 66 -719) : choix « Ouvrir l'atelier » → Ouvrir un marchand → `rpgquest:artisan_demo`,
+ajouté en tête du nœud `start` de `rpgquest:lucien` et publié via PlugAdmin (aucun JAR, aucun FTP).
+Pour l'étape 8, utiliser la **lanterne** (aucun ingrédient pris, donc aucune place libérée) avec les 36
+emplacements du sac et de la barre occupés par des piles pleines.
+
 1.  Prix et coûts : une fabrication sans ingrédient **et** à 0 pièce → **Attendu** refus « des ingrédients,
     des pièces, ou les deux ».
 2.  Marchands : **Attendu** `artisan_demo` dans « Atelier d'artisan », chaque recette décrite en clair
@@ -7513,8 +7521,9 @@ et son niveau RPG (`/skills`).
 7.  Ajouter un lingot, cliquer l'épée : 2 lingots + 1 bâton + 5 pièces pris, épée reçue, vitrine mise à jour
     (✘ revenus).
 8.  Inventaire plein : clic sur une recette → message de place, rien débité ni pris.
-9.  Relier l'atelier à un PNJ de test (dialogue « Voir les recettes » → Ouvrir un marchand → Atelier de
-    l'artisan) et vérifier l'ouverture depuis le dialogue.
+9.  Relier l'atelier à un PNJ (proposé : Lucien, choix « Ouvrir l'atelier » → Ouvrir un marchand → Atelier de
+    l'artisan) et vérifier l'ouverture depuis le dialogue ; PlugAdmin → Marchands affiche alors « Ouvert par :
+    dialogue « rpgquest:lucien » ».
 
 **Reset** : désactiver les trois prix `demo_recette_*` ; fermer l'atelier si besoin. Les essais n'ont touché
 que le solde et l'inventaire du compte de test.

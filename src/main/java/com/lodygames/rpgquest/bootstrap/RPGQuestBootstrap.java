@@ -1319,6 +1319,23 @@ public final class RPGQuestBootstrap {
         // la source se déclare indisponible et seuls les mondes chargés sont décrits.
         agentActions.setWorldSources(worldService, worldPortalRegistry, configService::current,
                 new com.lodygames.rpgquest.world.multiverse.MultiverseWorldSource());
+        // Issue #561 (#331-W2) : réglages d'un monde existant. Rien n'est appliqué au démarrage :
+        // seule l'action world.settings.apply écrit, après aperçu et confirmation dans PlugAdmin.
+        com.lodygames.rpgquest.world.settings.WorldSettingsAuditLog worldSettingsAudit =
+                new com.lodygames.rpgquest.world.settings.WorldSettingsAuditLog(
+                        plugin.getDataFolder().toPath().resolve("world-settings-audit.yml"),
+                        task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
+                        plugin.getSLF4JLogger());
+        worldSettingsAudit.load();
+        agentActions.setWorldSettings(new com.lodygames.rpgquest.world.settings.WorldSettingsService(
+                new com.lodygames.rpgquest.world.settings.BukkitWorldSettingsGateway(plugin.getServer(),
+                        new com.lodygames.rpgquest.world.multiverse.MultiverseWorldSettings(),
+                        () -> {
+                            var cfg = configService.current();
+                            return new com.lodygames.rpgquest.world.settings.BukkitWorldSettingsGateway.Roles(
+                                    cfg.hub().world(), cfg.travel().wildWorld(), cfg.claims().world());
+                        }),
+                worldSettingsAudit, java.time.Clock.systemUTC()));
         // Issue #564 (#228-P1) : page Portails en lecture seule — mêmes registres que le jeu.
         agentActions.setPortalSources(portalRegistry, destinationRegistry,
                 id -> questProgressEngine.npcNameResolver().apply(id));

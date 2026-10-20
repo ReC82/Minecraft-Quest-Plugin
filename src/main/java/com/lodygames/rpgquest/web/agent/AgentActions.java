@@ -1535,6 +1535,24 @@ public interface AgentActions {
         return CompletableFuture.completedFuture(com.lodygames.rpgquest.world.WorldOverview.View.unavailable());
     }
 
+    /** Réglages d'un monde -- action {@code world.settings.get} (issue #561). {@code null} = indisponible. */
+    default CompletableFuture<com.lodygames.rpgquest.world.settings.WorldSettingsService.Reading> worldSettingsRead(
+            String world) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /** Aperçu sans écriture -- action {@code world.settings.preview} (issue #561). {@code null} = indisponible. */
+    default CompletableFuture<com.lodygames.rpgquest.world.settings.WorldSettingsService.Preview> worldSettingsPreview(
+            String world, Map<String, String> requested, String spawnFromPlayer) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /** Application confirmée -- action {@code world.settings.apply} (issue #561). {@code null} = indisponible. */
+    default CompletableFuture<com.lodygames.rpgquest.world.settings.WorldSettingsService.Application> worldSettingsApply(
+            String world, Map<String, String> requested, String expectedFingerprint, String actor) {
+        return CompletableFuture.completedFuture(null);
+    }
+
     /**
      * Portails du serveur -- action {@code portal.list} (issue #564). Lecture seule ; la vue est
      * indisponible ({@code available=false}) sur un plugin qui ne sait pas la produire.

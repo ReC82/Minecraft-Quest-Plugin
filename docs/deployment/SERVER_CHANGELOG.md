@@ -66,6 +66,23 @@ redémarrage. Aucune configuration, aucune migration, aucun PNJ (ni `npcs/help.y
 progression touchés. La pierre tombale `content-tombstones/dialogues/help.yml` reste en place (elle
 n'empêche que le réamorçage d'un exemple du JAR ; `help.yml` n'en est pas un).
 
+### Déploiement
+
+Effectué le 2026-10-20 : `scripts/deploy-verygames.sh -y --allow-no-backup --also …help_recolte.yml --also
+…help.yml` depuis `9ff50a63` (PR #649, CI verte ; aucun changement de code depuis `118de98e`). JAR 3 898 517 o,
+SHA-256 `5b7d1e33…bc76a`, re-téléchargé et identique ; backup `rpgquest-20261020T180859Z-predeploy.jar`
+(3 896 272 o, `5cd84c38…`, = `118de98e`). `quests/help_recolte.yml` sauvegardé dans
+`extra-20261020T180859Z/` (522 o, identique au relevé d'audit) puis remplacé (1 520 o, `35981fdb…`) ;
+`dialogues/help.yml` créé (3 368 o, `8406d5b6…`). `scripts/verygames-restart.sh` (aucun joueur en ligne),
+DEV de nouveau ONLINE.
+
+### Validation
+
+Lecture seule via l'agent (`created_by = claude-34`) : `npc.list` → `help` « Tania » LINKED, dialogue
+`rpgquest:help` (3 nœuds, 6 choix), démarre et donne `rpgquest:help_recolte`, aucun avertissement ;
+`dialogue.list` → 14 dialogues, 0 erreur de chargement ; `quest.list` → 33 quêtes, `help_recolte` titre
+« Le stock de Tania », objectifs et récompenses inchangés. En jeu : TC-378 / TC-379, PENDING MANUAL VALIDATION.
+
 ### Rollback
 
 Quête : remettre `extra-<horodatage>/RPGQuest/quests/help_recolte.yml` du dossier de sauvegarde.

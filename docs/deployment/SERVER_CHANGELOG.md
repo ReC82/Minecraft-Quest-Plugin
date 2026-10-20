@@ -48,6 +48,23 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Noms affichés des mondes et coordonnées F3 décimales (#81)
+
+### Changement
+
+PlugAdmin n'impose plus « Village / Terrains des joueurs / Monde sauvage » : nom affiché réglable dans
+Mondes → Réglages (alias Multiverse-Core, sinon `plugins/RPGQuest/world-names.yml`), défauts Hub / Claims /
+Wild. Formulaires X/Y/Z des PNJ : décimales F3 acceptées, collage « x y z ».
+
+### Actions serveur
+
+- JAR + PlugAdmin `2b4a2089` (PR #657 puis correctif #676). JAR SHA-256 `d1c7c3db…` retéléchargé identique, backup
+  `rpgquest-20261020T230221Z-predeploy.jar` (version #657). 1er redémarrage (#657, 00:40) OK ; **2e arrêt RCON (01:03) :
+  VeryGames n'a pas relancé** — serveur à démarrer depuis le panel VeryGames (aucune nouvelle tentative). Pas de migration SQL.
+- `world-names.yml` **n'est pas créé** tant qu'aucun nom n'est appliqué sur un monde hors Multiverse ; aucun nom
+  appliqué par Claude. Aucun monde, PNJ ni contenu modifié.
+- Rollback : `scripts/rollback-verygames.sh --latest` (JAR précédent `db563195`) + `scripts/plugadmin/rollback.sh`.
+
 ## 2026-10-20 - Dialogue du Bûcheron Bob : la quête « La requête du bûcheron » redevient acceptable (#80, TC-381)
 
 ### Changement

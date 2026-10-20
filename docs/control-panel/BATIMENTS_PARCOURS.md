@@ -26,7 +26,9 @@
 
 Parcours :
 
-1. **Atelier → Nouveau projet** : nom, « Décrivez le bâtiment souhaité », côté de l'entrée.
+1. **Atelier → Nouveau projet** : nom, « Décrivez le bâtiment souhaité », côté de l'entrée ; sous « Taille
+   et nom technique », trois limites distinctes : largeur X, longueur Z, hauteur Y (#305 — par ex.
+   13 × 9 × 7).
 2. **Créer un plan avec l'IA** (appel facturé, annoncé, protégé du double clic).
 3. **Vérifier le bâtiment** (gratuit) : le résultat s'affiche dans le projet, en français, avec
    l'**aperçu du bâtiment en 3D** (tourner autour, couper au-dessus d'un niveau pour voir l'intérieur) :

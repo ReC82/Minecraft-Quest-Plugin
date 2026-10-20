@@ -23,7 +23,9 @@ import java.util.regex.Pattern;
  * @param origin         d'où vient le brouillon
  * @param parentId       brouillon corrigé, pour une correction ; vide sinon
  * @param sourceActionId action d'où le plan a été récupéré, pour une récupération ; vide sinon
- * @param maxWidth       emprise demandée à l'IA, reprise pour une correction
+ * @param maxWidth       largeur (X) demandée à l'IA, reprise pour une correction
+ * @param maxDepth       longueur (Z) demandée à l'IA (#305) ; un brouillon antérieur, à limite
+ *                       carrée, est relu Z = X
  * @param maxHeight      hauteur demandée à l'IA, reprise pour une correction
  * @param projectId      projet d'atelier (#267) ; vide pour un brouillon antérieur, rattaché seulement
  *                       à son emplacement ({@code siteId}) jusqu'à son import
@@ -32,7 +34,7 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
                                 String planSha, int version, Origin origin, String parentId,
                                 String sourceActionId, String providerId, String providerLabel,
                                 String model, String usage, String rawResponse,
-                                String extractionNote, int maxWidth, int maxHeight,
+                                String extractionNote, int maxWidth, int maxDepth, int maxHeight,
                                 boolean archived, String createdBy, Instant createdAt,
                                 String updatedBy, Instant updatedAt, String projectId) {
 
@@ -44,7 +46,7 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
                              boolean archived, String createdBy, Instant createdAt, String updatedBy,
                              Instant updatedAt) {
         this(id, agentId, siteId, plan, planSha, version, origin, parentId, sourceActionId, providerId,
-                providerLabel, model, usage, rawResponse, extractionNote, maxWidth, maxHeight, archived,
+                providerLabel, model, usage, rawResponse, extractionNote, maxWidth, maxWidth, maxHeight, archived,
                 createdBy, createdAt, updatedBy, updatedAt, "");
     }
 
@@ -106,6 +108,7 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
         updatedBy = updatedBy == null ? "" : updatedBy;
         projectId = projectId == null ? "" : projectId;
         siteId = siteId == null ? "" : siteId;
+        maxDepth = maxDepth > 0 ? maxDepth : maxWidth;
     }
 
     public boolean hasPlan() {

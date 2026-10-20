@@ -374,6 +374,7 @@ class WorkshopFlowTest {
         // Vérification et aperçu sont partis d'eux-mêmes, avec les bornes du projet.
         AgentActionRow firstAudit = latest("building.plan.audit");
         assertEquals("19", firstAudit.params().get("max_width"));
+        assertEquals("19", firstAudit.params().get("max_depth"), "#305 : un formulaire sans Z reste carré");
         assertEquals("14", firstAudit.params().get("max_height"));
         assertEquals(1, store.recentActions(TestConfig.AGENT_ID, 200).stream()
                 .filter(a -> a.type().equals("building.plan.preview")).count());
@@ -667,7 +668,7 @@ class WorkshopFlowTest {
         String imports = section(page, "id=\"ws-import\"");
         assertTrue(imports.contains("Examen avant import"), imports);
         assertTrue(imports.contains("historique global"), imports);
-        assertTrue(imports.contains("19 × 30 × 19"), imports);
+        assertTrue(imports.contains("19 × 19 × 30 (largeur X × longueur Z × hauteur Y)"), imports);
         assertTrue(imports.contains("dépasse la hauteur maximale du projet (14)"), imports);
         assertTrue(imports.contains("Entrée orientée NORTH ; le projet attend WEST."), imports);
         assertTrue(imports.contains("Importer comme nouvelle version de ce projet"), imports);
@@ -960,6 +961,58 @@ class WorkshopFlowTest {
                 + "&front=WEST&max_width=19&max_height=14&building_id=trop_long");
         assertTrue(refused.body().contains("12001 caractères pour 12000 au plus"), excerpt(refused.body()));
         assertTrue(refused.body().contains("Rien n&#39;a été coupé"), "aucune troncature silencieuse");
+    }
+
+    // ---- #305 : emprise rectangulaire -------------------------------------------------------------
+
+    /** Signalement du 13/10/2026 : une estrade 13 × 9 × 7, pas forcée dans un carré 13 × 13. */
+    @Test
+    void aRectangularProjectKeepsItsThreeLimitsUpToTheAiAndTheServer() throws Exception {
+        start();
+        String form = get("/buildings/workshop/new").body();
+        assertTrue(form.contains("name=\"max_depth\""), "un champ Z distinct");
+        HttpResponse<String> res = post("/buildings/workshop/new", "_csrf=" + csrf(form) + "&name=" + enc("Estrade")
+                + "&brief=" + enc(BRIEF) + "&front=WEST&max_width=13&max_depth=9&max_height=7"
+                + "&building_id=bibliotheque_v2");
+        assertEquals(303, res.statusCode(), res.body());
+        String project = location(res);
+
+        String page = get(project).body();
+        String edit = formAround(page, "value=\"project_save\"");
+        assertTrue(edit.contains("name=\"max_width\" min=\"5\" max=\"64\" step=\"1\" required value=\"13\""), edit);
+        assertTrue(edit.contains("name=\"max_depth\" min=\"5\" max=\"64\" step=\"1\" required value=\"9\""), edit);
+        assertTrue(edit.contains("name=\"max_height\" min=\"4\" max=\"64\" step=\"1\" required value=\"7\""), edit);
+
+        String withDraft = propose(project);
+        assertTrue(lastAiRequest.contains("13 blocs en x (largeur), 9 blocs en z (longueur)"), lastAiRequest);
+        BuildingPlanDraft draft = drafts().find(draftId(withDraft)).orElseThrow();
+        assertEquals(java.util.List.of(13, 9, 7), java.util.List.of(draft.maxWidth(), draft.maxDepth(), draft.maxHeight()));
+        AgentActionRow audit = latest("building.plan.audit");
+        assertEquals("13", audit.params().get("max_width"));
+        assertEquals("9", audit.params().get("max_depth"));
+        assertEquals("7", audit.params().get("max_height"));
+        assertEquals("9", latest("building.plan.preview").params().get("max_depth"));
+
+        restart();
+        String again = formAround(get(project).body(), "value=\"project_save\"");
+        assertTrue(again.contains("required value=\"9\""), "Z conservé après redémarrage");
+    }
+
+    @Test
+    void anOutOfRangeDepthIsRefusedNamingTheAxisAndNothingIsSaved() throws Exception {
+        start();
+        String project = createProject("Estrade", BRIEF);
+        String page = get(project).body();
+        String edit = formAround(page, "value=\"project_save\"");
+        HttpResponse<String> res = post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=project_save&id=" + id(project) + "&project_version="
+                + field(edit, "name=\"project_version\" value=\"([^\"]+)\"") + "&name=" + enc("Estrade")
+                + "&brief=" + enc(BRIEF) + "&front=WEST&max_width=13&max_depth=abc&max_height=7"
+                + "&building_id=bibliotheque_v2");
+        String shown = get(location(res)).body();
+        assertTrue(shown.contains("Longueur maximale (Z) invalide"), excerpt(shown));
+        assertTrue(formAround(shown, "value=\"project_save\"").contains("name=\"max_width\" min=\"5\" max=\"64\" "
+                + "step=\"1\" required value=\"19\""), "rien n'a été enregistré");
     }
 
     private void start() throws Exception {

@@ -105,8 +105,12 @@ public final class BuildingPlanDraftStore {
     public record NewDraft(String agentId, String siteId, String plan,
                            BuildingPlanDraft.Origin origin, String parentId, String sourceActionId,
                            String providerId, String providerLabel, String model, String usage,
-                           String rawResponse, String extractionNote, int maxWidth, int maxHeight,
-                           String createdBy, String projectId) {
+                           String rawResponse, String extractionNote, int maxWidth, int maxDepth,
+                           int maxHeight, String createdBy, String projectId) {
+
+        public NewDraft {
+            maxDepth = maxDepth > 0 ? maxDepth : maxWidth;
+        }
 
         /** Forme antérieure à #267 : brouillon rattaché à un emplacement seulement. */
         public NewDraft(String agentId, String siteId, String plan, BuildingPlanDraft.Origin origin,
@@ -114,7 +118,8 @@ public final class BuildingPlanDraftStore {
                         String model, String usage, String rawResponse, String extractionNote,
                         int maxWidth, int maxHeight, String createdBy) {
             this(agentId, siteId, plan, origin, parentId, sourceActionId, providerId, providerLabel,
-                    model, usage, rawResponse, extractionNote, maxWidth, maxHeight, createdBy, "");
+                    model, usage, rawResponse, extractionNote, maxWidth, maxWidth, maxHeight, createdBy,
+                    "");
         }
     }
 
@@ -198,6 +203,10 @@ public final class BuildingPlanDraftStore {
             }
             s.execute("CREATE INDEX IF NOT EXISTS idx_plan_draft_project "
                     + "ON building_plan_draft(agent_id, project_id)");
+            // #305 — même principe : vide pour les brouillons existants, relus en carré (Z = X).
+            if (!hasColumn(c, "building_plan_draft", "max_depth")) {
+                s.execute("ALTER TABLE building_plan_draft ADD COLUMN max_depth INTEGER");
+            }
         } catch (SQLException e) {
             throw new IllegalStateException(
                     "Impossible d'initialiser les tables de brouillons de plan dans " + dbPath, e);
@@ -218,8 +227,8 @@ public final class BuildingPlanDraftStore {
                     INSERT INTO building_plan_draft (id, agent_id, site_id, plan, plan_sha, version,
                         origin, parent_id, source_action_id, provider_id, provider_label, model, usage,
                         raw_response, extraction_note, max_width, max_height, archived, created_by,
-                        created_at, updated_by, updated_at, project_id)
-                    VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)
+                        created_at, updated_by, updated_at, project_id, max_depth)
+                    VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)
                     """)) {
                 int i = 1;
                 ps.setString(i++, id);
@@ -242,7 +251,8 @@ public final class BuildingPlanDraftStore {
                 ps.setString(i++, now);
                 ps.setString(i++, nz(d.createdBy()));
                 ps.setString(i++, now);
-                ps.setString(i, nz(d.projectId()));
+                ps.setString(i++, nz(d.projectId()));
+                ps.setInt(i, d.maxDepth());
                 ps.executeUpdate();
             }
             insertRevision(c, id, 1, plan, sha, d.createdBy(), now);
@@ -622,7 +632,8 @@ public final class BuildingPlanDraftStore {
                 rs.getString("parent_id"), rs.getString("source_action_id"),
                 rs.getString("provider_id"), rs.getString("provider_label"), rs.getString("model"),
                 rs.getString("usage"), rs.getString("raw_response"), rs.getString("extraction_note"),
-                rs.getInt("max_width"), rs.getInt("max_height"), rs.getInt("archived") != 0,
+                rs.getInt("max_width"), rs.getInt("max_depth"), rs.getInt("max_height"),
+                rs.getInt("archived") != 0,
                 rs.getString("created_by"), instant(rs.getString("created_at")),
                 rs.getString("updated_by"), instant(rs.getString("updated_at")),
                 rs.getString("project_id"));

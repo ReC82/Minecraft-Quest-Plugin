@@ -296,8 +296,8 @@ class BuildingDesignPipelineTest {
     @Test
     void aFreshRunIgnoresTheExistingVersions() {
         BuildingPlanDraft old = drafts.create(new BuildingPlanDraftStore.NewDraft(AGENT, "", plan("old"),
-                BuildingPlanDraft.Origin.AI_PROPOSAL, "", "", "openai", "OpenAI", "gpt-4o", "", "", "", 19, 14,
-                "owner", project.id()));
+                BuildingPlanDraft.Origin.AI_PROPOSAL, "", "", "openai", "OpenAI", "gpt-4o", "", "", "", 19, 19,
+                14, "owner", project.id()));
         synchronized (scripted) {
             scripted.add(plan("brand new staircase"));
         }

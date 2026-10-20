@@ -40,6 +40,10 @@ public final class PlanVerdictText {
             Map.entry("LEVEL_UNREACHABLE", new Problem("Un étage n'est relié au rez-de-chaussée par "
                     + "aucun escalier ni aucune échelle.",
                     "Demander un escalier ou une échelle, avec une ouverture dans le plancher.")),
+            // #305
+            Map.entry("PROJECT_LIMITS_EXCEEDED", new Problem("Le plan est plus grand que les limites du "
+                    + "projet (largeur X, longueur Z ou hauteur Y) : le motif nomme l'axe dépassé.",
+                    "Demander à l'IA de réduire cette dimension, ou agrandir la limite du projet.")),
             Map.entry("PLAN_INVALID", new Problem("Le plan proposé par l'IA contient une erreur que le "
                     + "serveur ne sait pas construire.",
                     "Demander à l'IA de corriger le plan : le motif exact lui est transmis.")),

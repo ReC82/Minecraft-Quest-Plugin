@@ -18,11 +18,15 @@ import java.util.regex.Pattern;
  *                     nom d'un emplacement avait heurté celui de la V1)
  * @param front        orientation de référence de l'entrée (NORTH/EAST/SOUTH/WEST) ; la pose sur un
  *                     emplacement réoriente le bâtiment, elle n'est qu'un point de départ
+ * @param maxWidth     emprise maximale en X (largeur), en blocs
+ * @param maxDepth     emprise maximale en Z (longueur / profondeur), en blocs (#305) ; un projet
+ *                     antérieur, à limite carrée unique N, est relu X = N, Z = N
+ * @param maxHeight    hauteur maximale en Y, en blocs
  * @param sourceSiteId emplacement dont le brief a été importé, vide sinon — la trace de la migration
  * @param version      version de la fiche, pour qu'une modification faite ailleurs ne soit pas écrasée
  */
 public record BuildingProject(String id, String agentId, String name, String brief, String buildingId,
-                              String front, int maxWidth, int maxHeight, String sourceSiteId,
+                              String front, int maxWidth, int maxDepth, int maxHeight, String sourceSiteId,
                               int version, boolean archived, String createdBy, Instant createdAt,
                               String updatedBy, Instant updatedAt) {
 
@@ -42,9 +46,23 @@ public record BuildingProject(String id, String agentId, String name, String bri
         brief = brief == null ? "" : brief;
         buildingId = buildingId == null ? "" : buildingId;
         front = normaliseFront(front);
+        maxDepth = maxDepth > 0 ? maxDepth : maxWidth;
         sourceSiteId = sourceSiteId == null ? "" : sourceSiteId;
         createdBy = createdBy == null ? "" : createdBy;
         updatedBy = updatedBy == null ? "" : updatedBy;
+    }
+
+    /** Les limites, dans l'ordre de lecture d'un bâtiment : « 13 × 9 × 7 » = X × Z × Y. */
+    public String limitsLabel() {
+        return limitsLabel(maxWidth, maxDepth, maxHeight);
+    }
+
+    /**
+     * Libellé commun des trois limites (#305), pour que l'aperçu, la bibliothèque et les fiches
+     * disent la même chose : largeur X, longueur Z, hauteur Y.
+     */
+    public static String limitsLabel(int width, int depth, int height) {
+        return width + " de large (X) × " + depth + " de long (Z) × " + height + " de haut (Y)";
     }
 
     public boolean hasBrief() {

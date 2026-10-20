@@ -48,6 +48,44 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Atelier : largeur X, longueur Z et hauteur Y indépendantes (#305)
+
+### Changement
+
+JAR + PlugAdmin (branche `feature/305-emprise-rectangulaire`). PlugAdmin : la fiche d'un projet
+d'Atelier porte trois limites distinctes (X, Z, Y) ; elles vont aux prompts IA et aux vérifications
+(`building.plan.audit` / `preview` : nouveau paramètre optionnel `max_depth`). Plugin : un plan dont la
+taille déclarée dépasse une limite transmise est refusé (`PROJECT_LIMITS_EXCEEDED`, axe nommé) ;
+`PlanRepair` borne Z par `max_depth` (à défaut `max_width`, comportement antérieur).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) et redéploiement de PlugAdmin. Aucune configuration,
+aucun fichier de contenu, aucune donnée de joueur ni bâtiment touchés. **Migration** : côté
+`control-panel.db` (AWS) seulement, colonnes additives `building_project.max_depth` et
+`building_plan_draft.max_depth`, vides pour les lignes existantes (relues en carré). Aucune migration
+`data.db`.
+
+### Sauvegarde préalable
+
+Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés) ; `control-panel.db` sauvegardée
+par `scripts/plugadmin/deploy.sh`.
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` (avec `RPGQUEST_TEST_MAX_HEAP=768m`) puis `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+Atelier → Nouveau projet : trois champs X / Z / Y ; TC-371 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Remettre le JAR sauvegardé et redémarrer ; redéployer PlugAdmin précédent. Les colonnes `max_depth`
+ajoutées sont ignorées par l'ancien panel (aucune donnée perdue).
+
+---
+
 ## 2026-10-19 - Variables métier typées : CLAIM_TIER_1 = lasagne refusée partout (#320)
 
 ### Changement

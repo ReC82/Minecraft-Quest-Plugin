@@ -44,16 +44,29 @@ class PlanImportPreviewTest {
                 Optional.empty());
 
         assertEquals(4, p.conflicts().size(), p.conflicts().toString());
-        assertTrue(p.conflicts().get(0).contains("21×17"));
+        assertTrue(p.conflicts().get(0).contains("Largeur (X) 21"), p.conflicts().toString());
         assertTrue(p.provenance().contains("historique global"));
         assertFalse(p.ownedHere());
+    }
+
+    /** #305 : une limite rectangulaire est jugée axe par axe — Z dépassé, X dans les clous. */
+    @Test
+    void aRectangularProjectFlagsOnlyTheExceededAxis() {
+        PlanImportPreview p = PlanImportPreview.of(row(), PLAN.replace("north", "SOUTH")
+                .replace("bibliotheque_du_hub", "estrade"), project(25, 15, 20), Optional.empty(),
+                Optional.empty(), Optional.empty());
+
+        assertEquals(1, p.conflicts().size(), p.conflicts().toString());
+        assertTrue(p.conflicts().get(0).contains("Longueur (Z) 17"), p.conflicts().toString());
+        assertTrue(p.conflicts().get(0).contains("(15)"), p.conflicts().toString());
+        assertEquals("21 × 17 × 12 (largeur X × longueur Z × hauteur Y)", p.dimensions());
     }
 
     @Test
     void aPlanWithinTheLimitsOfTheSameProjectIsRecognisedAsOwnedHere() {
         BuildingProject target = project(30, 20);
         BuildingPlanDraft owner = new BuildingPlanDraft("d1", "agent", "", PLAN, "", 1, BuildingPlanDraft.Origin.AI_PROPOSAL,
-                "", "", "", "", "", "", "", "", 30, 20, false, "", Instant.EPOCH, "", Instant.EPOCH, target.id());
+                "", "", "", "", "", "", "", "", 30, 30, 20, false, "", Instant.EPOCH, "", Instant.EPOCH, target.id());
         PlanImportPreview p = PlanImportPreview.of(row(), PLAN.replace("north", "SOUTH")
                 .replace("bibliotheque_du_hub", "estrade"), target, Optional.of(owner), Optional.of(target),
                 Optional.empty());
@@ -68,7 +81,11 @@ class PlanImportPreviewTest {
     }
 
     private static BuildingProject project(int width, int height) {
-        return new BuildingProject("p1", "agent", "Estrade", "brief", "estrade", "SOUTH", width, height, "", 1,
-                false, "", Instant.EPOCH, "", Instant.EPOCH);
+        return project(width, width, height);
+    }
+
+    private static BuildingProject project(int width, int depth, int height) {
+        return new BuildingProject("p1", "agent", "Estrade", "brief", "estrade", "SOUTH", width, depth, height,
+                "", 1, false, "", Instant.EPOCH, "", Instant.EPOCH);
     }
 }

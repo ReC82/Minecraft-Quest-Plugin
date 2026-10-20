@@ -1700,6 +1700,23 @@ absent du relevé, aucun fournisseur utilisable.
 **sans emplacement**. Un **projet** porte le nom, la description du bâtiment souhaité (6 000 car.), le côté
 de l'entrée, la taille maximale et le **nom technique** sous lequel il entrera dans la bibliothèque.
 
+**Limites de taille : trois axes indépendants (issue #305).** La fiche du projet demande séparément la
+**largeur maximale — X**, la **longueur / profondeur maximale — Z** et la **hauteur maximale, toit
+compris — Y** (entiers de 5 à 64, 4 à 64 pour Y ; une valeur hors bornes ou non entière est refusée en
+nommant le champ, rien n'est recadré en douce). Une estrade 13 × 9 × 7 n'est donc plus forcée dans un carré
+13 × 13. Les axes sont ceux du plan, entrée devant soi : X le long de la façade d'entrée, Z de l'entrée vers
+le fond. À la pose, une rotation de 90° / 270° échange X et Z **dans le monde** (emprise calculée par le
+plugin, contrôle de collisions inchangé) ; les dimensions du projet, elles, ne changent pas. Les trois
+limites sont transmises à la conception détaillée, à chaque génération, correction et critique
+(« Emprise maximale : 13 blocs en x (largeur), 9 blocs en z (longueur) ») et à chaque vérification/aperçu
+(`building.plan.audit` / `preview` : `max_width`, `max_depth`, `max_height`). Le plugin **refuse** un plan
+dont la taille déclarée dépasse l'une d'elles (code `PROJECT_LIMITS_EXCEEDED`, motif « size.z = 11 pour
+une longueur maximale (Z) de 9 ») — même si X tient — et la réparation déterministe ne fait grandir Z que
+jusqu'à la limite Z. La carte « Enregistrer » affiche « Produit : … — limites du projet : X ≤ 13, Z ≤ 9,
+Y ≤ 7 ». **Migration** : colonne additive `max_depth` (projets et brouillons) ; une ligne antérieure garde
+sa limite carrée (N → X = N, Z = N) sans être réécrite ; un ancien panel qui n'envoie pas `max_depth` est
+traité comme carré par le plugin. Aucun plan, bâtiment de la bibliothèque ou bâtiment posé n'est modifié.
+
 Parcours guidé : Décrire → Proposer un plan (IA, facturé) → Vérifier (gratuit) → Enregistrer dans la
 bibliothèque. Une seule action principale à la fois ; les problèmes de vérification sont dits en français
 avec une piste ; « Améliorer avec l'IA » crée une nouvelle version. L'enregistrement n'utilise **jamais**
@@ -1718,8 +1735,8 @@ fiche :
   n'appartiennent à aucun brouillon, ou identifiant d'action collé (plan d'un autre projet, ancien
   brouillon d'emplacement sans projet). **« Examiner avant import »** n'écrit rien et montre la provenance
   (historique global / projet « X » / ancien brouillon sans projet), l'action source, nom technique, nom,
-  dimensions, entrée, les limites du projet et les **incompatibilités** (emprise, hauteur, entrée, nom
-  technique). Seul **« Importer comme nouvelle version de ce projet »** écrit : une **copie** (origine
+  dimensions (largeur X × longueur Z × hauteur Y), entrée, les limites du projet et les
+  **incompatibilités** (largeur X, longueur Z, hauteur, entrée, nom technique — chaque axe à part, #305). Seul **« Importer comme nouvelle version de ce projet »** écrit : une **copie** (origine
   « Récupéré depuis une action »), sans appel à l'IA ni facturation ; la source n'est ni déplacée ni
   modifiée (un ancien brouillon sans projet n'est plus rattaché d'office), le brief et la conception du
   projet restent les siens, et le verdict d'une action déjà rattachée reste à sa source. Importer deux
@@ -2066,7 +2083,7 @@ refus nouveau :
 
 | Faute | Correction |
 |---|---|
-| zone qui déborde du volume de 3 blocs au plus | volume agrandi si le projet le permet (`max_width`/`max_height` transmis par l'Atelier), sinon zone ramenée au volume — un toit `gable` est alors arasé, l'enveloppe restant close |
+| zone qui déborde du volume de 3 blocs au plus | volume agrandi si le projet le permet (`max_width` pour X, `max_depth` pour Z — #305 —, `max_height` pour Y, transmis par l'Atelier), sinon zone ramenée au volume — un toit `gable` est alors arasé, l'enveloppe restant close |
 | étage inaccessible | ajout de l'escalier vérifié |
 | escaliers, échelles, trémies d'origine qui ne mènent plus nulle part | retirés (une trémie orpheline est un trou où l'on tombe) |
 | `box` de meubles couvrant ≥ 40 % d'un plancher encombré | transformée en `walls` : rangée le long de son pourtour, centre libre |

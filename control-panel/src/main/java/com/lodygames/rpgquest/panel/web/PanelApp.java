@@ -1197,10 +1197,27 @@ public final class PanelApp {
             Map<String, String> f) {
         String name = f.getOrDefault("name", "").trim();
         String id = f.getOrDefault("building_id", "").trim();
+        // #305 : un formulaire antérieur n'envoie pas « max_depth » — sa limite était carrée.
+        int width = limitOf(f.get("max_width"), 19);
         return new com.lodygames.rpgquest.panel.building.BuildingProjectStore.Fields(name,
                 f.getOrDefault("brief", "").replace("\r\n", "\n"),
                 id.isEmpty() ? com.lodygames.rpgquest.panel.building.BuildingProject.suggestBuildingId(name) : id,
-                f.get("front"), parseIntOr(f.get("max_width"), 19), parseIntOr(f.get("max_height"), 14));
+                f.get("front"), width, limitOf(f.get("max_depth"), width), limitOf(f.get("max_height"), 14));
+    }
+
+    /**
+     * Une limite du formulaire d'Atelier (#305) : absente, la valeur par défaut ; illisible,
+     * {@code NOT_A_NUMBER}, que la validation refuse en nommant le champ au lieu de la remplacer.
+     */
+    private static int limitOf(String raw, int fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return com.lodygames.rpgquest.panel.building.BuildingProjectStore.NOT_A_NUMBER;
+        }
     }
 
     /**
@@ -1247,15 +1264,17 @@ public final class PanelApp {
         String name = site.map(com.lodygames.rpgquest.panel.building.BuildingSiteView::name).orElse(siteId);
         String brief = site.map(com.lodygames.rpgquest.panel.building.BuildingSiteView::aiBrief).orElse("");
         int width = siteDrafts.stream().mapToInt(BuildingPlanDraft::maxWidth).filter(w -> w > 0).findFirst().orElse(19);
+        int depth = siteDrafts.stream().mapToInt(BuildingPlanDraft::maxDepth).filter(d -> d > 0).findFirst().orElse(width);
         int height = siteDrafts.stream().mapToInt(BuildingPlanDraft::maxHeight).filter(h -> h > 0).findFirst().orElse(14);
         var fields = new com.lodygames.rpgquest.panel.building.BuildingProjectStore.Fields(name, brief,
                 com.lodygames.rpgquest.panel.building.BuildingProject.suggestBuildingId(name),
                 site.map(com.lodygames.rpgquest.panel.building.BuildingSiteView::facing).orElse("SOUTH"),
-                width, height);
+                width, depth, height).clamped();
         if (fields.name().length() > com.lodygames.rpgquest.panel.building.BuildingProject.MAX_NAME) {
             fields = new com.lodygames.rpgquest.panel.building.BuildingProjectStore.Fields(
                     fields.name().substring(0, com.lodygames.rpgquest.panel.building.BuildingProject.MAX_NAME),
-                    fields.brief(), fields.buildingId(), fields.front(), fields.maxWidth(), fields.maxHeight());
+                    fields.brief(), fields.buildingId(), fields.front(), fields.maxWidth(), fields.maxDepth(),
+                    fields.maxHeight());
         }
         var project = planProjects.create(agentId, fields, siteId, session.username());
         int attached = planDrafts.attachSiteDrafts(agentId, siteId, project.id());
@@ -1450,7 +1469,7 @@ public final class PanelApp {
         BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId, from.siteId(),
                 from.plan(), BuildingPlanDraft.Origin.RESUMED, from.id(), "", "", "", "", "", "",
                 "Reprise de la version " + from.id().substring(0, 8) + ", sans appel à l'IA.",
-                project.maxWidth(), project.maxHeight(), session.username(), project.id()));
+                project.maxWidth(), project.maxDepth(), project.maxHeight(), session.username(), project.id()));
         audit.record(session.username(), "building.plan.resume", "project=" + project.id() + " from="
                 + from.id() + " draft=" + created.id(), "OK", "", UUID.randomUUID().toString().substring(0, 8));
         workshopAutopilot.verify(created, session.username());
@@ -1489,7 +1508,7 @@ public final class PanelApp {
     private com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demandOf(
             com.lodygames.rpgquest.panel.building.BuildingProject p) {
         return new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(p.id(), p.name(), p.front(),
-                p.brief(), p.maxWidth(), p.maxHeight(), p.buildingId(),
+                p.brief(), p.maxWidth(), p.maxDepth(), p.maxHeight(), p.buildingId(),
                 designDocs.latest(p.id()).map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text)
                         .orElse(""));
     }
@@ -1866,7 +1885,8 @@ public final class PanelApp {
         BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId, "",
                 proposal.hasPlan() ? proposal.plan() : "", origin, parentId, "", proposal.providerId(),
                 proposal.providerLabel(), proposal.model(), proposal.usage(), proposal.rawResponse(),
-                proposal.extractionNote(), demand.maxWidth(), demand.maxHeight(), session.username(), project.id()));
+                proposal.extractionNote(), demand.maxWidth(), demand.maxDepth(), demand.maxHeight(),
+                session.username(), project.id()));
         planDrafts.fulfil(token, created.id());
         planProjects.touch(project.id(), session.username());
         // #282 : un plan neuf est vérifié et dessiné aussitôt, gratuitement. Si le serveur sait le
@@ -1950,6 +1970,7 @@ public final class PanelApp {
         if (check != BuildingPlanDraftStore.Check.GENERATE) {
             // #282 : les bornes du projet, pour la réparation déterministe du plugin.
             fields.put("max_width", String.valueOf(project.maxWidth()));
+            fields.put("max_depth", String.valueOf(project.maxDepth()));
             fields.put("max_height", String.valueOf(project.maxHeight()));
         }
         if (check == BuildingPlanDraftStore.Check.GENERATE) {
@@ -1986,6 +2007,7 @@ public final class PanelApp {
             // dira simplement que l'aperçu manque.
             Queued drawn = enqueueValidated(session, agentId, BuildingPlanDraftStore.Check.PREVIEW.actionType(),
                     Map.of("plan", current.plan(), "max_width", String.valueOf(project.maxWidth()),
+                            "max_depth", String.valueOf(project.maxDepth()),
                             "max_height", String.valueOf(project.maxHeight())));
             if (drawn.error() == null) {
                 planDrafts.link(current.id(), drawn.actionId(), BuildingPlanDraftStore.Check.PREVIEW,
@@ -2055,7 +2077,7 @@ public final class PanelApp {
         String plan = BuildingPlanWorkbench.planOf(row).orElseThrow();
         BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId, "", plan,
                 BuildingPlanDraft.Origin.RECOVERED, "", actionId, "", "", "", "", "", "", project.maxWidth(),
-                project.maxHeight(), session.username(), project.id()));
+                project.maxDepth(), project.maxHeight(), session.username(), project.id()));
         if (preview.get().sourceDraftId().isEmpty()) {
             BuildingPlanDraftStore.Check.ofActionType(row.type())
                     .ifPresent(check -> planDrafts.link(created.id(), actionId, check, 1));

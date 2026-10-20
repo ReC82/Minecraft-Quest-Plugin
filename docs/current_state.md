@@ -1128,6 +1128,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique » (Standard 4 / Soigné 8 / Exigeant 12 appels, critique architecturale, enveloppe
   annoncée et consentie, journal `building_design_run`). Voir la Bible, « Étages reliés,
   réparation déterministe et conception automatique ». Essais réels OpenAI sur DEV : PENDING.
+- **Atelier : emprise rectangulaire** *(issue #305, 2026-10-20)* — largeur X, longueur Z et
+  hauteur Y définies séparément dans la fiche d'un projet (colonne additive `max_depth`, anciens
+  projets relus en carré N → X = N, Z = N) ; les trois limites vont à la conception, aux prompts de
+  génération/correction/critique et aux vérifications (`max_depth`) ; le plugin refuse un plan qui
+  dépasse un axe (`PROJECT_LIMITS_EXCEEDED`, axe nommé) et `PlanRepair` ne fait grandir Z que jusqu'à Z.
+  Validation en jeu : TC-371, PENDING MANUAL VALIDATION.
 - **Brouillons de plan IA : reprendre un plan sans le repayer** *(issue #256, suite de #94,
   2026-10-12)* — premier plan V2 réel (OpenAI, `buildsite_0009`) : le clic sur « Auditer » quittait le
   parcours, la fiche d'action ne ramenait qu'à `/actions`, et le plan **payé** n'était plus

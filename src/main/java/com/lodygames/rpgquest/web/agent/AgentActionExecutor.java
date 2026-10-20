@@ -4,6 +4,8 @@ import com.lodygames.rpgquest.content.pack.ContentFamily;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import com.lodygames.rpgquest.dialogue.model.ActionType;
 import com.lodygames.rpgquest.encounter.EncounterTemplateParser;
+import com.lodygames.rpgquest.mob.ability.MobAbilityExchange;
+import com.lodygames.rpgquest.mob.ability.MobAbilityRules;
 import com.lodygames.rpgquest.mob.community.CommunityBossSettings;
 import com.lodygames.rpgquest.player.PlayerResetService.ResetScope;
 import com.lodygames.rpgquest.quest.model.QuestState;
@@ -158,6 +160,7 @@ public final class AgentActionExecutor {
                 case WAYPOINT_RENAME -> waypointRename(action);
                 case MOB_LIST -> mobList(action);
                 case MOB_CATALOGS -> mobCatalogs(action);
+                case MOB_ABILITY_CATALOG -> mobAbilityCatalog(action);
                 case ITEM_CATALOGS -> itemCatalogs(action);
                 case CONTENT_DEFINITION_DELETE -> contentDefinitionDelete(action);
                 case MOB_DEFINITION_CREATE -> mobDefinitionWrite(action, true);
@@ -703,6 +706,18 @@ public final class AgentActionExecutor {
     // ---- Mobs spéciaux / boss (issue #169, lot 1) ---------------------------------------------
 
     /** {@code mob.catalogs} (#172/#196) : lecture pure des registres de la version installée. */
+    /**
+     * {@code mob.ability.catalog} (#543) : registre statique du moteur, sans accès au monde — répond
+     * hors du thread principal. Le même bloc est joint à {@code mob.list} (« abilityCatalog »).
+     */
+    private CompletableFuture<AgentActionOutcome> mobAbilityCatalog(AgentAction action) {
+        Map<String, Object> details = MobAbilityExchange.catalogDetails();
+        int count = ((List<?>) details.get("types")).size();
+        return done(AgentActionOutcome.success(action.id(), String.valueOf(count),
+                count + " type(s) de capacité, " + MobAbilityRules.MAX_ABILITIES_PER_PROFILE + " au plus par profil.",
+                details));
+    }
+
     private CompletableFuture<AgentActionOutcome> mobCatalogs(AgentAction action) {
         return actions.mobCatalogs().thenApply(view -> {
             Map<String, Object> details = new LinkedHashMap<>();
@@ -831,6 +846,9 @@ public final class AgentActionExecutor {
                 row.put("summonCooldownSeconds", p.summonCooldownSeconds());
                 row.put("summonMaxAlive", p.summonMaxAlive());
                 row.put("abilitiesSummary", p.abilitiesSummary());
+                // Issue #543 : capacités structurées (cartes du formulaire) et avertissements de chargement.
+                row.put("abilities", p.abilities());
+                row.put("abilityWarnings", p.abilityWarnings());
                 row.put("bossMode", p.bossMode());
                 row.put("communityWeight", p.communityWeight());
                 row.put("participationRewards", p.participationRewards());
@@ -844,6 +862,7 @@ public final class AgentActionExecutor {
 
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("profiles", rows);
+            details.put("abilityCatalog", MobAbilityExchange.catalogDetails());
             details.put("spawnSettings", settings);
             details.put("hasIssues", view.hasIssues());
             details.put("issues", view.issues());
@@ -913,7 +932,18 @@ public final class AgentActionExecutor {
         List<String> biomes = placement.get("biomes");
         List<String> zones = placement.get("zones");
 
-        CompletableFuture<AgentActions.MutationResult> future = (create ? actions.mobDefinitionCreate(
+        // Issue #543 : liste structurée des cartes de capacités (JSON). Absente = ancien formulaire.
+        List<Map<String, Object>> abilities = null;
+        String rawAbilities = action.param("abilities");
+        if (rawAbilities != null) {
+            abilities = parseAbilityEntries(rawAbilities);
+            if (abilities == null) {
+                return done(AgentActionOutcome.rejected(action.id(),
+                        "Paramètre « abilities » illisible (liste JSON d'objets attendue). Rien n'a été écrit."));
+            }
+        }
+
+        CompletableFuture<AgentActions.MutationResult> future = actions.mobDefinitionWrite(create,
                 id, category, enabled, entityType, displayName, spawnChance,
                 worlds, biomes, zones,
                 parseDouble(action.param("health")), parseDouble(action.param("damage")),
@@ -926,23 +956,35 @@ public final class AgentActionExecutor {
                 parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
                 parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
                 parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
-                bossMode, communityWeight, participationRewards)
-                : actions.mobDefinitionUpdate(
-                id, category, enabled, entityType, displayName, spawnChance,
-                worlds, biomes, zones,
-                parseDouble(action.param("health")), parseDouble(action.param("damage")),
-                parseDouble(action.param("speed")), parseDouble(action.param("armor")),
-                parseDouble(action.param("knockback_resistance")), parseDouble(action.param("scale")),
-                parseDouble(action.param("creeper_explosion_radius")),
-                trimOrNull(action.param("particle")), trimOrNull(action.param("sound")),
-                parseOptionalInt(action.param("xp_reward")), parseOptionalInt(action.param("max_population")),
-                parseDouble(action.param("enraged_health_fraction")), parseDouble(action.param("enraged_speed_multiplier")),
-                parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
-                parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
-                parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")),
-                bossMode, communityWeight, participationRewards));
+                bossMode, communityWeight, participationRewards, abilities);
         return future.thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Liste JSON d'objets du formulaire (#543), ou {@code null} si elle est illisible ou trop longue. */
+    static List<Map<String, Object>> parseAbilityEntries(String raw) {
+        if (raw.length() > MAX_ABILITIES_PARAM_CHARS) {
+            return null;
+        }
+        Object parsed;
+        try {
+            parsed = com.lodygames.rpgquest.web.Json.parse(raw);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (!(parsed instanceof List<?> list)) {
+            return null;
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> m)) {
+                return null;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            m.forEach((k, v) -> entry.put(String.valueOf(k), v));
+            out.add(entry);
+        }
+        return out;
     }
 
     /**
@@ -1048,6 +1090,8 @@ public final class AgentActionExecutor {
     private static final java.util.Set<String> BOSS_MODES = java.util.Set.of("QUEST", "COMMUNITY");
     private static final int MAX_COMMUNITY_WEIGHT = 1000;
     private static final int MAX_PARTICIPATION_REWARDS = 5;
+    /** Issue #543 : taille au plus du paramètre « abilities » (10 cartes de 20 réglages tiennent largement). */
+    static final int MAX_ABILITIES_PARAM_CHARS = 16_000;
     private static final Pattern REWARD_KEY = com.lodygames.rpgquest.mob.model.SpecialMobDefinition.REWARD_KEY;
     private static final Pattern ENTITY_UUID = Pattern.compile(
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");

@@ -126,4 +126,34 @@ class MobAbilityGoldenTest {
                 new SummonOnDamageAbility(org.bukkit.entity.EntityType.HUSK, 3, 6, true, new AbilityOptions(false, 0.5, 5)),
                 new EnragedAbility(0.4, 1.3, 1.5, new AbilityOptions(false, 0.5, 10))), merged);
     }
+
+    /**
+     * Issue #543 — les cartes de capacités de PlugAdmin renvoient chaque valeur en texte, telle que
+     * {@code mob.list} l'a publiée : enregistrer sans rien changer doit redonner exactement les mêmes
+     * lignes de capacités, dans le même ordre (aucune réécriture de fichier existant).
+     */
+    @Test
+    void panelCardsSentBackUnchangedRenderTheSameAbilities() throws Exception {
+        for (Path file : profiles()) {
+            SpecialMobDefinition def = parse(file);
+            List<Object> sent = new ArrayList<>();
+            for (MobAbility ability : def.abilities()) {
+                java.util.Map<String, Object> view = com.lodygames.rpgquest.mob.ability.MobAbilityExchange.instanceView(ability);
+                java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                entry.put("type", view.get("type"));
+                ((java.util.Map<?, ?>) view.get("values")).forEach((k, v) -> entry.put((String) k, String.valueOf(v)));
+                sent.add(entry);
+            }
+            com.lodygames.rpgquest.mob.ability.MobAbilityExchange.Parsed back =
+                    com.lodygames.rpgquest.mob.ability.MobAbilityExchange.parseEntries(sent);
+            assertTrue(back.ok(), file + " : " + back.errors());
+            assertEquals(renderAbilities(def.abilities()), renderAbilities(back.abilities()), "capacités modifiées : " + file);
+        }
+    }
+
+    private static String renderAbilities(List<MobAbility> abilities) {
+        StringBuilder sb = new StringBuilder();
+        abilities.forEach(a -> com.lodygames.rpgquest.mob.ability.MobAbilityCatalog.render(a, sb));
+        return sb.toString();
+    }
 }

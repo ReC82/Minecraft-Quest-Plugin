@@ -2136,7 +2136,27 @@ public interface AgentActions {
                              Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount,
                              Double summonChance, Integer summonCooldownSeconds, Integer summonMaxAlive,
                              List<String> abilitiesSummary, String bossMode, int communityWeight,
-                             List<String> participationRewards, String yaml) {
+                             List<String> participationRewards, String yaml, List<Map<String, Object>> abilities,
+                             List<String> abilityWarnings) {
+
+        /** Forme antérieure à #543, sans les capacités structurées. */
+        public MobProfileSummary(String id, String category, boolean enabled, String entityType, String displayName,
+                                 double spawnChance, List<String> worlds, List<String> biomes, List<String> zones,
+                                 Double health, Double damage, Double speed, Double armor,
+                                 Double knockbackResistance, Double scale, Double creeperExplosionRadius,
+                                 String particle, String sound, Integer xpReward, Integer maxPopulation,
+                                 int alivePopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+                                 Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount,
+                                 Double summonChance, Integer summonCooldownSeconds, Integer summonMaxAlive,
+                                 List<String> abilitiesSummary, String bossMode, int communityWeight,
+                                 List<String> participationRewards, String yaml) {
+            this(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones, health, damage,
+                    speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound, xpReward,
+                    maxPopulation, alivePopulation, enragedHealthFraction, enragedSpeedMultiplier,
+                    enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
+                    summonMaxAlive, abilitiesSummary, bossMode, communityWeight, participationRewards, yaml,
+                    List.of(), List.of());
+        }
 
         /** Forme antérieure à #214, sans le fichier canonique (« Exporter ce profil »). */
         public MobProfileSummary(String id, String category, boolean enabled, String entityType, String displayName,
@@ -2223,6 +2243,37 @@ public interface AgentActions {
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
             Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
             List<String> participationRewards);
+
+    /**
+     * Issue #543 — comme {@link #mobDefinitionCreate}/{@link #mobDefinitionUpdate}, avec la liste
+     * <strong>complète et ordonnée</strong> des capacités envoyée par les cartes du formulaire
+     * (objets {@code {"type": …, "<clé YAML>": "<valeur>"}}) : elle remplace celle du profil et les
+     * champs plats Enragé/Renforts sont ignorés. {@code null} = ancien formulaire (champs plats).
+     */
+    default CompletableFuture<MutationResult> mobDefinitionWrite(boolean create, String id, String category,
+            boolean enabled, String entityType, String displayName, double spawnChance, List<String> worlds,
+            List<String> biomes, List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+            List<String> participationRewards, List<Map<String, Object>> abilities) {
+        if (abilities != null) {
+            return CompletableFuture.completedFuture(MutationResult.of(false, "UNSUPPORTED",
+                    "Capacités structurées non prises en charge par cette implémentation."));
+        }
+        return create
+                ? mobDefinitionCreate(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes,
+                        zones, health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius,
+                        particle, sound, xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier,
+                        enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
+                        summonMaxAlive, bossMode, communityWeight, participationRewards)
+                : mobDefinitionUpdate(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes,
+                        zones, health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius,
+                        particle, sound, xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier,
+                        enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
+                        summonMaxAlive, bossMode, communityWeight, participationRewards);
+    }
 
     /** Bascule {@code enabled} sans toucher au reste du profil -- action {@code mob.definition.toggle}. */
     CompletableFuture<MutationResult> mobDefinitionToggle(String id, boolean enabled);

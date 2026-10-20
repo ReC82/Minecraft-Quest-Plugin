@@ -6716,6 +6716,37 @@ les étapes 1, 2, 4 et 7 ; l'étape 3 en demande un (facultatif). **Durée** : 1
     ses versions, sa conception et son historique sont intacts ; aucun bâtiment posé n'a bougé.
 
 
+### TC-375 — PlugAdmin : créer un monde (issue #562, PENDING MANUAL VALIDATION — création réelle en attente d'accord du propriétaire)
+
+Prérequis : JAR **et** PlugAdmin issus de la PR #562 sur DEV, compte Propriétaire. **Claude n'a créé aucun
+monde** et n'a jamais cliqué sur « Créer le monde ». Les étapes 1 à 5 ne créent rien. Les étapes 6 à 9
+**créent réellement un monde** : à faire seulement après accord explicite du propriétaire (nom du monde de
+test et moment, décision Q4 de l'étude #331 ; le serveur se fige quelques secondes).
+
+1.  Mondes → bouton « Créer un monde » → « Lire les options du serveur ». **Attendu** : formulaire guidé ;
+    « Noms déjà pris » liste `world_hub`, `wild`, `claims`, `world`… ; aucun débordement sur téléphone.
+2.  Choisir Nether : le bloc Terrain et « Monde plat » disparaissent ; revenir à Monde normal + Plat : le
+    bloc « Monde plat » (préréglage, biome, 6 couches) apparaît.
+3.  Nom `Wild` → « Vérifier et voir le résumé ». **Attendu** : « Création impossible en l'état » (monde
+    essentiel), aucun bouton « Créer le monde ».
+4.  Nom `Terres gelées`, Plat, préréglage Neige, structures décochées → Vérifier. **Attendu** : identifiant
+    `terres_gelees`, couches 1 × bedrock, 2 × dirt, 1 × snow_block, biome snowy_plains, « Aucun rôle… »,
+    avertissement « fige le serveur ». **Ne pas cocher la confirmation** (ou annuler) : `/mv list` en jeu
+    ne montre aucun nouveau monde.
+5.  Compte Administrateur (sans `WORLD_CREATE`) : pas de bouton « Créer un monde » ; `/worlds/create`
+    refusé.
+6.  (Accord propriétaire) Monde normal, nom de test choisi par le propriétaire, graine `12345` → Vérifier →
+    confirmer → « Créer le monde ». **Attendu** : En cours puis « Prêt : monde créé et relu conforme »,
+    contrôles Confirmé (dimension NORMAL, terrain NORMAL, graine 12345, géré par Multiverse, rechargé au
+    redémarrage, zone d'apparition non gardée en mémoire). En jeu : `/mv info <nom>`, `/seed` dans le monde.
+7.  (Accord propriétaire) Recharger la page résultat et recliquer « Créer le monde » sur le même aperçu :
+    « déjà été envoyée », rien en double.
+8.  (Accord propriétaire) Monde plat (préréglage Neige ou couches personnalisées + biome) : relecture
+    « Couches et biome » Confirmé ; en jeu, vérifier les couches au sol et le biome (F3).
+9.  (Accord propriétaire) Redémarrer DEV : les mondes créés sont rechargés (`/mv list`), aucun rôle
+    (Hub/Wild/Claims inchangés dans `/worlds`), aucun waypoint généré, aucun portail ; `world_hub`, `wild`,
+    `claims` inchangés. Suppression éventuelle du monde de test : hors PlugAdmin, décision du propriétaire.
+
 ### TC-374 — PlugAdmin : réglages d'un monde existant, aperçu, confirmation et relecture (issue #561, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR **et** PlugAdmin issus de la PR #561 sur DEV, compte Propriétaire. Claude n'a appliqué

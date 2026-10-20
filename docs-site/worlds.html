@@ -138,8 +138,8 @@
       <strong>lecture seule</strong> (issue #560) : chargé ou non, dimension, génération, graine,
       gestionnaire (Multiverse-Core, RPGQuest <code>worlds.yml</code> ou serveur), rôle Hub / Wild /
       Claims, badge « Essentiel », portails, emplacements, waypoints, mobs, emplacements PNJ et villes
-      liés, problèmes détectés. Sans Multiverse-Core, seuls les mondes chargés apparaissent. Créer,
-      charger ou décharger un monde ne se fait pas depuis cette page.
+      liés, problèmes détectés. Sans Multiverse-Core, seuls les mondes chargés apparaissent. Charger ou
+      décharger un monde ne se fait pas depuis cette page ; la création passe par « Créer un monde ».
     </p>
     <h3 class="h5 mt-4">Régler un monde existant (issue #561)</h3>
     <p class="text-body-secondary">
@@ -160,6 +160,32 @@
       les monstres ne peuvent pas être activés ; dans Claims, PvP et monstres restent interdits ; le Wild
       refuse la difficulté Paisible. Chaque application est notée dans
       <code>plugins/RPGQuest/world-settings-audit.yml</code> et dans « Dernières modifications ».
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Créer un monde (issue #562)</h2>
+    <p class="text-body-secondary">
+      Page Mondes → <strong>Créer un monde</strong> (permission <code>WORLD_CREATE</code>, propriétaire par
+      défaut). Le monde est créé par <strong>Multiverse-Core</strong>, qui le recharge à chaque démarrage ;
+      sans Multiverse-Core, la création est impossible et la raison est affichée.
+    </p>
+    <ol class="text-body-secondary">
+      <li>« Lire les options du serveur » : noms déjà pris, biomes et blocs disponibles.</li>
+      <li>Remplir : nom (l'identifiant du dossier en est déduit), dimension (normal, Nether, End), terrain
+        (normal, plat, amplifié, grands biomes — monde normal seulement), graine facultative, structures ;
+        pour un monde plat : préréglage, couches du bas vers le haut et biome.</li>
+      <li>« Vérifier et voir le résumé » : <strong>rien n'est créé</strong>. Le serveur affiche l'identifiant,
+        le résumé et refuse en français ce qui ne va pas (nom pris, dossier présent, monde essentiel, bloc
+        inconnu…).</li>
+      <li>Cocher « Je confirme la création du monde … » puis « Créer le monde ». Le serveur se fige quelques
+        secondes. État : En cours → Prêt (relu conforme) ou Échec avec la raison.</li>
+    </ol>
+    <p class="text-body-secondary">
+      Une demande n'est traitée qu'une fois (double clic, retour arrière ou nouvel essai : rien en double),
+      une seule création à la fois. Le nouveau monde n'a aucun rôle Hub / Wild / Claims, aucun portail, aucun
+      waypoint automatique ; ses réglages se font ensuite depuis sa fiche. Journal :
+      <code>plugins/RPGQuest/world-create-audit.yml</code>.
     </p>
   </section>
 

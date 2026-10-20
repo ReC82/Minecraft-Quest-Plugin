@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Mondes : outil de création d'un monde depuis PlugAdmin (#562)
+
+### Changement
+
+JAR + PlugAdmin (branche `feature/562-creer-monde`). Actions agent `world.create.options` (lecture),
+`world.create.preview` (rien n'est créé) et `world.create.apply` (après confirmation sur la page « Créer
+un monde », permission `WORLD_CREATE`), via Multiverse-Core uniquement. Nouveau fichier tenu par le
+plugin, créé seulement à la première demande de création : `plugins/RPGQuest/world-create-audit.yml`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (redémarrage requis) **et** redéploiement de PlugAdmin. Aucune migration
+`data.db`, aucune clé de configuration. **Aucun monde n'est créé** par le déploiement ni au démarrage ;
+ne toucher ni `plugins/RPGQuest/worlds.yml`, ni le `worlds.yml` de Multiverse-Core, ni aucun dossier de
+monde.
+
+### Sauvegarde préalable
+
+Celle du script officiel (`deploy-verygames.sh` : JAR + `data.db` datés).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y --wait-ci` puis redémarrage via le script RCON ; `scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+`world.list` relu avant et après : mêmes mondes. Création réelle : TC-375, **en attente d'accord du
+propriétaire** (aucun monde créé par Claude).
+
+### Rollback
+
+Remettre le JAR et PlugAdmin précédents (sauvegardes du script). `world-create-audit.yml` peut rester
+(ignoré par l'ancienne version).
+
 ## 2026-10-20 - Mondes : réglages d'un monde existant avec aperçu, confirmation et relecture (#561)
 
 ### Changement

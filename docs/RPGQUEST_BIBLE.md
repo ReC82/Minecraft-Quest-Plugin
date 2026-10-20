@@ -4804,8 +4804,9 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
   Testeur, Builder, Lecture seule). Le groupe de navigation « Monde » contient aussi **Voyages**
   (même URL `/travel`, déplacé depuis « RPGQuest »).
 - Action agent de liste : `world.list` (« Rafraîchir les mondes »), **lecture seule**. Aucune action
-  `world.*` ne crée, ne charge, ne décharge ni n'importe un monde ; les réglages d'un monde chargé
-  (#561) se font dans sa fiche, voir ci-dessous.
+  `world.*` ne charge, ne décharge, n'importe, ne régénère ni ne supprime un monde ; les réglages d'un
+  monde chargé (#561) se font dans sa fiche et la création d'un monde (#562) par « Créer un monde »,
+  voir ci-dessous.
 - Le relevé donne aussi `onlinePlayers`, le total des joueurs connectés lu au même instant que les
   compteurs par monde ; la page l'affiche et signale « attention » si la somme des mondes en diffère.
   Les noms des éléments liés (mobs, waypoints, villes) sont affichés en texte lisible, balises
@@ -4861,6 +4862,56 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
   PlugAdmin journalise aussi chaque demande (`audit_log`).
 - Rien n'est appliqué au démarrage, au rechargement, à l'ouverture de la page ni au déploiement. Aucune
   création, aucun chargement/déchargement, import, régénération ni suppression de monde.
+
+### Créer un monde depuis PlugAdmin (issue #562, #331-W3)
+
+- **Mondes → « Créer un monde »** (`/worlds/create`), permission **`WORLD_CREATE`** (sensible,
+  Propriétaire par défaut, attribuable par groupe) contrôlée par les routes PlugAdmin **et** le
+  catalogue d'actions. Actions agent : `world.create.options` (lecture : Multiverse-Core disponible,
+  noms déjà pris, mondes essentiels, préréglages, biomes et blocs du registre, dernières demandes),
+  `world.create.preview` (validation complète, **rien n'est créé**) et `world.create.apply` (sensible).
+  Le formulaire générique `/agents/action` refuse preview et apply.
+- **Gestionnaire** : Multiverse-Core uniquement (décision Q1 de l'étude #331) — `WorldManager#createWorld`
+  avec vérification de dossier, puis zone d'apparition non gardée en mémoire (`keepSpawnInMemory: false`)
+  et enregistrement du `worlds.yml` de Multiverse (rechargé à chaque démarrage). Sans Multiverse (absent,
+  désactivé, illisible) : création impossible, raison affichée ; jamais de repli sur `WorldCreator`.
+  Seule classe qui crée : `world/multiverse/MultiverseApiCreator`.
+- **Formulaire** : nom → identifiant du dossier (sans accents, minuscules, chiffres, `_`, `-`, 3 à 32
+  caractères) ; dimension Monde normal / Nether / End ; terrain normal / plat / amplifié / grands biomes
+  (monde normal seulement, masqué sinon) ; graine facultative (nombre, ou texte transformé comme
+  Minecraft) ; structures ; monde plat : préréglage (Classique, Neige, Désert, Vide), jusqu'à 16 couches
+  (bloc validé au registre, épaisseur 1–384, total ≤ 384) et biome unique validé au registre →
+  `generatorSettings` JSON vanilla (`layers`, `biome`, `features`, `lakes: false`, `structure_overrides` :
+  aucune, ou villages + forteresses si « structures » est coché). Ce qui est masqué n'est pas transmis.
+- **Refus en français** (rien n'est créé) : nom manquant ou invalide ; monde essentiel (monde principal,
+  `<principal>_nether`, `<principal>_the_end`, Hub, Wild, Claims) ; monde déjà chargé ; monde connu de
+  Multiverse (même non chargé) ; dossier déjà présent ; nom réservé du serveur (`plugins`, `logs`…) ;
+  terrain autre que normal en Nether/End ; options de monde plat hors terrain plat ; bloc, biome,
+  épaisseur ou préréglage inconnus ; graine hors limites. Comparaisons sans tenir compte de la casse.
+- **Parcours** : « Lire les options du serveur » → formulaire → « Vérifier et voir le résumé » (aperçu
+  serveur : identifiant, résumé, avertissements, refus) → case « Je confirme la création du monde … » →
+  « Créer le monde ». États : **En cours** → **Prêt** (créé et relu conforme) / **Créé avec écarts** /
+  **Échec** avec la raison (Multiverse, refus, demande différente de l'aperçu, autre création en cours).
+- **Idempotence** : PlugAdmin envoie les paramètres, l'empreinte et l'auteur de l'**aperçu enregistré**
+  (jamais ceux du navigateur), une seule fois, dans les 15 minutes (`submit_token` + garde par aperçu) ;
+  le jeton transmis est l'identifiant de l'aperçu. Le plugin : jeton déjà traité → résultat d'origine,
+  rien n'est refait (même après redémarrage, jeton conservé dans le journal) ; une seule création à la
+  fois ; tout est revalidé au moment de créer (nom pris entre-temps → refus) ; empreinte différente →
+  refus.
+- **Relecture** : dimension, terrain, graine demandée, structures, réglages du monde plat (relus dans
+  Multiverse), géré par Multiverse, rechargé au redémarrage, zone d'apparition non gardée en mémoire —
+  chaque contrôle Confirmé / Écart.
+- **Journal** : `plugins/RPGQuest/world-create-audit.yml` (qui, quand, jeton, monde, verdict, contrôles ;
+  200 dernières demandes ; créé à la première demande ; écrit hors du thread principal) + `audit_log`
+  PlugAdmin.
+- **Le nouveau monde n'a aucun rôle** (Hub / Wild / Claims se désignent dans `config.yml`, #335), aucun
+  portail, aucune règle modifiée ; il est absent de `travel.waypoint.worlds`, donc **interdit à la
+  génération automatique de waypoints** (#136). Aucun monde existant n'est touché.
+- **Limite connue** : la génération initiale est synchrone (Paper et Multiverse) : le serveur se fige
+  quelques secondes (plus en amplifié). Rien n'est créé au démarrage, au rechargement ni au déploiement.
+- **État de validation** : la création réelle n'a jamais été exécutée (aucun monde créé sur DEV ni
+  ailleurs) ; elle attend un accord explicite du propriétaire (TC-375, PENDING MANUAL VALIDATION). Le
+  comportement réel des préréglages « Vide » et des structures en monde plat reste à observer.
 
 
 Vérifié dans `RpgAdminCommand.java` (`handleWorld*`), `hub/HubWorldRulesService.java`, `config.yml`, et [VERYGAMES.md](deployment/VERYGAMES.md).

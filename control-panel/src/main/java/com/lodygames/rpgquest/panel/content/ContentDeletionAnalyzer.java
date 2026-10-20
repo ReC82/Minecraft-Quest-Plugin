@@ -53,7 +53,7 @@ public final class ContentDeletionAnalyzer {
      * Depuis #248, leur suppression côté serveur pose une pierre tombale qui empêche l'amorçage de
      * les recréer — à condition que le JAR déployé contienne #248.
      */
-    public static final List<String> BUNDLED_DIALOGUES = List.of("guard");
+    public static final List<String> BUNDLED_DIALOGUES = List.of("guard", "woodcutter_bob");
 
     /** Un choix de dialogue qui ouvre un autre dialogue : {@code dialogue: rpgquest:x}. */
     private static final Pattern DIALOGUE_OPEN_REF =

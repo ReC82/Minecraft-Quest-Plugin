@@ -7705,3 +7705,20 @@ La quête `rpgquest:woodcutters_request` exige `rpgquest:first_steps` (Premiers 
 **Couverture automatisée** : `BundledDialoguesValidityTest#theWoodcutterOffersHisQuestFromTheDialogueTheClickOpens`
 (giver de la quête = clé du dialogue ouvert au clic, START_QUEST gardé par QUEST_AVAILABLE, prérequis expliqué),
 `BundledDialoguesValidityTest` (chargement, libellés ≤ largeur de bouton, démarrage toujours annoncé), `BundledExamplesDriftTest`.
+
+### TC-382 — Noms affichés des mondes et coordonnées F3 décimales (issue #81, PENDING MANUAL VALIDATION)
+
+Ne déplacer, renommer ni recréer aucun PNJ (Bob = Citizens #49) ; ne modifier aucun monde sauf le nom affiché choisi à l'étape 4.
+
+1.  PlugAdmin → **PNJ** → fiche de Bob → « Déplacer ». **Attendu** : liste Monde « Hub (world_hub) » (plus « Village ») ; X/Y/Z préremplis à la précision F3.
+2.  Saisir `743.222` dans X (ou coller `743.222 67 -713.699` copié de F3 dans X). **Attendu** : aucun refus du navigateur ; le collage remplit X, Y et Z.
+    Ne PAS cocher la confirmation ni envoyer.
+3.  **Mondes**. **Attendu** : cartes « Hub world_hub », « Claims claims », « Wild wild », « Monde principal world » ; fiche → « Nom affiché … (par défaut — à choisir dans Réglages) ».
+4.  (Facultatif, si un nom est souhaité) fiche d'un monde → Réglages → « Lire les réglages réels » → « Nom affiché » = un nom → Prévisualiser.
+    **Attendu** : aperçu « - → nom », écrit par Multiverse-Core (`world_hub`, `claims`…) ou RPGQuest (`wild`), effet « l'identifiant … ne change pas ».
+    Confirmer → relecture « Confirmé » ; après « Rafraîchir les mondes », le nom apparaît dans PNJ, Mondes, Portails, Voyages. « - » revient au défaut.
+5.  `<`, `&`, `§` ou plus de 32 caractères → refus motivé dans l'aperçu, rien d'écrit.
+
+**Couverture automatisée** : `WorldSettingsPlannerTest` (normalisation, refus, empreinte), `BukkitWorldSettingsGatewayTest` (alias Multiverse vs
+`world-names.yml`, relecture, autre monde intact, persistance), `WorldOverviewTest` (source de l'alias, alias = identifiant ignoré),
+`WorldNamesTest`, `WorldsPageTest`, `WorldSettingsPageTest`, `NpcCoordinatesTest` (743.222 / négatifs acceptés, invalides refusés, `step="any"`).

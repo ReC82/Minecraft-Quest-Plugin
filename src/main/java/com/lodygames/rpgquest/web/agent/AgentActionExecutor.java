@@ -227,6 +227,9 @@ public final class AgentActionExecutor {
                 case WORLD_SETTINGS_GET -> worldSettingsGet(action);
                 case WORLD_SETTINGS_PREVIEW -> worldSettingsPreview(action);
                 case WORLD_SETTINGS_APPLY -> worldSettingsApply(action);
+                case WORLD_CREATE_OPTIONS -> worldCreateOptions(action);
+                case WORLD_CREATE_PREVIEW -> worldCreatePreview(action);
+                case WORLD_CREATE_APPLY -> worldCreateApply(action);
                 case PORTAL_LIST -> portalList(action);
                 case MERCHANT_SAVE -> merchantSave(action);
                 case MERCHANT_DUPLICATE -> merchantDuplicate(action);
@@ -2179,6 +2182,124 @@ public final class AgentActionExecutor {
             out.put(m.group(1), value);
         }
         return out.size() > com.lodygames.rpgquest.world.settings.WorldSettingsPlanner.MAX_CHANGES ? null : out;
+    }
+
+    // ---- Création d'un monde (issue #562, #331-W3) ---------------------------------------------
+
+    private static final java.util.regex.Pattern LAYER_PARAM = java.util.regex.Pattern.compile("layer\\.([0-9]{1,2})\\.block");
+    private static final java.util.regex.Pattern CREATE_TOKEN = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{6,64}");
+
+    /** {@code world.create.options} : lecture seule. */
+    private CompletableFuture<AgentActionOutcome> worldCreateOptions(AgentAction action) {
+        return actions.worldCreateOptions().thenApply(o -> {
+            if (o == null) {
+                return AgentActionOutcome.failed(action.id(), "Création de monde indisponible sur ce serveur.");
+            }
+            String summary = o.context().multiverseAvailable() ? "Création possible via Multiverse-Core."
+                    : "Création impossible : " + o.context().multiverseReason() + ".";
+            return AgentActionOutcome.success(action.id(), String.valueOf(o.context().multiverseAvailable()), summary,
+                    WorldCreateDetails.options(o));
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code world.create.preview} : validation complète, rien n'est créé. */
+    private CompletableFuture<AgentActionOutcome> worldCreatePreview(AgentAction action) {
+        com.lodygames.rpgquest.world.create.WorldCreationRequest request = creationRequest(action);
+        if (request == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Demande de création invalide (champ hors bornes)."));
+        }
+        return actions.worldCreatePreview(request).thenApply(p -> {
+            if (p == null) {
+                return AgentActionOutcome.failed(action.id(), "Création de monde indisponible sur ce serveur.");
+            }
+            String message = p.ok() ? "Aperçu valide pour « " + p.world() + " ». Rien n'a été créé."
+                    : p.errors().size() + " problème(s) à corriger. Rien n'a été créé.";
+            return AgentActionOutcome.success(action.id(), p.world(), message, WorldCreateDetails.plan(p));
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code world.create.apply} : confirmation, auteur, empreinte de l'aperçu et jeton exigés ici
+     * aussi (défense en profondeur après le contrôle WORLD_CREATE de PlugAdmin).
+     */
+    private CompletableFuture<AgentActionOutcome> worldCreateApply(AgentAction action) {
+        if (!"true".equals(action.param("confirm"))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Confirmation explicite manquante : rien n'a été créé."));
+        }
+        String actor = trimOrNull(action.param("actor"));
+        if (actor == null || actor.length() > 64) {
+            return done(AgentActionOutcome.rejected(action.id(), "Auteur manquant : rien n'a été créé."));
+        }
+        String expected = trimOrNull(action.param("expected"));
+        if (expected == null || !FINGERPRINT.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Aperçu de référence manquant : rien n'a été créé."));
+        }
+        String token = trimOrNull(action.param("token"));
+        if (token == null || !CREATE_TOKEN.matcher(token).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Jeton de demande manquant : rien n'a été créé."));
+        }
+        com.lodygames.rpgquest.world.create.WorldCreationRequest request = creationRequest(action);
+        if (request == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Demande de création invalide : rien n'a été créé."));
+        }
+        return actions.worldCreateApply(request, expected, token, actor).thenApply(c -> {
+            if (c == null) {
+                return AgentActionOutcome.failed(action.id(), "Création de monde indisponible sur ce serveur.");
+            }
+            Map<String, Object> details = WorldCreateDetails.creation(c);
+            return c.result() == com.lodygames.rpgquest.world.create.WorldCreationService.Result.CREATED
+                    ? AgentActionOutcome.success(action.id(), c.world(), c.message(), details)
+                    : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, c.result().name(), c.message(),
+                            details, java.time.Instant.now());
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Demande lue dans les paramètres ; {@code null} si un champ est hors bornes. */
+    static com.lodygames.rpgquest.world.create.WorldCreationRequest creationRequest(AgentAction action) {
+        String name = bounded(action.param("name"), 64);
+        String environment = bounded(action.param("environment"), 16);
+        String terrain = bounded(action.param("terrain"), 16);
+        String seed = bounded(action.param("seed"), com.lodygames.rpgquest.world.create.WorldCreationPlanner.MAX_SEED_LENGTH);
+        String preset = bounded(action.param("flat_preset"), 16);
+        String biome = bounded(action.param("biome"), 96);
+        String structures = action.param("structures");
+        if (name == null || environment == null || terrain == null || seed == null || preset == null || biome == null
+                || (structures != null && !structures.equals("true") && !structures.equals("false"))) {
+            return null;
+        }
+        java.util.TreeMap<Integer, com.lodygames.rpgquest.world.create.WorldCreationRequest.Layer> layers =
+                new java.util.TreeMap<>();
+        for (Map.Entry<String, String> e : action.params().entrySet()) {
+            java.util.regex.Matcher m = LAYER_PARAM.matcher(e.getKey());
+            if (!m.matches()) {
+                continue;
+            }
+            int index = Integer.parseInt(m.group(1));
+            String block = bounded(e.getValue(), 96);
+            if (block == null || index < 1
+                    || index > com.lodygames.rpgquest.world.create.WorldCreationPlanner.MAX_LAYERS) {
+                return null;
+            }
+            if (block.isEmpty()) {
+                continue;
+            }
+            String rawHeight = action.param("layer." + index + ".height");
+            int height;
+            try {
+                height = Integer.parseInt(rawHeight == null ? "" : rawHeight.trim());
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+            layers.put(index, new com.lodygames.rpgquest.world.create.WorldCreationRequest.Layer(block, height));
+        }
+        return new com.lodygames.rpgquest.world.create.WorldCreationRequest(name, environment, terrain, seed,
+                "true".equals(structures), preset, List.copyOf(layers.values()), biome);
+    }
+
+    /** Texte facultatif borné : {@code ""} si absent, {@code null} si trop long ou sur plusieurs lignes. */
+    private static String bounded(String raw, int max) {
+        String v = raw == null ? "" : raw.trim();
+        return v.length() > max || v.indexOf('\n') >= 0 || v.indexOf('\r') >= 0 ? null : v;
     }
 
     /** {@code world.list} : lecture pure, rien n'est créé, chargé, déchargé ni réglé. */

@@ -2246,6 +2246,51 @@ public final class BukkitAgentActions implements AgentActions {
         return onMain(() -> done(worldSettings.apply(world, requested, expectedFingerprint, actor)));
     }
 
+    // ---- Création d'un monde (issue #562, #331-W3) ---------------------------------------------
+    // Seul world.create.apply crée, après aperçu et confirmation. Les dossiers du répertoire des
+    // mondes sont relevés sur le thread de l'agent (disque), l'état Bukkit sur le thread principal.
+
+    private com.lodygames.rpgquest.world.create.WorldCreationService worldCreation;
+
+    public void setWorldCreation(com.lodygames.rpgquest.world.create.WorldCreationService service) {
+        this.worldCreation = service;
+    }
+
+    private java.util.Set<String> worldFolders() {
+        return com.lodygames.rpgquest.world.create.BukkitWorldCreationGateway.folders(
+                plugin.getServer().getWorldContainer());
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.create.WorldCreationService.Options> worldCreateOptions() {
+        if (worldCreation == null) {
+            return AgentActions.super.worldCreateOptions();
+        }
+        java.util.Set<String> folders = worldFolders();
+        return onMain(() -> done(worldCreation.options(folders)));
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.create.WorldCreationPlanner.Plan> worldCreatePreview(
+            com.lodygames.rpgquest.world.create.WorldCreationRequest request) {
+        if (worldCreation == null) {
+            return AgentActions.super.worldCreatePreview(request);
+        }
+        java.util.Set<String> folders = worldFolders();
+        return onMain(() -> done(worldCreation.preview(request, folders)));
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.create.WorldCreationService.Creation> worldCreateApply(
+            com.lodygames.rpgquest.world.create.WorldCreationRequest request, String expectedFingerprint, String token,
+            String actor) {
+        if (worldCreation == null) {
+            return AgentActions.super.worldCreateApply(request, expectedFingerprint, token, actor);
+        }
+        java.util.Set<String> folders = worldFolders();
+        return onMain(() -> done(worldCreation.create(request, folders, expectedFingerprint, token, actor)));
+    }
+
     // ---- Portails (issue #564, #228-P1) -------------------------------------------------------
 
     private com.lodygames.rpgquest.travel.YamlPortalRegistry zonePortals;

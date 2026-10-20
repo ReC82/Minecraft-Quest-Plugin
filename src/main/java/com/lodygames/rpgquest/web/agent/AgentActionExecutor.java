@@ -404,6 +404,10 @@ public final class AgentActionExecutor {
                 if (q.cooldownSeconds() > 0) {
                     row.put("cooldownSeconds", q.cooldownSeconds());
                 }
+                // Issue #15 lot 2 : modèle de quête quotidienne / hebdomadaire, seulement s'il l'est.
+                if (q.period() != null && !q.period().isBlank()) {
+                    row.put("period", q.period());
+                }
                 row.put("prerequisites", q.prerequisites());
                 // #75 : PNJ donneur, seulement s'il est déclaré (giver: optionnel dans le YAML).
                 if (q.giverId() != null && !q.giverId().isBlank()) {
@@ -427,11 +431,28 @@ public final class AgentActionExecutor {
             }
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("quests", rows);
+            actions.periodicQuestSettings().ifPresent(settings -> details.put("periodic", periodicRow(settings)));
             return done(AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " quête(s) chargée(s).", details));
         } catch (RuntimeException e) {
             return done(unexpectedFailure(action, e));
         }
+    }
+
+    /**
+     * Issue #15 lot 2 : réglages {@code periodic-quests} tels que le serveur les applique, pour
+     * affichage seul dans PlugAdmin. Aucune quête non terminée n'est récompensée à l'échéance.
+     */
+    private static Map<String, Object> periodicRow(com.lodygames.rpgquest.config.PeriodicQuestConfig settings) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("enabled", settings.enabled());
+        m.put("timezone", settings.zone().getId());
+        m.put("resetTime", settings.resetTime().toString());
+        m.put("weeklyResetDay", settings.weeklyResetDay().name());
+        m.put("dailyCount", settings.dailyCount());
+        m.put("weeklyCount", settings.weeklyCount());
+        m.put("expiredReward", false);
+        return m;
     }
 
     /** Objectifs structurés (#78) en lignes JSON sérialisables (Map imbriquées, jamais un record). */

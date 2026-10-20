@@ -459,7 +459,8 @@ public final class BukkitAgentActions implements AgentActions {
                     q.id().toString(), q.title().base(), q.category(), q.repeatable(),
                     q.prerequisites().stream().map(NamespacedKey::toString).toList(),
                     steps, describeRewards(q.rewards()), rewardDetails(q.rewards()),
-                    q.giver(), null, q.cooldown().toSeconds()));
+                    q.giver(), null, q.cooldown().toSeconds(),
+                    q.isPeriodic() ? q.period().yamlKey() : null));
         }
         return out;
     }
@@ -822,6 +823,17 @@ public final class BukkitAgentActions implements AgentActions {
     private com.lodygames.rpgquest.building.BuildingCaptureService buildingCapture;
 
     /** Issue #246 — dépendance facultative : sans elle, la capture est refusée avec son motif. */
+    /** Issue #15 lot 2 : réglages des quêtes périodiques exposés en lecture par {@code quest.list}. */
+    public void setPeriodicQuestSettings(Supplier<com.lodygames.rpgquest.config.PeriodicQuestConfig> settings) {
+        this.periodicQuestSettings = settings;
+    }
+
+    @Override
+    public Optional<com.lodygames.rpgquest.config.PeriodicQuestConfig> periodicQuestSettings() {
+        Supplier<com.lodygames.rpgquest.config.PeriodicQuestConfig> settings = periodicQuestSettings;
+        return settings == null ? Optional.empty() : Optional.ofNullable(settings.get());
+    }
+
     public void setBuildingCapture(com.lodygames.rpgquest.building.BuildingCaptureService capture) {
         this.buildingCapture = capture;
     }
@@ -2188,6 +2200,7 @@ public final class BukkitAgentActions implements AgentActions {
     private com.lodygames.rpgquest.world.WorldService worldService;
     private com.lodygames.rpgquest.travel.WorldPortalRegistry worldPortals;
     private Supplier<com.lodygames.rpgquest.config.PluginConfig> worldConfig;
+    private volatile Supplier<com.lodygames.rpgquest.config.PeriodicQuestConfig> periodicQuestSettings;
     private Supplier<com.lodygames.rpgquest.world.WorldOverview.ExternalSource> multiverseWorlds;
 
     public void setWorldSources(com.lodygames.rpgquest.world.WorldService worldService,

@@ -105,6 +105,33 @@ class QuestListPayloadTest {
         assertFalse(Json.write(noGiver).contains("giverId"), "giver absent du JSON quand non déclaré");
     }
 
+    @Test
+    void periodAndPeriodicSettingsAreExposedForPlugAdmin() {
+        Map<String, Object> details = questListDetails();
+        Map<String, Object> daily = quests(details).stream()
+                .filter(q -> "rpgquest:daily_wood".equals(q.get("id"))).findFirst().orElseThrow();
+        Map<String, Object> ordinary = quests(details).stream()
+                .filter(q -> "rpgquest:first_steps".equals(q.get("id"))).findFirst().orElseThrow();
+        assertEquals("daily", daily.get("period"));
+        assertFalse(ordinary.containsKey("period"), "aucune clé period pour une quête ordinaire");
+
+        String json = Json.write(details.get("periodic"));
+        assertTrue(json.contains("\"enabled\":true") && json.contains("\"timezone\":\"Europe/Paris\"")
+                && json.contains("\"resetTime\":\"04:00\"") && json.contains("\"weeklyResetDay\":\"MONDAY\"")
+                && json.contains("\"dailyCount\":2") && json.contains("\"weeklyCount\":1")
+                && json.contains("\"expiredReward\":false"), json);
+    }
+
+    @Test
+    void periodicSettingsAreOmittedWhenTheFacadeHasNone() {
+        AgentActionExecutor bare = new AgentActionExecutor(
+                ref -> CompletableFuture.completedFuture(Optional.empty()),
+                (uuid, key) -> CompletableFuture.completedFuture(Optional.empty()),
+                new StubAgentActions());
+        AgentActionOutcome outcome = bare.execute(new AgentAction("q", "quest.list", Map.of())).join();
+        assertFalse(outcome.details().containsKey("periodic"));
+    }
+
     // ---- Fausse façade métier : deux quêtes, tous les types utiles -----------------------
 
     private final class QuestCatalogActions extends StubAgentActions {
@@ -144,7 +171,15 @@ class QuestListPayloadTest {
                     List.of(new RewardSummary("EXPERIENCE", 50, null, null, null, "+50 XP")),
                     null, null);
 
-            return List.of(crystalHunt, firstSteps);
+            QuestSummary dailyWood = new QuestSummary("rpgquest:daily_wood", "Bois du jour", "daily", true,
+                    List.of(), List.of(), List.of(), List.of(), null, null, 0, "daily");
+
+            return List.of(crystalHunt, firstSteps, dailyWood);
+        }
+
+        @Override
+        public Optional<com.lodygames.rpgquest.config.PeriodicQuestConfig> periodicQuestSettings() {
+            return Optional.of(com.lodygames.rpgquest.config.PeriodicQuestConfig.defaults());
         }
     }
 }

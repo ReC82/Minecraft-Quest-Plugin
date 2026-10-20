@@ -1289,6 +1289,8 @@ public final class RPGQuestBootstrap {
         // aucune opération n'échoue pour autant. Un setter plutôt qu'un paramètre de plus dans une
         // liste qui en compte déjà une trentaine.
         agentActions.setBuildingHistoryRepository(buildingHistoryRepository);
+        // Issue #15 lot 2 : PlugAdmin affiche les réglages des quêtes périodiques (lecture seule).
+        agentActions.setPeriodicQuestSettings(() -> configService.current().periodicQuests());
         // Issue #175 : boss communautaires (état, réglages, apparition de test, retrait).
         agentActions.setCommunityBosses(communityBossService, communityBossSettingsStore, communityBossRewards);
         // Issue #94 : génération de bâtiments depuis un plan déclaratif. Même logique de setter

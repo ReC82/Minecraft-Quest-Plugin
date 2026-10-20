@@ -328,7 +328,10 @@ complet et section 6 pour la procédure en jeu.
 Un fichier par quête, dans `plugins/RPGQuest/quests/*.yml` (développement
 local : `run/plugins/RPGQuest/quests/*.yml`). Trois quêtes d'exemple sont
 déjà générées : `first_steps.yml`, `woodcutters_request.yml`,
-`crystal_hunt.yml` — utilisables comme référence.
+`crystal_hunt.yml` — utilisables comme référence. Le champ `giver:` ne fait
+que **déclarer** le donneur : c'est son dialogue (id = id du PNJ) qui propose
+la quête. `woodcutters_request` est donc livrée avec `dialogues/woodcutter_bob.yml`,
+amorcé lui aussi s'il manque (#80) ; sans lui, un clic droit sur Bob n'ouvrait rien.
 
 Implémentation : `com.lodygames.rpgquest.quest.QuestDefinitionParser`
 (validation), `com.lodygames.rpgquest.quest.progress.QuestProgressEngine`

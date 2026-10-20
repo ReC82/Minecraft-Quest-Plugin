@@ -12,9 +12,12 @@ import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
+import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
+import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.player.StarterToolKitService;
+import com.lodygames.rpgquest.quest.model.QuestState;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +38,8 @@ class BundledDialoguesValidityTest {
 
     private static final List<String> BUNDLED =
             List.of("guard.yml", "guide.yml", "jo.yml", "libraire.yml", "merchant.yml",
-                    "encounter_bandit.yml", "encounter_merchant.yml", "encounter_smith.yml", "help.yml");
+                    "encounter_bandit.yml", "encounter_merchant.yml", "encounter_smith.yml", "help.yml",
+                    "woodcutter_bob.yml");
 
     private final DialogueLoader loader = new DialogueLoader(List.of("give", "xp", "customitem", "claim"));
 
@@ -395,6 +399,40 @@ class BundledDialoguesValidityTest {
                         && start.questId().equals(new NamespacedKey("rpgquest", "kit_tier2")));
 
         assertTrue(offered, "rpgquest:kit_tier2 doit être proposée par son PNJ donneur (giver: guide)");
+    }
+
+    /**
+     * Issue #80 : un clic droit sur Bûcheron Bob n'ouvrait rien. Le clic ouvre le dialogue dont l'id
+     * est celui du PNJ ; le « giver » de la quête n'est qu'une déclaration. Ce test garde la chaîne
+     * entière : giver de la quête = clé du dialogue, qui propose la quête, seulement si elle est
+     * acceptable, et explique le prérequis au lieu de se taire.
+     */
+    @Test
+    void theWoodcutterOffersHisQuestFromTheDialogueTheClickOpens() {
+        ConfigurationSection quest = read("/quests/woodcutters_request.yml");
+        NamespacedKey questId = NamespacedKey.fromString(quest.getString("id"));
+        NamespacedKey clickKey = new NamespacedKey("rpgquest", quest.getString("giver"));
+
+        DialogueLoadReport report = loader.load(Map.of("woodcutter_bob.yml", read("/dialogues/woodcutter_bob.yml")));
+        assertTrue(report.issues().isEmpty(), () -> "woodcutter_bob.yml doit rester valide : " + report.issues());
+        DialogueDefinition bob = report.loaded().getFirst();
+        assertEquals(clickKey, bob.id(), "le clic droit sur le giver ouvre rpgquest:<id du PNJ>");
+
+        String offerNode = bob.nodes().entrySet().stream()
+                .filter(e -> e.getValue().choices().stream().anyMatch(c -> c.actions().stream()
+                        .anyMatch(a -> a instanceof StartQuestAction s && s.questId().equals(questId))))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(questId + " doit être proposée par Bob"));
+
+        DialogueNode greeting = bob.startNode();
+        assertTrue(greeting.choices().stream().anyMatch(c -> offerNode.equals(c.next())
+                        && c.conditions().equals(List.of(new QuestAvailableCondition(questId)))),
+                "l'accueil mène à l'offre, gardée par QUEST_AVAILABLE");
+        NamespacedKey prerequisite = NamespacedKey.fromString(quest.getStringList("prerequisites").getFirst());
+        assertTrue(greeting.choices().stream().anyMatch(c -> c.conditions().contains(
+                        new NegatedCondition(new QuestStateCondition(prerequisite, QuestState.COMPLETED)))),
+                "prérequis non rempli : Bob l'explique au lieu de ne rien proposer");
     }
 
     /** Issue #218 : chaque palier suivant (3 à 5) est proposé par le Guide, d'après STARTER_KIT_TIER. */

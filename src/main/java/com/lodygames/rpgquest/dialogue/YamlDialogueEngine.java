@@ -19,7 +19,9 @@ import org.slf4j.Logger;
  */
 public final class YamlDialogueEngine implements DialogueEngine {
 
-    private static final String[] BUNDLED_EXAMPLES = {"guard.yml"};
+    // woodcutter_bob.yml (#80) : sans lui, le donneur de rpgquest:woodcutters_request (quête
+    // elle-même amorcée par YamlQuestEngine) restait muet au clic droit.
+    private static final String[] BUNDLED_EXAMPLES = {"guard.yml", "woodcutter_bob.yml"};
 
     private final Path dialoguesDirectory;
     private final Logger logger;

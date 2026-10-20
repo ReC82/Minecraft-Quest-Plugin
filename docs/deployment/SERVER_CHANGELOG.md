@@ -48,6 +48,44 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-20 - Dialogue du Bûcheron Bob : la quête « La requête du bûcheron » redevient acceptable (#80, TC-381)
+
+### Changement
+
+Contenu + amorçage. Nouveau dialogue `dialogues/woodcutter_bob.yml` (id = id du PNJ, ouvert au clic droit) qui propose
+`rpgquest:woodcutters_request` (QUEST_AVAILABLE → « Commencer (j'accepte) »), explique le prérequis Premiers pas et suit la
+quête active. Ajouté à `YamlDialogueEngine#BUNDLED_EXAMPLES` : recréé au démarrage **seulement s'il manque** (jamais écrasé,
+pierre tombale respectée). PlugAdmin : même ajout dans la liste des dialogues embarqués (avertissement de suppression).
+
+### Action serveur
+
+Remplacement du JAR puis redémarrage (amorçage du fichier). Pas de configuration, pas de migration ; aucun PNJ, lien Citizens,
+quête, progression ni récompense modifié.
+
+### Sauvegarde préalable
+
+`rpgquest-20261020T210740Z-predeploy.jar` (3 905 404 o, = JAR du lot #71, code `97f98e45`). Aucun fichier existant écrasé
+(`woodcutter_bob.yml` absent de DEV avant le démarrage).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` depuis le worktree au merge `db563195` (PR #653), JAR 3 907 197 o, SHA-256
+`59c90534…58e0e0`, retéléchargé par FTP et identique ; `scripts/verygames-restart.sh` (0 joueur), DEV de nouveau ONLINE ;
+`RPGQuest/dialogues/woodcutter_bob.yml` retéléchargé, identique au dépôt. PlugAdmin : `scripts/plugadmin/deploy.sh --wait-ci`
+(`db563195`, CI verte), `/health` 200 après démarrage.
+
+### Validation
+
+`npc.list` DEV : `woodcutter_bob` LINKED #49, `hasDialogue=true`, démarre `rpgquest:woodcutters_request`, aucun avertissement.
+TC-381 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh` ; supprimer au besoin
+`RPGQuest/dialogues/woodcutter_bob.yml` (sans quoi il reste chargé). PlugAdmin : `scripts/plugadmin/rollback.sh app`.
+
+---
+
 ## 2026-10-20 - Bossbar de suivi compacte, sans identifiant technique (#71, TC-380)
 
 ### Changement

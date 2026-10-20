@@ -1830,6 +1830,19 @@ telles quelles par les exécuteurs `mob.ability.*Executor`.
     doublon, capacité « en développement » seulement hors tirage naturel ;
     refus à l'import et à l'enregistrement PlugAdmin, simple avertissement
     au chargement d'un ancien fichier.
+-   **PlugAdmin dérivé du registre (issue #543)** —
+    `mob.ability.MobAbilityExchange` publie le catalogue (action
+    `mob.ability.catalog`, bloc `abilityCatalog` de `mob.list`) et les
+    capacités structurées de chaque profil (`abilities`,
+    `abilityWarnings`). Le panel (`web.MobAbilityViews`) n'en code aucune :
+    page « Capacités » et cartes du profil sont rendues depuis ce
+    catalogue. À l'enregistrement, `AgentActionCatalog#collectAbilities`
+    transforme les cartes en liste JSON ordonnée (`abilities`) ;
+    `MobAbilityExchange#parseEntries` la convertit selon les types déclarés
+    et la repasse au parseur réel. Les champs plats `enraged_*`/`summon_*`
+    restent acceptés en l'absence de `abilities` (ancien panel).
+    `MobAbilityCatalogFixtureTest` garde la copie du catalogue utilisée par
+    les tests du panel identique au registre.
 
 ## `progression` (XP RPG multi-compétences)
 

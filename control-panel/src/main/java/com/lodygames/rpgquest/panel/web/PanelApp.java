@@ -350,6 +350,9 @@ public final class PanelApp {
                 Permission.MOB_READ, agentPages::mobsCommunity));
         route("/mobs/spawns", exchange -> handleBusinessPage(exchange, "/mobs", "Apparitions des mobs spéciaux",
                 Permission.MOB_READ, agentPages::mobsSpawns));
+        // Issue #543 : bibliothèque « Capacités » (lecture seule ; les capacités se règlent dans le profil).
+        route("/mobs/abilities", exchange -> handleBusinessPage(exchange, "/mobs/abilities", "Capacités",
+                Permission.MOB_READ, agentPages::mobAbilities));
         route("/mobs/import", this::handleMobImport);
         route("/mobs/template", this::handleMobTemplate);
         // Issues #177 / #474 — catalogue des récompenses et tables de tirage. Lecture : ECONOMY_READ ;

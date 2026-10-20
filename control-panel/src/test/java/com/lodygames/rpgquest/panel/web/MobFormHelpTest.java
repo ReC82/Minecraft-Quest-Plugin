@@ -63,7 +63,14 @@ class MobFormHelpTest {
             + "\"particle\":\"SOUL\",\"sound\":\"ENTITY_WITHER_SPAWN\",\"xpReward\":500,"
             + "\"maxPopulation\":1,\"enragedHealthFraction\":0.35,\"enragedSpeedMultiplier\":1.6,"
             + "\"enragedDamageMultiplier\":2.5,\"summonEntityType\":\"HUSK\",\"summonAmount\":3,"
-            + "\"summonChance\":0.3,\"summonCooldownSeconds\":12,\"summonMaxAlive\":6}]}";
+            + "\"summonChance\":0.3,\"summonCooldownSeconds\":12,\"summonMaxAlive\":6,"
+            // Issue #543 : capacités structurées + catalogue publié par le plugin (copie vérifiée côté plugin).
+            + "\"abilities\":[{\"type\":\"ENRAGED\",\"label\":\"Enragé\",\"enabled\":true,\"values\":"
+            + "{\"health-fraction\":0.35,\"speed-multiplier\":1.6,\"damage-multiplier\":2.5,\"enabled\":true,"
+            + "\"chance\":1.0,\"cooldown-seconds\":0}},{\"type\":\"SUMMON_ON_DAMAGE\",\"label\":\"Renforts\","
+            + "\"enabled\":true,\"values\":{\"summon-entity-type\":\"HUSK\",\"amount\":3,\"max-alive\":6,"
+            + "\"despawn-with-owner\":false,\"enabled\":true,\"chance\":0.3,\"cooldown-seconds\":12}}]}],"
+            + "\"abilityCatalog\":" + AbilityFixtures.catalogJson() + "}";
 
     @AfterEach
     void tearDown() {
@@ -111,14 +118,15 @@ class MobFormHelpTest {
             "Portée de l'explosion, en blocs",        // creeper_explosion_radius
             "une seule fois, à l'apparition",         // particle / sound
             "Points d'expérience lâchés",             // xp_reward
-            "Fraction de la vie maximum sous laquelle", // enraged_health_fraction
-            "Multiplie la vitesse une fois enragé",   // enraged_speed_multiplier
-            "Multiplie les dégâts une fois enragé",   // enraged_damage_multiplier
-            "Créature invoquée en renfort",           // summon_entity_type
-            "Combien de renforts apparaissent",       // summon_amount
-            "Chance de déclencher l'invocation",      // summon_chance
-            "avant qu'une nouvelle invocation soit",  // summon_cooldown_seconds
-            "Plafond de renforts encore en vie",      // summon_max_alive
+            // Issue #543 : capacités = aides du catalogue publié par le plugin.
+            "Seuil de vie qui déclenche la rage",     // ENRAGED health-fraction
+            "Multiplicateur de vitesse en rage",      // ENRAGED speed-multiplier
+            "Multiplicateur de dégâts en rage",       // ENRAGED damage-multiplier
+            "Créature invoquée en renfort",           // SUMMON_ON_DAMAGE summon-entity-type
+            "Renforts par invocation",                // amount
+            "Chance d&#39;invoquer à chaque coup reçu", // chance
+            "Délai minimum entre deux invocations",   // cooldown-seconds
+            "Renforts vivants au plus pour ce mob",   // max-alive
             "Interrupteur général",                   // spawn settings : enabled
             "Filtre global évalué",                   // spawn settings : chance
             "Plafond du nombre total de mobs",        // spawn settings : max
@@ -136,16 +144,16 @@ class MobFormHelpTest {
 
         // Unités explicites là où elles existent réellement.
         assertTrue(page.contains("2 points = 1 cœur"), "unité de la vie");
-        assertTrue(page.contains("en <strong>secondes</strong>"), "unité du cooldown");
+        assertTrue(page.contains("Délai (s)"), "unité du délai des capacités");
         assertTrue(page.contains("Portée de l'explosion, en blocs"), "unité du rayon");
 
         // Valeurs spéciales : annoncées uniquement là où le moteur les accepte vraiment.
         assertTrue(page.contains("<strong>0 signifie explicitement aucune "), "xp_reward : 0 supporté");
-        assertTrue(page.contains("<strong>0 = aucun délai</strong>"), "cooldown : 0 supporté");
+        assertTrue(page.contains("entier ≥ 0. Absent = 0."), "délai : 0 supporté");
         assertTrue(page.contains("1 = totalement immobile"), "résistance au recul : sens de 0 et 1");
         // Bornes strictes, dites comme telles.
-        assertTrue(page.contains("Strictement entre 0 et 1</strong> — ni 0 ni 1"), "seuil de rage exclusif");
-        assertTrue(page.contains("0 est "), "chance d'invocation : 0 refusé");
+        assertTrue(page.contains("doit être strictement compris entre 0 et 1"), "seuil de rage exclusif");
+        assertTrue(page.contains("doit être compris entre 0 (exclu) et 1"), "chance d'invocation : 0 refusé");
     }
 
     /** Le champ « Particule » ne pilote pas l'aura continue d'un boss : l'aide doit le dire. */
@@ -222,15 +230,12 @@ class MobFormHelpTest {
         // Aucun défaut moteur n'existe pour les statistiques : les champs restent VIDES, sinon la
         // valeur serait enregistrée et le mob ne serait plus « comme le vanilla ».
         for (String name : new String[] {"health", "damage", "speed", "armor", "knockback_resistance",
-            "scale", "creeper_explosion_radius", "xp_reward", "max_population",
-            "enraged_health_fraction", "enraged_speed_multiplier", "enraged_damage_multiplier",
-            "summon_amount", "summon_chance", "summon_cooldown_seconds", "summon_max_alive"}) {
+            "scale", "creeper_explosion_radius", "xp_reward", "max_population"}) {
             assertTrue(form.contains("name=\"" + name + "\" value=\"\""),
                     "champ prérempli à tort à la création : " + name);
         }
-        // Les champs sans défaut l'annoncent, sans inventer de valeur.
-        assertTrue(form.contains("<b>Défaut</b> Obligatoire si la capacité est activée"),
-                "capacité : obligatoire plutôt qu'un défaut inventé");
+        // Sans catalogue relevé, aucune capacité n'est inventée : le formulaire le dit.
+        assertTrue(form.contains("Catalogue des capacités pas encore relevé"), "capacités : catalogue attendu");
         assertTrue(form.contains("<b>Défaut</b> aucun — la vie vanilla du type choisi"),
                 "statistique : défaut réel énoncé");
         // La suggestion du panel pour la chance est annoncée comme telle, pas comme un défaut moteur.
@@ -247,9 +252,7 @@ class MobFormHelpTest {
         // Les exemples vivent dans l'aide ; aucun attribut value= ne les porte.
         assertTrue(form.contains("<b>Exemple</b> swamp_king"), "exemple d'identifiant dans l'aide");
         assertFalse(form.contains("value=\"swamp_king\""), "exemple jamais injecté dans le champ");
-        assertTrue(form.contains("<b>Exemple</b> ZOMBIE"), "exemple de renfort dans l'aide");
-        assertFalse(form.contains("name=\"summon_entity_type\" value=\"ZOMBIE\""),
-                "exemple de renfort jamais injecté");
+        assertFalse(form.contains("value=\"ZOMBIE\""), "exemple de renfort jamais injecté");
         assertFalse(form.contains("placeholder=\"Exemple :"), "plus d'exemple caché dans un placeholder");
     }
 
@@ -273,18 +276,19 @@ class MobFormHelpTest {
         stored.put("scale", "1.8");
         stored.put("xp_reward", "500");
         stored.put("max_population", "1");
-        stored.put("enraged_health_fraction", "0.35");
-        stored.put("enraged_speed_multiplier", "1.6");
-        stored.put("enraged_damage_multiplier", "2.5");
-        stored.put("summon_amount", "3");
-        stored.put("summon_chance", "0.3");
-        stored.put("summon_cooldown_seconds", "12");
-        stored.put("summon_max_alive", "6");
+        // Issue #543 : capacités en cartes, une par instance, dans l'ordre du profil.
+        stored.put("ab_0_health-fraction", "0.35");
+        stored.put("ab_0_speed-multiplier", "1.6");
+        stored.put("ab_0_damage-multiplier", "2.5");
+        stored.put("ab_1_amount", "3");
+        stored.put("ab_1_chance", "0.3");
+        stored.put("ab_1_cooldown-seconds", "12");
+        stored.put("ab_1_max-alive", "6");
         for (Map.Entry<String, String> e : stored.entrySet()) {
             assertTrue(form.contains("name=\"" + e.getKey() + "\" value=\"" + e.getValue() + "\""),
                     "valeur enregistrée perdue ou remplacée : " + e.getKey() + " = " + e.getValue());
         }
-        assertTrue(form.contains("name=\"summon_entity_type\" value=\"HUSK\""), "type de renfort conservé");
+        assertTrue(form.contains("name=\"ab_1_summon-entity-type\" value=\"HUSK\""), "type de renfort conservé");
 
         // Un champ vide côté profil le reste : pas de défaut substitué à l'édition.
         assertTrue(form.contains("name=\"creeper_explosion_radius\" value=\"\""),

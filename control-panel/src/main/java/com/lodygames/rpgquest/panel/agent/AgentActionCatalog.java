@@ -453,6 +453,9 @@ public final class AgentActionCatalog {
         // l'administrateur doit deviner les identifiants vanilla exacts.
         add("mob.catalogs", Permission.MOB_READ, false, false,
                 "Rafraîchir les catalogues Minecraft (entités, particules, sons, biomes)");
+        // Issue #543 : catalogue des capacités (libellés, réglages bornés, préréglages), lecture seule.
+        add("mob.ability.catalog", Permission.MOB_READ, false, false,
+                "Rafraîchir le catalogue des capacités de mobs (issue #543)");
         // Issue #196 : catalogue COMPLET des matériaux de la version installée, pour les icônes de
         // quête et les récompenses d'objet. Sans ce relevé, le panel retombe sur une courte liste
         // curée — qui ne contenait que deux épées sur les sept réellement disponibles.
@@ -859,6 +862,118 @@ public final class AgentActionCatalog {
     /** Issue #335 — clés de {@code settings.set}, les mêmes que le plugin. */
     public static final List<String> SETTINGS_KEYS = List.of("currency_name", "beta_warning_enabled", "beta_warning_text",
             "admin_bypass_available", "admin_bypass_max_minutes");
+
+    // ---- Issue #543 : cartes de capacités ---------------------------------------------------------
+
+    private static final Pattern ABILITY_TYPE = Pattern.compile("[A-Z][A-Z0-9_]{0,63}");
+    private static final Pattern ABILITY_KEY = Pattern.compile("[a-z][a-z0-9-]{0,39}");
+    private static final Pattern ABILITY_CARD_FIELD = Pattern.compile("ab_(\\d{1,2})_type");
+    private static final int MAX_ABILITY_ENTRIES = 10;
+    private static final int MAX_ABILITY_VALUE_CHARS = 64;
+
+    /**
+     * Lit les cartes ({@code ab_<i>_*}, retirées exclues) puis les capacités cochées
+     * ({@code ab_new_<TYPE>_*}), les ordonne par {@code ab_<i>_pos} (les nouvelles à la fin) et écrit
+     * le paramètre {@code abilities} (JSON). Contrôle de confort seulement : forme des clés, taille,
+     * doublons, plafond ; les bornes et les règles sont celles du plugin.
+     *
+     * @return message d'erreur, ou {@code null}
+     */
+    static String collectAbilities(Map<String, String> form, Map<String, String> params) {
+        record Card(int pos, int order, Map<String, Object> entry) {
+        }
+        List<Card> cards = new java.util.ArrayList<>();
+        java.util.TreeSet<Integer> indexes = new java.util.TreeSet<>();
+        for (String name : form.keySet()) {
+            java.util.regex.Matcher m = ABILITY_CARD_FIELD.matcher(name);
+            if (m.matches()) {
+                indexes.add(Integer.parseInt(m.group(1)));
+            }
+        }
+        for (int i : indexes) {
+            String prefix = "ab_" + i + "_";
+            if ("true".equals(trim(form.get(prefix + "remove")))) {
+                continue;
+            }
+            String type = trim(form.get(prefix + "type")).toUpperCase(java.util.Locale.ROOT);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("type", type);
+            String error = copyAbilityValues(form, prefix, entry);
+            if (error != null) {
+                return error;
+            }
+            entry.put("enabled", "true".equals(trim(form.get(prefix + "enabled"))) ? "true" : "false");
+            int pos;
+            try {
+                pos = Integer.parseInt(trim(form.get(prefix + "pos")));
+            } catch (NumberFormatException e) {
+                pos = i + 1;
+            }
+            cards.add(new Card(pos, i, entry));
+        }
+        int order = 1000;
+        for (String name : new java.util.TreeSet<>(form.keySet())) {
+            // « ab_new_<TYPE> » (case cochée) ; ses réglages « ab_new_<TYPE>_<clé> » ont une clé en minuscules.
+            String type = name.startsWith("ab_new_") ? name.substring("ab_new_".length()) : "";
+            if (!ABILITY_TYPE.matcher(type).matches() || !"true".equals(trim(form.get(name)))) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("type", type);
+            String error = copyAbilityValues(form, name + "_", entry);
+            if (error != null) {
+                return error;
+            }
+            entry.put("enabled", "true");
+            cards.add(new Card(Integer.MAX_VALUE, order++, entry));
+        }
+        for (Card c : cards) {
+            if (!ABILITY_TYPE.matcher((String) c.entry().get("type")).matches()) {
+                return "Capacité invalide : « " + c.entry().get("type") + " ».";
+            }
+        }
+        if (cards.size() > MAX_ABILITY_ENTRIES) {
+            return cards.size() + " capacités : trop de capacités pour un profil.";
+        }
+        java.util.Set<Object> seen = new java.util.HashSet<>();
+        for (Card c : cards) {
+            if (!seen.add(c.entry().get("type"))) {
+                return "Capacité « " + c.entry().get("type") + " » en double : une seule par profil. "
+                        + "Retirer l'une des deux.";
+            }
+        }
+        cards.sort(java.util.Comparator.comparingInt(Card::pos).thenComparingInt(Card::order));
+        params.put("abilities", com.lodygames.rpgquest.panel.json.Json.write(
+                cards.stream().map(Card::entry).toList()));
+        return null;
+    }
+
+    /** Recopie les champs {@code <prefix><clé YAML>} non vides (hors champs de contrôle de la carte). */
+    private static String copyAbilityValues(Map<String, String> form, String prefix, Map<String, Object> entry) {
+        for (Map.Entry<String, String> f : new java.util.TreeMap<>(form).entrySet()) {
+            if (!f.getKey().startsWith(prefix)) {
+                continue;
+            }
+            String key = f.getKey().substring(prefix.length());
+            if (List.of("type", "enabled", "remove", "pos").contains(key)) {
+                continue;
+            }
+            if (!key.isEmpty() && Character.isUpperCase(key.charAt(0))) {
+                continue; // réglage d'une autre capacité dont le type prolonge celui-ci (ab_new_A_B_…)
+            }
+            if (!ABILITY_KEY.matcher(key).matches()) {
+                return "Réglage de capacité invalide : « " + key + " ».";
+            }
+            String value = trim(f.getValue());
+            if (value.length() > MAX_ABILITY_VALUE_CHARS || value.indexOf('\n') >= 0) {
+                return "Valeur trop longue ou multi-ligne pour « " + key + " ».";
+            }
+            if (!value.isEmpty()) {
+                entry.put(key, value);
+            }
+        }
+        return null;
+    }
 
     public static Validation validate(String type, Map<String, String> form) {
         Optional<Spec> maybe = spec(type);
@@ -2219,8 +2334,15 @@ public final class AgentActionCatalog {
                         }
                     }
                 }
-                // Capacités du premier lot (issue #171) : toutes les clés d'une capacité ensemble, ou aucune.
-                if ("true".equals(trim(form.get("enraged_enabled")))) {
+                // Issue #543 : cartes de capacités → liste structurée, ordonnée ; le plugin revalide tout.
+                if ("1".equals(trim(form.get("ab_form")))) {
+                    String error = collectAbilities(form, params);
+                    if (error != null) {
+                        return Validation.fail(error);
+                    }
+                }
+                // Ancien formulaire (issue #171, catalogue non relevé) : toutes les clés d'une capacité, ou aucune.
+                else if ("true".equals(trim(form.get("enraged_enabled")))) {
                     Double hf = finite(form.get("enraged_health_fraction"));
                     Double sm = finite(form.get("enraged_speed_multiplier"));
                     Double dm = finite(form.get("enraged_damage_multiplier"));
@@ -2231,7 +2353,7 @@ public final class AgentActionCatalog {
                     params.put("enraged_speed_multiplier", trimNumber(sm));
                     params.put("enraged_damage_multiplier", trimNumber(dm));
                 }
-                if ("true".equals(trim(form.get("summon_enabled")))) {
+                if (!"1".equals(trim(form.get("ab_form"))) && "true".equals(trim(form.get("summon_enabled")))) {
                     String summonType = trim(form.get("summon_entity_type")).toUpperCase(java.util.Locale.ROOT);
                     Double chance = finite(form.get("summon_chance"));
                     String amountRaw = trim(form.get("summon_amount"));

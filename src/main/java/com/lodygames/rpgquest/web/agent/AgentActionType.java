@@ -71,6 +71,11 @@ public enum AgentActionType {
     /** Issue #172 : catalogues réels du serveur (entités, particules, sons, biomes, mondes). */
     MOB_CATALOGS("mob.catalogs"),
     /**
+     * Issue #543 : catalogue des types de capacités (libellés, réglages bornés, préréglages, garanties),
+     * dérivé du registre du moteur installé — lecture seule, aucun effet de bord.
+     */
+    MOB_ABILITY_CATALOG("mob.ability.catalog"),
+    /**
      * Issue #196 : catalogue complet des matériaux de la version installée, pour les icônes de
      * quête et les récompenses d'objet — lecture seule, aucun effet de bord.
      */

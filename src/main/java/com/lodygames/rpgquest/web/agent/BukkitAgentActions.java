@@ -5276,7 +5276,9 @@ public final class BukkitAgentActions implements AgentActions {
                 mobService.populationOf(def.id()), enragedHealthFraction, enragedSpeedMultiplier,
                 enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
                 summonMaxAlive, List.copyOf(abilitiesSummary), def.bossMode().name(), def.communityWeight(),
-                def.participationRewards(), com.lodygames.rpgquest.mob.SpecialMobDefinitionYaml.render(def));
+                def.participationRewards(), com.lodygames.rpgquest.mob.SpecialMobDefinitionYaml.render(def),
+                def.abilities().stream().map(com.lodygames.rpgquest.mob.ability.MobAbilityExchange::instanceView).toList(),
+                com.lodygames.rpgquest.mob.ability.MobAbilityRules.loadWarnings(def));
     }
 
     // ---- Import de profil (issue #214) -------------------------------------------------------------
@@ -5359,7 +5361,7 @@ public final class BukkitAgentActions implements AgentActions {
                 health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
                 xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
                 summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, bossMode,
-                communityWeight, participationRewards, true);
+                communityWeight, participationRewards, null, true);
     }
 
     @Override
@@ -5375,7 +5377,23 @@ public final class BukkitAgentActions implements AgentActions {
                 health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
                 xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
                 summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, bossMode,
-                communityWeight, participationRewards, false);
+                communityWeight, participationRewards, null, false);
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobDefinitionWrite(boolean create, String id, String category,
+            boolean enabled, String entityType, String displayName, double spawnChance, List<String> worlds,
+            List<String> biomes, List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
+            List<String> participationRewards, List<Map<String, Object>> abilities) {
+        return writeMobDefinition(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones,
+                health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
+                xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
+                summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, bossMode,
+                communityWeight, participationRewards, abilities, create);
     }
 
     @SuppressWarnings("removal") // Particle/Sound#valueOf : voir la justification dans SpecialMobDefinitionParser.
@@ -5386,7 +5404,7 @@ public final class BukkitAgentActions implements AgentActions {
             Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
             Integer summonCooldownSeconds, Integer summonMaxAlive, String bossMode, Integer communityWeight,
-            List<String> participationRewards, boolean create) {
+            List<String> participationRewards, List<Map<String, Object>> structuredAbilities, boolean create) {
         List<MobAbility> abilities = new ArrayList<>();
         try {
             // Issue #461 : ce que le formulaire n'édite pas (drops, capacités hors Enragé/Renforts, récompenses
@@ -5398,19 +5416,21 @@ public final class BukkitAgentActions implements AgentActions {
                         + " » ne se relit pas : modification refusée pour ne perdre ni drops ni "
                         + "capacités. Restaurer d'abord le fichier mobs/ (voir Diagnostics)."));
             }
-            EnragedAbility enraged = null;
-            if (enragedHealthFraction != null || enragedSpeedMultiplier != null || enragedDamageMultiplier != null) {
-                enraged = new EnragedAbility(enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier);
+            if (structuredAbilities != null) {
+                // Issue #543 : les cartes envoient la liste complète, dans l'ordre voulu ; elle remplace celle
+                // du profil (champs plats ignorés), revalidée par le parseur réel (mêmes bornes et messages
+                // qu'un fichier).
+                com.lodygames.rpgquest.mob.ability.MobAbilityExchange.Parsed parsed =
+                        com.lodygames.rpgquest.mob.ability.MobAbilityExchange.parseEntries(structuredAbilities);
+                if (!parsed.ok()) {
+                    return done(MutationResult.of(false, "INVALID_ABILITIES", String.join(" ", parsed.errors())));
+                }
+                abilities.addAll(parsed.abilities());
+            } else {
+                abilities.addAll(legacyFormAbilities(current, enragedHealthFraction, enragedSpeedMultiplier,
+                        enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
+                        summonMaxAlive));
             }
-            SummonOnDamageAbility summon = null;
-            if (summonEntityType != null || summonAmount != null || summonChance != null
-                    || summonCooldownSeconds != null || summonMaxAlive != null) {
-                org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(
-                        summonEntityType == null ? "" : summonEntityType.toLowerCase(Locale.ROOT));
-                summon = new SummonOnDamageAbility(type, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive);
-            }
-            abilities.addAll(mergeFormAbilities(current.map(SpecialMobDefinition::abilities).orElse(List.of()),
-                    enraged, summon));
 
             SpecialMobDefinition definition = new SpecialMobDefinition(
                     resolveKey(id), MobCategory.valueOf(category.toUpperCase(Locale.ROOT)), enabled,
@@ -5450,6 +5470,25 @@ public final class BukkitAgentActions implements AgentActions {
         } catch (IllegalArgumentException | NullPointerException e) {
             return done(MutationResult.of(false, "INVALID", e.getMessage()));
         }
+    }
+
+    /** Ancien formulaire (avant #543) : Enragé et Renforts en champs plats, fusionnés au profil actuel. */
+    private static List<MobAbility> legacyFormAbilities(Optional<SpecialMobDefinition> current,
+            Double enragedHealthFraction, Double enragedSpeedMultiplier, Double enragedDamageMultiplier,
+            String summonEntityType, Integer summonAmount, Double summonChance, Integer summonCooldownSeconds,
+            Integer summonMaxAlive) {
+        EnragedAbility enraged = null;
+        if (enragedHealthFraction != null || enragedSpeedMultiplier != null || enragedDamageMultiplier != null) {
+            enraged = new EnragedAbility(enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier);
+        }
+        SummonOnDamageAbility summon = null;
+        if (summonEntityType != null || summonAmount != null || summonChance != null
+                || summonCooldownSeconds != null || summonMaxAlive != null) {
+            org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(
+                    summonEntityType == null ? "" : summonEntityType.toLowerCase(Locale.ROOT));
+            summon = new SummonOnDamageAbility(type, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive);
+        }
+        return mergeFormAbilities(current.map(SpecialMobDefinition::abilities).orElse(List.of()), enraged, summon);
     }
 
     /**

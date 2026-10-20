@@ -227,4 +227,60 @@ class BukkitAgentActionsMobTest {
         mobRegistry.reload();
         assertEquals(def, mobRegistry.find(new NamespacedKey("rpgquest", "claude_diag_boss")).orElseThrow());
     }
+
+    // ---- Issue #543 : liste structurée des cartes de capacités --------------------------------------
+
+    private AgentActions.MutationResult writeWithAbilities(boolean create, List<java.util.Map<String, Object>> abilities)
+            throws Exception {
+        return actions.mobDefinitionWrite(create, "golem", "BOSS", true, "ZOMBIE", "Golem", 0.0,
+                List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null, null,
+                null, null, 0.3, 1.3, 1.5, null, null, null, null, null, "QUEST", 1, List.of(), abilities).get();
+    }
+
+    private static java.util.Map<String, Object> card(String type, String... keyValues) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("type", type);
+        for (int i = 0; i < keyValues.length; i += 2) {
+            out.put(keyValues[i], keyValues[i + 1]);
+        }
+        return out;
+    }
+
+    @Test
+    void structuredAbilitiesReplaceTheListInOrderAndIgnoreFlatFields() throws Exception {
+        AgentActions.MutationResult r = writeWithAbilities(true, List.of(
+                card("SUMMON_ON_DAMAGE", "summon-entity-type", "ZOMBIE", "amount", "2", "chance", "0.25",
+                        "cooldown-seconds", "20", "max-alive", "4", "enabled", "false"),
+                card("SPLIT_ON_HIT", "max-depth", "2", "max-children-per-hit", "2", "max-alive-per-parent", "2")));
+        assertTrue(r.ok(), r.message());
+        String yaml = Files.readString(mobsDir.resolve("golem.yml"));
+        int summon = yaml.indexOf("type: SUMMON_ON_DAMAGE");
+        int split = yaml.indexOf("type: SPLIT_ON_HIT");
+        assertTrue(summon > 0 && split > summon, "ordre des cartes conservé :\n" + yaml);
+        assertTrue(yaml.contains("enabled: false"), "désactivée, valeurs gardées :\n" + yaml);
+        assertTrue(!yaml.contains("ENRAGED"), "les champs plats Enragé sont ignorés quand la liste est envoyée");
+
+        assertTrue(writeWithAbilities(false, List.of()).ok());
+        assertTrue(!Files.readString(mobsDir.resolve("golem.yml")).contains("abilities"), "liste vide = aucune capacité");
+    }
+
+    @Test
+    void structuredAbilitiesRefusedLeaveTheFileUntouched() throws Exception {
+        assertTrue(writeWithAbilities(true, List.of(card("ENRAGED", "health-fraction", "0.3",
+                "speed-multiplier", "1.3", "damage-multiplier", "1.5"))).ok());
+        String before = Files.readString(mobsDir.resolve("golem.yml"));
+
+        AgentActions.MutationResult duplicate = writeWithAbilities(false, List.of(
+                card("ENRAGED", "health-fraction", "0.3", "speed-multiplier", "1.3", "damage-multiplier", "1.5"),
+                card("ENRAGED", "health-fraction", "0.5", "speed-multiplier", "1.3", "damage-multiplier", "1.5")));
+        assertEquals("INVALID_ABILITIES", duplicate.code(), duplicate.message());
+        assertTrue(duplicate.message().contains("en double"), duplicate.message());
+
+        AgentActions.MutationResult outOfBounds = writeWithAbilities(false, List.of(
+                card("ENRAGED", "health-fraction", "2", "speed-multiplier", "1.3", "damage-multiplier", "1.5")));
+        assertEquals("INVALID_ABILITIES", outOfBounds.code());
+        assertTrue(outOfBounds.message().contains("« Enragé »"), outOfBounds.message());
+
+        assertEquals(before, Files.readString(mobsDir.resolve("golem.yml")), "rien n'a été écrit");
+    }
 }

@@ -27,6 +27,12 @@ public final class Icons {
             Map.entry("npc", "person-badge"),
             Map.entry("travel", "signpost-split"),
             Map.entry("mob", "bug"),
+            // Issue #543 : capacités de mobs, une icône par catégorie du catalogue.
+            Map.entry("ability", "lightning-charge"),
+            Map.entry("ability-explosion", "fire"),
+            Map.entry("ability-reaction", "diagram-2"),
+            Map.entry("ability-enhancement", "lightning-charge"),
+            Map.entry("ability-summon", "people"),
             Map.entry("quests", "journal-check"),
             Map.entry("stories", "book"),
             Map.entry("dialogues", "chat-dots"),

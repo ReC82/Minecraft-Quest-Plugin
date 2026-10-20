@@ -52,6 +52,8 @@ public final class Layout {
                         // Issue #178 — les villes sont aussi les destinations « Villages » du voyage.
                         new NavItem("Villes", "/cities", "world", Permission.TRAVEL_READ, true),
                         new NavItem("Mobs spéciaux & boss", "/mobs", "mob", Permission.MOB_READ, true),
+                        // Issue #543 (décision Q10 de #541) : juste sous les mobs.
+                        new NavItem("Capacités", "/mobs/abilities", "ability", Permission.MOB_READ, true),
                         // Issue #177 : tables de tirage partagées par les quêtes et les boss.
                         new NavItem("Récompenses", "/rewards", "gift", Permission.ECONOMY_READ, true),
                         // Issue #336 : prix de vente, de rachat et de fabrication des PNJ.
@@ -125,6 +127,11 @@ public final class Layout {
         return page(title, activeHref, content, shell, ALL_VISIBLE);
     }
 
+    /** Vrai si une entrée de navigation porte exactement cette adresse (elle seule est alors active). */
+    private static boolean hasExactItem(String href) {
+        return nav().stream().flatMap(g -> g.items().stream()).anyMatch(it -> it.href().equals(href));
+    }
+
     public static String page(String title, String activeHref, String content, Shell shell, Predicate<NavItem> visible) {
         Predicate<NavItem> canSee = visible == null ? ALL_VISIBLE : visible;
         StringBuilder side = new StringBuilder();
@@ -141,7 +148,8 @@ public final class Layout {
             side.append("<div class=\"nav-group\"><p class=\"nav-group-t\">").append(Http.esc(g.title())).append("</p>");
             for (NavItem it : shown) {
                 boolean active = it.href().equals(activeHref)
-                        || (activeHref != null && activeHref.startsWith(it.href() + "/"));
+                        || (activeHref != null && activeHref.startsWith(it.href() + "/")
+                                && !hasExactItem(activeHref)); // #543 : /mobs/abilities n'allume pas /mobs
                 if (it.enabled()) {
                     side.append("<a class=\"navlink").append(active ? " active" : "").append("\" href=\"")
                             .append(it.href()).append("\">").append(Icons.icon(it.icon(), "nav-ic"))

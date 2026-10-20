@@ -200,3 +200,7 @@ Après **chaque** livraison Claude ou séance de jeu, modifier ce fichier dans l
 ## Décision du 20 octobre 2026 — #543
 
 Le propriétaire autorise uniquement le développement du ticket [#543](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/543) (interface des capacités des mobs). Aucun profil existant sur DEV ne doit être modifié, aucune capacité ni apparition activée automatiquement. Les tickets #544 à #553 restent en attente d'une nouvelle décision. Claude peut implémenter et tester le code avec des données fictives isolées ; les tests manuels demeurent en attente.
+
+## Autorisation #561 — 20/10/2026
+
+**Accord propriétaire :** seul [#561](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/561) est nouvellement autorisé : développement complet de la configuration des mondes depuis PlugAdmin, lecture, aperçu sans écriture, confirmation explicite avant application, vérification des droits WORLD_WRITE, audit et relecture de l'état réel. **Aucun réglage appliqué automatiquement aux mondes actuels**, ni création, suppression, import, régénération ou déchargement de monde. Le déploiement du code sur DEV doit être sans effet sur la configuration existante. Tests automatisés isolés ; essai réel de changement de réglage soumis au choix explicite du propriétaire. Protéger Hub, Wild, Claims. #562–#563 et #565–#570 restent non autorisés ; autorisation #543 séparée et inchangée. Superviseur lqorch : #561 peut passer READY, sans ouvrir d'autres lots.

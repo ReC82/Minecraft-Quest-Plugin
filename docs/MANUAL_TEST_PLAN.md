@@ -7564,3 +7564,19 @@ niveau RPG 2 = 100 XP `GLOBAL`). **Durée** : 10 minutes.
     refus « Il te manque le niveau requis pour ce portail. » au niveau RPG 1, téléportation au niveau 2.
 5.  Non-régression (optionnel) : avec `vanilla-xp-progression: true` et redémarrage, la condition relit
     le niveau vanilla (`/xp set <joueur> 2 levels` requis). Remettre `false` ensuite.
+
+### TC-376 — PlugAdmin : « Lire ses droits en jeu » sans NullPointerException (issue #27, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR et PlugAdmin `c92687f` (PR #635) sur DEV, LuckPerms présent. Action **en lecture seule** :
+ne modifie ni groupe, ni OP, ni whitelist, ni lien de compte. Ne rien synchroniser pendant ce test.
+
+1.  Joueurs → fiche de **Rondoudou9000** (hors ligne) → onglet Modération. **Attendu** : sous l'état actuel,
+    texte « … Fonctionne aussi quand le joueur est déconnecté. Lecture seule : rien n'est modifié. »
+2.  « Lire ses droits en jeu ». **Attendu** : résultat **réussi** (plus « Échec : NullPointerException »),
+    par exemple « Rondoudou9000 : Aucun droit géré porté par ce joueur. », daté.
+3.  Même chose sur **LoDyMcFly** connecté. **Attendu** : même type de résultat réussi.
+4.  Utilisateurs → un compte PlugAdmin **lié** à un joueur → « Lire l'état réel en jeu » : relevé réussi.
+    Un compte **non lié** : bannière « Aucun joueur lié », aucun bouton de lecture (comportement inchangé).
+5.  (Optionnel) Historique → détail de l'action : en cas d'erreur inattendue, le message est désormais en
+    français (« erreur interne de l'agent RPGQuest pendant « mc.rights.read » … ») avec des détails
+    `code`, `action`, `error`, `errorMessage`, `where` — jamais un nom d'exception seul.

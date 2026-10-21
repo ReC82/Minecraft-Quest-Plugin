@@ -2454,7 +2454,33 @@ public final class BukkitAgentActions implements AgentActions {
         return new com.lodygames.rpgquest.travel.WorldPortalAdminService.Context(loaded,
                 new com.lodygames.rpgquest.travel.PortalOverview.Roles(cfg.hub().world(), cfg.travel().wildWorld(),
                         cfg.claims().world()),
-                zonePortals.portals(), siteLookup());
+                zonePortals.portals(), siteLookup(), world -> java.util.Optional.ofNullable(
+                        plugin.getServer().getWorld(world)).map(w -> new com.lodygames.rpgquest.travel
+                        .WorldPortalAdminService.WorldBounds(w.getMinHeight(), w.getMaxHeight())));
+    }
+
+    /**
+     * {@code portal.verify} (issue #566) : état et blocs déjà chargés relevés sur le thread principal
+     * (aucun monde ni chunk chargé), contrôles ensuite hors du thread principal. Rien n'est écrit.
+     */
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.travel.WorldPortalVerifier.Report> portalVerify(String id) {
+        if (worldPortals == null || worldConfig == null || zonePortals == null) {
+            return AgentActions.super.portalVerify(id);
+        }
+        record Prepared(com.lodygames.rpgquest.travel.WorldPortalAdminService.Context ctx,
+                        Optional<com.lodygames.rpgquest.travel.ArrivalSafety.BlockView> arrival) {
+        }
+        return onMain(() -> {
+            var ctx = portalContext();
+            Optional<com.lodygames.rpgquest.travel.ArrivalSafety.BlockView> arrival = worldPortals.find(id)
+                    .filter(p -> p.fixedPoint() != null)
+                    .flatMap(p -> java.util.Optional.ofNullable(plugin.getServer().getWorld(p.destinationWorld()))
+                            .flatMap(w -> com.lodygames.rpgquest.travel.ArrivalSafety.snapshotIfLoaded(w,
+                                    p.fixedPoint().blockX(), p.fixedPoint().blockY(), p.fixedPoint().blockZ())));
+            return done(new Prepared(ctx, arrival));
+        }).thenApplyAsync(prep -> new com.lodygames.rpgquest.travel.WorldPortalVerifier(worldPortals)
+                .verify(id, prep.ctx(), (world, x, z) -> prep.arrival()));
     }
 
     @Override

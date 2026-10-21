@@ -4899,6 +4899,44 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
 - Pas de migration SQL, pas de clé de configuration. Destination précise, conditions, test de téléportation :
   tickets #566–#570.
 
+### Portails : arrivée, point fixe, portail retour, vérifier sans appliquer (issue #566, #228-P3)
+
+- Nouvelle stratégie **`FIXED_POINT`** (« point fixe ») des portails entre mondes : position des pieds et regard
+  (yaw ramené dans [-180, 180[, pitch de -90 à 90) dans le monde d'arrivée. YAML : `destination-strategy: FIXED_POINT`
+  + `destination-point: {x, y, z, yaw, pitch}` (x, y, z obligatoires ; fichier refusé au chargement sinon). Un JAR
+  antérieur refuse ce fichier (stratégie inconnue) : il n'envoie jamais un joueur ailleurs que prévu.
+- **`return-of: <id>`** : ce portail est le retour de `<id>`. Un aller-retour reste **deux portails distincts** ; le
+  retour part du monde d'arrivée de l'aller et ramène à son monde de départ (`RETURN_MISMATCH` sinon), un seul retour
+  par portail (`RETURN_EXISTS`), aller existant (`RETURN_TARGET_NOT_FOUND`) ; diagnostic `PORTAL_RETURN_TARGET_MISSING`
+  si l'aller disparaît. Créé en brouillon comme tout portail ; l'aller n'est pas modifié.
+- `destination-point` et `return-of` ne sont écrits que s'ils sont renseignés, et n'entrent dans l'empreinte que dans
+  ce cas : `hub_to_wild` / `hub_to_claims` gardent fichier et empreinte identiques.
+- **Arrivée modifiable** (`portal.update` avec `dest_mode=set`, `destination_world`, `strategy`, `point_x|y|z`,
+  `point_yaw`, `point_pitch`) pour un portail **non actif** seulement (`ACTIVE_DESTINATION_LOCKED`) ; mêmes champs à
+  la création, plus `return_of`. Règles communes (création, modification, **et revérifiées à l'activation**) : monde
+  d'arrivée chargé (`DESTINATION_NOT_LOADED` — un portail ne charge jamais un monde), `CLAIM_HOME` vers
+  `claims.world` seulement, point fixe présent (`POINT_REQUIRED`), dans les hauteurs du monde avec sol et tête
+  (`POINT_OUT_OF_WORLD`), hors de la zone de tout portail du monde d'arrivée, entre mondes ou de zone
+  (`POINT_INSIDE_PORTAL`, évite le renvoi en boucle).
+- **Au passage** (`WorldPortalTeleportListener`) : pour `FIXED_POINT` seulement, chargement des chunks
+  (`getChunkAtAsync`) et téléportation (`teleportAsync`) **asynchrones** ; position contrôlée par
+  `travel.ArrivalSafety` (mêmes règles que `RandomSafeLocationFinder` : sol solide non dangereux, pieds et tête
+  libres, pas de lave/feu/magma/cactus/feu de camp/baies). Point non sûr → position sûre la plus proche dans une boîte
+  **bornée** (2 blocs autour, 3 au-dessus/en dessous, 175 positions au plus), sinon **refus** avec message, le joueur
+  reste sur place ; refus aussi si l'arrivée tombe dans un portail actif. `WORLD_SPAWN`, `RANDOM_SAFE`, `CLAIM_HOME`
+  (donc Hub → Wild et Hub → Claims) gardent leur chemin synchrone inchangé ; les gardes Wild/Claims s'appliquent
+  toujours par le nom du monde d'arrivée.
+- **Vérifier sans appliquer** : action agent `portal.verify` (`id`), permission panel **`PORTAL_READ`**, non sensible.
+  Contrôles : état, départ (monde chargé, emplacement présent), zone (aucune superposition), monde d'arrivée,
+  arrivée (stratégie, hauteur et boucle du point fixe, sécurité), aller-retour. Statuts `OK` / `WARNING` /
+  `UNKNOWN` / `BLOCKING`, verdict global, empreinte du portail vérifié (la fiche signale un résultat antérieur à une
+  modification). **Aucun fichier écrit, aucun monde ni chunk chargé, aucun joueur déplacé** : la sécurité du point
+  n'est lue que si les chunks sont déjà chargés (copie des blocs sur le thread principal, contrôles hors du thread
+  principal), sinon `UNKNOWN`.
+- `portal.list` expose en plus `destinationPoint` (texte), `pointX|Y|Z|Yaw|Pitch`, `returnOf`, `returnedBy`.
+- `/rpgadmin worldportal create … fixed_point` est refusé : le point fixe se règle dans PlugAdmin.
+- Pas de migration SQL, pas de clé de configuration. Conditions d'accès et test de téléportation contrôlé : #567.
+
 ### `/rpgadmin portal` — commandes
 Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.md](TRAVEL.md). Page docs-site : aucune.
 
@@ -4927,6 +4965,7 @@ Page docs-site : `worlds.html` (mais voir la note d'obsolescence en section 19).
 
 Stratégies de destination (`travel.model.DestinationStrategy`, vérifié dans le code) :
 -   **`WORLD_SPAWN`** — `World#getSpawnLocation()` du monde destination, résolue à chaque activation.
+-   **`FIXED_POINT`** (issue #566) — position et regard enregistrés (`destination-point`), réglés depuis PlugAdmin uniquement (refusé par `/rpgadmin worldportal create`) ; voir la section #566.
 -   **`RANDOM_SAFE`** — position aléatoire sûre autour du spawn du monde destination (`travel.RandomSafeLocationFinder`), repli automatique sur `WORLD_SPAWN` si aucune position sûre trouvée. Réglages (`config.yml` → `travel.random-safe-arrival`, vérifiés dans `RandomSafeArrivalConfig`/`config.yml`) : `min-radius: 500`, `max-radius: 5000`, `max-attempts: 20` (distance autour du **spawn du monde**, pas du portail).
 
 ### Avertissement avant l'entrée dans le Wild (issue #161)

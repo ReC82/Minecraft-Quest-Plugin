@@ -1939,6 +1939,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         Placeholder.unparsed("value", args[4])));
                 return;
             }
+            if (strategy == DestinationStrategy.FIXED_POINT) {
+                // Issue #566 : un point fixe se saisit (position + regard) et se vérifie dans PlugAdmin.
+                player.sendMessage(MM.deserialize("<red>Le point fixe se règle depuis PlugAdmin (page Portails), "
+                        + "pas avec cette commande.</red>"));
+                return;
+            }
         }
 
         var pos1 = zoneSelectionService.pos1(player.getUniqueId());

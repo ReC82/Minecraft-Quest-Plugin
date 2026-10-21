@@ -689,6 +689,12 @@ public enum AgentActionType {
     /** Issue #565 — supprimer la configuration d'un portail non actif ; emplacement et bâtiment conservés. */
     PORTAL_DELETE("portal.delete"),
     /**
+     * Issue #566 (#228-P3) — « Vérifier sans appliquer » : départ, zone, arrivée, sécurité d'un point
+     * fixe (chunks déjà chargés seulement), lien de retour. Lecture seule : aucun fichier, monde,
+     * chunk ni joueur touché.
+     */
+    PORTAL_VERIFY("portal.verify"),
+    /**
      * Issue #637 — tous les claims persistés : propriétaire (UUID + pseudo connu), claim principal,
      * monde (chargé ou non), bornes, réservation, palier déduit de la taille réelle. Lecture seule ;
      * fonctionne pour un propriétaire hors ligne.

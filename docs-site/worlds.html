@@ -269,6 +269,14 @@
       zones qui se recouvrent sont refusées, y compris au redémarrage du serveur. Le test de téléportation n'est
       pas proposé.
     </p>
+    <p class="text-body-secondary">
+      Depuis l'issue #566, l'arrivée d'un portail non actif se règle dans sa fiche : point d'arrivée du monde, point
+      sûr aléatoire, claim du joueur (monde des claims seulement) ou <strong>point fixe</strong> avec son regard. Un
+      point fixe hors du monde ou dans la zone d'un portail est refusé ; à chaque passage, un point devenu dangereux
+      est remplacé par la position sûre la plus proche (2 blocs au plus), sinon le joueur reste sur place avec un
+      message. « Préparer le portail retour » crée un second portail, distinct, en brouillon. « Vérifier sans
+      appliquer » contrôle tout le portail sans rien modifier ni charger.
+    </p>
   </section>
 
   <section class="my-5">

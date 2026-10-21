@@ -24,7 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Issues #564 / #565 (#228-P1/P2) — page « Portails » d'après le relevé portal.list, et sa gestion. */
+/** Issues #564 / #565 / #566 (#228-P1/P2/P3) — page « Portails » d'après le relevé portal.list, et sa gestion. */
 class PortalsPageTest {
 
     private static final String WILD_GUARD = "{\"code\":\"WILD_WARNING\",\"title\":\"Avertissement avant d'entrer "
@@ -148,6 +148,90 @@ class PortalsPageTest {
                             + "\"portal\":\"arche_marche\",\"before\":\"\",\"after\":\"état DRAFT\"}],"
                             + "\"issues\":[{\"code\":\"PORTAL_FILE_SKIPPED\"");
 
+    /** Issue #566 : le brouillon arrive sur un point fixe de test_world. */
+    static final String RELEVE_566 = RELEVE_565
+            .replace("\"destinationRole\":\"\",\"strategy\":\"WORLD_SPAWN\",\"arrival\":[]",
+                    "\"destinationRole\":\"\",\"destinationPoint\":\"test_world 100.5, 64.0, -20.5 (regard 90°)\","
+                            + "\"strategy\":\"FIXED_POINT\",\"arrival\":[\"Point fixe : 100.5, 64.0, -20.5.\"]")
+            .replace("\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650}",
+                    "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650,\"pointX\":100.5,\"pointY\":64.0,"
+                            + "\"pointZ\":-20.5,\"pointYaw\":90.0,\"pointPitch\":0.0,\"returnOf\":\"\","
+                            + "\"returnedBy\":[]}");
+
+    @Test
+    void theFicheOfADraftOffersArrivalVerificationAndReturn() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_566);
+        String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(draft.contains("test_world 100.5, 64.0, -20.5 (regard 90°)"), "point affiché");
+        assertTrue(draft.contains("name=\"dest_mode\" value=\"set\""), "formulaire d'arrivée");
+        assertTrue(draft.contains("<option value=\"FIXED_POINT\" selected>"), "stratégie actuelle présélectionnée");
+        assertTrue(draft.contains("name=\"point_x\" value=\"100.5\"") && draft.contains("name=\"point_yaw\" value=\"90\""));
+        assertTrue(draft.contains("value=\"portal.verify\"") && draft.contains("Vérifier sans appliquer"));
+        assertTrue(draft.contains("return_of=arche_marche"), "préparer le portail retour");
+        assertTrue(draft.contains("<select name=\"destination_world\" required><option value=\"claims\">claims</option>"
+                + "<option value=\"test_world\" selected>"), "monde d'arrivée actuel présélectionné");
+        String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild").body();
+        assertTrue(wild.contains("Désactiver le portail avant de changer son arrivée"), "arrivée verrouillée si actif");
+        assertFalse(wild.contains("name=\"dest_mode\""));
+    }
+
+    @Test
+    void theLastVerificationIsShownAndFlaggedWhenThePortalChangedSince() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_566);
+        runAction("portal.verify", "&id=arche_marche", "{\"portal\":\"arche_marche\",\"verdict\":\"WARNING\","
+                + "\"fingerprint\":\"cccccccccccccccccccccccc\",\"checks\":[{\"code\":\"ARRIVAL_SAFETY\","
+                + "\"status\":\"UNKNOWN\",\"title\":\"Sécurité de l'arrivée\",\"message\":\"Non vérifiable "
+                + "maintenant.\"}]}");
+        String page = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(page.contains("Non vérifiable maintenant.") && page.contains(">À regarder<"), page);
+        assertTrue(page.contains("précède la dernière modification"), "empreinte différente de celle du relevé");
+        assertTrue(page.contains("Vérifier à nouveau"));
+    }
+
+    @Test
+    void theReturnFormIsPrefilledFromTheOutboundPortal() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_566);
+        String page = get("/portals?agent=" + TestConfig.AGENT_ID + "&return_of=arche_marche").body();
+        assertTrue(page.contains("Portail retour de <code>arche_marche</code>"), page);
+        assertTrue(page.contains("name=\"return_of\" value=\"arche_marche\""));
+        assertTrue(page.contains("<select name=\"world\" required><option value=\"claims\">claims</option>"
+                + "<option value=\"test_world\" selected>"), "départ = monde d'arrivée de l'aller");
+        assertTrue(page.contains("<option value=\"world_hub\" selected>"), "arrivée = monde de départ de l'aller");
+    }
+
+    @Test
+    void arrivalChangesAndVerificationsAreQueuedWithValidatedParams() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=portal.update&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche&expected=bbbbbbbbbbbbbbbbbbbbbbbb&zone_mode=keep&dest_mode=set"
+                + "&destination_world=test_world&strategy=FIXED_POINT&point_x=100,5&point_y=64&point_z=-20.5"
+                + "&point_yaw=90&confirm=true");
+        post("/agents/action", "_csrf=" + token + "&type=portal.verify&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche");
+        String queued = pollActions();
+        assertTrue(queued.contains("\"dest_mode\":\"set\"") && queued.contains("\"point_x\":\"100.5\""), queued);
+        assertTrue(queued.contains("portal.verify"), queued);
+    }
+
+    @Test
+    void aFixedPointWithoutCoordinatesIsRefusedBeforeQueueing() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=portal.update&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche&expected=bbbbbbbbbbbbbbbbbbbbbbbb&zone_mode=keep&dest_mode=set"
+                + "&destination_world=test_world&strategy=FIXED_POINT&point_x=1&confirm=true");
+        assertFalse(pollActions().contains("portal."), "rien mis en file");
+    }
+
     @Test
     void theOwnerGetsADraftFormAndNoTeleportTest() throws Exception {
         start();
@@ -238,9 +322,13 @@ class PortalsPageTest {
     }
 
     private void runAction(String type, String details) throws Exception {
+        runAction(type, "", details);
+    }
+
+    private void runAction(String type, String extraParams, String details) throws Exception {
         String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
         post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent=" + TestConfig.AGENT_ID
-                + "&return=/portals");
+                + "&return=/portals" + extraParams);
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),

@@ -7943,3 +7943,40 @@ numérique, touche F, glisser vers le coffre refusés pour les trois objets ; gl
 interne, retrait d'un exemplaire déjà stocké permis ; bundle refusé ; hopper refusé, objet ordinaire déplacé ; Rune
 et diamant stockables ; message anti-spam 2 s ; blocs à clic droit), `BackpackListenerTest` (lecture partagée
 `InventoryTransfers`, sacs inchangés), `SoulboundItemListenerTest` (anti-perte inchangé).
+
+### TC-391 — PlugAdmin : arrivée d'un portail, point fixe, portail retour, vérifier sans appliquer (issue #566, PENDING MANUAL VALIDATION)
+
+**Feu vert séparé du propriétaire requis avant l'étape 3** : l'autorisation du 20/10 n'autorise que des tests simulés —
+aucune destination ni portail réel modifié, aucune téléportation, aucun monde ni chunk chargé par Claude. Les étapes 1
+et 2 sont en lecture seule. Ne jamais modifier `hub_to_wild` ni `hub_to_claims`.
+
+1.  Lecture seule : Monde → Portails → « Rafraîchir les portails », fiche `hub_to_wild`. **Attendu** : arrivée « point
+    sûr aléatoire » inchangée ; bloc « Arrivée » : « Désactiver le portail avant de changer son arrivée » (aucun
+    formulaire) ; « Préparer le portail retour » ouvre seulement un formulaire prérempli, sans rien créer.
+2.  Lecture seule : « Vérifier sans appliquer » sur `hub_to_wild` puis `hub_to_claims`. **Attendu** : verdict OK,
+    contrôles État / Départ / Zone / Monde d'arrivée / Arrivée / Aller-retour ; rien de modifié (journal de la fiche
+    inchangé, en jeu rien ne bouge). Traverser ensuite les deux portails en jeu : comportement identique à avant.
+3.  (Feu vert requis) Créer un brouillon de test (TC-387 étape 2) vers un monde de test, arrivée « point fixe » à une
+    position relevée en F3 (X, Y des pieds, Z, regard horizontal). Essayer d'abord un Y hors du monde, puis un point
+    dans la zone d'un portail. **Attendu** : refus « hauteurs du monde » puis « serait renvoyé aussitôt » ; rien écrit.
+4.  « Vérifier sans appliquer » loin du point, puis en se tenant près du point. **Attendu** : « Non vérifiable
+    maintenant » (chunks non chargés), puis « OK » (ou « À regarder » si le point est dangereux).
+5.  Activer le brouillon, le traverser. **Attendu** : arrivée exacte au point, regard dans la direction saisie,
+    « Téléportation réussie », serveur sans à-coup. Poser de la lave sous le point (monde de test), retraverser :
+    arrivée sur le bloc sûr voisin. Entourer de lave sur 2 blocs : « L'arrivée de ce portail n'est pas sûre… », le
+    joueur reste dans le Hub.
+6.  Fiche de l'aller → « Préparer le portail retour ». **Attendu** : formulaire prérempli (départ = monde de test,
+    arrivée = Hub, point fixe), bandeau « Portail retour de … ». Créer : second portail en brouillon, « Retour de » dans
+    sa fiche, « Portail retour » dans celle de l'aller ; l'aller n'a pas changé. Un second retour du même aller est
+    refusé.
+7.  Désactiver puis supprimer les portails de test ; `hub_to_wild` / `hub_to_claims` inchangés et fonctionnels.
+
+**Couverture automatisée** : `WorldPortalDestinationTest` (copie isolée de `world-portals/` avec les deux portails de
+DEV : point fixe écrit et relu, empreinte et fichier historiques inchangés, fichier sans coordonnées ignoré, refus
+point requis / hors du monde / monde non chargé / dans un portail / CLAIM_HOME hors Claims, arrivée verrouillée si
+actif, confirmation des essentiels, revérification à l'activation, retour distinct et refus RETURN_*, vérification OK /
+non vérifiable / ajustée / impossible / monde absent / retour désaccordé, stratégies historiques sans lecture de bloc),
+`ArrivalSafetyTest` (verdicts, recherche bornée, refus sans repli lointain), `WorldPortalTeleportListenerTest`
+(point fixe atteint avec son regard, refus d'une arrivée dangereuse et d'une arrivée dans un portail actif, via un
+adaptateur asynchrone simulé ; RANDOM_SAFE / CLAIM_HOME inchangés), `PortalAdminParamsTest`, `PortalsPageTest`
+(fiche, résultat de vérification et périmé, retour prérempli, paramètres validés, refus avant mise en file).

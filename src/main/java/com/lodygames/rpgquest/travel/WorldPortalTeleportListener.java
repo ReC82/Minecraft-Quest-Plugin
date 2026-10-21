@@ -5,11 +5,14 @@ import com.lodygames.rpgquest.config.RandomSafeArrivalConfig;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.world.WorldService;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -70,6 +73,10 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final long ARRIVAL_GRACE_TICKS = 40L; // 2 s.
+    static final String FIXED_POINT_UNSAFE = "<red>L'arrivée de ce portail n'est pas sûre en ce moment : "
+            + "téléportation annulée, vous restez ici. Prévenez un administrateur.</red>";
+    static final String FIXED_POINT_UNAVAILABLE = "<red>L'arrivée de ce portail n'a pas pu être préparée : "
+            + "téléportation annulée, vous restez ici. Vous pouvez réessayer.</red>";
 
     private final RPGQuestPlugin plugin;
     private final WorldPortalRegistry registry;
@@ -93,6 +100,36 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         this.worldService = worldService;
         this.randomSafeArrivalConfig = randomSafeArrivalConfig;
         this.logger = logger;
+    }
+
+    /**
+     * Opérations asynchrones de Paper utilisées par le point fixe (issue #566) : {@code
+     * World#getChunkAtAsync} et {@code Entity#teleportAsync} en jeu.
+     */
+    interface AsyncWorldAccess {
+
+        CompletableFuture<?> loadChunk(World world, int chunkX, int chunkZ);
+
+        CompletableFuture<Boolean> teleport(Player player, Location target);
+    }
+
+    static final AsyncWorldAccess PAPER = new AsyncWorldAccess() {
+        @Override
+        public CompletableFuture<?> loadChunk(World world, int chunkX, int chunkZ) {
+            return world.getChunkAtAsync(chunkX, chunkZ);
+        }
+
+        @Override
+        public CompletableFuture<Boolean> teleport(Player player, Location target) {
+            return player.teleportAsync(target);
+        }
+    };
+
+    private volatile AsyncWorldAccess async = PAPER;
+
+    /** Visible pour les tests : MockBukkit n'implémente ni {@code getChunkAtAsync} ni {@code teleportAsync}. */
+    void setAsyncWorldAccess(AsyncWorldAccess access) {
+        this.async = access;
     }
 
     /** Une arrivée calculée pour un joueur précis — vide : laisser le repli s'appliquer. */
@@ -247,6 +284,10 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
             return;
         }
         World world = destination.get();
+        if (portal.destinationStrategy() == DestinationStrategy.FIXED_POINT) {
+            teleportToFixedPoint(player, portal, world);
+            return;
+        }
         Location source = player.getLocation();
 
         // Diagnostic de latence (issue #161) : les trois étapes du passage sont mesurées séparément
@@ -314,6 +355,108 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
             return;
         }
         player.sendMessage(MM.deserialize("<green>Téléportation réussie.</green>"));
+    }
+
+    /**
+     * Issue #566 — arrivée sur un point fixe, entièrement <strong>asynchrone</strong> : les chunks de
+     * la boîte de recherche ({@link ArrivalSafety#chunksAround}) sont chargés par {@code
+     * getChunkAtAsync}, puis la position est contrôlée sur le thread principal et le joueur déplacé
+     * par {@code teleportAsync}. Point non sûr et aucune position sûre à proximité immédiate, ou point
+     * dans la zone d'un portail actif : la téléportation est <strong>refusée</strong>, le joueur reste
+     * sur place. Les stratégies historiques (Hub → Wild, Hub → Claims) gardent leur chemin
+     * synchrone ci-dessus, inchangé.
+     */
+    private void teleportToFixedPoint(Player player, WorldPortalDefinition portal, World world) {
+        WorldPortalDefinition.FixedPoint point = portal.fixedPoint();
+        List<CompletableFuture<?>> loads = new ArrayList<>();
+        AsyncWorldAccess access = async;
+        try {
+            for (long[] c : ArrivalSafety.chunksAround(point.blockX(), point.blockZ())) {
+                loads.add(access.loadChunk(world, (int) c[0], (int) c[1]));
+            }
+        } catch (RuntimeException e) {
+            failFixedPoint(player, portal, e);
+            return;
+        }
+        CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) ->
+                onMainThread(() -> {
+                    try {
+                        finishFixedPoint(player, portal, world, point, error, access);
+                    } catch (RuntimeException e) {
+                        failFixedPoint(player, portal, e);
+                    }
+                }));
+    }
+
+    /** Erreur inattendue du chemin asynchrone : journalisée, le joueur prévenu et laissé sur place. */
+    private void failFixedPoint(Player player, WorldPortalDefinition portal, Throwable error) {
+        logger.error("Portail simple {} (FIXED_POINT) : erreur pendant la téléportation de {}.", portal.id(),
+                player.getName(), error);
+        if (player.isOnline()) {
+            player.sendMessage(MM.deserialize(FIXED_POINT_UNAVAILABLE));
+        }
+    }
+
+    private void finishFixedPoint(Player player, WorldPortalDefinition portal, World world,
+                                  WorldPortalDefinition.FixedPoint point, Throwable chunkError,
+                                  AsyncWorldAccess access) {
+        if (!player.isOnline()) {
+            return;
+        }
+        if (chunkError != null || plugin.getServer().getWorld(world.getName()) == null) {
+            logger.warn("Portail simple {} (FIXED_POINT) : arrivée dans « {} » impossible à préparer.", portal.id(),
+                    world.getName(), chunkError);
+            player.sendMessage(MM.deserialize(FIXED_POINT_UNAVAILABLE));
+            return;
+        }
+        Optional<ArrivalSafety.Spot> spot = ArrivalSafety.findNear(ArrivalSafety.worldView(world),
+                point.blockX(), point.blockY(), point.blockZ());
+        if (spot.isEmpty()) {
+            logger.warn("Portail simple {} (FIXED_POINT) : arrivée {} {},{},{} non sûre et aucune position sûre "
+                            + "à {} bloc(s) autour — téléportation refusée.", portal.id(), world.getName(),
+                    point.blockX(), point.blockY(), point.blockZ(), ArrivalSafety.HORIZONTAL_RADIUS);
+            player.sendMessage(MM.deserialize(FIXED_POINT_UNSAFE));
+            return;
+        }
+        ArrivalSafety.Spot s = spot.get();
+        if (registry.portalAt(world.getName(), s.x(), s.y(), s.z()).filter(WorldPortalDefinition::enabled).isPresent()) {
+            logger.warn("Portail simple {} (FIXED_POINT) : l'arrivée {} {},{},{} est dans la zone d'un portail "
+                    + "actif — téléportation refusée (boucle).", portal.id(), world.getName(), s.x(), s.y(), s.z());
+            player.sendMessage(MM.deserialize(FIXED_POINT_UNSAFE));
+            return;
+        }
+        boolean exact = s.x() == point.blockX() && s.y() == point.blockY() && s.z() == point.blockZ();
+        Location target = exact
+                ? new Location(world, point.x(), point.y(), point.z(), point.yaw(), point.pitch())
+                : new Location(world, s.x() + 0.5, s.y(), s.z() + 0.5, point.yaw(), point.pitch());
+        UUID playerId = player.getUniqueId();
+        Location source = player.getLocation();
+        TpTraceLogger.log(logger, "teleport_start", playerId, player.getName(), portal.id(),
+                world.getName(), target.getBlockX(), target.getBlockY(), target.getBlockZ(),
+                null, null, null, null, portalLocationString(source), portalLocationString(target));
+        access.teleport(player, target).whenComplete((success, error) -> onMainThread(() -> {
+            boolean ok = error == null && Boolean.TRUE.equals(success);
+            if (error != null) {
+                logger.warn("Portail simple {} (FIXED_POINT) : téléportation de {} en échec.", portal.id(),
+                        player.getName(), error);
+            }
+            TpTraceLogger.log(logger, ok ? "teleport_success" : "teleport_failed", playerId, player.getName(),
+                    portal.id(), world.getName(), target.getBlockX(), target.getBlockY(), target.getBlockZ(),
+                    null, null, null, null, portalLocationString(source), portalLocationString(target));
+            if (!player.isOnline()) {
+                return;
+            }
+            player.sendMessage(MM.deserialize(ok ? "<green>Téléportation réussie.</green>"
+                    : "<red>La téléportation a échoué : vous n'avez pas quitté cet endroit. Vous pouvez réessayer.</red>"));
+        }));
+    }
+
+    private void onMainThread(Runnable task) {
+        if (plugin.getServer().isPrimaryThread()) {
+            task.run();
+        } else {
+            plugin.getServer().getScheduler().runTask(plugin, task);
+        }
     }
 
     /**

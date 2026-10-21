@@ -48,6 +48,34 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Portails : arrivée point fixe, portail retour, vérifier sans appliquer (#566, TC-391)
+
+### Changement
+
+Portails entre mondes : arrivée « point fixe » (position + regard) contrôlée à chaque passage (position sûre la plus
+proche à 2 blocs, sinon refus ; chunks et téléportation asynchrones), arrivée modifiable hors portail actif, portail
+retour distinct en brouillon, action `portal.verify` en lecture seule. Page PlugAdmin Portails : bloc « Arrivée »,
+« Préparer le portail retour », « Vérifier sans appliquer ». `hub_to_wild` / `hub_to_claims` inchangés.
+
+### Action serveur
+
+- Remplacement du JAR RPGQuest (`scripts/deploy-verygames.sh -y` après CI verte sur la fusion) + redéploiement
+  PlugAdmin (`scripts/plugadmin/deploy.sh`). Aucune migration, aucune clé de configuration, aucun fichier de contenu.
+- **Aucun portail, fichier `world-portals/`, monde, chunk ni joueur touché** ; aucune action `portal.*` envoyée.
+- Champs YAML facultatifs `destination-point` et `return-of`, écrits seulement par PlugAdmin à la première arrivée
+  « point fixe » ou au premier portail retour (aucun sur DEV).
+
+### Validation
+
+TC-391 (PENDING MANUAL VALIDATION ; étapes 3 à 7 sur feu vert du propriétaire).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; PlugAdmin : release précédente. Un portail `FIXED_POINT`
+éventuel serait ignoré au chargement par l'ancien JAR (stratégie inconnue) : il ne téléporte personne.
+
+---
+
 ## 2026-10-21 - Objets permanents liés au joueur non stockables (#625, TC-390)
 
 ### Changement

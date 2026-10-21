@@ -1,9 +1,11 @@
 package com.lodygames.rpgquest.web.agent;
 
+import com.lodygames.rpgquest.travel.WorldPortalAdminService.DestinationRequest;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.Operation;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.ZoneRequest;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
+import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.FixedPoint;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.Zone;
 import java.util.Locale;
 import java.util.Map;
@@ -18,7 +20,12 @@ import java.util.Map;
  *   <li>zone : {@code zone_mode=site} + {@code site}, {@code width}, {@code height}, {@code depth},
  *       ou {@code zone_mode=coords} + {@code world} (création) et {@code min_x}…{@code max_z} ;
  *       {@code zone_mode=keep} (ou absent) en modification = zone inchangée ;</li>
- *   <li>création : {@code destination_world}, {@code strategy} ({@code WORLD_SPAWN} par défaut) ;</li>
+ *   <li>création : {@code destination_world}, {@code strategy} ({@code WORLD_SPAWN} par défaut) ;
+ *       modification : les mêmes avec {@code dest_mode=set} (absent ou {@code keep} = arrivée
+ *       inchangée) ;</li>
+ *   <li>{@code strategy=FIXED_POINT} : {@code point_x}, {@code point_y}, {@code point_z} obligatoires,
+ *       {@code point_yaw}, {@code point_pitch} facultatifs (0) — issue #566 ;</li>
+ *   <li>création : {@code return_of} facultatif = portail dont celui-ci est le retour ;</li>
  *   <li>{@code name} : présent = nouveau nom (vide = nom déduit de la destination) ;</li>
  *   <li>{@code confirm_essential=true} : portail vers le Hub, le Wild ou les Claims.</li>
  * </ul>
@@ -86,9 +93,45 @@ final class PortalAdminParams {
                 return Parsed.fail("Arrivée « " + rawStrategy + " » inconnue.");
             }
         }
+        DestinationRequest destination = null;
+        String destMode = trim(p.get("dest_mode")).toLowerCase(Locale.ROOT);
+        if (kind == Kind.CREATE || (kind == Kind.UPDATE && destMode.equals("set"))) {
+            FixedPoint point = null;
+            if (strategy == DestinationStrategy.FIXED_POINT) {
+                Double x = decimal(p.get("point_x"));
+                Double y = decimal(p.get("point_y"));
+                Double z = decimal(p.get("point_z"));
+                if (x == null || y == null || z == null) {
+                    return Parsed.fail("Point fixe : X, Y et Z doivent être des nombres.");
+                }
+                Double yaw = trim(p.get("point_yaw")).isEmpty() ? Double.valueOf(0) : decimal(p.get("point_yaw"));
+                Double pitch = trim(p.get("point_pitch")).isEmpty() ? Double.valueOf(0) : decimal(p.get("point_pitch"));
+                if (yaw == null || pitch == null || pitch < -90 || pitch > 90) {
+                    return Parsed.fail("Regard du point fixe invalide : horizontal en degrés, vertical de -90 à 90.");
+                }
+                point = new FixedPoint(x, y, z, yaw.floatValue(), pitch.floatValue());
+            }
+            destination = new DestinationRequest(trim(p.get("destination_world")), strategy, point);
+        } else if (kind == Kind.UPDATE && !(destMode.isEmpty() || destMode.equals("keep"))) {
+            return Parsed.fail("Arrivée : « dest_mode » doit valoir « set » ou « keep ».");
+        }
+        String returnOf = kind == Kind.CREATE ? trim(p.get("return_of")).toLowerCase(Locale.ROOT) : "";
+        if (!returnOf.isEmpty() && !returnOf.matches("[a-z0-9_-]{1,48}")) {
+            return Parsed.fail("Portail aller « return_of » invalide.");
+        }
         String actor = trim(p.get("by"));
-        return new Parsed(new Operation(kind, id, expected, name, zone, trim(p.get("destination_world")), strategy,
+        return new Parsed(new Operation(kind, id, expected, name, zone, destination, returnOf,
                 "true".equals(p.get("confirm_essential")), actor.isEmpty() ? "panel" : actor), null);
+    }
+
+    /** Nombre fini, au plus 30 000 000 en valeur absolue ({@code null} sinon). */
+    private static Double decimal(String raw) {
+        try {
+            double v = Double.parseDouble(trim(raw).replace(',', '.'));
+            return Double.isFinite(v) && Math.abs(v) <= 30_000_000 ? v : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static Integer integer(String raw) {

@@ -90,9 +90,10 @@ public final class PortalOverview {
      * @param editable portail de {@code world-portals/} modifiable depuis PlugAdmin
      */
     public record Admin(String state, String storedName, String site, String siteName, int width, int height,
-                        int depth, boolean essential, String fingerprint, boolean editable) {
+                        int depth, boolean essential, String fingerprint, boolean editable,
+                        WorldPortalDefinition.FixedPoint point, String returnOf, List<String> returnedBy) {
 
-        static final Admin LEGACY = new Admin("ACTIVE", "", "", "", 0, 0, 0, false, "", false);
+        static final Admin LEGACY = new Admin("ACTIVE", "", "", "", 0, 0, 0, false, "", false, null, "", List.of());
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -245,14 +246,23 @@ public final class PortalOverview {
             }
         }
         WorldPortalDefinition.Details d = p.details();
+        List<String> returnedBy = all.stream().filter(o -> o.returnOf().equals(p.id()))
+                .map(WorldPortalDefinition::id).toList();
+        if (!p.returnOf().isEmpty() && all.stream().noneMatch(o -> o.id().equals(p.returnOf()))) {
+            issues.add(new Issue("PORTAL_RETURN_TARGET_MISSING", "warning", "Retour de « " + p.returnOf()
+                    + " », qui n'existe plus."));
+        }
         Admin admin = new Admin(p.state().name(), d.name(), site, linked.map(BuildingSite::name).orElse(""),
                 d.width(), d.height(), d.depth(), WorldPortalAdminService.essential(p, in.roles()),
-                WorldPortalAdminService.fingerprint(p), sameId.isEmpty());
+                WorldPortalAdminService.fingerprint(p), sameId.isEmpty(), p.fixedPoint(), p.returnOf(), returnedBy);
+        WorldPortalDefinition.FixedPoint fp = p.fixedPoint();
+        String point = fp == null ? "" : String.format(Locale.ROOT, "%s %.1f, %.1f, %.1f (regard %.0f°)",
+                p.destinationWorld(), fp.x(), fp.y(), fp.z(), fp.yaw());
         return new Entry(p.id(), d.name().isEmpty() ? nameFor(p.destinationWorld(), in.roles()) : d.name(),
                 Kind.WORLD_PORTAL, p.enabled(), file,
                 p.world(), sourceLoaded, role(p.world(), in.roles()),
                 p.minX(), p.minY(), p.minZ(), p.maxX(), p.maxY(), p.maxZ(),
-                p.destinationWorld(), destLoaded, role(p.destinationWorld(), in.roles()), "", "",
+                p.destinationWorld(), destLoaded, role(p.destinationWorld(), in.roles()), "", point,
                 p.destinationStrategy().name(), arrival(p, in), worldPortalTrigger(!guards.isEmpty()),
                 List.copyOf(guards), List.of(), List.copyOf(issues), admin);
     }
@@ -274,6 +284,12 @@ public final class PortalOverview {
                             + " blocs du point d'arrivée, à au moins " + in.claimArrival().spacing()
                             + " blocs de tout claim (claims.arrival), " + in.claimArrival().attempts() + " tentatives.",
                     "Repli : point sûr aléatoire (travel.random-safe-arrival), puis " + spawnText + ".");
+            case FIXED_POINT -> List.of(
+                    "Point fixe : " + WorldPortalAdminService.pointText(p.fixedPoint()) + ".",
+                    "Contrôlé à chaque passage : s'il n'est pas sûr, position sûre la plus proche à "
+                            + ArrivalSafety.HORIZONTAL_RADIUS + " blocs au plus (" + ArrivalSafety.VERTICAL_RANGE
+                            + " en hauteur), sinon passage refusé — jamais de repli lointain.",
+                    "Chunks chargés et téléportation asynchrones.");
         };
     }
 

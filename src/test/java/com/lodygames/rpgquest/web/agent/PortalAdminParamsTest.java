@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
+import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.Zone;
 import java.util.HashMap;
 import java.util.Map;
@@ -32,7 +33,7 @@ class PortalAdminParamsTest {
         assertEquals("arche", p.operation().id());
         assertEquals("buildsite_0007", p.operation().zone().site());
         assertEquals(3, p.operation().zone().width());
-        assertEquals(DestinationStrategy.RANDOM_SAFE, p.operation().strategy());
+        assertEquals(DestinationStrategy.RANDOM_SAFE, p.operation().destination().strategy());
         assertEquals("lody", p.operation().actor());
     }
 
@@ -56,7 +57,47 @@ class PortalAdminParamsTest {
         assertNull(p.error());
         assertNull(p.operation().zone());
         assertNull(p.operation().name());
+        assertNull(p.operation().destination(), "sans dest_mode=set : arrivée inchangée");
         assertTrue(p.operation().confirmEssential());
+    }
+
+    @Test
+    void aFixedPointArrivalReadsPositionAndLook() {
+        Map<String, String> m = new HashMap<>(Map.of("confirm", "true", "id", "hub_to_ville", "expected", FP,
+                "dest_mode", "set", "destination_world", "ville", "strategy", "fixed_point"));
+        m.putAll(Map.of("point_x", "100,5", "point_y", "64", "point_z", "-20.5", "point_yaw", "450"));
+
+        var p = PortalAdminParams.parse(Kind.UPDATE, m);
+
+        assertNull(p.error());
+        var d = p.operation().destination();
+        assertEquals("ville", d.world());
+        assertEquals(DestinationStrategy.FIXED_POINT, d.strategy());
+        assertEquals(new WorldPortalDefinition.FixedPoint(100.5, 64, -20.5, 90f, 0f), d.point(), "450° = 90°");
+    }
+
+    @Test
+    void aFixedPointWithoutCoordinatesOrWithABadLookIsRejected() {
+        Map<String, String> base = Map.of("confirm", "true", "id", "x", "zone_mode", "coords", "world", "w",
+                "min_x", "0", "min_y", "0", "min_z", "0", "max_x", "0", "max_y", "0", "max_z", "0");
+        Map<String, String> noPoint = new HashMap<>(base);
+        noPoint.putAll(Map.of("destination_world", "ville", "strategy", "FIXED_POINT", "point_x", "1"));
+        assertNotNull(PortalAdminParams.parse(Kind.CREATE, noPoint).error());
+        Map<String, String> badPitch = new HashMap<>(noPoint);
+        badPitch.putAll(Map.of("point_y", "64", "point_z", "1", "point_pitch", "120"));
+        assertNotNull(PortalAdminParams.parse(Kind.CREATE, badPitch).error());
+    }
+
+    @Test
+    void aReturnPortalNamesItsOutboundPortal() {
+        Map<String, String> m = new HashMap<>(Map.of("confirm", "true", "id", "ville_to_hub", "zone_mode", "coords",
+                "world", "ville", "min_x", "0", "min_y", "64", "min_z", "0", "max_x", "1", "max_y", "65"));
+        m.putAll(Map.of("max_z", "0", "destination_world", "world_hub", "return_of", "Hub_To_Ville"));
+
+        var p = PortalAdminParams.parse(Kind.CREATE, m);
+
+        assertNull(p.error());
+        assertEquals("hub_to_ville", p.operation().returnOf());
     }
 
     @Test

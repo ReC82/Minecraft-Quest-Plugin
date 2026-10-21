@@ -108,6 +108,11 @@ strictement dominante :
     totale sans dédup ni mirroir (utile pour positionner un joueur à un
     niveau précis avant un test).
 
+Sans commande (issue #183, retour du 20/10) : dans le **journal de quêtes**, la bourse affiche le
+niveau RPG global et sa jauge ; un clic ouvre « Ma progression RPG », une jauge par piste (niveau,
+XP courante / requise, pourcentage, niveau maximal). Lecture seule, mêmes calculs que `/skills`
+(`ui.ProgressionGauge` sur `ProgressionService#curve()`).
+
 ## Affichage (mission point 9)
 
 `progression.display-mode` : `action_bar` (défaut), `boss_bar` ou `off`.

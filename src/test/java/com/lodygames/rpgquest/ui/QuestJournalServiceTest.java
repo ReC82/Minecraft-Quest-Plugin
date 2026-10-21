@@ -423,6 +423,133 @@ class QuestJournalServiceTest {
         assertEquals(questId, service.trackedQuestOf(player.getUniqueId()).orElseThrow());
     }
 
+    // ---- Page « Ma progression RPG » (issue #183, retour du 20/10) ------------------------------
+
+    /** Courbe réelle de la progression (100 XP puis ×2), niveau max 4 : tout calcul vient d'elle. */
+    private com.lodygames.rpgquest.progression.ProgressionService progressionWithCurve() {
+        var config = new com.lodygames.rpgquest.config.ProgressionConfig(100L, 2.0, 4, 0.0, 1000,
+                com.lodygames.rpgquest.config.DisplayMode.OFF, false, 50, 15, 5, 4, 10, 100, 0);
+        var progression = new com.lodygames.rpgquest.progression.ProgressionService(plugin,
+                new com.lodygames.rpgquest.database.ProgressionRepository(database), () -> config,
+                plugin.getSLF4JLogger());
+        service.setProgression(progression);
+        return progression;
+    }
+
+    private void setXp(com.lodygames.rpgquest.progression.ProgressionService progression, PlayerMock player,
+                       com.lodygames.rpgquest.progression.model.SkillType skill, long totalXp) throws Exception {
+        progression.setTotalXp(player.getUniqueId(), skill, totalXp).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private static String plain(net.kyori.adventure.text.Component component) {
+        return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(component);
+    }
+
+    private void openProgressionFromPurse(PlayerMock player) throws InterruptedException {
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        clickTopSlot(player, QuestJournalService.BALANCE_SLOT, ClickType.LEFT);
+        waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isProgression());
+    }
+
+    @Test
+    void thePurseShowsTheGlobalRpgLevelAndInvitesToOpenTheProgression() throws Exception {
+        var progression = progressionWithCurve();
+        PlayerMock player = addPlayer();
+        setXp(progression, player, com.lodygames.rpgquest.progression.model.SkillType.GLOBAL, 190L);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+
+        var purse = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.BALANCE_SLOT);
+        String lore = String.join("\n", loreText(purse));
+        assertTrue(plain(purse.getItemMeta().displayName()).contains("0"), "la bourse reste la bourse");
+        assertTrue(lore.contains("Niveau RPG 2"), lore);
+        assertTrue(lore.contains("45 %"), lore);
+        assertTrue(lore.contains("Clic : voir ma progression"), lore);
+    }
+
+    @Test
+    void clickingThePurseOpensOneGaugePerTrackGlobalFirst() throws Exception {
+        var progression = progressionWithCurve();
+        PlayerMock player = addPlayer();
+        setXp(progression, player, com.lodygames.rpgquest.progression.model.SkillType.GLOBAL, 190L);
+        setXp(progression, player, com.lodygames.rpgquest.progression.model.SkillType.MINING, 700L); // niveau max
+
+        openProgressionFromPurse(player);
+
+        Inventory page = player.getOpenInventory().getTopInventory();
+        assertTrue(page.getHolder() instanceof JournalInventoryHolder holder && holder.kind() == JournalKind.PROGRESSION);
+        var tracks = com.lodygames.rpgquest.progression.model.SkillType.values();
+        for (int i = 0; i < tracks.length; i++) {
+            ItemStack icon = page.getItem(QuestJournalService.PROGRESSION_FIRST_SLOT + i);
+            int index = i;
+            assertNotNull(icon, () -> "piste absente : " + tracks[index]);
+            String title = plain(icon.getItemMeta().displayName());
+            assertTrue(title.startsWith(tracks[i].label()), title);
+        }
+        String global = String.join("\n", loreText(page.getItem(QuestJournalService.PROGRESSION_FIRST_SLOT)));
+        assertTrue(global.contains("XP : 90 / 200 pour le niveau 3"), global);
+        String mining = String.join("\n", loreText(page.getItem(QuestJournalService.PROGRESSION_FIRST_SLOT
+                + com.lodygames.rpgquest.progression.model.SkillType.MINING.ordinal())));
+        assertTrue(mining.contains("Niveau maximal atteint"), mining);
+        assertTrue(mining.contains("100 %"), mining);
+    }
+
+    @Test
+    void aPlayerWithoutProgressionSeesEveryTrackAtLevelOneAndZeroPercent() throws Exception {
+        progressionWithCurve();
+        PlayerMock player = addPlayer();
+
+        openProgressionFromPurse(player);
+
+        Inventory page = player.getOpenInventory().getTopInventory();
+        for (int i = 0; i < com.lodygames.rpgquest.progression.model.SkillType.values().length; i++) {
+            ItemStack icon = page.getItem(QuestJournalService.PROGRESSION_FIRST_SLOT + i);
+            assertTrue(plain(icon.getItemMeta().displayName()).endsWith("niveau 1"));
+            String lore = String.join("\n", loreText(icon));
+            assertTrue(lore.contains("0 %") && lore.contains("XP : 0 / 100"), lore);
+            assertTrue(loreText(icon).size() <= QuestJournalService.MAX_DETAIL_LORE_LINES, lore);
+        }
+    }
+
+    @Test
+    void theProgressionPageIsReadOnlyAndBackReturnsToTheSameTab() throws Exception {
+        var progression = progressionWithCurve();
+        PlayerMock player = addPlayer();
+        setXp(progression, player, com.lodygames.rpgquest.progression.model.SkillType.COMBAT, 150L);
+        service.open(player);
+        showAndAwait(player, JournalTab.COMPLETED);
+        clickTopSlot(player, QuestJournalService.BALANCE_SLOT, ClickType.LEFT);
+        waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isProgression());
+
+        InventoryView view = player.getOpenInventory();
+        for (ClickType click : new ClickType[] {ClickType.LEFT, ClickType.SHIFT_LEFT, ClickType.NUMBER_KEY}) {
+            InventoryClickEvent event = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                    QuestJournalService.PROGRESSION_FIRST_SLOT, click, InventoryAction.PICKUP_ALL);
+            listener.onInventoryClick(event);
+            assertTrue(event.isCancelled(), () -> click + " doit être annulé");
+        }
+        assertEquals(150L, progression.totalXp(player.getUniqueId(),
+                com.lodygames.rpgquest.progression.model.SkillType.COMBAT), "consulter ne modifie aucune XP");
+
+        clickTopSlot(player, QuestJournalService.PROGRESSION_BACK_SLOT, ClickType.LEFT);
+        waitUntil(() -> listTabOf(player) == JournalTab.COMPLETED && !service.sessionOf(player).isProgression());
+    }
+
+    @Test
+    void theProgressionPageCloseButtonDefersClosingToTheNextTick() throws Exception {
+        progressionWithCurve();
+        PlayerMock player = addPlayer();
+        openProgressionFromPurse(player);
+
+        clickTopSlot(player, QuestJournalService.PROGRESSION_CLOSE_SLOT, ClickType.LEFT);
+
+        assertTrue(isJournalStillOpen(player));
+        server.getScheduler().performTicks(1);
+        assertFalse(isJournalStillOpen(player));
+    }
+
     // ---- Utilitaires ----------------------------------------------------
 
     private void assertCancelled(InventoryView view, ClickType click, InventoryAction action) {

@@ -7,6 +7,7 @@ import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
@@ -87,11 +88,10 @@ public final class QuestJournalService implements QuestJournalUi {
     private static final int PAGE_INDICATOR_SLOT = 5;
     static final int NEXT_PAGE_SLOT = 6;
     /**
-     * Bourse du joueur (issue #16) : un emplacement <strong>inerte</strong> de la barre du haut,
-     * placé là pour que le solde soit visible dans une interface déjà ouverte par les joueurs
-     * plutôt que derrière une commande à connaître. Cliquer dessus ne fait rien — c'est un
-     * indicateur, pas un bouton, et {@link #handleListClick} l'ignore comme les autres slots
-     * décoratifs.
+     * Bourse du joueur (issue #16) : visible dans une interface déjà ouverte par les joueurs plutôt
+     * que derrière une commande à connaître. Issue #183 (retour du 20/10) : dans la liste, elle
+     * porte aussi le niveau RPG global et sa jauge, et un clic ouvre la page « Ma progression RPG »
+     * (lecture seule) — la barre du haut n'a plus d'emplacement libre pour un bouton séparé.
      */
     static final int BALANCE_SLOT = 7;
     static final int CLOSE_SLOT = 8;
@@ -114,6 +114,11 @@ public final class QuestJournalService implements QuestJournalUi {
     static final int DETAIL_BACK_SLOT = 18;
     static final int DETAIL_TRACK_SLOT = 22;
     static final int DETAIL_CLOSE_SLOT = 26;
+
+    /** Issue #183 : page « Ma progression RPG » — une rangée d'une piste par objet, GLOBAL d'abord. */
+    static final int PROGRESSION_FIRST_SLOT = 10;
+    static final int PROGRESSION_BACK_SLOT = 18;
+    static final int PROGRESSION_CLOSE_SLOT = 26;
 
     private static final String TRACKED_QUEST_KEY = "__tracked_quest__";
     private static final MiniMessage MM = MiniMessage.miniMessage();
@@ -151,6 +156,9 @@ public final class QuestJournalService implements QuestJournalUi {
 
     /** Issue #15 : quêtes quotidiennes/hebdomadaires, branchées au démarrage (absentes = onglets masqués). */
     private volatile PeriodicQuestService periodicQuests;
+
+    /** Issue #183 : progression RPG lue pour la bourse et la page « Ma progression » (absente = bourse seule). */
+    private volatile ProgressionService progression;
 
     public QuestJournalService(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressEngine questProgressEngine,
                                 PlayerVariableRepository variableRepository, YamlCustomItemRegistry customItemRegistry,
@@ -216,6 +224,10 @@ public final class QuestJournalService implements QuestJournalUi {
     }
 
     /** Issue #475 — voir {@link #contextLabels}. Texte brut, jamais un identifiant interne. */
+    public void setProgression(ProgressionService progression) {
+        this.progression = progression;
+    }
+
     public void setPeriodicQuests(PeriodicQuestService periodicQuests) {
         this.periodicQuests = periodicQuests;
     }
@@ -345,6 +357,8 @@ public final class QuestJournalService implements QuestJournalUi {
             }
             if (session.isDetail()) {
                 showDetail(player, session.tab(), session.page(), session.detailQuestId());
+            } else if (session.isProgression()) {
+                showProgression(player, session.tab(), session.page());
             } else {
                 showList(player, session.tab(), session.page());
             }
@@ -429,7 +443,7 @@ public final class QuestJournalService implements QuestJournalUi {
             Inventory inventory = Bukkit.createInventory(holder, LIST_SIZE, title);
             holder.bind(inventory);
 
-            renderChrome(inventory, tab, page, pageCount, balance, progress);
+            renderChrome(inventory, playerId, tab, page, pageCount, balance, progress);
             if (shownProgress.isPresent() && !pageIds.isEmpty()) {
                 inventory.setItem(PAGE_INDICATOR_SLOT,
                         PeriodicJournalEntries.summaryIcon(shownProgress.get(), period.get(), Instant.now()));
@@ -549,8 +563,8 @@ public final class QuestJournalService implements QuestJournalUi {
         };
     }
 
-    private void renderChrome(Inventory inventory, JournalTab tab, int page, int pageCount, Optional<Long> balance,
-                              Map<QuestPeriod, PeriodicProgress> progress) {
+    private void renderChrome(Inventory inventory, UUID playerId, JournalTab tab, int page, int pageCount,
+                              Optional<Long> balance, Map<QuestPeriod, PeriodicProgress> progress) {
         inventory.setItem(TAB_IN_PROGRESS_SLOT, tabIcon("Quêtes en cours", Material.BOOK, tab == JournalTab.IN_PROGRESS));
         inventory.setItem(TAB_COMPLETED_SLOT, tabIcon("Quêtes terminées", Material.ENCHANTED_BOOK, tab == JournalTab.COMPLETED));
         if (periodicEnabled()) {
@@ -566,7 +580,7 @@ public final class QuestJournalService implements QuestJournalUi {
         if (page < pageCount - 1) {
             inventory.setItem(NEXT_PAGE_SLOT, navIcon(Material.ARROW, "Page suivante »"));
         }
-        inventory.setItem(BALANCE_SLOT, balanceIcon(balance));
+        inventory.setItem(BALANCE_SLOT, withProgressionSummary(balanceIcon(balance), playerId));
         inventory.setItem(CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
     }
 
@@ -621,6 +635,25 @@ public final class QuestJournalService implements QuestJournalUi {
         }
         stack.setItemMeta(meta);
         return stack;
+    }
+
+    /**
+     * Issue #183 : sous le solde, le niveau RPG global et sa jauge, puis l'invitation à cliquer.
+     * Sans service de progression branché, la bourse reste un simple indicateur.
+     */
+    private ItemStack withProgressionSummary(ItemStack purse, UUID playerId) {
+        ProgressionService current = progression;
+        if (current == null) {
+            return purse;
+        }
+        ItemMeta meta = purse.getItemMeta();
+        List<Component> lore = new ArrayList<>(meta.lore() == null ? List.of() : meta.lore());
+        lore.add(Component.empty());
+        lore.add(ProgressionJournalView.global(current, playerId).summaryLine());
+        lore.add(MM.deserialize("<yellow>Clic : voir ma progression</yellow>"));
+        meta.lore(lore);
+        purse.setItemMeta(meta);
+        return purse;
     }
 
     private ItemStack tabIcon(String label, Material material, boolean active) {
@@ -716,6 +749,43 @@ public final class QuestJournalService implements QuestJournalUi {
         });
     }
 
+    // ---- Page « Ma progression RPG » (issue #183) ------------------------------------------
+
+    /**
+     * Rendu synchrone : tout vient du cache en mémoire de {@link ProgressionService}, aucune
+     * lecture en base. Le jeton de rendu invalide quand même un rendu asynchrone plus ancien qui
+     * ramènerait sinon la liste par-dessus cette page.
+     */
+    void showProgression(Player player, JournalTab tab, int page) {
+        ProgressionService current = progression;
+        if (current == null) {
+            showList(player, tab, page);
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        nextRenderTicket(playerId);
+        JournalInventoryHolder holder = new JournalInventoryHolder(JournalKind.PROGRESSION);
+        Inventory inventory = Bukkit.createInventory(holder, DETAIL_SIZE, MM.deserialize(ProgressionJournalView.TITLE));
+        holder.bind(inventory);
+        List<ProgressionGauge> gauges = ProgressionJournalView.gauges(current, playerId);
+        for (int i = 0; i < gauges.size(); i++) {
+            inventory.setItem(PROGRESSION_FIRST_SLOT + i, ProgressionJournalView.icon(gauges.get(i)));
+        }
+        inventory.setItem(PROGRESSION_BACK_SLOT, navIcon(Material.ARROW, "« Retour"));
+        inventory.setItem(PROGRESSION_CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
+        // Session posée APRÈS openInventory — voir la note dans showList.
+        player.openInventory(inventory);
+        openSessions.put(playerId, JournalSession.progression(tab, page));
+    }
+
+    void handleProgressionClick(Player player, JournalSession session, int slot) {
+        if (slot == PROGRESSION_BACK_SLOT) {
+            showList(player, session.tab(), session.page());
+        } else if (slot == PROGRESSION_CLOSE_SLOT) {
+            closeNextTick(player);
+        }
+    }
+
     private ItemStack trackToggleIcon(boolean tracked) {
         ItemStack stack = new ItemStack(tracked ? Material.NETHER_STAR : Material.COMPASS);
         ItemMeta meta = stack.getItemMeta();
@@ -756,6 +826,12 @@ public final class QuestJournalService implements QuestJournalUi {
         }
         if (slot == CLOSE_SLOT) {
             closeNextTick(player);
+            return;
+        }
+        if (slot == BALANCE_SLOT) {
+            if (progression != null) {
+                showProgression(player, session.tab(), session.page());
+            }
             return;
         }
 

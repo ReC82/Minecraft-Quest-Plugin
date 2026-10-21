@@ -446,7 +446,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   base** (`quest.reward-money-credited`, avec le solde relu) ; un échec est dit explicitement
   (`quest.reward-money-failed`) et une occasion déjà payée ne dit **rien** au joueur. Les deux
   messages passent par le chat, jamais par l'ActionBar (réservée à la progression des objectifs).
-  **Bourse** affichée dans le journal de quêtes (liste et vue détail, emplacement inerte), relue
+  **Bourse** affichée dans le journal de quêtes (liste et vue détail), relue
   après chaque transaction, « indisponible » en cas d'erreur plutôt qu'un `0` trompeur. **Aucun
   plafond moteur** sur le montant (équilibrage = décision de jeu) ; le panel **avertit** au-delà de
   1 000 000. Restent non décidés : monnaie physique et conversion solde ↔ objet (#138), perte à la
@@ -1448,6 +1448,8 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `keep-vanilla-xp` retirée au démarrage) : plus d'orbes ni de gain d'XP vanilla, récompense de quête `EXPERIENCE`
   = XP RPG `GLOBAL` dédupliquée par complétion, anciens niveaux ni convertis ni effacés,
   enchantement/enclume inchangés (coût en niveaux vanilla). PENDING MANUAL VALIDATION (TC-347).
+  Consultation sans commande (#183, retour du 20/10) : la bourse du journal porte le niveau RPG global et ouvre
+  « Ma progression RPG » (une jauge par piste, lecture seule). PENDING MANUAL VALIDATION (TC-384).
 - **Boutique web** — catalogue, commandes, livraisons idempotentes (voir `web-api/`).
 - **Compatibilité mod client** — détection de handshake, politique configurable pour les clients
   vanilla.

@@ -7748,3 +7748,21 @@ l'étape 5 est la seule payante, à faire seulement si vous le décidez.
 **Couverture automatisée** : `Boulangerie655Test` (6 plans réels : d852629f, d54a87b1, 73affe8a, 14b2493d, 739ea04b, 35ce1e1a — sans aucun
 appel payant), `BriefOrientationTest`, `BuildingPromptFrame655Test`, `WorkshopDefaultDraft655Test`, `BuildingDesignPipelineTest`
 (critique ratée bornée à 5 appels au lieu de 12, diagnostic répété), `WorkshopFlowTest` (gestes payants suspendus, suivi terminal).
+
+### TC-384 — Journal : consulter sa progression RPG sans commande (issue #183, retour du 20/10, PENDING MANUAL VALIDATION)
+
+Lecture seule : aucune XP, aucun niveau, aucune récompense n'est modifié par cette page.
+
+1.  En jeu, clic droit avec le **Journal des quêtes** (ou `/quests`). En haut à droite, survoler le **lingot d'or « Bourse »**.
+    **Attendu** : sous le solde, « Niveau RPG N », une barre de 10 cases et un pourcentage, puis « Clic : voir ma progression ».
+2.  Cliquer le lingot. **Attendu** : une page « Ma progression RPG » avec 6 objets en ligne : Global, Combat, Minage, Agriculture,
+    Pêche, Exploration (jamais « GLOBAL », « MINING »…). Chaque infobulle : « Niveau N / max », barre + pourcentage,
+    « XP : x / y pour le niveau N+1 », XP totale, et d'où vient l'XP de la piste. L'infobulle tient entière à l'écran.
+3.  Comparer avec `/skills` (facultatif) : **attendu** les mêmes niveaux et les mêmes XP x / y.
+4.  Tuer un zombie ou miner quelques blocs, rouvrir la page. **Attendu** : la piste concernée et Global ont avancé.
+5.  « Retour » ramène à l'onglet d'où l'on venait ; « Fermer » ferme ; essayer de prendre un objet (clic, shift-clic, touche 1-9) :
+    rien ne bouge. Dans la vue détail d'une quête, la bourse reste un simple indicateur.
+
+**Couverture automatisée** : `ProgressionGaugeTest` (0 %, intermédiaire, 99 % jamais arrondi à 100, passage de niveau, niveau maximal,
+largeur fixe de la barre, aucun identifiant technique), `QuestJournalServiceTest` (résumé dans la bourse, 6 pistes dans l'ordre, joueur
+sans progression, page en lecture seule + clics annulés + Retour vers le même onglet, Fermer au tick suivant).

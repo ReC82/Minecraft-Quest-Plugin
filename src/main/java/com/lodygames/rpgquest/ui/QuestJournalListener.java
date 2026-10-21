@@ -67,10 +67,10 @@ final class QuestJournalListener implements Listener {
         }
 
         int slot = event.getSlot();
-        if (holder.kind() == JournalKind.LIST) {
-            service.handleListClick(player, session, slot, event.isRightClick());
-        } else {
-            service.handleDetailClick(player, session, slot);
+        switch (holder.kind()) {
+            case LIST -> service.handleListClick(player, session, slot, event.isRightClick());
+            case DETAIL -> service.handleDetailClick(player, session, slot);
+            case PROGRESSION -> service.handleProgressionClick(player, session, slot);
         }
     }
 

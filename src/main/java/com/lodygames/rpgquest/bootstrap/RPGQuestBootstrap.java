@@ -1180,6 +1180,8 @@ public final class RPGQuestBootstrap {
                         }, plugin.getSLF4JLogger());
         registry.start(periodicQuestService);
         questJournalService.setPeriodicQuests(periodicQuestService);
+        // Issue #183 : niveau RPG et jauges des pistes lus dans le journal (bourse → « Ma progression »).
+        questJournalService.setProgression(progressionService);
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
 

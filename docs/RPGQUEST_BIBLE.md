@@ -6303,7 +6303,10 @@ ou pour un exemple fourni). Chaque offre : un prix de la page Prix et coûts (`p
 permission. Écriture relue par le vrai parseur, atomique, rechargement immédiat, ancienne version remise en
 cas de refus. Liaison PNJ : action de dialogue « Ouvrir un marchand » (liste des catalogues dans l'éditeur
 de dialogues) ; « Ouvrir la boutique » = catalogue `SELL`, « Vendre des objets » = catalogue `BUY`.
-Vitrine : solde LodyCoins affiché, clic refusé si l'étal a changé depuis l'affichage. Audit
+Vitrine en vues **Acheter** (le joueur paie, reçoit l'objet) / **Vendre** (le joueur donne l'objet, reçoit
+des pièces) : onglets en bas à gauche pour un catalogue `MIXED`, vue unique annoncée pour `SELL` / `BUY` /
+`CRAFT`, onglet vide signalé, titre « … — Acheter / Vendre ». Solde LodyCoins affiché, clic refusé si l'étal
+a changé depuis l'affichage. Audit
 `transactions.context = marchand:<id> …`. Prix = valeurs de réglage, aucune règle économique définitive.
 Aucune migration de base. Détail : [MERCHANT_FORMAT.md](../MERCHANT_FORMAT.md).
 

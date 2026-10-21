@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.economy.merchant;
 
 import com.lodygames.rpgquest.economy.merchant.model.MerchantDefinition;
+import java.util.List;
 import org.bukkit.NamespacedKey;
 
 /**
@@ -19,6 +20,15 @@ import org.bukkit.NamespacedKey;
  * <p>Issue #17 : {@code shown} est le marchand tel qu'affiché. Les catalogues étant désormais
  * modifiables depuis PlugAdmin, un clic n'est accepté que si le marchand actuel est
  * <em>identique</em> : sinon l'offre sous le slot pourrait ne plus être celle affichée.</p>
+ *
+ * <p>Issue #17 (vues Acheter / Vendre) : {@code tab} est la vue affichée et {@code offerIndexes}
+ * l'index, dans {@code shown.offers()}, de l'offre posée sur chaque case — figé à l'affichage, pour
+ * que le slot cliqué désigne toujours l'offre vue par le joueur.</p>
  */
-record MerchantSession(NamespacedKey merchantId, long priceGeneration, MerchantDefinition shown) {
+record MerchantSession(NamespacedKey merchantId, long priceGeneration, MerchantDefinition shown, ShopTab tab,
+                       List<Integer> offerIndexes) {
+
+    MerchantSession {
+        offerIndexes = List.copyOf(offerIndexes);
+    }
 }

@@ -8006,3 +8006,32 @@ rendue une fois, délai court sans ouverture, délai renouvelé par nœud, dépl
 déconnexion sans rejeu), `DialogueSessionEngineTest` (remise terminant une quête dans un dialogue : aucun Title, ligne
 dans la fenêtre une seule fois, une annonce chat à la fermeture et rien de rejoué ; remise hors dialogue : Title
 conservé ; quête acceptée depuis un dialogue : pas de Title).
+
+### TC-393 — Boutique séparée en vues « Acheter » / « Vendre » (issue #17, PENDING MANUAL VALIDATION)
+
+Revalidation **visuelle** du retour propriétaire du 21/10 : les transactions elles-mêmes (achat et vente au
+Libraire, `village_merchant`) sont déjà validées et n'ont pas changé. Aucun catalogue, prix, dialogue ni
+solde n'a été modifié par la livraison.
+
+1.  Parler au Libraire → « Ouvrir la boutique » (`village_merchant`, catalogue `MIXED`). **Attendu** : titre
+    « Marchand du village — Acheter » ; seules les offres vendues par le marchand (pain, torches, lame de
+    la forêt) ; chaque offre commence par « Tu achètes » et indique « Tu paies : … » ; en bas à gauche une
+    émeraude « Acheter » qui brille et un entonnoir « Vendre » ; le solde au milieu de la dernière ligne.
+2.  Cliquer l'entonnoir « Vendre ». **Attendu** : la fenêtre se réaffiche, titre « … — Vendre », seules les
+    offres de rachat (croc d'araignée ×4, pierre ×64), « Tu vends » / « Tu reçois : … » ; l'entonnoir brille ;
+    solde inchangé, inventaire inchangé.
+3.  Vendre 64 pierres depuis « Vendre », puis revenir sur « Acheter » et acheter du pain. **Attendu** : mêmes
+    montants qu'avant la livraison ; solde mis à jour.
+4.  Anti-duplication : double clic rapide, shift-clic et glisser-déposer sur une offre et sur les onglets ;
+    clic sur un onglet pendant qu'un achat est en cours. **Attendu** : aucun objet ne quitte la vitrine, au
+    plus un échange par clic, jamais d'onglet déplaçable.
+5.  Inventaire plein → acheter depuis « Acheter ». **Attendu** : refusé, rien débité (comportement inchangé).
+6.  (Si un catalogue `SELL` seul ou `BUY` seul existe, `/merchant open <id>` en admin.) **Attendu** : une seule
+    vue, indicateur « Acheter » ou « Vendre » non cliquable, pas de second onglet. Atelier `artisan_demo` :
+    indicateur « Fabriquer », recettes inchangées.
+
+**Couverture automatisée** : `MerchantTradeServiceTest` (ouverture sur « Acheter », onglet « Vendre » limité
+aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliquable, ventes depuis l'onglet
+« Vendre »), `MerchantCatalogTradeTest` (vue unique `SELL` / `BUY` sans second onglet, indicateur sans
+échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
+existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.

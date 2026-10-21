@@ -1,6 +1,8 @@
 package com.lodygames.rpgquest.economy.merchant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
@@ -21,8 +23,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +42,9 @@ class MerchantTradeServiceTest {
     private static final long TIMEOUT_SECONDS = 5;
     private static final NamespacedKey MERCHANT_ID = new NamespacedKey("rpgquest", "test_merchant");
     private static final NamespacedKey SPIDER_FANG_ID = new NamespacedKey("rpgquest", "spider_fang");
+    /** Vitrine de 5 offres = 3 lignes : onglets Acheter / Vendre en début de dernière ligne. */
+    private static final int BUY_TAB_SLOT = 18;
+    private static final int SELL_TAB_SLOT = 19;
 
     @TempDir
     Path tempDir;
@@ -172,7 +180,8 @@ class MerchantTradeServiceTest {
         player.getInventory().addItem(spiderFangs);
 
         tradeService.openShop(player, MERCHANT_ID);
-        tradeService.handleClick(player, 1); // offre BUY_FROM_PLAYER spider_fang x3 / 7
+        showTab(player, SELL_TAB_SLOT);
+        tradeService.handleClick(player, 0); // offre BUY_FROM_PLAYER spider_fang x3 / 7, seule de l'onglet Vendre
         awaitAsyncWork();
 
         assertEquals(7L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
@@ -186,7 +195,8 @@ class MerchantTradeServiceTest {
         player.getInventory().addItem(spiderFangs);
 
         tradeService.openShop(player, MERCHANT_ID);
-        tradeService.handleClick(player, 1);
+        showTab(player, SELL_TAB_SLOT);
+        tradeService.handleClick(player, 0);
         awaitAsyncWork();
 
         assertEquals(0L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
@@ -199,7 +209,7 @@ class MerchantTradeServiceTest {
         walletRepository.credit(player.getUniqueId(), 10, "TEST", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         tradeService.openShop(player, MERCHANT_ID);
-        tradeService.handleClick(player, 2); // offre DIAMOND, requiert rpgquest.vip
+        tradeService.handleClick(player, 1); // onglet Acheter : offre DIAMOND, requiert rpgquest.vip
         awaitAsyncWork();
 
         assertEquals(10L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
@@ -212,7 +222,7 @@ class MerchantTradeServiceTest {
         walletRepository.credit(player.getUniqueId(), 10, "TEST", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         tradeService.openShop(player, MERCHANT_ID);
-        tradeService.handleClick(player, 3); // offre EMERALD, requiert first_steps COMPLETED
+        tradeService.handleClick(player, 2); // onglet Acheter : offre EMERALD, requiert first_steps COMPLETED
         awaitAsyncWork();
 
         assertEquals(10L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
@@ -228,13 +238,13 @@ class MerchantTradeServiceTest {
         tradeService.setRequiredLevelRule(p -> rpgLevel.get());
 
         tradeService.openShop(player, MERCHANT_ID);
-        tradeService.handleClick(player, 4); // offre GOLD_INGOT, required-level: 2
+        tradeService.handleClick(player, 3); // onglet Acheter : offre GOLD_INGOT, required-level: 2
         awaitAsyncWork();
         assertEquals(0, countMaterial(player, Material.GOLD_INGOT), "niveau RPG 1 < 2 : refusé");
 
         rpgLevel.set(2);
         tradeService.openShop(player, MERCHANT_ID);
-        tradeService.handleClick(player, 4);
+        tradeService.handleClick(player, 3);
         awaitAsyncWork();
         assertEquals(1, countMaterial(player, Material.GOLD_INGOT), "niveau RPG 2 : accepté malgré le niveau vanilla 0");
         assertEquals(9L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
@@ -247,6 +257,94 @@ class MerchantTradeServiceTest {
         tradeService.openShop(player, new NamespacedKey("rpgquest", "does_not_exist"));
 
         assertTrue(player.nextMessage() != null, "un message d'erreur doit être envoyé au joueur");
+    }
+
+    @Test
+    void aMixedShopOpensOnBuyAndShowsOnlyWhatThePlayerCanBuy() throws Exception {
+        PlayerMock player = addPlayer();
+
+        tradeService.openShop(player, MERCHANT_ID);
+
+        Inventory top = player.getOpenInventory().getTopInventory();
+        assertEquals(Material.BREAD, top.getItem(0).getType());
+        assertEquals(Material.DIAMOND, top.getItem(1).getType());
+        assertEquals(Material.EMERALD, top.getItem(2).getType());
+        assertEquals(Material.GOLD_INGOT, top.getItem(3).getType());
+        assertNull(top.getItem(4), "l'offre de rachat n'est pas dans l'onglet Acheter");
+        assertTrue(plain(player.getOpenInventory().title()).endsWith("Acheter"));
+        assertTrue(plain(top.getItem(0).getItemMeta().lore().get(0)).startsWith("Tu achètes"));
+        assertEquals(Material.EMERALD, top.getItem(BUY_TAB_SLOT).getType());
+        assertTrue(top.getItem(BUY_TAB_SLOT).getItemMeta().getEnchantmentGlintOverride(), "onglet affiché en surbrillance");
+        assertEquals(Material.HOPPER, top.getItem(SELL_TAB_SLOT).getType());
+        assertFalse(top.getItem(SELL_TAB_SLOT).getItemMeta().getEnchantmentGlintOverride());
+    }
+
+    @Test
+    void theSellTabShowsOnlyBuyBacksAndSwitchingTabsNeverTrades() throws Exception {
+        PlayerMock player = addPlayer();
+        walletRepository.credit(player.getUniqueId(), 10, "TEST", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        player.getInventory().addItem(customItemRegistry.create(SPIDER_FANG_ID, 5).orElseThrow());
+
+        tradeService.openShop(player, MERCHANT_ID);
+        showTab(player, SELL_TAB_SLOT);
+
+        Inventory top = player.getOpenInventory().getTopInventory();
+        assertEquals(SPIDER_FANG_ID, customItemRegistry.identify(top.getItem(0)).orElseThrow());
+        assertNull(top.getItem(1));
+        assertTrue(plain(player.getOpenInventory().title()).endsWith("Vendre"));
+        assertTrue(plain(top.getItem(0).getItemMeta().lore().get(0)).startsWith("Tu vends"));
+
+        showTab(player, SELL_TAB_SLOT); // déjà affiché : rien
+        showTab(player, BUY_TAB_SLOT);
+        assertEquals(Material.BREAD, player.getOpenInventory().getTopInventory().getItem(0).getType());
+        assertEquals(10L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals(5, countCustomItem(player, SPIDER_FANG_ID));
+        assertEquals(0, countMaterial(player, Material.BREAD));
+    }
+
+    @Test
+    void aMixedShopWithoutBuyBacksSaysSoInItsSellTab() throws Exception {
+        Path merchantsDir = tempDir.resolve("merchants");
+        Files.writeString(merchantsDir.resolve("bakery.yml"), """
+                id: rpgquest:bakery
+                title: "<gold>Boulangerie</gold>"
+
+                offers:
+                  - direction: SELL_TO_PLAYER
+                    material: BREAD
+                    quantity: 1
+                    price: 1
+                """);
+        YamlMerchantRegistry registry = new YamlMerchantRegistry(merchantsDir, plugin.getSLF4JLogger());
+        registry.start();
+        MerchantTradeService service = new MerchantTradeService(plugin, registry, economyService, customItemRegistry,
+                questProgressEngine);
+        PlayerMock player = addPlayer();
+        walletRepository.credit(player.getUniqueId(), 10, "TEST", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        service.openShop(player, new NamespacedKey("rpgquest", "bakery"));
+        service.handleClick(player, SELL_TAB_SLOT);
+        awaitAsyncWork();
+
+        Inventory top = player.getOpenInventory().getTopInventory();
+        assertEquals(Material.PAPER, top.getItem(MerchantTradeService.EMPTY_TAB_SLOT).getType());
+        assertTrue(plain(top.getItem(MerchantTradeService.EMPTY_TAB_SLOT).getItemMeta().displayName())
+                .contains("ne rachète rien"));
+        service.handleClick(player, MerchantTradeService.EMPTY_TAB_SLOT);
+        service.handleClick(player, 0);
+        awaitAsyncWork();
+        assertEquals(10L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals(0, countMaterial(player, Material.BREAD));
+        service.stop();
+    }
+
+    private void showTab(PlayerMock player, int tabSlot) throws InterruptedException {
+        tradeService.handleClick(player, tabSlot);
+        awaitAsyncWork();
+    }
+
+    private static String plain(Component component) {
+        return PlainTextComponentSerializer.plainText().serialize(component);
     }
 
     private PlayerMock addPlayer() throws Exception {

@@ -675,6 +675,14 @@ secondaire** (deux waypoints du même biome n'affichent donc plus jamais le mêm
   en défense supplémentaire.
 - **Réserve épuisée** : nom de secours unique généré (`"Avant-poste N"`, N incrémenté jusqu'à
   trouver un nom libre) — jamais un échec de génération.
+  **Constat DEV du 21/10/2026 (diagnostic #135)** : les 220 noms de la réserve sont tous
+  attribués ; depuis le 222ᵉ waypoint (20/10 13:35), **chaque** nouveau waypoint reçoit
+  `Avant-poste N` (26 sur 247). Ces noms persistés sont conservés tels quels (même `id`,
+  découvertes, borne et destinations) ; un renommage individuel reste possible via #134. Lot de
+  600 noms proposé, **non importé** : `docs/waypoints/waypoint-names-proposition-lot1.txt`
+  (validé par `WaypointNameExhaustionDiagnosticTest`). Rallonger `waypoint-names.txt` change
+  l'ordre mélangé des tirages, sans effet sur les noms déjà attribués (la migration V22 ne
+  s'exécute plus sur une base déjà migrée).
 - **Noms lisibles** (retour joueur 2026-10-04) : la réserve bundlée (`waypoint-names.txt`) ne
   concatène plus deux mots sans séparateur (ex. l'ancien `Lacgivre`) — grammaire générée
   automatiquement `<nom> de <nom>` (ex. `Lac de Givre`, `Lac d'Or` avec élision devant voyelle) ou

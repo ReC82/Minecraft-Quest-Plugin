@@ -170,8 +170,11 @@ permissions:
   rpgquest.admin.hub.combat:
     description: "Bypass explicite (issues #30/#31), distinct de la construction, autorisant à infliger des dégâts aux entités protégées du Hub. Depuis #35, ne compte QUE pendant une session /rpgadmin bypass on. Ne jamais accorder à un joueur normal."
     default: op
+  rpgquest.admin.hub.resources:
+    description: "Bypass explicite (issue #675) autorisant à commercer avec un villageois vanilla et à ouvrir un coffre, tonneau, shulker ou hopper du Hub (décor). Ne compte QUE pendant une session /rpgadmin bypass on. Ne jamais accorder à un joueur normal."
+    default: op
   rpgquest.admin.bypass:
-    description: "Ouvrir soi-même une session de mode bypass administrateur (/rpgadmin bypass on|off|status, issue #35). N'accorde AUCUN contournement par elle-même : pendant la session, seuls les nœuds de bypass déjà détenus (rpgquest.bypass.*, rpgquest.admin.hub.combat ou l'ombrelle rpgquest.admin.world) s'appliquent. Hors session, un OP joue comme un joueur normal. Session visible en barre d'action, close à la déconnexion et au redémarrage."
+    description: "Ouvrir soi-même une session de mode bypass administrateur (/rpgadmin bypass on|off|status, issue #35). N'accorde AUCUN contournement par elle-même : pendant la session, seuls les nœuds de bypass déjà détenus (rpgquest.bypass.*, rpgquest.admin.hub.combat, rpgquest.admin.hub.resources ou l'ombrelle rpgquest.admin.world) s'appliquent. Hors session, un OP joue comme un joueur normal. Session visible en barre d'action, close à la déconnexion et au redémarrage."
     default: op
   rpgquest.hud:
     description: Choisir l'affichage pièces / niveau RPG (/hud).

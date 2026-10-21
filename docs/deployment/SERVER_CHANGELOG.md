@@ -48,6 +48,20 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Journal : consulter sa progression RPG sans commande (#183, TC-384)
+
+### Changement
+
+Plugin seul : dans la liste du journal de quêtes, la bourse affiche le niveau RPG global et sa jauge ; un clic ouvre
+« Ma progression RPG » (une jauge par piste : niveau, XP courante / requise, pourcentage, niveau maximal). Lecture
+seule du cache de progression : aucune XP, aucun niveau, aucune récompense modifiés.
+
+### Actions serveur
+
+- Remplacer uniquement le JAR RPGQuest (script officiel, backup daté). Aucune migration SQL, aucune clé de
+  configuration, aucun contenu, PlugAdmin inchangé.
+- Rollback : `scripts/rollback-verygames.sh --latest`.
+
 ## 2026-10-21 - Atelier IA : réparations sûres, boucle bornée, orientation vérifiée (#655, TC-383)
 
 ### Changement

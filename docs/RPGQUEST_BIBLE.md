@@ -902,6 +902,17 @@ déjà utilisée, sans imposer de connaître `/money`. Il est relu à chaque ouv
 transaction (le crédit déclenche `notifyChanged`, qui recompose un menu ouvert). Une erreur de
 lecture affiche « indisponible » avec son motif : jamais un `0` inventé, qui ferait croire à un vol.
 
+**Progression RPG dans le journal** (issue #183, retour du 20/10) : dans la **liste**, la bourse porte
+aussi le niveau RPG global et sa jauge (« Niveau RPG 3 ■■■■□□□□□□ 45 % ») et devient cliquable : un
+clic ouvre la page **« Ma progression RPG »** (`JournalKind.PROGRESSION`, 27 cases) — un objet par
+piste de `SkillType`, `GLOBAL` d'abord (slots 10 à 15) : niveau / niveau max, barre de 10 cases,
+pourcentage (arrondi vers le bas, 100 % seulement au niveau maximal), « XP : courante / requise pour le
+niveau N », XP totale, et une ligne sur la source de l'XP de la piste. « Retour » (slot 18) ramène à
+l'onglet et à la page d'origine, « Fermer » (slot 26) ferme au tick suivant. **Lecture seule** : tout
+vient du cache de `ProgressionService` et de sa courbe (`ProgressionGauge`, mêmes calculs que
+`/skills`), rien n'est écrit ; un joueur sans progression voit toutes les pistes au niveau 1, 0 %. La
+bourse de la vue détail reste inerte. Aucune commande, aucune configuration, aucune migration.
+
 ### Éditeur guidé de quêtes et de stories dans PlugAdmin (issue #46)
 
 Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et des stories sans

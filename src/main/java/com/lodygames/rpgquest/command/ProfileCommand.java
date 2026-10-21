@@ -109,14 +109,7 @@ public final class ProfileCommand implements CommandExecutor {
     }
 
     static String label(SkillType skill) {
-        return switch (skill) {
-            case GLOBAL -> "Global";
-            case COMBAT -> "Combat";
-            case MINING -> "Minage";
-            case FARMING -> "Agriculture";
-            case FISHING -> "Pêche";
-            case EXPLORATION -> "Exploration";
-        };
+        return skill.label();
     }
 
     private boolean hasPermission(CommandSender sender) {

@@ -327,14 +327,7 @@ public final class ProgressionService implements PluginService, Listener {
     }
 
     private String label(SkillType skill) {
-        return switch (skill) {
-            case GLOBAL -> "Global";
-            case COMBAT -> "Combat";
-            case MINING -> "Minage";
-            case FARMING -> "Agriculture";
-            case FISHING -> "Pêche";
-            case EXPLORATION -> "Exploration";
-        };
+        return skill.label();
     }
 
     private static final class ThrottleWindow {

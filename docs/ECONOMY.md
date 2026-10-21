@@ -95,6 +95,11 @@ empêche un double-clic de vendre deux fois le même stock.
     remise si le rechargement la refuse.
 -   **Rachat filtré** : un comptoir ne rachète que les objets qu'il liste ; un prix de vente
     cité par un catalogue de rachat (ou l'inverse) est « indisponible ».
+-   **Vues Acheter / Vendre** (retour propriétaire du 21/10) : un catalogue `MIXED` sépare ses
+    offres en deux onglets du point de vue du joueur (« Acheter » : il paie et reçoit l'objet ;
+    « Vendre » : il donne l'objet et reçoit des pièces) ; `SELL` / `BUY` / `CRAFT` = vue unique
+    annoncée par un indicateur. Changer d'onglet n'échange rien ; la case cliquée est résolue
+    contre la liste d'offres figée à l'affichage. Détail : `MERCHANT_FORMAT.md`.
 -   **Vitrine** : solde affiché (dernière ligne) et rafraîchi après chaque échange ; si l'étal
     a changé depuis l'affichage, le clic est refusé et la vitrine réaffichée (aucun échange
     sur une offre non vue) ; boutique fermée entre-temps → vitrine fermée, rien échangé.

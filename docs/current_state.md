@@ -1491,7 +1491,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   droits Économie) : `type` SELL / BUY / MIXED, `enabled`, créer / modifier / dupliquer / ouvrir-fermer /
   supprimer (refusé si un dialogue l'ouvre) ; rachat limité aux objets listés ; vitrine avec solde, clic
   refusé si l'étal a changé ; audit `marchand:<id>` ; liste des catalogues dans l'action de dialogue
-  « Ouvrir un marchand » (PENDING MANUAL VALIDATION TC-344). Pas encore : stock, conditions monde / ville /
+  « Ouvrir un marchand » (PENDING MANUAL VALIDATION TC-344). Vitrine séparée en vues « Acheter » /
+  « Vendre » du point de vue du joueur (onglets pour `MIXED`, vue unique annoncée sinon, onglet vide
+  signalé — PENDING MANUAL VALIDATION TC-393). Pas encore : stock, conditions monde / ville /
   période / réputation, règles conditionnelles de prix.
   **#18 (MVP)** : ateliers d'artisan — catalogue `type: CRAFT` (« Atelier d'artisan » dans PlugAdmin →
   Marchands) limité aux recettes `price-ref` vers des prix `CRAFT` ; recettes à ingrédients seuls, pièces

@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.economy.merchant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
@@ -225,6 +226,26 @@ class MerchantCatalogTradeTest {
         tradeService.handleClick(player, 0);
         awaitAsyncWork();
         assertTrue(balanceText(top).contains("17"), balanceText(top));
+    }
+
+    @Test
+    void aSingleDirectionCatalogHasOneViewAnnouncedByAnIndicator() throws Exception {
+        PlayerMock player = playerWith(20);
+        tradeService.openShop(player, SHOP);
+        Inventory top = player.getOpenInventory().getTopInventory();
+        int indicator = top.getSize() - 9;
+        assertEquals(Material.EMERALD, top.getItem(indicator).getType(), "vente seule : vue « Acheter »");
+        assertNull(top.getItem(indicator + 1), "pas d'onglet « Vendre » sur un catalogue de vente");
+        assertTrue(PlainTextComponentSerializer.plainText().serialize(player.getOpenInventory().title()).endsWith("Acheter"));
+
+        tradeService.handleClick(player, indicator);
+        awaitAsyncWork();
+        assertEquals(20L, balance(player), "l'indicateur n'échange rien");
+
+        tradeService.openShop(player, COUNTER);
+        top = player.getOpenInventory().getTopInventory();
+        assertEquals(Material.HOPPER, top.getItem(top.getSize() - 9).getType(), "rachat seul : vue « Vendre »");
+        assertTrue(PlainTextComponentSerializer.plainText().serialize(player.getOpenInventory().title()).endsWith("Vendre"));
     }
 
     private static String balanceText(Inventory top) {

@@ -38,10 +38,12 @@ class MerchantPriceCatalogTradeTest {
     private static final long TIMEOUT_SECONDS = 5;
     private static final NamespacedKey MERCHANT_ID = new NamespacedKey("rpgquest", "atelier");
     private static final NamespacedKey SPIDER_FANG_ID = new NamespacedKey("rpgquest", "spider_fang");
+    // Catalogue mixte (issue #17) : onglet Acheter = pain, epee, inexistant ; onglet Vendre = crocs.
     private static final int SLOT_SELL = 0;
-    private static final int SLOT_BUY = 1;
-    private static final int SLOT_CRAFT = 2;
-    private static final int SLOT_MISSING = 3;
+    private static final int SLOT_CRAFT = 1;
+    private static final int SLOT_MISSING = 2;
+    private static final int SLOT_BUY_IN_SELL_TAB = 0;
+    private static final int SELL_TAB_SLOT = 19;
     private static final String PRICES = """
             prices:
               pain:
@@ -151,7 +153,11 @@ class MerchantPriceCatalogTradeTest {
         PlayerMock player = playerWith(0);
         player.getInventory().addItem(customItemRegistry.create(SPIDER_FANG_ID, 4).orElseThrow());
 
-        click(player, SLOT_BUY);
+        tradeService.openShop(player, MERCHANT_ID);
+        tradeService.handleClick(player, SELL_TAB_SLOT);
+        awaitAsyncWork();
+        tradeService.handleClick(player, SLOT_BUY_IN_SELL_TAB);
+        awaitAsyncWork();
 
         assertEquals(7L, balance(player));
         assertEquals(1, countCustomItem(player, SPIDER_FANG_ID));

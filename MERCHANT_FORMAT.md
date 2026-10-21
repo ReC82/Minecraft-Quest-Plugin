@@ -156,6 +156,27 @@ choices:
 
 ## Vitrine et échange
 
+-   **Vues « Acheter » / « Vendre »** (issue #17, du point de vue du
+    joueur) : « Acheter » = le joueur paie et reçoit l'objet ; « Vendre » =
+    le joueur donne l'objet et reçoit des pièces. Le titre de la fenêtre se
+    termine par la vue affichée (« … — Acheter »), chaque offre commence par
+    « Tu achètes » ou « Tu vends », et le montant est écrit « Tu paies : » ou
+    « Tu reçois : ».
+    -   Catalogue `MIXED` : deux onglets en début de dernière ligne —
+        émeraude « Acheter » (offres `SELL_TO_PLAYER`, prix `SELL_TO_PLAYER`
+        et `CRAFT`, `price-ref` inconnu) et entonnoir « Vendre » (offres
+        `BUY_FROM_PLAYER`, prix `BUY_FROM_PLAYER`, même désactivé). L'onglet
+        affiché brille ; un clic sur l'autre onglet rouvre la vitrine au tick
+        suivant, sans aucun échange. Ouverture sur « Acheter », ou sur
+        « Vendre » si rien n'est à acheter. Un onglet sans offre affiche un
+        papier « Rien à acheter ici » / « Ce marchand ne rachète rien »
+        (case non cliquable). Dans chaque onglet, les offres gardent l'ordre
+        du fichier.
+    -   Catalogue `SELL`, `BUY` ou `CRAFT` : une seule vue (« Acheter »,
+        « Vendre » ou « Fabriquer »), annoncée par un indicateur non
+        cliquable au même endroit, sans second onglet.
+    -   La taille de la fenêtre dépend du nombre total d'offres, pas de
+        l'onglet : changer d'onglet ne la redimensionne pas.
 -   Chaque clic (gauche ou droit, peu importe) sur une offre affichée
     déclenche l'échange complet défini par l'offre (quantité et prix fixes,
     pas de sélection de quantité).

@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.item.delivery.ItemDelivery;
 import com.lodygames.rpgquest.progression.RequiredLevelRule;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -64,6 +65,11 @@ import org.slf4j.Logger;
  * disparu entre-temps (second clic, dépôt), si la place manque ou si le joueur
  * est parti, seules les pièces sont remboursées — aucun objet n'est jamais
  * pris sans être compensé.</p>
+ *
+ * <p><b>Vues Acheter / Vendre</b> (issue #17, retour propriétaire du 21/10) : un catalogue mixte
+ * sépare ses offres en deux onglets, du point de vue du joueur (voir {@link ShopTab}) ; un catalogue
+ * d'un seul sens n'a qu'une vue, annoncée par un indicateur. La taille de la fenêtre ne dépend que du
+ * nombre total d'offres : changer d'onglet ne la redimensionne pas.</p>
  */
 public final class MerchantTradeService implements PluginService {
 
@@ -139,7 +145,7 @@ public final class MerchantTradeService implements PluginService {
             player.sendMessage(MM.deserialize("<yellow>Cette boutique est fermée pour le moment.</yellow>"));
             return;
         }
-        render(player, merchantOpt.get());
+        render(player, merchantOpt.get(), null);
     }
 
     void handleClose(Player player) {
@@ -164,56 +170,219 @@ public final class MerchantTradeService implements PluginService {
             return;
         }
         MerchantDefinition merchant = merchantOpt.get();
+        ShopTab requestedTab = tabButtonAt(session.shown(), slot);
+        if (requestedTab != null) {
+            if (requestedTab != session.tab()) {
+                switchTab(player, session, requestedTab);
+            }
+            return;
+        }
         if (!merchant.equals(session.shown())) {
             // Issue #17 : l'étal a été modifié depuis l'affichage — l'offre sous ce slot n'est peut-être
             // plus celle que le joueur voit. Rien n'est échangé, la vitrine est réaffichée.
             player.sendMessage(MM.deserialize("<yellow>Le marchand vient de changer son étal :</yellow> <gray>la "
                     + "vitrine est mise à jour, rien n'a été échangé. Vérifie l'offre puis clique de nouveau.</gray>"));
-            render(player, merchant);
+            render(player, merchant, session.tab());
             return;
         }
-        int contentSlots = contentSlotCount(merchant);
-        if (slot < 0 || slot >= contentSlots || slot >= merchant.offers().size()) {
+        if (slot < 0 || slot >= session.offerIndexes().size()) {
             return;
         }
-        MerchantOffer offer = merchant.offers().get(slot);
+        MerchantOffer offer = merchant.offers().get(session.offerIndexes().get(slot));
         if (offer.linked() && session.priceGeneration() != priceGeneration()) {
-            pricesChanged(player, merchant);
+            pricesChanged(player, merchant, session.tab());
             return;
         }
         checkRequirementsAndTrade(player, merchant, offer, session.priceGeneration());
     }
 
+    /**
+     * Changement d'onglet : la vitrine est rouverte au tick suivant (Paper déconseille d'ouvrir un
+     * inventaire pendant un {@code InventoryClickEvent}), seulement si c'est toujours la même vitrine.
+     * Aucun échange : le marchand actuel est réaffiché, rien n'est pris ni donné.
+     */
+    private void switchTab(Player player, MerchantSession session, ShopTab tab) {
+        UUID playerId = player.getUniqueId();
+        runOnMainThread(() -> {
+            if (!player.isOnline() || sessions.get(playerId) != session) {
+                return;
+            }
+            Optional<MerchantDefinition> merchant = merchantRegistry.find(session.merchantId());
+            if (merchant.isEmpty() || !merchant.get().enabled()) {
+                player.closeInventory();
+                return;
+            }
+            render(player, merchant.get(), tab);
+        });
+    }
+
     /** Les prix ont été modifiés depuis l'affichage : rien n'est échangé, la vitrine est réaffichée. */
-    private void pricesChanged(Player player, MerchantDefinition merchant) {
+    private void pricesChanged(Player player, MerchantDefinition merchant, ShopTab tab) {
         player.sendMessage(MM.deserialize("<yellow>Les prix viennent de changer :</yellow> <gray>la vitrine est "
                 + "mise à jour, rien n'a été échangé. Vérifie le prix puis clique de nouveau.</gray>"));
-        render(player, merchant);
+        render(player, merchant, tab);
     }
 
     // ---- Rendu ------------------------------------------------------------
 
-    private void render(Player player, MerchantDefinition merchant) {
+    /** @param requestedTab onglet voulu (catalogue mixte) ; {@code null} = premier onglet qui a des offres */
+    private void render(Player player, MerchantDefinition merchant, ShopTab requestedTab) {
         long generation = priceGeneration();
         int size = inventorySize(merchant.offers().size());
+        Map<ShopTab, List<Integer>> offersByTab = offersByTab(merchant);
+        ShopTab tab = chooseTab(merchant, offersByTab, requestedTab);
+        List<Integer> indexes = offersByTab.get(tab);
+        indexes = indexes.subList(0, Math.min(indexes.size(), contentSlotCount(merchant)));
+
         MerchantShopInventoryHolder holder = new MerchantShopInventoryHolder();
-        Inventory inventory = Bukkit.createInventory(holder, size, MM.deserialize(merchant.title()));
+        Inventory inventory = Bukkit.createInventory(holder, size, MM.deserialize(merchant.title())
+                .append(MM.deserialize("<dark_gray> — <label></dark_gray>", Placeholder.unparsed("label", tab.label()))));
         holder.bind(inventory);
 
-        int contentSlots = contentSlotCount(merchant);
         List<MerchantOffer> offers = merchant.offers();
-        for (int i = 0; i < offers.size() && i < contentSlots; i++) {
-            ItemStack icon = buildIcon(player, offers.get(i), merchant.type(), null);
+        for (int slot = 0; slot < indexes.size(); slot++) {
+            ItemStack icon = buildIcon(player, offers.get(indexes.get(slot)), merchant.type(), null);
             if (icon != null) {
-                inventory.setItem(i, icon);
+                inventory.setItem(slot, icon);
             }
+        }
+        if (indexes.isEmpty()) {
+            inventory.setItem(EMPTY_TAB_SLOT, emptyTabIcon(merchant, tab));
+        }
+        if (merchant.type() == MerchantCatalogType.MIXED) {
+            inventory.setItem(tabSlot(size, ShopTab.BUY), tabIcon(ShopTab.BUY, tab == ShopTab.BUY,
+                    offersByTab.get(ShopTab.BUY).size(), true));
+            inventory.setItem(tabSlot(size, ShopTab.SELL), tabIcon(ShopTab.SELL, tab == ShopTab.SELL,
+                    offersByTab.get(ShopTab.SELL).size(), true));
+        } else {
+            inventory.setItem(tabSlot(size, ShopTab.BUY), tabIcon(tab, true, indexes.size(), false));
         }
         inventory.setItem(balanceSlot(size), balanceIcon(null));
 
         player.openInventory(inventory);
         // Après l'ouverture : fermer l'ancienne vitrine (réaffichage) retire la session précédente.
-        sessions.put(player.getUniqueId(), new MerchantSession(merchant.id(), generation, merchant));
+        sessions.put(player.getUniqueId(), new MerchantSession(merchant.id(), generation, merchant, tab, indexes));
         refreshBalance(player);
+    }
+
+    // ---- Vues Acheter / Vendre (issue #17) -------------------------------------
+
+    /** Case du message « onglet vide » : milieu de la première ligne, jamais associée à une offre. */
+    static final int EMPTY_TAB_SLOT = 4;
+
+    /** Case d'un onglet (ou de l'indicateur de vue unique) : début de la dernière ligne. */
+    static int tabSlot(int size, ShopTab tab) {
+        return size - 9 + (tab == ShopTab.SELL ? 1 : 0);
+    }
+
+    /** Onglet dont le bouton est sous ce slot, pour un catalogue mixte seulement ; sinon {@code null}. */
+    private ShopTab tabButtonAt(MerchantDefinition shown, int slot) {
+        if (shown.type() != MerchantCatalogType.MIXED) {
+            return null;
+        }
+        int size = inventorySize(shown.offers().size());
+        if (slot == tabSlot(size, ShopTab.BUY)) {
+            return ShopTab.BUY;
+        }
+        return slot == tabSlot(size, ShopTab.SELL) ? ShopTab.SELL : null;
+    }
+
+    /** Index des offres de chaque vue, dans l'ordre du fichier du marchand. */
+    private Map<ShopTab, List<Integer>> offersByTab(MerchantDefinition merchant) {
+        Map<ShopTab, List<Integer>> byTab = new EnumMap<>(ShopTab.class);
+        for (ShopTab tab : ShopTab.values()) {
+            byTab.put(tab, new ArrayList<>());
+        }
+        ShopTab single = ShopTab.singleViewOf(merchant.type());
+        PriceCatalog catalog = priceCatalog == null ? PriceCatalog.EMPTY : priceCatalog.catalog();
+        List<MerchantOffer> offers = merchant.offers();
+        for (int i = 0; i < offers.size(); i++) {
+            MerchantOffer offer = offers.get(i);
+            ShopTab tab = single != null ? single
+                    : offer.linked() ? ShopTab.of(priceTypeOf(catalog, offer)) : ShopTab.of(offer.direction());
+            byTab.get(tab).add(i);
+        }
+        return byTab;
+    }
+
+    /** Type du prix cité, même désactivé (l'offre reste dans sa vue, affichée indisponible) ; {@code null} si absent. */
+    private static PriceType priceTypeOf(PriceCatalog catalog, MerchantOffer offer) {
+        PriceDefinition price = catalog.prices().get(offer.priceRef());
+        return price == null ? null : price.type();
+    }
+
+    private static ShopTab chooseTab(MerchantDefinition merchant, Map<ShopTab, List<Integer>> offersByTab,
+                                     ShopTab requestedTab) {
+        ShopTab single = ShopTab.singleViewOf(merchant.type());
+        if (single != null) {
+            return single;
+        }
+        if (requestedTab == ShopTab.BUY || requestedTab == ShopTab.SELL) {
+            return requestedTab;
+        }
+        return offersByTab.get(ShopTab.BUY).isEmpty() && !offersByTab.get(ShopTab.SELL).isEmpty()
+                ? ShopTab.SELL : ShopTab.BUY;
+    }
+
+    /**
+     * Bouton d'onglet (catalogue mixte) ou indicateur de la vue unique : le sens de l'échange est
+     * écrit sur l'objet lui-même, l'onglet affiché brille.
+     */
+    private static ItemStack tabIcon(ShopTab tab, boolean active, int offerCount, boolean clickable) {
+        ItemStack stack = new ItemStack(switch (tab) {
+            case BUY -> Material.EMERALD;
+            case SELL -> Material.HOPPER;
+            case CRAFT -> Material.CRAFTING_TABLE;
+        });
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(MM.deserialize(switch (tab) {
+            case BUY -> "<green><bold>Acheter</bold></green>";
+            case SELL -> "<gold><bold>Vendre</bold></gold>";
+            case CRAFT -> "<aqua><bold>Fabriquer</bold></aqua>";
+        }));
+        List<Component> lore = new ArrayList<>();
+        switch (tab) {
+            case BUY -> {
+                lore.add(MM.deserialize("<gray>Tu paies des " + CurrencyName.get() + ",</gray>"));
+                lore.add(MM.deserialize("<gray>tu reçois l'objet.</gray>"));
+            }
+            case SELL -> {
+                lore.add(MM.deserialize("<gray>Tu donnes l'objet,</gray>"));
+                lore.add(MM.deserialize("<gray>tu reçois des " + CurrencyName.get() + ".</gray>"));
+            }
+            case CRAFT -> {
+                lore.add(MM.deserialize("<gray>Tu donnes les ingrédients et/ou des " + CurrencyName.get() + ",</gray>"));
+                lore.add(MM.deserialize("<gray>tu reçois l'objet fabriqué.</gray>"));
+            }
+        }
+        lore.add(MM.deserialize("<white><count> offre(s)</white>", Placeholder.unparsed("count", String.valueOf(offerCount))));
+        if (active) {
+            lore.add(MM.deserialize("<yellow>▶ Vue affichée</yellow>"));
+        } else if (clickable) {
+            lore.add(MM.deserialize("<yellow>Clique pour afficher cette vue</yellow>"));
+        }
+        meta.lore(lore);
+        meta.setEnchantmentGlintOverride(active && clickable);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /** Vue sans offre : dit clairement qu'il n'y a rien ici, plutôt qu'une vitrine vide muette. */
+    private static ItemStack emptyTabIcon(MerchantDefinition merchant, ShopTab tab) {
+        ItemStack stack = new ItemStack(Material.PAPER);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(MM.deserialize(switch (tab) {
+            case BUY -> "<gray>Rien à acheter ici pour le moment</gray>";
+            case SELL -> "<gray>Ce marchand ne rachète rien pour le moment</gray>";
+            case CRAFT -> "<gray>Aucune recette pour le moment</gray>";
+        }));
+        if (merchant.type() == MerchantCatalogType.MIXED) {
+            ShopTab other = tab == ShopTab.BUY ? ShopTab.SELL : ShopTab.BUY;
+            meta.lore(List.of(MM.deserialize("<gray>Regarde l'onglet <white><other></white>, en bas à gauche.</gray>",
+                    Placeholder.unparsed("other", other.label()))));
+        }
+        stack.setItemMeta(meta);
+        return stack;
     }
 
     // ---- Solde affiché (issue #17) -------------------------------------------
@@ -267,12 +436,11 @@ public final class MerchantTradeService implements PluginService {
             return;
         }
         MerchantDefinition shown = session.shown();
-        List<MerchantOffer> offers = shown.offers();
-        int contentSlots = contentSlotCount(shown);
-        for (int i = 0; i < offers.size() && i < contentSlots && i < top.getSize(); i++) {
-            MerchantOffer offer = offers.get(i);
+        List<Integer> indexes = session.offerIndexes();
+        for (int slot = 0; slot < indexes.size() && slot < top.getSize(); slot++) {
+            MerchantOffer offer = shown.offers().get(indexes.get(slot));
             if (offer.linked() && usablePrice(offer, shown.type()).map(p -> p.type() == PriceType.CRAFT).orElse(false)) {
-                top.setItem(i, buildIcon(player, offer, shown.type(), balance));
+                top.setItem(slot, buildIcon(player, offer, shown.type(), balance));
             }
         }
     }
@@ -298,13 +466,10 @@ public final class MerchantTradeService implements PluginService {
         }
         ItemMeta meta = stack.getItemMeta();
         List<Component> lore = new ArrayList<>();
-        lore.add(offer.direction() == TradeDirection.SELL_TO_PLAYER
-                ? MM.deserialize("<yellow>Achat</yellow> <gray>: clic pour acheter</gray>")
-                : MM.deserialize("<yellow>Vente</yellow> <gray>: clic pour vendre</gray>"));
+        lore.add(directionLine(offer.direction()));
         lore.add(MM.deserialize("<white>Quantité :</white> <gray><amount></gray>",
                 Placeholder.unparsed("amount", String.valueOf(offer.quantity()))));
-        lore.add(MM.deserialize("<white>Prix :</white> <gold><price> " + CurrencyName.get() + "</gold>",
-                Placeholder.unparsed("price", String.valueOf(offer.price()))));
+        lore.add(priceLine(offer.direction(), offer.price()));
         addRequirementLore(offer, lore);
         meta.lore(lore);
         stack.setItemMeta(meta);
@@ -336,8 +501,8 @@ public final class MerchantTradeService implements PluginService {
         ItemMeta meta = stack.getItemMeta();
         List<Component> lore = new ArrayList<>();
         switch (p.type()) {
-            case SELL_TO_PLAYER -> lore.add(MM.deserialize("<yellow>Achat</yellow> <gray>: clic pour acheter</gray>"));
-            case BUY_FROM_PLAYER -> lore.add(MM.deserialize("<yellow>Vente</yellow> <gray>: clic pour vendre</gray>"));
+            case SELL_TO_PLAYER -> lore.add(directionLine(TradeDirection.SELL_TO_PLAYER));
+            case BUY_FROM_PLAYER -> lore.add(directionLine(TradeDirection.BUY_FROM_PLAYER));
             case CRAFT -> lore.add(MM.deserialize("<yellow>Fabrication</yellow> <gray>: clic pour fabriquer</gray>"));
         }
         lore.add(MM.deserialize("<white>Quantité :</white> <gray><amount></gray>",
@@ -345,13 +510,26 @@ public final class MerchantTradeService implements PluginService {
         if (p.type() == PriceType.CRAFT) {
             addRecipeLore(player, p, balance, lore);
         } else {
-            lore.add(MM.deserialize("<white>Prix :</white> <gold><price> " + CurrencyName.get() + "</gold>",
-                    Placeholder.unparsed("price", String.valueOf(p.coins()))));
+            lore.add(priceLine(p.type() == PriceType.SELL_TO_PLAYER
+                    ? TradeDirection.SELL_TO_PLAYER : TradeDirection.BUY_FROM_PLAYER, p.coins()));
         }
         addRequirementLore(offer, lore);
         meta.lore(lore);
         stack.setItemMeta(meta);
         return stack;
+    }
+
+    /** Sens de l'échange vu par le joueur (issue #17) : ce qu'il donne et ce qu'il reçoit. */
+    private static Component directionLine(TradeDirection direction) {
+        return direction == TradeDirection.SELL_TO_PLAYER
+                ? MM.deserialize("<green>Tu achètes</green> <gray>: clic pour payer et recevoir l'objet</gray>")
+                : MM.deserialize("<gold>Tu vends</gold> <gray>: clic pour donner l'objet contre des pièces</gray>");
+    }
+
+    private static Component priceLine(TradeDirection direction, long price) {
+        String label = direction == TradeDirection.SELL_TO_PLAYER ? "Tu paies :" : "Tu reçois :";
+        return MM.deserialize("<white>" + label + "</white> <gold><price> " + CurrencyName.get() + "</gold>",
+                Placeholder.unparsed("price", String.valueOf(price)));
     }
 
     /**

@@ -248,4 +248,101 @@ class WorldPortalAdminServiceTest {
         assertEquals("UNCHANGED", r.code());
         assertEquals(1, audit.recent(5).size());
     }
+
+    // ---- Conditions d'accès (issue #567) ---------------------------------------------------------
+
+    private static final org.bukkit.NamespacedKey CRYSTAL = new org.bukkit.NamespacedKey("rpgquest", "crystal_hunt");
+
+    private static com.lodygames.rpgquest.travel.model.PortalAccess sampleAccess() {
+        return new com.lodygames.rpgquest.travel.model.PortalAccess(5, "<red>Niveau 5.</red>", List.of(
+                new com.lodygames.rpgquest.travel.model.PortalAccess.Rule(
+                        new com.lodygames.rpgquest.dialogue.model.QuestStateCondition(CRYSTAL,
+                                com.lodygames.rpgquest.quest.model.QuestState.COMPLETED), "<red>Termine la chasse.</red>"),
+                new com.lodygames.rpgquest.travel.model.PortalAccess.Rule(
+                        new com.lodygames.rpgquest.dialogue.model.NegatedCondition(
+                                new com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition()), "")), 45, "");
+    }
+
+    private Context ctxWithQuests() {
+        return new Context(Set.of("world_hub", "wild", "claims", "test_world"), ROLES, zonePortals,
+                id -> Optional.ofNullable(sites.get(id)), w -> Optional.of(WorldPortalAdminService.WorldBounds.OVERWORLD),
+                CRYSTAL::equals);
+    }
+
+    @Test
+    void accessConditionsAreSavedOnADraftAndSurviveAReload() throws Exception {
+        createDraft();
+        Result r = service.setAccess("arche_marche", fp("arche_marche"), sampleAccess(), false, "claude",
+                ctxWithQuests());
+
+        assertTrue(r.ok(), r.message());
+        registry.reload();
+        assertEquals(sampleAccess(), registry.find("arche_marche").orElseThrow().access());
+        String yaml = Files.readString(dir.resolve("arche_marche.yml"));
+        assertTrue(yaml.contains("access:") && yaml.contains("required-level: 5") && yaml.contains("negate: true"),
+                yaml);
+        assertEquals(State.DRAFT, registry.find("arche_marche").orElseThrow().state(), "rien n'est activé");
+    }
+
+    @Test
+    void removingEveryConditionRestoresTheFileWithoutAccessSection() throws Exception {
+        createDraft();
+        String before = Files.readString(dir.resolve("arche_marche.yml"));
+        String fingerprintBefore = fp("arche_marche");
+        service.setAccess("arche_marche", fingerprintBefore, sampleAccess(), false, "claude", ctxWithQuests());
+        assertFalse(fp("arche_marche").equals(fingerprintBefore), "l'empreinte change avec les conditions");
+
+        Result r = service.setAccess("arche_marche", fp("arche_marche"),
+                com.lodygames.rpgquest.travel.model.PortalAccess.NONE, false, "claude", ctxWithQuests());
+
+        assertTrue(r.ok(), r.message());
+        assertEquals(before, Files.readString(dir.resolve("arche_marche.yml")));
+        assertEquals(fingerprintBefore, fp("arche_marche"));
+    }
+
+    @Test
+    void theAccessOfAnActivePortalIsLockedAndEssentialPortalsNeedConfirmation() throws Exception {
+        String before = Files.readString(dir.resolve("hub_to_wild.yml"));
+
+        Result unconfirmed = service.setAccess("hub_to_wild", fp("hub_to_wild"), sampleAccess(), false, "claude",
+                ctxWithQuests());
+        Result active = service.setAccess("hub_to_wild", fp("hub_to_wild"), sampleAccess(), true, "claude",
+                ctxWithQuests());
+
+        assertEquals("ESSENTIAL_CONFIRMATION_REQUIRED", unconfirmed.code());
+        assertEquals("ACTIVE_ACCESS_LOCKED", active.code());
+        assertEquals(before, Files.readString(dir.resolve("hub_to_wild.yml")), "hub_to_wild intact");
+    }
+
+    @Test
+    void anUnknownQuestOrABadlyTypedVariableIsRefused() {
+        createDraft();
+        var unknownQuest = new com.lodygames.rpgquest.travel.model.PortalAccess(null, "", List.of(
+                new com.lodygames.rpgquest.travel.model.PortalAccess.Rule(
+                        new com.lodygames.rpgquest.dialogue.model.QuestStateCondition(
+                                new org.bukkit.NamespacedKey("rpgquest", "inconnue"),
+                                com.lodygames.rpgquest.quest.model.QuestState.ACTIVE), "")), 0, "");
+        var badVariable = new com.lodygames.rpgquest.travel.model.PortalAccess(null, "", List.of(
+                new com.lodygames.rpgquest.travel.model.PortalAccess.Rule(
+                        new com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition("CLAIM_TIER_1", "peut-être"),
+                        "")), 0, "");
+
+        assertEquals("UNKNOWN_QUEST", service.setAccess("arche_marche", fp("arche_marche"), unknownQuest, false,
+                "claude", ctxWithQuests()).code());
+        assertEquals("INVALID_VARIABLE", service.setAccess("arche_marche", fp("arche_marche"), badVariable, false,
+                "claude", ctxWithQuests()).code());
+        assertTrue(registry.find("arche_marche").orElseThrow().access().isEmpty());
+    }
+
+    @Test
+    void anUnreadableAccessSectionKeepsThePortalUnloaded() throws Exception {
+        Files.writeString(dir.resolve("arche.yml"), String.join("\n", "id: arche", "world: world_hub",
+                "min: {x: 0, y: 60, z: 0}", "max: {x: 2, y: 63, z: 0}", "destination-world: wild", "enabled: true",
+                "access:", "  conditions:", "    - type: HAS_INVENTORY_SPACE", "      slots: 2", ""));
+
+        registry.reload();
+
+        assertTrue(registry.find("arche").isEmpty(), "jamais chargé sans ses conditions");
+        assertTrue(registry.skippedFiles().stream().anyMatch(i -> i.toString().contains("arche.yml")));
+    }
 }

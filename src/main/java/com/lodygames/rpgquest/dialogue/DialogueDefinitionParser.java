@@ -281,7 +281,7 @@ final class DialogueDefinitionParser {
         return conditions;
     }
 
-    private DialogueCondition parseCondition(ConfigurationSection section, String context, List<String> errors) {
+    DialogueCondition parseCondition(ConfigurationSection section, String context, List<String> errors) {
         String rawType = section.getString("type");
         if (rawType == null || rawType.isBlank()) {
             errors.add(context + ": « type » est obligatoire.");

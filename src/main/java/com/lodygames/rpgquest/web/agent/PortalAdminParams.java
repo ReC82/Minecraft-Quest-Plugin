@@ -1,14 +1,20 @@
 package com.lodygames.rpgquest.web.agent;
 
+import com.lodygames.rpgquest.dialogue.DialogueConditionYaml;
+import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.DestinationRequest;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.Operation;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.ZoneRequest;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
+import com.lodygames.rpgquest.travel.model.PortalAccess;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.FixedPoint;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.Zone;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.bukkit.configuration.MemoryConfiguration;
 
 /**
  * Lecture des paramètres de {@code portal.create|update|enable|disable|delete} (issue #565) :
@@ -28,6 +34,12 @@ import java.util.Map;
  *   <li>création : {@code return_of} facultatif = portail dont celui-ci est le retour ;</li>
  *   <li>{@code name} : présent = nouveau nom (vide = nom déduit de la destination) ;</li>
  *   <li>{@code confirm_essential=true} : portail vers le Hub, le Wild ou les Claims.</li>
+ *   <li>{@code portal.access} (issue #567) : {@code level} (vide = aucun) + {@code level_message},
+ *       {@code cooldown} (secondes, vide ou 0 = aucun) + {@code cooldown_message}, et jusqu'à
+ *       {@value PortalAccess#MAX_RULES} lignes {@code cond_<i>_type} (vide = ligne ignorée),
+ *       {@code cond_<i>_negate}, {@code cond_<i>_quest} / {@code _state} / {@code _material} /
+ *       {@code _amount} / {@code _permission} / {@code _key} / {@code _value}, {@code cond_<i>_message}.
+ *       Les conditions sont lues par le même code que les dialogues.</li>
  * </ul>
  */
 final class PortalAdminParams {
@@ -119,9 +131,97 @@ final class PortalAdminParams {
         if (!returnOf.isEmpty() && !returnOf.matches("[a-z0-9_-]{1,48}")) {
             return Parsed.fail("Portail aller « return_of » invalide.");
         }
+        PortalAccess access = null;
+        if (kind == Kind.ACCESS) {
+            AccessParsed a = access(p);
+            if (a.error() != null) {
+                return Parsed.fail(a.error());
+            }
+            access = a.access();
+        }
         String actor = trim(p.get("by"));
         return new Parsed(new Operation(kind, id, expected, name, zone, destination, returnOf,
-                "true".equals(p.get("confirm_essential")), actor.isEmpty() ? "panel" : actor), null);
+                "true".equals(p.get("confirm_essential")), actor.isEmpty() ? "panel" : actor, access), null);
+    }
+
+    private record AccessParsed(PortalAccess access, String error) {
+    }
+
+    private static final String[] CONDITION_KEYS = {"quest", "state", "material", "permission", "key", "value"};
+
+    /** Conditions d'accès (issue #567) : forme seulement, la quête et le type de variable sont revérifiés par le service. */
+    static AccessParsed access(Map<String, String> p) {
+        Integer level = null;
+        if (!trim(p.get("level")).isEmpty()) {
+            level = integer(p.get("level"));
+            if (level == null || level < 1 || level > PortalAccess.MAX_LEVEL) {
+                return new AccessParsed(null, "Niveau minimum : un entier de 1 à " + PortalAccess.MAX_LEVEL
+                        + " (vide = aucun).");
+            }
+        }
+        int cooldown = 0;
+        if (!trim(p.get("cooldown")).isEmpty()) {
+            Integer c = integer(p.get("cooldown"));
+            if (c == null || c < 0 || c > PortalAccess.MAX_COOLDOWN_SECONDS) {
+                return new AccessParsed(null, "Délai entre deux passages : de 0 à " + PortalAccess.MAX_COOLDOWN_SECONDS
+                        + " secondes.");
+            }
+            cooldown = c;
+        }
+        List<PortalAccess.Rule> rules = new ArrayList<>();
+        for (int i = 0; i < PortalAccess.MAX_RULES; i++) {
+            String prefix = "cond_" + i + "_";
+            String type = trim(p.get(prefix + "type")).toUpperCase(Locale.ROOT);
+            if (type.isEmpty()) {
+                continue;
+            }
+            String where = "Condition " + (i + 1) + " : ";
+            MemoryConfiguration section = new MemoryConfiguration();
+            section.set("type", type);
+            for (String key : CONDITION_KEYS) {
+                String value = trim(p.get(prefix + key));
+                if (value.length() > 100) {
+                    return new AccessParsed(null, where + "« " + key + " » trop long (100 caractères au plus).");
+                }
+                if (!value.isEmpty()) {
+                    section.set(key, value);
+                }
+            }
+            if ("VARIABLE_EQUALS".equals(type) && !section.isSet("value")) {
+                section.set("value", "");
+            }
+            String amount = trim(p.get(prefix + "amount"));
+            if (!amount.isEmpty()) {
+                Integer n = integer(amount);
+                if (n == null) {
+                    return new AccessParsed(null, where + "la quantité doit être un nombre entier.");
+                }
+                section.set("amount", n);
+            }
+            if (section.isSet("permission") && !section.getString("permission").matches("[A-Za-z0-9_.-]{1,100}")) {
+                return new AccessParsed(null, where + "permission invalide (lettres, chiffres, « . », « _ », « - »).");
+            }
+            if (section.isSet("key") && !section.getString("key").matches("[A-Za-z0-9_.:-]{1,64}")) {
+                return new AccessParsed(null, where + "nom de variable invalide (lettres, chiffres, « _ », « . », « : », « - »).");
+            }
+            section.set("negate", "true".equals(p.get(prefix + "negate")));
+            List<String> errors = new ArrayList<>();
+            DialogueCondition condition = DialogueConditionYaml.parse(section, "condition " + (i + 1), errors);
+            if (condition == null || !errors.isEmpty()) {
+                return new AccessParsed(null, where + String.join(" ; ", errors));
+            }
+            try {
+                rules.add(new PortalAccess.Rule(condition, p.get(prefix + "message")));
+            } catch (IllegalArgumentException e) {
+                return new AccessParsed(null, where + e.getMessage());
+            }
+        }
+        try {
+            return new AccessParsed(new PortalAccess(level, p.get("level_message"), rules, cooldown,
+                    p.get("cooldown_message")), null);
+        } catch (IllegalArgumentException e) {
+            return new AccessParsed(null, "Conditions d'accès : " + e.getMessage());
+        }
     }
 
     /** Nombre fini, au plus 30 000 000 en valeur absolue ({@code null} sinon). */

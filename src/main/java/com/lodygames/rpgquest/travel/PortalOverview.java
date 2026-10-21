@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.claim.ClaimWorldAccessGuard;
 import com.lodygames.rpgquest.config.RandomSafeArrivalConfig;
 import com.lodygames.rpgquest.permission.RpgPermissions;
 import com.lodygames.rpgquest.travel.model.Destination;
+import com.lodygames.rpgquest.travel.model.PortalAccess;
 import com.lodygames.rpgquest.travel.model.PortalDefinition;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import java.util.ArrayList;
@@ -91,9 +92,11 @@ public final class PortalOverview {
      */
     public record Admin(String state, String storedName, String site, String siteName, int width, int height,
                         int depth, boolean essential, String fingerprint, boolean editable,
-                        WorldPortalDefinition.FixedPoint point, String returnOf, List<String> returnedBy) {
+                        WorldPortalDefinition.FixedPoint point, String returnOf, List<String> returnedBy,
+                        PortalAccess access) {
 
-        static final Admin LEGACY = new Admin("ACTIVE", "", "", "", 0, 0, 0, false, "", false, null, "", List.of());
+        static final Admin LEGACY = new Admin("ACTIVE", "", "", "", 0, 0, 0, false, "", false, null, "", List.of(),
+                PortalAccess.NONE);
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -108,7 +111,7 @@ public final class PortalOverview {
     public record Guard(String code, String title, List<String> rules, List<Text> texts) {
     }
 
-    /** Une condition d'accès d'un portail de zone. */
+    /** Une condition d'accès (portail de zone, ou portail entre mondes depuis #567). */
     public record Condition(String label, String value) {
     }
 
@@ -254,7 +257,8 @@ public final class PortalOverview {
         }
         Admin admin = new Admin(p.state().name(), d.name(), site, linked.map(BuildingSite::name).orElse(""),
                 d.width(), d.height(), d.depth(), WorldPortalAdminService.essential(p, in.roles()),
-                WorldPortalAdminService.fingerprint(p), sameId.isEmpty(), p.fixedPoint(), p.returnOf(), returnedBy);
+                WorldPortalAdminService.fingerprint(p), sameId.isEmpty(), p.fixedPoint(), p.returnOf(), returnedBy,
+                p.access());
         WorldPortalDefinition.FixedPoint fp = p.fixedPoint();
         String point = fp == null ? "" : String.format(Locale.ROOT, "%s %.1f, %.1f, %.1f (regard %.0f°)",
                 p.destinationWorld(), fp.x(), fp.y(), fp.z(), fp.yaw());
@@ -263,8 +267,9 @@ public final class PortalOverview {
                 p.world(), sourceLoaded, role(p.world(), in.roles()),
                 p.minX(), p.minY(), p.minZ(), p.maxX(), p.maxY(), p.maxZ(),
                 p.destinationWorld(), destLoaded, role(p.destinationWorld(), in.roles()), "", point,
-                p.destinationStrategy().name(), arrival(p, in), worldPortalTrigger(!guards.isEmpty()),
-                List.copyOf(guards), List.of(), List.copyOf(issues), admin);
+                p.destinationStrategy().name(), arrival(p, in),
+                worldPortalTrigger(!guards.isEmpty(), !p.access().isEmpty()),
+                List.copyOf(guards), accessConditions(p.access()), List.copyOf(issues), admin);
     }
 
     private static List<String> arrival(WorldPortalDefinition p, Inputs in) {
@@ -293,11 +298,29 @@ public final class PortalOverview {
         };
     }
 
-    private static List<String> worldPortalTrigger(boolean guarded) {
+    /** Issue #567 : conditions d'accès d'un portail entre mondes, dans l'ordre où le serveur les vérifie. */
+    private static List<Condition> accessConditions(PortalAccess a) {
+        List<Condition> out = new ArrayList<>();
+        if (a.requiredLevel() != null) {
+            out.add(new Condition("Niveau RPG minimum", String.valueOf(a.requiredLevel())));
+        }
+        for (PortalAccess.Rule r : a.rules()) {
+            out.add(new Condition("Condition", PortalAccess.describe(r.condition())));
+        }
+        if (a.cooldownSeconds() > 0) {
+            out.add(new Condition("Attente entre deux passages", a.cooldownSeconds() + " s"));
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<String> worldPortalTrigger(boolean guarded, boolean conditioned) {
         return List.of(
                 "Téléportation immédiate en entrant dans la zone (de l'extérieur vers l'intérieur), sans attente ni coût.",
                 "Répit de 2 secondes après une arrivée ou une connexion : pas de renvoi en boucle.",
-                guarded
+                conditioned
+                        ? "Conditions d'accès vérifiées par le serveur à chaque passage, après les règles Claims / "
+                                + "Wild : un joueur refusé reste sur place et reçoit le message de la condition."
+                        : guarded
                         ? "Aucune condition de niveau, de quête ni de permission n'est configurée sur le portail "
                                 + "lui-même ; les règles du serveur (bloc « Règles appliquées par le serveur ») "
                                 + "s'appliquent quand même."

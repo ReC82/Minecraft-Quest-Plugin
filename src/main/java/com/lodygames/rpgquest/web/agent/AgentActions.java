@@ -1627,6 +1627,37 @@ public interface AgentActions {
     }
 
     /**
+     * Simulation des conditions d'accès d'un portail pour un joueur connecté (issue #567).
+     *
+     * @param code    {@code ALLOWED}, {@code REFUSED}, {@code PLAYER_OFFLINE} ou {@code NOT_FOUND}
+     * @param checks  contrôles évalués, dans l'ordre (vide si aucune condition)
+     * @param notes   précisions lisibles (gardes non simulés, portail inactif…)
+     */
+    record PortalSimulation(String code, String message, String portal, String playerName, boolean allowed,
+                            List<com.lodygames.rpgquest.travel.PortalAccessChecker.Check> checks,
+                            List<String> notes) {
+    }
+
+    /**
+     * Simuler le passage de {@code playerId} par le portail {@code portalId} -- action
+     * {@code portal.simulate} (issue #567). Lecture seule : personne n'est téléporté, aucun délai
+     * n'est démarré, rien n'est écrit. {@code null} sur un plugin qui ne sait pas le faire.
+     */
+    default CompletableFuture<PortalSimulation> portalSimulate(UUID playerId, String playerName, String portalId) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * « Téléporter pour test » -- action {@code portal.test} (issue #567) : {@code travelerId}, le
+     * personnage lié à la session PlugAdmin, emprunte le portail par le chemin réel (conditions sans
+     * délai, gardes Claims / Wild, téléportation), quel que soit l'état du portail.
+     */
+    default CompletableFuture<MutationResult> portalTest(UUID travelerId, String travelerName, String portalId) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Test de portail indisponible sur ce serveur."));
+    }
+
+    /**
      * Tous les claims persistés -- action {@code claim.list} (issue #637). Lecture seule ; vue
      * indisponible ({@code available=false}) sur un plugin sans service de claims.
      */

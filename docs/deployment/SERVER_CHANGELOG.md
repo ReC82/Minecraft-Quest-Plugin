@@ -59,14 +59,19 @@ permission `PORTAL_TEST`, propriétaire). Portails sans condition — dont `hub_
 
 ### Action serveur
 
-- Remplacer le JAR RPGQuest et redéployer PlugAdmin (`scripts/deploy-verygames.sh -y`, `scripts/plugadmin/deploy.sh`),
-  redémarrer DEV. **Aucune migration** (table `portal_cooldowns` existante, clé `world:<id>`), **aucune clé de
+- **Effectué le 21/10 vers 18:57** : `scripts/deploy-verygames.sh -y` depuis `fc1fb943` (PR #706, CI verte sur la
+  fusion) — JAR en ligne 4139426 octets, SHA-256 `60f9f842c8e6b562d29a73b06cd6adb3db70c4a741b883b34a191c206f4506e0`,
+  retéléchargé et identique ; DEV redémarré par `scripts/verygames-restart.sh` (0 joueur connecté), de nouveau ONLINE.
+  PlugAdmin `fc1fb943` (`scripts/plugadmin/deploy.sh`, `/health` ONLINE, aide servie vérifiée).
+- Relu après redémarrage (lecture seule) : `portal.list` → `hub_to_wild` / `hub_to_claims` actifs, sans condition,
+  empreintes identiques au relevé de 12:19 ; aucun fichier ignoré. **Aucune migration** (table `portal_cooldowns` existante, clé `world:<id>`), **aucune clé de
   configuration**, aucun fichier de contenu, aucun fichier `world-portals/` à transférer ni à modifier.
 - Ne PAS modifier `world-portals/*.yml`, `config.yml`, `data.db`.
 
 ### Sauvegarde préalable
 
-JAR et PlugAdmin précédents (automatique par les scripts).
+JAR précédent : `rpgquest-20261021T165646Z-predeploy.jar` (4098255 o, SHA-256 `ca2a80fc9457…`) ; PlugAdmin : release
+précédente sous `/opt/plugadmin/releases/`.
 
 ### Validation
 

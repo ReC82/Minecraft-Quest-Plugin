@@ -25,11 +25,19 @@ import org.bukkit.inventory.ItemStack;
  * (lave/feu/cactus/explosion) ne peut plus s'y appliquer. La restauration à la réapparition ne
  * duplique jamais rien : elle ne rend que les exemplaires effectivement retirés des drops de
  * <em>cette</em> mort précise.</p>
+ *
+ * <p><strong>Non stockable (issue #625)</strong> : un objet enregistré via
+ * {@link #registerStorageLocked} est en plus interdit de tout stockage — coffres, tonneaux, shulkers,
+ * coffre de l'Ender, hoppers, wagonnets, inventaires du plugin, sacs, cadres, pots… — dans
+ * <em>tous</em> les mondes ; voir {@link StorageLockedItemListener}. C'est une politique distincte
+ * de l'anti-perte : la Rune de rappel consommable reste soulbound sans être non stockable
+ * (décision propriétaire du 20/10/2026).</p>
  */
 public final class SoulboundItemService implements PluginService {
 
     private final YamlCustomItemRegistry customItemRegistry;
     private final Set<NamespacedKey> soulboundIds = ConcurrentHashMap.newKeySet();
+    private final Set<NamespacedKey> storageLockedIds = ConcurrentHashMap.newKeySet();
 
     public SoulboundItemService(YamlCustomItemRegistry customItemRegistry) {
         this.customItemRegistry = customItemRegistry;
@@ -40,6 +48,15 @@ public final class SoulboundItemService implements PluginService {
         soulboundIds.add(itemId);
     }
 
+    /**
+     * Enregistre {@code itemId} comme objet permanent lié au joueur <em>et</em> non stockable : il
+     * devient aussi soulbound. Idempotent.
+     */
+    public void registerStorageLocked(NamespacedKey itemId) {
+        register(itemId);
+        storageLockedIds.add(itemId);
+    }
+
     @Override
     public void start() {
         // Rien à démarrer : les enregistrements sont faits par le bootstrap, l'écouteur fait le reste.
@@ -48,11 +65,21 @@ public final class SoulboundItemService implements PluginService {
     @Override
     public void stop() {
         soulboundIds.clear();
+        storageLockedIds.clear();
     }
 
     /** Écouteur Bukkit unique (drop/mort/réapparition) à enregistrer via {@code PlayerListenerService}. */
     public Listener listener() {
         return new SoulboundItemListener(this);
+    }
+
+    /** Écouteur Bukkit du refus de stockage (#625) à enregistrer via {@code PlayerListenerService}. */
+    public Listener storageListener() {
+        return new StorageLockedItemListener(this);
+    }
+
+    public boolean isStorageLocked(ItemStack stack) {
+        return identify(stack).map(storageLockedIds::contains).orElse(false);
     }
 
     public boolean isSoulbound(ItemStack stack) {

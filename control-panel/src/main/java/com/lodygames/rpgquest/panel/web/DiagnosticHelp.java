@@ -281,6 +281,10 @@ public final class DiagnosticHelp {
                 "{detail}",
                 "La zone enregistrée reste la même, mais le portail ne peut plus être activé.",
                 "Choisir un autre emplacement (ou des coordonnées) dans « Zone d'activation » de la fiche.", "portails");
+        add("PORTAL_RETURN_TARGET_MISSING", Level.WARNING, "Portail aller introuvable",
+                "{detail}",
+                "Ce portail se déclare le retour d'un portail qui n'existe plus ; il fonctionne quand même seul.",
+                "Rien à faire si c'est voulu ; sinon recréer l'aller ou supprimer ce retour.", "portails");
         add("PORTAL_SAME_WORLD", Level.INFO, "Portail vers son propre monde",
                 "{detail}",
                 "Le joueur reste dans le même monde.",

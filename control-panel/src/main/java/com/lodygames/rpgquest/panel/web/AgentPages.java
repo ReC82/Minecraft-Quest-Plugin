@@ -11557,9 +11557,20 @@ public final class AgentPages {
         PortalPages.Manage manage = new PortalPages.Manage(session.csrfToken(),
                 perms.can(session.effective(), Permission.PORTAL_EDIT),
                 perms.can(session.effective(), Permission.PORTAL_ENABLE), sites);
+        // Issue #566 : dernier « Vérifier sans appliquer » réussi du portail ouvert.
+        PortalPages.Verify verify = null;
+        if (!selected.isEmpty()) {
+            String id = selected;
+            Optional<AgentActionRow> vr = store.recentActions(agentId, 50).stream()
+                    .filter(r -> "portal.verify".equals(r.type()) && r.status() == AgentActionStatus.SUCCESS
+                            && id.equals(r.params().get("id")))
+                    .findFirst();
+            verify = vr.flatMap(r -> detailsOf(r).map(d -> new PortalPages.Verify(d, when(at(r))))).orElse(null);
+        }
+        String returnOf = cleanFocus(q.get("return_of"));
         return PortalPages.render(new PortalPages.View(agentId, details, header,
                 row.map(r -> when(at(r))).orElse(""), selected, str(q.get("file")).trim(),
-                worldNames(agentId), manage));
+                worldNames(agentId), manage, verify, returnOf));
     }
 
     // ---- Claims (issue #637) ---------------------------------------------------------------------

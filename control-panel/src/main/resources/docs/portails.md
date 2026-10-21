@@ -1,7 +1,7 @@
 ---
 title: Portails
 category: Monde
-tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, avertissement, diagnostic, brouillon, emplacement, activer, désactiver]
+tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver]
 order: 2
 ---
 
@@ -26,7 +26,8 @@ Pour chaque portail, la fiche montre :
    fichier ;
 2. **Téléportation** : monde d'arrivée (lien vers la page Mondes), type d'arrivée et ses réglages —
    *point d'arrivée du monde*, *point sûr aléatoire* (`travel.random-safe-arrival` : rayon minimum,
-   maximum, tentatives) ou *claim du joueur, sinon point sûr* (`claims.arrival`) ;
+   maximum, tentatives), *claim du joueur, sinon point sûr* (`claims.arrival`) ou *point fixe*
+   (position et regard enregistrés) ; et l'aller-retour éventuel (« Retour de » / « Portail retour ») ;
 3. **Règles appliquées par le serveur** :
    - **Avertissement Wild** pour tout portail qui mène au monde `travel.wild-world` : fenêtre de
      confirmation, choix « ne plus afficher », textes actuels montrés au joueur ;
@@ -83,6 +84,39 @@ demande une seconde case. Toute modification est journalisée avec l'état avant
 
 Un emplacement cité par un portail ne peut pas être supprimé : supprimer d'abord le portail, ou
 changer sa zone.
+
+## Arrivée, point fixe et portail retour
+
+**Arrivée** (fiche, `PORTAL_EDIT`, portail non actif) : monde d'arrivée (un monde **chargé**) et type
+d'arrivée :
+
+- *point d'arrivée du monde*, *point sûr aléatoire*, *claim du joueur* : inchangés (Hub → Wild et
+  Hub → Claims fonctionnent comme avant) ; *claim du joueur* n'est accepté que vers le monde des
+  claims ;
+- *point fixe* : X, Y (les pieds du joueur), Z, et le **regard** — horizontal (0 = sud, 90 = ouest,
+  180 = nord, -90 = est, comme l'écran F3) et vertical (-90 ciel, 0 horizon, 90 sol). Écrit dans
+  `destination-point:` du fichier du portail.
+
+Le serveur **refuse** un point fixe hors des hauteurs du monde, ou dans la zone d'un portail (le
+joueur y serait renvoyé aussitôt). À chaque passage, il vérifie la position : si elle n'est pas
+sûre (lave, feu, vide sous les pieds, bloc plein à la tête), il prend la position sûre la plus
+proche **à 2 blocs au plus** (3 en hauteur) ; s'il n'y en a pas, **le passage est refusé** et le
+joueur reste où il est, avec un message. Monde d'arrivée non chargé : passage refusé avec un
+message, le portail ne charge jamais un monde. Pour un point fixe, le chargement des chunks et la
+téléportation sont **asynchrones** (le serveur ne se fige pas).
+
+**Portail retour** : bouton « Préparer le portail retour » de la fiche de l'aller. Le formulaire de
+création est prérempli (départ = monde d'arrivée de l'aller, arrivée = son monde de départ, point
+fixe) ; il crée un **second portail distinct, en brouillon** (`return-of:` dans son fichier).
+L'aller n'est pas modifié. Un seul retour par portail.
+
+**Vérifier sans appliquer** (fiche, `PORTAL_READ`, action `portal.verify`) : contrôle le départ, la
+zone, le monde d'arrivée, l'arrivée et sa sécurité, et l'aller-retour, puis affiche chaque point :
+**OK**, **À regarder**, **Non vérifiable** ou **Bloquant**. **Rien n'est modifié** : aucun fichier
+écrit, aucun monde ni chunk chargé, personne n'est téléporté. La sécurité d'un point fixe n'est lue
+que si personne n'a besoin de charger le terrain (un joueur est à proximité) ; sinon « Non
+vérifiable maintenant » — elle reste contrôlée à chaque passage. Si le portail est modifié après la
+vérification, la fiche le signale : vérifier à nouveau.
 
 ---
 
@@ -144,6 +178,11 @@ rien. L'activer depuis la fiche.
 
 Le portail cite un emplacement (`site:`) qui n'existe plus. Sa zone enregistrée ne change pas, mais
 il ne peut plus être activé : choisir un autre emplacement ou des coordonnées.
+
+## Portail aller introuvable
+
+Ce portail se déclare le retour (`return-of:`) d'un portail qui n'existe plus. Il fonctionne quand
+même seul ; recréer l'aller ou supprimer ce retour si ce n'est pas voulu.
 
 ## Portail désactivé
 

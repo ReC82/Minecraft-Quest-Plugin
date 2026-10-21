@@ -412,6 +412,8 @@ public final class AgentActionCatalog {
                 "world.list", "world.state.options");
         // Issue #564 (#228-P1) — portails en lecture.
         add("portal.list", Permission.PORTAL_READ, false, false, "Rafraîchir les portails");
+        // Issue #566 (#228-P3) — « Vérifier sans appliquer » : lecture seule, rien n'est chargé ni écrit.
+        add("portal.verify", Permission.PORTAL_READ, false, false, "Vérifier un portail sans rien appliquer");
         // Issue #565 (#228-P2) — portails modifiables : brouillon, zone, nom, suppression (PORTAL_EDIT),
         // activation / désactivation (PORTAL_ENABLE). Toutes sensibles (case de confirmation),
         // toutes relisent les portails ; l'empreinte du dernier relevé est exigée sauf à la création.
@@ -1494,6 +1496,13 @@ public final class AgentActionCatalog {
                 if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
                     params.put("by", by);
                 }
+            }
+            case "portal.verify" -> {
+                String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+                if (!PORTAL_ID.matcher(id).matches()) {
+                    return Validation.fail("Identifiant de portail invalide.");
+                }
+                params.put("id", id);
             }
             case "portal.create", "portal.update", "portal.enable", "portal.disable", "portal.delete" -> {
                 String error = portalParams(type, form, params);
@@ -3136,7 +3145,9 @@ public final class AgentActionCatalog {
     private static final Pattern PORTAL_ID = Pattern.compile("[a-z0-9_-]{3,48}");
     private static final Pattern PORTAL_WORLD = Pattern.compile("[A-Za-z0-9_.-]{1,64}");
     private static final List<String> PORTAL_CORNERS = List.of("min_x", "min_y", "min_z", "max_x", "max_y", "max_z");
-    private static final List<String> PORTAL_STRATEGIES = List.of("WORLD_SPAWN", "RANDOM_SAFE", "CLAIM_HOME");
+    private static final List<String> PORTAL_STRATEGIES = List.of("WORLD_SPAWN", "RANDOM_SAFE", "CLAIM_HOME",
+            "FIXED_POINT");
+    private static final Pattern PORTAL_DECIMAL = Pattern.compile("-?\\d{1,8}([.,]\\d{1,3})?");
     /** Miroirs de {@code PortalZone.MAX_SIDE} et {@code WorldPortalAdminService.MAX_NAME_LENGTH}. */
     public static final int PORTAL_MAX_SIDE = 32;
     public static final int PORTAL_MAX_NAME = 64;
@@ -3222,19 +3233,52 @@ public final class AgentActionCatalog {
         }
         params.put("zone_mode", mode);
         if ("portal.create".equals(type)) {
-            String dest = trim(form.get("destination_world"));
-            if (!PORTAL_WORLD.matcher(dest).matches()) {
-                return "Monde d'arrivée manquant ou invalide.";
+            String returnOf = trim(form.get("return_of")).toLowerCase(java.util.Locale.ROOT);
+            if (!returnOf.isEmpty()) {
+                if (!PORTAL_ID.matcher(returnOf).matches()) {
+                    return "Portail aller invalide.";
+                }
+                params.put("return_of", returnOf);
             }
-            params.put("destination_world", dest);
-            String strategy = trim(form.get("strategy")).toUpperCase(java.util.Locale.ROOT);
-            if (strategy.isEmpty()) {
-                strategy = "WORLD_SPAWN";
+        }
+        boolean destination = "portal.create".equals(type) || "set".equals(trim(form.get("dest_mode")));
+        if (!destination) {
+            return null;
+        }
+        if ("portal.update".equals(type)) {
+            params.put("dest_mode", "set");
+        }
+        String dest = trim(form.get("destination_world"));
+        if (!PORTAL_WORLD.matcher(dest).matches()) {
+            return "Monde d'arrivée manquant ou invalide.";
+        }
+        params.put("destination_world", dest);
+        String strategy = trim(form.get("strategy")).toUpperCase(java.util.Locale.ROOT);
+        if (strategy.isEmpty()) {
+            strategy = "WORLD_SPAWN";
+        }
+        if (!PORTAL_STRATEGIES.contains(strategy)) {
+            return "Arrivée inconnue.";
+        }
+        params.put("strategy", strategy);
+        if ("FIXED_POINT".equals(strategy)) {
+            for (String k : List.of("point_x", "point_y", "point_z")) {
+                String v = trim(form.get(k));
+                if (!PORTAL_DECIMAL.matcher(v).matches()) {
+                    return "Point fixe : X, Y et Z sont obligatoires (nombres, 3 décimales au plus).";
+                }
+                params.put(k, v.replace(',', '.'));
             }
-            if (!PORTAL_STRATEGIES.contains(strategy)) {
-                return "Arrivée inconnue.";
+            for (String k : List.of("point_yaw", "point_pitch")) {
+                String v = trim(form.get(k));
+                if (v.isEmpty()) {
+                    continue;
+                }
+                if (!PORTAL_DECIMAL.matcher(v).matches()) {
+                    return "Regard du point fixe : nombre de degrés.";
+                }
+                params.put(k, v.replace(',', '.'));
             }
-            params.put("strategy", strategy);
         }
         return null;
     }

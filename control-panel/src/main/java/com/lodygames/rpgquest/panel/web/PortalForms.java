@@ -13,6 +13,8 @@ import java.util.Map;
 /**
  * Issue #565 (#228-P2) — formulaires de la page Portails : création d'un brouillon, renommage,
  * zone d'activation, activation / désactivation, suppression, et journal des modifications.
+ * Issue #566 (#228-P3) : arrivée (monde, stratégie, point fixe et regard), portail retour préparé
+ * depuis la fiche de l'aller, et « Vérifier sans appliquer ».
  *
  * <p>Tous passent par {@code POST /agents/action} (contrôle de permission et de forme par {@link
  * AgentActionCatalog}, revérification complète par le plugin). Sans JavaScript : la CSP du panel
@@ -38,7 +40,18 @@ final class PortalForms {
             return sb.append(Ui.banner("info", "Aucun monde chargé dans le relevé : rafraîchir les portails."))
                     .append("</section>").toString();
         }
+        Map<String, Object> outbound = v.returnOf().isEmpty() ? null : PortalPages.maps(v.details().get("portals"))
+                .stream().filter(p -> v.returnOf().equals(str(p.get("id"))) && bool(p.get("editable")))
+                .findFirst().orElse(null);
         sb.append(formStart(v, "portal.create", ""));
+        if (outbound != null) {
+            sb.append(Ui.banner("info", "<strong>Portail retour de <code>" + Http.esc(v.returnOf()) + "</code></strong> : "
+                    + "il partira de <code>" + Http.esc(str(outbound.get("destinationWorld"))) + "</code> et ramènera "
+                    + "à <code>" + Http.esc(str(outbound.get("world"))) + "</code>. C'est un second portail, distinct, "
+                    + "créé en brouillon ; l'aller n'est pas modifié."))
+                    .append("<input type=\"hidden\" name=\"return_of\" value=\"").append(Http.esc(v.returnOf()))
+                    .append("\">");
+        }
         sb.append("<div class=\"form-grid\">")
                 .append(field("Identifiant (définitif)", "<input type=\"text\" name=\"id\" required pattern=\"[a-z0-9_\\-]{3,48}\" "
                         + "maxlength=\"48\" placeholder=\"arche_du_marche\" autocomplete=\"off\">",
@@ -46,12 +59,9 @@ final class PortalForms {
                 .append(field("Nom affiché", "<input type=\"text\" name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
                         + "\" placeholder=\"Arche du marché\">", "Facultatif ; sinon « Portail vers … »."))
                 .append("</div>");
-        sb.append(zoneFields(v, null));
-        sb.append("<div class=\"form-grid\">")
-                .append(field("Monde d'arrivée", select("destination_world", worlds, ""), ""))
-                .append(field("Arrivée", strategySelect(), "Le point fixe et les autres réglages d'arrivée viendront "
-                        + "avec la fiche Destination."))
-                .append("</div>");
+        sb.append(zoneFields(v, null, outbound == null ? "" : str(outbound.get("destinationWorld"))));
+        sb.append(destinationFields(worlds, outbound == null ? "" : str(outbound.get("world")),
+                outbound == null ? "" : "FIXED_POINT", null));
         sb.append(confirm("Je crée un brouillon : il ne téléportera personne tant que je ne l'active pas."));
         sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
                 .append(Icons.icon("plus")).append("Créer le brouillon</button></div></form></section>");
@@ -59,6 +69,52 @@ final class PortalForms {
     }
 
     // ---- Fiche ------------------------------------------------------------------------------------
+
+    /** « Vérifier sans appliquer » et dernier résultat (issue #566). */
+    static String verifySection(PortalPages.View v, Map<String, Object> p) {
+        if (!"WORLD_PORTAL".equals(str(p.get("kind"))) || v.manage().csrf().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-verify\"><h3 class=\"w-h\">")
+                .append(Icons.icon("diagnostics")).append("Vérifier sans appliquer</h3>")
+                .append("<p class=\"field-help\">Contrôle le départ, la zone, le monde d'arrivée, la sécurité du point "
+                        + "d'arrivée et l'aller-retour. <strong>Rien n'est modifié</strong> : aucun fichier écrit, aucun "
+                        + "monde ni chunk chargé, personne n'est téléporté.</p>");
+        PortalPages.Verify last = v.verify();
+        if (last != null) {
+            Map<String, Object> d = last.details();
+            boolean stale = !str(d.get("fingerprint")).equals(str(p.get("fingerprint")));
+            String verdict = str(d.get("verdict"));
+            sb.append("<p>").append(verdictPill(verdict)).append(" <span class=\"muted small\">")
+                    .append(last.atHtml()).append("</span></p>");
+            if (stale) {
+                sb.append(Ui.banner("warn", "Ce résultat précède la dernière modification du portail : vérifier à "
+                        + "nouveau."));
+            }
+            sb.append("<ul class=\"w-links\">");
+            for (Map<String, Object> c : maps(d.get("checks"))) {
+                sb.append("<li><span>").append(verdictPill(str(c.get("status")))).append(" <strong>")
+                        .append(Http.esc(str(c.get("title")))).append("</strong> — ")
+                        .append(Http.esc(str(c.get("message")))).append("</span></li>");
+            }
+            sb.append("</ul>");
+        }
+        sb.append(formStart(v, "portal.verify", str(p.get("id"))))
+                .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(str(p.get("id")))).append("\">")
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                .append(last == null ? "Vérifier" : "Vérifier à nouveau").append("</button></div></form>");
+        return sb.append("</section>").toString();
+    }
+
+    private static String verdictPill(String status) {
+        return switch (status) {
+            case "OK" -> "<span class=\"pill ok\">OK</span>";
+            case "WARNING" -> "<span class=\"pill warn\">À regarder</span>";
+            case "UNKNOWN" -> "<span class=\"pill pill--neutral\">Non vérifiable</span>";
+            case "BLOCKING" -> "<span class=\"pill err\">Bloquant</span>";
+            default -> "<span class=\"pill\">" + Http.esc(status) + "</span>";
+        };
+    }
 
     static String manageSection(PortalPages.View v, Map<String, Object> p) {
         PortalPages.Manage m = v.manage();
@@ -111,10 +167,32 @@ final class PortalForms {
                 sb.append("<p class=\"muted\">Désactiver le portail avant de déplacer ou de redimensionner sa zone.</p>");
             } else {
                 sb.append(formStart(v, "portal.update", str(p.get("id")))).append(hidden(p))
-                        .append(zoneFields(v, p)).append(essential(p))
+                        .append(zoneFields(v, p, "")).append(essential(p))
                         .append(confirm("Remplacer la zone de « " + str(p.get("id")) + " »"))
                         .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
                                 + "Enregistrer la zone</button></div></form>");
+            }
+            sb.append("<h4 class=\"w-h\">Arrivée</h4>");
+            if (active) {
+                sb.append("<p class=\"muted\">Désactiver le portail avant de changer son arrivée.</p>");
+            } else {
+                sb.append(formStart(v, "portal.update", str(p.get("id")))).append(hidden(p))
+                        .append("<input type=\"hidden\" name=\"zone_mode\" value=\"keep\">")
+                        .append("<input type=\"hidden\" name=\"dest_mode\" value=\"set\">")
+                        .append(destinationFields(worlds(v), str(p.get("destinationWorld")), str(p.get("strategy")), p))
+                        .append(essential(p))
+                        .append(confirm("Remplacer l'arrivée de « " + str(p.get("id")) + " »"))
+                        .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
+                                + "Enregistrer l'arrivée</button></div></form>");
+            }
+            boolean hasReturn = p.get("returnedBy") instanceof List<?> r && !r.isEmpty();
+            if (str(p.get("returnOf")).isEmpty() && !hasReturn) {
+                sb.append("<h4 class=\"w-h\">Aller-retour</h4><p class=\"field-help\">Le retour est un second "
+                        + "portail, distinct, créé en brouillon dans <code>").append(Http.esc(str(p.get("destinationWorld"))))
+                        .append("</code>. Ce portail-ci n'est pas modifié.</p><div class=\"btnrow\"><a class=\"btn btn-sm "
+                                + "btn-outline-primary\" href=\"").append(PortalPages.PATH).append("?agent=")
+                        .append(PortalPages.enc(v.agentId())).append("&amp;return_of=").append(PortalPages.enc(str(p.get("id"))))
+                        .append("#portal-create\">Préparer le portail retour</a></div>");
             }
             sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">").append(Icons.icon("warning"))
                     .append("Supprimer le portail (sa configuration seulement)</div>");
@@ -161,8 +239,47 @@ final class PortalForms {
 
     // ---- Briques ----------------------------------------------------------------------------------
 
-    /** Choix de la zone. {@code p} non {@code null} : valeurs actuelles du portail (modification). */
-    private static String zoneFields(PortalPages.View v, Map<String, Object> p) {
+    /**
+     * Arrivée : monde, stratégie et point fixe. {@code p} non {@code null} : valeurs actuelles du portail.
+     * Sans JavaScript, les champs du point restent visibles ; le serveur les ignore hors « point fixe ».
+     */
+    private static String destinationFields(List<String> worlds, String world, String strategy, Map<String, Object> p) {
+        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\"><legend class=\"small\">Arrivée</legend>")
+                .append("<div class=\"form-grid\">")
+                .append(field("Monde d'arrivée", select("destination_world", worlds, world), "Un monde chargé ; le "
+                        + "portail ne charge jamais un monde lui-même."))
+                .append(field("Arrivée", strategySelect(strategy), "« Claim du joueur » : seulement vers le monde des "
+                        + "claims."))
+                .append("</div><div class=\"form-grid\">");
+        String[] keys = {"point_x", "point_y", "point_z", "point_yaw", "point_pitch"};
+        String[] labels = {"Point fixe · X", "Point fixe · Y (pieds)", "Point fixe · Z", "Regard horizontal (°)",
+                "Regard vertical (°)"};
+        String[] current = {"pointX", "pointY", "pointZ", "pointYaw", "pointPitch"};
+        for (int i = 0; i < keys.length; i++) {
+            Object value = p == null ? null : p.get(current[i]);
+            sb.append(field(labels[i], "<input type=\"text\" inputmode=\"decimal\" name=\"" + keys[i] + "\" value=\""
+                    + Http.esc(value == null ? "" : decimalText(value)) + "\" maxlength=\"14\">", i == 3
+                    ? "0 = sud, 90 = ouest, 180 = nord, -90 = est (F3 en jeu)." : i == 4 ? "-90 ciel, 0 horizon, 90 sol." : ""));
+        }
+        return sb.append("</div><p class=\"field-help\">Point fixe seulement. Le serveur refuse un point hors des "
+                + "hauteurs du monde ou dans la zone d'un portail. À chaque passage, un point non sûr (lave, vide, "
+                + "bloc plein) est remplacé par la position sûre la plus proche à 2 blocs au plus ; sinon le passage "
+                + "est refusé.</p></fieldset>").toString();
+    }
+
+    private static String decimalText(Object value) {
+        if (value instanceof Number n) {
+            double d = n.doubleValue();
+            return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(Math.round(d * 1000) / 1000.0);
+        }
+        return str(value);
+    }
+
+    /**
+     * Choix de la zone. {@code p} non {@code null} : valeurs actuelles du portail (modification) ;
+     * {@code sourceWorld} : monde de départ présélectionné (portail retour).
+     */
+    private static String zoneFields(PortalPages.View v, Map<String, Object> p, String sourceWorld) {
         boolean bySite = p == null || !str(p.get("site")).isEmpty();
         List<PortalPages.SiteOption> sites = p == null ? v.manage().sites()
                 : v.manage().sites().stream().filter(s -> s.world().equals(str(p.get("world")))).toList();
@@ -199,7 +316,7 @@ final class PortalForms {
                 .append(bySite && !sites.isEmpty() ? "" : " checked").append("> En coordonnées (deux coins)</label>");
         sb.append("<div class=\"form-grid\">");
         if (p == null) {
-            sb.append(field("Monde de départ", select("world", worlds(v), ""), ""));
+            sb.append(field("Monde de départ", select("world", worlds(v), sourceWorld), ""));
         }
         String[] keys = {"min_x", "min_y", "min_z", "max_x", "max_y", "max_z"};
         String[] labels = {"Coin 1 · X", "Coin 1 · Y", "Coin 1 · Z", "Coin 2 · X", "Coin 2 · Y", "Coin 2 · Z"};
@@ -266,11 +383,11 @@ final class PortalForms {
         return sb.append("</select>").toString();
     }
 
-    private static String strategySelect() {
+    private static String strategySelect(String selected) {
         StringBuilder sb = new StringBuilder("<select name=\"strategy\">");
-        for (String s : List.of("WORLD_SPAWN", "RANDOM_SAFE", "CLAIM_HOME")) {
-            sb.append("<option value=\"").append(s).append("\">").append(Http.esc(PortalPages.strategyLabel(s)))
-                    .append("</option>");
+        for (String s : List.of("WORLD_SPAWN", "RANDOM_SAFE", "CLAIM_HOME", "FIXED_POINT")) {
+            sb.append("<option value=\"").append(s).append("\"").append(s.equals(selected) ? " selected" : "")
+                    .append(">").append(Http.esc(PortalPages.strategyLabel(s))).append("</option>");
         }
         return sb.append("</select>").toString();
     }

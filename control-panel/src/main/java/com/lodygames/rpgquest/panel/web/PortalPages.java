@@ -32,17 +32,32 @@ public final class PortalPages {
      * @param file       fichier du portail choisi, pour départager deux portails de même id
      */
     public record View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
-                       String selected, String file, WorldNames names, Manage manage) {
+                       String selected, String file, WorldNames names, Manage manage, Verify verify,
+                       String returnOf) {
 
         public View {
             names = names == null ? WorldNames.DEFAULTS : names;
             manage = manage == null ? Manage.NONE : manage;
+            returnOf = returnOf == null ? "" : returnOf;
+        }
+
+        public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
+                    String selected, String file, WorldNames names, Manage manage) {
+            this(agentId, details, headerHtml, releveHtml, selected, file, names, manage, null, "");
         }
 
         public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
                     String selected, String file) {
             this(agentId, details, headerHtml, releveHtml, selected, file, WorldNames.DEFAULTS, Manage.NONE);
         }
+    }
+
+    /**
+     * Issue #566 — dernier « Vérifier sans appliquer » réussi du portail ouvert.
+     *
+     * @param atHtml date du résultat (HTML sûr)
+     */
+    public record Verify(Map<String, Object> details, String atHtml) {
     }
 
     /** Un emplacement #213 du dernier relevé {@code building.site.list}. */
@@ -227,7 +242,18 @@ public final class PortalPages {
         if (!str(p.get("destinationId")).isEmpty()) {
             sb.append(dlHtml("Destination nommée", "<code>" + Http.esc(str(p.get("destinationId"))) + "</code>"));
         }
-        sb.append(dl("Arrivée", strategyLabel(str(p.get("strategy"))))).append("</dl>");
+        sb.append(dl("Arrivée", strategyLabel(str(p.get("strategy")))));
+        if (!legacy(p) && !str(p.get("destinationPoint")).isEmpty()) {
+            sb.append(dl("Point d'arrivée", str(p.get("destinationPoint"))));
+        }
+        if (!str(p.get("returnOf")).isEmpty()) {
+            sb.append(dlHtml("Retour de", portalLink(v, str(p.get("returnOf")))));
+        }
+        List<String> returnedBy = list(p.get("returnedBy"));
+        if (!returnedBy.isEmpty()) {
+            sb.append(dlHtml("Portail retour", String.join(", ", returnedBy.stream().map(r -> portalLink(v, r)).toList())));
+        }
+        sb.append("</dl>");
         sb.append(bullets(list(p.get("arrival"))));
         if (!list(p.get("trigger")).isEmpty()) {
             sb.append("<h4 class=\"w-h\">Déclenchement</h4>").append(bullets(list(p.get("trigger"))));
@@ -245,6 +271,7 @@ public final class PortalPages {
             sb.append(issueHtml(issue, str(p.get("id"))));
         }
         sb.append("</section>");
+        sb.append(PortalForms.verifySection(v, p));
         sb.append(PortalForms.manageSection(v, p));
         sb.append(PortalForms.historySection(v, p));
         sb.append("</div></div>");
@@ -290,7 +317,7 @@ public final class PortalPages {
             case "RANDOM_SAFE" -> "point sûr aléatoire";
             case "WORLD_SPAWN" -> "point d'arrivée du monde";
             case "CLAIM_HOME" -> "claim du joueur, sinon point sûr";
-            case "FIXED_POINT" -> "point fixe nommé";
+            case "FIXED_POINT" -> "point fixe";
             default -> strategy;
         };
     }
@@ -383,6 +410,11 @@ public final class PortalPages {
         return dlHtml("Emplacement", "<a href=\"/buildings/sites?agent=" + enc(v.agentId()) + "\">"
                 + (name.isEmpty() ? "" : Http.esc(name) + " ") + "<code>" + Http.esc(site) + "</code></a>"
                 + Http.esc(size));
+    }
+
+    private static String portalLink(View v, String id) {
+        return "<a href=\"" + PATH + "?agent=" + enc(v.agentId()) + "&amp;portal=" + enc(id) + "\"><code>"
+                + Http.esc(id) + "</code></a>";
     }
 
     private static String createForm(View v) {

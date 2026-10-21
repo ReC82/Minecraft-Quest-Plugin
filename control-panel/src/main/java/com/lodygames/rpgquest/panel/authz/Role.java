@@ -45,6 +45,8 @@ public enum Role {
             Permission.DASHBOARD_VIEW,
             Permission.PLAYERS_READ, Permission.PLAYER_MODERATE, Permission.PLAYER_BUILD_WRITE,
             Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
+            // Issue #637 : consulter les claims et s'y rendre pour diagnostic — deux droits distincts.
+            Permission.CLAIM_READ, Permission.CLAIM_TELEPORT,
             // Issue #156 : débloquer une instance du Hub restée sans borne est un geste
             // d'exploitation ciblé, pas une modification de l'équilibrage du réseau.
             Permission.TRAVEL_PAIR_WRITE, Permission.WAYPOINT_WRITE,
@@ -83,6 +85,8 @@ public enum Role {
 
     TESTER("Testeur", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ,
+            // Issue #637 : un testeur vérifie les protections d'un claim ; il le consulte, sans s'y téléporter.
+            Permission.CLAIM_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET,

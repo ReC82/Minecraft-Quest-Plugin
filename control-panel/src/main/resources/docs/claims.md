@@ -1,7 +1,7 @@
 ---
 title: Claims — obtenir un acte, tester, commandes admin
 category: Claims
-tags: [claim, claims, acte, deed, jo, tier1, test, wand, admin, resettier1]
+tags: [claim, claims, acte, deed, jo, tier1, test, wand, admin, resettier1, teleport, plugadmin]
 order: 1
 ---
 
@@ -59,3 +59,22 @@ Voir aussi le reset joueur complet : fiche **Reset d'un joueur** (`/rpgadmin pla
 > [!NOTE]
 > `rpgquest.admin.world` exempte l'acteur direct des protections d'un claim (utile pour réparer),
 > jamais les autres joueurs. Le monde Hub interdit toute création de claim.
+
+## Dans PlugAdmin : page Claims (issue #637)
+
+**RPGQuest → Claims** liste tous les claims (bouton « Rafraîchir les claims », action
+`claim.list`) : propriétaire, claim principal, monde, centre, taille, palier. Rechercher un
+pseudo ou un UUID ; « Tous ses claims » depuis une fiche, ou la carte « Claims » de la fiche
+joueur. Fonctionne aussi pour un joueur hors ligne.
+
+**M'y téléporter** (fiche d'un claim) déplace **uniquement votre personnage lié** (page
+Utilisateurs), jamais le propriétaire. Conditions :
+
+1. votre personnage est connecté en jeu ;
+2. il possède un claim, a débloqué `CLAIM_TIER_1`, ou vous avez tapé `/rpgadmin bypass on` —
+   sinon le monde des claims vous renverrait au Hub, et la demande est refusée d'avance ;
+3. le claim a une position sûre (sol solide, deux blocs d'air, ni lave ni vide).
+
+Le résultat (« Dernière demande ») ne devient un succès qu'une fois votre présence sur le claim
+relue par le serveur. La téléportation ne donne aucun droit sur le claim : pour vérifier les
+protections, rester mode bypass **désactivé** (`/rpgadmin bypass off`) une fois arrivé.

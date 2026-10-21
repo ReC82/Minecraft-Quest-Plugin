@@ -231,6 +231,8 @@ public final class AgentActionExecutor {
                 case WORLD_CREATE_PREVIEW -> worldCreatePreview(action);
                 case WORLD_CREATE_APPLY -> worldCreateApply(action);
                 case PORTAL_LIST -> portalList(action);
+                case CLAIM_LIST -> claimList(action);
+                case CLAIM_TELEPORT -> claimTeleport(action);
                 case MERCHANT_SAVE -> merchantSave(action);
                 case MERCHANT_DUPLICATE -> merchantDuplicate(action);
                 case MERCHANT_TOGGLE -> merchantToggle(action);
@@ -2353,6 +2355,41 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(view.portals().size()), summary,
                     PortalListDetails.of(view));
         }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    // ---- Claims (issue #637) -------------------------------------------------------------------
+
+    private static final Pattern CLAIM_ID = Pattern.compile("[a-z0-9_-]{1,80}");
+
+    /** {@code claim.list} : lecture pure — aucun claim créé, modifié, déplacé ni supprimé. */
+    private CompletableFuture<AgentActionOutcome> claimList(AgentAction action) {
+        return actions.claimList().thenApply(view -> {
+            if (!view.available()) {
+                return AgentActionOutcome.failed(action.id(), "Claims indisponibles sur ce serveur.");
+            }
+            String summary = view.claims().size() + " claim(s), " + view.owners() + " propriétaire(s)";
+            return AgentActionOutcome.success(action.id(), String.valueOf(view.claims().size()), summary,
+                    ClaimListDetails.of(view));
+        }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /**
+     * {@code claim.teleport} : {@code player} est le personnage de l'administrateur (imposé par
+     * PlugAdmin, jamais le propriétaire par défaut) ; {@code claim} le claim visé ; {@code owner} le
+     * propriétaire affiché avant confirmation, revérifié par le plugin.
+     */
+    private CompletableFuture<AgentActionOutcome> claimTeleport(AgentAction action) {
+        String claimId = trimOrNull(action.param("claim"));
+        if (claimId == null || !CLAIM_ID.matcher(claimId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Identifiant de claim manquant ou invalide."));
+        }
+        String rawOwner = trimOrNull(action.param("owner"));
+        if (rawOwner != null && !ENTITY_UUID.matcher(rawOwner).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "UUID du propriétaire invalide."));
+        }
+        UUID owner = rawOwner == null ? null : UUID.fromString(rawOwner);
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.claimTeleport(uuid, name, claimId, owner).thenApply(r -> toOutcome(action, r)));
     }
 
     private CompletableFuture<AgentActionOutcome> merchantCatalogStatus(AgentAction action) {

@@ -1595,6 +1595,25 @@ public interface AgentActions {
         return CompletableFuture.completedFuture(com.lodygames.rpgquest.travel.PortalOverview.View.unavailable());
     }
 
+    /**
+     * Tous les claims persistés -- action {@code claim.list} (issue #637). Lecture seule ; vue
+     * indisponible ({@code available=false}) sur un plugin sans service de claims.
+     */
+    default CompletableFuture<com.lodygames.rpgquest.claim.ClaimOverview.View> claimList() {
+        return CompletableFuture.completedFuture(com.lodygames.rpgquest.claim.ClaimOverview.View.unavailable());
+    }
+
+    /**
+     * Téléporte {@code travelerId} -- le personnage de l'administrateur -- sur une position sûre du
+     * claim {@code claimId} ({@code claim.teleport}, issue #637). Ne modifie ni claim, ni terrain, ni
+     * droit, ni variable, ni mode bypass ; {@code ok} seulement après relecture de la position.
+     */
+    default CompletableFuture<MutationResult> claimTeleport(UUID travelerId, String travelerName, String claimId,
+                                                            UUID expectedOwner) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Claims indisponibles sur ce serveur."));
+    }
+
     default CompletableFuture<MerchantCatalogView> merchantCatalogStatus() {
         return CompletableFuture.completedFuture(new MerchantCatalogView(false, List.of(), List.of(), List.of(),
                 List.of(), ""));

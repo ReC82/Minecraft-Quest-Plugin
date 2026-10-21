@@ -117,6 +117,8 @@ public final class AgentActionCatalog {
             java.util.Set.of("all", "quests", "stories", "dialogues", "npcs");
     private static final int MAX_EXPORT_IDS = 500;
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
+    /** Issue #637 — miroir de l'identifiant d'un claim côté plugin ({@code Claim}), qui revalide. */
+    private static final Pattern CLAIM_ID = Pattern.compile("[a-z0-9_-]{1,80}");
     /** Issue #165 : lien MineSkin strict — même motif que la validation côté plugin. */
     private static final Pattern MINESKIN_URL = Pattern.compile("https://minesk\\.in/[A-Za-z0-9]{8,64}");
 
@@ -396,6 +398,11 @@ public final class AgentActionCatalog {
         addSensitiveWrite("world.create.apply", Permission.WORLD_CREATE, false, "Créer un monde", "world.list");
         // Issue #564 (#228-P1) — portails en lecture seule. Aucune action portal.* mutative n'existe.
         add("portal.list", Permission.PORTAL_READ, false, false, "Rafraîchir les portails");
+        // Issue #637 — claims : relevé en lecture seule, et téléportation de diagnostic du SEUL
+        // personnage lié à la session (imposé par le panel, jamais un champ du formulaire).
+        add("claim.list", Permission.CLAIM_READ, false, false, "Rafraîchir les claims");
+        addSensitiveWrite("claim.teleport", Permission.CLAIM_TELEPORT, true,
+                "Me téléporter sur un claim (diagnostic)");
         addContentWrite("city.rename", Permission.CITY_WRITE, "Renommer une ville", "city.list");
         addContentWrite("city.resize", Permission.CITY_WRITE, "Régler la taille d'une ville", "city.list");
         addContentWrite("city.active", Permission.CITY_WRITE, "Activer / désactiver une ville", "city.list");
@@ -1010,6 +1017,18 @@ public final class AgentActionCatalog {
         }
 
         switch (type) {
+            case "claim.teleport" -> {
+                String claim = trim(form.get("claim"));
+                if (!CLAIM_ID.matcher(claim).matches()) {
+                    return Validation.fail("Identifiant de claim manquant ou invalide.");
+                }
+                params.put("claim", claim);
+                String owner = trim(form.get("owner"));
+                if (!ENTITY_UUID.matcher(owner).matches()) {
+                    return Validation.fail("Propriétaire du claim manquant ou invalide : rafraîchir la liste des claims.");
+                }
+                params.put("owner", owner.toLowerCase(java.util.Locale.ROOT));
+            }
             case "player.variable.get" -> {
                 String key = orDefault(trim(form.get("key")), "CLAIM_TIER_1");
                 if (!VARIABLE_KEY.matcher(key).matches()) {

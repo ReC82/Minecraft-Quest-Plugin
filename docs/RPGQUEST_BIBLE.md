@@ -5565,6 +5565,37 @@ ne changent rien. La mort suit la politique LodyQuests (spawn du village, puis b
 
 **Compte OP = joueur normal, sauf mode bypass explicite (issues #35/#321)** : être OP ne contourne plus le contrôle d'éligibilité. Seul un administrateur qui a lui-même tapé `/rpgadmin bypass on` (permission `rpgquest.admin.bypass`, barre d'action « ⚠ MODE ADMIN / BYPASS ACTIF » visible en permanence) **et** qui détient `rpgquest.bypass.claimworld` ou l'ombrelle `rpgquest.admin.world` entre sans contrôle dans `ClaimWorldAccessGuard` et n'est **jamais renvoyé** par `ClaimWorldSafetyListener` (il est venu volontairement). Mode OFF, un OP sans `CLAIM_TIER_1 = true` (absent, `false` ou valeur invalide) et sans claim est refusé comme n'importe qui. Avant #35, un test OP produisait exactement le symptôme « j'entre sans avoir débloqué » (#321). Depuis l'issue #22, en revanche, le bypass **ne dispense plus de la Pierre de retour** : elle est garantie à l'entrée comme à l'arrivée. Le dispenser des deux laissait un administrateur éligible sans aucune sortie — c'est la cause racine du blocage signalé le 05/10/2026. Les décisions des deux composants sont journalisées (`[claims-access]` / `[claims-safety]` / `[claims-retour]`).
 
+### Page PlugAdmin « Claims » et téléportation de diagnostic (issue #637)
+
+- **RPGQuest → Claims** (`/claims`), permission panel `CLAIM_READ` (Propriétaire, Administrateur,
+  Testeur — pas Lecture seule : les positions des bases sont sensibles). Action agent `claim.list`
+  (« Rafraîchir les claims »), **lecture seule** : tous les claims persistés en base (joueurs hors
+  ligne compris), propriétaire (UUID, pseudo connu du serveur ou « joueur 1234abcd… » — jamais
+  inventé), identifiant, claim **principal** (la même règle `ClaimService#mainClaimOf` que le portail
+  CLAIM_HOME, Jo et `/claim admin tp`), monde chargé ou non, centre, coins min/max, dimensions,
+  réservation, **palier déduit de la taille réelle** (forme libre = sans palier), membres, redstone
+  publique. Recherche par pseudo, UUID, claim ou monde ; filtres Principaux / Autres / Monde non
+  chargé ; `?owner=<uuid>` liste les claims d'un joueur. La fiche joueur (`/players`) affiche une
+  carte « Claims » avec ses claims.
+- **« M'y téléporter »** (fiche d'un claim), action `claim.teleport`, permission **distincte**
+  `CLAIM_TELEPORT` (Propriétaire, Administrateur). Le personnage déplacé est **toujours** celui lié au
+  compte PlugAdmin de la session (pont #200, page Utilisateurs) : le panel l'impose, aucun champ du
+  formulaire ne peut désigner le propriétaire ou un autre joueur. Personnage et destination sont
+  affichés avant, case de confirmation obligatoire, une seule demande en attente par personnage
+  (double clic), jamais déclenchée à l'ouverture ou au rafraîchissement. Côté plugin
+  (`claim.ClaimAdminTeleport`) : claim relu (refus s'il a disparu ou changé de propriétaire),
+  personnage connecté, monde chargé ; **éligibilité au monde des claims contrôlée avant** (mode
+  bypass `/rpgadmin bypass on` actif, claim possédé ou `CLAIM_TIER_1`), sinon refus — rien n'est
+  écrit, le bypass n'est jamais activé ; position sûre du claim (centre, sinon une autre colonne sûre
+  du claim, jamais au-delà — `ClaimTeleportService#findSafeArrivalInClaim`), refus explicite sinon ;
+  **succès seulement après relecture** de la position (10 ticks après l'arrivée), sinon
+  `BOUNCED`/`REFUSED`. Codes : `TELEPORTED`, `UNKNOWN_CLAIM`, `CLAIM_CHANGED`, `OFFLINE`,
+  `WORLD_UNAVAILABLE`, `NOT_ELIGIBLE`, `NO_SAFE_LOCATION`, `REFUSED`, `BOUNCED`, `BUSY`. Journaux
+  `[claim-admin-tp]` (demande / résultat) côté serveur, audit `agent.action.create` côté panel.
+- Ne donne **ni propriété, ni appartenance, ni droit de construire** : les protections du claim
+  s'appliquent au visiteur comme à tout joueur ; aucun claim, terrain, variable ni droit n'est
+  modifié. Comme toute arrivée dans le monde des claims, une Pierre de retour peut être remise.
+
 ### Prévu / TODO
 
 -   **Agrandissement du claim principal (`TIER_1` → `TIER_5`)** : implémenté depuis l'issue #179 via `ClaimService#upgradeTier`, déclenché par la chaîne de quêtes du Garde (voir section 3). Toujours **hors périmètre** : agrandissement au-delà de `TIER_5`, ou largeur/hauteur indépendantes du modèle de palier (seul le **nombre** maximal de claims augmente encore avec le niveau `GLOBAL`, +1 tous les 10 niveaux). Aucun avantage payant n'est prévu (politique confirmée dans `docs/CLAIMS.md`).

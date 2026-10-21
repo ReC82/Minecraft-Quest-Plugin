@@ -616,7 +616,7 @@ public final class AgentPages {
             case "economie" -> playerEconomyTab(session, agentId, e, slug, r);
             case "moderation" -> playerModerationTab(session, agentId, e, slug, r);
             case "outils" -> playerToolsTab(session, agentId, e, slug, r);
-            default -> playerOverviewTab(agentId, e);
+            default -> playerOverviewTab(agentId, e) + playerClaimsCard(session, agentId, uuid);
         };
         // Après une action, on revient sur cet onglet : chaque formulaire porte l'onglet courant.
         body = body.replace("<input type=\"hidden\" name=\"return\" value=\"/players\">",
@@ -11485,6 +11485,148 @@ public final class AgentPages {
         return PortalPages.render(new PortalPages.View(agentId, details, header,
                 row.map(r -> when(at(r))).orElse(""), str(q.get("portal")).trim(), str(q.get("file")).trim(),
                 worldNames(agentId)));
+    }
+
+    // ---- Claims (issue #637) ---------------------------------------------------------------------
+
+    /**
+     * Page {@code /claims} (issue #637), rendue dans {@link ClaimPages}. {@code linkedUuid} /
+     * {@code linkedName} : le personnage Minecraft lié au compte de la session ({@code null} = aucun),
+     * le seul que « M'y téléporter » peut déplacer.
+     */
+    public String claims(Session session, Map<String, String> q, String linkedUuid, String linkedName) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        if (agent.isEmpty()) {
+            return ClaimPages.render(new ClaimPages.View("", null, noAgent(), "", "", "", null, null));
+        }
+        String agentId = agent.get().id();
+        Optional<AgentActionRow> row = store.latestSuccessfulActionOfType(agentId, "claim.list");
+        Map<String, Object> details = row.flatMap(this::detailsOf).orElse(null);
+        String header = agentPicker(agentId, ClaimPages.PATH, "")
+                + listCatbar("Claims", compactRefresh(session, agentId, "claim.list", "Rafraîchir les claims",
+                details == null ? "btn-warning" : "btn-outline-primary", ClaimPages.PATH));
+        // Après « M'y téléporter », le panel revient avec focus=<id du claim> : la fiche reste ouverte.
+        String selected = str(q.get("claim")).trim();
+        if (selected.isEmpty() && !str(q.get("focus")).startsWith("tab-")) {
+            selected = cleanFocus(q.get("focus"));
+        }
+        return ClaimPages.render(new ClaimPages.View(agentId, details, header, row.map(r -> when(at(r))).orElse(""),
+                selected, str(q.get("owner")).trim(), worldNames(agentId),
+                c -> claimTeleportBlock(session, agentId, c, linkedUuid, linkedName)));
+    }
+
+    /**
+     * « M'y téléporter » (issue #637) : le personnage déplacé et la destination sont affichés
+     * <strong>avant</strong> l'envoi, une case à cocher confirme, et seul le personnage lié à la
+     * session peut être déplacé — le panel l'impose à la création de l'action. La dernière demande
+     * pour ce claim est rappelée avec son état réel : « en cours » tant que le serveur n'a pas relu
+     * la position, jamais un succès d'avance.
+     */
+    private String claimTeleportBlock(Session session, String agentId, Map<String, Object> c, String linkedUuid,
+                                      String linkedName) {
+        String claimId = str(c.get("id"));
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\"><h3 class=\"w-h\">")
+                .append(Icons.icon("travel")).append("M'y téléporter (diagnostic)</h3>");
+        sb.append(lastClaimTeleport(agentId, claimId));
+        if (!perms.can(session.effective(), Permission.CLAIM_TELEPORT)) {
+            return sb.append("<p class=\"muted\">Votre rôle permet de consulter les claims, pas de s'y téléporter "
+                    + "(droit « Téléporter sur un claim »).</p></section>").toString();
+        }
+        if (linkedUuid == null || linkedUuid.isBlank()) {
+            return sb.append(Ui.banner("warn", "Aucun personnage Minecraft n'est lié à votre compte PlugAdmin : "
+                    + "la téléportation ne déplace jamais que <strong>votre</strong> personnage. Demander au "
+                    + "propriétaire de le lier (page « Utilisateurs », personnage lié).")).append("</section>").toString();
+        }
+        if (!ClaimPages.bool(c.get("worldLoaded"))) {
+            return sb.append(Ui.banner("info", "Le monde <code>" + Http.esc(str(c.get("world"))) + "</code> de ce "
+                    + "claim n'est pas chargé : téléportation impossible.")).append("</section>").toString();
+        }
+        String traveler = linkedName == null || linkedName.isBlank() ? linkedUuid : linkedName;
+        sb.append("<dl class=\"w-dl\"><div><dt>Personnage déplacé</dt><dd><strong>").append(Http.esc(traveler))
+                .append("</strong> — votre personnage lié <span class=\"muted\">(UUID <code>").append(Http.esc(linkedUuid))
+                .append("</code>)</span></dd></div><div><dt>Destination</dt><dd>claim <code>").append(Http.esc(claimId))
+                .append("</code> de <strong>").append(Http.esc(ClaimPages.ownerLabel(c))).append("</strong>, monde <code>")
+                .append(Http.esc(str(c.get("world")))).append("</code>, autour du centre ")
+                .append(Http.esc(ClaimPages.str(c.get("center")))).append(" (x, z)</dd></div></dl>");
+        sb.append("<ul class=\"w-links\">");
+        for (String line : List.of(
+                "Votre personnage doit être connecté en jeu. Le propriétaire n'est jamais déplacé.",
+                "Arrivée sur une position sûre calculée par le serveur au moment de la demande : le centre du claim, "
+                        + "sinon une autre colonne sûre du claim. Aucune position sûre : refus, terrain inchangé.",
+                "Ne donne ni propriété, ni appartenance, ni droit de construire, et n'active pas le mode bypass : les "
+                        + "protections du claim s'appliquent à vous comme à n'importe quel visiteur.",
+                "Sans claim ni premier terrain débloqué, le monde des claims vous renverrait au Hub : la demande est "
+                        + "alors refusée. Activer le mode administrateur en jeu (/rpgadmin bypass on) pour y entrer.",
+                "Une Pierre de retour peut vous être remise à l'arrivée, comme à tout visiteur du monde des claims.")) {
+            sb.append("<li><i class=\"bi bi-dot\" aria-hidden=\"true\"></i><span>").append(Http.esc(line))
+                    .append("</span></li>");
+        }
+        sb.append("</ul>");
+        sb.append(formStart(session, agentId, "claim.teleport", ClaimPages.PATH, linkedUuid));
+        sb.append("<input type=\"hidden\" name=\"claim\" value=\"").append(Http.esc(claimId)).append("\">")
+                .append("<input type=\"hidden\" name=\"owner\" value=\"").append(Http.esc(str(c.get("owner")))).append("\">")
+                .append("<input type=\"hidden\" name=\"focus\" value=\"").append(Http.esc(claimId)).append("\">")
+                .append("<input type=\"hidden\" name=\"submit_token\" value=\"").append(java.util.UUID.randomUUID())
+                .append("\">");
+        sb.append(confirmBox("Je confirme téléporter mon personnage « " + traveler + " » sur le claim « " + claimId
+                + " » de " + ClaimPages.ownerLabel(c) + "."));
+        sb.append("<button class=\"btn btn-outline-primary\" type=\"submit\">").append(Icons.icon("travel"))
+                .append("M'y téléporter</button></form></section>");
+        return sb.toString();
+    }
+
+    /** Dernière demande de téléportation vers CE claim (24 h), avec son état réel. */
+    private String lastClaimTeleport(String agentId, String claimId) {
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (!"claim.teleport".equals(row.type()) || !claimId.equals(row.params().get("claim"))) {
+                continue;
+            }
+            Instant at = row.completedAt() != null ? row.completedAt() : row.createdAt();
+            if (at != null && at.isBefore(Instant.now().minus(java.time.Duration.ofDays(1)))) {
+                return "";
+            }
+            boolean pending = !row.status().terminal();
+            boolean ok = row.status() == AgentActionStatus.SUCCESS;
+            String text = pending ? "en cours — le serveur n'a pas encore confirmé l'arrivée."
+                    : row.resultMessage() == null ? row.status().name() : row.resultMessage();
+            return "<div class=\"dlg-live tone-" + (pending ? "info" : ok ? "ok" : "err") + "\" role=\"status\"><span>"
+                    + "<strong>Dernière demande</strong> (" + Http.esc(row.createdBy()) + ") — " + Http.esc(text)
+                    + " — " + when(at) + "</span><a class=\"btn secondary sm\" href=\"/actions/" + Http.esc(row.id())
+                    + "\">Détail</a></div>";
+        }
+        return "";
+    }
+
+    /** Carte « Claims » de la fiche joueur (issue #637) : ses claims d'après le dernier relevé. */
+    private String playerClaimsCard(Session session, String agentId, String uuid) {
+        if (!perms.can(session.effective(), Permission.CLAIM_READ)) {
+            return "";
+        }
+        String all = ClaimPages.PATH + "?agent=" + Http.esc(agentId);
+        StringBuilder sb = new StringBuilder("<div class=\"card pl-card\"><h2>Claims</h2>");
+        Optional<AgentActionRow> row = store.latestSuccessfulActionOfType(agentId, "claim.list");
+        Map<String, Object> details = row.flatMap(this::detailsOf).orElse(null);
+        if (details == null) {
+            return sb.append("<p class=\"muted\">Claims pas encore relevés : <a href=\"").append(all)
+                    .append("\">ouvrir la page Claims</a> puis « Rafraîchir les claims ».</p></div>").toString();
+        }
+        List<Map<String, Object>> mine = ClaimPages.ofOwner(details, uuid);
+        if (mine.isEmpty()) {
+            sb.append("<p>Aucun claim pour ce joueur.</p>");
+        } else {
+            sb.append("<ul class=\"pl-facts-list\">");
+            for (Map<String, Object> c : mine) {
+                sb.append("<li><a href=\"").append(ClaimPages.ficheHref(agentId, c)).append("\"><code>")
+                        .append(Http.esc(str(c.get("id")))).append("</code></a> — ")
+                        .append(ClaimPages.bool(c.get("main")) ? "<strong>principal</strong>, " : "")
+                        .append("<code>").append(Http.esc(str(c.get("world")))).append("</code>, centre ")
+                        .append(Http.esc(ClaimPages.str(c.get("center")))).append(", ")
+                        .append(Http.esc(ClaimPages.size(c))).append("</li>");
+            }
+            sb.append("</ul>");
+        }
+        return sb.append("<p class=\"muted small\">Relevé du serveur : ").append(when(at(row.get())))
+                .append(" · <a href=\"").append(all).append("\">Tous les claims</a></p></div>").toString();
     }
 
     /** Objets (Minecraft + RPGQuest), prix du catalogue central et quêtes, pour les champs de saisie. */

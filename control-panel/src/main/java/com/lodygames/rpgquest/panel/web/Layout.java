@@ -48,6 +48,8 @@ public final class Layout {
                         new NavItem("Voyages", "/travel", "travel", Permission.TRAVEL_READ, true))),
                 new NavGroup("RPGQuest", List.of(
                         new NavItem("Joueurs", "/players", "players", Permission.PLAYERS_READ, true),
+                        // Issue #637 : claims des joueurs, juste sous l'annuaire.
+                        new NavItem("Claims", "/claims", "claim", Permission.CLAIM_READ, true),
                         new NavItem("PNJ", "/npcs", "npc", Permission.NPC_READ, true),
                         // Issue #178 — les villes sont aussi les destinations « Villages » du voyage.
                         new NavItem("Villes", "/cities", "world", Permission.TRAVEL_READ, true),

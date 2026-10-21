@@ -8,8 +8,9 @@ order: 1
 # Mondes
 
 La page **Monde → Mondes** (`/worlds`) liste tous les mondes du serveur et ce qui en dépend.
-Elle est en **lecture seule** : rien n'y crée, ne charge, ne décharge ni ne modifie un monde.
-Cliquer sur **Rafraîchir les mondes** relit le serveur (action `world.list`).
+Cliquer sur **Rafraîchir les mondes** relit le serveur (action `world.list`, lecture seule). Les
+réglages d'un monde, son chargement et l'import d'un dossier existant se font depuis cette page, toujours
+après confirmation (voir « Charger, décharger, importer » plus bas) ; rien n'y supprime un monde.
 
 Pour chaque monde :
 
@@ -33,6 +34,25 @@ le serveur.
 non chargé que Multiverse ne décrit pas).
 
 ---
+
+## Charger, décharger, importer
+
+Droit **WORLD_WRITE** (propriétaire par défaut) et Multiverse-Core requis. Cliquer d'abord sur **Relever
+le chargement** (action `world.state.options`) : un bouton n'apparaît que si le serveur dit l'opération
+possible ; sinon les raisons du refus s'affichent.
+
+- **Fiche → Chargement** : **Charger** un monde que Multiverse-Core connaît, ou **Enregistrer puis
+  décharger** un monde chargé. Décharger n'efface rien : les fichiers restent sur le disque et
+  Multiverse-Core garde le monde pour le recharger. La case **Charger au démarrage du serveur** fixe s'il
+  revient après un redémarrage.
+- **Liste → Importer un dossier existant** : un dossier de monde déjà présent sur le serveur (il contient
+  `level.dat`) que Multiverse-Core ne connaît pas. La dimension lue dans le dossier est pré-choisie ; une
+  autre est refusée. Le monde est ajouté tel quel puis chargé, sans rôle, portail ni waypoint.
+
+Toujours refusé par le serveur : monde principal et ses dimensions Nether/End, mondes Hub / Wild / Claims,
+mondes rechargés par RPGQuest (`plugins/RPGQuest/worlds.yml`) ; pour décharger, joueurs présents ou portail
+actif qui y mène (le désactiver d'abord, page Portails). Charger et importer figent le serveur quelques
+secondes. Chaque demande n'est traitée qu'une fois ; journal `plugins/RPGQuest/world-state-audit.yml`.
 
 ## Monde à rôle non chargé
 

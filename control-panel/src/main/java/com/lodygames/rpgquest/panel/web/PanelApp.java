@@ -6224,7 +6224,7 @@ public final class PanelApp {
             }
         }
         if ("building.definition.retire".equals(type) || "npc.spot.capture".equals(type)
-                || type.startsWith("portal.")) {
+                || type.startsWith("portal.") || AgentPages.WORLD_STATE_WRITES.contains(type)) {
             // #284 : l'auteur du retrait est noté par le plugin dans l'archive ; #381 : l'auteur d'un
             // emplacement capturé. C'est la session, jamais un champ du formulaire.
             form.put("by", session.username());

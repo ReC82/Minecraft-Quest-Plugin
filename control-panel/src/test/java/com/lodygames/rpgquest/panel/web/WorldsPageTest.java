@@ -170,7 +170,9 @@ class WorldsPageTest {
     }
 
     @Test
-    void noMutatingWorldActionIsExposedAnywhereOnThePage() throws Exception {
+    void noMutatingWorldActionIsExposedBeforeTheStateIsRead() throws Exception {
+        // Depuis #563, charger / décharger / importer n'apparaissent qu'après le relevé world.state.options
+        // (voir WorldStatePageTest) ; sans lui, seules des lectures sont proposées.
         start();
         login();
         runAction("world.list", RELEVE);
@@ -179,7 +181,8 @@ class WorldsPageTest {
             String page = get(path).body();
             Matcher m = Pattern.compile("name=\"type\" value=\"([^\"]+)\"").matcher(page);
             while (m.find()) {
-                assertFalse(m.group(1).startsWith("world.") && !m.group(1).equals("world.list"),
+                assertFalse(m.group(1).startsWith("world.") && !m.group(1).equals("world.list")
+                                && !m.group(1).equals("world.state.options"),
                         "action mutative exposée : " + m.group(1));
             }
             assertFalse(page.contains("Décharger") || page.contains(">Charger<"));

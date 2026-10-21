@@ -11,9 +11,9 @@ import java.util.Map;
  * Issue #560 (#331-W1) — page « Mondes » : la liste des mondes (cartes) et la fiche d'un monde,
  * d'après le dernier relevé {@code world.list}.
  *
- * <p>Aucune création, aucun chargement, aucun déchargement ni aucune suppression n'est exposé, pas
- * même désactivé. Depuis l'issue #561, la fiche porte la section « Réglages »
- * ({@link WorldSettingsPages}) : relecture, aperçu sans écriture, puis application confirmée.</p>
+ * <p>Aucune suppression n'est exposée, pas même désactivée. Depuis l'issue #561, la fiche porte la
+ * section « Réglages » ({@link WorldSettingsPages}) ; depuis l'issue #563, la section « Chargement »
+ * et, sous la liste, « Importer un dossier existant » ({@link WorldStatePages}).</p>
  */
 public final class WorldPages {
 
@@ -25,13 +25,20 @@ public final class WorldPages {
      * @param headerHtml  sélecteur d'agent + barre « Rafraîchir » (HTML sûr)
      * @param releveHtml  date du relevé (HTML sûr, peut être vide)
      * @param selected    monde dont afficher la fiche ({@code ""} = la liste)
-     * @param settingsHtml section « Réglages » de la fiche (issue #561, HTML sûr, peut être vide)
+     * @param settingsHtml sections « Chargement » (issue #563) et « Réglages » (issue #561) de la fiche
+     *                     (HTML sûr, peut être vide)
+     * @param importHtml  section « Importer un dossier existant » sous la liste (issue #563, HTML sûr)
      */
     public record View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
-                       String selected, String settingsHtml) {
+                       String selected, String settingsHtml, String importHtml) {
+
+        public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml, String selected,
+                    String settingsHtml) {
+            this(agentId, details, headerHtml, releveHtml, selected, settingsHtml, "");
+        }
 
         public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml, String selected) {
-            this(agentId, details, headerHtml, releveHtml, selected, "");
+            this(agentId, details, headerHtml, releveHtml, selected, "", "");
         }
     }
 
@@ -42,9 +49,9 @@ public final class WorldPages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("world", "Mondes",
                 "Tous les mondes du serveur, leur gestionnaire et ce qui en dépend. Un monde n'a aucun rôle "
-                        + "(Hub, Wild, Claims) tant que la configuration ne le désigne pas. Rien n'est chargé, déchargé ni "
-                        + "supprimé d'ici ; les réglages d'un monde chargé se modifient dans sa fiche et un nouveau monde "
-                        + "se crée par « Créer un monde », toujours après aperçu et confirmation.", ""));
+                        + "(Hub, Wild, Claims) tant que la configuration ne le désigne pas. Charger, décharger et régler un "
+                        + "monde se fait dans sa fiche ; un dossier existant s'importe sous la liste et un nouveau monde "
+                        + "se crée par « Créer un monde », toujours après confirmation. Rien n'est supprimé d'ici.", ""));
         sb.append(v.headerHtml());
         if (v.agentId().isEmpty()) {
             return sb.toString();
@@ -66,7 +73,7 @@ public final class WorldPages {
             sb.append(issueHtml(issue, "le serveur"));
         }
         sb.append(list(v.agentId(), worlds, mv, WorldNames.of(v.details())));
-        return sb.toString();
+        return sb.append(v.importHtml()).toString();
     }
 
     /**
@@ -428,7 +435,7 @@ public final class WorldPages {
         return maps(w.get("issues")).stream().anyMatch(i -> !"info".equals(str(i.get("severity"))));
     }
 
-    private static String loadedPill(boolean loaded) {
+    static String loadedPill(boolean loaded) {
         return loaded ? "<span class=\"pill ok\">Chargé</span>" : "<span class=\"pill pill--neutral\">Non chargé</span>";
     }
 
@@ -492,7 +499,7 @@ public final class WorldPages {
         return Http.esc(URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8));
     }
 
-    private static boolean bool(Object o) {
+    static boolean bool(Object o) {
         return Boolean.TRUE.equals(o) || "true".equals(String.valueOf(o));
     }
 
@@ -500,20 +507,20 @@ public final class WorldPages {
         return o instanceof Number n ? n.intValue() : 0;
     }
 
-    private static String str(Object o) {
+    static String str(Object o) {
         return o == null ? "" : String.valueOf(o);
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> map(Object o) {
+    static Map<String, Object> map(Object o) {
         return o instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 
-    private static List<Map<String, Object>> maps(Object o) {
+    static List<Map<String, Object>> maps(Object o) {
         return o instanceof List<?> l ? l.stream().map(WorldPages::map).toList() : List.of();
     }
 
-    private static List<String> list(Object o) {
+    static List<String> list(Object o) {
         return o instanceof List<?> l ? l.stream().map(WorldPages::str).toList() : List.of();
     }
 }

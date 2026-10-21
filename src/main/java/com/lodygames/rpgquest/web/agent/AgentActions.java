@@ -1596,6 +1596,15 @@ public interface AgentActions {
     }
 
     /**
+     * Modifier un portail entre mondes -- actions {@code portal.create|update|enable|disable|delete}
+     * (issue #565). {@code null} sur un plugin qui ne sait pas le faire : rien n'est écrit.
+     */
+    default CompletableFuture<com.lodygames.rpgquest.travel.WorldPortalAdminService.Result> portalAdmin(
+            com.lodygames.rpgquest.travel.WorldPortalAdminService.Operation operation) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
      * Tous les claims persistés -- action {@code claim.list} (issue #637). Lecture seule ; vue
      * indisponible ({@code available=false}) sur un plugin sans service de claims.
      */

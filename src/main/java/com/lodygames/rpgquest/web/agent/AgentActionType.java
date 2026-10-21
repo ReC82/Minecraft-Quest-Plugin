@@ -653,6 +653,19 @@ public enum AgentActionType {
      */
     PORTAL_LIST("portal.list"),
     /**
+     * Issue #565 (#228-P2) — créer un portail entre mondes en <strong>brouillon</strong> (il ne
+     * téléporte personne), zone dérivée d'un emplacement #213 ou saisie en coordonnées.
+     */
+    PORTAL_CREATE("portal.create"),
+    /** Issue #565 — renommer un portail et/ou changer la zone d'un portail non actif (empreinte exigée). */
+    PORTAL_UPDATE("portal.update"),
+    /** Issue #565 — activer un brouillon ou un portail désactivé (empreinte exigée). */
+    PORTAL_ENABLE("portal.enable"),
+    /** Issue #565 — désactiver un portail en conservant sa configuration (empreinte exigée). */
+    PORTAL_DISABLE("portal.disable"),
+    /** Issue #565 — supprimer la configuration d'un portail non actif ; emplacement et bâtiment conservés. */
+    PORTAL_DELETE("portal.delete"),
+    /**
      * Issue #637 — tous les claims persistés : propriétaire (UUID + pseudo connu), claim principal,
      * monde (chargé ou non), bornes, réservation, palier déduit de la taille réelle. Lecture seule ;
      * fonctionne pour un propriétaire hors ligne.

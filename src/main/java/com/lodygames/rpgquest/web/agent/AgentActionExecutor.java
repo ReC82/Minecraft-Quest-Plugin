@@ -231,6 +231,11 @@ public final class AgentActionExecutor {
                 case WORLD_CREATE_PREVIEW -> worldCreatePreview(action);
                 case WORLD_CREATE_APPLY -> worldCreateApply(action);
                 case PORTAL_LIST -> portalList(action);
+                case PORTAL_CREATE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.CREATE);
+                case PORTAL_UPDATE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.UPDATE);
+                case PORTAL_ENABLE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.ENABLE);
+                case PORTAL_DISABLE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.DISABLE);
+                case PORTAL_DELETE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.DELETE);
                 case CLAIM_LIST -> claimList(action);
                 case CLAIM_TELEPORT -> claimTeleport(action);
                 case MERCHANT_SAVE -> merchantSave(action);
@@ -2354,6 +2359,33 @@ public final class AgentActionExecutor {
                     + (view.issues().isEmpty() ? "" : " — " + view.issues().size() + " fichier(s) ignoré(s)");
             return AgentActionOutcome.success(action.id(), String.valueOf(view.portals().size()), summary,
                     PortalListDetails.of(view));
+        }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /**
+     * {@code portal.create|update|enable|disable|delete} (issue #565) : paramètres lus ici, règles
+     * dans {@code WorldPortalAdminService}. Toute mutation exige {@code confirm=true} ; un refus ne
+     * modifie rien.
+     */
+    private CompletableFuture<AgentActionOutcome> portalAdmin(AgentAction action,
+            com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind kind) {
+        var op = PortalAdminParams.parse(kind, action.params());
+        if (op.error() != null) {
+            return done(AgentActionOutcome.rejected(action.id(), op.error()));
+        }
+        return actions.portalAdmin(op.operation()).thenApply(r -> {
+            if (r == null) {
+                return AgentActionOutcome.failed(action.id(), "Gestion des portails indisponible sur ce serveur.");
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("code", r.code());
+            details.put("portal", r.portal().isEmpty() ? op.operation().id() : r.portal());
+            details.put("effects", r.effects());
+            if (r.ok()) {
+                return AgentActionOutcome.success(action.id(), r.code(), r.message(), details);
+            }
+            return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(), r.message(),
+                    details, java.time.Instant.now());
         }).exceptionally(err -> unexpectedFailure(action, err));
     }
 

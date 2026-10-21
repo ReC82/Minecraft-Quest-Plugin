@@ -191,4 +191,51 @@ class PortalOverviewTest {
         assertTrue(codes(o).contains("PORTAL_ZONE_DESTINATION_UNKNOWN"));
         assertFalse(codes(o).contains("PORTAL_DESTINATION_NOT_LOADED"));
     }
+
+    // ---- #565 : brouillons, nom stocké, emplacement, empreinte ------------------------------------
+
+    @Test
+    void theDevPortalsAreEssentialEditableAndCarryAFingerprint() {
+        for (PortalOverview.Entry e : dev().portals()) {
+            assertEquals("ACTIVE", e.admin().state());
+            assertTrue(e.admin().essential(), e.id() + " mène au Wild ou aux Claims");
+            assertTrue(e.admin().editable());
+            assertEquals(24, e.admin().fingerprint().length());
+        }
+        assertEquals("Portail vers le Wild", dev().portals().get(1).name(), "nom toujours déduit sans nom stocké");
+    }
+
+    @Test
+    void aDraftShowsItsStoredNameItsSiteAndADraftNotice() {
+        WorldPortalDefinition draft = new WorldPortalDefinition("arche", "world_hub", 0, 64, 0, 2, 67, 0, "wild",
+                false, DestinationStrategy.WORLD_SPAWN,
+                new WorldPortalDefinition.Details("Arche du marché", "buildsite_0007", true, 3, 4, 1));
+        var site = new com.lodygames.rpgquest.building.model.BuildingSite("buildsite_0007", "Place du marché", "", "",
+                "world_hub", 1, 64, 0, com.lodygames.rpgquest.building.model.Facing.NORTH, null, "", java.time.Instant.EPOCH);
+        var in = new PortalOverview.Inputs(List.of(draft), List.of("arche.yml"), List.of(), List.of(), List.of(),
+                List.of(), ALL_LOADED, ROLES, new RandomSafeArrivalConfig(500, 5000, 20),
+                new PortalOverview.ClaimArrival(200, 3000, 64, 40), ELIAS,
+                id -> id.equals("buildsite_0007") ? java.util.Optional.of(site) : java.util.Optional.empty(), List.of());
+
+        PortalOverview.Entry e = PortalOverview.build(in).portals().get(0);
+
+        assertEquals("Arche du marché", e.name());
+        assertEquals("DRAFT", e.admin().state());
+        assertEquals("Place du marché", e.admin().siteName());
+        assertTrue(codes(e).contains("PORTAL_DRAFT"));
+        assertFalse(codes(e).contains("PORTAL_DISABLED"));
+    }
+
+    @Test
+    void aPortalWhoseSiteDisappearedIsFlagged() {
+        WorldPortalDefinition draft = new WorldPortalDefinition("arche", "world_hub", 0, 64, 0, 2, 67, 0, "wild",
+                false, DestinationStrategy.WORLD_SPAWN,
+                new WorldPortalDefinition.Details("", "buildsite_0042", false, 3, 4, 1));
+
+        PortalOverview.Entry e = PortalOverview.build(inputs(List.of(draft), List.of("arche.yml"), List.of(),
+                List.of(), List.of(), ALL_LOADED)).portals().get(0);
+
+        assertTrue(codes(e).contains("PORTAL_SITE_MISSING"));
+        assertTrue(codes(e).contains("PORTAL_DISABLED"));
+    }
 }

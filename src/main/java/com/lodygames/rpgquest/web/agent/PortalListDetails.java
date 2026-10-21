@@ -28,6 +28,19 @@ final class PortalListDetails {
         }
         details.put("portals", portals);
         details.put("issues", issues(view.issues()));
+        details.put("worlds", view.worlds());
+        List<Map<String, Object>> history = new ArrayList<>();
+        for (var h : view.history()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("at", h.at());
+            row.put("actor", h.actor());
+            row.put("operation", h.operation());
+            row.put("portal", h.portal());
+            row.put("before", h.before());
+            row.put("after", h.after());
+            history.add(row);
+        }
+        details.put("history", history);
         return details;
     }
 
@@ -78,6 +91,23 @@ final class PortalListDetails {
         }
         row.put("conditions", conditions);
         row.put("issues", issues(e.issues()));
+        PortalOverview.Admin a = e.admin();
+        row.put("state", a.state());
+        row.put("storedName", a.storedName());
+        row.put("site", a.site());
+        row.put("siteName", a.siteName());
+        row.put("width", a.width());
+        row.put("height", a.height());
+        row.put("depth", a.depth());
+        row.put("essential", a.essential());
+        row.put("fingerprint", a.fingerprint());
+        row.put("editable", a.editable());
+        row.put("minX", e.minX());
+        row.put("minY", e.minY());
+        row.put("minZ", e.minZ());
+        row.put("maxX", e.maxX());
+        row.put("maxY", e.maxY());
+        row.put("maxZ", e.maxZ());
         return row;
     }
 

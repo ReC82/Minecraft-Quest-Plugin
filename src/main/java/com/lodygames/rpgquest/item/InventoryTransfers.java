@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.item;
 
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -36,6 +37,17 @@ public final class InventoryTransfers {
             case HOTBAR_SWAP, HOTBAR_MOVE_AND_READD -> clicked == top ? hotbarSource(event, player) : null;
             default -> null;
         };
+    }
+
+    /**
+     * Blocs qui prennent (ou rendent) un objet sur un simple clic droit, sans ouvrir d'inventaire :
+     * bibliothèque sculptée, pot décoré, étagères. Partagé par {@link StorageLockedItemListener} et
+     * {@code hub.HubResourceLockListener} (#675).
+     */
+    public static boolean takesItemsOnClick(Material type) {
+        return type == Material.CHISELED_BOOKSHELF
+                || type == Material.DECORATED_POT
+                || type.name().endsWith("_SHELF");
     }
 
     private static ItemStack hotbarSource(InventoryClickEvent event, Player player) {

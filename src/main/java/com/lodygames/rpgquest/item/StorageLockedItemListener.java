@@ -5,7 +5,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Allay;
 import org.bukkit.entity.Entity;
@@ -105,7 +104,7 @@ final class StorageLockedItemListener implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onBlockInsert(PlayerInteractEvent event) {
         Block block = event.getClickedBlock();
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null || !acceptsItems(block.getType())) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null || !InventoryTransfers.takesItemsOnClick(block.getType())) {
             return;
         }
         if (service.isStorageLocked(event.getItem())) {
@@ -157,13 +156,6 @@ final class StorageLockedItemListener implements Listener {
                 || action == InventoryAction.PLACE_ALL_INTO_BUNDLE
                 || action == InventoryAction.PLACE_SOME_INTO_BUNDLE;
         return intoBundle && (service.isStorageLocked(event.getCursor()) || service.isStorageLocked(event.getCurrentItem()));
-    }
-
-    /** Blocs qui prennent l'objet tenu en main sur un simple clic droit. */
-    static boolean acceptsItems(Material type) {
-        return type == Material.CHISELED_BOOKSHELF
-                || type == Material.DECORATED_POT
-                || type.name().endsWith("_SHELF");
     }
 
     private void refuse(Cancellable event, Player player) {

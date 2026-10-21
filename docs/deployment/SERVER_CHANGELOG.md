@@ -48,6 +48,24 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Testeur non-OP : /rpgadmin player, quest, story (#64, TC-389)
+
+### Changement
+
+Plugin : nœuds `rpgquest.admin.testing` (paquet), `rpgquest.admin.player`, `rpgquest.admin.quest`,
+`rpgquest.admin.story`, tous `default: false`, acceptés par `/rpgadmin` pour ces trois branches seulement ; aucun effet
+sur les protections. Pont LuckPerms : ces nœuds deviennent gérables (ombrelle et `admin.debug` toujours exclus).
+PlugAdmin : famille « Raccourcis de test /rpgadmin (sans OP) » dans Groupes > droits Minecraft.
+
+### Actions serveur
+
+- Remplacement du JAR + déploiement PlugAdmin (scripts officiels). Aucune migration, aucune clé de configuration.
+- **Aucun droit, OP, groupe ni permission LuckPerms ne doit être modifié** par le déploiement : le premier octroi
+  appartient au propriétaire (`/lp user <compte> permission set rpgquest.admin.testing true`).
+- Rollback : `scripts/rollback-verygames.sh --latest` ; PlugAdmin : `scripts/plugadmin/rollback.sh app`.
+
+---
+
 ## 2026-10-21 - Mondes : charger, décharger, importer un dossier depuis PlugAdmin (#563, TC-388)
 
 ### Changement

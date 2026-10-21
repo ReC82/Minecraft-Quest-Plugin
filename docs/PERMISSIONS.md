@@ -16,6 +16,8 @@
 | `rpgquest.bypass.zone` | non | contourner les zones protégées | claims, Hub |
 | `rpgquest.admin.command` | non | **entrer** dans `/rpgadmin`, sans aucune branche | — |
 | `rpgquest.admin.npc` / `.npc.tag` / `.npc.untag` / `.npc.info` | non | les actions PNJ de `/rpgadmin npc` (toutes, ou une seule) | les autres branches de `/rpgadmin` |
+| `rpgquest.admin.testing` | non | **paquet testeur (#64)** : entrer dans `/rpgadmin` + branches `player`, `quest`, `story`, **sans être OP** | construction au Hub, tout bypass, session `/rpgadmin bypass`, les autres branches, `player variable set` (exige `rpgquest.admin.debug`) |
+| `rpgquest.admin.player` / `.quest` / `.story` | non | une seule branche de test (#64) : `player resetnew\|resetfull\|variable get`, `quest start\|complete\|reset`, `story …` — à combiner avec `rpgquest.admin.command` | les autres branches, tout bypass |
 | `rpgquest.admin.buildsite` | non | emplacements de construction | — |
 | `rpgquest.admin.city` | non | villes (outil, centre, nom) | — |
 | `rpgquest.admin.travel.maintenance` | non | casser les blocs du réseau de voyage **après** `/rpgadmin travel maintenance on` | — |
@@ -66,6 +68,25 @@ une **session explicite** :
 /lp group city-editor permission set rpgquest.admin.city true
 ```
 
+### Testeur non-OP (#64)
+
+Pour enchaîner `/rpgadmin player resetnew …`, `/rpgadmin quest …`, `/rpgadmin story …` et un test
+« joueur réel » **sans basculer OP / dé-OP** :
+
+```
+/lp user <compte> permission set rpgquest.admin.testing true     # octroi
+/lp user <compte> permission unset rpgquest.admin.testing        # révocation, immédiate
+/lp user <compte> permission set rpgquest.admin.debug true       # facultatif : player variable set
+```
+
+Ou depuis PlugAdmin > Groupes : famille « Raccourcis de test /rpgadmin (sans OP) », puis rattacher
+le compte au groupe. Le compte doit rester **non-OP** : un OP détient l'ombrelle par défaut et ne
+teste donc plus en conditions joueur pour la construction au Hub. Le paquet n'est consulté par
+**aucune** protection (Hub, Wild, claims, zones, waypoints) : le testeur y est un joueur ordinaire.
+LuckPerms persiste l'attribution (reconnexion, redémarrage). `rpgquest.admin.debug` reste hors des
+groupes du pont et s'accorde à la main. Aucune allowlist UUID dans le plugin : LuckPerms est déjà
+installé sur DEV et identifie les comptes par UUID.
+
 Le gamemode créatif n'est pas géré par RPGQuest : `minecraft.command.gamemode` via LuckPerms, en
 sachant qu'il s'applique partout. Les groupes peuvent aussi se gérer depuis PlugAdmin > Groupes (#200).
 
@@ -78,7 +99,8 @@ sachant qu'il s'applique partout. Les groupes peuvent aussi se gérer depuis Plu
 | `/rpgadmin` : entrée séparée des branches, PNJ par action | **fait** |
 | Pont PlugAdmin → LuckPerms (groupes, révocation ciblée) | **fait** (#200) |
 | OP sans bypass implicite | **fait** (#35) : mode bypass explicite, OFF par défaut, visible ; tests automatiques OP/DEOP × ON/OFF × accès Claims — **validation en jeu PENDING** |
-| Quêtes, dialogues, marchands, spawn, reset joueur en commande : droits séparés | **non fait** : sous `rpgquest.admin` |
+| `/rpgadmin player\|quest\|story` sans OP ni ombrelle (testeur) | **fait** (#64) : `rpgquest.admin.testing` ou nœud par branche ; tests automatiques — **validation en jeu PENDING** (TC-389) |
+| Quêtes, dialogues, marchands, spawn en commande (`/quest admin`, `/merchant`…) : droits séparés | **non fait** : sous `rpgquest.admin` |
 | `rpgquest.build.wild` effectif | **non fait** (aucune protection Wild à contourner) |
 | Hub identifié par numéro (`hub.0`) | **non fait** : nom de monde (`hub.world_hub`) |
 | Validation en jeu des comptes OP / non OP / builder | **à tester** (protocole ci-dessous) |

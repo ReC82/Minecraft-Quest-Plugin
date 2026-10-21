@@ -7884,3 +7884,30 @@ dimension, noms de chemin ; Multiverse absent), `WorldStateServiceTest` (déchar
 refus sans appel serveur, état revérifié à l'exécution, jeton jamais rejoué, chargement au démarrage, écart relu,
 échec Multiverse), `WorldStateFoldersTest`, `NoWorldDeletionTest`, `WorldStateActionTest`, `WorldStatePageTest`
 (boutons selon le relevé, raisons, confirmation, auteur = session, double clic, WORLD_WRITE côté serveur).
+
+### TC-389 — Testeur non-OP : /rpgadmin player, quest et story sans OP (issue #64, PENDING MANUAL VALIDATION)
+
+**Accord explicite du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 interdit à Claude d'attribuer
+ou de retirer un droit réel. Utiliser de préférence un **second compte de test** ; ne lancer `resetnew` / `quest` /
+`story` que sur ce compte de test, jamais sur un vrai joueur.
+
+1.  Compte de test **non-OP**, sans droit : `/rpgadmin quest complete <test> <quête>`. **Attendu** : « Permission
+    manquante : rpgquest.admin.command », rien ne change.
+2.  (Accord requis) Console : `/lp user <test> permission set rpgquest.admin.testing true` (ou PlugAdmin > Groupes,
+    famille « Raccourcis de test », groupe rattaché au compte). Le compte reste non-OP (`/op` jamais utilisé).
+3.  `/rpgadmin player resetnew <test> preview` puis `confirm`. **Attendu** : aperçu puis reset du seul compte de test.
+4.  `/rpgadmin quest start <test> <quête>`, `/rpgadmin quest complete …`, `/rpgadmin story start <test> <story>`.
+    **Attendu** : exécutés, journal et messages identiques à un OP.
+5.  `/rpgadmin player variable set <test> CLAIM_TIER_1 true`. **Attendu** : refus nommant `rpgquest.admin.debug`.
+6.  Sans rien changer : casser un bloc au Hub → **refusé** ; frapper une entité protégée du Hub → **refusé** ; entrer
+    dans Claims sans palier → **refusé** ; casser dans le claim d'un autre → **refusé** ; `/rpgadmin bypass on` →
+    refusé (`rpgquest.admin.bypass`) ; `/rpgadmin zone list`, `/rpgadmin flatten` → refus `rpgquest.admin.world`.
+7.  Se reconnecter, puis après un redémarrage DEV : refaire l'étape 4. **Attendu** : toujours autorisé (LuckPerms).
+8.  `/lp user <test> permission unset rpgquest.admin.testing`. **Attendu** : étape 4 refusée immédiatement.
+
+**Couverture automatisée** : `RpgPermissionsMatrixTest` (paquet testeur : trois branches, aucune construction Hub,
+aucun bypass, ni bypass/debug/hub.combat, autres branches fermées ; joueur ordinaire refusé ; seules
+player/quest/story sont des branches de test), `RpgAdminTestShortcutsCommandTest` (testeur non-OP : quest complete,
+story start, variable get exécutés ; zone refusée ; variable set refusé sans debug ; un nœud de branche n'ouvre que
+sa branche), `BridgeProvenanceTest` (nouveaux nœuds gérables par le pont, ombrelle et debug toujours exclus),
+`McBridgeDirectoryTest` (famille « Raccourcis de test », sans monde).

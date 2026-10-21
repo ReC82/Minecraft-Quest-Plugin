@@ -18,8 +18,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
@@ -48,7 +46,8 @@ public final class PortalAccessChecker {
      * Un contrôle : {@code code} = {@code LEVEL}, {@code CONDITION} ou {@code COOLDOWN}.
      *
      * @param refusal     message de refus MiniMessage tel que configuré
-     * @param values      valeurs de ses balises ({@code level}, {@code seconds})
+     * @param values      valeurs de ses jetons ({@code %level%}, {@code %seconds%}) — des jetons texte plutôt
+     *                    que des balises MiniMessage, pour rester éditables dans le champ stylé du panel
      * @param refusalText le même message en texte simple, valeurs remplacées (simulation PlugAdmin)
      */
     public record Check(String code, String label, boolean passed, String refusal, Map<String, String> values,
@@ -141,22 +140,26 @@ public final class PortalAccessChecker {
 
     /** Message de refus prêt à envoyer au joueur. */
     public static Component render(Check check) {
-        return MM.deserialize(check.refusal(), resolver(check.values()));
+        return MM.deserialize(fill(check.refusal(), check.values()));
     }
 
     private static Check check(String code, String label, boolean passed, String refusal, Map<String, String> values) {
         String text;
         try {
-            text = PlainTextComponentSerializer.plainText().serialize(MM.deserialize(refusal, resolver(values)));
+            text = PlainTextComponentSerializer.plainText().serialize(MM.deserialize(fill(refusal, values)));
         } catch (RuntimeException e) {
             text = refusal;
         }
         return new Check(code, label, passed, refusal, values, text);
     }
 
-    private static TagResolver resolver(Map<String, String> values) {
-        return TagResolver.resolver(values.entrySet().stream()
-                .map(e -> Placeholder.unparsed(e.getKey(), e.getValue())).toList());
+    /** Remplace {@code %clé%} par sa valeur (des chiffres seulement : aucune balise ne peut être injectée). */
+    private static String fill(String message, Map<String, String> values) {
+        String out = message;
+        for (Map.Entry<String, String> e : values.entrySet()) {
+            out = out.replace("%" + e.getKey() + "%", e.getValue());
+        }
+        return out;
     }
 
     /**

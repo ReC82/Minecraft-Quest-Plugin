@@ -238,7 +238,7 @@ final class PortalForms {
     private static String accessForm(PortalPages.View v, Map<String, Object> p) {
         Map<String, Object> access = PortalPages.maps(List.of(p.getOrDefault("access", Map.of()))).get(0);
         List<Map<String, Object>> rules = maps(access.get("rules"));
-        int rows = Math.min(AgentActionCatalog.PORTAL_MAX_CONDITIONS, rules.size() + 2);
+        int rows = Math.min(AgentActionCatalog.PORTAL_MAX_CONDITIONS, Math.max(2, rules.size() + 1));
         String id = str(p.get("id"));
         StringBuilder sb = new StringBuilder("<p class=\"field-help\">Vérifiées <strong>par le serveur</strong> à chaque "
                 + "passage, après les règles Claims / Wild ; toutes doivent être remplies. Un joueur refusé reste sur "
@@ -254,16 +254,16 @@ final class PortalForms {
                         + "Vide ou 0 = aucune."))
                 .append("</div>");
         sb.append(StyleField.render("level_message", "pa-" + id + "-level-msg", "Message si le niveau manque",
-                str(access.get("levelMessage")), false, "Balise &lt;level&gt; = niveau exigé."));
+                str(access.get("levelMessage")), false, "%level% = niveau exigé."));
         sb.append(StyleField.render("cooldown_message", "pa-" + id + "-cd-msg", "Message pendant l'attente",
-                str(access.get("cooldownMessage")), false, "Balise &lt;seconds&gt; = secondes restantes."));
+                str(access.get("cooldownMessage")), false, "%seconds% = secondes restantes."));
         for (int i = 0; i < rows; i++) {
             Map<String, Object> r = i < rules.size() ? rules.get(i) : Map.of();
             sb.append(conditionRow(id, i, r));
         }
         if (rows < AgentActionCatalog.PORTAL_MAX_CONDITIONS) {
-            sb.append("<p class=\"field-help\">Besoin de plus de lignes : enregistrer, la fiche en proposera deux "
-                    + "nouvelles (").append(AgentActionCatalog.PORTAL_MAX_CONDITIONS).append(" au plus).</p>");
+            sb.append("<p class=\"field-help\">Besoin de plus de lignes : enregistrer, la fiche en proposera une "
+                    + "nouvelle (").append(AgentActionCatalog.PORTAL_MAX_CONDITIONS).append(" au plus).</p>");
         }
         sb.append(essential(p)).append(confirm("Remplacer les conditions d'accès de « " + id + " »"))
                 .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">Enregistrer "

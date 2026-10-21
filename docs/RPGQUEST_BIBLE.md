@@ -4944,9 +4944,9 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
   ```yaml
   access:
     required-level: 5            # niveau RPG (RequiredLevelRule, #532) ; absent = aucun
-    level-message: "<red>Niveau <level> requis.</red>"
+    level-message: "<red>Niveau %level% requis.</red>"
     cooldown-seconds: 30         # par joueur, démarré après un passage réussi ; absent/0 = aucun
-    cooldown-message: ""         # vide = message par défaut ; <seconds> = secondes restantes
+    cooldown-message: ""         # vide = message par défaut ; %seconds% = secondes restantes
     conditions:                  # 8 au plus, toutes exigées ; mêmes clés que dans un dialogue
       - type: QUEST_STATE        # QUEST_STATE | HAS_ITEM | HAS_PERMISSION | VARIABLE_EQUALS | HAS_MAIN_CLAIM
         quest: rpgquest:crystal_hunt

@@ -214,7 +214,7 @@ class PortalAccessCheckerTest {
     void requiredLevelUsesTheSharedRule() throws Exception {
         PlayerMock player = addPlayer();
         checker.setRequiredLevelRule(p -> 4);
-        PortalAccess level5 = new PortalAccess(5, "<red>Niveau <level> requis.</red>", List.of(), 0, "");
+        PortalAccess level5 = new PortalAccess(5, "<red>Niveau %level% requis.</red>", List.of(), 0, "");
 
         PortalAccessChecker.Verdict v = evaluate(player, level5);
 

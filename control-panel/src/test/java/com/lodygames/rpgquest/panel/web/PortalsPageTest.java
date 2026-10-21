@@ -339,8 +339,8 @@ class PortalsPageTest {
         assertTrue(draft.contains("name=\"level\" min=\"1\" max=\"1000\" step=\"1\" value=\"5\""), draft);
         assertTrue(draft.contains("<option value=\"QUEST_STATE\" selected>"), "ligne existante préremplie");
         assertTrue(draft.contains("name=\"cond_0_quest\"") && draft.contains("value=\"rpgquest:crystal_hunt\""));
-        assertTrue(draft.contains("name=\"cond_2_type\"") && !draft.contains("name=\"cond_3_type\""),
-                "conditions actuelles + deux lignes vides");
+        assertTrue(draft.contains("name=\"cond_1_type\"") && !draft.contains("name=\"cond_2_type\""),
+                "conditions actuelles + une ligne vide (deux au moins)");
         assertTrue(draft.contains("value=\"portal.simulate\"") && draft.contains("Simuler (sans téléporter)"));
         assertTrue(draft.contains("Téléporter pour test") && draft.contains("Aucun personnage Minecraft n'est lié"),
                 "le test ne déplace que le personnage lié ; sans lien, aucun formulaire");

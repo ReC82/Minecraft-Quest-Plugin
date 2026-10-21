@@ -16,7 +16,7 @@ import org.bukkit.configuration.MemoryConfiguration;
  * <pre>
  * access:
  *   required-level: 5
- *   level-message: "&lt;red&gt;Reviens au niveau 5.&lt;/red&gt;"
+ *   level-message: "&lt;red&gt;Reviens au niveau %level%.&lt;/red&gt;"
  *   cooldown-seconds: 30
  *   cooldown-message: ""
  *   conditions:

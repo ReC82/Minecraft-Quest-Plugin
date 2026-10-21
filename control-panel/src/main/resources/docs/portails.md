@@ -134,8 +134,8 @@ vérification, la fiche le signale : vérifier à nouveau.
   au contraire que le joueur ne remplisse **pas** la condition. Aucune condition en texte libre.
 
 Chaque condition a son **message de refus** (couleurs et styles au clic, comme les répliques ; vide =
-message par défaut). Dans les messages, `<level>` est remplacé par le niveau exigé et `<seconds>` par
-les secondes restantes. Le formulaire montre les conditions actuelles et deux lignes vides ; choisir
+message par défaut). Dans les messages, `%level%` est remplacé par le niveau exigé et `%seconds%` par
+les secondes restantes. Le formulaire montre les conditions actuelles et une ligne vide (deux au moins) ; choisir
 « — aucune — » retire une condition ; enregistrer sans aucune ligne ni niveau ni délai retire toutes
 les conditions (le fichier redevient identique à avant). Une quête citée doit exister sur le serveur ;
 une variable connue (ex. `CLAIM_TIER_1`) doit recevoir une valeur de son type.

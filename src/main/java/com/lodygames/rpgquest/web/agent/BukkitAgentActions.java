@@ -2528,8 +2528,8 @@ public final class BukkitAgentActions implements AgentActions {
             }
             return portalAccess.evaluate(player, p, true).thenApply(v -> new PortalSimulation(
                     v.allowed() ? "ALLOWED" : "REFUSED", v.allowed()
-                    ? "AUTORISÉ : " + player.getName() + " remplit toutes les conditions."
-                    : "REFUSÉ : " + player.getName() + " ne remplit pas « "
+                    ? player.getName() + " remplit toutes les conditions."
+                    : player.getName() + " ne remplit pas « "
                     + v.firstRefusal().map(com.lodygames.rpgquest.travel.PortalAccessChecker.Check::label).orElse("?")
                     + " ».", portalId, player.getName(), v.allowed(), v.checks(), List.copyOf(notes)));
         });

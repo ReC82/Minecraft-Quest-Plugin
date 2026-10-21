@@ -23,7 +23,7 @@ import java.util.Set;
  * @param levelMessage    refus « niveau » ({@code ""} = message par défaut)
  * @param rules           conditions joueur, toutes exigées
  * @param cooldownSeconds délai entre deux passages réussis d'un même joueur (0 = aucun)
- * @param cooldownMessage refus « délai » ({@code ""} = message par défaut ; {@code <seconds>} = secondes restantes)
+ * @param cooldownMessage refus « délai » ({@code ""} = message par défaut ; {@code %seconds%} = secondes restantes)
  */
 public record PortalAccess(Integer requiredLevel, String levelMessage, List<Rule> rules, int cooldownSeconds,
                            String cooldownMessage) {
@@ -38,9 +38,9 @@ public record PortalAccess(Integer requiredLevel, String levelMessage, List<Rule
     public static final int MAX_COOLDOWN_SECONDS = 86_400;
     public static final int MAX_MESSAGE_LENGTH = 200;
 
-    public static final String DEFAULT_LEVEL_MESSAGE = "<red>Il te faut le niveau <level> pour emprunter ce portail.</red>";
+    public static final String DEFAULT_LEVEL_MESSAGE = "<red>Il te faut le niveau %level% pour emprunter ce portail.</red>";
     public static final String DEFAULT_COOLDOWN_MESSAGE =
-            "<red>Ce portail se recharge : réessaie dans <seconds> s.</red>";
+            "<red>Ce portail se recharge : réessaie dans %seconds% s.</red>";
 
     /** Une condition joueur et son message de refus. */
     public record Rule(DialogueCondition condition, String message) {

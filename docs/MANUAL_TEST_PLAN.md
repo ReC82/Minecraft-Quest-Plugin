@@ -7980,3 +7980,29 @@ non vérifiable / ajustée / impossible / monde absent / retour désaccordé, st
 (point fixe atteint avec son regard, refus d'une arrivée dangereuse et d'une arrivée dans un portail actif, via un
 adaptateur asynchrone simulé ; RANDOM_SAFE / CLAIM_HOME inchangés), `PortalAdminParamsTest`, `PortalsPageTest`
 (fiche, résultat de vérification et périmé, retour prérempli, paramètres validés, refus avant mise en file).
+
+### TC-392 — Pas de grand titre « Quête terminée » pendant un dialogue PNJ (issue #636, PENDING MANUAL VALIDATION)
+
+**Accord du propriétaire requis** : l'autorisation du 20/10 n'autorise aucun essai en jeu par Claude, aucun reset de
+quête ni récompense manuelle. Le propriétaire joue ces étapes avec son propre compte, sur des quêtes qu'il peut
+réellement rendre.
+
+1.  Remise « Les toiles du sous-bois » à un Brigand des bois (TC-306), quête prête à rendre. **Attendu** : aucun titre
+    « Quête terminée » derrière la fenêtre ; la réplique de remise affiche en dessous « ✔ Quête terminée : Les toiles du
+    sous-bois » (une seule fois) ; après fermeture par un bouton, le chat affiche « Quête terminée : … — récompenses : »
+    et les récompenses réellement reçues, une seule fois.
+2.  Même parcours mais fermeture par **Échap** puis immobile. **Attendu** : le bilan arrive dans le chat dès le premier
+    pas, ou au plus tard ~30 s après ; jamais deux fois ; aucun titre.
+3.  Quête terminée en parlant à un PNJ (`TALK_TO_NPC`) qui a un dialogue. **Attendu** : pas de titre au clic, la
+    fenêtre s'ouvre avec la ligne « ✔ Quête terminée : … ».
+4.  Accepter une quête depuis un dialogue (bouton qui ouvre un nœud suivant). **Attendu** : pas de « Quête commencée »
+    par-dessus la fenêtre ; les objectifs sont dans le chat.
+5.  Quête terminée hors dialogue (kill, collecte, `/quest`). **Attendu** : titre « Quête terminée » inchangé.
+6.  Se déconnecter avec la fenêtre ouverte juste après une remise, se reconnecter. **Attendu** : aucune annonce
+    rejouée ; récompenses présentes une seule fois ; journal cohérent ; délai de reprise de la quête inchangé.
+
+**Couverture automatisée** : `DialogueFocusTest` (pas de rétention hors dialogue, ligne de fenêtre unique, annonce
+rendue une fois, délai court sans ouverture, délai renouvelé par nœud, déplacement après la fenêtre et son élan,
+déconnexion sans rejeu), `DialogueSessionEngineTest` (remise terminant une quête dans un dialogue : aucun Title, ligne
+dans la fenêtre une seule fois, une annonce chat à la fermeture et rien de rejoué ; remise hors dialogue : Title
+conservé ; quête acceptée depuis un dialogue : pas de Title).

@@ -357,19 +357,16 @@ final class PortalForms {
         if (bool(p.get("warns"))) {
             boolean allowHide = !"false".equals(str(m.get("allowHide")));
             sb.append("<p class=\"small muted\">Aperçu de l'avertissement affiché avant chaque départ :</p>")
-                    .append("<p><strong>").append(MiniText.html(effective(m, d, "title"))).append("</strong></p>")
-                    .append("<p>").append(MiniText.html(effective(m, d, "text"))).append("</p>");
+                    .append("<p>").append(mc(effective(m, d, "title"))).append("</p>")
+                    .append("<p>").append(mc(effective(m, d, "text"))).append("</p>");
             if (!effective(m, d, "hint").isEmpty()) {
-                sb.append("<p>").append(MiniText.html(effective(m, d, "hint"))).append("</p>");
+                sb.append("<p>").append(mc(effective(m, d, "hint"))).append("</p>");
             }
-            sb.append("<p class=\"btnrow\"><span class=\"pill pill--neutral\">")
-                    .append(MiniText.html(effective(m, d, "enter"))).append("</span>");
+            sb.append("<p class=\"btnrow\">").append(mc(effective(m, d, "enter")));
             if (allowHide) {
-                sb.append(" <span class=\"pill pill--neutral\">").append(MiniText.html(effective(m, d, "enterHide")))
-                        .append("</span>");
+                sb.append(" ").append(mc(effective(m, d, "enterHide")));
             }
-            sb.append(" <span class=\"pill pill--neutral\">").append(MiniText.html(effective(m, d, "cancel")))
-                    .append("</span></p>");
+            sb.append(" ").append(mc(effective(m, d, "cancel"))).append("</p>");
             sb.append("<p class=\"small muted\">").append(allowHide
                     ? "« Ne plus afficher » est mémorisé par joueur et par portail ; effacé par /rpgadmin player resetnew."
                     : "« Ne plus afficher » n'est pas proposé : l'avertissement s'affiche à chaque départ.").append("</p>");
@@ -380,11 +377,16 @@ final class PortalForms {
         for (String[] f : MESSAGE_FIELDS) {
             String value = effective(m, d, f[1]);
             sb.append("<dt>").append(Http.esc(f[2])).append("</dt><dd>")
-                    .append(value.isEmpty() ? "<span class=\"muted\">—</span>" : MiniText.html(value))
+                    .append(value.isEmpty() ? "<span class=\"muted\">—</span>" : mc(value))
                     .append(str(m.get(f[1])).isEmpty() ? "" : " <span class=\"pill ok\">personnalisé</span>")
                     .append("</dd>");
         }
         return sb.append("</dl></div>").toString();
+    }
+
+    /** Texte Minecraft rendu sur fond sombre, comme l'aperçu des dialogues (HTML sûr). */
+    private static String mc(String miniMessage) {
+        return "<span class=\"dlg-preview\">" + MiniText.html(miniMessage) + "</span>";
     }
 
     private static String effective(Map<String, Object> m, Map<String, Object> d, String key) {
@@ -402,8 +404,8 @@ final class PortalForms {
         String id = str(p.get("id"));
         String mode = str(m.get("warningMode")).isEmpty() ? "DEFAULT" : str(m.get("warningMode"));
         StringBuilder modes = new StringBuilder("<select name=\"warning_mode\">");
-        for (String[] o : List.of(new String[] {"DEFAULT", "Par défaut (seulement vers le Wild)"},
-                new String[] {"ALWAYS", "Toujours, quelle que soit la destination"},
+        for (String[] o : List.of(new String[] {"DEFAULT", "Par défaut (vers le Wild)"},
+                new String[] {"ALWAYS", "Toujours"},
                 new String[] {"NEVER", "Jamais"})) {
             modes.append("<option value=\"").append(o[0]).append("\"").append(o[0].equals(mode) ? " selected" : "")
                     .append(">").append(Http.esc(o[1])).append("</option>");

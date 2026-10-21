@@ -13,6 +13,11 @@ package com.lodygames.rpgquest.travel.model;
  * ({@code site}), l'état brouillon et les dimensions saisies. Un brouillon est <strong>toujours</strong>
  * {@code enabled = false} : tout code qui ne lit que {@code enabled} (dont un JAR antérieur) le
  * traite comme un portail désactivé, jamais comme un portail actif.</p>
+ *
+ * <p>Issue #566 (#228-P3) : {@code fixedPoint} est l'arrivée d'un portail {@link
+ * DestinationStrategy#FIXED_POINT} (dans {@code destinationWorld}, {@code null} pour les autres
+ * stratégies) ; {@code returnOf} désigne le portail dont celui-ci est le retour ({@code ""} sinon) —
+ * un aller-retour reste toujours <strong>deux</strong> portails distincts.</p>
  */
 public record WorldPortalDefinition(
         String id,
@@ -22,8 +27,52 @@ public record WorldPortalDefinition(
         String destinationWorld,
         boolean enabled,
         DestinationStrategy destinationStrategy,
-        Details details
+        Details details,
+        FixedPoint fixedPoint,
+        String returnOf
 ) {
+
+    /**
+     * Point d'arrivée fixe (issue #566) : position du joueur (pieds) et regard, dans le monde d'arrivée.
+     *
+     * @param yaw   regard horizontal, ramené dans [-180, 180[
+     * @param pitch regard vertical, de -90 (ciel) à 90 (sol)
+     */
+    public record FixedPoint(double x, double y, double z, float yaw, float pitch) {
+
+        public FixedPoint {
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
+                    || !Float.isFinite(yaw) || !Float.isFinite(pitch)) {
+                throw new IllegalArgumentException("le point fixe doit avoir des coordonnées numériques.");
+            }
+            if (pitch < -90f || pitch > 90f) {
+                throw new IllegalArgumentException("le regard vertical (pitch) doit être entre -90 et 90.");
+            }
+            yaw = normalizeYaw(yaw);
+        }
+
+        public int blockX() {
+            return (int) Math.floor(x);
+        }
+
+        public int blockY() {
+            return (int) Math.floor(y);
+        }
+
+        public int blockZ() {
+            return (int) Math.floor(z);
+        }
+
+        static float normalizeYaw(float yaw) {
+            float y = yaw % 360f;
+            if (y >= 180f) {
+                y -= 360f;
+            } else if (y < -180f) {
+                y += 360f;
+            }
+            return y;
+        }
+    }
 
     /** État lisible : actif, désactivé, ou brouillon (jamais encore activé). */
     public enum State {
@@ -82,6 +131,24 @@ public record WorldPortalDefinition(
         if (details.draft() && enabled) {
             throw new IllegalArgumentException("un brouillon ne peut pas être actif.");
         }
+        if (destinationStrategy == DestinationStrategy.FIXED_POINT && fixedPoint == null) {
+            throw new IllegalArgumentException("une arrivée « point fixe » exige destination-point (x, y, z).");
+        }
+        if (destinationStrategy != DestinationStrategy.FIXED_POINT) {
+            fixedPoint = null; // un point n'a de sens qu'avec FIXED_POINT : jamais d'état ambigu.
+        }
+        returnOf = returnOf == null ? "" : returnOf.strip();
+        if (returnOf.equals(id)) {
+            throw new IllegalArgumentException("un portail ne peut pas être son propre retour.");
+        }
+    }
+
+    /** Sans destination fixe ni retour : conserve les appelants antérieurs à #566 inchangés. */
+    public WorldPortalDefinition(String id, String world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                  String destinationWorld, boolean enabled, DestinationStrategy destinationStrategy,
+                                  Details details) {
+        this(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, enabled, destinationStrategy,
+                details, null, "");
     }
 
     /** Sans {@link Details} : conserve les appelants antérieurs à #565 inchangés. */
@@ -110,13 +177,19 @@ public record WorldPortalDefinition(
                 ? new Details(details.name(), details.site(), false, details.width(), details.height(), details.depth())
                 : details;
         return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, on,
-                destinationStrategy, d);
+                destinationStrategy, d, fixedPoint, returnOf);
     }
 
     /** Même portail, zone et champs #565 remplacés ; l'id, la destination et l'état sont conservés. */
     public WorldPortalDefinition withZone(Zone zone, Details newDetails) {
         return new WorldPortalDefinition(id, world, zone.minX(), zone.minY(), zone.minZ(), zone.maxX(), zone.maxY(),
-                zone.maxZ(), destinationWorld, enabled, destinationStrategy, newDetails);
+                zone.maxZ(), destinationWorld, enabled, destinationStrategy, newDetails, fixedPoint, returnOf);
+    }
+
+    /** Même portail, arrivée remplacée (issue #566) ; zone, état et lien de retour conservés. */
+    public WorldPortalDefinition withDestination(String newWorld, DestinationStrategy strategy, FixedPoint point) {
+        return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, newWorld, enabled, strategy,
+                details, point, returnOf);
     }
 
     /** Une zone d'activation cuboïde (bornes incluses), monde à part. */

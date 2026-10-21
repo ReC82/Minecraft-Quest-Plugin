@@ -102,6 +102,16 @@ final class PortalListDetails {
         row.put("essential", a.essential());
         row.put("fingerprint", a.fingerprint());
         row.put("editable", a.editable());
+        // #566 : point fixe (valeurs brutes pour préremplir la fiche) et aller-retour.
+        if (a.point() != null) {
+            row.put("pointX", a.point().x());
+            row.put("pointY", a.point().y());
+            row.put("pointZ", a.point().z());
+            row.put("pointYaw", a.point().yaw());
+            row.put("pointPitch", a.point().pitch());
+        }
+        row.put("returnOf", a.returnOf());
+        row.put("returnedBy", a.returnedBy());
         row.put("minX", e.minX());
         row.put("minY", e.minY());
         row.put("minZ", e.minZ());

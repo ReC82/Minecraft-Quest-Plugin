@@ -37,6 +37,10 @@ import java.util.function.Function;
  *   <li>La zone d'un portail actif ne se modifie pas, et un portail actif ne se supprime pas :
  *       le désactiver d'abord.</li>
  *   <li>Supprimer un portail ne touche ni l'emplacement #213 ni un bâtiment posé.</li>
+ *   <li>Issue #566 : l'arrivée (monde, stratégie, point fixe) d'un portail actif ne se modifie pas ;
+ *       un point fixe est refusé hors des hauteurs du monde ou dans la zone d'un portail (boucle).
+ *       Un portail retour est un second portail distinct, créé en brouillon, qui relie les deux
+ *       mondes en sens inverse ({@code return-of}).</li>
  * </ul>
  */
 public final class WorldPortalAdminService {
@@ -53,7 +57,28 @@ public final class WorldPortalAdminService {
      * @param sites        emplacements #213 par id
      */
     public record Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
-                          Function<String, Optional<BuildingSite>> sites) {
+                          Function<String, Optional<BuildingSite>> sites,
+                          Function<String, Optional<WorldBounds>> bounds) {
+
+        /** Sans hauteurs relevées : celles d'un monde normal (−64 à 320). */
+        public Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
+                       Function<String, Optional<BuildingSite>> sites) {
+            this(loadedWorlds, roles, zonePortals, sites, w -> Optional.of(WorldBounds.OVERWORLD));
+        }
+    }
+
+    /** Hauteurs constructibles d'un monde chargé : {@code minY} inclus, {@code maxY} exclu. */
+    public record WorldBounds(int minY, int maxY) {
+
+        public static final WorldBounds OVERWORLD = new WorldBounds(-64, 320);
+    }
+
+    /**
+     * Arrivée demandée (issue #566).
+     *
+     * @param point obligatoire pour {@link DestinationStrategy#FIXED_POINT}, ignoré sinon
+     */
+    public record DestinationRequest(String world, DestinationStrategy strategy, WorldPortalDefinition.FixedPoint point) {
     }
 
     /**
@@ -75,8 +100,15 @@ public final class WorldPortalAdminService {
         }
     }
 
+    /** @param returnOf portail dont celui-ci est le retour ({@code ""} : aucun) */
     public record CreateRequest(String id, String name, ZoneRequest zone, String destinationWorld,
-                                DestinationStrategy strategy) {
+                                DestinationStrategy strategy, WorldPortalDefinition.FixedPoint point,
+                                String returnOf) {
+
+        public CreateRequest(String id, String name, ZoneRequest zone, String destinationWorld,
+                             DestinationStrategy strategy) {
+            this(id, name, zone, destinationWorld, strategy, null, "");
+        }
     }
 
     /** Résultat lisible. {@code code} : {@code CREATED}, {@code UPDATED}, {@code UNCHANGED}… ou la raison du refus. */
@@ -96,18 +128,32 @@ public final class WorldPortalAdminService {
      * @param name     {@code null} = nom inchangé (modification)
      * @param zone     {@code null} = zone inchangée (modification)
      * @param expected empreinte lue par la page (toutes les opérations sauf la création)
+     * @param destination création : arrivée choisie ; modification : {@code null} = arrivée inchangée
+     * @param returnOf création seulement : portail dont celui-ci est le retour
      */
     public record Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
-                            String destinationWorld, DestinationStrategy strategy, boolean confirmEssential,
+                            DestinationRequest destination, String returnOf, boolean confirmEssential,
                             String actor) {
+
+        public Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
+                         String destinationWorld, DestinationStrategy strategy, boolean confirmEssential,
+                         String actor) {
+            this(kind, id, expected, name, zone, kind == Kind.CREATE
+                    ? new DestinationRequest(destinationWorld, strategy, null) : null, "", confirmEssential, actor);
+        }
     }
 
     /** Aiguille une {@link Operation} vers l'opération correspondante. */
     public Result apply(Operation op, Context ctx) {
         return switch (op.kind()) {
-            case CREATE -> create(new CreateRequest(op.id(), op.name(), op.zone(), op.destinationWorld(),
-                    op.strategy()), op.actor(), ctx);
-            case UPDATE -> update(op.id(), op.expected(), op.name(), op.zone(), op.confirmEssential(), op.actor(), ctx);
+            case CREATE -> {
+                DestinationRequest d = op.destination() == null
+                        ? new DestinationRequest("", DestinationStrategy.WORLD_SPAWN, null) : op.destination();
+                yield create(new CreateRequest(op.id(), op.name(), op.zone(), d.world(), d.strategy(), d.point(),
+                        op.returnOf()), op.actor(), ctx);
+            }
+            case UPDATE -> update(op.id(), op.expected(), op.name(), op.zone(), op.destination(),
+                    op.confirmEssential(), op.actor(), ctx);
             case ENABLE -> setActive(op.id(), true, op.expected(), op.confirmEssential(), op.actor(), ctx);
             case DISABLE -> setActive(op.id(), false, op.expected(), op.confirmEssential(), op.actor(), ctx);
             case DELETE -> delete(op.id(), op.expected(), op.confirmEssential(), op.actor(), ctx);
@@ -144,28 +190,33 @@ public final class WorldPortalAdminService {
             return zone.error();
         }
         String dest = req.destinationWorld() == null ? "" : req.destinationWorld().strip();
-        if (!ctx.loadedWorlds().contains(dest)) {
-            return Result.refused("DESTINATION_NOT_LOADED", "Le monde d'arrivée « " + dest + " » n'est pas chargé.");
-        }
         DestinationStrategy strategy = req.strategy() == null ? DestinationStrategy.WORLD_SPAWN : req.strategy();
-        if (strategy == DestinationStrategy.CLAIM_HOME && !dest.equals(ctx.roles().claims())) {
-            return Result.refused("CLAIM_HOME_OUTSIDE_CLAIMS", "« Claim du joueur » ne s'utilise que vers le monde "
-                    + "des claims (" + ctx.roles().claims() + ").");
+        Result badDestination = checkDestination(id, dest, strategy, req.point(), ctx);
+        if (badDestination != null) {
+            return badDestination;
         }
         Details details = new Details(clean(req.name()), zone.site(), true, zone.width(), zone.height(), zone.depth());
         Zone z = zone.zone();
+        String returnOf = req.returnOf() == null ? "" : req.returnOf().strip();
         WorldPortalDefinition draft = new WorldPortalDefinition(id, zone.world(), z.minX(), z.minY(), z.minZ(),
-                z.maxX(), z.maxY(), z.maxZ(), dest, false, strategy, details);
+                z.maxX(), z.maxY(), z.maxZ(), dest, false, strategy, details,
+                strategy == DestinationStrategy.FIXED_POINT ? req.point() : null, returnOf);
         Result overlap = overlapWithZonePortals(draft, ctx);
         if (overlap != null) {
             return overlap;
         }
+        Result badReturn = checkReturn(draft);
+        if (badReturn != null) {
+            return badReturn;
+        }
         return switch (registry.create(draft)) {
             case CREATED -> {
                 record(actor, "CREATE_DRAFT", id, null, draft);
-                yield new Result(true, "CREATED", "Brouillon « " + id + " » créé. Il ne téléporte personne tant "
-                        + "qu'il n'est pas activé.", id, List.of("fichier world-portals/" + id + ".yml créé",
-                        "aucun bloc, aucun emplacement ni aucun joueur touché"));
+                yield new Result(true, "CREATED", "Brouillon « " + id + " » créé" + (returnOf.isEmpty() ? ""
+                        : " (retour de « " + returnOf + " »)") + ". Il ne téléporte personne tant qu'il n'est pas "
+                        + "activé.", id, List.of("fichier world-portals/" + id + ".yml créé",
+                        returnOf.isEmpty() ? "aucun bloc, aucun emplacement ni aucun joueur touché"
+                                : "portail « " + returnOf + " » inchangé ; aucun bloc ni joueur touché"));
             }
             case DUPLICATE_ID -> Result.refused("DUPLICATE_ID", "Un portail ou un fichier world-portals/" + id
                     + ".yml existe déjà.");
@@ -174,12 +225,20 @@ public final class WorldPortalAdminService {
         };
     }
 
-    /**
-     * Renommer ({@code name} non {@code null}) et/ou changer la zone ({@code zone} non {@code null}).
-     * Le monde de départ ne change pas ; la zone d'un portail actif non plus.
-     */
+    /** Sans changement d'arrivée : conserve les appelants antérieurs à #566. */
     public synchronized Result update(String id, String expected, String name, ZoneRequest zone,
                                       boolean confirmEssential, String actor, Context ctx) {
+        return update(id, expected, name, zone, null, confirmEssential, actor, ctx);
+    }
+
+    /**
+     * Renommer ({@code name} non {@code null}), changer la zone ({@code zone} non {@code null}) et/ou
+     * l'arrivée ({@code destination} non {@code null}). Le monde de départ ne change pas ; ni la zone
+     * ni l'arrivée d'un portail actif non plus.
+     */
+    public synchronized Result update(String id, String expected, String name, ZoneRequest zone,
+                                      DestinationRequest destination, boolean confirmEssential, String actor,
+                                      Context ctx) {
         Lookup found = lookup(id, expected, confirmEssential, ctx);
         if (found.error() != null) {
             return found.error();
@@ -210,6 +269,25 @@ public final class WorldPortalAdminService {
             Result overlap = overlapWithZonePortals(updated, ctx);
             if (overlap != null) {
                 return overlap;
+            }
+        }
+        if (destination != null) {
+            if (current.state() == State.ACTIVE) {
+                return Result.refused("ACTIVE_DESTINATION_LOCKED", "Le portail est actif : le désactiver avant de "
+                        + "changer son arrivée.");
+            }
+            String dest = destination.world() == null ? "" : destination.world().strip();
+            DestinationStrategy strategy = destination.strategy() == null
+                    ? DestinationStrategy.WORLD_SPAWN : destination.strategy();
+            Result bad = checkDestination(id, dest, strategy, destination.point(), ctx);
+            if (bad != null) {
+                return bad;
+            }
+            updated = updated.withDestination(dest, strategy,
+                    strategy == DestinationStrategy.FIXED_POINT ? destination.point() : null);
+            Result badReturn = checkReturn(updated);
+            if (badReturn != null) {
+                return badReturn;
             }
         }
         if (updated.equals(current)) {
@@ -246,6 +324,12 @@ public final class WorldPortalAdminService {
             Result overlap = overlapWithZonePortals(current, ctx);
             if (overlap != null) {
                 return overlap;
+            }
+            // #566 : mêmes règles d'arrivée qu'à l'enregistrement — le monde a pu changer depuis.
+            Result badDestination = checkDestination(current.id(), current.destinationWorld(),
+                    current.destinationStrategy(), current.fixedPoint(), ctx);
+            if (badDestination != null) {
+                return badDestination;
             }
         }
         WorldPortalDefinition updated = current.withEnabled(on);
@@ -289,6 +373,14 @@ public final class WorldPortalAdminService {
                 p.maxX() + "," + p.maxY() + "," + p.maxZ(), p.destinationWorld(), String.valueOf(p.enabled()),
                 p.destinationStrategy().name(), d.name(), d.site(), String.valueOf(d.draft()),
                 d.width() + "x" + d.height() + "x" + d.depth());
+        // #566 : ajoutés seulement s'ils sont renseignés — l'empreinte d'un portail sans point fixe ni
+        // retour reste celle d'avant (une page ouverte avant la mise à jour reste valable).
+        if (p.fixedPoint() != null) {
+            canonical += "|point:" + pointText(p.fixedPoint());
+        }
+        if (!p.returnOf().isEmpty()) {
+            canonical += "|return-of:" + p.returnOf();
+        }
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash, 0, 12);
@@ -313,7 +405,93 @@ public final class WorldPortalAdminService {
                 + p.maxX() + "," + p.maxY() + "," + p.maxZ()
                 + (d.site().isEmpty() ? "" : ", emplacement " + d.site() + " " + d.width() + "×" + d.height() + "×"
                 + d.depth())
-                + ", vers " + p.destinationWorld() + " (" + p.destinationStrategy() + ")";
+                + ", vers " + p.destinationWorld() + " (" + p.destinationStrategy()
+                + (p.fixedPoint() == null ? "" : " " + pointText(p.fixedPoint())) + ")"
+                + (p.returnOf().isEmpty() ? "" : ", retour de " + p.returnOf());
+    }
+
+    /** {@code x, y, z, regard yaw/pitch}, sans perte : sert aussi à l'empreinte. */
+    public static String pointText(WorldPortalDefinition.FixedPoint fp) {
+        return fp.x() + ", " + fp.y() + ", " + fp.z() + " regard " + fp.yaw() + "/" + fp.pitch();
+    }
+
+    /**
+     * Règles d'arrivée communes (création, modification, activation) : monde chargé, « claim du
+     * joueur » vers les Claims seulement, point fixe présent, dans les hauteurs du monde et hors de
+     * toute zone de portail (sinon le joueur serait renvoyé dès la fin du répit d'arrivée).
+     */
+    private Result checkDestination(String selfId, String dest, DestinationStrategy strategy,
+                                    WorldPortalDefinition.FixedPoint point, Context ctx) {
+        if (!ctx.loadedWorlds().contains(dest)) {
+            return Result.refused("DESTINATION_NOT_LOADED", "Le monde d'arrivée « " + dest + " » n'est pas chargé : "
+                    + "le portail ne le charge jamais lui-même.");
+        }
+        if (strategy == DestinationStrategy.CLAIM_HOME && !dest.equals(ctx.roles().claims())) {
+            return Result.refused("CLAIM_HOME_OUTSIDE_CLAIMS", "« Claim du joueur » ne s'utilise que vers le monde "
+                    + "des claims (" + ctx.roles().claims() + ").");
+        }
+        if (strategy != DestinationStrategy.FIXED_POINT) {
+            return null;
+        }
+        if (point == null) {
+            return Result.refused("POINT_REQUIRED", "Arrivée « point fixe » : saisir X, Y et Z.");
+        }
+        WorldBounds b = ctx.bounds().apply(dest).orElse(WorldBounds.OVERWORLD);
+        if (point.blockY() - 1 < b.minY() || point.blockY() + 1 >= b.maxY()) {
+            return Result.refused("POINT_OUT_OF_WORLD", "Le point fixe (Y " + point.blockY() + ") doit laisser un sol "
+                    + "et la tête du joueur dans les hauteurs du monde « " + dest + " » (" + (b.minY() + 1) + " à "
+                    + (b.maxY() - 2) + ").");
+        }
+        List<String> zones = portalsAt(dest, point.blockX(), point.blockY(), point.blockZ(), ctx);
+        if (!zones.isEmpty()) {
+            return Result.refused("POINT_INSIDE_PORTAL", "Le point fixe est dans la zone du portail "
+                    + String.join(", ", zones) + " : le joueur y serait renvoyé aussitôt. Choisir un point à côté.");
+        }
+        return null;
+    }
+
+    /** Portails (entre mondes et de zone) dont la zone contient ce bloc ou le bloc de la tête. */
+    List<String> portalsAt(String world, int x, int y, int z, Context ctx) {
+        List<String> out = new ArrayList<>();
+        for (WorldPortalDefinition other : registry.portalsInWorld(world)) {
+            if (other.contains(world, x, y, z) || other.contains(world, x, y + 1, z)) {
+                out.add("« " + other.id() + " »");
+            }
+        }
+        for (PortalDefinition zone : ctx.zonePortals()) {
+            if (world.equals(zone.world()) && x >= zone.minX() && x <= zone.maxX() && z >= zone.minZ()
+                    && z <= zone.maxZ() && y + 1 >= zone.minY() && y <= zone.maxY()) {
+                out.add("« " + zone.id() + " » (portail de zone)");
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Un portail retour part du monde d'arrivée du portail aller et ramène à son monde de départ ;
+     * un seul retour par portail.
+     */
+    private Result checkReturn(WorldPortalDefinition p) {
+        if (p.returnOf().isEmpty()) {
+            return null;
+        }
+        Optional<WorldPortalDefinition> target = registry.find(p.returnOf());
+        if (target.isEmpty()) {
+            return Result.refused("RETURN_TARGET_NOT_FOUND", "Aucun portail « " + p.returnOf() + " » : impossible "
+                    + "d'en créer le retour.");
+        }
+        WorldPortalDefinition t = target.get();
+        if (!p.world().equals(t.destinationWorld()) || !p.destinationWorld().equals(t.world())) {
+            return Result.refused("RETURN_MISMATCH", "Le retour de « " + t.id() + " » doit partir de « "
+                    + t.destinationWorld() + " » et mener à « " + t.world() + " ».");
+        }
+        for (WorldPortalDefinition other : registry.portals()) {
+            if (!other.id().equals(p.id()) && other.returnOf().equals(t.id())) {
+                return Result.refused("RETURN_EXISTS", "« " + t.id() + " » a déjà un portail retour : « "
+                        + other.id() + " ».");
+            }
+        }
+        return null;
     }
 
     private record Lookup(WorldPortalDefinition portal, Result error) {

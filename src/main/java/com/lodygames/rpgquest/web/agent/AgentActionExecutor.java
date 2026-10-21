@@ -244,6 +244,7 @@ public final class AgentActionExecutor {
                 case PORTAL_ENABLE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.ENABLE);
                 case PORTAL_DISABLE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.DISABLE);
                 case PORTAL_DELETE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.DELETE);
+                case PORTAL_VERIFY -> portalVerify(action);
                 case CLAIM_LIST -> claimList(action);
                 case CLAIM_TELEPORT -> claimTeleport(action);
                 case MERCHANT_SAVE -> merchantSave(action);
@@ -2452,6 +2453,41 @@ public final class AgentActionExecutor {
             }
             return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(), r.message(),
                     details, java.time.Instant.now());
+        }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /** {@code portal.verify} (issue #566) : lecture pure — rien n'est écrit, chargé ni téléporté. */
+    private CompletableFuture<AgentActionOutcome> portalVerify(AgentAction action) {
+        String id = action.params().getOrDefault("id", "").strip().toLowerCase(java.util.Locale.ROOT);
+        if (!id.matches("[a-z0-9_-]{1,48}")) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « id » manquant ou invalide."));
+        }
+        return actions.portalVerify(id).thenApply(report -> {
+            if (report == null) {
+                return AgentActionOutcome.failed(action.id(), "Vérification des portails indisponible sur ce serveur.");
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("portal", report.portal());
+            details.put("verdict", report.verdict().name());
+            details.put("fingerprint", report.fingerprint());
+            List<Map<String, Object>> checks = new ArrayList<>();
+            for (var c : report.checks()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("code", c.code());
+                row.put("status", c.status().name());
+                row.put("title", c.title());
+                row.put("message", c.message());
+                checks.add(row);
+            }
+            details.put("checks", checks);
+            long problems = report.checks().stream()
+                    .filter(c -> c.status() != com.lodygames.rpgquest.travel.WorldPortalVerifier.Status.OK).count();
+            String summary = switch (report.verdict()) {
+                case OK -> "Tout est en ordre : " + report.checks().size() + " contrôle(s), rien appliqué.";
+                case BLOCKING -> "Bloquant : " + problems + " point(s) à corriger — rien appliqué.";
+                default -> problems + " point(s) à regarder — rien appliqué.";
+            };
+            return AgentActionOutcome.success(action.id(), report.verdict().name(), summary, details);
         }).exceptionally(err -> unexpectedFailure(action, err));
     }
 

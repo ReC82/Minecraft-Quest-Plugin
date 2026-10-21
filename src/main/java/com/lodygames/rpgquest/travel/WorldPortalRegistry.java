@@ -176,7 +176,23 @@ public final class WorldPortalRegistry implements PluginService {
                 parseStrategy(yaml.getString("destination-strategy", DestinationStrategy.WORLD_SPAWN.name())),
                 new WorldPortalDefinition.Details(yaml.getString("name", ""), yaml.getString("site", ""),
                         yaml.getBoolean("draft", false), yaml.getInt("size.width"), yaml.getInt("size.height"),
-                        yaml.getInt("size.depth")));
+                        yaml.getInt("size.depth")),
+                parsePoint(yaml), yaml.getString("return-of", ""));
+    }
+
+    /** Issue #566 : {@code destination-point} absent = aucun point ; présent, x, y et z sont obligatoires. */
+    private WorldPortalDefinition.FixedPoint parsePoint(YamlConfiguration yaml) {
+        if (!yaml.isConfigurationSection("destination-point")) {
+            return null;
+        }
+        for (String axis : new String[] {"x", "y", "z"}) {
+            if (!yaml.isDouble("destination-point." + axis) && !yaml.isInt("destination-point." + axis)) {
+                throw new IllegalArgumentException("« destination-point." + axis + " » manquant ou non numérique.");
+            }
+        }
+        return new WorldPortalDefinition.FixedPoint(yaml.getDouble("destination-point.x"),
+                yaml.getDouble("destination-point.y"), yaml.getDouble("destination-point.z"),
+                (float) yaml.getDouble("destination-point.yaw"), (float) yaml.getDouble("destination-point.pitch"));
     }
 
     private DestinationStrategy parseStrategy(String raw) {
@@ -372,6 +388,18 @@ public final class WorldPortalRegistry implements PluginService {
                 yaml.set("size.width", d.width());
                 yaml.set("size.height", d.height());
                 yaml.set("size.depth", d.depth());
+            }
+            // #566 : même règle — seulement si renseignés.
+            WorldPortalDefinition.FixedPoint point = portal.fixedPoint();
+            if (point != null) {
+                yaml.set("destination-point.x", point.x());
+                yaml.set("destination-point.y", point.y());
+                yaml.set("destination-point.z", point.z());
+                yaml.set("destination-point.yaw", (double) point.yaw());
+                yaml.set("destination-point.pitch", (double) point.pitch());
+            }
+            if (!portal.returnOf().isEmpty()) {
+                yaml.set("return-of", portal.returnOf());
             }
             Path tmp = target.resolveSibling(fileName + ".tmp");
             yaml.save(tmp.toFile());

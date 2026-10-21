@@ -242,7 +242,7 @@ public final class RandomSafeLocationFinder {
                 || name.endsWith("_ROOTS");
     }
 
-    private static boolean isDangerous(Material type) {
+    static boolean isDangerous(Material type) {
         return type == Material.LAVA
                 || type == Material.FIRE
                 || type == Material.SOUL_FIRE

@@ -66,6 +66,87 @@ class WorldPortalTeleportListenerTest {
         MockBukkit.unmock();
     }
 
+    // ---- Stratégie FIXED_POINT (issue #566) -----------------------------------------------------
+
+    private WorldPortalDefinition fixedPortal(double x, double y, double z) {
+        return new WorldPortalDefinition("hub_to_square", "world", 100, 60, 100, 110, 70, 110, "wild", true,
+                DestinationStrategy.FIXED_POINT, WorldPortalDefinition.Details.NONE,
+                new WorldPortalDefinition.FixedPoint(x, y, z, 90f, 15f), "");
+    }
+
+    private void enterFixedPortal(PlayerMock player) {
+        // Adaptateur simulé : MockBukkit n'implémente ni getChunkAtAsync ni teleportAsync.
+        listener.setAsyncWorldAccess(new WorldPortalTeleportListener.AsyncWorldAccess() {
+            @Override
+            public java.util.concurrent.CompletableFuture<?> loadChunk(World world, int x, int z) {
+                return java.util.concurrent.CompletableFuture.completedFuture(world.getChunkAt(x, z));
+            }
+
+            @Override
+            public java.util.concurrent.CompletableFuture<Boolean> teleport(org.bukkit.entity.Player who, Location to) {
+                return java.util.concurrent.CompletableFuture.completedFuture(who.teleport(to));
+            }
+        });
+        listener.onMove(new PlayerMoveEvent(player, new Location(hub, 1000.5, 64, 1000.5),
+                new Location(hub, 105.5, 65, 105.5)));
+        server.getScheduler().performTicks(2); // complétion des chargements / téléportation asynchrones.
+    }
+
+    @Test
+    void fixedPointPortalTeleportsToThePointWithItsLook() {
+        int ground = 63;
+        wild.getBlockAt(50, ground, 50).setType(org.bukkit.Material.STONE);
+        wild.getBlockAt(50, ground + 1, 50).setType(org.bukkit.Material.AIR);
+        wild.getBlockAt(50, ground + 2, 50).setType(org.bukkit.Material.AIR);
+        assertTrue(ArrivalSafety.check(ArrivalSafety.worldView(wild), 50, ground + 1, 50) == ArrivalSafety.Verdict.SAFE,
+                "terrain simulé sûr");
+        registry.create(fixedPortal(50.5, ground + 1, 50.5));
+        PlayerMock player = server.addPlayer();
+
+        enterFixedPortal(player);
+
+        assertEquals(wild, player.getWorld());
+        assertEquals(50.5, player.getLocation().getX(), 1e-9);
+        assertEquals(ground + 1, player.getLocation().getY(), 1e-9);
+        assertEquals(90f, player.getLocation().getYaw(), 1e-3);
+        assertEquals(15f, player.getLocation().getPitch(), 1e-3);
+    }
+
+    @Test
+    void fixedPointPortalRefusesAnUnsafeArrivalAndTheTravellerStays() {
+        int ground = wild.getHighestBlockYAt(50, 50);
+        for (int x = 46; x <= 54; x++) {
+            for (int z = 46; z <= 54; z++) {
+                for (int y = ground - 4; y <= ground + 5; y++) {
+                    wild.getBlockAt(x, y, z).setType(org.bukkit.Material.LAVA);
+                }
+            }
+        }
+        registry.create(fixedPortal(50.5, ground + 1, 50.5));
+        PlayerMock player = server.addPlayer();
+        World before = player.getWorld();
+
+        enterFixedPortal(player);
+
+        assertEquals(before, player.getWorld());
+        String message = player.nextMessage();
+        assertTrue(message != null && message.contains("pas sûre"), message);
+    }
+
+    @Test
+    void fixedPointPortalRefusesToDropTheTravellerIntoAnotherActivePortal() {
+        int ground = wild.getHighestBlockYAt(50, 50);
+        registry.create(new WorldPortalDefinition("wild_trap", "wild", 45, ground - 2, 45, 55, ground + 5, 55,
+                "world", true));
+        registry.create(fixedPortal(50.5, ground + 1, 50.5));
+        PlayerMock player = server.addPlayer();
+        World before = player.getWorld();
+
+        enterFixedPortal(player);
+
+        assertEquals(before, player.getWorld());
+    }
+
     // ---- Stratégie CLAIM_HOME (issue #73) -------------------------------------------------------
 
     @Test

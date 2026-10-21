@@ -1619,6 +1619,14 @@ public interface AgentActions {
     }
 
     /**
+     * Vérifier un portail sans rien appliquer -- action {@code portal.verify} (issue #566). {@code null}
+     * sur un plugin qui ne sait pas le faire.
+     */
+    default CompletableFuture<com.lodygames.rpgquest.travel.WorldPortalVerifier.Report> portalVerify(String id) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
      * Tous les claims persistés -- action {@code claim.list} (issue #637). Lecture seule ; vue
      * indisponible ({@code available=false}) sur un plugin sans service de claims.
      */

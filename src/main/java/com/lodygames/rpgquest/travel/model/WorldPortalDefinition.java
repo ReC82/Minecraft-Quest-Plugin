@@ -21,6 +21,9 @@ package com.lodygames.rpgquest.travel.model;
  *
  * <p>Issue #567 (#228-P4) : {@code access} porte les conditions d'accès vérifiées par le serveur au
  * franchissement ({@link PortalAccess#NONE} = aucune, comportement d'avant).</p>
+ *
+ * <p>Issue #569 (#228-P6) : {@code messages} porte les messages et l'avertissement propres au
+ * portail ({@link PortalMessages#NONE} = textes d'avant).</p>
  */
 public record WorldPortalDefinition(
         String id,
@@ -33,7 +36,8 @@ public record WorldPortalDefinition(
         Details details,
         FixedPoint fixedPoint,
         String returnOf,
-        PortalAccess access
+        PortalAccess access,
+        PortalMessages messages
 ) {
 
     /**
@@ -146,6 +150,15 @@ public record WorldPortalDefinition(
             throw new IllegalArgumentException("un portail ne peut pas être son propre retour.");
         }
         access = access == null ? PortalAccess.NONE : access;
+        messages = messages == null ? PortalMessages.NONE : messages;
+    }
+
+    /** Sans messages personnalisés : conserve les appelants antérieurs à #569 inchangés. */
+    public WorldPortalDefinition(String id, String world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                  String destinationWorld, boolean enabled, DestinationStrategy destinationStrategy,
+                                  Details details, FixedPoint fixedPoint, String returnOf, PortalAccess access) {
+        this(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, enabled, destinationStrategy,
+                details, fixedPoint, returnOf, access, PortalMessages.NONE);
     }
 
     /** Sans conditions d'accès : conserve les appelants antérieurs à #567 inchangés. */
@@ -190,25 +203,32 @@ public record WorldPortalDefinition(
                 ? new Details(details.name(), details.site(), false, details.width(), details.height(), details.depth())
                 : details;
         return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, on,
-                destinationStrategy, d, fixedPoint, returnOf, access);
+                destinationStrategy, d, fixedPoint, returnOf, access, messages);
     }
 
     /** Même portail, zone et champs #565 remplacés ; l'id, la destination et l'état sont conservés. */
     public WorldPortalDefinition withZone(Zone zone, Details newDetails) {
         return new WorldPortalDefinition(id, world, zone.minX(), zone.minY(), zone.minZ(), zone.maxX(), zone.maxY(),
-                zone.maxZ(), destinationWorld, enabled, destinationStrategy, newDetails, fixedPoint, returnOf, access);
+                zone.maxZ(), destinationWorld, enabled, destinationStrategy, newDetails, fixedPoint, returnOf, access,
+                messages);
     }
 
     /** Même portail, arrivée remplacée (issue #566) ; zone, état et lien de retour conservés. */
     public WorldPortalDefinition withDestination(String newWorld, DestinationStrategy strategy, FixedPoint point) {
         return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, newWorld, enabled, strategy,
-                details, point, returnOf, access);
+                details, point, returnOf, access, messages);
     }
 
     /** Même portail, conditions d'accès remplacées (issue #567) ; le reste est conservé. */
     public WorldPortalDefinition withAccess(PortalAccess newAccess) {
         return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, enabled,
-                destinationStrategy, details, fixedPoint, returnOf, newAccess);
+                destinationStrategy, details, fixedPoint, returnOf, newAccess, messages);
+    }
+
+    /** Même portail, messages et avertissement remplacés (issue #569) ; le reste est conservé. */
+    public WorldPortalDefinition withMessages(PortalMessages newMessages) {
+        return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, enabled,
+                destinationStrategy, details, fixedPoint, returnOf, access, newMessages);
     }
 
     /** Une zone d'activation cuboïde (bornes incluses), monde à part. */

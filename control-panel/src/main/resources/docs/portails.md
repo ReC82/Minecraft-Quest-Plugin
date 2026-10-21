@@ -1,7 +1,7 @@
 ---
 title: Portails
 category: Monde
-tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver, conditions, accès, niveau, délai, simuler, simulation, tester, portal_test]
+tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver, conditions, accès, niveau, délai, simuler, simulation, tester, portal_test, messages, bienvenue, ne plus afficher, préférence]
 order: 2
 ---
 
@@ -158,13 +158,46 @@ règles Wild / Claims (fenêtre d'avertissement, accès aux Claims), puis télé
 forte : cocher la case **et** recopier l'identifiant du portail. Sans personnage lié au compte
 PlugAdmin, le bouton n'est pas proposé.
 
+## Messages et avertissement
+
+Bloc **Messages et avertissement** de la fiche (`PORTAL_EDIT`, action `portal.messages`). Un
+**aperçu** (lecture seule) montre l'avertissement tel qu'il s'affichera et chaque message effectif
+(« personnalisé » ou texte actuel). Le formulaire n'apparaît que sur un portail **non actif** : le
+désactiver d'abord, comme pour la zone ou les conditions.
+
+**Avertissement avant le départ** — la même fenêtre que celle du Wild (fenêtre Minecraft, ou lignes
+cliquables dans le chat) :
+
+- **Afficher l'avertissement** : *Par défaut* (seulement pour un portail vers le Wild, comme avant),
+  *Toujours*, ou *Jamais* ;
+- titre, texte, ligne d'indice, libellés des boutons **Entrer**, **Entrer et ne plus afficher**,
+  **Annuler**, et message après « Annuler » ;
+- case **Proposer « Entrer et ne plus afficher »** : décochée, l'avertissement s'affiche à chaque
+  départ (les préférences déjà enregistrées sont conservées, simplement ignorées).
+
+**Messages** : attente avant le départ, réussite, bienvenue (après l'arrivée), monde de destination
+indisponible, destination dangereuse (arrivée « point fixe » non sûre : départ refusé), et refus d'une
+condition d'accès qui n'a pas son propre message. Le message pendant l'attente entre deux passages se
+règle dans « Conditions d'accès ».
+
+**Chaque champ vide reprend le texte actuel**, rappelé sous le champ : enregistrer le formulaire sans
+rien saisir ne change rien, et vider tous les champs rend un fichier identique à avant. `hub_to_wild`
+garde exactement ses textes tant qu'on ne les modifie pas.
+
+« Ne plus afficher » est mémorisé **par joueur et par portail** (variable
+`PORTAL_WARNING_HIDDEN_<ID>`) et survit à une reconnexion ; `/rpgadmin player resetnew` l'efface
+avec les autres variables du joueur. Pour un portail vers le Wild, l'ancienne préférence
+`WILD_ENTRY_WARNING_HIDDEN` reste lue : un joueur qui l'avait masqué ne le revoit pas. Le fichier du
+portail garde ces textes dans `messages:` et `warning:` ; une section illisible fait ignorer le
+fichier.
+
 ---
 
 ## Fichier de portail ignoré
 
 Un fichier de `world-portals/` ou `portals/` n'a pas pu être lu au chargement : le portail n'existe
 pas en jeu. Le message indique le fichier et la raison (champ manquant, coordonnées inversées,
-stratégie inconnue, condition d'accès invalide).
+stratégie inconnue, condition d'accès invalide, message trop long ou mode d'avertissement inconnu).
 
 ## Monde de destination non chargé
 

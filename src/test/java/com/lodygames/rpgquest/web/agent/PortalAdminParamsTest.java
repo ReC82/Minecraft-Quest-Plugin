@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.web.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -166,5 +167,41 @@ class PortalAdminParamsTest {
         assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("level", "0")).error());
         assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("cooldown", "-1")).error());
         assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("level_message", "x".repeat(201))).error());
+    }
+
+    // ---- portal.messages (issue #569) ------------------------------------------------
+
+    @Test
+    void messagesReadEveryTextAndTheWarningOptions() {
+        var p = PortalAdminParams.parse(Kind.MESSAGES, access("msg_welcome", "<green>Salut.</green>",
+                "msg_refusal", "<red>Non.</red>", "warning_mode", "always", "warn_title", "<gold>Attention</gold>",
+                "warn_allow_hide", "false"));
+
+        assertNull(p.error());
+        var m = p.operation().messages();
+        assertEquals("<green>Salut.</green>", m.welcome());
+        assertEquals("<red>Non.</red>", m.refusal());
+        assertEquals("", m.success(), "absent = défaut");
+        assertEquals(com.lodygames.rpgquest.travel.model.PortalMessages.Mode.ALWAYS, m.warning().mode());
+        assertEquals("<gold>Attention</gold>", m.warning().title());
+        assertFalse(m.warning().allowHide());
+    }
+
+    @Test
+    void anEmptyMessagesFormRestoresEveryDefault() {
+        var p = PortalAdminParams.parse(Kind.MESSAGES, access("msg_welcome", "  ", "warning_mode", ""));
+
+        assertNull(p.error());
+        assertTrue(p.operation().messages().isEmpty());
+    }
+
+    @Test
+    void messagesRejectAnUnknownModeOrTooLongTexts() {
+        assertNotNull(PortalAdminParams.parse(Kind.MESSAGES, access("warning_mode", "PARFOIS")).error());
+        assertNotNull(PortalAdminParams.parse(Kind.MESSAGES, access("warn_allow_hide", "oui")).error());
+        assertNotNull(PortalAdminParams.parse(Kind.MESSAGES, access("msg_success", "x".repeat(201))).error());
+        assertNull(PortalAdminParams.parse(Kind.MESSAGES, access("warn_text", "x".repeat(500))).error(),
+                "le texte de l'avertissement peut être plus long");
+        assertNotNull(PortalAdminParams.parse(Kind.MESSAGES, access("warn_text", "x".repeat(501))).error());
     }
 }

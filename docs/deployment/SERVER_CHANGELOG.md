@@ -48,6 +48,37 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Portails : messages et avertissement par portail (#569, TC-395)
+
+### Changement
+
+Portails entre mondes : sections facultatives `messages:` et `warning:` (attente, réussite, bienvenue, monde
+indisponible, destination dangereuse, refus ; avertissement DEFAULT / ALWAYS / NEVER, textes, boutons, option « ne plus
+afficher »). Préférence « ne plus afficher » par joueur et par portail (`PORTAL_WARNING_HIDDEN_<ID>`),
+`WILD_ENTRY_WARNING_HIDDEN` toujours lue pour les portails vers le Wild. PlugAdmin : aperçu et formulaire d'un portail
+non actif (`portal.messages`). Portails sans personnalisation — dont `hub_to_wild` / `hub_to_claims` — inchangés.
+
+### Action serveur
+
+- JAR RPGQuest + PlugAdmin (AWS) depuis la fusion de la PR #569 ; redémarrage DEV requis. **Aucune migration**, aucune
+  clé de configuration, aucun fichier de contenu ni `world-portals/` à transférer.
+- Ne PAS modifier `world-portals/*.yml`, `config.yml`, `data.db` ; aucune préférence de joueur touchée.
+
+### Sauvegarde préalable
+
+Sauvegarde automatique du JAR en place par `scripts/deploy-verygames.sh` ; PlugAdmin : release précédente sous
+`/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-395 (PENDING MANUAL VALIDATION ; étapes 2 à 7 sur feu vert du propriétaire).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; PlugAdmin : `scripts/plugadmin/rollback.sh`. Un JAR
+antérieur ignore `messages:` / `warning:` (textes d'avant) et ne lit pas `PORTAL_WARNING_HIDDEN_<ID>` : un joueur qui a
+masqué l'avertissement de `hub_to_wild` après ce déploiement le reverrait une fois (sans perte de données).
+
 ## 2026-10-21 - Portails : conditions d'accès vérifiées par le serveur, simulation et test (#567, TC-394)
 
 ### Changement

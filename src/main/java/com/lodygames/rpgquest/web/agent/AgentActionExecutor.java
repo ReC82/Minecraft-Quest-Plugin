@@ -246,6 +246,7 @@ public final class AgentActionExecutor {
                 case PORTAL_DELETE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.DELETE);
                 case PORTAL_VERIFY -> portalVerify(action);
                 case PORTAL_ACCESS -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.ACCESS);
+                case PORTAL_MESSAGES -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.MESSAGES);
                 case PORTAL_SIMULATE -> portalSimulate(action);
                 case PORTAL_TEST -> portalTest(action);
                 case CLAIM_LIST -> claimList(action);

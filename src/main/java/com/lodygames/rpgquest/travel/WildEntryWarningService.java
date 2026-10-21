@@ -2,13 +2,18 @@ package com.lodygames.rpgquest.travel;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.travel.model.PortalMessages;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -57,17 +62,26 @@ import org.bukkit.event.player.PlayerQuitEvent;
  * de portail (il ne réagit qu'à une véritable transition extérieur → intérieur). Il faut donc
  * ressortir et rentrer — une nouvelle intervention explicite — pour revoir l'avertissement. Aucun
  * minuteur anti-spam n'est nécessaire, et aucun n'est posé.</p>
+ *
+ * <p><strong>Issue #569 (#228-P6) — avertissement par portail.</strong> Le même garde sert tout
+ * portail entre mondes : {@code warning.mode} ({@code DEFAULT} = vers le Wild seulement, {@code ALWAYS},
+ * {@code NEVER}), textes et libellés propres au portail (vides = textes ci-dessous, inchangés pour
+ * {@code hub_to_wild}), option « ne plus afficher » activable. La préférence est mémorisée <em>par
+ * joueur et par portail</em> ({@link #hiddenKey}) ; l'ancienne clé {@link #WARNING_HIDDEN_KEY} reste
+ * lue pour les portails vers le Wild, donc aucun joueur ne revoit un avertissement qu'il avait masqué.</p>
  */
 public final class WildEntryWarningService implements WorldPortalEntryGuard, Listener {
 
     /**
-     * Clé de {@code player_variables} portant le choix « Ne plus afficher cet avertissement » :
-     * {@code "true"} = masqué. Absence de ligne = avertissement affiché (comportement par défaut
-     * d'un nouveau joueur) ; réutilise la table existante, donc aucune migration de schéma, et
-     * {@code /rpgadmin player resetnew} rétablit l'avertissement sans code dédié puisqu'il efface
-     * toutes les variables du joueur.
+     * Clé de {@code player_variables} portant le choix « Ne plus afficher cet avertissement » d'avant
+     * #569 : {@code "true"} = masqué, pour <strong>tout</strong> portail vers le Wild. Toujours lue
+     * pour un portail vers le Wild (reprise : un joueur qui l'a masqué ne le revoit pas), plus jamais
+     * écrite — {@link #hiddenKey} la remplace. Absence de ligne = avertissement affiché ; {@code
+     * /rpgadmin player resetnew} efface toutes les variables du joueur, donc les deux clés.
      */
     static final String WARNING_HIDDEN_KEY = "WILD_ENTRY_WARNING_HIDDEN";
+    /** Préfixe de la préférence par portail (issue #569) : {@code PORTAL_WARNING_HIDDEN_<ID>}. */
+    public static final String PORTAL_HIDDEN_PREFIX = "PORTAL_WARNING_HIDDEN_";
     private static final String HIDDEN = "true";
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
@@ -81,6 +95,27 @@ public final class WildEntryWarningService implements WorldPortalEntryGuard, Lis
     static final String ENTER_AND_HIDE_LABEL = "Entrer et ne plus afficher cet avertissement";
     static final String CANCEL_LABEL = "Annuler";
     static final String CANCEL_TEXT = "Vous restez au Hub.";
+
+    /** Textes par défaut d'un portail vers le Wild : ceux d'avant #569, mise en forme comprise. */
+    static final Texts WILD_DEFAULTS = new Texts("<gold>⚠ Entrée dans le Wild</gold>",
+            "<white>" + WARNING_TEXT + "</white>", "<gray>" + GUARD_HINT + "</gray>",
+            "<green>" + ENTER_LABEL + "</green>", "<yellow>" + ENTER_AND_HIDE_LABEL + "</yellow>",
+            "<red>" + CANCEL_LABEL + "</red>", "<gray>" + CANCEL_TEXT + "</gray>",
+            "<aqua>" + PREPARING_TEXT + "</aqua>", true);
+    /** Textes par défaut d'un autre portail dont l'avertissement est activé (issue #569). */
+    static final Texts GENERIC_DEFAULTS = new Texts("<gold>⚠ Avertissement</gold>",
+            "<white>Ce portail mène vers une zone dangereuse. Voulez-vous continuer ?</white>", "",
+            "<green>Entrer</green>", "<yellow>" + ENTER_AND_HIDE_LABEL + "</yellow>",
+            "<red>" + CANCEL_LABEL + "</red>", "<gray>Vous restez ici.</gray>",
+            "<aqua>" + PREPARING_TEXT + "</aqua>", true);
+
+    /**
+     * Textes effectifs d'un avertissement (MiniMessage), personnalisés ou par défaut : une seule
+     * source pour le jeu et pour la fiche PlugAdmin. {@code hint} vide = pas de ligne d'indice.
+     */
+    public record Texts(String title, String text, String hint, String enter, String enterHide, String cancel,
+                        String cancelText, String preparing, boolean allowHide) {
+    }
 
     private final RPGQuestPlugin plugin;
     private final PlayerVariableRepository variableRepository;
@@ -102,40 +137,94 @@ public final class WildEntryWarningService implements WorldPortalEntryGuard, Lis
 
     /**
      * Ce garde s'applique-t-il à ce portail ? Même règle en jeu et dans la page Portails de
-     * PlugAdmin (issue #564) : la destination est exactement {@code travel.wild-world}.
+     * PlugAdmin (issue #564) : par défaut, la destination est exactement {@code travel.wild-world} ;
+     * depuis #569, l'avertissement du portail peut être forcé ({@code ALWAYS}) ou retiré ({@code NEVER}).
      */
     public static boolean appliesTo(WorldPortalDefinition portal, String wildWorld) {
+        return portal.messages().warns(towardsWild(portal, wildWorld));
+    }
+
+    static boolean towardsWild(WorldPortalDefinition portal, String wildWorld) {
         return portal.destinationWorld().equals(wildWorld);
+    }
+
+    /** Préférence « ne plus afficher » de ce portail (issue #569), dans {@code player_variables}. */
+    public static String hiddenKey(String portalId) {
+        return PORTAL_HIDDEN_PREFIX + portalId.toUpperCase(Locale.ROOT);
+    }
+
+    /** Textes effectifs : ceux du portail, sinon ceux par défaut (Wild ou génériques). */
+    public static Texts texts(WorldPortalDefinition portal, String wildWorld) {
+        Texts d = towardsWild(portal, wildWorld) ? WILD_DEFAULTS : GENERIC_DEFAULTS;
+        PortalMessages.Warning w = portal.messages().warning();
+        return new Texts(or(w.title(), d.title()), or(w.text(), d.text()), or(w.hint(), d.hint()),
+                or(w.enter(), d.enter()), or(w.enterHide(), d.enterHide()), or(w.cancel(), d.cancel()),
+                or(w.cancelText(), d.cancelText()), or(portal.messages().preparing(), d.preparing()), w.allowHide());
+    }
+
+    private static String or(String custom, String fallback) {
+        return custom.isEmpty() ? fallback : custom;
     }
 
     @Override
     public boolean allowEntry(Player player, WorldPortalDefinition portal) {
-        if (!appliesTo(portal, wildWorld.get())) {
-            return true; // pas un portail vers le Wild : jamais concerné.
+        String wild = wildWorld.get();
+        if (!appliesTo(portal, wild)) {
+            return true; // aucun avertissement pour ce portail.
         }
         UUID playerId = player.getUniqueId();
         if (!inFlight.add(playerId)) {
             return false; // une demande de ce joueur est déjà en vol : ni relecture, ni second départ.
         }
-        variableRepository.get(playerId, WARNING_HIDDEN_KEY).whenComplete((stored, error) -> runOnMainThread(() -> {
+        Texts texts = texts(portal, wild);
+        if (!texts.allowHide()) {
+            // « Ne plus afficher » non proposé : avertissement toujours affiché, préférence ni lue ni effacée.
+            runOnMainThread(() -> {
+                if (player.isOnline()) {
+                    showWarning(player, portal, texts);
+                } else {
+                    inFlight.remove(playerId);
+                }
+            });
+            return false;
+        }
+        readHidden(playerId, portal, wild).whenComplete((hidden, error) -> runOnMainThread(() -> {
             if (!player.isOnline()) {
                 inFlight.remove(playerId);
                 return;
             }
             if (error != null) {
                 plugin.getSLF4JLogger().error(
-                        "Impossible de lire la préférence d'avertissement d'entrée dans le Wild de {} : "
-                                + "avertissement affiché par défaut.", playerId, error);
-                showWarning(player, portal);
+                        "Impossible de lire la préférence d'avertissement du portail {} de {} : "
+                                + "avertissement affiché par défaut.", portal.id(), playerId, error);
+                showWarning(player, portal, texts);
                 return;
             }
-            if (HIDDEN.equalsIgnoreCase(stored.orElse(""))) {
-                beginTeleport(player, portal); // avertissement masqué : départ direct, préparation visible.
+            if (hidden) {
+                beginTeleport(player, portal, texts); // avertissement masqué : départ direct, préparation visible.
                 return;
             }
-            showWarning(player, portal);
+            showWarning(player, portal, texts);
         }));
         return false;
+    }
+
+    /**
+     * Préférence masquée ? Clé du portail ; pour un portail vers le Wild, aussi l'ancienne clé
+     * {@link #WARNING_HIDDEN_KEY} (reprise, issue #569).
+     */
+    private CompletableFuture<Boolean> readHidden(UUID playerId, WorldPortalDefinition portal, String wild) {
+        CompletableFuture<Boolean> own = variableRepository.get(playerId, hiddenKey(portal.id()))
+                .thenApply(WildEntryWarningService::isHidden);
+        if (!towardsWild(portal, wild)) {
+            return own;
+        }
+        return own.thenCompose(hidden -> hidden ? CompletableFuture.completedFuture(true)
+                : variableRepository.get(playerId, WARNING_HIDDEN_KEY).thenApply(WildEntryWarningService::isHidden));
+    }
+
+    private static boolean isHidden(Optional<String> stored) {
+        return HIDDEN.equalsIgnoreCase(stored.orElse(""));
     }
 
     /** Relâche un jeton resté en vol si le joueur se déconnecte entre-temps. */
@@ -144,18 +233,22 @@ public final class WildEntryWarningService implements WorldPortalEntryGuard, Lis
         inFlight.remove(event.getPlayer().getUniqueId());
     }
 
-    private void showWarning(Player player, WorldPortalDefinition portal) {
+    private void showWarning(Player player, WorldPortalDefinition portal, Texts texts) {
         UUID playerId = player.getUniqueId();
-        WildEntryPrompt prompt = new WildEntryPrompt(
-                MM.deserialize("<gold>⚠ Entrée dans le Wild</gold>"),
-                List.of(MM.deserialize("<white>" + WARNING_TEXT + "</white>"),
-                        MM.deserialize("<gray>" + GUARD_HINT + "</gray>")),
-                List.of(new WildEntryPromptButton(MM.deserialize("<green>" + ENTER_LABEL + "</green>"),
-                                () -> onConfirm(playerId, portal, false)),
-                        new WildEntryPromptButton(MM.deserialize("<yellow>" + ENTER_AND_HIDE_LABEL + "</yellow>"),
-                                () -> onConfirm(playerId, portal, true)),
-                        new WildEntryPromptButton(MM.deserialize("<red>" + CANCEL_LABEL + "</red>"),
-                                () -> onCancel(playerId))));
+        List<Component> body = new ArrayList<>();
+        body.add(MM.deserialize(texts.text()));
+        if (!texts.hint().isEmpty()) {
+            body.add(MM.deserialize(texts.hint()));
+        }
+        List<WildEntryPromptButton> buttons = new ArrayList<>();
+        buttons.add(new WildEntryPromptButton(MM.deserialize(texts.enter()),
+                () -> onConfirm(playerId, portal, false)));
+        if (texts.allowHide()) {
+            buttons.add(new WildEntryPromptButton(MM.deserialize(texts.enterHide()),
+                    () -> onConfirm(playerId, portal, true)));
+        }
+        buttons.add(new WildEntryPromptButton(MM.deserialize(texts.cancel()), () -> onCancel(playerId, portal)));
+        WildEntryPrompt prompt = new WildEntryPrompt(MM.deserialize(texts.title()), body, buttons);
         // Le jeton est relâché AVANT l'affichage : l'avertissement lui-même tient le joueur, et un
         // joueur qui ferme la fenêtre (= annulation silencieuse) ne doit jamais rester bloqué.
         inFlight.remove(playerId);
@@ -176,19 +269,20 @@ public final class WildEntryWarningService implements WorldPortalEntryGuard, Lis
             return; // clic répété, ou départ déjà en cours : une seule téléportation.
         }
         if (hideFutureWarnings) {
-            variableRepository.set(playerId, WARNING_HIDDEN_KEY, HIDDEN).exceptionally(error -> {
+            variableRepository.set(playerId, hiddenKey(portal.id()), HIDDEN).exceptionally(error -> {
                 plugin.getSLF4JLogger().error(
-                        "Impossible d'enregistrer « ne plus afficher l'avertissement du Wild » pour {}", playerId, error);
+                        "Impossible d'enregistrer « ne plus afficher l'avertissement » du portail {} pour {}",
+                        portal.id(), playerId, error);
                 return null;
             });
         }
-        beginTeleport(online.get(), portal);
+        beginTeleport(online.get(), portal, texts(portal, wildWorld.get()));
     }
 
     /** Annulation explicite : le joueur reste où il est, rien n'est mémorisé. */
-    void onCancel(UUID playerId) {
+    void onCancel(UUID playerId, WorldPortalDefinition portal) {
         onlinePlayer(playerId).ifPresent(player ->
-                player.sendMessage(MM.deserialize("<gray>" + CANCEL_TEXT + "</gray>")));
+                player.sendMessage(MM.deserialize(texts(portal, wildWorld.get()).cancelText())));
     }
 
     /**
@@ -198,9 +292,9 @@ public final class WildEntryWarningService implements WorldPortalEntryGuard, Lis
      * jamais après. Le jeton {@link #inFlight} n'est relâché qu'à la fin du départ, et un joueur
      * déconnecté entre-temps n'est jamais téléporté.
      */
-    private void beginTeleport(Player player, WorldPortalDefinition portal) {
+    private void beginTeleport(Player player, WorldPortalDefinition portal, Texts texts) {
         UUID playerId = player.getUniqueId();
-        player.sendMessage(MM.deserialize("<aqua>" + PREPARING_TEXT + "</aqua>"));
+        player.sendMessage(MM.deserialize(texts.preparing()));
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             try {
                 onlinePlayer(playerId).ifPresent(online -> teleporter.teleportNow(online, portal));

@@ -112,7 +112,7 @@ public final class PortalAccessChecker {
         }
         for (PortalAccess.Rule rule : access.rules()) {
             checks.add(evaluator.evaluate(player, null, rule.condition()).thenApply(ok -> check("CONDITION",
-                    PortalAccess.describe(rule.condition()), ok, rule.refusal(), Map.of())));
+                    PortalAccess.describe(rule.condition()), ok, portal.messages().refusalFor(rule), Map.of())));
         }
         if (withCooldown && access.cooldownSeconds() > 0) {
             checks.add(cooldowns.expiry(player.getUniqueId(), cooldownKey(portal.id())).thenApply(expiry -> {

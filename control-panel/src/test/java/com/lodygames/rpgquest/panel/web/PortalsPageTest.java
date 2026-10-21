@@ -401,6 +401,62 @@ class PortalsPageTest {
                 || page.contains("Simulation seulement : personne n'est téléporté."), "notes du serveur");
     }
 
+    // ---- Issue #569 : messages et avertissement par portail ------------------------------------------
+
+    /** Relevé #569 : le brouillon a un titre d'avertissement, une bienvenue et « ne plus afficher » retiré. */
+    static final String RELEVE_569 = RELEVE_565.replace(
+            "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650}",
+            "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650,\"messages\":{\"welcome\":"
+                    + "\"<green>Bienvenue au marché.</green>\",\"preparing\":\"\",\"success\":\"\",\"unavailable\":\"\","
+                    + "\"unsafe\":\"\",\"refusal\":\"\",\"warningMode\":\"ALWAYS\",\"title\":\"<gold>Marché</gold>\","
+                    + "\"text\":\"\",\"hint\":\"\",\"enter\":\"\",\"enterHide\":\"\",\"cancel\":\"\",\"cancelText\":\"\","
+                    + "\"allowHide\":false,\"custom\":true},\"messageDefaults\":{\"title\":\"<gold>⚠ Avertissement</gold>\","
+                    + "\"text\":\"<white>Ce portail mène vers une zone dangereuse. Voulez-vous continuer ?</white>\","
+                    + "\"hint\":\"\",\"enter\":\"<green>Entrer</green>\",\"enterHide\":\"<yellow>Entrer et ne plus "
+                    + "afficher cet avertissement</yellow>\",\"cancel\":\"<red>Annuler</red>\",\"cancelText\":"
+                    + "\"<gray>Vous restez ici.</gray>\",\"preparing\":\"<aqua>Recherche d'un point d'arrivée sûr… "
+                    + "Téléportation en préparation.</aqua>\",\"success\":\"<green>Téléportation réussie.</green>\","
+                    + "\"unavailable\":\"<red>Le monde de destination de ce portail n'est pas chargé.</red>\","
+                    + "\"unsafe\":\"<red>Arrivée non sûre.</red>\"},\"warns\":true}");
+
+    @Test
+    void theDraftFicheEditsMessagesAndPreviewsTheWarning() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_569);
+        String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(draft.contains("value=\"portal.messages\""), "formulaire des messages");
+        assertTrue(draft.contains("Aperçu de l&#39;avertissement") || draft.contains("Aperçu de l'avertissement"),
+                draft);
+        assertTrue(draft.contains(">Marché</span>"), "titre personnalisé dans l'aperçu");
+        assertTrue(draft.contains("Ce portail mène vers une zone dangereuse"), "texte par défaut dans l'aperçu");
+        assertFalse(draft.contains("name=\"warn_allow_hide\" value=\"true\" checked"), "case décochée");
+        assertTrue(draft.contains("<option value=\"ALWAYS\" selected>"), "mode prérempli");
+        assertTrue(draft.contains("Vide = « Téléportation réussie. »"), "texte actuel rappelé sous le champ");
+        assertTrue(draft.contains("Bienvenue au marché.") && draft.contains(">personnalisé<"));
+        String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild").body();
+        assertFalse(wild.contains("value=\"portal.messages\""), "portail actif : messages verrouillés");
+    }
+
+    @Test
+    void messagesAreQueuedOnlyWithAKnownModeAndAnExplicitHideChoice() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        String base = "_csrf=" + token + "&type=portal.messages&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche&expected=bbbbbbbbbbbbbbbbbbbbbbbb&confirm=true";
+        post("/agents/action", base + "&warning_mode=PARFOIS");
+        assertFalse(pollActions().contains("portal.messages"), "mode inconnu : rien en file");
+        post("/agents/action", base + "&warn_text=" + "x".repeat(501));
+        assertFalse(pollActions().contains("portal.messages"), "texte trop long : rien en file");
+        post("/agents/action", base + "&warning_mode=always&msg_welcome=" + URLEncoder.encode(
+                "<green>Salut</green>", StandardCharsets.UTF_8));
+        String queued = pollActions();
+        assertTrue(queued.contains("\"warning_mode\":\"ALWAYS\"") && queued.contains("\"warn_allow_hide\":\"false\""),
+                queued);
+        assertTrue(queued.contains("Salut"), queued);
+    }
+
     private String pollActions() throws Exception {
         return client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)

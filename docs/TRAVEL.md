@@ -422,6 +422,12 @@ fermeture de fenêtre. Elle masque l'avertissement seul : le retour de préparat
 réussite/échec et tous les contrôles de sécurité restent en place. `/rpgadmin player resetnew`
 rétablit l'avertissement sans code dédié (il efface toutes les variables du joueur).
 
+**Depuis #569 (avertissement par portail)** : la préférence est mémorisée par joueur **et par
+portail**, clé `PORTAL_WARNING_HIDDEN_<ID>` (identifiant du portail en majuscules). L'ancienne clé
+`WILD_ENTRY_WARNING_HIDDEN` n'est plus écrite mais reste lue pour tout portail vers le Wild : un
+joueur qui l'avait masqué ne le revoit pas. Textes, boutons, mode (DEFAULT / ALWAYS / NEVER) et option
+« ne plus afficher » se règlent par portail (sections `warning:` et `messages:`, voir la Bible).
+
 ### Pas de boucle de menu
 
 Aucun minuteur anti-spam. `WorldPortalTeleportListener` ne consulte les gardes que sur une

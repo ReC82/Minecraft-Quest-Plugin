@@ -193,6 +193,14 @@ final class PortalForms {
             } else {
                 sb.append(accessForm(v, p));
             }
+            sb.append("<h4 class=\"w-h\" id=\"portal-messages\">Messages et avertissement</h4>");
+            sb.append(messagesPreview(p));
+            if (active) {
+                sb.append("<p class=\"muted\">Désactiver le portail avant de changer ses messages et son "
+                        + "avertissement.</p>");
+            } else if (p.containsKey("messages")) {
+                sb.append(messagesForm(v, p));
+            }
             boolean hasReturn = p.get("returnedBy") instanceof List<?> r && !r.isEmpty();
             if (str(p.get("returnOf")).isEmpty() && !hasReturn) {
                 sb.append("<h4 class=\"w-h\">Aller-retour</h4><p class=\"field-help\">Le retour est un second "
@@ -311,6 +319,129 @@ final class PortalForms {
         sb.append(StyleField.render(prefix + "message", "pa-" + portalId + "-c" + i + "-msg", "Message de refus",
                 str(r.get("message")), false, "Montré au joueur refusé par cette condition. Vide = message par défaut."));
         return sb.append("<p class=\"field-help\">Seuls les champs du type choisi sont lus.</p></fieldset>").toString();
+    }
+
+    // ---- Messages et avertissement (issue #569) -----------------------------------------------
+
+    /** {nom du champ, clé dans messages / messageDefaults, libellé, aide}. */
+    private static final List<String[]> WARNING_FIELDS = List.of(
+            new String[] {"warn_title", "title", "Titre de la fenêtre", ""},
+            new String[] {"warn_text", "text", "Texte de l'avertissement", ""},
+            new String[] {"warn_hint", "hint", "Ligne d'indice (sous le texte)", ""},
+            new String[] {"warn_enter", "enter", "Bouton « Entrer »", ""},
+            new String[] {"warn_enter_hide", "enterHide", "Bouton « Entrer et ne plus afficher »", ""},
+            new String[] {"warn_cancel", "cancel", "Bouton « Annuler »", ""},
+            new String[] {"warn_cancel_text", "cancelText", "Message après « Annuler »", ""});
+    private static final List<String[]> MESSAGE_FIELDS = List.of(
+            new String[] {"msg_preparing", "preparing", "Message d'attente (avant le départ)",
+                    "Sans avertissement, aucun message d'attente par défaut."},
+            new String[] {"msg_success", "success", "Message de réussite", ""},
+            new String[] {"msg_welcome", "welcome", "Message de bienvenue (après l'arrivée)", "Vide = aucun."},
+            new String[] {"msg_unavailable", "unavailable", "Monde de destination indisponible", ""},
+            new String[] {"msg_unsafe", "unsafe", "Destination dangereuse (arrivée non sûre, départ refusé)",
+                    "Arrivée « point fixe » seulement."},
+            new String[] {"msg_refusal", "refusal", "Refus d'une condition d'accès sans message propre",
+                    "Vide = message par défaut de chaque condition."});
+
+    /**
+     * Aperçu en lecture seule (aucune écriture) : l'avertissement tel qu'il s'affichera en jeu et les
+     * messages effectifs, personnalisés ou par défaut.
+     */
+    static String messagesPreview(Map<String, Object> p) {
+        if (!p.containsKey("messages")) {
+            return "";
+        }
+        Map<String, Object> m = PortalPages.maps(List.of(p.get("messages"))).get(0);
+        Map<String, Object> d = PortalPages.maps(List.of(p.getOrDefault("messageDefaults", Map.of()))).get(0);
+        StringBuilder sb = new StringBuilder("<div class=\"card w-sec\" id=\"portal-messages-preview\">");
+        if (bool(p.get("warns"))) {
+            boolean allowHide = !"false".equals(str(m.get("allowHide")));
+            sb.append("<p class=\"small muted\">Aperçu de l'avertissement affiché avant chaque départ :</p>")
+                    .append("<p>").append(mc(effective(m, d, "title"))).append("</p>")
+                    .append("<p>").append(mc(effective(m, d, "text"))).append("</p>");
+            if (!effective(m, d, "hint").isEmpty()) {
+                sb.append("<p>").append(mc(effective(m, d, "hint"))).append("</p>");
+            }
+            sb.append("<p class=\"btnrow\">").append(mc(effective(m, d, "enter")));
+            if (allowHide) {
+                sb.append(" ").append(mc(effective(m, d, "enterHide")));
+            }
+            sb.append(" ").append(mc(effective(m, d, "cancel"))).append("</p>");
+            sb.append("<p class=\"small muted\">").append(allowHide
+                    ? "« Ne plus afficher » est mémorisé par joueur et par portail ; effacé par /rpgadmin player resetnew."
+                    : "« Ne plus afficher » n'est pas proposé : l'avertissement s'affiche à chaque départ.").append("</p>");
+        } else {
+            sb.append("<p class=\"small muted\">Aucun avertissement avant le départ.</p>");
+        }
+        sb.append("<dl class=\"w-dl\">");
+        for (String[] f : MESSAGE_FIELDS) {
+            String value = effective(m, d, f[1]);
+            sb.append("<dt>").append(Http.esc(f[2])).append("</dt><dd>")
+                    .append(value.isEmpty() ? "<span class=\"muted\">—</span>" : mc(value))
+                    .append(str(m.get(f[1])).isEmpty() ? "" : " <span class=\"pill ok\">personnalisé</span>")
+                    .append("</dd>");
+        }
+        return sb.append("</dl></div>").toString();
+    }
+
+    /** Texte Minecraft rendu sur fond sombre, comme l'aperçu des dialogues (HTML sûr). */
+    private static String mc(String miniMessage) {
+        return "<span class=\"dlg-preview\">" + MiniText.html(miniMessage) + "</span>";
+    }
+
+    private static String effective(Map<String, Object> m, Map<String, Object> d, String key) {
+        String custom = str(m.get(key));
+        return custom.isEmpty() ? str(d.get(key)) : custom;
+    }
+
+    /**
+     * Formulaire des messages d'un portail non actif. Chaque champ vide reprend le texte affiché
+     * sous lui (texte actuel) : enregistrer le formulaire sans rien saisir ne change rien.
+     */
+    private static String messagesForm(PortalPages.View v, Map<String, Object> p) {
+        Map<String, Object> m = PortalPages.maps(List.of(p.get("messages"))).get(0);
+        Map<String, Object> d = PortalPages.maps(List.of(p.getOrDefault("messageDefaults", Map.of()))).get(0);
+        String id = str(p.get("id"));
+        String mode = str(m.get("warningMode")).isEmpty() ? "DEFAULT" : str(m.get("warningMode"));
+        StringBuilder modes = new StringBuilder("<select name=\"warning_mode\">");
+        for (String[] o : List.of(new String[] {"DEFAULT", "Par défaut (vers le Wild)"},
+                new String[] {"ALWAYS", "Toujours"},
+                new String[] {"NEVER", "Jamais"})) {
+            modes.append("<option value=\"").append(o[0]).append("\"").append(o[0].equals(mode) ? " selected" : "")
+                    .append(">").append(Http.esc(o[1])).append("</option>");
+        }
+        modes.append("</select>");
+        StringBuilder sb = new StringBuilder("<p class=\"field-help\">Chaque champ vide reprend le texte "
+                + "<strong>actuel</strong>, rappelé sous lui : enregistrer sans rien saisir ne change rien. Aucune "
+                + "préférence de joueur n'est modifiée.</p>");
+        sb.append(formStart(v, "portal.messages", id)).append(hidden(p));
+        sb.append("<fieldset class=\"mb-2\"><legend class=\"small\">Avertissement avant le départ</legend>")
+                .append("<div class=\"form-grid\">").append(field("Afficher l'avertissement", modes.toString(), ""))
+                .append("<label class=\"inline\"><input type=\"checkbox\" name=\"warn_allow_hide\" value=\"true\"")
+                .append("false".equals(str(m.get("allowHide"))) ? "" : " checked")
+                .append("> Proposer « Entrer et ne plus afficher » (mémorisé par joueur et par portail)</label></div>");
+        for (String[] f : WARNING_FIELDS) {
+            sb.append(messageField(id, f, m, d, "warn_text".equals(f[0])));
+        }
+        sb.append("</fieldset><fieldset class=\"mb-2\"><legend class=\"small\">Messages</legend>");
+        for (String[] f : MESSAGE_FIELDS) {
+            sb.append(messageField(id, f, m, d, false));
+        }
+        sb.append("<p class=\"field-help\">Le message d'attente entre deux passages se règle dans « Conditions "
+                + "d'accès ».</p></fieldset>");
+        sb.append(essential(p)).append(confirm("Remplacer les messages de « " + id + " »"))
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">Enregistrer "
+                        + "les messages</button></div></form>");
+        return sb.toString();
+    }
+
+    private static String messageField(String portalId, String[] f, Map<String, Object> m, Map<String, Object> d,
+                                       boolean multiline) {
+        String fallback = MiniText.plain(str(d.get(f[1])));
+        String help = (fallback.isEmpty() ? "Vide = aucun." : "Vide = « " + Http.esc(fallback) + " ».")
+                + (f[3].isEmpty() || f[3].equals("Vide = aucun.") ? "" : " " + Http.esc(f[3]));
+        return StyleField.render(f[0], "pa-" + portalId + "-" + f[0].replace('_', '-'), f[2], str(m.get(f[1])), false,
+                help, multiline);
     }
 
     private static String text(String name, String value, String placeholder) {
@@ -569,6 +700,7 @@ final class PortalForms {
             case "DISABLE" -> "Désactivé";
             case "DELETE" -> "Supprimé";
             case "ACCESS" -> "Conditions d'accès modifiées";
+            case "MESSAGES" -> "Messages et avertissement modifiés";
             default -> op;
         };
     }

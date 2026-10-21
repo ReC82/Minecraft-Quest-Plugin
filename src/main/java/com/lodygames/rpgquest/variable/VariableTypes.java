@@ -55,6 +55,8 @@ public final class VariableTypes {
             bool("CLAIM_TIER_<n>", "CLAIM_TIER_\\d+", "Droit au palier n de terrain (true = débloqué)."),
             bool("WILD_ENTRY_WARNING_HIDDEN", "WILD_ENTRY_WARNING_HIDDEN",
                     "Avertissement d'entrée dans le Wild masqué par le joueur."),
+            bool("PORTAL_WARNING_HIDDEN_<ID>", "PORTAL_WARNING_HIDDEN_[A-Z0-9_-]{1,48}",
+                    "Avertissement d'un portail masqué par le joueur (issue #569)."),
             bool("BETA_WARNING_HIDDEN", "BETA_WARNING_HIDDEN", "Avertissement bêta masqué par le joueur."),
             bool("RUNE_RAPPEL_GRANTED", "RUNE_RAPPEL_GRANTED", "Pierre de retour déjà remise."),
             bool("STARTER_TOOL_KIT_AVAILABLE", "STARTER_TOOL_KIT_AVAILABLE",

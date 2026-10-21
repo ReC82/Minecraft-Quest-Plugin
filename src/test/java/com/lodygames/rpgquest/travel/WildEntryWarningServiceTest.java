@@ -10,6 +10,8 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.travel.model.PortalAccess;
+import com.lodygames.rpgquest.travel.model.PortalMessages;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -160,10 +162,13 @@ class WildEntryWarningServiceTest {
         return out;
     }
 
+    /** Préférence par portail (issue #569) de {@code hub_to_wild}. */
     private String hiddenPreference(UUID playerId) throws Exception {
-        Optional<String> value = variableRepository
-                .get(playerId, WildEntryWarningService.WARNING_HIDDEN_KEY)
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return variable(playerId, WildEntryWarningService.hiddenKey("hub_to_wild"));
+    }
+
+    private String variable(UUID playerId, String key) throws Exception {
+        Optional<String> value = variableRepository.get(playerId, key).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         return value.orElse(null);
     }
 
@@ -299,6 +304,8 @@ class WildEntryWarningServiceTest {
                 throw new IllegalStateException(e);
             }
         }, "préférence « ne plus afficher » persistée");
+        assertNull(variable(player.getUniqueId(), WildEntryWarningService.WARNING_HIDDEN_KEY),
+                "l'ancienne clé n'est plus écrite : la préférence est par portail (#569)");
     }
 
     @Test
@@ -378,5 +385,106 @@ class WildEntryWarningServiceTest {
         pumpQuietly();
         assertEquals(0, teleportNowCalls.get(), "aucune téléportation tardive pour un joueur déconnecté");
         assertFalse(guard.hasRequestInFlight(playerId), "le jeton est relâché après une déconnexion");
+    }
+
+    // ---- Avertissement par portail (issue #569) ----------------------------
+
+    private static WorldPortalDefinition withWarning(String id, String destination, PortalMessages.Warning warning) {
+        return new WorldPortalDefinition(id, "world_hub", 0, 0, 0, 4, 4, 4, destination, false, null, null, null, "",
+                PortalAccess.NONE, PortalMessages.NONE.withWarning(warning));
+    }
+
+    private static PortalMessages.Warning on(String title, String text, boolean allowHide) {
+        return new PortalMessages.Warning(PortalMessages.Mode.ALWAYS, title, text, "", "<green>Y aller</green>", "",
+                "", "<gray>Tu restes là.</gray>", allowHide);
+    }
+
+    @Test
+    void hubToWildKeepsExactlyTheTextsItHadBefore() {
+        assertEquals(WildEntryWarningService.WILD_DEFAULTS, WildEntryWarningService.texts(TO_WILD, "wild"),
+                "sans personnalisation, hub_to_wild garde ses textes d'avant #569");
+        assertTrue(WildEntryWarningService.appliesTo(TO_WILD, "wild"));
+        assertFalse(WildEntryWarningService.appliesTo(TO_CLAIMS, "wild"));
+    }
+
+    @Test
+    void aCustomWarningUsesThePortalTextsAndFallsBackToDefaults() throws Exception {
+        WorldPortalDefinition toVillage = withWarning("hub_to_village", "village",
+                on("<gold>Village</gold>", "<white>Les loups rôdent.</white>", true));
+        PlayerMock player = player();
+
+        assertFalse(guard.allowEntry(player, toVillage), "un portail averti n'est jamais traversé directement");
+        pumpUntil(() -> presenter.presentations.get() == 1, "avertissement affiché");
+
+        assertTrue(presenter.plainBody().contains("Les loups rôdent."), presenter::plainBody);
+        assertEquals(List.of("Y aller", "Entrer et ne plus afficher cet avertissement", "Annuler"),
+                presenter.plainLabels(), "libellés vides = libellés par défaut");
+        drainMessages(player);
+        presenter.click(2);
+        List<String> messages = drainMessages(player);
+        assertTrue(messages.stream().anyMatch(m -> m.contains("Tu restes là.")), () -> "obtenu : " + messages);
+        assertEquals(0, teleportNowCalls.get());
+    }
+
+    @Test
+    void warningOffLetsEvenAWildPortalThrough() throws Exception {
+        WorldPortalDefinition silent = withWarning("hub_to_wild_b", "wild", new PortalMessages.Warning(
+                PortalMessages.Mode.NEVER, "", "", "", "", "", "", "", true));
+        PlayerMock player = player();
+
+        assertTrue(guard.allowEntry(player, silent), "avertissement retiré : passage direct");
+        assertEquals(0, presenter.presentations.get());
+    }
+
+    @Test
+    void withoutNeverShowAgainTheWarningAlwaysShowsAndThePreferenceIsKept() throws Exception {
+        WorldPortalDefinition strict = withWarning("hub_to_wild", "wild", on("", "", false));
+        PlayerMock player = player();
+        variableRepository.set(player.getUniqueId(), WildEntryWarningService.WARNING_HIDDEN_KEY, "true")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertFalse(guard.allowEntry(player, strict));
+        pumpUntil(() -> presenter.presentations.get() == 1, "avertissement affiché malgré la préférence");
+        assertEquals(2, presenter.plainLabels().size(), () -> "« ne plus afficher » absent : " + presenter.plainLabels());
+        assertEquals("true", variable(player.getUniqueId(), WildEntryWarningService.WARNING_HIDDEN_KEY),
+                "aucune préférence de joueur n'est effacée");
+    }
+
+    @Test
+    void neverShowAgainIsRememberedPerPortal() throws Exception {
+        WorldPortalDefinition a = withWarning("hub_to_a", "world_a", on("", "", true));
+        WorldPortalDefinition b = withWarning("hub_to_b", "world_b", on("", "", true));
+        PlayerMock player = player();
+
+        guard.allowEntry(player, a);
+        pumpUntil(() -> presenter.presentations.get() == 1, "avertissement de A");
+        presenter.click(1);
+        pumpUntil(() -> {
+            try {
+                return "true".equals(variable(player.getUniqueId(), WildEntryWarningService.hiddenKey("hub_to_a")));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }, "préférence de A persistée");
+        pumpUntil(() -> teleportNowCalls.get() == 1, "départ par A");
+
+        guard.allowEntry(player, b);
+        pumpUntil(() -> presenter.presentations.get() == 2, "B avertit toujours");
+
+        guard.allowEntry(player, a);
+        pumpUntil(() -> teleportNowCalls.get() == 2, "A ne réaverti plus");
+        assertEquals(2, presenter.presentations.get());
+        assertEquals("PORTAL_WARNING_HIDDEN_HUB_TO_A", WildEntryWarningService.hiddenKey("hub_to_a"));
+    }
+
+    @Test
+    void theOldWildPreferenceIsNotAppliedToOtherDestinations() throws Exception {
+        WorldPortalDefinition toVillage = withWarning("hub_to_village", "village", on("", "", true));
+        PlayerMock player = player();
+        variableRepository.set(player.getUniqueId(), WildEntryWarningService.WARNING_HIDDEN_KEY, "true")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        guard.allowEntry(player, toVillage);
+        pumpUntil(() -> presenter.presentations.get() == 1, "l'ancienne clé ne vaut que pour le Wild");
     }
 }

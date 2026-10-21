@@ -73,12 +73,17 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final long ARRIVAL_GRACE_TICKS = 40L; // 2 s.
-    static final String FIXED_POINT_UNSAFE = "<red>L'arrivée de ce portail n'est pas sûre en ce moment : "
+    public static final String FIXED_POINT_UNSAFE = "<red>L'arrivée de ce portail n'est pas sûre en ce moment : "
             + "téléportation annulée, vous restez ici. Prévenez un administrateur.</red>";
     static final String FIXED_POINT_UNAVAILABLE = "<red>L'arrivée de ce portail n'a pas pu être préparée : "
             + "téléportation annulée, vous restez ici. Vous pouvez réessayer.</red>";
     static final String ACCESS_UNAVAILABLE = "<red>Les conditions de ce portail n'ont pas pu être vérifiées : "
             + "vous restez ici. Vous pouvez réessayer.</red>";
+    public static final String WORLD_UNAVAILABLE =
+            "<red>Le monde de destination de ce portail n'est pas chargé, contacte un administrateur.</red>";
+    public static final String SUCCESS = "<green>Téléportation réussie.</green>";
+    static final String FAILED =
+            "<red>La téléportation a échoué : vous n'avez pas quitté cet endroit. Vous pouvez réessayer.</red>";
 
     private final RPGQuestPlugin plugin;
     private final WorldPortalRegistry registry;
@@ -217,6 +222,11 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         WorldPortalEntryGuard guard = entryGuard;
         if (guard != null && !guard.allowEntry(player, portalOpt.get())) {
             return; // le garde a bloqué ce passage (ex. avertissement Wild sans Rune) et gère la suite.
+        }
+        // #569 : message d'attente du portail (aucun par défaut sans avertissement, comme avant).
+        String preparing = portalOpt.get().messages().preparing();
+        if (!preparing.isEmpty()) {
+            player.sendMessage(MM.deserialize(preparing));
         }
         teleport(player, portalOpt.get());
     }
@@ -403,8 +413,7 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
     private void transport(Player player, WorldPortalDefinition portal, Runnable onSuccess) {
         Optional<World> destination = worldService.find(portal.destinationWorld());
         if (destination.isEmpty()) {
-            player.sendMessage(MM.deserialize(
-                    "<red>Le monde de destination de ce portail n'est pas chargé, contacte un administrateur.</red>"));
+            player.sendMessage(text(portal.messages().unavailable(), WORLD_UNAVAILABLE));
             logger.warn("Portail simple {} pointe vers un monde non chargé « {} ».", portal.id(), portal.destinationWorld());
             return;
         }
@@ -475,12 +484,25 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
                     + "un autre plugin a probablement annulé la téléportation.", portal.id(), player.getName());
             // Issue #161 : un retour d'échec compréhensible, jamais un faux « réussie » — le joueur
             // reste là où il était et peut réessayer en reprenant le portail.
-            player.sendMessage(MM.deserialize(
-                    "<red>La téléportation a échoué : vous n'avez pas quitté cet endroit. Vous pouvez réessayer.</red>"));
+            player.sendMessage(MM.deserialize(FAILED));
             return;
         }
         onSuccess.run();
-        player.sendMessage(MM.deserialize("<green>Téléportation réussie.</green>"));
+        announceArrival(player, portal);
+    }
+
+    /** Réussite puis bienvenue éventuelle (issue #569) : textes du portail, sinon ceux d'avant. */
+    private static void announceArrival(Player player, WorldPortalDefinition portal) {
+        player.sendMessage(text(portal.messages().success(), SUCCESS));
+        String welcome = portal.messages().welcome();
+        if (!welcome.isEmpty()) {
+            player.sendMessage(MM.deserialize(welcome));
+        }
+    }
+
+    /** Texte personnalisé du portail (MiniMessage), sinon le texte par défaut. */
+    private static net.kyori.adventure.text.Component text(String custom, String fallback) {
+        return MM.deserialize(custom.isEmpty() ? fallback : custom);
     }
 
     /**
@@ -541,14 +563,14 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
             logger.warn("Portail simple {} (FIXED_POINT) : arrivée {} {},{},{} non sûre et aucune position sûre "
                             + "à {} bloc(s) autour — téléportation refusée.", portal.id(), world.getName(),
                     point.blockX(), point.blockY(), point.blockZ(), ArrivalSafety.HORIZONTAL_RADIUS);
-            player.sendMessage(MM.deserialize(FIXED_POINT_UNSAFE));
+            player.sendMessage(text(portal.messages().unsafe(), FIXED_POINT_UNSAFE));
             return;
         }
         ArrivalSafety.Spot s = spot.get();
         if (registry.portalAt(world.getName(), s.x(), s.y(), s.z()).filter(WorldPortalDefinition::enabled).isPresent()) {
             logger.warn("Portail simple {} (FIXED_POINT) : l'arrivée {} {},{},{} est dans la zone d'un portail "
                     + "actif — téléportation refusée (boucle).", portal.id(), world.getName(), s.x(), s.y(), s.z());
-            player.sendMessage(MM.deserialize(FIXED_POINT_UNSAFE));
+            player.sendMessage(text(portal.messages().unsafe(), FIXED_POINT_UNSAFE));
             return;
         }
         boolean exact = s.x() == point.blockX() && s.y() == point.blockY() && s.z() == point.blockZ();
@@ -575,8 +597,11 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
             if (!player.isOnline()) {
                 return;
             }
-            player.sendMessage(MM.deserialize(ok ? "<green>Téléportation réussie.</green>"
-                    : "<red>La téléportation a échoué : vous n'avez pas quitté cet endroit. Vous pouvez réessayer.</red>"));
+            if (ok) {
+                announceArrival(player, portal);
+            } else {
+                player.sendMessage(MM.deserialize(FAILED));
+            }
         }));
     }
 

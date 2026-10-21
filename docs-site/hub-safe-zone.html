@@ -53,7 +53,8 @@
   <h2 class="h3 mt-5">Monde Hub (<code>world_hub</code>) — règles globales</h2>
   <p class="text-body-secondary">
     Implémentation : <code>hub.HubWorldRulesService</code> (application des règles) +
-    <code>hub.HubWorldProtectionListener</code> (protections). Distinct de la zone protégée
+    <code>hub.HubWorldProtectionListener</code> (protections) +
+    <code>hub.HubResourceLockListener</code> (commerce et conteneurs, #675). Distinct de la zone protégée
     <code>central_village</code> plus bas : ces règles s'appliquent à <strong>tout le monde
     <code>world_hub</code></strong> (nom lu depuis <code>hub.world</code> dans
     <code>config.yml</code>, <code>world_hub</code> par défaut), pas seulement à une zone cuboïde
@@ -73,6 +74,8 @@
         <tr><td>Seaux (#107)</td><td>Vider ou remplir un seau est refusé sans droit de construction (comme poser/casser un bloc) — <strong>traire une vache reste permis</strong>.</td></tr>
         <tr><td>Feu (#107)</td><td>Propagation et combustion toujours annulées ; allumer un feu refusé sans droit de construction (un constructeur peut poser un feu décoratif, qui ne se propage pas).</td></tr>
         <tr><td>Établis (salle de craft, #107)</td><td><strong>Utilisables</strong> par tout joueur (clic droit), même dans une zone <code>public-containers: false</code> ; jamais cassables ni brûlables. Détail : <code>docs/HUB_SERVICES.md</code>.</td></tr>
+        <tr><td>Commerce vanilla (#675)</td><td><strong>Indisponible</strong> : clic droit sur un villageois ou un marchand ambulant (hors PNJ Citizens) annulé avec un message discret ; aucune émeraude, aucun objet, aucune XP de commerce. Les PNJ, marchands et ateliers RPGQuest restent utilisables.</td></tr>
+        <tr><td>Conteneurs (#675)</td><td>Coffres, tonneaux, shulkers, hoppers, distributeurs, droppers, crafters, wagonnets et bateaux à coffre <strong>ne s'ouvrent pas</strong> ; pots décorés et étagères refusent le clic ; hoppers et droppers ne transfèrent rien. Verrouillage seul : <strong>aucun contenu supprimé</strong>. Restent libres : coffres personnels liés (#105), fours, alambics, établis, coffre de l'Ender. Bypass <code>rpgquest.admin.hub.resources</code> en session <code>/rpgadmin bypass on</code> seulement.</td></tr>
         <tr><td>Explosions</td><td>Aucune destruction de bloc (<code>blockList()</code> vidée), qu'il s'agisse d'une explosion d'entité (creeper, TNT) ou de bloc.</td></tr>
         <tr><td>Mobs hostiles</td><td>Aucun spawn naturel (<code>CreatureSpawnEvent</code> de raison <code>NATURAL</code> annulé pour tout <code>Monster</code>).</td></tr>
         <tr><td>Claims</td><td>Interdits — <code>ClaimService</code> refuse toute création dans le monde exact de <code>hub.world</code>.</td></tr>

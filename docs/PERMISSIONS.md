@@ -23,6 +23,7 @@
 | `rpgquest.admin.travel.maintenance` | non | casser les blocs du réseau de voyage **après** `/rpgadmin travel maintenance on` | — |
 | `rpgquest.admin.bypass` | **OP** | **ouvrir** une session de mode bypass (`/rpgadmin bypass on`, #35) — n'accorde aucun contournement à elle seule | tout bypass non détenu |
 | `rpgquest.admin.hub.combat` | **OP** | frapper les entités protégées du Hub, **uniquement en mode bypass** (#35) | construction |
+| `rpgquest.admin.hub.resources` | **OP** | commercer avec un villageois vanilla et ouvrir un coffre / tonneau / hopper du Hub, **uniquement en mode bypass** (#675) | construction |
 | `rpgquest.admin.debug` | **OP** | outils de débogage | — |
 | `rpgquest.admin` | **OP** | commandes d'administration (`/rpgquest reload`, `/quest admin`…) | — |
 | `rpgquest.admin.world` | **OP** | **ancien nœud global** : construction de tous les Hubs, tous les bypass (**uniquement en mode bypass**, #35), branches historiques de `/rpgadmin` | — |
@@ -33,7 +34,7 @@ PlugAdmin (rôles du panel) et OP Minecraft sont indépendants : changer l'un ne
 ## Mode bypass administrateur (#35, #321)
 
 Être OP ne contourne plus **aucune règle de jeu**. Les nœuds `rpgquest.bypass.*`,
-`rpgquest.admin.hub.combat` et la partie « bypass » de `rpgquest.admin.world` ne comptent que pendant
+`rpgquest.admin.hub.combat`, `rpgquest.admin.hub.resources` et la partie « bypass » de `rpgquest.admin.world` ne comptent que pendant
 une **session explicite** :
 
 | Commande | Effet |

@@ -350,7 +350,7 @@ Voir aussi `docs/TRAVEL.md` section « Réseau de voyage / bornes » pour le dé
 | `/rpgadmin travel repair waypoint\|beacon <id> confirm` | **Déplace** une structure inaccessible (#153) vers un emplacement accessible proche ; id/nom/découvertes conservés. | oui |
 | `/rpgadmin travel restore waypoint <id> confirm [force]` | (#191) **Repose les blocs manquants sans déplacer** le waypoint — à utiliser après une destruction. Conserve id, nom, découvertes et borne appariée ; ne crée aucun doublon. Un emplacement occupé par une construction tierce est signalé en conflit et **laissé intact** sauf `force` explicite. Ne pas confondre avec `repair`, qui relocalise. | oui (blocs du monde) |
 | `/rpgadmin travel maintenance <on\|off>` | (#191) Autorise temporairement, **pour soi uniquement**, la casse des blocs de waypoints/bornes. Exige la permission dédiée `rpgquest.admin.travel.maintenance` (`default: false`, **jamais accordée par le simple statut OP**) ; expire d'elle-même au bout de 5 minutes. Sans argument : affiche l'état courant. | non (mémoire, perdu au redémarrage — défaut sûr) |
-| `/rpgadmin bypass <on\|off\|status>` | (#35/#321) **Mode bypass administrateur explicite** : seule façon de contourner une règle de jeu (accès et règles du monde Claims, claims d'autrui, zones, combat au Hub) — **être OP ne suffit plus**. Exige `rpgquest.admin.bypass` (défaut `op`) ; n'arme que les nœuds de bypass déjà détenus (`rpgquest.bypass.*`, `rpgquest.admin.hub.combat`, ombrelle `rpgquest.admin.world`). Barre d'action permanente « ⚠ MODE ADMIN / BYPASS ACTIF ». Coupé à la déconnexion, au redémarrage, par `off`, à la durée maximale ou si PlugAdmin le désactive (Paramètres généraux > Administration). Droits d'administration et de construction inchangés. Détail : `docs/PERMISSIONS.md`. | non (mémoire seule — défaut sûr) |
+| `/rpgadmin bypass <on\|off\|status>` | (#35/#321) **Mode bypass administrateur explicite** : seule façon de contourner une règle de jeu (accès et règles du monde Claims, claims d'autrui, zones, combat au Hub) — **être OP ne suffit plus**. Exige `rpgquest.admin.bypass` (défaut `op`) ; n'arme que les nœuds de bypass déjà détenus (`rpgquest.bypass.*`, `rpgquest.admin.hub.combat`, `rpgquest.admin.hub.resources`, ombrelle `rpgquest.admin.world`). Barre d'action permanente « ⚠ MODE ADMIN / BYPASS ACTIF ». Coupé à la déconnexion, au redémarrage, par `off`, à la durée maximale ou si PlugAdmin le désactive (Paramètres généraux > Administration). Droits d'administration et de construction inchangés. Détail : `docs/PERMISSIONS.md`. | non (mémoire seule — défaut sûr) |
 
 **Protection des structures (issue #191)** — casser le bouton, le bloc d'or, le support ou un
 panneau latéral d'un waypoint, ainsi que les blocs d'une borne diamant, est refusé pour **tout le
@@ -5328,6 +5328,21 @@ Règles appliquées (idempotentes) :
     joueur** (mêlée ou projectile) à une entité vivante non-joueur (animal, mob décoratif...) est
     annulé — sauf un PNJ Citizens. Bypass **explicite et distinct** de la construction :
     `rpgquest.admin.hub.combat` (jamais accordé implicitement par `rpgquest.admin.world`).
+-   **pas de commerce vanilla ni de ressources dans les conteneurs** (issue #675,
+    `hub.HubResourceLockListener`) : règle du monde `hub.world`, quelle que soit la position du village.
+    Clic droit sur un villageois ou un marchand ambulant **non Citizens** annulé (message discret
+    « Le commerce n'est pas disponible dans le Hub. », une fois toutes les 2 s) et toute interface
+    marchande adossée à un villageois refusée — aucune émeraude, aucun objet, aucune XP de commerce.
+    Coffres (simples, doubles, piégés), tonneaux, shulkers, hoppers, distributeurs, droppers, crafters,
+    wagonnets et bateaux à coffre **ne s'ouvrent pas** (« Les coffres du Hub sont fermés. ») ; pot décoré,
+    bibliothèque sculptée et étagères refusent le clic droit ; hoppers/droppers ne déplacent rien et
+    n'aspirent rien au sol. **Verrouiller, jamais vider** : aucun objet, villageois ni bloc n'est
+    modifié, et la règle étant évaluée à chaque évènement elle persiste après redémarrage.
+    **Restent libres** : PNJ Citizens (dialogues, marchands et ateliers RPGQuest), toutes les interfaces
+    du plugin, coffres personnels liés (#105), établis, fours, fumoirs, hauts fourneaux, alambics
+    (salles de préparation #107) et coffre de l'Ender (stockage personnel). Wild et Claims inchangés.
+    Bypass : `rpgquest.admin.hub.resources` (défaut `op`), **uniquement** pendant une session
+    `/rpgadmin bypass on` (#35) — par ex. pour garnir un coffre de décor.
 -   **faim/saturation jamais réduites** (issue #33, `hub.HubComfortService`) : `FoodLevelChangeEvent`
     annulé pour toute diminution (sprint/sauts/épuisement) ; une garde périodique (1 s) neutralise
     aussi l'épuisement silencieux (`exhaustion`/`saturation` internes, sans événement dédié). Vie,

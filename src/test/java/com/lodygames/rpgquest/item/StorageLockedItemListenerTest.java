@@ -265,10 +265,10 @@ class StorageLockedItemListenerTest {
 
     @Test
     void onlyItemTakingBlocksAreGuardedOnRightClick() {
-        assertTrue(StorageLockedItemListener.acceptsItems(Material.CHISELED_BOOKSHELF));
-        assertTrue(StorageLockedItemListener.acceptsItems(Material.DECORATED_POT));
-        assertTrue(StorageLockedItemListener.acceptsItems(Material.OAK_SHELF));
-        assertFalse(StorageLockedItemListener.acceptsItems(Material.CHEST), "un coffre s'ouvre : le clic est filtré ensuite");
-        assertFalse(StorageLockedItemListener.acceptsItems(Material.STONE));
+        assertTrue(InventoryTransfers.takesItemsOnClick(Material.CHISELED_BOOKSHELF));
+        assertTrue(InventoryTransfers.takesItemsOnClick(Material.DECORATED_POT));
+        assertTrue(InventoryTransfers.takesItemsOnClick(Material.OAK_SHELF));
+        assertFalse(InventoryTransfers.takesItemsOnClick(Material.CHEST), "un coffre s'ouvre : le clic est filtré ensuite");
+        assertFalse(InventoryTransfers.takesItemsOnClick(Material.STONE));
     }
 }

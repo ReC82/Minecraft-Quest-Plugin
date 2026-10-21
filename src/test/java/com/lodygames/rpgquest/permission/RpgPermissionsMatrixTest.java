@@ -107,6 +107,7 @@ class RpgPermissionsMatrixTest {
         assertFalse(p.hasPermission("rpgquest.admin.bypass"), "aucune session /rpgadmin bypass");
         assertFalse(p.hasPermission("rpgquest.admin.debug"), "variable set reste hors du paquet");
         assertFalse(p.hasPermission("rpgquest.admin.hub.combat"));
+        assertFalse(p.hasPermission("rpgquest.admin.hub.resources"), "#675 : coffres et commerce du Hub fermés");
     }
 
     @Test

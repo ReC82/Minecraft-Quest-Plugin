@@ -53,11 +53,20 @@ Règles réellement appliquées dans tout le monde Hub (`hub.HubWorldProtectionL
 | Allumer un feu (briquet, boule de feu…) | Refusé (#107). |
 | Propagation du feu, combustion d'un bloc (établi, bois…) | Toujours annulées dans le Hub (#107), même près d'un feu posé par un constructeur. |
 | Explosions | Aucun bloc détruit (règle Hub existante). |
+| Ouvrir un coffre, tonneau, shulker, hopper, distributeur, dropper, crafter (bloc non lié à un coffre personnel) | Refusé (#675, `hub.HubResourceLockListener`) — « Les coffres du Hub sont fermés. » Rien n'est retiré du bloc. |
+| Clic droit sur un pot décoré, une bibliothèque sculptée, une étagère | Refusé (#675). |
+| Commercer avec un villageois / marchand ambulant (non Citizens) | Refusé (#675) — « Le commerce n'est pas disponible dans le Hub. » |
+| Four, fumoir, haut fourneau, alambic, coffre de l'Ender | **Autorisé** — blocs utilitaires / stockage personnel, non concernés par #675. |
 
 Un **constructeur du Hub** (`rpgquest.build.hub.<monde>`, `rpgquest.build.hub.*` ou l'ombrelle
 `rpgquest.admin.world`, voir [PERMISSIONS.md](PERMISSIONS.md)) peut toujours casser, poser, utiliser
 des seaux et allumer un feu décoratif — c'est un droit de construction, pas un bypass (#35). Le feu
 qu'il allume ne se propage pas et ne brûle rien.
+
+Le droit de construction **n'ouvre pas** les conteneurs de stockage vanilla du Hub (#675) : garnir un
+coffre de décor exige le nœud `rpgquest.admin.hub.resources` **pendant** une session
+`/rpgadmin bypass on`. Un coffre lié par `/rpgadmin vault bind` n'est jamais concerné : son clic ouvre
+toujours le coffre personnel de celui qui clique.
 
 Limite connue : les **pistons** ne sont pas bloqués à l'échelle du monde Hub (un joueur standard ne
 peut pas en poser ; un mécanisme existant est la responsabilité du constructeur). Ne pas placer

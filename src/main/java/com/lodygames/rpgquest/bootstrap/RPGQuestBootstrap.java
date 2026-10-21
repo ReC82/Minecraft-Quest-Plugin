@@ -76,6 +76,7 @@ import com.lodygames.rpgquest.health.HeartBonusService;
 import com.lodygames.rpgquest.hub.HubGuideRegistry;
 import com.lodygames.rpgquest.hub.HubComfortService;
 import com.lodygames.rpgquest.hub.HubRescueFallbackService;
+import com.lodygames.rpgquest.hub.HubResourceLockListener;
 import com.lodygames.rpgquest.hub.HubWorldProtectionListener;
 import com.lodygames.rpgquest.hub.HubWorldRulesService;
 import com.lodygames.rpgquest.item.RpgItemKeys;
@@ -492,6 +493,9 @@ public final class RPGQuestBootstrap {
         // déjà chargés au démarrage (ex. spawn) — jamais un chargement forcé de tout le monde.
         worldService.find(configService.current().hub().world())
                 .ifPresent(hubWorldProtectionListener::sweepAlreadyLoaded);
+        // Issue #675 : pas de commerce vanilla ni d'accès aux conteneurs de stockage dans le Hub.
+        registry.start(new PlayerListenerService(plugin, new HubResourceLockListener(
+                () -> configService.current().hub(), npcIdentityService::isCitizensNpc, adminBypassMode)));
 
         HubComfortService hubComfortService = new HubComfortService(
                 plugin, () -> configService.current().hub(), plugin.getSLF4JLogger());

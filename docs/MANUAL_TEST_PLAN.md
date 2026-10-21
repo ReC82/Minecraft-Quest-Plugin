@@ -7981,6 +7981,39 @@ non vérifiable / ajustée / impossible / monde absent / retour désaccordé, st
 adaptateur asynchrone simulé ; RANDOM_SAFE / CLAIM_HOME inchangés), `PortalAdminParamsTest`, `PortalsPageTest`
 (fiche, résultat de vérification et périmé, retour prérempli, paramètres validés, refus avant mise en file).
 
+### TC-397 — Hub : pas de commerce vanilla ni de ressources dans les conteneurs (issue #675, PENDING MANUAL VALIDATION)
+
+Avec un compte **joueur normal** (ou un OP **sans** session `/rpgadmin bypass on`), dans le monde Hub
+(`hub.world`). Aucun objet, villageois ni bloc n'est modifié par la livraison : c'est un verrou.
+
+1.  Clic droit sur un villageois du village vanilla du Hub (avec et sans objet en main, main secondaire
+    comprise). **Attendu** : aucune fenêtre de commerce ; message gris « Le commerce n'est pas disponible
+    dans le Hub. » au plus une fois toutes les 2 s ; aucune émeraude, aucun objet, aucune XP. Le villageois
+    ne bouge pas de métier et n'est pas supprimé.
+2.  Clic droit sur un coffre, un double coffre et un tonneau d'un bâtiment du village. **Attendu** : rien ne
+    s'ouvre, message « Les coffres du Hub sont fermés. ». Idem hopper, distributeur, dropper s'il y en a.
+3.  Shift-clic droit, clic droit en tenant un objet, clic sur un pot décoré / une bibliothèque sculptée
+    s'il y en a. **Attendu** : aucun dépôt ni retrait.
+4.  Coffre personnel lié (salle des coffres, #105). **Attendu** : s'ouvre **normalement** sur le coffre
+    personnel du joueur (non concerné par #675).
+5.  Établi, four (salle de préparation, #107) et coffre de l'Ender s'il y en a. **Attendu** : utilisables.
+6.  Parler à un PNJ RPGQuest (Elias, Libraire → « Ouvrir la boutique », Lucien → « Ouvrir l'atelier »).
+    **Attendu** : dialogues, boutique et atelier fonctionnent comme avant, y compris un PNJ Citizens de
+    type villageois.
+7.  Wild puis monde des claims : commercer avec un villageois, ouvrir un coffre (dans son claim).
+    **Attendu** : comportement inchangé (commerce possible, coffre ouvrable selon les règles des claims).
+8.  (Admin) `/rpgadmin bypass on` avec `rpgquest.admin.hub.resources` (défaut `op`) → ouvrir un coffre du
+    Hub. **Attendu** : s'ouvre ; `/rpgadmin bypass off` → refermé de nouveau.
+9.  Redémarrer DEV puis refaire 1 et 2. **Attendu** : toujours bloqué (règle de monde, sans état).
+10. Si un entonnoir est relié à un coffre du village : y jeter un objet / remplir le coffre au-dessus.
+    **Attendu** : rien n'est aspiré ni transféré.
+
+**Couverture automatisée** : `HubResourceLockListenerTest` (commerce refusé sur villageois et marchand
+ambulant, deux mains, un seul message, PNJ Citizens et Wild non concernés, bypass seulement en session ;
+coffres/tonneaux refusés sans perte de contenu ; fours/hauts fourneaux/fumoirs/alambics et inventaires du
+plugin libres ; pots et étagères ; transferts de hopper refusés dans le Hub seulement),
+`RpgPermissionsMatrixTest` (le paquet testeur #64 n'a pas le nœud), `StorageLockedItemListenerTest`.
+
 ### TC-396 — Portails : construction liée — arche, zone de passage, liaison (issue #568, PENDING MANUAL VALIDATION)
 
 **Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 n'autorise que des tests simulés —

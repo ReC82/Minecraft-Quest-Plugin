@@ -48,6 +48,47 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Portails : construction liée — arche, zone de passage, liaison (#568, TC-396)
+
+### Changement
+
+Bibliothèque de bâtiments : type (`kind:` habitable / decoration / portal, relu depuis le plan conservé pour un bâtiment
+généré avant) et zone de passage d'une arche (`passage:`). Atelier : type « Arche de portail » (passage relevé sur la
+grille, refus `PORTAL_PASSAGE_MISSING`). Portails : lien `building:` vers l'arche posée sur l'emplacement
+(`portal.building.link` / `unlink`), zone = passage après ancre + rotation, jamais d'activation par la liaison,
+activation refusée si l'arche liée est libérée / remplacée / réorientée. PlugAdmin : bloc « Construction » de la fiche
+portail, filtre « Portails » de la Bibliothèque.
+
+### Action serveur
+
+- **Effectué le 21/10** : JAR `f35c9538` (PR #711, CI PR + fusion vertes) via `scripts/deploy-verygames.sh -y` — en ligne
+  4178087 octets, SHA-256 `79fb4faae8375123cdcc0f553b97ec176f59148bcd693f437ab6ed6d4519fb19`, retéléchargé et identique ;
+  DEV redémarré par `scripts/verygames-restart.sh` (0 joueur connecté). PlugAdmin `f35c9538` (`scripts/plugadmin/deploy.sh`,
+  `/health` ONLINE, classes et aide servies vérifiées).
+- Relu après redémarrage (lecture seule) : `portal.list` → `hub_to_wild` / `hub_to_claims` actifs, construction `NONE`,
+  empreintes identiques (`abbf0fe0…`, `87276553…`), aucun fichier ignoré ; `building.definition.list` → 10 bâtiments,
+  0 problème, `hub_estrade_elias` et `estrade_elias` relus « decoration » depuis leur plan, aucune arche.
+- **Aucune migration `data.db`**, aucune clé de configuration, aucun fichier `buildings/` ni `world-portals/` transféré
+  ou réécrit. PlugAdmin : migration **additive** de `control-panel.db` (`building_project.kind`, `passage_width`,
+  `passage_height`, vides = bâtiment ordinaire).
+- Ne PAS modifier `world-portals/*.yml`, `buildings/*.yml`, `config.yml`, `data.db` ; aucune pose, aucun emplacement,
+  aucun portail touchés ; aucun appel IA.
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261021T192521Z-predeploy.jar` (4156217 o, SHA-256 `9fab196b…`, JAR #569) ; PlugAdmin :
+release précédente sous `/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-396 (PENDING MANUAL VALIDATION ; étapes 2 à 6 sur feu vert du propriétaire — appel IA payant et pose réelle).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; PlugAdmin : `scripts/plugadmin/rollback.sh`. Un JAR antérieur
+ignore `kind:` / `passage:` des bâtiments et `building:` des portails (zone conservée, plus de contrôle de lien) ; les
+colonnes ajoutées à `control-panel.db` sont ignorées par un PlugAdmin antérieur.
+
 ## 2026-10-21 - Portails : messages et avertissement par portail (#569, TC-395)
 
 ### Changement

@@ -372,6 +372,52 @@ class WaypointServiceTest {
     }
 
     /**
+     * Issue #654 : sur un waypoint réellement généré puis rechargé depuis la base (structure déjà
+     * persistée), aucun des deux panneaux latéraux n'est éditable — ni GUI, ni texte, recto/verso —
+     * tandis que le bouton garde son interaction et que le nom affiché reste le nom canonique.
+     */
+    @Test
+    void persistedWaypointSignsStayUneditableAfterReloadWhileTheButtonStillWorks() throws Exception {
+        Waypoint wp = generateAround(704, 704, Biome.PLAINS);
+        service.stop();
+        service = newService(new WaypointModelRegistry(1, new WaypointModelV1()));
+        service.start();
+        await(() -> service.byId(wp.id()).isPresent());
+        server.getPluginManager().registerEvents(
+                service.protectionListener(new com.lodygames.rpgquest.travel.TravelMaintenanceMode()), plugin);
+        PlayerMock player = addPlayer();
+
+        for (BlockFace side : lateralsOf(wp)) {
+            Block signBlock = wild.getBlockAt(wp.x() + side.getModX(), wp.y() + 1, wp.z() + side.getModZ());
+            org.bukkit.event.player.PlayerInteractEvent click = new org.bukkit.event.player.PlayerInteractEvent(
+                    player, org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK, null, signBlock, side,
+                    org.bukkit.inventory.EquipmentSlot.HAND);
+            server.getPluginManager().callEvent(click);
+            assertEquals(org.bukkit.event.Event.Result.DENY, click.useInteractedBlock(), "clic panneau " + side);
+            for (Side face : Side.values()) {
+                var open = new io.papermc.paper.event.player.PlayerOpenSignEvent(player, (Sign) signBlock.getState(),
+                        face, io.papermc.paper.event.player.PlayerOpenSignEvent.Cause.INTERACT);
+                server.getPluginManager().callEvent(open);
+                assertTrue(open.isCancelled(), "éditeur refusé " + side + "/" + face);
+                var change = new org.bukkit.event.block.SignChangeEvent(signBlock, player,
+                        new java.util.ArrayList<>(List.of(net.kyori.adventure.text.Component.text("Grief"),
+                                net.kyori.adventure.text.Component.empty(), net.kyori.adventure.text.Component.empty(),
+                                net.kyori.adventure.text.Component.empty())), face);
+                server.getPluginManager().callEvent(change);
+                assertTrue(change.isCancelled(), "texte refusé " + side + "/" + face);
+            }
+            assertEquals(wp.displayName(), signText(wp, side), "nom canonique intact côté " + side);
+        }
+
+        org.bukkit.event.player.PlayerInteractEvent press = new org.bukkit.event.player.PlayerInteractEvent(
+                player, org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK, null, interactorBlockOf(wp),
+                BlockFace.valueOf(wp.facing()), org.bukkit.inventory.EquipmentSlot.HAND);
+        server.getPluginManager().callEvent(press);
+        assertTrue(press.useInteractedBlock() != org.bukkit.event.Event.Result.DENY,
+                "la protection des panneaux ne touche pas au bouton");
+    }
+
+    /**
      * Issue #134 : seul le nom change — id, position, découvertes intacts —, les panneaux affichent
      * le nouveau nom (sans reste de l'ancien) et le renommage survit à un rechargement.
      */

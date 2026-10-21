@@ -7796,3 +7796,26 @@ sans écrire `CLAIM_TIER_1`, aucune position sûre, claim inconnu / changé de p
 double demande), `ClaimActionsTest` (contrat JSON, refus non succès, paramètres invalides), `ClaimsPageTest` (page sans
 relevé, liste et filtre par joueur, fiche, rien envoyé à l'ouverture, personnage lié imposé même si le formulaire désigne
 le propriétaire, confirmation obligatoire, double clic, droits lecture / téléportation distincts).
+
+### TC-386 — Waypoints : les panneaux de nom ne s'éditent plus (issue #654, PENDING MANUAL VALIDATION)
+
+Test réservé au propriétaire. Ne rien casser ni renommer ; ne pas utiliser de panneau de waypoint réel pour autre chose
+que les clics décrits. Prévoir un panneau ordinaire posé par vous-même hors de toute structure (étape 5).
+
+1.  Joueur normal (non OP), face à un waypoint existant (par exemple « Avant-poste 12 ») : clic droit sur chacun des
+    deux panneaux latéraux, puis en visant le **verso** si accessible. **Attendu** : aucun écran « Edit Sign Message »,
+    le texte reste le nom canonique.
+2.  Même joueur, une teinture, une encre lumineuse puis un rayon de miel en main : clic droit sur un panneau.
+    **Attendu** : ni couleur, ni texte lumineux, ni cire ; l'objet n'est pas consommé.
+3.  Compte OP, puis (si vous avez la permission dédiée) `/rpgadmin travel maintenance on` : refaire 1.
+    **Attendu** : toujours aucun éditeur. Terminer par `/rpgadmin travel maintenance off`.
+4.  Clic droit sur le **bouton** du waypoint. **Attendu** : message de découverte ou « Waypoint déjà découvert : … ».
+5.  Clic droit sur votre panneau ordinaire hors structure. **Attendu** : l'éditeur s'ouvre et la modification est
+    enregistrée (comportement vanilla inchangé).
+6.  Après un redémarrage du serveur ou en revenant d'assez loin pour recharger le chunk : refaire 1. **Attendu** :
+    identique.
+
+**Couverture automatisée** : `WaypointProtectionListenerTest` (clic main vide et teinture/encre/cire refusés, OP +
+maintenance sans éditeur, ouverture refusée recto/verso pour toutes les causes, écriture refusée recto/verso, bouton
+inchangé, panneau ordinaire éditable), `WaypointServiceTest#persistedWaypointSignsStayUneditableAfterReloadWhileTheButtonStillWorks`
+(waypoint généré puis rechargé depuis la base : les deux panneaux protégés, nom canonique intact, bouton cliquable).

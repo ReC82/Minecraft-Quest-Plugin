@@ -1,10 +1,14 @@
 package com.lodygames.rpgquest.waypoint;
 
+import io.papermc.paper.event.player.PlayerOpenSignEvent;
+import org.bukkit.Tag;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockFromToEvent;
@@ -13,12 +17,15 @@ import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 
 /**
  * Protection MVP des blocs constitutifs d'un waypoint (issue #124) : « casse joueur, explosion,
- * déplacement piston, feu / altération pertinente, remplacement direct ».
+ * déplacement piston, feu / altération pertinente, remplacement direct » — et, depuis l'issue #654,
+ * édition des panneaux de nom (éditeur vanilla, teinture, cire, écriture de texte).
  *
  * <p>Même conception que {@code claim.ClaimProtectionListener} : test bon marché
  * ({@link WaypointService#isProtectedBlock}) sur chaque événement concerné ; bypass explicite
@@ -72,6 +79,44 @@ final class WaypointProtectionListener implements Listener {
                 && (isProtected(event.getBlock()) || isProtected(event.getBlockReplacedState().getBlock()))) {
             event.setCancelled(true);
         }
+    }
+
+    // ---- Panneaux de nom (issue #654) -------------------------------------------------------
+    //
+    // Depuis 1.20, un clic droit sur un panneau non ciré ouvre l'éditeur vanilla (recto ou verso
+    // selon le côté visé) ; teinture, encre lumineuse et cire passent par la même interaction.
+    // Trois barrières indépendantes, sans aucun bypass (ni OP, ni maintenance #191 : l'éditeur
+    // standard ne doit jamais être exposé, le nom canonique ne change que par le renommage #134) :
+    //  1. le clic droit sur le panneau ne déclenche plus l'usage du bloc → ni GUI, ni teinture/cire ;
+    //  2. l'ouverture de l'éditeur (Paper) est refusée quelle qu'en soit la cause ;
+    //  3. l'écriture du texte (paquet d'édition, client modifié) est refusée.
+    // Seuls les blocs protégés de type panneau sont concernés : le bouton garde son interaction et
+    // les panneaux des joueurs hors structure restent éditables.
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onSignInteract(PlayerInteractEvent event) {
+        Block block = event.getClickedBlock();
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK && block != null && isProtectedSign(block)) {
+            event.setUseInteractedBlock(Event.Result.DENY);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
+    public void onSignOpen(PlayerOpenSignEvent event) {
+        if (isProtected(event.getSign().getBlock())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
+    public void onSignChange(SignChangeEvent event) {
+        if (isProtected(event.getBlock())) {
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean isProtectedSign(Block block) {
+        return Tag.ALL_SIGNS.isTagged(block.getType()) && isProtected(block);
     }
 
     // ---- Explosions ------------------------------------------------------------------------

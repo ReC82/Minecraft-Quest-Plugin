@@ -1,16 +1,26 @@
 package com.lodygames.rpgquest.waypoint;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import io.papermc.paper.event.player.PlayerOpenSignEvent;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.Sign;
+import org.bukkit.block.sign.Side;
+import org.bukkit.event.Event;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.SignChangeEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.EntityType;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -178,5 +188,113 @@ class WaypointProtectionListenerTest {
         BlockBurnEvent event = new BlockBurnEvent(protectedBlock(), world.getBlockAt(PX + 1, PY, PZ));
         server.getPluginManager().callEvent(event);
         assertTrue(event.isCancelled(), "le feu ne consume pas un bloc de waypoint");
+    }
+
+    // ---- Panneaux de nom (issue #654) -------------------------------------------------------
+
+    private Block protectedSign() {
+        Block block = world.getBlockAt(PX, PY, PZ);
+        block.setType(Material.OAK_WALL_SIGN);
+        return block;
+    }
+
+    private Block ordinarySign() {
+        Block block = world.getBlockAt(PX + 5, PY, PZ);
+        block.setType(Material.OAK_WALL_SIGN);
+        return block;
+    }
+
+    private static List<net.kyori.adventure.text.Component> lines(String first) {
+        return new ArrayList<>(List.of(net.kyori.adventure.text.Component.text(first),
+                net.kyori.adventure.text.Component.empty(), net.kyori.adventure.text.Component.empty(),
+                net.kyori.adventure.text.Component.empty()));
+    }
+
+    private PlayerInteractEvent rightClick(PlayerMock player, Block block, ItemStack inHand) {
+        PlayerInteractEvent event = new PlayerInteractEvent(player, Action.RIGHT_CLICK_BLOCK, inHand, block,
+                BlockFace.NORTH, org.bukkit.inventory.EquipmentSlot.HAND);
+        server.getPluginManager().callEvent(event);
+        return event;
+    }
+
+    /** Le clic droit qui ouvrirait l'éditeur vanilla n'atteint plus le panneau (ni GUI, ni teinture/cire). */
+    @Test
+    void rightClickOnAProtectedSignNeverReachesTheSign() {
+        PlayerMock player = server.addPlayer();
+        PlayerInteractEvent bare = rightClick(player, protectedSign(), null);
+        assertEquals(Event.Result.DENY, bare.useInteractedBlock(), "main vide : pas d'éditeur");
+        for (Material tool : List.of(Material.RED_DYE, Material.GLOW_INK_SAC, Material.INK_SAC, Material.HONEYCOMB)) {
+            PlayerInteractEvent event = rightClick(player, protectedSign(), new ItemStack(tool));
+            assertEquals(Event.Result.DENY, event.useInteractedBlock(), tool + " ne doit pas modifier le panneau");
+        }
+    }
+
+    /** Ni OP, ni maintenance explicite (#191) n'exposent l'éditeur standard d'un panneau de waypoint. */
+    @Test
+    void opAndMaintenanceDoNotReopenTheVanillaSignEditor() {
+        PlayerMock player = server.addPlayer();
+        player.setOp(true);
+        player.addAttachment(plugin, com.lodygames.rpgquest.travel.TravelMaintenanceMode.PERMISSION, true);
+        assertTrue(maintenance.enable(player));
+        Block sign = protectedSign();
+
+        assertEquals(Event.Result.DENY, rightClick(player, sign, null).useInteractedBlock());
+        PlayerOpenSignEvent open = new PlayerOpenSignEvent(player, (Sign) sign.getState(), Side.FRONT,
+                PlayerOpenSignEvent.Cause.INTERACT);
+        server.getPluginManager().callEvent(open);
+        assertTrue(open.isCancelled(), "même en maintenance, l'éditeur ne s'ouvre pas");
+    }
+
+    /** Deuxième barrière : l'ouverture de l'éditeur est refusée sur les deux faces, quelle qu'en soit la cause. */
+    @Test
+    void signEditorCannotOpenOnEitherSideOfAProtectedSign() {
+        PlayerMock player = server.addPlayer();
+        Sign sign = (Sign) protectedSign().getState();
+        for (Side side : Side.values()) {
+            for (PlayerOpenSignEvent.Cause cause : PlayerOpenSignEvent.Cause.values()) {
+                PlayerOpenSignEvent event = new PlayerOpenSignEvent(player, sign, side, cause);
+                server.getPluginManager().callEvent(event);
+                assertTrue(event.isCancelled(), "éditeur refusé : " + side + " / " + cause);
+            }
+        }
+    }
+
+    /** Troisième barrière : un texte envoyé malgré tout (client modifié) n'est jamais écrit. */
+    @Test
+    void signTextChangeIsRefusedOnBothSidesOfAProtectedSign() {
+        PlayerMock player = server.addPlayer();
+        for (Side side : Side.values()) {
+            SignChangeEvent event = new SignChangeEvent(protectedSign(), player,
+                    lines("Grief"), side);
+            server.getPluginManager().callEvent(event);
+            assertTrue(event.isCancelled(), "écriture refusée côté " + side);
+        }
+    }
+
+    /** Le bouton (bloc protégé mais pas un panneau) garde son interaction : la découverte reste possible. */
+    @Test
+    void buttonInteractionIsLeftUntouched() {
+        PlayerMock player = server.addPlayer();
+        Block button = world.getBlockAt(PX, PY, PZ);
+        button.setType(Material.STONE_BUTTON);
+        PlayerInteractEvent event = rightClick(player, button, null);
+        assertNotEquals(Event.Result.DENY, event.useInteractedBlock(), "le bouton reste cliquable");
+    }
+
+    /** Les panneaux des joueurs hors structure restent pleinement éditables. */
+    @Test
+    void ordinarySignsStayEditable() {
+        PlayerMock player = server.addPlayer();
+        Block sign = ordinarySign();
+        assertNotEquals(Event.Result.DENY, rightClick(player, sign, null).useInteractedBlock());
+
+        PlayerOpenSignEvent open = new PlayerOpenSignEvent(player, (Sign) sign.getState(), Side.FRONT,
+                PlayerOpenSignEvent.Cause.INTERACT);
+        server.getPluginManager().callEvent(open);
+        assertFalse(open.isCancelled(), "éditeur d'un panneau ordinaire autorisé");
+
+        SignChangeEvent change = new SignChangeEvent(sign, player, lines("Chez moi"), Side.BACK);
+        server.getPluginManager().callEvent(change);
+        assertFalse(change.isCancelled(), "écriture d'un panneau ordinaire autorisée");
     }
 }

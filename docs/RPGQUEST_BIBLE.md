@@ -362,6 +362,15 @@ la permission dédiée `rpgquest.admin.travel.maintenance` (`default: false`) **
 désormais aussi les structures **abîmées** (blocs manquants), distinctes des structures
 *inaccessibles* — une structure cassée restait « accessible », elle n'était donc pas détectée.
 
+**Panneaux de nom non éditables (issue #654)** — les deux panneaux latéraux d'un waypoint ne
+s'éditent **jamais** par une interaction de joueur : clic droit (l'éditeur vanilla « Edit Sign
+Message » ne s'ouvre plus, recto comme verso), teinture, encre lumineuse et cire sont sans effet, et
+un texte envoyé malgré tout (client modifié) est refusé. Cela vaut pour tout le monde — OP inclus,
+et même en `/rpgadmin travel maintenance on` : la maintenance autorise la casse, pas l'éditeur. Le
+nom affiché ne change que par le renommage PlugAdmin (#134). Le **bouton** reste cliquable, et les
+panneaux posés par les joueurs hors structure restent éditables normalement. Les bornes diamant ne
+portent pas de panneau.
+
 À savoir : dans le **Hub**, un waypoint (modèle or) **et** une borne distincte s'y génèrent
 désormais automatiquement par instance de biome (issue #149, réutilise #124) — ces commandes
 restent le **seul** moyen de poser une borne/un centre dans le **Wild** et pour les centres de

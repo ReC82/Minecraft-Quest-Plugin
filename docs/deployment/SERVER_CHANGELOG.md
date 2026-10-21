@@ -48,7 +48,7 @@ Procédure de retour arrière.
 
 ---
 
-## 2026-10-22 - Supprimer un bâtiment et toutes ses versions (#644, TC-399) — NON DÉPLOYÉ
+## 2026-10-22 - Supprimer un bâtiment et toutes ses versions (#644, TC-399)
 
 ### Changement
 
@@ -60,7 +60,7 @@ et `buildings/.audit/purges.log`.
 
 ### Action serveur
 
-- **Aucune action effectuée.** Le déploiement (JAR + PlugAdmin) ne supprime rien : aucune suppression
+- **Effectué le 22/10 vers 00:40** : JAR `318f31e2` (PR #718, CI PR + fusion vertes) en ligne 4205779 octets, SHA-256 `596d478f…`, retéléchargé et identique ; DEV redémarré (0 joueur) ; PlugAdmin `318f31e2` servi. Aucun aperçu ni suppression lancé. Le déploiement ne supprime rien : aucune suppression
   n'a lieu au démarrage, à l'affichage ni au déploiement.
 - **Aucune migration** `data.db` ni `control-panel.db`, aucune clé de configuration.
 - Ne PAS supprimer de bâtiment existant pour « tester » : TC-399 se fait sur un bâtiment d'essai, avec
@@ -68,7 +68,7 @@ et `buildings/.audit/purges.log`.
 
 ### Sauvegarde préalable
 
-Comme pour tout JAR : JAR + `data.db` + `buildings/` + `schematics/`.
+JAR précédent : `rpgquest-20261021T223951Z-predeploy.jar` (4182486 o, SHA-256 `c4f20086…`, JAR #675).
 
 ### Validation
 

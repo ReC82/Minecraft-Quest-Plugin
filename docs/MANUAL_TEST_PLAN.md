@@ -7504,6 +7504,9 @@ ci-dessus avec les libellés « Pain de l'artisan », « Lanterne de l'artisan �
 ajouté en tête du nœud `start` de `rpgquest:lucien` et publié via PlugAdmin (aucun JAR, aucun FTP).
 Pour l'étape 8, utiliser la **lanterne** (aucun ingrédient pris, donc aucune place libérée) avec les 36
 emplacements du sac et de la barre occupés par des piles pleines.
+**Préparation appliquée sur DEV le 21/10** (accord « Autorisation #18 ») : `prices.yml` (3 prix ci-dessus) et
+`dialogues/lucien.yml` (choix « Ouvrir l'atelier ») transférés par `deploy-verygames.sh --also` — DEV était arrêté,
+donc pas via PlugAdmin ; contenu identique à celui que produit l'éditeur de prix. Lus au prochain démarrage de DEV.
 
 1.  Prix et coûts : une fabrication sans ingrédient **et** à 0 pièce → **Attendu** refus « des ingrédients,
     des pièces, ou les deux ».

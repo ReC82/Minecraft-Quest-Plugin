@@ -65,6 +65,19 @@ public record PortalMessages(String welcome, String preparing, String success, S
         public boolean isDefault() {
             return equals(DEFAULT);
         }
+
+        /**
+         * Ici et non dans {@link PortalMessages} : initialiser {@code Warning} ne doit jamais initialiser
+         * la classe englobante, sinon {@link PortalMessages#NONE} serait construit pendant que {@link
+         * #DEFAULT} vaut encore {@code null} (cycle d'initialisation selon l'ordre de chargement).
+         */
+        static String check(String label, String value, int max) {
+            String v = value == null ? "" : value.strip();
+            if (v.length() > max) {
+                throw new IllegalArgumentException("« " + label + " » trop long : " + max + " caractères au plus.");
+            }
+            return v;
+        }
     }
 
     public PortalMessages {
@@ -110,10 +123,6 @@ public record PortalMessages(String welcome, String preparing, String success, S
     }
 
     private static String check(String label, String value, int max) {
-        String v = value == null ? "" : value.strip();
-        if (v.length() > max) {
-            throw new IllegalArgumentException("« " + label + " » trop long : " + max + " caractères au plus.");
-        }
-        return v;
+        return Warning.check(label, value, max);
     }
 }

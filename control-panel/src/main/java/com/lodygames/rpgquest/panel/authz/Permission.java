@@ -88,6 +88,12 @@ public enum Permission {
      */
     PORTAL_ENABLE,
     /**
+     * « Téléporter pour test » (issue #567) : déplace <strong>seulement</strong> le personnage
+     * Minecraft lié au compte de la session par le chemin réel d'un portail (conditions, gardes
+     * Claims / Wild), même en brouillon. Réservé au propriétaire par défaut (attribuable par groupe).
+     */
+    PORTAL_TEST,
+    /**
      * Consultation lecture seule des claims (issue #637) : propriétaire, claim principal, monde,
      * position, bornes et palier. Ne permet ni de créer, ni de modifier, ni de supprimer un claim.
      */

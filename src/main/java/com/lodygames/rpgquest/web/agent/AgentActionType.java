@@ -695,6 +695,21 @@ public enum AgentActionType {
      */
     PORTAL_VERIFY("portal.verify"),
     /**
+     * Issue #567 (#228-P4) — remplacer les conditions d'accès d'un portail non actif (niveau RPG,
+     * conditions joueur existantes, délai, messages de refus ; empreinte exigée).
+     */
+    PORTAL_ACCESS("portal.access"),
+    /**
+     * Issue #567 — simuler AUTORISÉ / REFUSÉ pour un joueur connecté. Lecture seule : personne n'est
+     * téléporté, aucun délai démarré, rien n'est écrit.
+     */
+    PORTAL_SIMULATE("portal.simulate"),
+    /**
+     * Issue #567 — « Téléporter pour test » : le personnage lié à la session emprunte le portail par
+     * le chemin réel (conditions sans délai, gardes Claims / Wild), confirmation forte exigée.
+     */
+    PORTAL_TEST("portal.test"),
+    /**
      * Issue #637 — tous les claims persistés : propriétaire (UUID + pseudo connu), claim principal,
      * monde (chargé ou non), bornes, réservation, palier déduit de la taille réelle. Lecture seule ;
      * fonctionne pour un propriétaire hors ligne.

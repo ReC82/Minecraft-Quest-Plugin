@@ -806,6 +806,16 @@ public final class RPGQuestBootstrap {
         // Issue #73 : arrivée « CLAIM_HOME » — sur son claim s'il en a un, sinon à l'écart de tous.
         worldPortalTeleportListener.setClaimArrival(new com.lodygames.rpgquest.claim.ClaimArrivalResolver(
                 claimService, () -> configService.current().claims()));
+        // Issue #567 : conditions d'accès des portails entre mondes, vérifiées par le serveur après les
+        // gardes ci-dessus — même évaluateur que les dialogues, niveau RPG #532, délais en base.
+        com.lodygames.rpgquest.travel.PortalAccessChecker portalAccessChecker =
+                new com.lodygames.rpgquest.travel.PortalAccessChecker(
+                        new com.lodygames.rpgquest.dialogue.PlayerConditionEvaluator(questProgressEngine,
+                                variableRepository, claimService, customItemRegistry),
+                        com.lodygames.rpgquest.travel.PortalAccessChecker.persistent(portalCooldownRepository,
+                                plugin.getSLF4JLogger()), java.time.Clock.systemUTC());
+        portalAccessChecker.setRequiredLevelRule(requiredLevelRule);
+        worldPortalTeleportListener.setAccessChecker(portalAccessChecker);
         // Filet de sécurité : personne ne reste coincé dans le monde des claims, et un retour Hub
         // sans commande y est toujours possible (Pierre de retour donnée si absente ; joueur non
         // éligible arrivé autrement que par le portail renvoyé au village).
@@ -1418,6 +1428,8 @@ public final class RPGQuestBootstrap {
         portalAudit.load();
         agentActions.setPortalAdmin(new com.lodygames.rpgquest.travel.WorldPortalAdminService(worldPortalRegistry,
                 portalAudit, java.time.Clock.systemUTC()), portalAudit);
+        // Issue #567 : simulation des conditions d'accès et téléportation de test.
+        agentActions.setPortalAccess(worldPortalTeleportListener, portalAccessChecker);
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
         registry.start(new PlayerListenerService(plugin, operatorNotices));

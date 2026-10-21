@@ -2456,7 +2456,8 @@ public final class BukkitAgentActions implements AgentActions {
                         cfg.claims().world()),
                 zonePortals.portals(), siteLookup(), world -> java.util.Optional.ofNullable(
                         plugin.getServer().getWorld(world)).map(w -> new com.lodygames.rpgquest.travel
-                        .WorldPortalAdminService.WorldBounds(w.getMinHeight(), w.getMaxHeight())));
+                        .WorldPortalAdminService.WorldBounds(w.getMinHeight(), w.getMaxHeight())),
+                key -> questEngine.find(key).isPresent());
     }
 
     /**
@@ -2481,6 +2482,89 @@ public final class BukkitAgentActions implements AgentActions {
             return done(new Prepared(ctx, arrival));
         }).thenApplyAsync(prep -> new com.lodygames.rpgquest.travel.WorldPortalVerifier(worldPortals)
                 .verify(id, prep.ctx(), (world, x, z) -> prep.arrival()));
+    }
+
+    private com.lodygames.rpgquest.travel.WorldPortalTeleportListener portalTraveler;
+    private com.lodygames.rpgquest.travel.PortalAccessChecker portalAccess;
+
+    /** Issue #567 : simulation des conditions d'accès et « Téléporter pour test ». */
+    public void setPortalAccess(com.lodygames.rpgquest.travel.WorldPortalTeleportListener traveler,
+                                com.lodygames.rpgquest.travel.PortalAccessChecker access) {
+        this.portalTraveler = traveler;
+        this.portalAccess = access;
+    }
+
+    /**
+     * {@code portal.simulate} (issue #567) : l'évaluation réelle du serveur, sans téléportation ni
+     * écriture (le délai est lu, jamais démarré). Joueur hors ligne : refus lisible, rien d'évalué.
+     */
+    @Override
+    public CompletableFuture<PortalSimulation> portalSimulate(UUID playerId, String playerName, String portalId) {
+        if (worldPortals == null || portalAccess == null) {
+            return AgentActions.super.portalSimulate(playerId, playerName, portalId);
+        }
+        return onMain(() -> {
+            Optional<com.lodygames.rpgquest.travel.model.WorldPortalDefinition> portal = worldPortals.find(portalId);
+            if (portal.isEmpty()) {
+                return done(new PortalSimulation("NOT_FOUND", "Aucun portail « " + portalId + " » chargé.", portalId,
+                        playerName, false, List.of(), List.of()));
+            }
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player == null || !player.isOnline()) {
+                return done(new PortalSimulation("PLAYER_OFFLINE", label(playerName, playerId)
+                        + " n'est pas connecté : la simulation lit l'état d'un joueur en jeu.", portalId, playerName,
+                        false, List.of(), List.of()));
+            }
+            var p = portal.get();
+            List<String> notes = new ArrayList<>();
+            notes.add("Simulation seulement : personne n'est téléporté, aucun délai n'est démarré, rien n'est écrit.");
+            notes.add("Les gardes Claims et Wild s'appliquent avant ces conditions ; ils ne sont pas simulés ici.");
+            if (!p.enabled()) {
+                notes.add("Le portail n'est pas actif : personne ne le franchit pour l'instant.");
+            }
+            if (p.access().isEmpty()) {
+                return done(new PortalSimulation("ALLOWED", "Aucune condition d'accès : " + player.getName()
+                        + " passerait.", portalId, player.getName(), true, List.of(), List.copyOf(notes)));
+            }
+            return portalAccess.evaluate(player, p, true).thenApply(v -> new PortalSimulation(
+                    v.allowed() ? "ALLOWED" : "REFUSED", v.allowed()
+                    ? player.getName() + " remplit toutes les conditions."
+                    : player.getName() + " ne remplit pas « "
+                    + v.firstRefusal().map(com.lodygames.rpgquest.travel.PortalAccessChecker.Check::label).orElse("?")
+                    + " ».", portalId, player.getName(), v.allowed(), v.checks(), List.copyOf(notes)));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> portalTest(UUID travelerId, String travelerName, String portalId) {
+        if (worldPortals == null || portalTraveler == null) {
+            return AgentActions.super.portalTest(travelerId, travelerName, portalId);
+        }
+        return onMain(() -> {
+            Optional<com.lodygames.rpgquest.travel.model.WorldPortalDefinition> portal = worldPortals.find(portalId);
+            if (portal.isEmpty()) {
+                return done(MutationResult.of(false, "NOT_FOUND", "Aucun portail « " + portalId + " » chargé."));
+            }
+            Player player = plugin.getServer().getPlayer(travelerId);
+            if (player == null || !player.isOnline()) {
+                return done(MutationResult.of(false, "PLAYER_OFFLINE", label(travelerName, travelerId)
+                        + " doit être connecté pour un test de téléportation."));
+            }
+            return portalTraveler.testTeleport(player, portal.get()).thenApply(r -> switch (r.outcome()) {
+                case TELEPORTING -> new MutationResult(true, "TELEPORTING", "Conditions remplies : téléportation de "
+                        + player.getName() + " lancée par « " + portalId + " ».", List.of(
+                        "Personnage déplacé par le chemin réel du portail (résultat affiché en jeu).",
+                        "Aucun délai démarré ; portail, conditions et données du joueur inchangés."));
+                case REFUSED -> new MutationResult(false, "REFUSED", "Refusé : " + r.verdict().firstRefusal()
+                        .map(com.lodygames.rpgquest.travel.PortalAccessChecker.Check::label).orElse("conditions non vérifiables")
+                        + ". Personne n'a été déplacé.", List.of("Rien n'a été modifié."));
+                case GUARD_TOOK_OVER -> new MutationResult(true, "GUARD_TOOK_OVER", "Conditions remplies ; un garde "
+                        + "Claims ou Wild a pris la main en jeu (fenêtre ou refus affiché au joueur).",
+                        List.of("Aucun délai démarré ; portail et conditions inchangés."));
+                case PLAYER_OFFLINE -> MutationResult.of(false, "PLAYER_OFFLINE", label(travelerName, travelerId)
+                        + " s'est déconnecté pendant le test.");
+            });
+        });
     }
 
     @Override

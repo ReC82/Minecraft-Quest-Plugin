@@ -1,7 +1,7 @@
 ---
 title: Portails
 category: Monde
-tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver]
+tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver, conditions, accès, niveau, délai, simuler, simulation, tester, portal_test]
 order: 2
 ---
 
@@ -10,7 +10,8 @@ order: 2
 La page **Monde → Portails** (`/portals`) liste tous les portails du serveur. Cliquer sur
 **Rafraîchir les portails** relit le serveur (action `portal.list`). Avec les permissions
 `PORTAL_EDIT` et `PORTAL_ENABLE` (propriétaire par défaut), on y crée et gère les portails entre
-mondes — voir « Créer et gérer un portail » plus bas. Aucun test de téléportation n'est proposé.
+mondes — voir « Créer et gérer un portail » plus bas — et leurs **conditions d'accès** (« Conditions
+d'accès, simulation et test »).
 
 Deux sortes de portails sont réunies dans une seule liste :
 
@@ -37,8 +38,10 @@ Pour chaque portail, la fiche montre :
      sous son **nom affiché actuel** (ex. Elias) ; si ce nom ne se résout pas, la fiche l'indique ;
    - les **conditions** d'un portail de zone.
 
-Un portail entre mondes n'a **aucune condition propre** (niveau, quête, permission) : la ligne
-« Déclenchement » le précise, mais les règles du bloc 3 (Wild, Claims) restent appliquées.
+Un portail entre mondes peut avoir des **conditions d'accès** (niveau RPG, quête, objet, permission,
+variable, claim principal, attente entre deux passages) : elles apparaissent dans le bloc 3, sous les
+règles Wild / Claims, qui restent appliquées **avant** elles. Sans condition, la ligne
+« Déclenchement » le précise. `hub_to_wild` et `hub_to_claims` n'en ont aucune.
 
 La recherche et les filtres (Actifs, Brouillons, Désactivés, Ancien format, Avec problème) affichent
 un message explicite quand aucun portail ne correspond (ex. « Aucun portail désactivé. »).
@@ -118,13 +121,50 @@ que si personne n'a besoin de charger le terrain (un joueur est à proximité) ;
 vérifiable maintenant » — elle reste contrôlée à chaque passage. Si le portail est modifié après la
 vérification, la fiche le signale : vérifier à nouveau.
 
+## Conditions d'accès, simulation et test
+
+**Conditions d'accès** (fiche, `PORTAL_EDIT`, portail **non actif** — le désactiver d'abord) :
+
+- **Niveau RPG minimum** (le niveau RPG du joueur, comme les offres marchandes) et son message ;
+- **Attente entre deux passages** (secondes, par joueur, démarrée après un passage réussi) et son
+  message ;
+- jusqu'à **8 conditions**, toutes exigées, choisies parmi les conditions déjà utilisées par les
+  dialogues : *quête dans un état*, *avoir un objet* (vérifie l'inventaire, ne retire rien), *avoir
+  une permission*, *variable joueur égale à*, *avoir un claim principal* ; la case **Inverser** exige
+  au contraire que le joueur ne remplisse **pas** la condition. Aucune condition en texte libre.
+
+Chaque condition a son **message de refus** (couleurs et styles au clic, comme les répliques ; vide =
+message par défaut). Dans les messages, `%level%` est remplacé par le niveau exigé et `%seconds%` par
+les secondes restantes. Le formulaire montre les conditions actuelles et une ligne vide (deux au moins) ; choisir
+« — aucune — » retire une condition ; enregistrer sans aucune ligne ni niveau ni délai retire toutes
+les conditions (le fichier redevient identique à avant). Une quête citée doit exister sur le serveur ;
+une variable connue (ex. `CLAIM_TIER_1`) doit recevoir une valeur de son type.
+
+C'est **le serveur** qui vérifie, à chaque passage, après les règles Wild / Claims : un joueur refusé
+**reste sur place** et reçoit le message de la première condition non remplie ; le refus est noté
+dans la console du serveur. Le fichier du portail garde ces réglages dans `access:`. Un fichier dont
+la section `access:` est illisible est **ignoré** (« Fichier de portail ignoré ») : un portail n'est
+jamais chargé sans ses conditions.
+
+**Simuler un passage** (fiche, `PORTAL_READ`, action `portal.simulate`) : choisir un joueur
+**connecté** ; le serveur évalue les conditions et répond **AUTORISÉ** ou **REFUSÉ**, avec chaque
+contrôle (OK / Non) et le message que le joueur recevrait. **Personne n'est téléporté**, aucune
+attente n'est démarrée, rien n'est écrit. Les règles Wild / Claims ne sont pas simulées.
+
+**Téléporter pour test** (fiche, `PORTAL_TEST`, propriétaire par défaut, action `portal.test`) :
+déplace **réellement votre personnage lié** (jamais un autre joueur), connecté, par le chemin réel du
+portail, même en brouillon ou désactivé : conditions (sans l'attente, ni lue ni démarrée), puis
+règles Wild / Claims (fenêtre d'avertissement, accès aux Claims), puis téléportation. Confirmation
+forte : cocher la case **et** recopier l'identifiant du portail. Sans personnage lié au compte
+PlugAdmin, le bouton n'est pas proposé.
+
 ---
 
 ## Fichier de portail ignoré
 
 Un fichier de `world-portals/` ou `portals/` n'a pas pu être lu au chargement : le portail n'existe
 pas en jeu. Le message indique le fichier et la raison (champ manquant, coordonnées inversées,
-stratégie inconnue).
+stratégie inconnue, condition d'accès invalide).
 
 ## Monde de destination non chargé
 

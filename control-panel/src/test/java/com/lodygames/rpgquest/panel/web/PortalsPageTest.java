@@ -314,6 +314,93 @@ class PortalsPageTest {
         assertFalse(pollActions().contains("building.site.delete"));
     }
 
+    // ---- Issue #567 : conditions d'accès, simulation, test de téléportation -----------------------
+
+    /** Relevé #567 : le brouillon porte un niveau, une condition de quête et un délai. */
+    static final String RELEVE_567 = RELEVE_565.replace(
+            "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650}",
+            "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650,\"access\":{\"level\":\"5\","
+                    + "\"levelMessage\":\"<red>Niveau 5.</red>\",\"cooldown\":30,\"cooldownMessage\":\"\","
+                    + "\"rules\":[{\"type\":\"QUEST_STATE\",\"quest\":\"rpgquest:crystal_hunt\",\"state\":"
+                    + "\"COMPLETED\",\"message\":\"<red>Termine la chasse.</red>\",\"label\":\"Quête "
+                    + "rpgquest:crystal_hunt à l'état COMPLETED\"}]}}")
+            .replace("\"guards\":[],\"conditions\":[],",
+                    "\"guards\":[],\"conditions\":[{\"label\":\"Niveau RPG minimum\",\"value\":\"5\"},"
+                            + "{\"label\":\"Condition\",\"value\":\"Quête rpgquest:crystal_hunt à l'état COMPLETED\"}],");
+
+    @Test
+    void theDraftFicheEditsAccessConditionsAndOffersASimulation() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_567);
+        String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(draft.contains("Quête rpgquest:crystal_hunt à l&#39;état COMPLETED"), "condition lisible");
+        assertTrue(draft.contains("value=\"portal.access\""), "formulaire des conditions");
+        assertTrue(draft.contains("name=\"level\" min=\"1\" max=\"1000\" step=\"1\" value=\"5\""), draft);
+        assertTrue(draft.contains("<option value=\"QUEST_STATE\" selected>"), "ligne existante préremplie");
+        assertTrue(draft.contains("name=\"cond_0_quest\"") && draft.contains("value=\"rpgquest:crystal_hunt\""));
+        assertTrue(draft.contains("name=\"cond_1_type\"") && !draft.contains("name=\"cond_2_type\""),
+                "conditions actuelles + une ligne vide (deux au moins)");
+        assertTrue(draft.contains("value=\"portal.simulate\"") && draft.contains("Simuler (sans téléporter)"));
+        assertTrue(draft.contains("Téléporter pour test") && draft.contains("Aucun personnage Minecraft n'est lié"),
+                "le test ne déplace que le personnage lié ; sans lien, aucun formulaire");
+        assertFalse(draft.contains("value=\"portal.test\""));
+        String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild").body();
+        assertTrue(wild.contains("Désactiver le portail avant de changer ses conditions d'accès."));
+        assertFalse(wild.contains("value=\"portal.access\""), "portail actif : conditions verrouillées");
+    }
+
+    @Test
+    void accessConditionsAreQueuedOnlyWithOfferedTypes() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        String base = "_csrf=" + token + "&type=portal.access&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche&expected=bbbbbbbbbbbbbbbbbbbbbbbb&confirm=true";
+        post("/agents/action", base + "&cond_0_type=HAS_INVENTORY_SPACE");
+        assertFalse(pollActions().contains("portal.access"), "type non proposé : rien en file");
+        post("/agents/action", base + "&level=5&cooldown=30&level_message=" + URLEncoder.encode("<red>N5</red>",
+                StandardCharsets.UTF_8) + "&cond_0_type=QUEST_STATE&cond_0_quest=crystal_hunt&cond_0_state=COMPLETED"
+                + "&cond_1_type=&cond_1_quest=ignoree&cond_2_type=HAS_MAIN_CLAIM&cond_2_negate=true");
+        String queued = pollActions();
+        assertTrue(queued.contains("\"cond_0_type\":\"QUEST_STATE\"") && queued.contains("\"level\":\"5\""), queued);
+        assertTrue(queued.contains("\"cond_2_negate\":\"true\"") && !queued.contains("ignoree"), queued);
+    }
+
+    @Test
+    void aTestTeleportNeedsALinkedCharacterAndTheCopiedId() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=portal.test&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche&confirm_id=arche_marche&confirm=true&player=Alex");
+        assertFalse(pollActions().contains("portal.test"), "sans personnage lié : refusé, jamais un autre joueur");
+        assertFalse(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("portal.test", new java.util.HashMap<>(
+                Map.of("id", "arche_marche", "confirm", "true", "player", "Alex", "confirm_id", "autre"))).valid(),
+                "identifiant non recopié : refusé");
+        assertTrue(com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("portal.test", new java.util.HashMap<>(
+                Map.of("id", "arche_marche", "confirm", "true", "player", "Alex", "confirm_id", "ARCHE_MARCHE")))
+                .valid());
+    }
+
+    @Test
+    void theLastSimulationIsShownWithEachCheck() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_567);
+        runAction("portal.simulate", "&id=arche_marche&player=Alex", "{\"portal\":\"arche_marche\",\"player\":"
+                + "\"Alex\",\"allowed\":false,\"code\":\"REFUSED\",\"checks\":[{\"code\":\"LEVEL\",\"label\":"
+                + "\"Niveau RPG 5 minimum (actuel : 7)\",\"passed\":true,\"refusal\":\"Niveau 5.\"},{\"code\":"
+                + "\"CONDITION\",\"label\":\"Quête rpgquest:crystal_hunt à l'état COMPLETED\",\"passed\":false,"
+                + "\"refusal\":\"Termine la chasse.\"}],\"notes\":[\"Simulation seulement : personne n'est "
+                + "téléporté.\"]}");
+        String page = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(page.contains(">REFUSÉ<"), page);
+        assertTrue(page.contains("Niveau RPG 5 minimum (actuel : 7)") && page.contains("« Termine la chasse. »"));
+        assertTrue(page.contains("Simulation seulement : personne n&#39;est téléporté.")
+                || page.contains("Simulation seulement : personne n'est téléporté."), "notes du serveur");
+    }
+
     private String pollActions() throws Exception {
         return client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)

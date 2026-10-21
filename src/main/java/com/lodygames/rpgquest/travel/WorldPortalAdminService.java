@@ -1,12 +1,18 @@
 package com.lodygames.rpgquest.travel;
 
 import com.lodygames.rpgquest.building.model.BuildingSite;
+import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
+import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
+import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
+import com.lodygames.rpgquest.travel.model.PortalAccess;
 import com.lodygames.rpgquest.travel.model.PortalDefinition;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.Details;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.State;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.Zone;
+import com.lodygames.rpgquest.variable.VariableTypes;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -18,6 +24,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import org.bukkit.NamespacedKey;
 
 /**
  * Gestion des portails entre mondes depuis PlugAdmin (issue #565, #228-P2) : créer un
@@ -41,6 +49,9 @@ import java.util.function.Function;
  *       un point fixe est refusé hors des hauteurs du monde ou dans la zone d'un portail (boucle).
  *       Un portail retour est un second portail distinct, créé en brouillon, qui relie les deux
  *       mondes en sens inverse ({@code return-of}).</li>
+ *   <li>Issue #567 : les conditions d'accès (niveau RPG, conditions joueur, délai) d'un portail
+ *       actif ne se modifient pas ; une quête citée doit exister, une variable connue doit recevoir
+ *       une valeur de son type.</li>
  * </ul>
  */
 public final class WorldPortalAdminService {
@@ -58,7 +69,15 @@ public final class WorldPortalAdminService {
      */
     public record Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
                           Function<String, Optional<BuildingSite>> sites,
-                          Function<String, Optional<WorldBounds>> bounds) {
+                          Function<String, Optional<WorldBounds>> bounds,
+                          Predicate<NamespacedKey> questKnown) {
+
+        /** Sans liste de quêtes (issue #567) : toute quête est admise. */
+        public Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
+                       Function<String, Optional<BuildingSite>> sites,
+                       Function<String, Optional<WorldBounds>> bounds) {
+            this(loadedWorlds, roles, zonePortals, sites, bounds, q -> true);
+        }
 
         /** Sans hauteurs relevées : celles d'un monde normal (−64 à 320). */
         public Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
@@ -121,7 +140,9 @@ public final class WorldPortalAdminService {
 
     /** Opération demandée par PlugAdmin, déjà lue et typée par l'agent. */
     public enum Kind {
-        CREATE, UPDATE, ENABLE, DISABLE, DELETE
+        CREATE, UPDATE, ENABLE, DISABLE, DELETE,
+        /** Issue #567 : remplacer les conditions d'accès. */
+        ACCESS
     }
 
     /**
@@ -130,10 +151,17 @@ public final class WorldPortalAdminService {
      * @param expected empreinte lue par la page (toutes les opérations sauf la création)
      * @param destination création : arrivée choisie ; modification : {@code null} = arrivée inchangée
      * @param returnOf création seulement : portail dont celui-ci est le retour
+     * @param access   {@link Kind#ACCESS} seulement : nouvelles conditions d'accès
      */
     public record Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
                             DestinationRequest destination, String returnOf, boolean confirmEssential,
-                            String actor) {
+                            String actor, PortalAccess access) {
+
+        public Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
+                         DestinationRequest destination, String returnOf, boolean confirmEssential,
+                         String actor) {
+            this(kind, id, expected, name, zone, destination, returnOf, confirmEssential, actor, null);
+        }
 
         public Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
                          String destinationWorld, DestinationStrategy strategy, boolean confirmEssential,
@@ -157,6 +185,7 @@ public final class WorldPortalAdminService {
             case ENABLE -> setActive(op.id(), true, op.expected(), op.confirmEssential(), op.actor(), ctx);
             case DISABLE -> setActive(op.id(), false, op.expected(), op.confirmEssential(), op.actor(), ctx);
             case DELETE -> delete(op.id(), op.expected(), op.confirmEssential(), op.actor(), ctx);
+            case ACCESS -> setAccess(op.id(), op.expected(), op.access(), op.confirmEssential(), op.actor(), ctx);
         };
     }
 
@@ -338,6 +367,45 @@ public final class WorldPortalAdminService {
                 : "Portail « " + id + " » désactivé : sa configuration est conservée.");
     }
 
+    /**
+     * Remplace les conditions d'accès (issue #567) d'un portail non actif. {@link PortalAccess#NONE}
+     * les retire toutes. Rien n'est vérifié sur un joueur : seule la configuration est écrite.
+     */
+    public synchronized Result setAccess(String id, String expected, PortalAccess access, boolean confirmEssential,
+                                         String actor, Context ctx) {
+        if (access == null) {
+            return Result.refused("ACCESS_REQUIRED", "Conditions d'accès manquantes.");
+        }
+        Lookup found = lookup(id, expected, confirmEssential, ctx);
+        if (found.error() != null) {
+            return found.error();
+        }
+        WorldPortalDefinition current = found.portal();
+        if (current.state() == State.ACTIVE) {
+            return Result.refused("ACTIVE_ACCESS_LOCKED", "Le portail est actif : le désactiver avant de changer ses "
+                    + "conditions d'accès.");
+        }
+        for (PortalAccess.Rule rule : access.rules()) {
+            DialogueCondition c = rule.condition() instanceof NegatedCondition n ? n.inner() : rule.condition();
+            if (c instanceof QuestStateCondition q && !ctx.questKnown().test(q.questId())) {
+                return Result.refused("UNKNOWN_QUEST", "Aucune quête « " + q.questId() + " » chargée sur le serveur.");
+            }
+            if (c instanceof VariableEqualsCondition v) {
+                Optional<String> problem = VariableTypes.problem(v.key(), v.value());
+                if (problem.isPresent()) {
+                    return Result.refused("INVALID_VARIABLE", "Variable " + v.key() + " : " + problem.get());
+                }
+            }
+        }
+        WorldPortalDefinition updated = current.withAccess(access);
+        if (updated.equals(current)) {
+            return new Result(true, "UNCHANGED", "Aucun changement à enregistrer.", id, List.of());
+        }
+        return save(current, updated, "ACCESS", actor, access.isEmpty()
+                ? "Conditions d'accès de « " + id + " » retirées."
+                : "Conditions d'accès de « " + id + " » enregistrées : le serveur les vérifiera à chaque passage.");
+    }
+
     /** Supprime la configuration d'un portail non actif. L'emplacement et le bâtiment restent. */
     public synchronized Result delete(String id, String expected, boolean confirmEssential, String actor,
                                       Context ctx) {
@@ -381,6 +449,10 @@ public final class WorldPortalAdminService {
         if (!p.returnOf().isEmpty()) {
             canonical += "|return-of:" + p.returnOf();
         }
+        // #567 : même règle — un portail sans condition garde son empreinte d'avant.
+        if (!p.access().isEmpty()) {
+            canonical += "|access:" + PortalAccessYaml.canonical(p.access());
+        }
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash, 0, 12);
@@ -407,7 +479,23 @@ public final class WorldPortalAdminService {
                 + d.depth())
                 + ", vers " + p.destinationWorld() + " (" + p.destinationStrategy()
                 + (p.fixedPoint() == null ? "" : " " + pointText(p.fixedPoint())) + ")"
-                + (p.returnOf().isEmpty() ? "" : ", retour de " + p.returnOf());
+                + (p.returnOf().isEmpty() ? "" : ", retour de " + p.returnOf())
+                + (p.access().isEmpty() ? "" : ", conditions : " + accessSummary(p.access()));
+    }
+
+    /** Résumé lisible des conditions d'accès (journal, fiche). */
+    public static String accessSummary(PortalAccess a) {
+        List<String> parts = new ArrayList<>();
+        if (a.requiredLevel() != null) {
+            parts.add("niveau RPG " + a.requiredLevel());
+        }
+        for (PortalAccess.Rule r : a.rules()) {
+            parts.add(PortalAccess.describe(r.condition()));
+        }
+        if (a.cooldownSeconds() > 0) {
+            parts.add("délai " + a.cooldownSeconds() + " s");
+        }
+        return String.join(" ; ", parts);
     }
 
     /** {@code x, y, z, regard yaw/pitch}, sans perte : sert aussi à l'empreinte. */

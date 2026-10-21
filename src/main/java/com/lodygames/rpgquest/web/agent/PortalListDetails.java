@@ -44,6 +44,24 @@ final class PortalListDetails {
         return details;
     }
 
+    private static Map<String, Object> access(com.lodygames.rpgquest.travel.model.PortalAccess access) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("level", access.requiredLevel() == null ? "" : String.valueOf(access.requiredLevel()));
+        out.put("levelMessage", access.levelMessage());
+        out.put("cooldown", access.cooldownSeconds());
+        out.put("cooldownMessage", access.cooldownMessage());
+        List<Map<String, Object>> rules = new ArrayList<>();
+        for (var r : access.rules()) {
+            Map<String, Object> rule = new LinkedHashMap<>(
+                    com.lodygames.rpgquest.dialogue.DialogueConditionYaml.toMap(r.condition()));
+            rule.put("message", r.message());
+            rule.put("label", com.lodygames.rpgquest.travel.model.PortalAccess.describe(r.condition()));
+            rules.add(rule);
+        }
+        out.put("rules", rules);
+        return out;
+    }
+
     private static Map<String, Object> entry(PortalOverview.Entry e) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", e.id());
@@ -102,6 +120,10 @@ final class PortalListDetails {
         row.put("essential", a.essential());
         row.put("fingerprint", a.fingerprint());
         row.put("editable", a.editable());
+        // #567 : conditions d'accès brutes, pour préremplir le formulaire de la fiche.
+        if (!a.access().isEmpty()) {
+            row.put("access", access(a.access()));
+        }
         // #566 : point fixe (valeurs brutes pour préremplir la fiche) et aller-retour.
         if (a.point() != null) {
             row.put("pointX", a.point().x());

@@ -77,6 +77,8 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
             + "téléportation annulée, vous restez ici. Prévenez un administrateur.</red>";
     static final String FIXED_POINT_UNAVAILABLE = "<red>L'arrivée de ce portail n'a pas pu être préparée : "
             + "téléportation annulée, vous restez ici. Vous pouvez réessayer.</red>";
+    static final String ACCESS_UNAVAILABLE = "<red>Les conditions de ce portail n'ont pas pu être vérifiées : "
+            + "vous restez ici. Vous pouvez réessayer.</red>";
 
     private final RPGQuestPlugin plugin;
     private final WorldPortalRegistry registry;
@@ -90,6 +92,10 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
     private volatile ArrivalResolver claimArrival;
     /** Politique optionnelle d'autorisation d'entrée (mission « avertissement avant entrée dans le Wild »). */
     private volatile WorldPortalEntryGuard entryGuard;
+    /** Issue #567 : conditions d'accès ; {@code null} = non câblé (un portail à conditions refuse alors tout passage). */
+    private volatile PortalAccessChecker accessChecker;
+    /** Issue #567 : joueurs dont les conditions sont en cours d'évaluation (un seul passage à la fois). */
+    private final Set<UUID> pendingAccess = ConcurrentHashMap.newKeySet();
     /** TODO(debug bug TP hub) : marqueur de ré-entrance — voir {@link #onTeleport}. */
     private final Set<UUID> selfInitiatedTeleport = ConcurrentHashMap.newKeySet();
 
@@ -156,6 +162,11 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
      */
     public void setEntryGuard(WorldPortalEntryGuard entryGuard) {
         this.entryGuard = entryGuard;
+    }
+
+    /** Issue #567 : vérification des conditions d'accès au franchissement. */
+    public void setAccessChecker(PortalAccessChecker checker) {
+        this.accessChecker = checker;
     }
 
     /**
@@ -266,6 +277,7 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
     public void onQuit(PlayerQuitEvent event) {
         UUID playerId = event.getPlayer().getUniqueId();
         currentPortalByPlayer.remove(playerId);
+        pendingAccess.remove(playerId);
         arrivalGrace.remove(playerId);
         selfInitiatedTeleport.remove(playerId);
     }
@@ -275,7 +287,120 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> arrivalGrace.remove(playerId), ARRIVAL_GRACE_TICKS);
     }
 
+    /**
+     * Issue #567 — conditions d'accès vérifiées par le serveur, <em>après</em> les gardes Claims /
+     * Wild (déjà passés à ce stade, ou relancés par eux via {@link #teleportNow}). Un portail sans
+     * condition garde exactement le chemin d'avant, synchrone et dans le même tick ; avec conditions,
+     * l'évaluation est asynchrone puis le passage reprend sur le thread principal. Refus, erreur de
+     * lecture ou vérificateur absent : le joueur reste sur place, avec un message.
+     */
     private void teleport(Player player, WorldPortalDefinition portal) {
+        if (portal.access().isEmpty()) {
+            transport(player, portal, () -> { });
+            return;
+        }
+        PortalAccessChecker checker = accessChecker;
+        if (checker == null) {
+            logger.warn("Portail simple {} : conditions d'accès configurées mais non vérifiables — passage refusé.",
+                    portal.id());
+            player.sendMessage(MM.deserialize(ACCESS_UNAVAILABLE));
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        if (!pendingAccess.add(playerId)) {
+            return; // une évaluation est déjà en cours pour ce joueur.
+        }
+        evaluateSafely(checker, player, portal, true).whenComplete((verdict, error) -> onMainThread(() -> {
+            pendingAccess.remove(playerId);
+            if (!player.isOnline()) {
+                return;
+            }
+            if (error != null) {
+                logger.error("Portail simple {} : conditions d'accès de {} non vérifiables — passage refusé.",
+                        portal.id(), player.getName(), error);
+                player.sendMessage(MM.deserialize(ACCESS_UNAVAILABLE));
+                return;
+            }
+            if (!verdict.allowed()) {
+                PortalAccessChecker.Check refused = verdict.firstRefusal().orElseThrow();
+                logger.info("Portail simple {} : passage refusé pour {} — {}.", portal.id(), player.getName(),
+                        refused.label());
+                player.sendMessage(PortalAccessChecker.render(refused));
+                return;
+            }
+            if (!portal.world().equals(player.getWorld().getName())) {
+                return; // a changé de monde pendant la vérification : plus de passage à faire.
+            }
+            transport(player, portal, () -> checker.recordPassage(player, portal));
+        }));
+    }
+
+    private static CompletableFuture<PortalAccessChecker.Verdict> evaluateSafely(PortalAccessChecker checker,
+            Player player, WorldPortalDefinition portal, boolean withCooldown) {
+        try {
+            return checker.evaluate(player, portal, withCooldown);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    /** Issue #567 — issue d'un « Téléporter pour test » (voir {@link #testTeleport}). */
+    public enum TestOutcome {
+        /** Conditions remplies, gardes passés : la téléportation est lancée. */
+        TELEPORTING,
+        /** Une condition d'accès refuse : personne n'est déplacé. */
+        REFUSED,
+        /** Un garde Claims / Wild a pris la main (fenêtre ou refus montré en jeu). */
+        GUARD_TOOK_OVER,
+        /** Le joueur s'est déconnecté. */
+        PLAYER_OFFLINE
+    }
+
+    public record TestResult(TestOutcome outcome, PortalAccessChecker.Verdict verdict) {
+    }
+
+    /**
+     * Issue #567 — « Téléporter pour test » : le chemin réel d'un passage, sans entrer dans la zone
+     * et quel que soit l'état du portail (un brouillon se teste) : conditions d'accès (sans le délai,
+     * ni lu ni démarré), puis gardes Claims / Wild, puis téléportation. À appeler sur le thread principal.
+     */
+    public CompletableFuture<TestResult> testTeleport(Player player, WorldPortalDefinition portal) {
+        PortalAccessChecker checker = accessChecker;
+        CompletableFuture<PortalAccessChecker.Verdict> verdict = portal.access().isEmpty() || checker == null
+                ? CompletableFuture.completedFuture(new PortalAccessChecker.Verdict(portal.access().isEmpty(),
+                List.of()))
+                : evaluateSafely(checker, player, portal, false);
+        CompletableFuture<TestResult> result = new CompletableFuture<>();
+        verdict.whenComplete((v, error) -> onMainThread(() -> {
+            if (error != null) {
+                result.completeExceptionally(error);
+                return;
+            }
+            if (!player.isOnline()) {
+                result.complete(new TestResult(TestOutcome.PLAYER_OFFLINE, v));
+                return;
+            }
+            if (!v.allowed()) {
+                v.firstRefusal().ifPresent(c -> player.sendMessage(PortalAccessChecker.render(c)));
+                result.complete(new TestResult(TestOutcome.REFUSED, v));
+                return;
+            }
+            logger.info("Portail simple {} : téléportation de test de {} demandée depuis PlugAdmin.", portal.id(),
+                    player.getName());
+            WorldPortalEntryGuard guard = entryGuard;
+            if (guard != null && !guard.allowEntry(player, portal)) {
+                result.complete(new TestResult(TestOutcome.GUARD_TOOK_OVER, v));
+                return;
+            }
+            currentPortalByPlayer.put(player.getUniqueId(), portal.id());
+            transport(player, portal, () -> { });
+            result.complete(new TestResult(TestOutcome.TELEPORTING, v));
+        }));
+        return result;
+    }
+
+    /** Le passage lui-même (monde d'arrivée, stratégie, sécurité) ; {@code onSuccess} après une téléportation réussie. */
+    private void transport(Player player, WorldPortalDefinition portal, Runnable onSuccess) {
         Optional<World> destination = worldService.find(portal.destinationWorld());
         if (destination.isEmpty()) {
             player.sendMessage(MM.deserialize(
@@ -285,7 +410,7 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         }
         World world = destination.get();
         if (portal.destinationStrategy() == DestinationStrategy.FIXED_POINT) {
-            teleportToFixedPoint(player, portal, world);
+            teleportToFixedPoint(player, portal, world, onSuccess);
             return;
         }
         Location source = player.getLocation();
@@ -354,6 +479,7 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
                     "<red>La téléportation a échoué : vous n'avez pas quitté cet endroit. Vous pouvez réessayer.</red>"));
             return;
         }
+        onSuccess.run();
         player.sendMessage(MM.deserialize("<green>Téléportation réussie.</green>"));
     }
 
@@ -366,7 +492,7 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
      * sur place. Les stratégies historiques (Hub → Wild, Hub → Claims) gardent leur chemin
      * synchrone ci-dessus, inchangé.
      */
-    private void teleportToFixedPoint(Player player, WorldPortalDefinition portal, World world) {
+    private void teleportToFixedPoint(Player player, WorldPortalDefinition portal, World world, Runnable onSuccess) {
         WorldPortalDefinition.FixedPoint point = portal.fixedPoint();
         List<CompletableFuture<?>> loads = new ArrayList<>();
         AsyncWorldAccess access = async;
@@ -381,7 +507,7 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) ->
                 onMainThread(() -> {
                     try {
-                        finishFixedPoint(player, portal, world, point, error, access);
+                        finishFixedPoint(player, portal, world, point, error, access, onSuccess);
                     } catch (RuntimeException e) {
                         failFixedPoint(player, portal, e);
                     }
@@ -399,7 +525,7 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
 
     private void finishFixedPoint(Player player, WorldPortalDefinition portal, World world,
                                   WorldPortalDefinition.FixedPoint point, Throwable chunkError,
-                                  AsyncWorldAccess access) {
+                                  AsyncWorldAccess access, Runnable onSuccess) {
         if (!player.isOnline()) {
             return;
         }
@@ -443,6 +569,9 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
             TpTraceLogger.log(logger, ok ? "teleport_success" : "teleport_failed", playerId, player.getName(),
                     portal.id(), world.getName(), target.getBlockX(), target.getBlockY(), target.getBlockZ(),
                     null, null, null, null, portalLocationString(source), portalLocationString(target));
+            if (ok) {
+                onSuccess.run();
+            }
             if (!player.isOnline()) {
                 return;
             }

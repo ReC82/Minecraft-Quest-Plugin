@@ -245,6 +245,9 @@ public final class AgentActionExecutor {
                 case PORTAL_DISABLE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.DISABLE);
                 case PORTAL_DELETE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.DELETE);
                 case PORTAL_VERIFY -> portalVerify(action);
+                case PORTAL_ACCESS -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.ACCESS);
+                case PORTAL_SIMULATE -> portalSimulate(action);
+                case PORTAL_TEST -> portalTest(action);
                 case CLAIM_LIST -> claimList(action);
                 case CLAIM_TELEPORT -> claimTeleport(action);
                 case MERCHANT_SAVE -> merchantSave(action);
@@ -2489,6 +2492,61 @@ public final class AgentActionExecutor {
             };
             return AgentActionOutcome.success(action.id(), report.verdict().name(), summary, details);
         }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /**
+     * {@code portal.simulate} (issue #567) : lecture pure — personne n'est téléporté, aucun délai
+     * démarré. {@code player} = pseudo ou UUID d'un joueur connecté.
+     */
+    private CompletableFuture<AgentActionOutcome> portalSimulate(AgentAction action) {
+        String id = action.params().getOrDefault("id", "").strip().toLowerCase(java.util.Locale.ROOT);
+        if (!id.matches("[a-z0-9_-]{1,48}")) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « id » manquant ou invalide."));
+        }
+        return withResolvedUuid(action, (uuid, name) -> actions.portalSimulate(uuid, name, id).thenApply(sim -> {
+            if (sim == null) {
+                return AgentActionOutcome.failed(action.id(), "Simulation des portails indisponible sur ce serveur.");
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("portal", sim.portal());
+            details.put("player", sim.playerName());
+            details.put("allowed", sim.allowed());
+            details.put("code", sim.code());
+            List<Map<String, Object>> checks = new ArrayList<>();
+            for (var c : sim.checks()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("code", c.code());
+                row.put("label", c.label());
+                row.put("passed", c.passed());
+                row.put("refusal", c.refusalText());
+                checks.add(row);
+            }
+            details.put("checks", checks);
+            details.put("notes", sim.notes());
+            if (sim.code().equals("ALLOWED") || sim.code().equals("REFUSED")) {
+                return AgentActionOutcome.success(action.id(), sim.code(), sim.message(), details);
+            }
+            return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, sim.code(), sim.message(),
+                    details, java.time.Instant.now());
+        }));
+    }
+
+    /**
+     * {@code portal.test} (issue #567) : le personnage imposé par le panel ({@code player_uuid})
+     * emprunte le portail. Confirmation forte : {@code confirm=true} et {@code confirm_id} = l'id.
+     */
+    private CompletableFuture<AgentActionOutcome> portalTest(AgentAction action) {
+        String id = action.params().getOrDefault("id", "").strip().toLowerCase(java.util.Locale.ROOT);
+        if (!id.matches("[a-z0-9_-]{1,48}")) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « id » manquant ou invalide."));
+        }
+        if (!"true".equals(action.params().get("confirm"))
+                || !id.equals(action.params().getOrDefault("confirm_id", "").strip().toLowerCase(java.util.Locale.ROOT))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Confirmation manquante : cocher la case et recopier "
+                    + "l'identifiant du portail. Personne n'a été déplacé."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.portalTest(uuid, name, id).thenApply(r -> toOutcome(action, r)));
     }
 
     // ---- Claims (issue #637) -------------------------------------------------------------------

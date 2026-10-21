@@ -423,6 +423,13 @@ public final class AgentActionCatalog {
         addSensitiveWrite("portal.delete", Permission.PORTAL_EDIT, false, "Supprimer un portail", "portal.list");
         addSensitiveWrite("portal.enable", Permission.PORTAL_ENABLE, false, "Activer un portail", "portal.list");
         addSensitiveWrite("portal.disable", Permission.PORTAL_ENABLE, false, "Désactiver un portail", "portal.list");
+        // Issue #567 (#228-P4) — conditions d'accès (portail non actif, PORTAL_EDIT), simulation
+        // AUTORISÉ / REFUSÉ pour un joueur connecté (lecture seule, PORTAL_READ) et « Téléporter pour
+        // test » du SEUL personnage lié à la session (PORTAL_TEST, imposé par le panel, confirmation forte).
+        addSensitiveWrite("portal.access", Permission.PORTAL_EDIT, false,
+                "Modifier les conditions d'accès d'un portail", "portal.list");
+        add("portal.simulate", Permission.PORTAL_READ, false, true, "Simuler les conditions d'accès d'un portail");
+        addSensitiveWrite("portal.test", Permission.PORTAL_TEST, true, "Téléporter mon personnage pour tester un portail");
         // Issue #637 — claims : relevé en lecture seule, et téléportation de diagnostic du SEUL
         // personnage lié à la session (imposé par le panel, jamais un champ du formulaire).
         add("claim.list", Permission.CLAIM_READ, false, false, "Rafraîchir les claims");
@@ -1495,6 +1502,35 @@ public final class AgentActionCatalog {
                 String by = trim(form.get("by"));
                 if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
                     params.put("by", by);
+                }
+            }
+            case "portal.simulate" -> {
+                String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+                if (!PORTAL_ID.matcher(id).matches()) {
+                    return Validation.fail("Identifiant de portail invalide.");
+                }
+                params.put("id", id);
+            }
+            case "portal.test" -> {
+                String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+                if (!PORTAL_ID.matcher(id).matches()) {
+                    return Validation.fail("Identifiant de portail invalide.");
+                }
+                // Confirmation forte : recopier l'identifiant, en plus de la case.
+                if (!id.equals(trim(form.get("confirm_id")).toLowerCase(java.util.Locale.ROOT))) {
+                    return Validation.fail("Recopier l'identifiant du portail (« " + id + " ») pour confirmer le test.");
+                }
+                params.put("id", id);
+                params.put("confirm", "true");
+                params.put("confirm_id", id);
+            }
+            case "portal.access" -> {
+                String error = portalParams(type, form, params);
+                if (error == null) {
+                    error = portalAccessParams(form, params);
+                }
+                if (error != null) {
+                    return Validation.fail(error);
                 }
             }
             case "portal.verify" -> {
@@ -3156,6 +3192,69 @@ public final class AgentActionCatalog {
      * Paramètres de {@code portal.*} ; {@code null} si valides, sinon le message d'erreur. Contrôle
      * de forme seulement : le plugin revérifie tout (mondes chargés, chevauchements, empreinte).
      */
+    /** Nombre de lignes de condition d'un portail (miroir de {@code PortalAccess.MAX_RULES} du plugin). */
+    public static final int PORTAL_MAX_CONDITIONS = 8;
+    public static final int PORTAL_MAX_MESSAGE = 200;
+    private static final List<String> PORTAL_CONDITION_TYPES = List.of("QUEST_STATE", "HAS_ITEM", "HAS_PERMISSION",
+            "VARIABLE_EQUALS", "HAS_MAIN_CLAIM");
+    private static final List<String> PORTAL_CONDITION_FIELDS = List.of("quest", "state", "material", "amount",
+            "permission", "key", "value");
+
+    /**
+     * Issue #567 — forme des conditions d'accès : types proposés seulement, longueurs bornées. Le
+     * plugin relit chaque condition avec le code des dialogues et revérifie quête et variable.
+     */
+    private static String portalAccessParams(Map<String, String> form, Map<String, String> params) {
+        String level = trim(form.get("level"));
+        if (!level.isEmpty() && intIn(level, 1, 1000) == null) {
+            return "Niveau minimum : un entier de 1 à 1000 (vide = aucun).";
+        }
+        params.put("level", level);
+        String cooldown = trim(form.get("cooldown"));
+        if (!cooldown.isEmpty() && intIn(cooldown, 0, 86_400) == null) {
+            return "Délai entre deux passages : de 0 à 86 400 secondes.";
+        }
+        params.put("cooldown", cooldown);
+        for (String key : List.of("level_message", "cooldown_message")) {
+            String message = trim(form.get(key));
+            if (message.length() > PORTAL_MAX_MESSAGE) {
+                return "Message de refus trop long : " + PORTAL_MAX_MESSAGE + " caractères au plus.";
+            }
+            params.put(key, message);
+        }
+        for (int i = 0; i < PORTAL_MAX_CONDITIONS; i++) {
+            String prefix = "cond_" + i + "_";
+            String condType = trim(form.get(prefix + "type")).toUpperCase(java.util.Locale.ROOT);
+            if (condType.isEmpty()) {
+                continue;
+            }
+            if (!PORTAL_CONDITION_TYPES.contains(condType)) {
+                return "Condition " + (i + 1) + " : type « " + condType + " » non proposé pour un portail.";
+            }
+            params.put(prefix + "type", condType);
+            for (String field : PORTAL_CONDITION_FIELDS) {
+                String value = trim(form.get(prefix + field));
+                if (value.length() > 100) {
+                    return "Condition " + (i + 1) + " : « " + field + " » trop long.";
+                }
+                if (!value.isEmpty()) {
+                    params.put(prefix + field, value);
+                }
+            }
+            if ("true".equals(trim(form.get(prefix + "negate")))) {
+                params.put(prefix + "negate", "true");
+            }
+            String message = trim(form.get(prefix + "message"));
+            if (message.length() > PORTAL_MAX_MESSAGE) {
+                return "Condition " + (i + 1) + " : message de refus trop long (" + PORTAL_MAX_MESSAGE + " au plus).";
+            }
+            if (!message.isEmpty()) {
+                params.put(prefix + "message", message);
+            }
+        }
+        return null;
+    }
+
     private static String portalParams(String type, Map<String, String> form, Map<String, String> params) {
         String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
         if (!PORTAL_ID.matcher(id).matches()) {

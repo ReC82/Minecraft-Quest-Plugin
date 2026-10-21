@@ -277,6 +277,14 @@
       message. « Préparer le portail retour » crée un second portail, distinct, en brouillon. « Vérifier sans
       appliquer » contrôle tout le portail sans rien modifier ni charger.
     </p>
+    <p class="text-body-secondary">
+      Depuis l'issue #567, un portail non actif peut avoir des <strong>conditions d'accès</strong> : niveau RPG
+      minimum, quête dans un état, objet dans l'inventaire (rien n'est retiré), permission, variable joueur, claim
+      principal (chacune inversable), et une attente entre deux passages. Chaque condition a son message de refus.
+      C'est le serveur qui les vérifie à chaque passage, après les règles Wild et Claims : un joueur refusé reste sur
+      place. « Simuler un passage » répond AUTORISÉ ou REFUSÉ pour un joueur connecté sans téléporter personne ;
+      « Téléporter pour test » (propriétaire) déplace seulement son propre personnage lié, après confirmation.
+    </p>
   </section>
 
   <section class="my-5">

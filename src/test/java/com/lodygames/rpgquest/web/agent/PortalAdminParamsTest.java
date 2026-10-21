@@ -109,4 +109,62 @@ class PortalAdminParamsTest {
         assertNotNull(PortalAdminParams.parse(Kind.CREATE, Map.of("confirm", "true", "id", "x", "zone_mode", "site",
                 "width", "3", "height", "4", "depth", "1", "strategy", "teleport_anywhere")).error());
     }
+
+    // ---- Conditions d'accès (issue #567) ---------------------------------------------------------
+
+    private static Map<String, String> access(String... kv) {
+        Map<String, String> m = new HashMap<>(Map.of("confirm", "true", "id", "arche", "expected", FP));
+        for (int i = 0; i < kv.length; i += 2) {
+            m.put(kv[i], kv[i + 1]);
+        }
+        return m;
+    }
+
+    @Test
+    void accessReadsLevelCooldownAndConditionRowsWithTheDialogueParser() {
+        var p = PortalAdminParams.parse(Kind.ACCESS, access("level", "5", "level_message", "<red>Niveau 5.</red>",
+                "cooldown", "30", "cond_0_type", "quest_state", "cond_0_quest", "crystal_hunt", "cond_0_state",
+                "completed", "cond_0_message", "<red>Termine la chasse.</red>", "cond_1_type", "",
+                "cond_2_type", "HAS_ITEM", "cond_2_material", "diamond", "cond_2_amount", "2",
+                "cond_3_type", "HAS_MAIN_CLAIM", "cond_3_negate", "true"));
+
+        assertNull(p.error());
+        var a = p.operation().access();
+        assertEquals(5, a.requiredLevel());
+        assertEquals("<red>Niveau 5.</red>", a.levelMessage());
+        assertEquals(30, a.cooldownSeconds());
+        assertEquals(3, a.rules().size(), "ligne sans type ignorée");
+        assertEquals(new com.lodygames.rpgquest.dialogue.model.QuestStateCondition(
+                new org.bukkit.NamespacedKey("rpgquest", "crystal_hunt"),
+                com.lodygames.rpgquest.quest.model.QuestState.COMPLETED), a.rules().get(0).condition());
+        assertEquals("<red>Termine la chasse.</red>", a.rules().get(0).message());
+        assertEquals(new com.lodygames.rpgquest.dialogue.model.HasItemCondition(org.bukkit.Material.DIAMOND, 2),
+                a.rules().get(1).condition());
+        assertEquals(new com.lodygames.rpgquest.dialogue.model.NegatedCondition(
+                new com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition()), a.rules().get(2).condition());
+    }
+
+    @Test
+    void anEmptyAccessFormRemovesEveryCondition() {
+        var p = PortalAdminParams.parse(Kind.ACCESS, access("level", "", "cooldown", "0"));
+
+        assertNull(p.error());
+        assertTrue(p.operation().access().isEmpty());
+    }
+
+    @Test
+    void accessRejectsUnknownOrUnofferedTypesAndBadValues() {
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("cond_0_type", "HAS_INVENTORY_SPACE")).error(),
+                "type existant mais non proposé aux portails");
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("cond_0_type", "FREE_TEXT")).error());
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("cond_0_type", "HAS_ITEM",
+                "cond_0_material", "pas_un_bloc", "cond_0_amount", "1")).error());
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("cond_0_type", "QUEST_STATE",
+                "cond_0_quest", "q")).error(), "état obligatoire");
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("cond_0_type", "HAS_PERMISSION",
+                "cond_0_permission", "a b")).error());
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("level", "0")).error());
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("cooldown", "-1")).error());
+        assertNotNull(PortalAdminParams.parse(Kind.ACCESS, access("level_message", "x".repeat(201))).error());
+    }
 }

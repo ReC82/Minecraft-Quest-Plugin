@@ -18,6 +18,9 @@ package com.lodygames.rpgquest.travel.model;
  * DestinationStrategy#FIXED_POINT} (dans {@code destinationWorld}, {@code null} pour les autres
  * stratégies) ; {@code returnOf} désigne le portail dont celui-ci est le retour ({@code ""} sinon) —
  * un aller-retour reste toujours <strong>deux</strong> portails distincts.</p>
+ *
+ * <p>Issue #567 (#228-P4) : {@code access} porte les conditions d'accès vérifiées par le serveur au
+ * franchissement ({@link PortalAccess#NONE} = aucune, comportement d'avant).</p>
  */
 public record WorldPortalDefinition(
         String id,
@@ -29,7 +32,8 @@ public record WorldPortalDefinition(
         DestinationStrategy destinationStrategy,
         Details details,
         FixedPoint fixedPoint,
-        String returnOf
+        String returnOf,
+        PortalAccess access
 ) {
 
     /**
@@ -141,6 +145,15 @@ public record WorldPortalDefinition(
         if (returnOf.equals(id)) {
             throw new IllegalArgumentException("un portail ne peut pas être son propre retour.");
         }
+        access = access == null ? PortalAccess.NONE : access;
+    }
+
+    /** Sans conditions d'accès : conserve les appelants antérieurs à #567 inchangés. */
+    public WorldPortalDefinition(String id, String world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                  String destinationWorld, boolean enabled, DestinationStrategy destinationStrategy,
+                                  Details details, FixedPoint fixedPoint, String returnOf) {
+        this(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, enabled, destinationStrategy,
+                details, fixedPoint, returnOf, PortalAccess.NONE);
     }
 
     /** Sans destination fixe ni retour : conserve les appelants antérieurs à #566 inchangés. */
@@ -177,19 +190,25 @@ public record WorldPortalDefinition(
                 ? new Details(details.name(), details.site(), false, details.width(), details.height(), details.depth())
                 : details;
         return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, on,
-                destinationStrategy, d, fixedPoint, returnOf);
+                destinationStrategy, d, fixedPoint, returnOf, access);
     }
 
     /** Même portail, zone et champs #565 remplacés ; l'id, la destination et l'état sont conservés. */
     public WorldPortalDefinition withZone(Zone zone, Details newDetails) {
         return new WorldPortalDefinition(id, world, zone.minX(), zone.minY(), zone.minZ(), zone.maxX(), zone.maxY(),
-                zone.maxZ(), destinationWorld, enabled, destinationStrategy, newDetails, fixedPoint, returnOf);
+                zone.maxZ(), destinationWorld, enabled, destinationStrategy, newDetails, fixedPoint, returnOf, access);
     }
 
     /** Même portail, arrivée remplacée (issue #566) ; zone, état et lien de retour conservés. */
     public WorldPortalDefinition withDestination(String newWorld, DestinationStrategy strategy, FixedPoint point) {
         return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, newWorld, enabled, strategy,
-                details, point, returnOf);
+                details, point, returnOf, access);
+    }
+
+    /** Même portail, conditions d'accès remplacées (issue #567) ; le reste est conservé. */
+    public WorldPortalDefinition withAccess(PortalAccess newAccess) {
+        return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, enabled,
+                destinationStrategy, details, fixedPoint, returnOf, newAccess);
     }
 
     /** Une zone d'activation cuboïde (bornes incluses), monde à part. */

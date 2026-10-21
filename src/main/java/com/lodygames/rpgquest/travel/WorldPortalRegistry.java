@@ -177,7 +177,7 @@ public final class WorldPortalRegistry implements PluginService {
                 new WorldPortalDefinition.Details(yaml.getString("name", ""), yaml.getString("site", ""),
                         yaml.getBoolean("draft", false), yaml.getInt("size.width"), yaml.getInt("size.height"),
                         yaml.getInt("size.depth")),
-                parsePoint(yaml), yaml.getString("return-of", ""));
+                parsePoint(yaml), yaml.getString("return-of", ""), PortalAccessYaml.read(yaml));
     }
 
     /** Issue #566 : {@code destination-point} absent = aucun point ; présent, x, y et z sont obligatoires. */
@@ -401,6 +401,8 @@ public final class WorldPortalRegistry implements PluginService {
             if (!portal.returnOf().isEmpty()) {
                 yaml.set("return-of", portal.returnOf());
             }
+            // #567 : conditions d'accès, seulement si le portail en a.
+            PortalAccessYaml.write(yaml, portal.access());
             Path tmp = target.resolveSibling(fileName + ".tmp");
             yaml.save(tmp.toFile());
             Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING,

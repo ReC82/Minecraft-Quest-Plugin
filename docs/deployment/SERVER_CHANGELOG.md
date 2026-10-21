@@ -60,7 +60,10 @@ la page Emplacements.
 
 ### Actions serveur
 
-- Remplacer le JAR RPGQuest et redéployer PlugAdmin (code inerte : rien n'est écrit au démarrage).
+- JAR `1de1d576` (PR #687) transféré par `deploy-verygames.sh -y`, 3988190 o en ligne (== local), SHA-256 `d74fc530…` ;
+  backup `rpgquest-20261021T060101Z-predeploy.jar` (version `4dcfd755`, #654). **Serveur DEV toujours arrêté** : le JAR
+  sera chargé au démarrage depuis le panel VeryGames. Aucun redémarrage tenté. Code inerte : rien n'est écrit au démarrage.
+- PlugAdmin `1de1d576` déployé (`scripts/plugadmin/deploy.sh`), app précédente `/opt/plugadmin/releases/20261021-080147`.
 - `hub_to_wild` et `hub_to_claims` ne se recouvrent pas (relevé `portal.list` de DEV) : le nouveau contrôle au
   rechargement les charge tous deux à l'identique ; leurs fichiers ne sont pas réécrits.
 - **Aucun portail réel ne doit être créé, activé, désactivé, modifié ni supprimé** avant un nouvel accord du

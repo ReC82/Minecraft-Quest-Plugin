@@ -2091,6 +2091,21 @@ public interface AgentActions {
     }
 
     /**
+     * Aperçu de la suppression d'une famille de versions (issue #644). {@code null} = indisponible
+     * sur ce serveur.
+     */
+    default CompletableFuture<com.lodygames.rpgquest.building.BuildingFamilyPurge.Preview> buildingFamilyPreview(
+            String id) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /** Supprime un bâtiment et toutes ses versions (issue #644). Par défaut indisponible. */
+    default CompletableFuture<MutationResult> buildingFamilyPurge(String id, String confirmation, String by) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "La suppression de bâtiments n'est pas disponible sur ce serveur."));
+    }
+
+    /**
      * Issue #246 — ce que l'administrateur demande pour une capture : l'emplacement source, un
      * ajustement borné des bornes face par face, et l'identité du nouveau bâtiment.
      */

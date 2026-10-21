@@ -104,6 +104,8 @@ public final class AgentActionExecutor {
                 case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
                 case BUILDING_DEFINITION_LIST -> buildingDefinitionList(action);
                 case BUILDING_DEFINITION_RETIRE -> buildingDefinitionRetire(action);
+                case BUILDING_FAMILY_PREVIEW -> buildingFamilyPreview(action);
+                case BUILDING_FAMILY_PURGE -> buildingFamilyPurge(action);
                 case BUILDING_PLACEMENT_PREVIEW -> buildingPlacementPreview(action);
                 case BUILDING_PLACEMENT_PLACE -> buildingPlacementPlace(action);
                 case BUILDING_PLACEMENT_ROLLBACK -> buildingPlacementRollback(action);
@@ -3971,6 +3973,63 @@ public final class AgentActionExecutor {
         }
         String by = trimOrNull(action.param("by"));
         return actions.buildingDefinitionRetire(id, by == null ? "panel" : by)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /** {@code building.family.preview} (#644) : lecture seule, versions, conservé, blocages. */
+    private CompletableFuture<AgentActionOutcome> buildingFamilyPreview(AgentAction action) {
+        String id = trimOrNull(action.param("id"));
+        if (!com.lodygames.rpgquest.building.BuildingFamilyPurge.validId(id)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (identifiant de bâtiment)."));
+        }
+        return actions.buildingFamilyPreview(id).thenApply(preview -> {
+            if (preview == null) {
+                return AgentActionOutcome.rejected(action.id(),
+                        "La suppression de bâtiments n'est pas disponible sur ce serveur.");
+            }
+            List<Map<String, Object>> versions = new ArrayList<>();
+            for (var v : preview.versions()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("kind", v.kind().name());
+                row.put("version", v.version());
+                row.put("label", v.label());
+                row.put("paths", v.paths());
+                versions.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("id", preview.id());
+            details.put("name", preview.name());
+            details.put("inLibrary", preview.inLibrary());
+            details.put("bundled", preview.bundled());
+            details.put("currentVersion", preview.currentVersion());
+            details.put("purgeable", preview.purgeable());
+            details.put("fileCount", preview.fileCount());
+            details.put("versions", versions);
+            details.put("kept", preview.kept());
+            details.put("blockers", preview.blockers());
+            String summary = !preview.exists() ? "Aucun bâtiment ni version « " + id + " »."
+                    : preview.versions().size() + " version(s), " + preview.fileCount() + " élément(s) — "
+                            + (preview.purgeable() ? "suppression possible." : "suppression refusée.");
+            return AgentActionOutcome.success(action.id(), String.valueOf(preview.versions().size()), summary, details);
+        }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /** {@code building.family.purge} (#644) : identifiant ressaisi, refus nommés, aucun bloc touché. */
+    private CompletableFuture<AgentActionOutcome> buildingFamilyPurge(AgentAction action) {
+        String id = trimOrNull(action.param("id"));
+        if (!com.lodygames.rpgquest.building.BuildingFamilyPurge.validId(id)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (identifiant de bâtiment)."));
+        }
+        String confirmation = trimOrNull(action.param("confirm"));
+        if (!id.equals(confirmation)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Identifiant ressaisi absent ou différent : rien n'a été supprimé."));
+        }
+        String by = trimOrNull(action.param("by"));
+        return actions.buildingFamilyPurge(id, confirmation, by == null ? "panel" : by)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
                 .exceptionally(err -> unexpectedFailure(action, err));
     }

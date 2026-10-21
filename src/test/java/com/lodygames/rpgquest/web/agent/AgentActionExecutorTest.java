@@ -1104,6 +1104,23 @@ class AgentActionExecutorTest {
         assertEquals(AgentActionOutcome.FAILED, unavailable.status());
     }
 
+    /** #644 : suppression d'une famille — identifiant strict et ressaisi, refus du service relayé. */
+    @Test
+    void buildingFamilyPurgeNeedsTheRetypedIdentifier() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("p0", "building.family.purge",
+                Map.of("confirm", "x"))).status(), "sans id");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("p1", "building.family.purge",
+                Map.of("id", "../buildings", "confirm", "../buildings"))).status(), "id forgé");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("p2", "building.family.purge",
+                Map.of("id", "boulangerie", "confirm", "true"))).status(), "case cochée au lieu de l'id");
+        assertEquals(AgentActionOutcome.FAILED, run(new AgentAction("p3", "building.family.purge",
+                Map.of("id", "boulangerie", "confirm", "boulangerie"))).status(), "bouchon : indisponible");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("p4", "building.family.preview",
+                Map.of("id", "boulangerie"))).status(), "aperçu indisponible sur le bouchon");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("p5", "building.family.preview",
+                Map.of())).status(), "aperçu sans id");
+    }
+
     /** Il n'existe AUCUNE action de création : un emplacement naît d'un clic en jeu, pas d'un écran. */
     @Test
     void thereIsNoBuildingSiteCreateAction() {

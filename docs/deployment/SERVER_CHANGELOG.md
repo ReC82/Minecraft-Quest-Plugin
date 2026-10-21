@@ -48,6 +48,37 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-22 - Supprimer un bâtiment et toutes ses versions (#644, TC-399) — NON DÉPLOYÉ
+
+### Changement
+
+Plugin : `building.BuildingFamilyPurge`, actions `building.family.preview` (lecture seule) et
+`building.family.purge`. PlugAdmin : permission `BUILDING_PURGE` (Propriétaire seul), zone « Supprimer ce
+bâtiment et toutes ses versions » dans la Bibliothèque, état « Supprimé avec toutes ses versions » dans
+l'Atelier. Nouveaux dossiers créés **seulement lors d'une suppression** : `buildings/.purging/` (transitoire)
+et `buildings/.audit/purges.log`.
+
+### Action serveur
+
+- **Aucune action effectuée.** Le déploiement (JAR + PlugAdmin) ne supprime rien : aucune suppression
+  n'a lieu au démarrage, à l'affichage ni au déploiement.
+- **Aucune migration** `data.db` ni `control-panel.db`, aucune clé de configuration.
+- Ne PAS supprimer de bâtiment existant pour « tester » : TC-399 se fait sur un bâtiment d'essai, avec
+  l'accord du propriétaire.
+
+### Sauvegarde préalable
+
+Comme pour tout JAR : JAR + `data.db` + `buildings/` + `schematics/`.
+
+### Validation
+
+TC-399 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+JAR et PlugAdmin précédents. Une suppression définitive n'est pas réversible (c'est son objet) : préférer
+« Retirer de la bibliothèque », qui archive.
+
 ## 2026-10-21 - Hub : commerce vanilla et conteneurs verrouillés (#675, TC-397)
 
 ### Changement

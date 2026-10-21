@@ -1319,6 +1319,12 @@ public final class RPGQuestBootstrap {
         agentActions.setBuildingRetirement(new com.lodygames.rpgquest.building.BuildingRetirement(
                 buildingLibrary, plugin.getDataFolder().toPath().resolve("schematics"),
                 buildingPlacementService::all, plugin.getLogger(), java.time.Clock.systemUTC()));
+        // Issue #644 : supprimer un bâtiment et toutes ses versions — refusé s'il est posé ou lié à un
+        // portail (même en brouillon, ou cité par un fichier de portail illisible).
+        agentActions.setBuildingFamilyPurge(new com.lodygames.rpgquest.building.BuildingFamilyPurge(
+                buildingLibrary, plugin.getDataFolder().toPath().resolve("schematics"),
+                buildingPlacementService::all, this::portalsCitingBuilding, plugin.getLogger(),
+                java.time.Clock.systemUTC()));
         // Issue #246 : capturer une construction posée comme nouveau bâtiment. Lecture seule du
         // monde ; n'écrit que dans la bibliothèque, jamais par-dessus un fichier existant.
         agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
@@ -1849,5 +1855,30 @@ public final class RPGQuestBootstrap {
             rpgadmin.setExecutor(rpgAdminCommand);
             rpgadmin.setTabCompleter(rpgAdminCommand);
         }
+    }
+
+    /** Issue #644 : les portails qui citent ce bâtiment, y compris un fichier de portail illisible. */
+    private List<String> portalsCitingBuilding(String buildingId) {
+        List<String> found = new java.util.ArrayList<>();
+        for (var portal : worldPortalRegistry.portals()) {
+            if (buildingId.equals(portal.details().building())) {
+                found.add("« " + portal.id() + " »" + (portal.details().draft() ? " (brouillon)" : ""));
+            }
+        }
+        for (var issue : worldPortalRegistry.skippedFiles()) {
+            try {
+                java.nio.file.Path file = java.nio.file.Path.of(issue.file());
+                if (!file.isAbsolute()) {
+                    file = plugin.getDataFolder().toPath().resolve("world-portals").resolve(issue.file());
+                }
+                if (java.nio.file.Files.isRegularFile(file)
+                        && java.nio.file.Files.readString(file).contains(buildingId)) {
+                    found.add("du fichier illisible « " + issue.file() + " »");
+                }
+            } catch (java.io.IOException | RuntimeException error) {
+                found.add("du fichier illisible « " + issue.file() + " » (non relu)");
+            }
+        }
+        return found;
     }
 }

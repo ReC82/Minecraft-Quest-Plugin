@@ -3049,6 +3049,37 @@ public final class BukkitAgentActions implements AgentActions {
                 "Échec du retrait : " + rootName(error)));
     }
 
+    private com.lodygames.rpgquest.building.BuildingFamilyPurge buildingFamilyPurge;
+
+    /** Issue #644 — dépendance facultative : sans elle, aperçu et suppression sont indisponibles. */
+    public void setBuildingFamilyPurge(com.lodygames.rpgquest.building.BuildingFamilyPurge purge) {
+        this.buildingFamilyPurge = purge;
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.building.BuildingFamilyPurge.Preview> buildingFamilyPreview(
+            String id) {
+        if (buildingFamilyPurge == null) {
+            return done(null);
+        }
+        // Lecture de dossiers : hors du thread principal.
+        return CompletableFuture.supplyAsync(() -> buildingFamilyPurge.preview(id));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingFamilyPurge(String id, String confirmation, String by) {
+        if (buildingFamilyPurge == null) {
+            return done(MutationResult.of(false, "UNAVAILABLE",
+                    "La suppression de bâtiments n'est pas disponible sur ce serveur."));
+        }
+        // Déplacements et effacements de fichiers : jamais sur le thread principal.
+        return CompletableFuture.supplyAsync(() -> {
+            var outcome = buildingFamilyPurge.purge(id, confirmation, by);
+            return new MutationResult(outcome.ok(), outcome.code().name(), outcome.message(), outcome.effects());
+        }).exceptionally(error -> MutationResult.of(false, "ERROR",
+                "Échec de la suppression : " + rootName(error)));
+    }
+
     /**
      * Issue #94 — dépendance <strong>facultative</strong>, comme l'historique : sans elle, la
      * génération est refusée avec son motif, et rien d'autre ne cesse de fonctionner.

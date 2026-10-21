@@ -2583,11 +2583,13 @@ public final class AgentPages {
         boolean canPlace = library.engineAvailable()
                 && perms.can(session.effective(), Permission.BUILDING_PLACE);
         boolean canRetire = perms.can(session.effective(), Permission.BUILDING_DELETE);
+        boolean canPurge = perms.can(session.effective(), Permission.BUILDING_PURGE);
         var sites = buildingSiteDirectory(agentId);
         for (var building : library.buildings()) {
             sb.append(buildingDefinitionItem(building, index++, canPlace,
                     workshopZone(session, agentId, building)
-                            + (canRetire ? retireZone(session, agentId, building, sites) : "")));
+                            + (canRetire ? retireZone(session, agentId, building, sites) : "")
+                            + (canPurge ? purgeZone(session, agentId, building, sites) : "")));
         }
         sb.append("</div>").append(filterEmpty("buildings", "Aucun bâtiment"));
         sb.append("<div class=\"card\"><div class=\"card-body\">");
@@ -2690,6 +2692,99 @@ public final class AgentPages {
         sb.append("<button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">").append(Icons.icon("trash"))
                 .append("Retirer de la bibliothèque</button></form>");
         return sb.append("</div>").toString();
+    }
+
+    /**
+     * « Supprimer ce bâtiment et toutes ses versions » (issue #644). Deux temps : un aperçu en lecture
+     * seule calculé par le plugin (versions, fichiers, ce qui est conservé, ce qui bloque), puis la
+     * suppression, qui exige l'identifiant ressaisi. Distinct de « Retirer de la bibliothèque », qui
+     * archive.
+     */
+    private String purgeZone(Session session, String agentId,
+                             com.lodygames.rpgquest.panel.building.BuildingDefinitionView building,
+                             com.lodygames.rpgquest.panel.building.BuildingSiteDirectory sites) {
+        if (building.bundled()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"danger-zone\">");
+        sb.append(detailSection("trash", "Supprimer ce bâtiment et toutes ses versions"));
+        sb.append("<p class=\"field-help\">Efface <strong>définitivement</strong> la version courante, les versions "
+                + "remplacées et les versions archivées de <code class=\"tid\">").append(Http.esc(building.id()))
+                .append("</code>. Contrairement à « Retirer de la bibliothèque », rien n'est gardé pour un retour en "
+                        + "arrière. Aucun bloc du monde n'est touché ; emplacements, portails, historique des poses, "
+                        + "sauvegardes de terrain et projets de l'Atelier sont conservés. Pour repartir de zéro sans "
+                        + "rien effacer, créez plutôt un nouveau projet dans l'Atelier.</p>");
+        List<String> usedOn = sites.sites().stream().map(st -> sites.placementFor(st.id()))
+                .flatMap(Optional::stream).filter(p -> p.buildingId().equals(building.id()))
+                .map(p -> p.siteId()).toList();
+        if (!usedOn.isEmpty()) {
+            sb.append(Ui.banner("warning", "<strong>Posé sur " + Http.esc(String.join(", ", usedOn))
+                    + ".</strong> Retirez-le d'abord de chaque emplacement : un bâtiment posé ne peut pas être "
+                    + "supprimé."));
+            return sb.append("</div>").toString();
+        }
+        sb.append(formStart(session, agentId, "building.family.preview", "/buildings/library", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(building.id())).append("\">");
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">").append(Icons.icon("search"))
+                .append("Voir ce qui serait supprimé</button></form>");
+        Optional<AgentActionRow> latest = store.successfulActionsOfType(agentId, "building.family.preview", 50).stream()
+                .filter(r -> building.id().equals(r.params().getOrDefault("id", ""))).findFirst();
+        if (latest.isEmpty()) {
+            return sb.append("<p class=\"field-help\">Aucun aperçu calculé : rien ne peut être supprimé sans "
+                    + "l'avoir vu.</p></div>").toString();
+        }
+        Map<String, Object> d = detailsOf(latest.get()).orElse(Map.of());
+        sb.append(familyPreview(d, latest.get()));
+        if (!Boolean.TRUE.equals(d.get("purgeable"))) {
+            return sb.append("</div>").toString();
+        }
+        sb.append(formStart(session, agentId, "building.family.purge", "/buildings/library", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(building.id())).append("\">");
+        sb.append("<label class=\"form-label\">Ressaisissez l'identifiant <code class=\"tid\">")
+                .append(Http.esc(building.id())).append("</code> pour confirmer<input class=\"form-control\" "
+                        + "name=\"confirm_id\" required autocomplete=\"off\" spellcheck=\"false\" pattern=\"")
+                .append(Http.esc(building.id()))
+                .append("\"></label>");
+        sb.append(confirmBox("Je supprime définitivement « " + building.name() + " » et toutes ses versions."));
+        sb.append("<button class=\"btn btn-sm btn-danger\" type=\"submit\">").append(Icons.icon("trash"))
+                .append("Supprimer ce bâtiment et toutes ses versions</button></form>");
+        return sb.append("</div>").toString();
+    }
+
+    /** L'aperçu #644 tel que le plugin l'a calculé : versions, conservé, blocages. */
+    @SuppressWarnings("unchecked")
+    private static String familyPreview(Map<String, Object> d, AgentActionRow row) {
+        StringBuilder sb = new StringBuilder("<div class=\"field-help\"><p><strong>Aperçu</strong> ")
+                .append(when(at(row))).append(" — relancez-le si quelque chose a changé depuis.</p>");
+        List<Object> versions = d.get("versions") instanceof List<?> l ? (List<Object>) l : List.of();
+        sb.append("<p>").append(versions.size()).append(" version(s), ").append(Http.esc(String.valueOf(
+                d.getOrDefault("fileCount", 0)))).append(" élément(s) à supprimer :</p><ul>");
+        for (Object o : versions) {
+            if (o instanceof Map<?, ?> v) {
+                List<?> paths = v.get("paths") instanceof List<?> p ? p : List.of();
+                sb.append("<li>").append(Http.esc(String.valueOf(v.get("label")))).append(" — ");
+                sb.append(String.join(", ", paths.stream().map(p -> "<code class=\"tid tid--wrap\">"
+                        + Http.esc(String.valueOf(p)) + "</code>").toList())).append("</li>");
+            }
+        }
+        sb.append("</ul>");
+        List<?> kept = d.get("kept") instanceof List<?> k ? k : List.of();
+        if (!kept.isEmpty()) {
+            sb.append("<p>Conservé :</p><ul>");
+            kept.forEach(k -> sb.append("<li>").append(Http.esc(String.valueOf(k))).append("</li>"));
+            sb.append("</ul>");
+        }
+        sb.append("</div>");
+        List<?> blockers = d.get("blockers") instanceof List<?> b ? b : List.of();
+        if (!blockers.isEmpty()) {
+            StringBuilder why = new StringBuilder("<strong>Suppression impossible.</strong><ul>");
+            blockers.forEach(b -> why.append("<li>").append(Http.esc(String.valueOf(b))).append("</li>"));
+            sb.append(Ui.banner("warning", why.append("</ul>Rien ne sera supprimé tant que ces points restent.")
+                    .toString()));
+        } else if (Boolean.TRUE.equals(d.get("bundled"))) {
+            sb.append(Ui.banner("warning", "Exemple fourni avec le plugin : il serait recréé au démarrage."));
+        }
+        return sb.toString();
     }
 
     private String buildingDefinitionItem(

@@ -8051,6 +8051,31 @@ aucune erreur console. Constat : la fiche d'un **brouillon** fait ~17 800 px de 
 dont ~13 900 px pour « Gérer ce portail » (tous les formulaires — nom, zone, arrivée, conditions, messages — ouverts
 l'un sous l'autre). Utilisable mais long à parcourir ; suivi proposé dans le ticket #570.
 
+### TC-399 — Supprimer un bâtiment et toutes ses versions (issue #644, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et PlugAdmin issus de #644, compte Propriétaire. **Durée** : 10 minutes.
+**Ne supprimer aucun bâtiment réel ni existant** : seulement un bâtiment d'essai créé pour l'occasion, avec
+l'accord du propriétaire. Aucun appel IA payant (plan saisi à la main).
+
+1.  Atelier → nouveau projet « Essai suppression », identifiant `essai_suppression_644`, plan saisi à la
+    main → « Enregistrer dans la bibliothèque », puis modifier le plan et « Remplacer » une fois (une
+    version remplacée est créée dans `.history`).
+2.  `/buildings/library` → Rafraîchir → ouvrir `essai_suppression_644` : la zone « Supprimer ce bâtiment et
+    toutes ses versions » est distincte de « Retirer de la bibliothèque » ; aucun bouton de suppression tant
+    qu'il n'y a pas d'aperçu. Un compte non Propriétaire ne voit pas la zone.
+3.  « Voir ce qui serait supprimé » : 2 versions (courante 2, remplacée 1), les chemins exacts, la liste
+    « Conservé ». Rien n'a changé sur le serveur.
+4.  Poser le bâtiment d'essai sur un emplacement libre, relancer l'aperçu : « Posé sur buildsite_… »,
+    aucun bouton ; forcer l'envoi depuis un ancien onglet : refus avant la file. Retirer le bâtiment de
+    l'emplacement (terrain restauré).
+5.  Relancer l'aperçu ; saisir un identifiant faux : refus « Ressaisissez exactement… » ; saisir le bon,
+    cocher, envoyer (double clic) : une seule action, succès « … et ses 2 version(s) ont été supprimés ».
+6.  Rafraîchir : le bâtiment a disparu ; le projet d'Atelier dit « Supprimé avec toutes ses versions ». Sur
+    le serveur : plus de `buildings/essai_suppression_644.yml`, `schematics/essai_suppression_644.schem`,
+    `buildings/.history/essai_suppression_644/`, pas de `buildings/.purging/` ; `buildings/.audit/purges.log`
+    contient la ligne ; la sauvegarde de terrain de l'étape 4 et l'historique de l'emplacement sont intacts.
+7.  Redémarrer : le bâtiment ne revient pas. Mobile (390 px) : la zone et l'aperçu restent lisibles.
+
 ### TC-397 — Hub : pas de commerce vanilla ni de ressources dans les conteneurs (issue #675, PENDING MANUAL VALIDATION)
 
 Avec un compte **joueur normal** (ou un OP **sans** session `/rpgadmin bypass on`), dans le monde Hub

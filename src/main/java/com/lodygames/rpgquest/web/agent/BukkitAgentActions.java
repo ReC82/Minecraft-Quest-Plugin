@@ -2347,6 +2347,59 @@ public final class BukkitAgentActions implements AgentActions {
         return onMain(() -> done(worldCreation.create(request, folders, expectedFingerprint, token, actor)));
     }
 
+    // ---- Charger / décharger / importer un monde (issue #563, #331-W4) ---------------------------
+    // Seules les actions world.load / unload / import / autoload agissent, après confirmation. Les
+    // dossiers du répertoire des mondes sont relevés sur le thread de l'agent (disque), l'état
+    // Bukkit et les opérations Multiverse sur le thread principal.
+
+    private com.lodygames.rpgquest.world.state.WorldStateService worldState;
+
+    public void setWorldState(com.lodygames.rpgquest.world.state.WorldStateService service) {
+        this.worldState = service;
+    }
+
+    private List<com.lodygames.rpgquest.world.state.WorldStatePlanner.Folder> worldStateFolders() {
+        return com.lodygames.rpgquest.world.state.BukkitWorldStateGateway.folders(
+                plugin.getServer().getWorldContainer());
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.state.WorldStateService.Options> worldStateOptions() {
+        if (worldState == null) {
+            return AgentActions.super.worldStateOptions();
+        }
+        var folders = worldStateFolders();
+        return onMain(() -> done(worldState.options(folders)));
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.world.state.WorldStateService.Outcome> worldStateApply(
+            com.lodygames.rpgquest.world.state.WorldStatePlanner.Request request, String token, String actor) {
+        if (worldState == null) {
+            return AgentActions.super.worldStateApply(request, token, actor);
+        }
+        var folders = worldStateFolders();
+        return onMain(() -> done(worldState.apply(request, folders, token, actor)));
+    }
+
+    /**
+     * Portails et monde où ils mènent (issue #563) : portails entre mondes (actifs s'ils sont
+     * activés) et portails de zone (toujours actifs), dont la destination nommée donne le monde.
+     */
+    public List<com.lodygames.rpgquest.world.state.WorldStatePlanner.PortalTarget> portalTargets() {
+        List<com.lodygames.rpgquest.world.state.WorldStatePlanner.PortalTarget> out = new ArrayList<>();
+        if (worldPortals != null) {
+            worldPortals.portals().forEach(p -> out.add(new com.lodygames.rpgquest.world.state.WorldStatePlanner
+                    .PortalTarget(p.id(), p.world(), p.destinationWorld(), p.enabled())));
+        }
+        if (zonePortals != null && zoneDestinations != null) {
+            zonePortals.portals().forEach(p -> out.add(new com.lodygames.rpgquest.world.state.WorldStatePlanner
+                    .PortalTarget(p.id(), p.world(), zoneDestinations.find(p.destinationId())
+                            .map(com.lodygames.rpgquest.travel.model.Destination::world).orElse(""), true)));
+        }
+        return out;
+    }
+
     // ---- Portails (issue #564, #228-P1) -------------------------------------------------------
 
     private com.lodygames.rpgquest.travel.YamlPortalRegistry zonePortals;

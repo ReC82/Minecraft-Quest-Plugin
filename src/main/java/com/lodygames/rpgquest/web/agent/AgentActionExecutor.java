@@ -230,6 +230,14 @@ public final class AgentActionExecutor {
                 case WORLD_CREATE_OPTIONS -> worldCreateOptions(action);
                 case WORLD_CREATE_PREVIEW -> worldCreatePreview(action);
                 case WORLD_CREATE_APPLY -> worldCreateApply(action);
+                case WORLD_STATE_OPTIONS -> worldStateOptions(action);
+                case WORLD_LOAD -> worldStateApply(action, com.lodygames.rpgquest.world.state.WorldStatePlanner.Operation.LOAD);
+                case WORLD_UNLOAD -> worldStateApply(action,
+                        com.lodygames.rpgquest.world.state.WorldStatePlanner.Operation.UNLOAD);
+                case WORLD_IMPORT -> worldStateApply(action,
+                        com.lodygames.rpgquest.world.state.WorldStatePlanner.Operation.IMPORT);
+                case WORLD_AUTOLOAD -> worldStateApply(action,
+                        com.lodygames.rpgquest.world.state.WorldStatePlanner.Operation.AUTOLOAD);
                 case PORTAL_LIST -> portalList(action);
                 case PORTAL_CREATE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.CREATE);
                 case PORTAL_UPDATE -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.UPDATE);
@@ -2277,6 +2285,64 @@ public final class AgentActionExecutor {
             return c.result() == com.lodygames.rpgquest.world.create.WorldCreationService.Result.CREATED
                     ? AgentActionOutcome.success(action.id(), c.world(), c.message(), details)
                     : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, c.result().name(), c.message(),
+                            details, java.time.Instant.now());
+        }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    // ---- Charger / décharger / importer un monde (issue #563, #331-W4) ---------------------------
+
+    /** {@code world.state.options} : lecture seule, rien n'est chargé, déchargé ni importé. */
+    private CompletableFuture<AgentActionOutcome> worldStateOptions(AgentAction action) {
+        return actions.worldStateOptions().thenApply(o -> {
+            if (o == null) {
+                return AgentActionOutcome.failed(action.id(), "Chargement / déchargement de monde indisponible sur ce "
+                        + "serveur.");
+            }
+            String summary = o.context().multiverseAvailable()
+                    ? o.worlds().size() + " monde(s) relevé(s), " + o.importable().size() + " dossier(s) importable(s)."
+                    : "Opérations impossibles : " + o.context().multiverseReason() + ".";
+            return AgentActionOutcome.success(action.id(), String.valueOf(o.context().multiverseAvailable()), summary,
+                    WorldStateDetails.options(o));
+        }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /**
+     * {@code world.load} / {@code world.unload} / {@code world.import} / {@code world.autoload} :
+     * confirmation, auteur, jeton et « charger au démarrage » exigés ici aussi (défense en profondeur
+     * après le contrôle WORLD_WRITE de PlugAdmin) ; les refus métier sont revérifiés par le service.
+     */
+    private CompletableFuture<AgentActionOutcome> worldStateApply(AgentAction action,
+            com.lodygames.rpgquest.world.state.WorldStatePlanner.Operation operation) {
+        if (!"true".equals(action.param("confirm"))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Confirmation explicite manquante : rien n'a été fait."));
+        }
+        String actor = trimOrNull(action.param("by"));
+        if (actor == null || actor.length() > 64) {
+            return done(AgentActionOutcome.rejected(action.id(), "Auteur manquant : rien n'a été fait."));
+        }
+        String token = trimOrNull(action.param("token"));
+        if (token == null || !CREATE_TOKEN.matcher(token).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Jeton de demande manquant : rien n'a été fait."));
+        }
+        String world = bounded(action.param("world"), 64);
+        String autoLoad = action.param("auto_load");
+        String environment = bounded(action.param("environment"), 16);
+        if (world == null || world.isEmpty() || environment == null
+                || (!"true".equals(autoLoad) && !"false".equals(autoLoad))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Monde ou « charger au démarrage » manquant ou "
+                    + "invalide : rien n'a été fait."));
+        }
+        var request = new com.lodygames.rpgquest.world.state.WorldStatePlanner.Request(operation, world, environment,
+                Boolean.parseBoolean(autoLoad));
+        return actions.worldStateApply(request, token, actor).thenApply(o -> {
+            if (o == null) {
+                return AgentActionOutcome.failed(action.id(), "Chargement / déchargement de monde indisponible sur ce "
+                        + "serveur.");
+            }
+            Map<String, Object> details = WorldStateDetails.outcome(o);
+            return o.result() == com.lodygames.rpgquest.world.state.WorldStateService.Result.DONE
+                    ? AgentActionOutcome.success(action.id(), o.world(), o.message(), details)
+                    : new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, o.result().name(), o.message(),
                             details, java.time.Instant.now());
         }).exceptionally(err -> unexpectedFailure(action, err));
     }

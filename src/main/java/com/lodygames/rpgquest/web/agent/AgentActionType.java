@@ -646,6 +646,29 @@ public enum AgentActionType {
      */
     WORLD_CREATE_APPLY("world.create.apply"),
     /**
+     * Issue #563 (#331-W4) — pour chaque monde chargé ou connu de Multiverse-Core : ce que
+     * « Charger », « Décharger » et « Charger au démarrage » permettent, ou les raisons du refus ;
+     * dossiers importables et leur dimension ; dernières opérations. Lecture seule.
+     */
+    WORLD_STATE_OPTIONS("world.state.options"),
+    /**
+     * Issue #563 — charge un monde connu de Multiverse-Core, après confirmation explicite. Refusé
+     * pour le monde principal, Hub / Wild / Claims et les mondes rechargés par RPGQuest.
+     */
+    WORLD_LOAD("world.load"),
+    /**
+     * Issue #563 — enregistre puis décharge un monde (fichiers conservés, toujours connu de
+     * Multiverse-Core). Refusé en plus si des joueurs s'y trouvent ou si un portail actif y mène.
+     */
+    WORLD_UNLOAD("world.unload"),
+    /**
+     * Issue #563 — importe dans Multiverse-Core un dossier de monde présent sur le serveur et le
+     * charge, après vérification de sa dimension. Aucun bloc modifié, aucun rôle attribué.
+     */
+    WORLD_IMPORT("world.import"),
+    /** Issue #563 — règle « charger au démarrage » d'un monde connu de Multiverse-Core. */
+    WORLD_AUTOLOAD("world.autoload"),
+    /**
      * Issue #564 (#228-P1) — tous les portails (entre mondes {@code world-portals/} et de zone
      * {@code portals/}, ancien format), zone, destination, stratégie d'arrivée, gardes Wild/Claims
      * réellement appliqués et diagnostics. Lecture seule : rien n'est créé, modifié, activé ni

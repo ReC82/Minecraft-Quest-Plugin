@@ -2754,7 +2754,7 @@ public final class AgentPages {
     /** L'aperçu #644 tel que le plugin l'a calculé : versions, conservé, blocages. */
     @SuppressWarnings("unchecked")
     private static String familyPreview(Map<String, Object> d, AgentActionRow row) {
-        StringBuilder sb = new StringBuilder("<div class=\"field-help\"><p><strong>Aperçu</strong>")
+        StringBuilder sb = new StringBuilder("<div class=\"field-help\"><p><strong>Aperçu</strong> ")
                 .append(when(at(row))).append(" — relancez-le si quelque chose a changé depuis.</p>");
         List<Object> versions = d.get("versions") instanceof List<?> l ? (List<Object>) l : List.of();
         sb.append("<p>").append(versions.size()).append(" version(s), ").append(Http.esc(String.valueOf(
@@ -2763,7 +2763,7 @@ public final class AgentPages {
             if (o instanceof Map<?, ?> v) {
                 List<?> paths = v.get("paths") instanceof List<?> p ? p : List.of();
                 sb.append("<li>").append(Http.esc(String.valueOf(v.get("label")))).append(" — ");
-                sb.append(String.join(", ", paths.stream().map(p -> "<code class=\"tid\">"
+                sb.append(String.join(", ", paths.stream().map(p -> "<code class=\"tid tid--wrap\">"
                         + Http.esc(String.valueOf(p)) + "</code>").toList())).append("</li>");
             }
         }

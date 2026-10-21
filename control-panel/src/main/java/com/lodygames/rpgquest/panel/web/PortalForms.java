@@ -40,10 +40,10 @@ final class PortalForms {
         }
         sb.append(formStart(v, "portal.create", ""));
         sb.append("<div class=\"form-grid\">")
-                .append(field("Identifiant (définitif)", "<input name=\"id\" required pattern=\"[a-z0-9_\\-]{3,48}\" "
+                .append(field("Identifiant (définitif)", "<input type=\"text\" name=\"id\" required pattern=\"[a-z0-9_\\-]{3,48}\" "
                         + "maxlength=\"48\" placeholder=\"arche_du_marche\" autocomplete=\"off\">",
                         "3 à 48 caractères : minuscules, chiffres, « _ », « - ». Il ne changera plus."))
-                .append(field("Nom affiché", "<input name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
+                .append(field("Nom affiché", "<input type=\"text\" name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
                         + "\" placeholder=\"Arche du marché\">", "Facultatif ; sinon « Portail vers … »."))
                 .append("</div>");
         sb.append(zoneFields(v, null));
@@ -100,7 +100,7 @@ final class PortalForms {
             sb.append("<h4 class=\"w-h\">Nom affiché</h4>")
                     .append(formStart(v, "portal.update", str(p.get("id")))).append(hidden(p))
                     .append("<input type=\"hidden\" name=\"zone_mode\" value=\"keep\">")
-                    .append(field("Nom affiché", "<input name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
+                    .append(field("Nom affiché", "<input type=\"text\" name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
                             + "\" value=\"" + Http.esc(str(p.get("storedName"))) + "\">",
                             "Vide = nom déduit de la destination. L'identifiant ne change pas."))
                     .append(essential(p)).append(confirm("Renommer « " + str(p.get("id")) + " »"))
@@ -167,7 +167,8 @@ final class PortalForms {
         List<PortalPages.SiteOption> sites = p == null ? v.manage().sites()
                 : v.manage().sites().stream().filter(s -> s.world().equals(str(p.get("world")))).toList();
         String currentSite = p == null ? "" : str(p.get("site"));
-        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\"><legend class=\"small\">Zone d'activation</legend>");
+        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\">")
+                .append(p == null ? "<legend class=\"small\">Zone d'activation</legend>" : "");
         sb.append("<label class=\"inline\"><input type=\"radio\" name=\"zone_mode\" value=\"site\"")
                 .append(bySite ? " checked" : "").append(sites.isEmpty() ? " disabled" : "")
                 .append("> Autour d'un emplacement marqué en jeu</label>");

@@ -6,6 +6,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Panneaux de nom des waypoints non éditables (#654, 21/10/2026)** — `WaypointProtectionListener`
+> refuse, sur les seuls panneaux protégés d'un waypoint, l'usage du bloc au clic droit
+> (`PlayerInteractEvent` → pas d'éditeur vanilla, pas de teinture/encre/cire), l'ouverture de
+> l'éditeur (`PlayerOpenSignEvent`, toutes causes, recto/verso) et l'écriture (`SignChangeEvent`).
+> Aucun bypass (ni OP, ni maintenance #191). Bouton et panneaux ordinaires inchangés ; aucun bloc
+> réécrit, aucune migration. PENDING MANUAL VALIDATION (TC-386).
+
 > **Claims dans PlugAdmin (#637, 21/10/2026)** — page `/claims` (groupe « RPGQuest », sous Joueurs),
 > permission `CLAIM_READ` (Propriétaire, Administrateur, Testeur), action agent `claim.list` : tous les
 > claims persistés (propriétaire UUID + pseudo connu, claim principal = `ClaimService#mainClaimOf`,

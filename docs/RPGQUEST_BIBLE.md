@@ -5022,6 +5022,38 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
   (opération `MESSAGES`, noms des champs modifiés, jamais leur contenu).
 - `portal.list` : `messages` (valeurs brutes), `messageDefaults` (textes affichés quand un champ est vide), `warns`.
 
+### Portails : construction liée — arche, zone de passage, liaison (issue #568, #228-P5)
+
+- **Bibliothèque** : une définition `buildings/<id>.yml` peut déclarer `kind: portal` (aussi `habitable` — défaut —
+  ou `decoration`) et, pour une arche, sa **zone de passage** en coordonnées locales du schematic (rotation nulle) :
+  ```yaml
+  kind: portal
+  passage:
+    min: {x: 1, y: 1, z: 0}
+    max: {x: 3, y: 4, z: 1}
+  ```
+  `passage` est refusé hors du schematic ou sur un type autre que `portal`. Un fichier sans ces clés est inchangé.
+  `building.definition.list` renvoie `kind` et `passage` (libellé) ; la page Bibliothèque filtre « Portails ».
+- **Atelier IA** : *Type de construction* = « Arche de portail » + largeur / hauteur du passage (projet PlugAdmin :
+  colonnes additives `kind`, `passage_width`, `passage_height` de `building_project` dans `control-panel.db`). Le contrat
+  de portail (kind, passage traversant dans l'axe de l'entrée, ancre au centre du passage) suit le brief envoyé à l'IA.
+  À la vérification et à la publication, le serveur relève le passage **sur la grille** depuis l'ancre
+  (`PortalPassageFinder` ; ancre dans la dalle du sol → passage juste au-dessus) et refuse une arche sans passage
+  traversant de 2 blocs de haut (`PORTAL_PASSAGE_MISSING`, rien n'est écrit).
+- **Liaison** portée par le portail : `building: <id>` dans `world-portals/<id>.yml`, à côté de `site:` (ignoré sans
+  `site`). Action `portal.building.link` (`PORTAL_EDIT`, sensible, empreinte, portail **non actif** —
+  `ACTIVE_ZONE_LOCKED` sinon) : la zone devient le passage de l'arche posée sur l'emplacement, transformé par l'ancre et
+  la rotation de la pose (`PortalPassage.inWorld`, même calcul que l'emprise). Refus `NO_SITE`, `NO_BUILDING`,
+  `NOT_A_PORTAL`, `NO_PASSAGE`, `DEFINITION_MISSING`, `INVALID_SIZE`, `WORLD_CHANGE_REFUSED`. Ne pose ni ne retire aucun
+  bloc et **n'active jamais** le portail (état conservé). `portal.building.unlink` retire le lien, garde la zone et
+  l'arche. Saisir une zone à la main délie aussi. Journal `portal-audit.yml` : `LINK_BUILDING`, `UNLINK_BUILDING`.
+- **Lien rompu** (arche libérée, remplacée par une autre construction, réorientée, définition retirée ou sans passage) :
+  `portal.enable` refuse (`BUILDING_LINK_BROKEN`), `portal.verify` → contrôle `BUILDING` bloquant, `portal.list` →
+  diagnostic `PORTAL_BUILDING_LINK_BROKEN` et bloc `construction` (`linked`, `status`, `placed`, `rotation`,
+  `linkable`, `zone`, `refusal`). Remplacer l'arche (#234) ne touche ni la destination ni les conditions : relier relit
+  le nouveau passage. L'empreinte d'un portail sans lien est inchangée (`hub_to_wild`, `hub_to_claims`).
+- Limite : une capture (#246) d'une arche posée crée un bâtiment **habitable** sans zone de passage.
+
 ### `/rpgadmin portal` — commandes
 Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.md](TRAVEL.md). Page docs-site : aucune.
 

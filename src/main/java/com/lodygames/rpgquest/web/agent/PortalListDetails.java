@@ -177,6 +177,21 @@ final class PortalListDetails {
             row.put("pointYaw", a.point().yaw());
             row.put("pointPitch", a.point().pitch());
         }
+        // #568 : construction posée sur l'emplacement et état du lien (portail entre mondes seulement).
+        if (e.kind() == PortalOverview.Kind.WORLD_PORTAL) {
+            PortalOverview.Construction c = a.construction();
+            Map<String, Object> construction = new LinkedHashMap<>();
+            construction.put("linked", c.linked());
+            construction.put("status", c.status());
+            construction.put("message", c.message());
+            construction.put("placed", c.placed());
+            construction.put("placedName", c.placedName());
+            construction.put("rotation", c.rotation());
+            construction.put("linkable", c.linkable());
+            construction.put("zone", c.zone());
+            construction.put("refusal", c.refusal());
+            row.put("construction", construction);
+        }
         row.put("returnOf", a.returnOf());
         row.put("returnedBy", a.returnedBy());
         row.put("minX", e.minX());

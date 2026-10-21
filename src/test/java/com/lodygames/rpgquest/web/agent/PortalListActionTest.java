@@ -61,5 +61,12 @@ class PortalListActionTest {
                 ((List<Map<String, Object>>) p.get("issues")).get(0).get("code"));
         assertEquals("PORTAL_FILE_SKIPPED",
                 ((List<Map<String, Object>>) out.details().get("issues")).get(0).get("code"));
+        // #568 : bloc construction, clés lues par la fiche du panel.
+        Map<String, Object> construction = (Map<String, Object>) p.get("construction");
+        assertEquals("NONE", construction.get("status"));
+        assertEquals("", construction.get("linked"));
+        assertEquals(false, construction.get("linkable"));
+        assertTrue(construction.keySet().containsAll(List.of("message", "placed", "placedName", "rotation", "zone",
+                "refusal")), construction.toString());
     }
 }

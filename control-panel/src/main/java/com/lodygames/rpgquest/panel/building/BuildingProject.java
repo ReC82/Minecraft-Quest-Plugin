@@ -28,7 +28,24 @@ import java.util.regex.Pattern;
 public record BuildingProject(String id, String agentId, String name, String brief, String buildingId,
                               String front, int maxWidth, int maxDepth, int maxHeight, String sourceSiteId,
                               int version, boolean archived, String createdBy, Instant createdAt,
-                              String updatedBy, Instant updatedAt) {
+                              String updatedBy, Instant updatedAt, String kind, int passageWidth,
+                              int passageHeight) {
+
+    /** Type d'un projet (#568) : un bâtiment ordinaire, ou une arche de portail. */
+    public static final String KIND_BUILDING = "building";
+    public static final String KIND_PORTAL = "portal";
+    /** Passage par défaut d'une arche : 3 de large, 4 de haut. */
+    public static final int DEFAULT_PASSAGE_WIDTH = 3;
+    public static final int DEFAULT_PASSAGE_HEIGHT = 4;
+
+    /** Forme antérieure à #568 : un bâtiment ordinaire. */
+    public BuildingProject(String id, String agentId, String name, String brief, String buildingId,
+                           String front, int maxWidth, int maxDepth, int maxHeight, String sourceSiteId,
+                           int version, boolean archived, String createdBy, Instant createdAt,
+                           String updatedBy, Instant updatedAt) {
+        this(id, agentId, name, brief, buildingId, front, maxWidth, maxDepth, maxHeight, sourceSiteId, version,
+                archived, createdBy, createdAt, updatedBy, updatedAt, KIND_BUILDING, 0, 0);
+    }
 
     /** Même règle que le plugin ({@code BuildingPlan#ID}) : refusé ici plutôt qu'à l'audit. */
     public static final Pattern BUILDING_ID = Pattern.compile("[a-z0-9_]{3,48}");
@@ -50,6 +67,45 @@ public record BuildingProject(String id, String agentId, String name, String bri
         sourceSiteId = sourceSiteId == null ? "" : sourceSiteId;
         createdBy = createdBy == null ? "" : createdBy;
         updatedBy = updatedBy == null ? "" : updatedBy;
+        kind = normaliseKind(kind);
+        if (!KIND_PORTAL.equals(kind)) {
+            passageWidth = 0;
+            passageHeight = 0;
+        }
+    }
+
+    public static String normaliseKind(String raw) {
+        return KIND_PORTAL.equals(raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT)) ? KIND_PORTAL : KIND_BUILDING;
+    }
+
+    /** Une arche de portail (issue #568). */
+    public boolean portal() {
+        return KIND_PORTAL.equals(kind);
+    }
+
+    /**
+     * Le brief réellement envoyé à l'IA : celui de l'administrateur, suivi pour une arche du contrat
+     * de portail (#568) — type, passage traversable de la taille choisie, ancre au centre du passage.
+     * Le brief enregistré, lui, reste le texte de l'administrateur.
+     */
+    public String briefForAi() {
+        return portal() ? brief + portalContract(front, passageWidth, passageHeight) : brief;
+    }
+
+    /** Le contrat d'une arche de portail, tel que le serveur le vérifiera (PortalPassageFinder). */
+    public static String portalContract(String front, int width, int height) {
+        String f = normaliseFront(front);
+        boolean alongX = "NORTH".equals(f) || "SOUTH".equals(f);
+        return "\n\nTYPE IMPOSÉ : ARCHE DE PORTAIL\n"
+                + "- Déclare « kind: portal ». Ce n'est pas un bâtiment habitable : ni pièces, ni intérieur.\n"
+                + "- Le passage traversable fait exactement " + width + " bloc(s) de large (axe "
+                + (alongX ? "x" : "z") + ") et " + height + " blocs de haut, et traverse l'arche de part en part "
+                + "dans l'axe de la façade d'entrée (front: " + f + "), sur toute la profondeur (size."
+                + (alongX ? "z" : "x") + ").\n"
+                + "- Déclare « anchor » au centre du passage, sur la première couche d'air où l'on marche "
+                + "(juste au-dessus de la dalle du sol s'il y en a une).\n"
+                + "- Aucun bloc dans le passage (ni dalle, tapis, torche, rideau ni vitre) : le serveur relève le "
+                + "passage sur la grille depuis l'ancre et refuse l'arche s'il n'est pas dégagé.";
     }
 
     /** Les limites, dans l'ordre de lecture d'un bâtiment : « 13 × 9 × 7 » = X × Z × Y. */

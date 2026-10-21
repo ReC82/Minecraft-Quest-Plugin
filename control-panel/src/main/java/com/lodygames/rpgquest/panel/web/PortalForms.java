@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.panel.web;
 
 import static com.lodygames.rpgquest.panel.web.PortalPages.bool;
+import static com.lodygames.rpgquest.panel.web.PortalPages.map;
 import static com.lodygames.rpgquest.panel.web.PortalPages.maps;
 import static com.lodygames.rpgquest.panel.web.PortalPages.num;
 import static com.lodygames.rpgquest.panel.web.PortalPages.str;
@@ -634,6 +635,91 @@ final class PortalForms {
     private static List<String> worlds(PortalPages.View v) {
         return v.details() != null && v.details().get("worlds") instanceof List<?> l
                 ? l.stream().map(PortalPages::str).toList() : List.of();
+    }
+
+    /**
+     * Issue #568 (#228-P5) — bloc « 2 · Construction » de la fiche : arche posée sur l'emplacement,
+     * état du lien, zone que donnerait « Lier », et les formulaires Lier / Délier. La pose, le
+     * remplacement et la libération de l'arche restent ceux de la page Emplacements (#234) : rien ici
+     * ne pose ni ne retire de bloc, et lier n'active jamais le portail.
+     */
+    static String constructionSection(PortalPages.View v, Map<String, Object> p) {
+        if ("ZONE_PORTAL".equals(str(p.get("kind")))) {
+            return "";
+        }
+        Map<String, Object> c = map(p.get("construction"));
+        String site = str(p.get("site"));
+        String sites = "/buildings/sites?agent=" + PortalPages.enc(v.agentId());
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-construction\"><h3 class=\"w-h\">")
+                .append(Icons.icon("box")).append("2 · Construction</h3>");
+        if (site.isEmpty()) {
+            return sb.append("<p class=\"muted\">Zone saisie en coordonnées : aucune construction ne peut y être "
+                    + "liée. Pour une arche, choisir une zone « depuis un emplacement » (outil d'emplacement), "
+                    + "puis y poser l'arche depuis la page Emplacements.</p></section>").toString();
+        }
+        String linked = str(c.get("linked"));
+        String status = str(c.get("status"));
+        String placed = str(c.get("placed"));
+        sb.append("<dl class=\"w-dl\">")
+                .append(PortalPages.dlHtml("Arche liée", linked.isEmpty() ? "<span class=\"muted\">aucune — zone "
+                        + "saisie (dimensions autour de l'emplacement)</span>" : "<code>" + Http.esc(linked) + "</code> "
+                        + linkPill(status)))
+                .append(PortalPages.dlHtml("Posé sur l'emplacement", placed.isEmpty()
+                        ? "<span class=\"muted\">rien</span>"
+                        : (str(c.get("placedName")).isEmpty() ? "" : Http.esc(str(c.get("placedName"))) + " ")
+                        + "<code>" + Http.esc(placed) + "</code> · rotation " + PortalPages.num(c.get("rotation")) + "°"));
+        if (bool(c.get("linkable"))) {
+            sb.append(PortalPages.dl("Zone de son passage", str(c.get("zone"))));
+        }
+        sb.append("</dl>");
+        if (!str(c.get("message")).isEmpty()) {
+            sb.append(Ui.banner("warn", Http.esc(str(c.get("message")))));
+        } else if (!placed.isEmpty() && !bool(c.get("linkable")) && !str(c.get("refusal")).isEmpty()) {
+            sb.append("<p class=\"field-help\">").append(Http.esc(str(c.get("refusal")))).append("</p>");
+        }
+        sb.append("<p class=\"field-help\">Poser, remplacer, réorienter ou libérer l'arche se fait sur la page "
+                + "<a href=\"").append(sites).append("\">Emplacements</a> (aperçu puis confirmation). Remplacer "
+                + "l'arche ne change ni la destination ni les conditions : il suffit de « Lier » à nouveau pour relire "
+                + "son passage. Poser ou lier une arche n'active jamais le portail.</p>");
+        PortalPages.Manage m = v.manage();
+        if (!m.canEdit() || !bool(p.get("editable"))) {
+            return sb.append("</section>").toString();
+        }
+        boolean active = "ACTIVE".equals(str(p.get("state")));
+        String id = str(p.get("id"));
+        if (bool(c.get("linkable")) && !"OK".equals(status)) {
+            if (active) {
+                sb.append("<p class=\"muted\">Désactiver le portail avant de lier une construction (sa zone "
+                        + "changerait).</p>");
+            } else {
+                sb.append(formStart(v, "portal.building.link", id)).append(hidden(p))
+                        .append("<p class=\"field-help\">La zone d'activation devient le passage de l'arche posée : "
+                                + Http.esc(str(c.get("zone"))) + ". Le portail reste ")
+                        .append("DRAFT".equals(str(p.get("state"))) ? "en brouillon" : "désactivé")
+                        .append(" ; aucun bloc n'est touché.</p>")
+                        .append(essential(p)).append(confirm("Lier « " + placed + " » au portail « " + id + " »"))
+                        .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
+                        .append(linked.isEmpty() ? "Lier l'arche posée" : "Lier à nouveau (relire le passage)")
+                        .append("</button></div></form>");
+            }
+        }
+        if (!linked.isEmpty()) {
+            sb.append(formStart(v, "portal.building.unlink", id)).append(hidden(p))
+                    .append("<p class=\"field-help\">L'arche reste posée et la zone actuelle est conservée ; le "
+                            + "portail ne suit simplement plus l'arche.</p>")
+                    .append(essential(p)).append(confirm("Délier la construction de « " + id + " »"))
+                    .append("<div class=\"btnrow\"><button class=\"btn sm secondary\" "
+                            + "type=\"submit\">Délier sans démolir</button></div></form>");
+        }
+        return sb.append("</section>").toString();
+    }
+
+    private static String linkPill(String status) {
+        return switch (status) {
+            case "OK" -> "<span class=\"pill ok\">Zone = passage</span>";
+            case "NONE", "" -> "";
+            default -> "<span class=\"pill warn\">Lien rompu</span>";
+        };
     }
 
     private static String formStart(PortalPages.View v, String type, String focus) {

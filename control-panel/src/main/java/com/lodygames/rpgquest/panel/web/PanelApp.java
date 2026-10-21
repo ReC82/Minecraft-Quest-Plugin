@@ -1230,7 +1230,10 @@ public final class PanelApp {
         return new com.lodygames.rpgquest.panel.building.BuildingProjectStore.Fields(name,
                 f.getOrDefault("brief", "").replace("\r\n", "\n"),
                 id.isEmpty() ? com.lodygames.rpgquest.panel.building.BuildingProject.suggestBuildingId(name) : id,
-                f.get("front"), width, limitOf(f.get("max_depth"), width), limitOf(f.get("max_height"), 14));
+                f.get("front"), width, limitOf(f.get("max_depth"), width), limitOf(f.get("max_height"), 14),
+                f.get("kind"),
+                limitOf(f.get("passage_width"), com.lodygames.rpgquest.panel.building.BuildingProject.DEFAULT_PASSAGE_WIDTH),
+                limitOf(f.get("passage_height"), com.lodygames.rpgquest.panel.building.BuildingProject.DEFAULT_PASSAGE_HEIGHT));
     }
 
     /**
@@ -1552,7 +1555,7 @@ public final class PanelApp {
     private com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demandOf(
             com.lodygames.rpgquest.panel.building.BuildingProject p) {
         return new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(p.id(), p.name(), p.front(),
-                p.brief(), p.maxWidth(), p.maxDepth(), p.maxHeight(), p.buildingId(),
+                p.briefForAi(), p.maxWidth(), p.maxDepth(), p.maxHeight(), p.buildingId(),
                 designDocs.latest(p.id()).map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text)
                         .orElse(""));
     }

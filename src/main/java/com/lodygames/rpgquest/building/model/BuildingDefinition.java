@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.building.model;
 
+import com.lodygames.rpgquest.building.plan.StructureKind;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -32,6 +33,13 @@ import java.util.regex.Pattern;
  * qui regarde les {@code -Z}, donc le nord — d'où {@code front: NORTH} et une ancre en
  * {@code z = 0}. Déclarer {@code SOUTH} avec la même géométrie aurait introduit un demi-tour
  * implicite, c'est-à-dire exactement le genre d'offset caché que ce lot doit éviter.</p>
+ *
+ * <h2>Type et zone de passage (issue #568, #228-P5)</h2>
+ *
+ * <p>{@link #kind()} conserve le type déclaré par le plan ({@link StructureKind#HABITABLE} si le
+ * fichier ne dit rien, comme un plan). Seule une {@link StructureKind#PORTAL} peut porter une
+ * {@link #passage()} : le volume traversable, relatif au schematic, d'où PlugAdmin déduit la zone
+ * d'activation d'un portail lié à la pose.</p>
  */
 public record BuildingDefinition(String id,
                                  String name,
@@ -45,7 +53,9 @@ public record BuildingDefinition(String id,
                                  int anchorZ,
                                  Facing front,
                                  List<String> materials,
-                                 int version) {
+                                 int version,
+                                 StructureKind kind,
+                                 PortalPassage passage) {
 
     /** Même forme d'identifiant que le reste du contenu du projet. */
     public static final Pattern ID_PATTERN = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
@@ -58,6 +68,20 @@ public record BuildingDefinition(String id,
     public BuildingDefinition {
         description = description == null ? "" : description;
         materials = materials == null ? List.of() : List.copyOf(materials);
+        kind = kind == null ? StructureKind.HABITABLE : kind;
+    }
+
+    /** Forme antérieure à #568 : type par défaut, sans zone de passage. */
+    public BuildingDefinition(String id, String name, String description, String schematic,
+                              int sizeX, int sizeY, int sizeZ, int anchorX, int anchorY, int anchorZ,
+                              Facing front, List<String> materials, int version) {
+        this(id, name, description, schematic, sizeX, sizeY, sizeZ, anchorX, anchorY, anchorZ, front,
+                materials, version, StructureKind.HABITABLE, null);
+    }
+
+    /** Une arche de portail (issue #568). */
+    public boolean portal() {
+        return kind == StructureKind.PORTAL;
     }
 
     /**
@@ -97,6 +121,16 @@ public record BuildingDefinition(String id,
                 || anchorZ < 0 || anchorZ >= sizeZ) {
             return Optional.of("Ancre hors du bâtiment pour « " + id + " » : "
                     + anchorLabel() + " dans " + sizeLabel() + ".");
+        }
+        if (passage != null) {
+            if (!portal()) {
+                return Optional.of("« " + id + " » déclare une zone de passage sans être un portail "
+                        + "(kind: portal).");
+            }
+            Optional<String> outside = passage.checkInside(sizeX, sizeY, sizeZ);
+            if (outside.isPresent()) {
+                return Optional.of(outside.get() + " (« " + id + " »)");
+            }
         }
         return Optional.empty();
     }

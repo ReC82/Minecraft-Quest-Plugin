@@ -2445,6 +2445,20 @@ public final class BukkitAgentActions implements AgentActions {
         return buildingSiteService == null ? id -> Optional.empty() : buildingSiteService::find;
     }
 
+    /**
+     * Issue #568 : construction posée sur un emplacement + sa définition actuelle (caches mémoire,
+     * aucun accès disque). Rien n'est posé ni modifié ici.
+     */
+    private java.util.function.Function<String, Optional<com.lodygames.rpgquest.travel.PortalBuildingLink.SiteBuilding>>
+            siteBuildingLookup() {
+        if (buildingPlacements == null) {
+            return id -> Optional.empty();
+        }
+        return id -> buildingPlacements.at(id).map(p -> new com.lodygames.rpgquest.travel.PortalBuildingLink
+                .SiteBuilding(p, buildingLibraryService == null ? null
+                        : buildingLibraryService.find(p.buildingId()).orElse(null)));
+    }
+
     private com.lodygames.rpgquest.travel.WorldPortalAdminService.Context portalContext() {
         var cfg = worldConfig.get();
         java.util.Set<String> loaded = new java.util.LinkedHashSet<>();
@@ -2457,7 +2471,7 @@ public final class BukkitAgentActions implements AgentActions {
                 zonePortals.portals(), siteLookup(), world -> java.util.Optional.ofNullable(
                         plugin.getServer().getWorld(world)).map(w -> new com.lodygames.rpgquest.travel
                         .WorldPortalAdminService.WorldBounds(w.getMinHeight(), w.getMaxHeight())),
-                key -> questEngine.find(key).isPresent());
+                key -> questEngine.find(key).isPresent(), siteBuildingLookup());
     }
 
     /**
@@ -2595,7 +2609,7 @@ public final class BukkitAgentActions implements AgentActions {
                         claims.arrivalMaxRadius(), claims.arrivalSpacing(),
                         com.lodygames.rpgquest.claim.ClaimArrivalResolver.ATTEMPTS),
                 guideNpc(cfg.hub().guideNpcId()), siteLookup(),
-                portalAudit == null ? List.of() : portalAudit.recent(30));
+                portalAudit == null ? List.of() : portalAudit.recent(30), siteBuildingLookup());
     }
 
     private com.lodygames.rpgquest.travel.PortalOverview.GuideNpc guideNpc(String npcId) {
@@ -3239,7 +3253,9 @@ public final class BukkitAgentActions implements AgentActions {
                     definition.anchorX(), definition.anchorY(), definition.anchorZ(),
                     definition.front().name(), definition.materials(),
                     definition.schematic(), schematicGateway.has(definition.schematic()),
-                    definition.version(), buildingLibraryService.bundled(definition.id())));
+                    definition.version(), buildingLibraryService.bundled(definition.id()),
+                    definition.kind().name().toLowerCase(java.util.Locale.ROOT),
+                    definition.passage() == null ? "" : definition.passage().label()));
         }
         return done(new BuildingLibraryView(List.copyOf(rows), buildingLibraryService.problems(),
                 schematicGateway.available(), schematicGateway.unavailableReason()));

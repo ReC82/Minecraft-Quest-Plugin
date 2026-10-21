@@ -457,6 +457,58 @@ class PortalsPageTest {
         assertTrue(queued.contains("Salut"), queued);
     }
 
+    /** Issue #568 : l'arche de test est posée (rotation 90°) sur l'emplacement du brouillon, pas encore liée. */
+    static final String RELEVE_568 = RELEVE_565.replace(
+            "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650}",
+            "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650,\"construction\":{\"linked\":\"\","
+                    + "\"status\":\"NONE\",\"message\":\"\",\"placed\":\"arche_test\",\"placedName\":\"Arche de test\","
+                    + "\"rotation\":90,\"linkable\":true,\"zone\":\"700,64,-651 → 700,67,-649\",\"refusal\":\"\"}}");
+
+    /** Issue #568 : la même arche, liée, puis libérée — lien rompu. */
+    static final String RELEVE_568_BROKEN = RELEVE_568.replace("\"linked\":\"\",\"status\":\"NONE\",\"message\":\"\","
+                    + "\"placed\":\"arche_test\",\"placedName\":\"Arche de test\",\"rotation\":90,\"linkable\":true",
+            "\"linked\":\"arche_test\",\"status\":\"BUILDING_MISSING\",\"message\":\"L'arche liée n'est plus posée.\","
+                    + "\"placed\":\"\",\"placedName\":\"\",\"rotation\":0,\"linkable\":false");
+
+    @Test
+    void theConstructionBlockOffersToLinkThePlacedArchWithoutActivating() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_568);
+        String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(draft.contains("2 · Construction") && draft.contains("3 · Téléportation"), "blocs numérotés");
+        assertTrue(draft.contains("Arche de test") && draft.contains("rotation 90°"), "arche posée");
+        assertTrue(draft.contains("700,64,-651 → 700,67,-649"), "zone que donnerait « Lier »");
+        assertTrue(draft.contains("value=\"portal.building.link\""), "formulaire Lier");
+        assertTrue(draft.contains("Le portail reste en brouillon"), "lier n'active pas");
+        assertFalse(draft.contains("value=\"portal.building.unlink\""), "rien à délier");
+        String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild").body();
+        assertFalse(wild.contains("value=\"portal.building.link\""), "zone saisie : aucune construction à lier");
+
+        runAction("portal.list", RELEVE_568_BROKEN);
+        String broken = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(broken.contains("Lien rompu") && broken.contains("plus posée"), broken);
+        assertTrue(broken.contains("value=\"portal.building.unlink\""), "délier sans démolir");
+        assertFalse(broken.contains("value=\"portal.building.link\""), "rien de posé : rien à lier");
+    }
+
+    @Test
+    void linkIsQueuedOnlyWithTheFingerprintAndTheConfirmation() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        String base = "_csrf=" + token + "&type=portal.building.link&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche";
+        post("/agents/action", base + "&confirm=true");
+        assertFalse(pollActions().contains("portal.building.link"), "sans empreinte : rien en file");
+        post("/agents/action", base + "&expected=bbbbbbbbbbbbbbbbbbbbbbbb");
+        assertFalse(pollActions().contains("portal.building.link"), "sans confirmation : rien en file");
+        post("/agents/action", base + "&expected=bbbbbbbbbbbbbbbbbbbbbbbb&confirm=true");
+        String queued = pollActions();
+        assertTrue(queued.contains("portal.building.link") && queued.contains("\"expected\":\"bbbbbbbbbbbbbbbbbbbbbbbb\""),
+                queued);
+    }
+
     private String pollActions() throws Exception {
         return client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)

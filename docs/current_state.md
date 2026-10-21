@@ -44,6 +44,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > progression : même libellé traduit (`ObjectiveLabels`), plus « Tuer ZOMBIE ». Pas de config, pas
 > de migration.
 
+> **Portails : construction liée (#568, 21/10/2026)** — la bibliothèque garde `kind` (habitable / decoration /
+> portal) et la `passage` d'une arche (coordonnées locales) ; l'Atelier crée une « Arche de portail » (passage
+> largeur × hauteur, relevé sur la grille, refus `PORTAL_PASSAGE_MISSING`). Un portail créé depuis un emplacement se
+> lie à l'arche posée (`portal.building.link`, `building:` dans son fichier) : zone = passage après ancre + rotation ;
+> jamais activé par la liaison ; activation refusée si l'arche est libérée, remplacée ou réorientée ; délier garde la
+> zone. Migration additive `control-panel.db` (`building_project.kind`, `passage_width`, `passage_height`) ; pas de
+> migration `data.db`.
+
 > **Portails : messages et avertissement (#569, 21/10/2026)** — sections facultatives `messages:` (attente, réussite,
 > bienvenue, monde indisponible, destination dangereuse, refus par défaut) et `warning:` (mode DEFAULT/ALWAYS/NEVER,
 > titre, texte, indice, boutons, message d'annulation, `allow-hide`) des portails entre mondes ; vide = texte d'avant.

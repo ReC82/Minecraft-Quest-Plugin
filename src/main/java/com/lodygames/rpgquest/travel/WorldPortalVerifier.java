@@ -62,6 +62,7 @@ public final class WorldPortalVerifier {
         checks.add(state(p));
         checks.add(source(p, ctx));
         checks.add(zone(p, ctx));
+        checks.add(building(p, ctx));
         checks.add(destinationWorld(p, ctx));
         checks.addAll(arrival(p, ctx, probe));
         checks.add(returnLink(p));
@@ -116,6 +117,22 @@ public final class WorldPortalVerifier {
         }
         return new Check("ZONE", Status.OK, "Zone d'activation", size + " blocs dans « " + p.world()
                 + " », ne recouvre aucun autre portail.");
+    }
+
+    /**
+     * Issue #568 : la construction liée. Sans lien, simple information ; lien rompu = bloquant (la zone ne
+     * correspond plus à l'arche, l'activation est refusée).
+     */
+    private static Check building(WorldPortalDefinition p, WorldPortalAdminService.Context ctx) {
+        WorldPortalDefinition.Details d = p.details();
+        PortalBuildingLink.Status link = PortalBuildingLink.status(p,
+                d.site().isEmpty() ? Optional.empty() : ctx.buildings().apply(d.site()));
+        return switch (link) {
+            case NONE -> new Check("BUILDING", Status.OK, "Construction", "Aucune construction liée : zone saisie.");
+            case OK -> new Check("BUILDING", Status.OK, "Construction", "Arche « " + d.building() + " » posée sur « "
+                    + d.site() + " » : la zone est exactement son passage.");
+            default -> new Check("BUILDING", Status.BLOCKING, "Construction", PortalBuildingLink.describe(link, p));
+        };
     }
 
     private static Check destinationWorld(WorldPortalDefinition p, WorldPortalAdminService.Context ctx) {

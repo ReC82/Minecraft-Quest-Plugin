@@ -301,6 +301,24 @@ public final class BuildingGenerator {
                 plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                 expansion.solidCount(), audit.blockingCodes(), List.copyOf(warnings), exists,
                 audit.metrics());
+        // #568 : une arche sans passage à l'ancre ne pourrait jamais porter la zone d'un portail.
+        if (plan.kind() == StructureKind.PORTAL) {
+            Optional<com.lodygames.rpgquest.building.model.PortalPassage> passage = portalPassage(plan, expansion);
+            if (passage.isEmpty()) {
+                List<String> codes = new ArrayList<>(audit.blockingCodes());
+                codes.add(PORTAL_PASSAGE_MISSING);
+                verdict = new Verdict(false, audit.refused() ? "ARCHITECTURE_REFUSED" : PORTAL_PASSAGE_MISSING,
+                        (audit.refused() ? refusalText(plan, audit) + "\n" : "") + portalPassageRefusal(plan),
+                        plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(),
+                        expansion.solidCount(), List.copyOf(codes), List.copyOf(warnings), exists, audit.metrics());
+            } else if (!audit.refused()) {
+                com.lodygames.rpgquest.building.model.PortalPassage p = passage.get();
+                verdict = new Verdict(true, "OK", verdict.message() + " Passage du portail : " + p.sizeX()
+                        + " × " + p.sizeZ() + " × " + p.sizeY() + " (x × z × hauteur), relevé à l'ancre.",
+                        plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(),
+                        expansion.solidCount(), audit.blockingCodes(), List.copyOf(warnings), exists, audit.metrics());
+            }
+        }
         // L'aperçu est produit même pour un plan REFUSÉ, et c'est tout l'intérêt : on veut voir
         // POURQUOI il est refusé. Une façade sans porte se constate sur une coupe en une seconde.
         return new Examination(verdict, PlanPreview.of(expansion.blueprint(), plan.front(),
@@ -378,6 +396,13 @@ public final class BuildingGenerator {
                     expansion.solidCount(), 0, false, List.of());
         }
 
+        // #568 : une arche de portail doit dire où est son passage — relevé sur la grille, avant
+        // toute écriture, pour que la zone d'activation d'un portail lié se déduise de la pose.
+        Optional<com.lodygames.rpgquest.building.model.PortalPassage> passage = portalPassage(plan, expansion);
+        if (plan.kind() == StructureKind.PORTAL && passage.isEmpty()) {
+            return Result.failure(PORTAL_PASSAGE_MISSING, portalPassageRefusal(plan));
+        }
+
         String schematic = plan.id() + ".schem";
         List<String> archived = new ArrayList<>();
         if (existing.isPresent()) {
@@ -411,7 +436,7 @@ public final class BuildingGenerator {
                 "Généré depuis un plan (issue #94).", schematic,
                 plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                 plan.anchorX(), plan.anchorY(), plan.anchorZ(),
-                plan.front(), plan.materials(), version);
+                plan.front(), plan.materials(), version, plan.kind(), passage.orElse(null));
         Optional<String> invalid = definition.validate();
         if (invalid.isPresent()) {
             return Result.failure("DEFINITION_INVALID",
@@ -515,6 +540,27 @@ public final class BuildingGenerator {
         return effects;
     }
 
+    /** Code de refus d'une arche de portail sans passage à l'ancre (issue #568). */
+    public static final String PORTAL_PASSAGE_MISSING = "PORTAL_PASSAGE_MISSING";
+
+    private static Optional<com.lodygames.rpgquest.building.model.PortalPassage> portalPassage(
+            BuildingPlan plan, BuildingPlanExpander.Result expansion) {
+        if (plan.kind() != StructureKind.PORTAL) {
+            return Optional.empty();
+        }
+        return PortalPassageFinder.find(expansion.blueprint(), plan.anchorX(), plan.anchorY(), plan.anchorZ(),
+                plan.front());
+    }
+
+    /** Rédigé une fois : lu par l'écran et renvoyé tel quel au modèle par la boucle de correction. */
+    static String portalPassageRefusal(BuildingPlan plan) {
+        return "Plan refusé — architecture de portail : l'ancre (" + plan.anchorX() + " / " + plan.anchorY()
+                + " / " + plan.anchorZ() + ") doit être au centre du passage, sur la première couche d'air "
+                + "où l'on marche, et le passage doit traverser toute l'arche dans l'axe de la façade "
+                + plan.front() + " (de part en part) sur au moins " + PortalPassageFinder.MIN_HEIGHT
+                + " blocs de haut. Déclare « anchor » sur ce passage, ou dégage-le. Rien n'a été écrit.";
+    }
+
     /**
      * Le texte d'un refus architectural — rédigé une seule fois, lu par l'écran <em>et</em> renvoyé
      * au modèle. Deux rédactions divergentes apprendraient deux choses différentes du même refus.
@@ -549,6 +595,7 @@ public final class BuildingGenerator {
         yaml.set("front", definition.front().name());
         yaml.set("materials", definition.materials());
         yaml.set("version", definition.version());
+        com.lodygames.rpgquest.building.BuildingDefinitionYaml.writeKind(yaml, definition);
         yaml.set("plan", planYaml);
         yaml.options().setHeader(List.of(
                 "Bâtiment généré par RPGQuest (issue #94) — ne pas éditer à la main sans savoir.",

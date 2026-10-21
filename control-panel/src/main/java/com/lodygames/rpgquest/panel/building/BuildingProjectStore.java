@@ -47,7 +47,10 @@ public final class BuildingProjectStore {
                 created_by TEXT,
                 created_at TEXT NOT NULL,
                 updated_by TEXT,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                kind TEXT,
+                passage_width INTEGER,
+                passage_height INTEGER
             )
             """;
     private static final String CREATE_SOURCE_INDEX =
@@ -68,7 +71,13 @@ public final class BuildingProjectStore {
      * @param maxHeight limite en Y (hauteur)
      */
     public record Fields(String name, String brief, String buildingId, String front, int maxWidth,
-                         int maxDepth, int maxHeight) {
+                         int maxDepth, int maxHeight, String kind, int passageWidth, int passageHeight) {
+
+        /** Forme antérieure à #568 : un bâtiment ordinaire. */
+        public Fields(String name, String brief, String buildingId, String front, int maxWidth,
+                      int maxDepth, int maxHeight) {
+            this(name, brief, buildingId, front, maxWidth, maxDepth, maxHeight, BuildingProject.KIND_BUILDING, 0, 0);
+        }
 
         /** Forme antérieure à #305 : une limite carrée, X = Z. */
         public Fields(String name, String brief, String buildingId, String front, int maxWidth,
@@ -83,6 +92,11 @@ public final class BuildingProjectStore {
             brief = brief == null ? "" : brief.replace("\r\n", "\n").replace('\r', '\n').trim();
             buildingId = buildingId == null ? "" : buildingId.trim().toLowerCase(java.util.Locale.ROOT);
             front = BuildingProject.normaliseFront(front);
+            kind = BuildingProject.normaliseKind(kind);
+            if (!BuildingProject.KIND_PORTAL.equals(kind)) {
+                passageWidth = 0;
+                passageHeight = 0;
+            }
         }
 
         /**
@@ -91,7 +105,7 @@ public final class BuildingProjectStore {
          */
         public Fields clamped() {
             return new Fields(name, brief, buildingId, front, clamp(maxWidth, MIN_WIDTH),
-                    clamp(maxDepth, MIN_WIDTH), clamp(maxHeight, MIN_HEIGHT));
+                    clamp(maxDepth, MIN_WIDTH), clamp(maxHeight, MIN_HEIGHT), kind, passageWidth, passageHeight);
         }
 
         private static int clamp(int value, int min) {
@@ -118,12 +132,28 @@ public final class BuildingProjectStore {
             if (axis.isPresent()) {
                 return axis;
             }
+            // #568 : le passage d'une arche tient dans l'emprise, avec un pilier de chaque côté et un linteau.
+            if (BuildingProject.KIND_PORTAL.equals(kind)) {
+                int across = "NORTH".equals(front) || "SOUTH".equals(front) ? maxWidth : maxDepth;
+                if (passageWidth < 1 || passageWidth > across - 2) {
+                    return Optional.of("Largeur du passage invalide (" + describe(passageWidth) + ") : de 1 à "
+                            + (across - 2) + " blocs, pour laisser un pilier de chaque côté.");
+                }
+                if (passageHeight < 2 || passageHeight > maxHeight - 1) {
+                    return Optional.of("Hauteur du passage invalide (" + describe(passageHeight) + ") : de 2 à "
+                            + (maxHeight - 1) + " blocs, pour laisser un linteau.");
+                }
+            }
             if (!BuildingProject.BUILDING_ID.matcher(buildingId).matches()) {
                 return Optional.of("Identifiant de bibliothèque invalide : « " + buildingId + " » "
                         + "(3 à 48 caractères : minuscules, chiffres ou « _ »).");
             }
             return Optional.empty();
         }
+    }
+
+    private static String describe(int value) {
+        return value == NOT_A_NUMBER ? "ce n'est pas un nombre entier" : value + " blocs";
     }
 
     private static Optional<String> axisRefusal(String label, int value, int min) {
@@ -149,6 +179,16 @@ public final class BuildingProjectStore {
             if (!hasColumn(c, "building_project", "max_depth")) {
                 s.execute("ALTER TABLE building_project ADD COLUMN max_depth INTEGER");
             }
+            // #568 — migration ADDITIVE : type et passage d'une arche, vides = bâtiment ordinaire.
+            if (!hasColumn(c, "building_project", "kind")) {
+                s.execute("ALTER TABLE building_project ADD COLUMN kind TEXT");
+            }
+            if (!hasColumn(c, "building_project", "passage_width")) {
+                s.execute("ALTER TABLE building_project ADD COLUMN passage_width INTEGER");
+            }
+            if (!hasColumn(c, "building_project", "passage_height")) {
+                s.execute("ALTER TABLE building_project ADD COLUMN passage_height INTEGER");
+            }
         } catch (SQLException e) {
             throw new IllegalStateException("Impossible d'initialiser les projets d'atelier dans " + dbPath, e);
         }
@@ -160,7 +200,8 @@ public final class BuildingProjectStore {
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement("""
                 INSERT INTO building_project (id, agent_id, name, brief, building_id, front, max_width,
                     max_height, max_depth, source_site_id, version, archived, created_by, created_at,
-                    updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?,?,?,?)
+                    updated_by, updated_at, kind, passage_width, passage_height)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?,?,?,?,?,?,?)
                 """)) {
             int i = 1;
             ps.setString(i++, id);
@@ -176,7 +217,10 @@ public final class BuildingProjectStore {
             ps.setString(i++, by);
             ps.setString(i++, now);
             ps.setString(i++, by);
-            ps.setString(i, now);
+            ps.setString(i++, now);
+            ps.setString(i++, f.kind());
+            ps.setInt(i++, f.passageWidth());
+            ps.setInt(i, f.passageHeight());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("Création du projet impossible", e);
@@ -188,7 +232,8 @@ public final class BuildingProjectStore {
     public UpdateOutcome update(String id, int expectedVersion, Fields f, String by) {
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement("""
                 UPDATE building_project SET name = ?, brief = ?, building_id = ?, front = ?,
-                    max_width = ?, max_height = ?, max_depth = ?, version = version + 1, updated_by = ?, updated_at = ?
+                    max_width = ?, max_height = ?, max_depth = ?, kind = ?, passage_width = ?, passage_height = ?,
+                    version = version + 1, updated_by = ?, updated_at = ?
                 WHERE id = ? AND version = ? AND archived = 0
                 """)) {
             int i = 1;
@@ -199,6 +244,9 @@ public final class BuildingProjectStore {
             ps.setInt(i++, f.maxWidth());
             ps.setInt(i++, f.maxHeight());
             ps.setInt(i++, f.maxDepth());
+            ps.setString(i++, f.kind());
+            ps.setInt(i++, f.passageWidth());
+            ps.setInt(i++, f.passageHeight());
             ps.setString(i++, by);
             ps.setString(i++, STAMP.format(Instant.now()));
             ps.setString(i++, id);
@@ -296,7 +344,8 @@ public final class BuildingProjectStore {
                 rs.getString("source_site_id"),
                 rs.getInt("version"), rs.getInt("archived") != 0, rs.getString("created_by"),
                 instant(rs.getString("created_at")), rs.getString("updated_by"),
-                instant(rs.getString("updated_at")));
+                instant(rs.getString("updated_at")), rs.getString("kind"), rs.getInt("passage_width"),
+                rs.getInt("passage_height"));
     }
 
     private static boolean hasColumn(Connection c, String table, String column) throws SQLException {

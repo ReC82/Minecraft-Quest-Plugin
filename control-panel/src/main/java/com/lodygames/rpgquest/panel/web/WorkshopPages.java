@@ -167,6 +167,31 @@ public final class WorkshopPages {
                 .append(BuildingProject.MAX_BRIEF).append(" caractères</p>")
                 .append("<p class=\"field-help\">Matériaux, nombre d'étages, pièces, style, ce qui doit "
                         + "absolument y être. Plus c'est précis, meilleur est le plan.</p></div>");
+        // #568 : une arche de portail — passage traversable aux dimensions choisies, vérifié par le serveur.
+        String kind = BuildingProject.normaliseKind(v.get("kind"));
+        sb.append("<div class=\"field\"><label for=\"ws-kind\">Type de construction</label>")
+                .append("<select id=\"ws-kind\" name=\"kind\">")
+                .append("<option value=\"building\"").append(BuildingProject.KIND_PORTAL.equals(kind) ? "" : " selected")
+                .append(">Bâtiment</option><option value=\"portal\"")
+                .append(BuildingProject.KIND_PORTAL.equals(kind) ? " selected" : "")
+                .append(">Arche de portail</option></select>")
+                .append("<p class=\"field-help\">Une arche de portail a un passage que l'on traverse d'une face à "
+                        + "l'autre ; une fois posée sur l'emplacement d'un portail, PlugAdmin en déduit sa zone "
+                        + "d'activation (page Portails, « Lier l'arche posée »). La poser n'active jamais le "
+                        + "portail.</p></div>");
+        sb.append("<details class=\"npc-registry\"").append(BuildingProject.KIND_PORTAL.equals(kind) ? " open" : "")
+                .append("><summary class=\"muted\">Passage de l'arche (arche de portail seulement)</summary>")
+                .append("<div class=\"field\"><label for=\"ws-pw\">Largeur du passage (blocs)</label>")
+                .append("<input id=\"ws-pw\" type=\"number\" name=\"passage_width\" min=\"1\" max=\"62\" step=\"1\" "
+                        + "value=\"").append(Http.esc(v.getOrDefault("passage_width",
+                                String.valueOf(BuildingProject.DEFAULT_PASSAGE_WIDTH)))).append("\"></div>")
+                .append("<div class=\"field\"><label for=\"ws-ph\">Hauteur du passage (blocs)</label>")
+                .append("<input id=\"ws-ph\" type=\"number\" name=\"passage_height\" min=\"2\" max=\"63\" step=\"1\" "
+                        + "value=\"").append(Http.esc(v.getOrDefault("passage_height",
+                                String.valueOf(BuildingProject.DEFAULT_PASSAGE_HEIGHT)))).append("\"></div>")
+                .append("<p class=\"field-help\">Le passage traverse l'arche dans l'axe de l'entrée ; il doit laisser "
+                        + "un pilier de chaque côté et un linteau. Le serveur relève le passage réel sur le plan et "
+                        + "refuse une arche dont le passage est bouché.</p></details>");
         String front = BuildingProject.normaliseFront(v.get("front"));
         sb.append("<div class=\"field\"><label for=\"ws-front\">Côté de l'entrée</label>")
                 .append("<select id=\"ws-front\" name=\"front\">");
@@ -300,7 +325,10 @@ public final class WorkshopPages {
         }
         sb.append(projectFields(Map.of("name", p.name(), "brief", p.brief(), "front", p.front(),
                 "max_width", String.valueOf(p.maxWidth()), "max_depth", String.valueOf(p.maxDepth()),
-                "max_height", String.valueOf(p.maxHeight()), "building_id", p.buildingId())));
+                "max_height", String.valueOf(p.maxHeight()), "building_id", p.buildingId(), "kind", p.kind(),
+                "passage_width", String.valueOf(p.portal() ? p.passageWidth() : BuildingProject.DEFAULT_PASSAGE_WIDTH),
+                "passage_height", String.valueOf(p.portal() ? p.passageHeight()
+                        : BuildingProject.DEFAULT_PASSAGE_HEIGHT))));
         sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
                 .append(Icons.icon("save")).append("Enregistrer les modifications</button></div>");
         if (!p.sourceSiteId().isEmpty()) {

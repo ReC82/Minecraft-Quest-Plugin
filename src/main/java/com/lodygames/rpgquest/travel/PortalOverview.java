@@ -67,11 +67,24 @@ public final class PortalOverview {
                          List<PortalLoadIssue> zonePortalIssues, List<Destination> destinations,
                          Map<String, String> loadedWorlds, Roles roles, RandomSafeArrivalConfig randomSafe,
                          ClaimArrival claimArrival, GuideNpc guide,
-                         Function<String, Optional<BuildingSite>> sites, List<PortalAuditLog.Entry> history) {
+                         Function<String, Optional<BuildingSite>> sites, List<PortalAuditLog.Entry> history,
+                         Function<String, Optional<PortalBuildingLink.SiteBuilding>> buildings) {
 
         public Inputs {
             sites = sites == null ? id -> Optional.empty() : sites;
             history = history == null ? List.of() : List.copyOf(history);
+            buildings = buildings == null ? id -> Optional.empty() : buildings;
+        }
+
+        /** Sans constructions relevées (#568) : conserve les appelants antérieurs. */
+        public Inputs(List<WorldPortalDefinition> worldPortals, List<String> worldPortalFiles,
+                      List<PortalLoadIssue> worldPortalSkipped, List<PortalDefinition> zonePortals,
+                      List<PortalLoadIssue> zonePortalIssues, List<Destination> destinations,
+                      Map<String, String> loadedWorlds, Roles roles, RandomSafeArrivalConfig randomSafe,
+                      ClaimArrival claimArrival, GuideNpc guide,
+                      Function<String, Optional<BuildingSite>> sites, List<PortalAuditLog.Entry> history) {
+            this(worldPortals, worldPortalFiles, worldPortalSkipped, zonePortals, zonePortalIssues, destinations,
+                    loadedWorlds, roles, randomSafe, claimArrival, guide, sites, history, null);
         }
 
         /** Sans emplacements ni journal (#565) : conserve les appelants antérieurs. */
@@ -95,14 +108,35 @@ public final class PortalOverview {
                         int depth, boolean essential, String fingerprint, boolean editable,
                         WorldPortalDefinition.FixedPoint point, String returnOf, List<String> returnedBy,
                         PortalAccess access, PortalMessages messages, WildEntryWarningService.Texts warningDefaults,
-                        boolean warns) {
+                        boolean warns, Construction construction) {
 
         static final Admin LEGACY = new Admin("ACTIVE", "", "", "", 0, 0, 0, false, "", false, null, "", List.of(),
-                PortalAccess.NONE, PortalMessages.NONE, null, false);
+                PortalAccess.NONE, PortalMessages.NONE, null, false, Construction.NONE);
 
         public Admin {
             messages = messages == null ? PortalMessages.NONE : messages;
+            construction = construction == null ? Construction.NONE : construction;
         }
+    }
+
+    /**
+     * Construction liée (issue #568), relevée sans rien modifier.
+     *
+     * @param linked     arche liée au portail ({@code ""} = aucune)
+     * @param status     {@link PortalBuildingLink.Status} du lien
+     * @param message    explication si le lien est rompu, sinon {@code ""}
+     * @param placed     construction réellement posée sur l'emplacement ({@code ""} = rien)
+     * @param placedName nom de cette construction dans la bibliothèque ({@code ""} si retirée)
+     * @param rotation   rotation appliquée à la pose, en degrés
+     * @param linkable   « Lier » donnerait une zone : arche de portail avec passage
+     * @param zone       zone que donnerait « Lier » ({@code x1,y1,z1 → x2,y2,z2}), {@code ""} sinon
+     * @param refusal    pourquoi « Lier » serait refusé, {@code ""} si {@code linkable}
+     */
+    public record Construction(String linked, String status, String message, String placed, String placedName,
+                               int rotation, boolean linkable, String zone, String refusal) {
+
+        public static final Construction NONE = new Construction("", PortalBuildingLink.Status.NONE.name(), "", "",
+                "", 0, false, "", "");
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -204,6 +238,13 @@ public final class PortalOverview {
             issues.add(new Issue("PORTAL_SITE_MISSING", "warning", "L'emplacement « " + site + " » cité par ce "
                     + "portail n'existe plus : sa zone reste celle enregistrée, mais il ne peut pas être activé."));
         }
+        PortalBuildingLink.Status link = PortalBuildingLink.status(p,
+                site.isEmpty() ? Optional.empty() : in.buildings().apply(site));
+        if (link != PortalBuildingLink.Status.NONE && link != PortalBuildingLink.Status.OK) {
+            issues.add(new Issue("PORTAL_BUILDING_LINK_BROKEN", p.enabled() ? "error" : "warning",
+                    PortalBuildingLink.describe(link, p) + " Tant que le lien est rompu, le portail ne peut pas être "
+                            + "activé."));
+        }
         if (!sourceLoaded) {
             issues.add(new Issue("PORTAL_SOURCE_NOT_LOADED", "warning", "Le monde de départ « " + p.world()
                     + " » n'est pas chargé : personne ne peut atteindre ce portail."));
@@ -266,7 +307,7 @@ public final class PortalOverview {
                 WorldPortalAdminService.fingerprint(p), sameId.isEmpty(), p.fixedPoint(), p.returnOf(), returnedBy,
                 p.access(), p.messages(), WildEntryWarningService.towardsWild(p, in.roles().wild())
                         ? WildEntryWarningService.WILD_DEFAULTS : WildEntryWarningService.GENERIC_DEFAULTS,
-                WildEntryWarningService.appliesTo(p, in.roles().wild()));
+                WildEntryWarningService.appliesTo(p, in.roles().wild()), construction(p, in));
         WorldPortalDefinition.FixedPoint fp = p.fixedPoint();
         String point = fp == null ? "" : String.format(Locale.ROOT, "%s %.1f, %.1f, %.1f (regard %.0f°)",
                 p.destinationWorld(), fp.x(), fp.y(), fp.z(), fp.yaw());
@@ -278,6 +319,27 @@ public final class PortalOverview {
                 p.destinationStrategy().name(), arrival(p, in),
                 worldPortalTrigger(!guards.isEmpty(), !p.access().isEmpty()),
                 List.copyOf(guards), accessConditions(p.access()), List.copyOf(issues), admin);
+    }
+
+    /** Issue #568 : construction posée sur l'emplacement et état du lien, sans rien modifier. */
+    private static Construction construction(WorldPortalDefinition p, Inputs in) {
+        String site = p.details().site();
+        Optional<PortalBuildingLink.SiteBuilding> onSite = site.isEmpty() ? Optional.empty()
+                : in.buildings().apply(site);
+        PortalBuildingLink.Status status = PortalBuildingLink.status(p, onSite);
+        if (onSite.isEmpty()) {
+            return new Construction(p.details().building(), status.name(), PortalBuildingLink.describe(status, p),
+                    "", "", 0, false, "", site.isEmpty() ? "Aucun emplacement : zone saisie en coordonnées."
+                            : "Aucune construction posée sur l'emplacement « " + site + " ».");
+        }
+        PortalBuildingLink.SiteBuilding sb = onSite.get();
+        PortalBuildingLink.Derived derived = PortalBuildingLink.derive(sb);
+        WorldPortalDefinition.Zone z = derived.zone();
+        return new Construction(p.details().building(), status.name(), PortalBuildingLink.describe(status, p),
+                sb.placement().buildingId(), sb.definition() == null ? "" : sb.definition().name(),
+                sb.placement().rotationDegrees(), derived.ok(),
+                z == null ? "" : z.minX() + "," + z.minY() + "," + z.minZ() + " → " + z.maxX() + "," + z.maxY() + ","
+                        + z.maxZ(), derived.ok() ? "" : derived.message());
     }
 
     private static List<String> arrival(WorldPortalDefinition p, Inputs in) {

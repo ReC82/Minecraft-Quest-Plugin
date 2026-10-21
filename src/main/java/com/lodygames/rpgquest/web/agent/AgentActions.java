@@ -427,7 +427,16 @@ public interface AgentActions {
                                      int anchorX, int anchorY, int anchorZ,
                                      String front, List<String> materials,
                                      String schematic, boolean schematicPresent, int version,
-                                     boolean bundled) {
+                                     boolean bundled, String kind, String passage) {
+
+        /** Forme antérieure à #568 : sans type ni zone de passage. */
+        public BuildingDefinitionSummary(String id, String name, String description, int sizeX,
+                                         int sizeY, int sizeZ, int anchorX, int anchorY, int anchorZ,
+                                         String front, List<String> materials, String schematic,
+                                         boolean schematicPresent, int version, boolean bundled) {
+            this(id, name, description, sizeX, sizeY, sizeZ, anchorX, anchorY, anchorZ, front,
+                    materials, schematic, schematicPresent, version, bundled, "habitable", "");
+        }
 
         /** Forme antérieure à #284 : sans l'indication « exemple embarqué ». */
         public BuildingDefinitionSummary(String id, String name, String description, int sizeX,

@@ -247,6 +247,10 @@ public final class AgentActionExecutor {
                 case PORTAL_VERIFY -> portalVerify(action);
                 case PORTAL_ACCESS -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.ACCESS);
                 case PORTAL_MESSAGES -> portalAdmin(action, com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.MESSAGES);
+                case PORTAL_BUILDING_LINK -> portalAdmin(action,
+                        com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.LINK_BUILDING);
+                case PORTAL_BUILDING_UNLINK -> portalAdmin(action,
+                        com.lodygames.rpgquest.travel.WorldPortalAdminService.Kind.UNLINK_BUILDING);
                 case PORTAL_SIMULATE -> portalSimulate(action);
                 case PORTAL_TEST -> portalTest(action);
                 case CLAIM_LIST -> claimList(action);
@@ -3992,6 +3996,9 @@ public final class AgentActionExecutor {
                 row.put("version", b.version());
                 // #284 : un exemple embarqué est recréé au démarrage — le panel ne propose pas de le retirer.
                 row.put("bundled", b.bundled());
+                // #568 : type (habitable / decoration / portal) et zone de passage d'une arche.
+                row.put("kind", b.kind());
+                row.put("passage", b.passage());
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();

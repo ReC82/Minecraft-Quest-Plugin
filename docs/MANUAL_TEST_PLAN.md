@@ -7981,6 +7981,43 @@ non vérifiable / ajustée / impossible / monde absent / retour désaccordé, st
 adaptateur asynchrone simulé ; RANDOM_SAFE / CLAIM_HOME inchangés), `PortalAdminParamsTest`, `PortalsPageTest`
 (fiche, résultat de vérification et périmé, retour prérempli, paramètres validés, refus avant mise en file).
 
+### TC-396 — Portails : construction liée — arche, zone de passage, liaison (issue #568, PENDING MANUAL VALIDATION)
+
+**Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 n'autorise que des tests simulés —
+aucune construction posée, déplacée, remplacée ou supprimée, aucun portail réel modifié (dont `hub_to_wild` /
+`hub_to_claims`), aucun appel IA payant de test. L'étape 1 est en lecture seule.
+
+1.  Lecture seule : Monde → Portails → « Rafraîchir », fiche `hub_to_wild`. **Attendu** : blocs « 1 · Emplacement »,
+    « 2 · Construction » (« Zone saisie en coordonnées : aucune construction ne peut y être liée », aucun bouton),
+    « 3 · Téléportation » ; aucun diagnostic nouveau. Bâtiments → Bibliothèque : filtres Tous / Bâtiments / Décorations
+    / Portails ; les bâtiments existants comptent comme « Bâtiments ». Atelier → Nouveau projet : champ « Type de
+    construction » et « Passage de l'arche » visibles (ne rien créer).
+2.  (Feu vert requis — appel IA payant) Atelier : nouveau projet « Arche de test », type « Arche de portail », passage
+    3 × 4, entrée au nord, emprise 7 × 5 × 8. Proposer, vérifier. **Attendu** : verdict « Passage du portail : … » ; une
+    arche bouchée est refusée `PORTAL_PASSAGE_MISSING`. Enregistrer : la Bibliothèque la montre sous « Portails » avec sa
+    zone de passage.
+3.  (Feu vert requis) Marquer un emplacement de test (outil #213, face est), créer un portail brouillon depuis cet
+    emplacement vers un monde de test. Poser l'arche sur l'emplacement (page Emplacements, aperçu puis confirmation).
+    **Attendu** : le portail reste Brouillon ; fiche → « Construction » : arche posée, rotation, « Zone de son passage ».
+4.  « Lier l'arche posée ». **Attendu** : zone = passage annoncé (traverser l'arche en jeu : les coins tombent dans
+    l'ouverture, pas dans les piliers — `/rpgadmin worldportal debug show <id>` si besoin) ; toujours Brouillon. Activer, traverser
+    → téléportation ; le contour de l'arche ne téléporte pas.
+5.  Désactiver. Remplacer l'arche par une autre arche (page Emplacements). **Attendu** : « Lien rompu », « Activer »
+    refusé (`BUILDING_LINK_BROKEN`), destination inchangée ; « Lier à nouveau » relit le nouveau passage.
+6.  Libérer l'emplacement (retour arrière). **Attendu** : terrain d'origine rendu ; portail conservé, lien rompu ;
+    « Délier sans démolir » garde la zone. Supprimer le portail et l'emplacement de test ; `hub_to_wild` /
+    `hub_to_claims` inchangés.
+
+**Couverture automatisée** : `PortalPassageTest` (passage dans l'emprise et ancre contenue aux 4 rotations, 90° = axe X
+vers l'est, type/zone validés, aller-retour YAML, fichier antérieur identique), `PortalPassageFinderTest` (ouverture
+relevée sur la grille, façade est, ancre dans la dalle, pilier / passage bouché), `BuildingGeneratorTest` (arche publiée
+avec type et passage, refus avant écriture), `WorldPortalBuildingLinkTest` (zone = passage après rotation, jamais activé,
+refus sans arche / pas un portail / sans passage / définition retirée, portail actif verrouillé, activation refusée si
+arche libérée / remplacée / réorientée, relier après remplacement garde la destination, délier garde zone et arche, zone
+saisie = délié, contrôle `BUILDING` et bloc `construction`), `PortalListActionTest`, `PortalsPageTest` (bloc Construction,
+Lier / Délier, file avec empreinte et confirmation), `BuildingPlacementPageTest` (filtre Portails),
+`BuildingProjectStoreTest` (projet arche, contrat envoyé à l'IA, migration additive, passage borné).
+
 ### TC-395 — Portails : messages et avertissement par portail (issue #569, PENDING MANUAL VALIDATION)
 
 **Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 n'autorise que des tests simulés

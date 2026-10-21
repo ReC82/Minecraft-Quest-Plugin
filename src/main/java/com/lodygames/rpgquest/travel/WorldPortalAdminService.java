@@ -73,7 +73,20 @@ public final class WorldPortalAdminService {
     public record Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
                           Function<String, Optional<BuildingSite>> sites,
                           Function<String, Optional<WorldBounds>> bounds,
-                          Predicate<NamespacedKey> questKnown) {
+                          Predicate<NamespacedKey> questKnown,
+                          Function<String, Optional<PortalBuildingLink.SiteBuilding>> buildings) {
+
+        public Context {
+            buildings = buildings == null ? s -> Optional.empty() : buildings;
+        }
+
+        /** Sans constructions relevées (issue #568) : aucun emplacement n'a de construction posée. */
+        public Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
+                       Function<String, Optional<BuildingSite>> sites,
+                       Function<String, Optional<WorldBounds>> bounds,
+                       Predicate<NamespacedKey> questKnown) {
+            this(loadedWorlds, roles, zonePortals, sites, bounds, questKnown, null);
+        }
 
         /** Sans liste de quêtes (issue #567) : toute quête est admise. */
         public Context(Set<String> loadedWorlds, PortalOverview.Roles roles, List<PortalDefinition> zonePortals,
@@ -147,7 +160,11 @@ public final class WorldPortalAdminService {
         /** Issue #567 : remplacer les conditions d'accès. */
         ACCESS,
         /** Issue #569 : remplacer les messages et l'avertissement. */
-        MESSAGES
+        MESSAGES,
+        /** Issue #568 : lier la construction posée sur l'emplacement (zone = son passage). */
+        LINK_BUILDING,
+        /** Issue #568 : délier la construction, sans toucher ni la zone ni aucun bloc. */
+        UNLINK_BUILDING
     }
 
     /**
@@ -198,6 +215,8 @@ public final class WorldPortalAdminService {
             case DELETE -> delete(op.id(), op.expected(), op.confirmEssential(), op.actor(), ctx);
             case ACCESS -> setAccess(op.id(), op.expected(), op.access(), op.confirmEssential(), op.actor(), ctx);
             case MESSAGES -> setMessages(op.id(), op.expected(), op.messages(), op.confirmEssential(), op.actor(), ctx);
+            case LINK_BUILDING -> linkBuilding(op.id(), op.expected(), op.confirmEssential(), op.actor(), ctx);
+            case UNLINK_BUILDING -> unlinkBuilding(op.id(), op.expected(), op.confirmEssential(), op.actor(), ctx);
         };
     }
 
@@ -295,7 +314,7 @@ public final class WorldPortalAdminService {
             newName = clean(name);
         }
         WorldPortalDefinition updated = current.withZone(current.zone(),
-                new Details(newName, d.site(), d.draft(), d.width(), d.height(), d.depth()));
+                new Details(newName, d.site(), d.draft(), d.width(), d.height(), d.depth(), d.building()));
         if (zone != null) {
             if (current.state() == State.ACTIVE) {
                 return Result.refused("ACTIVE_ZONE_LOCKED", "Le portail est actif : le désactiver avant de "
@@ -361,6 +380,11 @@ public final class WorldPortalAdminService {
             String site = current.details().site();
             if (!site.isEmpty() && ctx.sites().apply(site).isEmpty()) {
                 return Result.refused("SITE_MISSING", "L'emplacement « " + site + " » de ce portail n'existe plus.");
+            }
+            // #568 : une zone liée à une arche absente, remplacée ou réorientée ne s'active pas.
+            PortalBuildingLink.Status link = PortalBuildingLink.status(current, ctx.buildings().apply(site));
+            if (link != PortalBuildingLink.Status.NONE && link != PortalBuildingLink.Status.OK) {
+                return Result.refused("BUILDING_LINK_BROKEN", PortalBuildingLink.describe(link, current));
             }
             Result overlap = overlapWithZonePortals(current, ctx);
             if (overlap != null) {
@@ -446,6 +470,76 @@ public final class WorldPortalAdminService {
                 : "Messages et avertissement de « " + id + " » enregistrés.");
     }
 
+    /**
+     * Lie la construction posée sur l'emplacement du portail (issue #568) : la zone d'activation
+     * devient le passage de l'arche, relu après l'ancre et la rotation de la pose. Ne pose, ne
+     * déplace ni ne retire aucun bloc ; <strong>n'active jamais</strong> le portail (l'état est
+     * conservé, et un portail actif est refusé comme pour toute modification de zone). Relier après
+     * un remplacement d'arche (#234) relit le nouveau passage sans toucher la destination.
+     */
+    public synchronized Result linkBuilding(String id, String expected, boolean confirmEssential, String actor,
+                                            Context ctx) {
+        Lookup found = lookup(id, expected, confirmEssential, ctx);
+        if (found.error() != null) {
+            return found.error();
+        }
+        WorldPortalDefinition current = found.portal();
+        if (current.state() == State.ACTIVE) {
+            return Result.refused("ACTIVE_ZONE_LOCKED", "Le portail est actif : le désactiver avant de lier une "
+                    + "construction (sa zone changerait).");
+        }
+        Details d = current.details();
+        if (d.site().isEmpty()) {
+            return Result.refused("NO_SITE", "Ce portail n'est pas rattaché à un emplacement : choisir d'abord un "
+                    + "emplacement pour sa zone, puis y poser une arche.");
+        }
+        Optional<PortalBuildingLink.SiteBuilding> onSite = ctx.buildings().apply(d.site());
+        if (onSite.isEmpty()) {
+            return Result.refused("NO_BUILDING", "Aucune construction n'est posée sur l'emplacement « " + d.site()
+                    + " » : poser une arche depuis la page Emplacements, puis revenir lier.");
+        }
+        PortalBuildingLink.SiteBuilding sb = onSite.get();
+        if (!sb.placement().world().equals(current.world())) {
+            return Result.refused("WORLD_CHANGE_REFUSED", "La construction est dans « " + sb.placement().world()
+                    + " », pas dans le monde du portail (" + current.world() + ").");
+        }
+        PortalBuildingLink.Derived derived = PortalBuildingLink.derive(sb);
+        if (!derived.ok()) {
+            return Result.refused(derived.code(), derived.message());
+        }
+        WorldPortalDefinition updated = current.withZone(derived.zone(), d.withBuilding(sb.placement().buildingId()));
+        if (updated.equals(current)) {
+            return new Result(true, "UNCHANGED", "Le portail est déjà lié à cette arche, zone identique.", id,
+                    List.of());
+        }
+        Result overlap = overlapWithZonePortals(updated, ctx);
+        if (overlap != null) {
+            return overlap;
+        }
+        Zone z = derived.zone();
+        return save(current, updated, "LINK_BUILDING", actor, "Arche « " + sb.placement().buildingId()
+                + " » liée à « " + id + " » : zone = son passage " + z.minX() + "," + z.minY() + "," + z.minZ()
+                + " → " + z.maxX() + "," + z.maxY() + "," + z.maxZ() + ". Le portail reste "
+                + (current.state() == State.DRAFT ? "en brouillon" : "désactivé") + ".");
+    }
+
+    /** Délie la construction (issue #568) : la zone actuelle est conservée, aucun bloc n'est touché. */
+    public synchronized Result unlinkBuilding(String id, String expected, boolean confirmEssential, String actor,
+                                              Context ctx) {
+        Lookup found = lookup(id, expected, confirmEssential, ctx);
+        if (found.error() != null) {
+            return found.error();
+        }
+        WorldPortalDefinition current = found.portal();
+        Details d = current.details();
+        if (!d.linked()) {
+            return new Result(true, "UNCHANGED", "Aucune construction n'est liée à ce portail.", id, List.of());
+        }
+        WorldPortalDefinition updated = current.withZone(current.zone(), d.withBuilding(""));
+        return save(current, updated, "UNLINK_BUILDING", actor, "Construction « " + d.building() + " » déliée de « "
+                + id + " » : l'arche reste posée, la zone du portail est conservée.");
+    }
+
     /** Supprime la configuration d'un portail non actif. L'emplacement et le bâtiment restent. */
     public synchronized Result delete(String id, String expected, boolean confirmEssential, String actor,
                                       Context ctx) {
@@ -481,6 +575,10 @@ public final class WorldPortalAdminService {
                 p.maxX() + "," + p.maxY() + "," + p.maxZ(), p.destinationWorld(), String.valueOf(p.enabled()),
                 p.destinationStrategy().name(), d.name(), d.site(), String.valueOf(d.draft()),
                 d.width() + "x" + d.height() + "x" + d.depth());
+        // #568 : même règle — un portail sans construction liée garde son empreinte d'avant.
+        if (d.linked()) {
+            canonical += "|building:" + d.building();
+        }
         // #566 : ajoutés seulement s'ils sont renseignés — l'empreinte d'un portail sans point fixe ni
         // retour reste celle d'avant (une page ouverte avant la mise à jour reste valable).
         if (p.fixedPoint() != null) {
@@ -521,6 +619,7 @@ public final class WorldPortalAdminService {
                 + p.maxX() + "," + p.maxY() + "," + p.maxZ()
                 + (d.site().isEmpty() ? "" : ", emplacement " + d.site() + " " + d.width() + "×" + d.height() + "×"
                 + d.depth())
+                + (d.linked() ? ", construction liée " + d.building() : "")
                 + ", vers " + p.destinationWorld() + " (" + p.destinationStrategy()
                 + (p.fixedPoint() == null ? "" : " " + pointText(p.fixedPoint())) + ")"
                 + (p.returnOf().isEmpty() ? "" : ", retour de " + p.returnOf())

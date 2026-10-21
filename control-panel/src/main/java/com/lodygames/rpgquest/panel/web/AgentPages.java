@@ -2568,6 +2568,16 @@ public final class AgentPages {
             return sb.toString();
         }
 
+        // #568 : filtre par type — les arches de portail se retrouvent d'un clic.
+        long portals = library.buildings().stream().filter(b -> b.portal()).count();
+        long decorations = library.buildings().stream().filter(b -> "decoration".equals(b.kind())).count();
+        String chips = filterBtn("", "Tous · " + library.total(), true)
+                + filterBtn("habitable", "Bâtiments · " + (library.buildings().size() - portals - decorations), false,
+                        "Aucun bâtiment habitable")
+                + filterBtn("decoration", "Décorations · " + decorations, false, "Aucune décoration")
+                + filterBtn("portal", "Portails · " + portals, false,
+                        "Aucune arche de portail — en créer une dans l'Atelier (type « Arche de portail »)");
+        sb.append(listControls("buildings", "Rechercher un bâtiment", chips));
         sb.append("<div class=\"accordion npc-accordion\" id=\"building-accordion\">");
         int index = 0;
         boolean canPlace = library.engineAvailable()
@@ -2579,7 +2589,7 @@ public final class AgentPages {
                     workshopZone(session, agentId, building)
                             + (canRetire ? retireZone(session, agentId, building, sites) : "")));
         }
-        sb.append("</div>");
+        sb.append("</div>").append(filterEmpty("buildings", "Aucun bâtiment"));
         sb.append("<div class=\"card\"><div class=\"card-body\">");
         sb.append("<h3 class=\"h6\">Comment poser un bâtiment</h3>");
         sb.append("<p class=\"field-help\">Ouvrez un bâtiment ci-dessus, puis <strong>Placer sur un "
@@ -2687,7 +2697,9 @@ public final class AgentPages {
             boolean canPlace, String retireZone) {
         String slug = "building-" + index + "-" + building.id().replaceAll("[^a-z0-9_-]", "-");
         StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"accordion-item npc-item\">");
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"buildings\" data-filter-cat=\"")
+                .append(Http.esc(building.kind())).append("\" data-filter-text=\"")
+                .append(Http.esc(building.id() + " " + building.name() + " " + building.kindLabel())).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" ")
                 .append("data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
@@ -2698,6 +2710,9 @@ public final class AgentPages {
         sb.append("<span class=\"npc-loc\">").append(Http.esc(building.sizeLabel()))
                 .append("</span>");
         sb.append("</span><span class=\"npc-head-badges\">");
+        if (building.portal()) {
+            sb.append("<span class=\"badge text-bg-info\">").append(Http.esc(building.kindLabel())).append("</span>");
+        }
         sb.append("<span class=\"badge text-bg-secondary\">façade ")
                 .append(Http.esc(building.frontLabel())).append("</span>");
         sb.append(building.schematicPresent()
@@ -2715,6 +2730,13 @@ public final class AgentPages {
         dlRow(sb, "Dimensions", "<code class=\"tid\">" + Http.esc(building.sizeLabel())
                 + "</code> <span class=\"muted\">(largeur × profondeur × hauteur)</span>");
         dlRow(sb, "Volume", building.blockCount() + " blocs");
+        dlRow(sb, "Type", Http.esc(building.kindLabel()));
+        if (building.portal()) {
+            dlRow(sb, "Zone de passage", building.passage().isEmpty()
+                    ? "<span class=\"muted\">non déclarée — la zone d'un portail sera saisie à la main</span>"
+                    : "<code class=\"tid\">" + Http.esc(building.passage()) + "</code> <span class=\"muted\">(x / y / z "
+                            + "locaux ; dans le monde, relue après la rotation de la pose)</span>");
+        }
         dlRow(sb, "Ancre", Http.esc(building.anchorMeaning()) + " <code class=\"tid\">"
                 + Http.esc(building.anchorLabel()) + "</code>");
         dlRow(sb, "Façade de référence", Http.esc(building.frontLabel())

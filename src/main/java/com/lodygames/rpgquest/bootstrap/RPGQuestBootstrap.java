@@ -1310,6 +1310,10 @@ public final class RPGQuestBootstrap {
         agentActions.setRewardEntitlements(rewardEntitlementService);
         agentActions.setPriceCatalog(priceCatalogService, merchantRegistry);
         agentActions.setNpcSpots(npcSpotService, claimService);
+        // Issue #637 : relevé des claims et téléportation de diagnostic d'un administrateur.
+        agentActions.setClaimAdmin(claimService, new com.lodygames.rpgquest.claim.ClaimAdminTeleport(plugin,
+                claimService, () -> configService.current().claims(), adminBypassMode),
+                () -> configService.current().claims().world());
         // Issue #381 (correction du 15/10) — l'outil « Emplacements PNJ » : clic droit = un emplacement.
         // Enregistré ici parce qu'il refuse les parcelles, donc a besoin du ClaimService.
         registry.start(new PlayerListenerService(plugin, new com.lodygames.rpgquest.npc.spot.NpcSpotToolListener(

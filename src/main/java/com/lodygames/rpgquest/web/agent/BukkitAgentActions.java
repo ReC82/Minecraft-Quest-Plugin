@@ -879,6 +879,46 @@ public final class BukkitAgentActions implements AgentActions {
         });
     }
 
+    // ---- Claims (actions claim.*, issue #637) ----------------------------------------------------
+
+    private com.lodygames.rpgquest.claim.ClaimService claimAdminClaims;
+    private com.lodygames.rpgquest.claim.ClaimAdminTeleport claimAdminTeleport;
+    private Supplier<String> claimsWorld = () -> "";
+
+    /** Facultatif : sans service, {@code claim.list} et {@code claim.teleport} répondent « indisponible ». */
+    public void setClaimAdmin(com.lodygames.rpgquest.claim.ClaimService claims,
+                              com.lodygames.rpgquest.claim.ClaimAdminTeleport teleport, Supplier<String> claimsWorld) {
+        this.claimAdminClaims = claims;
+        this.claimAdminTeleport = teleport;
+        this.claimsWorld = claimsWorld;
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.claim.ClaimOverview.View> claimList() {
+        if (claimAdminClaims == null) {
+            return AgentActions.super.claimList();
+        }
+        return onMain(() -> done(com.lodygames.rpgquest.claim.ClaimOverview.build(claimAdminClaims.claims(),
+                claimAdminClaims::mainClaimOf, owner -> {
+                    // Pseudo connu du cache du serveur (aucune requête réseau, joueur hors ligne compris).
+                    String name = plugin.getServer().getOfflinePlayer(owner).getName();
+                    return name == null || name.isBlank() ? null : name;
+                }, world -> plugin.getServer().getWorld(world) != null, claimsWorld.get())));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> claimTeleport(UUID travelerId, String travelerName, String claimId,
+                                                           UUID expectedOwner) {
+        if (claimAdminTeleport == null) {
+            return AgentActions.super.claimTeleport(travelerId, travelerName, claimId, expectedOwner);
+        }
+        return onMain(() -> claimAdminTeleport.teleport(travelerId, claimId, expectedOwner)
+                .thenApply(r -> new MutationResult(r.ok(), r.code().name(), r.message(), r.ok()
+                        ? List.of("Personnage déplacé : " + label(travelerName, travelerId) + ".",
+                                "Claim, terrain, droits, variables et mode bypass inchangés.")
+                        : List.of("Rien n'a été modifié."))));
+    }
+
     // ---- Emplacements de PNJ (actions npc.spot.*, issue #381) ----------------------------------
 
     private com.lodygames.rpgquest.npc.spot.NpcSpotService npcSpots;

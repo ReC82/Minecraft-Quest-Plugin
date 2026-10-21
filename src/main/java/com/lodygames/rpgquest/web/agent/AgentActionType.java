@@ -651,7 +651,20 @@ public enum AgentActionType {
      * réellement appliqués et diagnostics. Lecture seule : rien n'est créé, modifié, activé ni
      * téléporté.
      */
-    PORTAL_LIST("portal.list");
+    PORTAL_LIST("portal.list"),
+    /**
+     * Issue #637 — tous les claims persistés : propriétaire (UUID + pseudo connu), claim principal,
+     * monde (chargé ou non), bornes, réservation, palier déduit de la taille réelle. Lecture seule ;
+     * fonctionne pour un propriétaire hors ligne.
+     */
+    CLAIM_LIST("claim.list"),
+    /**
+     * Issue #637 — téléporte le personnage <strong>de l'administrateur</strong> (paramètre {@code
+     * player}, imposé par PlugAdmin) sur une position sûre d'un claim existant, pour diagnostic.
+     * Aucun claim, terrain, droit, variable ni mode bypass n'est modifié ; succès seulement après
+     * relecture de la position réelle.
+     */
+    CLAIM_TELEPORT("claim.teleport");
 
     private final String wire;
 

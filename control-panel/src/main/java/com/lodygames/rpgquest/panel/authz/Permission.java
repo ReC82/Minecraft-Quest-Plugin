@@ -72,6 +72,17 @@ public enum Permission {
      * tester un portail.
      */
     PORTAL_READ,
+    /**
+     * Consultation lecture seule des claims (issue #637) : propriétaire, claim principal, monde,
+     * position, bornes et palier. Ne permet ni de créer, ni de modifier, ni de supprimer un claim.
+     */
+    CLAIM_READ,
+    /**
+     * Téléporter <strong>son propre personnage lié</strong> sur un claim existant, pour diagnostic
+     * (issue #637). N'accorde ni propriété, ni appartenance, ni droit de construire, et n'active pas
+     * le mode bypass en jeu. Jamais le propriétaire ni un autre joueur.
+     */
+    CLAIM_TELEPORT,
     /** Consultation des profils de mob spécial/boss + throttle Wild (issue #169). */
     MOB_READ,
     /** Créer/modifier/activer-désactiver un profil de mob spécial/boss, régler le throttle Wild (issue #169). */

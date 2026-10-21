@@ -385,6 +385,14 @@ public final class PanelApp {
         // Issue #564 (#228-P1) — portails en LECTURE SEULE : seul « Rafraîchir » (portal.list) est exposé.
         route("/portals", exchange -> handleBusinessPage(exchange, "/portals", "Portails",
                 Permission.PORTAL_READ, agentPages::portals));
+        // Issue #637 — claims des joueurs : relevé (CLAIM_READ) et « M'y téléporter » du seul personnage lié
+        // à la session (CLAIM_TELEPORT, imposé dans createAgentAction).
+        route("/claims", exchange -> handleBusinessPage(exchange, "/claims", "Claims", Permission.CLAIM_READ,
+                (session, q) -> {
+                    Optional<McBridgeRepository.Link> link = mcBridge.linkOf(session.userId());
+                    return agentPages.claims(session, q, link.map(McBridgeRepository.Link::mcUuid).orElse(null),
+                            link.map(McBridgeRepository.Link::mcName).orElse(null));
+                }));
         // Issue #332 — dialogues, version simple : une liste, un éditeur, « Enregistrer » puis
         // « Mettre en jeu » par la publication à chaud (#47). L'ancien écran reste en « Détails
         // techniques ».
@@ -6189,6 +6197,31 @@ public final class PanelApp {
             audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "agent inconnu : " + agentId, rid);
             Http.redirect(exchange, withError(returnPath, agentId, null, "Agent inconnu."));
             return;
+        }
+        if ("claim.teleport".equals(type)) {
+            // Issue #637 : le personnage déplacé est TOUJOURS celui lié au compte de la session — jamais
+            // un champ du formulaire, donc jamais le propriétaire du claim ni un autre joueur.
+            Optional<McBridgeRepository.Link> link = mcBridge.linkOf(session.userId());
+            if (link.isEmpty()) {
+                audit.record(session.username(), "agent.action.create", auditTarget, "DENIED",
+                        "aucun personnage Minecraft lié au compte", rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, "Aucun personnage Minecraft n'est lié à "
+                        + "votre compte PlugAdmin : la téléportation ne déplace que votre propre personnage."));
+                return;
+            }
+            String traveler = link.get().mcUuid();
+            form.put("player", traveler);
+            // Double clic : une seule téléportation en attente par personnage (le plugin refuse aussi).
+            if (agentStore.recentActions(agentId, 50).stream().anyMatch(a -> !a.status().terminal()
+                    && "claim.teleport".equals(a.type())
+                    && traveler.equalsIgnoreCase(a.params().getOrDefault("player", "")))) {
+                audit.record(session.username(), "agent.action.create", auditTarget, "DENIED",
+                        "téléportation déjà en attente pour ce personnage", rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, "Une téléportation de votre personnage "
+                        + "est déjà en cours : rien n'a été envoyé en double.")
+                        + "&focus=" + enc(AgentPages.cleanFocus(form.get("claim"))));
+                return;
+            }
         }
         if ("building.definition.retire".equals(type) || "npc.spot.capture".equals(type)) {
             // #284 : l'auteur du retrait est noté par le plugin dans l'archive ; #381 : l'auteur d'un

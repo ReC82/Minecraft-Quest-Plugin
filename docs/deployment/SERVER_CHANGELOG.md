@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Objets permanents liés au joueur non stockables (#625, TC-390)
+
+### Changement
+
+Le Journal des quêtes, la Pierre de retour et l'Acte de propriété ne peuvent plus entrer dans aucun stockage, dans
+tous les mondes (coffres, Ender, shulkers, tonneaux, hoppers, wagonnets, coffres personnels, sacs, bundles, cadres,
+pots décorés, étagères, bibliothèques sculptées, porte-armures, allays). Rune de rappel et objets ordinaires
+inchangés. Retirer un exemplaire déjà stocké reste permis.
+
+### Action serveur
+
+- `scripts/deploy-verygames.sh -y` depuis `2864105d` (PR #696, CI verte sur la fusion) : **remplacement du JAR
+  seul**. Aucune migration, aucune clé de configuration, aucun fichier de contenu. PlugAdmin inchangé.
+- JAR en ligne SHA-256 `db5fb794118d0b990dd69869519b9eb3d5fa4f2ecc9b4f8c1a4f8b992baf3656`, retéléchargé et
+  identique au JAR local.
+- **Aucun coffre, inventaire ni monde lu, scanné, purgé ou modifié.**
+- DEV était arrêté (RCON refusé) : le JAR est chargé au prochain démarrage par le propriétaire.
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261021T110516Z-predeploy.jar` (SHA-256 `eda37e2b…`).
+
+### Validation
+
+TC-390 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` (rend le JAR `eda37e2b…`), puis redémarrage. Aucune donnée à restaurer.
+
+---
+
 ## 2026-10-21 - Atelier de Lucien : 3 prix démo + choix « Ouvrir l'atelier » → artisan_demo (#18, TC-345)
 
 ### Changement

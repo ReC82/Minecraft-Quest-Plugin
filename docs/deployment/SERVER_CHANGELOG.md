@@ -59,11 +59,20 @@ retour distinct en brouillon, action `portal.verify` en lecture seule. Page Plug
 
 ### Action serveur
 
-- Remplacement du JAR RPGQuest (`scripts/deploy-verygames.sh -y` après CI verte sur la fusion) + redéploiement
-  PlugAdmin (`scripts/plugadmin/deploy.sh`). Aucune migration, aucune clé de configuration, aucun fichier de contenu.
+- **Effectué le 21/10 vers 14:19** : `scripts/deploy-verygames.sh -y` depuis `839489b3` (PR #699, CI verte sur la
+  fusion) — JAR en ligne 4084363 octets, SHA-256 `c4ecdb349ab6da2578f3ad213909e503988872952bd6c5f696c4de763011494a`,
+  retéléchargé et identique ; DEV redémarré par `scripts/verygames-restart.sh` (seul LoDyMcFly connecté), de nouveau
+  ONLINE. PlugAdmin `839489b3` (`scripts/plugadmin/deploy.sh`, `/health` ONLINE, jar servi vérifié). Aucune migration,
+  aucune clé de configuration, aucun fichier de contenu.
+- Relu après redémarrage (lecture seule) : `portal.list` → 2 portails actifs, zones et stratégies inchangées,
+  empreintes identiques à la formule d'avant #566 ; `portal.verify` → OK sur `hub_to_wild` et `hub_to_claims`.
 - **Aucun portail, fichier `world-portals/`, monde, chunk ni joueur touché** ; aucune action `portal.*` envoyée.
 - Champs YAML facultatifs `destination-point` et `return-of`, écrits seulement par PlugAdmin à la première arrivée
   « point fixe » ou au premier portail retour (aucun sur DEV).
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261021T121806Z-predeploy.jar` (SHA-256 `db5fb794…`, JAR #625).
 
 ### Validation
 

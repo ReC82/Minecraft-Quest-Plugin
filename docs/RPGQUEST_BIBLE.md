@@ -3972,7 +3972,8 @@ ces notions vivent sur la page **Diagnostic des PNJ** (`/npcs/diagnostic`).
     résumé de l'état final à la connexion (`OP_NOTICE_STATE`). Messages `player.op-*`.
 -   Variables typées (#319, #320) : registre `variable.VariableTypes` (copie panel
     `panel.agent.KnownVariableTypes`, à faire évoluer ensemble). Booléens `true`/`false` exacts :
-    `CLAIM_TIER_<n>`, `WILD_ENTRY_WARNING_HIDDEN`, `BETA_WARNING_HIDDEN`, `RUNE_RAPPEL_GRANTED`,
+    `CLAIM_TIER_<n>`, `WILD_ENTRY_WARNING_HIDDEN`, `PORTAL_WARNING_HIDDEN_<ID>` (#569), `BETA_WARNING_HIDDEN`,
+    `RUNE_RAPPEL_GRANTED`,
     `STARTER_TOOL_KIT_AVAILABLE`, `WEB_PROFILE_HIDDEN`, `VAULT_UNLOCK_<ID>` ; `STARTER_KIT_TIER` = entier 1–99 ;
     `VAULT_SLOTS_<ID>` = 9…54 par 9. Validé sur **toutes** les écritures : outil PlugAdmin (sélecteur vrai/faux),
     `/rpgadmin player variable set`, action de dialogue `SET_VARIABLE` et récompense de quête `VARIABLE`
@@ -4983,6 +4984,44 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
   `GUARD_TOOK_OVER`, `PLAYER_OFFLINE`.
 - `portal.list` : conditions lisibles dans `conditions` et valeurs brutes dans `access` (préremplissage de la fiche).
 
+### Portails : messages et avertissement par portail (issue #569, #228-P6)
+
+- **Sections `messages:` et `warning:`** d'un fichier `world-portals/<id>.yml`, toutes facultatives ; seules les
+  valeurs personnalisées sont écrites (sinon fichier et empreinte identiques à avant — `hub_to_wild` garde exactement
+  ses textes). MiniMessage, 200 caractères au plus (500 pour `warning.text`) :
+  ```yaml
+  messages:
+    preparing: ""          # attente avant le départ ; vide = celui de l'avertissement, aucun sans avertissement
+    success: ""            # vide = « Téléportation réussie. »
+    welcome: ""            # après l'arrivée ; vide = aucun
+    world-unavailable: ""  # monde de destination non chargé
+    unsafe-arrival: ""     # point fixe non sûr : départ refusé
+    refusal: ""            # condition d'accès (#567) sans message propre ; vide = message par défaut du type
+  warning:
+    mode: ALWAYS           # DEFAULT = seulement vers travel.wild-world (avant #569) | ALWAYS | NEVER
+    title: ""              # vides = textes du Wild (portail vers le Wild) ou textes génériques
+    text: ""
+    hint: ""
+    enter: ""
+    enter-and-hide: ""
+    cancel: ""
+    cancel-text: ""
+    allow-hide: true       # false = « Entrer et ne plus afficher » retiré, avertissement à chaque départ
+  ```
+  Une section illisible (mode inconnu, texte trop long, valeur non texte) fait **ignorer le fichier**.
+- **Garde unique** `WildEntryWarningService`, même fenêtre (Paper Dialog, repli chat) pour tout portail averti ; la
+  page Portails montre les textes effectifs dans « Règles appliquées par le serveur ».
+- **Préférence par joueur et par portail** : `player_variables` → `PORTAL_WARNING_HIDDEN_<ID>` = `"true"`, écrite
+  seulement sur « Entrer et ne plus afficher » ; pour un portail vers le Wild, `WILD_ENTRY_WARNING_HIDDEN` (avant
+  #569) reste lue — reprise sans migration. Avec `allow-hide: false`, aucune préférence n'est lue ni effacée.
+  `/rpgadmin player resetnew` efface les deux (toutes les variables du joueur).
+- **Action `portal.messages`** (permission panel `PORTAL_EDIT`, sensible) : remplace messages et avertissement d'un
+  portail **non actif** (`ACTIVE_MESSAGES_LOCKED` sinon), empreinte et confirmation « portail essentiel ». Paramètres
+  `msg_welcome|preparing|success|unavailable|unsafe|refusal`, `warning_mode`, `warn_title|text|hint|enter|enter_hide|
+  cancel|cancel_text`, `warn_allow_hide` (absent = `true`) ; vide = texte par défaut. Journal `portal-audit.yml`
+  (opération `MESSAGES`, noms des champs modifiés, jamais leur contenu).
+- `portal.list` : `messages` (valeurs brutes), `messageDefaults` (textes affichés quand un champ est vide), `warns`.
+
 ### `/rpgadmin portal` — commandes
 Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.md](TRAVEL.md). Page docs-site : aucune.
 
@@ -5021,7 +5060,7 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
 -   **Aucune inspection d'inventaire** (décision du 2026-10-07, qui remplace la conception initiale de #26 partie B) : ni nourriture, ni arme, ni outil, ni Rune de rappel, ni kit de départ, ni « gear score ». L'ancien avertissement « vous partez sans moyen de rappel », qui lisait l'inventaire, a été retiré.
 -   **Texte** : « Le Wild est une zone dangereuse. Le PvP y est autorisé : d'autres joueurs peuvent vous attaquer. Vous pouvez mourir et perdre les objets de votre inventaire. Voulez-vous continuer ? » + « Le Garde peut vous renseigner sur les conditions actuelles du Wild. » L'état jour/nuit/météo n'est **jamais** affiché ici (c'est le Garde qui renseigne, section 4).
 -   **Trois actions** : « Entrer dans le Wild », « Entrer et ne plus afficher cet avertissement », « Annuler ». **Fermer la fenêtre n'exécute rien** = annulation.
--   **Option persistante** : `player_variables` → `WILD_ENTRY_WARNING_HIDDEN` = `"true"` (aucune migration de schéma ; absente = avertissement affiché). Écrite **uniquement** sur une confirmation réelle de départ, jamais sur une annulation/fermeture. Masque l'avertissement **seul** : préparation, messages de réussite/échec et contrôles de sécurité restent en place. `/rpgadmin player resetnew` la rétablit (il efface toutes les variables).
+-   **Option persistante** : `player_variables` → `WILD_ENTRY_WARNING_HIDDEN` = `"true"` (aucune migration de schéma ; absente = avertissement affiché). Écrite **uniquement** sur une confirmation réelle de départ, jamais sur une annulation/fermeture. Masque l'avertissement **seul** : préparation, messages de réussite/échec et contrôles de sécurité restent en place. `/rpgadmin player resetnew` la rétablit (il efface toutes les variables). **Depuis #569** : la préférence est écrite par portail (`PORTAL_WARNING_HIDDEN_<ID>`) ; `WILD_ENTRY_WARNING_HIDDEN` n'est plus écrite mais reste lue pour tout portail vers le Wild.
 -   **Retour d'attente** : « Recherche d'un point d'arrivée sûr… Téléportation en préparation. » dès la confirmation (ou directement si l'avertissement est masqué), puis réussite ou échec explicite — jamais un faux « Téléportation réussie. » après un échec.
 -   **Pas de boucle de menu, une seule demande en vol** : un joueur qui annule et reste dans le portail ne revoit pas la fenêtre (les gardes ne sont consultés que sur une vraie transition extérieur → intérieur) ; un double-clic ou plusieurs pas dans la zone ne lancent jamais deux recherches/téléportations ; une déconnexion annule le départ différé.
 -   **Présentation** : fenêtre Paper native ou chat cliquable selon `config.yml` → `dialogue.renderer` (même préférence que les dialogues), avec repli chat automatique.

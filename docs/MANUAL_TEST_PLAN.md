@@ -7981,6 +7981,39 @@ non vérifiable / ajustée / impossible / monde absent / retour désaccordé, st
 adaptateur asynchrone simulé ; RANDOM_SAFE / CLAIM_HOME inchangés), `PortalAdminParamsTest`, `PortalsPageTest`
 (fiche, résultat de vérification et périmé, retour prérempli, paramètres validés, refus avant mise en file).
 
+### TC-395 — Portails : messages et avertissement par portail (issue #569, PENDING MANUAL VALIDATION)
+
+**Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 n'autorise que des tests simulés
+par Claude — aucun texte ni réglage écrit sur un portail réel (dont `hub_to_wild` / `hub_to_claims`), aucune
+préférence de joueur écrite ou effacée, aucun `resetnew` réel, aucune téléportation. L'étape 1 est en lecture seule.
+
+1.  Lecture seule : Monde → Portails → « Rafraîchir les portails », fiche `hub_to_wild`. **Attendu** : bloc « Messages
+    et avertissement » : aperçu avec « ⚠ Entrée dans le Wild », le texte du Wild, les trois boutons, aucun message
+    « personnalisé » ; « Désactiver le portail avant de changer ses messages… » (aucun formulaire). Traverser
+    `hub_to_wild` en jeu : fenêtre, textes, boutons et message de préparation identiques à avant. Un joueur qui avait
+    déjà choisi « ne plus afficher » ne la revoit pas.
+2.  (Feu vert requis) Brouillon de test (TC-387 étape 2) vers un monde de test. Messages : avertissement « Toujours »,
+    titre et texte colorés, bienvenue colorée, réussite personnalisée. **Attendu** : aperçu mis à jour, « personnalisé »
+    sur les champs remplis ; `world-portals/<id>.yml` contient `messages:` et `warning:`.
+3.  Activer, traverser. **Attendu** : fenêtre avec vos textes ; « Annuler » → message après annulation, vous restez ;
+    ressortir/rentrer, « Entrer » → message d'attente, téléportation, réussite puis bienvenue personnalisées.
+4.  Revenir, « Entrer et ne plus afficher ». Se déconnecter / reconnecter, retraverser. **Attendu** : plus de fenêtre,
+    départ direct avec le message d'attente. `hub_to_wild` avertit toujours (préférence par portail).
+5.  Désactiver, décocher « Proposer “Entrer et ne plus afficher” », réactiver, traverser. **Attendu** : fenêtre à deux
+    boutons, affichée malgré la préférence de l'étape 4 (conservée, ignorée).
+6.  Désactiver, vider tous les champs, mode « Par défaut », enregistrer. **Attendu** : `messages:` / `warning:` absents
+    du fichier ; plus d'avertissement (destination autre que le Wild).
+7.  Supprimer le portail de test ; `hub_to_wild` / `hub_to_claims` inchangés et fonctionnels.
+
+**Couverture automatisée** : `WildEntryWarningServiceTest` (textes de `hub_to_wild` identiques, textes personnalisés
+avec repli par défaut, mode NEVER même vers le Wild, « ne plus afficher » retiré = avertissement malgré la préférence et
+préférence conservée, préférence par portail, ancienne clé lue seulement vers le Wild et plus écrite),
+`WorldPortalAccessListenerTest` (réussite inchangée sans personnalisation ; attente, réussite et bienvenue dans l'ordre ;
+monde indisponible ; refus par défaut du portail), `WorldPortalAdminServiceTest` (écrits et relus, journal sans contenu,
+retour aux défauts = fichier et empreinte d'origine, portail actif verrouillé, section illisible = fichier ignoré),
+`PortalAdminParamsTest`, `PortalsPageTest` (aperçu, formulaire prérempli, textes actuels rappelés, verrou actif,
+paramètres validés).
+
 ### TC-394 — Portails : conditions d'accès, simulation, téléporter pour test (issue #567, PENDING MANUAL VALIDATION)
 
 **Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 n'autorise que des tests simulés

@@ -44,6 +44,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > progression : même libellé traduit (`ObjectiveLabels`), plus « Tuer ZOMBIE ». Pas de config, pas
 > de migration.
 
+> **Portails : messages et avertissement (#569, 21/10/2026)** — sections facultatives `messages:` (attente, réussite,
+> bienvenue, monde indisponible, destination dangereuse, refus par défaut) et `warning:` (mode DEFAULT/ALWAYS/NEVER,
+> titre, texte, indice, boutons, message d'annulation, `allow-hide`) des portails entre mondes ; vide = texte d'avant.
+> `WildEntryWarningService` sert tout portail averti ; préférence `PORTAL_WARNING_HIDDEN_<ID>` par joueur et par
+> portail, `WILD_ENTRY_WARNING_HIDDEN` toujours lue pour les portails vers le Wild (plus écrite). PlugAdmin : aperçu
+> et formulaire hors portail actif (`portal.messages`). Sans personnalisation : comportement inchangé. Pas de migration.
+
 > **Portails : conditions d'accès (#567, 21/10/2026)** — section `access:` des portails entre mondes : niveau RPG,
 > conditions joueur des dialogues (quête, objet, permission, variable, claim principal, négation), délai par joueur
 > (`portal_cooldowns`, clé `world:<id>`), message de refus par condition ; vérifiées par le serveur après les gardes

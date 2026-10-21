@@ -120,6 +120,8 @@ public final class QuestProgressEngine implements PluginService {
     /** Jeton anti double-clic / spam / appel concurrent d'une remise d'objets (issue #123), par joueur. */
     private final java.util.Set<UUID> deliveriesInFlight = ConcurrentHashMap.newKeySet();
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
+    /** Issue #636 — dialogue PNJ au premier plan : aucun grand titre de quête par-dessus. */
+    private final DialogueFocus dialogueFocus = new DialogueFocus(System::currentTimeMillis);
     /**
      * Issue #185 — nombre de waypoints déjà découverts par un joueur, filtré par monde. Simple
      * couture branchée au bootstrap sur {@code waypoint.WaypointService#discoveredCount} : le moteur
@@ -420,6 +422,7 @@ public final class QuestProgressEngine implements PluginService {
 
     public void unloadForPlayer(UUID playerId) {
         activeByPlayer.remove(playerId);
+        dialogueFocus.discard(playerId);
     }
 
     private int indexOfStep(QuestDefinition quest, String stepId) {
@@ -1757,7 +1760,11 @@ public final class QuestProgressEngine implements PluginService {
         Component title = messagesService.current().format("quest.started-title");
         Component subtitle = messagesService.current().format(
                 "quest.started-subtitle", Placeholder.parsed("quest", quest.title().base()));
-        player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+        // Issue #636 : quête acceptée depuis un dialogue — la fenêtre reste lisible, le nœud
+        // suivant le dit déjà ; les objectifs ci-dessous restent dans le chat.
+        if (!dialogueFocus.isFocused(player.getUniqueId())) {
+            player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+        }
 
         // Une quête sans étape ne passe pas la validation du parseur, mais on ne le suppose pas ici.
         if (quest.steps().isEmpty()) {
@@ -1812,17 +1819,95 @@ public final class QuestProgressEngine implements PluginService {
         if (!player.isOnline()) {
             return;
         }
+        // Issue #636 : une seule annonce, priorité au dialogue ouvert. Pas de titre par-dessus la
+        // fenêtre : une ligne dans le prochain nœud, puis le bilan dans le chat à sa fermeture.
+        DialogueFocus.Deferred completion = new DialogueFocus.Deferred(quest.title().base(), rewardLines);
+        if (dialogueFocus.defer(player.getUniqueId(), completion)) {
+            scheduleFocusExpiry(player.getUniqueId());
+            return;
+        }
         Component title = messagesService.current().format("quest.completed-title");
         Component subtitle = messagesService.current().format(
                 "quest.completed-subtitle", Placeholder.parsed("quest", quest.title().base()));
         player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+        sendRewardSummary(player, completion, false);
+    }
 
-        if (rewardLines.isEmpty()) {
+    /**
+     * Bilan des récompenses réellement accordées (jamais celles seulement prévues). Après un
+     * dialogue, une quête sans récompense est quand même confirmée d'une ligne : c'était sa seule
+     * annonce hors de la fenêtre.
+     */
+    private void sendRewardSummary(Player player, DialogueFocus.Deferred completion, boolean afterDialogue) {
+        if (completion.rewardLines().isEmpty()) {
+            if (afterDialogue) {
+                player.sendMessage(messagesService.current().format(
+                        "quest.completed-after-dialogue", Placeholder.parsed("quest", completion.questTitle())));
+            }
             return;
         }
         player.sendMessage(messagesService.current().format(
-                "quest.reward-summary-header", Placeholder.parsed("quest", quest.title().base())));
-        rewardLines.forEach(player::sendMessage);
+                "quest.reward-summary-header", Placeholder.parsed("quest", completion.questTitle())));
+        completion.rewardLines().forEach(player::sendMessage);
+    }
+
+    // ---- Focus d'un dialogue PNJ (issue #636) --------------------------------------------------
+
+    /** Clic sur un PNJ dont le dialogue va s'ouvrir — avant la progression TALK_TO_NPC du même clic. */
+    public void expectDialogue(Player player) {
+        dialogueFocus.expect(player.getUniqueId());
+    }
+
+    /**
+     * Un nœud de dialogue va être affiché : renouvelle le focus et rend, une seule fois, les lignes
+     * « quête terminée » à ajouter à sa réplique.
+     */
+    public List<Component> dialogueShown(Player player) {
+        dialogueFocus.shown(player.getUniqueId());
+        return dialogueFocus.takeNotices(player.getUniqueId()).stream()
+                .map(questTitle -> messagesService.current().format(
+                        "quest.completed-in-dialogue", Placeholder.parsed("quest", questTitle)))
+                .toList();
+    }
+
+    /** Fin observée du dialogue (fermeture par un choix, échec d'ouverture, déplacement, téléportation). */
+    public void dialogueEnded(Player player) {
+        List<DialogueFocus.Deferred> released = dialogueFocus.end(player.getUniqueId());
+        if (player.isOnline()) {
+            released.forEach(completion -> sendRewardSummary(player, completion, true));
+        }
+    }
+
+    void dialogueMaybeLeftByMove(Player player) {
+        if (dialogueFocus.endsOnMove(player.getUniqueId())) {
+            dialogueEnded(player);
+        }
+    }
+
+    boolean hasDialogueFocus(UUID playerId) {
+        return dialogueFocus.isFocused(playerId) || dialogueFocus.hasPending(playerId);
+    }
+
+    /**
+     * Échap ferme une fenêtre Paper Dialog sans rien dire au serveur : faute d'autre signal, les
+     * annonces retenues partent à l'expiration du délai de garde (vérifiée chaque seconde, et
+     * seulement tant qu'il reste une annonce en attente pour CE joueur).
+     */
+    private void scheduleFocusExpiry(UUID playerId) {
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (!dialogueFocus.hasPending(playerId)) {
+                return;
+            }
+            List<DialogueFocus.Deferred> released = dialogueFocus.expireIfDue(playerId);
+            Player online = plugin.getServer().getPlayer(playerId);
+            if (!released.isEmpty()) {
+                if (online != null) {
+                    released.forEach(completion -> sendRewardSummary(online, completion, true));
+                }
+                return;
+            }
+            scheduleFocusExpiry(playerId);
+        }, 20L);
     }
 
     /** Comme {@link #showObjectiveProgress}, préfixé du titre de la quête (plusieurs quêtes concernées). */

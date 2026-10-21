@@ -4,8 +4,8 @@ import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import java.util.Optional;
 import org.bukkit.NamespacedKey;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 
@@ -41,20 +41,26 @@ final class DialogueNpcInteractListener implements Listener {
         this.npcIdentityService = npcIdentityService;
     }
 
+    /**
+     * Issue #636 : LOWEST, avant la progression {@code TALK_TO_NPC} (LOW) du même clic — une quête
+     * rendue par ce clic sait déjà qu'un dialogue va s'ouvrir et n'affiche pas de grand titre.
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onInteractEarly(PlayerInteractEntityEvent event) {
+        dialogueOf(event).ifPresent(dialogueId -> sessionEngine.expectDialogue(event.getPlayer(), dialogueId));
+    }
+
     @EventHandler(ignoreCancelled = true)
     public void onInteract(PlayerInteractEntityEvent event) {
+        dialogueOf(event).ifPresent(dialogueId -> sessionEngine.open(event.getPlayer(), dialogueId));
+    }
+
+    private Optional<NamespacedKey> dialogueOf(PlayerInteractEntityEvent event) {
         if (npcIdentityService.isCitizensNpc(event.getRightClicked())) {
-            return;
+            return Optional.empty();
         }
-        Optional<String> npcId = npcIdentityService.currentId(event.getRightClicked());
-        if (npcId.isEmpty()) {
-            return;
-        }
-        NamespacedKey dialogueId = new NamespacedKey(DEFAULT_NAMESPACE, npcId.get());
-        if (dialogueEngine.find(dialogueId).isEmpty()) {
-            return;
-        }
-        Player player = event.getPlayer();
-        sessionEngine.open(player, dialogueId);
+        return npcIdentityService.currentId(event.getRightClicked())
+                .map(npcId -> new NamespacedKey(DEFAULT_NAMESPACE, npcId))
+                .filter(dialogueId -> dialogueEngine.find(dialogueId).isPresent());
     }
 }

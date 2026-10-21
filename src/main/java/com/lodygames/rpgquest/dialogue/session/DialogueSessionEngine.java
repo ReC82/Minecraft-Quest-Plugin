@@ -191,6 +191,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     public void open(Player player, NamespacedKey dialogueId) {
         Optional<DialogueDefinition> dialogueOpt = dialogueEngine.find(dialogueId);
         if (dialogueOpt.isEmpty()) {
+            questProgressEngine.dialogueEnded(player);
             player.sendMessage(MM.deserialize(
                     "<red>Dialogue introuvable :</red> <white><id></white>",
                     Placeholder.unparsed("id", dialogueId.toString())));
@@ -200,6 +201,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         entryNode(player, dialogue).thenAccept(nodeId -> openNode(player, dialogue, nodeId))
                 .exceptionally(error -> {
                     logger.error("Échec de l'ouverture du dialogue {} pour {}", dialogueId, player.getUniqueId(), error);
+                    runOnMainThread(() -> questProgressEngine.dialogueEnded(player));
                     return null;
                 });
     }
@@ -229,7 +231,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             // Substitution juste avant le rendu, sur le thread principal : la valeur affichée est
             // donc lue au plus tard possible (état réel au moment où le joueur voit le texte).
             renderer.render(player, dialogue,
-                    placeholders.apply(player, dialogue.id(), withChosenLine(player, dialogue, node), delivered),
+                    withQuestNotices(player,
+                            placeholders.apply(player, dialogue.id(), withChosenLine(player, dialogue, node), delivered)),
                     visible);
             // Issue #12 : c'est le SEUL endroit où un nœud est réellement affiché au joueur, donc
             // le seul endroit où « lu » a un sens. Ouvrir un PNJ ne présente que le nœud de
@@ -426,6 +429,19 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         justDelivered.remove(player.getUniqueId());
         shownOffers.remove(player.getUniqueId());
         player.closeDialog();
+        // Issue #636 : fenêtre fermée — le bilan des quêtes terminées pendant le dialogue part maintenant.
+        questProgressEngine.dialogueEnded(player);
+    }
+
+    /**
+     * Issue #636 — clic sur un PNJ dont le dialogue va s'ouvrir, appelé AVANT la progression
+     * {@code TALK_TO_NPC} du même clic : une quête rendue par ce clic n'affiche aucun titre
+     * par-dessus la fenêtre qui s'ouvre.
+     */
+    void expectDialogue(Player player, NamespacedKey dialogueId) {
+        if (dialogueEngine.find(dialogueId).isPresent()) {
+            questProgressEngine.expectDialogue(player);
+        }
     }
 
     // ---- Offres de catalogue (issue #369) ------------------------------------------------------
@@ -472,7 +488,27 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         }
         // Issue #475 : le locuteur (« %npc_name% ») et la description de quête de l'offre passent
         // par les mêmes valeurs dynamiques qu'un nœud écrit dans le fichier.
-        renderer.render(player, dialogue, placeholders.apply(player, dialogue.id(), node), visible);
+        renderer.render(player, dialogue, withQuestNotices(player, placeholders.apply(player, dialogue.id(), node)),
+                visible);
+    }
+
+    /**
+     * Issue #636 — le nœud va être affiché : le focus du dialogue est renouvelé (aucun grand titre
+     * de quête par-dessus la fenêtre) et chaque quête terminée depuis le nœud précédent est
+     * signalée une fois, sous la réplique. Le fichier du dialogue n'est jamais modifié : seule la
+     * copie rendue reçoit la ligne, après les valeurs dynamiques (un titre de quête n'est jamais
+     * interprété comme un {@code %placeholder%}).
+     */
+    private DialogueNode withQuestNotices(Player player, DialogueNode node) {
+        List<net.kyori.adventure.text.Component> notices = questProgressEngine.dialogueShown(player);
+        if (notices.isEmpty()) {
+            return node;
+        }
+        StringBuilder suffix = new StringBuilder();
+        notices.forEach(notice -> suffix.append('\n').append(MM.serialize(notice)));
+        Map<String, String> withNotices = new java.util.LinkedHashMap<>();
+        node.text().byLocale().forEach((locale, text) -> withNotices.put(locale, text + "\n" + suffix));
+        return node.withSpeakerAndText(node.speaker(), new LocalizedText(withNotices));
     }
 
     private void onCatalogOfferChoice(Player player, DialogueDefinition dialogue, String nodeId, int choiceIndex) {

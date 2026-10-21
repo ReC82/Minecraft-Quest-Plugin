@@ -5,8 +5,8 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import java.util.Optional;
 import net.citizensnpcs.api.event.NPCRightClickEvent;
 import org.bukkit.NamespacedKey;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 
 /**
@@ -36,17 +36,20 @@ final class DialogueCitizensNpcInteractListener implements Listener {
         this.npcIdentityService = npcIdentityService;
     }
 
+    /** Issue #636 : même rôle que {@link DialogueNpcInteractListener#onInteractEarly}. */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onClickEarly(NPCRightClickEvent event) {
+        dialogueOf(event).ifPresent(dialogueId -> sessionEngine.expectDialogue(event.getClicker(), dialogueId));
+    }
+
     @EventHandler(ignoreCancelled = true)
     public void onClick(NPCRightClickEvent event) {
-        Optional<String> npcId = npcIdentityService.currentId(event.getNPC().getEntity());
-        if (npcId.isEmpty()) {
-            return;
-        }
-        NamespacedKey dialogueId = new NamespacedKey(DEFAULT_NAMESPACE, npcId.get());
-        if (dialogueEngine.find(dialogueId).isEmpty()) {
-            return;
-        }
-        Player player = event.getClicker();
-        sessionEngine.open(player, dialogueId);
+        dialogueOf(event).ifPresent(dialogueId -> sessionEngine.open(event.getClicker(), dialogueId));
+    }
+
+    private Optional<NamespacedKey> dialogueOf(NPCRightClickEvent event) {
+        return npcIdentityService.currentId(event.getNPC().getEntity())
+                .map(npcId -> new NamespacedKey(DEFAULT_NAMESPACE, npcId))
+                .filter(dialogueId -> dialogueEngine.find(dialogueId).isPresent());
     }
 }

@@ -1,15 +1,16 @@
 ---
 title: Portails
 category: Monde
-tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, avertissement, diagnostic]
+tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, avertissement, diagnostic, brouillon, emplacement, activer, désactiver]
 order: 2
 ---
 
 # Portails
 
-La page **Monde → Portails** (`/portals`) liste tous les portails du serveur. Elle est en
-**lecture seule** : rien n'y crée, ne modifie, n'active ni ne téléporte. Cliquer sur
-**Rafraîchir les portails** relit le serveur (action `portal.list`).
+La page **Monde → Portails** (`/portals`) liste tous les portails du serveur. Cliquer sur
+**Rafraîchir les portails** relit le serveur (action `portal.list`). Avec les permissions
+`PORTAL_EDIT` et `PORTAL_ENABLE` (propriétaire par défaut), on y crée et gère les portails entre
+mondes — voir « Créer et gérer un portail » plus bas. Aucun test de téléportation n'est proposé.
 
 Deux sortes de portails sont réunies dans une seule liste :
 
@@ -38,11 +39,50 @@ Pour chaque portail, la fiche montre :
 Un portail entre mondes n'a **aucune condition propre** (niveau, quête, permission) : la ligne
 « Déclenchement » le précise, mais les règles du bloc 3 (Wild, Claims) restent appliquées.
 
-La recherche et les filtres (Actifs, Désactivés, Ancien format, Avec problème) affichent un message
-explicite quand aucun portail ne correspond (ex. « Aucun portail désactivé. »).
+La recherche et les filtres (Actifs, Brouillons, Désactivés, Ancien format, Avec problème) affichent
+un message explicite quand aucun portail ne correspond (ex. « Aucun portail désactivé. »).
 
-Le **nom** affiché (« Portail vers le Wild ») est déduit de la destination : aucun nom n'est encore
-enregistré dans les fichiers.
+Le **nom** affiché est celui enregistré dans le fichier (`name:`) ; sans nom, il est déduit de la
+destination (« Portail vers le Wild »).
+
+## Créer et gérer un portail
+
+**Créer un portail en brouillon** (bas de la liste, `PORTAL_EDIT`) : identifiant définitif, nom
+affiché facultatif, zone d'activation, monde d'arrivée et type d'arrivée. Le brouillon est écrit
+dans `world-portals/<id>.yml` avec `enabled: false` et `draft: true` : **il ne téléporte personne**.
+
+La **zone d'activation** se règle de deux façons :
+
+- **autour d'un emplacement** marqué en jeu avec l'outil d'emplacement (page **Emplacements**) :
+  largeur (en travers de la face de l'emplacement), hauteur (vers le haut depuis le bloc
+  d'ancrage), profondeur (le long de la face), centrées sur l'emplacement. Exemple : une arche
+  3 × 4 × 1 face au nord couvre 3 blocs en X, 4 en Y, 1 en Z. Le fichier garde `site:` et
+  `size:` ; la page Emplacements affiche alors « Utilisé par le portail … » ;
+- **en coordonnées** : deux coins, comme `hub_to_wild` et `hub_to_claims`.
+
+32 blocs au plus de chaque côté. Une zone qui recouvre celle d'un autre portail est **refusée** à
+l'enregistrement et **au rechargement** du serveur (le portail déjà chargé garde sa zone, le fichier
+ajouté est ignoré et signalé).
+
+Dans la **fiche** :
+
+- **Activer / Désactiver** (`PORTAL_ENABLE`) : activer vérifie que les deux mondes sont chargés, que
+  l'emplacement existe encore et que la zone ne recouvre aucun portail. Désactiver garde toute la
+  configuration ;
+- **Nom affiché** (`PORTAL_EDIT`) : l'identifiant ne change jamais ;
+- **Zone d'activation** (`PORTAL_EDIT`) : seulement quand le portail n'est pas actif, sans changer de
+  monde ;
+- **Supprimer le portail** (`PORTAL_EDIT`) : seulement s'il n'est pas actif ; supprime le fichier, ne
+  touche ni l'emplacement ni un bâtiment posé, ni aucun bloc.
+
+Chaque formulaire demande une case de confirmation et porte l'**empreinte** du dernier relevé : si
+le portail a changé entre-temps, le serveur refuse (« rafraîchir puis recommencer »). Un portail
+**essentiel** — il mène au Hub, au Wild ou aux Claims, comme `hub_to_wild` et `hub_to_claims` —
+demande une seconde case. Toute modification est journalisée avec l'état avant / après dans
+`plugins/RPGQuest/portal-audit.yml` (bloc « Modifications depuis PlugAdmin » de la fiche).
+
+Un emplacement cité par un portail ne peut pas être supprimé : supprimer d'abord le portail, ou
+changer sa zone.
 
 ---
 
@@ -63,13 +103,15 @@ Le portail se trouve dans un monde non chargé : personne ne peut l'atteindre.
 
 ## Identifiant de portail en double
 
-Deux fichiers déclarent le même identifiant. Les commandes n'atteignent que le premier, mais les
-deux zones restent actives. Ne rien supprimer sans décision du propriétaire.
+Deux fichiers déclarent le même identifiant. Depuis #565, le serveur ne garde que le premier (le
+portail déjà chargé, sinon l'ordre alphabétique) et ignore l'autre. Ne rien supprimer sans décision
+du propriétaire.
 
 ## Zones de portail superposées
 
-Deux zones d'activation se recouvrent. Là où elles se recouvrent, le serveur ne consulte que le
-portail du premier fichier (ordre alphabétique), même s'il est désactivé.
+Deux zones d'activation se recouvrent. Depuis #565, le serveur refuse ce cas au chargement : le
+portail déjà chargé (sinon le premier fichier par ordre alphabétique) garde sa zone, l'autre fichier
+est ignoré (« Fichier de portail ignoré »).
 
 ## Portail de zone superposé
 
@@ -92,6 +134,16 @@ Le portail de zone cite une destination absente de `destinations/` : la télépo
 ## Portail sans destination
 
 Le portail de zone n'a aucune destination : il ne téléporte personne.
+
+## Portail en brouillon
+
+Créé depuis PlugAdmin, jamais activé (`draft: true`, `enabled: false`) : entrer dans la zone ne fait
+rien. L'activer depuis la fiche.
+
+## Emplacement du portail introuvable
+
+Le portail cite un emplacement (`site:`) qui n'existe plus. Sa zone enregistrée ne change pas, mais
+il ne peut plus être activé : choisir un autre emplacement ou des coordonnées.
 
 ## Portail désactivé
 

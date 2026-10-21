@@ -24,7 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Issue #564 (#228-P1) — page « Portails » en lecture seule, d'après le relevé portal.list. */
+/** Issues #564 / #565 (#228-P1/P2) — page « Portails » d'après le relevé portal.list, et sa gestion. */
 class PortalsPageTest {
 
     private static final String WILD_GUARD = "{\"code\":\"WILD_WARNING\",\"title\":\"Avertissement avant d'entrer "
@@ -127,34 +127,107 @@ class PortalsPageTest {
         assertTrue(missing.contains("n'apparaît pas dans le dernier relevé"));
     }
 
+    /** Relevé #565 : champs de gestion (état, empreinte, essentiel), un brouillon et la liste des mondes. */
+    static final String RELEVE_565 = RELEVE.replace("\"conditions\":[],\"issues\":[]},",
+            "\"conditions\":[],\"issues\":[],\"state\":\"ACTIVE\",\"storedName\":\"\",\"site\":\"\","
+                    + "\"essential\":true,\"editable\":true,\"fingerprint\":\"aaaaaaaaaaaaaaaaaaaaaaaa\","
+                    + "\"minX\":737,\"minY\":66,\"minZ\":-673,\"maxX\":740,\"maxY\":69,\"maxZ\":-673},"
+                    + "{\"id\":\"arche_marche\",\"name\":\"Arche du marché\",\"kind\":\"WORLD_PORTAL\","
+                    + "\"enabled\":false,\"file\":\"arche_marche.yml\",\"world\":\"world_hub\",\"worldLoaded\":true,"
+                    + "\"worldRole\":\"HUB\",\"min\":\"699, 64, -650\",\"max\":\"701, 67, -650\",\"size\":\"3 × 4 × 1\","
+                    + "\"destinationWorld\":\"test_world\",\"destinationLoaded\":true,\"destinationRole\":\"\","
+                    + "\"strategy\":\"WORLD_SPAWN\",\"arrival\":[],\"trigger\":[],\"guards\":[],\"conditions\":[],"
+                    + "\"issues\":[{\"code\":\"PORTAL_DRAFT\",\"severity\":\"info\",\"message\":\"Brouillon.\"}],"
+                    + "\"state\":\"DRAFT\",\"storedName\":\"Arche du marché\",\"site\":\"buildsite_0007\","
+                    + "\"siteName\":\"Place du marché\",\"width\":3,\"height\":4,\"depth\":1,\"essential\":false,"
+                    + "\"editable\":true,\"fingerprint\":\"bbbbbbbbbbbbbbbbbbbbbbbb\",\"minX\":699,\"minY\":64,"
+                    + "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650},")
+            .replace("\"issues\":[{\"code\":\"PORTAL_FILE_SKIPPED\"",
+                    "\"worlds\":[\"claims\",\"test_world\",\"wild\",\"world_hub\"],\"history\":[{\"at\":"
+                            + "\"2026-10-21T05:00:00Z\",\"actor\":\"owner\",\"operation\":\"CREATE_DRAFT\","
+                            + "\"portal\":\"arche_marche\",\"before\":\"\",\"after\":\"état DRAFT\"}],"
+                            + "\"issues\":[{\"code\":\"PORTAL_FILE_SKIPPED\"");
+
     @Test
-    void noMutatingPortalActionIsExposedAnywhereOnThePage() throws Exception {
+    void theOwnerGetsADraftFormAndNoTeleportTest() throws Exception {
         start();
         login();
-        runAction("portal.list", RELEVE);
-        for (String path : new String[] {"/portals?agent=" + TestConfig.AGENT_ID,
-                "/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild"}) {
-            String page = get(path).body();
-            Matcher m = Pattern.compile("name=\"type\" value=\"([^\"]+)\"").matcher(page);
-            while (m.find()) {
-                assertFalse(m.group(1).startsWith("portal.") && !m.group(1).equals("portal.list"),
-                        "action mutative exposée : " + m.group(1));
-                assertFalse(m.group(1).startsWith("worldportal") || m.group(1).startsWith("player.teleport"),
-                        "action mutative exposée : " + m.group(1));
+        runAction("portal.list", RELEVE_565);
+        String page = get("/portals?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Créer un portail en brouillon") && page.contains("value=\"portal.create\""));
+        assertTrue(page.contains("<option value=\"test_world\">"), "mondes chargés proposés en arrivée");
+        assertTrue(page.contains("Brouillons · 1") && page.contains(">Brouillon<"));
+        assertFalse(page.contains("Téléporter") || page.contains("player.teleport"), "aucun test de téléportation");
+    }
+
+    @Test
+    void theFicheOfAnEssentialActivePortalOffersOnlyGuardedActions() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_565);
+        String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild").body();
+        assertTrue(wild.contains("value=\"portal.disable\"") && !wild.contains("value=\"portal.enable\""));
+        assertTrue(wild.contains("name=\"expected\" value=\"aaaaaaaaaaaaaaaaaaaaaaaa\""), "empreinte du relevé");
+        assertTrue(wild.contains("name=\"confirm_essential\""), "seconde confirmation des portails essentiels");
+        assertTrue(wild.contains("Désactiver le portail avant de déplacer"), "zone verrouillée tant qu'il est actif");
+        assertFalse(wild.contains("value=\"portal.delete\""), "un portail actif ne se supprime pas");
+        String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&focus=arche_marche").body();
+        assertTrue(draft.contains("value=\"portal.enable\"") && draft.contains("value=\"portal.delete\""));
+        assertTrue(draft.contains("buildsite_0007") && draft.contains("Place du marché"));
+        assertTrue(draft.contains("Brouillon créé") && draft.contains("Modifications depuis PlugAdmin"), "journal");
+        assertFalse(draft.contains("name=\"confirm_essential\""));
+    }
+
+    @Test
+    void aDraftCreationIsQueuedWithValidatedParamsAndTheSessionAsAuthor() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=portal.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=Arche_Marche&name=Arche&zone_mode=site&site=buildsite_0007&width=3&height=4"
+                + "&depth=1&destination_world=wild&strategy=random_safe&by=pirate&confirm=true");
+        String queued = pollActions();
+        assertTrue(queued.contains("portal.create"), queued);
+        assertTrue(queued.contains("\"id\":\"arche_marche\"") && queued.contains("\"strategy\":\"RANDOM_SAFE\""));
+        assertTrue(queued.contains("\"by\":\"owner\"") && !queued.contains("pirate"), "auteur = session");
+    }
+
+    @Test
+    void portalMutationsWithoutConfirmationOrFingerprintAreRefused() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=portal.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche&zone_mode=site&site=buildsite_0007&width=3&height=4&depth=1"
+                + "&destination_world=wild");
+        post("/agents/action", "_csrf=" + token + "&type=portal.disable&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=hub_to_wild&confirm=true");
+        post("/agents/action", "_csrf=" + token + "&type=portal.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche&zone_mode=site&site=buildsite_0007&width=99&height=4&depth=1"
+                + "&destination_world=wild&confirm=true");
+        assertFalse(pollActions().contains("portal."), "rien mis en file");
+    }
+
+    @Test
+    void portalWritesAreOwnerOnlyByDefault() {
+        for (com.lodygames.rpgquest.panel.authz.Role role : com.lodygames.rpgquest.panel.authz.Role.values()) {
+            if (role != com.lodygames.rpgquest.panel.authz.Role.OWNER) {
+                assertFalse(role.has(com.lodygames.rpgquest.panel.authz.Permission.PORTAL_EDIT), role.name());
+                assertFalse(role.has(com.lodygames.rpgquest.panel.authz.Permission.PORTAL_ENABLE), role.name());
             }
-            assertFalse(page.contains("Créer un portail") || page.contains(">Activer<") || page.contains("Téléporter"));
         }
     }
 
     @Test
-    void aMutatingPortalActionIsRefusedByTheCatalog() throws Exception {
+    void aSiteUsedByAPortalCannotBeDeletedFromThePanel() throws Exception {
         start();
         login();
+        runAction("portal.list", RELEVE_565);
         String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
-        HttpResponse<String> res = post("/agents/action", "_csrf=" + token + "&type=portal.create&agent="
-                + TestConfig.AGENT_ID + "&return=/portals&id=lody_test");
-        assertFalse(pollActions().contains("portal.create"), "aucune action portal.create mise en file");
-        assertTrue(res.statusCode() >= 300, "refusé / redirigé");
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token + "&type=building.site.delete&agent="
+                + TestConfig.AGENT_ID + "&return=/buildings/sites&id=buildsite_0007&confirm=true");
+        assertTrue(res.headers().firstValue("Location").orElse("").contains("arche_marche"));
+        assertFalse(pollActions().contains("building.site.delete"));
     }
 
     private String pollActions() throws Exception {

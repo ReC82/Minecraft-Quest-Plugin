@@ -243,11 +243,11 @@ public final class DiagnosticHelp {
                 "Chargez le monde de départ, ou désactivez le portail.", "portails");
         add("PORTAL_DUPLICATE_ID", Level.ERROR, "Identifiant de portail en double",
                 "{detail}",
-                "Les commandes n'atteignent que le premier fichier ; chaque zone reste pourtant active en jeu.",
+                "Le serveur refuse désormais ce cas au chargement : seul le premier fichier est retenu.",
                 "Gardez un seul fichier par identifiant sur le serveur (ne rien supprimer sans décision du propriétaire).", "portails");
         add("PORTAL_OVERLAP", Level.WARNING, "Zones de portail superposées",
                 "{detail}",
-                "Là où les zones se recouvrent, un seul portail est consulté — même s'il est désactivé.",
+                "Le serveur refuse désormais ce cas au chargement : un des deux fichiers est ignoré.",
                 "Séparez les zones d'activation des deux portails.", "portails");
         add("PORTAL_OVERLAP_ENGINES", Level.WARNING, "Portail de zone superposé",
                 "{detail}",
@@ -273,6 +273,14 @@ public final class DiagnosticHelp {
                 "{detail}",
                 "Entrer dans sa zone ne téléporte personne.",
                 "Rien à faire si c'est voulu.", "portails");
+        add("PORTAL_DRAFT", Level.INFO, "Portail en brouillon",
+                "{detail}",
+                "Le portail est enregistré mais n'a jamais été activé : entrer dans sa zone ne téléporte personne.",
+                "L'activer depuis sa fiche quand la zone et l'arrivée sont prêtes.", "portails");
+        add("PORTAL_SITE_MISSING", Level.WARNING, "Emplacement du portail introuvable",
+                "{detail}",
+                "La zone enregistrée reste la même, mais le portail ne peut plus être activé.",
+                "Choisir un autre emplacement (ou des coordonnées) dans « Zone d'activation » de la fiche.", "portails");
         add("PORTAL_SAME_WORLD", Level.INFO, "Portail vers son propre monde",
                 "{detail}",
                 "Le joueur reste dans le même monde.",

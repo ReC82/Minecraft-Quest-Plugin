@@ -2928,6 +2928,19 @@ public final class AgentPages {
                 : "<span class=\"muted\">inconnu</span>");
         dlRow(sb, "Description du lieu", site.description().isEmpty()
                 ? "<span class=\"muted\">aucune</span>" : Http.esc(site.description()));
+        // Issue #565 : un emplacement « est un emplacement de portail » parce qu'un portail le cite.
+        List<String> usedBy = portalsUsingSite(agentId, site.id());
+        if (!usedBy.isEmpty()) {
+            StringBuilder links = new StringBuilder();
+            for (String portal : usedBy) {
+                links.append(links.length() == 0 ? "" : ", ").append("<a href=\"").append(PortalPages.PATH)
+                        .append("?agent=").append(Http.esc(java.net.URLEncoder.encode(agentId,
+                                java.nio.charset.StandardCharsets.UTF_8))).append("&amp;portal=")
+                        .append(Http.esc(java.net.URLEncoder.encode(portal, java.nio.charset.StandardCharsets.UTF_8)))
+                        .append("\"><code>").append(Http.esc(portal)).append("</code></a>");
+            }
+            dlRow(sb, "Utilisé par le portail", links.toString());
+        }
         sb.append("</dl>");
         sb.append(legacyBuildingBrief(session, agentId, site));
 
@@ -2942,7 +2955,7 @@ public final class AgentPages {
         }
         if (canDelete) {
             sb.append(buildingSiteDeleteZone(session, agentId, site,
-                    directory.placementFor(site.id()).isPresent() || "OCCUPIED".equals(site.status())));
+                    directory.placementFor(site.id()).isPresent() || "OCCUPIED".equals(site.status()), usedBy));
         }
         sb.append("</div></div></div>");
         return sb.toString();
@@ -3771,7 +3784,7 @@ public final class AgentPages {
      */
     private String buildingSiteDeleteZone(Session session, String agentId,
                                           com.lodygames.rpgquest.panel.building.BuildingSiteView site,
-                                          boolean occupied) {
+                                          boolean occupied, List<String> usedByPortals) {
         String head = "<div class=\"danger-zone\"><div class=\"dz-title\">"
                 + Icons.icon("warning") + "Supprimer l'emplacement (le repère seulement)</div>"
                 + "<p class=\"muted\">Retire ce repère de la liste des emplacements. "
@@ -3784,6 +3797,11 @@ public final class AgentPages {
                     + "« Retirer le bâtiment et restaurer le terrain » : supprimer le repère maintenant "
                     + "laisserait le bâtiment dans le monde, sans plus aucun moyen de rendre le terrain.")
                     + "</div>";
+        }
+        if (!usedByPortals.isEmpty()) {
+            return head + Ui.banner("info", "Utilisé par le(s) portail(s) " + Http.esc(String.join(", ",
+                    usedByPortals)) + " : supprimer d'abord ces portails (page Portails), ou changer leur zone. "
+                    + "Le serveur refuse de toute façon de supprimer un emplacement cité par un portail.") + "</div>";
         }
         return head + ""
                 + formStart(session, agentId, "building.site.delete", "/buildings/sites", "")
@@ -10084,6 +10102,18 @@ public final class AgentPages {
         return Optional.empty();
     }
 
+    /** Issue #565 : portails du dernier relevé {@code portal.list} dont la zone vient de cet emplacement. */
+    public List<String> portalsUsingSite(String agentId, String siteId) {
+        if (agentId == null || agentId.isBlank() || siteId == null || siteId.isBlank()) {
+            return List.of();
+        }
+        return latestDetails(agentId, "portal.list")
+                .map(d -> d.get("portals") instanceof List<?> l ? l : List.of())
+                .orElse(List.of()).stream()
+                .filter(o -> o instanceof Map<?, ?> m && siteId.equalsIgnoreCase(String.valueOf(m.get("site"))))
+                .map(o -> String.valueOf(((Map<?, ?>) o).get("id"))).toList();
+    }
+
     private Optional<Map<String, Object>> latestDetails(String agentId, String type) {
         // Dernière action RÉUSSIE du type : une action « Rafraîchir » plus récente encore en cours
         // (ou en échec) ne doit pas vider le catalogue déjà chargé (issue affichage /stories).
@@ -11482,9 +11512,21 @@ public final class AgentPages {
         String header = agentPicker(agentId, PortalPages.PATH, "")
                 + listCatbar("Portails", compactRefresh(session, agentId, "portal.list", "Rafraîchir les portails",
                 details == null ? "btn-warning" : "btn-outline-primary", PortalPages.PATH));
+        // Après une action de la fiche, le panel revient avec focus=<id du portail> : la fiche reste ouverte.
+        String selected = str(q.get("portal")).trim();
+        if (selected.isEmpty() && !str(q.get("focus")).startsWith("tab-")) {
+            selected = cleanFocus(q.get("focus"));
+        }
+        // Issue #565 : formulaires selon PORTAL_EDIT / PORTAL_ENABLE ; emplacements du relevé building.site.list.
+        List<PortalPages.SiteOption> sites = buildingSiteDirectory(agentId).sites().stream()
+                .map(st -> new PortalPages.SiteOption(st.id(), st.name(), st.world(), st.positionLabel(),
+                        st.facingLabel())).toList();
+        PortalPages.Manage manage = new PortalPages.Manage(session.csrfToken(),
+                perms.can(session.effective(), Permission.PORTAL_EDIT),
+                perms.can(session.effective(), Permission.PORTAL_ENABLE), sites);
         return PortalPages.render(new PortalPages.View(agentId, details, header,
-                row.map(r -> when(at(r))).orElse(""), str(q.get("portal")).trim(), str(q.get("file")).trim(),
-                worldNames(agentId)));
+                row.map(r -> when(at(r))).orElse(""), selected, str(q.get("file")).trim(),
+                worldNames(agentId), manage));
     }
 
     // ---- Claims (issue #637) ---------------------------------------------------------------------

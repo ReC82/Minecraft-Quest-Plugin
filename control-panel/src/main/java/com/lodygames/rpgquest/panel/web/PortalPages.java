@@ -8,12 +8,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Issue #564 (#228-P1) — page « Portails » en <strong>lecture seule</strong> : la liste des
- * portails (cartes) et la fiche d'un portail, d'après le dernier relevé {@code portal.list}.
+ * Issue #564 (#228-P1) — page « Portails » : la liste des portails (cartes) et la fiche d'un
+ * portail, d'après le dernier relevé {@code portal.list}. La présentation reprend celle de la page
+ * Mondes ({@link WorldPages}).
  *
- * <p>Aucune action mutative n'est exposée : pas de création, de modification, d'activation ni de
- * test de téléportation, pas même désactivés. Le seul formulaire de la page est « Rafraîchir »,
- * qui relit le serveur. La présentation reprend celle de la page Mondes ({@link WorldPages}).</p>
+ * <p>Issue #565 (#228-P2) — avec {@code PORTAL_EDIT} : créer un portail en <strong>brouillon</strong>
+ * (il ne téléporte personne), le renommer, régler sa zone tant qu'il n'est pas actif, le supprimer ;
+ * avec {@code PORTAL_ENABLE} : l'activer ou le désactiver. Chaque formulaire porte l'empreinte du
+ * relevé (le serveur refuse si le portail a changé) et une case de confirmation ; un portail
+ * essentiel (vers le Hub, le Wild ou les Claims) en demande une seconde. Aucun test de
+ * téléportation n'est proposé ici.</p>
  */
 public final class PortalPages {
 
@@ -28,15 +32,38 @@ public final class PortalPages {
      * @param file       fichier du portail choisi, pour départager deux portails de même id
      */
     public record View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
-                       String selected, String file, WorldNames names) {
+                       String selected, String file, WorldNames names, Manage manage) {
 
         public View {
             names = names == null ? WorldNames.DEFAULTS : names;
+            manage = manage == null ? Manage.NONE : manage;
         }
 
         public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
                     String selected, String file) {
-            this(agentId, details, headerHtml, releveHtml, selected, file, WorldNames.DEFAULTS);
+            this(agentId, details, headerHtml, releveHtml, selected, file, WorldNames.DEFAULTS, Manage.NONE);
+        }
+    }
+
+    /** Un emplacement #213 du dernier relevé {@code building.site.list}. */
+    public record SiteOption(String id, String name, String world, String position, String facing) {
+    }
+
+    /**
+     * Droits de la session et données des formulaires (issue #565). {@link #NONE} : aucun formulaire.
+     *
+     * @param csrf jeton CSRF de la session
+     */
+    public record Manage(String csrf, boolean canEdit, boolean canEnable, List<SiteOption> sites) {
+
+        public static final Manage NONE = new Manage("", false, false, List.of());
+
+        public Manage {
+            sites = sites == null ? List.of() : List.copyOf(sites);
+        }
+
+        boolean any() {
+            return canEdit || canEnable;
         }
     }
 
@@ -47,8 +74,8 @@ public final class PortalPages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("portal", "Portails",
                 "Tous les portails du serveur : où ils se trouvent, où ils mènent et les règles que le serveur "
-                        + "applique avant de téléporter. Page en lecture seule : rien n'est créé, modifié, activé "
-                        + "ni téléporté d'ici.", ""));
+                        + "applique avant de téléporter. Un nouveau portail naît en brouillon : il ne téléporte "
+                        + "personne tant qu'il n'est pas activé.", ""));
         sb.append(v.headerHtml());
         if (v.agentId().isEmpty()) {
             return sb.toString();
@@ -68,7 +95,11 @@ public final class PortalPages {
         for (Map<String, Object> issue : maps(v.details().get("issues"))) {
             sb.append(issueHtml(issue, "le serveur"));
         }
-        sb.append("<div class=\"p-scope\">").append(list(v.agentId(), portals, v.names())).append("</div>");
+        sb.append("<div class=\"p-scope\">").append(list(v.agentId(), portals, v.names()));
+        if (v.manage().canEdit()) {
+            sb.append(createForm(v));
+        }
+        sb.append("</div>");
         return sb.toString();
     }
 
@@ -77,11 +108,13 @@ public final class PortalPages {
     private static String list(String agentId, List<Map<String, Object>> portals, WorldNames names) {
         StringBuilder sb = new StringBuilder();
         long active = portals.stream().filter(p -> bool(p.get("enabled"))).count();
+        long drafts = portals.stream().filter(p -> "DRAFT".equals(str(p.get("state")))).count();
         long legacy = portals.stream().filter(PortalPages::legacy).count();
         long withIssue = portals.stream().filter(PortalPages::hasProblem).count();
         String chips = AgentPages.filterBtn("", "Tous · " + portals.size(), true)
                 + AgentPages.filterBtn("active", "Actifs · " + active, false, "Aucun portail actif")
-                + AgentPages.filterBtn("disabled", "Désactivés · " + (portals.size() - active), false,
+                + AgentPages.filterBtn("draft", "Brouillons · " + drafts, false, "Aucun brouillon")
+                + AgentPages.filterBtn("disabled", "Désactivés · " + (portals.size() - active - drafts), false,
                         "Aucun portail désactivé")
                 + AgentPages.filterBtn("legacy", "Ancien format · " + legacy, false, "Aucun portail à l'ancien format")
                 + AgentPages.filterBtn("issue", "Avec problème · " + withIssue, false, "Aucun portail avec problème");
@@ -96,9 +129,9 @@ public final class PortalPages {
             sb.append(card(agentId, p, names));
         }
         sb.append("</div>").append(AgentPages.filterEmpty("portals", "Aucun portail"));
-        sb.append("<p class=\"muted small w-small-note\">Les portails actifs sont repris tels quels depuis les "
-                + "fichiers du serveur : leurs règles Wild et Claims restent appliquées par le serveur. La création "
-                + "et la modification feront l'objet d'un lot séparé.</p>");
+        sb.append("<p class=\"muted small w-small-note\">Les portails sont lus tels quels depuis les fichiers du "
+                + "serveur : leurs règles Wild et Claims restent appliquées par le serveur. Le choix d'une destination "
+                + "précise, les conditions d'accès et le test de téléportation feront l'objet de lots séparés.</p>");
         return sb.toString();
     }
 
@@ -106,7 +139,7 @@ public final class PortalPages {
         String id = str(p.get("id"));
         boolean enabled = bool(p.get("enabled"));
         List<String> cats = new ArrayList<>();
-        cats.add(enabled ? "active" : "disabled");
+        cats.add(enabled ? "active" : "DRAFT".equals(str(p.get("state"))) ? "draft" : "disabled");
         if (legacy(p)) {
             cats.add("legacy");
         }
@@ -180,10 +213,11 @@ public final class PortalPages {
                 .append(dl("Coin minimum", str(p.get("min"))))
                 .append(dl("Coin maximum", str(p.get("max"))))
                 .append(dl("Taille (x × y × z)", str(p.get("size")) + " blocs"))
+                .append(siteHtml(v, p))
                 .append(dlHtml("Fichier", legacy(p) ? "<code>portals/" + Http.esc(str(p.get("id"))) + ".yml</code>"
                         : "<code>world-portals/" + Http.esc(str(p.get("file"))) + "</code>"))
                 .append("</dl><p class=\"field-help\">Zone d'activation telle que le serveur la lit. Aucune "
-                        + "construction ni aucun emplacement n'est encore lié aux portails.</p></section>");
+                        + "construction n'est encore liée aux portails.</p></section>");
         sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("travel"))
                 .append("2 · Téléportation</h3><dl class=\"w-dl\">")
                 .append(dlHtml("Monde d'arrivée", str(p.get("destinationWorld")).isEmpty()
@@ -210,8 +244,9 @@ public final class PortalPages {
         for (Map<String, Object> issue : issues) {
             sb.append(issueHtml(issue, str(p.get("id"))));
         }
-        sb.append("<p class=\"field-help\">Lecture seule. Créer, modifier, activer ou tester un portail fera l'objet "
-                + "d'un lot séparé.</p></section>");
+        sb.append("</section>");
+        sb.append(PortalForms.manageSection(v, p));
+        sb.append(PortalForms.historySection(v, p));
         sb.append("</div></div>");
         return sb.toString();
     }
@@ -329,9 +364,37 @@ public final class PortalPages {
         return "ZONE_PORTAL".equals(str(p.get("kind")));
     }
 
-    private static String statePill(Map<String, Object> p) {
-        return bool(p.get("enabled")) ? "<span class=\"pill ok\">Actif</span>"
+    static String statePill(Map<String, Object> p) {
+        if (bool(p.get("enabled"))) {
+            return "<span class=\"pill ok\">Actif</span>";
+        }
+        return "DRAFT".equals(str(p.get("state"))) ? "<span class=\"pill warn\">Brouillon</span>"
                 : "<span class=\"pill pill--neutral\">Désactivé</span>";
+    }
+
+    private static String siteHtml(View v, Map<String, Object> p) {
+        String site = str(p.get("site"));
+        if (site.isEmpty()) {
+            return "";
+        }
+        String name = str(p.get("siteName"));
+        String size = num(p.get("width")) > 0 ? " · zone " + num(p.get("width")) + " × " + num(p.get("height"))
+                + " × " + num(p.get("depth")) + " (largeur × hauteur × profondeur)" : "";
+        return dlHtml("Emplacement", "<a href=\"/buildings/sites?agent=" + enc(v.agentId()) + "\">"
+                + (name.isEmpty() ? "" : Http.esc(name) + " ") + "<code>" + Http.esc(site) + "</code></a>"
+                + Http.esc(size));
+    }
+
+    private static String createForm(View v) {
+        return PortalForms.createSection(v);
+    }
+
+    static int num(Object o) {
+        try {
+            return o instanceof Number n ? n.intValue() : Integer.parseInt(str(o));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private static String legacyPill(Map<String, Object> p) {
@@ -351,11 +414,11 @@ public final class PortalPages {
         return sb.append("</ul>").toString();
     }
 
-    private static String dl(String key, String value) {
+    static String dl(String key, String value) {
         return dlHtml(key, Http.esc(value));
     }
 
-    private static String dlHtml(String key, String valueHtml) {
+    static String dlHtml(String key, String valueHtml) {
         return "<div><dt>" + Http.esc(key) + "</dt><dd>" + valueHtml + "</dd></div>";
     }
 
@@ -365,15 +428,15 @@ public final class PortalPages {
                 + (file.isEmpty() ? "" : "&amp;file=" + enc(file));
     }
 
-    private static String enc(String s) {
+    static String enc(String s) {
         return Http.esc(URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8));
     }
 
-    private static boolean bool(Object o) {
+    static boolean bool(Object o) {
         return Boolean.TRUE.equals(o) || "true".equals(String.valueOf(o));
     }
 
-    private static String str(Object o) {
+    static String str(Object o) {
         return o == null ? "" : String.valueOf(o);
     }
 
@@ -382,7 +445,7 @@ public final class PortalPages {
         return o instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 
-    private static List<Map<String, Object>> maps(Object o) {
+    static List<Map<String, Object>> maps(Object o) {
         return o instanceof List<?> l ? l.stream().map(PortalPages::map).toList() : List.of();
     }
 

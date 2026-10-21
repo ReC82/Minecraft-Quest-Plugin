@@ -73,6 +73,17 @@ public enum Permission {
      */
     PORTAL_READ,
     /**
+     * Créer un portail en brouillon, le renommer, régler sa zone d'activation, le supprimer (issue
+     * #565, #228-P2). Un brouillon ne téléporte personne ; un portail actif ne se déplace ni ne se
+     * supprime. Réservé au propriétaire par défaut (attribuable par groupe).
+     */
+    PORTAL_EDIT,
+    /**
+     * Activer ou désactiver un portail (issue #565) : c'est l'activation qui fait téléporter les
+     * joueurs. Réservé au propriétaire par défaut (attribuable par groupe).
+     */
+    PORTAL_ENABLE,
+    /**
      * Consultation lecture seule des claims (issue #637) : propriétaire, claim principal, monde,
      * position, bornes et palier. Ne permet ni de créer, ni de modifier, ni de supprimer un claim.
      */

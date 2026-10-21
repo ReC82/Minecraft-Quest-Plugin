@@ -6223,7 +6223,8 @@ public final class PanelApp {
                 return;
             }
         }
-        if ("building.definition.retire".equals(type) || "npc.spot.capture".equals(type)) {
+        if ("building.definition.retire".equals(type) || "npc.spot.capture".equals(type)
+                || type.startsWith("portal.")) {
             // #284 : l'auteur du retrait est noté par le plugin dans l'archive ; #381 : l'auteur d'un
             // emplacement capturé. C'est la session, jamais un champ du formulaire.
             form.put("by", session.username());
@@ -6310,6 +6311,16 @@ public final class PanelApp {
                 Http.redirect(exchange, withError(returnPath, agentId, null, "Un bâtiment est encore posé "
                         + "sur « " + siteId + " » : retirez-le d'abord (« Retirer le bâtiment et restaurer "
                         + "le terrain »). Rien n'a été supprimé."));
+                return;
+            }
+            // Issue #565 : un portail qui cite l'emplacement perdrait sa référence (le plugin refuse aussi).
+            List<String> portals = agentPages.portalsUsingSite(agentId, siteId);
+            if (!portals.isEmpty()) {
+                audit.record(session.username(), "agent.action.create", auditTarget,
+                        "DENIED", "emplacement utilisé par " + String.join(", ", portals), rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, "L'emplacement « " + siteId
+                        + " » est utilisé par le(s) portail(s) " + String.join(", ", portals) + " : supprimer "
+                        + "d'abord ces portails. Rien n'a été supprimé."));
                 return;
             }
         }

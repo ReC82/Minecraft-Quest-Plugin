@@ -48,6 +48,25 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Atelier IA : réparations sûres, boucle bornée, orientation vérifiée (#655, TC-383)
+
+### Changement
+
+Plugin : le moteur répare seul, sans appel IA, les façades d'instruction en point cardinal, `minecraft:brick`, un toit
+posé au-dessus du volume, des marches d'entrée sans dénivelé, une entrée sans porte à sauter et l'absence de porte avant
+(audit complet, `NO_ENTRANCE` jamais assoupli). PlugAdmin : gestes payants suspendus si la description contredit la
+façade d'entrée, une seule correction par critique ratée, arrêt sur diagnostic répété, page ouverte sur la version
+retenue, vérification suivie jusqu'à son état terminal.
+
+### Actions serveur
+
+- JAR `03c66a0e` (PR #678) transféré, SHA-256 `186f064d…` retéléchargé identique ; backup
+  `rpgquest-20261021T005844Z-predeploy.jar` (version `2b4a2089`). **Serveur DEV toujours arrêté** (depuis l'arrêt RCON
+  de 01:03, #81) : le JAR sera chargé au démarrage depuis le panel VeryGames. Aucun redémarrage tenté.
+- PlugAdmin `03c66a0e` en ligne (local AWS), `/health` ONLINE.
+- Aucune migration SQL, aucune config, aucun contenu ; projet Atelier `96a24bba` non modifié.
+- Rollback : `scripts/rollback-verygames.sh --latest` + `scripts/plugadmin/rollback.sh app`.
+
 ## 2026-10-21 - Noms affichés des mondes et coordonnées F3 décimales (#81)
 
 ### Changement

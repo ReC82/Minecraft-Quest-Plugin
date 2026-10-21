@@ -6,6 +6,7 @@ import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.dialogue.DialogueNpcResolution;
 import com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders;
+import com.lodygames.rpgquest.dialogue.PlayerConditionEvaluator;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
@@ -18,25 +19,14 @@ import com.lodygames.rpgquest.dialogue.model.DialogueEntry;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
-import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
-import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
-import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
-import com.lodygames.rpgquest.dialogue.model.HasInventorySpaceCondition;
-import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
-import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
-import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OfferCatalogQuestAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
-import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
-import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
-import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
 import com.lodygames.rpgquest.dialogue.model.SetVariableAction;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.dialogue.model.TakeItemAction;
 import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
-import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.dialogue.render.DialogueChoiceHandler;
 import com.lodygames.rpgquest.dialogue.render.DialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.VisibleChoice;
@@ -88,9 +78,9 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private final PlayerVariableRepository variableRepository;
     private final MerchantTradeService merchantTradeService;
     private final NpcIdentityService npcIdentityService;
-    private final ClaimService claimService;
     private final YamlCustomItemRegistry customItemRegistry;
     private final StarterToolKitService starterToolKitService;
+    private final PlayerConditionEvaluator conditionEvaluator;
     private final Logger logger;
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
@@ -127,9 +117,10 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         this.variableRepository = variableRepository;
         this.merchantTradeService = merchantTradeService;
         this.npcIdentityService = npcIdentityService;
-        this.claimService = claimService;
         this.customItemRegistry = customItemRegistry;
         this.starterToolKitService = starterToolKitService;
+        this.conditionEvaluator = new PlayerConditionEvaluator(questProgressEngine, variableRepository, claimService,
+                customItemRegistry);
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -628,67 +619,10 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     // ---- Conditions ----------------------------------------------------
 
-    private CompletableFuture<Boolean> evaluateCondition(Player player, NamespacedKey dialogueId,
-                                                         DialogueCondition condition) {
-        return switch (condition) {
-            case QuestStateCondition c -> questProgressEngine.stateOf(player.getUniqueId(), c.questId())
-                    .thenApply(state -> state == c.state());
-            // Issue #13 : la règle d'acceptation elle-même (QuestProgressEngine.availability), jamais
-            // une copie — une offre affichée est donc une offre réellement acceptable.
-            case QuestAvailableCondition c -> questProgressEngine.availability(player.getUniqueId(), c.questId(), false)
-                    .thenApply(QuestProgressEngine.Availability::available);
-            case HasItemCondition c -> CompletableFuture.completedFuture(
-                    player.getInventory().containsAtLeast(new ItemStack(c.material()), c.amount()));
-            case HasPermissionCondition c -> CompletableFuture.completedFuture(player.hasPermission(c.permission()));
-            case VariableEqualsCondition c -> variableRepository.get(player.getUniqueId(), c.key())
-                    .thenApply(opt -> opt.map(v -> v.equals(c.value())).orElse(false));
-            case NoMainClaimCondition ignored -> CompletableFuture.completedFuture(
-                    claimService.claimsOwnedBy(player.getUniqueId()).isEmpty());
-            case HasMainClaimCondition ignored -> CompletableFuture.completedFuture(
-                    claimService.mainClaimOf(player.getUniqueId()).isPresent());
-            case LacksCustomItemCondition c -> CompletableFuture.completedFuture(!hasCustomItem(player, c.itemId()));
-            // Issue #85 : lecture de l'inventaire principal, sur le thread du clic — aucune requête.
-            case HasInventorySpaceCondition c -> CompletableFuture.completedFuture(
-                    freeStorageSlots(player) >= c.slots());
-            // Issue #123 : lecture pure de l'état de remise, déjà en mémoire — aucune requête, donc
-            // un future déjà complété, évalué à chaque ouverture de nœud sans coût.
-            case PendingDeliveryCondition c -> CompletableFuture.completedFuture(
-                    questProgressEngine.hasPendingDelivery(
-                            player.getUniqueId(), DialogueNpcResolution.resolve(c.npcId(), dialogueId)));
-            case NegatedCondition c -> evaluateCondition(player, dialogueId, c.inner()).thenApply(result -> !result);
-        };
-    }
-
-    /** Emplacements vides de l'inventaire principal (ni armure, ni seconde main). */
-    static int freeStorageSlots(Player player) {
-        int free = 0;
-        for (ItemStack stack : player.getInventory().getStorageContents()) {
-            if (stack == null || stack.getType().isAir()) {
-                free++;
-            }
-        }
-        return free;
-    }
-
-    private boolean hasCustomItem(Player player, NamespacedKey itemId) {
-        for (ItemStack stack : player.getInventory().getContents()) {
-            if (stack != null && customItemRegistry.identify(stack).map(itemId::equals).orElse(false)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
+    /** Issue #567 : évaluation déléguée à l'évaluateur partagé avec les portails. */
     private CompletableFuture<Boolean> evaluateAll(Player player, NamespacedKey dialogueId,
                                                    List<DialogueCondition> conditions) {
-        if (conditions.isEmpty()) {
-            return CompletableFuture.completedFuture(true);
-        }
-        List<CompletableFuture<Boolean>> checks = conditions.stream()
-                .map(condition -> evaluateCondition(player, dialogueId, condition))
-                .toList();
-        return CompletableFuture.allOf(checks.toArray(CompletableFuture[]::new))
-                .thenApply(v -> checks.stream().allMatch(CompletableFuture::join));
+        return conditionEvaluator.evaluateAll(player, dialogueId, conditions);
     }
 
     /**

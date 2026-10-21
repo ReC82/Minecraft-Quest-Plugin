@@ -16,8 +16,11 @@ import java.util.Map;
  * (il ne téléporte personne), le renommer, régler sa zone tant qu'il n'est pas actif, le supprimer ;
  * avec {@code PORTAL_ENABLE} : l'activer ou le désactiver. Chaque formulaire porte l'empreinte du
  * relevé (le serveur refuse si le portail a changé) et une case de confirmation ; un portail
- * essentiel (vers le Hub, le Wild ou les Claims) en demande une seconde. Aucun test de
- * téléportation n'est proposé ici.</p>
+ * essentiel (vers le Hub, le Wild ou les Claims) en demande une seconde.</p>
+ *
+ * <p>Issue #567 (#228-P4) — conditions d'accès (portail non actif, {@code PORTAL_EDIT}), simulation
+ * AUTORISÉ / REFUSÉ pour un joueur connecté (lecture seule, {@code PORTAL_READ}) et « Téléporter pour
+ * test » du seul personnage lié à la session ({@code PORTAL_TEST}, confirmation forte).</p>
  */
 public final class PortalPages {
 
@@ -33,12 +36,18 @@ public final class PortalPages {
      */
     public record View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
                        String selected, String file, WorldNames names, Manage manage, Verify verify,
-                       String returnOf) {
+                       String returnOf, Access access) {
 
         public View {
             names = names == null ? WorldNames.DEFAULTS : names;
             manage = manage == null ? Manage.NONE : manage;
             returnOf = returnOf == null ? "" : returnOf;
+            access = access == null ? Access.NONE : access;
+        }
+
+        public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
+                    String selected, String file, WorldNames names, Manage manage, Verify verify, String returnOf) {
+            this(agentId, details, headerHtml, releveHtml, selected, file, names, manage, verify, returnOf, null);
         }
 
         public View(String agentId, Map<String, Object> details, String headerHtml, String releveHtml,
@@ -58,6 +67,31 @@ public final class PortalPages {
      * @param atHtml date du résultat (HTML sûr)
      */
     public record Verify(Map<String, Object> details, String atHtml) {
+    }
+
+    /**
+     * Issue #567 — dernière simulation du portail ouvert et bloc « Téléporter pour test ».
+     *
+     * @param simulation    dernière simulation terminée ({@code null} = aucune)
+     * @param onlinePlayers joueurs connectés du dernier relevé (suggestions)
+     * @param testHtml      bloc « Téléporter pour test », déjà rendu (HTML sûr, peut être vide)
+     */
+    public record Access(Simulation simulation, List<String> onlinePlayers, String testHtml) {
+
+        public static final Access NONE = new Access(null, List.of(), "");
+
+        public Access {
+            onlinePlayers = onlinePlayers == null ? List.of() : List.copyOf(onlinePlayers);
+            testHtml = testHtml == null ? "" : testHtml;
+        }
+    }
+
+    /**
+     * @param details détails du résultat (vide si l'action a échoué avant l'évaluation)
+     * @param message message du serveur
+     * @param atHtml  date (HTML sûr)
+     */
+    public record Simulation(Map<String, Object> details, String message, boolean success, String atHtml) {
     }
 
     /** Un emplacement #213 du dernier relevé {@code building.site.list}. */
@@ -145,8 +179,8 @@ public final class PortalPages {
         }
         sb.append("</div>").append(AgentPages.filterEmpty("portals", "Aucun portail"));
         sb.append("<p class=\"muted small w-small-note\">Les portails sont lus tels quels depuis les fichiers du "
-                + "serveur : leurs règles Wild et Claims restent appliquées par le serveur. Le choix d'une destination "
-                + "précise, les conditions d'accès et le test de téléportation feront l'objet de lots séparés.</p>");
+                + "serveur : leurs règles Wild et Claims, puis leurs conditions d'accès, sont vérifiées par le serveur à "
+                + "chaque passage. Chaque fiche permet de simuler un passage sans téléporter personne.</p>");
         return sb.toString();
     }
 
@@ -272,6 +306,8 @@ public final class PortalPages {
         }
         sb.append("</section>");
         sb.append(PortalForms.verifySection(v, p));
+        sb.append(PortalForms.simulateSection(v, p));
+        sb.append(v.access().testHtml());
         sb.append(PortalForms.manageSection(v, p));
         sb.append(PortalForms.historySection(v, p));
         sb.append("</div></div>");
@@ -306,6 +342,10 @@ public final class PortalPages {
                 sb.append(dl(str(c.get("label")), str(c.get("value"))));
             }
             sb.append("</dl>");
+            if ("WORLD_PORTAL".equals(str(p.get("kind")))) {
+                sb.append("<p class=\"field-help\">Vérifiées par le serveur à chaque passage, après les règles "
+                        + "ci-dessus. Un joueur refusé reste sur place et reçoit le message de la condition.</p>");
+            }
         }
         return sb.append("</section>").toString();
     }

@@ -383,8 +383,13 @@ public final class PanelApp {
         route(WorldCreatePages.PATH + "/preview", this::handleWorldCreatePreview);
         route(WorldCreatePages.PATH + "/apply", this::handleWorldCreateApply);
         // Issue #564 (#228-P1) — portails en LECTURE SEULE : seul « Rafraîchir » (portal.list) est exposé.
+        // Issue #567 : « Téléporter pour test » ne déplace que le personnage lié à la session.
         route("/portals", exchange -> handleBusinessPage(exchange, "/portals", "Portails",
-                Permission.PORTAL_READ, agentPages::portals));
+                Permission.PORTAL_READ, (session, q) -> {
+                    Optional<McBridgeRepository.Link> link = mcBridge.linkOf(session.userId());
+                    return agentPages.portals(session, q, link.map(McBridgeRepository.Link::mcUuid).orElse(null),
+                            link.map(McBridgeRepository.Link::mcName).orElse(null));
+                }));
         // Issue #637 — claims des joueurs : relevé (CLAIM_READ) et « M'y téléporter » du seul personnage lié
         // à la session (CLAIM_TELEPORT, imposé dans createAgentAction).
         route("/claims", exchange -> handleBusinessPage(exchange, "/claims", "Claims", Permission.CLAIM_READ,
@@ -6198,9 +6203,10 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, null, "Agent inconnu."));
             return;
         }
-        if ("claim.teleport".equals(type)) {
+        if ("claim.teleport".equals(type) || "portal.test".equals(type)) {
             // Issue #637 : le personnage déplacé est TOUJOURS celui lié au compte de la session — jamais
-            // un champ du formulaire, donc jamais le propriétaire du claim ni un autre joueur.
+            // un champ du formulaire, donc jamais le propriétaire du claim ni un autre joueur. Issue #567 :
+            // même règle pour « Téléporter pour test » d'un portail.
             Optional<McBridgeRepository.Link> link = mcBridge.linkOf(session.userId());
             if (link.isEmpty()) {
                 audit.record(session.username(), "agent.action.create", auditTarget, "DENIED",
@@ -6213,13 +6219,13 @@ public final class PanelApp {
             form.put("player", traveler);
             // Double clic : une seule téléportation en attente par personnage (le plugin refuse aussi).
             if (agentStore.recentActions(agentId, 50).stream().anyMatch(a -> !a.status().terminal()
-                    && "claim.teleport".equals(a.type())
+                    && type.equals(a.type())
                     && traveler.equalsIgnoreCase(a.params().getOrDefault("player", "")))) {
                 audit.record(session.username(), "agent.action.create", auditTarget, "DENIED",
                         "téléportation déjà en attente pour ce personnage", rid);
                 Http.redirect(exchange, withError(returnPath, agentId, null, "Une téléportation de votre personnage "
                         + "est déjà en cours : rien n'a été envoyé en double.")
-                        + "&focus=" + enc(AgentPages.cleanFocus(form.get("claim"))));
+                        + "&focus=" + enc(AgentPages.cleanFocus(form.get("claim.teleport".equals(type) ? "claim" : "id"))));
                 return;
             }
         }

@@ -11533,8 +11533,17 @@ public final class AgentPages {
                 && world.equals(a.params().get("world"))).orElse(null);
     }
 
-    /** Page {@code /portals} (issue #564) : lecture seule, rendu dans {@link PortalPages}. */
+    /** Sans personnage lié connu : conserve les appelants antérieurs à #567. */
     public String portals(Session session, Map<String, String> q) {
+        return portals(session, q, null, null);
+    }
+
+    /**
+     * Page {@code /portals} (issue #564), rendue dans {@link PortalPages}. {@code linkedUuid} /
+     * {@code linkedName} : le personnage lié au compte de la session ({@code null} = aucun), le seul
+     * que « Téléporter pour test » (#567) peut déplacer.
+     */
+    public String portals(Session session, Map<String, String> q, String linkedUuid, String linkedName) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         if (agent.isEmpty()) {
             return PortalPages.render(new PortalPages.View("", null, noAgent(), "", "", ""));
@@ -11568,9 +11577,95 @@ public final class AgentPages {
             verify = vr.flatMap(r -> detailsOf(r).map(d -> new PortalPages.Verify(d, when(at(r))))).orElse(null);
         }
         String returnOf = cleanFocus(q.get("return_of"));
+        // Issue #567 : dernière simulation du portail ouvert, joueurs connectés, test de téléportation.
+        PortalPages.Access access = PortalPages.Access.NONE;
+        if (!selected.isEmpty()) {
+            String id = selected;
+            PortalPages.Simulation simulation = store.recentActions(agentId, 50).stream()
+                    .filter(r -> "portal.simulate".equals(r.type()) && r.status().terminal()
+                            && id.equals(r.params().get("id")))
+                    .findFirst()
+                    .map(r -> new PortalPages.Simulation(detailsOf(r).orElse(Map.of()),
+                            r.resultMessage() == null ? r.status().name() : r.resultMessage(),
+                            r.status() == AgentActionStatus.SUCCESS, when(at(r))))
+                    .orElse(null);
+            boolean worldPortal = details != null && PortalPages.maps(details.get("portals")).stream()
+                    .anyMatch(p -> id.equals(PortalPages.str(p.get("id")))
+                            && "WORLD_PORTAL".equals(PortalPages.str(p.get("kind"))));
+            access = new PortalPages.Access(simulation, onlinePlayers(agentId).names(),
+                    worldPortal ? portalTestBlock(session, agentId, id, linkedUuid, linkedName) : "");
+        }
         return PortalPages.render(new PortalPages.View(agentId, details, header,
                 row.map(r -> when(at(r))).orElse(""), selected, str(q.get("file")).trim(),
-                worldNames(agentId), manage, verify, returnOf));
+                worldNames(agentId), manage, verify, returnOf, access));
+    }
+
+    /**
+     * « Téléporter pour test » (issue #567) : seul le personnage lié à la session est déplacé (imposé
+     * par le panel), par le chemin réel du portail — conditions d'accès sans le délai, puis règles
+     * Claims / Wild — même en brouillon. Confirmation forte : case à cocher et identifiant recopié.
+     */
+    private String portalTestBlock(Session session, String agentId, String portalId, String linkedUuid,
+                                   String linkedName) {
+        if (!perms.can(session.effective(), Permission.PORTAL_TEST)) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-test\"><h3 class=\"w-h\">")
+                .append(Icons.icon("travel")).append("Téléporter pour test</h3>");
+        sb.append(lastPortalTest(agentId, portalId));
+        if (linkedUuid == null || linkedUuid.isBlank()) {
+            return sb.append(Ui.banner("warn", "Aucun personnage Minecraft n'est lié à votre compte PlugAdmin : le "
+                    + "test ne déplace jamais que <strong>votre</strong> personnage. Demander au propriétaire de le "
+                    + "lier (page « Utilisateurs », personnage lié).")).append("</section>").toString();
+        }
+        String traveler = linkedName == null || linkedName.isBlank() ? linkedUuid : linkedName;
+        sb.append("<ul class=\"w-links\">");
+        for (String line : List.of(
+                "Déplace RÉELLEMENT votre personnage « " + traveler + " » (connecté) par ce portail, même en brouillon "
+                        + "ou désactivé, sans entrer dans sa zone. Aucun autre joueur n'est concerné.",
+                "Conditions d'accès vérifiées comme au passage (sans le délai entre deux passages, ni lu ni démarré) ; "
+                        + "si l'une manque, personne n'est déplacé.",
+                "Puis règles Claims / Wild comme pour un joueur : fenêtre d'avertissement du Wild, accès aux Claims.",
+                "Pour seulement vérifier les conditions, utiliser « Simuler un passage » ci-dessus.")) {
+            sb.append("<li><i class=\"bi bi-dot\" aria-hidden=\"true\"></i><span>").append(Http.esc(line))
+                    .append("</span></li>");
+        }
+        sb.append("</ul>");
+        sb.append(formStart(session, agentId, "portal.test", PortalPages.PATH, linkedUuid))
+                .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(portalId)).append("\">")
+                .append("<input type=\"hidden\" name=\"focus\" value=\"").append(Http.esc(portalId)).append("\">")
+                .append("<input type=\"hidden\" name=\"submit_token\" value=\"").append(java.util.UUID.randomUUID())
+                .append("\">")
+                .append("<label class=\"field\"><span>Recopier l'identifiant du portail (<code>").append(Http.esc(portalId))
+                .append("</code>)</span><input type=\"text\" name=\"confirm_id\" required autocomplete=\"off\" "
+                        + "maxlength=\"48\"></label>");
+        sb.append(confirmBox("Je confirme téléporter mon personnage « " + traveler + " » par le portail « " + portalId
+                + " »."));
+        sb.append("<button class=\"btn btn-outline-danger\" type=\"submit\">").append(Icons.icon("travel"))
+                .append("Téléporter mon personnage</button></form></section>");
+        return sb.toString();
+    }
+
+    /** Dernier test de ce portail (24 h), avec son état réel. */
+    private String lastPortalTest(String agentId, String portalId) {
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (!"portal.test".equals(row.type()) || !portalId.equals(row.params().get("id"))) {
+                continue;
+            }
+            Instant at = row.completedAt() != null ? row.completedAt() : row.createdAt();
+            if (at != null && at.isBefore(Instant.now().minus(java.time.Duration.ofDays(1)))) {
+                return "";
+            }
+            boolean pending = !row.status().terminal();
+            boolean ok = row.status() == AgentActionStatus.SUCCESS;
+            String text = pending ? "en cours — le serveur n'a pas encore répondu."
+                    : row.resultMessage() == null ? row.status().name() : row.resultMessage();
+            return "<div class=\"dlg-live tone-" + (pending ? "info" : ok ? "ok" : "err") + "\" role=\"status\"><span>"
+                    + "<strong>Dernier test</strong> (" + Http.esc(row.createdBy()) + ") — " + Http.esc(text)
+                    + " — " + when(at) + "</span><a class=\"btn secondary sm\" href=\"/actions/" + Http.esc(row.id())
+                    + "\">Détail</a></div>";
+        }
+        return "";
     }
 
     // ---- Claims (issue #637) ---------------------------------------------------------------------

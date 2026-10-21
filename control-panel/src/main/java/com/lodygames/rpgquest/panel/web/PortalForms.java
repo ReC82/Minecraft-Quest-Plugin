@@ -15,6 +15,8 @@ import java.util.Map;
  * zone d'activation, activation / désactivation, suppression, et journal des modifications.
  * Issue #566 (#228-P3) : arrivée (monde, stratégie, point fixe et regard), portail retour préparé
  * depuis la fiche de l'aller, et « Vérifier sans appliquer ».
+ * Issue #567 (#228-P4) : conditions d'accès (niveau RPG, conditions joueur existantes, délai, message
+ * de refus par condition) et simulation AUTORISÉ / REFUSÉ pour un joueur connecté.
  *
  * <p>Tous passent par {@code POST /agents/action} (contrôle de permission et de forme par {@link
  * AgentActionCatalog}, revérification complète par le plugin). Sans JavaScript : la CSP du panel
@@ -185,6 +187,12 @@ final class PortalForms {
                         .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
                                 + "Enregistrer l'arrivée</button></div></form>");
             }
+            sb.append("<h4 class=\"w-h\" id=\"portal-access\">Conditions d'accès</h4>");
+            if (active) {
+                sb.append("<p class=\"muted\">Désactiver le portail avant de changer ses conditions d'accès.</p>");
+            } else {
+                sb.append(accessForm(v, p));
+            }
             boolean hasReturn = p.get("returnedBy") instanceof List<?> r && !r.isEmpty();
             if (str(p.get("returnOf")).isEmpty() && !hasReturn) {
                 sb.append("<h4 class=\"w-h\">Aller-retour</h4><p class=\"field-help\">Le retour est un second "
@@ -209,6 +217,163 @@ final class PortalForms {
             }
         }
         return sb.append("</section>").toString();
+    }
+
+    // ---- Conditions d'accès et simulation (issue #567) ---------------------------------------------
+
+    private static final List<String[]> CONDITION_TYPES = List.of(
+            new String[] {"QUEST_STATE", "Quête dans un état"},
+            new String[] {"HAS_ITEM", "Avoir un objet"},
+            new String[] {"HAS_PERMISSION", "Avoir une permission"},
+            new String[] {"VARIABLE_EQUALS", "Variable joueur égale à"},
+            new String[] {"HAS_MAIN_CLAIM", "Avoir un claim principal"});
+    private static final List<String> QUEST_STATES = List.of("NOT_STARTED", "ACTIVE", "READY_TO_TURN_IN", "COMPLETED",
+            "FAILED", "ABANDONED");
+
+    /**
+     * Formulaire des conditions d'accès d'un portail non actif. Sans JavaScript : un nombre fixe de
+     * lignes (les conditions actuelles, plus deux vides), chaque ligne garde tous ses champs et le
+     * serveur ne lit que ceux du type choisi. Type vide = ligne ignorée (retirer une condition).
+     */
+    private static String accessForm(PortalPages.View v, Map<String, Object> p) {
+        Map<String, Object> access = PortalPages.maps(List.of(p.getOrDefault("access", Map.of()))).get(0);
+        List<Map<String, Object>> rules = maps(access.get("rules"));
+        int rows = Math.min(AgentActionCatalog.PORTAL_MAX_CONDITIONS, rules.size() + 2);
+        String id = str(p.get("id"));
+        StringBuilder sb = new StringBuilder("<p class=\"field-help\">Vérifiées <strong>par le serveur</strong> à chaque "
+                + "passage, après les règles Claims / Wild ; toutes doivent être remplies. Un joueur refusé reste sur "
+                + "place et reçoit le message de la première condition non remplie (vide = message par défaut). Rien "
+                + "n'est retiré au joueur : « Avoir un objet » vérifie seulement l'inventaire.</p>");
+        sb.append(formStart(v, "portal.access", id)).append(hidden(p));
+        sb.append("<div class=\"form-grid\">")
+                .append(field("Niveau RPG minimum", "<input type=\"number\" name=\"level\" min=\"1\" max=\"1000\" "
+                        + "step=\"1\" value=\"" + Http.esc(str(access.get("level"))) + "\">", "Vide = aucun niveau exigé."))
+                .append(field("Attente entre deux passages (s)", "<input type=\"number\" name=\"cooldown\" min=\"0\" "
+                        + "max=\"86400\" step=\"1\" value=\"" + Http.esc(num(access.get("cooldown")) == 0 ? ""
+                        : String.valueOf(num(access.get("cooldown")))) + "\">", "Par joueur, après un passage réussi. "
+                        + "Vide ou 0 = aucune."))
+                .append("</div>");
+        sb.append(StyleField.render("level_message", "pa-" + id + "-level-msg", "Message si le niveau manque",
+                str(access.get("levelMessage")), false, "Balise &lt;level&gt; = niveau exigé."));
+        sb.append(StyleField.render("cooldown_message", "pa-" + id + "-cd-msg", "Message pendant l'attente",
+                str(access.get("cooldownMessage")), false, "Balise &lt;seconds&gt; = secondes restantes."));
+        for (int i = 0; i < rows; i++) {
+            Map<String, Object> r = i < rules.size() ? rules.get(i) : Map.of();
+            sb.append(conditionRow(id, i, r));
+        }
+        if (rows < AgentActionCatalog.PORTAL_MAX_CONDITIONS) {
+            sb.append("<p class=\"field-help\">Besoin de plus de lignes : enregistrer, la fiche en proposera deux "
+                    + "nouvelles (").append(AgentActionCatalog.PORTAL_MAX_CONDITIONS).append(" au plus).</p>");
+        }
+        sb.append(essential(p)).append(confirm("Remplacer les conditions d'accès de « " + id + " »"))
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">Enregistrer "
+                        + "les conditions</button></div></form>");
+        return sb.toString();
+    }
+
+    private static String conditionRow(String portalId, int i, Map<String, Object> r) {
+        String prefix = "cond_" + i + "_";
+        String type = str(r.get("type"));
+        StringBuilder types = new StringBuilder("<select name=\"" + prefix + "type\"><option value=\"\""
+                + (type.isEmpty() ? " selected" : "") + ">— aucune —</option>");
+        for (String[] t : CONDITION_TYPES) {
+            types.append("<option value=\"").append(t[0]).append("\"").append(t[0].equals(type) ? " selected" : "")
+                    .append(">").append(Http.esc(t[1])).append("</option>");
+        }
+        types.append("</select>");
+        StringBuilder states = new StringBuilder("<select name=\"" + prefix + "state\">");
+        String state = str(r.get("state")).isEmpty() ? "COMPLETED" : str(r.get("state"));
+        for (String st : QUEST_STATES) {
+            states.append("<option value=\"").append(st).append("\"").append(st.equals(state) ? " selected" : "")
+                    .append(">").append(st).append("</option>");
+        }
+        states.append("</select>");
+        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\"><legend class=\"small\">Condition ")
+                .append(i + 1).append(type.isEmpty() ? "" : " · " + Http.esc(str(r.get("label")))).append("</legend>");
+        sb.append("<div class=\"form-grid\">").append(field("Type", types.toString(), ""))
+                .append("<label class=\"inline\"><input type=\"checkbox\" name=\"").append(prefix)
+                .append("negate\" value=\"true\"").append(bool(r.get("negate")) ? " checked" : "")
+                .append("> Inverser (le joueur ne doit PAS remplir la condition)</label></div>");
+        sb.append("<div class=\"form-grid\">")
+                .append(field("Quête", text(prefix + "quest", str(r.get("quest")), "rpgquest:crystal_hunt"),
+                        "Quête dans un état."))
+                .append(field("État de la quête", states.toString(), ""))
+                .append(field("Objet (matériau)", text(prefix + "material", str(r.get("material")), "DIAMOND"),
+                        "Avoir un objet."))
+                .append(field("Quantité", "<input type=\"number\" name=\"" + prefix + "amount\" min=\"1\" max=\"2304\" "
+                        + "value=\"" + Http.esc(str(r.get("amount"))) + "\">", ""))
+                .append(field("Permission", text(prefix + "permission", str(r.get("permission")), "rpgquest.portal.x"),
+                        "Avoir une permission."))
+                .append(field("Variable", text(prefix + "key", str(r.get("key")), "CLAIM_TIER_1"),
+                        "Variable joueur égale à."))
+                .append(field("Valeur", text(prefix + "value", str(r.get("value")), "true"), ""))
+                .append("</div>");
+        sb.append(StyleField.render(prefix + "message", "pa-" + portalId + "-c" + i + "-msg", "Message de refus",
+                str(r.get("message")), false, "Montré au joueur refusé par cette condition. Vide = message par défaut."));
+        return sb.append("<p class=\"field-help\">Seuls les champs du type choisi sont lus.</p></fieldset>").toString();
+    }
+
+    private static String text(String name, String value, String placeholder) {
+        return "<input type=\"text\" name=\"" + name + "\" maxlength=\"100\" value=\"" + Http.esc(value)
+                + "\" placeholder=\"" + Http.esc(placeholder) + "\" autocomplete=\"off\">";
+    }
+
+    /** Simulation AUTORISÉ / REFUSÉ (lecture seule) et dernier résultat du portail ouvert. */
+    static String simulateSection(PortalPages.View v, Map<String, Object> p) {
+        if (!"WORLD_PORTAL".equals(str(p.get("kind"))) || v.manage().csrf().isEmpty()) {
+            return "";
+        }
+        String id = str(p.get("id"));
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-simulate\"><h3 class=\"w-h\">")
+                .append(Icons.icon("diagnostics")).append("Simuler un passage</h3>")
+                .append("<p class=\"field-help\">Le serveur évalue les conditions d'accès pour un joueur <strong>"
+                        + "connecté</strong> et répond AUTORISÉ ou REFUSÉ. <strong>Personne n'est téléporté</strong>, "
+                        + "aucun délai n'est démarré, rien n'est écrit. Les règles Claims / Wild ne sont pas simulées.</p>");
+        PortalPages.Simulation last = v.access().simulation();
+        if (last != null) {
+            Map<String, Object> d = last.details();
+            boolean allowed = bool(d.get("allowed"));
+            sb.append("<p>").append(!last.success() ? "<span class=\"pill pill--neutral\">Non évalué</span>"
+                    : allowed ? "<span class=\"pill ok\">AUTORISÉ</span>" : "<span class=\"pill err\">REFUSÉ</span>")
+                    .append(" ").append(Http.esc(last.message())).append(" <span class=\"muted small\">")
+                    .append(last.atHtml()).append("</span></p>");
+            List<Map<String, Object>> checks = maps(d.get("checks"));
+            if (!checks.isEmpty()) {
+                sb.append("<ul class=\"w-links\">");
+                for (Map<String, Object> c : checks) {
+                    boolean ok = bool(c.get("passed"));
+                    sb.append("<li><span>").append(ok ? "<span class=\"pill ok\">OK</span>"
+                            : "<span class=\"pill err\">Non</span>").append(" ").append(Http.esc(str(c.get("label"))));
+                    if (!ok) {
+                        sb.append("<br><span class=\"muted small\">Message au joueur : « ")
+                                .append(Http.esc(str(c.get("refusal")))).append(" »</span>");
+                    }
+                    sb.append("</span></li>");
+                }
+                sb.append("</ul>");
+            }
+            for (String note : strings(d.get("notes"))) {
+                sb.append("<p class=\"muted small\">").append(Http.esc(note)).append("</p>");
+            }
+        }
+        String listId = "pa-sim-players-" + id;
+        sb.append(formStart(v, "portal.simulate", id))
+                .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(id)).append("\">")
+                .append(field("Joueur connecté (pseudo)", "<input type=\"text\" name=\"player\" required maxlength=\"40\" "
+                        + "pattern=\"[A-Za-z0-9_\\-]{1,40}\" list=\"" + listId + "\" autocomplete=\"off\">",
+                        v.access().onlinePlayers().isEmpty() ? "Rafraîchir la page Joueurs pour proposer les joueurs connectés."
+                                : "Joueurs connectés au dernier relevé proposés."))
+                .append("<datalist id=\"").append(listId).append("\">");
+        for (String name : v.access().onlinePlayers()) {
+            sb.append("<option value=\"").append(Http.esc(name)).append("\">");
+        }
+        sb.append("</datalist><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">"
+                + "Simuler (sans téléporter)</button></div></form>");
+        return sb.append("</section>").toString();
+    }
+
+    private static List<String> strings(Object o) {
+        return o instanceof List<?> l ? l.stream().map(PortalPages::str).toList() : List.of();
     }
 
     static String historySection(PortalPages.View v, Map<String, Object> p) {
@@ -403,6 +568,7 @@ final class PortalForms {
             case "ENABLE" -> "Activé";
             case "DISABLE" -> "Désactivé";
             case "DELETE" -> "Supprimé";
+            case "ACCESS" -> "Conditions d'accès modifiées";
             default -> op;
         };
     }

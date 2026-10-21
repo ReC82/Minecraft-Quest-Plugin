@@ -48,6 +48,38 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Portails : conditions d'accès vérifiées par le serveur, simulation et test (#567, TC-394)
+
+### Changement
+
+Portails entre mondes : section facultative `access:` (niveau RPG, conditions joueur des dialogues, délai par joueur,
+message de refus par condition), vérifiée par le serveur après les gardes Claims / Wild. PlugAdmin : conditions d'un
+portail non actif, « Simuler un passage » (lecture seule), « Téléporter pour test » du personnage lié (nouvelle
+permission `PORTAL_TEST`, propriétaire). Portails sans condition — dont `hub_to_wild` / `hub_to_claims` — inchangés.
+
+### Action serveur
+
+- Remplacer le JAR RPGQuest et redéployer PlugAdmin (`scripts/deploy-verygames.sh -y`, `scripts/plugadmin/deploy.sh`),
+  redémarrer DEV. **Aucune migration** (table `portal_cooldowns` existante, clé `world:<id>`), **aucune clé de
+  configuration**, aucun fichier de contenu, aucun fichier `world-portals/` à transférer ni à modifier.
+- Ne PAS modifier `world-portals/*.yml`, `config.yml`, `data.db`.
+
+### Sauvegarde préalable
+
+JAR et PlugAdmin précédents (automatique par les scripts).
+
+### Validation
+
+TC-394 (PENDING MANUAL VALIDATION ; étapes 2 à 7 sur feu vert du propriétaire).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; PlugAdmin : `scripts/plugadmin/rollback.sh`. **Attention** :
+un JAR antérieur ignore la section `access:` — un portail à conditions **actif** deviendrait libre d'accès. Avant un
+rollback, désactiver les portails qui ont des conditions (aucun sur DEV au déploiement).
+
+---
+
 ## 2026-10-21 - Boutique des marchands séparée en vues « Acheter » / « Vendre » (#17, TC-393)
 
 ### Changement

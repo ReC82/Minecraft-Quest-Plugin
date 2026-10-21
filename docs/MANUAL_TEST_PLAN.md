@@ -7981,6 +7981,42 @@ non vérifiable / ajustée / impossible / monde absent / retour désaccordé, st
 adaptateur asynchrone simulé ; RANDOM_SAFE / CLAIM_HOME inchangés), `PortalAdminParamsTest`, `PortalsPageTest`
 (fiche, résultat de vérification et périmé, retour prérempli, paramètres validés, refus avant mise en file).
 
+### TC-394 — Portails : conditions d'accès, simulation, téléporter pour test (issue #567, PENDING MANUAL VALIDATION)
+
+**Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 n'autorise que des tests simulés
+par Claude — aucune condition ni configuration écrite sur un portail réel (dont `hub_to_wild` / `hub_to_claims`), aucune
+simulation sur un joueur réellement connecté, aucune téléportation. L'étape 1 est en lecture seule.
+
+1.  Lecture seule : Monde → Portails → « Rafraîchir les portails », fiche `hub_to_wild` puis `hub_to_claims`.
+    **Attendu** : bloc « Conditions d'accès » : « Désactiver le portail avant de changer ses conditions d'accès. »
+    (aucun formulaire) ; bloc 3 sans condition ; « Simuler un passage » et « Téléporter pour test » présents. Traverser
+    les deux portails en jeu : comportement identique à avant (aucune condition, aucun délai).
+2.  (Feu vert requis) Brouillon de test (TC-387 étape 2) vers un monde de test. Conditions : niveau RPG = votre niveau
+    + 1 avec un message coloré, « Avoir un objet » 1 × DIAMOND avec un message, attente 30 s. **Attendu** : enregistré,
+    bloc 3 liste les trois conditions ; `world-portals/<id>.yml` contient `access:`.
+3.  « Simuler un passage » avec votre pseudo (connecté). **Attendu** : REFUSÉ, niveau « Non » avec son message, objet
+    « Non » ; vous n'avez pas bougé. Prendre un diamant, re-simuler : seul le niveau reste « Non ».
+4.  Retirer le niveau (vide), enregistrer, activer, traverser sans diamant. **Attendu** : vous restez dans le Hub, le
+    message de l'objet s'affiche (couleur respectée). Avec un diamant : téléporté, diamant toujours dans l'inventaire.
+    Revenir et retraverser aussitôt : « réessaie dans N s » ; après 30 s, passage autorisé.
+5.  Désactiver le portail, « Téléporter pour test » : recopier l'identifiant, cocher. **Attendu** : votre personnage
+    seul est téléporté (même portail désactivé), l'attente n'est pas démarrée. Sans identifiant recopié : refus, rien
+    envoyé.
+6.  Une condition « Variable joueur égale à » `CLAIM_TIER_1` = `peut-être`. **Attendu** : refus « INVALID_VARIABLE »,
+    rien écrit. Une quête inexistante : « UNKNOWN_QUEST ».
+7.  Supprimer le portail de test ; `hub_to_wild` / `hub_to_claims` inchangés et fonctionnels.
+
+**Couverture automatisée** : `PortalAccessCheckerTest` (base SQLite temporaire, joueurs fictifs : un test par type —
+état de quête, objet sans retrait, permission, variable, claim principal et négation, niveau RPG avec `<level>`,
+ordre de tous les contrôles et messages par défaut, délai persisté sous `world:<id>` et non lu pour un test),
+`WorldPortalAccessListenerTest` (sans condition : même tick même sans vérificateur ; refus = reste sur place avec le
+message ; passage autorisé démarre le délai ; délai en cours refusé ; conditions sans vérificateur refusées ; garde
+d'entrée d'abord ; test de téléportation d'un brouillon sans délai ; test refusé), `WorldPortalAdminServiceTest`
+(conditions écrites et relues, retrait = fichier et empreinte d'origine, portail actif verrouillé, essentiels confirmés,
+`UNKNOWN_QUEST`, `INVALID_VARIABLE`, section illisible = fichier ignoré), `PortalAdminParamsTest`, `PortalsPageTest`
+(formulaire prérempli, verrou actif, simulation affichée, paramètres validés, test refusé sans personnage lié ni
+identifiant recopié), `DialogueSessionEngineTest` (non-régression des dialogues).
+
 ### TC-392 — Pas de grand titre « Quête terminée » pendant un dialogue PNJ (issue #636, PENDING MANUAL VALIDATION)
 
 **Accord du propriétaire requis** : l'autorisation du 20/10 n'autorise aucun essai en jeu par Claude, aucun reset de

@@ -4937,6 +4937,52 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
 - `/rpgadmin worldportal create … fixed_point` est refusé : le point fixe se règle dans PlugAdmin.
 - Pas de migration SQL, pas de clé de configuration. Conditions d'accès et test de téléportation contrôlé : #567.
 
+### Portails : conditions d'accès vérifiées par le serveur, simulation et test (issue #567, #228-P4)
+
+- **Section `access:`** d'un fichier `world-portals/<id>.yml` (écrite seulement si le portail a au moins une
+  condition ; sinon fichier et empreinte identiques à avant — `hub_to_wild` / `hub_to_claims` n'en ont pas) :
+  ```yaml
+  access:
+    required-level: 5            # niveau RPG (RequiredLevelRule, #532) ; absent = aucun
+    level-message: "<red>Niveau <level> requis.</red>"
+    cooldown-seconds: 30         # par joueur, démarré après un passage réussi ; absent/0 = aucun
+    cooldown-message: ""         # vide = message par défaut ; <seconds> = secondes restantes
+    conditions:                  # 8 au plus, toutes exigées ; mêmes clés que dans un dialogue
+      - type: QUEST_STATE        # QUEST_STATE | HAS_ITEM | HAS_PERMISSION | VARIABLE_EQUALS | HAS_MAIN_CLAIM
+        quest: rpgquest:crystal_hunt
+        state: COMPLETED
+        negate: false            # true = le joueur ne doit PAS remplir la condition
+        message: "<red>Termine d'abord la chasse au cristal.</red>"   # vide = message par défaut du type
+  ```
+  Lecture par le parseur des dialogues (`DialogueConditionYaml` → `DialogueDefinitionParser#parseCondition`) : aucune
+  syntaxe libre, aucun autre type. Une section illisible ou un type non proposé fait **ignorer le fichier** au
+  chargement (« Fichier de portail ignoré ») : un portail n'est jamais chargé sans ses conditions.
+- **Évaluateur unique** `dialogue.PlayerConditionEvaluator`, extrait de `DialogueSessionEngine` (comportement des
+  dialogues inchangé) et partagé avec `travel.PortalAccessChecker` ; délais dans la table existante
+  `portal_cooldowns`, clé `world:<id>` (distincte des portails de zone), plus un cache mémoire. Pas de migration.
+- **Au passage** (`WorldPortalTeleportListener`) : gardes Claims / Wild d'abord (inchangés, en tête de chaîne), puis
+  conditions. Sans condition : chemin d'avant, synchrone, même tick. Avec conditions : évaluation asynchrone (quête,
+  variables, délai lus hors du thread principal), puis retour sur le thread principal ; refus → le joueur reste sur
+  place et reçoit le message de la **première** condition non remplie, ligne `Portail simple <id> : passage refusé
+  pour <joueur> — <condition>` en console. Erreur de lecture ou vérificateur absent → refus avec message. Le délai
+  démarre seulement après une téléportation réussie. Une condition « avoir un objet » ne retire rien.
+- **Action `portal.access`** (permission panel `PORTAL_EDIT`, sensible) : remplace toutes les conditions d'un portail
+  **non actif** (`ACTIVE_ACCESS_LOCKED` sinon), empreinte et confirmation « portail essentiel » comme les autres
+  `portal.*`. Paramètres `level`, `level_message`, `cooldown`, `cooldown_message`, `cond_<0..7>_type|negate|quest|
+  state|material|amount|permission|key|value|message`. Refus `UNKNOWN_QUEST` (quête non chargée) et
+  `INVALID_VARIABLE` (variable connue de #320 avec une valeur du mauvais type). Journal `portal-audit.yml` (opération
+  `ACCESS`).
+- **Action `portal.simulate`** (`id`, `player` = pseudo ou UUID d'un joueur **connecté** ; `PORTAL_READ`) : verdict
+  `ALLOWED` / `REFUSED` avec chaque contrôle (`LEVEL`, `CONDITION`, `COOLDOWN`), son libellé et le message que le
+  joueur recevrait. Lecture seule : aucune téléportation, aucun délai démarré, rien d'écrit ; gardes Claims / Wild non
+  simulés. Joueur hors ligne : `PLAYER_OFFLINE`.
+- **Action `portal.test`** (« Téléporter pour test », nouvelle permission panel **`PORTAL_TEST`**, propriétaire par
+  défaut) : le panel impose le **personnage lié** à la session (comme `claim.teleport`), confirmation forte
+  (`confirm=true` + `confirm_id` = identifiant recopié). Chemin réel, quel que soit l'état du portail : conditions
+  sans délai (ni lu ni démarré), puis gardes Claims / Wild, puis téléportation. Codes `TELEPORTING`, `REFUSED`,
+  `GUARD_TOOK_OVER`, `PLAYER_OFFLINE`.
+- `portal.list` : conditions lisibles dans `conditions` et valeurs brutes dans `access` (préremplissage de la fiche).
+
 ### `/rpgadmin portal` — commandes
 Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.md](TRAVEL.md). Page docs-site : aucune.
 

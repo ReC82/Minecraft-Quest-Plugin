@@ -44,6 +44,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > progression : même libellé traduit (`ObjectiveLabels`), plus « Tuer ZOMBIE ». Pas de config, pas
 > de migration.
 
+> **Portails : conditions d'accès (#567, 21/10/2026)** — section `access:` des portails entre mondes : niveau RPG,
+> conditions joueur des dialogues (quête, objet, permission, variable, claim principal, négation), délai par joueur
+> (`portal_cooldowns`, clé `world:<id>`), message de refus par condition ; vérifiées par le serveur après les gardes
+> Claims / Wild (évaluateur `PlayerConditionEvaluator` extrait de `DialogueSessionEngine`). PlugAdmin : édition hors
+> portail actif (`portal.access`), « Simuler un passage » en lecture seule (`portal.simulate`), « Téléporter pour
+> test » du personnage lié (`portal.test`, permission `PORTAL_TEST`). Sans condition : comportement inchangé. Pas de
+> migration.
+
 > **Portails : destinations (#566, 21/10/2026)** — arrivée « point fixe » (position + regard, `destination-point`)
 > contrôlée à chaque passage (position sûre la plus proche à 2 blocs, sinon refus ; chunks et téléportation
 > asynchrones), refus d'un point hors du monde ou dans un portail, arrivée modifiable hors portail actif, portail

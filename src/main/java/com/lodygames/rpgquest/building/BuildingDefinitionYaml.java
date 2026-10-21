@@ -81,6 +81,10 @@ public final class BuildingDefinitionYaml {
         // #568 : type et zone de passage, facultatifs (un fichier antérieur reste identique).
         StructureKind kind = StructureKind.HABITABLE;
         String kindRaw = text(section, "kind");
+        if (kindRaw == null) {
+            // Bâtiment généré avant #568 : le type n'était conservé que dans le plan source.
+            kindRaw = planKind(section.getString("plan", ""));
+        }
         if (kindRaw != null) {
             Optional<StructureKind> parsed = StructureKind.of(kindRaw);
             if (parsed.isEmpty()) {
@@ -151,6 +155,18 @@ public final class BuildingDefinitionYaml {
             yaml.set("passage.max.y", p.maxY());
             yaml.set("passage.max.z", p.maxZ());
         }
+    }
+
+    private static final java.util.regex.Pattern PLAN_KIND =
+            java.util.regex.Pattern.compile("(?m)^kind:\\s*\"?([A-Za-z_]+)\"?\\s*$");
+
+    /** Le {@code kind:} de premier niveau d'un plan conservé, ou {@code null} (plan absent ou muet). */
+    static String planKind(String plan) {
+        if (plan == null || plan.isBlank()) {
+            return null;
+        }
+        java.util.regex.Matcher m = PLAN_KIND.matcher(plan);
+        return m.find() && StructureKind.of(m.group(1)).isPresent() ? m.group(1) : null;
     }
 
     private static String text(ConfigurationSection section, String key) {

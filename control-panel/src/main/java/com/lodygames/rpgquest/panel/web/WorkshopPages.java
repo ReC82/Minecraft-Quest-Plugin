@@ -179,8 +179,8 @@ public final class WorkshopPages {
                         + "l'autre ; une fois posée sur l'emplacement d'un portail, PlugAdmin en déduit sa zone "
                         + "d'activation (page Portails, « Lier l'arche posée »). La poser n'active jamais le "
                         + "portail.</p></div>");
-        sb.append("<fieldset class=\"field\"><legend class=\"small\">Passage de l'arche (seulement pour une arche "
-                + "de portail)</legend>")
+        sb.append("<details class=\"npc-registry\"").append(BuildingProject.KIND_PORTAL.equals(kind) ? " open" : "")
+                .append("><summary class=\"muted\">Passage de l'arche (arche de portail seulement)</summary>")
                 .append("<div class=\"field\"><label for=\"ws-pw\">Largeur du passage (blocs)</label>")
                 .append("<input id=\"ws-pw\" type=\"number\" name=\"passage_width\" min=\"1\" max=\"62\" step=\"1\" "
                         + "value=\"").append(Http.esc(v.getOrDefault("passage_width",
@@ -191,7 +191,7 @@ public final class WorkshopPages {
                                 String.valueOf(BuildingProject.DEFAULT_PASSAGE_HEIGHT)))).append("\"></div>")
                 .append("<p class=\"field-help\">Le passage traverse l'arche dans l'axe de l'entrée ; il doit laisser "
                         + "un pilier de chaque côté et un linteau. Le serveur relève le passage réel sur le plan et "
-                        + "refuse une arche dont le passage est bouché.</p></fieldset>");
+                        + "refuse une arche dont le passage est bouché.</p></details>");
         String front = BuildingProject.normaliseFront(v.get("front"));
         sb.append("<div class=\"field\"><label for=\"ws-front\">Côté de l'entrée</label>")
                 .append("<select id=\"ws-front\" name=\"front\">");

@@ -708,7 +708,7 @@ final class PortalForms {
                     .append("<p class=\"field-help\">L'arche reste posée et la zone actuelle est conservée ; le "
                             + "portail ne suit simplement plus l'arche.</p>")
                     .append(essential(p)).append(confirm("Délier la construction de « " + id + " »"))
-                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" "
+                    .append("<div class=\"btnrow\"><button class=\"btn sm secondary\" "
                             + "type=\"submit\">Délier sans démolir</button></div></form>");
         }
         return sb.append("</section>").toString();

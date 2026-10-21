@@ -78,6 +78,16 @@ class PortalPassageTest {
     }
 
     @Test
+    void aBuildingGeneratedBefore568TakesItsKindFromItsStoredPlan() {
+        YamlConfiguration yaml = base();
+        yaml.set("plan", "id: arche\nname: \"Arche\"\nkind: decoration\nsteps:\n  - op: box\n");
+        List<String> problems = new ArrayList<>();
+        assertEquals(StructureKind.DECORATION, BuildingDefinitionYaml.read(yaml, problems).orElseThrow().kind());
+        yaml.set("plan", "id: arche\nsteps: []\n");
+        assertEquals(StructureKind.HABITABLE, BuildingDefinitionYaml.read(yaml, problems).orElseThrow().kind());
+    }
+
+    @Test
     void anUnknownKindOrAnIncompletePassageIsRefusedWithAReadableReason() throws Exception {
         YamlConfiguration yaml = base();
         yaml.set("kind", "fontaine");

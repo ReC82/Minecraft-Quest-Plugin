@@ -575,6 +575,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
   courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
   pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
+  **Non stockables (issue #625)** : l'Acte, la Pierre de retour et le Journal (objets permanents liés
+  au joueur, `registerStorageLocked`) ne peuvent entrer dans **aucun** stockage, dans tous les mondes
+  (`item.StorageLockedItemListener` : coffres/tonneaux/shulkers/Ender/wagonnets/inventaires du plugin
+  par clic, shift-click, touche numérique, touche F, glisser ; bundles ; bibliothèque sculptée, pot
+  décoré, étagères, cadres, allays, porte-armures ; hoppers). La Rune de rappel consommable reste
+  stockable. Retirer un exemplaire déjà stocké reste permis ; aucun coffre n'est scanné ni purgé.
 - **Kit d'outils en bois** *(issue #26, partie A)* — demandé explicitement au Guide (« Demander mon
   kit de départ », action de dialogue `GIVE_STARTER_KIT`), jamais de remise automatique (ni clic
   simple, ni connexion, ni réapparition). Un exemplaire de chaque matériau de `config.yml` →

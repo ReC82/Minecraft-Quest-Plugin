@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Pas de grand titre « Quête terminée » pendant un dialogue PNJ (#636, TC-392)
+
+### Changement
+
+Tant qu'une fenêtre de dialogue PNJ est ouverte, aucune annonce Title de quête (« Quête terminée »,
+« Quête commencée ») n'est affichée par-dessus : ligne « ✔ Quête terminée : … » sous la réplique du nœud suivant,
+puis bilan des récompenses réellement accordées dans le chat à la fermeture du dialogue (choix, déplacement d'un
+bloc, téléportation, ou 30 s sans nouveau nœud). Déconnexion : annonce abandonnée, jamais rejouée. Hors dialogue,
+rien ne change. Aucune récompense, progression ni délai de reprise modifié.
+
+### Action serveur
+
+Remplacement du JAR seul (`43b94cf2`, PR #701). Pas de migration. `messages.yml` serveur complété automatiquement
+au démarrage par la fusion des clés manquantes (`quest.completed-in-dialogue`, `quest.completed-after-dialogue`) —
+relu par FTP après redémarrage. PlugAdmin inchangé.
+
+### Sauvegarde préalable
+
+`rpgquest-20261021T131727Z-predeploy.jar` (4 084 363 o) créé par `deploy-verygames.sh`.
+
+### Déploiement
+
+21/10 vers 15:18 : `deploy-verygames.sh -y` (CI verte sur `43b94cf2`), JAR 4 092 599 o, SHA-256 `68641e1d…`
+retéléchargé identique ; `verygames-restart.sh` (seul LoDyMcFly connecté) → DEV de nouveau ONLINE.
+
+### Validation
+
+TC-392 — PENDING MANUAL VALIDATION (propriétaire).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage. Les deux clés ajoutées à `messages.yml` sont sans effet
+sur l'ancien JAR.
+
 ## 2026-10-21 - Portails : arrivée point fixe, portail retour, vérifier sans appliquer (#566, TC-391)
 
 ### Changement

@@ -7914,3 +7914,32 @@ player/quest/story sont des branches de test), `RpgAdminTestShortcutsCommandTest
 story start, variable get exécutés ; zone refusée ; variable set refusé sans debug ; un nœud de branche n'ouvre que
 sa branche), `BridgeProvenanceTest` (nouveaux nœuds gérables par le pont, ombrelle et debug toujours exclus),
 `McBridgeDirectoryTest` (famille « Raccourcis de test », sans monde).
+
+### TC-390 — Objets permanents non stockables : Journal, Pierre de retour, Acte (issue #625, PENDING MANUAL VALIDATION)
+
+Sur **son propre** compte et **ses propres** coffres de test (posés pour l'occasion) ; ne toucher à aucun coffre
+d'un autre joueur. Avoir en inventaire le Journal des quêtes, la Pierre de retour (et l'Acte si disponible), une
+Rune de rappel et quelques blocs ordinaires.
+
+1.  Wild : poser un coffre, l'ouvrir. Tenter d'y mettre le Journal par clic gauche, clic droit, shift-click,
+    touche numérique (objet en barre rapide, survol d'une case du coffre), touche F (objet en main secondaire) et
+    glisser-déposer. **Attendu** : chaque geste refusé, l'objet reste dans l'inventaire, message « Cet objet doit
+    rester dans ton inventaire. » une seule fois par rafale (pas de spam).
+2.  Même chose avec la Pierre de retour, puis dans un tonneau, une shulker, le coffre de l'Ender, un wagonnet de
+    stockage et un hopper. **Attendu** : tout refusé.
+3.  Hub et Claims (son claim) : refaire l'étape 1 avec un coffre et, au Hub, son coffre personnel. **Attendu** :
+    refusé partout.
+4.  Bundle : tenter de ranger le Journal dans un bundle (dans les deux sens). Clic droit avec la Pierre sur une
+    bibliothèque sculptée, un pot décoré, une étagère, un cadre, un porte-armure. **Attendu** : tout refusé, rien
+    ne disparaît.
+5.  Rune de rappel et blocs ordinaires : dépôt et retrait dans le coffre. **Attendu** : inchangés (permis).
+6.  Inventaire plein + tentatives rapides répétées ; se déconnecter / reconnecter. **Attendu** : un seul
+    exemplaire de chaque objet, aucun au sol, aucun dans le coffre.
+7.  (Si un exemplaire avait été rangé avant ce correctif) ouvrir le coffre et le reprendre. **Attendu** : retrait
+    permis ; le reposer est refusé.
+
+**Couverture automatisée** : `StorageLockedItemListenerTest` (clic, clic droit, swap curseur, shift-click, touche
+numérique, touche F, glisser vers le coffre refusés pour les trois objets ; glisser dans son inventaire, shift-click
+interne, retrait d'un exemplaire déjà stocké permis ; bundle refusé ; hopper refusé, objet ordinaire déplacé ; Rune
+et diamant stockables ; message anti-spam 2 s ; blocs à clic droit), `BackpackListenerTest` (lecture partagée
+`InventoryTransfers`, sacs inchangés), `SoulboundItemListenerTest` (anti-perte inchangé).

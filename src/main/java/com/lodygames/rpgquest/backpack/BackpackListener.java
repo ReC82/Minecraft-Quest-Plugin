@@ -1,11 +1,11 @@
 package com.lodygames.rpgquest.backpack;
 
+import com.lodygames.rpgquest.item.InventoryTransfers;
 import java.util.Map;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -57,26 +57,10 @@ final class BackpackListener implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
-        ItemStack incoming = incomingItem(event, top, player);
+        ItemStack incoming = InventoryTransfers.incomingToTop(event, player);
         if (incoming != null && service.isForbidden(incoming)) {
             event.setCancelled(true);
         }
-    }
-
-    private ItemStack incomingItem(InventoryClickEvent event, Inventory top, Player player) {
-        InventoryAction action = event.getAction();
-        Inventory clicked = event.getClickedInventory();
-        return switch (action) {
-            case PLACE_ALL, PLACE_SOME, PLACE_ONE, SWAP_WITH_CURSOR -> clicked == top ? event.getCursor() : null;
-            case MOVE_TO_OTHER_INVENTORY -> clicked != null && clicked != top ? event.getCurrentItem() : null;
-            case HOTBAR_SWAP, HOTBAR_MOVE_AND_READD -> {
-                if (clicked != top || event.getHotbarButton() < 0) {
-                    yield null;
-                }
-                yield player.getInventory().getItem(event.getHotbarButton());
-            }
-            default -> null;
-        };
     }
 
     @EventHandler

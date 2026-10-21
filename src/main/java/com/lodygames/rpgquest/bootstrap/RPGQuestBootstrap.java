@@ -844,13 +844,16 @@ public final class RPGQuestBootstrap {
 
         // Anti-perte générique (mission « système soulbound générique ») : un seul écouteur pour
         // tous les objets permanents du plugin, plutôt qu'un écouteur dédié recopié par objet.
+        // #625 : les objets permanents liés au joueur sont en plus non stockables, dans tous les
+        // mondes ; la Rune de rappel consommable garde sa politique propre (soulbound seulement).
         SoulboundItemService soulboundItemService = new SoulboundItemService(customItemRegistry);
-        soulboundItemService.register(RpgItemKeys.ACTE_PROPRIETE);
-        soulboundItemService.register(RpgItemKeys.PIERRE_RETOUR);
-        soulboundItemService.register(RpgItemKeys.JOURNAL_QUETES);
+        soulboundItemService.registerStorageLocked(RpgItemKeys.ACTE_PROPRIETE);
+        soulboundItemService.registerStorageLocked(RpgItemKeys.PIERRE_RETOUR);
+        soulboundItemService.registerStorageLocked(RpgItemKeys.JOURNAL_QUETES);
         soulboundItemService.register(RpgItemKeys.RUNE_RAPPEL);
         registry.start(soulboundItemService);
         registry.start(new PlayerListenerService(plugin, soulboundItemService.listener()));
+        registry.start(new PlayerListenerService(plugin, soulboundItemService.storageListener()));
 
         // Kit de départ (mission « boucle joueur ») : une Rune de rappel remise une seule fois à
         // chaque joueur, à sa première connexion — marqueur persistant, jamais de duplication.

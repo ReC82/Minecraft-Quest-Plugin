@@ -430,6 +430,9 @@ public final class AgentActionCatalog {
                 "Modifier les conditions d'accès d'un portail", "portal.list");
         add("portal.simulate", Permission.PORTAL_READ, false, true, "Simuler les conditions d'accès d'un portail");
         addSensitiveWrite("portal.test", Permission.PORTAL_TEST, true, "Téléporter mon personnage pour tester un portail");
+        // Issue #569 (#228-P6) — messages et avertissement d'un portail non actif (PORTAL_EDIT).
+        addSensitiveWrite("portal.messages", Permission.PORTAL_EDIT, false,
+                "Modifier les messages et l'avertissement d'un portail", "portal.list");
         // Issue #637 — claims : relevé en lecture seule, et téléportation de diagnostic du SEUL
         // personnage lié à la session (imposé par le panel, jamais un champ du formulaire).
         add("claim.list", Permission.CLAIM_READ, false, false, "Rafraîchir les claims");
@@ -1523,6 +1526,15 @@ public final class AgentActionCatalog {
                 params.put("id", id);
                 params.put("confirm", "true");
                 params.put("confirm_id", id);
+            }
+            case "portal.messages" -> {
+                String error = portalParams(type, form, params);
+                if (error == null) {
+                    error = portalMessagesParams(form, params);
+                }
+                if (error != null) {
+                    return Validation.fail(error);
+                }
             }
             case "portal.access" -> {
                 String error = portalParams(type, form, params);
@@ -3252,6 +3264,35 @@ public final class AgentActionCatalog {
                 params.put(prefix + "message", message);
             }
         }
+        return null;
+    }
+
+    /** Champs de {@code portal.messages} (issue #569), miroir de {@code PortalMessages} du plugin. */
+    public static final List<String> PORTAL_MESSAGE_FIELDS = List.of("msg_welcome", "msg_preparing", "msg_success",
+            "msg_unavailable", "msg_unsafe", "msg_refusal", "warn_title", "warn_text", "warn_hint", "warn_enter",
+            "warn_enter_hide", "warn_cancel", "warn_cancel_text");
+    public static final int PORTAL_MAX_WARNING_TEXT = 500;
+    private static final List<String> PORTAL_WARNING_MODES = List.of("DEFAULT", "ALWAYS", "NEVER");
+
+    /**
+     * Issue #569 — forme des messages : longueurs bornées, mode proposé seulement ; vide = texte par
+     * défaut. La case « ne plus afficher » décochée est transmise explicitement ({@code false}).
+     */
+    private static String portalMessagesParams(Map<String, String> form, Map<String, String> params) {
+        for (String key : PORTAL_MESSAGE_FIELDS) {
+            String value = trim(form.get(key));
+            int max = "warn_text".equals(key) ? PORTAL_MAX_WARNING_TEXT : PORTAL_MAX_MESSAGE;
+            if (value.length() > max) {
+                return "Message trop long : " + max + " caractères au plus.";
+            }
+            params.put(key, value);
+        }
+        String mode = trim(form.get("warning_mode")).toUpperCase(java.util.Locale.ROOT);
+        if (!mode.isEmpty() && !PORTAL_WARNING_MODES.contains(mode)) {
+            return "Avertissement : choisir Par défaut, Toujours ou Jamais.";
+        }
+        params.put("warning_mode", mode.isEmpty() ? "DEFAULT" : mode);
+        params.put("warn_allow_hide", "true".equals(trim(form.get("warn_allow_hide"))) ? "true" : "false");
         return null;
     }
 

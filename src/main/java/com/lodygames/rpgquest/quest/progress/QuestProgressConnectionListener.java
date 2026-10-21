@@ -7,7 +7,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 
 /**
  * Toujours enregistré (contrairement aux listeners par type d'objectif,
@@ -42,6 +44,25 @@ final class QuestProgressConnectionListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
         engine.retryAwaitingTurnInsNextTick(event.getPlayer());
+    }
+
+    /**
+     * Issue #636 : un joueur devant une fenêtre de dialogue ne se déplace pas — changer de bloc
+     * (ou être téléporté) signale qu'elle est fermée, même par Échap, que le serveur ne voit pas.
+     * Un seul test de map par joueur concerné, aucun scan.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onMove(PlayerMoveEvent event) {
+        if (event.hasChangedBlock() && engine.hasDialogueFocus(event.getPlayer().getUniqueId())) {
+            engine.dialogueMaybeLeftByMove(event.getPlayer());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTeleport(PlayerTeleportEvent event) {
+        if (engine.hasDialogueFocus(event.getPlayer().getUniqueId())) {
+            engine.dialogueEnded(event.getPlayer());
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

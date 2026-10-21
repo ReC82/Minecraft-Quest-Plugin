@@ -65,6 +65,13 @@ quest:
   completed-title: "<gold><bold>Quête terminée</bold></gold>"
   completed-subtitle: "<white><quest></white>"
   reward-summary-header: "<gold><bold>Quête terminée :</bold></gold> <white><quest></white> <gray>— récompenses :</gray>"
+  # Issue #636 : quête terminée PENDANT un dialogue PNJ — jamais de grand titre par-dessus la
+  # fenêtre. completed-in-dialogue est ajouté sous la réplique du nœud suivant ; à la fermeture du
+  # dialogue, le bilan reward-summary-header/reward-line-* part dans le chat, ou, pour une quête
+  # sans récompense, completed-after-dialogue. started-title n'est pas affiché non plus pendant un
+  # dialogue (les objectifs restent dans le chat).
+  completed-in-dialogue: "<green>✔ Quête terminée : <white><quest></white></green>"
+  completed-after-dialogue: "<gold><bold>Quête terminée :</bold></gold> <white><quest></white>"
   reward-line-experience: "<yellow> + <amount> XP</yellow>"
   reward-line-rpg-experience: "<yellow> + <amount> XP RPG</yellow>"
   reward-line-item: "<yellow> + <amount>x <item></yellow>"

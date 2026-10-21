@@ -41,6 +41,7 @@ import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.NamespacedKey;
@@ -1777,6 +1778,144 @@ class DialogueSessionEngineTest {
         PlayerMock player = addPlayer();
 
         assertEquals(CatalogOfferNodes.NOTHING, askForWork(player).id());
+    }
+
+    // ---- Pas de grand titre « Quête terminée » pendant un dialogue (issue #636) ---------------
+
+    /** Joueur qui retient les Title Adventure reçus : MockBukkit ne les expose pas. */
+    private static final class TitleRecordingPlayer extends PlayerMock {
+        private final List<net.kyori.adventure.title.Title> titles = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        TitleRecordingPlayer(ServerMock server) {
+            super(server, "Titled", java.util.UUID.randomUUID());
+        }
+
+        @Override
+        public void showTitle(net.kyori.adventure.title.Title title) {
+            titles.add(title);
+        }
+    }
+
+    private TitleRecordingPlayer addTitleRecordingPlayer() throws Exception {
+        TitleRecordingPlayer player = new TitleRecordingPlayer(server);
+        server.addPlayer(player);
+        profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return player;
+    }
+
+    private static String plain(net.kyori.adventure.text.Component component) {
+        return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(component);
+    }
+
+    private void awaitCompleted(Player player, NamespacedKey questId) throws Exception {
+        long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+        while (System.currentTimeMillis() < deadline) {
+            server.getScheduler().performTicks(1);
+            if (questProgressEngine.stateOf(player.getUniqueId(), questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    == com.lodygames.rpgquest.quest.model.QuestState.COMPLETED) {
+                server.getScheduler().performTicks(2);
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("quête " + questId + " non terminée avant le délai");
+    }
+
+    private List<String> chat(PlayerMock player) {
+        List<String> lines = new ArrayList<>();
+        net.kyori.adventure.text.Component next;
+        while ((next = player.nextComponentMessage()) != null) {
+            lines.add(plain(next));
+        }
+        return lines;
+    }
+
+    @Test
+    void aQuestCompletedDuringADialogueShowsNoTitleAndIsAnnouncedOnceAfterClosing() throws Exception {
+        installDeliveryContent();
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "deliver");
+        questProgressEngine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        player.getInventory().clear();
+        player.getInventory().addItem(new org.bukkit.inventory.ItemStack(Material.LEATHER, 4));
+
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        player.titles.clear();
+        chat(player);
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, DELIVERY_DIALOGUE, "deliver", renderer.lastVisibleChoices.get(0).index());
+        awaitRendered();
+        awaitCompleted(player, questId);
+
+        assertTrue(player.titles.isEmpty(), "aucun grand titre par-dessus la fenêtre de dialogue");
+        String afterDelivery = renderer.lastNode.text().base();
+        if (!afterDelivery.contains("Quête terminée")) {
+            // Remise terminée après le rendu du nœud : la ligne arrive avec le nœud suivant.
+            renderer.lastNode = null;
+            sessionEngine.open(player, DELIVERY_DIALOGUE);
+            awaitRendered();
+        }
+        assertTrue(renderer.lastNode.text().base().contains("Quête terminée"),
+                () -> "succès signalé dans le dialogue : " + renderer.lastNode.text().base());
+        assertFalse(chat(player).stream().anyMatch(line -> line.contains("Quête terminée")),
+                "rien d'annoncé dans le chat tant que la fenêtre est ouverte");
+
+        renderer.lastNode = null;
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        assertFalse(renderer.lastNode.text().base().contains("Quête terminée"), "signalé une seule fois dans la fenêtre");
+
+        String closeLabel = "Tout est remis";
+        int close = renderer.lastVisibleChoices.stream().filter(c -> c.label().equals(closeLabel))
+                .findFirst().orElseThrow().index();
+        sessionEngine.onChoiceSelected(player, DELIVERY_DIALOGUE, "deliver", close);
+        long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+        List<String> after = new ArrayList<>();
+        while (after.stream().noneMatch(line -> line.contains("Quête terminée")) && System.currentTimeMillis() < deadline) {
+            server.getScheduler().performTicks(1);
+            after.addAll(chat(player));
+            Thread.sleep(10);
+        }
+        assertEquals(1, after.stream().filter(line -> line.contains("Quête terminée : Titre")).count(),
+                () -> "une seule annonce après la fermeture : " + after);
+        server.getScheduler().performTicks(40);
+        assertFalse(chat(player).stream().anyMatch(line -> line.contains("Quête terminée")), "aucune annonce rejouée");
+        assertTrue(player.titles.isEmpty(), "toujours aucun grand titre");
+    }
+
+    @Test
+    void aQuestCompletedOutsideAnyDialogueKeepsItsTitle() throws Exception {
+        installDeliveryContent();
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "deliver");
+        questProgressEngine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+        player.titles.clear();
+        player.getInventory().clear();
+        player.getInventory().addItem(new org.bukkit.inventory.ItemStack(Material.LEATHER, 4));
+
+        questProgressEngine.deliverTo(player, "guard");
+        awaitCompleted(player, questId);
+
+        assertEquals(1, player.titles.size(), "hors dialogue : la notification forte est conservée");
+        assertEquals("Quête terminée", plain(player.titles.get(0).title()));
+    }
+
+    @Test
+    void aQuestStartedFromADialogueShowsNoTitleOverTheWindow() throws Exception {
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+        sessionEngine.open(player, DIALOGUE_ID);
+        awaitRendered();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, DIALOGUE_ID, "greeting", 0);
+        awaitRendered();
+        server.getScheduler().performTicks(5);
+
+        assertEquals(QuestState.ACTIVE, questProgressEngine.stateOf(player.getUniqueId(), QUEST_ID)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(player.titles.isEmpty(), "le nœud « accepté » suffit : pas de « Quête commencée » par-dessus");
     }
 
     private static final class RecordingRenderer implements DialogueRenderer {

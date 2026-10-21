@@ -2263,6 +2263,10 @@ Fabrication → Remise → Récompense
     problème de fréquence. Le texte reste entièrement piloté par
     `messages.yml` (`quest.started-title`/`started-subtitle`,
     `quest.objective-progress`, `quest.completed-title`/`completed-subtitle`)
+    — issue #636 : pas de Title tant qu'un dialogue PNJ a le focus
+    (`quest.progress.DialogueFocus`, logique pure ; annonce retenue, ligne
+    `quest.completed-in-dialogue` dans le nœud suivant, résumé chat à la fin
+    du dialogue)
     — jamais une quête codée en dur, le placeholder `<quest>` reçoit
     toujours `quest.title().base()` au moment de l'appel. `QuestCommand`
     n'envoie plus de message pour `AcceptOutcome.Result.ACCEPTED` (branche

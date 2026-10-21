@@ -411,7 +411,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   raison de spawn (hostiles, enderman même neutre, marchand ambulant/lama — issues #121/#155,
   nettoyage ciblé des entités déjà présentes) ; dégâts joueur causés à une entité protégée
   (animaux...) toujours annulés sauf bypass explicite `rpgquest.admin.hub.combat` (issues #30/#31,
-  distinct de la construction) ; faim/saturation jamais réduites, restaurées au maximum à
+  distinct de la construction) ; pas de commerce vanilla (villageois/marchand ambulant non Citizens)
+  ni d'accès aux conteneurs de stockage vanilla (coffres, tonneaux, shulkers, hoppers, distributeurs,
+  droppers, crafters, wagonnets/bateaux à coffre, pots décorés, étagères), hoppers inertes — verrouillage
+  sans vidage, fours/établis/alambics/coffre de l'Ender/coffres personnels #105/interfaces RPGQuest libres,
+  bypass `rpgquest.admin.hub.resources` en session seulement (issue #675, `hub.HubResourceLockListener`,
+  PENDING MANUAL VALIDATION TC-397) ; faim/saturation jamais réduites, restaurées au maximum à
   l'arrivée (connexion/changement de monde/réapparition) — issue #33, `hub.HubComfortService`,
   strictement scopé au monde `hub.world` (`isHub()` par joueur, le Wild garde sa survie normale,
   couvert par `foodLevelDecreaseInTheWildIsNeverCancelled`/`periodicSweepNeverTouchesPlayersInTheWild`).

@@ -60,14 +60,21 @@ non actif (`portal.messages`). Portails sans personnalisation — dont `hub_to_w
 
 ### Action serveur
 
-- JAR RPGQuest + PlugAdmin (AWS) depuis la fusion de la PR #569 ; redémarrage DEV requis. **Aucune migration**, aucune
-  clé de configuration, aucun fichier de contenu ni `world-portals/` à transférer.
+- **Effectué le 21/10** : JAR `34c20df2` (PR #708) à 19:50 puis JAR corrigé `1b11b0cb` (PR #709, cycle d'initialisation
+  qui faisait voir `hub_to_wild` / `hub_to_claims` comme personnalisés) à 20:29 via `scripts/deploy-verygames.sh -y`
+  (CI verte sur chaque fusion) — en ligne 4156217 octets, SHA-256
+  `9fab196b4b6d1318dc93c89ff7cecbc22834626ed9531c77250d21573bdbbf7f`, retéléchargé et identique ; DEV redémarré deux
+  fois par `scripts/verygames-restart.sh` (0 joueur connecté). PlugAdmin `34c20df2` (`scripts/plugadmin/deploy.sh`,
+  `/health` ONLINE revérifié, aide servie vérifiée).
+- Relu après redémarrage (lecture seule) : `portal.list` → `hub_to_wild` / `hub_to_claims` actifs, non personnalisés,
+  empreintes identiques au relevé d'avant (`abbf0fe0…`, `87276553…`) ; aucun fichier ignoré. **Aucune migration**,
+  aucune clé de configuration, aucun fichier de contenu ni `world-portals/` transféré.
 - Ne PAS modifier `world-portals/*.yml`, `config.yml`, `data.db` ; aucune préférence de joueur touchée.
 
 ### Sauvegarde préalable
 
-Sauvegarde automatique du JAR en place par `scripts/deploy-verygames.sh` ; PlugAdmin : release précédente sous
-`/opt/plugadmin/releases/`.
+JAR précédents : `rpgquest-20261021T175048Z-predeploy.jar` (4139426 o, JAR #567) et
+`rpgquest-20261021T182900Z-predeploy.jar` (JAR `34c20df2`) ; PlugAdmin : release précédente sous `/opt/plugadmin/releases/`.
 
 ### Validation
 

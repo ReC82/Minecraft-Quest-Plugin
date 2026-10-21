@@ -48,6 +48,28 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Libraire : choix « Ouvrir la boutique » → village_merchant (#17, TC-344)
+
+### Changement
+
+Contenu seul : `dialogues/libraire.yml` gagne, sur l'accueil (`greeting`), un choix « Ouvrir la boutique »
+sans condition, action `OPEN_MERCHANT` → `rpgquest:village_merchant` (catalogue existant, inchangé).
+Les choix existants du Libraire (« Obtenir mon journal », « Merci ! ») et ses nœuds sont conservés à l'identique.
+
+### Actions serveur
+
+- `scripts/deploy-verygames.sh -y --also src/main/resources/dialogues/libraire.yml:RPGQuest/dialogues/libraire.yml`
+  depuis le commit `2c093d5e` (PR #646, CI verte). JAR retransféré par le script (même code que `8c79bfc8`,
+  seules ressources changées). Aucune migration, aucune clé de configuration.
+- Version active sauvegardée avant transfert : `extra-20261021T101730Z/RPGQuest/dialogues/libraire.yml`
+  (SHA-256 `f088b0e9…`, identique au dépôt avant #646) ; JAR précédent `rpgquest-20261021T101730Z-predeploy.jar`.
+- **Aucun catalogue, prix, offre, PNJ, solde ni autre dialogue modifié.**
+- DEV était arrêté (dernier signal agent 20/10 23:02) : le dialogue est lu au prochain démarrage.
+- Rollback : `scripts/rollback-verygames.sh --also ~/.local/share/rpgquest/verygames-backups/extra-20261021T101730Z/RPGQuest/dialogues/libraire.yml:RPGQuest/dialogues/libraire.yml`
+  (+ `--latest` pour le JAR si besoin), puis redémarrage.
+
+---
+
 ## 2026-10-21 - Testeur non-OP : /rpgadmin player, quest, story (#64, TC-389)
 
 ### Changement

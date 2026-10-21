@@ -44,6 +44,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > progression : même libellé traduit (`ObjectiveLabels`), plus « Tuer ZOMBIE ». Pas de config, pas
 > de migration.
 
+> **Portails : destinations (#566, 21/10/2026)** — arrivée « point fixe » (position + regard, `destination-point`)
+> contrôlée à chaque passage (position sûre la plus proche à 2 blocs, sinon refus ; chunks et téléportation
+> asynchrones), refus d'un point hors du monde ou dans un portail, arrivée modifiable hors portail actif, portail
+> retour distinct en brouillon (`return-of`), action `portal.verify` « Vérifier sans appliquer » (lecture seule,
+> aucun chunk chargé). Hub → Wild / Hub → Claims inchangés. Pas de migration.
+
 > **Portails gérés depuis PlugAdmin (#565, 21/10/2026)** — `/portals` : créer un portail en brouillon (zone autour
 > d'un emplacement #213 ou en coordonnées), renommer, régler la zone d'un portail non actif, activer / désactiver,
 > supprimer (fichier seul) ; permissions `PORTAL_EDIT` / `PORTAL_ENABLE` (propriétaire), actions `portal.create|update|

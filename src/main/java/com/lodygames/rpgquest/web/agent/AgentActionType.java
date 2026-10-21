@@ -248,6 +248,17 @@ public enum AgentActionType {
      */
     BUILDING_DEFINITION_RETIRE("building.definition.retire"),
     /**
+     * Aperçu en lecture seule de la suppression d'un bâtiment et de toutes ses versions (issue #644) :
+     * versions, fichiers, ce qui est conservé et ce qui bloque. N'écrit rien.
+     */
+    BUILDING_FAMILY_PREVIEW("building.family.preview"),
+    /**
+     * Supprime définitivement un bâtiment et toutes ses versions (issue #644) : identifiant ressaisi
+     * exigé, refus si posé, lié à un portail ou embarqué ; aucun bloc du monde touché. Voir
+     * {@code BuildingFamilyPurge}.
+     */
+    BUILDING_FAMILY_PURGE("building.family.purge"),
+    /**
      * Calcule rotation et emprise pour un couple (emplacement, bâtiment). <strong>N'écrit
      * rien</strong>, ni dans le monde, ni en base : c'est ce qui permet de montrer l'emprise avant
      * de demander confirmation.

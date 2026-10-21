@@ -58,8 +58,10 @@ seule du cache de progression : aucune XP, aucun niveau, aucune récompense modi
 
 ### Actions serveur
 
-- Remplacer uniquement le JAR RPGQuest (script officiel, backup daté). Aucune migration SQL, aucune clé de
-  configuration, aucun contenu, PlugAdmin inchangé.
+- JAR `f3cbc72c` (PR #680) transféré par `deploy-verygames.sh -y`, SHA-256 `214e66d0…` retéléchargé identique ;
+  backup `rpgquest-20261021T022210Z-predeploy.jar` (version `03c66a0e`, #655). **Serveur DEV toujours arrêté** (RCON
+  refusé, depuis l'arrêt de 01:03) : le JAR sera chargé au démarrage depuis le panel VeryGames. Aucun redémarrage tenté.
+- Aucune migration SQL, aucune clé de configuration, aucun contenu, PlugAdmin inchangé (`03c66a0e`).
 - Rollback : `scripts/rollback-verygames.sh --latest`.
 
 ## 2026-10-21 - Atelier IA : réparations sûres, boucle bornée, orientation vérifiée (#655, TC-383)

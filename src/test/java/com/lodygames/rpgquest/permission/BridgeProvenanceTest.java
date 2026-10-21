@@ -145,6 +145,10 @@ class BridgeProvenanceTest {
         assertTrue(ManagedNodePolicy.isManaged("rpgquest.admin.command"));
         assertTrue(ManagedNodePolicy.isManaged("rpgquest.admin.npc"));
         assertTrue(ManagedNodePolicy.isManaged("rpgquest.admin.npc.tag"));
+        assertTrue(ManagedNodePolicy.isManaged("rpgquest.admin.testing"));
+        assertTrue(ManagedNodePolicy.isManaged("rpgquest.admin.player"));
+        assertTrue(ManagedNodePolicy.isManaged("rpgquest.admin.quest"));
+        assertTrue(ManagedNodePolicy.isManaged("rpgquest.admin.story"));
     }
 
     @Test

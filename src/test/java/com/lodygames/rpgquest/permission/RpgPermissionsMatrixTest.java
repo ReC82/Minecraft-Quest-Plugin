@@ -87,6 +87,47 @@ class RpgPermissionsMatrixTest {
     }
 
     @Test
+    void theTesterBundleRunsTheTestBranchesAndBypassesNothing() {
+        // Issue #64 : un testeur non-OP utilise player/quest/story et reste un joueur normal pour
+        // toutes les protections (Hub, claims, monde des claims, zones) et les autres branches.
+        PlayerMock p = with(RpgPermissions.ADMIN_TESTING);
+        assertFalse(p.isOp());
+        assertTrue(RpgPermissions.canEnterAdminCommand(p));
+        assertTrue(RpgPermissions.canRunTestingBranch(p, RpgPermissions.ADMIN_PLAYER));
+        assertTrue(RpgPermissions.canRunTestingBranch(p, RpgPermissions.ADMIN_QUEST));
+        assertTrue(RpgPermissions.canRunTestingBranch(p, RpgPermissions.ADMIN_STORY));
+        assertFalse(RpgPermissions.canBuildInHub(p, "world_hub"), "aucune construction dans le Hub");
+        assertFalse(RpgPermissions.hasBypass(p, RpgPermissions.BYPASS_CLAIM));
+        assertFalse(RpgPermissions.hasBypass(p, RpgPermissions.BYPASS_CLAIM_WORLD));
+        assertFalse(RpgPermissions.hasBypass(p, RpgPermissions.BYPASS_ZONE));
+        assertFalse(RpgPermissions.canRunLegacyAdminBranch(p), "pas les autres branches de /rpgadmin");
+        assertFalse(RpgPermissions.canRunNpcAction(p, RpgPermissions.ADMIN_NPC_TAG));
+        assertFalse(RpgPermissions.canManageCities(p));
+        assertFalse(RpgPermissions.canManageBuildingSites(p));
+        assertFalse(p.hasPermission("rpgquest.admin.bypass"), "aucune session /rpgadmin bypass");
+        assertFalse(p.hasPermission("rpgquest.admin.debug"), "variable set reste hors du paquet");
+        assertFalse(p.hasPermission("rpgquest.admin.hub.combat"));
+    }
+
+    @Test
+    void anOrdinaryNonOpPlayerRunsNoTestBranch() {
+        PlayerMock p = with();
+        assertFalse(RpgPermissions.canRunTestingBranch(p, RpgPermissions.ADMIN_PLAYER));
+        assertFalse(RpgPermissions.canRunTestingBranch(p, RpgPermissions.ADMIN_QUEST));
+        assertFalse(RpgPermissions.canRunTestingBranch(p, RpgPermissions.ADMIN_STORY));
+    }
+
+    @Test
+    void onlyPlayerQuestAndStoryAreTestBranches() {
+        assertTrue(RpgPermissions.ADMIN_PLAYER.equals(RpgPermissions.testingBranchNode("PLAYER")));
+        assertTrue(RpgPermissions.ADMIN_QUEST.equals(RpgPermissions.testingBranchNode("quest")));
+        assertTrue(RpgPermissions.ADMIN_STORY.equals(RpgPermissions.testingBranchNode("story")));
+        for (String other : new String[] {"zone", "flatten", "claim", "kit", "bypass", "npc", "world", "vault"}) {
+            assertTrue(RpgPermissions.testingBranchNode(other) == null, other + " n'est pas une branche de test");
+        }
+    }
+
+    @Test
     void theLegacyAdminWorldNodeStillGrantsEverythingAndIsTheOpsImplicitBypass() {
         // Constat d'audit (#27, #35, #321) : c'est le seul nœud qui ouvre tout, et plugin.yml le donne
         // aux OP par défaut. Depuis #35, ses bypass de règles de jeu ne comptent QUE pendant une session

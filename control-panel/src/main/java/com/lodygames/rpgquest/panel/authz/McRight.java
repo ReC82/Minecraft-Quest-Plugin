@@ -21,7 +21,8 @@ import java.util.Optional;
  * Minecraft, droits de construction par monde, création/gestion de PNJ, bypass gameplay ». Les
  * permissions PlugAdmin sont les {@link Permission} (une autre page) ; OP Minecraft reste
  * {@code player.op} (une autre action, réservée au propriétaire) ; ici on ne trouve que les trois
- * dernières familles.</p>
+ * dernières familles. Depuis #64, une famille « raccourcis de test » s'y ajoute : des branches de
+ * {@code /rpgadmin} pour un testeur non-OP, sans aucun bypass.</p>
  */
 public final class McRight {
 
@@ -32,6 +33,7 @@ public final class McRight {
     public enum Family {
         BUILD("Construction", true),
         NPC("PNJ et commande d'administration", false),
+        TESTING("Raccourcis de test /rpgadmin (sans OP)", false),
         BYPASS("Bypass de protection", false);
 
         private final String label;
@@ -93,6 +95,21 @@ public final class McRight {
                     "Retire l'identifiant RPGQuest de l'entité visée.", false),
             new Definition("rpgquest.admin.npc.info", Family.NPC, "Lire le marquage (info)",
                     "Lecture seule.", false),
+            new Definition("rpgquest.admin.testing", Family.TESTING, "Paquet testeur (sans OP)",
+                    "Ouvre /rpgadmin et autorise player, quest et story (issue #64). N'accorde "
+                            + "AUCUNE construction, AUCUN bypass de protection ni aucune autre "
+                            + "branche : le compte reste un joueur normal pour le Hub, le Wild et "
+                            + "les claims. « player variable set » exige en plus "
+                            + "rpgquest.admin.debug, jamais distribué par un groupe.", false),
+            new Definition("rpgquest.admin.player", Family.TESTING, "Branche player (reset, variables)",
+                    "resetnew / resetfull avec preview puis confirm, et variable get. À combiner "
+                            + "avec « Entrer dans /rpgadmin ».", false),
+            new Definition("rpgquest.admin.quest", Family.TESTING, "Branche quest",
+                    "start / complete / reset d'une quête pour un joueur. À combiner avec "
+                            + "« Entrer dans /rpgadmin ».", false),
+            new Definition("rpgquest.admin.story", Family.TESTING, "Branche story",
+                    "info / start / advance / complete / reset d'une Story pour un joueur. À "
+                            + "combiner avec « Entrer dans /rpgadmin ».", false),
             new Definition("rpgquest.bypass.claim", Family.BYPASS, "Contourner les claims d'autrui",
                     "Strictement distinct de toute permission de construction : un builder de Hub "
                             + "ne l'obtient jamais par son droit de build.", false),

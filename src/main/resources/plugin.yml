@@ -147,6 +147,23 @@ permissions:
   rpgquest.admin.travel.maintenance:
     description: "Autorise, APRÈS activation explicite via /rpgadmin travel maintenance on, à casser les blocs d'un waypoint ou d'une borne de voyage (issue #191). Volontairement PAS accordée aux opérateurs : un bypass implicite par statut OP permettait de détruire ces structures sans geste délibéré."
     default: false
+  rpgquest.admin.testing:
+    description: "Paquet TESTEUR (issue #64) : utiliser /rpgadmin player, quest et story SANS être OP. N'accorde AUCUNE construction dans le Hub, AUCUN bypass de claim/zone/monde des claims/waypoint, aucune session /rpgadmin bypass et aucune autre branche de /rpgadmin : le compte reste un joueur normal pour toutes les protections. /rpgadmin player variable set exige en plus rpgquest.admin.debug (non inclus). Ne jamais l'accorder à un joueur ordinaire."
+    default: false
+    children:
+      rpgquest.admin.command: true
+      rpgquest.admin.player: true
+      rpgquest.admin.quest: true
+      rpgquest.admin.story: true
+  rpgquest.admin.player:
+    description: "/rpgadmin player resetnew|resetfull <joueur> preview|confirm et player variable get (issue #64). Aucun bypass de protection. variable set exige en plus rpgquest.admin.debug."
+    default: false
+  rpgquest.admin.quest:
+    description: "/rpgadmin quest start|complete|reset <joueur> <quête> (raccourcis de test #36, nœud dédié #64). Aucun bypass de protection."
+    default: false
+  rpgquest.admin.story:
+    description: "/rpgadmin story info|start|advance|complete|reset|resetwithquests <joueur> <story> (nœud dédié #64). Aucun bypass de protection."
+    default: false
   rpgquest.admin.debug:
     description: Permission stricte supplémentaire pour les écritures bas niveau de debug (/rpgadmin player variable set). Ne jamais accorder à un joueur normal.
     default: op

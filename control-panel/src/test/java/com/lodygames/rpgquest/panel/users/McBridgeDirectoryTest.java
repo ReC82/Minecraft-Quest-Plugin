@@ -284,6 +284,17 @@ class McBridgeDirectoryTest {
     }
 
     @Test
+    void theTesterRightsAreOfferedWithoutAWorldAndApartFromTheBypasses() {
+        // Issue #64 : paquet testeur et branches player/quest/story, distribuables par un groupe.
+        for (String node : List.of("rpgquest.admin.testing", "rpgquest.admin.player",
+                "rpgquest.admin.quest", "rpgquest.admin.story")) {
+            McRight.Definition definition = McRight.byNode(node).orElseThrow();
+            assertEquals(McRight.Family.TESTING, definition.family(), node);
+            assertFalse(definition.family().worldRequired(), node);
+        }
+    }
+
+    @Test
     void aBuildRightKnowsItNeedsAWorldAndTheOthersDoNot() {
         assertTrue(McRight.byNode("rpgquest.build.hub.world_hub").orElseThrow().family().worldRequired());
         assertFalse(McRight.byNode("rpgquest.bypass.zone").orElseThrow().family().worldRequired());

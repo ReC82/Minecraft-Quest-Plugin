@@ -147,9 +147,62 @@ class RpgAdminTestShortcutsCommandTest {
 
         run(player, "quest", "complete", player.getName(), BASE_QUEST.toString());
 
-        assertTrue(nextMessage(player).contains(WORLD_PERM),
-                "la branche exige encore l'ombrelle : entrer dans la commande ne suffit pas");
+        assertTrue(nextMessage(player).contains("rpgquest.admin.quest"),
+                "la branche exige son nœud dédié (#64) : entrer dans la commande ne suffit pas");
         assertEquals(QuestState.NOT_STARTED, questState(player, BASE_QUEST), "rien ne doit se passer");
+    }
+
+    // ---- Testeur non-OP (issue #64) ------------------------------------------------------------
+
+    @Test
+    void aNonOpTesterRunsTheQuestStoryAndPlayerShortcuts() throws Exception {
+        PlayerMock tester = addPlayer(false, false);
+        tester.setOp(false);
+        tester.addAttachment(plugin, "rpgquest.admin.testing", true);
+
+        run(tester, "quest", "complete", tester.getName(), BASE_QUEST.toString());
+        awaitUntil(() -> questState(tester, BASE_QUEST) == QuestState.COMPLETED);
+
+        run(tester, "story", "start", tester.getName(), STORY_ID);
+        awaitUntil(() -> storyState(tester, STORY_ID) != StoryState.NOT_STARTED);
+
+        variableRepository.set(tester.getUniqueId(), "CLAIM_TIER_1", "true").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        run(tester, "player", "variable", "get", tester.getName(), "CLAIM_TIER_1");
+        assertTrue(awaitMessageContaining(tester, "true"), "variable get autorisée au testeur");
+        assertFalse(tester.isOp(), "le testeur n'est jamais devenu OP");
+    }
+
+    @Test
+    void theTesterBundleOpensNoOtherBranchAndNotVariableSet() throws Exception {
+        PlayerMock tester = addPlayer(false, false);
+        tester.setOp(false);
+        tester.addAttachment(plugin, "rpgquest.admin.testing", true);
+
+        run(tester, "zone", "list");
+        assertTrue(nextMessage(tester).contains(WORLD_PERM), "zone reste derrière l'ombrelle");
+
+        run(tester, "player", "variable", "set", tester.getName(), "CLAIM_TIER_1", "true");
+        assertTrue(nextMessage(tester).contains(DEBUG_PERM), "set exige toujours rpgquest.admin.debug");
+        assertTrue(variableRepository.get(tester.getUniqueId(), "CLAIM_TIER_1")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(), "rien écrit");
+    }
+
+    @Test
+    void aSingleBranchNodeOpensOnlyThatBranch() throws Exception {
+        PlayerMock tester = addPlayer(false, false);
+        tester.setOp(false);
+        tester.addAttachment(plugin, "rpgquest.admin.command", true);
+        tester.addAttachment(plugin, "rpgquest.admin.quest", true);
+
+        run(tester, "story", "start", tester.getName(), STORY_ID);
+        assertTrue(nextMessage(tester).contains("rpgquest.admin.story"), "story exige son propre nœud");
+        assertEquals(StoryState.NOT_STARTED, storyState(tester, STORY_ID));
+
+        run(tester, "player", "resetnew", tester.getName(), "confirm");
+        assertTrue(nextMessage(tester).contains("rpgquest.admin.player"), "player exige son propre nœud");
+
+        run(tester, "quest", "complete", tester.getName(), BASE_QUEST.toString());
+        awaitUntil(() -> questState(tester, BASE_QUEST) == QuestState.COMPLETED);
     }
 
     @Test

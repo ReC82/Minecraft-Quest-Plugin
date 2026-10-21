@@ -190,9 +190,70 @@ public final class RpgPermissions {
                 && (who.hasPermission(ADMIN_CITY) || who.hasPermission(LEGACY_ADMIN_WORLD));
     }
 
+    // ---- Raccourcis de test sans OP (issue #64) -------------------------------------------------
+
+    /**
+     * Paquet « testeur » (issue #64) : entrer dans {@code /rpgadmin} et exécuter ses trois branches
+     * de test — {@link #ADMIN_PLAYER}, {@link #ADMIN_QUEST}, {@link #ADMIN_STORY} — <strong>sans
+     * être OP</strong>.
+     *
+     * <h3>Pourquoi pas l'ombrelle {@link #LEGACY_ADMIN_WORLD}</h3>
+     *
+     * <p>L'ombrelle accorde aussi la construction dans le Hub <em>en permanence</em>
+     * ({@link #canBuildInHub}) et les bypass de claims/zones/monde des claims dès qu'une session
+     * {@code /rpgadmin bypass on} est ouverte. Un testeur qui la porterait ne jouerait plus comme un
+     * joueur normal — exactement ce que #64 doit éviter. Ce paquet n'est consulté par
+     * <strong>aucune</strong> protection : ni Hub, ni Wild, ni claims, ni zones, ni waypoints.</p>
+     *
+     * <p>{@code rpgquest.admin.player variable set} exige toujours en plus
+     * {@code rpgquest.admin.debug}, qui n'est pas inclus et n'est jamais distribuable par un groupe.</p>
+     */
+    public static final String ADMIN_TESTING = "rpgquest.admin.testing";
+
+    /** {@code /rpgadmin player ...} : resetnew/resetfull (avec preview/confirm), variable get. */
+    public static final String ADMIN_PLAYER = "rpgquest.admin.player";
+
+    /** {@code /rpgadmin quest start|complete|reset} (raccourcis de test, issue #36). */
+    public static final String ADMIN_QUEST = "rpgquest.admin.quest";
+
+    /** {@code /rpgadmin story info|start|advance|complete|reset|resetwithquests}. */
+    public static final String ADMIN_STORY = "rpgquest.admin.story";
+
+    /**
+     * Nœud dédié d'une branche de test de {@code /rpgadmin}, ou {@code null} si la branche n'en a
+     * pas (elle reste alors derrière son propre contrôle ou l'ombrelle).
+     */
+    public static String testingBranchNode(String branch) {
+        if (branch == null) {
+            return null;
+        }
+        return switch (branch.toLowerCase(java.util.Locale.ROOT)) {
+            case "player" -> ADMIN_PLAYER;
+            case "quest" -> ADMIN_QUEST;
+            case "story" -> ADMIN_STORY;
+            default -> null;
+        };
+    }
+
+    /**
+     * {@code true} si {@code who} peut exécuter cette branche de test : son nœud précis, le paquet
+     * testeur, ou l'ombrelle historique. Le paquet est testé explicitement, sans dépendre de
+     * l'expansion des {@code children} par le gestionnaire de permissions.
+     */
+    public static boolean canRunTestingBranch(Permissible who, String preciseNode) {
+        if (who == null) {
+            return false;
+        }
+        return who.hasPermission(LEGACY_ADMIN_WORLD)
+                || who.hasPermission(ADMIN_TESTING)
+                || who.hasPermission(preciseNode);
+    }
+
     /** {@code true} si {@code who} peut entrer dans {@code /rpgadmin} (sans rien y exécuter). */
     public static boolean canEnterAdminCommand(Permissible who) {
-        return who != null && (who.hasPermission(ADMIN_COMMAND) || who.hasPermission(LEGACY_ADMIN_WORLD));
+        return who != null && (who.hasPermission(ADMIN_COMMAND)
+                || who.hasPermission(ADMIN_TESTING)
+                || who.hasPermission(LEGACY_ADMIN_WORLD));
     }
 
     /**

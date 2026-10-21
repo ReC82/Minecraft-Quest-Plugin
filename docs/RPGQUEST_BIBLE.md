@@ -208,7 +208,7 @@ Détail : [REWARD_ENTITLEMENTS.md §10.8](REWARD_ENTITLEMENTS.md#108-catalogue-a
 
 Vérifié dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java`. Racine unique pour les sous-systèmes d'administration : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`, `quest`, `story`, `waystone`, `player`, `guide`.
 
-Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** pour tout `/rpgadmin`. **Exception** : `/rpgadmin player variable set` exige **en plus** `rpgquest.admin.debug` (défaut `op`, écriture bas niveau). La plupart des sous-commandes exigent un **joueur en jeu** (position/sélection) ; `quest`, `story`, `player` et `guide` ciblent au contraire un joueur passé en argument et sont utilisables **depuis la console**.
+Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** pour tout `/rpgadmin`. **Testeur non-OP (#64)** : `player`, `quest` et `story` acceptent aussi leur nœud dédié (`rpgquest.admin.player|quest|story`, avec `rpgquest.admin.command`) ou le paquet `rpgquest.admin.testing`, qui n'accorde **aucune** construction ni aucun bypass (voir `docs/PERMISSIONS.md`). **Exception** : `/rpgadmin player variable set` exige **en plus** `rpgquest.admin.debug` (défaut `op`, écriture bas niveau). La plupart des sous-commandes exigent un **joueur en jeu** (position/sélection) ; `quest`, `story`, `player` et `guide` ciblent au contraire un joueur passé en argument et sont utilisables **depuis la console**.
 
 ### Aplatissement de terrain — `/rpgadmin flatten`
 Détail complet : [docs/ADMIN_FLATTEN.md](ADMIN_FLATTEN.md). Page docs-site : aucune.

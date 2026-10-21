@@ -6,6 +6,16 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Testeur non-OP pour /rpgadmin (#64, 21/10/2026)** — nouveaux nœuds `rpgquest.admin.player`,
+> `rpgquest.admin.quest`, `rpgquest.admin.story` et le paquet `rpgquest.admin.testing` (entrée + les
+> trois branches), tous `default: false`. Un compte non-OP qui les porte utilise `/rpgadmin player
+> resetnew|resetfull|variable get`, `quest …` et `story …` sans l'ombrelle `rpgquest.admin.world`, et
+> reste un joueur normal : aucune construction au Hub, aucun bypass claim/zone/monde des claims, pas de
+> session `/rpgadmin bypass`, aucune autre branche ; `variable set` exige toujours
+> `rpgquest.admin.debug`. Attribution explicite et révocable : PlugAdmin > Groupes (famille « Raccourcis
+> de test », pont LuckPerms #200) ou `/lp user … permission set`. **Aucun droit réel attribué** : le
+> premier octroi appartient au propriétaire. Pas de migration. PENDING MANUAL VALIDATION (TC-389).
+
 > **Panneaux de nom des waypoints non éditables (#654, 21/10/2026)** — `WaypointProtectionListener`
 > refuse, sur les seuls panneaux protégés d'un waypoint, l'usage du bloc au clic droit
 > (`PlayerInteractEvent` → pas d'éditeur vanilla, pas de teinture/encre/cire), l'ouverture de

@@ -35,7 +35,12 @@ public final class ManagedNodePolicy {
             "rpgquest.build.",
             "rpgquest.bypass.",
             "rpgquest.admin.command",
-            "rpgquest.admin.npc");
+            "rpgquest.admin.npc",
+            // Issue #64 : raccourcis de test sans OP, sans aucun bypass de protection.
+            "rpgquest.admin.testing",
+            "rpgquest.admin.player",
+            "rpgquest.admin.quest",
+            "rpgquest.admin.story");
 
     /** Nœuds explicitement interdits au pont, même s'ils correspondent à un préfixe géré. */
     public static final List<String> NEVER_MANAGED = List.of(

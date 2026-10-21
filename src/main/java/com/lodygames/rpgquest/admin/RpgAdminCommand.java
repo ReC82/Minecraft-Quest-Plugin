@@ -86,7 +86,9 @@ import org.jetbrains.annotations.Nullable;
  * <p><strong>Autorisation en deux temps depuis l'issue #200</strong> : entrer dans la commande
  * exige {@code rpgquest.admin.command} (ou l'ombrelle {@code rpgquest.admin.world}), et cela
  * n'autorise <strong>aucune</strong> branche. La branche {@code npc} a ses propres nœuds
- * ({@code rpgquest.admin.npc.tag|untag|info}) ; toutes les autres exigent encore l'ombrelle
+ * ({@code rpgquest.admin.npc.tag|untag|info}) ; depuis l'issue #64, {@code player}, {@code quest}
+ * et {@code story} ont aussi les leurs ({@code rpgquest.admin.player|quest|story}, ou le paquet
+ * {@code rpgquest.admin.testing}) pour un testeur non-OP ; les autres exigent encore l'ombrelle
  * {@code rpgquest.admin.world}. Un compte ne portant que le nœud d'entrée et les nœuds PNJ ouvre
  * donc la commande sans pouvoir toucher aux resets joueur, à l'économie ni au reste.
  * {@code /rpgadmin player variable set} exige <strong>en plus</strong>
@@ -296,11 +298,21 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     Placeholder.unparsed("permission", RpgPermissions.ADMIN_COMMAND)));
             return true;
         }
-        // Issue #200 : toute branche AUTRE que « npc » exige encore l'ombrelle historique. Le
+        // Issue #200 : toute autre branche sans nœud dédié exige encore l'ombrelle historique. Le
         // découpage fin du reste de /rpgadmin appartient au backlog #27 et n'est pas nécessaire
         // ici ; ce qui compte pour ce lot, c'est qu'un éditeur de PNJ ne puisse PAS atteindre les
         // resets joueur, l'économie ni les autres opérations d'administration.
-        if (args.length > 0 && !args[0].equalsIgnoreCase("npc")
+        // Issue #64 : player/quest/story ont leur propre nœud (ou le paquet rpgquest.admin.testing),
+        // accordable à un testeur NON-OP sans l'ombrelle, qui porterait des bypass de protection.
+        String testingNode = args.length > 0 ? RpgPermissions.testingBranchNode(args[0]) : null;
+        if (testingNode != null && !RpgPermissions.canRunTestingBranch(sender, testingNode)) {
+            sender.sendMessage(MM.deserialize(
+                    "<red>Permission manquante pour cette sous-commande :</red> <white><permission></white>"
+                            + "<gray> — vous pouvez entrer dans /rpgadmin, mais pas exécuter celle-ci.</gray>",
+                    Placeholder.unparsed("permission", testingNode)));
+            return true;
+        }
+        if (args.length > 0 && testingNode == null && !args[0].equalsIgnoreCase("npc")
                 && !args[0].equalsIgnoreCase("buildsite")
                 && !args[0].equalsIgnoreCase("ville")
                 && !args[0].equalsIgnoreCase("building")

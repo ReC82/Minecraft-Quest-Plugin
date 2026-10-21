@@ -13,5 +13,17 @@ public enum SkillType {
     MINING,
     FARMING,
     FISHING,
-    EXPLORATION
+    EXPLORATION;
+
+    /** Nom affiché au joueur (chat, action bar, journal) — jamais l'identifiant technique. */
+    public String label() {
+        return switch (this) {
+            case GLOBAL -> "Global";
+            case COMBAT -> "Combat";
+            case MINING -> "Minage";
+            case FARMING -> "Agriculture";
+            case FISHING -> "Pêche";
+            case EXPLORATION -> "Exploration";
+        };
+    }
 }

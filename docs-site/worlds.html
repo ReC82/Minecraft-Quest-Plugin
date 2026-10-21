@@ -199,6 +199,29 @@
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Charger, décharger, importer un dossier (issue #563)</h2>
+    <p class="text-body-secondary">
+      Permission <code>WORLD_WRITE</code> (propriétaire par défaut), Multiverse-Core obligatoire. Cliquer d'abord
+      sur <strong>Relever le chargement</strong> : chaque bouton n'apparaît que si le serveur dit l'opération
+      possible, sinon les raisons s'affichent.
+    </p>
+    <ul class="text-body-secondary">
+      <li><strong>Fiche d'un monde → Chargement</strong> : « Charger » un monde connu de Multiverse-Core, ou
+        « Enregistrer puis décharger » (les fichiers restent sur le disque, le monde reste rechargeable) ; case
+        « Charger au démarrage du serveur ».</li>
+      <li><strong>Liste → Importer un dossier existant</strong> : un dossier de monde présent sur le serveur
+        (contenant <code>level.dat</code>) que Multiverse-Core ne connaît pas ; la dimension lue dans le dossier
+        est pré-choisie, une autre est refusée. Le monde est ajouté tel quel puis chargé.</li>
+    </ul>
+    <p class="text-body-secondary">
+      Toujours refusé par le serveur : le monde principal et ses dimensions, les mondes Hub / Wild / Claims, les
+      mondes rechargés par RPGQuest (<code>worlds.yml</code>) ; pour décharger, un monde où se trouvent des joueurs
+      ou vers lequel mène un portail actif. Aucune suppression n'est possible. Une demande n'est traitée qu'une
+      fois ; journal <code>plugins/RPGQuest/world-state-audit.yml</code>.
+    </p>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Mondes où des waypoints apparaissent</h2>
     <p class="text-body-secondary">
       Issue #136 : les waypoints ne sont générés automatiquement que dans les mondes autorisés. Par défaut :

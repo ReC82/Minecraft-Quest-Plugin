@@ -1580,6 +1580,20 @@ public interface AgentActions {
         return CompletableFuture.completedFuture(null);
     }
 
+    /** Relevé des opérations possibles -- action {@code world.state.options} (issue #563). {@code null} = indisponible. */
+    default CompletableFuture<com.lodygames.rpgquest.world.state.WorldStateService.Options> worldStateOptions() {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Charger / décharger / importer / régler le chargement au démarrage -- actions {@code world.load},
+     * {@code world.unload}, {@code world.import}, {@code world.autoload} (issue #563). {@code null} = indisponible.
+     */
+    default CompletableFuture<com.lodygames.rpgquest.world.state.WorldStateService.Outcome> worldStateApply(
+            com.lodygames.rpgquest.world.state.WorldStatePlanner.Request request, String token, String actor) {
+        return CompletableFuture.completedFuture(null);
+    }
+
     /** Création confirmée -- action {@code world.create.apply} (issue #562). {@code null} = indisponible. */
     default CompletableFuture<com.lodygames.rpgquest.world.create.WorldCreationService.Creation> worldCreateApply(
             com.lodygames.rpgquest.world.create.WorldCreationRequest request, String expectedFingerprint, String token,

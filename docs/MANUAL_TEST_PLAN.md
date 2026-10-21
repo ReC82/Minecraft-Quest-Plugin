@@ -7852,3 +7852,35 @@ priorité au portail chargé, aller-retour des champs, format historique conserv
 `PortalAdminParamsTest`, `PortalOverviewTest`, `PortalsPageTest` (formulaires, catalogue, auteur = session,
 emplacement cité non supprimable, rôles).
 
+### TC-388 — PlugAdmin : charger, décharger, importer un dossier existant (issue #563, PENDING MANUAL VALIDATION)
+
+**Feu vert séparé du propriétaire requis avant l'étape 3** : l'autorisation du 20/10 interdit tout chargement,
+déchargement ou import d'un monde réel par Claude, même « test ». Les étapes 1 et 2 sont en lecture seule. Ne jamais
+toucher le monde principal, `world_hub`, `wild`, `claims`.
+
+1.  Lecture seule : Monde → Mondes → « Rafraîchir les mondes », ouvrir la fiche du Hub, « Relever le chargement ».
+    **Attendu** : section « Chargement » sans bouton, raisons affichées (« a le rôle HUB », joueurs présents s'il y en
+    a) ; même chose pour `wild` (rôle WILD + `worlds.yml`), `claims` et le monde principal.
+2.  Lecture seule : sous la liste, « Importer un dossier existant ». **Attendu** : uniquement des dossiers que
+    Multiverse-Core ne connaît pas, avec la dimension lue dans le dossier ; « Aucun dossier importable » sinon.
+3.  (Feu vert requis) Créer un monde de test vide (TC-375) ou en choisir un sans rôle ni portail, s'y placer en jeu,
+    noter un bloc posé à un endroit précis. Fiche → « Enregistrer puis décharger » coché. **Attendu** : refus « 1
+    joueur(s) se trouvent dans … », rien n'est fait.
+4.  Quitter le monde, relever à nouveau, décharger (case « Charger au démarrage » cochée), confirmer. **Attendu** :
+    message « enregistré puis déchargé ; fichiers conservés », contrôles OK ; la carte passe à « Non chargé » ; le monde
+    reste listé (Multiverse).
+5.  « Charger », confirmer. **Attendu** : « chargé et relu conforme » ; en jeu, le bloc posé à l'étape 3 est toujours là
+    (données intactes).
+6.  Créer un portail en brouillon vers ce monde puis l'activer (TC-387, feu vert requis). Tenter de décharger.
+    **Attendu** : refus citant le portail actif. Le désactiver : le déchargement redevient possible.
+7.  « Ne plus charger au démarrage », redémarrer le serveur. **Attendu** : le monde n'est pas chargé après le
+    redémarrage ; `hub_to_wild` / `hub_to_claims`, Hub, Wild et Claims inchangés.
+8.  (Feu vert requis, facultatif) Copier par FTP un dossier de monde de test, relever, l'importer avec une dimension
+    différente de celle détectée. **Attendu** : refus. Avec la bonne dimension : importé, chargé, sans rôle.
+
+**Couverture automatisée** : `WorldStatePlannerTest` (tous les refus : monde principal et dimensions, rôles,
+`worlds.yml`, joueurs, portail actif / inactif / sortant, non chargé, hors Multiverse, import : dossier, réservé,
+dimension, noms de chemin ; Multiverse absent), `WorldStateServiceTest` (décharger puis recharger : données intactes,
+refus sans appel serveur, état revérifié à l'exécution, jeton jamais rejoué, chargement au démarrage, écart relu,
+échec Multiverse), `WorldStateFoldersTest`, `NoWorldDeletionTest`, `WorldStateActionTest`, `WorldStatePageTest`
+(boutons selon le relevé, raisons, confirmation, auteur = session, double clic, WORLD_WRITE côté serveur).

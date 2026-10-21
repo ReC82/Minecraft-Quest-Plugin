@@ -396,6 +396,20 @@ public final class AgentActionCatalog {
         add("world.create.preview", Permission.WORLD_CREATE, false, false,
                 "Aperçu de la création d'un monde (rien n'est créé)");
         addSensitiveWrite("world.create.apply", Permission.WORLD_CREATE, false, "Créer un monde", "world.list");
+        // Issue #563 (#331-W4) — charger / décharger / importer un dossier existant / « charger au
+        // démarrage ». Relevé en lecture (WORLD_READ) ; opérations sensibles (WORLD_WRITE, case de
+        // confirmation), revérifiées par le plugin : monde principal, Hub / Wild / Claims, mondes de
+        // worlds.yml, joueurs présents et portail actif qui y mène sont refusés côté serveur.
+        add("world.state.options", Permission.WORLD_READ, false, false,
+                "Relever le chargement des mondes et les dossiers importables");
+        addSensitiveWrite("world.load", Permission.WORLD_WRITE, false, "Charger un monde", "world.list",
+                "world.state.options");
+        addSensitiveWrite("world.unload", Permission.WORLD_WRITE, false, "Décharger un monde", "world.list",
+                "world.state.options");
+        addSensitiveWrite("world.import", Permission.WORLD_WRITE, false, "Importer un dossier de monde", "world.list",
+                "world.state.options");
+        addSensitiveWrite("world.autoload", Permission.WORLD_WRITE, false, "Régler « charger au démarrage »",
+                "world.list", "world.state.options");
         // Issue #564 (#228-P1) — portails en lecture.
         add("portal.list", Permission.PORTAL_READ, false, false, "Rafraîchir les portails");
         // Issue #565 (#228-P2) — portails modifiables : brouillon, zone, nom, suppression (PORTAL_EDIT),
@@ -2450,6 +2464,12 @@ public final class AgentActionCatalog {
                     return Validation.fail(error);
                 }
             }
+            case "world.load", "world.unload", "world.import", "world.autoload" -> {
+                String error = worldStateParams(type, form, params);
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
             case "world.create.options", "world.create.preview", "world.create.apply" -> {
                 String error = worldCreateParams(type, form, params);
                 if (error != null) {
@@ -2969,6 +2989,45 @@ public final class AgentActionCatalog {
 
     /** Issue #562 — bornes miroir de {@code WorldCreationPlanner}, que le plugin revalide entièrement. */
     public static final int MAX_WORLD_LAYERS = 16;
+    /** Nom d'un monde à charger / décharger / importer : celui d'un dossier, sans séparateur (issue #563). */
+    private static final Pattern WORLD_STATE_NAME = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}");
+
+    /**
+     * Paramètres de {@code world.load / unload / import / autoload} (issue #563). La confirmation est
+     * déjà exigée par validate() ; l'auteur vient de la session (PanelApp) ; le jeton est celui du
+     * formulaire, que le plugin ne traite qu'une fois.
+     */
+    private static String worldStateParams(String type, Map<String, String> form, Map<String, String> params) {
+        String world = trim(form.get("world"));
+        if (!WORLD_STATE_NAME.matcher(world).matches()) {
+            return "Nom de monde manquant ou invalide.";
+        }
+        params.put("world", world);
+        String autoLoad = trim(form.get("auto_load"));
+        if (!"true".equals(autoLoad) && !"false".equals(autoLoad)) {
+            return "Choisir si le monde est chargé au démarrage.";
+        }
+        params.put("auto_load", autoLoad);
+        if ("world.import".equals(type)) {
+            String environment = trim(form.get("environment"));
+            if (!java.util.Set.of("NORMAL", "NETHER", "THE_END").contains(environment)) {
+                return "Choisir la dimension du dossier : monde normal, Nether ou End.";
+            }
+            params.put("environment", environment);
+        }
+        String token = trim(form.get("token"));
+        if (!WORLD_CREATE_TOKEN.matcher(token).matches()) {
+            return "Jeton de demande manquant : recharger la page.";
+        }
+        params.put("token", token);
+        String by = trim(form.get("by"));
+        if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
+            params.put("by", by);
+        }
+        params.put("confirm", "true");
+        return null;
+    }
+
     private static final Pattern WORLD_CREATE_ID = Pattern.compile("[a-z0-9_.:-]{1,96}");
     private static final Pattern WORLD_CREATE_TOKEN = Pattern.compile("[A-Za-z0-9_-]{6,64}");
     private static final java.util.Set<String> WORLD_DIMENSIONS = java.util.Set.of("NORMAL", "NETHER", "THE_END");

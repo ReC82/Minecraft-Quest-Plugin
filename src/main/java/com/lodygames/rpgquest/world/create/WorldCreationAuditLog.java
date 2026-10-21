@@ -40,13 +40,26 @@ public final class WorldCreationAuditLog {
     private final Path file;
     private final Executor ioExecutor;
     private final Logger logger;
+    private final String subject;
+    private final List<String> header;
     private final Deque<Entry> entries = new ArrayDeque<>();
     private final Object fileLock = new Object();
 
     public WorldCreationAuditLog(Path file, Executor ioExecutor, Logger logger) {
+        this(file, ioExecutor, logger, "Création", List.of("Créations de monde demandées depuis PlugAdmin (issue #562).",
+                "Fichier tenu par RPGQuest : ne pas modifier à la main (le jeton empêche une double création)."));
+    }
+
+    /**
+     * Même journal pour une autre famille d'opérations sur les mondes (issue #563 : chargement,
+     * déchargement, import) : {@code subject} préfixe la ligne de log, {@code header} l'en-tête du fichier.
+     */
+    public WorldCreationAuditLog(Path file, Executor ioExecutor, Logger logger, String subject, List<String> header) {
         this.file = file;
         this.ioExecutor = ioExecutor;
         this.logger = logger;
+        this.subject = subject;
+        this.header = List.copyOf(header);
     }
 
     /** Charge le fichier existant (hors thread principal). */
@@ -71,7 +84,7 @@ public final class WorldCreationAuditLog {
             }
             copy = List.copyOf(entries);
         }
-        logger.info("Création du monde « {} » demandée depuis PlugAdmin par {} (jeton {}) : {}.", entry.world(),
+        logger.info("{} du monde « {} » demandée depuis PlugAdmin par {} (jeton {}) : {}.", subject, entry.world(),
                 entry.actor(), entry.token(), entry.result());
         ioExecutor.execute(() -> writeFile(copy));
     }
@@ -119,8 +132,7 @@ public final class WorldCreationAuditLog {
             try {
                 Files.createDirectories(file.getParent());
                 YamlConfiguration yaml = new YamlConfiguration();
-                yaml.options().setHeader(List.of("Créations de monde demandées depuis PlugAdmin (issue #562).",
-                        "Fichier tenu par RPGQuest : ne pas modifier à la main (le jeton empêche une double création)."));
+                yaml.options().setHeader(header);
                 List<Map<String, Object>> list = new ArrayList<>();
                 for (Entry e : snapshot) {
                     Map<String, Object> m = new LinkedHashMap<>();
@@ -138,7 +150,7 @@ public final class WorldCreationAuditLog {
                 yaml.save(tmp.toFile());
                 Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException | RuntimeException e) {
-                logger.error("Impossible d'écrire le journal des créations de monde {}.", file, e);
+                logger.error("Impossible d'écrire le journal des opérations sur les mondes {}.", file, e);
             }
         }
     }

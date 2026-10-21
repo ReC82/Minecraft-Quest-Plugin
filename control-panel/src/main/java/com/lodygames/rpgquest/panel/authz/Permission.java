@@ -55,8 +55,12 @@ public enum Permission {
     /**
      * Régler un monde existant (issue #561, #331-W2) : aperçu puis application confirmée de la
      * difficulté, du PvP, des apparitions, du mode de jeu à l'arrivée, de l'heure, de la météo, de la
-     * bordure, du point d'arrivée et des règles de jeu. Ne permet ni de créer, ni de charger, ni de
-     * décharger, ni de supprimer un monde. Réservé au propriétaire par défaut (attribuable par groupe).
+     * bordure, du point d'arrivée et des règles de jeu. Depuis l'issue #563 (#331-W4), aussi charger,
+     * décharger (après enregistrement, fichiers conservés), importer un dossier de monde existant et
+     * régler « charger au démarrage », via Multiverse-Core, après confirmation ; le plugin refuse le
+     * monde principal, Hub / Wild / Claims, les joueurs présents et les portails actifs qui y mènent.
+     * Ne permet ni de créer ni de supprimer un monde. Réservé au propriétaire par défaut (attribuable
+     * par groupe).
      */
     WORLD_WRITE,
     /**

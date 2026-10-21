@@ -11433,9 +11433,42 @@ public final class AgentPages {
                         ? " <a class=\"btn btn-sm btn-outline-primary\" href=\"" + WorldCreatePages.href(agentId) + "\">"
                         + Icons.icon("plus") + "Créer un monde</a>" : ""));
         String selected = str(q.get("world")).trim();
+        if (selected.isEmpty() && details != null && !str(q.get("focus")).isBlank()) {
+            // Après « Charger » / « Décharger », le panel revient avec focus=<monde> : la fiche reste ouverte.
+            String focus = cleanFocus(q.get("focus"));
+            selected = asList(details.get("worlds")).stream().map(w -> str(asMap(w).get("name")))
+                    .filter(n -> n.equalsIgnoreCase(focus)).findFirst().orElse("");
+        }
+        String fiche = details == null || selected.isEmpty() ? ""
+                : WorldStatePages.fiche(worldState(session, agentId, selected), selected)
+                        + worldSettings(session, agentId, selected, details, q);
         return WorldPages.render(new WorldPages.View(agentId, details, header,
-                row.map(r -> when(at(r))).orElse(""), selected,
-                details == null || selected.isEmpty() ? "" : worldSettings(session, agentId, selected, details, q)));
+                row.map(r -> when(at(r))).orElse(""), selected, fiche,
+                details == null ? "" : WorldStatePages.importSection(worldState(session, agentId, null))));
+    }
+
+    /** Opérations de chargement (issue #563) : mutations du catalogue, auteur imposé par la session. */
+    static final java.util.Set<String> WORLD_STATE_WRITES = java.util.Set.of("world.load", "world.unload",
+            "world.import", "world.autoload");
+
+    /**
+     * Issue #563 — relevé {@code world.state.options} et dernière opération (24 h) : celle de CE monde
+     * pour la fiche ({@code world} non nul), le dernier import pour la liste.
+     */
+    private WorldStatePages.View worldState(Session session, String agentId, String world) {
+        Optional<AgentActionRow> options = store.latestSuccessfulActionOfType(agentId, "world.state.options");
+        Instant since = Instant.now().minus(java.time.Duration.ofHours(24));
+        AgentActionRow last = store.recentActions(agentId, 100).stream()
+                .filter(r -> world == null ? "world.import".equals(r.type())
+                        : WORLD_STATE_WRITES.contains(r.type()) && world.equals(r.params().get("world")))
+                .filter(r -> r.createdAt() != null && r.createdAt().isAfter(since))
+                .findFirst().orElse(null);
+        String refresh = compactRefresh(session, agentId, "world.state.options",
+                options.isEmpty() ? "Relever le chargement" : "Relever à nouveau",
+                options.isEmpty() ? "btn-warning" : "secondary", WorldPages.PATH);
+        return new WorldStatePages.View(session.csrfToken(), agentId, perms.can(session.effective(), Permission.WORLD_WRITE),
+                options.flatMap(this::detailsOf).orElse(null), options.map(r -> when(at(r))).orElse(""), refresh, last,
+                last == null ? null : detailsOf(last).orElse(null));
     }
 
     /**

@@ -1374,6 +1374,35 @@ public final class RPGQuestBootstrap {
                             return roles;
                         }),
                 worldCreateAudit, java.time.Clock.systemUTC()));
+        // Issue #563 (#331-W4) : charger / décharger / importer un monde via Multiverse-Core. Rien n'est
+        // fait au démarrage : seules les actions world.load / unload / import / autoload agissent,
+        // après confirmation dans PlugAdmin. Refus serveur : monde principal, Hub / Wild / Claims,
+        // mondes de worlds.yml, joueurs présents, portail actif qui y mène.
+        com.lodygames.rpgquest.world.create.WorldCreationAuditLog worldStateAudit =
+                new com.lodygames.rpgquest.world.create.WorldCreationAuditLog(
+                        plugin.getDataFolder().toPath().resolve("world-state-audit.yml"),
+                        task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
+                        plugin.getSLF4JLogger(), "Chargement / déchargement / import",
+                        java.util.List.of("Chargements, déchargements et imports de monde demandés depuis PlugAdmin "
+                                + "(issue #563).", "Fichier tenu par RPGQuest : ne pas modifier à la main (le jeton "
+                                + "empêche de rejouer une demande)."));
+        worldStateAudit.load();
+        agentActions.setWorldState(new com.lodygames.rpgquest.world.state.WorldStateService(
+                new com.lodygames.rpgquest.world.state.BukkitWorldStateGateway(plugin.getServer(),
+                        new com.lodygames.rpgquest.world.multiverse.MultiverseWorldState(),
+                        () -> {
+                            var cfg = configService.current();
+                            java.util.Map<String, java.util.List<String>> roles = new java.util.LinkedHashMap<>();
+                            for (String[] role : new String[][]{{cfg.hub().world(), "HUB"},
+                                    {cfg.travel().wildWorld(), "WILD"}, {cfg.claims().world(), "CLAIMS"}}) {
+                                if (role[0] != null && !role[0].isBlank()) {
+                                    roles.computeIfAbsent(role[0].toLowerCase(java.util.Locale.ROOT),
+                                            k -> new java.util.ArrayList<>()).add(role[1]);
+                                }
+                            }
+                            return roles;
+                        }, worldService::managedNames, agentActions::portalTargets),
+                worldStateAudit, java.time.Clock.systemUTC()));
         // Issue #564 (#228-P1) : page Portails en lecture seule — mêmes registres que le jeu.
         agentActions.setPortalSources(portalRegistry, destinationRegistry,
                 id -> questProgressEngine.npcNameResolver().apply(id));

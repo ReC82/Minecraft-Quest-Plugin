@@ -46,6 +46,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > et portails de zone (ancien format), zone, destination, arrivée RANDOM_SAFE / CLAIM_HOME, gardes Wild/Claims
 > appliqués, diagnostics. Aucune création, modification, activation ni téléportation. Pas de migration.
 
+> **Charger / décharger / importer un monde (#563, 21/10/2026)** — fiche d'un monde, section « Chargement »,
+> et « Importer un dossier existant » sous la liste ; relevé `world.state.options` (WORLD_READ), actions
+> sensibles `world.load|unload|import|autoload` (WORLD_WRITE, confirmation, jeton, auteur = session) via
+> Multiverse-Core seulement. Refus côté serveur : monde principal et ses dimensions, Hub/Wild/Claims, mondes de
+> `worlds.yml`, joueurs présents, portail actif qui y mène, dimension du dossier différente. Déchargement =
+> enregistrement puis déchargement, fichiers conservés ; aucune suppression possible. Journal
+> `world-state-audit.yml`. **Aucune opération réelle exécutée** : TC-388 en attente d'accord du propriétaire.
+> Pas de migration.
+
 > **Créer un monde (#562, 20/10/2026)** — PlugAdmin `/worlds/create`, permission `WORLD_CREATE`
 > (propriétaire) : options `world.create.options`, aperçu sans création `world.create.preview`, création
 > confirmée `world.create.apply` via Multiverse-Core seulement (dimension, terrain normal/plat/amplifié/

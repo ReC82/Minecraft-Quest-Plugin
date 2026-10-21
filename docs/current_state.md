@@ -6,6 +6,18 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Claims dans PlugAdmin (#637, 21/10/2026)** — page `/claims` (groupe « RPGQuest », sous Joueurs),
+> permission `CLAIM_READ` (Propriétaire, Administrateur, Testeur), action agent `claim.list` : tous les
+> claims persistés (propriétaire UUID + pseudo connu, claim principal = `ClaimService#mainClaimOf`,
+> monde chargé ou non, bornes, réservation, palier déduit de la taille réelle, membres), filtre par
+> joueur, fonctionne hors ligne ; carte « Claims » sur la fiche joueur. « M'y téléporter » :
+> `claim.teleport`, permission distincte `CLAIM_TELEPORT` (Propriétaire, Administrateur), ne déplace
+> **que le personnage lié** au compte PlugAdmin (imposé par le panel), confirmation, une demande à la
+> fois ; le plugin (`claim.ClaimAdminTeleport`) contrôle avant l'éligibilité au monde des claims (sans
+> écrire `CLAIM_TIER_1` ni activer le bypass), calcule la position sûre du claim (même résolveur que
+> `/claim admin tp`) et ne répond succès qu'après relecture de la position. Aucun claim, terrain ni
+> droit modifié. Pas de migration.
+
 > **Bossbar de suivi compacte (#71, 20/10/2026)** — `ui.TrackedQuestSummary` : la bossbar de la quête
 > suivie n'affiche plus la liste concaténée des objectifs (« Tuer SPIDER · Tuer ZOMBIE · … ») mais un
 > résumé borné : titre (raccourci avec « … » si besoin), « Étape 2/3 » si plusieurs étapes, puis

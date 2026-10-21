@@ -7766,3 +7766,33 @@ Lecture seule : aucune XP, aucun niveau, aucune récompense n'est modifié par c
 **Couverture automatisée** : `ProgressionGaugeTest` (0 %, intermédiaire, 99 % jamais arrondi à 100, passage de niveau, niveau maximal,
 largeur fixe de la barre, aucun identifiant technique), `QuestJournalServiceTest` (résumé dans la bourse, 6 pistes dans l'ordre, joueur
 sans progression, page en lecture seule + clics annulés + Retour vers le même onglet, Fermer au tick suivant).
+
+### TC-385 — PlugAdmin : consulter les claims d'un joueur et s'y téléporter pour diagnostic (issue #637, PENDING MANUAL VALIDATION)
+
+Aucun claim n'est créé, supprimé, transféré ni déplacé pour ce test ; ne casser aucune construction. La téléportation
+n'est faite que par le propriétaire du serveur, avec son personnage lié.
+
+1.  PlugAdmin → **RPGQuest → Claims** → « Rafraîchir les claims ». **Attendu** : une carte par claim réel, avec le pseudo
+    du propriétaire (ou « joueur 1234abcd… » s'il est inconnu), « Principal », le monde, le centre (x, z), la taille et
+    le palier. Comparer avec `/claim list` / `/claim admin tp <joueur>` en jeu : mêmes identifiants et positions.
+2.  Rechercher un pseudo, puis ouvrir la fiche joueur (Joueurs → le joueur) : **attendu** une carte « Claims » listant
+    ses claims ; pour un joueur sans claim, « Aucun claim pour ce joueur ». Essayer un joueur hors ligne : même résultat.
+3.  Ouvrir la fiche d'un claim **d'un autre joueur** (avec son accord). **Attendu** : « Personnage déplacé » = votre
+    personnage lié, « Destination » = ce claim ; aucune téléportation tant que rien n'est confirmé (rafraîchir la page :
+    rien ne bouge en jeu).
+4.  En jeu, mode bypass **désactivé**, personnage sans claim ni `CLAIM_TIER_1` (si c'est le cas) : confirmer « M'y
+    téléporter ». **Attendu** : refus expliqué (« serait aussitôt renvoyé au Hub… »), vous ne bougez pas. Sinon passer à 5.
+5.  Avec un personnage éligible (claim ou `CLAIM_TIER_1`, ou `/rpgadmin bypass on` puis `off` une fois arrivé) :
+    confirmer « M'y téléporter » (double-cliquer le bouton). **Attendu** : une seule téléportation, arrivée sur le claim
+    sur un sol sûr, « Dernière demande » en cours puis « Votre personnage est sur le claim … en x, y, z ».
+6.  Une fois sur place, mode bypass **OFF** : tenter de casser un bloc du claim d'autrui. **Attendu** : refusé (la
+    téléportation ne donne aucun droit). Ne rien casser sur votre propre claim pour ce test.
+7.  Avec un compte PlugAdmin Testeur (s'il existe) : la page Claims se lit, mais la fiche dit que le rôle ne permet pas
+    de s'y téléporter.
+
+**Couverture automatisée** : `ClaimOverviewTest` (principal, palier déduit, pseudo inconnu, relevé vide vs indisponible),
+`ClaimAdminTeleportTest` (MockBukkit : seul l'administrateur bouge, claim inchangé, aucune appartenance, refus non éligible
+sans écrire `CLAIM_TIER_1`, aucune position sûre, claim inconnu / changé de propriétaire, hors ligne, monde non chargé,
+double demande), `ClaimActionsTest` (contrat JSON, refus non succès, paramètres invalides), `ClaimsPageTest` (page sans
+relevé, liste et filtre par joueur, fiche, rien envoyé à l'ouverture, personnage lié imposé même si le formulaire désigne
+le propriétaire, confirmation obligatoire, double clic, droits lecture / téléportation distincts).

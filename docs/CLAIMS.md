@@ -698,3 +698,16 @@ introduite ici. De même, `Player#spawnParticle` n'est pas simulé par
 MockBukkit (no-op) : `ClaimBorderRenderer` est testé via une sous-classe
 d'enregistrement (`RecordingBorderRenderer`, tests dédiés), jamais via une
 assertion sur des particules réellement envoyées.
+
+## PlugAdmin : consulter les claims et s'y téléporter (issue #637)
+
+-   **Page `/claims`** (permission panel `CLAIM_READ`) : relevé `claim.list` de tous les claims
+    persistés — propriétaire (UUID + pseudo connu), claim principal (`ClaimService#mainClaimOf`),
+    monde chargé ou non, bornes, réservation, palier déduit de la taille, membres. Joueurs hors
+    ligne compris. Carte « Claims » sur la fiche joueur.
+-   **« M'y téléporter »** (permission distincte `CLAIM_TELEPORT`) : équivalent PlugAdmin de
+    `/claim admin tp`, mais vers **un claim précis**, et seulement pour le personnage lié au compte
+    PlugAdmin de la session. Contrôle préalable de l'accès au monde des claims (sans rien écrire),
+    même position sûre que `/claim admin tp`, succès seulement après relecture de la position.
+    Aucun claim, terrain, droit ni mode bypass n'est modifié. Détail : `docs/RPGQUEST_BIBLE.md`
+    section 8.

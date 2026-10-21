@@ -48,6 +48,24 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - PlugAdmin : consulter les claims et s'y téléporter pour diagnostic (#637, TC-385)
+
+### Changement
+
+Plugin : actions agent `claim.list` (relevé lecture seule de tous les claims) et `claim.teleport` (téléportation du
+personnage lié d'un administrateur sur une position sûre d'un claim, après contrôle d'accès au monde des claims et avec
+relecture de la position). PlugAdmin : page `/claims`, carte « Claims » de la fiche joueur, permissions `CLAIM_READ` /
+`CLAIM_TELEPORT`. Aucun claim, terrain, droit, variable ni mode bypass modifié.
+
+### Actions serveur
+
+- JAR `c8e83f0a` (PR #682) transféré par `deploy-verygames.sh -y`, SHA-256 `39160773…` retéléchargé identique ; backup
+  `rpgquest-20261021T034901Z-predeploy.jar` (version `f3cbc72c`, #183). **Serveur DEV toujours arrêté** : le JAR sera
+  chargé au démarrage depuis le panel VeryGames. Aucun redémarrage tenté.
+- PlugAdmin `c8e83f0a` déployé (`scripts/plugadmin/deploy.sh`), app précédente `/opt/plugadmin/releases/20261021-054945`.
+- Aucune migration SQL, aucune clé de configuration, aucun contenu.
+- Rollback : `scripts/rollback-verygames.sh --latest` ; PlugAdmin : restaurer la release précédente.
+
 ## 2026-10-21 - Journal : consulter sa progression RPG sans commande (#183, TC-384)
 
 ### Changement

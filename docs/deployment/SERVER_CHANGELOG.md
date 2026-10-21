@@ -48,6 +48,28 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Mondes : charger, décharger, importer un dossier depuis PlugAdmin (#563, TC-388)
+
+### Changement
+
+Plugin : relevé `world.state.options` et actions `world.load|unload|import|autoload` via Multiverse-Core (confirmation,
+jeton, auteur, une opération à la fois, relecture), journal `world-state-audit.yml` (créé à la première demande).
+Refus côté serveur : monde principal et ses dimensions, Hub / Wild / Claims, mondes de `worlds.yml`, joueurs présents,
+portail actif qui y mène, dimension du dossier différente. Déchargement = enregistrement puis déchargement, fichiers
+conservés ; aucune suppression possible. PlugAdmin : section « Chargement » de la fiche monde, « Importer un dossier
+existant », permission `WORLD_WRITE`.
+
+### Actions serveur
+
+- JAR `62e2949f` (PR #689) transféré par `deploy-verygames.sh -y`, 4038929 o, SHA-256 `44797aba…` retéléchargé
+  identique ; backup `rpgquest-20261021T073412Z-predeploy.jar` (version `1de1d576`, #565). **Serveur DEV toujours
+  arrêté** : le JAR sera chargé au démarrage depuis le panel VeryGames. Aucun redémarrage tenté. Code inerte au démarrage.
+- PlugAdmin `62e2949f` déployé (`scripts/plugadmin/deploy.sh`), app précédente `/opt/plugadmin/releases/20261021-093459`.
+- **Aucun monde réel ne doit être chargé, déchargé ni importé** avant un nouvel accord du propriétaire (autorisation du
+  20/10 sur #563).
+- Aucune migration SQL, aucune clé de configuration, aucun contenu.
+- Rollback : `scripts/rollback-verygames.sh --latest` ; PlugAdmin : `scripts/plugadmin/rollback.sh app`.
+
 ## 2026-10-21 - Portails : brouillons, zone d'activation, activation depuis PlugAdmin (#565, TC-387)
 
 ### Changement

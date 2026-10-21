@@ -4949,10 +4949,10 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
 - **Monde → Mondes** (`/worlds`), permission panel `WORLD_READ` (Propriétaire, Administrateur,
   Testeur, Builder, Lecture seule). Le groupe de navigation « Monde » contient aussi **Voyages**
   (même URL `/travel`, déplacé depuis « RPGQuest »).
-- Action agent de liste : `world.list` (« Rafraîchir les mondes »), **lecture seule**. Aucune action
-  `world.*` ne charge, ne décharge, n'importe, ne régénère ni ne supprime un monde ; les réglages d'un
-  monde chargé (#561) se font dans sa fiche et la création d'un monde (#562) par « Créer un monde »,
-  voir ci-dessous.
+- Action agent de liste : `world.list` (« Rafraîchir les mondes »), **lecture seule**. Les réglages d'un
+  monde chargé (#561), le chargement / déchargement (#563) se font dans sa fiche, l'import d'un dossier
+  existant (#563) sous la liste et la création d'un monde (#562) par « Créer un monde », voir ci-dessous.
+  Aucune action `world.*` ne régénère ni ne supprime un monde.
 - Le relevé donne aussi `onlinePlayers`, le total des joueurs connectés lu au même instant que les
   compteurs par monde ; la page l'affiche et signale « attention » si la somme des mondes en diffère.
   Les noms des éléments liés (mobs, waypoints, villes) sont affichés en texte lisible, balises
@@ -5068,6 +5068,47 @@ Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avert
 - **État de validation** : la création réelle n'a jamais été exécutée (aucun monde créé sur DEV ni
   ailleurs) ; elle attend un accord explicite du propriétaire (TC-375, PENDING MANUAL VALIDATION). Le
   comportement réel des préréglages « Vide » et des structures en monde plat reste à observer.
+
+
+### Charger, décharger, importer un dossier existant (issue #563, #331-W4)
+
+- **Où** : fiche d'un monde → section **Chargement** (« Charger » ou « Enregistrer puis décharger »,
+  « Charger au démarrage ») ; liste des mondes → **Importer un dossier existant**. Bouton **Relever le
+  chargement** = action `world.state.options` (lecture seule, `WORLD_READ`) : pour chaque monde chargé ou
+  connu de Multiverse-Core, ce que chaque opération permet ou les raisons du refus ; dossiers importables et
+  leur dimension ; dernières opérations.
+- **Actions agent** (sensibles, case de confirmation, permission **`WORLD_WRITE`**, Propriétaire par
+  défaut) : `world.load`, `world.unload`, `world.import` (paramètre `environment` NORMAL / NETHER / THE_END),
+  `world.autoload` ; toutes exigent `world`, `auto_load` (true/false), `token` (jeton du formulaire, traité
+  une seule fois même après redémarrage), `by` (auteur = la session PlugAdmin, jamais le formulaire) et
+  `confirm=true`, revérifiés par le plugin.
+- **Gestionnaire** : Multiverse-Core uniquement (`WorldManager#loadWorld` / `unloadWorld` avec
+  `saveBukkitWorld(true)` / `importWorld` avec vérification de dossier / `setAutoLoad` + enregistrement de son
+  `worlds.yml`). Seule classe qui agit : `world/multiverse/MultiverseApiState`. Sans Multiverse : tout est
+  refusé, raison affichée. **Décharger n'efface rien** : le monde est enregistré, ses fichiers restent sur le
+  disque et Multiverse-Core le garde dans sa liste pour le recharger. Aucune suppression, retrait, régénération
+  ni clonage n'existe dans le code des mondes (`NoWorldDeletionTest`).
+- **Refus côté serveur** (revérifiés sur le thread principal juste avant d'agir, journalisés) : Multiverse
+  absent ; nom invalide (lettres, chiffres, `_ - .`, sans séparateur de chemin) ; **monde principal** et
+  `<principal>_nether` / `<principal>_the_end` ; **monde à rôle** Hub / Wild / Claims (`config.yml`) ; monde
+  rechargé par RPGQuest (`plugins/RPGQuest/worlds.yml`, ex. `wild`). Décharger : monde non chargé, chargé hors
+  Multiverse, **joueurs présents**, **portail actif qui y mène** (portail entre mondes activé, ou portail de
+  zone dont la destination est dans ce monde) ; un portail qui en part donne un avertissement. Charger : monde
+  déjà chargé ou inconnu de Multiverse (→ importer). Importer : dossier du serveur (`plugins`, `logs`…), monde
+  déjà chargé ou connu, aucun dossier de ce nom contenant `level.dat`, dimension non choisie, **dimension
+  différente de celle lue dans le dossier** (`region` = monde normal, sinon `DIM-1` = Nether, `DIM1` = End ;
+  aucune = refus). « Charger au démarrage » : monde inconnu de Multiverse, valeur déjà en place.
+- **Dossiers importables** : relevés hors du thread principal (au plus 100 dossiers, ceux qui contiennent
+  `level.dat`), moins les mondes chargés, connus de Multiverse et les dossiers du serveur.
+- **Relecture** après l'opération : chargé / non chargé, géré par Multiverse-Core, dimension (import),
+  chargé au démarrage — chaque contrôle OK / écart. Une seule opération à la fois.
+- **Journal** : `plugins/RPGQuest/world-state-audit.yml` (qui, quand, jeton, monde, opération, verdict,
+  contrôles ; 200 dernières demandes ; créé à la première demande ; écrit hors du thread principal) +
+  `audit_log` PlugAdmin. Rien n'est fait au démarrage, au rechargement ni au déploiement.
+- **Limite connue** : charger et importer sont synchrones (Paper et Multiverse) : le serveur se fige quelques
+  secondes. Un monde chargé ou importé ne reçoit aucun rôle, portail ni waypoint.
+- **État de validation** : aucune opération réelle n'a été exécutée (aucun monde chargé, déchargé ni importé sur
+  DEV) ; elles attendent un accord explicite du propriétaire (TC-388, PENDING MANUAL VALIDATION).
 
 
 Vérifié dans `RpgAdminCommand.java` (`handleWorld*`), `hub/HubWorldRulesService.java`, `config.yml`, et [VERYGAMES.md](deployment/VERYGAMES.md).

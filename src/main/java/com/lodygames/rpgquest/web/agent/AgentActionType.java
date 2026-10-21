@@ -716,6 +716,17 @@ public enum AgentActionType {
      */
     PORTAL_MESSAGES("portal.messages"),
     /**
+     * Issue #568 (#228-P5) — lier la construction posée sur l'emplacement d'un portail non actif : la
+     * zone d'activation devient le passage de l'arche (ancre + rotation de la pose). Aucun bloc posé
+     * ni retiré ; le portail n'est jamais activé par cette action. Empreinte exigée.
+     */
+    PORTAL_BUILDING_LINK("portal.building.link"),
+    /**
+     * Issue #568 — délier la construction d'un portail : l'arche reste posée, la zone est conservée.
+     * Empreinte exigée.
+     */
+    PORTAL_BUILDING_UNLINK("portal.building.unlink"),
+    /**
      * Issue #637 — tous les claims persistés : propriétaire (UUID + pseudo connu), claim principal,
      * monde (chargé ou non), bornes, réservation, palier déduit de la taille réelle. Lecture seule ;
      * fonctionne pour un propriétaire hors ligne.

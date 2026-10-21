@@ -121,6 +121,64 @@ class BuildingGeneratorTest {
         assertTrue(result.blocks() > 0, "des blocs ont été posés");
     }
 
+    /** Arche de portail (issue #568) : socle en y=0, passage x 2..4, y 1..3, sur toute la profondeur. */
+    private static final String ARCH_PLAN = """
+            id: arche_portail
+            name: "Arche du portail"
+            kind: portal
+            front: NORTH
+            size:
+              x: 7
+              y: 6
+              z: 3
+            steps:
+              - op: box
+                from: [0, 0, 0]
+                to: [6, 4, 2]
+                block: minecraft:stone_bricks
+              - op: clear
+                from: [2, 1, 0]
+                to: [4, 3, 2]
+              - op: box
+                from: [0, 0, 0]
+                to: [6, 0, 2]
+                block: minecraft:polished_andesite
+            """;
+
+    @Test
+    @DisplayName("#568 : une arche générée garde son type et sa zone de passage dans la bibliothèque")
+    void aGeneratedPortalArchKeepsItsKindAndPassage() throws Exception {
+        BuildingGenerator.Result result = generator.generate(ARCH_PLAN, false);
+
+        assertTrue(result.ok(), result.message());
+        var definition = library.find("arche_portail").orElseThrow();
+        assertEquals(StructureKind.PORTAL, definition.kind());
+        // Ancre par défaut (3, 0, 1) dans la dalle : le passage commence juste au-dessus.
+        assertEquals(new com.lodygames.rpgquest.building.model.PortalPassage(2, 1, 0, 4, 3, 2),
+                definition.passage());
+        String yaml = Files.readString(buildings.resolve("arche_portail.yml"));
+        assertTrue(yaml.contains("kind: portal"), yaml);
+        assertTrue(yaml.contains("passage:"), yaml);
+        assertTrue(generator.preview(ARCH_PLAN).verdict().message().contains("Passage du portail : 3 × 3 × 3"));
+    }
+
+    @Test
+    @DisplayName("#568 : une arche sans passage à l'ancre est refusée avant toute écriture")
+    void aPortalArchWithoutPassageAtTheAnchorIsRefusedBeforeWriting() {
+        String offCentre = ARCH_PLAN.replace("id: arche_portail", "id: arche_decalee")
+                + "anchor:\n  x: 0\n  y: 0\n  z: 1\n";
+
+        BuildingGenerator.Result result = generator.generate(offCentre, false);
+
+        assertFalse(result.ok());
+        assertEquals(BuildingGenerator.PORTAL_PASSAGE_MISSING, result.code());
+        assertFalse(gateway.files.contains("arche_decalee.schem"), "rien n'a été écrit");
+        assertTrue(library.find("arche_decalee").isEmpty());
+        BuildingGenerator.Verdict v = generator.preview(offCentre).verdict();
+        assertFalse(v.ok());
+        assertTrue(v.codes().contains(BuildingGenerator.PORTAL_PASSAGE_MISSING), v.codes().toString());
+    }
+
     @Test
     @DisplayName("Le plan source est conservé dans la définition : un bâtiment généré n'est pas un cul-de-sac")
     void thesourcePlanIsKeptInsideTheDefinition() throws Exception {

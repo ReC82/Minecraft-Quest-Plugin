@@ -97,17 +97,39 @@ public record WorldPortalDefinition(
      * @param width  largeur saisie (0 = non renseignée), perpendiculaire à la face de l'emplacement
      * @param height hauteur saisie (0 = non renseignée)
      * @param depth  profondeur saisie (0 = non renseignée), le long de la face de l'emplacement
+     * @param building issue #568 : arche de la bibliothèque dont la zone a été déduite, posée sur
+     *                 {@code site} ({@code ""} = aucune construction liée). Lien explicite, écrit
+     *                 seulement par « Lier la construction » ; poser une arche ne l'écrit jamais
      */
-    public record Details(String name, String site, boolean draft, int width, int height, int depth) {
+    public record Details(String name, String site, boolean draft, int width, int height, int depth,
+                          String building) {
 
-        public static final Details NONE = new Details("", "", false, 0, 0, 0);
+        public static final Details NONE = new Details("", "", false, 0, 0, 0, "");
 
         public Details {
             name = name == null ? "" : name.strip();
             site = site == null ? "" : site.strip();
+            building = building == null ? "" : building.strip();
             if (width < 0 || height < 0 || depth < 0) {
                 throw new IllegalArgumentException("les dimensions saisies doivent être positives.");
             }
+            if (!building.isEmpty() && site.isEmpty()) {
+                throw new IllegalArgumentException("une construction liée exige un emplacement (site).");
+            }
+        }
+
+        /** Sans construction liée : conserve les appelants antérieurs à #568 inchangés. */
+        public Details(String name, String site, boolean draft, int width, int height, int depth) {
+            this(name, site, draft, width, height, depth, "");
+        }
+
+        /** Mêmes champs, construction liée remplacée ({@code ""} = déliée). */
+        public Details withBuilding(String buildingId) {
+            return new Details(name, site, draft, width, height, depth, buildingId);
+        }
+
+        public boolean linked() {
+            return !building.isEmpty();
         }
 
         public boolean hasSize() {
@@ -200,7 +222,8 @@ public record WorldPortalDefinition(
     /** Activé ({@code true}, quitte l'état brouillon) ou désactivé ; le reste est conservé. */
     public WorldPortalDefinition withEnabled(boolean on) {
         Details d = on && details.draft()
-                ? new Details(details.name(), details.site(), false, details.width(), details.height(), details.depth())
+                ? new Details(details.name(), details.site(), false, details.width(), details.height(), details.depth(),
+                        details.building())
                 : details;
         return new WorldPortalDefinition(id, world, minX, minY, minZ, maxX, maxY, maxZ, destinationWorld, on,
                 destinationStrategy, d, fixedPoint, returnOf, access, messages);

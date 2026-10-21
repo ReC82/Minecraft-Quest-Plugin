@@ -176,9 +176,14 @@ public final class WorldPortalRegistry implements PluginService {
                 parseStrategy(yaml.getString("destination-strategy", DestinationStrategy.WORLD_SPAWN.name())),
                 new WorldPortalDefinition.Details(yaml.getString("name", ""), yaml.getString("site", ""),
                         yaml.getBoolean("draft", false), yaml.getInt("size.width"), yaml.getInt("size.height"),
-                        yaml.getInt("size.depth")),
+                        yaml.getInt("size.depth"), parseBuilding(yaml)),
                 parsePoint(yaml), yaml.getString("return-of", ""), PortalAccessYaml.read(yaml),
                 PortalMessagesYaml.read(yaml));
+    }
+
+    /** Issue #568 : une construction liée n'a de sens qu'avec un emplacement — sinon ignorée. */
+    private static String parseBuilding(YamlConfiguration yaml) {
+        return yaml.getString("site", "").isBlank() ? "" : yaml.getString("building", "");
     }
 
     /** Issue #566 : {@code destination-point} absent = aucun point ; présent, x, y et z sont obligatoires. */
@@ -381,6 +386,9 @@ public final class WorldPortalRegistry implements PluginService {
             }
             if (!d.site().isEmpty()) {
                 yaml.set("site", d.site());
+            }
+            if (d.linked()) {
+                yaml.set("building", d.building());
             }
             if (d.draft()) {
                 yaml.set("draft", true);

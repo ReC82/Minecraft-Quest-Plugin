@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.building;
 
 import com.lodygames.rpgquest.building.model.BuildingDefinition;
 import com.lodygames.rpgquest.building.model.Facing;
+import com.lodygames.rpgquest.building.model.PortalPassage;
+import com.lodygames.rpgquest.building.plan.StructureKind;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -76,6 +78,37 @@ public final class BuildingDefinitionYaml {
             return Optional.empty();
         }
 
+        // #568 : type et zone de passage, facultatifs (un fichier antérieur reste identique).
+        StructureKind kind = StructureKind.HABITABLE;
+        String kindRaw = text(section, "kind");
+        if (kindRaw != null) {
+            Optional<StructureKind> parsed = StructureKind.of(kindRaw);
+            if (parsed.isEmpty()) {
+                problems.add("Type inconnu pour « " + id + " » : « " + kindRaw
+                        + " ». Valeurs acceptées : habitable, decoration, portal.");
+                return Optional.empty();
+            }
+            kind = parsed.get();
+        }
+        PortalPassage passage = null;
+        ConfigurationSection passageSection = section.getConfigurationSection("passage");
+        if (passageSection != null) {
+            ConfigurationSection min = passageSection.getConfigurationSection("min");
+            ConfigurationSection max = passageSection.getConfigurationSection("max");
+            if (min == null || max == null) {
+                problems.add("Zone de passage incomplète pour « " + id + " » : sections « passage.min » et "
+                        + "« passage.max » attendues.");
+                return Optional.empty();
+            }
+            try {
+                passage = new PortalPassage(min.getInt("x"), min.getInt("y"), min.getInt("z"),
+                        max.getInt("x"), max.getInt("y"), max.getInt("z"));
+            } catch (IllegalArgumentException invalid) {
+                problems.add("Zone de passage invalide pour « " + id + " » : " + invalid.getMessage());
+                return Optional.empty();
+            }
+        }
+
         List<String> materials = new ArrayList<>();
         for (String raw : section.getStringList("materials")) {
             if (raw != null && !raw.isBlank()) {
@@ -91,7 +124,7 @@ public final class BuildingDefinitionYaml {
                 size.getInt("x"), size.getInt("y"), size.getInt("z"),
                 anchor.getInt("x"), anchor.getInt("y"), anchor.getInt("z"),
                 front.get(), materials,
-                Math.max(1, section.getInt("version", 1)));
+                Math.max(1, section.getInt("version", 1)), kind, passage);
 
         Optional<String> invalid = definition.validate();
         if (invalid.isPresent()) {
@@ -99,6 +132,25 @@ public final class BuildingDefinitionYaml {
             return Optional.empty();
         }
         return Optional.of(definition);
+    }
+
+    /**
+     * Écrit le type et la zone de passage (issue #568). Rien pour un bâtiment habitable sans zone :
+     * un fichier antérieur réécrit reste identique.
+     */
+    public static void writeKind(ConfigurationSection yaml, BuildingDefinition definition) {
+        if (definition.kind() != StructureKind.HABITABLE) {
+            yaml.set("kind", definition.kind().name().toLowerCase(Locale.ROOT));
+        }
+        PortalPassage p = definition.passage();
+        if (p != null) {
+            yaml.set("passage.min.x", p.minX());
+            yaml.set("passage.min.y", p.minY());
+            yaml.set("passage.min.z", p.minZ());
+            yaml.set("passage.max.x", p.maxX());
+            yaml.set("passage.max.y", p.maxY());
+            yaml.set("passage.max.z", p.maxZ());
+        }
     }
 
     private static String text(ConfigurationSection section, String key) {

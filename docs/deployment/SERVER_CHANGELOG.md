@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Hub : commerce vanilla et conteneurs verrouillés (#675, TC-397)
+
+### Changement
+
+Nouvel écouteur `hub.HubResourceLockListener`, règle du monde `hub.world` : pas de commerce avec un villageois ou un
+marchand ambulant non Citizens, pas d'ouverture des coffres / tonneaux / shulkers / hoppers / distributeurs / droppers /
+crafters / wagonnets et bateaux à coffre, pots décorés et étagères refusés, hoppers et droppers inertes. Verrouillage
+par annulation d'évènement : aucun objet, villageois ni bloc modifié. Fours, alambics, établis, coffre de l'Ender,
+coffres personnels liés (#105), PNJ Citizens et interfaces RPGQuest libres ; Wild et Claims inchangés. Nouveau nœud
+`rpgquest.admin.hub.resources` (défaut `op`, effectif seulement en session `/rpgadmin bypass on`).
+
+### Action serveur
+
+- **Effectué le 21/10 23:06** : JAR `1549c345` (PR #713, CI PR + fusion vertes) via `scripts/deploy-verygames.sh -y` — en
+  ligne 4182486 octets, SHA-256 `c4f200862d08ed317f889760eb8eb40694bc4ffe2f9050a79324c08b5adf14a2`, retéléchargé et
+  identique ; DEV redémarré par `scripts/verygames-restart.sh` (0 joueur connecté), RPGQuest actif (`plugins`).
+- **Aucune migration `data.db`**, aucune clé de configuration, aucun fichier de contenu transféré. PlugAdmin inchangé.
+- Ne PAS vider de coffre ni retirer de villageois pour « tester » : la livraison est un verrou, pas un nettoyage.
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261021T210601Z-predeploy.jar` (4178087 o, SHA-256 `79fb4faa…`, JAR #568).
+
+### Validation
+
+TC-397 (PENDING MANUAL VALIDATION) : villageois du Hub sans commerce, coffre/tonneau fermés, coffre personnel / établi /
+four / PNJ RPGQuest normaux, Wild inchangé.
+
+### Rollback
+
+Remettre `rpgquest-20261021T210601Z-predeploy.jar` comme JAR du plugin puis redémarrer (aucune donnée à restaurer).
+
+---
+
 ## 2026-10-21 - Portails : construction liée — arche, zone de passage, liaison (#568, TC-396)
 
 ### Changement

@@ -49,8 +49,10 @@
       utilisé en production VeryGames) puis régi automatiquement par
       <code>hub.HubWorldRulesService</code> (jour/météo permanents, dégâts/PvP/casse-pose/claims
       bloqués). RPGQuest ne dépend techniquement d'aucun plugin externe pour démarrer
-      (<code>plugin.yml</code> → <code>softdepend: [Citizens]</code> uniquement) : Multiverse-Core
-      reste un outil d'exploitation, jamais une dépendance de code. Détail complet des règles Hub :
+      (<code>plugin.yml</code> → <code>softdepend: [Citizens, LuckPerms, WorldEdit, Multiverse-Core]</code>, jamais
+      <code>depend</code>) : présent, Multiverse-Core sert aux pages Mondes de PlugAdmin (lecture, création,
+      chargement, réglages — issues #560 à #563) ; absent, le plugin démarre et ces outils se déclarent
+      indisponibles avec leur motif. Détail complet des règles Hub :
       <a href="hub-safe-zone.html">Spawn du village</a> ; procédure d'installation :
       <code>docs/deployment/VERYGAMES.md</code>.
     </p>
@@ -425,11 +427,10 @@ level-type=minecraft:normal
     <p class="text-body-secondary small">
       Les trois commandes <code>/rpgadmin world ...</code> ci-dessus sont entièrement RPGQuest
       (<code>world.WorldService</code>), jamais Multiverse — RPGQuest n'a aucune dépendance de code
-      vers Multiverse-Core (<code>plugin.yml</code> ne déclare que
-      <code>softdepend: [Citizens]</code>). Multiverse-Core <strong>est</strong> installé et utilisé
-      en production VeryGames, mais uniquement pour déclarer/lister le monde Hub
-      (<code>/mv import world_hub normal</code>, <code>/mv list</code> — voir
-      <code>docs/deployment/VERYGAMES.md</code>), jamais pour un monde créé via
+      obligatoire vers Multiverse-Core (<code>plugin.yml</code> le déclare en <code>softdepend</code>, avec
+      Citizens, LuckPerms et WorldEdit). Multiverse-Core <strong>est</strong> installé sur VeryGames : il déclare le
+      monde Hub (<code>/mv import world_hub normal</code>, voir <code>docs/deployment/VERYGAMES.md</code>) et sert
+      d'adaptateur aux pages Mondes de PlugAdmin (issues #560 à #563) ; il n'intervient jamais dans
       <code>/rpgadmin world create</code>.
     </p>
   </section>
@@ -629,6 +630,20 @@ level-type=minecraft:normal
       que <code>zone.ZoneRegistry</code>/<code>travel.YamlPortalRegistry</code>), rechargé au
       démarrage du plugin — un redémarrage complet du serveur ne perd donc jamais un portail simple
       créé.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Recette complète mondes et portails (issue #570)</h2>
+    <p class="text-body-secondary">
+      Le parcours complet — monde de test, portail Hub → ce monde depuis un emplacement, arche de la Bibliothèque,
+      point fixe, condition de niveau, avertissement, activation, désactivation, remplacement d'arche, déliaison et
+      suppression sans démolition — est <strong>joué automatiquement en simulation</strong> par
+      <code>WorldPortalRecetteScenarioTest</code> (aucun monde, bloc, portail ni joueur réel). La checklist pas à pas
+      pour le propriétaire, une action à la fois avec retour arrière, est <strong>TC-398</strong> dans
+      <code>docs/MANUAL_TEST_PLAN.md</code>. Les étapes réelles (créer un monde, poser une arche, activer, traverser)
+      demandent chacune son <strong>feu vert</strong> et restent <code>PENDING MANUAL VALIDATION</code> tant que le
+      propriétaire ne les a pas faites en jeu.
     </p>
   </section>
 

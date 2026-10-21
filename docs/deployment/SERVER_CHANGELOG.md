@@ -48,6 +48,36 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Atelier de Lucien : 3 prix démo + choix « Ouvrir l'atelier » → artisan_demo (#18, TC-345)
+
+### Changement
+
+Contenu seul, selon « Autorisation #18 » du registre :
+- `prices.yml` **créé** (absent jusque-là) avec exactement trois prix de fabrication marqués démonstration :
+  `demo_recette_ingredients` (1 BREAD ← 3 WHEAT, 0 pièce), `demo_recette_pieces` (1 LANTERN, 12 pièces),
+  `demo_recette_mixte` (1 IRON_SWORD ← 2 IRON_INGOT + 1 STICK, 5 pièces). Texte produit par le vrai éditeur de prix
+  (`PriceCatalogEditor`, le code qu'utilise PlugAdmin → Prix et coûts), relu sans erreur par `PriceCatalogLoader`.
+- `dialogues/lucien.yml` : version DEV (squelette « Salut ! » / « Au revoir ») + un choix « Ouvrir l'atelier »,
+  action `OPEN_MERCHANT` → `rpgquest:artisan_demo`, placé avant « Au revoir ». Rien d'autre ne change.
+- `merchants/artisan_demo.yml` inchangé (il citait déjà ces trois clés).
+
+### Actions serveur
+
+- `scripts/deploy-verygames.sh -y --allow-no-backup --also <prices.yml>:RPGQuest/prices.yml --also <lucien.yml>:RPGQuest/dialogues/lucien.yml`
+  depuis `a42c8126` (documentation seule au-dessus de `2c093d5e`, CI verte). JAR retransféré par le script
+  (même code, SHA-256 `eda37e2b…`, identique au JAR en ligne). Aucune migration, aucune clé de configuration.
+  `--allow-no-backup` uniquement parce que `prices.yml` n'existait pas.
+- Sauvegardes : `extra-20261021T103112Z/` (MANIFEST : `prices.yml` absent ; `lucien.yml` SHA-256 `f9055ebe…`) ;
+  JAR précédent `rpgquest-20261021T103112Z-predeploy.jar`.
+- Relecture FTP : `prices.yml` `9f17832e…`, `lucien.yml` `5b5a7c2e…` = fichiers locaux ; `artisan_demo.yml` inchangé.
+- **Aucun autre catalogue, prix, offre, PNJ, solde, progression ni inventaire modifié.**
+- DEV était arrêté (dernier signal agent 20/10 23:02 UTC) : prix et dialogue sont lus au prochain démarrage.
+- Rollback : désactiver les 3 prix dans PlugAdmin → Prix et coûts (ou supprimer `RPGQuest/prices.yml`, absent avant) ;
+  dialogue : `scripts/rollback-verygames.sh --also ~/.local/share/rpgquest/verygames-backups/extra-20261021T103112Z/RPGQuest/dialogues/lucien.yml:RPGQuest/dialogues/lucien.yml`,
+  puis redémarrage.
+
+---
+
 ## 2026-10-21 - Libraire : choix « Ouvrir la boutique » → village_merchant (#17, TC-344)
 
 ### Changement

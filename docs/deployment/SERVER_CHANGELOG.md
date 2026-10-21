@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Boutique des marchands séparée en vues « Acheter » / « Vendre » (#17, TC-393)
+
+### Changement
+
+Vitrine des marchands présentée du point de vue du joueur : catalogue `MIXED` (dont `village_merchant`, ouvert par
+le Libraire) en deux onglets en bas à gauche — émeraude « Acheter » (le joueur paie, reçoit l'objet) et entonnoir
+« Vendre » (le joueur donne l'objet, reçoit des pièces) —, onglet affiché en surbrillance, titre « … — Acheter /
+Vendre », onglet vide signalé ; `SELL` / `BUY` / `CRAFT` : vue unique annoncée. Lore « Tu achètes / Tu vends »,
+« Tu paies : / Tu reçois : ». Échanges, prix, conditions et anti-duplication inchangés.
+
+### Action serveur
+
+Remplacement du JAR seul (`a7e878ec`, PR #703). Pas de migration. Aucun fichier `merchants/`, `prices.yml`,
+dialogue ni solde touché. PlugAdmin inchangé.
+
+### Sauvegarde préalable
+
+`rpgquest-20261021T143130Z-predeploy.jar` (4 092 599 o, = JAR #636) créé par `deploy-verygames.sh`.
+
+### Déploiement
+
+21/10 vers 16:31 : `deploy-verygames.sh -y` (CI verte sur la PR et sur `a7e878ec`), JAR 4 098 255 o, SHA-256
+`ca2a80fc…` retéléchargé identique (contient `ShopTab`) ; `verygames-restart.sh` (seul LoDyMcFly connecté) → DEV
+de nouveau ONLINE ; `/plugins` RPGQuest vert, `/merchant list` : 3 marchands (`artisan_demo` 3, `atelier_demo` 3,
+`village_merchant` 5 offres), comme avant.
+
+### Validation
+
+TC-393 — PENDING MANUAL VALIDATION (propriétaire, revalidation visuelle).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage. Aucune donnée à restaurer.
+
 ## 2026-10-21 - Pas de grand titre « Quête terminée » pendant un dialogue PNJ (#636, TC-392)
 
 ### Changement

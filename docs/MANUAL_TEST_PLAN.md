@@ -7981,6 +7981,76 @@ non vérifiable / ajustée / impossible / monde absent / retour désaccordé, st
 adaptateur asynchrone simulé ; RANDOM_SAFE / CLAIM_HOME inchangés), `PortalAdminParamsTest`, `PortalsPageTest`
 (fiche, résultat de vérification et périmé, retour prérempli, paramètres validés, refus avant mise en file).
 
+### TC-398 — Recette complète mondes et portails, une action à la fois (issue #570, PENDING MANUAL VALIDATION)
+
+Parcours de bout en bout qui enchaîne W1–W4 (#560–#563) et P1–P6 (#564–#569). Chaque étape renvoie au TC détaillé.
+**Partie A : lecture seule**, faisable à tout moment. **Partie B : feu vert du propriétaire requis à chaque étape** —
+l'autorisation #570 du 20/10 ne couvre que les tests simulés ; Claude n'a exécuté aucune de ces étapes. Ne jamais
+utiliser `hub_to_wild`, `hub_to_claims`, `world_hub`, `wild` ni `claims` comme objet de test : seulement un monde et
+un portail créés pour la recette, supprimés à la fin.
+
+**Préconditions** : PlugAdmin à jour (empreintes visibles dans les fiches), DEV démarré, compte propriétaire
+(`WORLD_*` / `PORTAL_*`), un personnage lié connecté (pour l'étape B8 seulement), Multiverse-Core présent.
+
+**Partie A — lecture seule**
+
+1.  Monde → Mondes → « Rafraîchir les mondes ». **Attendu** : 6 mondes, gestionnaire Multiverse, rôles Hub / Wild /
+    Claims, mondes essentiels cadenassés (TC-362). **Retour arrière** : aucun (rien écrit).
+2.  Fiche `world_hub` → « Relever le chargement » puis « Lire les réglages réels ». **Attendu** : « Décharger » refusé
+    pour un monde essentiel ; réglages lus sans rien appliquer (TC-374, TC-388). **Retour arrière** : aucun.
+3.  Monde → Portails → « Rafraîchir les portails », fiche `hub_to_wild` → « Vérifier sans appliquer ». **Attendu** :
+    rapport OK/À regarder, aucune écriture, empreinte inchangée (TC-363, TC-391). **Retour arrière** : aucun.
+4.  Même fiche → « Simuler un passage » pour votre personnage. **Attendu** : AUTORISÉ/REFUSÉ et la liste des
+    contrôles, personne n'est téléporté (TC-394). **Retour arrière** : aucun.
+5.  Bâtiments → Bibliothèque → filtre « Portails ». **Attendu** : arches visibles ou liste vide expliquée (TC-396).
+
+**Partie B — avec feu vert, dans cet ordre, une action à la fois**
+
+1.  Mondes → « Créer un monde » : `recette_portails`, Monde normal, terrain normal, graine vide. Aperçu, puis
+    confirmation. **Attendu** : monde chargé, sans rôle ni portail (TC-375). **Retour arrière** : le décharger
+    (étape B12) ; le dossier n'est jamais supprimé par PlugAdmin.
+2.  En jeu, au Hub : marquer un emplacement de test avec l'outil #213 (face vers l'extérieur du passage). **Attendu** :
+    emplacement visible dans Emplacements. **Retour arrière** : supprimer l'emplacement (étape B12).
+3.  Portails → « Créer un portail » depuis cet emplacement, id `hub_to_recette`, vers `recette_portails`, arrivée
+    « point fixe » (relever d'abord en jeu, F3, les X / Y des pieds / Z et le regard de l'arrivée voulue, puis les
+    saisir dans « Point fixe · X / Y / Z » et « Regard »). **Attendu** : Brouillon, il ne
+    téléporte personne (TC-387, TC-391). **Retour arrière** : « Supprimer » (fichier seulement).
+4.  Poser l'arche de la Bibliothèque sur l'emplacement (Emplacements → aperçu → confirmation), puis fiche du portail →
+    « Lier l'arche posée ». **Attendu** : zone = passage de l'arche, toujours Brouillon (TC-396). **Retour arrière** :
+    « Délier sans démolir », puis libérer l'emplacement (terrain d'origine rendu).
+5.  Conditions → niveau RPG minimum = votre niveau + 1 → Enregistrer. **Attendu** : condition écrite, rien vérifié sur
+    un joueur à ce stade (TC-394). **Retour arrière** : vider le niveau minimum
+    puis enregistrer (aucune condition = comportement d'avant #567).
+6.  Messages → Avertissement « Toujours », titre « Monde de recette » → Enregistrer. **Attendu** : aperçu fidèle
+    (TC-395). **Retour arrière** : remettre « Afficher
+    l'avertissement » sur « Par défaut (vers le Wild) » (un champ texte vide garde le texte actuel).
+7.  « Vérifier sans appliquer ». **Attendu** : aucun contrôle bloquant (sécurité de l'arrivée éventuellement « non
+    vérifiable » si personne n'est près du point). **Retour arrière** : aucun (rien écrit).
+8.  « Activer », puis traverser l'arche en jeu. **Attendu** : avertissement affiché, puis refus « niveau » avec le
+    message configuré ; vous restez au Hub. **Retour arrière** : « Désactiver ».
+9.  Désactiver → vider le niveau minimum → réactiver → traverser. **Attendu** : avertissement, « Entrer » →
+    arrivée au point fixe dans `recette_portails`, avec le regard enregistré. **Retour arrière** : « Désactiver ».
+10. Désactiver. Remplacer l'arche par une autre arche (Emplacements). **Attendu** : « Lien rompu », « Activer » refusé
+    (`BUILDING_LINK_BROKEN`), destination et point fixe inchangés ; « Lier à nouveau » relit le nouveau passage.
+11. « Délier sans démolir », puis « Supprimer » le portail. **Attendu** : fichier supprimé, arche et emplacement
+    toujours en place, aucun bloc touché ; `hub_to_wild` / `hub_to_claims` inchangés (empreintes identiques).
+12. Nettoyage : libérer l'emplacement (terrain rendu), supprimer l'emplacement, décharger `recette_portails`
+    (TC-388). **Attendu** : liste des mondes et des portails identique à la partie A.
+
+**Couverture automatisée (simulée)** : `WorldPortalRecetteScenarioTest` joue B1 → B11 dans l'ordre (plan de création
+accepté, brouillon depuis un emplacement, refus `NO_BUILDING`, liaison = passage, niveau + avertissement « Toujours »
+relus du fichier, vérification sans écriture, activation, empreinte périmée refusée `STALE`, verrous du portail actif,
+désactivation qui conserve la configuration, remplacement d'arche `BUILDING_LINK_BROKEN` puis reliaison, déliaison et
+suppression sans démolition, journal `CREATE_DRAFT → … → DELETE`) et le refus `DESTINATION_NOT_LOADED` d'un monde
+déchargé. S'y ajoutent les tests de chaque TC cité. La traversée réelle, l'avertissement Paper et l'arrivée en jeu
+restent **PENDING MANUAL VALIDATION**.
+
+**QA PlugAdmin 1280 / 390 px (21/10, panel local, relevés DEV + portail brouillon fictif)** : pages Mondes, fiche
+`world_hub`, Créer un monde, Portails, fiche `hub_to_wild` et fiche d'un brouillon lié — aucun débordement horizontal,
+aucune erreur console. Constat : la fiche d'un **brouillon** fait ~17 800 px de haut sur téléphone (~12 700 px à 1280),
+dont ~13 900 px pour « Gérer ce portail » (tous les formulaires — nom, zone, arrivée, conditions, messages — ouverts
+l'un sous l'autre). Utilisable mais long à parcourir ; suivi proposé dans le ticket #570.
+
 ### TC-397 — Hub : pas de commerce vanilla ni de ressources dans les conteneurs (issue #675, PENDING MANUAL VALIDATION)
 
 Avec un compte **joueur normal** (ou un OP **sans** session `/rpgadmin bypass on`), dans le monde Hub

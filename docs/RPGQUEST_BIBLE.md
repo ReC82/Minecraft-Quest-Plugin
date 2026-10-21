@@ -5067,6 +5067,17 @@ Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.
 
 À savoir : un portail sans destination configurée ne fait rien (message affiché, aucune canalisation). Sécurité de destination : avant toute téléportation, le monde doit exister, une position sûre est recherchée (balayage vertical ±5 blocs, aucun bloc dangereux/solide) — sinon aucune téléportation, aucun débit. Le coût n'est débité **qu'après** résolution réussie de la destination.
 
+### Recette complète mondes et portails (issue #570, #228 / #331)
+
+Procédure de validation, pas de nouvelle fonction : le parcours monde de test → portail Hub → ce monde depuis un
+emplacement → arche liée → point fixe → condition de niveau → avertissement → activation / désactivation →
+remplacement d'arche → déliaison → suppression sans démolition est décrit **une action à la fois**, avec attendu et
+retour arrière, dans **TC-398** (`docs/MANUAL_TEST_PLAN.md`). Partie A en lecture seule ; partie B sur feu vert du
+propriétaire à chaque étape, uniquement avec un monde (`recette_portails`) et un portail (`hub_to_recette`) créés pour
+l'occasion — jamais `hub_to_wild`, `hub_to_claims` ni un monde essentiel. Le même enchaînement est joué en simulation
+par `WorldPortalRecetteScenarioTest` (copie isolée de `world-portals/`, poses d'arche fictives, aucun monde réel) ;
+la traversée et l'avertissement en jeu restent `PENDING MANUAL VALIDATION`.
+
 ### `/rpgadmin worldportal` — commandes
 Page docs-site : `worlds.html` (mais voir la note d'obsolescence en section 19). Détail complet des outils de diagnostic (`here`/`debug`) et de l'instrumentation `TP-TRACE` : [docs/TRAVEL.md](TRAVEL.md).
 

@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.panel.building;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -85,6 +86,47 @@ class BuildingProjectStoreTest {
         }
     }
 
+    // ---- #568 : arche de portail ------------------------------------------------------------
+
+    @Test
+    void aPortalArchProjectKeepsItsPassageAndSendsThePortalContractToTheAi() {
+        String db = tmp.resolve("cp.db").toString();
+        BuildingProjectStore store = new BuildingProjectStore(db);
+        BuildingProject p = store.create("dev", new BuildingProjectStore.Fields("Arche du marché", "Arche en pierre",
+                "arche_marche", "NORTH", 7, 5, 8, "portal", 3, 4), "", "owner");
+
+        BuildingProject reloaded = new BuildingProjectStore(db).find(p.id()).orElseThrow();
+        assertTrue(reloaded.portal());
+        assertEquals(3, reloaded.passageWidth());
+        assertEquals(4, reloaded.passageHeight());
+        assertEquals("Arche en pierre", reloaded.brief(), "le brief enregistré reste celui de l'administrateur");
+        String ai = reloaded.briefForAi();
+        assertTrue(ai.startsWith("Arche en pierre") && ai.contains("kind: portal")
+                && ai.contains("3 bloc(s) de large (axe x) et 4 blocs de haut"), ai);
+
+        assertEquals(BuildingProjectStore.UpdateOutcome.SAVED, store.update(p.id(), 1, new BuildingProjectStore.Fields(
+                "Arche du marché", "Arche en pierre", "arche_marche", "NORTH", 7, 5, 8, "building", 3, 4), "owner"));
+        BuildingProject back = store.find(p.id()).orElseThrow();
+        assertFalse(back.portal());
+        assertEquals(0, back.passageWidth(), "un bâtiment n'a pas de passage");
+        assertEquals("Arche en pierre", back.briefForAi());
+    }
+
+    @Test
+    void aPassageMustLeaveAPillarOnEachSideAndALintel() {
+        assertTrue(new BuildingProjectStore.Fields("A", "x", "arche", "NORTH", 7, 5, 8, "portal", 5, 4).refusal()
+                .isEmpty());
+        assertTrue(new BuildingProjectStore.Fields("A", "x", "arche", "NORTH", 7, 5, 8, "portal", 6, 4).refusal()
+                .orElse("").contains("Largeur du passage"));
+        // Face à l'est, on traverse en X : la largeur du passage se compte en Z (5 → 3 au plus).
+        assertTrue(new BuildingProjectStore.Fields("A", "x", "arche", "EAST", 7, 5, 8, "portal", 4, 4).refusal()
+                .orElse("").contains("de 1 à 3"));
+        assertTrue(new BuildingProjectStore.Fields("A", "x", "arche", "NORTH", 7, 5, 8, "portal", 3, 8).refusal()
+                .orElse("").contains("Hauteur du passage"));
+        assertTrue(new BuildingProjectStore.Fields("A", "x", "arche", "NORTH", 7, 5, 8, "building", 99, 99).refusal()
+                .isEmpty(), "un bâtiment ignore le passage");
+    }
+
     // ---- #305 : emprise rectangulaire ----------------------------------------------------------
 
     @Test
@@ -126,6 +168,7 @@ class BuildingProjectStoreTest {
         assertEquals(13, p.maxDepth());
         assertEquals(7, p.maxHeight());
         assertEquals(3, p.version(), "aucune ligne réécrite par la migration");
+        assertFalse(p.portal(), "#568 : un projet antérieur reste un bâtiment ordinaire");
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + db); Statement s = c.createStatement();
              ResultSet rs = s.executeQuery("SELECT max_depth, updated_at FROM building_project WHERE id = 'p-old'")) {
             assertTrue(rs.next());

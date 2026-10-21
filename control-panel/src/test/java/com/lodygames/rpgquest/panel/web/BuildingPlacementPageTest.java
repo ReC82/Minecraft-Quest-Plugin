@@ -128,6 +128,23 @@ class BuildingPlacementPageTest {
         assertTrue(page.contains("210"), "le volume en blocs");
     }
 
+    @Test
+    void theLibraryFiltersPortalArchesAndShowsTheirPassage() throws Exception {
+        start();
+        seed("building.definition.list", LIBRARY.replace("\"version\":1}", "\"version\":1},"
+                + "{\"id\":\"arche_test\",\"name\":\"Arche de test\",\"description\":\"\","
+                + "\"sizeX\":5,\"sizeY\":6,\"sizeZ\":2,\"anchorX\":2,\"anchorY\":0,\"anchorZ\":0,"
+                + "\"front\":\"NORTH\",\"materials\":[],\"schematic\":\"arche_test.schem\","
+                + "\"schematicPresent\":true,\"version\":1,\"kind\":\"portal\",\"passage\":\"1..3 / 1..4 / 0..1\"}"));
+
+        String page = get("/buildings/library?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Portails · 1"), "filtre « Portails »");
+        assertTrue(page.contains("Bâtiments · 1"), "la hutte, sans type déclaré, est un bâtiment");
+        assertTrue(page.contains("data-filter-cat=\"portal\""), "arche filtrable");
+        assertTrue(page.contains("Arche de portail") && page.contains("1..3 / 1..4 / 0..1"), "type et passage");
+    }
+
     // ---- #284 : retirer un bâtiment de la bibliothèque --------------------------------------------
 
     /** Trois cas réels : un exemple embarqué posé, un bâtiment libre, et le refus d'un bâtiment posé. */

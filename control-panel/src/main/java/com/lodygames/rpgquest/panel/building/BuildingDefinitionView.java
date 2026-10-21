@@ -20,10 +20,36 @@ public record BuildingDefinitionView(String id, String name, String description,
                                      int anchorX, int anchorY, int anchorZ,
                                      String front, List<String> materials,
                                      String schematic, boolean schematicPresent, int version,
-                                     boolean bundled) {
+                                     boolean bundled, String kind, String passage) {
 
     public BuildingDefinitionView {
         materials = List.copyOf(materials == null ? List.of() : materials);
+        // #568 : un plugin antérieur n'envoie pas « kind » — défaut d'un plan : habitable.
+        kind = kind == null || kind.isBlank() ? "habitable" : kind.trim().toLowerCase(Locale.ROOT);
+        passage = passage == null ? "" : passage.trim();
+    }
+
+    /** Forme antérieure à #568 : sans type ni zone de passage. */
+    public BuildingDefinitionView(String id, String name, String description, int sizeX, int sizeY,
+                                  int sizeZ, int anchorX, int anchorY, int anchorZ, String front,
+                                  List<String> materials, String schematic, boolean schematicPresent,
+                                  int version, boolean bundled) {
+        this(id, name, description, sizeX, sizeY, sizeZ, anchorX, anchorY, anchorZ, front, materials,
+                schematic, schematicPresent, version, bundled, "", "");
+    }
+
+    /** Une arche de portail (issue #568). */
+    public boolean portal() {
+        return "portal".equals(kind);
+    }
+
+    /** Libellé du type, comme dans l'Atelier. */
+    public String kindLabel() {
+        return switch (kind) {
+            case "portal" -> "Arche de portail";
+            case "decoration" -> "Décoration";
+            default -> "Bâtiment";
+        };
     }
 
     /** Forme antérieure à #284. */

@@ -265,10 +265,10 @@ public final class PortalPages {
                 .append(siteHtml(v, p))
                 .append(dlHtml("Fichier", legacy(p) ? "<code>portals/" + Http.esc(str(p.get("id"))) + ".yml</code>"
                         : "<code>world-portals/" + Http.esc(str(p.get("file"))) + "</code>"))
-                .append("</dl><p class=\"field-help\">Zone d'activation telle que le serveur la lit. Aucune "
-                        + "construction n'est encore liée aux portails.</p></section>");
+                .append("</dl><p class=\"field-help\">Zone d'activation telle que le serveur la lit.</p></section>");
+        sb.append(PortalForms.constructionSection(v, p));
         sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("travel"))
-                .append("2 · Téléportation</h3><dl class=\"w-dl\">")
+                .append(legacy(p) ? "2" : "3").append(" · Téléportation</h3><dl class=\"w-dl\">")
                 .append(dlHtml("Monde d'arrivée", str(p.get("destinationWorld")).isEmpty()
                         ? "<span class=\"muted\">inconnu</span>"
                         : worldHtml(v.names(), a, str(p.get("destinationWorld")), str(p.get("destinationRole")),
@@ -513,7 +513,7 @@ public final class PortalPages {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> map(Object o) {
+    static Map<String, Object> map(Object o) {
         return o instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 

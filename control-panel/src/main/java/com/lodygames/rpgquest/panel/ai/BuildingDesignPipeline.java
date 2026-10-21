@@ -239,8 +239,9 @@ public final class BuildingDesignPipeline {
             this.run = run;
             this.project = project;
             this.quality = Quality.of(run.quality());
+            // #568 : pour une arche, le contrat de portail suit le brief de l'administrateur.
             this.demand = new BuildingPromptBuilder.Demand(project.id(), project.name(), project.front(),
-                    project.brief(), project.maxWidth(), project.maxDepth(), project.maxHeight(),
+                    project.briefForAi(), project.maxWidth(), project.maxDepth(), project.maxHeight(),
                     project.buildingId());
             this.spent = run.spentCalls();
             this.references = referencesOf(project.id());

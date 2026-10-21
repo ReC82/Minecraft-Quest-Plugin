@@ -433,6 +433,13 @@ public final class AgentActionCatalog {
         // Issue #569 (#228-P6) — messages et avertissement d'un portail non actif (PORTAL_EDIT).
         addSensitiveWrite("portal.messages", Permission.PORTAL_EDIT, false,
                 "Modifier les messages et l'avertissement d'un portail", "portal.list");
+        // Issue #568 (#228-P5) — lier / délier l'arche posée sur l'emplacement d'un portail
+        // (PORTAL_EDIT). Lier relit la zone depuis le passage de l'arche, n'active jamais le portail ;
+        // aucune des deux ne pose ni ne retire de bloc. Relisent portails et poses.
+        addSensitiveWrite("portal.building.link", Permission.PORTAL_EDIT, false,
+                "Lier l'arche posée à un portail", "portal.list", "building.site.list");
+        addSensitiveWrite("portal.building.unlink", Permission.PORTAL_EDIT, false,
+                "Délier la construction d'un portail", "portal.list", "building.site.list");
         // Issue #637 — claims : relevé en lecture seule, et téléportation de diagnostic du SEUL
         // personnage lié à la session (imposé par le panel, jamais un champ du formulaire).
         add("claim.list", Permission.CLAIM_READ, false, false, "Rafraîchir les claims");
@@ -1552,7 +1559,8 @@ public final class AgentActionCatalog {
                 }
                 params.put("id", id);
             }
-            case "portal.create", "portal.update", "portal.enable", "portal.disable", "portal.delete" -> {
+            case "portal.create", "portal.update", "portal.enable", "portal.disable", "portal.delete",
+                    "portal.building.link", "portal.building.unlink" -> {
                 String error = portalParams(type, form, params);
                 if (error != null) {
                     return Validation.fail(error);

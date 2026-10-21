@@ -1,7 +1,7 @@
 ---
 title: Portails
 category: Monde
-tags: [portail, portails, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver, conditions, accès, niveau, délai, simuler, simulation, tester, portal_test, messages, bienvenue, ne plus afficher, préférence]
+tags: [portail, portails, arche, construction, lier, délier, passage, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver, conditions, accès, niveau, délai, simuler, simulation, tester, portal_test, messages, bienvenue, ne plus afficher, préférence]
 order: 2
 ---
 
@@ -25,11 +25,13 @@ Pour chaque portail, la fiche montre :
 
 1. **Emplacement** : monde de départ, coins minimum et maximum de la zone d'activation, taille,
    fichier ;
-2. **Téléportation** : monde d'arrivée (lien vers la page Mondes), type d'arrivée et ses réglages —
+2. **Construction** : l'arche posée sur l'emplacement du portail et le lien entre les deux — voir
+   « Construction liée (arche) » plus bas ;
+3. **Téléportation** : monde d'arrivée (lien vers la page Mondes), type d'arrivée et ses réglages —
    *point d'arrivée du monde*, *point sûr aléatoire* (`travel.random-safe-arrival` : rayon minimum,
    maximum, tentatives), *claim du joueur, sinon point sûr* (`claims.arrival`) ou *point fixe*
    (position et regard enregistrés) ; et l'aller-retour éventuel (« Retour de » / « Portail retour ») ;
-3. **Règles appliquées par le serveur** :
+4. **Règles appliquées par le serveur** :
    - **Avertissement Wild** pour tout portail qui mène au monde `travel.wild-world` : fenêtre de
      confirmation, choix « ne plus afficher », textes actuels montrés au joueur ;
    - **Accès Claims + retour** pour tout portail qui mène au monde `claims.world` : premier terrain
@@ -39,7 +41,7 @@ Pour chaque portail, la fiche montre :
    - les **conditions** d'un portail de zone.
 
 Un portail entre mondes peut avoir des **conditions d'accès** (niveau RPG, quête, objet, permission,
-variable, claim principal, attente entre deux passages) : elles apparaissent dans le bloc 3, sous les
+variable, claim principal, attente entre deux passages) : elles apparaissent dans le bloc 4, sous les
 règles Wild / Claims, qui restent appliquées **avant** elles. Sans condition, la ligne
 « Déclenchement » le précise. `hub_to_wild` et `hub_to_claims` n'en ont aucune.
 
@@ -191,7 +193,37 @@ avec les autres variables du joueur. Pour un portail vers le Wild, l'ancienne pr
 portail garde ces textes dans `messages:` et `warning:` ; une section illisible fait ignorer le
 fichier.
 
+## Construction liée (arche)
+
+Un portail créé **depuis un emplacement** peut suivre l'**arche** qui y est posée. Bloc
+**2 · Construction** de la fiche (`PORTAL_EDIT`).
+
+1. **Créer l'arche** : dans l'Atelier, *Type de construction* = **Arche de portail**, avec la largeur
+   et la hauteur du **passage**. Le serveur relève le passage réel sur le plan (depuis l'ancre, au
+   centre du passage) et refuse une arche dont le passage est bouché (`PORTAL_PASSAGE_MISSING`). La
+   Bibliothèque garde le type et la **zone de passage** ; son filtre **Portails** les liste.
+2. **Poser l'arche** sur l'emplacement du portail depuis la page **Emplacements** (aperçu, puis
+   confirmation) — comme tout bâtiment. Poser une arche **n'active jamais** un portail.
+3. **Lier l'arche posée** (action `portal.building.link`, portail non actif) : la zone d'activation
+   devient exactement le passage de l'arche, relu après l'**ancre et la rotation** de la pose. Le
+   portail reste en brouillon ou désactivé ; l'**activation** reste un geste séparé.
+
+**Remplacer ou réorienter** l'arche (page Emplacements) ne change ni la destination, ni les
+conditions, ni les messages du portail : le lien devient « rompu », l'activation est refusée
+(`PORTAL_BUILDING_LINK_BROKEN`), et **Lier à nouveau** relit le nouveau passage. **Libérer**
+l'emplacement (retour arrière) laisse le portail et sa zone ; le lien est signalé rompu.
+**Délier sans démolir** (`portal.building.unlink`) garde l'arche posée et la zone actuelle.
+Saisir une zone à la main (bloc « Zone d'activation ») délie aussi l'arche. Le fichier du portail
+garde le lien dans `building:` ; `hub_to_wild` et `hub_to_claims` n'en ont pas.
+
 ---
+
+## Arche liée absente, remplacée ou réorientée
+
+L'arche liée (`building:`) n'est plus posée sur l'emplacement, une autre construction l'a remplacée,
+ou elle a été réorientée : la zone du portail ne correspond plus à son passage, et l'activation est
+refusée. Dans le bloc « Construction » : **Lier à nouveau** pour relire le passage, ou **Délier sans
+démolir** pour garder la zone actuelle.
 
 ## Fichier de portail ignoré
 

@@ -207,7 +207,8 @@ public final class ArchitecturalAudit {
             findings.add(ArchitecturalFinding.blocking("ENTRANCE_STEP",
                     "Entrée à sauter : on n'entre qu'en sautant une marche d'un bloc entier. Le "
                             + "terrain est en y=" + (groundY - 1) + " (on s'y tient en y=" + groundY
-                            + ") ; " + String.join(" ; ", access.thresholds()) + ". Pose devant la "
+                            + ")" + (access.thresholds().isEmpty() ? "" : " ; "
+                            + String.join(" ; ", access.thresholds())) + ". Pose devant la "
                             + "porte, DANS le volume, une marche d'escalier tournée vers la porte "
                             + "(ou un perron avec ses marches), ou abaisse le plancher."));
         }

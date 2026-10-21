@@ -2167,6 +2167,51 @@ le délai (180 s). Deux refus identiques de suite déclenchent une **conception 
 version et une ligne du journal (`building_design_run`, base du panel), avec ses jetons. Un
 redémarrage du panel marque la session **interrompue** et ne la relance jamais seul.
 
+#### Boucle bornée, réparations sûres et orientation vérifiée (issue #655)
+
+Le 20/10/2026, la **Boulangerie de Central** (projet `96a24bba`) a épuisé une conception
+automatique « Exigeant » (12 appels, session `6a91d328`) et cinq corrections manuelles sans plan
+exploitable. Trois causes, toutes corrigées :
+
+1. **Contradiction description / sélecteur.** La description demandait l'entrée à l'OUEST, le
+   sélecteur « Façade d'entrée » disait EST : l'IA perçait l'ouest, le serveur cherchait l'entrée à
+   l'est (`NO_ENTRANCE`). Désormais, une tournure explicite de la description (« entrée à l'ouest »,
+   « entrée principale au nord », « façade d'entrée à l'est », « entrée côté sud ») est comparée au
+   sélecteur ; en cas de contradiction, un bandeau l'explique et **tous les gestes payants** de
+   l'Atelier (Créer un plan, Améliorer, Recommencer, Conception automatique, Conception détaillée)
+   sont refusés **à coût nul** jusqu'à ce que l'administrateur corrige l'un ou l'autre. Rien n'est
+   réécrit à sa place ; une description qui cite plusieurs côtés, ou aucun, ne bloque jamais.
+2. **Fautes sûres réparées par le moteur, sans IA** (`PlanRepair`, une seule passe — l'Atelier ne
+   re-répare pas une version réparée) :
+
+   | Faute | Correction | Garde-fou |
+   |---|---|---|
+   | `facade: EAST` (point cardinal) dans une instruction | traduite exactement depuis `front` (pour `front: EAST` : EAST → FRONT, WEST → BACK, SOUTH → LEFT, NORTH → RIGHT) | le `front` du bâtiment n'est jamais touché ; la lecture stricte refuse toujours un point cardinal |
+   | `minecraft:brick` (objet) | `minecraft:bricks` — le pluriel, seulement s'il est un bloc du registre 1.21.11 | toute autre faute de nom reste un refus avec suggestions |
+   | toit `gable` posé **entièrement** au-dessus du volume (murs jusqu'à y=9, toit à y=10, volume haut de 10) | abaissé pour que son sommet affleure y = size.y − 1 | 3 blocs au plus, emprise x/z inchangée |
+   | marches d'entrée (`staircase` par façade) refusées et sans dénivelé (`floor` ≤ ancre y) | retirées | une volée qui monte réellement n'est jamais retirée |
+   | entrée à sauter sur une ouverture **sans porte** (`clear`) | fondation enterrée : l'ancre monte de 1 ou 2 blocs | rejoué par l'audit, gardé seulement si `ENTRANCE_STEP` disparaît sans nouveau refus |
+   | `NO_ENTRANCE` sans porte sur la façade avant | `op: door` posée sur `FRONT`, au premier plancher, depuis le milieu de la façade | l'audit complet juge la porte (cellule derrière libre, sol praticable) ; jamais si le plan a déjà une porte avant ; `NO_ENTRANCE` n'est pas assoupli |
+
+   Un plan qui reste `PLAN_INVALID` après réparation garde désormais les corrections sûres si la
+   première faute rendue a changé (ou si la lecture stricte devient possible) : la faute suivante
+   part seule à l'IA, au lieu de lui renvoyer celle que le moteur savait corriger.
+3. **Boucle de conception bornée.** Une critique architecturale qui casse un plan conforme a droit à
+   **une** correction ; si elle échoue, la session revient à la version conforme (journal : « retour
+   à la version conforme ») puis passe à la critique suivante ou s'arrête. Un diagnostic déjà reçu
+   (mêmes codes, même texte) déclenche une conception neuve une fois ; s'il revient encore, la
+   session s'arrête (« l'IA tourne en rond ») au lieu de payer la même réponse. Sur la forme de la
+   session réelle, la dépense passe de 12 appels à 5.
+
+**Prompt.** Chaque demande donne le repère propre au bâtiment : `FRONT = façade EST · BACK = OUEST ·
+LEFT = SUD · RIGHT = NORD` (pour `front: EAST`), « y ≤ size.y − 1, le toit compris », et
+`minecraft:bricks`.
+
+**Écran.** Sans version désignée dans l'URL, la page d'un projet s'ouvre sur la **version retenue**
+par la dernière conception automatique terminée (tant qu'aucune version n'a été créée après elle),
+et non sur la dernière version refusée. « Vérification en cours… » suit l'audit jusqu'à son état
+terminal et recharge la page d'elle-même, réussi ou non (le bouton Rafraîchir reste en secours).
+
 #### Images de référence et nouvelle conception indépendante (issue #283)
 
 Les trois variantes de la Bibliothèque du Hub se ressemblaient (bloc rectangulaire, toit uniforme,

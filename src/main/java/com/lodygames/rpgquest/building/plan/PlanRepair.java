@@ -116,22 +116,57 @@ public final class PlanRepair {
 
     /** Répare un plan lu sans validation. */
     public static Outcome repair(BuildingPlan raw, Limits limits) {
-        List<String> changes = new ArrayList<>();
-        List<String> before = codes(raw);
-        BuildingPlan plan = bounds(raw, limits == null ? Limits.none() : limits, changes);
+        return repair(raw, limits, List.of());
+    }
+
+    /**
+     * Répare un plan lu par {@link BuildingPlanYaml#readForRepair} : les traductions déjà faites à
+     * la lecture (façades cardinales, #655) sont des corrections à part entière, et le plan
+     * d'origine était illisible — c'est donc depuis {@code PLAN_INVALID} qu'on juge le progrès.
+     */
+    public static Outcome repair(BuildingPlan raw, Limits limits, List<String> readNotes) {
+        List<String> changes = new ArrayList<>(readNotes == null ? List.of() : readNotes);
+        List<String> before = changes.isEmpty() ? codes(raw) : List.of("PLAN_INVALID");
+        BuildingPlan plan = materials(raw, changes);
+        plan = bounds(plan, limits == null ? Limits.none() : limits, changes);
         if (plan.validate().isPresent()) {
             // Rien de sûr à faire : la faute n'est pas dans le catalogue.
             return new Outcome(null, List.of(), before, before);
         }
         plan = openings(plan, changes);
+        plan = needlessEntrySteps(plan, changes);
         plan = circulation(plan, changes);
+        plan = doorway(plan, changes);
         plan = entrance(plan, changes);
         plan = lanterns(plan, changes);
         List<String> after = codes(plan);
-        if (changes.isEmpty() || worse(before, after)) {
+        if (changes.isEmpty() || worse(before, after) && !progressWhileInvalid(raw, plan, readNotes)) {
             return new Outcome(null, List.of(), before, before);
         }
         return new Outcome(plan, changes, before, after);
+    }
+
+    /**
+     * Un plan qui reste illisible après réparation a-t-il tout de même progressé (#655) ? Oui si
+     * la lecture stricte devient possible (façades traduites) ou si la première faute rendue par le
+     * moteur n'est plus la même. Jeter ces corrections sûres, c'était renvoyer à l'IA — payante —
+     * une faute que le moteur savait corriger, cachée derrière la suivante : la Boulangerie a payé
+     * quatre corrections pour un toit à y=10, puis une fenêtre qui débordait du mur.
+     */
+    static boolean progressWhileInvalid(BuildingPlan raw, BuildingPlan repaired, List<String> readNotes) {
+        if (readNotes != null && !readNotes.isEmpty()) {
+            return true;
+        }
+        return !firstFault(raw).equals(firstFault(repaired));
+    }
+
+    private static String firstFault(BuildingPlan plan) {
+        Optional<String> invalid = plan.validate();
+        if (invalid.isPresent()) {
+            return invalid.get();
+        }
+        BuildingPlanExpander.Result r = BuildingPlanExpander.expand(plan);
+        return r.ok() ? "" : r.error();
     }
 
     /** Les refus bloquants d'un plan, tels que le pipeline réel les rend. */
@@ -169,6 +204,50 @@ public final class PlanRepair {
         return false;
     }
 
+    // ---- 0. Les identifiants de bloc (#655) ----------------------------------------------------
+
+    /**
+     * Remplace un identifiant de bloc inconnu par son pluriel, quand ce pluriel est un bloc réel.
+     *
+     * <p>« minecraft:brick » est l'<em>objet</em> brique ; le bloc est « minecraft:bricks ». Même
+     * faute pour {@code stone_brick}, {@code oak_plank}, {@code nether_brick}. La table du registre
+     * tranche : le singulier n'existe pas, le pluriel existe, il n'y a qu'un seul candidat — la
+     * correction est sûre. Toute autre faute de nom reste un refus, avec ses suggestions.</p>
+     */
+    static BuildingPlan materials(BuildingPlan plan, List<String> changes) {
+        Map<String, String> renamed = new java.util.LinkedHashMap<>();
+        List<PlanStep> steps = new ArrayList<>();
+        for (PlanStep step : plan.steps()) {
+            String state = plural(step.state(), renamed);
+            String fill = plural(step.fill(), renamed);
+            steps.add(state.equals(step.state()) && fill.equals(step.fill()) ? step
+                    : new PlanStep(step.kind(), step.box(), state, step.axis(), step.facade(),
+                            step.numbers(), fill));
+        }
+        if (renamed.isEmpty()) {
+            return plan;
+        }
+        renamed.forEach((from, to) -> changes.add("Bloc « " + from + " » inconnu en Minecraft "
+                + BlockCatalog.VERSION + " : remplacé par « " + to + " », le bloc de ce matériau."));
+        return copy(plan, steps);
+    }
+
+    private static String plural(String state, Map<String, String> renamed) {
+        if (state == null || state.isBlank() || !BlockState.valid(state)
+                || BlockCatalog.vanilla().known(state)) {
+            return state == null ? "" : state;
+        }
+        String trimmed = state.trim();
+        int bracket = trimmed.indexOf('[');
+        String type = bracket < 0 ? trimmed : trimmed.substring(0, bracket);
+        String candidate = type + "s";
+        if (type.endsWith("s") || !BlockCatalog.vanilla().known(candidate)) {
+            return state;
+        }
+        renamed.put(type, candidate);
+        return candidate + (bracket < 0 ? "" : trimmed.substring(bracket));
+    }
+
     // ---- 1. Le volume ---------------------------------------------------------------------------
 
     /**
@@ -201,6 +280,17 @@ public final class PlanRepair {
         for (int i = 0; i < plan.steps().size(); i++) {
             PlanStep step = plan.steps().get(i);
             PlanBox b = step.box();
+            Optional<PlanBox> lowered = b.within(sx, sy, sz) ? Optional.empty() : lowered(step, b, sx, sy, sz);
+            if (lowered.isPresent()) {
+                PlanBox down = lowered.get();
+                steps.add(new PlanStep(step.kind(), down, step.state(), step.axis(), step.facade(),
+                        step.numbers(), step.fill()));
+                changes.add("Instruction " + (i + 1) + " (gable) : toit posé entièrement au-dessus du "
+                        + "volume (zone " + b.label() + ", y de 0 à " + (sy - 1) + " seulement) — "
+                        + "abaissé de " + (b.minY() - down.minY()) + " bloc(s) en " + down.label()
+                        + " : il coiffe le haut des murs au lieu de flotter hors du volume.");
+                continue;
+            }
             if (b.within(sx, sy, sz) || !clampable(step, b, sx, sy, sz)) {
                 steps.add(step);
                 continue;
@@ -219,6 +309,26 @@ public final class PlanRepair {
         return new BuildingPlan(plan.id(), plan.name(), sx, sy, sz, plan.front(),
                 Math.min(plan.anchorX(), sx - 1), Math.min(plan.anchorY(), sy - 1),
                 Math.min(plan.anchorZ(), sz - 1), steps, plan.kind());
+    }
+
+    /**
+     * Un toit {@code gable} posé ENTIÈREMENT au-dessus du volume (Boulangerie de Central, #655 :
+     * murs jusqu'à y=9, toit en y=10 dans un volume haut de 10) ne peut pas être « ramené » par
+     * découpe : il disparaîtrait. On l'abaisse donc, d'au plus {@value #MAX_CLAMP} blocs, pour que
+     * son sommet affleure le haut du volume. Seul le toit bouge, en x et z il reste où il était ;
+     * l'audit qui suit dit si l'enveloppe est close.
+     */
+    private static Optional<PlanBox> lowered(PlanStep step, PlanBox b, int sx, int sy, int sz) {
+        if (step.kind() != PlanStep.Kind.GABLE || b.minY() < sy) {
+            return Optional.empty();
+        }
+        int drop = b.maxY() - (sy - 1);
+        boolean footprint = b.minX() >= 0 && b.minZ() >= 0 && b.maxX() < sx && b.maxZ() < sz;
+        if (drop > MAX_CLAMP || !footprint || b.minY() - drop < 1) {
+            return Optional.empty();
+        }
+        return Optional.of(PlanBox.of(b.minX(), b.minY() - drop, b.minZ(), b.maxX(), b.maxY() - drop,
+                b.maxZ()));
     }
 
     private static int grow(int size, int need, int limit) {
@@ -294,6 +404,42 @@ public final class PlanRepair {
         return current;
     }
 
+    /**
+     * Retire des marches d'entrée ({@code staircase} repéré par façade) que l'expanseur refuse ET
+     * qui ne montent nulle part : leur {@code floor} n'est pas au-dessus du terrain. Boulangerie de
+     * Central (#655) : plancher affleurant le terrain (ancre y=1), « staircase facade: EAST floor: 1 »
+     * plaqué contre le four en briques de la façade — refusé, et aucun dénivelé à franchir. Une
+     * volée qui servait réellement (floor au-dessus du terrain) n'est jamais retirée : c'est
+     * l'audit de l'entrée qui dira alors ce qui manque.
+     */
+    static BuildingPlan needlessEntrySteps(BuildingPlan plan, List<String> changes) {
+        BuildingPlan current = plan;
+        for (int guard = 0; guard < plan.steps().size(); guard++) {
+            BuildingPlanExpander.Result r = BuildingPlanExpander.expand(current);
+            if (r.ok()) {
+                return current;
+            }
+            var m = java.util.regex.Pattern.compile("^Instruction (\\d+) \\(STAIRCASE\\) : ")
+                    .matcher(r.error());
+            if (!m.find()) {
+                return current;
+            }
+            int rank = Integer.parseInt(m.group(1));
+            PlanStep step = current.steps().get(rank - 1);
+            if (step.facade() == null || step.number("floor", Integer.MAX_VALUE) > current.anchorY()) {
+                return current;
+            }
+            String described = BuildingPlanExpander.describeStep(current, rank);
+            List<PlanStep> steps = new ArrayList<>(current.steps());
+            steps.remove(rank - 1);
+            current = copy(current, steps);
+            changes.add("Retrait de l'" + described + " : marches d'entrée refusées par le moteur, et "
+                    + "inutiles — leur palier (floor " + step.number("floor", 0) + ") n'est pas au-dessus "
+                    + "du terrain (ancre y=" + plan.anchorY() + "), le plancher est déjà de plain-pied.");
+        }
+        return current;
+    }
+
     /** Le rang de la porte ou fenêtre que l'expanseur refuse faute de mur, ou 0. */
     private static int failingOpening(BuildingPlanExpander.Result r) {
         if (r.ok()) {
@@ -304,7 +450,96 @@ public final class PlanRepair {
         return m.find() ? Integer.parseInt(m.group(1)) : 0;
     }
 
-    // ---- 3. L'entrée (#291) ---------------------------------------------------------------------
+    // ---- 3. L'entrée manquante (#655) ----------------------------------------------------------
+
+    /**
+     * Perce une vraie porte dans la façade avant quand le bâtiment n'a AUCUNE entrée de ce côté.
+     *
+     * <p>Boulangerie de Central, 20/10/2026 : dix corrections payantes de suite ont rendu un plan
+     * sans passage dans la façade EST (x=9), chaque fois avec la même consigne. Le moteur sait ce
+     * qu'il faut : une instruction {@code door} sur {@code FRONT} — la primitive qui pose les deux
+     * moitiés, l'orientation, la charnière et le dégagement intérieur. Il cherche, depuis le milieu
+     * de la façade, la première position où l'audit trouve une entrée praticable, au niveau du
+     * premier plancher, et ne garde la porte que si elle n'ajoute aucun autre refus. Le contrôle
+     * {@code NO_ENTRANCE} n'est jamais assoupli : c'est l'audit complet qui juge la porte.</p>
+     *
+     * <p>Rien n'est fait si le plan a déjà une porte sur sa façade avant : ce qui la rend
+     * impraticable est une intention à revoir, pas un oubli.</p>
+     */
+    static BuildingPlan doorway(BuildingPlan plan, List<String> changes) {
+        Snapshot s = snapshot(plan);
+        if (s == null || !s.report().blockingCodes().contains("NO_ENTRANCE")) {
+            return plan;
+        }
+        for (PlanStep step : plan.steps()) {
+            if (step.kind() == PlanStep.Kind.DOOR && step.facade() == Facade.FRONT) {
+                return plan;
+            }
+        }
+        List<String> before = s.report().blockingCodes();
+        List<Circulation.Level> levels = Circulation.detect(AuditGrid.of(s.expansion().blueprint()));
+        Set<Integer> heights = new LinkedHashSet<>();
+        if (!levels.isEmpty()) {
+            heights.add(levels.get(0).standY());
+        }
+        heights.add(1);
+        String block = doorMaterial(plan);
+        int span = Facade.FRONT.span(plan.front(), plan.sizeX(), plan.sizeZ());
+        int center = span / 2;
+        for (int d = 0; d <= span; d++) {
+            for (int sign : d == 0 ? new int[] {1} : new int[] {-1, 1}) {
+                int offset = center + sign * d;
+                if (offset < 0 || offset >= span) {
+                    continue;
+                }
+                for (int y : heights) {
+                    Map<String, Integer> numbers = new HashMap<>();
+                    numbers.put("offset", offset);
+                    numbers.put("y", y);
+                    List<PlanStep> steps = new ArrayList<>(plan.steps());
+                    steps.add(new PlanStep(PlanStep.Kind.DOOR, PlanBox.at(0, 0, 0), block, "",
+                            Facade.FRONT, numbers, ""));
+                    BuildingPlan candidate = copy(plan, steps);
+                    if (candidate.validate().isPresent()) {
+                        continue;
+                    }
+                    List<String> after = codes(candidate);
+                    if (after.contains("PLAN_INVALID") || after.contains("NO_ENTRANCE")
+                            || worseThanNoEntrance(before, after)) {
+                        continue;
+                    }
+                    changes.add("Aucune entrée dans la façade avant (" + plan.front().name() + ") : porte "
+                            + BlockState.type(block) + " posée par le moteur (op: door, facade: FRONT, "
+                            + "offset " + offset + ", y " + y + "), première position praticable depuis "
+                            + "le milieu de la façade.");
+                    return candidate;
+                }
+            }
+        }
+        return plan;
+    }
+
+    /**
+     * Une entrée qui apparaît peut révéler une marche à sauter : c'est le refus suivant, qu'on ne
+     * pouvait pas mesurer sans porte, et que {@link #entrance} traite juste après.
+     */
+    private static boolean worseThanNoEntrance(List<String> before, List<String> after) {
+        List<String> rest = new ArrayList<>(after);
+        rest.remove("ENTRANCE_STEP");
+        return worse(before, rest);
+    }
+
+    private static String doorMaterial(BuildingPlan plan) {
+        for (PlanStep step : plan.steps()) {
+            String type = BlockStates.bareType(step.state());
+            if (type.endsWith("_door") && !type.contains("trapdoor")) {
+                return type;
+            }
+        }
+        return "minecraft:oak_door";
+    }
+
+    // ---- 3 bis. Le seuil (#291) -----------------------------------------------------------------
 
     /**
      * Pose les marches d'entrée qui manquent, quand le seuil est au-dessus du terrain.
@@ -396,6 +631,36 @@ public final class PlanRepair {
                         + " marche(s) de " + BlockState.type(stairs) + " ajoutée(s) devant elle, dans le "
                         + "volume, tournées vers la porte.");
                 return withSteps;
+            }
+        }
+        return sunkFloor(plan, s.report().blockingCodes(), changes);
+    }
+
+    /**
+     * Une ouverture SANS porte (un {@code clear} dans le mur, l'« entrée sans porte » d'une
+     * boutique) au-dessus du terrain : il n'y a pas de bloc de porte pour orienter des marches,
+     * mais la fondation peut s'enterrer de la même façon — l'ancre monte d'un ou deux blocs, le
+     * plancher affleure le terrain (Boulangerie de Central, #655 : plancher en y=0, ancre en y=0,
+     * « on n'entre qu'en sautant »). La grille ne change pas ; seule la pose change.
+     */
+    private static BuildingPlan sunkFloor(BuildingPlan plan, List<String> before, List<String> changes) {
+        for (int rise = 1; rise <= 2; rise++) {
+            int anchorY = plan.anchorY() + rise;
+            if (anchorY >= plan.sizeY()) {
+                break;
+            }
+            BuildingPlan sunk = new BuildingPlan(plan.id(), plan.name(), plan.sizeX(), plan.sizeY(),
+                    plan.sizeZ(), plan.front(), plan.anchorX(), anchorY, plan.anchorZ(), plan.steps(),
+                    plan.kind());
+            if (sunk.validate().isPresent()) {
+                continue;
+            }
+            List<String> after = codes(sunk);
+            if (!after.contains("ENTRANCE_STEP") && !worse(before, after)) {
+                changes.add("Entrée à " + rise + " bloc(s) au-dessus du terrain : fondation enterrée — "
+                        + "l'ancre passe de y=" + plan.anchorY() + " à y=" + anchorY + ", le plancher "
+                        + "affleure le terrain et l'on entre de plain-pied.");
+                return sunk;
             }
         }
         return plan;

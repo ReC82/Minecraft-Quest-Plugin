@@ -227,6 +227,11 @@ public final class BuildingDesignPipeline {
         private int spent;
         private int critiques;
         private BuildingPlanDraft best;
+        /** #655 : la critique en cours a-t-elle déjà eu sa correction ? Une seule par critique. */
+        private boolean critiqueFixed;
+        /** #655 : empreintes des diagnostics déjà reçus — un diagnostic qui revient est stérile. */
+        private final Set<String> seenDiagnoses = new HashSet<>();
+        private boolean freshDesignDone;
         /** #283 : les pixels des références du projet, joints à chaque passe payante. */
         private final List<com.lodygames.rpgquest.panel.ai.AiProvider.Image> references;
 
@@ -283,6 +288,7 @@ public final class BuildingDesignPipeline {
                     best = current;
                     if (critiques < quality.critiques() && canSpend()) {
                         critiques++;
+                        critiqueFixed = false;
                         BuildingPlanDraft accepted = current;
                         String measured = metrics(j.verdict());
                         String remarks = String.join("\n", j.verdict().warnings());
@@ -302,12 +308,23 @@ public final class BuildingDesignPipeline {
                 // ---- Refusé ----------------------------------------------------------------------
                 pitfalls.add(PlanVerdictText.headline(j.verdict(), false) + " — "
                         + String.join(", ", j.verdict().codes()));
-                if (best != null && current.parentId().equals(best.id())) {
-                    // Une critique a cassé un plan conforme : on garde le conforme, et on corrige la
-                    // critique tant que l'enveloppe le permet.
+                if (best != null) {
+                    // #655 : une critique a cassé un plan conforme. Elle a droit à UNE correction ; si
+                    // celle-ci échoue aussi, on revient au conforme — le 20/10/2026, dix corrections
+                    // payantes de suite ont poursuivi une critique ratée jusqu'à épuiser l'enveloppe.
+                    if (critiqueFixed) {
+                        record(new Pass("NOTE", best.id(), best.version(), "", 0, 0,
+                                "La correction de l'amélioration est refusée elle aussi : retour à la "
+                                        + "version conforme " + best.id().substring(0, Math.min(8,
+                                        best.id().length())) + ", qui reste le résultat. Aucun appel de "
+                                        + "plus pour cette amélioration."));
+                        current = best;
+                        continue;
+                    }
+                    critiqueFixed = true;
                     record(new Pass("NOTE", current.id(), current.version(), "", 0, 0,
-                            "L'amélioration a été refusée ; la version conforme précédente reste le "
-                                    + "résultat si la correction échoue."));
+                            "L'amélioration a été refusée ; une seule correction est tentée, la version "
+                                    + "conforme précédente reste le résultat si elle échoue."));
                 }
                 if (!canSpend()) {
                     stop(best != null ? null : "Enveloppe épuisée : le dernier plan est encore refusé ("
@@ -318,7 +335,19 @@ public final class BuildingDesignPipeline {
                 sameRefusals = codes.equals(lastCodes) ? sameRefusals + 1 : 0;
                 lastCodes = codes;
                 BuildingPlanDraft refused = current;
-                if (sameRefusals >= 1 && best == null) {
+                // #655 : un diagnostic déjà reçu — même texte, mêmes coordonnées — revient. Le corriger
+                // une fois de plus, c'est payer la même réponse : on change d'approche une fois, puis
+                // on s'arrête en le disant.
+                boolean repeated = !seenDiagnoses.add(BuildingPlanDraftStore.sha256(
+                        String.join(",", j.verdict().codes()) + "\n" + j.diagnosis()));
+                if (repeated && best == null && freshDesignDone) {
+                    stop("Le serveur renvoie un diagnostic déjà reçu malgré une conception neuve : l'IA "
+                            + "tourne en rond (" + codes + "). La session s'arrête au lieu de payer la même "
+                            + "réponse ; les versions produites restent consultables.");
+                    return;
+                }
+                if ((sameRefusals >= 1 || repeated) && best == null) {
+                    freshDesignDone = true;
                     // Deux refus identiques de suite : corriger encore produirait une variante du même
                     // défaut. On repart du brief, avec les écueils déjà rencontrés.
                     sameRefusals = 0;

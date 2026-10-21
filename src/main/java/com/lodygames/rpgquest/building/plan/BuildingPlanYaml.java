@@ -46,11 +46,34 @@ public final class BuildingPlanYaml {
      * renvoyer le plan entier à l'IA. Ne jamais expanser un plan lu ainsi sans le valider.
      */
     public static Optional<BuildingPlan> readUnvalidated(String yaml, List<String> problems) {
-        return read(yaml, problems, false);
+        return read(yaml, problems, false, null);
+    }
+
+    /**
+     * Lecture <strong>pour la réparation</strong> (issue #655) : comme {@link #readUnvalidated}, mais
+     * une façade d'instruction écrite en point cardinal ({@code facade: EAST}) est traduite dans
+     * le repère du bâtiment au lieu de faire refuser le plan.
+     *
+     * <p>La traduction est exacte, pas devinée : {@code front} fixe la façade avant, et
+     * {@link Facade#direction} donne la direction réelle de chacune des quatre façades. Pour un
+     * bâtiment {@code front: EAST}, « EAST » est FRONT, « SOUTH » est LEFT, « NORTH » est RIGHT.
+     * Le 20/10/2026, la correction payante de l'IA avait traduit SOUTH en RIGHT : la fenêtre
+     * changeait de mur. Le {@code front} du bâtiment, lui, n'est jamais touché.</p>
+     *
+     * @param notes reçoit une phrase par façade traduite — elle devient une correction annoncée
+     */
+    public static Optional<BuildingPlan> readForRepair(String yaml, List<String> problems,
+                                                       List<String> notes) {
+        return read(yaml, problems, false, notes);
     }
 
     private static Optional<BuildingPlan> read(String yaml, List<String> problems,
                                                boolean validate) {
+        return read(yaml, problems, validate, null);
+    }
+
+    private static Optional<BuildingPlan> read(String yaml, List<String> problems,
+                                               boolean validate, List<String> notes) {
         if (yaml == null || yaml.isBlank()) {
             problems.add("Plan vide.");
             return Optional.empty();
@@ -63,7 +86,7 @@ public final class BuildingPlanYaml {
             problems.add("YAML illisible : " + broken.getMessage());
             return Optional.empty();
         }
-        return read(config, problems, validate);
+        return read(config, problems, validate, notes);
     }
 
     /** Lit un plan depuis une section déjà analysée. */
@@ -73,6 +96,11 @@ public final class BuildingPlanYaml {
 
     private static Optional<BuildingPlan> read(ConfigurationSection section, List<String> problems,
                                                boolean validate) {
+        return read(section, problems, validate, null);
+    }
+
+    private static Optional<BuildingPlan> read(ConfigurationSection section, List<String> problems,
+                                               boolean validate, List<String> notes) {
         if (section == null) {
             problems.add("Plan vide ou illisible.");
             return Optional.empty();
@@ -124,7 +152,8 @@ public final class BuildingPlanYaml {
                 problems.add(where + "forme inattendue (une instruction est une liste de clés).");
                 return Optional.empty();
             }
-            Optional<PlanStep> step = step(map, where, problems);
+            Optional<PlanStep> step = step(map, where, problems,
+                    notes == null ? null : front.get(), notes);
             if (step.isEmpty()) {
                 return Optional.empty();
             }
@@ -158,7 +187,8 @@ public final class BuildingPlanYaml {
     }
 
     private static Optional<PlanStep> step(java.util.Map<?, ?> map, String where,
-                                           List<String> problems) {
+                                           List<String> problems, Facing front,
+                                           List<String> notes) {
         Optional<PlanStep.Kind> kind = PlanStep.Kind.of(str(map.get("op")));
         if (kind.isEmpty()) {
             problems.add(where + "instruction inconnue : « " + str(map.get("op"))
@@ -186,6 +216,15 @@ public final class BuildingPlanYaml {
         }
         if (!onRaw.isEmpty()) {
             Optional<Facade> parsed = Facade.of(onRaw);
+            if (parsed.isEmpty() && front != null) {
+                parsed = fromCompass(onRaw, front);
+                if (parsed.isPresent()) {
+                    Facade f = parsed.get();
+                    notes.add(where.replace(" : ", "") + " (" + str(map.get("op")) + ") : « facade: "
+                            + onRaw.trim() + " » est un point cardinal ; pour ce bâtiment « front: "
+                            + front.name() + " », c'est la façade " + f.name() + " (" + f.label() + ").");
+                }
+            }
             if (parsed.isEmpty()) {
                 problems.add(where + "façade inconnue : « " + onRaw
                         + " ». Valeurs acceptées : FRONT, BACK, LEFT, RIGHT.");
@@ -247,6 +286,21 @@ public final class BuildingPlanYaml {
         }
         return Optional.of(new PlanStep(k, box, state, axis, facade,
                 numbers, str(map.get("fill"))));
+    }
+
+    /** La façade relative qui regarde ce point cardinal, pour un bâtiment orienté {@code front}. */
+    static Optional<Facade> fromCompass(String raw, Facing front) {
+        Optional<Facing> compass = Facing.of(raw);
+        if (compass.isEmpty()) {
+            return Optional.empty();
+        }
+        BlockStates.Dir wanted = Facade.toDir(compass.get());
+        for (Facade f : Facade.values()) {
+            if (f.direction(front) == wanted) {
+                return Optional.of(f);
+            }
+        }
+        return Optional.empty();
     }
 
     private static boolean semantic(PlanStep.Kind kind) {

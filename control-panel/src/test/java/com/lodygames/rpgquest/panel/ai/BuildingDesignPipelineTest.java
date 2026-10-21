@@ -145,7 +145,8 @@ class BuildingDesignPipelineTest {
         details.put("code", ok ? "OK" : "ARCHITECTURE_REFUSED");
         details.put("codes", ok ? List.of() : List.of("LEVEL_UNREACHABLE"));
         details.put("message", ok ? "Plan conforme." : "Niveau inaccessible : la marche la plus haute "
-                + "est en 9/5/5, sous le plancher (y=6). Diagnostic-" + plan.hashCode());
+                + "est en 9/5/5, sous le plancher (y=6). Diagnostic-"
+                + (plan.contains("same-diag") ? "identique" : String.valueOf(plan.hashCode())));
         details.put("warnings", List.of());
         details.put("metrics", Map.of("floors", 2, "reachableFloors", ok ? 2 : 1));
         if (plan.contains("overflow")) {
@@ -229,6 +230,41 @@ class BuildingDesignPipelineTest {
         assertEquals(2, r.spentCalls());
         assertTrue(drafts.find(r.finalDraftId()).orElseThrow().plan().contains("# good staircase"),
                 "la version conforme reste le résultat");
+    }
+
+    /**
+     * #655 — la forme de la session réelle 6a91d328 (Boulangerie, « Exigeant », 12 appels) : un plan
+     * conforme, puis une critique qui le casse, puis dix corrections de la critique jusqu'à épuiser
+     * l'enveloppe. Désormais une critique a droit à UNE correction ; ensuite on revient au conforme.
+     */
+    @Test
+    void aBrokenCritiqueGetsOneCorrectionThenTheConformVersionIsKeptWithoutSpendingTheEnvelope() {
+        var r = run(BuildingDesignPipeline.Quality.EXIGEANT, 12, plan("good staircase"),
+                plan("staircase ugly-critique 1"), plan("staircase ugly-critique 2"),
+                plan("staircase ugly-critique 3"), plan("staircase ugly-critique 4"),
+                plan("staircase ugly-critique 5"), plan("staircase ugly-critique 6"),
+                plan("staircase ugly-critique 7"), plan("staircase ugly-critique 8"));
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        // conception + 2 × (critique + sa seule correction) = 5, et non 12.
+        assertEquals(5, r.spentCalls(), kinds(r).toString());
+        assertEquals(5, requests.size(), "aucun appel au-delà");
+        assertEquals(2, kinds(r).stream().filter("CRITIQUE"::equals).count(), kinds(r).toString());
+        assertEquals(2, kinds(r).stream().filter("CORRECTION"::equals).count(), kinds(r).toString());
+        assertTrue(drafts.find(r.finalDraftId()).orElseThrow().plan().contains("# good staircase"),
+                "la version conforme reste le résultat");
+        assertTrue(r.passes().stream().anyMatch(p -> p.verdict().contains("retour à la version conforme")),
+                "le retour au conforme est dit dans le journal");
+    }
+
+    /** #655 — un diagnostic déjà reçu revient après une conception neuve : la session s'arrête. */
+    @Test
+    void aDiagnosisThatComesBackAfterAFreshDesignStopsInsteadOfPayingTheSameAnswer() {
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4, plan("a same-diag"), plan("b same-diag"),
+                plan("c same-diag"), plan("d staircase"));
+        assertEquals(BuildingDesignRunStore.Status.STOPPED, r.status(), r.outcome());
+        assertEquals(3, r.spentCalls(), kinds(r).toString());
+        assertTrue(kinds(r).contains("CONCEPTION NEUVE"), kinds(r).toString());
+        assertTrue(r.outcome().contains("tourne en rond"), r.outcome());
     }
 
     @Test

@@ -146,6 +146,41 @@ class WorkshopFlowTest {
         assertEquals(1, aiCalls.get(), "reprendre, recharger, revenir : jamais facturé");
     }
 
+    /** #655 : la vérification en cours est suivie jusqu'à son état terminal, sans clic « Rafraîchir ». */
+    @Test
+    void aPendingVerificationIsTrackedUntilItsTerminalState() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        String card = mainCard(get(withDraft).body());
+        assertTrue(card.contains("Vérification en cours"), card);
+        AgentActionRow audit = latest("building.plan.audit");
+        assertTrue(card.contains("data-pa-track-action=\"" + audit.id() + "\" data-pa-track-reload=\"terminal\""),
+                card);
+    }
+
+    /**
+     * #655 — Boulangerie de Central : la description demande l'entrée à l'est, le sélecteur dit
+     * ouest. Aucun geste payant ne part ; la page dit pourquoi et comment trancher.
+     */
+    @Test
+    void aBriefThatContradictsTheEntranceSelectorSuspendsEveryPaidGesture() throws Exception {
+        start();
+        String project = createProject("Boulangerie", "Petite boulangerie médiévale. Façade principale et "
+                + "entrée à l’EST, arrière à l’OUEST.");
+        String page = get(project).body();
+        assertTrue(page.contains("Façade d&#39;entrée contradictoire") || page.contains("Façade d'entrée contradictoire"),
+                excerpt(page));
+        for (String action : List.of("propose", "design", "restart", "design_write")) {
+            HttpResponse<String> res = post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action="
+                    + action + "&id=" + id(project) + "&provider=openai&consent=yes&confirm=yes&quality=STANDARD"
+                    + "&request_token=" + token(page) + "-" + action);
+            assertEquals(303, res.statusCode(), action);
+            assertTrue(decoded(location(res)).contains("Rien n'a été demandé à l'IA"), action + " : "
+                    + decoded(location(res)));
+        }
+        assertEquals(0, aiCalls.get(), "aucun appel facturé");
+    }
+
     @Test
     void resubmittingTheSamePaidFormNeverCallsTwice() throws Exception {
         start();

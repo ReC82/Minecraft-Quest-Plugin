@@ -1161,6 +1161,17 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique » (Standard 4 / Soigné 8 / Exigeant 12 appels, critique architecturale, enveloppe
   annoncée et consentie, journal `building_design_run`). Voir la Bible, « Étages reliés,
   réparation déterministe et conception automatique ». Essais réels OpenAI sur DEV : PENDING.
+- **Atelier : boucle bornée, réparations sûres, orientation vérifiée** *(issue #655, 2026-10-21)* —
+  contradiction description / sélecteur de façade détectée (`BriefOrientation`), gestes payants
+  refusés à coût nul tant qu'elle existe ; `PlanRepair` traduit les façades cardinales depuis
+  `front`, remplace `minecraft:brick` par `minecraft:bricks`, abaisse un toit posé au-dessus du
+  volume, retire des marches d'entrée sans dénivelé, enterre la fondation d'une entrée sans porte,
+  pose une porte avant quand il n'y a aucune entrée (audit complet, `NO_ENTRANCE` non assoupli) et
+  garde ses corrections sur un plan encore invalide qui a progressé ; conception automatique : une
+  seule correction par critique ratée puis retour au conforme, arrêt sur diagnostic répété ; page
+  projet ouverte sur la version retenue ; vérification suivie jusqu'à l'état terminal. Fixtures :
+  6 plans réels du projet `96a24bba`. Voir la Bible, « Boucle bornée, réparations sûres et
+  orientation vérifiée ». PENDING MANUAL VALIDATION.
 - **Atelier : emprise rectangulaire** *(issue #305, 2026-10-20)* — largeur X, longueur Z et
   hauteur Y définies séparément dans la fiche d'un projet (colonne additive `max_depth`, anciens
   projets relus en carré N → X = N, Z = N) ; les trois limites vont à la conception, aux prompts de

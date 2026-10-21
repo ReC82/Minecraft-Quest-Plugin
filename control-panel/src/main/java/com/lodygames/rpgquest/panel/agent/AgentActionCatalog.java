@@ -615,6 +615,12 @@ public final class AgentActionCatalog {
         // embarqué, et ARCHIVE les fichiers au lieu de les effacer.
         addSensitiveWrite("building.definition.retire", Permission.BUILDING_DELETE, false,
                 "Retirer un bâtiment de la bibliothèque", "building.definition.list");
+        // Issue #644 — supprimer un bâtiment ET toutes ses versions. L'aperçu n'écrit rien ; la
+        // suppression est définitive : permission dédiée réservée au propriétaire, identifiant ressaisi.
+        add("building.family.preview", Permission.BUILDING_PURGE, false, false,
+                "Aperçu : supprimer un bâtiment et toutes ses versions");
+        addSensitiveWrite("building.family.purge", Permission.BUILDING_PURGE, false,
+                "Supprimer un bâtiment et toutes ses versions", "building.definition.list");
         // L'aperçu n'écrit RIEN : ni bloc, ni ligne en base. Il est donc déclaré en lecture, et
         // c'est ce qui permet de le relancer autant de fois qu'on veut avant de se décider.
         add("building.placement.preview", Permission.BUILDING_READ, false, false,
@@ -1363,6 +1369,32 @@ public final class AgentActionCatalog {
                 }
                 params.put("waypointId", waypointId);
                 params.put("displayName", name);
+            }
+            case "building.family.preview" -> {
+                String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+                if (!id.matches("[a-z0-9_]{3,48}")) {
+                    return Validation.fail("Identifiant de bâtiment manquant ou invalide.");
+                }
+                params.put("id", id);
+            }
+            case "building.family.purge" -> {
+                String id = trim(form.get("id"));
+                if (!id.matches("[a-z0-9_]{3,48}")) {
+                    return Validation.fail("Identifiant de bâtiment manquant ou invalide.");
+                }
+                if (!id.equals(trim(form.get("confirm_id")))) {
+                    return Validation.fail("Ressaisissez exactement l'identifiant « " + id + " » pour confirmer : "
+                            + "rien n'a été supprimé.");
+                }
+                if (!"true".equals(trim(form.get("confirm")))) {
+                    return Validation.fail("Cochez la confirmation : rien n'a été supprimé.");
+                }
+                params.put("id", id);
+                params.put("confirm", id);
+                String by = trim(form.get("by"));
+                if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
+                    params.put("by", by);
+                }
             }
             case "building.definition.retire" -> {
                 String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);

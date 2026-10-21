@@ -1229,6 +1229,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `building.definition.retire` : refus si le bâtiment est posé ou si c'est un exemple embarqué ;
   sinon fichiers archivés dans `buildings/.retired/`, pas de réapparition au redémarrage, historique
   et sauvegardes de terrain conservés. Voir la Bible.
+- **Supprimer un bâtiment et toutes ses versions** *(issue #644, non déployé)* — aperçu en lecture seule
+  `building.family.preview` puis `building.family.purge` (permission `BUILDING_PURGE`, Propriétaire seul,
+  identifiant ressaisi) : version courante, versions `.history`, `.retired` et effacement inachevé
+  `.purging` ; refus si posé, lié à un portail (même brouillon), embarqué ou redéclaré ; aucun bloc du
+  monde touché ; déplacement en attente puis effacement, compensation, journal `buildings/.audit/purges.log`.
+  TC-399 PENDING MANUAL VALIDATION. Voir la Bible.
 - **Images de référence et « Recommencer depuis ma description »** *(issue #283, déployé sur DEV le
   12/10/2026, `7025bd8`)* — jusqu'à 4 images par projet (type vérifié sur les octets, 4 Mio, stockées dans
   `control-panel.db`, effacées au retrait), transmises en pixels à OpenAI / Anthropic / Gemini comme

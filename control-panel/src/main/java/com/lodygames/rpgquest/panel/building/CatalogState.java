@@ -32,7 +32,9 @@ public record CatalogState(State state, int version, Instant at) {
         /** Retiré par « Retirer de la bibliothèque » : archivé, plus posable. */
         RETIRED,
         /** Absent du dernier relevé de la bibliothèque, sans retrait connu. */
-        ABSENT
+        ABSENT,
+        /** Supprimé définitivement avec toutes ses versions (#644) : plus rien n'est archivé. */
+        PURGED
     }
 
     private static final int SCAN = 200;
@@ -43,7 +45,7 @@ public record CatalogState(State state, int version, Instant at) {
     }
 
     public boolean gone() {
-        return state == State.RETIRED || state == State.ABSENT;
+        return state == State.RETIRED || state == State.ABSENT || state == State.PURGED;
     }
 
     public static CatalogState unknown() {
@@ -69,13 +71,20 @@ public record CatalogState(State state, int version, Instant at) {
                 break;
             }
         }
+        for (AgentActionRow row : store.successfulActionsOfType(agentId, "building.family.purge", SCAN)) {
+            if (buildingId.equals(row.params().getOrDefault("id", ""))) {
+                best = later(best, new CatalogState(State.PURGED, best.version(), when(row)));
+                break;
+            }
+        }
         Optional<AgentActionRow> listing = store.latestSuccessfulActionOfType(agentId, "building.definition.list");
         if (listing.isPresent()) {
             var directory = details(listing.get()).map(BuildingLibraryDirectory::from);
             if (directory.isPresent() && directory.get().available()) {
                 var found = directory.get().find(buildingId);
                 CatalogState seen = found.map(b -> new CatalogState(State.IN_LIBRARY, b.version(), when(listing.get())))
-                        .orElse(new CatalogState(best.state() == State.RETIRED ? State.RETIRED : State.ABSENT,
+                        .orElse(new CatalogState(best.state() == State.RETIRED || best.state() == State.PURGED
+                                ? best.state() : State.ABSENT,
                                 best.version(), when(listing.get())));
                 if (best.state() != State.UNKNOWN || found.isPresent()) {
                     best = later(best, seen);
@@ -127,6 +136,7 @@ public record CatalogState(State state, int version, Instant at) {
         return switch (state) {
             case IN_LIBRARY -> "Dans la bibliothèque" + (version > 0 ? " (version " + version + ")" : "");
             case RETIRED -> "Retiré de la bibliothèque";
+            case PURGED -> "Supprimé avec toutes ses versions";
             case ABSENT -> "Absent de la bibliothèque au dernier relevé";
             case UNKNOWN -> "Jamais enregistré";
         };

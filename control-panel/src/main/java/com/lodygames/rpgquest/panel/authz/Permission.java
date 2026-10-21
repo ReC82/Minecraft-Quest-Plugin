@@ -210,6 +210,13 @@ public enum Permission {
      */
     BUILDING_DELETE,
     /**
+     * Supprimer <strong>définitivement</strong> un bâtiment de la bibliothèque avec toutes ses
+     * versions (issue #644). Permission dédiée, distincte de {@link #BUILDING_DELETE} qui ne fait
+     * qu'archiver : l'effacement n'est pas réversible. Réservée au propriétaire (aucun autre rôle ne
+     * la reçoit).
+     */
+    BUILDING_PURGE,
+    /**
      * Poser un bâtiment dans le monde (issue #213, lot « placement »).
      *
      * <p>Permission <strong>dédiée</strong>, et séparée de {@link #BUILDING_WRITE} pour une raison

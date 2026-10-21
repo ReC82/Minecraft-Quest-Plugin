@@ -6232,7 +6232,8 @@ public final class PanelApp {
                 return;
             }
         }
-        if ("building.definition.retire".equals(type) || "npc.spot.capture".equals(type)
+        if ("building.definition.retire".equals(type) || "building.family.purge".equals(type)
+                || "npc.spot.capture".equals(type)
                 || type.startsWith("portal.") || AgentPages.WORLD_STATE_WRITES.contains(type)) {
             // #284 : l'auteur du retrait est noté par le plugin dans l'archive ; #381 : l'auteur d'un
             // emplacement capturé. C'est la session, jamais un champ du formulaire.
@@ -6290,9 +6291,20 @@ public final class PanelApp {
                     "Un changement d'OP est déjà en cours pour ce joueur : rien n'a été envoyé en double."));
             return;
         }
+        // Issue #644 : un double clic n'empile pas deux suppressions du même bâtiment.
+        if ("building.family.purge".equals(type) && agentStore.recentActions(agentId, 50).stream()
+                .anyMatch(a -> !a.status().terminal() && type.equals(a.type())
+                        && a.params().getOrDefault("id", "").equals(v.params().getOrDefault("id", "")))) {
+            audit.record(session.username(), "agent.action.create", auditTarget,
+                    "DENIED", "suppression déjà en attente pour ce bâtiment", rid);
+            Http.redirect(exchange, withError(returnPath, agentId, null,
+                    "Une suppression de ce bâtiment est déjà en cours : rien n'a été envoyé en double."));
+            return;
+        }
         // Issue #284 : un bâtiment posé ne se retire pas de la bibliothèque — refus avant la file,
-        // sur le dernier relevé des emplacements (le plugin revérifie de son côté).
-        if ("building.definition.retire".equals(type)) {
+        // sur le dernier relevé des emplacements (le plugin revérifie de son côté). Idem pour la
+        // suppression de toutes ses versions (#644).
+        if ("building.definition.retire".equals(type) || "building.family.purge".equals(type)) {
             String buildingId = v.params().getOrDefault("id", "");
             List<String> usedOn = agentPages.buildingSiteDirectory(agentId).sites().stream()
                     .map(st -> agentPages.buildingSiteDirectory(agentId).placementFor(st.id()))

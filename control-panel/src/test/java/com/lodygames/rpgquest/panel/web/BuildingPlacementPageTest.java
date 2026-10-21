@@ -202,6 +202,78 @@ class BuildingPlacementPageTest {
                 "l'auteur est la session, jamais un champ du formulaire");
     }
 
+    // ---- #644 : supprimer un bâtiment et toutes ses versions ---------------------------------------
+
+    private static final String FAMILY_OK = "{\"id\":\"bibliotheque_v1\",\"name\":\"Bibliothèque V1\","
+            + "\"inLibrary\":true,\"bundled\":false,\"currentVersion\":3,\"purgeable\":true,\"fileCount\":4,"
+            + "\"versions\":[{\"kind\":\"CURRENT\",\"version\":3,\"label\":\"version courante 3\","
+            + "\"paths\":[\"buildings/bibliotheque_v1.yml\",\"schematics/bibliotheque_v1.schem\"]},"
+            + "{\"kind\":\"HISTORY\",\"version\":2,\"label\":\"version remplacée 2\","
+            + "\"paths\":[\"buildings/.history/bibliotheque_v1/v2_20261001-100000/\"]},"
+            + "{\"kind\":\"RETIRED\",\"version\":1,\"label\":\"version archivée 1\","
+            + "\"paths\":[\"buildings/.retired/bibliotheque_v1_20261002-100000/\"]}],"
+            + "\"kept\":[\"historique des poses, sauvegardes de terrain\"],\"blockers\":[]}";
+
+    @Test
+    void theFamilyDeletionShowsTheReadOnlyPreviewBeforeOfferingToDelete() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY_284);
+        String page = get("/buildings/library?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Supprimer ce bâtiment et toutes ses versions"), "zone distincte du retrait");
+        assertTrue(page.contains("value=\"building.family.preview\""), "l'aperçu se demande d'abord");
+        assertFalse(page.contains("value=\"building.family.purge\""), "pas de suppression sans aperçu");
+
+        seed("building.family.preview", FAMILY_OK);
+        page = get("/buildings/library?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("3 version(s), 4 élément(s)"), "nombre exact des versions et fichiers");
+        assertTrue(page.contains("buildings/.history/bibliotheque_v1/v2_20261001-100000/"));
+        assertTrue(page.contains("version archivée 1"));
+        assertTrue(page.contains("name=\"confirm_id\""), "identifiant à ressaisir");
+        assertTrue(page.contains("value=\"building.family.purge\""));
+    }
+
+    @Test
+    void aBlockedPreviewSaysWhyAndOffersNoDeletion() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY_284);
+        seed("building.family.preview", FAMILY_OK.replace("\"purgeable\":true", "\"purgeable\":false")
+                .replace("\"blockers\":[]", "\"blockers\":[\"lié au portail « portail_nord » (brouillon)\"]"));
+        String page = get("/buildings/library?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("Suppression impossible"));
+        assertTrue(page.contains("portail_nord"));
+        assertFalse(page.contains("value=\"building.family.purge\""));
+    }
+
+    @Test
+    void deletingNeedsTheRetypedIdRecordsTheAuthorAndRefusesAPlacedBuilding() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY_284);
+        String token = csrf(get("/buildings/library?agent=" + TestConfig.AGENT_ID).body());
+        String base = "_csrf=" + token + "&type=building.family.purge&agent=" + TestConfig.AGENT_ID
+                + "&return=/buildings/library";
+        long before = count("building.family.purge");
+        post("/agents/action", base + "&id=bibliotheque_v1&confirm=true");
+        assertEquals(before, count("building.family.purge"), "sans identifiant ressaisi, rien ne part");
+        post("/agents/action", base + "&id=bibliotheque_v1&confirm=true&confirm_id=bibliotheque");
+        assertEquals(before, count("building.family.purge"), "identifiant ressaisi différent");
+        post("/agents/action", base + "&id=bibliotheque_v1&confirm_id=bibliotheque_v1");
+        assertEquals(before, count("building.family.purge"), "sans case cochée");
+        post("/agents/action", base + "&id=test_hut_01&confirm=true&confirm_id=test_hut_01");
+        assertEquals(before, count("building.family.purge"), "un bâtiment posé est refusé avant la file");
+
+        post("/agents/action", base + "&id=bibliotheque_v1&confirm=true&confirm_id=bibliotheque_v1&by=x");
+        assertEquals(before + 1, count("building.family.purge"));
+        AgentActionRow queued = queued("building.family.purge");
+        assertEquals("bibliotheque_v1", queued.params().get("confirm"), "le plugin reçoit l'identifiant ressaisi");
+        assertEquals(TestConfig.OWNER_USERNAME, queued.params().get("by"));
+
+        post("/agents/action", base + "&id=bibliotheque_v1&confirm=true&confirm_id=bibliotheque_v1");
+        assertEquals(before + 1, count("building.family.purge"), "double clic : rien en double");
+    }
+
     /** La bibliothèque est en lecture seule : aucun formulaire d'écriture ne doit y figurer. */
     /** #269 : l'ancre affichée est celle de CE bâtiment, pas une convention unique. */
     @Test
@@ -802,7 +874,8 @@ class BuildingPlacementPageTest {
         post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent="
                 + TestConfig.AGENT_ID + "&return=/buildings/sites"
                 + (type.startsWith("building.placement") ? "&id=buildsite_0001"
-                        + "&building=test_hut_01&confirm=true" : ""));
+                        + "&building=test_hut_01&confirm=true" : "")
+                + ("building.family.preview".equals(type) ? "&id=bibliotheque_v1" : ""));
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),

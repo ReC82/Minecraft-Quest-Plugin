@@ -471,7 +471,9 @@ public final class WorkshopPages {
                     .append(Http.esc(p.buildingId())).append("</code>) n'est plus dans la bibliothèque du "
                             + "serveur")
                     .append(v.catalog().state() == CatalogState.State.RETIRED
-                            ? " : il a été retiré, ses fichiers sont archivés" : "")
+                            ? " : il a été retiré, ses fichiers sont archivés"
+                            : v.catalog().state() == CatalogState.State.PURGED
+                                    ? " : il a été supprimé avec toutes ses versions enregistrées" : "")
                     .append(". Il ne peut pas être posé. La description, les versions et les images du projet "
                             + "sont conservées.</p>");
             if (v.canWrite()) {

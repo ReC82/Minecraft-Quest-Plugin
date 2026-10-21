@@ -2494,6 +2494,51 @@ l'Atelier sont conservés (« Enregistrer dans la bibliothèque » le recréerai
 les deux fichiers de l'archive à leur place, puis `/rpgadmin building reload`. Retirer un bâtiment
 n'est **ni** supprimer un emplacement, **ni** archiver une version de l'Atelier.
 
+#### Supprimer un bâtiment et toutes ses versions (issue #644)
+
+« Retirer de la bibliothèque » (#284) **archive** : c'est le geste courant, réversible. Pour alléger
+vraiment le serveur, la fiche d'un bâtiment propose en dessous **« Supprimer ce bâtiment et toutes ses
+versions »**, réservé à la permission dédiée `BUILDING_PURGE` (rôle Propriétaire uniquement). Deux temps :
+
+1. **« Voir ce qui serait supprimé »** (action `building.family.preview`, lecture seule, n'écrit rien) :
+   le plugin liste chaque version, les fichiers exacts, ce qui est conservé et ce qui bloque. Sans aperçu,
+   aucun bouton de suppression n'est affiché ; un aperçu bloqué n'en affiche pas non plus.
+2. **Suppression** (action `building.family.purge`, mutation sensible) : l'identifiant du bâtiment doit
+   être **ressaisi** exactement, la case cochée ; l'auteur est la session ; un double clic n'envoie rien
+   en double. Le plugin recalcule tout au moment d'agir.
+
+La **famille** d'un identifiant, et seulement elle :
+
+| Élément | Emplacement | Supprimé ? |
+|---|---|---|
+| version courante | `buildings/<fichier>.yml` + `schematics/<id>.schem` | oui ; le `.schem` est **conservé** s'il sert à un autre bâtiment, s'il est une sauvegarde de pose ou hors du dossier |
+| versions remplacées par une régénération (#94) | `buildings/.history/<id>/v<N>_<horodatage>/` | oui |
+| versions archivées par un retrait (#284) | `buildings/.retired/<id>_<horodatage>/` | oui, sauf si sa note `retired.yml` désigne un autre identifiant |
+| effacement inachevé | `buildings/.purging/<id>_<horodatage>/` | oui (reprise) |
+| entrée non reconnue dans `.history/<id>/`, bâtiment au nom proche (`<id>_bis_…`) | — | **non**, montrée et laissée en place |
+| emplacements, portails, historique des poses, sauvegardes de terrain (`backup_`, `baseline_`), projets et versions de l'Atelier, données de joueurs | — | **jamais** |
+
+**Refus** (rien n'est supprimé, motif et marche à suivre affichés) : exemple embarqué ; bâtiment posé sur
+un emplacement (refusé aussi par le panel avant la file) ; portail qui le cite comme construction liée
+(#568), **même en brouillon**, ou fichier de portail illisible qui mentionne l'identifiant ; autre
+`buildings/*.yml` déclarant le même identifiant (il le ferait réapparaître). **Aucun bloc du monde n'est
+touché** : retirer physiquement une construction reste « Retirer le bâtiment et restaurer le terrain ».
+
+**Pas de demi-suppression** : tout est d'abord déplacé (déplacements atomiques) dans
+`buildings/.purging/<id>_<horodatage>/` ; si un déplacement échoue ou si la bibliothèque rechargée porte
+encore le bâtiment, tout est remis en place (« Rien n'a été supprimé »). Le dossier d'attente n'est effacé
+qu'ensuite ; s'il ne peut pas l'être entièrement, le résultat `PURGED_PENDING` le dit et une nouvelle
+suppression du même identifiant le termine. **Rien n'est jamais effacé au démarrage ni au déploiement.**
+Le bâtiment ne réapparaît pas au redémarrage. Journal : `buildings/.audit/purges.log` (date, identifiant,
+auteur, chemins supprimés), ligne `[building] « id » supprimé…` dans la console, et l'action dans le
+journal d'audit du panel.
+
+**Repartir de zéro** sans rien effacer : créer un **nouveau projet** dans l'Atelier — il a son propre
+historique de versions (#308) et n'hérite d'aucun plan. Réutiliser l'identifiant d'un bâtiment encore
+dans la bibliothèque est refusé par l'Atelier (« Changez-le… ») ; après une suppression définitive,
+l'identifiant est libre (état « Supprimé avec toutes ses versions » dans le projet d'origine, qui reste
+consultable et peut le réenregistrer).
+
 ### Cycle de vie d'un bâtiment posé (issue #234)
 
 Un emplacement occupé **ne doit pas devenir une impasse** : il faut pouvoir essayer, restaurer,

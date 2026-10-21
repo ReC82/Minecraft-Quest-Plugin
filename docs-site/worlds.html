@@ -234,8 +234,17 @@
       (<code>hub_to_wild</code>, <code>hub_to_claims</code>) et portails classiques (« ancien format »),
       zone d'activation réelle, monde d'arrivée, type d'arrivée et ses réglages, avertissement Wild et
       accès Claims réellement appliqués, conditions, problèmes détectés (monde non chargé, id en double,
-      zones superposées, fichier ignoré…). Créer, modifier, activer ou tester un portail ne se fait pas
-      depuis cette page.
+      zones superposées, fichier ignoré…).
+    </p>
+    <p class="text-body-secondary">
+      Depuis l'issue #565, le propriétaire (permissions <code>PORTAL_EDIT</code> / <code>PORTAL_ENABLE</code>) y
+      <strong>crée un portail en brouillon</strong> — il ne téléporte personne tant qu'il n'est pas activé —, avec
+      une zone d'activation réglée autour d'un emplacement marqué en jeu (largeur × hauteur × profondeur, orientée
+      par la face de l'emplacement) ou en coordonnées. Dans la fiche : renommer, régler la zone d'un portail non
+      actif, activer, désactiver (la configuration est conservée), supprimer (le fichier seulement : ni emplacement
+      ni bloc touché). Les portails vers le Hub, le Wild ou les Claims demandent une confirmation de plus. Deux
+      zones qui se recouvrent sont refusées, y compris au redémarrage du serveur. Le test de téléportation n'est
+      pas proposé.
     </p>
   </section>
 

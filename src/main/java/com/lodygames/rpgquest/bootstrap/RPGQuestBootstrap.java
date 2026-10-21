@@ -1377,6 +1377,15 @@ public final class RPGQuestBootstrap {
         // Issue #564 (#228-P1) : page Portails en lecture seule — mêmes registres que le jeu.
         agentActions.setPortalSources(portalRegistry, destinationRegistry,
                 id -> questProgressEngine.npcNameResolver().apply(id));
+        // Issue #565 (#228-P2) : portails gérés depuis PlugAdmin. Rien n'est écrit au démarrage ;
+        // portal-audit.yml n'est créé qu'à la première modification.
+        com.lodygames.rpgquest.travel.PortalAuditLog portalAudit = new com.lodygames.rpgquest.travel.PortalAuditLog(
+                plugin.getDataFolder().toPath().resolve("portal-audit.yml"),
+                task -> plugin.getServer().getScheduler().runTaskAsynchronously(plugin, task),
+                plugin.getSLF4JLogger());
+        portalAudit.load();
+        agentActions.setPortalAdmin(new com.lodygames.rpgquest.travel.WorldPortalAdminService(worldPortalRegistry,
+                portalAudit, java.time.Clock.systemUTC()), portalAudit);
         com.lodygames.rpgquest.player.OperatorNoticeService operatorNotices =
                 new com.lodygames.rpgquest.player.OperatorNoticeService(plugin, variableRepository, questMessagesService);
         registry.start(new PlayerListenerService(plugin, operatorNotices));

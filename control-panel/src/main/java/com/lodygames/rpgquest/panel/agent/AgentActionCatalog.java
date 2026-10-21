@@ -396,8 +396,17 @@ public final class AgentActionCatalog {
         add("world.create.preview", Permission.WORLD_CREATE, false, false,
                 "Aperçu de la création d'un monde (rien n'est créé)");
         addSensitiveWrite("world.create.apply", Permission.WORLD_CREATE, false, "Créer un monde", "world.list");
-        // Issue #564 (#228-P1) — portails en lecture seule. Aucune action portal.* mutative n'existe.
+        // Issue #564 (#228-P1) — portails en lecture.
         add("portal.list", Permission.PORTAL_READ, false, false, "Rafraîchir les portails");
+        // Issue #565 (#228-P2) — portails modifiables : brouillon, zone, nom, suppression (PORTAL_EDIT),
+        // activation / désactivation (PORTAL_ENABLE). Toutes sensibles (case de confirmation),
+        // toutes relisent les portails ; l'empreinte du dernier relevé est exigée sauf à la création.
+        addSensitiveWrite("portal.create", Permission.PORTAL_EDIT, false, "Créer un portail en brouillon",
+                "portal.list");
+        addSensitiveWrite("portal.update", Permission.PORTAL_EDIT, false, "Modifier un portail", "portal.list");
+        addSensitiveWrite("portal.delete", Permission.PORTAL_EDIT, false, "Supprimer un portail", "portal.list");
+        addSensitiveWrite("portal.enable", Permission.PORTAL_ENABLE, false, "Activer un portail", "portal.list");
+        addSensitiveWrite("portal.disable", Permission.PORTAL_ENABLE, false, "Désactiver un portail", "portal.list");
         // Issue #637 — claims : relevé en lecture seule, et téléportation de diagnostic du SEUL
         // personnage lié à la session (imposé par le panel, jamais un champ du formulaire).
         add("claim.list", Permission.CLAIM_READ, false, false, "Rafraîchir les claims");
@@ -1470,6 +1479,12 @@ public final class AgentActionCatalog {
                 String by = trim(form.get("by"));
                 if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
                     params.put("by", by);
+                }
+            }
+            case "portal.create", "portal.update", "portal.enable", "portal.disable", "portal.delete" -> {
+                String error = portalParams(type, form, params);
+                if (error != null) {
+                    return Validation.fail(error);
                 }
             }
             case "building.site.delete" -> {
@@ -3056,6 +3071,123 @@ public final class AgentActionCatalog {
     /** Issue #561 — clé d'un réglage demandé, miroir du plugin qui revalide tout. */
     private static final Pattern WORLD_SETTING_PARAM = Pattern.compile("set\\.(?:rule\\.)?[a-z0-9_]{1,64}");
     private static final Pattern WORLD_SETTINGS_FINGERPRINT = Pattern.compile("[0-9a-f]{24}");
+
+    // ---- Portails (issue #565) ------------------------------------------------------------------
+
+    private static final Pattern PORTAL_ID = Pattern.compile("[a-z0-9_-]{3,48}");
+    private static final Pattern PORTAL_WORLD = Pattern.compile("[A-Za-z0-9_.-]{1,64}");
+    private static final List<String> PORTAL_CORNERS = List.of("min_x", "min_y", "min_z", "max_x", "max_y", "max_z");
+    private static final List<String> PORTAL_STRATEGIES = List.of("WORLD_SPAWN", "RANDOM_SAFE", "CLAIM_HOME");
+    /** Miroirs de {@code PortalZone.MAX_SIDE} et {@code WorldPortalAdminService.MAX_NAME_LENGTH}. */
+    public static final int PORTAL_MAX_SIDE = 32;
+    public static final int PORTAL_MAX_NAME = 64;
+
+    /**
+     * Paramètres de {@code portal.*} ; {@code null} si valides, sinon le message d'erreur. Contrôle
+     * de forme seulement : le plugin revérifie tout (mondes chargés, chevauchements, empreinte).
+     */
+    private static String portalParams(String type, Map<String, String> form, Map<String, String> params) {
+        String id = trim(form.get("id")).toLowerCase(java.util.Locale.ROOT);
+        if (!PORTAL_ID.matcher(id).matches()) {
+            return "Identifiant de portail invalide : 3 à 48 caractères, minuscules, chiffres, « _ » et « - ».";
+        }
+        params.put("id", id);
+        // La case de confirmation est déjà exigée par validate() (action sensible) ; le plugin la
+        // revérifie. L'auteur vient de la session (PanelApp), jamais du formulaire du navigateur.
+        params.put("confirm", "true");
+        String by = trim(form.get("by"));
+        if (by.matches("[A-Za-z0-9_.@-]{1,64}")) {
+            params.put("by", by);
+        }
+        if (!"portal.create".equals(type)) {
+            String expected = trim(form.get("expected"));
+            if (!WORLD_SETTINGS_FINGERPRINT.matcher(expected).matches()) {
+                return "Empreinte du portail manquante : rafraîchir les portails puis recommencer.";
+            }
+            params.put("expected", expected);
+        }
+        if ("true".equals(trim(form.get("confirm_essential")))) {
+            params.put("confirm_essential", "true");
+        }
+        if (form.containsKey("name") && ("portal.create".equals(type) || "portal.update".equals(type))) {
+            String name = trim(form.get("name"));
+            if (name.length() > PORTAL_MAX_NAME || name.contains("<") || name.contains(">")) {
+                return "Nom affiché invalide : " + PORTAL_MAX_NAME + " caractères au plus, sans « < » ni « > ».";
+            }
+            params.put("name", name);
+        }
+        if (!"portal.create".equals(type) && !"portal.update".equals(type)) {
+            return null;
+        }
+        String mode = trim(form.get("zone_mode")).toLowerCase(java.util.Locale.ROOT);
+        switch (mode) {
+            case "site" -> {
+                String site = buildSiteId(Map.of("id", trim(form.get("site"))));
+                if (site == null) {
+                    return "Choisir un emplacement (outil d'emplacement, page Emplacements).";
+                }
+                params.put("site", site);
+                for (String k : List.of("width", "height", "depth")) {
+                    Integer v = intIn(form.get(k), 1, PORTAL_MAX_SIDE);
+                    if (v == null) {
+                        return "Largeur, hauteur et profondeur : nombres entiers de 1 à " + PORTAL_MAX_SIDE + ".";
+                    }
+                    params.put(k, String.valueOf(v));
+                }
+            }
+            case "coords" -> {
+                for (String k : PORTAL_CORNERS) {
+                    Integer v = intIn(form.get(k), -30_000_000, 30_000_000);
+                    if (v == null) {
+                        return "Coordonnée « " + k + " » manquante ou invalide.";
+                    }
+                    params.put(k, String.valueOf(v));
+                }
+                if ("portal.create".equals(type)) {
+                    String world = trim(form.get("world"));
+                    if (!PORTAL_WORLD.matcher(world).matches()) {
+                        return "Monde de départ manquant ou invalide.";
+                    }
+                    params.put("world", world);
+                }
+            }
+            case "", "keep" -> {
+                if ("portal.create".equals(type)) {
+                    return "Zone : choisir un emplacement ou saisir les deux coins.";
+                }
+                mode = "keep";
+            }
+            default -> {
+                return "Mode de zone inconnu.";
+            }
+        }
+        params.put("zone_mode", mode);
+        if ("portal.create".equals(type)) {
+            String dest = trim(form.get("destination_world"));
+            if (!PORTAL_WORLD.matcher(dest).matches()) {
+                return "Monde d'arrivée manquant ou invalide.";
+            }
+            params.put("destination_world", dest);
+            String strategy = trim(form.get("strategy")).toUpperCase(java.util.Locale.ROOT);
+            if (strategy.isEmpty()) {
+                strategy = "WORLD_SPAWN";
+            }
+            if (!PORTAL_STRATEGIES.contains(strategy)) {
+                return "Arrivée inconnue.";
+            }
+            params.put("strategy", strategy);
+        }
+        return null;
+    }
+
+    private static Integer intIn(String raw, int min, int max) {
+        try {
+            int v = Integer.parseInt(trim(raw));
+            return v < min || v > max ? null : v;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
     /** Miroir de {@code WorldSettingsPlanner.MAX_CHANGES}. */
     public static final int MAX_WORLD_SETTINGS = 30;
 

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.travel;
 
+import com.lodygames.rpgquest.building.model.BuildingSite;
 import com.lodygames.rpgquest.claim.ClaimWorldAccessGuard;
 import com.lodygames.rpgquest.config.RandomSafeArrivalConfig;
 import com.lodygames.rpgquest.permission.RpgPermissions;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Vue en <strong>lecture seule</strong> de tous les portails du serveur (issue #564, #228-P1) : ce
@@ -62,7 +64,35 @@ public final class PortalOverview {
                          List<PortalLoadIssue> worldPortalSkipped, List<PortalDefinition> zonePortals,
                          List<PortalLoadIssue> zonePortalIssues, List<Destination> destinations,
                          Map<String, String> loadedWorlds, Roles roles, RandomSafeArrivalConfig randomSafe,
-                         ClaimArrival claimArrival, GuideNpc guide) {
+                         ClaimArrival claimArrival, GuideNpc guide,
+                         Function<String, Optional<BuildingSite>> sites, List<PortalAuditLog.Entry> history) {
+
+        public Inputs {
+            sites = sites == null ? id -> Optional.empty() : sites;
+            history = history == null ? List.of() : List.copyOf(history);
+        }
+
+        /** Sans emplacements ni journal (#565) : conserve les appelants antérieurs. */
+        public Inputs(List<WorldPortalDefinition> worldPortals, List<String> worldPortalFiles,
+                      List<PortalLoadIssue> worldPortalSkipped, List<PortalDefinition> zonePortals,
+                      List<PortalLoadIssue> zonePortalIssues, List<Destination> destinations,
+                      Map<String, String> loadedWorlds, Roles roles, RandomSafeArrivalConfig randomSafe,
+                      ClaimArrival claimArrival, GuideNpc guide) {
+            this(worldPortals, worldPortalFiles, worldPortalSkipped, zonePortals, zonePortalIssues, destinations,
+                    loadedWorlds, roles, randomSafe, claimArrival, guide, null, null);
+        }
+    }
+
+    /**
+     * Ce que #565 ajoute à une entrée : état, emplacement lié, dimensions saisies, empreinte à
+     * renvoyer avec toute modification, et portail essentiel (confirmation de plus).
+     *
+     * @param editable portail de {@code world-portals/} modifiable depuis PlugAdmin
+     */
+    public record Admin(String state, String storedName, String site, String siteName, int width, int height,
+                        int depth, boolean essential, String fingerprint, boolean editable) {
+
+        static final Admin LEGACY = new Admin("ACTIVE", "", "", "", 0, 0, 0, false, "", false);
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -92,7 +122,8 @@ public final class PortalOverview {
                         int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
                         String destinationWorld, Boolean destinationLoaded, String destinationRole,
                         String destinationId, String destinationPoint, String strategy, List<String> arrival,
-                        List<String> trigger, List<Guard> guards, List<Condition> conditions, List<Issue> issues) {
+                        List<String> trigger, List<Guard> guards, List<Condition> conditions, List<Issue> issues,
+                        Admin admin) {
 
         public String size() {
             return (maxX - minX + 1) + " × " + (maxY - minY + 1) + " × " + (maxZ - minZ + 1);
@@ -100,10 +131,11 @@ public final class PortalOverview {
     }
 
     /** Résultat complet de {@code portal.list}. */
-    public record View(boolean available, Roles roles, List<Entry> portals, List<Issue> issues) {
+    public record View(boolean available, Roles roles, List<Entry> portals, List<Issue> issues,
+                       List<String> worlds, List<PortalAuditLog.Entry> history) {
 
         public static View unavailable() {
-            return new View(false, new Roles("", "", ""), List.of(), List.of());
+            return new View(false, new Roles("", "", ""), List.of(), List.of(), List.of(), List.of());
         }
     }
 
@@ -130,7 +162,10 @@ public final class PortalOverview {
             issues.add(new Issue("PORTAL_FILE_SKIPPED", "error", "Fichier portals/" + skipped.file()
                     + " refusé au chargement : " + skipped.message()));
         }
-        return new View(true, in.roles(), List.copyOf(entries), List.copyOf(issues));
+        List<String> worlds = new ArrayList<>(in.loadedWorlds().keySet());
+        worlds.sort(null);
+        return new View(true, in.roles(), List.copyOf(entries), List.copyOf(issues), List.copyOf(worlds),
+                in.history());
     }
 
     // ---- Portails entre mondes ------------------------------------------------------------------
@@ -146,9 +181,18 @@ public final class PortalOverview {
             guards.add(claimsGuard(in.guide()));
         }
         List<Issue> issues = new ArrayList<>();
-        if (!p.enabled()) {
+        if (p.state() == WorldPortalDefinition.State.DRAFT) {
+            issues.add(new Issue("PORTAL_DRAFT", "info", "Brouillon : jamais activé, entrer dans sa zone ne "
+                    + "téléporte personne."));
+        } else if (!p.enabled()) {
             issues.add(new Issue("PORTAL_DISABLED", "info", "Portail désactivé (enabled: false) : "
                     + "entrer dans sa zone ne téléporte personne."));
+        }
+        String site = p.details().site();
+        Optional<BuildingSite> linked = site.isEmpty() ? Optional.empty() : in.sites().apply(site);
+        if (!site.isEmpty() && linked.isEmpty()) {
+            issues.add(new Issue("PORTAL_SITE_MISSING", "warning", "L'emplacement « " + site + " » cité par ce "
+                    + "portail n'existe plus : sa zone reste celle enregistrée, mais il ne peut pas être activé."));
         }
         if (!sourceLoaded) {
             issues.add(new Issue("PORTAL_SOURCE_NOT_LOADED", "warning", "Le monde de départ « " + p.world()
@@ -200,12 +244,17 @@ public final class PortalOverview {
                         + "« " + zone.id() + " » (ancien format) : un joueur peut déclencher les deux."));
             }
         }
-        return new Entry(p.id(), nameFor(p.destinationWorld(), in.roles()), Kind.WORLD_PORTAL, p.enabled(), file,
+        WorldPortalDefinition.Details d = p.details();
+        Admin admin = new Admin(p.state().name(), d.name(), site, linked.map(BuildingSite::name).orElse(""),
+                d.width(), d.height(), d.depth(), WorldPortalAdminService.essential(p, in.roles()),
+                WorldPortalAdminService.fingerprint(p), sameId.isEmpty());
+        return new Entry(p.id(), d.name().isEmpty() ? nameFor(p.destinationWorld(), in.roles()) : d.name(),
+                Kind.WORLD_PORTAL, p.enabled(), file,
                 p.world(), sourceLoaded, role(p.world(), in.roles()),
                 p.minX(), p.minY(), p.minZ(), p.maxX(), p.maxY(), p.maxZ(),
                 p.destinationWorld(), destLoaded, role(p.destinationWorld(), in.roles()), "", "",
                 p.destinationStrategy().name(), arrival(p, in), worldPortalTrigger(!guards.isEmpty()),
-                List.copyOf(guards), List.of(), List.copyOf(issues));
+                List.copyOf(guards), List.of(), List.copyOf(issues), admin);
     }
 
     private static List<String> arrival(WorldPortalDefinition p, Inputs in) {
@@ -314,7 +363,8 @@ public final class PortalOverview {
                 p.hasDestination() ? p.destinationId() : "", point, "FIXED_POINT",
                 dest.isPresent() ? List.of("Point fixe nommé « " + p.destinationId() + " » : " + point + ".") : List.of(),
                 List.of("Canalisation de " + p.channelSeconds() + " s en restant dans la zone ; annulée par un "
-                        + "déplacement, un dégât ou un départ."), List.of(), conditions(p), List.copyOf(issues));
+                        + "déplacement, un dégât ou un départ."), List.of(), conditions(p), List.copyOf(issues),
+                Admin.LEGACY);
     }
 
     private static List<Condition> conditions(PortalDefinition p) {

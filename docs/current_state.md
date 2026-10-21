@@ -34,6 +34,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > progression : même libellé traduit (`ObjectiveLabels`), plus « Tuer ZOMBIE ». Pas de config, pas
 > de migration.
 
+> **Portails gérés depuis PlugAdmin (#565, 21/10/2026)** — `/portals` : créer un portail en brouillon (zone autour
+> d'un emplacement #213 ou en coordonnées), renommer, régler la zone d'un portail non actif, activer / désactiver,
+> supprimer (fichier seul) ; permissions `PORTAL_EDIT` / `PORTAL_ENABLE` (propriétaire), actions `portal.create|update|
+> enable|disable|delete` avec empreinte et seconde confirmation pour les portails vers Hub/Wild/Claims ; journal
+> `portal-audit.yml`. `world-portals/` refuse désormais id en double et zones superposées au rechargement. Aucun portail
+> réel créé ni modifié sur DEV (interdit sans nouvel accord). Pas de migration.
+
 > **Page « Portails » en lecture seule (#564, 19/10/2026)** — PlugAdmin `/portals` (groupe « Monde »),
 > permission `PORTAL_READ`, action agent `portal.list` seule : world-portals (`hub_to_wild`, `hub_to_claims`)
 > et portails de zone (ancien format), zone, destination, arrivée RANDOM_SAFE / CLAIM_HOME, gardes Wild/Claims

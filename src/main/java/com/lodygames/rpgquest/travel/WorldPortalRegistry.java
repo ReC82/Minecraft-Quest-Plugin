@@ -30,18 +30,17 @@ import org.slf4j.Logger;
  * <p>{@link #portalsInWorld(String)} est indexé (une passe par {@link #reload()}) pour que {@code
  * WorldPortalTeleportListener} reste bon marché à chaque {@code PlayerMoveEvent}.</p>
  *
- * <p><strong>Anomalie constatée (investigation « bug TP hub »), non corrigée ici</strong> :
- * contrairement à {@code zone.ZoneLoader}/{@code travel.PortalLoader}, {@link #reload()} ne fait
- * <em>aucune</em> validation croisée entre fichiers — ni id dupliqué, ni chevauchement de zone
- * d'activation. Seul {@link #create(WorldPortalDefinition)} (donc uniquement le chemin {@code
- * /rpgadmin worldportal create}) vérifie les chevauchements au moment de la création ; un fichier
- * ajouté ou édité à la main dans {@code plugins/RPGQuest/world-portals/} (chemin explicitement
- * supporté, {@link #reload()} le relit sans réserve) peut donc introduire silencieusement une
- * seconde zone superposée à une zone existante, ou un id dupliqué (auquel cas {@link #find} ne
- * renvoie jamais que la première occurrence rencontrée) — sans qu'aucune erreur ne soit journalisée.
- * {@link #portalAt} ne renvoie lui aussi que la première zone trouvée par ordre de fichier, jamais
- * un avertissement de chevauchement. Voir {@link #portalsContaining} pour l'outil de diagnostic qui
- * rend ce cas visible en jeu ({@code /rpgadmin worldportal here}).</p>
+ * <p><strong>Configurations ambiguës refusées (issue #565)</strong> : {@link #reload()} refuse
+ * désormais un id déjà chargé et une zone d'activation qui recouvre celle d'un portail déjà accepté
+ * dans le même monde (brouillons et portails désactivés compris : ils peuvent être activés). Les
+ * portails déjà en mémoire avant le rechargement passent <em>en premier</em>, dans leur ordre : un
+ * fichier ajouté à la main qui recouvre {@code hub_to_wild} est donc ignoré (et listé dans {@link
+ * #skippedFiles()}) au lieu de lui voler sa zone. Au démarrage, l'ordre est celui des noms de
+ * fichier. {@link #create} et {@link #save} appliquent la même règle avant d'écrire.</p>
+ *
+ * <p>Les écritures sont sérialisées ({@code synchronized}) : l'agent PlugAdmin et {@code /rpgadmin
+ * worldportal} peuvent écrire depuis deux threads. Les lectures ({@link #portalsInWorld}, à chaque
+ * {@code PlayerMoveEvent}) restent des instantanés {@code volatile} sans verrou.</p>
  */
 public final class WorldPortalRegistry implements PluginService {
 
@@ -75,9 +74,9 @@ public final class WorldPortalRegistry implements PluginService {
         // Rien à libérer : les définitions vivent en mémoire, pas de ressource externe.
     }
 
-    public void reload() {
-        List<WorldPortalDefinition> loaded = new ArrayList<>();
-        List<String> origins = new ArrayList<>();
+    public synchronized void reload() {
+        List<WorldPortalDefinition> parsed = new ArrayList<>();
+        List<String> parsedFiles = new ArrayList<>();
         List<PortalLoadIssue> skipped = new ArrayList<>();
         List<Path> files;
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(portalsDirectory, this::isYamlFile)) {
@@ -93,28 +92,91 @@ public final class WorldPortalRegistry implements PluginService {
             try {
                 YamlConfiguration yaml = new YamlConfiguration();
                 yaml.load(file.toFile());
-                loaded.add(new WorldPortalDefinition(
-                        requireString(yaml, "id"), requireString(yaml, "world"),
-                        yaml.getInt("min.x"), yaml.getInt("min.y"), yaml.getInt("min.z"),
-                        yaml.getInt("max.x"), yaml.getInt("max.y"), yaml.getInt("max.z"),
-                        requireString(yaml, "destination-world"), yaml.getBoolean("enabled", true),
-                        parseStrategy(yaml.getString("destination-strategy", DestinationStrategy.WORLD_SPAWN.name()))));
-                origins.add(file.getFileName().toString());
+                parsed.add(parse(yaml));
+                parsedFiles.add(file.getFileName().toString());
             } catch (IOException | InvalidConfigurationException | IllegalArgumentException e) {
                 logger.warn("Portail simple ignoré ({}) : {}", file.getFileName(), e.getMessage());
                 skipped.add(new PortalLoadIssue(file.getFileName().toString(), String.valueOf(e.getMessage())));
             }
         }
 
-        this.portals = List.copyOf(loaded);
-        this.sourceFiles = List.copyOf(origins);
+        List<WorldPortalDefinition> loaded = new ArrayList<>();
+        List<String> origins = new ArrayList<>();
+        for (int i : acceptanceOrder(parsed, parsedFiles)) {
+            WorldPortalDefinition candidate = parsed.get(i);
+            String conflict = conflictWith(candidate, loaded);
+            if (conflict != null) {
+                logger.warn("Portail simple ignoré ({}) : {}", parsedFiles.get(i), conflict);
+                skipped.add(new PortalLoadIssue(parsedFiles.get(i), conflict));
+                continue;
+            }
+            loaded.add(candidate);
+            origins.add(parsedFiles.get(i));
+        }
+        // Affichage et ordre de consultation : celui des noms de fichier, comme avant #565.
+        List<Integer> byFile = new ArrayList<>();
+        for (int i = 0; i < origins.size(); i++) {
+            byFile.add(i);
+        }
+        byFile.sort(Comparator.comparing(origins::get));
+        List<WorldPortalDefinition> sorted = byFile.stream().map(loaded::get).toList();
+        List<String> sortedFiles = byFile.stream().map(origins::get).toList();
+
+        this.portals = List.copyOf(sorted);
+        this.sourceFiles = List.copyOf(sortedFiles);
         this.skippedFiles = List.copyOf(skipped);
         Map<String, List<WorldPortalDefinition>> index = new HashMap<>();
-        for (WorldPortalDefinition portal : loaded) {
+        for (WorldPortalDefinition portal : sorted) {
             index.computeIfAbsent(portal.world(), w -> new ArrayList<>()).add(portal);
         }
         this.byWorld = Map.copyOf(index);
-        logger.info("Chargement des portails simples : {} chargé(s).", loaded.size());
+        logger.info("Chargement des portails simples : {} chargé(s).", sorted.size());
+    }
+
+    /** Indices de {@code parsed} : les portails déjà en mémoire (même id, même fichier) d'abord. */
+    private List<Integer> acceptanceOrder(List<WorldPortalDefinition> parsed, List<String> files) {
+        List<Integer> first = new ArrayList<>();
+        List<Integer> rest = new ArrayList<>();
+        List<WorldPortalDefinition> previous = this.portals;
+        List<String> previousFiles = this.sourceFiles;
+        for (int i = 0; i < parsed.size(); i++) {
+            boolean known = false;
+            for (int j = 0; j < previous.size() && !known; j++) {
+                known = previous.get(j).id().equals(parsed.get(i).id())
+                        && j < previousFiles.size() && previousFiles.get(j).equals(files.get(i));
+            }
+            (known ? first : rest).add(i);
+        }
+        List<Integer> order = new ArrayList<>(first);
+        order.addAll(rest);
+        return order;
+    }
+
+    /** {@code null} si {@code candidate} peut cohabiter avec {@code accepted}, sinon la raison lisible. */
+    static String conflictWith(WorldPortalDefinition candidate, List<WorldPortalDefinition> accepted) {
+        for (WorldPortalDefinition existing : accepted) {
+            if (existing.id().equals(candidate.id())) {
+                return "id « " + candidate.id() + " » déjà déclaré par un autre fichier.";
+            }
+        }
+        for (WorldPortalDefinition existing : accepted) {
+            if (candidate.overlaps(existing)) {
+                return "zone d'activation qui recouvre celle du portail « " + existing.id() + " ».";
+            }
+        }
+        return null;
+    }
+
+    private WorldPortalDefinition parse(YamlConfiguration yaml) {
+        return new WorldPortalDefinition(
+                requireString(yaml, "id"), requireString(yaml, "world"),
+                yaml.getInt("min.x"), yaml.getInt("min.y"), yaml.getInt("min.z"),
+                yaml.getInt("max.x"), yaml.getInt("max.y"), yaml.getInt("max.z"),
+                requireString(yaml, "destination-world"), yaml.getBoolean("enabled", true),
+                parseStrategy(yaml.getString("destination-strategy", DestinationStrategy.WORLD_SPAWN.name())),
+                new WorldPortalDefinition.Details(yaml.getString("name", ""), yaml.getString("site", ""),
+                        yaml.getBoolean("draft", false), yaml.getInt("size.width"), yaml.getInt("size.height"),
+                        yaml.getInt("size.depth")));
     }
 
     private DestinationStrategy parseStrategy(String raw) {
@@ -184,12 +246,26 @@ public final class WorldPortalRegistry implements PluginService {
         return portalsInWorld(world).stream().filter(p -> p.contains(world, x, y, z)).toList();
     }
 
+    /** Fichier d'où vient le portail {@code id} ({@code <id>.yml} s'il n'est pas chargé). */
+    public String fileOf(String id) {
+        List<WorldPortalDefinition> all = portals;
+        List<String> files = sourceFiles;
+        for (int i = 0; i < all.size(); i++) {
+            if (all.get(i).id().equals(id) && i < files.size()) {
+                return files.get(i);
+            }
+        }
+        return id + ".yml";
+    }
+
     public enum CreateOutcome {
         CREATED, DUPLICATE_ID, OVERLAPS, IO_ERROR
     }
 
-    public CreateOutcome create(WorldPortalDefinition portal) {
-        if (find(portal.id()).isPresent()) {
+    public synchronized CreateOutcome create(WorldPortalDefinition portal) {
+        // Un fichier <id>.yml ignoré au chargement (invalide, en conflit) compte aussi : l'écraser
+        // effacerait la configuration de quelqu'un d'autre.
+        if (find(portal.id()).isPresent() || Files.exists(portalsDirectory.resolve(portal.id() + ".yml"))) {
             return CreateOutcome.DUPLICATE_ID;
         }
         for (WorldPortalDefinition existing : portalsInWorld(portal.world())) {
@@ -197,11 +273,34 @@ public final class WorldPortalRegistry implements PluginService {
                 return CreateOutcome.OVERLAPS;
             }
         }
-        if (!write(portal)) {
+        if (!write(portal, portal.id() + ".yml")) {
             return CreateOutcome.IO_ERROR;
         }
         reload();
         return CreateOutcome.CREATED;
+    }
+
+    public enum SaveOutcome {
+        SAVED, NOT_FOUND, OVERLAPS, IO_ERROR
+    }
+
+    /**
+     * Remplace un portail existant (même id) dans <em>son</em> fichier d'origine (issue #565) : la
+     * nouvelle zone ne doit recouvrir aucun autre portail du monde.
+     */
+    public synchronized SaveOutcome save(WorldPortalDefinition updated) {
+        if (find(updated.id()).isEmpty()) {
+            return SaveOutcome.NOT_FOUND;
+        }
+        List<WorldPortalDefinition> others = portals.stream().filter(p -> !p.id().equals(updated.id())).toList();
+        if (others.stream().anyMatch(updated::overlaps)) {
+            return SaveOutcome.OVERLAPS;
+        }
+        if (!write(updated, fileOf(updated.id()))) {
+            return SaveOutcome.IO_ERROR;
+        }
+        reload();
+        return find(updated.id()).isPresent() ? SaveOutcome.SAVED : SaveOutcome.IO_ERROR;
     }
 
     public enum SetEnabledOutcome {
@@ -209,7 +308,7 @@ public final class WorldPortalRegistry implements PluginService {
     }
 
     /** Bascule {@code enabled} et persiste immédiatement — le reste de la configuration est conservé à l'identique. */
-    public SetEnabledOutcome setEnabled(String id, boolean enabled) {
+    public synchronized SetEnabledOutcome setEnabled(String id, boolean enabled) {
         Optional<WorldPortalDefinition> existing = find(id);
         if (existing.isEmpty()) {
             return SetEnabledOutcome.NOT_FOUND;
@@ -218,11 +317,7 @@ public final class WorldPortalRegistry implements PluginService {
         if (current.enabled() == enabled) {
             return SetEnabledOutcome.UNCHANGED;
         }
-        WorldPortalDefinition updated = new WorldPortalDefinition(
-                current.id(), current.world(), current.minX(), current.minY(), current.minZ(),
-                current.maxX(), current.maxY(), current.maxZ(), current.destinationWorld(), enabled,
-                current.destinationStrategy());
-        if (!write(updated)) {
+        if (!write(current.withEnabled(enabled), fileOf(id))) {
             return SetEnabledOutcome.IO_ERROR;
         }
         reload();
@@ -230,11 +325,11 @@ public final class WorldPortalRegistry implements PluginService {
     }
 
     /** Supprime le fichier persisté et retire le portail de la mémoire (recharge) — ne touche ni au monde ni aux autres portails. */
-    public boolean delete(String id) {
+    public synchronized boolean delete(String id) {
         if (find(id).isEmpty()) {
             return false;
         }
-        Path target = portalsDirectory.resolve(id + ".yml");
+        Path target = portalsDirectory.resolve(fileOf(id));
         try {
             Files.deleteIfExists(target);
         } catch (IOException e) {
@@ -245,8 +340,8 @@ public final class WorldPortalRegistry implements PluginService {
         return true;
     }
 
-    private boolean write(WorldPortalDefinition portal) {
-        Path target = portalsDirectory.resolve(portal.id() + ".yml");
+    private boolean write(WorldPortalDefinition portal, String fileName) {
+        Path target = portalsDirectory.resolve(fileName);
         try {
             Files.createDirectories(portalsDirectory);
             YamlConfiguration yaml = new YamlConfiguration();
@@ -261,7 +356,27 @@ public final class WorldPortalRegistry implements PluginService {
             yaml.set("destination-world", portal.destinationWorld());
             yaml.set("enabled", portal.enabled());
             yaml.set("destination-strategy", portal.destinationStrategy().name());
-            yaml.save(target.toFile());
+            // #565 : champs ajoutés écrits seulement s'ils sont renseignés — un portail historique
+            // garde un fichier identique quand on le (dés)active.
+            WorldPortalDefinition.Details d = portal.details();
+            if (!d.name().isEmpty()) {
+                yaml.set("name", d.name());
+            }
+            if (!d.site().isEmpty()) {
+                yaml.set("site", d.site());
+            }
+            if (d.draft()) {
+                yaml.set("draft", true);
+            }
+            if (d.hasSize()) {
+                yaml.set("size.width", d.width());
+                yaml.set("size.height", d.height());
+                yaml.set("size.depth", d.depth());
+            }
+            Path tmp = target.resolveSibling(fileName + ".tmp");
+            yaml.save(tmp.toFile());
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
             return true;
         } catch (IOException e) {
             logger.error("Impossible d'écrire le portail simple {} dans {}.", portal.id(), target, e);

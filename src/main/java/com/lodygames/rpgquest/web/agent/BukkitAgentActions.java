@@ -2366,6 +2366,44 @@ public final class BukkitAgentActions implements AgentActions {
         this.npcNames = npcNames;
     }
 
+    private com.lodygames.rpgquest.travel.WorldPortalAdminService portalAdmin;
+    private com.lodygames.rpgquest.travel.PortalAuditLog portalAudit;
+
+    /** Issue #565 : gestion des portails depuis PlugAdmin et son journal. */
+    public void setPortalAdmin(com.lodygames.rpgquest.travel.WorldPortalAdminService service,
+                               com.lodygames.rpgquest.travel.PortalAuditLog audit) {
+        this.portalAdmin = service;
+        this.portalAudit = audit;
+    }
+
+    @Override
+    public CompletableFuture<com.lodygames.rpgquest.travel.WorldPortalAdminService.Result> portalAdmin(
+            com.lodygames.rpgquest.travel.WorldPortalAdminService.Operation operation) {
+        if (portalAdmin == null || worldPortals == null || worldConfig == null || zonePortals == null) {
+            return AgentActions.super.portalAdmin(operation);
+        }
+        // Mondes chargés = état Bukkit -> relevé sur le thread principal ; l'écriture du fichier de
+        // portail se fait ensuite hors du thread principal.
+        return onMain(() -> done(portalContext()))
+                .thenApplyAsync(ctx -> portalAdmin.apply(operation, ctx));
+    }
+
+    private java.util.function.Function<String, Optional<com.lodygames.rpgquest.building.model.BuildingSite>> siteLookup() {
+        return buildingSiteService == null ? id -> Optional.empty() : buildingSiteService::find;
+    }
+
+    private com.lodygames.rpgquest.travel.WorldPortalAdminService.Context portalContext() {
+        var cfg = worldConfig.get();
+        java.util.Set<String> loaded = new java.util.LinkedHashSet<>();
+        for (org.bukkit.World w : plugin.getServer().getWorlds()) {
+            loaded.add(w.getName());
+        }
+        return new com.lodygames.rpgquest.travel.WorldPortalAdminService.Context(loaded,
+                new com.lodygames.rpgquest.travel.PortalOverview.Roles(cfg.hub().world(), cfg.travel().wildWorld(),
+                        cfg.claims().world()),
+                zonePortals.portals(), siteLookup());
+    }
+
     @Override
     public CompletableFuture<com.lodygames.rpgquest.travel.PortalOverview.View> portalList() {
         if (worldPortals == null || worldConfig == null || zonePortals == null || zoneDestinations == null) {
@@ -2393,7 +2431,8 @@ public final class BukkitAgentActions implements AgentActions {
                 new com.lodygames.rpgquest.travel.PortalOverview.ClaimArrival(claims.arrivalMinRadius(),
                         claims.arrivalMaxRadius(), claims.arrivalSpacing(),
                         com.lodygames.rpgquest.claim.ClaimArrivalResolver.ATTEMPTS),
-                guideNpc(cfg.hub().guideNpcId()));
+                guideNpc(cfg.hub().guideNpcId()), siteLookup(),
+                portalAudit == null ? List.of() : portalAudit.recent(30));
     }
 
     private com.lodygames.rpgquest.travel.PortalOverview.GuideNpc guideNpc(String npcId) {
@@ -3345,6 +3384,17 @@ public final class BukkitAgentActions implements AgentActions {
         // suivi (redémarrage pendant une pose) — c'est le placement qui porte le terrain d'origine.
         if (buildingPlacements != null && id != null && buildingPlacements.at(id.trim()).isPresent()) {
             return done(MutationResult.of(false, "SITE_OCCUPIED", occupiedMessage(id)));
+        }
+        // #565 : un portail qui cite l'emplacement perdrait sa référence — refus, avec la liste.
+        if (worldPortals != null && id != null) {
+            List<String> usedBy = worldPortals.portals().stream()
+                    .filter(p -> p.details().site().equalsIgnoreCase(id.trim()))
+                    .map(com.lodygames.rpgquest.travel.model.WorldPortalDefinition::id).toList();
+            if (!usedBy.isEmpty()) {
+                return done(MutationResult.of(false, "SITE_USED_BY_PORTAL", "L'emplacement « " + safe(id)
+                        + " » est utilisé par le(s) portail(s) " + String.join(", ", usedBy) + " : supprimer "
+                        + "d'abord ces portails, ou changer leur zone. Rien n'a été modifié."));
+            }
         }
         return buildingSiteService.delete(id)
                 .thenApply(outcome -> switch (outcome) {

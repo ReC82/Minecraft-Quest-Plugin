@@ -212,17 +212,18 @@ class WorldPortalRegistryTest {
     // ---- portalsContaining (diagnostic) ------------------------------------------------------------
 
     @Test
-    void portalsContainingReturnsEveryMatchNotJustTheFirst() {
+    void anOverlappingFileAddedByHandIsSkippedAndTheLoadedPortalKeepsItsZone() {
         registry.create(portal("hub_to_wild", "world", "wild"));
-        // create() rejette normalement les chevauchements (voir overlappingPortalInTheSameWorldIsRejected)
-        // — cette seconde zone est donc introduite par un fichier ajouté à la main, exactement comme
-        // le décrit le Javadoc de WorldPortalRegistry (voir le test suivant pour la preuve complète).
+        // « hub_to_other_manual.yml » passe AVANT « hub_to_wild.yml » par ordre alphabétique : sans
+        // la priorité aux portails déjà chargés (#565), il volerait la zone de hub_to_wild.
         writeManualPortalFile("hub_to_other", "world", 0, 60, 0, 10, 70, 10, "other");
         registry.reload();
 
-        var matches = registry.portalsContaining("world", 0, 65, 0);
-
-        assertEquals(2, matches.size(), "les deux zones superposées doivent apparaître, pas seulement la première");
+        assertEquals(1, registry.portalsContaining("world", 0, 65, 0).size());
+        assertEquals("hub_to_wild", registry.portalAt("world", 0, 65, 0).orElseThrow().id());
+        assertEquals(java.util.List.of("hub_to_other_manual.yml"),
+                registry.skippedFiles().stream().map(PortalLoadIssue::file).toList());
+        assertTrue(registry.skippedFiles().get(0).message().contains("hub_to_wild"));
     }
 
     @Test
@@ -232,33 +233,25 @@ class WorldPortalRegistryTest {
         assertTrue(registry.portalsContaining("world", 1000, 65, 1000).isEmpty());
     }
 
-    /**
-     * TODO(debug bug TP hub) : preuve exécutable de l'anomalie documentée dans le Javadoc de la
-     * classe — {@link #reload()} (donc aussi {@link #start()}) ne rejette ni les id dupliqués ni
-     * les chevauchements entre fichiers, contrairement à {@code create()}. Un fichier ajouté ou
-     * édité à la main dans {@code plugins/RPGQuest/world-portals/} peut donc faire coexister deux
-     * zones actives superposées sans qu'aucune erreur ne soit jamais journalisée — exactement le
-     * genre de configuration invisible que {@code /rpgadmin worldportal here} est censé révéler.
-     * Ce test documente le comportement actuel tel quel (pas encore corrigé, mission : outils de
-     * diagnostic d'abord) plutôt que de l'affirmer en prose seulement.
-     */
     @Test
-    void reloadNeverRejectsOverlappingZonesIntroducedByManuallyPlacedFiles() throws Exception {
+    void atStartupOverlappingFilesAreResolvedByFileNameOrder() throws Exception {
         writeManualPortalFile("hub_to_wild", "world", -5, 60, -5, 5, 70, 5, "wild");
         writeManualPortalFile("hub_to_other", "world", 0, 60, 0, 10, 70, 10, "other");
 
-        registry.reload(); // reload(), pas create() : c'est ce chemin qui n'a aucune validation croisée.
+        WorldPortalRegistry fresh = new WorldPortalRegistry(tempDir.resolve("world-portals"), NOPLogger.NOP_LOGGER);
+        fresh.start();
 
-        assertEquals(2, registry.portals().size(), "aucun rejet de chevauchement lors d'un reload() (à la différence de create())");
-        assertTrue(registry.portalAt("world", 0, 65, 0).isPresent(), "portalAt continue de ne renvoyer que la première zone trouvée");
-        assertEquals(2, registry.portalsContaining("world", 0, 65, 0).size(), "les deux zones sont bien actives simultanément");
+        assertEquals(1, fresh.portals().size(), "une zone ambiguë est refusée au chargement (#565)");
+        assertEquals("hub_to_other", fresh.portals().get(0).id(), "premier fichier dans l'ordre alphabétique");
+        assertEquals("hub_to_wild_manual.yml", fresh.skippedFiles().get(0).file());
     }
 
     @Test
-    void reloadNeverRejectsDuplicateIdsIntroducedByManuallyPlacedFiles() throws Exception {
+    void reloadRejectsADuplicateIdFromAnotherFile() throws Exception {
         writeManualPortalFile("hub_to_wild", "world", -5, 60, -5, 5, 70, 5, "wild");
+        registry.reload();
         // Même id, fichier différent, bornes différentes (donc pas un simple doublon inoffensif).
-        Path duplicate = tempDir.resolve("world-portals/zz_duplicate.yml");
+        Path duplicate = tempDir.resolve("world-portals/aa_duplicate.yml");
         var yaml = new YamlConfiguration();
         yaml.set("id", "hub_to_wild");
         yaml.set("world", "world");
@@ -269,7 +262,68 @@ class WorldPortalRegistryTest {
 
         registry.reload();
 
-        assertEquals(2, registry.portals().size(), "aucun rejet de doublon d'id lors d'un reload()");
+        assertEquals(1, registry.portals().size());
+        assertEquals("wild", registry.find("hub_to_wild").orElseThrow().destinationWorld(),
+                "le portail déjà chargé garde la priorité");
+        assertEquals("aa_duplicate.yml", registry.skippedFiles().get(0).file());
+    }
+
+    @Test
+    void draftFieldsRoundTripAndADraftIsNeverEnabled() {
+        WorldPortalDefinition draft = new WorldPortalDefinition("arche_test", "world", 0, 64, 0, 2, 67, 0, "wild",
+                false, DestinationStrategy.RANDOM_SAFE,
+                new WorldPortalDefinition.Details("Arche du test", "buildsite_0003", true, 3, 4, 1));
+        assertEquals(WorldPortalRegistry.CreateOutcome.CREATED, registry.create(draft));
+
+        WorldPortalRegistry fresh = new WorldPortalRegistry(tempDir.resolve("world-portals"), NOPLogger.NOP_LOGGER);
+        fresh.start();
+        WorldPortalDefinition read = fresh.find("arche_test").orElseThrow();
+        assertEquals(draft, read);
+        assertEquals(WorldPortalDefinition.State.DRAFT, read.state());
+        assertFalse(read.enabled(), "un brouillon reste enabled: false — un ancien JAR ne le déclenche pas");
+    }
+
+    @Test
+    void enablingADraftLeavesTheDraftState() {
+        registry.create(new WorldPortalDefinition("arche_test", "world", 0, 64, 0, 2, 67, 0, "wild", false,
+                DestinationStrategy.WORLD_SPAWN, new WorldPortalDefinition.Details("", "", true, 0, 0, 0)));
+
+        registry.setEnabled("arche_test", true);
+
+        assertEquals(WorldPortalDefinition.State.ACTIVE, registry.find("arche_test").orElseThrow().state());
+    }
+
+    @Test
+    void togglingALegacyPortalRewritesNoNewKey() throws Exception {
+        writeManualPortalFile("hub_to_wild", "world", -5, 60, -5, 5, 70, 5, "wild");
+        registry.reload();
+
+        registry.setEnabled("hub_to_wild", false);
+
+        String text = Files.readString(tempDir.resolve("world-portals/hub_to_wild_manual.yml"));
+        assertFalse(text.contains("draft") || text.contains("name:") || text.contains("site") || text.contains("size"),
+                "un portail historique garde son format : " + text);
+        assertFalse(Files.exists(tempDir.resolve("world-portals/hub_to_wild.yml")),
+                "l'écriture vise le fichier d'origine, pas <id>.yml");
+    }
+
+    @Test
+    void createRefusesAnIdWhoseFileExistsEvenIfItWasSkipped() throws Exception {
+        Files.writeString(tempDir.resolve("world-portals/arche.yml"), "id: arche\nworld: world\n");
+        registry.reload();
+
+        assertEquals(WorldPortalRegistry.CreateOutcome.DUPLICATE_ID, registry.create(portal("arche", "world", "wild")));
+    }
+
+    @Test
+    void saveRefusesAZoneThatOverlapsAnotherPortal() {
+        registry.create(portal("hub_to_wild", "world", "wild"));
+        registry.create(new WorldPortalDefinition("other", "world", 20, 60, 20, 22, 63, 20, "wild", false));
+        WorldPortalDefinition moved = registry.find("other").orElseThrow()
+                .withZone(new WorldPortalDefinition.Zone(0, 60, 0, 2, 63, 0), WorldPortalDefinition.Details.NONE);
+
+        assertEquals(WorldPortalRegistry.SaveOutcome.OVERLAPS, registry.save(moved));
+        assertEquals(20, registry.find("other").orElseThrow().minX());
     }
 
     private void writeManualPortalFile(String id, String world, int minX, int minY, int minZ,

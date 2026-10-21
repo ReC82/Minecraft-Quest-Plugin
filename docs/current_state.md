@@ -1229,7 +1229,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `building.definition.retire` : refus si le bâtiment est posé ou si c'est un exemple embarqué ;
   sinon fichiers archivés dans `buildings/.retired/`, pas de réapparition au redémarrage, historique
   et sauvegardes de terrain conservés. Voir la Bible.
-- **Supprimer un bâtiment et toutes ses versions** *(issue #644, non déployé)* — aperçu en lecture seule
+- **Supprimer un bâtiment et toutes ses versions** *(issue #644, déployé sur DEV le 22/10/2026, `318f31e2`)* — aperçu en lecture seule
   `building.family.preview` puis `building.family.purge` (permission `BUILDING_PURGE`, Propriétaire seul,
   identifiant ressaisi) : version courante, versions `.history`, `.retired` et effacement inachevé
   `.purging` ; refus si posé, lié à un portail (même brouillon), embarqué ou redéclaré ; aucun bloc du

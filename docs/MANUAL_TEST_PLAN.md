@@ -7819,3 +7819,36 @@ que les clics décrits. Prévoir un panneau ordinaire posé par vous-même hors 
 maintenance sans éditeur, ouverture refusée recto/verso pour toutes les causes, écriture refusée recto/verso, bouton
 inchangé, panneau ordinaire éditable), `WaypointServiceTest#persistedWaypointSignsStayUneditableAfterReloadWhileTheButtonStillWorks`
 (waypoint généré puis rechargé depuis la base : les deux panneaux protégés, nom canonique intact, bouton cliquable).
+
+### TC-387 — PlugAdmin : portail en brouillon, zone, activation/désactivation (issue #565, PENDING MANUAL VALIDATION)
+
+**Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 interdit toute création,
+activation, désactivation, modification ou suppression de portail réel, brouillon compris. Les étapes 1 et 7 sont
+en lecture seule et peuvent être faites dès le déploiement. Ne jamais toucher `hub_to_wild` ni `hub_to_claims`.
+
+1.  Lecture seule : PlugAdmin → Monde → Portails → « Rafraîchir les portails ». **Attendu** : `hub_to_wild` et
+    `hub_to_claims` toujours **Actifs**, mêmes coins qu'avant ; leur fiche montre « Portail essentiel », une case
+    « Désactiver », la zone verrouillée (« Désactiver le portail avant de déplacer… ») et pas de suppression.
+    En bas de la liste : « Créer un portail en brouillon ».
+2.  (Feu vert requis) Marquer en jeu un emplacement de test avec l'outil d'emplacement, loin des portails du Hub ;
+    rafraîchir Emplacements puis Portails. Créer un brouillon `test_portail_565`, zone autour de cet emplacement
+    3 × 4 × 1, arrivée `wild` ou un monde de test, case cochée. **Attendu** : carte « Brouillon » ; en jeu, traverser
+    la zone ne téléporte pas.
+3.  Créer un second brouillon dont la zone recouvre la première. **Attendu** : refus « recouvre … », rien d'écrit.
+4.  Fiche du brouillon : renommer, puis passer la zone à 5 × 5 × 1. **Attendu** : nom et coins mis à jour, journal
+    « Modifications depuis PlugAdmin » avec avant / après. Page Emplacements : « Utilisé par le portail
+    test_portail_565 » ; « Supprimer l'emplacement » refusé.
+5.  Activer (case cochée). **Attendu** : carte « Actif » ; en jeu, traverser la zone téléporte vers le monde choisi
+    (avec l'avertissement Wild si `wild`). La zone n'est plus modifiable, la suppression non proposée.
+6.  Désactiver. **Attendu** : traverser ne téléporte plus ; nom, zone et emplacement conservés. Supprimer le
+    portail. **Attendu** : carte disparue, emplacement intact, aucun bloc changé ; `hub_to_wild` / `hub_to_claims`
+    inchangés et toujours fonctionnels.
+7.  (Lecture seule) Après un redémarrage du serveur : les deux portails du Hub sont toujours chargés et actifs.
+
+**Couverture automatisée** : `WorldPortalAdminServiceTest` (copie isolée de `world-portals/` avec les deux portails de
+DEV : brouillon orienté, refus de superposition y compris ancien format, essentiels intacts sans confirmation, empreinte
+périmée, zone verrouillée si actif, suppression du fichier seul), `WorldPortalRegistryTest` (refus au rechargement,
+priorité au portail chargé, aller-retour des champs, format historique conservé), `PortalZoneTest`,
+`PortalAdminParamsTest`, `PortalOverviewTest`, `PortalsPageTest` (formulaires, catalogue, auteur = session,
+emplacement cité non supprimable, rôles).
+

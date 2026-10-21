@@ -4859,6 +4859,42 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
   `PORTAL_ZONE_NO_DESTINATION`, `PORTAL_DISABLED`, `PORTAL_SAME_WORLD`, `PORTAL_LEGACY_FORMAT`.
 - Téléportations, avertissements et conditions d'accès **inchangés** (tests de non-régression).
 
+### Portails gérés depuis PlugAdmin : brouillon, zone, activation (issue #565, #228-P2)
+
+- Permissions panel **`PORTAL_EDIT`** (créer un brouillon, renommer, zone, supprimer) et **`PORTAL_ENABLE`**
+  (activer / désactiver), **propriétaire seul** par défaut (attribuables par groupe). Actions agent
+  `portal.create`, `portal.update`, `portal.enable`, `portal.disable`, `portal.delete` : toutes sensibles
+  (case de confirmation), auteur = session du panel, empreinte (`expected`, 24 hex) du dernier `portal.list`
+  exigée sauf à la création — un portail modifié entre-temps n'est jamais écrasé (`STALE`).
+- Même moteur que le jeu (`WorldPortalRegistry`, `world-portals/<id>.yml`) : aucun second moteur, aucun nouvel
+  outil ni commande. Champs **ajoutés et facultatifs** du YAML : `name` (nom affiché), `site` (emplacement #213),
+  `draft: true`, `size.width/height/depth`. Un fichier historique (`hub_to_wild`, `hub_to_claims`) n'en reçoit
+  aucun, même réécrit par (dés)activation ; l'écriture vise le fichier d'origine, de façon atomique.
+- **Brouillon** = `draft: true` + `enabled: false` : il ne téléporte personne, même lu par un JAR antérieur.
+  Activer un brouillon le fait passer actif (`draft` retiré).
+- **Zone d'activation** : autour d'un emplacement (largeur en travers de la face, profondeur le long de la face,
+  toutes deux centrées sur l'ancre, hauteur vers le haut depuis l'ancre ; taille paire → bloc en plus vers X/Z
+  croissants) ou en coordonnées min/max ; 32 blocs au plus par côté.
+- **Chevauchement refusé** à la création, à la modification, à l'activation (aussi contre les portails de zone
+  `portals/`) **et au rechargement** : `WorldPortalRegistry.reload()` refuse désormais un id déjà chargé et une zone
+  qui recouvre un portail accepté (brouillons et désactivés compris). Les portails déjà en mémoire passent en
+  premier ; au démarrage, ordre alphabétique des fichiers. Le fichier refusé apparaît en `PORTAL_FILE_SKIPPED`.
+- Règles : la zone d'un portail **actif** ne se modifie pas et un portail actif ne se supprime pas (le
+  désactiver d'abord) ; une modification de zone ne change pas de monde ; activer exige les deux mondes chargés,
+  l'emplacement encore présent et aucune superposition ; `CLAIM_HOME` seulement vers `claims.world`.
+- **Portail essentiel** (destination = Hub, Wild ou Claims, donc `hub_to_wild` et `hub_to_claims`) : toute
+  opération exige en plus `confirm_essential=true` (seconde case dans le panel).
+- Supprimer un portail ne supprime que son fichier : ni emplacement, ni bâtiment, ni bloc. Supprimer un
+  emplacement cité par un portail est **refusé** (`SITE_USED_BY_PORTAL`, panel et plugin) ; la page Emplacements
+  affiche « Utilisé par le portail … ».
+- Audit : `plugins/RPGQuest/portal-audit.yml` (créé à la première modification, 300 entrées max) — date, auteur,
+  opération (`CREATE_DRAFT`, `UPDATE`, `ENABLE`, `DISABLE`, `DELETE`), état avant / après ; affiché dans la fiche.
+- `portal.list` expose en plus : `state` (DRAFT/ACTIVE/DISABLED), `storedName`, `site`, `siteName`, dimensions,
+  `essential`, `fingerprint`, `editable`, coins numériques, `worlds` (mondes chargés), `history`. Nouveaux
+  diagnostics `PORTAL_DRAFT` (info) et `PORTAL_SITE_MISSING` (avertissement).
+- Pas de migration SQL, pas de clé de configuration. Destination précise, conditions, test de téléportation :
+  tickets #566–#570.
+
 ### `/rpgadmin portal` — commandes
 Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.md](TRAVEL.md). Page docs-site : aucune.
 

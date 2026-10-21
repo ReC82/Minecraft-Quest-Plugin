@@ -48,6 +48,27 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Portails : brouillons, zone d'activation, activation depuis PlugAdmin (#565, TC-387)
+
+### Changement
+
+Plugin : actions agent `portal.create|update|enable|disable|delete`, champs facultatifs `name`/`site`/`draft`/`size`
+dans `world-portals/<id>.yml`, journal `portal-audit.yml` (créé à la première modification seulement), refus d'un id en
+double ou d'une zone superposée **au rechargement**, suppression d'un emplacement cité par un portail refusée. PlugAdmin :
+formulaires de la page `/portals`, permissions `PORTAL_EDIT` / `PORTAL_ENABLE`, mention « Utilisé par le portail » sur
+la page Emplacements.
+
+### Actions serveur
+
+- Remplacer le JAR RPGQuest et redéployer PlugAdmin (code inerte : rien n'est écrit au démarrage).
+- `hub_to_wild` et `hub_to_claims` ne se recouvrent pas (relevé `portal.list` de DEV) : le nouveau contrôle au
+  rechargement les charge tous deux à l'identique ; leurs fichiers ne sont pas réécrits.
+- **Aucun portail réel ne doit être créé, activé, désactivé, modifié ni supprimé** avant un nouvel accord du
+  propriétaire (autorisation du 20/10 sur #565).
+- Aucune migration SQL, aucune clé de configuration, aucun contenu.
+- Rollback : `scripts/rollback-verygames.sh --latest` ; PlugAdmin : restaurer la release précédente. Un brouillon
+  éventuellement créé plus tard reste inactif sous l'ancien JAR (`enabled: false`).
+
 ## 2026-10-21 - Waypoints : panneaux de nom non éditables (#654, TC-386)
 
 ### Changement

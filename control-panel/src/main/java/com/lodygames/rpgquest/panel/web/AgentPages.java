@@ -11465,7 +11465,7 @@ public final class AgentPages {
                 .findFirst().orElse(null);
         String refresh = compactRefresh(session, agentId, "world.state.options",
                 options.isEmpty() ? "Relever le chargement" : "Relever à nouveau",
-                options.isEmpty() ? "btn-warning" : "btn-outline-primary", WorldPages.PATH);
+                options.isEmpty() ? "btn-warning" : "secondary", WorldPages.PATH);
         return new WorldStatePages.View(session.csrfToken(), agentId, perms.can(session.effective(), Permission.WORLD_WRITE),
                 options.flatMap(this::detailsOf).orElse(null), options.map(r -> when(at(r))).orElse(""), refresh, last,
                 last == null ? null : detailsOf(last).orElse(null));

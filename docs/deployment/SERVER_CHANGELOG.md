@@ -48,6 +48,23 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-21 - Waypoints : panneaux de nom non éditables (#654, TC-386)
+
+### Changement
+
+Plugin seul : sur les panneaux protégés d'un waypoint, le clic droit n'ouvre plus l'éditeur vanilla et n'applique plus
+teinture, encre lumineuse ni cire ; l'ouverture de l'éditeur (Paper) et l'écriture du texte sont refusées, sans bypass
+OP ni maintenance. Le bouton du waypoint et les panneaux ordinaires hors structure sont inchangés.
+
+### Actions serveur
+
+- JAR `4dcfd755` (PR #685) transféré par `deploy-verygames.sh -y`, SHA-256 `dfb1a4d1…` retéléchargé identique ; backup
+  `rpgquest-20261021T042121Z-predeploy.jar` (version `c8e83f0a`, #637). **Serveur DEV toujours arrêté** (RCON refusé) :
+  le JAR sera chargé au démarrage depuis le panel VeryGames. Aucun redémarrage tenté.
+- PlugAdmin non redéployé (aucun changement `control-panel/`), toujours `c8e83f0a`.
+- Aucune migration SQL, aucune clé de configuration, aucun contenu ; aucun waypoint ni panneau réel touché.
+- Rollback : `scripts/rollback-verygames.sh --latest`.
+
 ## 2026-10-21 - PlugAdmin : consulter les claims et s'y téléporter pour diagnostic (#637, TC-385)
 
 ### Changement

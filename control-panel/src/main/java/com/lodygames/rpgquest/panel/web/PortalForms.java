@@ -244,9 +244,13 @@ final class PortalForms {
      * Sans JavaScript, les champs du point restent visibles ; le serveur les ignore hors « point fixe ».
      */
     private static String destinationFields(List<String> worlds, String world, String strategy, Map<String, Object> p) {
-        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\"><legend class=\"small\">Arrivée</legend>")
+        // Monde actuel absent du relevé (non chargé) : gardé en tête de liste plutôt que remplacé en silence.
+        List<String> choices = world.isEmpty() || worlds.contains(world) ? worlds
+                : java.util.stream.Stream.concat(java.util.stream.Stream.of(world), worlds.stream()).toList();
+        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\">")
+                .append(p == null ? "<legend class=\"small\">Arrivée</legend>" : "")
                 .append("<div class=\"form-grid\">")
-                .append(field("Monde d'arrivée", select("destination_world", worlds, world), "Un monde chargé ; le "
+                .append(field("Monde d'arrivée", select("destination_world", choices, world), "Un monde chargé ; le "
                         + "portail ne charge jamais un monde lui-même."))
                 .append(field("Arrivée", strategySelect(strategy), "« Claim du joueur » : seulement vers le monde des "
                         + "claims."))

@@ -170,6 +170,8 @@ class PortalsPageTest {
         assertTrue(draft.contains("name=\"point_x\" value=\"100.5\"") && draft.contains("name=\"point_yaw\" value=\"90\""));
         assertTrue(draft.contains("value=\"portal.verify\"") && draft.contains("Vérifier sans appliquer"));
         assertTrue(draft.contains("return_of=arche_marche"), "préparer le portail retour");
+        assertTrue(draft.contains("<select name=\"destination_world\" required><option value=\"claims\">claims</option>"
+                + "<option value=\"test_world\" selected>"), "monde d'arrivée actuel présélectionné");
         String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild").body();
         assertTrue(wild.contains("Désactiver le portail avant de changer son arrivée"), "arrivée verrouillée si actif");
         assertFalse(wild.contains("name=\"dest_mode\""));

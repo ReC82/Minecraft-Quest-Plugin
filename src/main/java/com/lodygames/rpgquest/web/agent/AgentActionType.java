@@ -710,6 +710,12 @@ public enum AgentActionType {
      */
     PORTAL_TEST("portal.test"),
     /**
+     * Issue #569 (#228-P6) — remplacer les messages (bienvenue, attente, réussite, monde indisponible,
+     * destination dangereuse, refus) et l'avertissement d'un portail non actif ; empreinte exigée.
+     * Aucune préférence de joueur n'est lue ni modifiée.
+     */
+    PORTAL_MESSAGES("portal.messages"),
+    /**
      * Issue #637 — tous les claims persistés : propriétaire (UUID + pseudo connu), claim principal,
      * monde (chargé ou non), bornes, réservation, palier déduit de la taille réelle. Lecture seule ;
      * fonctionne pour un propriétaire hors ligne.

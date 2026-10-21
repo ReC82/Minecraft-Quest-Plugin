@@ -44,6 +44,45 @@ final class PortalListDetails {
         return details;
     }
 
+    private static Map<String, Object> messages(com.lodygames.rpgquest.travel.model.PortalMessages m) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("welcome", m.welcome());
+        out.put("preparing", m.preparing());
+        out.put("success", m.success());
+        out.put("unavailable", m.unavailable());
+        out.put("unsafe", m.unsafe());
+        out.put("refusal", m.refusal());
+        var w = m.warning();
+        out.put("warningMode", w.mode().name());
+        out.put("title", w.title());
+        out.put("text", w.text());
+        out.put("hint", w.hint());
+        out.put("enter", w.enter());
+        out.put("enterHide", w.enterHide());
+        out.put("cancel", w.cancel());
+        out.put("cancelText", w.cancelText());
+        out.put("allowHide", w.allowHide());
+        out.put("custom", !m.isEmpty());
+        return out;
+    }
+
+    /** Textes affichés quand un champ est vide : avertissement (Wild ou générique) et messages d'avant #569. */
+    private static Map<String, Object> messageDefaults(com.lodygames.rpgquest.travel.WildEntryWarningService.Texts t) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("title", t.title());
+        out.put("text", t.text());
+        out.put("hint", t.hint());
+        out.put("enter", t.enter());
+        out.put("enterHide", t.enterHide());
+        out.put("cancel", t.cancel());
+        out.put("cancelText", t.cancelText());
+        out.put("preparing", t.preparing());
+        out.put("success", com.lodygames.rpgquest.travel.WorldPortalTeleportListener.SUCCESS);
+        out.put("unavailable", com.lodygames.rpgquest.travel.WorldPortalTeleportListener.WORLD_UNAVAILABLE);
+        out.put("unsafe", com.lodygames.rpgquest.travel.WorldPortalTeleportListener.FIXED_POINT_UNSAFE);
+        return out;
+    }
+
     private static Map<String, Object> access(com.lodygames.rpgquest.travel.model.PortalAccess access) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("level", access.requiredLevel() == null ? "" : String.valueOf(access.requiredLevel()));
@@ -123,6 +162,12 @@ final class PortalListDetails {
         // #567 : conditions d'accès brutes, pour préremplir le formulaire de la fiche.
         if (!a.access().isEmpty()) {
             row.put("access", access(a.access()));
+        }
+        // #569 : messages bruts (vide = défaut), textes par défaut et avertissement effectif.
+        if (a.warningDefaults() != null) {
+            row.put("messages", messages(a.messages()));
+            row.put("messageDefaults", messageDefaults(a.warningDefaults()));
+            row.put("warns", a.warns());
         }
         // #566 : point fixe (valeurs brutes pour préremplir la fiche) et aller-retour.
         if (a.point() != null) {

@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.travel.WorldPortalAdminService.Operation;
 import com.lodygames.rpgquest.travel.WorldPortalAdminService.ZoneRequest;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
 import com.lodygames.rpgquest.travel.model.PortalAccess;
+import com.lodygames.rpgquest.travel.model.PortalMessages;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.FixedPoint;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.Zone;
 import java.util.ArrayList;
@@ -40,6 +41,9 @@ import org.bukkit.configuration.MemoryConfiguration;
  *       {@code cond_<i>_negate}, {@code cond_<i>_quest} / {@code _state} / {@code _material} /
  *       {@code _amount} / {@code _permission} / {@code _key} / {@code _value}, {@code cond_<i>_message}.
  *       Les conditions sont lues par le même code que les dialogues.</li>
+ *   <li>{@code portal.messages} (issue #569) : {@code msg_welcome|preparing|success|unavailable|unsafe|refusal},
+ *       {@code warning_mode} (DEFAULT, ALWAYS, NEVER), {@code warn_title|text|hint|enter|enter_hide|cancel|cancel_text},
+ *       {@code warn_allow_hide} ; vide = texte par défaut.</li>
  * </ul>
  */
 final class PortalAdminParams {
@@ -139,9 +143,40 @@ final class PortalAdminParams {
             }
             access = a.access();
         }
+        PortalMessages messages = null;
+        if (kind == Kind.MESSAGES) {
+            try {
+                messages = messages(p);
+            } catch (IllegalArgumentException e) {
+                return Parsed.fail("Messages : " + e.getMessage());
+            }
+        }
         String actor = trim(p.get("by"));
         return new Parsed(new Operation(kind, id, expected, name, zone, destination, returnOf,
-                "true".equals(p.get("confirm_essential")), actor.isEmpty() ? "panel" : actor, access), null);
+                "true".equals(p.get("confirm_essential")), actor.isEmpty() ? "panel" : actor, access, messages), null);
+    }
+
+    /**
+     * Messages et avertissement (issue #569) : tous facultatifs, vide = texte par défaut ;
+     * {@code warning_mode} DEFAULT / ALWAYS / NEVER, {@code warn_allow_hide} absent = {@code true}.
+     */
+    static PortalMessages messages(Map<String, String> p) {
+        String rawMode = trim(p.get("warning_mode")).toUpperCase(Locale.ROOT);
+        PortalMessages.Mode mode;
+        try {
+            mode = rawMode.isEmpty() ? PortalMessages.Mode.DEFAULT : PortalMessages.Mode.valueOf(rawMode);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("avertissement « " + rawMode + " » inconnu (DEFAULT, ALWAYS ou NEVER).");
+        }
+        String allowHide = trim(p.get("warn_allow_hide"));
+        if (!allowHide.isEmpty() && !allowHide.equals("true") && !allowHide.equals("false")) {
+            throw new IllegalArgumentException("« warn_allow_hide » doit valoir true ou false.");
+        }
+        PortalMessages.Warning warning = new PortalMessages.Warning(mode, p.get("warn_title"), p.get("warn_text"),
+                p.get("warn_hint"), p.get("warn_enter"), p.get("warn_enter_hide"), p.get("warn_cancel"),
+                p.get("warn_cancel_text"), !allowHide.equals("false"));
+        return new PortalMessages(p.get("msg_welcome"), p.get("msg_preparing"), p.get("msg_success"),
+                p.get("msg_unavailable"), p.get("msg_unsafe"), p.get("msg_refusal"), warning);
     }
 
     private record AccessParsed(PortalAccess access, String error) {

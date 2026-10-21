@@ -11,6 +11,7 @@ import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
 import com.lodygames.rpgquest.travel.model.PortalAccess;
+import com.lodygames.rpgquest.travel.model.PortalMessages;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.world.WorldService;
 import java.nio.file.Path;
@@ -250,5 +251,77 @@ class WorldPortalAccessListenerTest {
         assertEquals(WorldPortalTeleportListener.TestOutcome.REFUSED, r.outcome());
         assertFalse(r.verdict().allowed());
         assertEquals(hub, player.getWorld());
+    }
+
+    // ---- Messages par portail (issue #569) -------------------------------------------
+
+    private WorldPortalDefinition portalWithMessages(String destination, PortalAccess access, PortalMessages messages) {
+        return new WorldPortalDefinition("arche", "world", -5, 60, -5, 5, 70, 5, destination, true,
+                DestinationStrategy.WORLD_SPAWN, WorldPortalDefinition.Details.NONE, null, "", access, messages);
+    }
+
+    private static List<String> messages(PlayerMock player) {
+        List<String> out = new java.util.ArrayList<>();
+        net.kyori.adventure.text.Component c;
+        while ((c = player.nextComponentMessage()) != null) {
+            out.add(PlainTextComponentSerializer.plainText().serialize(c));
+        }
+        return out;
+    }
+
+    @Test
+    void withoutCustomMessagesTheSuccessTextIsTheOneFromBefore() {
+        registry.create(portal(true, PortalAccess.NONE));
+        PlayerMock player = server.addPlayer();
+        player.teleport(new Location(hub, 100.5, 64, 100.5));
+        messages(player);
+
+        enter(player);
+
+        assertEquals(List.of("Téléportation réussie."), messages(player));
+    }
+
+    @Test
+    void customPreparingSuccessAndWelcomeMessagesAreSentInOrder() {
+        registry.create(portalWithMessages("wild", PortalAccess.NONE, new PortalMessages(
+                "<green>Bienvenue dans les terres sauvages.</green>", "<aqua>Ouverture du passage…</aqua>",
+                "<green>Passage franchi.</green>", "", "", "", PortalMessages.Warning.DEFAULT)));
+        PlayerMock player = server.addPlayer();
+        player.teleport(new Location(hub, 100.5, 64, 100.5));
+        messages(player);
+
+        enter(player);
+
+        assertEquals(wild, player.getWorld());
+        assertEquals(List.of("Ouverture du passage…", "Passage franchi.", "Bienvenue dans les terres sauvages."),
+                messages(player));
+    }
+
+    @Test
+    void anUnavailableWorldUsesThePortalMessage() {
+        registry.create(portalWithMessages("absent_world", PortalAccess.NONE, new PortalMessages("", "", "",
+                "<red>Le village est en travaux.</red>", "", "", PortalMessages.Warning.DEFAULT)));
+        PlayerMock player = server.addPlayer();
+        player.teleport(new Location(hub, 100.5, 64, 100.5));
+        messages(player);
+
+        enter(player);
+
+        assertEquals(hub, player.getWorld());
+        assertEquals(List.of("Le village est en travaux."), messages(player));
+    }
+
+    @Test
+    void thePortalRefusalReplacesOnlyTheDefaultConditionMessages() {
+        registry.create(portalWithMessages("wild", new PortalAccess(null, "", List.of(new PortalAccess.Rule(
+                new HasPermissionCondition("rpgquest.portal.arche"), "")), 0, ""), new PortalMessages("", "", "",
+                "", "", "<red>Le gardien te barre la route.</red>", PortalMessages.Warning.DEFAULT)));
+        PlayerMock player = server.addPlayer();
+        player.teleport(new Location(hub, 100.5, 64, 100.5));
+
+        enter(player);
+
+        assertEquals(hub, player.getWorld());
+        assertEquals("Le gardien te barre la route.", lastMessage(player));
     }
 }

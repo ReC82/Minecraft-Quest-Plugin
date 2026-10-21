@@ -7,6 +7,7 @@ import com.lodygames.rpgquest.permission.RpgPermissions;
 import com.lodygames.rpgquest.travel.model.Destination;
 import com.lodygames.rpgquest.travel.model.PortalAccess;
 import com.lodygames.rpgquest.travel.model.PortalDefinition;
+import com.lodygames.rpgquest.travel.model.PortalMessages;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import java.util.ArrayList;
 import java.util.List;
@@ -93,10 +94,15 @@ public final class PortalOverview {
     public record Admin(String state, String storedName, String site, String siteName, int width, int height,
                         int depth, boolean essential, String fingerprint, boolean editable,
                         WorldPortalDefinition.FixedPoint point, String returnOf, List<String> returnedBy,
-                        PortalAccess access) {
+                        PortalAccess access, PortalMessages messages, WildEntryWarningService.Texts warningDefaults,
+                        boolean warns) {
 
         static final Admin LEGACY = new Admin("ACTIVE", "", "", "", 0, 0, 0, false, "", false, null, "", List.of(),
-                PortalAccess.NONE);
+                PortalAccess.NONE, PortalMessages.NONE, null, false);
+
+        public Admin {
+            messages = messages == null ? PortalMessages.NONE : messages;
+        }
     }
 
     /** Un problème lisible : {@code code} renvoie à l'aide du panel ({@code DiagnosticHelp}). */
@@ -179,7 +185,7 @@ public final class PortalOverview {
         boolean destLoaded = in.loadedWorlds().containsKey(p.destinationWorld());
         List<Guard> guards = new ArrayList<>();
         if (WildEntryWarningService.appliesTo(p, in.roles().wild())) {
-            guards.add(wildGuard());
+            guards.add(wildGuard(p, in.roles().wild()));
         }
         if (ClaimWorldAccessGuard.appliesTo(p, in.roles().claims())) {
             guards.add(claimsGuard(in.guide()));
@@ -258,7 +264,9 @@ public final class PortalOverview {
         Admin admin = new Admin(p.state().name(), d.name(), site, linked.map(BuildingSite::name).orElse(""),
                 d.width(), d.height(), d.depth(), WorldPortalAdminService.essential(p, in.roles()),
                 WorldPortalAdminService.fingerprint(p), sameId.isEmpty(), p.fixedPoint(), p.returnOf(), returnedBy,
-                p.access());
+                p.access(), p.messages(), WildEntryWarningService.towardsWild(p, in.roles().wild())
+                        ? WildEntryWarningService.WILD_DEFAULTS : WildEntryWarningService.GENERIC_DEFAULTS,
+                WildEntryWarningService.appliesTo(p, in.roles().wild()));
         WorldPortalDefinition.FixedPoint fp = p.fixedPoint();
         String point = fp == null ? "" : String.format(Locale.ROOT, "%s %.1f, %.1f, %.1f (regard %.0f°)",
                 p.destinationWorld(), fp.x(), fp.y(), fp.z(), fp.yaw());
@@ -328,20 +336,40 @@ public final class PortalOverview {
                                 + "et aucune règle du serveur ne s'applique à sa destination.");
     }
 
-    private static Guard wildGuard() {
-        return new Guard("WILD_WARNING", "Avertissement avant d'entrer dans le Wild", List.of(
-                "Avant chaque départ, une fenêtre Minecraft demande de confirmer. Fermer la fenêtre = annuler.",
-                "« Ne plus afficher » est mémorisé par joueur (variable " + WildEntryWarningService.WARNING_HIDDEN_KEY
-                        + ") ; le message de préparation reste affiché.",
-                "Aucune inspection d'inventaire : le texte énonce le risque de la zone, il ne juge pas l'équipement.",
-                "Une seule demande à la fois par joueur ; après « Annuler », il faut ressortir puis rentrer."),
-                List.of(new Text("Message", WildEntryWarningService.WARNING_TEXT),
-                        new Text("Indice", WildEntryWarningService.GUARD_HINT),
-                        new Text("Bouton", WildEntryWarningService.ENTER_LABEL),
-                        new Text("Bouton", WildEntryWarningService.ENTER_AND_HIDE_LABEL),
-                        new Text("Bouton", WildEntryWarningService.CANCEL_LABEL),
-                        new Text("Après « Annuler »", WildEntryWarningService.CANCEL_TEXT),
-                        new Text("Après confirmation", WildEntryWarningService.PREPARING_TEXT)));
+    /** Avertissement avant le départ (#161), avec les textes effectifs du portail (#569). */
+    private static Guard wildGuard(WorldPortalDefinition p, String wildWorld) {
+        WildEntryWarningService.Texts t = WildEntryWarningService.texts(p, wildWorld);
+        boolean wild = WildEntryWarningService.towardsWild(p, wildWorld);
+        List<String> rules = new ArrayList<>();
+        rules.add("Avant chaque départ, une fenêtre Minecraft demande de confirmer. Fermer la fenêtre = annuler.");
+        rules.add(t.allowHide()
+                ? "« Ne plus afficher » est mémorisé par joueur et par portail (variable "
+                        + WildEntryWarningService.hiddenKey(p.id())
+                        + (wild ? ", ou l'ancienne " + WildEntryWarningService.WARNING_HIDDEN_KEY : "")
+                        + ") ; le message de préparation reste affiché."
+                : "« Ne plus afficher » n'est pas proposé : l'avertissement s'affiche à chaque départ.");
+        rules.add("Aucune inspection d'inventaire : le texte énonce le risque de la zone, il ne juge pas l'équipement.");
+        rules.add("Une seule demande à la fois par joueur ; après « Annuler », il faut ressortir puis rentrer.");
+        List<Text> texts = new ArrayList<>();
+        texts.add(new Text("Message", plain(t.text())));
+        if (!t.hint().isEmpty()) {
+            texts.add(new Text("Indice", plain(t.hint())));
+        }
+        texts.add(new Text("Bouton", plain(t.enter())));
+        if (t.allowHide()) {
+            texts.add(new Text("Bouton", plain(t.enterHide())));
+        }
+        texts.add(new Text("Bouton", plain(t.cancel())));
+        texts.add(new Text("Après « Annuler »", plain(t.cancelText())));
+        texts.add(new Text("Après confirmation", plain(t.preparing())));
+        texts.add(new Text("Titre de la fenêtre", plain(t.title())));
+        return new Guard("WILD_WARNING", wild ? "Avertissement avant d'entrer dans le Wild"
+                : "Avertissement avant le départ", List.copyOf(rules), List.copyOf(texts));
+    }
+
+    private static String plain(String miniMessage) {
+        return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(miniMessage));
     }
 
     private static Guard claimsGuard(GuideNpc guide) {

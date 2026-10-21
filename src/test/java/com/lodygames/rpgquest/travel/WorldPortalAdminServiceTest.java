@@ -345,4 +345,74 @@ class WorldPortalAdminServiceTest {
         assertTrue(registry.find("arche").isEmpty(), "jamais chargé sans ses conditions");
         assertTrue(registry.skippedFiles().stream().anyMatch(i -> i.toString().contains("arche.yml")));
     }
+
+    // ---- Messages et avertissement (issue #569) ----------------------------
+
+    private static com.lodygames.rpgquest.travel.model.PortalMessages sampleMessages() {
+        return new com.lodygames.rpgquest.travel.model.PortalMessages("<green>Bienvenue au marché.</green>", "",
+                "", "<red>Le marché est fermé.</red>", "", "<red>Pas encore.</red>",
+                new com.lodygames.rpgquest.travel.model.PortalMessages.Warning(
+                        com.lodygames.rpgquest.travel.model.PortalMessages.Mode.ALWAYS, "<gold>Marché</gold>",
+                        "<white>Foule dense.</white>", "", "", "", "", "", false));
+    }
+
+    @Test
+    void messagesAreSavedOnADraftAndSurviveAReload() throws Exception {
+        createDraft();
+        Result r = service.setMessages("arche_marche", fp("arche_marche"), sampleMessages(), false, "claude", ctx());
+
+        assertTrue(r.ok(), r.message());
+        registry.reload();
+        assertEquals(sampleMessages(), registry.find("arche_marche").orElseThrow().messages());
+        String yaml = Files.readString(dir.resolve("arche_marche.yml"));
+        assertTrue(yaml.contains("messages:") && yaml.contains("welcome:") && yaml.contains("mode: ALWAYS")
+                && yaml.contains("allow-hide: false") && !yaml.contains("success:"), yaml);
+        assertEquals(State.DRAFT, registry.find("arche_marche").orElseThrow().state(), "rien n'est activé");
+        assertTrue(audit.recent(5).stream().anyMatch(e -> e.operation().equals("MESSAGES")
+                && e.after().contains("bienvenue") && !e.after().contains("Foule")),
+                "le journal nomme les champs, jamais leur contenu");
+    }
+
+    @Test
+    void restoringTheDefaultsRestoresTheFileAndTheFingerprint() throws Exception {
+        createDraft();
+        String before = Files.readString(dir.resolve("arche_marche.yml"));
+        String fingerprintBefore = fp("arche_marche");
+        service.setMessages("arche_marche", fingerprintBefore, sampleMessages(), false, "claude", ctx());
+        assertFalse(fp("arche_marche").equals(fingerprintBefore), "l'empreinte change avec les messages");
+
+        Result r = service.setMessages("arche_marche", fp("arche_marche"),
+                com.lodygames.rpgquest.travel.model.PortalMessages.NONE, false, "claude", ctx());
+
+        assertTrue(r.ok(), r.message());
+        assertEquals(before, Files.readString(dir.resolve("arche_marche.yml")));
+        assertEquals(fingerprintBefore, fp("arche_marche"));
+    }
+
+    @Test
+    void theMessagesOfAnActivePortalAreLockedAndHubToWildIsUntouched() throws Exception {
+        String before = Files.readString(dir.resolve("hub_to_wild.yml"));
+        String fingerprintBefore = fp("hub_to_wild");
+
+        Result unconfirmed = service.setMessages("hub_to_wild", fp("hub_to_wild"), sampleMessages(), false, "claude",
+                ctx());
+        Result active = service.setMessages("hub_to_wild", fp("hub_to_wild"), sampleMessages(), true, "claude", ctx());
+
+        assertEquals("ESSENTIAL_CONFIRMATION_REQUIRED", unconfirmed.code());
+        assertEquals("ACTIVE_MESSAGES_LOCKED", active.code());
+        assertEquals(before, Files.readString(dir.resolve("hub_to_wild.yml")), "hub_to_wild intact");
+        assertTrue(registry.find("hub_to_wild").orElseThrow().messages().isEmpty(), "textes par défaut");
+        assertEquals(fingerprintBefore, fp("hub_to_wild"));
+    }
+
+    @Test
+    void anUnreadableMessagesSectionKeepsThePortalUnloaded() throws Exception {
+        Files.writeString(dir.resolve("arche.yml"), String.join("\n", "id: arche", "world: world_hub",
+                "min: {x: 0, y: 60, z: 0}", "max: {x: 2, y: 63, z: 0}", "destination-world: wild", "enabled: true",
+                "warning:", "  mode: PARFOIS", ""));
+
+        registry.reload();
+
+        assertTrue(registry.find("arche").isEmpty(), "jamais chargé avec un avertissement illisible");
+    }
 }

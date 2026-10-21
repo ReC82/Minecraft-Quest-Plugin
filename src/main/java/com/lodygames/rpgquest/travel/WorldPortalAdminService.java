@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
 import com.lodygames.rpgquest.travel.model.PortalAccess;
 import com.lodygames.rpgquest.travel.model.PortalDefinition;
+import com.lodygames.rpgquest.travel.model.PortalMessages;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.Details;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition.State;
@@ -52,6 +53,8 @@ import org.bukkit.NamespacedKey;
  *   <li>Issue #567 : les conditions d'accès (niveau RPG, conditions joueur, délai) d'un portail
  *       actif ne se modifient pas ; une quête citée doit exister, une variable connue doit recevoir
  *       une valeur de son type.</li>
+ *   <li>Issue #569 : les messages et l'avertissement d'un portail actif ne se modifient pas non
+ *       plus ; vides, ils reprennent les textes d'avant.</li>
  * </ul>
  */
 public final class WorldPortalAdminService {
@@ -142,7 +145,9 @@ public final class WorldPortalAdminService {
     public enum Kind {
         CREATE, UPDATE, ENABLE, DISABLE, DELETE,
         /** Issue #567 : remplacer les conditions d'accès. */
-        ACCESS
+        ACCESS,
+        /** Issue #569 : remplacer les messages et l'avertissement. */
+        MESSAGES
     }
 
     /**
@@ -155,12 +160,18 @@ public final class WorldPortalAdminService {
      */
     public record Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
                             DestinationRequest destination, String returnOf, boolean confirmEssential,
-                            String actor, PortalAccess access) {
+                            String actor, PortalAccess access, PortalMessages messages) {
+
+        public Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
+                         DestinationRequest destination, String returnOf, boolean confirmEssential,
+                         String actor, PortalAccess access) {
+            this(kind, id, expected, name, zone, destination, returnOf, confirmEssential, actor, access, null);
+        }
 
         public Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
                          DestinationRequest destination, String returnOf, boolean confirmEssential,
                          String actor) {
-            this(kind, id, expected, name, zone, destination, returnOf, confirmEssential, actor, null);
+            this(kind, id, expected, name, zone, destination, returnOf, confirmEssential, actor, null, null);
         }
 
         public Operation(Kind kind, String id, String expected, String name, ZoneRequest zone,
@@ -186,6 +197,7 @@ public final class WorldPortalAdminService {
             case DISABLE -> setActive(op.id(), false, op.expected(), op.confirmEssential(), op.actor(), ctx);
             case DELETE -> delete(op.id(), op.expected(), op.confirmEssential(), op.actor(), ctx);
             case ACCESS -> setAccess(op.id(), op.expected(), op.access(), op.confirmEssential(), op.actor(), ctx);
+            case MESSAGES -> setMessages(op.id(), op.expected(), op.messages(), op.confirmEssential(), op.actor(), ctx);
         };
     }
 
@@ -406,6 +418,34 @@ public final class WorldPortalAdminService {
                 : "Conditions d'accès de « " + id + " » enregistrées : le serveur les vérifiera à chaque passage.");
     }
 
+    /**
+     * Remplace les messages et l'avertissement (issue #569) d'un portail non actif. {@link
+     * PortalMessages#NONE} rétablit tous les textes par défaut. Aucun joueur n'est concerné : seule
+     * la configuration est écrite (les préférences « ne plus afficher » restent en base).
+     */
+    public synchronized Result setMessages(String id, String expected, PortalMessages messages,
+                                           boolean confirmEssential, String actor, Context ctx) {
+        if (messages == null) {
+            return Result.refused("MESSAGES_REQUIRED", "Messages manquants.");
+        }
+        Lookup found = lookup(id, expected, confirmEssential, ctx);
+        if (found.error() != null) {
+            return found.error();
+        }
+        WorldPortalDefinition current = found.portal();
+        if (current.state() == State.ACTIVE) {
+            return Result.refused("ACTIVE_MESSAGES_LOCKED", "Le portail est actif : le désactiver avant de changer "
+                    + "ses messages et son avertissement.");
+        }
+        WorldPortalDefinition updated = current.withMessages(messages);
+        if (updated.equals(current)) {
+            return new Result(true, "UNCHANGED", "Aucun changement à enregistrer.", id, List.of());
+        }
+        return save(current, updated, "MESSAGES", actor, messages.isEmpty()
+                ? "Messages de « " + id + " » remis par défaut."
+                : "Messages et avertissement de « " + id + " » enregistrés.");
+    }
+
     /** Supprime la configuration d'un portail non actif. L'emplacement et le bâtiment restent. */
     public synchronized Result delete(String id, String expected, boolean confirmEssential, String actor,
                                       Context ctx) {
@@ -453,6 +493,10 @@ public final class WorldPortalAdminService {
         if (!p.access().isEmpty()) {
             canonical += "|access:" + PortalAccessYaml.canonical(p.access());
         }
+        // #569 : même règle — un portail aux textes par défaut garde son empreinte d'avant.
+        if (!p.messages().isEmpty()) {
+            canonical += "|messages:" + PortalMessagesYaml.canonical(p.messages());
+        }
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash, 0, 12);
@@ -480,7 +524,33 @@ public final class WorldPortalAdminService {
                 + ", vers " + p.destinationWorld() + " (" + p.destinationStrategy()
                 + (p.fixedPoint() == null ? "" : " " + pointText(p.fixedPoint())) + ")"
                 + (p.returnOf().isEmpty() ? "" : ", retour de " + p.returnOf())
-                + (p.access().isEmpty() ? "" : ", conditions : " + accessSummary(p.access()));
+                + (p.access().isEmpty() ? "" : ", conditions : " + accessSummary(p.access()))
+                + (p.messages().isEmpty() ? "" : ", messages : " + messagesSummary(p.messages()));
+    }
+
+    /** Résumé lisible des textes personnalisés (journal) — les noms des champs, jamais leur contenu. */
+    public static String messagesSummary(PortalMessages m) {
+        List<String> parts = new ArrayList<>();
+        addIf(parts, !m.welcome().isEmpty(), "bienvenue");
+        addIf(parts, !m.preparing().isEmpty(), "attente");
+        addIf(parts, !m.success().isEmpty(), "réussite");
+        addIf(parts, !m.unavailable().isEmpty(), "monde indisponible");
+        addIf(parts, !m.unsafe().isEmpty(), "destination dangereuse");
+        addIf(parts, !m.refusal().isEmpty(), "refus");
+        PortalMessages.Warning w = m.warning();
+        addIf(parts, w.mode() != PortalMessages.Mode.DEFAULT,
+                w.mode() == PortalMessages.Mode.ALWAYS ? "avertissement toujours affiché" : "avertissement retiré");
+        addIf(parts, !w.title().isEmpty() || !w.text().isEmpty() || !w.hint().isEmpty() || !w.enter().isEmpty()
+                || !w.enterHide().isEmpty() || !w.cancel().isEmpty() || !w.cancelText().isEmpty(),
+                "textes de l'avertissement");
+        addIf(parts, !w.allowHide(), "« ne plus afficher » retiré");
+        return String.join(", ", parts);
+    }
+
+    private static void addIf(List<String> parts, boolean condition, String label) {
+        if (condition) {
+            parts.add(label);
+        }
     }
 
     /** Résumé lisible des conditions d'accès (journal, fiche). */

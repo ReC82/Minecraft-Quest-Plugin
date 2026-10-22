@@ -350,22 +350,48 @@ nodes:
 
   <section class="my-5">
     <h2 class="h4">Modifier un dialogue depuis PlugAdmin</h2>
-    <p>Page <strong>Dialogues</strong> : « Créer un dialogue », puis pour chaque réplique
-      <em>Le personnage dit…</em>, <em>Le joueur peut répondre…</em> et <em>Ensuite…</em>
-      (une autre réplique ou la fin). <em>Et aussi…</em> propose, fait avancer ou rend une quête
-      choisie par son titre. <strong>Enregistrer</strong> garde les modifications ;
-      <strong>Mettre en jeu</strong> les envoie au serveur sans redémarrage. Les conditions et les
-      autres effets restent modifiables dans la partie repliée de chaque réponse, et rien de ce que
-      contient le fichier n'est perdu à l'enregistrement.</p>
+    <p>Un PNJ créé dans PlugAdmin, ou un PNJ Citizens « rattaché à RPGQuest » qui n'avait pas encore
+      de dialogue, reçoit d'office un dialogue « Salut ! » avec une réponse « Au revoir ». On le
+      modifie dans la page <strong>« Dialogue de … »</strong> (fiche du PNJ → <em>Modifier le
+      dialogue</em>, ou page <strong>Dialogues</strong>). Le mode d'emploi complet, à jour de
+      l'interface, est dans l'aide intégrée de PlugAdmin (bouton <strong>Aide</strong> de l'éditeur,
+      fiche « Faire parler un personnage »).</p>
+    <ul>
+      <li>Une carte par réplique : <em>Début de la conversation</em>, puis <em>Réplique 2</em>,
+        <em>Réplique 3</em>… Dans chacune : <em>Le personnage dit…</em> et <em>Le joueur peut
+        répondre…</em>.</li>
+      <li>Pour chaque réponse, <em>Ensuite…</em> : <em>Terminer la conversation</em>,
+        <em>Le personnage répond : réplique N</em> ou <em>Une nouvelle réplique…</em>.
+        <em>Et aussi…</em> propose, fait avancer ou rend une quête choisie par son titre.</li>
+      <li><strong>Chaque réplique a au moins une réponse</strong> : pour finir, une réponse
+        « Au revoir. » → <em>Terminer la conversation</em>. PlugAdmin refuse d'enregistrer ou de
+        mettre en jeu une réplique sans réponse, avant toute écriture sur le serveur (le moteur
+        refuserait le fichier : <code>choices</code> est obligatoire).</li>
+      <li>Une réplique marquée « Aucune réponse n'y mène » ne sera jamais vue : la choisir dans
+        <em>Ensuite…</em> d'une réponse.</li>
+      <li><strong>Enregistrer</strong> garde les modifications dans PlugAdmin ;
+        <strong>Mettre en jeu</strong> les envoie au serveur, qui les charge sans redémarrage.
+        Le bandeau distingue « Enregistré — pas encore en jeu » et « À jour en jeu ».</li>
+      <li>Une mise en jeu refusée remet le fichier du serveur dans son état d'avant : les joueurs
+        gardent l'ancienne version. Si le dialogue a été changé ailleurs, PlugAdmin le dit
+        (« Le serveur a une autre version de ce dialogue ») et ne remplace rien sans
+        confirmation ; <strong>Recharger depuis DEV</strong> reprend la version du serveur.</li>
+    </ul>
+    <p>Les conditions et autres effets restent modifiables dans la partie repliée de chaque
+      réponse, et rien de ce que contient le fichier n'est perdu à l'enregistrement (seules les
+      notes <code>#</code> écrites à la main ne sont pas gardées). L'écran « Détails
+      techniques » (nœuds, identifiants, graphe) est réservé au diagnostic avancé.</p>
   </section>
 
   <section class="my-5">
     <h2 class="h4">Comment tester un dialogue</h2>
     <ol>
-      <li>Placez le fichier dans <code>plugins/RPGQuest/dialogues/&lt;id&gt;.yml</code> (en
-        développement local : <code>run/plugins/RPGQuest/dialogues/</code>).</li>
-      <li>Redémarrez le serveur complètement (<code>stop</code> puis relancer) — les dialogues ne
-        se rechargent <strong>jamais</strong> à chaud, aucune commande ne l'expose.</li>
+      <li>Depuis PlugAdmin : <strong>Enregistrer et mettre en jeu</strong>, attendre
+        « À jour en jeu », puis clic droit sur le PNJ en jeu.</li>
+      <li>Fichier écrit à la main : le placer dans <code>plugins/RPGQuest/dialogues/&lt;id&gt;.yml</code>
+        (en développement local : <code>run/plugins/RPGQuest/dialogues/</code>), puis
+        <code>/rpgadmin content reload</code> (un fichier invalide est refusé, l'ancienne version
+        reste chargée) ou un redémarrage.</li>
       <li>Deux façons de l'ouvrir en jeu :</li>
     </ol>
     <pre class="rpgq-code"><code># À distance, sans PNJ (admin, test)

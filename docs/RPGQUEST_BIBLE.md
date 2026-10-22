@@ -3828,6 +3828,45 @@ le ticket interdit. À reprendre si un véritable état « à rendre » est intr
 Également hors périmètre : halo ou icône au-dessus du PNJ (demanderait un affichage serveur
 supplémentaire), et signal pour un dialogue atteint autrement que par le PNJ lui-même.
 
+### Éditeur guidé PlugAdmin : vocabulaire et parcours normal (issue #729)
+
+Le parcours normal d'un administrateur passe **uniquement** par la page « Dialogue de … » de
+PlugAdmin ; nœuds, identifiants et graphe sont réservés à l'écran « Détails techniques »
+(`/dialogues/diagnostic`, diagnostic avancé). Mode d'emploi : fiche d'aide intégrée
+`control-panel/src/main/resources/docs/dialogues.md` (« Faire parler un personnage », bouton
+**Aide** de la liste et de l'éditeur), dépannage : `dialogues-depannage.md`.
+
+| Éditeur guidé | Format YAML |
+|---|---|
+| Début de la conversation | nœud `start` |
+| Réplique 2, 3… (ordre d'affichage) | autres nœuds de `nodes` |
+| Le personnage dit… / Réglages de la réplique (nom affiché) | `text` / `speaker` du nœud |
+| Le joueur peut répondre… → Réponse du joueur | élément de `choices` (`text`) |
+| Ensuite… → Terminer la conversation | choix sans `next`, action `CLOSE` |
+| Ensuite… → Le personnage répond : … / Une nouvelle réplique… | `next` (nouveau nœud créé à l'envoi du formulaire, avec une réponse « Au revoir. ») |
+| Et aussi… | action de quête du choix (`START_QUEST`, catalogue, `TURN_IN_QUEST`…) |
+| Conditions et autres effets | `conditions` / autres `actions` du choix |
+
+Règles que le guide rend visibles :
+
+- **`choices` est obligatoire et non vide** pour chaque nœud (`DialogueDefinitionParser`) : une
+  réplique de fin porte une réponse « Au revoir. » → « Terminer la conversation ». PlugAdmin le
+  vérifie avant toute écriture (enregistrement, mise en jeu seule ou en lot, #730), lien d'erreur
+  `/docs/dialogues#terminer-une-conversation`.
+- Une réplique sans réponse entrante est marquée « Aucune réponse n'y mène » (diagnostic
+  `NODE_UNREACHABLE`).
+- « Enregistrer » écrit la source PlugAdmin ; « Mettre en jeu » publie sur DEV et recharge. Le
+  bandeau distingue « Enregistré — pas encore en jeu » de « À jour en jeu ». Un refus au
+  rechargement remet le fichier DEV dans son état d'avant (#731) : l'ancien runtime reste actif.
+  Conflit et « Recharger depuis DEV » : voir « Publier du contenu sur DEV sans rebuild » au
+  chapitre 3 (#731, #732).
+- PNJ créé dans PlugAdmin, ou PNJ Citizens rattaché sans dialogue existant : dialogue initial
+  « Salut ! » + « Au revoir » (`NpcCreationPlanner`).
+
+Les liens d'aide de l'éditeur et les renvois entre les deux fiches sont vérifiés par
+`DialogueHelpLinksTest` ; `DialogueEditorTest` vérifie que chaque libellé du parcours affiché par
+l'éditeur est nommé tel quel dans le guide.
+
 ### Convention id dialogue ↔ id PNJ
 
 Cliquer sur un PNJ identifié `X` (voir section 5) ouvre automatiquement le

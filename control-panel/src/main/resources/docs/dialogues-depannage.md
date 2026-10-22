@@ -10,6 +10,10 @@ order: 2
 Chaque alerte de la page **Dialogues** renvoie ici, à la section correspondant à son code
 technique.
 
+Les corrections se font dans la page **« Dialogue de … »** (l'éditeur guidé, voir
+[Faire parler un personnage](/docs/dialogues)). Les mots techniques « nœud » et « choix » des
+diagnostics désignent ce que l'éditeur appelle une **réplique** et une **réponse**.
+
 ---
 
 ## Dialogue non associé à un PNJ
@@ -99,7 +103,8 @@ L'alerte disparaît après rafraîchissement du catalogue.
 
 ### Ce que cela signifie
 
-Un choix de ce dialogue **renvoie vers un nœud qui n'existe pas**.
+Une réponse de ce dialogue **mène vers une réplique qui n'existe pas** (un choix dont le `next`
+vise un nœud inconnu).
 
 ### Pourquoi il faut corriger
 
@@ -107,13 +112,15 @@ En jeu, ce choix bloquera ou fermera la conversation de façon inattendue.
 
 ### Comment corriger
 
-1. Ouvrir **Dialogues**, ouvrir le dialogue concerné.
-2. Repérer le nœud et le choix fautif dans le graphe.
-3. Corriger la destination du choix (nœud existant) **ou** supprimer le choix.
+1. Ouvrir **Dialogues**, puis le dialogue concerné.
+2. Repérer la réponse dont **Ensuite…** affiche « Réplique introuvable — choisissez une suite ».
+3. Choisir une autre suite (une réplique existante, *Une nouvelle réplique…* ou *Terminer la
+   conversation*), **ou** **Supprimer cette réponse**.
+4. **Enregistrer et mettre en jeu**.
 
 ### Vérification
 
-Le compteur **« … warning »** de la ligne diminue.
+Le bandeau indique « À jour en jeu » et l'alerte disparaît de la page **Dialogues**.
 
 ### Référence technique
 
@@ -151,20 +158,23 @@ L'alerte disparaît après rafraîchissement des catalogues Dialogues **et** Qu�
 
 ### Ce que cela signifie
 
-Un nœud du dialogue **n'est relié à aucun choix** : il est inaccessible.
+Une réplique du dialogue n'est atteinte par **aucune réponse** : dans l'éditeur, sa carte porte
+l'étiquette **« Aucune réponse n'y mène »**. C'est souvent une réplique tout juste créée avec
+**Ajouter une réplique**.
 
 ### Pourquoi il faut corriger
 
-Ce nœud ne sera **jamais affiché** en jeu.
+Cette réplique ne sera **jamais affichée** en jeu.
 
 ### Comment corriger
 
-Ouvrir le dialogue, puis soit ajouter un choix qui pointe vers ce nœud, soit le supprimer
-s'il est inutile.
+Ouvrir le dialogue, puis soit choisir cette réplique dans **Ensuite…** d'une réponse, soit
+**Réglages de la réplique → Retirer cette réplique** si elle est inutile. Voir
+[Une réplique que personne n'atteint](/docs/dialogues#une-replique-que-personne-natteint).
 
 ### Vérification
 
-Le nœud n'est plus marqué **« inaccessible »** dans le graphe.
+La carte n'affiche plus « Aucune réponse n'y mène ».
 
 ### Référence technique
 
@@ -184,8 +194,10 @@ Ce dialogue est **totalement absent** du jeu.
 
 ### Comment corriger
 
-Corriger le fichier YAML côté serveur (le message d'erreur précise la ligne / le champ),
-puis recharger (`/rpgquest reload` ou redémarrage), puis rafraîchir le catalogue.
+Si le dialogue est modifiable dans PlugAdmin : ouvrir le dialogue, corriger ce que dit le message
+(par exemple une réplique sans réponse, voir [Réplique sans réponse](#replique-sans-reponse)),
+puis **Enregistrer et mettre en jeu**. Sinon (fichier déposé à la main sur le serveur) : corriger
+le fichier YAML (le message précise la ligne ou le champ), puis `/rpgadmin content reload`.
 
 ### Vérification
 
@@ -316,34 +328,29 @@ en attente »).
 
 ## Comprendre l'éditeur de dialogues
 
-### Créer un dialogue
+Le mode d'emploi complet de l'éditeur guidé est dans
+[Faire parler un personnage](/docs/dialogues) : répliques, réponses, « Ensuite… »,
+enregistrement, mise en jeu, conflits et « Recharger depuis DEV ». Ce qui suit résume les points
+qui reviennent souvent en dépannage.
 
-Le bouton **« Créer un dialogue »** ouvre `/dialogues/new` (même mécanique que « Créer une
-quête ») : identifiant, **PNJ à rattacher** (recherche par nom ou par id — optionnel), locuteur
-affiché, couleur du texte et réplique de départ. « Enregistrer dans la source » écrit
-`src/main/resources/dialogues/<id>.yml` — **aucun déploiement**, le serveur le validera au
-prochain rechargement.
+### Correspondance des mots
 
-Si un PNJ est choisi, sa **définition** est mise à jour dans la foulée pour pointer vers ce
-dialogue (une seconde action, visible dans les notifications). Si le PNJ n'est pas dans le dernier
-relevé, le dialogue est quand même enregistré et un message invite à faire le rattachement depuis
-la fiche du PNJ (**PNJ → Modifier → Dialogue**).
+| Dans l'éditeur | Dans le fichier et les diagnostics |
+|---|---|
+| Début de la conversation | le nœud `start` |
+| Réplique 2, Réplique 3… | un nœud de `nodes` (numéro = ordre d'affichage, pas l'identifiant) |
+| Le personnage dit… | `text` du nœud |
+| Réponse du joueur | un élément de `choices` |
+| Ensuite… → Terminer la conversation | choix sans `next`, avec l'action `CLOSE` |
+| Ensuite… → Le personnage répond : … | `next` du choix |
+| Conditions et autres effets | `conditions` et `actions` du choix |
 
-Depuis la fiche d'un PNJ, le bouton **« Créer un dialogue pour ce PNJ »** ouvre le même
-formulaire avec le PNJ déjà sélectionné et le locuteur prérempli.
+### Ce que l'éditeur guidé conserve
 
-### Ce que l'éditeur guidé permet (dialogue déjà chargé par le serveur)
-
-- modifier le **locuteur** et le **texte** d'un nœud ;
-- ajouter un **nœud simple** ;
-- ajouter, modifier ou supprimer un **choix simple** (sans condition ni action de quête).
-
-Ces opérations ne sont proposées que pour un dialogue **chargé par le serveur** (pas « Source
-uniquement »).
-
-Les conditions, les actions de quête (`START_QUEST`, `QUEST_STATE`…) et le renommage de
-nœud ne sont **pas encore éditables** : elles restent intactes dans le fichier, mais se
-modifient à la main pour l'instant.
+Tout ce que le fichier contient est gardé à l'enregistrement, même ce que l'éditeur ne sait pas
+nommer : seules les notes `#` écrites à la main ne le sont pas (l'éditeur le signale).
+**Enregistrer** sans rien changer ne réécrit pas le fichier. Un fichier que l'éditeur ne sait pas
+relire en entier s'ouvre en lecture seule, avec la raison.
 
 ### Choisir une couleur sans écrire de balise
 
@@ -352,21 +359,22 @@ le panel génère le MiniMessage correct (`<yellow>…</yellow>`). Pour un rendu
 (dégradés, gras, plusieurs couleurs), écrire directement du MiniMessage dans le champ
 texte : le panel **ne le modifie pas**.
 
-### Format canonique
-
-Chaque écriture réécrit le fichier `dialogues/<id>.yml` au **format canonique** du panel :
-les commentaires et la mise en forme d'origine ne sont pas conservés. Le fichier est ensuite
-re-lu et rechargé ; si quelque chose échoue, le contenu d'origine est **restauré**.
-
 ### « Enregistré » ne veut pas dire « chargé en jeu »
 
 Le panel distingue trois choses :
 
-1. le **fichier** écrit sur le serveur ;
-2. le **catalogue** que le panel a relu (ce que montrent les pages) ;
-3. ce que le serveur Minecraft a effectivement **rechargé en jeu**.
+1. la version **enregistrée dans PlugAdmin** (bouton **Enregistrer**) ;
+2. le **fichier sur le serveur DEV** (écrit par **Mettre en jeu**) ;
+3. ce que le jeu a **réellement chargé** pour les joueurs.
 
-Après un **Enregistrer**, la fiche, la liste et les diagnostics se remettent à jour
-**automatiquement** — inutile de cliquer « Rafraîchir le catalogue » ni de recharger la
-page (F5). Un dialogue marqué **« pas encore chargé en jeu »** est bien écrit dans les
-fichiers, mais le serveur ne l'a pas encore pris en compte pour les joueurs connectés.
+Le bandeau de l'éditeur les distingue : « Enregistré — pas encore en jeu », « À jour en jeu »,
+« une ancienne version est toujours en jeu »… Après une action, la page se met à jour
+**automatiquement** : inutile de recharger la page (F5). Une mise en jeu refusée remet le fichier
+DEV dans son état d'avant : les joueurs gardent l'ancienne version.
+
+### Écrans techniques
+
+**Détails techniques** (`/dialogues/diagnostic`, depuis la liste) garde l'ancien écran : relevé
+du serveur, graphe des nœuds avec leurs identifiants, comparaison avec la version du serveur et
+retour arrière d'une publication. Il sert au **diagnostic avancé** ; le parcours normal n'en a
+pas besoin.

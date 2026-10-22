@@ -8272,6 +8272,38 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-403 — Dialogues : une réplique sans réponse est refusée avant toute écriture (issue #730, PENDING MANUAL VALIDATION)
+
+PlugAdmin (éditeur guidé, mise en jeu seule et en lot) + JAR (message de rechargement). Aucune migration.
+**Ne pas utiliser Musty ni un dialogue réel** : créer un dialogue jetable (ex. un PNJ de test) ou dupliquer
+un dialogue de test. Acquis à ne pas régresser : #128 (attente visible), #129 (resynchronisation après
+rattachement), #130 (réplique ajoutée visible sans F5).
+
+1.  Dialogues → dialogue jetable → sur la réponse « Au revoir », ajouter une réponse « Tu vends quoi ? »
+    → **Ensuite… → Une nouvelle réplique…** → Enregistrer. **Attendu** : la réplique 2 apparaît en bas avec
+    déjà une réponse « Au revoir. » qui termine la conversation.
+2.  Écrire le texte de la réplique 2, puis **supprimer** sa réponse « Au revoir. ». **Attendu** : sous la
+    réplique, un encadré orange « Cette réplique n'a pas encore de réponse. Le jeu en demande au moins une… »
+    avec le lien « Comment terminer une conversation ? » (s'ouvre sur la doc, section « Terminer une
+    conversation »). Plus de phrase « la conversation s'arrête après cette réplique ».
+3.  Cliquer **Enregistrer et mettre en jeu**. **Attendu** : bandeau rouge « Enregistrement impossible : la
+    réplique 2 n'a pas de sortie. Ajoutez une réponse qui termine la conversation. » + lien doc ; message
+    rouge près de la réplique 2 ; le texte saisi est toujours là ; bandeau d'état inchangé (aucune mise en
+    jeu lancée) ; Historique : aucune nouvelle action « content.publish ».
+4.  Réparer : « Ajouter une réponse » sous la réplique 2 (Ensuite… = Terminer la conversation), écrire
+    « Merci, au revoir. » → Enregistrer et mettre en jeu. **Attendu** : « Mise en jeu en cours… » puis « À
+    jour en jeu » ; aucun CONFLICT ; en jeu : clic droit sur le PNJ → « Tu vends quoi ? » → réplique 2 →
+    « Merci, au revoir. » ferme la conversation.
+5.  (Optionnel) Import contenu → publier en lot un pack contenant un dialogue dont une réplique n'a pas de
+    `choices`. **Attendu** : lot entier refusé « … : Mise en jeu impossible : la réplique N n'a pas de
+    sortie… Rien n'a été envoyé au serveur », aucun fichier modifié sur DEV.
+
+**Couverture automatisée** : `DialogueEditorTest` (parcours Musty : refus avant écriture, rien envoyé,
+saisie conservée, réparation puis une seule mise en jeu ; source invalide refusée en publication seule et en
+lot), `DialogueNoExitValidationTest` (erreur sur la seule réplique fautive, `start → r2` valide avec une
+réponse terminale, réplique neuve avec sortie), `DialogueDefinitionParserTest` (plus de « nœud inexistant »
+vers une réplique présente mais refusée), `ContentPackImportTest`.
+
 ### TC-402 — Historique des actions : actions joueur dans « Joueurs » et pseudo en cible (issue #93 retour du 22/10, PENDING MANUAL VALIDATION)
 
 PlugAdmin seulement (aucun changement du plugin, aucune migration, aucune ligne d'historique réécrite).

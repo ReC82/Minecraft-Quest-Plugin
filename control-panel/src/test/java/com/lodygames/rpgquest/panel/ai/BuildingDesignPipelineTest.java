@@ -89,11 +89,19 @@ class BuildingDesignPipelineTest {
                 exchange.close();
                 return;
             }
-            Map<String, Object> message = Map.of("role", "assistant", "content", plan);
+            // Comme la vraie API : des champs à null (« refusal », « logprobs ») — #739, trouvé sur DEV.
+            Map<String, Object> message = new LinkedHashMap<>();
+            message.put("role", "assistant");
+            message.put("content", plan);
+            message.put("refusal", null);
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("id", "chatcmpl-simule-" + requests.size());
             response.put("model", "gpt-4o-2024-08-06");
-            response.put("choices", List.of(Map.of("message", message, "finish_reason", "stop")));
+            Map<String, Object> choice = new LinkedHashMap<>();
+            choice.put("message", message);
+            choice.put("logprobs", null);
+            choice.put("finish_reason", "stop");
+            response.put("choices", List.of(choice));
             response.put("usage", Map.of("prompt_tokens", 4400, "completion_tokens", 900));
             byte[] bytes = Json.write(response).getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");

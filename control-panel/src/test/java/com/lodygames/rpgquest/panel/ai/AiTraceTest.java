@@ -83,4 +83,13 @@ class AiTraceTest {
         assertEquals("", split.skeleton());
         assertEquals("<html>502 Bad Gateway</html>", split.texts().get(0).content());
     }
+
+    @Test
+    void jsonNullsFromARealProviderAreKeptAndNeverThrow() {
+        AiTrace.Split split = AiTrace.split("{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\","
+                + "\"refusal\":null},\"logprobs\":null,\"finish_reason\":\"stop\"}]}", "R", List.of(), KEY, "Réponse",
+                new ArrayList<>());
+        assertTrue(split.skeleton().contains("\"refusal\": null"), split.skeleton());
+        assertTrue(split.skeleton().contains("\"logprobs\": null"));
+    }
 }

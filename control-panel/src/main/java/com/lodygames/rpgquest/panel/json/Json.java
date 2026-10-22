@@ -42,6 +42,8 @@ public final class Json {
 
     private static void writePrettyValue(StringBuilder sb, Object value, int depth) {
         switch (value) {
+            // #739 : un « null » JSON (OpenAI renvoie « refusal »: null) s'écrit, il ne lève pas.
+            case null -> sb.append("null");
             case Map<?, ?> map -> {
                 if (map.isEmpty()) {
                     sb.append("{}");

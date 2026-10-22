@@ -48,6 +48,36 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-22 - Dialogues : reprise après une mise en jeu refusée ou un conflit de version (#731, TC-404)
+
+### Changement
+
+JAR : une mise en jeu seule (`content.publish`) refusée par le moteur au rechargement (`RELOAD_FAILED`) remet le
+fichier DEV dans son état d'avant (texte d'origine, ou retrait d'une ressource nouvelle), comme un lot (#427) ; la
+sauvegarde reste disponible. PlugAdmin : la référence DEV est la dernière empreinte laissée par ses propres opérations,
+échecs compris (plus de faux CONFLICT en corrigeant après un refus) ; une vraie modification concurrente affiche un
+encadré guidé (comparer, garder sa version après confirmation, garder celle du serveur), sans mise en jeu automatique.
+
+### Action serveur
+
+- **Effectué le 22/10 17:24** : JAR `42b34f62` (PR #737, CI PR + fusion vertes) via `scripts/deploy-verygames.sh -y` —
+  en ligne 4227815 octets, SHA-256 `11014ac222dfc88c36dfb0a6ec3257b0df71351bc76b67ba03ba8c839954d103`, retéléchargé
+  et identique ; DEV redémarré par `scripts/verygames-restart.sh` (0 joueur avant), RPGQuest actif.
+- **17:26** : PlugAdmin `42b34f62` via `scripts/plugadmin/deploy.sh` (sans sudo) ; le sondage `/health` du script a
+  échoué au premier essai (course connue), `/health` 200 juste après, service actif, JAR servi relu.
+- **Aucune migration**, aucun fichier de contenu publié ni modifié sur DEV (Musty et tous les dialogues réels intacts).
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261022T152507Z-predeploy.jar` (= JAR #730 `9bdee3de`) ; PlugAdmin précédent sauvegardé par
+`deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-404 (PENDING MANUAL VALIDATION) sur un dialogue jetable, jamais Musty.
+
+---
+
 ## 2026-10-22 - Dialogues : réplique sans réponse refusée avant toute écriture (#730, TC-403)
 
 ### Changement

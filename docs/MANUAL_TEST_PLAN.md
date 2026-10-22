@@ -8290,6 +8290,28 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-412 — PlugAdmin : icônes pixel art sur les fiches de quête (issue #428 phase 2b, PENDING MANUAL VALIDATION)
+
+PlugAdmin seul (AWS), aucun JAR, aucune migration, aucune donnée de joueur touchée. Navigateur seul, aucun
+test en jeu. Durée : 3 minutes. Acquis à ne pas régresser : TC-411 (portail), lisibilité des fiches de quête.
+
+1.  **Ordinateur** : PlugAdmin → **Quêtes** → ouvrir « Le Garde — Palier 1 ». **Attendu** : dans
+    « Objectifs », une petite tuile bois devant chaque ligne (araignée pour « Tuer Araignée », crâne pour
+    Zombie / Squelette / Creeper) ; dans « Récompenses », étoile XP, trophée pour « Débloque : … »,
+    parchemin pour une commande. Textes et identifiants techniques inchangés.
+2.  Ouvrir deux ou trois autres quêtes (Lily, Jeff, quêtes de minage). **Attendu** : aucune image cassée ;
+    un objet sans icône dédiée prend l'icône de son type (épée, coffre, pioche…).
+3.  **Téléphone** : même fiche. **Attendu** : tuiles alignées sur la première ligne du texte, aucun
+    défilement horizontal.
+4.  **Avis** : les tuiles aident-elles à lire la fiche ? Icônes à redessiner ? Réponse sur #428.
+
+**Couverture automatisée** : `PixelIconsTest` (sprite et table du panel identiques octet par octet à ceux du
+portail, icône de chaque type d'objectif / récompense, exact → suffixe → type → repli, chaque material des
+quêtes livrées a une vraie icône), `QuestsCatalogTest#structuredPayloadIsUsedWithoutReparsingStrings` (tuiles
+rendues, sprite versionné, balisage décoratif), `AssetsBootstrapTest` (`/assets/lq/lq-icons.svg` servi en
+`image/svg+xml`). Captures locales 1280 / 390 px sur le relevé `quest.list` réel de DEV :
+`docs/design/428-icones/captures/phase2b-plugadmin/`. **Non couvert** : avis esthétique.
+
 ### TC-411 — Portail public : nouvelle identité visuelle et icônes (issue #428 phase 2, PENDING MANUAL VALIDATION)
 
 Portail AWS seul (https://lodyquests.lodylands.com), aucun JAR, aucune migration, aucune donnée de joueur

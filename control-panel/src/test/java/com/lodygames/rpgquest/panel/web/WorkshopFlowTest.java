@@ -568,6 +568,11 @@ class WorkshopFlowTest {
         'I', 'H', 'D', 'R', 1, 2, 3};
 
     private HttpResponse<String> upload(String page, String projectId, String name, byte[] data) throws Exception {
+        return upload("/buildings/workshop/image", page, projectId, name, data);
+    }
+
+    private HttpResponse<String> upload(String path, String page, String projectId, String name, byte[] data)
+            throws Exception {
         String boundary = "----rpgquest283";
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
         out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"_csrf\"\r\n\r\n" + csrf(page)
@@ -576,7 +581,7 @@ class WorkshopFlowTest {
                 + "\"\r\nContent-Type: image/png\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         out.write(data);
         out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
-        return send(HttpRequest.newBuilder(uri("/buildings/workshop/image"))
+        return send(HttpRequest.newBuilder(uri(path))
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray())));
     }
@@ -607,6 +612,24 @@ class WorkshopFlowTest {
         assertTrue(lastAiRequest.contains("data:image/png;base64,"
                 + java.util.Base64.getEncoder().encodeToString(PNG)), "les pixels partent avec la demande");
         assertTrue(lastAiRequest.contains("RÉFÉRENCES DE STYLE"));
+    }
+
+    /** #283 : la limite est affichée et un envoi trop lourd revient sur le projet, avec un message clair. */
+    @Test
+    void anOversizedImageComesBackToItsProjectWithAClearMessage() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        String page = get(project).body();
+        assertTrue(page.contains("4 Mio au plus par image, 4 images par projet"), page);
+        String action = unescape(field(page, "action=\"(/buildings/workshop/image[^\"]*)\""));
+        assertEquals("/buildings/workshop/image?id=" + id(project), action, "le projet voyage dans l'URL");
+
+        byte[] heavy = new byte[com.lodygames.rpgquest.panel.building.ReferenceImageStore.MAX_BYTES + 128 * 1024];
+        System.arraycopy(PNG, 0, heavy, 0, PNG.length);
+        String back = location(upload(action, page, id(project), "planche.png", heavy));
+        assertTrue(back.startsWith("/buildings/workshop/project?id=" + id(project)), back);
+        assertTrue(decoded(back).contains("Image trop lourde : 4 Mio au plus"), decoded(back));
+        assertTrue(get(project).body().contains("(facultatif, 0 / 4)"), "rien n'a été enregistré");
     }
 
     @Test

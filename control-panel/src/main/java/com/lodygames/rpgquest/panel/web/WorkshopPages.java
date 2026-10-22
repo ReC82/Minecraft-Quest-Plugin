@@ -710,16 +710,23 @@ public final class WorkshopPages {
             sb.append("</ul>");
         }
         if (v.images().size() < ReferenceImageStore.MAX_IMAGES) {
-            sb.append("<form method=\"post\" action=\"").append(BASE).append("/image\" enctype=\"multipart/form-data\" "
+            // Le projet voyage aussi dans l'URL : un envoi trop lourd, refusé avant toute lecture du
+            // formulaire (par PlugAdmin ou par le proxy nginx), revient quand même sur ce projet.
+            String target = BASE + "/image?id=" + Http.esc(v.project().id())
+                    + (v.draft() == null ? "" : "&amp;draft=" + Http.esc(v.draft().id()));
+            sb.append("<form method=\"post\" action=\"").append(target).append("\" enctype=\"multipart/form-data\" "
                     + "class=\"actform\">").append(hidden("_csrf", v.session().csrfToken()))
                     .append(hidden("id", v.project().id()));
             if (v.draft() != null) {
                 sb.append(hidden("draft", v.draft().id()));
             }
-            sb.append("<div class=\"field\"><label for=\"ws-image\">Ajouter une image (PNG, JPEG, WebP ou GIF, "
-                    + ReferenceImageStore.MAX_BYTES / (1024 * 1024) + " Mio au plus)</label>"
+            sb.append("<div class=\"field\"><label for=\"ws-image\">Ajouter une image</label>"
                     + "<input id=\"ws-image\" type=\"file\" name=\"image\" accept=\"image/png,image/jpeg,image/webp,image/gif\">"
-                    + "</div><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">"
+                    + "<p class=\"muted small\">Formats acceptés : PNG, JPEG, WebP ou GIF. "
+                    + ReferenceImageStore.MAX_BYTES / (1024 * 1024) + " Mio au plus par image, "
+                    + ReferenceImageStore.MAX_IMAGES + " images par projet. Une image ou une planche "
+                    + "ChatGPT ordinaire passe ; si elle est plus lourde, enregistrez-la en JPEG ou réduisez-la "
+                    + "(1600 pixels de large suffisent).</p></div><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">"
                     + "Ajouter l'image</button></div></form>");
         }
         return sb.append("</details>").toString();

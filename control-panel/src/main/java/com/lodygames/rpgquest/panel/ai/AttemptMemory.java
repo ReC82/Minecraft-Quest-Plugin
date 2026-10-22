@@ -146,6 +146,36 @@ public final class AttemptMemory {
         return new AttemptMemory(new ArrayList<>(byDraft.values()));
     }
 
+    /**
+     * La mémoire d'un projet relue dans ses VERSIONS et le dernier verdict du serveur sur chacune, de
+     * la plus ancienne à la plus récente. C'est la source qui fait foi : le journal IA ne relève une
+     * vérification qu'au moment d'une amélioration — la version produite par l'IA puis réparée par le
+     * moteur, jamais améliorée elle-même, en était absente (#747, parcours réel du 22/10/2026) — et il
+     * ne couvre pas les versions antérieures à son installation. Une version jamais jugée est ignorée.
+     */
+    public static AttemptMemory fromVersions(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                             List<com.lodygames.rpgquest.panel.building.BuildingPlanDraft> drafts,
+                                             com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench workbench) {
+        List<com.lodygames.rpgquest.panel.building.BuildingPlanDraft> ordered = new ArrayList<>(
+                drafts == null ? List.of() : drafts);
+        ordered.sort(java.util.Comparator.comparing(com.lodygames.rpgquest.panel.building.BuildingPlanDraft::createdAt));
+        List<Attempt> out = new ArrayList<>();
+        for (var draft : ordered) {
+            if (!draft.hasPlan()) {
+                continue;
+            }
+            var state = workbench.state(draft, com.lodygames.rpgquest.panel.building.BuildingPlanDraftStore.Check.AUDIT);
+            var verdict = com.lodygames.rpgquest.panel.building.PlanDiagnosis.verdict(state);
+            if (!verdict.available()) {
+                continue;
+            }
+            out.add(new Attempt(draft.id(), draft.version(), verdict.accepted(), verdict.codes(), verdict.accepted()
+                    ? List.of() : issuesOf(verdict.codes(),
+                    com.lodygames.rpgquest.panel.building.PlanDiagnosis.of(project, state))));
+        }
+        return new AttemptMemory(out);
+    }
+
     /** La même mémoire, avec une vérification de plus (remplace celle de la même version). */
     public AttemptMemory with(Attempt attempt) {
         List<Attempt> next = new ArrayList<>();

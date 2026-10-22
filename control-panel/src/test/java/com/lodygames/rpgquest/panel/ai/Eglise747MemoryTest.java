@@ -172,12 +172,13 @@ class Eglise747MemoryTest {
     }
 
     @Test
-    void theReplayedChurchPlanMissesTheBellAndTheBenchesAndLostItsStainedGlassAtCompilation() {
+    void theReplayedChurchPlanMissesTheBellAndTheBenches() {
         String plan = resource("eglise_747_8a2a9614.yml");
-        // La palette réellement construite par le serveur (Eglise747Test côté plugin) : le « clear » a
-        // effacé le grand vitrail rouge ; les vitraux latéraux n'existent pas dans ce plan.
+        // La palette réellement mesurée par le serveur DEV sur cette version (action 4ab3d4d4, 22/10/2026) :
+        // le « clear » a effacé le grand vitrail rouge, les vitraux latéraux bleus et jaunes restent.
         Map<String, Object> palette = Map.of("minecraft:lectern", 3, "minecraft:lantern", 4,
-                "minecraft:white_concrete", 900, "minecraft:polished_blackstone_stairs", 300);
+                "minecraft:light_blue_stained_glass_pane", 16, "minecraft:yellow_stained_glass_pane", 16,
+                "minecraft:white_concrete", 706, "minecraft:polished_blackstone_stairs", 361);
 
         BriefRequirements.Report report = BriefRequirements.evaluate(resource("eglise_747_brief.txt"), plan, palette);
         Map<String, BriefRequirements.Status> byId = new LinkedHashMap<>();
@@ -186,14 +187,24 @@ class Eglise747MemoryTest {
         assertTrue(byId.get("bell").missing(), "aucune cloche");
         assertTrue(byId.get("benches").missing(), "les seuls escaliers sont ceux du toit");
         assertFalse(byId.get("lectern").missing(), "le pupitre est là");
-        assertTrue(byId.get("stained_glass").inPlan());
-        assertEquals(Boolean.FALSE, byId.get("stained_glass").inResult(), "vitrail du plan, effacé du résultat");
-        assertTrue(byId.get("stained_glass").missing());
+        assertEquals(Boolean.TRUE, byId.get("stained_glass").inResult());
         // Une tour ne se prouve par aucun bloc : jamais déclarée présente ni manquante.
         assertFalse(byId.get("tower").missing());
         assertTrue(byId.get("tower").line().startsWith("◌"), byId.get("tower").line());
         assertFalse(report.complete());
         assertTrue(report.promptBlock().contains("✗ Cloche"), report.promptBlock());
+    }
+
+    @Test
+    void anElementInThePlanButErasedFromTheCompiledResultIsMissing() {
+        String plan = "steps:\n  - op: box\n    from: [1, 1, 1]\n    block: minecraft:bell\n";
+
+        BriefRequirements.Report report = BriefRequirements.evaluate("Une cloche.", plan, Map.of("minecraft:stone", 9));
+
+        BriefRequirements.Status bell = report.statuses().get(0);
+        assertTrue(bell.inPlan());
+        assertEquals(Boolean.FALSE, bell.inResult());
+        assertTrue(bell.missing() && bell.line().contains("ABSENT du résultat compilé"), bell.line());
     }
 
     @Test

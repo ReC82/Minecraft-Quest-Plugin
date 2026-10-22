@@ -1738,8 +1738,8 @@ public final class PanelApp {
     private WorkshopRepairPlan workshopRepairPlan(com.lodygames.rpgquest.panel.building.BuildingProject project,
                                                   BuildingPlanDraft draft, BuildingPlanWorkbench.CheckState audit,
                                                   String brief, String requested) {
-        var memory = com.lodygames.rpgquest.panel.ai.AttemptMemory.fromJournal(
-                aiJournal.store().events(com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id()));
+        var memory = com.lodygames.rpgquest.panel.ai.AttemptMemory.fromVersions(project,
+                planDrafts.forProject(project.agentId(), project.id()), planWorkbench);
         Map<String, Object> palette = paletteOf(audit);
         var compliance = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(brief, draft.plan(), palette);
         var regressions = memory.regressionsOf(draft.id());

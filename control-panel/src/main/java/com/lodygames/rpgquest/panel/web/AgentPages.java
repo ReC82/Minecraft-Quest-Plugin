@@ -1964,9 +1964,12 @@ public final class AgentPages {
                 List<Object> structured = asList(st.get("objectiveDetails"));
                 if (!structured.isEmpty()) {
                     for (Object od : structured) {
-                        ObjectiveText.Objective o = ObjectiveText.fromSummary(asMap(od),
+                        Map<String, Object> odm = asMap(od);
+                        ObjectiveText.Objective o = ObjectiveText.fromSummary(odm,
                                 cityDirectory(agentId)::nameOf);
-                        sb.append("<li><span class=\"obj-text\">").append(Http.esc(o.label())).append("</span>");
+                        sb.append("<li class=\"has-tile\">")
+                                .append(PixelIcons.tile(PixelIcons.forObjective(str(odm.get("kind")), str(odm.get("target")))))
+                                .append("<span class=\"obj-text\">").append(Http.esc(o.label())).append("</span>");
                         if (o.hasTarget()) {
                             sb.append(Ui.rawValue(o.rawTarget()));
                         }
@@ -1989,7 +1992,9 @@ public final class AgentPages {
             boolean structured = !rewardDetails.isEmpty();
             for (Object o : source) {
                 RewardText.Reward rw = structured ? RewardText.fromSummary(asMap(o)) : RewardText.parse(str(o));
-                sb.append("<li><span class=\"obj-text\">").append(Http.esc(rw.label())).append("</span>");
+                sb.append(structured ? "<li class=\"has-tile\">" + PixelIcons.tile(PixelIcons.forReward(
+                        str(asMap(o).get("kind")), str(asMap(o).get("target")))) : "<li>");
+                sb.append("<span class=\"obj-text\">").append(Http.esc(rw.label())).append("</span>");
                 if (rw.hasDetail()) {
                     sb.append(Ui.rawValue(rw.rawDetail()));
                 }

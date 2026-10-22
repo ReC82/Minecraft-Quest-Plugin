@@ -48,6 +48,7 @@ class AssetsBootstrapTest {
         assertAsset("/assets/bootstrap-icons/fonts/bootstrap-icons.woff2", "font/woff2");
         assertAsset("/assets/plugadmin.css", "text/css");
         assertAsset("/assets/panel.js", "application/javascript");
+        assertAsset("/assets/lq/lq-icons.svg", "image/svg+xml");
     }
 
     @Test

@@ -138,6 +138,14 @@ class QuestsCatalogTest {
         // #78 : objectifs rendus depuis la structure (noms FR par jeton, pas de regex sur phrase)
         assertTrue(cat.contains("Tuer Araignée (x5)"), "objectif kill structuré en FR");
         assertTrue(cat.contains("Parler à Guard"), "objectif talk-to-npc structuré");
+
+        // #428 : tuiles pixel art du sprite partagé avec le portail, devant objectifs et récompenses
+        String sprite = "/assets/lq/lq-icons.svg?v=";
+        assertTrue(cat.contains("<li class=\"has-tile\"><span class=\"lq-tile\">"), "tuile devant la ligne");
+        assertTrue(cat.contains(sprite) && cat.contains("#lq-spider\""), "KILL_ENTITY SPIDER -> araignée");
+        assertTrue(cat.contains("#lq-talk\""), "TALK_TO_NPC -> bulle");
+        assertTrue(cat.contains("#lq-xp\"") && cat.contains("#lq-sword\""), "récompenses XP et épée");
+        assertTrue(cat.contains("aria-hidden=\"true\""), "icône décorative, le libellé porte le sens");
         assertTrue(cat.contains("data-copy=\"SPIDER\""), "jeton technique de la cible conservé");
 
         // #78 : récompenses depuis la structure

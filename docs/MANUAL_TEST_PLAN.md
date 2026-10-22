@@ -8272,6 +8272,34 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-402 — Historique des actions : actions joueur dans « Joueurs » et pseudo en cible (issue #93 retour du 22/10, PENDING MANUAL VALIDATION)
+
+PlugAdmin seulement (aucun changement du plugin, aucune migration, aucune ligne d'historique réécrite).
+Acquis du propriétaire à **ne pas régresser** : recherche par pseudo et filtre par statut de
+l'historique.
+
+1.  Joueurs → fiche de `LoDyMcFly` → « Actualiser » l'annuaire si besoin, puis bloc « Droits en jeu »
+    → lire les droits (`mc.rights.read`). Ouvrir Historique (`/actions`) → puce **Joueurs**.
+    **Attendu** : la ligne « Lire les droits Minecraft réellement portés par un joueur » y figure, badge
+    « Joueurs » ; colonne Cible = **LoDyMcFly** en gras, UUID en petit dessous (infobulle « UUID … »).
+2.  Toujours sous **Joueurs** : les anciennes lignes « Me téléporter sur un claim », « Rafraîchir les
+    claims », « Appliquer les droits Minecraft d'un groupe » / « Synchroniser les droits Minecraft d'un
+    joueur » (s'il y en a) sont présentes avec le badge « Joueurs » ; « État des quêtes d'un joueur »
+    est présente aussi mais garde son badge « Quêtes ».
+3.  Puce **Quêtes** : « État des quêtes d'un joueur » y est toujours ; « Lire les droits… » n'y est pas.
+4.  Recherche `LoDy` (sans filtre) puis recherche par l'UUID complet. **Attendu** : les deux trouvent les
+    actions de lecture des droits. Recherche `LoDy` + statut **Échec** : seules les lectures en échec.
+5.  Cloche (topbar) : la dernière lecture des droits affiche « LoDyMcFly » (UUID en infobulle). Téléphone
+    (≈ 390 px) : le panneau et les cartes de `/actions` restent lisibles, sans défilement horizontal.
+6.  Repli : une action dont le joueur n'est pas dans l'annuaire (ex. annuaire jamais rafraîchi) montre
+    l'UUID brut, sans erreur ni lenteur.
+
+**Couverture automatisée** : `ActionPlayerTargetTest` (8 tests : toute action `needsPlayer` du catalogue
+est dans « Joueurs » — échoue si une nouvelle ne l'est pas ; `player.*`/`mc.*`/`claim.*` badge Joueurs ;
+`quest.start` badge Quêtes + filtre Joueurs ; pseudo + UUID secondaire ; repli UUID/pseudo saisi ;
+annuaire sans pseudo ignoré ; filtre/recherche pseudo/UUID/statut ; cloche et toast) ; non-régression
+`ActionsCenterTest` (18), `NotificationsBugfixTest` (6), `ActionReturnPathTest` (4).
+
 ### TC-401 — Hub : postes de travail fermés par défaut et exceptions (issue #675 retour du 22/10, PENDING MANUAL VALIDATION)
 
 Avec un compte **joueur normal** (ou un OP **sans** `/rpgadmin bypass on`), dans le monde Hub. Livré

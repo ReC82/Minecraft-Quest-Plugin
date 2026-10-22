@@ -6216,6 +6216,14 @@ PlugAdmin avant la file (confirmation manquante, valeur invalide, conflit…) �
 motif, acteur — lues dans le journal d'audit existant (aucune migration), distinctes des actions
 réellement exécutées.
 
+Le filtre **« Joueurs »** de l'historique (#93, 22/10) regroupe `player.*`, les droits Minecraft
+(`mc.*` : lecture/synchronisation des droits d'un joueur, groupes, paquet testeur #64) et les claims
+(`claim.*`), plus toute action que le catalogue déclare ciblant un joueur (`needsPlayer`) : une action
+de quête ou de story sur un joueur garde son badge « Quêtes »/« Stories » mais apparaît aussi sous
+« Joueurs ». La **cible** d'une action sur un joueur s'affiche par son **pseudo** (dernier annuaire
+`player.catalog` déjà relevé), l'UUID restant en petit texte et en infobulle ; si le pseudo est
+inconnu, l'UUID brut est affiché. La recherche trouve une action par le pseudo **ou** l'UUID.
+
 Sur la fiche d'une action (`/actions/<id>`), le bouton **« Copier le résultat brut »** (#583) copie le
 JSON complet du bloc « Corps brut du résultat » (y compris `action_id` et `details`), tel quel, et
 affiche « Copié — N caractères ». Si le presse-papiers est refusé ou indisponible, le texte est

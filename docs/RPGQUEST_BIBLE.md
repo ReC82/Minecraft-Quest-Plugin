@@ -3439,6 +3439,15 @@ Champs : `id`/`start`/`nodes` obligatoires ; `nodes.<id>.speaker`/`text`/
 `choices` obligatoires ; `choices[].text` obligatoire, `conditions`/
 `actions`/`next` optionnels.
 
+**Retour à la ligne dans un texte de nœud** (issue #728, vérifié sur MiniMessage 4.26) : un vrai
+saut de ligne (`"Bienvenue !\nTout est cuit."` entre guillemets, ou un scalaire bloc `|`) et les
+balises `<br>` / `<br/>` / `<newline>` donnent exactement le même composant ; le chat et la
+fenêtre de dialogue Paper passent alors à la ligne. `</br>`, `</newline>` et un `\n` hors
+guillemets doubles s'affichent **tels quels**. Dans PlugAdmin, il suffit d'appuyer sur **Entrée**
+dans « Le personnage dit… » : le `\r\n` du navigateur est ramené à `\n` avant l'écriture, l'aperçu
+montre les lignes, et un `<br>` déjà présent est conservé tel quel. Les libellés de choix
+(boutons) restent sur une ligne.
+
 **Conditions** (`choices[].conditions[].type`) : `QUEST_STATE` (`quest`,
 `state` parmi `NOT_STARTED|ACTIVE|READY_TO_TURN_IN|COMPLETED|FAILED|ABANDONED`),
 `HAS_ITEM` (`material`, `amount`), `HAS_PERMISSION` (`permission`),

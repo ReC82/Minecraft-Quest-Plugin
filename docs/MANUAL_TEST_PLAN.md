@@ -8290,6 +8290,35 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-410 — Dialogues : aller à la ligne dans une réplique avec Entrée (issue #728, PENDING MANUAL VALIDATION)
+
+PlugAdmin seul, aucun JAR, aucune migration. **Ne pas modifier le dialogue de Musty** ni un PNJ réel : utiliser
+un PNJ jetable « Test 728 » (PNJ → Créer un PNJ), comme pour TC-409. Acquis à ne pas régresser : #128, #129,
+#130, TC-403, TC-404, TC-407, TC-409. Durée : 5 minutes, dont 2 en jeu.
+
+1.  **Aide visible** : éditeur du dialogue de Test 728. **Attendu** : sous « Le personnage dit… », la phrase
+    « Pour aller à la ligne dans le jeu, appuyez sur Entrée. » et un lien **En savoir plus** qui ouvre la
+    section **Aller à la ligne dans une réplique** du guide (pas le haut de la page).
+2.  **Saisie** : dans « Le personnage dit… », écrire « Bienvenue ! », appuyer sur **Entrée**, écrire « Tout est
+    cuit ce matin. ». **Attendu** : l'aperçu juste sous le champ montre deux lignes, au fil de la frappe.
+3.  **Enregistrer et mettre en jeu** → « À jour en jeu ». Rouvrir l'éditeur. **Attendu** : le champ et l'aperçu
+    de la conversation montrent toujours deux lignes.
+4.  **En jeu** : clic droit sur Test 728. **Attendu** : « Bienvenue ! » puis « Tout est cuit ce matin. » sur la
+    ligne suivante, aucun caractère étrange (ni carré, ni « \n », ni « <br> »). Vérifier avec le rendu
+    configuré sur DEV (chat ou fenêtre de dialogue).
+5.  **Erreur courante** : remplacer le saut de ligne par `</br>` → **Enregistrer**. **Attendu** : sous le champ,
+    « « </br> » s'affichera tel quel dans le jeu. Pour aller à la ligne, effacez-le et appuyez sur Entrée à la
+    place. » (l'enregistrement reste possible, rien n'est corrigé d'office). Remettre un vrai saut de ligne.
+6.  **Nettoyage** : supprimer le PNJ de test et, si on le souhaite, son dialogue.
+
+**Couverture automatisée** : `DialogueEditorTest` (Entrée envoyée en `\r\n` → `\n` écrit, aucun `\r` ; aide et
+lien près du champ ; un `<br>` existant réenregistré sans changement ; avertissement `</br>` ; première réplique
+sur deux lignes à la création), `LineBreaksTest`, `MiniTextTest` (aperçu HTML : `\n`, `<br>`, `<newline>` →
+retour à la ligne, `</br>` littéral), `DialogueHelpLinksTest` (ancre de l'aide), `DialogueDefinitionParserTest`
+(plugin : `\n` entre guillemets, scalaire `|`, `<br>` et `<newline>` donnent le même texte sur deux lignes).
+**Non couvert** : l'aperçu JavaScript au fil de la frappe (vérifié hors dépôt avec Node, pas de banc de test JS)
+et le rendu réel dans le client Minecraft.
+
 ### TC-409 — Dialogues : parcours normal de l'éditeur guidé, du « Salut ! » au test en jeu (issue #729, PENDING MANUAL VALIDATION)
 
 PlugAdmin seul (documentation et lien **Aide**), aucun JAR, aucune migration. **Ne pas utiliser Musty ni un PNJ

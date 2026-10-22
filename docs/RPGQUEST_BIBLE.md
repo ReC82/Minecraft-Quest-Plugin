@@ -6633,7 +6633,11 @@ surcharge. Absent : `/lien` répond « pas activée » et ne contacte rien. Aucu
 Aucune commande. Fichier **hors Git** `plugins/RPGQuest/portal-snapshot.properties` (modèle
 `scripts/portal-snapshot.properties.example` : `enabled`, `base-url` HTTPS, `token` = le
 `RPGQUEST_PORTAL_SNAPSHOT_TOKEN` du portail, jeton dédié), lu au démarrage ; variables
-`RPGQUEST_PORTAL_SNAPSHOT_*` en surcharge. Avec `web-export.enabled: true`, chaque `snapshot.json`
+`RPGQUEST_PORTAL_SNAPSHOT_*` en surcharge. Dès qu'il est actif, un **relevé d'état agrégé**
+(`"kind": "status"` : en ligne, nombre de joueurs, capacité — aucune autre donnée, le portail refuse
+tout champ en plus) part toutes les `status-interval-seconds` (30 s par défaut, 10–300), **même avec
+`web-export.enabled: false`**, numéroté `bootId`/`sequence` (doublons et retards ignorés par le
+portail) ; à l'arrêt, un dernier relevé annonce l'arrêt. Avec `web-export.enabled: true`, chaque `snapshot.json`
 est aussi envoyé à `POST /api/snapshot` du portail, depuis le fil d'export ; à l'arrêt du plugin,
 un instantané minimal `server.online=false` annonce l'arrêt. Absent : rien ne part vers AWS. Le
 portail affiche alors l'état du serveur en quatre cas : en ligne, hors ligne (arrêt annoncé), non

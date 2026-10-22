@@ -102,27 +102,50 @@ curl -s -o /dev/null -w '%{http_code}\n' --resolve lodyquests.lodylands.com:80:1
 systemctl show lodyquests-portal -p MemoryCurrent -p ActiveState
 ```
 
-### Acheminer l'instantané du serveur Minecraft (#421) — décision du propriétaire
+### Acheminer l'état du serveur Minecraft (#421)
 
-Inactif aujourd'hui. Pour l'activer (sans publier aucun pseudo : `player-data-public` reste
-`false`, et seuls les joueurs en `/profile web public` figureraient de toute façon dans l'instantané) :
+Deux contenus empruntent le même canal sortant `POST /api/snapshot` (jeton dédié
+`RPGQUEST_PORTAL_SNAPSHOT_TOKEN`, HTTPS, VeryGames initie) :
+
+- **relevé d'état agrégé** (`"kind": "status"`) — en ligne ?, nombre de joueurs, capacité ; rien
+  d'autre (le portail refuse tout champ supplémentaire, 400). Envoyé toutes les 30 s dès que
+  `portal-snapshot.properties` est actif, **indépendamment de `web-export.enabled`**. Stocké dans
+  `/var/lib/lodyquests-portal/web-export/server-status.json` ; idempotent (`bootId` + `sequence` :
+  `DUPLICATE` / `OUT_OF_ORDER` accusés sans écriture) ;
+- **instantané complet** `snapshot.json` — seulement si `web-export.enabled: true` (décision du
+  propriétaire, #55 ; `player-data-public` reste `false`).
+
+Mise en service du relevé d'état (aucune donnée de joueur) :
 
 1. nginx — le vhost en service doit contenir le bloc `location = /api/snapshot` de
-   `scripts/web-portal/nginx-lodyquests-portal.conf` (copie du vhost, ajout, `sudo nginx -t`,
-   `sudo systemctl reload nginx`) ;
+   `scripts/web-portal/nginx-lodyquests-portal.conf` ;
 2. portail — `openssl rand -base64 36`, puis dans `/etc/lodyquests-portal/portal.env` :
    `RPGQUEST_PORTAL_SNAPSHOT_TOKEN=<jeton>` ; `sudo systemctl restart lodyquests-portal` ;
 3. serveur Minecraft — `scripts/portal-snapshot.properties.example` copié **hors Git** avec
    `enabled=true` et **le même jeton**, transféré par
    `scripts/deploy-verygames.sh --also <fichier>:RPGQuest/portal-snapshot.properties` ;
-   `web-export.enabled: true` dans `config.yml` du serveur ; redémarrage du serveur ;
-4. vérifier : `curl -s http://127.0.0.1:8092/health` passe de `MISSING`/`UNKNOWN` à
-   `FRESH`/`ONLINE` en moins d'une minute ; arrêter le serveur → `OFFLINE` ; couper le canal
-   (jeton retiré) → `STALE` après `snapshot-max-age-seconds`, jamais `OFFLINE`.
+   redémarrage du serveur (fichier lu au démarrage). **Ne pas** toucher `web-export.enabled` ;
+4. vérifier **depuis une autre machine** : `curl -s https://lodyquests.lodylands.com/health` →
+   `"heartbeat":"FRESH","server":"ONLINE"` et `lastUpdate` qui avance (< 1 min) ; la console du
+   serveur ne dit pas « Envoi du relevé d'état au portail … impossible ». Arrêt propre du serveur →
+   `"server":"OFFLINE"` ; canal coupé (jeton retiré) → `STALE` après `snapshot-max-age-seconds`
+   (120 s), jamais `OFFLINE`.
+
+Diagnostic :
+
+| `/health` | Signification | Où regarder |
+|---|---|---|
+| `heartbeat: MISSING`, `server: UNKNOWN` | aucun relevé jamais reçu | `portal-snapshot.properties` absent / `enabled=false` côté serveur ; journal du plugin au démarrage (« Envoi d'instantané au portail … ») |
+| `heartbeat: STALE`, `server: STALE` | relevés interrompus | console MC : « … impossible : HTTP 401 » (jetons différents), « 404 » (nginx sans le bloc), « injoignable » (réseau/TLS) ; `journalctl -u lodyquests-portal` |
+| `server: OFFLINE` | arrêt annoncé par le serveur | normal après un arrêt propre ; repasse `ONLINE` au démarrage suivant (nouveau `bootId`) |
+| `heartbeat: FRESH`, `server: ONLINE` | canal opérationnel | — |
+
+Le portail journalise chaque nouveau démarrage reçu et chaque arrêt annoncé (`journalctl -u
+lodyquests-portal | grep "Relevé d'état"`), jamais de jeton.
 
 Revenir en arrière : `enabled=false` dans `portal-snapshot.properties` (ou retirer le jeton de
-`portal.env` : tout envoi reçoit 401, journalisé une fois côté plugin) ; le dernier `snapshot.json`
-reçu reste lisible et passe en « non actualisé ».
+`portal.env` : tout envoi reçoit 401, journalisé une fois côté plugin) ; l'état passe en « non
+actualisé », jamais « hors ligne ».
 
 Sans jeton, contrôle de fermeture : `curl -s -o /dev/null -w '%{http_code}\n' -X POST
 https://lodyquests.lodylands.com/api/snapshot` → `401`.

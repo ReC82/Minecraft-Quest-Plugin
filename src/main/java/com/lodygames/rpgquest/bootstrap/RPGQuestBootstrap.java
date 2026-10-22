@@ -614,16 +614,21 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("statistics.yml"), statisticsRepository, plugin.getSLF4JLogger());
         registry.start(statisticsService);
         webSnapshotWriter.setStatistics(statisticsService, statisticsRepository);
-        // Issue #421 : chaque instantané part aussi vers le portail AWS. Inerte tant que
+        // Issue #421 : chaque instantané part aussi vers le portail AWS, et un relevé d'état agrégé
+        // (en ligne, nombre de joueurs) part même sans export nominatif. Inerte tant que
         // plugins/RPGQuest/portal-snapshot.properties (hors Git) ne l'active pas.
         var snapshotPushConfig = new com.lodygames.rpgquest.web.push.SnapshotPushConfigLoader(
                 plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
         if (snapshotPushConfig.enabled()) {
             webSnapshotWriter.setPortalPush(
                     new com.lodygames.rpgquest.web.push.SnapshotPushClient(snapshotPushConfig, plugin.getSLF4JLogger()));
+            registry.start(new com.lodygames.rpgquest.web.push.ServerStatusReporter(plugin,
+                    new com.lodygames.rpgquest.web.push.SnapshotPushClient(snapshotPushConfig, plugin.getSLF4JLogger(),
+                            "du relevé d'état"),
+                    snapshotPushConfig.statusIntervalSeconds()));
             if (!configService.current().webExport().enabled()) {
-                plugin.getSLF4JLogger().warn("Envoi d'instantané au portail configuré, mais web-export.enabled=false "
-                        + "dans config.yml : rien ne sera envoyé tant que l'export reste désactivé.");
+                plugin.getSLF4JLogger().info("Portail : relevé d'état agrégé seul (web-export.enabled=false) — "
+                        + "aucun classement ni pseudo envoyé tant que l'export reste désactivé.");
             }
         }
         registry.start(webSnapshotWriter);

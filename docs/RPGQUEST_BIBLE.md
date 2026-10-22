@@ -5395,10 +5395,23 @@ Règles appliquées (idempotentes) :
     n'aspirent rien au sol. **Verrouiller, jamais vider** : aucun objet, villageois ni bloc n'est
     modifié, et la règle étant évaluée à chaque évènement elle persiste après redémarrage.
     **Restent libres** : PNJ Citizens (dialogues, marchands et ateliers RPGQuest), toutes les interfaces
-    du plugin, coffres personnels liés (#105), établis, fours, fumoirs, hauts fourneaux, alambics
-    (salles de préparation #107) et coffre de l'Ender (stockage personnel). Wild et Claims inchangés.
-    Bypass : `rpgquest.admin.hub.resources` (défaut `op`), **uniquement** pendant une session
+    du plugin, coffres personnels liés (#105) et coffre de l'Ender (stockage personnel). Wild et Claims
+    inchangés. Bypass : `rpgquest.admin.hub.resources` (défaut `op`), **uniquement** pendant une session
     `/rpgadmin bypass on` (#35) — par ex. pour garnir un coffre de décor.
+-   **postes de travail fermés par défaut** (issue #675, retour du 22/10, `hub.HubStationLockListener`) :
+    établi, four, haut fourneau, fumoir, alambic, enclumes, meule, table de forgeron, tailleur de pierre,
+    métier à tisser, table de cartographie, table d'enchantement et balise ne s'ouvrent pas (« Les postes
+    de travail du Hub sont fermés. », même message discret partagé) ; composteur, jukebox, chaudrons, pots
+    de fleurs et coffre des épreuves sont fermés **sans exception** ; le livre d'un lutrin se lit mais ne se
+    prend pas. Seule l'utilisation du bloc est refusée (l'objet en main reste utilisable), rien n'est
+    modifié. **Exceptions** : liste `hub.stations.exceptions` de `config.yml` (vide par défaut, ajoutée
+    par le complément automatique) — par type (`stations`), bloc précis (`blocks` x/y/z dans `hub.world`)
+    et conditions (`required-level` = niveau RPG #532 ; `conditions` = mêmes clés que `access.conditions`
+    d'un portail #567, même `PlayerConditionEvaluator`) ; une exception suffit, `message` = refus. Révise
+    #107 : les établis/fours des salles de préparation ne sont plus libres d'office, il faut une exception.
+    Accès achetés : prévus via `id` + variable `VARIABLE_EQUALS` posée par un futur achat (#336) ou droit
+    (#422), non implémentés. Même bypass `rpgquest.admin.hub.resources` en session. Détail et inventaire :
+    `docs/HUB_SERVICES.md` ; PENDING MANUAL VALIDATION TC-401.
 -   **faim/saturation jamais réduites** (issue #33, `hub.HubComfortService`) : `FoodLevelChangeEvent`
     annulé pour toute diminution (sprint/sauts/épuisement) ; une garde périodique (1 s) neutralise
     aussi l'épuisement silencieux (`exhaustion`/`saturation` internes, sans événement dédié). Vie,
@@ -7044,6 +7057,10 @@ perché), exige un **sol plein** et **deux cases libres** pour le corps, évite 
 vide et chevauchement avec un autre PNJ, et **ne casse ni ne pose aucun bloc**. Les bornes sont
 configurables : `hub.placement.search-radius` (1–64), `vertical-radius` (0–32), `max-attempts`
 (1–100000).
+
+Postes de travail du Hub (#675) : `hub.stations.exceptions` (liste, vide par défaut) — exceptions à
+la fermeture des postes (`id`, `stations`, `blocks`, `required-level`, `conditions`, `message`),
+validées au chargement ; voir la section Hub plus haut et `docs/HUB_SERVICES.md`.
 
 Chaque impossibilité a son code et son message : Guide absent, Guide non lié, position du Guide
 inconnue, Guide hors du Hub configuré, Hub non chargé, aucun emplacement sûr. **Aucun PNJ partiel

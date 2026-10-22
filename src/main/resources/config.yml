@@ -272,6 +272,30 @@ hub:
     # Nombre maximum d'emplacements examinés (1 à 100000).
     max-attempts: 2000
 
+  # Postes de travail du Hub (issue #675) : établis, fours, hauts fourneaux, fumoirs, alambics,
+  # enclumes, meules, tables de forgeron, tailleurs de pierre, métiers à tisser, tables de
+  # cartographie, tables d'enchantement et balises sont FERMÉS par défaut dans hub.world (message
+  # discret). Coffres, tonneaux, crafters… restent fermés sans exception ; coffres personnels liés
+  # (#105), coffre de l'Ender, PNJ et menus RPGQuest restent libres. Contournement admin :
+  # rpgquest.admin.hub.resources pendant /rpgadmin bypass on.
+  # Une exception rouvre des postes (stations: types ; vide = tous), éventuellement des blocs
+  # précis seulement (blocks: x/y/z, world facultatif = hub.world), à qui remplit ses conditions
+  # (required-level = niveau RPG ; conditions = mêmes clés que access.conditions d'un portail :
+  # QUEST_STATE, HAS_ITEM, HAS_PERMISSION, VARIABLE_EQUALS, HAS_MAIN_CLAIM ; message = refus).
+  # Exemple :
+  #   exceptions:
+  #     - id: salle_de_craft
+  #       stations: [CRAFTING_TABLE]
+  #       blocks:
+  #         - { x: 12, y: 64, z: -30 }
+  #       conditions:
+  #         - type: QUEST_STATE
+  #           quest: rpgquest:crystal_hunt
+  #           state: COMPLETED
+  #       message: "<gray>Termine la chasse au cristal pour utiliser cet établi.</gray>"
+  stations:
+    exceptions: []
+
 travel:
   # Nom exact du monde d'exploration (voir config.TravelConfig) : la Rune de rappel n'y fonctionne
   # que là, l'avertissement d'entrée ne concerne que les portails qui y mènent, et c'est le seul

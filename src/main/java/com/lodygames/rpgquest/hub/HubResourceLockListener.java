@@ -3,13 +3,9 @@ package com.lodygames.rpgquest.hub;
 import com.lodygames.rpgquest.config.HubConfig;
 import com.lodygames.rpgquest.item.InventoryTransfers;
 import com.lodygames.rpgquest.permission.AdminBypassMode;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
-import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Barrel;
@@ -60,10 +56,10 @@ import org.bukkit.inventory.MerchantInventory;
  *       du Hub et aucun hopper n'aspire d'objet au sol.</li>
  * </ul>
  *
- * <p><strong>Ce qui reste libre</strong> : établis, fours, fumoirs, hauts fourneaux, alambics et
- * autres blocs utilitaires des salles de préparation (#107), coffre de l'Ender (stockage personnel),
+ * <p><strong>Ce qui reste libre</strong> : coffre de l'Ender (stockage personnel),
  * coffres personnels liés (#105 : {@code storage.VaultAccessListener} annule l'ouverture du bloc et
- * ouvre un inventaire du plugin, non concerné ici) et toutes les interfaces RPGQuest.</p>
+ * ouvre un inventaire du plugin, non concerné ici) et toutes les interfaces RPGQuest. Les postes de
+ * travail (établis, fours, alambics…) sont fermés par défaut par {@link HubStationLockListener}.</p>
  *
  * <p>Verrouiller, jamais vider : annuler l'évènement laisse chaque objet où il est, aucun villageois
  * ni bloc n'est modifié, et la règle étant évaluée à chaque évènement elle persiste d'elle-même après
@@ -75,27 +71,29 @@ public final class HubResourceLockListener implements Listener {
     static final String BYPASS_PERMISSION = "rpgquest.admin.hub.resources";
     static final String TRADE_REFUSED = "<gray>Le commerce n'est pas disponible dans le Hub.</gray>";
     static final String CONTAINER_REFUSED = "<gray>Les coffres du Hub sont fermés.</gray>";
-    static final long MESSAGE_COOLDOWN_MILLIS = 2_000L;
-
-    private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final Supplier<HubConfig> config;
     private final Predicate<Entity> isCitizensNpc;
     private final AdminBypassMode bypass;
-    private final LongSupplier clock;
-    private final Map<UUID, Long> lastMessageAt = new ConcurrentHashMap<>();
+    private final HubRefusalMessages messages;
 
     public HubResourceLockListener(Supplier<HubConfig> config, Predicate<Entity> isCitizensNpc,
                                    AdminBypassMode bypass) {
-        this(config, isCitizensNpc, bypass, System::currentTimeMillis);
+        this(config, isCitizensNpc, bypass, new HubRefusalMessages(System::currentTimeMillis));
     }
 
     HubResourceLockListener(Supplier<HubConfig> config, Predicate<Entity> isCitizensNpc,
                             AdminBypassMode bypass, LongSupplier clock) {
+        this(config, isCitizensNpc, bypass, new HubRefusalMessages(clock));
+    }
+
+    /** {@code messages} partagé avec {@link HubStationLockListener} : un seul message discret par fenêtre. */
+    public HubResourceLockListener(Supplier<HubConfig> config, Predicate<Entity> isCitizensNpc,
+                                   AdminBypassMode bypass, HubRefusalMessages messages) {
         this.config = config;
         this.isCitizensNpc = isCitizensNpc;
         this.bypass = bypass;
-        this.clock = clock;
+        this.messages = messages;
     }
 
     // ---- Commerce vanilla --------------------------------------------------------------------------
@@ -155,12 +153,12 @@ public final class HubResourceLockListener implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        lastMessageAt.remove(event.getPlayer().getUniqueId());
+        messages.forget(event.getPlayer().getUniqueId());
     }
 
     // ---- Utilitaires -------------------------------------------------------------------------------
 
-    /** Conteneurs de stockage verrouillés. Les blocs utilitaires (fours, alambics…) restent libres (#107). */
+    /** Conteneurs de stockage verrouillés, sans exception (les postes de travail : {@link HubStationLockListener}). */
     static boolean isLockedStorage(InventoryHolder holder) {
         return holder instanceof Chest || holder instanceof DoubleChest || holder instanceof Barrel
                 || holder instanceof ShulkerBox || holder instanceof Hopper || holder instanceof Dispenser
@@ -182,17 +180,11 @@ public final class HubResourceLockListener implements Listener {
         return bypass.allowsExact(player, BYPASS_PERMISSION);
     }
 
-    /** Annule l'évènement ; message éventuel limité à un toutes les {@value #MESSAGE_COOLDOWN_MILLIS} ms. */
+    /** Annule l'évènement ; message éventuel, limité par {@link HubRefusalMessages}. */
     private void refuse(Cancellable event, Player player, String message) {
         event.setCancelled(true);
-        if (message == null) {
-            return;
-        }
-        long now = clock.getAsLong();
-        Long last = lastMessageAt.get(player.getUniqueId());
-        if (last == null || now - last >= MESSAGE_COOLDOWN_MILLIS) {
-            lastMessageAt.put(player.getUniqueId(), now);
-            player.sendMessage(MM.deserialize(message));
+        if (message != null) {
+            messages.send(player, message);
         }
     }
 }

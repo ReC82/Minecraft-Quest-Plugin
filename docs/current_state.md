@@ -420,9 +420,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   distinct de la construction) ; pas de commerce vanilla (villageois/marchand ambulant non Citizens)
   ni d'accès aux conteneurs de stockage vanilla (coffres, tonneaux, shulkers, hoppers, distributeurs,
   droppers, crafters, wagonnets/bateaux à coffre, pots décorés, étagères), hoppers inertes — verrouillage
-  sans vidage, fours/établis/alambics/coffre de l'Ender/coffres personnels #105/interfaces RPGQuest libres,
+  sans vidage, coffre de l'Ender/coffres personnels #105/interfaces RPGQuest libres,
   bypass `rpgquest.admin.hub.resources` en session seulement (issue #675, `hub.HubResourceLockListener`,
-  PENDING MANUAL VALIDATION TC-397) ; faim/saturation jamais réduites, restaurées au maximum à
+  PENDING MANUAL VALIDATION TC-397) ; postes de travail (établi, fours, alambic, enclumes, meule, forgeron,
+  tailleur, métier à tisser, cartographie, enchantement, balise) fermés par défaut, blocs-ressources
+  (composteur, jukebox, chaudrons, pots de fleurs, coffre des épreuves) fermés, livre de lutrin non
+  prenable, exceptions `hub.stations.exceptions` (type/bloc/niveau RPG/conditions des portails, vide par
+  défaut) — révise l'exemption #107 (issue #675 retour du 22/10, `hub.HubStationLockListener`, PENDING
+  MANUAL VALIDATION TC-401) ; faim/saturation jamais réduites, restaurées au maximum à
   l'arrivée (connexion/changement de monde/réapparition) — issue #33, `hub.HubComfortService`,
   strictement scopé au monde `hub.world` (`isHub()` par joueur, le Wild garde sa survie normale,
   couvert par `foodLevelDecreaseInTheWildIsNeverCancelled`/`periodicSweepNeverTouchesPlayersInTheWild`).

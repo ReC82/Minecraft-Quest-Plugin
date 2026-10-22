@@ -48,6 +48,41 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-22 - Hub : postes de travail fermés par défaut et exceptions (#675 retour du 22/10, TC-401)
+
+### Changement
+
+Nouvel écouteur `hub.HubStationLockListener`, règle du monde `hub.world` : établi, four, haut fourneau, fumoir, alambic,
+enclumes, meule, table de forgeron, tailleur de pierre, métier à tisser, table de cartographie, table d'enchantement et
+balise fermés par défaut ; composteur, jukebox, chaudrons, pots de fleurs, coffre des épreuves fermés sans exception ;
+livre de lutrin non prenable. Seule l'utilisation du bloc est refusée, rien n'est modifié. Exceptions par
+`hub.stations.exceptions` (type, bloc précis, niveau RPG, conditions des portails #567). Le lot du 21/10 (commerce et
+conteneurs) est conservé. Révise #107 : les établis/fours des salles de préparation ne sont plus libres d'office.
+
+### Action serveur
+
+- Remplacer uniquement le JAR RPGQuest (`scripts/deploy-verygames.sh -y`, après CI verte du commit de fusion).
+- **Configuration** : la clé `hub.stations.exceptions: []` est ajoutée au `config.yml` du serveur par le complément
+  automatique au démarrage (`ConfigFileCompleter`) — **ne pas téléverser `config.yml`**. Liste vide = aucune exception.
+- **Aucune migration `data.db`**, aucun fichier de contenu, PlugAdmin inchangé. Redémarrage requis (nouveau listener).
+- Ne vider aucun conteneur, ne retirer aucun bloc : la livraison est un verrou.
+
+### Sauvegarde préalable
+
+JAR en ligne sauvegardé par le script (`rpgquest-<horodatage>-predeploy.jar`) ; `config.yml` copié en
+`config.yml.bak` par le completer avant de le compléter.
+
+### Validation
+
+TC-401 (PENDING MANUAL VALIDATION) : postes du Hub fermés, coffre personnel / coffre de l'Ender / PNJ RPGQuest normaux,
+Wild et Claims inchangés. Relire `hub.stations` dans le `config.yml` DEV après redémarrage.
+
+### Rollback
+
+Remettre le JAR `-predeploy` puis redémarrer ; la clé `hub.stations` ajoutée est simplement ignorée par l'ancien JAR.
+
+---
+
 ## 2026-10-22 - Supprimer un bâtiment et toutes ses versions (#644, TC-399)
 
 ### Changement

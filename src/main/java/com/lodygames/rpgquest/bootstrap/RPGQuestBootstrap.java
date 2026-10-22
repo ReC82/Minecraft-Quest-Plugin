@@ -493,9 +493,13 @@ public final class RPGQuestBootstrap {
         // déjà chargés au démarrage (ex. spawn) — jamais un chargement forcé de tout le monde.
         worldService.find(configService.current().hub().world())
                 .ifPresent(hubWorldProtectionListener::sweepAlreadyLoaded);
-        // Issue #675 : pas de commerce vanilla ni d'accès aux conteneurs de stockage dans le Hub.
+        // Issue #675 : pas de commerce vanilla ni d'accès aux conteneurs de stockage dans le Hub ; le
+        // même message discret (un par fenêtre de 2 s) sert aussi aux postes de travail, plus bas.
+        com.lodygames.rpgquest.hub.HubRefusalMessages hubRefusalMessages =
+                new com.lodygames.rpgquest.hub.HubRefusalMessages();
         registry.start(new PlayerListenerService(plugin, new HubResourceLockListener(
-                () -> configService.current().hub(), npcIdentityService::isCitizensNpc, adminBypassMode)));
+                () -> configService.current().hub(), npcIdentityService::isCitizensNpc, adminBypassMode,
+                hubRefusalMessages)));
 
         HubComfortService hubComfortService = new HubComfortService(
                 plugin, () -> configService.current().hub(), plugin.getSLF4JLogger());
@@ -812,14 +816,25 @@ public final class RPGQuestBootstrap {
                 claimService, () -> configService.current().claims()));
         // Issue #567 : conditions d'accès des portails entre mondes, vérifiées par le serveur après les
         // gardes ci-dessus — même évaluateur que les dialogues, niveau RPG #532, délais en base.
+        com.lodygames.rpgquest.dialogue.PlayerConditionEvaluator playerConditionEvaluator =
+                new com.lodygames.rpgquest.dialogue.PlayerConditionEvaluator(questProgressEngine,
+                        variableRepository, claimService, customItemRegistry);
         com.lodygames.rpgquest.travel.PortalAccessChecker portalAccessChecker =
-                new com.lodygames.rpgquest.travel.PortalAccessChecker(
-                        new com.lodygames.rpgquest.dialogue.PlayerConditionEvaluator(questProgressEngine,
-                                variableRepository, claimService, customItemRegistry),
+                new com.lodygames.rpgquest.travel.PortalAccessChecker(playerConditionEvaluator,
                         com.lodygames.rpgquest.travel.PortalAccessChecker.persistent(portalCooldownRepository,
                                 plugin.getSLF4JLogger()), java.time.Clock.systemUTC());
         portalAccessChecker.setRequiredLevelRule(requiredLevelRule);
         worldPortalTeleportListener.setAccessChecker(portalAccessChecker);
+        // Issue #675 (retour du 22/10) : postes de travail du Hub fermés par défaut, exceptions
+        // hub.stations.exceptions vérifiées par le même évaluateur que les portails et le niveau #532.
+        com.lodygames.rpgquest.hub.HubStationLockListener hubStationLockListener =
+                new com.lodygames.rpgquest.hub.HubStationLockListener(() -> configService.current().hub(),
+                        adminBypassMode, (player, conditions) -> playerConditionEvaluator.evaluateAll(
+                                player, null, conditions),
+                        task -> plugin.getServer().getScheduler().runTask(plugin, task), hubRefusalMessages,
+                        plugin.getSLF4JLogger());
+        hubStationLockListener.setRequiredLevelRule(requiredLevelRule);
+        registry.start(new PlayerListenerService(plugin, hubStationLockListener));
         // Filet de sécurité : personne ne reste coincé dans le monde des claims, et un retour Hub
         // sans commande y est toujours possible (Pierre de retour donnée si absente ; joueur non
         // éligible arrivé autrement que par le portail renvoyé au village).

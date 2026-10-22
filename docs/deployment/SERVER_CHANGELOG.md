@@ -48,6 +48,32 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-22 - PlugAdmin : « Recharger depuis DEV » dans l'éditeur guidé des dialogues (#732, TC-407)
+
+### Changement
+
+PlugAdmin seul. Bouton « Recharger depuis DEV » : lecture du fichier DEV (`content.dev.read`, lecture seule),
+remplacement de la source PlugAdmin uniquement sur clic (sauvegarde `content-backups/reload-…` avant), brouillon non
+enregistré jamais abandonné sans confirmation (copie `<slug>.brouillon.yml`). La version reprise devient la référence
+DEV attendue. Rien n'est publié dans Minecraft.
+
+### Action serveur
+
+- **Effectué le 22/10 20:57** : PlugAdmin `e2ca42f0` (PR #748, CI PR + fusion vertes) via `scripts/plugadmin/deploy.sh
+  --wait-ci` (sans sudo) ; /health 200 ; JAR servi relu (`DialogueDevReload`, guide « Recharger depuis DEV ») ;
+  `/dialogues/reload` répond 303 → /login (route enregistrée).
+- Aucune action sur VeryGames : JAR, `config.yml`, `data.db` et dialogues inchangés ; Minecraft non redémarré.
+
+### Migration
+
+`control-panel.db` : table additive `content_dev_reference` créée au démarrage (`CREATE TABLE IF NOT EXISTS`). Aucune
+pour `data.db`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (release précédente `/opt/plugadmin/releases/20261022-204811`). La table additive
+peut rester : l'ancienne version l'ignore.
+
 ## 2026-10-22 - PlugAdmin : upload d'image de référence de l'Atelier (#283, TC-406)
 
 ### Changement

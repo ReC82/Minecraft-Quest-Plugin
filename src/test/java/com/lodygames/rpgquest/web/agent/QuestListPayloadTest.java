@@ -93,6 +93,18 @@ class QuestListPayloadTest {
     }
 
     @Test
+    void iconIsPresentOnlyWhenKnown() {
+        List<Map<String, Object>> quests = quests(questListDetails());
+        Map<String, Object> withIcon = quests.stream()
+                .filter(q -> "rpgquest:first_steps".equals(q.get("id"))).findFirst().orElseThrow();
+        Map<String, Object> noIcon = quests.stream()
+                .filter(q -> "rpgquest:crystal_hunt".equals(q.get("id"))).findFirst().orElseThrow();
+
+        assertEquals("WOODEN_SWORD", withIcon.get("icon"), "#428 : material de la tuile PlugAdmin");
+        assertNull(noIcon.get("icon"), "aucune clé icon si elle est inconnue");
+    }
+
+    @Test
     void giverIsPresentOnlyWhenDeclared() {
         List<Map<String, Object>> quests = quests(questListDetails());
         Map<String, Object> withGiver = quests.stream()
@@ -169,7 +181,7 @@ class QuestListPayloadTest {
                             List.of(new ObjectiveSummary("KILL_ENTITY", "SPIDER", 10, "Tuer SPIDER (x10)")))),
                     List.of("+50 XP"),
                     List.of(new RewardSummary("EXPERIENCE", 50, null, null, null, "+50 XP")),
-                    null, null);
+                    null, null, 0, null, "WOODEN_SWORD");
 
             QuestSummary dailyWood = new QuestSummary("rpgquest:daily_wood", "Bois du jour", "daily", true,
                     List.of(), List.of(), List.of(), List.of(), null, null, 0, "daily");

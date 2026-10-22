@@ -18,7 +18,9 @@ import java.util.Optional;
  *
  * <ul>
  *   <li><b>Domaine</b> : dérivé du préfixe du type ({@code player.*} → Joueurs, {@code npc.*} →
- *       PNJ, …).</li>
+ *       PNJ, …). Une action qui <em>cible un joueur</em> selon le catalogue
+ *       ({@link AgentActionCatalog.Spec#needsPlayer()}) appartient aussi à « Joueurs », même si son
+ *       préfixe la range ailleurs (retour du 22/10 : {@code mc.rights.read} n'y figurait pas).</li>
  *   <li><b>Groupe de statut</b> : {@code SUCCESS} → Succès ; {@code PENDING}/{@code DELIVERED} →
  *       En cours ; {@code FAILED}/{@code REJECTED}/{@code EXPIRED} → Échec.</li>
  * </ul>
@@ -30,7 +32,9 @@ public final class ActionView {
 
     /** Familles d'actions pour le filtre par domaine. {@code icon} = nom d'icône {@link Icons}. */
     public enum Domain {
-        PLAYERS("players", "Joueurs", "players", "player."),
+        // mc.* = droits Minecraft des joueurs et de leurs groupes (#200, #64) ; claim.* = claims
+        // des joueurs (#637). Les autres actions ciblant un joueur viennent du catalogue (needsPlayer).
+        PLAYERS("players", "Joueurs", "players", "player.", "mc.", "claim."),
         NPC("npc", "PNJ", "npc", "npc."),
         QUESTS("quests", "Quêtes", "quests", "quest."),
         STORIES("stories", "Stories", "stories", "story."),
@@ -72,7 +76,16 @@ public final class ActionView {
                     }
                 }
             }
-            return OTHER;
+            return targetsPlayer(type) ? PLAYERS : OTHER;
+        }
+
+        /**
+         * Appartenance au filtre : le domaine principal, plus, pour « Joueurs », toute action qui
+         * cible un joueur ({@code quest.start}, {@code story.player.status}…) — elle garde son badge
+         * Quêtes / Stories mais se retrouve quand on filtre sur les joueurs.
+         */
+        public boolean includes(String type) {
+            return of(type) == this || (this == PLAYERS && targetsPlayer(type));
         }
 
         public static Optional<Domain> fromSlug(String slug) {
@@ -131,6 +144,11 @@ public final class ActionView {
         }
     }
 
+    /** Une action cible-t-elle un joueur ? Source unique : le catalogue ({@code needsPlayer}). */
+    public static boolean targetsPlayer(String type) {
+        return AgentActionCatalog.spec(type).map(AgentActionCatalog.Spec::needsPlayer).orElse(false);
+    }
+
     // ---- libellés ----------------------------------------------------------------------
 
     /** Libellé humain de l'action (catalogue), repli sur une forme lisible du type technique. */
@@ -149,18 +167,64 @@ public final class ActionView {
     }
 
     private static final List<String> TARGET_KEYS = List.of(
-            "player", "npc_id", "quest_id", "story_id", "dialogue_id", "citizens_id",
+            "player", "group", "npc_id", "quest_id", "story_id", "dialogue_id", "citizens_id",
             "item_id", "node_id", "key", "display_name", "world");
+
+    /**
+     * Cible affichée : {@code primary} = pseudo connu, ou la valeur brute (id de PNJ/quête…, pseudo
+     * saisi, UUID inconnu) ; {@code uuid} = l'UUID du joueur quand {@code primary} est son pseudo
+     * résolu, sinon vide.
+     */
+    public record Target(String primary, String uuid) {
+
+        public boolean isEmpty() {
+            return primary.isEmpty();
+        }
+
+        /** Texte de recherche : le pseudo ET l'UUID, pour qu'une recherche par l'un trouve l'autre. */
+        public String searchText() {
+            return uuid.isEmpty() ? primary : primary + " " + uuid;
+        }
+
+        /** Pseudo, UUID en petit texte secondaire (tableau, fiche). HTML sûr. */
+        public String html() {
+            if (uuid.isEmpty()) {
+                return Http.esc(primary);
+            }
+            return "<span class=\"pa-player\" title=\"UUID " + Http.esc(uuid) + "\">" + Http.esc(primary)
+                    + "</span> <small class=\"muted pa-uuid\">" + Http.esc(uuid) + "</small>";
+        }
+
+        /** Pseudo seul, UUID en infobulle (lignes compactes : cloche, cartes). HTML sûr. */
+        public String compactHtml() {
+            if (uuid.isEmpty()) {
+                return Http.esc(primary);
+            }
+            return "<span class=\"pa-player\" title=\"UUID " + Http.esc(uuid) + "\">" + Http.esc(primary) + "</span>";
+        }
+    }
 
     /** Cible la plus parlante d'une action (pseudo joueur, id de PNJ/quête/…), sinon vide. */
     public static String target(AgentActionRow a) {
+        return target(a, PlayerNames.EMPTY).primary();
+    }
+
+    /** Idem, le joueur désigné par UUID étant affiché sous son pseudo connu s'il est dans {@code names}. */
+    public static Target target(AgentActionRow a, PlayerNames names) {
         for (String k : TARGET_KEYS) {
             String v = a.params().get(k);
             if (v != null && !v.isBlank()) {
-                return v.trim();
+                String raw = v.trim();
+                if ("player".equals(k)) {
+                    Optional<String> name = (names == null ? PlayerNames.EMPTY : names).nameOf(raw);
+                    if (name.isPresent()) {
+                        return new Target(name.get(), raw);
+                    }
+                }
+                return new Target(raw, "");
             }
         }
-        return "";
+        return new Target("", "");
     }
 
     /** Résultat synthétique lisible (valeur + message), plafonné. Vide si non terminal / rien. */
@@ -260,9 +324,13 @@ public final class ActionView {
     /** Une ligne du centre de notifications. HTML déjà sûr (échappé). Résultat volontairement bref
      *  (le détail complet est sur {@code /actions}). */
     public static String notifItemHtml(AgentActionRow a, Instant now) {
+        return notifItemHtml(a, now, PlayerNames.EMPTY);
+    }
+
+    public static String notifItemHtml(AgentActionRow a, Instant now, PlayerNames names) {
         Domain d = Domain.of(a.type());
         Group g = Group.of(a.status());
-        String tgt = target(a);
+        Target tgt = target(a, names);
         String res = clamp(shortResult(a), 90);
         StringBuilder sb = new StringBuilder();
         sb.append("<a class=\"notif-item\" href=\"/actions/").append(Http.esc(a.id())).append("\">");
@@ -271,7 +339,7 @@ public final class ActionView {
         sb.append("<span class=\"notif-t\">").append(Http.esc(d.label())).append(" · ")
                 .append(Http.esc(humanLabel(a.type())));
         if (!tgt.isEmpty()) {
-            sb.append(" <span class=\"notif-tgt\">").append(Http.esc(tgt)).append("</span>");
+            sb.append(" <span class=\"notif-tgt\">").append(tgt.compactHtml()).append("</span>");
         }
         sb.append("</span>");
         sb.append("<span class=\"notif-meta\"><span class=\"notif-status ").append(groupColor(g)).append("\">")
@@ -286,9 +354,13 @@ public final class ActionView {
 
     /** Toast Bootstrap pour une action donnée. Déplacé et affiché par {@code panel.js}. */
     public static String toastHtml(AgentActionRow a, Instant now) {
+        return toastHtml(a, now, PlayerNames.EMPTY);
+    }
+
+    public static String toastHtml(AgentActionRow a, Instant now, PlayerNames names) {
         Group g = Group.of(a.status());
         boolean autohide = g == Group.SUCCESS;
-        String tgt = target(a);
+        String tgt = target(a, names).primary();
         String res = shortResult(a);
         String body = res.isEmpty()
                 ? (tgt.isEmpty() ? "Action enregistrée." : Http.esc(tgt))

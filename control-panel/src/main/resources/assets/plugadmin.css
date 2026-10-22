@@ -158,6 +158,13 @@ h3{font-size:14.5px;margin:16px 0 8px;font-weight:650}
 .obj-text{color:var(--txt);overflow-wrap:anywhere}
 .act-type{color:var(--txt)}
 .reward-list .obj-text{font-weight:600}
+/* ---- #428 : tuiles d'icônes pixel art (sprite partagé avec le portail public) ---- */
+.lq-tile{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;
+  border-radius:3px;background:#8b6a43;border:1px solid #4a3220;
+  box-shadow:inset 2px 2px 0 #6b4c2c,inset -2px -2px 0 #4a3220}
+.lq-ico{display:inline-block;flex:none;width:16px;height:16px;image-rendering:pixelated}
+.obj-list li.has-tile,.reward-list li.has-tile{padding-left:0}
+.obj-list li.has-tile::before,.reward-list li.has-tile::before{content:none}
 /* ---- identifiant technique en second plan ---- */
 .tid{font-size:11.5px;color:var(--txt-faint);background:var(--surface-3);border:1px solid var(--line);
   border-radius:6px;padding:1px 6px;white-space:nowrap;font-family:var(--mono)}

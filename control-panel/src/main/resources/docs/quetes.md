@@ -119,6 +119,11 @@ Page **Quêtes** / **Stories** : `quest.list`, `quest.player.status`, `story.lis
 `story.advance` / `story.complete`, `player.variable.set` (mutations, confirmation obligatoire).
 Le donneur de quête (`giver:`) se pose via `quest.giver.set` depuis la page **PNJ**.
 
+Dans la fiche d'une quête, chaque objectif et chaque récompense est précédé d'une petite icône
+pixel art (la même que sur le portail public) : araignée, crâne, minerai, pièce, XP… L'icône est
+décorative ; le texte reste la référence. Un objet sans icône dédiée prend l'icône de son type
+(épée pour « Tuer », coffre pour « Collecter »…), jamais une image cassée.
+
 ## Éditeur guidé (créer / modifier une quête sans YAML)
 
 Page **Quêtes** → « Créer une quête », ou « Modifier » sur une carte. Principe :

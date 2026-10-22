@@ -53,6 +53,16 @@ infos, statut, wiki, actualités, états vides. Canonique désormais :
 `web-api/src/main/resources/portal/lq-icons.svg` et `material-map.json` (copies ici pour les
 prototypes). Captures : `captures/phase2-portail/`. Test manuel : TC-411. Reste : PlugAdmin (phase 2b).
 
+**Phase 2b — PlugAdmin (fiches de quête).** Le panel sert le **même** sprite et la **même** table
+sous `/assets/lq/` : `control-panel/build.gradle.kts` les copie depuis `web-api/…/portal` au
+`processResources` (aucune copie manuelle ; `PixelIconsTest` vérifie l'égalité octet par octet).
+Résolveur `PixelIcons` : material exact → suffixe → icône du type d'objectif / de récompense →
+`unknown`. Chaque ligne d'objectif et de récompense structurée de la page **Quêtes** porte une tuile
+bois 24 px (`.lq-tile`, décorative). La table a été complétée (CREEPER, LEATHER, STICK, COBBLESTONE,
+WHEAT, CACTUS, ARROW, armures `_HELMET`… , outils `_AXE`…) : tous les materials des quêtes livrées
+ont une vraie icône (test de couverture). Captures : `captures/phase2b-plugadmin/`. Reste :
+catalogues, PNJ, Voyages, Mobs.
+
 ## Intégration prévue (phases 2-3, après accord)
 
 1. Sprite et `lq-icons.css` versionnés **une seule fois** et servis en local par les deux applications

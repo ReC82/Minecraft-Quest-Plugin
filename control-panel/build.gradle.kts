@@ -63,6 +63,17 @@ tasks {
         }
     }
 
+    // Issue #428 : le sprite d'icônes pixel art et sa table material -> icône sont ceux du portail
+    // public. Une seule source (web-api/src/main/resources/portal), copiée dans le classpath du panel
+    // sous assets/lq/ : jamais de copie manuelle qui divergerait. Copie de fichiers seulement, aucune
+    // dépendance de code vers :web-api.
+    processResources {
+        from(rootProject.file("web-api/src/main/resources/portal")) {
+            include("lq-icons.svg", "material-map.json")
+            into("assets/lq")
+        }
+    }
+
     compileJava {
         options.encoding = "UTF-8"
         options.release.set(21)

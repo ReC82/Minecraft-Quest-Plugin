@@ -18,10 +18,17 @@
     "COOKED_COD": "fish", "COOKED_SALMON": "fish", "FISHING_ROD": "fish",
     "SPIDER": "spider", "CAVE_SPIDER": "spider", "SLIME": "slime", "MAGMA_CUBE": "slime",
     "VILLAGER": "npc", "WANDERING_TRADER": "npc",
-    "ENDER_DRAGON": "boss", "WITHER": "boss", "ELDER_GUARDIAN": "boss", "WARDEN": "boss"
+    "ENDER_DRAGON": "boss", "WITHER": "boss", "ELDER_GUARDIAN": "boss", "WARDEN": "boss",
+    "CREEPER": "skull", "ROTTEN_FLESH": "skull", "BONE": "skull", "STRING": "spider", "SPIDER_EYE": "spider",
+    "STICK": "log", "COBBLESTONE": "ore", "STONE": "ore", "COAL": "ore", "RAW_IRON": "ore", "RAW_GOLD": "ore",
+    "RAW_COPPER": "ore", "IRON_INGOT": "ore", "COPPER_INGOT": "ore",
+    "WHEAT": "bread", "WHEAT_SEEDS": "grass", "CACTUS": "grass",
+    "ARROW": "sword", "BOW": "sword", "CROSSBOW": "sword", "SHIELD": "shield", "LEATHER": "shield"
   },
   "suffix": {
-    "_SWORD": "sword", "_PICKAXE": "pickaxe", "_ORE": "ore",
+    "_SWORD": "sword", "_PICKAXE": "pickaxe", "_AXE": "pickaxe", "_SHOVEL": "pickaxe", "_HOE": "pickaxe",
+    "_ORE": "ore", "_HELMET": "shield", "_CHESTPLATE": "shield", "_LEGGINGS": "shield", "_BOOTS": "shield",
+    "_SAPLING": "grass", "_LEAVES": "grass", "_SEEDS": "grass",
     "_LOG": "log", "_WOOD": "log", "_PLANKS": "log", "_TULIP": "flower"
   },
   "fallback": "unknown"

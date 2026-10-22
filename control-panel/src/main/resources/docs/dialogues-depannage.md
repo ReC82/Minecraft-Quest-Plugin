@@ -247,8 +247,9 @@ Tant que vous n'avez pas choisi quelle version garder, votre dialogue ne peut pa
    s'ouvre ; demandez la comparaison pour voir ce qui a changé.
 2. **Pour garder votre version** : une fois la comparaison affichée, cliquez **Écraser la version
    DEV** et confirmez. L'autre version est sauvegardée sur le serveur avant d'être remplacée.
-3. **Pour garder celle du serveur** : ne mettez pas votre version en jeu ; recopiez dans l'éditeur
-   ce que vous voulez garder de l'autre version, puis enregistrez.
+3. **Pour garder celle du serveur** : cliquez **Recharger depuis DEV**, puis **Remplacer ma version
+   par celle de DEV**. Votre version est sauvegardée avant d'être remplacée, et la version reprise
+   devient la référence : vous pouvez ensuite réappliquer votre correction et remettre en jeu.
 
 Si la comparaison montre la même chose des deux côtés, cliquez **Vérifier à nouveau** : l'état du
 serveur était peut-être simplement ancien.
@@ -262,6 +263,9 @@ L'éditeur n'affiche plus l'encadré rouge ; après la mise en jeu, il indique �
 Refus `CONFLICT` de `content.publish` : l'empreinte DEV attendue ne correspond pas au fichier. La
 référence du panel est la dernière empreinte laissée par **ses** opérations, échecs de
 rechargement compris (#731) ; un refus `RELOAD_FAILED` remet le fichier DEV dans son état d'avant.
+« Recharger depuis DEV » (#732) relit le fichier par `content.dev.read`, le copie octet pour octet
+dans la source (sauvegarde `content-backups/reload-…`) et enregistre son empreinte comme nouvelle
+référence attendue sur DEV.
 
 ---
 

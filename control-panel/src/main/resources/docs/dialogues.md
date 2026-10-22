@@ -79,6 +79,27 @@ change en jeu avant « Mettre en jeu ».
 Depuis la fiche d'un catalogue, **Configurer le dialogue de ce PNJ** ouvre directement le dialogue
 de chaque PNJ récurrent. L'en-tête du dialogue nomme ces PNJ récurrents et leurs listes.
 
+## Recharger depuis DEV
+
+Le bouton **Recharger depuis DEV**, dans le bandeau d'état en haut de l'éditeur, relit la version
+**enregistrée sur le serveur DEV** — par exemple après un refus de mise en jeu, ou si quelqu'un a
+changé le dialogue ailleurs. Pas besoin de F5 ni des détails techniques.
+
+1. Cliquez **Recharger depuis DEV**. PlugAdmin lit le fichier du serveur : rien n'est encore
+   remplacé, rien ne change en jeu.
+2. Si vous avez des modifications **non enregistrées**, PlugAdmin le dit d'abord. **Annuler —
+   garder mes modifications** ne perd rien. Pour recharger quand même, ouvrez « Recharger quand
+   même », cochez la case puis confirmez : une copie de vos modifications est gardée dans les
+   sauvegardes de PlugAdmin.
+3. Quand la version DEV est lue, PlugAdmin dit si elle est identique à la vôtre ou différente. Si
+   elle est différente : **Comparer les versions**, ou **Remplacer ma version par celle de DEV**
+   (votre version est sauvegardée avant). Ensuite, l'éditeur montre la version DEV.
+
+**Enregistré sur DEV ≠ en jeu.** Le fichier enregistré sur DEV n'est pas toujours celui que le jeu
+utilise. PlugAdmin l'indique séparément : « c'est bien cette version que les joueurs voient »,
+« une ancienne version est toujours en jeu », « le jeu ne l'a pas chargé », ou « on ne sait pas
+encore » (cliquez **Vérifier**). Recharger ne publie jamais rien dans Minecraft.
+
 ## Un dialogue qui n'existe que sur le serveur
 
 Un dialogue livré avec le plugin ou déposé à la main (« Hors source ») s'affiche en lecture

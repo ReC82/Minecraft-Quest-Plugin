@@ -234,6 +234,29 @@ public final class ContentWorkspace {
     }
 
     /**
+     * Issue #732 — garde une copie d'un brouillon jamais enregistré (texte venu de l'éditeur) dans
+     * le dossier de sauvegarde de l'opération, sous {@code <kind>/<slug>.brouillon.yml}, avant que
+     * l'éditeur ne l'abandonne. Le fichier de contenu n'est pas touché.
+     */
+    public Optional<Path> keepDraft(String kind, String slug, String stamp, String text) {
+        if (resolve(kind, slug) == null) {
+            return Optional.empty();
+        }
+        Path dir = backupDir(stamp);
+        if (dir == null) {
+            return Optional.empty();
+        }
+        try {
+            Files.createDirectories(dir.resolve(kind));
+            Path target = dir.resolve(kind).resolve(slug + ".brouillon.yml");
+            Files.write(target, (text == null ? "" : text).getBytes(StandardCharsets.UTF_8));
+            return Optional.of(target);
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Dossier de sauvegarde d'une opération, <strong>hors du dépôt Git</strong> (voir le
      * constructeur). Un horodatage par opération : rien n'est jamais écrasé.
      */

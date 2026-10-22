@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.panel.web;
 
 import com.lodygames.rpgquest.panel.content.Descriptors;
 import com.lodygames.rpgquest.panel.content.DialogueCatalogCoherence;
+import com.lodygames.rpgquest.panel.content.DialogueDevReload;
 import com.lodygames.rpgquest.panel.content.DialogueDraft;
 import com.lodygames.rpgquest.panel.content.DialogueForm;
 import com.lodygames.rpgquest.panel.content.DialogueServerCopy;
@@ -205,15 +206,55 @@ public final class DialoguePages {
      * @param hasComments le fichier contient des notes « # » que l'enregistrement ne garde pas
      * @param serverCopy  issue #430 — pour un dialogue présent seulement sur le serveur : où en est
      *                    sa copie vers la source ; {@code null} sinon
+     * @param reload      issue #732 — « Recharger depuis DEV » en cours ; {@code null} sinon
      */
     public record Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
                           String notice, String noticeTone, Map<String, List<String>> errors,
-                          boolean dirty, boolean hasComments, DialogueServerCopy serverCopy) {
+                          boolean dirty, boolean hasComments, DialogueServerCopy serverCopy, Reload reload) {
+
+        public Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
+                       String notice, String noticeTone, Map<String, List<String>> errors,
+                       boolean dirty, boolean hasComments, DialogueServerCopy serverCopy) {
+            this(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments, serverCopy, null);
+        }
+
+        /** Le même éditeur, avec l'étape « Recharger depuis DEV » à afficher. */
+        public Editing withReload(Reload r) {
+            return new Editing(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments,
+                    serverCopy, r);
+        }
 
         public Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
                        String notice, String noticeTone, Map<String, List<String>> errors,
                        boolean dirty, boolean hasComments) {
             this(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments, null);
+        }
+    }
+
+    /**
+     * Issue #732 — l'étape « Recharger depuis DEV » à afficher.
+     *
+     * @param askDiscard {@code true} : le formulaire porte des modifications non enregistrées, on
+     *                   demande d'abord quoi en faire (rien n'est encore lu ni remplacé)
+     * @param askError   message si la confirmation a été demandée sans cocher la case, ou vide
+     * @param readId     la lecture {@code content.dev.read} demandée (vide avec {@code askDiscard})
+     * @param read       où en est cette lecture ({@code null} avec {@code askDiscard})
+     * @param inGame     ce que le jeu utilise par rapport au fichier lu
+     * @param sourceSha  empreinte de la version enregistrée dans PlugAdmin
+     * @param applied    la version lue vient de remplacer celle de l'éditeur (l'étape est finie : seul
+     *                   l'état « en jeu » en reste)
+     */
+    public record Reload(boolean askDiscard, String askError, String readId, DialogueDevReload read,
+                         DialogueDevReload.InGame inGame, String sourceSha, boolean applied) {
+
+        public static Reload askDiscard(String error) {
+            return new Reload(true, error == null ? "" : error, "", null, DialogueDevReload.InGame.UNKNOWN, "", false);
+        }
+
+        /** Le fichier DEV lu est celui que l'éditeur a enregistré, mais le jeu en a un autre (ou aucun). */
+        boolean gameLagsBehind(String sourceSha) {
+            return read != null && read.ready() && read.devSha().equals(sourceSha)
+                    && (inGame == DialogueDevReload.InGame.OLDER || inGame == DialogueDevReload.InGame.NOT_LOADED);
         }
     }
 
@@ -442,6 +483,9 @@ public final class DialoguePages {
 
         sb.append(who(csrf, ctx, rights, e.slug(), users));
         sb.append(liveBar(csrf, ctx, rights, e));
+        if (e.reload() != null && !e.reload().askDiscard() && !e.reload().applied()) {
+            sb.append(reloadPanel(csrf, ctx, e));
+        }
         if (e.serverCopy() != null) {
             sb.append(serverCopy(csrf, ctx, rights, e.slug(), e.serverCopy()));
         }
@@ -461,13 +505,17 @@ public final class DialoguePages {
 
         sb.append(coherence(ctx, d, e.slug()));
 
-        sb.append("<form method=\"post\" action=\"/dialogues/save\" class=\"dlg-editor\" novalidate")
+        sb.append("<form method=\"post\" action=\"/dialogues/save\" class=\"dlg-editor\" id=\"").append(EDITOR_FORM_ID)
+                .append("\" novalidate")
                 .append(e.dirty() ? " data-dirty=\"1\"" : "").append(" data-dirty-form>");
         sb.append(hidden("_csrf", csrf)).append(hidden("agent", ctx.agentId()))
                 .append(hidden("slug", e.slug())).append(hidden("expected_sha", e.expectedSha()));
         // Entrée = « Enregistrer », jamais un geste d'édition pris au hasard parmi les boutons.
         sb.append("<button type=\"submit\" name=\"_op\" value=\"save\" class=\"default-submit\" tabindex=\"-1\" "
                 + "aria-hidden=\"true\"").append(editable ? "" : " disabled").append("></button>");
+        if (editable && e.reload() != null && e.reload().askDiscard()) {
+            sb.append(reloadAsk(e.reload(), e.slug()));
+        }
 
         Map<String, String> f = DialogueForm.fields(d);
         sb.append(hidden("d_id", f.get("d_id"))).append(hidden("n_count", f.get("n_count")));
@@ -599,7 +647,7 @@ public final class DialoguePages {
                 offerPublish = true;
             }
             case CONFLICT -> {
-                return conflictBox(csrf, ctx, e.slug());
+                return conflictBox(csrf, ctx, e.slug(), canReload(rights, e));
             }
             case SERVER_ONLY -> {
                 tone = "info";
@@ -612,6 +660,15 @@ public final class DialoguePages {
                 offerCheck = true;
                 offerPublish = !live.sourceSha().isEmpty();
             }
+        }
+        if ((live.live() == Live.UP_TO_DATE || live.live() == Live.UNKNOWN) && e.reload() != null
+                && e.reload().gameLagsBehind(live.sourceSha())) {
+            // Issue #732 : le fichier DEV est bien celui de l'éditeur, mais le relevé du jeu montre
+            // autre chose. Un fichier identique déjà chargé n'est pas rechargé par une mise en jeu :
+            // le bouton n'est proposé que s'il peut servir.
+            tone = "warn";
+            text = inGameText(e.reload().inGame());
+            offerPublish = e.reload().inGame() == DialogueDevReload.InGame.NOT_LOADED;
         }
         StringBuilder sb = new StringBuilder("<div class=\"dlg-live tone-").append(tone).append("\" role=\"status\">");
         sb.append("<span>").append(Http.esc(text));
@@ -634,7 +691,163 @@ public final class DialoguePages {
                     .append(hidden("return", "/dialogues/edit/" + e.slug()))
                     .append("<button class=\"btn secondary sm\" type=\"submit\">Vérifier</button></form>");
         }
+        if (live.live() != Live.PUBLISHING && live.live() != Live.SERVER_ONLY && canReload(rights, e)) {
+            sb.append(reloadButton());
+        }
         return sb.append("</div>").toString();
+    }
+
+    /** Identifiant du formulaire de l'éditeur : les boutons placés hors de lui l'envoient quand même. */
+    static final String EDITOR_FORM_ID = "dlg-editor-form";
+
+    /** « Recharger depuis DEV » est offert dès que le dialogue est enregistré ici et modifiable. */
+    private static boolean canReload(Rights rights, Editing e) {
+        return rights.write() && e.readOnly().isEmpty() && e.serverCopy() == null && !e.expectedSha().isEmpty();
+    }
+
+    /**
+     * Issue #732 — le bouton envoie le formulaire de l'éditeur (attribut {@code form}) : les
+     * modifications non enregistrées arrivent au serveur, qui demande quoi en faire au lieu de les
+     * perdre. Rien n'est lu ni remplacé par ce seul clic s'il y en a.
+     */
+    private static String reloadButton() {
+        return "<button class=\"btn secondary sm dlg-reload-btn\" type=\"submit\" form=\"" + EDITOR_FORM_ID
+                + "\" name=\"_op\" value=\"reload\" formnovalidate data-busy-label=\"Lecture…\">"
+                + Icons.icon("refresh") + "Recharger depuis DEV</button>";
+    }
+
+    /**
+     * Issue #732 — des modifications non enregistrées existent : on demande AVANT toute lecture.
+     * « Garder mes modifications » est le choix par défaut ; abandonner demande une case cochée.
+     * Placé dans le formulaire : chaque bouton renvoie la saisie telle quelle.
+     */
+    private static String reloadAsk(Reload r, String slug) {
+        StringBuilder sb = new StringBuilder("<section class=\"card dlg-card dlg-reload tone-warn\" id=\"dlg-reload\" ")
+                .append("role=\"alertdialog\" aria-labelledby=\"dlg-reload-h\">");
+        sb.append("<h2 class=\"dlg-node-h\" id=\"dlg-reload-h\">").append(Icons.icon("warning"))
+                .append("Vous avez des modifications non enregistrées</h2>");
+        sb.append("<p>Si vous rechargez la version du serveur DEV, ces modifications <strong>disparaîtront de "
+                + "l'éditeur</strong>. Rien n'a encore été rechargé.</p>");
+        if (!r.askError().isEmpty()) {
+            sb.append("<p class=\"field-error\" role=\"alert\">").append(Icons.icon("warning"))
+                    .append(Http.esc(r.askError())).append("</p>");
+        }
+        sb.append("<div class=\"btnrow\">")
+                .append("<button class=\"btn sm\" type=\"submit\" name=\"_op\" value=\"reload_cancel\" formnovalidate>")
+                .append("Annuler — garder mes modifications</button>")
+                .append("<a class=\"btn secondary sm\" href=\"/dialogues/diagnostic?focus=").append(Http.esc(slug))
+                .append("\" target=\"_blank\" rel=\"noopener\">")
+                .append(Icons.icon("search")).append("Comparer les versions</a></div>");
+        sb.append("<details class=\"dlg-more\"><summary>Recharger quand même</summary>")
+                .append("<p class=\"form-text\">Une copie de vos modifications est gardée dans les sauvegardes de "
+                        + "PlugAdmin, mais elle ne sera plus dans l'éditeur.</p>")
+                .append("<label class=\"dlg-check\"><input type=\"checkbox\" name=\"reload_discard\" value=\"1\"> ")
+                .append("Je veux abandonner mes modifications non enregistrées</label>")
+                .append("<div class=\"btnrow\"><button class=\"btn secondary sm npc-danger\" type=\"submit\" ")
+                .append("name=\"_op\" value=\"reload_confirm\" formnovalidate>").append(Icons.icon("refresh"))
+                .append("Recharger en abandonnant mes modifications</button></div></details>");
+        return sb.append("</section>").toString();
+    }
+
+    /** Une phrase simple : ce que le jeu utilise, par rapport au fichier DEV. */
+    public static String inGameText(DialogueDevReload.InGame inGame) {
+        return switch (inGame) {
+            case SAME -> "En jeu : c'est bien cette version que les joueurs voient.";
+            case OLDER -> "Attention : ce fichier est enregistré sur DEV, mais une ancienne version est toujours en "
+                    + "jeu (le serveur ne l'a pas rechargé). Les joueurs la verront à la prochaine mise en jeu d'une "
+                    + "modification, ou au prochain rechargement des dialogues.";
+            case NOT_LOADED -> "Attention : ce fichier est enregistré sur DEV, mais le jeu ne l'a pas chargé. "
+                    + "« Mettre en jeu » demande au serveur de le charger.";
+            case UNKNOWN -> "En jeu : on ne sait pas encore si le jeu utilise cette version (« Vérifier » pour le savoir).";
+        };
+    }
+
+    /**
+     * Issue #732 — l'étape après « Recharger depuis DEV » : lecture en cours, échec (rien n'a
+     * changé), ou version lue — que l'on remplace seulement sur un clic, la version enregistrée
+     * ici étant sauvegardée avant.
+     */
+    private static String reloadPanel(String csrf, Ctx ctx, Editing e) {
+        Reload r = e.reload();
+        DialogueDevReload read = r.read();
+        String slug = e.slug();
+        StringBuilder sb = new StringBuilder("<section class=\"card dlg-card dlg-reload\" id=\"dlg-reload\">");
+        sb.append("<h2 class=\"dlg-node-h\">").append(Icons.icon("refresh")).append("Recharger depuis DEV</h2>");
+        String again = "<div class=\"btnrow\">" + reloadReadForm(csrf, ctx, slug, "Relire le serveur DEV")
+                + "<a class=\"btn secondary sm\" href=\"/dialogues/edit/" + Http.esc(slug) + "\">Fermer</a></div>";
+        String unchanged = " Rien n'a changé dans l'éditeur.";
+        switch (read.status()) {
+            case PENDING -> sb.append("<p role=\"status\" data-pa-track-action=\"").append(Http.esc(r.readId()))
+                    .append("\" data-pa-track-reload=\"terminal\">").append(Icons.icon("refresh"))
+                    .append("Lecture de la version DEV en cours… La page se met à jour toute seule.</p>");
+            case FAILED -> sb.append("<p class=\"field-error\" role=\"alert\">")
+                    .append(Http.esc("Lecture impossible : " + read.message() + "." + unchanged)).append("</p>")
+                    .append(again);
+            case ABSENT -> sb.append("<p class=\"field-error\" role=\"alert\">")
+                    .append(Http.esc("Le serveur DEV n'a pas ce dialogue : il n'a jamais été mis en jeu, ou il a été "
+                            + "retiré." + unchanged)).append("</p>").append(again);
+            case TOO_LARGE -> sb.append("<p class=\"field-error\" role=\"alert\">")
+                    .append(Http.esc("Le fichier DEV est trop gros pour être relu depuis PlugAdmin." + unchanged))
+                    .append("</p>").append(again);
+            case CORRUPT -> sb.append("<p class=\"field-error\" role=\"alert\">")
+                    .append(Http.esc("Le fichier reçu est abîmé (son empreinte ne correspond pas)." + unchanged))
+                    .append("</p>").append(again);
+            case STALE -> sb.append("<p class=\"field-error\" role=\"alert\">")
+                    .append(Http.esc("Le fichier DEV a encore changé depuis la lecture : relisez-le." + unchanged))
+                    .append("</p>").append(again);
+            case READY -> sb.append(reloadReady(csrf, ctx, slug, r, read));
+        }
+        return sb.append("</section>").toString();
+    }
+
+    private static String reloadReady(String csrf, Ctx ctx, String slug, Reload r, DialogueDevReload read) {
+        StringBuilder sb = new StringBuilder();
+        String inGame = "<p class=\"dlg-ingame tone-" + (r.inGame() == DialogueDevReload.InGame.SAME ? "ok"
+                : r.inGame() == DialogueDevReload.InGame.UNKNOWN ? "info" : "warn") + "\">"
+                + Http.esc(inGameText(r.inGame())) + "</p>";
+        if (read.devSha().equals(r.sourceSha())) {
+            sb.append("<p role=\"status\">").append(Icons.icon("check"))
+                    .append("Version DEV relue : c'est exactement votre version enregistrée. Rien à recharger.</p>")
+                    .append(inGame).append("<div class=\"btnrow\"><a class=\"btn secondary sm\" href=\"/dialogues/edit/")
+                    .append(Http.esc(slug)).append("\">Fermer</a></div>");
+            return sb.toString();
+        }
+        int lines = read.lineCount();
+        sb.append("<p role=\"status\">").append(Icons.icon("check")).append("Version DEV lue")
+                .append(lines > 0 ? " : " + lines + (lines > 1 ? " répliques" : " réplique") : "")
+                .append(" (empreinte <code>").append(Http.esc(read.shortSha())).append("</code>). ")
+                .append("Elle est <strong>différente</strong> de votre version enregistrée ici.</p>");
+        sb.append(inGame);
+        sb.append("<p class=\"dlg-warn\">").append(Icons.icon("warning"))
+                .append("Si vous continuez, votre version enregistrée ici sera remplacée par celle de DEV. Une "
+                        + "sauvegarde de votre version est faite avant. Rien n'est changé en jeu.</p>");
+        if (!read.editorIssues().isEmpty()) {
+            sb.append("<p class=\"dlg-warn\">").append(Icons.icon("warning"))
+                    .append(Http.esc("L'éditeur simple ne sait pas relire cette version sans perte ("
+                            + String.join(" ; ", read.editorIssues()) + ") : après le rechargement, elle s'affichera "
+                            + "en lecture seule.")).append("</p>");
+        }
+        sb.append("<details class=\"dlg-more\"><summary>Voir le fichier DEV</summary><div class=\"codeblock\"><pre>")
+                .append(Http.esc(read.text())).append("</pre></div></details>");
+        sb.append("<form method=\"post\" action=\"/dialogues/reload\" data-submit-once>")
+                .append(hidden("_csrf", csrf)).append(hidden("agent", ctx.agentId())).append(hidden("slug", slug))
+                .append(hidden("_op", "apply")).append(hidden("read_id", r.readId()))
+                .append(hidden("expected_dev_sha", read.devSha())).append(hidden("expected_sha", r.sourceSha()))
+                .append("<div class=\"btnrow\"><button class=\"btn sm\" type=\"submit\" data-busy-label=\"Rechargement…\">")
+                .append(Icons.icon("refresh")).append("Remplacer ma version par celle de DEV</button>")
+                .append("<a class=\"btn secondary sm\" href=\"/dialogues/diagnostic?focus=").append(Http.esc(slug))
+                .append("\">").append(Icons.icon("search")).append("Comparer les versions</a>")
+                .append("<a class=\"btn secondary sm\" href=\"/dialogues/edit/").append(Http.esc(slug))
+                .append("\">Annuler</a></div></form>");
+        return sb.toString();
+    }
+
+    /** Relit le fichier DEV, sans formulaire d'édition à transmettre (aucun brouillon en jeu ici). */
+    private static String reloadReadForm(String csrf, Ctx ctx, String slug, String label) {
+        return "<form method=\"post\" action=\"/dialogues/reload\" data-submit-once>" + hidden("_csrf", csrf)
+                + hidden("agent", ctx.agentId()) + hidden("slug", slug) + hidden("_op", "read")
+                + "<button class=\"btn secondary sm\" type=\"submit\" data-busy-label=\"Lecture…\">"
+                + Icons.icon("refresh") + Http.esc(label) + "</button></form>";
     }
 
     /**
@@ -644,6 +857,10 @@ public final class DialoguePages {
      * sauvegarde) ou celle du serveur.
      */
     static String conflictBox(String csrf, Ctx ctx, String slug) {
+        return conflictBox(csrf, ctx, slug, false);
+    }
+
+    static String conflictBox(String csrf, Ctx ctx, String slug, boolean reload) {
         StringBuilder sb = new StringBuilder("<div class=\"dlg-live dlg-conflict tone-err\" role=\"alert\">");
         sb.append("<p><strong>").append(Icons.icon("warning"))
                 .append("Le serveur a une autre version de ce dialogue.</strong> Quelqu'un l'a changée en dehors de "
@@ -653,11 +870,16 @@ public final class DialoguePages {
                 .append("<li><strong>Comparez</strong> les deux versions pour voir ce qui a changé.</li>")
                 .append("<li><strong>Pour garder la vôtre</strong> : après la comparaison, choisissez « Écraser la "
                         + "version DEV » et confirmez. L'autre version est sauvegardée avant d'être remplacée.</li>")
-                .append("<li><strong>Pour garder celle du serveur</strong> : ne mettez pas votre version en jeu ; "
+                .append(reload ? "<li><strong>Pour garder celle du serveur</strong> : cliquez « Recharger depuis "
+                        + "DEV ». Votre version est sauvegardée avant d'être remplacée.</li>"
+                        : "<li><strong>Pour garder celle du serveur</strong> : ne mettez pas votre version en jeu ; "
                         + "recopiez dans l'éditeur ce que vous voulez garder de l'autre version.</li>")
                 .append("</ol>");
         sb.append("<div class=\"btnrow\"><a class=\"btn sm\" href=\"/dialogues/diagnostic?focus=")
                 .append(Http.esc(slug)).append("\">").append(Icons.icon("search")).append("Comparer les deux versions</a>");
+        if (reload) {
+            sb.append(reloadButton());
+        }
         sb.append("<form method=\"post\" action=\"/dialogues/refresh\" data-submit-once>")
                 .append(hidden("_csrf", csrf)).append(hidden("agent", ctx.agentId()))
                 .append(hidden("return", "/dialogues/edit/" + slug))

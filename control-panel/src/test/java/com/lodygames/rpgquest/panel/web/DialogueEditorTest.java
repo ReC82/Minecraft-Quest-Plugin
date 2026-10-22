@@ -506,6 +506,217 @@ class DialogueEditorTest {
                 "le brouillon est gardé");
     }
 
+    // ---- Recharger depuis DEV (issue #732) -------------------------------------------------------
+
+    private static final String LUCIEN_DEV = LUCIEN.replace("Salut !", "Bonjour depuis DEV !");
+
+    private String readIdOf(HttpResponse<String> res) {
+        String location = res.headers().firstValue("Location").orElse("");
+        Matcher m = Pattern.compile("[?&]reload=([^&#]+)").matcher(location);
+        assertTrue(m.find(), location);
+        return java.net.URLDecoder.decode(m.group(1), StandardCharsets.UTF_8);
+    }
+
+    private static Map<String, String> applyForm(String page) {
+        int at = page.indexOf("value=\"apply\"");
+        assertTrue(at > 0, "le remplacement est proposé");
+        return formFieldsOf(page.substring(page.lastIndexOf("<form", at)), "/dialogues/reload");
+    }
+
+    /** Le texte, tel quel ou avec ses apostrophes échappées par le rendu. */
+    private static boolean shows(String page, String text) {
+        return page.contains(text) || page.contains(text.replace("'", "&#39;"));
+    }
+
+    private List<Path> backups(String suffix) throws Exception {
+        Path root = tmp.resolve("content-backups");
+        if (!Files.isDirectory(root)) {
+            return List.of();
+        }
+        try (var walk = Files.walk(root)) {
+            return walk.filter(p -> p.getFileName().toString().endsWith(suffix)).toList();
+        }
+    }
+
+    /** État propre : un clic lit DEV (sans rien écrire), un second remplace, avec sauvegarde. */
+    @Test
+    void reloadWithoutLocalChangesReadsDevThenReplacesOnlyOnClickWithABackup() throws Exception {
+        start();
+        devState("lucien", sha256(LUCIEN), Instant.now().minusSeconds(60));
+        String page = get("/dialogues/edit/lucien").body();
+        assertTrue(page.contains("Recharger depuis DEV"), "bouton visible sans passer par les détails techniques");
+        assertTrue(page.contains("form=\"dlg-editor-form\""), "il envoie le formulaire de l'éditeur");
+
+        HttpResponse<String> res = post("/dialogues/save", formFields(page), "reload");
+        assertEquals(303, res.statusCode());
+        String readId = readIdOf(res);
+        assertEquals(1, actions("content.dev.read").size(), "une lecture du fichier DEV");
+        assertEquals("lucien", actions("content.dev.read").get(0).params().get("id"));
+        assertEquals(LUCIEN, Files.readString(content.resolve("dialogues/lucien.yml")), "rien d'écrit à la lecture");
+
+        String pending = get("/dialogues/edit/lucien?reload=" + readId).body();
+        assertTrue(pending.contains("Lecture de la version DEV en cours"), pending);
+        assertTrue(pending.contains("data-pa-track-action=\"" + readId + "\""), "la page se met à jour seule");
+
+        recordDevRead("lucien", LUCIEN_DEV);
+        String ready = get("/dialogues/edit/lucien?reload=" + readId).body();
+        assertTrue(ready.contains("Version DEV lue"), ready);
+        assertTrue(ready.contains("différente"));
+        assertTrue(ready.contains("Remplacer ma version par celle de DEV"));
+        assertTrue(ready.contains("href=\"/dialogues/diagnostic?focus=lucien\""), "comparer est proposé");
+        assertEquals(LUCIEN, Files.readString(content.resolve("dialogues/lucien.yml")), "toujours rien d'écrit");
+
+        HttpResponse<String> done = post("/dialogues/reload", applyForm(ready), null);
+        assertEquals(303, done.statusCode());
+        assertTrue(done.headers().firstValue("Location").orElse("").contains("reloaded="));
+        assertEquals(LUCIEN_DEV, Files.readString(content.resolve("dialogues/lucien.yml")), "octet pour octet");
+        List<Path> saved = backups("lucien.yml");
+        assertEquals(1, saved.size(), "la version remplacée est sauvegardée");
+        assertEquals(LUCIEN, Files.readString(saved.get(0)));
+        assertTrue(actions("content.publish").isEmpty(), "rien n'est mis en jeu");
+        assertTrue(actions("content.publish.batch").isEmpty());
+
+        String after = get(done.headers().firstValue("Location").orElseThrow()).body();
+        assertTrue(shows(after, "Version DEV rechargée dans l'éditeur"), after);
+        assertTrue(formHtml(after).contains("Bonjour depuis DEV !"), "l'éditeur montre la version DEV");
+
+        // Rejouer le même formulaire ne réécrit rien : la version d'ici a changé depuis.
+        HttpResponse<String> replay = post("/dialogues/reload", applyForm(ready), null);
+        assertTrue(replay.headers().firstValue("Location").orElse("").contains("err="));
+        assertEquals(1, backups("lucien.yml").size());
+    }
+
+    /** Modifications non enregistrées : on demande d'abord ; rien n'est perdu sans case cochée. */
+    @Test
+    void unsavedChangesAreNeverDroppedWithoutAnExplicitConfirmation() throws Exception {
+        start();
+        Map<String, String> f = formFields(get("/dialogues/edit/lucien").body());
+        f.put("n0_text", "Mon brouillon précieux");
+
+        HttpResponse<String> ask = post("/dialogues/save", f, "reload");
+        assertEquals(200, ask.statusCode(), "aucune redirection : la saisie est réaffichée");
+        assertTrue(ask.body().contains("Vous avez des modifications non enregistrées"), ask.body());
+        assertTrue(formHtml(ask.body()).contains("Mon brouillon précieux"), "le brouillon est toujours là");
+        assertTrue(formHtml(ask.body()).contains("value=\"reload_cancel\""), "Annuler est dans le formulaire");
+        assertTrue(actions("content.dev.read").isEmpty(), "rien n'est lu avant le choix");
+
+        HttpResponse<String> cancel = post("/dialogues/save", formFields(ask.body()), "reload_cancel");
+        assertTrue(shows(cancel.body(), "Rien n'a été rechargé"));
+        assertTrue(formHtml(cancel.body()).contains("Mon brouillon précieux"));
+
+        HttpResponse<String> unchecked = post("/dialogues/save", formFields(ask.body()), "reload_confirm");
+        assertTrue(shows(unchecked.body(), "cochez d'abord la case"), unchecked.body());
+        assertTrue(formHtml(unchecked.body()).contains("Mon brouillon précieux"));
+        assertTrue(actions("content.dev.read").isEmpty());
+
+        Map<String, String> confirmed = formFields(ask.body());
+        confirmed.put("reload_discard", "1");
+        HttpResponse<String> go = post("/dialogues/save", confirmed, "reload_confirm");
+        assertEquals(303, go.statusCode());
+        readIdOf(go);
+        assertEquals(1, actions("content.dev.read").size());
+        List<Path> kept = backups("lucien.brouillon.yml");
+        assertEquals(1, kept.size(), "une copie du brouillon est gardée");
+        assertTrue(Files.readString(kept.get(0)).contains("Mon brouillon précieux"));
+        assertEquals(LUCIEN, Files.readString(content.resolve("dialogues/lucien.yml")),
+                "la version enregistrée n'est pas touchée par la lecture");
+    }
+
+    /** Erreur de lecture ou fichier absent : message clair, éditeur et fichier intacts. */
+    @Test
+    void aReadErrorOrAMissingFileLeavesTheEditorUntouched() throws Exception {
+        start();
+        String readId = readIdOf(post("/dialogues/save", formFields(get("/dialogues/edit/lucien").body()), "reload"));
+        store.recordResult(readId, TestConfig.AGENT_ID, AgentActionStatus.FAILED, "IO", "Lecture refusée par le serveur",
+                "{\"action_id\":\"" + readId + "\",\"status\":\"FAILED\"}", Instant.now());
+        String failed = get("/dialogues/edit/lucien?reload=" + readId).body();
+        assertTrue(failed.contains("Lecture impossible"), failed);
+        assertTrue(shows(failed, "Rien n'a changé dans l'éditeur"));
+        assertFalse(failed.contains("value=\"apply\""), "rien à remplacer");
+        assertTrue(failed.contains("Relire le serveur DEV"), "on peut réessayer");
+        assertEquals(LUCIEN, Files.readString(content.resolve("dialogues/lucien.yml")));
+
+        Map<String, String> again = formFieldsOf(failed.substring(failed.indexOf("id=\"dlg-reload\"")), "/dialogues/reload");
+        String second = readIdOf(post("/dialogues/reload", again, null));
+        store.recordResult(second, TestConfig.AGENT_ID, AgentActionStatus.SUCCESS, "absent", "ok",
+                "{\"action_id\":\"" + second + "\",\"status\":\"SUCCESS\",\"details\":{\"kind\":\"dialogues\","
+                        + "\"slug\":\"lucien\",\"present\":false,\"tooLarge\":false,\"sha256\":\"\",\"text\":\"\"}}",
+                Instant.now());
+        String absent = get("/dialogues/edit/lucien?reload=" + second).body();
+        assertTrue(shows(absent, "n'a pas ce dialogue"), absent);
+        assertEquals(LUCIEN, Files.readString(content.resolve("dialogues/lucien.yml")));
+        assertTrue(backups(".yml").isEmpty(), "aucune sauvegarde ni écriture");
+
+        // Un identifiant de lecture qui ne concerne pas ce dialogue n'affiche rien.
+        assertFalse(get("/dialogues/edit/lucien?reload=inconnu").body().contains("id=\"dlg-reload\""));
+    }
+
+    /**
+     * Parcours Musty : mise en jeu refusée (INVALID_CONTENT), puis vrai conflit ; on recharge DEV,
+     * on réapplique sa correction et la mise en jeu repart sans rester bloquée.
+     */
+    @Test
+    void afterARefusedThenConflictingPublishTheOwnerReloadsFixesAndRetries() throws Exception {
+        start();
+        Instant t0 = Instant.now().minusSeconds(120);
+        devState("lucien", sha256(LUCIEN), t0);
+        Map<String, String> f = formFields(get("/dialogues/edit/lucien").body());
+        f.put("n0_text", "Version invalide");
+        post("/dialogues/save", f, "save_publish");
+        AgentActionRow first = actions("content.publish").get(0);
+        publishResult(first.id(), false, "INVALID_CONTENT", sha256(LUCIEN), sha256(LUCIEN), t0.plusSeconds(2));
+
+        Map<String, String> g = formFields(get("/dialogues/edit/lucien").body());
+        g.put("n0_text", "Version corrigée");
+        post("/dialogues/save", g, "save_publish");
+        AgentActionRow second = actions("content.publish").stream().filter(a -> !a.id().equals(first.id()))
+                .findFirst().orElseThrow();
+        publishResult(second.id(), false, "CONFLICT", sha256(LUCIEN_DEV), sha256(LUCIEN_DEV), t0.plusSeconds(4));
+
+        String conflict = get("/dialogues/edit/lucien").body();
+        assertTrue(conflict.contains("Le serveur a une autre version de ce dialogue"), conflict);
+        int box = conflict.indexOf("dlg-conflict");
+        assertTrue(conflict.indexOf("Recharger depuis DEV", box) > 0, "le conflit propose de recharger");
+
+        String readId = readIdOf(post("/dialogues/save", formFields(conflict), "reload"));
+        recordDevRead("lucien", LUCIEN_DEV);
+        String ready = get("/dialogues/edit/lucien?reload=" + readId).body();
+        post("/dialogues/reload", applyForm(ready), null);
+        assertEquals(LUCIEN_DEV, Files.readString(content.resolve("dialogues/lucien.yml")));
+        assertEquals(1, backups("lucien.yml").size(), "« Version corrigée » est sauvegardée");
+
+        String reloaded = get("/dialogues/edit/lucien?reloaded=" + readId).body();
+        assertFalse(reloaded.contains("Le serveur a une autre version de ce dialogue"), "le conflit est résolu");
+
+        Map<String, String> h = formFields(reloaded);
+        h.put("n0_text", "Version corrigée, réappliquée");
+        post("/dialogues/save", h, "save_publish");
+        List<AgentActionRow> pubs = actions("content.publish");
+        assertEquals(3, pubs.size(), "la mise en jeu repart");
+        AgentActionRow third = pubs.stream().filter(a -> !a.id().equals(first.id()) && !a.id().equals(second.id()))
+                .findFirst().orElseThrow();
+        assertEquals(sha256(LUCIEN_DEV), third.params().get("expected_dev_sha"),
+                "référence = la version DEV reprise, pas l'ancienne");
+    }
+
+    /** Fichier DEV rechargé mais relevé du jeu différent : les deux états sont dits séparément. */
+    @Test
+    void aDevFileThatTheGameHasNotLoadedIsSaidSeparately() throws Exception {
+        start();
+        String readId = readIdOf(post("/dialogues/save", formFields(get("/dialogues/edit/lucien").body()), "reload"));
+        recordDevRead("lucien", LUCIEN_DEV);
+        survey("{\"dialogues\":[{\"id\":\"rpgquest:lucien\",\"key\":\"lucien\",\"startNodeId\":\"start\","
+                + "\"nodes\":[{\"id\":\"start\",\"speaker\":\"Lucien\",\"text\":\"Salut !\",\"choices\":["
+                + "{\"text\":\"Au revoir\",\"nextNodeId\":\"\",\"actions\":[{\"kind\":\"CLOSE\"}],"
+                + "\"conditions\":[]}]}]}]}");
+        String ready = get("/dialogues/edit/lucien?reload=" + readId).body();
+        assertTrue(ready.contains("une ancienne version est toujours en jeu"), ready);
+        post("/dialogues/reload", applyForm(ready), null);
+        String after = get("/dialogues/edit/lucien?reloaded=" + readId).body();
+        assertTrue(after.contains("Version DEV rechargée dans l"), after);
+        assertTrue(after.contains("une ancienne version est toujours en jeu"), "fichier DEV ≠ version en jeu");
+    }
+
     private void devState(String slug, String sha, Instant at) {
         String id = store.createAction(TestConfig.AGENT_ID, "content.dev.state", Map.of(), "owner");
         String details = "{\"files\":[{\"kind\":\"dialogues\",\"slug\":\"" + slug + "\",\"sha256\":\"" + sha

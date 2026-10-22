@@ -8284,6 +8284,36 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-407 — Dialogues : « Recharger depuis DEV » dans l'éditeur guidé (issue #732, PENDING MANUAL VALIDATION)
+
+PlugAdmin seul. Migration additive de `control-panel.db` (table `content_dev_reference`), aucune pour `data.db`.
+**Ne pas utiliser Musty ni un dialogue réel** : un dialogue jetable uniquement. Acquis à ne pas régresser :
+#128, #129, #130, TC-403, TC-404.
+
+1.  Dialogue jetable, sans rien modifier → **Recharger depuis DEV** (bandeau d'état en haut). **Attendu** :
+    encadré « Recharger depuis DEV — Lecture de la version DEV en cours… », puis la page se met à jour seule :
+    « Version DEV relue : c'est exactement votre version enregistrée » (ou « différente »), et une ligne « En
+    jeu : … » distincte. Rien n'est mis en jeu.
+2.  Modifier une réplique **sans enregistrer** → **Recharger depuis DEV**. **Attendu** : encadré « Vous avez des
+    modifications non enregistrées », votre texte toujours dans l'éditeur. **Annuler — garder mes
+    modifications** → rien n'est perdu. Recommencer, ouvrir « Recharger quand même » et cliquer sans cocher →
+    « cochez d'abord la case », rien de perdu. Cocher et confirmer → la lecture part ; message de copie de
+    secours.
+3.  Provoquer une modification ailleurs (**Détails techniques** → ce dialogue → édition directe sur le
+    serveur), puis dans l'éditeur **Recharger depuis DEV**. **Attendu** : « Version DEV lue… différente »,
+    boutons **Remplacer ma version par celle de DEV**, **Comparer les versions**, **Annuler**. Remplacer →
+    « Version DEV rechargée dans l'éditeur » et le texte du serveur dans l'éditeur ; la ligne « En jeu » dit si
+    le jeu utilise déjà cette version.
+4.  Parcours conflit (TC-404 étape 3) : l'encadré rouge propose **Recharger depuis DEV** ; recharger, remplacer,
+    réappliquer sa correction → **Enregistrer et mettre en jeu** part **sans CONFLICT** → « À jour en jeu ».
+5.  Téléphone (largeur ~390 px) : bandeau et encadré lisibles, boutons utilisables, pas de défilement
+    horizontal.
+
+**Couverture automatisée** : `DialogueDevReloadTest` (états de lecture, version en jeu confirmée / comparée /
+inconnue), `DialogueEditorTest` (état propre, brouillon modifié jamais perdu sans case cochée + copie de
+secours, erreur de lecture et fichier absent sans effet, rejeu refusé, parcours refus puis conflit → recharger,
+réappliquer, remettre en jeu avec la référence reprise, fichier DEV ≠ version en jeu).
+
 ### TC-405 — Atelier : télécharger le journal IA d'un projet (issue #739, PENDING MANUAL VALIDATION)
 
 PlugAdmin seul. Aucune migration de `data.db` ; table additive `ai_journal_event` dans `control-panel.db`.

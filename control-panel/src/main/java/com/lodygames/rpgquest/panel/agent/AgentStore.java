@@ -72,6 +72,27 @@ public final class AgentStore {
     private static final String CREATE_ACTION_INDEX =
             "CREATE INDEX IF NOT EXISTS idx_agent_action_agent_status ON agent_action(agent_id, status)";
 
+    /**
+     * Issue #732 — « Recharger depuis DEV » : la version DEV qu'un administrateur a reprise dans
+     * PlugAdmin devient la référence attendue sur DEV, comme si nous l'y avions écrite. Une ligne par
+     * ressource, remplacée à chaque rechargement. Table additive, créée si absente.
+     */
+    private static final String CREATE_DEV_REFERENCE = """
+            CREATE TABLE IF NOT EXISTS content_dev_reference (
+                agent_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                slug TEXT NOT NULL,
+                dev_sha TEXT NOT NULL,
+                adopted_at TEXT NOT NULL,
+                adopted_by TEXT,
+                PRIMARY KEY (agent_id, kind, slug)
+            )
+            """;
+
+    /** Une version DEV reprise dans PlugAdmin (issue #732). */
+    public record DevReference(String devSha, Instant adoptedAt) {
+    }
+
     private final String jdbcUrl;
 
     public AgentStore(String dbPath) {
@@ -80,8 +101,46 @@ public final class AgentStore {
             statement.execute(CREATE_HEARTBEAT);
             statement.execute(CREATE_ACTION);
             statement.execute(CREATE_ACTION_INDEX);
+            statement.execute(CREATE_DEV_REFERENCE);
         } catch (SQLException e) {
             throw new IllegalStateException("Impossible d'initialiser les tables agent dans " + dbPath, e);
+        }
+    }
+
+    // ---- Référence DEV reprise (issue #732) ---------------------------------------------
+
+    public void adoptDevReference(String agentId, String kind, String slug, String devSha, String by, Instant at) {
+        String sql = """
+                INSERT INTO content_dev_reference (agent_id, kind, slug, dev_sha, adopted_at, adopted_by)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(agent_id, kind, slug) DO UPDATE SET
+                    dev_sha=excluded.dev_sha, adopted_at=excluded.adopted_at, adopted_by=excluded.adopted_by
+                """;
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            ps.setString(2, kind);
+            ps.setString(3, slug);
+            ps.setString(4, devSha);
+            ps.setString(5, at.toString());
+            ps.setString(6, by);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Écriture de la référence DEV impossible (" + kind + "/" + slug + ")", e);
+        }
+    }
+
+    public Optional<DevReference> devReference(String agentId, String kind, String slug) {
+        String sql = "SELECT dev_sha, adopted_at FROM content_dev_reference WHERE agent_id = ? AND kind = ? AND slug = ?";
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            ps.setString(2, kind);
+            ps.setString(3, slug);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(new DevReference(rs.getString(1), Instant.parse(rs.getString(2))))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture de la référence DEV impossible (" + kind + "/" + slug + ")", e);
         }
     }
 

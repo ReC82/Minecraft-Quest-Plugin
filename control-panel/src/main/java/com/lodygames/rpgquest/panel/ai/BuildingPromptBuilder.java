@@ -196,13 +196,21 @@ public final class BuildingPromptBuilder {
                 - op: box     → remplit toute la zone.
                 - op: shell   → ne pose que l'enveloppe (les six faces), intérieur vide.
                 - op: walls   → ne pose que les quatre murs verticaux : ni sol, ni plafond.
-                - op: clear   → VIDE la zone. Pas de clé « block ».
+                - op: clear   → VIDE la zone. Pas de clé « block ». Les instructions
+                                s'appliquent DANS L'ORDRE : un « clear » posé après une porte,
+                                une fenêtre, une lumière ou un meuble les EFFACE. Place les
+                                « clear » juste après les volumes, avant tout le reste, et ne
+                                leur fais jamais traverser un mur extérieur : ils y percent
+                                un trou.
                 - op: pillars → une colonne verticale tous les « spacing » blocs le long de la
                                 zone. Clés : « spacing » (défaut 4, minimum 2).
                 - op: gable   → toit à deux pentes. Exige « axis: x » ou « axis: z » — l'axe du
                                 FAÎTE, pas une direction — et un bloc d'ESCALIER. Ajoute « fill: » avec un bloc plein :
                                 c'est le matériau des deux triangles de pignon, et sans lui le
                                 pignon est fait d'escaliers, ce qui laisse des creux visibles.
+                                UN SEUL « gable » par corps de bâtiment : deux toits superposés
+                                créent un faux étage inaccessible et de nouveaux pignons
+                                ouverts. Un toit qui déborde d'un mur en retrait est permis.
 
                 Ces instructions prennent « from » et, facultativement, « to ». Sans « to »,
                 l'instruction vise UN SEUL bloc. Les bornes sont INCLUSES des deux côtés :
@@ -749,6 +757,54 @@ public final class BuildingPromptBuilder {
      */
     public static String correctionPrompt(Demand demand, String previousPlan, String refusal,
                                           String metrics, int attempt, int maxAttempts) {
+        return correctionPrompt(demand, previousPlan, refusal, metrics, attempt, maxAttempts, Repair.of(
+                RepairMode.REPAIR, "", ""));
+    }
+
+    /**
+     * La nature d'une reprise (#747). Une <strong>réparation</strong> corrige ce que le serveur
+     * désigne et préserve tout le reste ; une <strong>amélioration</strong> peut revoir les volumes
+     * en cause et ajouter ce qui manque au brief. Le 22/10/2026, toutes les reprises de l'Église du
+     * hub étaient enfermées dans « corrige UNIQUEMENT ce que le motif désigne » — le clocher, la
+     * cloche et les bancs absents dès la première version ne pouvaient donc jamais apparaître.
+     */
+    public enum RepairMode {
+        REPAIR("Réparation technique"), IMPROVE("Amélioration architecturale");
+
+        private final String label;
+
+        RepairMode(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+    /**
+     * Ce qui accompagne une reprise au-delà du dernier motif (#747).
+     *
+     * @param memory       le bloc « MÉMOIRE DES TENTATIVES » ({@link AttemptMemory#promptBlock}) ; vide si aucune
+     * @param requirements le bloc « CONFORMITÉ AU BRIEF » ({@link BriefRequirements.Report#promptBlock}) ; vide si aucun
+     */
+    public record Repair(RepairMode mode, String memory, String requirements) {
+
+        public Repair {
+            mode = mode == null ? RepairMode.REPAIR : mode;
+            memory = memory == null ? "" : memory.trim();
+            requirements = requirements == null ? "" : requirements.trim();
+        }
+
+        public static Repair of(RepairMode mode, String memory, String requirements) {
+            return new Repair(mode, memory, requirements);
+        }
+    }
+
+    /** La reprise complète : motif, mesures, rang, et — depuis #747 — mode, mémoire et conformité au brief. */
+    public static String correctionPrompt(Demand demand, String previousPlan, String refusal,
+                                          String metrics, int attempt, int maxAttempts, Repair repair) {
+        Repair r = repair == null ? Repair.of(RepairMode.REPAIR, "", "") : repair;
         String measured = metrics == null || metrics.isBlank() ? ""
                 : """
 
@@ -776,15 +832,7 @@ public final class BuildingPromptBuilder {
                 %s
                 Plan refusé :
                 %s
-
-                Corrige UNIQUEMENT ce que le motif désigne. Garde l'identifiant, le nom, la façade
-                et l'intention du brief. Ne réécris pas le plan de zéro : repars de celui-ci, et
-                CONSERVE tout ce qui est déjà juste — pièces, mobilier, décoration, palette : une
-                correction technique ne retire aucun élément voulu par le brief ou la conception. Si le
-                motif parle d'une porte, d'une fenêtre, d'une lumière, d'un escalier ou d'une
-                échelle, utilise l'instruction d'architecture correspondante plutôt que de calculer
-                une coordonnée.
-
+                %s%s
                 Les coordonnées citées par le motif sont MESURÉES sur la grille construite : elles
                 disent exactement quelle cellule bloque et quelle instruction l'a posée. Si le motif
                 contient « RÉPARATION VÉRIFIÉE PAR LE MOTEUR », recopie EXACTEMENT l'instruction
@@ -795,7 +843,47 @@ public final class BuildingPromptBuilder {
                 """.formatted(userPrompt(demand), budget,
                 refusal == null || refusal.isBlank() ? "motif non transmis" : refusal.trim(),
                 measured,
-                previousPlan == null ? "" : previousPlan.trim());
+                previousPlan == null ? "" : previousPlan.trim(),
+                context(r), instruction(r.mode()));
+    }
+
+    /** Mémoire et conformité, chacune dans son bloc ; rien si elles sont vides. */
+    private static String context(Repair r) {
+        StringBuilder sb = new StringBuilder();
+        if (!r.memory().isEmpty()) {
+            sb.append('\n').append(r.memory()).append('\n');
+        }
+        if (!r.requirements().isEmpty()) {
+            sb.append('\n').append(r.requirements()).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** La consigne de reprise selon le mode : préserver, ou repenser ce qui est en cause. */
+    private static String instruction(RepairMode mode) {
+        if (mode == RepairMode.IMPROVE) {
+            return """
+
+                    MODE : AMÉLIORATION ARCHITECTURALE. Les corrections ponctuelles n'ont pas suffi ou
+                    le brief n'est pas réalisé. Repars de ce plan, mais tu peux REVOIR les volumes en
+                    cause (ordre des instructions, murs, toit, « clear ») et AJOUTER les éléments du
+                    brief marqués ✗ ci-dessus. Garde l'identifiant, le nom, la façade, la taille et
+                    tout ce qui est déjà juste ; ne réintroduis aucune erreur déjà résolue.
+                    Si le motif parle d'une porte, d'une fenêtre, d'une lumière, d'un escalier ou
+                    d'une échelle, utilise l'instruction d'architecture correspondante plutôt que
+                    de calculer une coordonnée.
+                    """;
+        }
+        return """
+
+                MODE : RÉPARATION TECHNIQUE. Corrige ce que le motif désigne. Garde l'identifiant, le
+                nom, la façade et l'intention du brief. Ne réécris pas le plan de zéro : repars de
+                celui-ci, et CONSERVE tout ce qui est déjà juste — pièces, mobilier, décoration,
+                palette : une correction technique ne retire aucun élément voulu par le brief ou la
+                conception, et ne réintroduit aucune erreur déjà résolue. Si le motif parle d'une
+                porte, d'une fenêtre, d'une lumière, d'un escalier ou d'une échelle, utilise
+                l'instruction d'architecture correspondante plutôt que de calculer une coordonnée.
+                """;
     }
 
     /**
@@ -809,6 +897,13 @@ public final class BuildingPromptBuilder {
      * vérifié comme un autre — s'il régresse, la version conforme précédente est conservée.</p>
      */
     public static String critiquePrompt(Demand demand, String plan, String metrics, String warnings) {
+        return critiquePrompt(demand, plan, metrics, warnings, "");
+    }
+
+    /** La critique, avec le bilan de conformité au brief de la version acceptée (#747). */
+    public static String critiquePrompt(Demand demand, String plan, String metrics, String warnings,
+                                        String requirements) {
+        String compliance = requirements == null || requirements.isBlank() ? "" : "\n" + requirements.trim() + "\n";
         return """
                 %s
 
@@ -837,7 +932,7 @@ public final class BuildingPromptBuilder {
                 CE QUE LE SERVEUR A MESURÉ SUR LA VERSION ACCEPTÉE
 
                 %s
-                %s
+                %s%s
                 Plan accepté :
                 %s
 
@@ -846,6 +941,7 @@ public final class BuildingPromptBuilder {
                 metrics == null || metrics.isBlank() ? "(aucune mesure transmise)" : metrics.trim(),
                 warnings == null || warnings.isBlank() ? ""
                         : "\nRemarques du serveur à traiter :\n" + warnings.trim() + "\n",
+                compliance,
                 plan == null ? "" : plan.trim());
     }
 

@@ -247,7 +247,23 @@ public final class WorkshopPages {
                               List<ReferenceImageStore.Info> images, CatalogState catalog,
                               boolean ownBuilding, List<BuildingDesignDocStore.Doc> designs,
                               String designConflict, String importQuery,
-                              Optional<PlanImportPreview> importPreview) {
+                              Optional<PlanImportPreview> importPreview, RepairInfo repairInfo) {
+    }
+
+    /**
+     * #747 : ce qui partira avec « Améliorer avec l'IA » en plus du motif — la mémoire des tentatives,
+     * la conformité au brief, le mode suggéré et l'état des images — pour que l'administrateur le voie
+     * avant de payer.
+     *
+     * @param complianceLines une ligne par exigence du brief (✓ réalisée, ✗ manquante, ◌ à apprécier)
+     * @param regressions     ce que cette version réintroduit, ou vide
+     */
+    public record RepairInfo(String memorySummary, List<String> complianceLines, String suggestedMode,
+                             String why, String imageNote, String regressions, String best) {
+
+        public RepairInfo {
+            complianceLines = List.copyOf(complianceLines == null ? List.of() : complianceLines);
+        }
     }
 
     /** Les étapes du parcours, dans l'ordre. */
@@ -1045,6 +1061,7 @@ public final class WorkshopPages {
                     + "automatiquement (diagnostic du serveur)</summary><pre class=\"ws-diagnosis\">")
                     .append(Http.esc(reason)).append("</pre></details>");
         }
+        sb.append(repairInfo(v.repairInfo()));
         sb.append("<div class=\"field\"><label for=\"ws-reason\">Vos consignes en plus "
                 + "<span class=\"muted\">(facultatif)</span></label>")
                 .append("<textarea id=\"ws-reason\" name=\"notes\" rows=\"3\"></textarea>")
@@ -1058,6 +1075,45 @@ public final class WorkshopPages {
                 + "disponible.</p>");
         sb.append("<div class=\"btnrow\"><button class=\"btn btn-primary\" type=\"submit\">")
                 .append(Icons.icon("wrench")).append("Améliorer avec l'IA</button></div></form>");
+        return sb.toString();
+    }
+
+    /**
+     * #747 : la mémoire des tentatives, la conformité au brief, les images et le choix du mode, dans
+     * le formulaire d'amélioration. Le mode « automatique » suit la suggestion affichée.
+     */
+    private static String repairInfo(RepairInfo info) {
+        if (info == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry\"><summary class=\"muted\">"
+                + "Mémoire des tentatives et conformité à la description (envoyées avec la demande)</summary>");
+        sb.append("<p class=\"field-help\">").append(Http.esc(info.memorySummary())).append("</p>");
+        if (!info.regressions().isEmpty()) {
+            sb.append("<p class=\"field-help\">").append(Icons.icon("warning")).append(Http.esc(info.regressions()))
+                    .append("</p>");
+        }
+        if (!info.best().isEmpty()) {
+            sb.append("<p class=\"field-help\">").append(Http.esc(info.best())).append("</p>");
+        }
+        if (info.complianceLines().isEmpty()) {
+            sb.append("<p class=\"field-help\">Aucune exigence reconnue dans la description.</p>");
+        } else {
+            sb.append("<ul class=\"ws-compliance\">");
+            for (String line : info.complianceLines()) {
+                sb.append("<li>").append(Http.esc(line)).append("</li>");
+            }
+            sb.append("</ul><p class=\"field-help\">✓ et ✗ sont vérifiés sur les blocs du plan et du résultat "
+                    + "compilé ; ◌ ne se prouve par aucun bloc et reste à juger à l'aperçu.</p>");
+        }
+        sb.append("<p class=\"field-help\">").append(Http.esc(info.imageNote())).append("</p></details>");
+        sb.append("<div class=\"field\"><label for=\"ws-mode\">Nature de la reprise</label>"
+                + "<select id=\"ws-mode\" name=\"mode\">")
+                .append("<option value=\"auto\" selected>Automatique — ").append(Http.esc(info.suggestedMode()))
+                .append("</option><option value=\"repair\">Réparation technique : corriger le motif, tout garder</option>"
+                        + "<option value=\"improve\">Amélioration architecturale : revoir les volumes en cause, "
+                        + "ajouter ce qui manque à la description</option></select>")
+                .append("<p class=\"field-help\">").append(Http.esc(info.why())).append("</p></div>");
         return sb.toString();
     }
 

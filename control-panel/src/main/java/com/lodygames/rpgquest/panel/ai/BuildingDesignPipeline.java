@@ -259,6 +259,12 @@ public final class BuildingDesignPipeline {
         private String lastCallId = "";
         /** #283 : les pixels des références du projet, joints à chaque passe payante. */
         private final List<com.lodygames.rpgquest.panel.ai.AiProvider.Image> references;
+        /** #747 : la mémoire structurée des tentatives — versions, erreurs résolues, régressions. */
+        private AttemptMemory memory = AttemptMemory.empty();
+        /** #747 : les verdicts déjà rendus dans cette session, par version : repartir d'une version sans la rejuger. */
+        private final Map<String, Judgement> judged = new java.util.HashMap<>();
+        /** #747 : une passe de complétude du brief a-t-elle déjà été accordée hors niveau de qualité ? */
+        private boolean completenessDone;
 
         Session(Run run, BuildingProject project) {
             this.run = run;
@@ -270,6 +276,10 @@ public final class BuildingDesignPipeline {
                     project.buildingId());
             this.spent = run.spentCalls();
             this.references = referencesOf(project.id());
+            // « Repartir de zéro » n'hérite d'aucune erreur ; sinon, le journal du projet est la mémoire.
+            if (!run.fresh() && journal != null) {
+                this.memory = AttemptMemory.fromJournal(journal.store().events(BuildingAiJournal.SCOPE, project.id()));
+            }
         }
 
         void go() {
@@ -322,18 +332,37 @@ public final class BuildingDesignPipeline {
                     }
                 }
                 if (j.verdict().accepted()) {
+                    BriefRequirements.Report compliance = compliance(current, j);
+                    // #747 : une version conforme mais MOINS fidèle au brief que la précédente n'est pas
+                    // promue : la géométrie ne remplace pas ce que le brief demande.
+                    if (best != null && best != current && judged.containsKey(best.id())
+                            && compliance.missing().size() > compliance(best, judged.get(best.id())).missing().size()) {
+                        record(new Pass("NOTE", current.id(), current.version(), "", 0, 0, "Version "
+                                + shortId(current.id()) + " conforme mais moins fidèle au brief que " + shortId(best.id())
+                                + " (" + compliance.summary() + ") : elle n'est pas retenue."));
+                        current = best;
+                        j = judged.get(best.id());
+                        compliance = compliance(current, j);
+                    }
                     best = current;
-                    if (critiques < quality.critiques() && canSpend()) {
+                    boolean completeness = !compliance.complete() && !completenessDone;
+                    if ((critiques < quality.critiques() || completeness) && canSpend()) {
+                        if (critiques >= quality.critiques()) {
+                            completenessDone = true;
+                        }
                         critiques++;
                         critiqueFixed = false;
                         BuildingPlanDraft accepted = current;
                         String measured = metrics(j.verdict());
                         String remarks = String.join("\n", j.verdict().warnings());
-                        BuildingPlanDraft improved = paid("CRITIQUE", (provider, d) -> studio.critique(
-                                provider, d, accepted.plan(), measured, remarks, references),
+                        String requirements = compliance.promptBlock();
+                        String kind = completeness && critiques > quality.critiques() ? "COMPLÉTUDE DU BRIEF" : "CRITIQUE";
+                        BuildingPlanDraft improved = paid(kind, (provider, d) -> studio.critique(
+                                provider, d, accepted.plan(), measured, remarks, references, requirements),
                                 BuildingPlanDraft.Origin.AI_CORRECTION, accepted.id(), "", List.of(
                                         "Plan conforme " + shortId(accepted.id()) + " transmis avec les mesures et "
                                                 + "les remarques du serveur.",
+                                        "Conformité au brief transmise : " + compliance.summary(),
                                         omitted("")));
                         if (improved == null) {
                             succeed();
@@ -371,10 +400,41 @@ public final class BuildingDesignPipeline {
                             + String.join(", ", j.verdict().codes()) + ").");
                     return;
                 }
+                // #747 : la stagnation est bornée — une conception neuve, puis l'arrêt, dit comme tel.
+                boolean stagnating = best == null && memory.stagnating();
+                if (stagnating && freshDesignDone) {
+                    stop("Stagnation : " + memory.sinceImprovement() + " tentatives de suite sans faire mieux que "
+                            + memory.bestRefused().map(AttemptMemory.Attempt::shortId).orElse("la meilleure version")
+                            + ", malgré une conception neuve. La session s'arrête au lieu de payer la même réponse ; "
+                            + "les versions produites restent consultables.");
+                    return;
+                }
                 String codes = String.join(",", j.verdict().codes());
                 sameRefusals = codes.equals(lastCodes) ? sameRefusals + 1 : 0;
                 lastCodes = codes;
                 BuildingPlanDraft refused = current;
+                Judgement base = j;
+                // #747 : un candidat qui réintroduit une erreur résolue n'est pas promu : la correction
+                // suivante repart de la meilleure version refusée, et la raison est écrite.
+                if (best == null) {
+                    String candidate = current.id();
+                    var regressions = memory.regressionsOf(candidate);
+                    var baseline = memory.bestRefused().filter(b -> !b.draftId().equals(candidate));
+                    if (!regressions.isEmpty() && baseline.isPresent()) {
+                        Optional<BuildingPlanDraft> back = drafts.find(baseline.get().draftId());
+                        Judgement again = back.map(d -> judged.containsKey(d.id()) ? judged.get(d.id()) : judge(d))
+                                .orElse(null);
+                        if (back.isPresent() && again != null && again.reached() && !again.verdict().accepted()) {
+                            record(new Pass("NOTE", current.id(), current.version(), "", 0, 0, "Candidat "
+                                    + shortId(current.id()) + " non promu : il réintroduit " + String.join(", ",
+                                    regressions.stream().map(r -> r.code() + " (résolu en " + r.resolvedBy().shortId()
+                                            + ")").toList()) + ". La correction suivante repart de "
+                                    + baseline.get().shortId() + " (" + String.join(", ", baseline.get().codes()) + ")."));
+                            refused = back.get();
+                            base = again;
+                        }
+                    }
+                }
                 // #655 : un diagnostic déjà reçu — même texte, mêmes coordonnées — revient. Le corriger
                 // une fois de plus, c'est payer la même réponse : on change d'approche une fois, puis
                 // on s'arrête en le disant.
@@ -386,7 +446,7 @@ public final class BuildingDesignPipeline {
                             + "réponse ; les versions produites restent consultables.");
                     return;
                 }
-                if ((sameRefusals >= 1 || repeated) && best == null) {
+                if ((sameRefusals >= 1 || repeated || stagnating) && best == null) {
                     freshDesignDone = true;
                     // Deux refus identiques de suite : corriger encore produirait une variante du même
                     // défaut. On repart du brief, avec les écueils déjà rencontrés.
@@ -402,14 +462,24 @@ public final class BuildingDesignPipeline {
                                             + "codes) : le texte exact des diagnostics n'est pas transmis.",
                                     omitted("")));
                 } else {
-                    String motive = j.diagnosis();
-                    String measured = metrics(j.verdict());
-                    String sent = fingerprint(j);
+                    BuildingPlanDraft from = refused;
+                    String motive = base.diagnosis();
+                    String measured = metrics(base.verdict());
+                    String sent = fingerprint(base);
+                    BriefRequirements.Report compliance = compliance(from, base);
+                    BuildingPromptBuilder.RepairMode mode = memory.sinceImprovement() >= 2
+                            || !memory.regressionsOf(current.id()).isEmpty() || !compliance.complete()
+                            ? BuildingPromptBuilder.RepairMode.IMPROVE : BuildingPromptBuilder.RepairMode.REPAIR;
+                    BuildingPromptBuilder.Repair repair = BuildingPromptBuilder.Repair.of(mode,
+                            memory.promptBlock(from.id()), compliance.promptBlock());
                     current = paid("CORRECTION", (provider, d) -> studio.correct(provider, d,
-                            refused.plan(), motive, measured, references),
-                            BuildingPlanDraft.Origin.AI_CORRECTION, refused.id(), sent, List.of(
-                                    "Plan refusé " + shortId(refused.id()) + " transmis avec le diagnostic exact "
+                            from.plan(), motive, measured, references, repair),
+                            BuildingPlanDraft.Origin.AI_CORRECTION, from.id(), sent, List.of(
+                                    "Plan refusé " + shortId(from.id()) + " transmis avec le diagnostic exact "
                                             + "de sa vérification (empreinte " + sent + ") et ses mesures.",
+                                    "Mémoire des tentatives transmise (résumé borné) : " + memory.summary(),
+                                    "Conformité au brief : " + compliance.summary(),
+                                    "Mode : " + mode.label() + ".",
                                     omitted(sent)));
                 }
                 if (current == null) {
@@ -567,7 +637,18 @@ public final class BuildingDesignPipeline {
                     }
                 }
             }
-            return new Judgement(true, verdict, diagnosis, repaired);
+            Judgement judgement = new Judgement(true, verdict, diagnosis, repaired);
+            judged.put(draft.id(), judgement);
+            memory = memory.with(new AttemptMemory.Attempt(draft.id(), draft.version(), verdict.accepted(),
+                    verdict.codes(), verdict.accepted() ? List.of() : AttemptMemory.issuesOf(verdict.codes(), diagnosis)));
+            return judgement;
+        }
+
+        /** #747 : la conformité d'une version au brief, sur son plan et sur la palette mesurée par le serveur. */
+        private BriefRequirements.Report compliance(BuildingPlanDraft draft, Judgement j) {
+            Object palette = j == null ? null : j.verdict().metrics().get("palette");
+            return BriefRequirements.evaluate(project.brief(), draft.plan(),
+                    palette instanceof Map<?, ?> map ? castPalette(map) : Map.of());
         }
 
         private BuildingPromptBuilder.Demand withPitfalls() {
@@ -610,9 +691,26 @@ public final class BuildingDesignPipeline {
         private void succeed() {
             runs.finish(run.id(), BuildingDesignRunStore.Status.SUCCEEDED,
                     "Plan conforme en " + spent + " appel(s) à l'IA" + (critiques > 0
-                            ? ", dont " + critiques + " passe(s) de critique architecturale." : "."),
+                            ? ", dont " + critiques + " passe(s) de critique architecturale." : ".")
+                            + briefVerdict(),
                     best.id());
             journalEnd(run.id());
+        }
+
+        /**
+         * #747 : ce que la version retenue réalise du brief. « Conforme » est un verdict TECHNIQUE ; un
+         * bâtiment sans ce que le brief demande est dit incomplet, jamais réussi en silence.
+         */
+        private String briefVerdict() {
+            if (best == null) {
+                return "";
+            }
+            BriefRequirements.Report r = compliance(best, judged.get(best.id()));
+            if (r.isEmpty()) {
+                return "";
+            }
+            return r.complete() ? " Brief : " + r.summary() + "."
+                    : " INCOMPLET vis-à-vis du brief — " + r.summary() + ".";
         }
 
         /** Arrêt : avec un plan conforme déjà obtenu, c'est un succès partiel qu'on dit comme tel. */
@@ -620,13 +718,18 @@ public final class BuildingDesignPipeline {
             if (best != null) {
                 runs.finish(run.id(), BuildingDesignRunStore.Status.SUCCEEDED, "Plan conforme obtenu ; "
                         + (why == null ? "l'enveloppe ne permettait pas d'autre passe." : why
-                                + " La dernière version conforme est le résultat."), best.id());
+                                + " La dernière version conforme est le résultat.") + briefVerdict(), best.id());
                 journalEnd(run.id());
                 return;
             }
             runs.finish(run.id(), BuildingDesignRunStore.Status.STOPPED, why, "");
             journalEnd(run.id());
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castPalette(Map<?, ?> map) {
+        return (Map<String, Object>) map;
     }
 
     /** Les images de référence du projet, en pixels, prêtes à joindre à un appel (#283). */

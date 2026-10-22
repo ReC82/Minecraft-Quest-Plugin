@@ -1477,7 +1477,8 @@ public final class PanelApp {
                 planWorkbench.recoverable(agentId, importQuery, 10), UUID.randomUUID().toString(), notice, error,
                 conflictText, idTaken, isoView, isoCut, latestRun,
                 referenceImages.list(project.get().id()), catalog, ownBuilding,
-                designDocs.history(project.get().id()), designText, importQuery, importPreview);
+                designDocs.history(project.get().id()), designText, importQuery, importPreview,
+                repairInfo(project.get(), draft));
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -1708,16 +1709,114 @@ public final class PanelApp {
         var demand = demandOf(project);
         // #739 : le verdict transmis est relevé dans le journal, avec son empreinte, avant l'appel.
         String sentDiagnosis = journalVerdict(session, project, draft, audit);
+        // #747 : la mémoire des tentatives du projet (relue dans son journal), la conformité au brief
+        // et la nature de la reprise partent avec le motif — plus seulement le dernier diagnostic.
+        var plan = workshopRepairPlan(project, draft, audit, project.brief(), f.getOrDefault("mode", "auto"));
+        var references = referencesOf(project.id());
         var proposal = aiBuildingStudio.correct(f.getOrDefault("provider", "").trim(), demand,
-                draft.plan(), reason, measured, referencesOf(project.id()));
+                draft.plan(), reason, measured, references, plan.repair());
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
-                BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true, manualCall(session,
-                        "MANUEL — AMÉLIORER AVEC L'IA", draft.id(), sentDiagnosis, "Version "
-                                + draft.id().substring(0, Math.min(8, draft.id().length())) + " transmise avec le "
-                                + "motif : diagnostic de sa dernière vérification"
+                BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true,
+                new com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext("", "MANUEL — AMÉLIORER AVEC L'IA",
+                        0, session.username(), draft.id(), "", sentDiagnosis, List.of(
+                        "Version " + draft.id().substring(0, Math.min(8, draft.id().length())) + " transmise avec "
+                                + "le motif : diagnostic de sa dernière vérification"
                                 + (sentDiagnosis.isEmpty() ? " (aucun)" : " (empreinte " + sentDiagnosis + ")")
-                                + " et consignes éventuelles de l'administrateur. Les diagnostics des versions "
-                                + "précédentes ne sont pas transmis."));
+                                + " et consignes éventuelles de l'administrateur.",
+                        "Mémoire des tentatives transmise (résumé borné, pas le journal) : " + plan.memory().summary(),
+                        "Conformité au brief : " + plan.compliance().summary(),
+                        "Mode : " + plan.repair().mode().label() + " — " + plan.why(),
+                        references.isEmpty() ? "Aucune image de référence attachée au projet : l'appel part sans image."
+                                : references.size() + " image(s) de référence jointe(s) à l'appel.")));
+    }
+
+    /**
+     * #747 : ce qui accompagne une reprise — mémoire, conformité au brief, mode — et pourquoi ce mode.
+     *
+     * @param requested « repair », « improve » ou « auto » (l'Atelier choisit)
+     */
+    private WorkshopRepairPlan workshopRepairPlan(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                                  BuildingPlanDraft draft, BuildingPlanWorkbench.CheckState audit,
+                                                  String brief, String requested) {
+        var memory = com.lodygames.rpgquest.panel.ai.AttemptMemory.fromJournal(
+                aiJournal.store().events(com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id()));
+        Map<String, Object> palette = paletteOf(audit);
+        var compliance = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(brief, draft.plan(), palette);
+        var regressions = memory.regressionsOf(draft.id());
+        com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode mode;
+        String why;
+        if ("repair".equalsIgnoreCase(requested)) {
+            mode = com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode.REPAIR;
+            why = "choisi par l'administrateur";
+        } else if ("improve".equalsIgnoreCase(requested)) {
+            mode = com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode.IMPROVE;
+            why = "choisi par l'administrateur";
+        } else if (memory.stagnating()) {
+            mode = com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode.IMPROVE;
+            why = "automatique : stagnation (" + memory.sinceImprovement() + " tentatives sans progrès)";
+        } else if (!regressions.isEmpty()) {
+            mode = com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode.IMPROVE;
+            why = "automatique : cette version réintroduit une erreur déjà corrigée — " + String.join(" ; ",
+                    regressions.stream().map(r -> com.lodygames.rpgquest.panel.building.PlanVerdictText.of(r.code())
+                            .text()).toList());
+        } else if (!compliance.complete()) {
+            mode = com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode.IMPROVE;
+            why = "automatique : des éléments demandés dans la description manquent";
+        } else {
+            mode = com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode.REPAIR;
+            why = "automatique : ni stagnation, ni régression, description réalisée sur les points vérifiables";
+        }
+        return new WorkshopRepairPlan(com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Repair.of(mode,
+                memory.promptBlock(draft.id()), compliance.promptBlock()), memory, compliance, why);
+    }
+
+    /** #747 : ce que l'écran montre de la reprise qui partirait avec « Améliorer avec l'IA ». */
+    private WorkshopPages.RepairInfo repairInfo(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                                BuildingPlanDraft draft) {
+        if (draft == null || !draft.hasPlan()) {
+            return null;
+        }
+        try {
+            var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
+            var plan = workshopRepairPlan(project, draft, audit, project.brief(), "auto");
+            int images = referenceImages.list(project.id()).size();
+            var regressions = plan.memory().regressionsOf(draft.id());
+            String best = plan.memory().bestRefused().filter(b -> !b.draftId().equals(draft.id()))
+                    .filter(b -> plan.memory().find(draft.id()).map(c -> b.score() < c.score()).orElse(false))
+                    .map(b -> "Version refusée la plus proche du but : " + b.shortId() + " (" + b.codes().size()
+                            + " point(s) à corriger). Elle reste consultable ; vous pouvez repartir d'elle.").orElse("");
+            return new WorkshopPages.RepairInfo(plan.memory().summary(),
+                    plan.compliance().statuses().stream().map(
+                            com.lodygames.rpgquest.panel.ai.BriefRequirements.Status::line).toList(),
+                    plan.repair().mode().label(), "Suggestion " + plan.why() + ".",
+                    images == 0 ? "Aucune image de référence attachée au projet : l'appel part sans image."
+                            : images + " image(s) de référence jointe(s) à l'appel (pixels transmis au fournisseur ; "
+                            + "le journal IA en garde le type, la taille et l'empreinte).",
+                    regressions.isEmpty() ? "" : "Cette version réintroduit une erreur déjà corrigée : " + String.join(
+                            " ; ", regressions.stream().map(r -> com.lodygames.rpgquest.panel.building.PlanVerdictText.of(
+                            r.code()).text() + " (corrigé en " + r.resolvedBy().shortId() + ")").toList()),
+                    best);
+        } catch (RuntimeException failure) {
+            // L'aide ne doit jamais empêcher d'afficher le projet.
+            return null;
+        }
+    }
+
+    /** #747 : la reprise préparée pour une version, et de quoi l'expliquer à l'écran et au journal. */
+    record WorkshopRepairPlan(com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Repair repair,
+                              com.lodygames.rpgquest.panel.ai.AttemptMemory memory,
+                              com.lodygames.rpgquest.panel.ai.BriefRequirements.Report compliance, String why) {
+    }
+
+    /** La palette du résultat compilé, mesurée par la dernière vérification de cette version (#747). */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> paletteOf(BuildingPlanWorkbench.CheckState audit) {
+        if (!audit.current()) {
+            return Map.of();
+        }
+        Object palette = com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.from(audit.details()).metrics()
+                .get("palette");
+        return palette instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
     }
 
     /**

@@ -197,6 +197,48 @@ class WorkshopFlowTest {
         assertTrue(decoded(second).contains("Aucun nouvel appel"));
     }
 
+    // ---- #739 : le journal IA téléchargeable ------------------------------------------------------
+
+    @Test
+    void theAiJournalIsDownloadedFromTheProjectPageSurvivesARestartAndIsReservedToAiUsers() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        String page = get(project).body();
+        assertTrue(page.contains("/buildings/workshop/journal?id=" + id(project)), "bouton sur la fiche du projet");
+        assertTrue(page.contains("Télécharger le journal IA"));
+        post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=propose&id=" + id(project)
+                + "&provider=openai&request_token=" + token(page));
+        assertEquals(1, aiCalls.get());
+
+        HttpResponse<String> res = get("/buildings/workshop/journal?id=" + id(project));
+        assertEquals(200, res.statusCode());
+        assertTrue(res.headers().firstValue("Content-Type").orElse("").startsWith("text/plain; charset=utf-8"));
+        String disposition = res.headers().firstValue("Content-Disposition").orElse("");
+        assertTrue(disposition.matches("attachment; filename=\"journal-ia-bibliotheque-v2-\\d{8}-\\d{6}\\.txt\""),
+                disposition);
+        String text = res.body();
+        assertTrue(text.contains("NOTICE") && text.contains("INDEX CHRONOLOGIQUE"), text);
+        assertTrue(text.contains("MANUEL — CRÉER UN PLAN"));
+        assertTrue(text.contains("REQUÊTE") && text.contains("RÉPONSE"));
+        assertTrue(text.contains("[rôle : system]") && text.contains("[rôle : user]"));
+        assertTrue(text.contains("[rôle : assistant] choices[0].message.content"), "la réponse reçue, entière");
+        assertFalse(text.contains("sk-test"), "aucun secret dans l'export");
+        int events = text.split("\nn°", -1).length;
+
+        restart();
+        String again = get("/buildings/workshop/journal?id=" + id(project)).body();
+        assertEquals(events, again.split("\nn°", -1).length, "le journal survit au redémarrage du panel");
+
+        // Un testeur (sans AI_USE) ne lit pas le journal.
+        post("/users/create", "_csrf=" + csrf(get("/users").body()) + "&username=tess&password="
+                + enc("Tess-Password-2026!") + "&role=TESTER");
+        jar.clear();
+        post("/login", "username=tess&password=" + enc("Tess-Password-2026!") + "&_csrf=" + csrf(get("/login").body()));
+        HttpResponse<String> denied = get("/buildings/workshop/journal?id=" + id(project));
+        assertEquals(403, denied.statusCode());
+        assertFalse(denied.body().contains("JOURNAL IA"));
+    }
+
     // ---- Vérifier, en français ---------------------------------------------------------------
 
     @Test

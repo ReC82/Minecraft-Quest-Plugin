@@ -64,6 +64,8 @@ class BuildingDesignPipelineTest {
     private WorkshopAutopilot autopilot;
     private BuildingDesignPipeline pipeline;
     private BuildingProject project;
+    private String db;
+    private AiJournalStore journal;
     private Thread fakeAgent;
     private final AtomicBoolean running = new AtomicBoolean(true);
     private volatile boolean agentOnline = true;
@@ -77,10 +79,21 @@ class BuildingDesignPipelineTest {
             synchronized (scripted) {
                 plan = scripted.isEmpty() ? "id: vide" : scripted.poll();
             }
+            if (plan.startsWith("HTTP500")) {
+                // #739 : une erreur API dont le corps recopie la clé — elle ne doit jamais atteindre le journal.
+                byte[] err = "{\"error\":{\"message\":\"Incorrect API key provided: sk-test (panne simulée)\"}}"
+                        .getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("x-request-id", "req_simule_500");
+                exchange.sendResponseHeaders(500, err.length);
+                exchange.getResponseBody().write(err);
+                exchange.close();
+                return;
+            }
             Map<String, Object> message = Map.of("role", "assistant", "content", plan);
             Map<String, Object> response = new LinkedHashMap<>();
+            response.put("id", "chatcmpl-simule-" + requests.size());
             response.put("model", "gpt-4o-2024-08-06");
-            response.put("choices", List.of(Map.of("message", message)));
+            response.put("choices", List.of(Map.of("message", message, "finish_reason", "stop")));
             response.put("usage", Map.of("prompt_tokens", 4400, "completion_tokens", 900));
             byte[] bytes = Json.write(response).getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -89,7 +102,7 @@ class BuildingDesignPipelineTest {
             exchange.close();
         });
         ai.start();
-        String db = tmp.resolve("cp.db").toString();
+        db = tmp.resolve("cp.db").toString();
         AiSettingsStore settings = new AiSettingsStore(db);
         settings.save(new AiProviderSettings("openai", true, "sk-test",
                 "http://127.0.0.1:" + ai.getAddress().getPort(), "", 4000, 5), "test");
@@ -104,6 +117,8 @@ class BuildingDesignPipelineTest {
         pipeline = new BuildingDesignPipeline(studio, runs, projects, drafts,
                 new BuildingPlanWorkbench(agents, drafts), agents, autopilot, audit, images,
                 Duration.ofSeconds(3));
+        journal = new AiJournalStore(db);
+        pipeline.withJournal(new BuildingAiJournal(journal));
         project = projects.create(AGENT, new BuildingProjectStore.Fields("Bibliothèque du Hub",
                 "Bibliothèque médiévale de deux étages, escalier intérieur.", "bibliotheque_test", "WEST",
                 19, 14), "", "owner");
@@ -437,5 +452,120 @@ class BuildingDesignPipelineTest {
         assertEquals("CONCEPTION DÉTAILLÉE", kinds(r).get(0), kinds(r).toString());
         assertEquals(2, docs.latest(project.id()).orElseThrow().version(), "une NOUVELLE version, l'ancienne gardée");
         assertEquals(2, docs.history(project.id()).size());
+    }
+
+    // ---- #739 : le journal IA ----------------------------------------------------------------------
+
+    private String export() {
+        var subject = new BuildingAiJournalExport.Subject(project.id(), project.name(), project.buildingId(),
+                "owner", Instant.now(), journal.installedAt(), journal.maxEventsPerSubject(), List.of());
+        return BuildingAiJournalExport.render(subject, journal.events(BuildingAiJournal.SCOPE, project.id()),
+                id -> java.util.Optional.empty());
+    }
+
+    private List<AiJournalStore.Event> events(String kind) {
+        return journal.events(BuildingAiJournal.SCOPE, project.id()).stream()
+                .filter(e -> e.kind().equals(kind)).toList();
+    }
+
+    /**
+     * Le scénario du ticket : diagnostic A, la correction produit B, la conception neuve revient à A.
+     * Le journal doit le montrer, et dire ce que chaque requête portait réellement.
+     */
+    @Test
+    void anABALoopIsVisibleInTheJournalWithWhatEachRequestReallyCarried() {
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4, plan("same-diag first"), plan("second"),
+                plan("same-diag third"));
+        assertEquals(BuildingDesignRunStore.Status.STOPPED, r.status(), r.outcome());
+        assertEquals(3, events("REQUEST").size());
+        assertEquals(3, events("RESPONSE").size());
+        assertEquals(3, events("VALIDATION").size());
+
+        var requests = events("REQUEST");
+        var responses = events("RESPONSE");
+        for (int i = 0; i < 3; i++) {
+            assertEquals(requests.get(i).callId(), responses.get(i).callId(), "requête et réponse liées");
+            assertTrue(responses.get(i).seq() > requests.get(i).seq());
+            assertTrue(responses.get(i).durationMs() >= 0);
+            assertEquals(r.id(), requests.get(i).runId());
+        }
+        assertEquals(List.of("CONCEPTION", "CORRECTION", "CONCEPTION NEUVE"),
+                requests.stream().map(AiJournalStore.Event::operation).toList());
+        // La correction cite la version corrigée, l'appel précédent et le diagnostic transmis.
+        var correction = requests.get(1);
+        assertEquals(responses.get(0).draftId(), correction.draftId());
+        assertTrue(correction.parentRef().contains("call:" + requests.get(0).callId()), correction.parentRef());
+        String first = String.valueOf(events("VALIDATION").get(0).body().get("fingerprint"));
+        assertEquals(first, correction.body().get("inputDiagnosis"));
+
+        String text = export();
+        assertTrue(text.startsWith("=".repeat(100) + "\nJOURNAL IA — Bibliothèque du Hub"), text.substring(0, 200));
+        assertTrue(text.contains("NOTICE") && text.contains("INDEX CHRONOLOGIQUE") && text.contains(BuildingAiJournalExport.FORMAT));
+        assertTrue(text.contains("REFUS A"), "premier diagnostic : A");
+        assertTrue(text.contains("REFUS B"), "deuxième diagnostic : B");
+        assertTrue(text.contains("A revient au n°"), "la boucle A → B → A est signalée");
+        assertTrue(text.contains("A(n°") && text.contains("→ B(n°") && text.contains("→ A↺(n°"),
+                "la suite des diagnostics se lit dans l'index");
+        // La correction portait A mot pour mot ; la conception neuve ne portait ni A ni B.
+        assertTrue(text.contains("diagnostics antérieurs présents mot pour mot dans cette requête : A oui"), text);
+        assertTrue(text.contains("diagnostics antérieurs présents mot pour mot dans cette requête : A non, B non"));
+        assertTrue(text.contains("le texte exact des diagnostics n'est pas transmis"));
+        // Les messages, avec leurs rôles, reproduits en entier ; les paramètres réellement envoyés.
+        assertTrue(text.contains("[rôle : system] messages[0].content"));
+        assertTrue(text.contains("[rôle : user] messages[1].content"));
+        assertTrue(text.contains("\"max_completion_tokens\""));
+        assertTrue(text.contains("chatcmpl-simule-"), "identifiant fournisseur");
+        assertTrue(text.contains("fin de génération : stop"));
+        assertTrue(text.contains("brief : {\"chars\""), "inventaire du contexte");
+        assertTrue(text.contains("\"presentInRequest\":\"oui\""));
+        assertFalse(text.contains("sk-test"), "la clé API n'apparaît jamais");
+        assertTrue(text.contains("En-tête « Authorization » : valeur masquée"));
+        assertTrue(text.contains("Bruxelles"), "heure locale en complément de l'UTC");
+        assertTrue(text.contains("contenu IDENTIQUE, octet pour octet, à Q1 du n°"), "consignes système non recopiées");
+    }
+
+    @Test
+    void anApiErrorIsJournaledWithItsStatusAndNeverTheKey() {
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4, plan("same-diag first"), "HTTP500");
+        assertEquals(BuildingDesignRunStore.Status.STOPPED, r.status());
+        var errors = events("CALL_ERROR");
+        assertEquals(1, errors.size());
+        assertEquals(500, ((Number) errors.get(0).body().get("httpStatus")).intValue());
+        assertTrue(String.valueOf(errors.get(0).body().get("error")).contains("HTTP 500"));
+        assertEquals(events("REQUEST").get(1).callId(), errors.get(0).callId());
+        String text = export();
+        assertTrue(text.contains("ERREUR D'APPEL"));
+        assertTrue(text.contains("statut HTTP : 500"));
+        assertTrue(text.contains("req_simule_500"));
+        assertFalse(text.contains("sk-test"), "la clé recopiée par l'erreur est masquée");
+        assertTrue(text.contains(AiTrace.MASK));
+        assertTrue(text.contains("FIN SESSION"));
+    }
+
+    @Test
+    void theJournalSurvivesARestartOfThePanel() {
+        run(BuildingDesignPipeline.Quality.STANDARD, 4, plan("first"), plan("second staircase"));
+        int before = journal.events(BuildingAiJournal.SCOPE, project.id()).size();
+        assertTrue(before >= 6);
+        AiJournalStore reopened = new AiJournalStore(db);
+        var after = reopened.events(BuildingAiJournal.SCOPE, project.id());
+        assertEquals(before, after.size());
+        assertEquals(journal.installedAt(), reopened.installedAt(), "la date d'installation ne bouge pas");
+        for (int i = 0; i < after.size(); i++) {
+            assertEquals(i + 1, after.get(i).seq(), "séquence continue");
+        }
+    }
+
+    @Test
+    void retentionDropsTheOldestEventsAndSaysSo() {
+        AiJournalStore small = new AiJournalStore(tmp.resolve("small.db").toString(), 50);
+        for (int i = 0; i < 55; i++) {
+            small.append("building", "p1", new AiJournalStore.NewEvent("NOTE", "", "", "", 0, "", "", Instant.now(),
+                    -1, "t", "note " + i, Map.of()));
+        }
+        var all = small.events("building", "p1");
+        assertTrue(all.size() <= 51);
+        assertTrue(all.stream().anyMatch(e -> e.kind().equals("RETENTION") && e.summary().contains("retirés")));
+        assertTrue(small.events("building", "p2").isEmpty(), "un autre sujet n'est pas touché");
     }
 }

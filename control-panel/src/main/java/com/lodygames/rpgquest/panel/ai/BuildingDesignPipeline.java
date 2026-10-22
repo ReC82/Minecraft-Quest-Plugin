@@ -136,6 +136,15 @@ public final class BuildingDesignPipeline {
     /** #289 : la conception détaillée ; sans elle, la session part du seul brief (forme #282). */
     private com.lodygames.rpgquest.panel.building.BuildingDesignDocStore designDocs;
 
+    /** #739 : le journal IA du projet ; sans lui, rien n'est journalisé (tests anciens). */
+    private BuildingAiJournal journal;
+
+    /** Branche le journal IA (#739). */
+    public BuildingDesignPipeline withJournal(BuildingAiJournal j) {
+        this.journal = j;
+        return this;
+    }
+
     /** Branche la conception détaillée (#289). */
     public BuildingDesignPipeline withDesignDocs(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore store) {
         this.designDocs = store;
@@ -201,6 +210,7 @@ public final class BuildingDesignPipeline {
             if (stopping) {
                 runs.finish(runId, BuildingDesignRunStore.Status.INTERRUPTED, "Le panel s'est arrêté pendant "
                         + "la conception : rien n'a été relancé. Les versions déjà produites sont conservées.", "");
+                journalEnd(runId);
                 return;
             }
             LOG.log(System.Logger.Level.WARNING, "event=design_run_failed run=" + runId + " error="
@@ -208,7 +218,18 @@ public final class BuildingDesignPipeline {
             runs.finish(runId, BuildingDesignRunStore.Status.STOPPED, "Arrêt sur une erreur interne : "
                     + failure.getClass().getSimpleName() + ". Les versions déjà produites sont conservées.",
                     "");
+            journalEnd(runId);
         }
+    }
+
+    /** #739 : la fin d'une session, telle qu'elle est enregistrée, recopiée dans le journal IA. */
+    private void journalEnd(String runId) {
+        if (journal == null) {
+            return;
+        }
+        runs.find(runId).ifPresent(r -> journal.runEnd(r.projectId(), r.id(), r.createdBy(), r.status().name(),
+                r.outcome(), r.finalDraftId(), java.time.Duration.between(r.createdAt(), Instant.now()).toMillis(),
+                r.spentCalls()));
     }
 
     /** Le verdict du serveur sur une version, et la réparation éventuelle du moteur. */
@@ -232,6 +253,10 @@ public final class BuildingDesignPipeline {
         /** #655 : empreintes des diagnostics déjà reçus — un diagnostic qui revient est stérile. */
         private final Set<String> seenDiagnoses = new HashSet<>();
         private boolean freshDesignDone;
+        /** #739 : empreintes courtes des diagnostics de refus, dans l'ordre d'arrivée. */
+        private final java.util.LinkedHashSet<String> diagnosisOrder = new java.util.LinkedHashSet<>();
+        /** #739 : le dernier appel journalisé de la session, parent du suivant. */
+        private String lastCallId = "";
         /** #283 : les pixels des références du projet, joints à chaque passe payante. */
         private final List<com.lodygames.rpgquest.panel.ai.AiProvider.Image> references;
 
@@ -248,6 +273,16 @@ public final class BuildingDesignPipeline {
         }
 
         void go() {
+            if (journal != null) {
+                Map<String, Object> settings = new java.util.LinkedHashMap<>();
+                settings.put("provider", run.providerId());
+                settings.put("quality", run.quality());
+                settings.put("maxCalls", run.maxCalls());
+                settings.put("fresh", run.fresh());
+                settings.put("rewriteDesign", run.rewriteDesign());
+                settings.put("referenceImages", references.size());
+                journal.runStart(project.id(), run.id(), run.createdBy(), settings);
+            }
             // #283 : « repartir de zéro » n'hérite d'aucune version — ni plan, ni erreur.
             BuildingPlanDraft current = run.fresh() ? null
                     : drafts.forProject(run.agentId(), project.id()).stream()
@@ -266,7 +301,8 @@ public final class BuildingDesignPipeline {
                         return;
                     }
                     current = paid("CONCEPTION", (provider, d) -> studio.propose(provider, d, references),
-                            BuildingPlanDraft.Origin.AI_PROPOSAL, "");
+                            BuildingPlanDraft.Origin.AI_PROPOSAL, "", "", List.of("Demande neuve : brief, "
+                                    + "contraintes et conception en vigueur ; aucun plan ni diagnostic antérieur."));
                     if (current == null) {
                         return;
                     }
@@ -295,7 +331,10 @@ public final class BuildingDesignPipeline {
                         String remarks = String.join("\n", j.verdict().warnings());
                         BuildingPlanDraft improved = paid("CRITIQUE", (provider, d) -> studio.critique(
                                 provider, d, accepted.plan(), measured, remarks, references),
-                                BuildingPlanDraft.Origin.AI_CORRECTION, accepted.id());
+                                BuildingPlanDraft.Origin.AI_CORRECTION, accepted.id(), "", List.of(
+                                        "Plan conforme " + shortId(accepted.id()) + " transmis avec les mesures et "
+                                                + "les remarques du serveur.",
+                                        omitted("")));
                         if (improved == null) {
                             succeed();
                             return;
@@ -356,13 +395,22 @@ public final class BuildingDesignPipeline {
                     BuildingPromptBuilder.Demand fresh = withPitfalls();
                     current = paid("CONCEPTION NEUVE", (provider, d) -> studio.propose(provider, fresh,
                             references),
-                            BuildingPlanDraft.Origin.AI_PROPOSAL, "");
+                            BuildingPlanDraft.Origin.AI_PROPOSAL, "", "", List.of(
+                                    "Conception neuve depuis le brief : le plan refusé " + shortId(refused.id())
+                                            + " n'est PAS transmis.",
+                                    pitfalls.size() + " écueil(s) ajouté(s) au brief, sous forme RÉSUMÉE (titre + "
+                                            + "codes) : le texte exact des diagnostics n'est pas transmis.",
+                                    omitted("")));
                 } else {
                     String motive = j.diagnosis();
                     String measured = metrics(j.verdict());
+                    String sent = fingerprint(j);
                     current = paid("CORRECTION", (provider, d) -> studio.correct(provider, d,
                             refused.plan(), motive, measured, references),
-                            BuildingPlanDraft.Origin.AI_CORRECTION, refused.id());
+                            BuildingPlanDraft.Origin.AI_CORRECTION, refused.id(), sent, List.of(
+                                    "Plan refusé " + shortId(refused.id()) + " transmis avec le diagnostic exact "
+                                            + "de sa vérification (empreinte " + sent + ") et ses mesures.",
+                                    omitted(sent)));
                 }
                 if (current == null) {
                     return;
@@ -395,6 +443,8 @@ public final class BuildingDesignPipeline {
                 audit.record(run.createdBy(), "building.design.write", "project=" + project.id() + " run="
                                 + run.id() + " provider=" + p.providerId() + " model=" + p.model() + " usage="
                                 + p.usage(), p.callOk() ? "OK" : "FAILED", p.callOk() ? "" : p.error(), rid());
+                journalCall("CONCEPTION DÉTAILLÉE", "", "", List.of("Rédaction de la conception détaillée depuis "
+                        + "le brief et les contraintes ; aucun plan ni diagnostic transmis."), p, "", 0);
                 if (!p.callOk()) {
                     runs.addPass(run.id(), new Pass("CONCEPTION DÉTAILLÉE", "", 0, "", 0, 0,
                             "Appel échoué : " + p.error()), true);
@@ -425,7 +475,8 @@ public final class BuildingDesignPipeline {
         private BuildingPlanDraft paid(String kind,
                                        BiFunction<String, BuildingPromptBuilder.Demand,
                                                AiBuildingStudio.Proposal> call,
-                                       BuildingPlanDraft.Origin origin, String parentId) {
+                                       BuildingPlanDraft.Origin origin, String parentId, String inputDiagnosis,
+                                       List<String> context) {
             AiBuildingStudio.Proposal p = call.apply(run.providerId(), demand);
             spent++;
             int[] tokens = tokens(p.usage());
@@ -435,6 +486,7 @@ public final class BuildingDesignPipeline {
                     p.callOk() ? "OK" : "FAILED", p.callOk() ? (p.hasPlan() ? "plan proposé"
                             : "aucun plan exploitable") : p.error(), rid());
             if (!p.callOk()) {
+                journalCall(kind, parentId, inputDiagnosis, context, p, "", 0);
                 runs.addPass(run.id(), new Pass(kind, "", 0, "", 0, 0, "Appel échoué : " + p.error()), true);
                 stop("L'appel au fournisseur d'IA a échoué : " + p.error());
                 return null;
@@ -444,6 +496,7 @@ public final class BuildingDesignPipeline {
                     p.model(), p.usage(), p.rawResponse(), p.extractionNote(), demand.maxWidth(),
                     demand.maxDepth(), demand.maxHeight(), run.createdBy(), project.id()));
             projects.touch(project.id(), run.createdBy());
+            journalCall(kind, parentId, inputDiagnosis, context, p, created.id(), created.version());
             // #289 : la critique dit d'abord ce qui manquait au brief et à la conception — c'est
             // gardé dans le journal, consultable, au lieu de se perdre avec la réponse brute.
             String findings = "CRITIQUE".equals(kind) ? BuildingPromptBuilder.critiqueFindings(p.rawResponse()) : "";
@@ -489,6 +542,15 @@ public final class BuildingDesignPipeline {
             record(new Pass("VÉRIFICATION", draft.id(), draft.version(), "", 0, 0,
                     verdict.accepted() ? "Conforme." : PlanVerdictText.headline(verdict, false)
                             + " (" + String.join(", ", verdict.codes()) + ")"));
+            if (journal != null) {
+                journal.validation(project.id(), run.id(), run.createdBy(), draft.id(), draft.version(),
+                        verdict.accepted(), verdict.codes(), PlanVerdictText.headline(verdict, false), diagnosis,
+                        metrics(verdict), verdict.warnings(), state.row().map(AgentActionRow::id).orElse(""),
+                        state.row().map(AgentActionRow::completedAt).orElse(null), "vérification de la session");
+                if (!verdict.accepted()) {
+                    diagnosisOrder.add(BuildingAiJournal.fingerprint(verdict.codes(), diagnosis));
+                }
+            }
             BuildingPlanDraft repaired = null;
             if (!verdict.accepted() && draft.origin() != BuildingPlanDraft.Origin.ENGINE_REPAIR
                     && WorkshopAutopilot.EngineRepair.from(state.details()).isPresent()) {
@@ -498,6 +560,11 @@ public final class BuildingDesignPipeline {
                 if (repaired != null) {
                     record(new Pass("MOTEUR", repaired.id(), repaired.version(), "", 0, 0,
                             "Réparé par le moteur, sans appel à l'IA."));
+                    if (journal != null) {
+                        journal.note(project.id(), run.id(), run.createdBy(), "ENGINE_REPAIR", repaired.id(),
+                                "Version " + shortId(repaired.id()) + " réparée par le moteur à partir de "
+                                        + shortId(draft.id()) + ", sans appel à l'IA. " + nz(repaired.extractionNote()));
+                    }
                 }
             }
             return new Judgement(true, verdict, diagnosis, repaired);
@@ -511,6 +578,33 @@ public final class BuildingDesignPipeline {
 
         private void record(Pass pass) {
             runs.addPass(run.id(), pass, false);
+            if (journal != null && "NOTE".equals(pass.kind())) {
+                journal.note(project.id(), run.id(), run.createdBy(), "NOTE", pass.draftId(), pass.verdict());
+            }
+        }
+
+        /** #739 : un appel de la session, dans le journal IA, chaîné au précédent. */
+        private void journalCall(String kind, String inputDraftId, String inputDiagnosis, List<String> context,
+                                 AiBuildingStudio.Proposal p, String producedDraftId, int producedVersion) {
+            if (journal == null) {
+                return;
+            }
+            lastCallId = journal.call(project.id(), new BuildingAiJournal.CallContext(run.id(), kind, spent,
+                    run.createdBy(), inputDraftId, lastCallId, inputDiagnosis, context), p, producedDraftId,
+                    producedVersion);
+        }
+
+        /** L'empreinte du diagnostic d'un verdict, comme le journal la calcule. */
+        private String fingerprint(Judgement j) {
+            return BuildingAiJournal.fingerprint(j.verdict().codes(), j.diagnosis());
+        }
+
+        /** Les diagnostics de refus déjà reçus dans la session et NON transmis par cet appel. */
+        private String omitted(String transmitted) {
+            List<String> others = diagnosisOrder.stream().filter(fp -> !fp.equals(transmitted)).toList();
+            return others.isEmpty() ? "Aucun autre diagnostic de refus reçu dans cette session."
+                    : "Diagnostics de refus antérieurs de la session NON transmis à cet appel : "
+                            + String.join(", ", others) + ".";
         }
 
         private void succeed() {
@@ -518,6 +612,7 @@ public final class BuildingDesignPipeline {
                     "Plan conforme en " + spent + " appel(s) à l'IA" + (critiques > 0
                             ? ", dont " + critiques + " passe(s) de critique architecturale." : "."),
                     best.id());
+            journalEnd(run.id());
         }
 
         /** Arrêt : avec un plan conforme déjà obtenu, c'est un succès partiel qu'on dit comme tel. */
@@ -526,9 +621,11 @@ public final class BuildingDesignPipeline {
                 runs.finish(run.id(), BuildingDesignRunStore.Status.SUCCEEDED, "Plan conforme obtenu ; "
                         + (why == null ? "l'enveloppe ne permettait pas d'autre passe." : why
                                 + " La dernière version conforme est le résultat."), best.id());
+                journalEnd(run.id());
                 return;
             }
             runs.finish(run.id(), BuildingDesignRunStore.Status.STOPPED, why, "");
+            journalEnd(run.id());
         }
     }
 
@@ -567,6 +664,10 @@ public final class BuildingDesignPipeline {
 
     private static String nz(String s) {
         return s == null ? "" : s;
+    }
+
+    private static String shortId(String id) {
+        return id == null ? "" : id.substring(0, Math.min(8, id.length()));
     }
 
     private static String rid() {

@@ -290,8 +290,13 @@ public final class WorkshopPages {
     public static String project(ProjectView v) {
         BuildingProject p = v.project();
         StringBuilder sb = new StringBuilder();
+        // #739 : le journal IA complet du projet, en texte — un clic, aucun appel payant.
         sb.append(Ui.pageHeader("box", p.name(), "Projet de l'Atelier — rien n'est posé dans le monde depuis "
-                + "cette page.", "<a class=\"btn btn-outline-secondary\" href=\"" + BASE + "\">"
+                + "cette page.", "<a class=\"btn btn-outline-secondary\" href=\"" + BASE + "/journal?id="
+                + Http.esc(java.net.URLEncoder.encode(p.id(), java.nio.charset.StandardCharsets.UTF_8))
+                + "\" title=\"Fichier texte : chaque échange réel avec l'IA et chaque vérification du serveur, "
+                + "horodatés, secrets masqués\">" + Icons.icon("export") + "Télécharger le journal IA</a> "
+                + "<a class=\"btn btn-outline-secondary\" href=\"" + BASE + "\">"
                 + Icons.icon("back") + "Atelier</a>"));
         banners(sb, v.notice(), v.error());
         Optional<String> orientation = com.lodygames.rpgquest.panel.building.BriefOrientation.conflict(p);

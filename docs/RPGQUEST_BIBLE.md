@@ -2236,6 +2236,51 @@ par la dernière conception automatique terminée (tant qu'aucune version n'a é
 et non sur la dernière version refusée. « Vérification en cours… » suit l'audit jusqu'à son état
 terminal et recharge la page d'elle-même, réussi ou non (le bouton Rafraîchir reste en secours).
 
+#### Journal IA d'un projet et export texte (issue #739)
+
+Chaque projet de l'Atelier tient un **journal IA persistant** de tous les appels réellement envoyés au
+fournisseur et de ce qui les relie. Bouton **« Télécharger le journal IA »** en tête de la fiche du projet
+(`/buildings/workshop/project?id=…`, à côté de « Atelier ») → `GET /buildings/workshop/journal?id=…` :
+fichier `journal-ia-<bâtiment>-AAAAMMJJ-HHMMSS.txt`, UTF-8, sans aucun appel payant. Même permission que
+l'Atelier (`AI_USE`) : un testeur ou un compte en lecture seule reçoit 403. Chaque téléchargement est tracé
+dans l'audit (`building.ai.journal.download`).
+
+| Événement | Quand | Contenu |
+|---|---|---|
+| `REQUÊTE` | départ réel de l'appel | corps JSON réellement envoyé (paramètres : modèle, plafond de sortie…), chaque message avec son **rôle** et son chemin JSON, reproduit en entier ; adresse, en-têtes (authentification masquée) ; **inventaire du contexte** : brief, conception détaillée, plan précédent, motif, mesures, images — taille, empreinte, présence mot pour mot dans le texte envoyé ; version corrigée et empreinte du diagnostic transmis ; contexte omis (diagnostics antérieurs non transmis) |
+| `RÉPONSE` / `ERREUR D'APPEL` | arrivée réelle | statut HTTP, durée, modèle rapporté, usage, identifiant fournisseur, fin de génération (`length` / `max_tokens` = réponse coupée, signalée), texte reçu en entier, plan extrait, version produite ; erreur exacte |
+| `APPEL NON ÉMIS` | fournisseur désactivé, sans clé | motif ; rien n'est parti |
+| `VÉRIFICATION` | verdict du serveur | codes, diagnostic exact, mesures, remarques, empreinte (codes + texte, celle que la conception automatique compare depuis #655), action d'audit |
+| `DÉBUT` / `FIN SESSION`, `NOTE`, `ENGINE_REPAIR` | conception automatique | enveloppe, retour à la version conforme, réparation du moteur, statut final |
+| `FICHE MODIFIÉE` | « Enregistrer les modifications » | brief, façade, emprise, type avant / après |
+| `RETENTION` | rotation | quels numéros ont été retirés, quand, pourquoi |
+
+**Fichier.** Une notice (but, format `lodyquests-ai-journal/1`, périmètre, date d'installation du journal,
+versions antérieures sans trace, identifiants, comment suivre requête → réponse → vérification → tentative
+suivante, masquages), une synthèse, un **index chronologique** où chaque diagnostic distinct reçoit une
+lettre (A, B, C…) — « ↺ déjà vu au n°… » et la ligne « Suite des diagnostics : A → B → A↺ » font ressortir
+une boucle — puis le détail. Pour chaque requête : « diagnostics antérieurs présents mot pour mot dans cette
+requête : A oui, B non ». Heures en UTC ISO 8601 à la milliseconde, puis en heure de Bruxelles avec son
+décalage ; numéro de séquence propre au projet. Un texte identique octet pour octet à un texte déjà reproduit
+(les consignes système d'un appel à l'autre) renvoie à sa première occurrence avec son empreinte.
+
+**Secrets.** Clé API (où qu'elle apparaisse, y compris recopiée par un message d'erreur du fournisseur —
+désormais masquée aussi à l'écran), en-têtes `Authorization` / `x-api-key` / `x-goog-api-key`, cookies,
+motifs `sk-…`, `AIza…`, `Bearer …`, paramètres d'URL `key=` : remplacés par `⟦MASQUÉ⟧`, chaque masquage listé.
+Les pixels des images de référence ne sont pas recopiés (type, taille, empreinte SHA-256).
+
+**Ce qui n'y est pas.** Les échanges antérieurs à l'installation du journal (jamais reconstruits) ; le
+raisonnement interne non exposé du modèle. Les gestes manuels n'ont pas de vérification « de session » :
+le verdict actuel de leur version est lu à l'export dans les actions du serveur et marqué « lu à l'export »,
+et une amélioration manuelle relève dans le journal le verdict qu'elle transmet.
+
+**Stockage.** Table `ai_journal_event` (et `ai_journal_meta`, date d'installation) de `control-panel.db`,
+créée au démarrage si absente — migration additive, aucune table existante modifiée. Générique : un événement
+appartient à un *scope* (`building`) et à un sujet (le projet) ; un autre atelier IA peut réutiliser le store.
+Rétention : 5 000 événements par projet (`-Drpgquest.ai.journal.maxEvents`), les plus anciens retirés avec
+un événement `RETENTION`. Une écriture impossible dans le journal n'interrompt jamais le geste (avertissement
+`event=ai_journal_write_failed` dans le journal du panel).
+
 #### Images de référence et nouvelle conception indépendante (issue #283)
 
 Les trois variantes de la Bibliothèque du Hub se ressemblaient (bloc rectangulaire, toit uniforme,

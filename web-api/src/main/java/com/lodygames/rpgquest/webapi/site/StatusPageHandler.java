@@ -41,7 +41,13 @@ public final class StatusPageHandler implements ApiHandler {
                     + "Le site, lui, fonctionne.</p>";
         };
 
-        HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, "Statut", status, body));
+        String icon = switch (status.kind()) {
+            case ONLINE -> "waypoint";
+            case OFFLINE -> "skull";
+            case STALE, UNKNOWN -> "unknown";
+        };
+        HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, "Statut", status,
+                "<div class=\"lq-h\">" + PortalIcons.tile(icon, true) + "<div>" + body + "</div></div>"));
         return 200;
     }
 }

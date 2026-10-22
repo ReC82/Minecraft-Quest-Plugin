@@ -19,7 +19,7 @@ final class BoardView {
      */
     static String render(List<Map<String, Object>> rows, String metric, int limit) {
         if (rows.isEmpty()) {
-            return "<p class=\"note\">Personne pour l'instant.</p>";
+            return PortalIcons.empty("npc", "Personne pour l'instant.");
         }
         StringBuilder html = new StringBuilder("<ol class=\"board\">");
         int position = 0;
@@ -29,11 +29,17 @@ final class BoardView {
             }
             position++;
             Object rank = row.get("rank") instanceof Number number ? number : position;
-            html.append("<li><span class=\"rank\" aria-label=\"Rang ").append(rank).append("\">").append(rank)
+            html.append("<li><span class=\"rank").append(podium(rank)).append("\" aria-label=\"Rang ").append(rank).append("\">").append(rank)
                     .append("</span><span class=\"who\">").append(PlayersPageHandler.link(String.valueOf(row.get("name"))))
                     .append("</span><span class=\"value\">").append(StatLabels.number(row.get("value"))).append(' ')
                     .append(Html.escape(StatLabels.unit(metric))).append("</span></li>");
         }
         return html.append("</ol>").toString();
+    }
+
+    /** Or, argent, bronze pour les trois premiers rangs (ex aequo compris, #428). */
+    private static String podium(Object rank) {
+        long value = rank instanceof Number number ? number.longValue() : 0L;
+        return value >= 1 && value <= 3 ? " podium-" + value : "";
     }
 }

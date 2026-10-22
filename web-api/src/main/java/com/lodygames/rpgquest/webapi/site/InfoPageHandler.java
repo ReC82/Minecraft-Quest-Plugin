@@ -42,14 +42,14 @@ public final class InfoPageHandler implements ApiHandler {
         String version = settings.minecraftVersion().isEmpty()
                 ? ""
                 : "<p>Version de Minecraft : <strong>" + Html.escape(settings.minecraftVersion()) + "</strong> (Java Edition).</p>";
-        return "<section id=\"rejoindre\"><h2>Rejoindre le serveur</h2>" + address + version
+        return "<section id=\"rejoindre\">" + PortalIcons.heading("h2", "waypoint", "Rejoindre le serveur") + address + version
                 + "<ol><li>Lance Minecraft Java Edition.</li><li>Va dans <em>Multijoueur</em> puis "
                 + "<em>Ajouter un serveur</em>.</li><li>Colle l'adresse du serveur, valide, et rejoins la partie.</li></ol>"
                 + "</section>";
     }
 
     private static String firstSteps() {
-        return "<section><h2>Premiers pas en jeu</h2><ul>"
+        return "<section>" + PortalIcons.heading("h2", "npc", "Premiers pas en jeu") + "<ul>"
                 + "<li>Parle aux personnages (clic droit) : certains te proposent des quêtes.</li>"
                 + "<li><code>/quests</code> ouvre ton journal de quêtes.</li>"
                 + "<li><code>/profile</code> résume tes niveaux ; <code>/skills</code> détaille tes compétences.</li>"
@@ -59,7 +59,7 @@ public final class InfoPageHandler implements ApiHandler {
     }
 
     private static String rules() {
-        return "<section><h2>Règles de base</h2><ul>"
+        return "<section>" + PortalIcons.heading("h2", "shield", "Règles de base") + "<ul>"
                 + "<li>Respecte les autres joueurs : pas d'insultes, pas de harcèlement.</li>"
                 + "<li>Ne partage jamais tes informations personnelles (nom, adresse, école, mot de passe).</li>"
                 + "<li>Pas de triche ni de logiciel qui donne un avantage.</li>"
@@ -68,7 +68,7 @@ public final class InfoPageHandler implements ApiHandler {
     }
 
     private String faq() {
-        return "<section><h2>Questions fréquentes</h2>"
+        return "<section>" + PortalIcons.heading("h2", "talk", "Questions fréquentes")
                 + "<h3>Faut-il un compte sur ce site pour jouer ?</h3><p>Non. Le site sert à suivre la vie du serveur ; "
                 + "on joue directement dans Minecraft.</p>"
                 + "<h3>Pourquoi je ne me vois pas dans les classements ?</h3><p>Ton profil est privé par défaut. Tape "

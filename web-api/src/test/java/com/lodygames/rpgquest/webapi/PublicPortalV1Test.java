@@ -259,4 +259,36 @@ class PublicPortalV1Test {
         }
         assertTrue(get("/actualites").body().contains("href=\"/actualites\" aria-current=\"page\""));
     }
+
+    @Test
+    void iconSpriteIsServedLocallyWithLongCacheAndPagesUseIt() throws Exception {
+        start(true, "");
+        snapshot();
+
+        String home = get("/").body();
+        String version = com.lodygames.rpgquest.webapi.site.PortalIcons.VERSION;
+        assertTrue(home.contains("/assets/lq-icons.svg?v=" + version + "#lq-trophy"), "menu illustré (#428)");
+        assertTrue(home.contains("NOT AN OFFICIAL MINECRAFT SERVICE. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT."));
+        assertFalse(home.contains("<use href=\"http"), "aucune icône distante");
+        assertTrue(get("/classements").body().contains("class=\"rank podium-1\""), "podium or / argent / bronze");
+
+        HttpResponse<String> sprite = get("/assets/lq-icons.svg?v=" + version);
+        assertEquals(200, sprite.statusCode());
+        assertTrue(sprite.headers().firstValue("Content-Type").orElse("").startsWith("image/svg+xml"));
+        assertEquals("public, max-age=31536000, immutable", sprite.headers().firstValue("Cache-Control").orElse(""));
+        assertTrue(sprite.body().contains("<symbol id=\"lq-unknown\""));
+        assertEquals("public, max-age=3600", get("/assets/lq-icons.svg").headers().firstValue("Cache-Control").orElse(""));
+
+        String etag = sprite.headers().firstValue("ETag").orElseThrow();
+        HttpResponse<String> cached = client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
+                + "/assets/lq-icons.svg?v=" + version)).header("If-None-Match", etag).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(304, cached.statusCode());
+        assertEquals(404, get("/assets/../snapshot.json").statusCode());
+        assertEquals(404, get("/assets/autre.svg").statusCode());
+        HttpResponse<String> post = client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
+                + "/assets/lq-icons.svg")).POST(HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(405, post.statusCode());
+    }
 }

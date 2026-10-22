@@ -116,7 +116,7 @@ public final class LeaderboardsPageHandler implements ApiHandler {
             boards = legacyBoards(state.get("leaderboards"));
         }
         if (boards.isEmpty()) {
-            return html.append("<p class=\"note\">Aucun classement disponible pour le moment.</p>").toString();
+            return html.append(PortalIcons.empty("trophy", "Aucun classement disponible pour le moment.")).toString();
         }
         return html.append(cards(boards)).toString();
     }
@@ -141,7 +141,7 @@ public final class LeaderboardsPageHandler implements ApiHandler {
         html.append(community(period));
         Map<String, List<Map<String, Object>>> boards = boards(period.get("leaderboards"));
         if (boards.isEmpty()) {
-            return html.append("<p class=\"note\">Aucun classement pour cette période.</p>").toString();
+            return html.append(PortalIcons.empty("trophy", "Aucun classement pour cette période.")).toString();
         }
         return html.append(cards(boards)).toString();
     }
@@ -204,7 +204,7 @@ public final class LeaderboardsPageHandler implements ApiHandler {
             return "";
         }
         long shown = Math.min(total.longValue(), goal.longValue());
-        return "<section class=\"card\"><h2>Objectif commun</h2><p><progress max=\"" + goal.longValue() + "\" value=\""
+        return "<section class=\"card\">" + PortalIcons.heading("h2", "heart", "Objectif commun") + "<p><progress max=\"" + goal.longValue() + "\" value=\""
                 + shown + "\"></progress> " + Html.escape(StatLabels.number(total)) + " / "
                 + Html.escape(StatLabels.number(goal)) + "</p>"
                 + (Boolean.TRUE.equals(community.get("reached")) ? "<p><strong>Objectif atteint, bravo à tous !</strong></p>" : "")
@@ -214,8 +214,9 @@ public final class LeaderboardsPageHandler implements ApiHandler {
     private static String cards(Map<String, List<Map<String, Object>>> boards) {
         StringBuilder html = new StringBuilder("<div class=\"grid\">");
         for (Map.Entry<String, List<Map<String, Object>>> board : boards.entrySet()) {
-            html.append("<section class=\"card\"><h2>").append(Html.escape(StatLabels.title(board.getKey())))
-                    .append("</h2>").append(BoardView.render(board.getValue(), board.getKey(), TOP)).append("</section>");
+            html.append("<section class=\"card\">")
+                    .append(PortalIcons.heading("h2", PortalIcons.forMetric(board.getKey()), StatLabels.title(board.getKey())))
+                    .append(BoardView.render(board.getValue(), board.getKey(), TOP)).append("</section>");
         }
         return html.append("</div>").toString();
     }

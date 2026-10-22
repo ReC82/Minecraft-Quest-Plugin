@@ -25,8 +25,8 @@ public final class UnpublishedPageHandler implements ApiHandler {
     @Override
     public int handle(HttpExchange exchange) throws IOException {
         HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, new PageMeta("", "", section), pageTitle, true,
-                "<p>Cette page n'est pas encore publiée : les profils et classements des joueurs "
-                        + "n'apparaîtront qu'après validation des règles de confidentialité.</p>"
+                PortalIcons.empty("shield", "Cette page n'est pas encore publiée : les profils et classements des "
+                        + "joueurs n'apparaîtront qu'après validation des règles de confidentialité.")
                         + "<p><a href=\"/confidentialite\">En savoir plus</a></p>"));
         return 200;
     }

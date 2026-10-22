@@ -7,7 +7,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Écrit une réponse JSON ou HTML complète (en-têtes + corps) sur un {@link HttpExchange}. Une
+ * Écrit une réponse JSON, HTML ou statique complète (en-têtes + corps) sur un {@link HttpExchange}. Une
  * requête {@code HEAD} (sondes de supervision) reçoit les en-têtes sans corps.
  */
 public final class HttpResponses {
@@ -24,6 +24,12 @@ public final class HttpResponses {
     public static void sendHtml(HttpExchange exchange, int status, String html) throws IOException {
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
+        send(exchange, status, bytes);
+    }
+
+    /** Ressource statique déjà en mémoire (sprite d'icônes #428). */
+    public static void sendBytes(HttpExchange exchange, int status, String contentType, byte[] bytes) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", contentType);
         send(exchange, status, bytes);
     }
 

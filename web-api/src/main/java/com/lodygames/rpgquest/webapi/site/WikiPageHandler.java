@@ -31,12 +31,13 @@ public final class WikiPageHandler implements ApiHandler {
 
         StringBuilder body = new StringBuilder();
         if (catalog.isEmpty()) {
-            body.append("<p><em>Aucun objet au catalogue pour le moment.</em></p>");
+            body.append(PortalIcons.empty("chest", "Aucun objet au catalogue pour le moment."));
         } else {
             body.append("<table><thead><tr><th>Objet</th><th>Rareté</th></tr></thead><tbody>");
             for (Object itemRaw : catalog) {
                 if (itemRaw instanceof Map<?, ?> item) {
-                    body.append("<tr><td>").append(Html.escape(String.valueOf(item.get("name")))).append("</td><td>")
+                    body.append("<tr><td>").append(PortalIcons.tile(itemIcon(item), false)).append(' ')
+                            .append(Html.escape(String.valueOf(item.get("name")))).append("</td><td>")
                             .append(Html.escape(String.valueOf(item.get("rarity")))).append("</td></tr>");
                 }
             }
@@ -45,5 +46,10 @@ public final class WikiPageHandler implements ApiHandler {
 
         HttpResponses.sendHtml(exchange, 200, PageLayout.render(siteTitle, "Wiki", serverStatus, body.toString()));
         return 200;
+    }
+
+    /** Objet custom : icône de son material quand l'instantané le fournit, sinon le coffre générique (#428). */
+    private static String itemIcon(Map<?, ?> item) {
+        return item.get("material") instanceof String material ? PortalIcons.forMaterial(material) : "chest";
     }
 }

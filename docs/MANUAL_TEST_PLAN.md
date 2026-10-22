@@ -8284,6 +8284,26 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-408 — Atelier : mémoire des tentatives, conformité au brief et nature de la reprise (issue #747, PENDING MANUAL VALIDATION)
+
+**But.** Vérifier que « Améliorer avec l'IA » transmet la mémoire des tentatives et la conformité au
+brief, que le mode de reprise est choisi et expliqué, et que le serveur nomme un « clear » destructif.
+Ne rien poser en jeu. Ne pas utiliser un projet existant : créer un projet de test.
+
+1. PlugAdmin → Bâtiments → Atelier → nouveau projet « TEST #747 … », brief court contenant « une cloche »
+   et « un pupitre ». Créer un plan avec l'IA (1 appel).
+2. Fiche du projet → déplier « Améliorer avec l'IA » → déplier « Mémoire des tentatives et conformité au
+   brief » : attendu une ligne « ✓/✗ Cloche … » et « ✓/✗ Pupitre … », l'état des images, et dans
+   « Nature de la reprise » une option « Automatique — … » suivie de sa raison.
+3. Si la version est refusée, cliquer « Améliorer avec l'IA » (1 appel). Télécharger le journal IA :
+   la requête montre dans son inventaire `mode`, `memory` et `requirements` (« présent mot pour mot :
+   oui ») et, dans le contexte, « Mémoire des tentatives transmise … », « Conformité au brief … », « Mode … ».
+4. (Facultatif, gratuit) Dans « Détails techniques », coller un plan avec un `clear` placé après la porte
+   puis « Vérifier » : refus `CLEAR_ERASES` qui nomme la porte.
+
+**Attendu.** Aucune version existante modifiée ; au plus 3 appels payants au total ; le journal prouve ce
+qui est parti. **Non couvert** : la qualité architecturale du résultat (appréciation visuelle).
+
 ### TC-407 — Dialogues : « Recharger depuis DEV » dans l'éditeur guidé (issue #732, PENDING MANUAL VALIDATION)
 
 PlugAdmin seul. Migration additive de `control-panel.db` (table `content_dev_reference`), aucune pour `data.db`.

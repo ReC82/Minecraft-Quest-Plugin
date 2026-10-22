@@ -1,7 +1,9 @@
 package com.lodygames.rpgquest.panel.ai;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Appelle une IA pour obtenir un plan de bâtiment (issue #94).
@@ -39,7 +41,19 @@ public final class AiBuildingStudio {
      * @param error          échec de l'appel ; {@code null} si l'appel a abouti
      */
     public record Proposal(String providerId, String providerLabel, String model, String usage,
-                           String rawResponse, String plan, String extractionNote, String error) {
+                           String rawResponse, String plan, String extractionNote, String error,
+                           AiProvider.Exchange exchange, Map<String, Object> manifest) {
+
+        public Proposal {
+            manifest = manifest == null ? Map.of() : java.util.Collections.unmodifiableMap(
+                    new LinkedHashMap<>(manifest));
+        }
+
+        /** Forme antérieure à #739 : sans trace de l'échange ni inventaire de la demande. */
+        public Proposal(String providerId, String providerLabel, String model, String usage,
+                        String rawResponse, String plan, String extractionNote, String error) {
+            this(providerId, providerLabel, model, usage, rawResponse, plan, extractionNote, error, null, null);
+        }
 
         public boolean callOk() {
             return error == null;
@@ -68,8 +82,9 @@ public final class AiBuildingStudio {
      */
     public Proposal propose(String providerId, BuildingPromptBuilder.Demand demand,
                             List<AiProvider.Image> images) {
-        return run(providerId, BuildingPromptBuilder.withReferences(
-                BuildingPromptBuilder.userPrompt(demand), images.size()), images);
+        String user = BuildingPromptBuilder.withReferences(BuildingPromptBuilder.userPrompt(demand), images.size());
+        return run(providerId, user, images, manifest("PROPOSITION", BuildingPromptBuilder.systemPrompt(), user,
+                demand, null, null, null, null, images));
     }
 
     /** Redemande un plan corrigé, en montrant au modèle le refus réel du serveur. */
@@ -92,9 +107,10 @@ public final class AiBuildingStudio {
     public Proposal correct(String providerId, BuildingPromptBuilder.Demand demand,
                             String previousPlan, String refusal, String metrics,
                             List<AiProvider.Image> images) {
-        return run(providerId, BuildingPromptBuilder.withReferences(
-                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics),
-                images.size()), images);
+        String user = BuildingPromptBuilder.withReferences(
+                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics), images.size());
+        return run(providerId, user, images, manifest("CORRECTION", BuildingPromptBuilder.systemPrompt(), user,
+                demand, previousPlan, refusal, metrics, null, images));
     }
 
     /** La passe de critique architecturale d'un plan déjà conforme (issue #282). */
@@ -105,9 +121,10 @@ public final class AiBuildingStudio {
 
     public Proposal critique(String providerId, BuildingPromptBuilder.Demand demand, String plan,
                              String metrics, String warnings, List<AiProvider.Image> images) {
-        return run(providerId, BuildingPromptBuilder.withReferences(
-                BuildingPromptBuilder.critiquePrompt(demand, plan, metrics, warnings), images.size()),
-                images);
+        String user = BuildingPromptBuilder.withReferences(
+                BuildingPromptBuilder.critiquePrompt(demand, plan, metrics, warnings), images.size());
+        return run(providerId, user, images, manifest("CRITIQUE", BuildingPromptBuilder.systemPrompt(), user,
+                demand, plan, null, metrics, warnings, images));
     }
 
     /**
@@ -116,40 +133,110 @@ public final class AiBuildingStudio {
      */
     public Proposal design(String providerId, BuildingPromptBuilder.Demand demand,
                            List<AiProvider.Image> images) {
-        return run(providerId, BuildingPromptBuilder.designSystemPrompt(), BuildingPromptBuilder.withReferences(
-                BuildingPromptBuilder.designUserPrompt(demand), images.size()), images, false);
+        String system = BuildingPromptBuilder.designSystemPrompt();
+        String user = BuildingPromptBuilder.withReferences(BuildingPromptBuilder.designUserPrompt(demand),
+                images.size());
+        return run(providerId, system, user, images, false, manifest("CONCEPTION_DETAILLEE", system, user, demand,
+                null, null, null, null, images));
     }
 
-    private Proposal run(String providerId, String userPrompt) {
-        return run(providerId, userPrompt, List.of());
+    private Proposal run(String providerId, String userPrompt, List<AiProvider.Image> images,
+                         Map<String, Object> manifest) {
+        return run(providerId, BuildingPromptBuilder.systemPrompt(), userPrompt, images, true, manifest);
     }
 
-    private Proposal run(String providerId, String userPrompt, List<AiProvider.Image> images) {
-        return run(providerId, BuildingPromptBuilder.systemPrompt(), userPrompt, images, true);
+    /**
+     * L'inventaire de ce qui compose la demande (#739) : quelles pièces de contexte sont parties,
+     * leur taille, leur empreinte, et si elles figurent <em>réellement</em> dans le texte envoyé —
+     * vérifié ici sur le texte final, pas déclaré. Complété par {@link #run} une fois le texte bâti.
+     */
+    private static Map<String, Object> manifest(String operation, String system, String user,
+                                                BuildingPromptBuilder.Demand demand, String plan,
+                                                String refusal, String metrics, String warnings,
+                                                List<AiProvider.Image> images) {
+        String sent = system + "\n" + user;
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("operation", operation);
+        m.put("systemPrompt", piece(system, null));
+        m.put("userPrompt", piece(user, null));
+        m.put("projectId", nz(demand.siteId()));
+        m.put("projectName", nz(demand.siteName()));
+        m.put("buildingId", nz(demand.buildingId()));
+        m.put("facing", nz(demand.facing()));
+        m.put("maxWidth", demand.maxWidth());
+        m.put("maxDepth", demand.maxDepth());
+        m.put("maxHeight", demand.maxHeight());
+        m.put("brief", piece(demand.brief(), sent));
+        m.put("design", piece(demand.design(), sent));
+        if (plan != null) {
+            m.put("previousPlan", piece(plan, sent));
+        }
+        if (refusal != null) {
+            m.put("refusal", piece(refusal, sent));
+        }
+        if (metrics != null) {
+            m.put("metrics", piece(metrics, sent));
+        }
+        if (warnings != null) {
+            m.put("warnings", piece(warnings, sent));
+        }
+        List<Object> pics = new java.util.ArrayList<>();
+        for (AiProvider.Image image : images) {
+            byte[] data = image.data();
+            pics.add(Map.of("mime", image.mime(), "bytes", data.length,
+                    "sha256", AiTrace.sha256(data).substring(0, 16)));
+        }
+        m.put("images", pics);
+        return m;
+    }
+
+    /**
+     * Taille et empreinte d'une pièce de contexte, et — si {@code sent} est donné — sa présence mot
+     * pour mot dans le texte réellement envoyé : « non » signale une pièce perdue ou réduite.
+     */
+    private static Map<String, Object> piece(String text, String sent) {
+        String t = text == null ? "" : text.trim();
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("chars", t.length());
+        p.put("sha256", t.isEmpty() ? "" : AiTrace.sha256(t).substring(0, 16));
+        if (sent != null) {
+            p.put("presentInRequest", t.isEmpty() ? "vide" : sent.contains(t) ? "oui" : "non");
+        }
+        return p;
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
     }
 
     private Proposal run(String providerId, String systemPrompt, String userPrompt,
-                         List<AiProvider.Image> images, boolean expectPlan) {
+                         List<AiProvider.Image> images, boolean expectPlan, Map<String, Object> manifest) {
         AiProvider provider = registry.byId(providerId).orElse(null);
         if (provider == null) {
-            return failed(providerId, providerId, "Fournisseur inconnu : « " + providerId + " ».");
+            return failed(providerId, providerId, "Fournisseur inconnu : « " + providerId + " ».", null, manifest);
         }
         AiProviderSettings config = settings.get(provider.id());
         if (!config.enabled()) {
             return failed(provider.id(), provider.label(),
-                    "Le fournisseur « " + provider.label() + " » est désactivé.");
+                    "Le fournisseur « " + provider.label() + " » est désactivé.", null, manifest);
         }
         if (!config.hasKey()) {
             return failed(provider.id(), provider.label(),
-                    "Aucune clé API enregistrée pour « " + provider.label() + " ».");
+                    "Aucune clé API enregistrée pour « " + provider.label() + " ».", null, manifest);
         }
 
         AiProvider.Request call = new AiProvider.Request(systemPrompt,
                 userPrompt, config.maxOutputTokens(),
                 Duration.ofSeconds(config.timeoutSeconds()), images);
+        Map<String, Object> m = new LinkedHashMap<>(manifest);
+        m.put("provider", provider.id());
+        m.put("configuredModel", config.model().isEmpty() ? provider.defaultModel() + " (défaut du fournisseur)"
+                : config.model());
+        m.put("maxOutputTokens", call.maxOutputTokens());
+        m.put("timeoutSeconds", config.timeoutSeconds());
         AiProvider.Result result = provider.generate(call, config);
         if (!result.ok()) {
-            return failed(provider.id(), provider.label(), result.error());
+            return failed(provider.id(), provider.label(), result.error(), result.exchange(), m);
         }
 
         // Le même extracteur que l'atelier de contenu : un modèle qui encadre son YAML d'un bloc de
@@ -157,16 +244,17 @@ public final class AiBuildingStudio {
         // différemment produirait deux comportements à expliquer.
         if (!expectPlan) {
             return new Proposal(provider.id(), provider.label(), result.model(), result.usage(),
-                    result.text(), null, null, null);
+                    result.text(), null, null, null, result.exchange(), m);
         }
         AiYamlExtractor.Extraction extraction = AiYamlExtractor.extract(result.text());
         return new Proposal(provider.id(), provider.label(), result.model(), result.usage(),
                 result.text(), extraction.ok() ? extraction.yaml() : null,
-                extraction.note(), null);
+                extraction.note(), null, result.exchange(), m);
     }
 
-    private static Proposal failed(String id, String label, String error) {
+    private static Proposal failed(String id, String label, String error, AiProvider.Exchange exchange,
+                                   Map<String, Object> manifest) {
         return new Proposal(id, label, null, null, null, null, null,
-                error == null ? "Échec non précisé." : error);
+                error == null ? "Échec non précisé." : error, exchange, manifest);
     }
 }

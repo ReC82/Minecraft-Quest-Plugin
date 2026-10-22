@@ -88,7 +88,18 @@ public interface AiProvider {
      * @param outputTokens jetons de sortie facturés, {@code null} si non fourni
      */
     record Result(boolean ok, String text, String error, String model,
-                  Integer inputTokens, Integer outputTokens) {
+                  Integer inputTokens, Integer outputTokens, Exchange exchange) {
+
+        /** Forme antérieure à #739 : sans trace de l'échange réel. */
+        public Result(boolean ok, String text, String error, String model,
+                      Integer inputTokens, Integer outputTokens) {
+            this(ok, text, error, model, inputTokens, outputTokens, null);
+        }
+
+        /** Le même résultat, accompagné de ce qui a réellement circulé (#739). */
+        public Result withExchange(Exchange trace) {
+            return new Result(ok, text, error, model, inputTokens, outputTokens, trace);
+        }
 
         public static Result failure(String error) {
             return new Result(false, null, error, null, null, null);
@@ -105,6 +116,44 @@ public interface AiProvider {
             }
             return (inputTokens == null ? "?" : inputTokens) + " entrée / "
                     + (outputTokens == null ? "?" : outputTokens) + " sortie";
+        }
+    }
+
+    /**
+     * Ce qui a <strong>réellement</strong> circulé sur le réseau pour un appel (issue #739), déjà
+     * expurgé : c'est la matière du journal IA, pas un résumé reconstruit.
+     *
+     * <p>Les longs textes (consignes, messages, plan renvoyé) sont sortis du corps JSON et rangés
+     * dans {@code requestTexts} / {@code responseTexts} avec leur rôle et leur chemin ; le corps
+     * restant ({@code *Skeleton}) garde les paramètres tels qu'envoyés. Les pixels des images sont
+     * remplacés par leur type, leur taille et leur empreinte. Les clés et en-têtes d'authentification
+     * sont masqués, et chaque masquage est écrit dans {@code redactions}.</p>
+     *
+     * @param httpStatus      -1 si aucune réponse HTTP n'a été reçue (panne réseau, délai)
+     * @param transportError  la panne réseau, s'il y en a eu une ; vide sinon
+     */
+    record Exchange(String endpoint, java.util.Map<String, String> headers, String requestSkeleton,
+                    java.util.List<AiTrace.Text> requestTexts, int httpStatus, String responseSkeleton,
+                    java.util.List<AiTrace.Text> responseTexts, String providerRequestId, String finishReason,
+                    java.util.List<String> redactions, java.time.Instant startedAt,
+                    java.time.Instant finishedAt, String transportError) {
+
+        public Exchange {
+            headers = java.util.Map.copyOf(headers == null ? java.util.Map.of() : headers);
+            requestTexts = java.util.List.copyOf(requestTexts == null ? java.util.List.of() : requestTexts);
+            responseTexts = java.util.List.copyOf(responseTexts == null ? java.util.List.of() : responseTexts);
+            redactions = java.util.List.copyOf(redactions == null ? java.util.List.of() : redactions);
+            endpoint = endpoint == null ? "" : endpoint;
+            requestSkeleton = requestSkeleton == null ? "" : requestSkeleton;
+            responseSkeleton = responseSkeleton == null ? "" : responseSkeleton;
+            providerRequestId = providerRequestId == null ? "" : providerRequestId;
+            finishReason = finishReason == null ? "" : finishReason;
+            transportError = transportError == null ? "" : transportError;
+        }
+
+        public long durationMillis() {
+            return startedAt == null || finishedAt == null ? -1
+                    : java.time.Duration.between(startedAt, finishedAt).toMillis();
         }
     }
 

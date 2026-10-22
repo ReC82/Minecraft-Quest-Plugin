@@ -125,6 +125,8 @@ public final class PanelApp {
     /** #289 : la conception détaillée de chaque projet, versionnée. */
     private final com.lodygames.rpgquest.panel.building.BuildingDesignDocStore designDocs;
     private final com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline designPipeline;
+    /** #739 : le journal IA persistant des projets de l'Atelier. */
+    private final com.lodygames.rpgquest.panel.ai.BuildingAiJournal aiJournal;
     /** Issue #267 — les projets de l'Atelier, indépendants des emplacements. */
     private final com.lodygames.rpgquest.panel.building.BuildingProjectStore planProjects;
     private final ContentEditorPages contentEditor;
@@ -206,6 +208,10 @@ public final class PanelApp {
                 designRuns, planProjects, planDrafts, planWorkbench, agentStore, workshopAutopilot, audit,
                 referenceImages, Duration.ofSeconds(Long.getLong("rpgquest.design.verdictTimeoutSeconds", 180)))
                 .withDesignDocs(designDocs);
+        // #739 : même base que le reste du panel — le journal survit aux redémarrages.
+        this.aiJournal = new com.lodygames.rpgquest.panel.ai.BuildingAiJournal(
+                new com.lodygames.rpgquest.panel.ai.AiJournalStore(config.panelDbPath()));
+        this.designPipeline.withJournal(aiJournal);
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.agentPages.useWorkshopProjects(planProjects);
@@ -441,6 +447,7 @@ public final class PanelApp {
         route(WorkshopPages.BASE + "/import", this::handleWorkshopImport);
         route(WorkshopPages.BASE + "/project", this::handleWorkshopProject);
         route(WorkshopPages.BASE + "/image", this::handleWorkshopImage);
+        route(WorkshopPages.BASE + "/journal", this::handleWorkshopJournal);
         route("/content/schema.json", this::handleContentSchema);
         route("/content/template", this::handleContentTemplate);
         route("/content/contract.md", this::handleContentContractDoc);
@@ -1541,6 +1548,10 @@ public final class PanelApp {
         }
         var outcome = planProjects.update(project.id(), parseIntOr(f.get("project_version"), -1), fields,
                 session.username());
+        if (outcome == com.lodygames.rpgquest.panel.building.BuildingProjectStore.UpdateOutcome.SAVED) {
+            planProjects.find(project.id()).ifPresent(after -> aiJournal.projectChanged(project.id(),
+                    session.username(), project, after));
+        }
         audit.record(session.username(), "building.project.save", "project=" + project.id(), outcome.name(), "",
                 UUID.randomUUID().toString().substring(0, 8));
         return PlanOutcome.redirect(switch (outcome) {
@@ -1580,6 +1591,9 @@ public final class PanelApp {
         }
         var proposal = aiBuildingStudio.design(f.getOrDefault("provider", "").trim(), demandOf(project),
                 referencesOf(project.id()));
+        aiJournal.call(project.id(), manualCall(session, "MANUEL — CONCEPTION DÉTAILLÉE", "", "",
+                "Rédaction de la conception détaillée depuis le brief et les contraintes ; aucun plan ni "
+                        + "diagnostic transmis."), proposal, "", 0);
         audit.record(session.username(), "building.design.write", "project=" + project.id() + " provider="
                         + proposal.providerId() + " model=" + proposal.model() + " usage=" + proposal.usage(),
                 proposal.callOk() ? "OK" : "FAILED", proposal.callOk() ? "" : proposal.error(),
@@ -1640,7 +1654,9 @@ public final class PanelApp {
         var proposal = aiBuildingStudio.propose(f.getOrDefault("provider", "").trim(), demand,
                 referencesOf(project.id()));
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
-                BuildingPlanDraft.Origin.AI_PROPOSAL, "", demand, false);
+                BuildingPlanDraft.Origin.AI_PROPOSAL, "", demand, false, manualCall(session,
+                        "MANUEL — CRÉER UN PLAN", "", "", "Demande neuve : brief, contraintes et conception en "
+                                + "vigueur ; aucun plan ni diagnostic antérieur."));
     }
 
     /**
@@ -1689,10 +1705,18 @@ public final class PanelApp {
                         com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.from(audit.details()).metrics())
                 : "";
         var demand = demandOf(project);
+        // #739 : le verdict transmis est relevé dans le journal, avec son empreinte, avant l'appel.
+        String sentDiagnosis = journalVerdict(session, project, draft, audit);
         var proposal = aiBuildingStudio.correct(f.getOrDefault("provider", "").trim(), demand,
                 draft.plan(), reason, measured, referencesOf(project.id()));
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
-                BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true);
+                BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true, manualCall(session,
+                        "MANUEL — AMÉLIORER AVEC L'IA", draft.id(), sentDiagnosis, "Version "
+                                + draft.id().substring(0, Math.min(8, draft.id().length())) + " transmise avec le "
+                                + "motif : diagnostic de sa dernière vérification"
+                                + (sentDiagnosis.isEmpty() ? " (aucun)" : " (empreinte " + sentDiagnosis + ")")
+                                + " et consignes éventuelles de l'administrateur. Les diagnostics des versions "
+                                + "précédentes ne sont pas transmis."));
     }
 
     /**
@@ -1789,6 +1813,94 @@ public final class PanelApp {
         return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
                 removed ? "Image retirée du projet (effacée de la base du panel)." : null,
                 removed ? null : "Image introuvable : rien n'a été retiré."));
+    }
+
+    /** #739 : le contexte d'un geste payant manuel, pour le journal IA. */
+    private static com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext manualCall(Session session,
+            String operation, String inputDraftId, String inputDiagnosis, String context) {
+        return new com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext("", operation, 0,
+                session.username(), inputDraftId, "", inputDiagnosis, List.of(context));
+    }
+
+    /**
+     * #739 : relève dans le journal le verdict qui part avec une amélioration manuelle, et rend son
+     * empreinte (vide si la version n'est pas refusée, ou pas encore jugée).
+     */
+    private String journalVerdict(Session session, com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                  BuildingPlanDraft draft, BuildingPlanWorkbench.CheckState state) {
+        var verdict = com.lodygames.rpgquest.panel.building.PlanDiagnosis.verdict(state);
+        if (!verdict.available()) {
+            return "";
+        }
+        String diagnosis = com.lodygames.rpgquest.panel.building.PlanDiagnosis.of(project, state);
+        aiJournal.validation(project.id(), "", session.username(), draft.id(), draft.version(), verdict.accepted(),
+                verdict.codes(), com.lodygames.rpgquest.panel.building.PlanVerdictText.headline(verdict, false),
+                diagnosis, com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop.formatMetrics(verdict.metrics()),
+                verdict.warnings(), state.row().map(com.lodygames.rpgquest.panel.agent.AgentActionRow::id).orElse(""),
+                state.row().map(com.lodygames.rpgquest.panel.agent.AgentActionRow::completedAt).orElse(null),
+                "relevé au moment de la demande d'amélioration");
+        return verdict.accepted() ? "" : com.lodygames.rpgquest.panel.ai.BuildingAiJournal.fingerprint(
+                verdict.codes(), diagnosis);
+    }
+
+    /**
+     * {@code GET /buildings/workshop/journal?id=…} (issue #739) : le journal IA complet du projet, en
+     * texte UTF-8 téléchargeable.
+     *
+     * <p>Même garde que l'Atelier ({@link Permission#AI_USE}) : le journal contient les consignes et
+     * les plans que seuls ceux qui peuvent appeler l'IA voient déjà. Les secrets n'y figurent pas — ils
+     * sont masqués à l'écriture. Le téléchargement est tracé dans l'audit du panel.</p>
+     */
+    private void handleWorkshopJournal(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.AI_USE)) {
+            forbidden(exchange, session, WorkshopPages.BASE);
+            return;
+        }
+        String agentId = config.agents().defaultAgentId();
+        var project = planProjects.find(Http.query(exchange).getOrDefault("id", "").trim())
+                .filter(p -> p.agentId().equals(agentId));
+        if (project.isEmpty()) {
+            Http.html(exchange, 404, Layout.bare("Projet introuvable", "<h1>Projet introuvable</h1>"));
+            return;
+        }
+        var p = project.get();
+        var store = aiJournal.store();
+        var events = store.events(com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, p.id());
+        java.time.Instant now = java.time.Instant.now();
+        var drafts = planDrafts.forProject(agentId, p.id()).stream()
+                .map(d -> new com.lodygames.rpgquest.panel.ai.BuildingAiJournalExport.DraftInfo(d.id(), d.version(),
+                        d.origin().name(), d.createdAt())).toList();
+        var subject = new com.lodygames.rpgquest.panel.ai.BuildingAiJournalExport.Subject(p.id(), p.name(),
+                p.buildingId(), session.username(), now, store.installedAt(), store.maxEventsPerSubject(), drafts);
+        String text = com.lodygames.rpgquest.panel.ai.BuildingAiJournalExport.render(subject, events,
+                draftId -> exportVerdict(p, draftId));
+        audit.record(session.username(), "building.ai.journal.download", "project=" + p.id() + " events="
+                + events.size(), "OK", "", UUID.randomUUID().toString().substring(0, 8));
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        Http.attachment(exchange, com.lodygames.rpgquest.panel.ai.BuildingAiJournalExport.filename(p.name(),
+                p.buildingId(), now), "text/plain", text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Le verdict ACTUEL du serveur sur une version, lu dans ses actions (export du journal, #739). */
+    private Optional<com.lodygames.rpgquest.panel.ai.BuildingAiJournalExport.ExportVerdict> exportVerdict(
+            com.lodygames.rpgquest.panel.building.BuildingProject project, String draftId) {
+        return planDrafts.find(draftId).flatMap(d -> {
+            var state = planWorkbench.state(d, BuildingPlanDraftStore.Check.AUDIT);
+            var verdict = com.lodygames.rpgquest.panel.building.PlanDiagnosis.verdict(state);
+            if (!verdict.available()) {
+                return Optional.empty();
+            }
+            return Optional.of(new com.lodygames.rpgquest.panel.ai.BuildingAiJournalExport.ExportVerdict(
+                    verdict.accepted(), verdict.codes(),
+                    com.lodygames.rpgquest.panel.building.PlanDiagnosis.of(project, state),
+                    state.row().map(com.lodygames.rpgquest.panel.agent.AgentActionRow::completedAt).orElse(null),
+                    state.row().map(com.lodygames.rpgquest.panel.agent.AgentActionRow::id).orElse("")));
+        });
     }
 
     /**
@@ -1919,7 +2031,8 @@ public final class PanelApp {
                                      com.lodygames.rpgquest.panel.ai.AiBuildingStudio.Proposal proposal,
                                      BuildingPlanDraft.Origin origin, String parentId,
                                      com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demand,
-                                     boolean correction) {
+                                     boolean correction,
+                                     com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext journalContext) {
         // L'audit retient le fournisseur, le modèle et l'issue — jamais la clé, jamais la description.
         audit.record(session.username(), "building.plan.generate",
                 "project=" + project.id() + " provider=" + proposal.providerId() + " model=" + proposal.model()
@@ -1928,6 +2041,7 @@ public final class PanelApp {
                 proposal.callOk() ? (proposal.hasPlan() ? "plan proposé" : "aucun plan exploitable") : proposal.error(),
                 UUID.randomUUID().toString().substring(0, 8));
         if (!proposal.callOk()) {
+            aiJournal.call(project.id(), journalContext, proposal, "", 0);
             return PlanOutcome.redirect(projectLocation(project.id(), parentId, null,
                     "L'IA n'a pas répondu : " + proposal.error() + " Aucune version n'a été créée."));
         }
@@ -1939,6 +2053,7 @@ public final class PanelApp {
                 session.username(), project.id()));
         planDrafts.fulfil(token, created.id());
         planProjects.touch(project.id(), session.username());
+        aiJournal.call(project.id(), journalContext, proposal, created.id(), created.version());
         // #282 : un plan neuf est vérifié et dessiné aussitôt, gratuitement. Si le serveur sait le
         // réparer, l'Atelier crée la version réparée dès le retour de l'audit.
         Optional<String> verifyRefused = created.hasPlan()

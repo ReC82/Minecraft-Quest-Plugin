@@ -105,4 +105,9 @@ public final class AnthropicProvider extends HttpAiProvider {
         Map<String, Object> usage = mapAt(response, "usage");
         return new int[] {intAt(usage, "input_tokens"), intAt(usage, "output_tokens")};
     }
+
+    @Override
+    protected String extractFinishReason(Map<String, Object> response) {
+        return stringAt(response, "stop_reason");
+    }
 }

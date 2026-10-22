@@ -23,7 +23,8 @@ import java.util.Map;
  * <p><strong>Aucune journalisation.</strong> Cette classe n'écrit rien dans les logs : ni la clé
  * (évidemment), ni le corps des requêtes, qui contient le contenu éditorial et pourrait être
  * volumineux. Les erreurs remontent par {@link AiProvider.Result}, et c'est l'appelant qui décide
- * ce qu'il en affiche.</p>
+ * ce qu'il en affiche. Depuis #739, le résultat porte aussi la trace expurgée de l'échange
+ * ({@link AiProvider.Exchange}) : c'est l'appelant qui la range dans le journal IA du projet.</p>
  */
 abstract class HttpAiProvider implements AiProvider {
 
@@ -87,8 +88,63 @@ abstract class HttpAiProvider implements AiProvider {
         return generate(probe, settings);
     }
 
+    /** Fin de génération rapportée par le fournisseur (« stop », « length »…) ; vide si absente. */
+    protected String extractFinishReason(Map<String, Object> response) {
+        return "";
+    }
+
+    /**
+     * Ce qui a circulé pendant un appel, relevé au fil de l'eau puis expurgé (#739). Aucun champ
+     * n'est jamais journalisé ici : la trace remonte à l'appelant dans {@link Result#exchange()}.
+     */
+    private final class Capture {
+        private final Request request;
+        private final AiProviderSettings settings;
+        private final java.time.Instant started = java.time.Instant.now();
+        private String endpoint = "";
+        private Map<String, String> headers = Map.of();
+        private String body = "";
+        private int status = -1;
+        private String raw = "";
+        private String requestId = "";
+        private String finish = "";
+        private String transport = "";
+
+        Capture(Request request, AiProviderSettings settings) {
+            this.request = request;
+            this.settings = settings;
+        }
+
+        Result attach(Result outcome) {
+            Result result = outcome;
+            if (body.isEmpty()) {
+                return result; // rien n'est parti : pas d'échange à tracer
+            }
+            List<String> notes = new java.util.ArrayList<>();
+            String key = settings.apiKey();
+            if (result.error() != null) {
+                // Un fournisseur peut recopier la clé dans son message d'erreur : elle ne s'affiche ni
+                // à l'écran ni dans le journal.
+                result = new Result(result.ok(), result.text(), AiTrace.mask(result.error(), key,
+                        "Message d'erreur", notes), result.model(), result.inputTokens(), result.outputTokens());
+            }
+            Map<String, String> sentHeaders = AiTrace.headers(headers, key, notes);
+            AiTrace.Split req = AiTrace.split(body, "Q", request.images(), key, "Requête", notes);
+            AiTrace.Split res = AiTrace.split(raw, "R", List.of(), key, "Réponse", notes);
+            return result.withExchange(new Exchange(AiTrace.mask(endpoint, key, "Adresse appelée", notes),
+                    sentHeaders, req.skeleton(), req.texts(), status, res.skeleton(), res.texts(),
+                    AiTrace.mask(requestId, key, "Identifiant fournisseur", notes), finish, notes, started,
+                    java.time.Instant.now(), AiTrace.mask(transport, key, "Erreur réseau", notes)));
+        }
+    }
+
     @Override
     public Result generate(Request request, AiProviderSettings settings) {
+        Capture capture = new Capture(request, settings);
+        return capture.attach(send(request, settings, capture));
+    }
+
+    private Result send(Request request, AiProviderSettings settings, Capture capture) {
         if (!settings.hasKey()) {
             return Result.failure("Aucune clé API enregistrée pour « " + label() + " ».");
         }
@@ -105,31 +161,46 @@ abstract class HttpAiProvider implements AiProvider {
                     + "une clé API ne doit jamais circuler en clair.");
         }
 
+        String body = body(request, settings);
+        Map<String, String> sent = new java.util.LinkedHashMap<>();
+        sent.put("Content-Type", "application/json");
+        sent.putAll(headers(settings));
+        capture.endpoint = "POST " + uri;
+        capture.headers = sent;
+        capture.body = body;
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                 .timeout(request.timeout() == null
                         ? Duration.ofSeconds(settings.timeoutSeconds()) : request.timeout())
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body(request, settings), StandardCharsets.UTF_8));
-        headers(settings).forEach(builder::header);
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+        sent.forEach(builder::header);
 
         HttpResponse<byte[]> response;
         try {
             response = HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
         } catch (java.net.http.HttpTimeoutException e) {
+            capture.transport = "délai dépassé";
             return Result.failure("Délai dépassé après " + settings.timeoutSeconds()
                     + " s. Rien n'a été enregistré.");
         } catch (IOException e) {
+            capture.transport = rootMessage(e);
             return Result.failure("Appel impossible : " + rootMessage(e));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            capture.transport = "appel interrompu";
             return Result.failure("Appel interrompu.");
         }
 
         byte[] bytes = response.body() == null ? new byte[0] : response.body();
+        capture.status = response.statusCode();
+        capture.requestId = response.headers().firstValue("x-request-id")
+                .or(() -> response.headers().firstValue("request-id")).orElse("");
         if (bytes.length > MAX_RESPONSE_BYTES) {
+            capture.raw = "(réponse de " + bytes.length + " octets non conservée : au-delà de la limite de "
+                    + MAX_RESPONSE_BYTES + " octets lue par le panel)";
             return Result.failure("Réponse anormalement volumineuse (" + bytes.length + " octets).");
         }
         String raw = new String(bytes, StandardCharsets.UTF_8);
+        capture.raw = raw;
 
         if (response.statusCode() / 100 != 2) {
             return Result.failure(httpError(response.statusCode(), raw));
@@ -147,6 +218,11 @@ abstract class HttpAiProvider implements AiProvider {
         } catch (RuntimeException e) {
             return Result.failure("Réponse illisible du fournisseur (JSON invalide).");
         }
+        String bodyId = stringAt(parsed, "id").isBlank() ? stringAt(parsed, "responseId") : stringAt(parsed, "id");
+        if (!bodyId.isBlank()) {
+            capture.requestId = capture.requestId.isBlank() ? bodyId : bodyId + " (requête " + capture.requestId + ")";
+        }
+        capture.finish = extractFinishReason(parsed);
 
         String text = extractText(parsed);
         if (text == null || text.isBlank()) {

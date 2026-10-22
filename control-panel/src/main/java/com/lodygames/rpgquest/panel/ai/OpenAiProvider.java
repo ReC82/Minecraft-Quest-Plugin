@@ -105,4 +105,10 @@ public final class OpenAiProvider extends HttpAiProvider {
         Map<String, Object> usage = mapAt(response, "usage");
         return new int[] {intAt(usage, "prompt_tokens"), intAt(usage, "completion_tokens")};
     }
+
+    @Override
+    protected String extractFinishReason(Map<String, Object> response) {
+        List<Object> choices = listAt(response, "choices");
+        return choices.isEmpty() ? "" : stringAt(choices.get(0), "finish_reason");
+    }
 }

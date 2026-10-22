@@ -113,4 +113,10 @@ public final class GeminiProvider extends HttpAiProvider {
         String reported = stringAt(response, "modelVersion");
         return reported.isBlank() ? model(settings) : reported;
     }
+
+    @Override
+    protected String extractFinishReason(Map<String, Object> response) {
+        List<Object> candidates = listAt(response, "candidates");
+        return candidates.isEmpty() ? "" : stringAt(candidates.get(0), "finishReason");
+    }
 }

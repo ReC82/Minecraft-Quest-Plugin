@@ -8272,6 +8272,35 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-404 — Dialogues : reprise après une mise en jeu refusée ou un conflit de version (issue #731, PENDING MANUAL VALIDATION)
+
+JAR (remise en l'état d'un fichier refusé) + PlugAdmin (référence DEV, encadré de conflit). Aucune migration.
+**Ne pas utiliser Musty ni un dialogue réel** : un dialogue jetable uniquement. Acquis à ne pas régresser :
+#128, #129, #130, TC-403.
+
+1.  Dialogue jetable → modifier une réplique → **Enregistrer et mettre en jeu**. **Attendu** : « Mise en jeu en
+    cours… » puis « À jour en jeu » (parcours normal inchangé).
+2.  Provoquer une vraie modification concurrente : **Détails techniques** → ce dialogue → modifier le texte
+    d'un nœud directement sur le serveur (édition guidée de la page technique) et valider.
+3.  Revenir dans l'éditeur guidé, changer une réplique → **Enregistrer et mettre en jeu**. **Attendu** : le texte
+    est enregistré dans l'éditeur, **rien n'est mis en jeu** ; bandeau rouge « Le serveur a une autre version de
+    ce dialogue : rien n'a été remplacé et votre version est gardée… » puis, après « Vérifier à nouveau »,
+    l'encadré rouge « Le serveur a une autre version de ce dialogue » avec trois étapes, les boutons
+    « Comparer les deux versions », « Vérifier à nouveau » et « Que faire ? » (fiche de dépannage). Aucun
+    bouton « Réessayer » ni « Mettre en jeu ».
+4.  **Comparer les deux versions** → la fiche technique s'ouvre sur ce dialogue → demander la comparaison.
+    **Attendu** : la différence est affichée ; le bouton rouge « Écraser la version DEV » n'apparaît qu'après,
+    avec une confirmation explicite. Confirmer. **Attendu** : sauvegarde prise, version de l'éditeur en jeu ;
+    l'éditeur affiche « À jour en jeu ».
+5.  (Si l'occasion se présente, sans la provoquer sur un dialogue réel) une mise en jeu refusée par le serveur
+    (`RELOAD_FAILED`). **Attendu** : « Mise en jeu échouée : Le serveur a refusé ce contenu… Rien n'a été mis en
+    jeu : le fichier DEV est remis dans son état d'avant. » ; corriger puis « Réessayer » passe **sans CONFLICT**.
+
+**Couverture automatisée** : `ContentPublishServiceTest` (fichier refusé remis à l'octet près / ressource
+nouvelle retirée, correction suivante publiée avec la même empreinte, vraie modification concurrente toujours
+en CONFLICT et non écrasée), `DialogueEditorTest` (parcours Musty sans F5 et sans faux conflit, avec l'ancien
+comportement serveur et le nouveau ; vrai conflit : encadré guidé, aucune nouvelle mise en jeu, brouillon gardé).
+
 ### TC-403 — Dialogues : une réplique sans réponse est refusée avant toute écriture (issue #730, PENDING MANUAL VALIDATION)
 
 PlugAdmin (éditeur guidé, mise en jeu seule et en lot) + JAR (message de rechargement). Aucune migration.

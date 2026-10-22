@@ -6093,8 +6093,8 @@ public final class PanelApp {
             return "!Une mise en jeu de ce dialogue est déjà en cours.";
         }
         if (live.live() == DialoguePages.Live.CONFLICT) {
-            return "!Le serveur a une autre version de ce dialogue : comparez-les dans « Détails techniques » avant "
-                    + "de la remplacer.";
+            return "!Le serveur a une autre version de ce dialogue : rien n'a été remplacé et votre version est "
+                    + "gardée. Cliquez « Comparer les deux versions » pour choisir laquelle garder.";
         }
         Map<String, String> publishForm = new java.util.LinkedHashMap<>();
         publishForm.put("kind", "dialogues");

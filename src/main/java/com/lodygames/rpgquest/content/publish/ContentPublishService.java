@@ -239,6 +239,9 @@ public final class ContentPublishService {
                         "UNCHANGED");
             }
 
+            // Issue #731 : le texte d'origine, pour remettre DEV en l'état si le moteur refuse.
+            String original = created ? null : store.read(kind, slug).orElse(null);
+
             // Sauvegarde AVANT écriture. Un échec ici arrête tout : publier sans pouvoir revenir en
             // arrière n'est pas acceptable.
             String backupPath = "";
@@ -281,8 +284,15 @@ public final class ContentPublishService {
                         backupPath, false, "", "", 0, 0, false, applier.runtimeHash(), now);
             }
 
-            return reloadAndVerify(kind, slug, id, before, after, sourceSha, created, backupPath,
-                    "PUBLISHED");
+            PublishOutcome outcome = reloadAndVerify(kind, slug, id, before, after, sourceSha, created,
+                    backupPath, "PUBLISHED");
+            if ("RELOAD_FAILED".equals(outcome.code())) {
+                if (!created && original == null) {
+                    original = store.readBackup(backupPath).orElse(null);
+                }
+                return putBack(outcome, created, original);
+            }
+            return outcome;
         } finally {
             inFlight.remove(lockKey);
         }
@@ -794,6 +804,44 @@ public final class ContentPublishService {
         } finally {
             inFlight.remove(lockKey);
         }
+    }
+
+    /**
+     * Le moteur a refusé le fichier qu'on vient d'écrire : rien n'a été mis en jeu (issue #731).
+     *
+     * <p>On remet DEV dans son état d'avant — texte d'origine, ou retrait d'une ressource
+     * nouvelle — comme le fait déjà un lot (#427). Sans cela, DEV gardait une version que le jeu
+     * n'avait pas acceptée, d'empreinte inconnue du panel : la correction suivante, faite dans le
+     * même éditeur, était refusée pour conflit. Le rechargement n'ayant rien appliqué, le contenu
+     * en jeu n'a pas changé ; on ne recharge donc pas une seconde fois.</p>
+     */
+    private PublishOutcome putBack(PublishOutcome failed, boolean created, String original) {
+        PublishKind kind = failed.kind();
+        String slug = failed.slug();
+        String note;
+        try {
+            if (created) {
+                store.delete(kind, slug);
+            } else if (original != null) {
+                store.write(kind, slug, original);
+            } else {
+                throw new IOException("texte d'origine illisible");
+            }
+            note = " Rien n'a été mis en jeu : le fichier DEV est remis dans son état d'avant"
+                    + (created ? " (retiré, il n'existait pas)." : ".");
+        } catch (IOException error) {
+            note = " ATTENTION : le fichier DEV n'a pas pu être remis dans son état d'avant ("
+                    + describe(error) + ")"
+                    + (failed.backupPath().isEmpty() ? "." : " ; sauvegarde « " + failed.backupPath() + " ».");
+        }
+        return new PublishOutcome(false, "RELOAD_FAILED",
+                "Le serveur a refusé ce contenu au rechargement (" + failed.reloadCode() + ") : "
+                        + failed.reloadMessage() + culprits(failed.reloadDetail()) + note,
+                kind, slug, failed.expectedId(), failed.devShaBefore(), store.sha256(kind, slug),
+                failed.sourceSha(), failed.created(), failed.backupPath(),
+                false, failed.reloadCode(), failed.reloadMessage(), failed.loadedCount(),
+                failed.issueCount(), false, failed.runtimeHash(), failed.verifiedAt(),
+                failed.reloadDetail());
     }
 
     /**

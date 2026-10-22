@@ -8272,6 +8272,33 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-405 — Atelier : télécharger le journal IA d'un projet (issue #739, PENDING MANUAL VALIDATION)
+
+PlugAdmin seul. Aucune migration de `data.db` ; table additive `ai_journal_event` dans `control-panel.db`.
+**Ne rien poser, ne toucher à aucun bâtiment placé.** Les échanges antérieurs au déploiement ne sont pas
+dans le journal (c'est voulu).
+
+1.  Atelier → ouvrir un projet de test (pas la Boulangerie). **Attendu** : bouton « Télécharger le journal IA »
+    en haut à droite, à côté de « Atelier ».
+2.  Cliquer. **Attendu** : téléchargement d'un fichier `journal-ia-<bâtiment>-<date>-<heure>.txt` qui s'ouvre
+    dans un éditeur de texte, accents corrects ; il commence par « JOURNAL IA — <projet> » puis la NOTICE.
+3.  Sur ce projet de test, faire un ou deux gestes IA (Créer un plan, Améliorer avec l'IA — appels facturés)
+    puis retélécharger. **Attendu** : une REQUÊTE et une RÉPONSE par appel, avec le même « appel C-… » ;
+    l'index chronologique les liste avec leurs heures (UTC et Bruxelles) ; la vérification du serveur
+    apparaît (« VÉRIFICATION » ou « lu à l'export ») ; un refus porte une lettre (A, B…).
+4.  Chercher dans le fichier « sk- », « Bearer » et la clé : **Attendu** : absents ; les en-têtes
+    d'authentification montrent `⟦MASQUÉ⟧` et la liste des masquages.
+5.  (Facultatif) Après une conception automatique qui échoue en boucle : la synthèse affiche « ⚠ Diagnostics
+    revenus après un autre » et la ligne « Suite des diagnostics » montre A → B → A↺.
+6.  Avec un compte Testeur (sans IA) : ouvrir `/buildings/workshop/journal?id=<projet>`. **Attendu** : accès
+    refusé.
+
+**Couverture automatisée** : `BuildingDesignPipelineTest` (fournisseur simulé : A → B → A détecté, contexte
+réellement transmis à chaque requête, erreur API 500 dont le corps recopie la clé → masquée, persistance après
+réouverture de la base, rétention signalée), `AiTraceTest` (rôles OpenAI / Anthropic / Gemini, pixels
+remplacés, masquage des secrets listé), `WorkshopFlowTest` (bouton, téléchargement HTTP authentifié, nom de
+fichier, survie à un redémarrage complet du panel, 403 pour un testeur).
+
 ### TC-404 — Dialogues : reprise après une mise en jeu refusée ou un conflit de version (issue #731, PENDING MANUAL VALIDATION)
 
 JAR (remise en l'état d'un fichier refusé) + PlugAdmin (référence DEV, encadré de conflit). Aucune migration.

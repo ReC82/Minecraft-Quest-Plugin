@@ -1231,6 +1231,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   descriptions de 12 000 caractères ; échec d'enregistrement affiché dans l'Atelier.
   `PENDING MANUAL VALIDATION` : TC-294 à TC-297. Adaptation au terrain réel au moment de la pose :
   non traitée (suite de #291).
+- **Journal IA par projet de l'Atelier** *(issue #739, 22/10/2026)* — chaque appel réellement envoyé au
+  fournisseur (générations, améliorations, corrections et critiques automatiques, conceptions détaillées,
+  erreurs) est journalisé avec ses messages et leurs rôles, ses paramètres, la réponse entière, la durée,
+  l'identifiant fournisseur et la fin de génération, puis relié à la vérification du serveur (diagnostic
+  exact + empreinte). « Télécharger le journal IA » en tête de la fiche du projet produit un `.txt` UTF-8 :
+  notice, index chronologique avec lettres de diagnostic (boucle A → B → A visible), détail. Secrets masqués
+  et signalés, pixels non recopiés, aucun échange antérieur reconstruit. Table additive `ai_journal_event`
+  de `control-panel.db`, permission `AI_USE`. `PENDING MANUAL VALIDATION` : TC-405.
 - **Marches d'entrée sur le terrain (estrade, perron)** *(issue #472, 16/10/2026)* — `op: staircase`
   accepte une volée posée sur le terrain (départ hors volume, une seule marche, largeur 1 à 9) et la
   forme `facade: FRONT` où le moteur place les marches ; prompt de planification aligné (exemple

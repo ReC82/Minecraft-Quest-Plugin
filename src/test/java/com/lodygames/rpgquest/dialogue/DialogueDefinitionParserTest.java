@@ -426,6 +426,33 @@ class DialogueDefinitionParserTest {
         assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("choices")));
     }
 
+    /** Issue #730 : la réplique r2 existe, seule son absence de réponse est en cause. */
+    @Test
+    void aChoiceTowardsARejectedNodeDoesNotClaimTheNodeIsMissing() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("musty.yml", load("""
+                id: rpgquest:musty
+                start: start
+                nodes:
+                  start:
+                    speaker: "Musty"
+                    text: "Salut !"
+                    choices:
+                      - text: "Au revoir"
+                        actions:
+                          - type: CLOSE
+                      - text: "Tu vends quoi ?"
+                        next: r2
+                  r2:
+                    speaker: "Musty"
+                    text: "Du pain."
+                """));
+
+        assertFalse(result.isSuccess());
+        List<String> messages = result.issues().stream().map(DialogueLoadIssue::message).toList();
+        assertTrue(messages.stream().anyMatch(m -> m.startsWith("nodes.r2") && m.contains("choices")), messages::toString);
+        assertTrue(messages.stream().noneMatch(m -> m.contains("nœud inexistant")), messages::toString);
+    }
+
     // ---- Issue #158 : entrees conditionnelles et variantes -----------------------------------
 
     private static final String WITH_ENTRIES = """

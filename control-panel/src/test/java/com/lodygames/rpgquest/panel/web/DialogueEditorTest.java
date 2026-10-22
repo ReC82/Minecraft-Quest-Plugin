@@ -209,6 +209,101 @@ class DialogueEditorTest {
         assertEquals(2, d.nodes.size());
         assertEquals("r2", d.nodes.get(0).choices.get(1).next, "la réponse mène à la nouvelle réplique");
         assertEquals("Lucien", d.nodes.get(1).speaker, "dite par le même personnage");
+        // Issue #730 : la nouvelle réplique a d'office une sortie, sinon le jeu refuserait le dialogue.
+        assertEquals(1, d.nodes.get(1).choices.size());
+        assertEquals("Au revoir.", d.nodes.get(1).choices.get(0).text);
+        assertTrue(d.nodes.get(1).choices.get(0).close, "elle termine la conversation");
+    }
+
+    // ---- Issue #730 : une réplique sans réponse ----------------------------------------------
+
+    /** Le parcours de Musty : réplique 2 sans réponse, « Enregistrer et mettre en jeu ». */
+    @Test
+    void aLineWithoutAnyReplyIsRefusedBeforeAnyWriteAndCanBeRepaired() throws Exception {
+        start();
+        Map<String, String> f = formFields(get("/dialogues/edit/lucien").body());
+        String withReply = post("/dialogues/save", f, "addreply:0").body();
+        Map<String, String> g = formFields(withReply);
+        g.put("n0_c1_text", "Tu vends quoi ?");
+        g.put("n0_c1_next", "__new");
+        Map<String, String> h = formFields(post("/dialogues/save", g, "save").body());
+        h.put("n1_text", "Du pain frais !");
+        // On retire la réponse posée d'office : la réplique 2 n'a plus aucune sortie.
+        String emptied = post("/dialogues/save", h, "delreply:1:0").body();
+        assertTrue(unescape(emptied).contains("Cette réplique n'a pas encore de réponse"), "dit avant d'enregistrer");
+        assertFalse(emptied.contains("la conversation s'arrête après cette réplique"), "l'ancienne promesse a disparu");
+        assertTrue(emptied.contains(DialoguePages.END_HELP_HREF), "lien vers l'explication");
+
+        String refused = post("/dialogues/save", formFields(emptied), "save_publish").body();
+        String text = unescape(refused);
+        assertTrue(text.contains("Enregistrement impossible : la réplique 2 n'a pas de sortie. Ajoutez une réponse "
+                + "qui termine la conversation."), "message clair, réplique nommée comme dans l'éditeur");
+        assertTrue(text.contains("Cette réplique n'a pas de sortie"), "et près de la réplique");
+        assertTrue(refused.contains(DialoguePages.END_HELP_HREF));
+        assertFalse(text.contains("inexistant"), "aucune erreur en cascade sur une réplique bien présente");
+        assertTrue(refused.contains("value=\"Du pain frais !\"") || refused.contains("Du pain frais !"),
+                "la saisie est conservée");
+        assertEquals(LUCIEN, Files.readString(content.resolve("dialogues/lucien.yml")), "rien d'écrit");
+        assertTrue(actions("content.publish").isEmpty(), "rien d'envoyé au serveur");
+
+        // Réparation : une réponse ajoutée termine la conversation par défaut.
+        Map<String, String> fix = formFields(post("/dialogues/save", formFields(refused), "addreply:1").body());
+        fix.put("n1_c0_text", "Merci, au revoir.");
+        assertEquals(303, post("/dialogues/save", fix, "save_publish").statusCode());
+        var saved = DialogueYaml.read(Files.readString(content.resolve("dialogues/lucien.yml"))).draft();
+        assertEquals(1, saved.nodes.get(1).choices.size());
+        assertTrue(saved.nodes.get(1).choices.get(0).close);
+        assertEquals(1, actions("content.publish").size(), "une seule mise en jeu, une fois réparé");
+    }
+
+    /** Un fichier source déjà invalide (écrit hors de l'éditeur) n'est pas mis en jeu non plus. */
+    @Test
+    void anInvalidSourceIsNeverSentToTheServerAloneOrInABatch() throws Exception {
+        start();
+        String broken = """
+                id: rpgquest:musty_test
+                start: start
+                nodes:
+                  start:
+                    speaker: "Musty"
+                    text: "Salut !"
+                    choices:
+                      - text: "Tu vends quoi ?"
+                        next: r2
+                  r2:
+                    speaker: "Musty"
+                    text: "Du pain."
+                """;
+        Files.writeString(content.resolve("dialogues/musty_test.yml"), broken);
+        String token = csrf(get("/dialogues/edit/musty_test").body());
+
+        HttpResponse<String> one = post("/dialogues/publish", Map.of("_csrf", token, "agent", TestConfig.AGENT_ID,
+                "slug", "musty_test", "expected_sha", sha256(broken)), null);
+        String where = java.net.URLDecoder.decode(one.headers().firstValue("Location").orElse(""), StandardCharsets.UTF_8);
+        assertTrue(where.contains("Mise en jeu impossible : la réplique 2 n'a pas de sortie"), where);
+
+        Map<String, String> batch = new LinkedHashMap<>();
+        batch.put("_csrf", token);
+        batch.put("agent", TestConfig.AGENT_ID);
+        batch.put("type", "content.publish.batch");
+        batch.put("return", "/content/import");
+        batch.put("count", "2");
+        batch.put("kind_0", "dialogues");
+        batch.put("id_0", "lucien");
+        batch.put("expected_dev_sha_0", "");
+        batch.put("expected_source_sha_0", sha256(LUCIEN));
+        batch.put("kind_1", "dialogues");
+        batch.put("id_1", "musty_test");
+        batch.put("expected_dev_sha_1", "");
+        batch.put("expected_source_sha_1", sha256(broken));
+        batch.put("confirm", "true");
+        HttpResponse<String> lot = post("/agents/action", batch, null);
+        String lotWhere = java.net.URLDecoder.decode(lot.headers().firstValue("Location").orElse(""), StandardCharsets.UTF_8);
+        assertTrue(lotWhere.contains("dialogues/musty_test : Mise en jeu impossible"), lotWhere);
+
+        assertTrue(actions("content.publish").isEmpty() && actions("content.publish.batch").isEmpty(),
+                "ni seul ni en lot : le lot entier est refusé");
+        assertEquals(broken, Files.readString(content.resolve("dialogues/musty_test.yml")), "la source reste telle quelle");
     }
 
     @Test

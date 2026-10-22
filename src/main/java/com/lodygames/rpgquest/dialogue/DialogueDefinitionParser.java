@@ -74,12 +74,15 @@ final class DialogueDefinitionParser {
         String start = parseStart(section, errors);
         Map<String, DialogueNode> nodes = parseNodes(section, errors);
         List<DialogueEntry> entries = parseEntries(section, errors);
+        // Issue #730 : un nœud déclaré mais refusé a déjà son erreur. Les références vers lui ne
+        // sont pas répétées en « nœud inexistant », ce qui ferait chercher un nœud bien présent.
+        Set<String> declared = declaredNodeIds(section);
 
-        if (start != null && !nodes.isEmpty() && !nodes.containsKey(start)) {
+        if (start != null && !nodes.isEmpty() && !nodes.containsKey(start) && !declared.contains(start)) {
             errors.add("« start » invalide : le nœud « " + start + " » n'existe pas.");
         }
-        validateNextReferences(nodes, errors);
-        validateEntryReferences(entries, nodes, errors);
+        validateNextReferences(nodes, declared, errors);
+        validateEntryReferences(entries, nodes, declared, errors);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(m -> new DialogueLoadIssue(fileName, m)).toList());
@@ -92,11 +95,17 @@ final class DialogueDefinitionParser {
         }
     }
 
-    private void validateNextReferences(Map<String, DialogueNode> nodes, List<String> errors) {
+    private static Set<String> declaredNodeIds(ConfigurationSection section) {
+        ConfigurationSection nodesSection = section.getConfigurationSection("nodes");
+        return nodesSection == null ? Set.of() : nodesSection.getKeys(false);
+    }
+
+    private void validateNextReferences(Map<String, DialogueNode> nodes, Set<String> declared,
+                                        List<String> errors) {
         for (DialogueNode node : nodes.values()) {
             for (int i = 0; i < node.choices().size(); i++) {
                 String next = node.choices().get(i).next();
-                if (next != null && !nodes.containsKey(next)) {
+                if (next != null && !nodes.containsKey(next) && !declared.contains(next)) {
                     errors.add("nodes." + node.id() + ".choices[" + i + "].next référence un nœud inexistant « " + next + " ».");
                 }
             }
@@ -104,12 +113,13 @@ final class DialogueDefinitionParser {
     }
 
     private void validateEntryReferences(List<DialogueEntry> entries, Map<String, DialogueNode> nodes,
-                                         List<String> errors) {
+                                         Set<String> declared, List<String> errors) {
         if (nodes.isEmpty()) {
             return;
         }
         for (int i = 0; i < entries.size(); i++) {
-            if (!nodes.containsKey(entries.get(i).nodeId())) {
+            String nodeId = entries.get(i).nodeId();
+            if (!nodes.containsKey(nodeId) && !declared.contains(nodeId)) {
                 errors.add("entries[" + i + "].node référence un nœud inexistant « " + entries.get(i).nodeId() + " ».");
             }
         }

@@ -6048,8 +6048,10 @@ public final class PanelApp {
                     + "sans risque de perte : " + String.join(" ; ", rtp));
         }
         if (!errors.isEmpty()) {
-            String msg = created.isEmpty() ? "Rien n'a été enregistré : corrigez les points signalés en rouge."
-                    : "Une nouvelle réplique a été ajoutée en bas : écrivez ce que dit le personnage, puis enregistrez.";
+            String noExit = DialoguePages.noExitNotice(draft);
+            String msg = !created.isEmpty()
+                    ? "Une nouvelle réplique a été ajoutée en bas : écrivez ce que dit le personnage, puis enregistrez."
+                    : noExit.isEmpty() ? "Rien n'a été enregistré : corrigez les points signalés en rouge." : noExit;
             dialoguePage(exchange, post.session(), DialoguePages.title(slug, draft, ctx.users(slug)),
                     DialoguePages.editor(post.session().csrfToken(), ctx, dialogueRights(post.session()),
                             new DialoguePages.Editing(slug, draft, expectedSha, "", msg, created.isEmpty() ? "err" : "info",
@@ -6629,12 +6631,39 @@ public final class PanelApp {
                     "La source a changé depuis votre analyse : relancez-la avant de publier, "
                             + "pour ne pas publier une version que vous n'avez pas vue.");
         }
+        String unloadable = unloadableDialogue(kind, file.get().text());
+        if (unloadable != null) {
+            return new PublishEnrichment(null, unloadable);
+        }
         java.util.Map<String, String> out = new java.util.LinkedHashMap<>(params);
         // L'empreinte source a joué son rôle ici : inutile de l'envoyer au serveur de jeu.
         out.remove("expected_source_sha");
         out.put("yaml", file.get().text());
         out.put("expected_id", declaredId(kind, file.get().text(), slug));
         return new PublishEnrichment(out, null);
+    }
+
+    /**
+     * Issue #730 — un dialogue que le moteur refuserait à coup sûr n'est pas envoyé : le serveur
+     * écrirait le fichier sur DEV avant de le rejeter au rechargement. Seule la règle structurelle
+     * partagée avec le moteur (au moins une réponse par réplique) bloque ici, pour ne pas refuser
+     * un dialogue existant que le jeu accepte ; un YAML que le panel ne sait pas lire reste jugé par
+     * le serveur, comme avant.
+     *
+     * @return le motif du refus, ou {@code null}
+     */
+    static String unloadableDialogue(String kind, String yaml) {
+        if (!"dialogues".equals(kind)) {
+            return null;
+        }
+        var read = com.lodygames.rpgquest.panel.content.DialogueYaml.read(yaml);
+        if (read.draft() == null) {
+            return null;
+        }
+        String noExit = DialoguePages.noExitNotice(read.draft());
+        return noExit.isEmpty() ? null
+                : noExit.replace("Enregistrement impossible", "Mise en jeu impossible") + " Rien n'a été envoyé au "
+                        + "serveur. Explication : " + DialoguePages.END_HELP_HREF;
     }
 
     /**

@@ -24,6 +24,10 @@ import java.util.regex.Pattern;
  * réels <em>avant</em> qu'un administrateur confirme. Le moteur reste l'autorité finale ; ce qui
  * est vérifié ici, c'est ce que le panel est capable de savoir — et il sait désormais quels types
  * existent.</p>
+ *
+ * <p>Issue #730 : comme le moteur ({@code DialogueDefinitionParser}), chaque nœud doit avoir au
+ * moins un choix. Un nœud sans choix était accepté ici puis refusé au rechargement du serveur,
+ * après écriture du fichier sur DEV.</p>
  */
 public final class DialogueValidator {
 
@@ -74,6 +78,10 @@ public final class DialogueValidator {
             } else if (n.text.length() > MAX_TEXT) {
                 out.add(Diagnostic.error(ctx + ".text", "Texte trop long (max " + MAX_TEXT + ")."));
             }
+            if (n.choices.isEmpty()) {
+                out.add(Diagnostic.error(ctx + ".choices", "Le nœud « " + nid + " » n'a aucun choix : le "
+                        + "moteur en exige au moins un (par exemple « Au revoir », qui ferme la conversation)."));
+            }
         }
 
         String start = d.start == null ? "" : d.start.trim();
@@ -105,6 +113,20 @@ public final class DialogueValidator {
                     validateEntry(out, ctx + ".actions[" + j + "]", c.actions.get(j),
                             Descriptors.DIALOGUE_ACTIONS, "action", false);
                 }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Issue #730 — les nœuds sans aucun choix, dans l'ordre du fichier. Le moteur refuse tout le
+     * dialogue pour un seul d'entre eux.
+     */
+    public static List<String> nodesWithoutChoice(DialogueDraft d) {
+        List<String> out = new ArrayList<>();
+        for (DialogueDraft.Node n : d.nodes) {
+            if (n.choices.isEmpty()) {
+                out.add(n.id == null ? "" : n.id.trim());
             }
         }
         return out;

@@ -17,7 +17,8 @@ joueur peut choisir.
 2. **Le personnage dit…** : sa réplique.
 3. **Le joueur peut répondre…** : une ligne par réponse. Pour chacune :
    - **Ensuite…** : soit le personnage répond (une autre réplique, ou « Une nouvelle réplique… »),
-     soit la conversation se termine ;
+     soit la conversation se termine. Chaque réplique a besoin d'au moins une réponse (voir
+     [Terminer une conversation](#terminer-une-conversation)) ;
    - **Et aussi…** : *Proposer une quête précise*, *Proposer une quête au hasard dans une liste*,
      *Faire avancer une quête* ou *Rendre une quête* (qui donne ses récompenses). La quête se
      choisit par son titre, avec une recherche ; la liste, par son nom.
@@ -33,6 +34,25 @@ joueur peut choisir.
 | Mise en jeu échouée | Le serveur a refusé : le motif est affiché, corrigez puis réessayez. |
 
 « Enregistrer et mettre en jeu » fait les deux à la suite.
+
+## Terminer une conversation
+
+**Chaque réplique doit avoir au moins une réponse.** Le jeu refuse un dialogue dont une seule
+réplique n'en a aucune : il ne se charge pas, et les joueurs gardent l'ancienne version.
+
+Pour terminer la conversation après une réplique :
+
+1. sous la réplique, cliquez **Ajouter une réponse** ;
+2. écrivez ce que dit le joueur, par exemple « Au revoir. » ;
+3. laissez **Ensuite… → Terminer la conversation** (c'est le choix proposé d'office).
+
+Une réplique créée par « Une nouvelle réplique… » ou « Ajouter une réplique » reçoit déjà une
+réponse « Au revoir. » qui termine la conversation : modifiez-la ou ajoutez-en d'autres.
+
+Si une réplique n'a aucune réponse, PlugAdmin refuse **avant** d'écrire quoi que ce soit, avec un
+message comme « Enregistrement impossible : la réplique 2 n'a pas de sortie. Ajoutez une réponse
+qui termine la conversation. » La même vérification bloque **Mettre en jeu**, seul ou dans un lot
+(Import contenu) : rien n'est envoyé au serveur.
 
 ## L'aperçu
 

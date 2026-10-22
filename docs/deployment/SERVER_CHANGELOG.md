@@ -48,6 +48,39 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-22 - Dialogues : réplique sans réponse refusée avant toute écriture (#730, TC-403)
+
+### Changement
+
+PlugAdmin : le validateur exige au moins une réponse par réplique (comme le moteur) ; l'éditeur guidé refuse
+« Enregistrement impossible : la réplique N n'a pas de sortie… » avec un lien vers « Terminer une conversation » ;
+une réplique neuve reçoit d'office « Au revoir. » qui termine la conversation ; la mise en jeu seule ou en lot
+(`content.publish`, `content.publish.batch`) refuse un tel dialogue avant tout envoi au serveur. JAR : une réponse
+vers une réplique présente mais refusée ne produit plus l'erreur trompeuse « nœud inexistant ».
+
+### Action serveur
+
+- **Effectué le 22/10 16:09** : JAR `9bdee3de` (PR #733, CI PR + fusion vertes) via `scripts/deploy-verygames.sh -y` — en
+  ligne 4227011 octets, SHA-256 `6d1a49bfbb08e9e86f5aba8cd3f7775ddd4a366a1e74e710c7e263c2cc2b828c`, retéléchargé et
+  identique ; DEV redémarré par `scripts/verygames-restart.sh` (seul LoDyMcFly connecté avant), RPGQuest actif.
+- **16:11** : PlugAdmin `9bdee3de` via `scripts/plugadmin/deploy.sh` (health OK ; JAR servi relu : doc et éditeur à jour).
+- **Aucune migration**, aucun fichier de contenu publié ni modifié sur DEV (Musty et tous les dialogues réels intacts).
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261022T140954Z-predeploy.jar` (4226840 o, SHA `2db4d083…`, JAR #675 `9eec7812`) ;
+PlugAdmin précédent sauvegardé par `deploy.sh` sous `/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-403 (PENDING MANUAL VALIDATION) sur un dialogue jetable, jamais Musty.
+
+### Rollback
+
+Remettre `rpgquest-20261022T140954Z-predeploy.jar` puis redémarrer ; PlugAdmin : `scripts/plugadmin/rollback.sh`.
+
+---
+
 ## 2026-10-22 - Hub : postes de travail fermés par défaut et exceptions (#675 retour du 22/10, TC-401)
 
 ### Changement

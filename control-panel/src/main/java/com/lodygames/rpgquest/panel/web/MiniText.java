@@ -63,7 +63,10 @@ public final class MiniText {
             Map.entry("underlined", "u"), Map.entry("u", "u"),
             Map.entry("strikethrough", "s"), Map.entry("st", "s"), Map.entry("s", "s"));
 
-    private static final Pattern TAG = Pattern.compile("<(/?)([a-zA-Z0-9_#:]+)(?::([^>]*))?>");
+    private static final Pattern TAG = Pattern.compile("<(/?)([a-zA-Z0-9_#:]+)(?::([^>]*))?/?>");
+    /** Balises MiniMessage de retour à la ligne (issue #728), rendues en {@code <br>} HTML. */
+    private static final Set<String> LINE_BREAK_TAGS = Set.of("br", "newline");
+    private static final Pattern LINE_BREAK = Pattern.compile("(?i)<(?:br|newline)/?>");
     private static final Pattern HEX = Pattern.compile("#?[0-9a-fA-F]{6}");
     private static final Pattern SCREAMING = Pattern.compile("\\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)*\\b");
     private static final Set<String> KEEP_UPPER = Set.of("XP", "HP", "TNT", "NPC", "PNJ", "UUID", "ID", "RPG", "URL", "API");
@@ -75,7 +78,9 @@ public final class MiniText {
         if (raw == null || raw.isEmpty()) {
             return "";
         }
-        return TAG.matcher(raw).replaceAll("").replaceAll("\\s+", " ").trim();
+        // Issue #728 : un retour à la ligne sépare deux mots, il ne les colle pas.
+        String spaced = LINE_BREAK.matcher(raw).replaceAll(" ");
+        return TAG.matcher(spaced).replaceAll("").replaceAll("\\s+", " ").trim();
     }
 
     /**
@@ -98,6 +103,15 @@ public final class MiniText {
             String name = m.group(2).toLowerCase(java.util.Locale.ROOT);
             String arg = m.group(3);
 
+            if (LINE_BREAK_TAGS.contains(name)) {
+                // Issue #728 : <br>/<newline> passent à la ligne en jeu ; </br> s'y affiche tel quel.
+                if (closing) {
+                    appendEscaped(out, m.group());
+                } else {
+                    out.append("<br>");
+                }
+                continue;
+            }
             if (closing || name.equals("reset") || name.equals("r")) {
                 closeUntil(out, open, closing ? tagKind(name, arg) : null);
                 continue;
@@ -232,6 +246,8 @@ public final class MiniText {
                 case '>' -> out.append("&gt;");
                 case '"' -> out.append("&quot;");
                 case '\'' -> out.append("&#39;");
+                case '\n' -> out.append("<br>");
+                case '\r' -> { }
                 default -> out.append(c);
             }
         }

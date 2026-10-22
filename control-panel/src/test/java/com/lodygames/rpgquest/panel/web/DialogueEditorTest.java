@@ -337,6 +337,54 @@ class DialogueEditorTest {
         assertEquals(LUCIEN, Files.readString(content.resolve("dialogues/lucien.yml")));
     }
 
+    // ---- Issue #728 : retours à la ligne -------------------------------------------------------
+
+    @Test
+    void enterInALineSavesARealLineBreakWithoutCarriageReturn() throws Exception {
+        start();
+        String page = get("/dialogues/edit/lucien").body();
+        assertTrue(page.contains("appuyez sur <kbd>Entrée</kbd>"), "l'aide est à côté du champ");
+        assertTrue(page.contains("href=\"" + DialoguePages.LINE_BREAK_HELP_HREF + "\""), "lien vers l'explication");
+
+        Map<String, String> f = formFields(page);
+        f.put("n0_text", "Bienvenue !\r\nTout est cuit ce matin.");  // ce qu'envoie un navigateur
+        assertEquals(303, post("/dialogues/save", f, "save").statusCode());
+        String saved = Files.readString(content.resolve("dialogues/lucien.yml"));
+        assertTrue(saved.contains("text: \"Bienvenue !\\nTout est cuit ce matin.\""), saved);
+        assertFalse(saved.contains("\\r") || saved.contains("\r"), "aucun retour chariot écrit");
+        DialogueDraft read = DialogueYaml.read(saved).draft();
+        assertEquals("Bienvenue !\nTout est cuit ce matin.", read.startNode().text);
+
+        String reopened = get("/dialogues/edit/lucien").body();
+        assertTrue(reopened.contains("Bienvenue !\nTout est cuit ce matin.</textarea>"), "le champ montre deux lignes");
+        assertTrue(reopened.contains("Bienvenue !<br>Tout est cuit ce matin."), "l'aperçu aussi");
+    }
+
+    @Test
+    void anExistingBrTagIsKeptAsWrittenAndALiteralLookalikeIsPointedOut() throws Exception {
+        start();
+        String withTag = LUCIEN.replace("Salut !", "Salut !<br>Ça va ?");
+        Files.writeString(content.resolve("dialogues/lucien.yml"), withTag);
+        HttpResponse<String> res = post("/dialogues/save", formFields(get("/dialogues/edit/lucien").body()), "save");
+        assertEquals(303, res.statusCode());
+        assertEquals(withTag, Files.readString(content.resolve("dialogues/lucien.yml")), "rien n'est réécrit d'office");
+
+        Files.writeString(content.resolve("dialogues/lucien.yml"), LUCIEN.replace("Salut !", "Salut !</br>Ça va ?"));
+        String page = unescape(get("/dialogues/edit/lucien").body());
+        assertTrue(page.contains("« </br> » s'affichera tel quel dans le jeu"), "l'erreur courante est signalée");
+    }
+
+    @Test
+    void aFirstLineTypedOnTwoLinesIsCreatedWithoutCarriageReturn() throws Exception {
+        start();
+        String form = get("/dialogues/new?npc=mira").body();
+        assertEquals(303, post("/dialogues/create", Map.of("_csrf", csrf(form), "npc", "mira",
+                "first_line", "Salut !\r\nTu es nouveau ?"), null).statusCode());
+        String yaml = Files.readString(content.resolve("dialogues/mira.yml"));
+        assertTrue(yaml.contains("Salut !\\nTu es nouveau ?"), yaml);
+        assertFalse(yaml.contains("\\r"), yaml);
+    }
+
     @Test
     void aComplexDialoguePassesThroughTheEditorWithoutLosingAnything() throws Exception {
         start();

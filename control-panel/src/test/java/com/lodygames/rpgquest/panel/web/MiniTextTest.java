@@ -82,4 +82,16 @@ class MiniTextTest {
         }
         return n;
     }
+
+    /** Issue #728 : l'aperçu va à la ligne là où le jeu va à la ligne, et seulement là. */
+    @Test
+    void lineBreaksAreShownWhereTheGameBreaksTheLine() {
+        assertEquals("Salut !<br>Ça va ?", MiniText.html("Salut !\nÇa va ?"));
+        assertEquals("Salut !<br>Ça va ?", MiniText.html("Salut !\r\nÇa va ?"));
+        assertEquals("a<br>b<br>c<br>d", MiniText.html("a<br>b<newline>c<BR/>d"));
+        assertEquals("a&lt;/br&gt;b", MiniText.html("a</br>b"), "</br> s'affiche tel quel en jeu");
+        assertTrue(MiniText.html("<gold>a<br>b</gold>").contains("a<br>b</span>"), "la couleur continue");
+        assertEquals("Salut ! Ça va ?", MiniText.plain("Salut !<br>Ça va ?"));
+        assertEquals("Salut ! Ça va ?", MiniText.plain("Salut !\nÇa va ?"));
+    }
 }

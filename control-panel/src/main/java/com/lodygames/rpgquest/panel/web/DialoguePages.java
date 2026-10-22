@@ -915,7 +915,8 @@ public final class DialoguePages {
         String textId = "dlg-n" + i + "-text";
         if (editable) {
             sb.append(StyleField.render(DialogueForm.node(i, "text"), textId, "Le personnage dit…", node.text,
-                    false, "", true, false));
+                    false, lineBreakHelp(), true, false));
+            sb.append(lookalikeWarning(node.text));
         } else {
             sb.append("<p class=\"dlg-says\">").append(MiniText.html(node.text)).append("</p>")
                     .append(hidden(DialogueForm.node(i, "text"), node.text));
@@ -1620,6 +1621,31 @@ public final class DialoguePages {
     static String guideLink() {
         return "<a class=\"btn secondary\" href=\"" + GUIDE_HREF + "\" target=\"_blank\" rel=\"noopener\">"
                 + Icons.icon("help") + "Aide</a>";
+    }
+
+    /** Issue #728 : l'explication « Aller à la ligne dans une réplique ». */
+    public static final String LINE_BREAK_HELP_TITLE = "Aller à la ligne dans une réplique";
+    public static final String LINE_BREAK_HELP_HREF = GUIDE_HREF + "#"
+            + com.lodygames.rpgquest.panel.docs.Markdown.slug(LINE_BREAK_HELP_TITLE);
+
+    /** Issue #728 : l'aide affichée sous « Le personnage dit… ». */
+    static String lineBreakHelp() {
+        return "Pour aller à la ligne dans le jeu, appuyez sur <kbd>Entrée</kbd>. <a href=\"" + LINE_BREAK_HELP_HREF
+                + "\" target=\"_blank\" rel=\"noopener\">En savoir plus</a>";
+    }
+
+    /**
+     * Issue #728 : {@code </br>} ou {@code \n} tapés à la main s'affichent tels quels au joueur. On le dit
+     * à côté du champ, sans rien corriger d'office : le texte reste celui de l'auteur.
+     */
+    static String lookalikeWarning(String text) {
+        List<String> found = com.lodygames.rpgquest.panel.content.LineBreaks.literalLookalikes(text);
+        if (found.isEmpty()) {
+            return "";
+        }
+        return "<p class=\"form-text dlg-warn\" role=\"status\">" + Icons.icon("warning")
+                + Http.esc("« " + String.join(" », « ", found) + " » s'affichera tel quel dans le jeu. "
+                + "Pour aller à la ligne, effacez-le et appuyez sur Entrée à la place.") + "</p>";
     }
 
     static String endHelpLink() {

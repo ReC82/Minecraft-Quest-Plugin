@@ -5623,7 +5623,8 @@ public final class PanelApp {
         DialoguePages.Ctx ctx = agentPages.dialogueCtx(post.agentId());
         String npcId = form.getOrDefault("npc", "").trim().toLowerCase(java.util.Locale.ROOT);
         String name = form.getOrDefault("name", "").trim();
-        String line = form.getOrDefault("first_line", "").trim();
+        String line = com.lodygames.rpgquest.panel.content.LineBreaks.normalize(
+                form.getOrDefault("first_line", "").trim());
         DialoguePages.Npc npc = ctx.npcs().stream().filter(n -> n.id().equals(npcId)).findFirst().orElse(null);
         String error = null;
         if (!npcId.isEmpty() && npc == null) {

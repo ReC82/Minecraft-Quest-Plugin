@@ -31,7 +31,8 @@ De haut en bas :
 2. **Une carte par réplique.** La première s'appelle **Début de la conversation** : c'est ce que
    dit le personnage quand on lui parle. Les suivantes s'appellent **Réplique 2**, **Réplique 3**…
    Dans chaque carte :
-   - **Le personnage dit…** : sa phrase ;
+   - **Le personnage dit…** : sa phrase (**Entrée** pour aller à la ligne, voir
+     [Aller à la ligne dans une réplique](#aller-a-la-ligne-dans-une-replique)) ;
    - **Le joueur peut répondre…** : une ligne par réponse (**Réponse du joueur**). Pour chacune :
      - **Ensuite…** : *Terminer la conversation*, *Le personnage répond : réplique 2* (ou une
        autre réplique, ou le début), ou *Une nouvelle réplique…* qui en crée une juste pour
@@ -65,6 +66,27 @@ personnage réponde « Du pain frais ! ».
 Avec **Ajouter une réplique**, la nouvelle carte arrive en bas de la page, mais **aucune réponse
 n'y mène encore** : choisissez-la dans **Ensuite…** d'une réponse, sinon le joueur ne la verra
 jamais (voir [Une réplique que personne n'atteint](#une-replique-que-personne-natteint)).
+
+## Aller à la ligne dans une réplique
+
+Pour qu'une phrase commence sur une nouvelle ligne dans le jeu, appuyez sur **Entrée** dans
+**Le personnage dit…**, comme dans un message :
+
+```
+Bienvenue dans ma boulangerie !
+Tout est cuit ce matin.
+```
+
+L'aperçu juste sous le champ montre le résultat : une ligne par ligne, comme dans le jeu. Rien
+d'autre à écrire.
+
+- Une ligne trop longue passe aussi toute seule à la ligne dans le jeu : Entrée sert à choisir
+  **où** couper.
+- N'écrivez pas `</br>` ni `\n` : le jeu les afficherait tels quels. PlugAdmin vous prévient
+  sous le champ si vous en avez écrit un.
+- Dans un ancien texte, `<br>` ou `<newline>` veulent aussi dire « à la ligne » : PlugAdmin les
+  garde tels quels et les montre comme un retour à la ligne.
+- Les réponses du joueur sont des boutons : elles tiennent sur une seule ligne.
 
 ## Terminer une conversation
 

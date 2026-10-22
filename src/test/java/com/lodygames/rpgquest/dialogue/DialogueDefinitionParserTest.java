@@ -17,6 +17,8 @@ import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import java.io.StringReader;
 import java.util.List;
 import java.util.Set;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.Test;
@@ -560,6 +562,37 @@ class DialogueDefinitionParserTest {
                     text: "Bienvenue."
                     choices:
                 """ + choicesYaml;
+    }
+
+    /**
+     * Issue #728 : PlugAdmin enregistre la touche Entrée comme un vrai saut de ligne ({@code "\\n"}
+     * entre guillemets). Le moteur doit le garder et produire exactement le même texte que la
+     * balise {@code <br>} des anciens dialogues — c'est ce composant que le chat et la fenêtre
+     * de dialogue affichent sur deux lignes.
+     */
+    @Test
+    void aSavedLineBreakAndTheBrTagGiveTheSameTwoLineText() {
+        String expected = "Bienvenue !\nTout est cuit ce matin.";
+        for (String written : List.of("\"Bienvenue !\\nTout est cuit ce matin.\"",
+                "\"Bienvenue !<br>Tout est cuit ce matin.\"", "\"Bienvenue !<newline>Tout est cuit ce matin.\"",
+                "|-\n      Bienvenue !\n      Tout est cuit ce matin.")) {
+            DialogueDefinitionParser.ParseResult result = parser.parse("lines.yml", load("""
+                    id: rpgquest:baker
+                    start: hello
+                    nodes:
+                      hello:
+                        speaker: "Boulanger"
+                        text: %s
+                        choices:
+                          - text: "Au revoir"
+                            actions:
+                              - type: CLOSE
+                    """.formatted(written)));
+            assertTrue(result.isSuccess(), () -> written + " : " + result.issues());
+            String text = result.dialogue().startNode().text().base();
+            assertEquals(expected, PlainTextComponentSerializer.plainText()
+                    .serialize(MiniMessage.miniMessage().deserialize(text)), written);
+        }
     }
 
     private ConfigurationSection load(String yaml) {

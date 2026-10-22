@@ -168,6 +168,24 @@ class DialogueEditorTest {
     }
 
     @Test
+    void theGuideUsesTheLabelsTheEditorReallyShowsAndIsOneClickAway() throws Exception {
+        // Issue #729 : le guide décrit l'interface actuelle, pas un ancien écran. Chaque libellé
+        // du parcours normal doit exister dans la page ET être nommé tel quel dans le guide.
+        start();
+        String page = get("/dialogues/edit/lucien").body();
+        String guide = com.lodygames.rpgquest.panel.docs.DocLibrary.load().bySlug("dialogues").orElseThrow().markdown();
+        for (String label : List.of("Début de la conversation", "Le personnage dit…", "Le joueur peut répondre…",
+                "Réponse du joueur", "Ensuite…", "Terminer la conversation", "Une nouvelle réplique…", "Et aussi…",
+                "Ajouter une réponse", "Supprimer cette réponse", "Ajouter une réplique", "Réglages de la réplique",
+                "Réglages du dialogue", "Enregistrer et mettre en jeu", "Aperçu de la conversation")) {
+            assertTrue(page.contains(label), "libellé de l'éditeur : " + label);
+            assertTrue(guide.contains(label), "le guide nomme : " + label);
+        }
+        assertTrue(page.contains("href=\"" + DialoguePages.GUIDE_HREF + "\""), "aide depuis l'éditeur");
+        assertTrue(get("/dialogues").body().contains("href=\"" + DialoguePages.GUIDE_HREF + "\""), "aide depuis la liste");
+    }
+
+    @Test
     void offeringAQuestIsChosenByTitleAndShowsInThePreview() throws Exception {
         start();
         String page = get("/dialogues/edit/lucien").body();

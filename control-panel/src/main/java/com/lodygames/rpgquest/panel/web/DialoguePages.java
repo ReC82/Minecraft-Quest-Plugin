@@ -269,7 +269,7 @@ public final class DialoguePages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("dialogues", "Dialogues",
                 "Ce que disent les personnages, et ce que le joueur peut leur répondre.",
-                rights.write() ? Ui.primaryLink("/dialogues/new", "plus", "Créer un dialogue") : ""));
+                guideLink() + (rights.write() ? Ui.primaryLink("/dialogues/new", "plus", "Créer un dialogue") : "")));
 
         sb.append("<div class=\"npc-catbar\">")
                 .append("<form method=\"post\" action=\"/dialogues/refresh\" data-submit-once>")
@@ -479,7 +479,8 @@ public final class DialoguePages {
                         + Icons.icon("docs") + "Modifier avec une IA…</a>"
                 : "";
         sb.append(Ui.pageHeader("dialogues", title, "",
-                "<a class=\"btn secondary\" href=\"/dialogues\">" + Icons.icon("back") + "Dialogues</a>" + aiEdit));
+                "<a class=\"btn secondary\" href=\"/dialogues\">" + Icons.icon("back") + "Dialogues</a>" + guideLink()
+                        + aiEdit));
 
         sb.append(who(csrf, ctx, rights, e.slug(), users));
         sb.append(liveBar(csrf, ctx, rights, e));
@@ -1612,6 +1613,14 @@ public final class DialoguePages {
 
     /** Issue #730 : l'explication « Terminer une conversation » du centre de documentation. */
     public static final String END_HELP_HREF = "/docs/dialogues#terminer-une-conversation";
+
+    /** Issue #729 : le mode d'emploi de l'éditeur guidé, ouvert à côté de la page. */
+    public static final String GUIDE_HREF = "/docs/dialogues";
+
+    static String guideLink() {
+        return "<a class=\"btn secondary\" href=\"" + GUIDE_HREF + "\" target=\"_blank\" rel=\"noopener\">"
+                + Icons.icon("help") + "Aide</a>";
+    }
 
     static String endHelpLink() {
         return "<a href=\"" + END_HELP_HREF + "\" target=\"_blank\" rel=\"noopener\">Comment terminer une conversation ?</a>";

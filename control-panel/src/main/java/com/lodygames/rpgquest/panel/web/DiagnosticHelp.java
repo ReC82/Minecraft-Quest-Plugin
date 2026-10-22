@@ -148,17 +148,19 @@ public final class DiagnosticHelp {
                 "Le PNJ ouvrira le dialogue déclaré dans sa fiche, pas forcément celui-ci.",
                 "Alignez l'identifiant du dialogue dans la fiche du PNJ.", "dialogues-depannage");
         add("NEXT_MISSING", Level.ERROR, "Choix sans destination",
-                "Un choix de ce dialogue renvoie vers un nœud qui n'existe pas.",
-                "En jeu, ce choix bloquera ou fermera la conversation de façon inattendue.",
-                "Corrigez la destination du choix, ou supprimez-le.", "dialogues-depannage");
+                "Une réponse de ce dialogue mène vers une réplique qui n'existe pas.",
+                "En jeu, cette réponse bloquera ou fermera la conversation de façon inattendue.",
+                "Dans l'éditeur, choisissez une autre suite dans « Ensuite… », ou supprimez cette réponse.",
+                "dialogues-depannage");
         add("QUEST_REF_UNKNOWN", Level.WARNING, "Quête inconnue référencée",
                 "Ce dialogue fait référence à une quête absente du catalogue.",
                 "L'action liée à cette quête ne se déclenchera pas.",
                 "Corrigez l'identifiant de la quête, ou créez la quête manquante.", "dialogues-depannage");
         add("NODE_UNREACHABLE", Level.INFO, "Nœud jamais atteint",
-                "Un nœud de ce dialogue n'est relié à aucun choix : il est inaccessible.",
-                "Ce nœud ne sera jamais affiché en jeu.",
-                "Reliez-le via un choix, ou supprimez-le s'il est inutile.", "dialogues-depannage");
+                "Une réplique de ce dialogue n'est atteinte par aucune réponse : elle est inaccessible.",
+                "Cette réplique ne sera jamais affichée en jeu.",
+                "Choisissez-la dans « Ensuite… » d'une réponse, ou retirez-la si elle est inutile.",
+                "dialogues-depannage");
         add("DIALOGUE_LOAD_ISSUE", Level.ERROR, "Fichier de dialogue rejeté",
                 "Le fichier {name} n'a pas pu être chargé : {detail}",
                 "Ce dialogue est totalement absent du jeu.",

@@ -6,6 +6,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Portail public : identité visuelle et icônes (#428 phase 2, 23/10/2026)** — habillage « RPG fantasy
+> voxel » (variante B) sur toutes les pages du portail `web-api` ; 28 icônes pixel art originales servies en
+> local (`GET /assets/lq-icons.svg`, cache versionné), résolveur `PortalIcons` material / métrique → icône avec
+> repli `unknown`, podium or/argent/bronze, états vides illustrés, mention Mojang « NOT AN OFFICIAL MINECRAFT
+> SERVICE… » au pied de page. Aucune donnée joueur publiée en plus. PlugAdmin pas encore habillé. TC-411.
+
 > **Testeur non-OP pour /rpgadmin (#64, 21/10/2026)** — nouveaux nœuds `rpgquest.admin.player`,
 > `rpgquest.admin.quest`, `rpgquest.admin.story` et le paquet `rpgquest.admin.testing` (entrée + les
 > trois branches), tous `default: false`. Un compte non-OP qui les porte utilise `/rpgadmin player

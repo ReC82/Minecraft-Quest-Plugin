@@ -14,10 +14,11 @@ PlugAdmin chargent le vrai CSS du panel par chemin relatif).
 | `tools/` | `icons.py` (grilles pixel art), `build_sprite.py`, `build_prototypes.py` |
 | `sources/` | Pages réelles capturées sur des instances locales (PlugAdmin, web-api) |
 
-Régénérer :
+Régénérer (le sprite du portail fait foi, la copie `assets/` sert aux prototypes) :
 
 ```bash
-python3 -I docs/design/428-icones/tools/build_sprite.py docs/design/428-icones/tools docs/design/428-icones/assets/lq-icons.svg
+python3 -I docs/design/428-icones/tools/build_sprite.py docs/design/428-icones/tools web-api/src/main/resources/portal/lq-icons.svg
+cp web-api/src/main/resources/portal/lq-icons.svg docs/design/428-icones/assets/lq-icons.svg
 python3 -I docs/design/428-icones/tools/build_prototypes.py
 ```
 

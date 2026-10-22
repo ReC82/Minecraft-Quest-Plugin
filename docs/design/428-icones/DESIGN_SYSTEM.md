@@ -39,6 +39,20 @@ Statut : **prototype à valider par le propriétaire**. Rien n'est intégré à 
 (`_SWORD`, `_PICKAXE`, `_ORE`, `_LOG`, `_WOOD`, `_PLANKS`, `_TULIP`), puis repli `unknown`.
 La table est montrée dans `palette.html`.
 
+## Décision et phase 2 — portail (23/10/2026)
+
+La demande du propriétaire du 22/10 (#428) autorise à retenir la meilleure direction sans attendre.
+**Variante B « RPG fantasy voxel » retenue** : c'est l'identité demandée (« fantasy / RPG / voxel
+moderne »), elle garde les contrastes de la variante A et ne coûte rien de plus. Source : **icônes
+originales** (option a) ; Kenney / Shikashi / renderchest non utilisés. Trois icônes ajoutées
+(poisson, trophée, bouclier) : 28 au total.
+
+Intégré au portail public (`web-api`) : sprite servi en local (`/assets/lq-icons.svg`), résolveur
+`PortalIcons` (material, métrique), habillage B dans `PageLayout`, accueil, classements avec podium,
+infos, statut, wiki, actualités, états vides. Canonique désormais :
+`web-api/src/main/resources/portal/lq-icons.svg` et `material-map.json` (copies ici pour les
+prototypes). Captures : `captures/phase2-portail/`. Test manuel : TC-411. Reste : PlugAdmin (phase 2b).
+
 ## Intégration prévue (phases 2-3, après accord)
 
 1. Sprite et `lq-icons.css` versionnés **une seule fois** et servis en local par les deux applications

@@ -26,11 +26,18 @@ public class SnapshotPushClient {
     private final SnapshotPushConfig config;
     private final HttpClient httpClient;
     private final Logger logger;
+    private final String subject;
     private volatile boolean failing;
 
     public SnapshotPushClient(SnapshotPushConfig config, Logger logger) {
+        this(config, logger, "de l'instantané");
+    }
+
+    /** @param subject ce qui est envoyé, pour le journal (« du relevé d'état »…) */
+    public SnapshotPushClient(SnapshotPushConfig config, Logger logger, String subject) {
         this.config = config;
         this.logger = logger;
+        this.subject = subject;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.connectTimeoutMs()))
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -66,7 +73,7 @@ public class SnapshotPushClient {
             case 401 -> " : jeton refusé (vérifier token des deux côtés)";
             case 404 -> " : route absente (portail trop ancien ou nginx non à jour)";
             case 413 -> " : instantané trop gros (snapshot-ingest-max-bytes du portail)";
-            case 400 -> " : instantané refusé comme invalide";
+            case 400 -> " : corps refusé comme invalide";
             default -> "";
         };
     }
@@ -74,15 +81,15 @@ public class SnapshotPushClient {
     private void failed(String reason) {
         if (!failing) {
             failing = true;
-            logger.warn("Envoi de l'instantané au portail {} impossible : {}. Nouvel essai à chaque export ; "
-                    + "message suivant au rétablissement.", config.baseUrl(), reason);
+            logger.warn("Envoi {} au portail {} impossible : {}. Nouvel essai au prochain envoi ; "
+                    + "message suivant au rétablissement.", subject, config.baseUrl(), reason);
         }
     }
 
     private void recovered() {
         if (failing) {
             failing = false;
-            logger.info("Envoi de l'instantané au portail {} rétabli.", config.baseUrl());
+            logger.info("Envoi {} au portail {} rétabli.", subject, config.baseUrl());
         }
     }
 }

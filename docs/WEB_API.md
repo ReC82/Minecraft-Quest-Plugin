@@ -186,10 +186,36 @@ thread principal ; un échec est journalisé une fois (statut HTTP ou « injoign
 ni le contenu), puis au rétablissement. À l'arrêt du plugin, un dernier instantané minimal
 `server.online=false` (sans aucune donnée de joueur) est publié.
 
+### Relevé d'état agrégé (`"kind": "status"`)
+
+Même route, même jeton. Envoyé par le plugin (`ServerStatusReporter`, fil `RPGQuest-PortalStatus`)
+toutes les `status-interval-seconds` (30 s), **même avec `web-export.enabled: false`** :
+
+```json
+{"schemaVersion":1,"kind":"status","generatedAt":"2026-10-22T17:00:00Z","bootId":"boot-…","sequence":42,
+ "server":{"online":true,"playerCount":1,"maxPlayers":20}}
+```
+
+- **Périmètre fermé** : toute autre clé (racine ou `server`) → `400`, rien n'est écrit. Aucun
+  pseudo, UUID ou position ne peut transiter. Compteurs entiers 0–100 000 ; `bootId`
+  `[A-Za-z0-9-]{8,64}` aléatoire par démarrage ; `generatedAt` au plus 5 min dans le futur ; `kind`
+  inconnu → `400`.
+- **Idempotent** : même `bootId` et `sequence` déjà reçue → `200 {"result":"DUPLICATE"}` ; plus
+  petite → `OUT_OF_ORDER` ; autre `bootId` plus ancien que le dernier relevé → `OUT_OF_ORDER`. Rien
+  n'est écrit dans ces cas : un renvoi ne fait jamais reculer l'état, les compteurs sont remplacés,
+  jamais additionnés.
+- Stocké atomiquement dans `server-status.json`, voisin du `snapshot-file`, avec `receivedAt`
+  (horloge du portail, qui sert à juger la fraîcheur). Le portail journalise un nouveau démarrage
+  et un arrêt annoncé, sans jeton.
+- Dès qu'il est au moins aussi récent que `snapshot.json`, le relevé fait foi pour l'état du serveur
+  (ONLINE / OFFLINE / STALE) ; classements, catalogue et profils ne viennent que d'un instantané
+  complet frais, sinon ils restent vides.
+
 ## Sonde `GET /health` (pas d'authentification)
 
-`{"status":"UP","snapshot":"MISSING|STALE|FRESH","server":"UNKNOWN|STALE|OFFLINE|ONLINE","playerDataPublic":false,"store":false}` —
-toujours `200` tant que le processus sert des requêtes (un instantané absent n'est pas une panne).
+`{"status":"UP","snapshot":"MISSING|STALE|FRESH","server":"UNKNOWN|STALE|OFFLINE|ONLINE","heartbeat":"MISSING|STALE|FRESH","lastUpdate":"…|null","playerDataPublic":false,"store":false,"news":0}` —
+`status` atteste le portail seul ; `server` l'état du jeu ; `heartbeat` l'arrivée du relevé d'état ;
+`lastUpdate` la date du dernier relevé pris en compte. Toujours `200` tant que le processus sert des requêtes (un instantané absent n'est pas une panne).
 Ni donnée joueur, ni chemin, ni configuration sensible. Les requêtes `HEAD` reçoivent les en-têtes
 sans corps.
 
@@ -216,9 +242,9 @@ arrêt du serveur :
 | `status` | Cause | Bandeau du site |
 |---|---|---|
 | `UNKNOWN` | aucun instantané (ou JSON corrompu) | neutre : « État du serveur de jeu inconnu — aucune donnée reçue pour le moment » |
-| `STALE` | instantané plus vieux que `snapshot-max-age-seconds` | neutre : « Informations non actualisées depuis le … » |
-| `OFFLINE` | instantané `server.online=false`, publié par le plugin à son arrêt | rouge : « Serveur de jeu hors ligne — arrêt annoncé par le serveur le … » |
-| `ONLINE` | instantané récent `server.online=true` | aucun |
+| `STALE` | dernier instantané / relevé plus vieux que `snapshot-max-age-seconds` | neutre : « Informations non actualisées depuis le … » |
+| `OFFLINE` | instantané ou relevé `server.online=false`, publié par le plugin à son arrêt | rouge : « Serveur de jeu hors ligne — arrêt annoncé par le serveur le … » |
+| `ONLINE` | instantané ou relevé d'état récent `server.online=true` | aucun |
 
 Une panne du canal de télémétrie donne `UNKNOWN` ou `STALE`, jamais `OFFLINE`.
 

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi.ingest;
 
+import com.lodygames.rpgquest.webapi.SnapshotStore;
 import com.lodygames.rpgquest.webapi.http.ApiHandler;
 import com.lodygames.rpgquest.webapi.http.AuthFilter;
 import com.lodygames.rpgquest.webapi.http.HttpResponses;
@@ -21,6 +22,7 @@ import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * {@code POST /api/snapshot} (#421) — reçoit l'instantané que le plugin écrit chez VeryGames et le
@@ -32,6 +34,11 @@ import java.util.Map;
  * niveau (règles #55 : l'export ne publie jamais d'UUID). Un corps refusé laisse le fichier
  * précédent intact ; un corps accepté remplace le fichier de façon atomique (temporaire + rename).
  * Le portail n'écrit rien d'autre et n'accède à aucune base du serveur de jeu.</p>
+ *
+ * <p>Un corps {@code "kind": "status"} est un <em>relevé d'état agrégé</em> (en ligne, nombre de
+ * joueurs), envoyé par le plugin même quand l'export nominatif est désactivé : il est validé en
+ * périmètre fermé et stocké à part, de façon idempotente, par {@link StatusReportIngest}. La réponse
+ * indique {@code STORED}, {@code DUPLICATE} ou {@code OUT_OF_ORDER} (toujours 200).</p>
  */
 public final class SnapshotIngestHandler implements ApiHandler {
 
@@ -47,12 +54,15 @@ public final class SnapshotIngestHandler implements ApiHandler {
     private final int maxBytes;
     private final AuthFilter auth;
     private final Clock clock;
+    private final StatusReportIngest statusReports;
 
     public SnapshotIngestHandler(Path snapshotFile, SnapshotIngestSettings settings, Clock clock) {
         this.snapshotFile = snapshotFile;
         this.maxBytes = settings.maxBytes();
         this.auth = new AuthFilter(settings.token());
         this.clock = clock;
+        this.statusReports = new StatusReportIngest(SnapshotStore.heartbeatFile(snapshotFile), clock,
+                Logger.getLogger("rpgquest-webapi"));
     }
 
     @Override
@@ -76,7 +86,16 @@ public final class SnapshotIngestHandler implements ApiHandler {
             return 413;
         }
         String json = new String(bytes, StandardCharsets.UTF_8);
-        validate(json);
+        Map<?, ?> root = parseObject(json);
+        if (root.containsKey("kind")) {
+            if (!StatusReportIngest.KIND.equals(root.get("kind"))) {
+                throw new MalformedRequestException("« kind » inconnu (attendu \"" + StatusReportIngest.KIND + "\").");
+            }
+            StatusReportIngest.Result result = statusReports.accept(StatusReportIngest.validate(root, clock.instant()));
+            HttpResponses.sendJson(exchange, 200, Map.of("result", result.name()));
+            return 200;
+        }
+        validate(root);
         writeAtomic(json);
         HttpResponses.sendJson(exchange, 200, Map.of("result", "STORED"));
         return 200;
@@ -100,7 +119,7 @@ public final class SnapshotIngestHandler implements ApiHandler {
         }
     }
 
-    void validate(String json) {
+    private static Map<?, ?> parseObject(String json) {
         Object parsed;
         try {
             parsed = Json.parse(json);
@@ -110,6 +129,10 @@ public final class SnapshotIngestHandler implements ApiHandler {
         if (!(parsed instanceof Map<?, ?> root)) {
             throw new MalformedRequestException("Objet JSON attendu.");
         }
+        return root;
+    }
+
+    void validate(Map<?, ?> root) {
         if (!(root.get("schemaVersion") instanceof Number version)
                 || version.intValue() < MIN_SCHEMA_VERSION || version.intValue() > MAX_SCHEMA_VERSION
                 || version.doubleValue() != version.intValue()) {

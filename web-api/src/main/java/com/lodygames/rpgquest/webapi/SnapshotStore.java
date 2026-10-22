@@ -20,72 +20,121 @@ import java.util.logging.Logger;
  * ("serveur jamais démarré côté web") ou périmé (le plugin a cessé de
  * l'actualiser, ex. serveur Minecraft arrêté).
  *
+ * <p>#421 : relit aussi {@code server-status.json}, voisin de l'instantané, où le portail dépose le
+ * dernier <em>relevé d'état agrégé</em> reçu (en ligne, nombre de joueurs — aucune donnée de
+ * joueur). Ce relevé arrive même quand l'export nominatif {@code web-export} est désactivé ; sa
+ * fraîcheur se juge sur {@code receivedAt}, l'horloge du portail, pour ne pas dépendre de celle du
+ * serveur de jeu.</p>
+ *
  * <p>Le contenu est mis en cache en mémoire et relu uniquement si la date de
  * modification du fichier a changé, pour ne jamais faire de disque sur
  * chaque requête HTTP (mission point 4, transposée côté site).</p>
  */
 public final class SnapshotStore {
 
-    private final Path snapshotFile;
-    private final long maxAgeSeconds;
-    private final Logger logger;
+    /** Nom du fichier du relevé d'état, toujours à côté de {@code snapshot-file}. */
+    public static final String HEARTBEAT_FILE_NAME = "server-status.json";
 
-    private volatile FileTime lastLoadedModifiedTime;
-    private volatile Map<String, Object> cached;
+    private final long maxAgeSeconds;
+    private final JsonFileCache snapshot;
+    private final JsonFileCache heartbeat;
 
     public SnapshotStore(Path snapshotFile, long maxAgeSeconds, Logger logger) {
-        this.snapshotFile = snapshotFile;
         this.maxAgeSeconds = maxAgeSeconds;
-        this.logger = logger;
+        this.snapshot = new JsonFileCache(snapshotFile, "Snapshot", logger);
+        this.heartbeat = new JsonFileCache(heartbeatFile(snapshotFile), "Relevé d'état", logger);
+    }
+
+    /** Emplacement du relevé d'état pour un {@code snapshot-file} donné (écrit par l'ingestion). */
+    public static Path heartbeatFile(Path snapshotFile) {
+        return snapshotFile.toAbsolutePath().resolveSibling(HEARTBEAT_FILE_NAME);
     }
 
     /** Snapshot courant, ou vide si jamais généré ou illisible (corruption traitée comme absente, jamais fatale). */
-    public synchronized Optional<Map<String, Object>> current() {
-        try {
-            if (!Files.exists(snapshotFile)) {
-                cached = null;
-                return Optional.empty();
-            }
-            FileTime modified = Files.getLastModifiedTime(snapshotFile);
-            if (cached == null || !modified.equals(lastLoadedModifiedTime)) {
-                reload(modified);
-            }
-            return Optional.ofNullable(cached);
-        } catch (IOException e) {
-            logger.log(Level.WARNING, "Snapshot illisible : " + snapshotFile, e);
-            cached = null;
-            return Optional.empty();
-        }
+    public Optional<Map<String, Object>> current() {
+        return snapshot.current();
     }
 
-    private void reload(FileTime modified) throws IOException {
-        String content = Files.readString(snapshotFile, StandardCharsets.UTF_8);
-        try {
-            Object parsed = Json.parse(content);
-            if (!(parsed instanceof Map<?, ?> map)) {
-                throw new JsonParseException("Le snapshot ne contient pas un objet JSON racine.");
-            }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> typed = (Map<String, Object>) map;
-            cached = typed;
-            lastLoadedModifiedTime = modified;
-        } catch (JsonParseException e) {
-            logger.log(Level.WARNING, "Snapshot corrompu, traité comme absent : " + snapshotFile, e);
-            cached = null;
-        }
+    /** Dernier relevé d'état agrégé reçu (#421), ou vide. */
+    public Optional<Map<String, Object>> currentHeartbeat() {
+        return heartbeat.current();
     }
 
     /** {@code true} si {@code snapshot} n'a plus été régénéré depuis plus de {@code maxAgeSeconds}. */
     public boolean isStale(Map<String, Object> snapshot) {
-        Object raw = snapshot.get("generatedAt");
-        if (!(raw instanceof String generatedAtText)) {
-            return true;
+        return isOlderThanMaxAge(snapshot.get("generatedAt"));
+    }
+
+    /** {@code true} si le portail n'a plus reçu de relevé d'état depuis plus de {@code maxAgeSeconds}. */
+    public boolean isHeartbeatStale(Map<String, Object> heartbeat) {
+        return isOlderThanMaxAge(heartbeat.get("receivedAt"));
+    }
+
+    private boolean isOlderThanMaxAge(Object raw) {
+        Instant at = instant(raw);
+        return at == null || at.isBefore(Instant.now().minusSeconds(maxAgeSeconds));
+    }
+
+    /** Date ISO-8601 lue dans un instantané ou un relevé, ou {@code null}. */
+    public static Instant instant(Object raw) {
+        if (!(raw instanceof String text)) {
+            return null;
         }
         try {
-            Instant generatedAt = Instant.parse(generatedAtText);
-            return generatedAt.isBefore(Instant.now().minusSeconds(maxAgeSeconds));
+            return Instant.parse(text);
         } catch (DateTimeParseException e) {
-            return true;
+            return null;
+        }
+    }
+
+    /** Un objet JSON racine relu seulement quand la date de modification du fichier change. */
+    private static final class JsonFileCache {
+
+        private final Path file;
+        private final String label;
+        private final Logger logger;
+        private FileTime lastLoadedModifiedTime;
+        private Map<String, Object> cached;
+
+        JsonFileCache(Path file, String label, Logger logger) {
+            this.file = file;
+            this.label = label;
+            this.logger = logger;
+        }
+
+        synchronized Optional<Map<String, Object>> current() {
+            try {
+                if (!Files.exists(file)) {
+                    cached = null;
+                    return Optional.empty();
+                }
+                FileTime modified = Files.getLastModifiedTime(file);
+                if (cached == null || !modified.equals(lastLoadedModifiedTime)) {
+                    reload(modified);
+                }
+                return Optional.ofNullable(cached);
+            } catch (IOException e) {
+                logger.log(Level.WARNING, label + " illisible : " + file, e);
+                cached = null;
+                return Optional.empty();
+            }
+        }
+
+        private void reload(FileTime modified) throws IOException {
+            String content = Files.readString(file, StandardCharsets.UTF_8);
+            try {
+                Object parsed = Json.parse(content);
+                if (!(parsed instanceof Map<?, ?> map)) {
+                    throw new JsonParseException(label + " : pas d'objet JSON racine.");
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> typed = (Map<String, Object>) map;
+                cached = typed;
+                lastLoadedModifiedTime = modified;
+            } catch (JsonParseException e) {
+                logger.log(Level.WARNING, label + " corrompu, traité comme absent : " + file, e);
+                cached = null;
+            }
         }
     }
 }

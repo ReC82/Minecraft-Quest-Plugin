@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,10 @@ public final class ServerState {
 
     public static Map<String, Object> resolve(SnapshotStore store) {
         Optional<Map<String, Object>> snapshot = store.current();
+        Optional<Map<String, Object>> heartbeat = store.currentHeartbeat();
+        if (heartbeat.isPresent() && isNewerThan(heartbeat.get(), snapshot)) {
+            return fromHeartbeat(store, heartbeat.get(), snapshot);
+        }
         if (snapshot.isEmpty()) {
             return degraded("no_data", ServerStatus.Kind.UNKNOWN, null);
         }
@@ -35,14 +40,58 @@ public final class ServerState {
             return degraded("stale", ServerStatus.Kind.STALE, generatedAt);
         }
         Map<String, Object> fresh = new LinkedHashMap<>(data);
-        Map<String, Object> server = new LinkedHashMap<>();
-        if (data.get("server") instanceof Map<?, ?> source) {
-            source.forEach((key, value) -> server.put(String.valueOf(key), value));
-        }
-        server.put("status", ServerStatus.Kind.ONLINE.name());
-        server.put("lastUpdate", generatedAt);
-        fresh.put("server", server);
+        fresh.put("server", onlineServer(data.get("server"), generatedAt));
         return fresh;
+    }
+
+    /**
+     * #421 — le relevé d'état agrégé fait foi pour l'état du serveur dès qu'il est au moins aussi
+     * récent que l'instantané complet. Les données de jeu (classements, catalogue…) ne viennent que
+     * d'un instantané complet frais : sans lui, elles restent vides, jamais inventées.
+     */
+    private static Map<String, Object> fromHeartbeat(SnapshotStore store, Map<String, Object> heartbeat,
+                                                     Optional<Map<String, Object>> snapshot) {
+        Object receivedAt = heartbeat.get("receivedAt");
+        if (heartbeat.get("server") instanceof Map<?, ?> server && Boolean.FALSE.equals(server.get("online"))) {
+            return degraded("stopped", ServerStatus.Kind.OFFLINE, receivedAt);
+        }
+        if (store.isHeartbeatStale(heartbeat)) {
+            return degraded("stale", ServerStatus.Kind.STALE, receivedAt);
+        }
+        Map<String, Object> fresh = degraded("online", ServerStatus.Kind.ONLINE, receivedAt);
+        Map<String, Object> server = new LinkedHashMap<>();
+        snapshot.filter(data -> !store.isStale(data) && isOnline(data)).ifPresent(data -> {
+            fresh.putAll(data);
+            copyInto(server, data.get("server"));
+        });
+        // Les compteurs du relevé, plus récent, remplacent ceux de l'instantané : jamais additionnés.
+        copyInto(server, heartbeat.get("server"));
+        fresh.put("server", onlineServer(server, receivedAt));
+        return fresh;
+    }
+
+    private static boolean isNewerThan(Map<String, Object> heartbeat, Optional<Map<String, Object>> snapshot) {
+        if (snapshot.isEmpty()) {
+            return true;
+        }
+        Instant beat = SnapshotStore.instant(heartbeat.get("receivedAt"));
+        Instant full = SnapshotStore.instant(snapshot.get().get("generatedAt"));
+        return full == null || (beat != null && !beat.isBefore(full));
+    }
+
+    private static void copyInto(Map<String, Object> target, Object source) {
+        if (source instanceof Map<?, ?> map) {
+            map.forEach((key, value) -> target.put(String.valueOf(key), value));
+        }
+    }
+
+    private static Map<String, Object> onlineServer(Object source, Object lastUpdate) {
+        Map<String, Object> server = new LinkedHashMap<>();
+        copyInto(server, source);
+        server.put("online", true);
+        server.put("status", ServerStatus.Kind.ONLINE.name());
+        server.put("lastUpdate", lastUpdate);
+        return server;
     }
 
     public static boolean isOnline(Map<String, Object> state) {

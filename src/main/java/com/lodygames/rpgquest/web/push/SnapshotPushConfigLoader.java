@@ -23,6 +23,7 @@ import org.slf4j.Logger;
  * <tr><td>{@code token}</td><td>{@code RPGQUEST_PORTAL_SNAPSHOT_TOKEN}</td><td>(aucun — obligatoire)</td></tr>
  * <tr><td>{@code connect-timeout-ms}</td><td>—</td><td>{@code 5000}</td></tr>
  * <tr><td>{@code request-timeout-ms}</td><td>—</td><td>{@code 10000}</td></tr>
+ * <tr><td>{@code status-interval-seconds}</td><td>—</td><td>{@code 30} (10–300)</td></tr>
  * </table>
  */
 public final class SnapshotPushConfigLoader {
@@ -51,6 +52,8 @@ public final class SnapshotPushConfigLoader {
         String token = settings.text("token", "RPGQUEST_PORTAL_SNAPSHOT_TOKEN", "");
         int connectTimeout = settings.boundedInt("connect-timeout-ms", 5000, 500, 30_000);
         int requestTimeout = settings.boundedInt("request-timeout-ms", 10_000, 1000, 60_000);
+        int statusInterval = settings.boundedInt("status-interval-seconds",
+                SnapshotPushConfig.DEFAULT_STATUS_INTERVAL_SECONDS, 10, 300);
 
         if (!enabled) {
             logger.info("Envoi d'instantané au portail désactivé (enabled != true dans {}).", FILE_NAME);
@@ -66,7 +69,7 @@ public final class SnapshotPushConfigLoader {
                     baseUrl);
             return SnapshotPushConfig.disabled();
         }
-        SnapshotPushConfig config = new SnapshotPushConfig(true, baseUrl, token, connectTimeout, requestTimeout);
+        SnapshotPushConfig config = new SnapshotPushConfig(true, baseUrl, token, connectTimeout, requestTimeout, statusInterval);
         logger.info("Envoi d'instantané au portail configuré : {}", config);
         return config;
     }

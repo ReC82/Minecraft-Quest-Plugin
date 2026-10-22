@@ -6866,6 +6866,8 @@ désactiver.
 
 ### TC-370 — PlugAdmin : /dialogues à jour après rattachement / changement / retrait du dialogue d'une fiche PNJ (issue #129, PENDING MANUAL VALIDATION)
 
+> Note #729 : pour le parcours normal de l'éditeur guidé, voir TC-409 (étape 2). Ce test-ci reste valable tel quel.
+
 Prérequis : PlugAdmin issu de la PR #614 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 5 minutes.
 Travailler **uniquement sur un PNJ de test** et deux **dialogues de test** (jamais un PNJ ou dialogue joué) ; noter
 l'état initial du PNJ pour le remettre à la fin.
@@ -6882,6 +6884,8 @@ l'état initial du PNJ pour le remettre à la fin.
 
 ### TC-369 — PlugAdmin : un nœud ajouté apparaît dans le graphe sans F5 (issue #130, PENDING MANUAL VALIDATION)
 
+> Note #729 : pour le parcours normal de l'éditeur guidé, voir TC-409 (étapes 5 et 6). Ce test-ci reste valable tel quel.
+
 Prérequis : PlugAdmin issu de la PR de #130 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 3 minutes.
 Travailler sur un **dialogue de test** (jamais un dialogue joué), par ex. un squelette créé pour l'occasion.
 
@@ -6896,6 +6900,8 @@ Travailler sur un **dialogue de test** (jamais un dialogue joué), par ex. un sq
 6.  Nettoyage : supprimer le dialogue de test (ou le nœud par l'éditeur simple), selon l'usage habituel.
 
 ### TC-367 — PlugAdmin : attente visible pendant la mise à jour automatique après une modification (issue #128, PENDING MANUAL VALIDATION)
+
+> Note #729 : pour le parcours normal de l'éditeur guidé, voir TC-409 (étapes 3 et 5). Ce test-ci reste valable tel quel.
 
 Prérequis : PlugAdmin issu de la PR de #128 sur **DEV** (plugin inchangé). Navigateur seulement ; durée : 3 minutes.
 Choisir une modification **réversible** (ex. PNJ → renommer le nom affiché d'un PNJ de test puis remettre l'ancien).
@@ -8283,6 +8289,45 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 « Vendre »), `MerchantCatalogTradeTest` (vue unique `SELL` / `BUY` sans second onglet, indicateur sans
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
+
+### TC-409 — Dialogues : parcours normal de l'éditeur guidé, du « Salut ! » au test en jeu (issue #729, PENDING MANUAL VALIDATION)
+
+PlugAdmin seul (documentation et lien **Aide**), aucun JAR, aucune migration. **Ne pas utiliser Musty ni un PNJ
+réel** : créer un PNJ jetable « Test 729 » (PNJ → Créer un PNJ) ou rattacher un Citizens de test. Ce test
+remplace, pour le **parcours normal**, les étapes de TC-367 / TC-369 / TC-370 qui passaient par « Détails
+techniques » (nœuds, identifiants, graphe) ; ces écrans restent réservés au diagnostic avancé. Acquis à ne pas
+régresser : #128 (attente visible), #129 (resynchronisation après rattachement), #130 (réplique ajoutée visible
+sans F5), TC-403, TC-404, TC-407. Durée : 10 minutes, dont 3 en jeu.
+
+1.  **Aide** : page **Dialogues** puis éditeur → bouton **Aide** → la fiche « Faire parler un personnage »
+    s'ouvre dans un nouvel onglet. Ses sections nomment les mêmes boutons que l'écran.
+2.  **Dialogue initial** : fiche du PNJ de test → **Dialogue et quêtes → Modifier le dialogue**. **Attendu** :
+    page « Dialogue de Test 729 », carte **Début de la conversation** « Salut ! » avec une réponse « Au revoir »
+    → **Ensuite… → Terminer la conversation** (#129 : le dialogue est lié au PNJ sans F5).
+3.  **Modifier une réplique** : changer « Salut ! » en « Bonjour, voyageur ! » → **Enregistrer**. **Attendu** :
+    bandeau « Enregistré — pas encore en jeu ». **Mettre en jeu** → « Mise en jeu en cours… » puis, sans F5,
+    « À jour en jeu » (#128).
+4.  **Test en jeu** : clic droit sur le PNJ → « Bonjour, voyageur ! » et la réponse « Au revoir » qui ferme la
+    fenêtre.
+5.  **Deuxième réplique** (exemple du guide) : **Ajouter une réponse** sous le début, « Tu vends quoi ? »,
+    **Ensuite… → Une nouvelle réplique…**, **Enregistrer** → une carte **Réplique 2** apparaît sans F5 (#130),
+    avec déjà une réponse « Au revoir. ». Y écrire « Du pain frais ! » → **Enregistrer et mettre en jeu** →
+    « À jour en jeu ». En jeu : « Tu vends quoi ? » → « Du pain frais ! » → « Au revoir. » ferme.
+6.  **Réplique inaccessible** : **Ajouter une réplique** → carte en bas marquée « Aucune réponse n'y mène ».
+    La choisir dans **Ensuite…** d'une réponse → l'étiquette disparaît après **Enregistrer**. (Ou **Réglages de
+    la réplique → Retirer cette réplique**.)
+7.  **Réplique sans réponse** : sur Réplique 2, **Supprimer cette réponse** (la seule) → **Enregistrer**.
+    **Attendu** : « Enregistrement impossible : la réplique 2 n'a pas de sortie… » + lien « Comment terminer une
+    conversation ? » qui ouvre la section **Terminer une conversation** du guide (pas le haut de la page). Rien
+    n'est mis en jeu ; en jeu, l'ancienne version fonctionne toujours. Remettre une réponse et enregistrer.
+8.  **Nettoyage** : supprimer le PNJ de test (PNJ → Supprimer) et, si on le souhaite, son dialogue
+    (**Supprimer ce dialogue…**).
+
+**Attendu global** : tout le parcours se fait sans identifiant, sans YAML et sans F5 ; chaque bouton cité dans le
+guide existe à l'écran. **Couverture automatisée** : `DialogueEditorTest` (chaque libellé de l'éditeur est nommé
+tel quel dans le guide, lien **Aide** sur la liste et l'éditeur), `DialogueHelpLinksTest` (liens d'erreur de
+l'éditeur et renvois entre fiches mènent à une section existante, parcours normal du guide sans jargon),
+`DiagnosticHelpTest` (ancres des diagnostics). **Non couvert** : captures d'écran (non produites).
 
 ### TC-408 — Atelier : mémoire des tentatives, conformité au brief et nature de la reprise (issue #747, PENDING MANUAL VALIDATION)
 

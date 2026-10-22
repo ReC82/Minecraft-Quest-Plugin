@@ -8,32 +8,63 @@ order: 0
 # Faire parler un personnage
 
 Un **dialogue**, c'est ce que dit un personnage quand un joueur lui parle, et les réponses que le
-joueur peut choisir.
+joueur peut choisir. Tout se fait dans la page **« Dialogue de … »** (par exemple « Dialogue de
+Musty ») : pas besoin d'identifiants techniques ni de fichiers.
 
-## Le parcours
+## D'où vient le dialogue d'un personnage
 
-1. **Dialogues → Créer un dialogue** : choisissez le personnage et écrivez sa première phrase.
-   Depuis la fiche d'un PNJ, « Modifier le dialogue » ouvre directement le sien.
-2. **Le personnage dit…** : sa réplique.
-3. **Le joueur peut répondre…** : une ligne par réponse. Pour chacune :
-   - **Ensuite…** : soit le personnage répond (une autre réplique, ou « Une nouvelle réplique… »),
-     soit la conversation se termine. Chaque réplique a besoin d'au moins une réponse (voir
-     [Terminer une conversation](#terminer-une-conversation)) ;
-   - **Et aussi…** : *Proposer une quête précise*, *Proposer une quête au hasard dans une liste*,
-     *Faire avancer une quête* ou *Rendre une quête* (qui donne ses récompenses). La quête se
-     choisit par son titre, avec une recherche ; la liste, par son nom.
-4. **Enregistrer** garde vos modifications dans PlugAdmin.
-5. **Mettre en jeu** les envoie au serveur. Le bandeau en haut dit où vous en êtes :
+- **PNJ → Créer un PNJ** : le personnage reçoit tout de suite un dialogue à lui qui dit
+  « Salut ! », avec une réponse « Au revoir » qui termine la conversation.
+- **PNJ → « Rattacher à RPGQuest »** (un personnage Citizens déjà présent en jeu) : s'il n'a pas
+  encore de dialogue, il reçoit le même « Salut ! ». S'il en a déjà un, il le garde.
+- **Dialogues → Créer un dialogue** : choisissez le personnage et écrivez sa première phrase.
 
-| Bandeau | Ce que ça veut dire |
-|---|---|
-| Modifications non enregistrées | Vous avez changé quelque chose : enregistrez. |
-| Enregistré — pas encore en jeu | Les joueurs voient encore l'ancienne version. |
-| Mise en jeu en cours… | Le serveur n'a pas encore répondu. |
-| À jour en jeu | Les joueurs voient la version enregistrée. |
-| Mise en jeu échouée | Le serveur a refusé : le motif est affiché, corrigez puis réessayez. |
+Pour l'ouvrir : fiche du PNJ → **Dialogue et quêtes → Modifier le dialogue**, ou page
+**Dialogues** → cliquez sur le dialogue.
 
-« Enregistrer et mettre en jeu » fait les deux à la suite.
+## La page « Dialogue de … »
+
+De haut en bas :
+
+1. **Le bandeau d'état** : enregistré ou non, en jeu ou non (voir
+   [Enregistrer, puis mettre en jeu](#enregistrer-puis-mettre-en-jeu)).
+2. **Une carte par réplique.** La première s'appelle **Début de la conversation** : c'est ce que
+   dit le personnage quand on lui parle. Les suivantes s'appellent **Réplique 2**, **Réplique 3**…
+   Dans chaque carte :
+   - **Le personnage dit…** : sa phrase ;
+   - **Le joueur peut répondre…** : une ligne par réponse (**Réponse du joueur**). Pour chacune :
+     - **Ensuite…** : *Terminer la conversation*, *Le personnage répond : réplique 2* (ou une
+       autre réplique, ou le début), ou *Une nouvelle réplique…* qui en crée une juste pour
+       cette réponse ;
+     - **Et aussi…** : *Proposer une quête précise*, *Proposer une quête au hasard dans une
+       liste*, *Faire avancer une quête* ou *Rendre une quête* (qui donne ses récompenses). La
+       quête se choisit par son titre, avec une recherche ;
+     - **Conditions et autres effets** (replié), voir plus bas ;
+     - **Supprimer cette réponse**.
+   - **Ajouter une réponse** : une réponse de plus pour le joueur ;
+   - **Réglages de la réplique** (replié) : le nom affiché au-dessus de la phrase, et **Retirer
+     cette réplique**.
+3. **Ajouter une réplique** (sous la dernière carte) : une nouvelle réplique, en bas de la page.
+4. **Réglages du dialogue** (replié) : la réplique par laquelle commence la conversation.
+5. **Enregistrer** et **Enregistrer et mettre en jeu**.
+6. **Aperçu de la conversation**.
+
+### Exemple : ajouter une deuxième réplique
+
+Le personnage dit « Salut ! ». On veut que le joueur puisse demander « Tu vends quoi ? » et que le
+personnage réponde « Du pain frais ! ».
+
+1. Sous **Début de la conversation**, cliquez **Ajouter une réponse** et écrivez « Tu vends quoi ? ».
+2. Dans **Ensuite…** de cette réponse, choisissez **Une nouvelle réplique…**, puis
+   **Enregistrer** : une carte **Réplique 2** apparaît.
+3. Dans **Réplique 2 → Le personnage dit…**, écrivez « Du pain frais ! ».
+4. Réplique 2 a déjà une réponse « Au revoir. » qui termine la conversation : gardez-la, ou
+   changez son texte.
+5. **Enregistrer et mettre en jeu**, puis attendez « À jour en jeu ».
+
+Avec **Ajouter une réplique**, la nouvelle carte arrive en bas de la page, mais **aucune réponse
+n'y mène encore** : choisissez-la dans **Ensuite…** d'une réponse, sinon le joueur ne la verra
+jamais (voir [Une réplique que personne n'atteint](#une-replique-que-personne-natteint)).
 
 ## Terminer une conversation
 
@@ -52,7 +83,66 @@ réponse « Au revoir. » qui termine la conversation : modifiez-la ou ajoutez-e
 Si une réplique n'a aucune réponse, PlugAdmin refuse **avant** d'écrire quoi que ce soit, avec un
 message comme « Enregistrement impossible : la réplique 2 n'a pas de sortie. Ajoutez une réponse
 qui termine la conversation. » La même vérification bloque **Mettre en jeu**, seul ou dans un lot
-(Import contenu) : rien n'est envoyé au serveur.
+(Import contenu) : rien n'est envoyé au serveur. Vos modifications restent dans la page : ajoutez
+la réponse, puis enregistrez à nouveau.
+
+## Une réplique que personne n'atteint
+
+Une carte marquée **« Aucune réponse n'y mène »** ne sera **jamais** montrée au joueur : aucune
+réponse n'a « Le personnage répond : cette réplique » dans **Ensuite…**. Cela arrive après
+**Ajouter une réplique**, ou quand on change la suite d'une réponse.
+
+Pour la rendre visible, choisissez-la dans **Ensuite…** d'une réponse. Si elle ne sert à rien :
+**Réglages de la réplique → Retirer cette réplique**. Retirer une réplique ne casse rien : les
+réponses qui y menaient terminent alors la conversation (PlugAdmin le dit).
+
+## Enregistrer, puis mettre en jeu
+
+Deux étapes différentes :
+
+- **Enregistrer** garde vos modifications dans PlugAdmin. **Les joueurs ne voient encore rien.**
+- **Mettre en jeu** envoie la version enregistrée au serveur DEV, qui la charge tout de suite,
+  sans redémarrage.
+- **Enregistrer et mettre en jeu** fait les deux à la suite.
+
+Le bandeau en haut de la page dit où vous en êtes. Pendant une mise en jeu, la page se met à jour
+toute seule : pas besoin de F5.
+
+| Bandeau | Ce que ça veut dire | Que faire |
+|---|---|---|
+| Modifications non enregistrées | Vous avez changé quelque chose dans la page. | Enregistrez. |
+| Enregistré — pas encore en jeu | Les joueurs voient encore l'ancienne version. | **Mettre en jeu**. |
+| Mise en jeu en cours… | Le serveur n'a pas encore répondu. | Attendez quelques secondes. |
+| À jour en jeu | Les joueurs voient la version enregistrée. | Testez en jeu. |
+| Mise en jeu échouée | Le serveur a refusé : le motif est affiché. | Corrigez, puis **Réessayer**. |
+| Enregistré — on ne sait pas encore si le jeu a cette version | PlugAdmin n'a pas encore de nouvelles du serveur. | **Vérifier**. |
+| Attention : … une ancienne version est toujours en jeu | Le fichier DEV est le bon, mais le jeu montre autre chose. | Voir [Recharger depuis DEV](#recharger-depuis-dev). |
+| Le serveur a une autre version de ce dialogue (encadré rouge) | Quelqu'un a changé le dialogue ailleurs. | Suivez les étapes de l'encadré ([détails](dialogues-depannage#le-serveur-a-une-autre-version-de-ce-dialogue)). |
+
+**« Enregistré » n'est pas « à jour en jeu ».** Ne testez en jeu qu'après avoir vu **À jour en
+jeu**.
+
+### Si la mise en jeu est refusée
+
+Une mise en jeu refusée n'est **jamais** un succès :
+
+- le bandeau passe à **Mise en jeu échouée**, avec le motif ;
+- le serveur remet son fichier dans l'état d'avant : **les joueurs gardent l'ancienne version**,
+  qui continue de fonctionner ;
+- votre version reste enregistrée dans PlugAdmin : corrigez-la, enregistrez, puis **Réessayer**.
+  Pas de conflit après une correction.
+
+## Tester en jeu
+
+1. Attendez **À jour en jeu** dans le bandeau.
+2. Dans Minecraft, faites un clic droit sur le personnage : la fenêtre de dialogue s'ouvre sur
+   **Début de la conversation**.
+3. Cliquez chaque réponse et vérifiez la suite. Une réponse qui « termine la conversation » ferme
+   la fenêtre.
+4. Pour revoir le dialogue depuis le début, parlez de nouveau au personnage.
+
+Si le jeu montre encore l'ancien texte alors que le bandeau dit **À jour en jeu**, cliquez
+**Vérifier**, puis voir [Recharger depuis DEV](#recharger-depuis-dev).
 
 ## L'aperçu
 

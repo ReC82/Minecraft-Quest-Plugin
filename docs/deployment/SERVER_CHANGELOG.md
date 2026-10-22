@@ -61,7 +61,10 @@ conteneurs) est conservé. Révise #107 : les établis/fours des salles de prép
 
 ### Action serveur
 
-- Remplacer uniquement le JAR RPGQuest (`scripts/deploy-verygames.sh -y`, après CI verte du commit de fusion).
+- **Effectué le 22/10 10:44** : JAR `9eec7812` (PR #723, CI PR + fusion vertes) via `scripts/deploy-verygames.sh -y` — en
+  ligne 4226840 octets, SHA-256 `2db4d08359d3f2d7d04a1952a593db80c6d2f2d2535cc07954589d2bfd0f697c`, retéléchargé et
+  identique ; DEV redémarré par `scripts/verygames-restart.sh` (seul LoDyMcFly connecté), RPGQuest actif (`plugins`).
+  `config.yml` DEV relu après redémarrage : `hub.stations.exceptions: []` ajouté par le completer (aucune exception).
 - **Configuration** : la clé `hub.stations.exceptions: []` est ajoutée au `config.yml` du serveur par le complément
   automatique au démarrage (`ConfigFileCompleter`) — **ne pas téléverser `config.yml`**. Liste vide = aucune exception.
 - **Aucune migration `data.db`**, aucun fichier de contenu, PlugAdmin inchangé. Redémarrage requis (nouveau listener).
@@ -69,7 +72,7 @@ conteneurs) est conservé. Révise #107 : les établis/fours des salles de prép
 
 ### Sauvegarde préalable
 
-JAR en ligne sauvegardé par le script (`rpgquest-<horodatage>-predeploy.jar`) ; `config.yml` copié en
+JAR précédent : `rpgquest-20261022T084430Z-predeploy.jar` (4205779 o, JAR #644/#566 en ligne avant) ; `config.yml` copié en
 `config.yml.bak` par le completer avant de le compléter.
 
 ### Validation
@@ -79,7 +82,7 @@ Wild et Claims inchangés. Relire `hub.stations` dans le `config.yml` DEV après
 
 ### Rollback
 
-Remettre le JAR `-predeploy` puis redémarrer ; la clé `hub.stations` ajoutée est simplement ignorée par l'ancien JAR.
+Remettre `rpgquest-20261022T084430Z-predeploy.jar` puis redémarrer ; la clé `hub.stations` ajoutée est simplement ignorée par l'ancien JAR.
 
 ---
 

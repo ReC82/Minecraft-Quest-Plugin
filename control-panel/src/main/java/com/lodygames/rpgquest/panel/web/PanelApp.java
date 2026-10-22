@@ -1943,13 +1943,17 @@ public final class PanelApp {
         }
         int max = com.lodygames.rpgquest.panel.building.ReferenceImageStore.MAX_BYTES + 64 * 1024;
         byte[] body = exchange.getRequestBody().readNBytes(max + 1);
+        if (body.length > max) {
+            // Lu jusqu'au bout (borné) : la réponse arrive au navigateur au lieu d'une coupure réseau.
+            drain(exchange.getRequestBody(), 64L * 1024 * 1024);
+            Http.redirect(exchange, uploadBackLocation(Http.query(exchange), agentId, tooLargeMessage()));
+            return;
+        }
         var form = com.lodygames.rpgquest.panel.http.Multipart.parse(
                 exchange.getRequestHeaders().getFirst("Content-Type"), body);
-        if (body.length > max || form.isEmpty()) {
-            Http.redirect(exchange, WorkshopPages.BASE + "?err=" + enc(body.length > max
-                    ? "Image trop lourde : " + (com.lodygames.rpgquest.panel.building.ReferenceImageStore.MAX_BYTES / 1024)
-                            + " Kio au plus. Rien n'a été enregistré."
-                    : "Envoi illisible : rien n'a été enregistré."));
+        if (form.isEmpty()) {
+            Http.redirect(exchange, uploadBackLocation(Http.query(exchange), agentId,
+                    "Envoi illisible : rien n'a été enregistré."));
             return;
         }
         Map<String, String> f = form.get().fields();
@@ -1972,6 +1976,32 @@ public final class PanelApp {
         Http.redirect(exchange, projectLocation(project.get().id(), f.get("draft"),
                 added.image().isPresent() ? "Image de référence ajoutée. Elle sera montrée à l'IA à chaque "
                         + "demande de ce projet." : null, added.image().isPresent() ? null : added.refusal()));
+    }
+
+    /** Le refus d'une image trop lourde, avec les limites et la marche à suivre (#283). */
+    static String tooLargeMessage() {
+        return "Image trop lourde : " + com.lodygames.rpgquest.panel.building.ReferenceImageStore.MAX_BYTES / (1024 * 1024)
+                + " Mio au plus par image (PNG, JPEG, WebP ou GIF). Enregistrez-la en JPEG ou réduisez-la "
+                + "(1600 pixels de large suffisent), puis recommencez. Rien n'a été enregistré ; "
+                + "le projet et sa description sont intacts.";
+    }
+
+    /** Retour d'un envoi refusé avant lecture du formulaire : le projet de l'URL s'il existe, sinon l'Atelier. */
+    private String uploadBackLocation(Map<String, String> query, String agentId, String err) {
+        return planProjects.find(query.getOrDefault("id", ""))
+                .filter(p -> !p.archived() && p.agentId().equals(agentId))
+                .map(p -> projectLocation(p.id(), query.get("draft"), null, err))
+                .orElse(WorkshopPages.BASE + "?err=" + enc(err));
+    }
+
+    /** Consomme au plus {@code limit} octets restants d'une requête refusée. */
+    private static void drain(java.io.InputStream in, long limit) throws IOException {
+        byte[] buf = new byte[64 * 1024];
+        long read = 0;
+        int n;
+        while (read < limit && (n = in.read(buf)) > 0) {
+            read += n;
+        }
     }
 
     /**

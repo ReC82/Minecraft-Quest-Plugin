@@ -8115,7 +8115,8 @@ plugin libres ; pots et étagères ; transferts de hopper refusés dans le Hub s
 aucune construction posée, déplacée, remplacée ou supprimée, aucun portail réel modifié (dont `hub_to_wild` /
 `hub_to_claims`), aucun appel IA payant de test. L'étape 1 est en lecture seule.
 
-1.  Lecture seule : Monde → Portails → « Rafraîchir », fiche `hub_to_wild`. **Attendu** : blocs « 1 · Emplacement »,
+1.  Lecture seule : Monde → Portails → « Rafraîchir », fiche `hub_to_wild`. **Attendu** (numéros depuis la fiche recomposée, TC-400 : 3 · Emplacement, 4 · Construction,
+    5 · Téléportation et arrivée) : blocs « 1 · Emplacement »,
     « 2 · Construction » (« Zone saisie en coordonnées : aucune construction ne peut y être liée », aucun bouton),
     « 3 · Téléportation » ; aucun diagnostic nouveau. Bâtiments → Bibliothèque : filtres Tous / Bâtiments / Décorations
     / Portails ; les bâtiments existants comptent comme « Bâtiments ». Atelier → Nouveau projet : champ « Type de
@@ -8269,3 +8270,30 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 « Vendre »), `MerchantCatalogTradeTest` (vue unique `SELL` / `BUY` sans second onglet, indicateur sans
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
+
+### TC-400 — Fiche Portails recomposée : une colonne, résumé et tests en tête (issue #566, PENDING MANUAL VALIDATION)
+
+Revalidation **visuelle** du retour propriétaire du 22/10 (PlugAdmin seulement : plugin, portails et fichiers
+inchangés). Lecture seule : ne rien enregistrer, ne rien activer.
+
+1.  Monde → Portails → « Rafraîchir les portails », fiche `hub_to_wild` sur ordinateur. **Attendu** : une seule
+    colonne pleine largeur ; blocs « 1 · Résumé et diagnostic » (Actif, Essentiel, départ, arrivée « point sûr
+    aléatoire », accès « Avertissement Wild », « Aucun problème détecté », bouton « Désactiver le portail ») puis
+    « 2 · Vérifier et tester » (Vérifier sans appliquer, Simuler un passage, Téléporter pour test réunis), puis
+    3 · Emplacement, 4 · Construction, 5 · Téléportation et arrivée, 6 · Règles appliquées par le serveur,
+    7 · Messages et avertissement, 8 · Nom et suppression — numéros continus.
+2.  Même fiche : chaque bloc de réglage affiche « Désactiver le portail avant de… » (portail actif), aucun
+    formulaire ouvert. « Déclenchement » et « Textes actuels montrés au joueur » se déplient au clic.
+3.  « Vérifier » dans le bloc 2. **Attendu** : verdict OK, rappelé dans le résumé (« Dernière vérification »,
+    lien « détail »). Rien d'autre ne change.
+4.  Même parcours sur `hub_to_claims`, puis sur téléphone. **Attendu** : textes et champs lisibles, aucun
+    défilement horizontal, faits du résumé sur deux colonnes.
+5.  (Seulement si un brouillon de test existe déjà, sur ton feu vert.) Fiche du brouillon : « Activer le
+    portail » dans le résumé ; « Modifier la zone / l'arrivée / les conditions d'accès / les messages »,
+    « Renommer », « Supprimer… » repliés ; les ouvrir montre les mêmes champs et cases de confirmation qu'avant.
+
+**Couverture automatisée** : `PortalsPageTest` (ordre et numérotation continue des blocs, outils regroupés,
+activation dans le résumé, formulaires repliés, portail actif sans formulaire dépliable ; tous les tests de
+formulaires #565–#569 inchangés et verts). Rendu local Playwright 1280 / 390 px (fiche active et brouillon avec
+conditions, messages et arche liée) : aucun débordement, aucune erreur console.
+

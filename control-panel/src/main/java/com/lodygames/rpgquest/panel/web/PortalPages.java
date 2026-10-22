@@ -238,6 +238,11 @@ public final class PortalPages {
 
     // ---- Fiche ----------------------------------------------------------------------------------
 
+    /**
+     * Fiche d'un portail, en une seule colonne pleine largeur (retour propriétaire du 22/10 sur #566) :
+     * résumé et diagnostic, puis les outils de test regroupés, puis un bloc par sujet — chaque
+     * formulaire de modification y est replié. La numérotation suit l'ordre réel des blocs affichés.
+     */
     private static String fiche(View v, List<Map<String, Object>> portals) {
         String back = "<a class=\"btn sm secondary\" href=\"" + PATH + "?agent=" + enc(v.agentId()) + "\">"
                 + Icons.icon("back") + "Tous les portails</a>";
@@ -249,26 +254,107 @@ public final class PortalPages {
             return Ui.banner("warn", "Le portail <code>" + Http.esc(v.selected()) + "</code> n'apparaît pas dans le "
                     + "dernier relevé. Rafraîchir, ou revenir à la liste.") + "<div class=\"btnrow\">" + back + "</div>";
         }
-        String a = "?agent=" + enc(v.agentId());
-        StringBuilder sb = new StringBuilder("<div class=\"btnrow mb-3\">").append(back).append("</div>");
+        StringBuilder sb = new StringBuilder("<div class=\"p-fiche\"><div class=\"btnrow mb-3\">").append(back)
+                .append("</div>");
         sb.append("<div class=\"w-title\" role=\"heading\" aria-level=\"2\">").append(Http.esc(str(p.get("name"))))
                 .append(" <code>").append(Http.esc(str(p.get("id")))).append("</code> ").append(statePill(p))
                 .append(legacyPill(p)).append("</div>");
-        sb.append("<div class=\"w-cols\"><div>");
-        sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("target"))
-                .append("1 · Emplacement</h3><dl class=\"w-dl\">")
-                .append(dlHtml("Monde de départ", worldHtml(v.names(), a, str(p.get("world")), str(p.get("worldRole")),
-                        bool(p.get("worldLoaded")))))
-                .append(dl("Coin minimum", str(p.get("min"))))
-                .append(dl("Coin maximum", str(p.get("max"))))
-                .append(dl("Taille (x × y × z)", str(p.get("size")) + " blocs"))
-                .append(siteHtml(v, p))
-                .append(dlHtml("Fichier", legacy(p) ? "<code>portals/" + Http.esc(str(p.get("id"))) + ".yml</code>"
-                        : "<code>world-portals/" + Http.esc(str(p.get("file"))) + "</code>"))
-                .append("</dl><p class=\"field-help\">Zone d'activation telle que le serveur la lit.</p></section>");
-        sb.append(PortalForms.constructionSection(v, p));
-        sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("travel"))
-                .append(legacy(p) ? "2" : "3").append(" · Téléportation</h3><dl class=\"w-dl\">")
+        int[] n = {0};
+        java.util.function.Consumer<java.util.function.IntFunction<String>> add = block -> {
+            String html = block.apply(n[0] + 1);
+            if (!html.isEmpty()) {
+                n[0]++;
+                sb.append(html);
+            }
+        };
+        add.accept(num -> summarySection(v, p, num));
+        add.accept(num -> PortalForms.toolsSection(v, p, num));
+        add.accept(num -> locationSection(v, p, num));
+        add.accept(num -> PortalForms.constructionSection(v, p, num));
+        add.accept(num -> arrivalSection(v, p, num));
+        add.accept(num -> guardsSection(v, p, num));
+        add.accept(num -> PortalForms.messagesSection(v, p, num));
+        add.accept(num -> PortalForms.manageSection(v, p, num));
+        sb.append(PortalForms.historySection(v, p));
+        return sb.append("</div>").toString();
+    }
+
+    /** Titre numéroté d'un bloc de la fiche. */
+    static String heading(String icon, int num, String title) {
+        return "<h3 class=\"w-h\">" + Icons.icon(icon) + num + " · " + Http.esc(title) + "</h3>";
+    }
+
+    /** Bloc 1 : l'essentiel en une ligne de faits, l'état, le diagnostic et l'activation. */
+    private static String summarySection(View v, Map<String, Object> p, int num) {
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-summary\">")
+                .append(heading("diagnostics", num, "Résumé et diagnostic")).append("<div class=\"p-facts\">");
+        sb.append(fact("État", statePill(p) + (bool(p.get("essential"))
+                ? " <span class=\"pill pill--neutral\" title=\"Mène au Hub, au Wild ou aux Claims\">Essentiel</span>" : "")));
+        sb.append(fact("Départ", worldName(v.names(), str(p.get("world"))) + "<br><span class=\"muted small\">"
+                + Http.esc(str(p.get("min"))) + " → " + Http.esc(str(p.get("max"))) + "</span>"));
+        String point = legacy(p) ? "" : str(p.get("destinationPoint"));
+        sb.append(fact("Arrivée", destinationHtml(p, v.names()) + "<br><span class=\"muted small\">"
+                + Http.esc(strategyLabel(str(p.get("strategy"))) + (point.isEmpty() ? "" : " · " + point)) + "</span>"));
+        List<String> access = new ArrayList<>();
+        maps(p.get("guards")).forEach(g -> access.add(guardShort(str(g.get("code")))));
+        int conditions = maps(p.get("conditions")).size();
+        if (conditions > 0) {
+            access.add(conditions + " condition(s)");
+        }
+        sb.append(fact("Accès", access.isEmpty() ? "<span class=\"muted\">libre</span>"
+                : Http.esc(String.join(" · ", access))));
+        if (!legacy(p)) {
+            String linked = str(map(p.get("construction")).get("linked"));
+            sb.append(fact("Construction", linked.isEmpty() ? "<span class=\"muted\">aucune</span>"
+                    : "<code>" + Http.esc(linked) + "</code>"));
+        }
+        List<String> returns = new ArrayList<>(list(p.get("returnedBy")).stream().map(r -> portalLink(v, r)).toList());
+        if (!str(p.get("returnOf")).isEmpty()) {
+            returns.add("retour de " + portalLink(v, str(p.get("returnOf"))));
+        }
+        if (!returns.isEmpty()) {
+            sb.append(fact("Aller-retour", String.join(", ", returns)));
+        }
+        sb.append("</div>");
+        if (v.verify() != null) {
+            sb.append(PortalForms.verifyLine(v, p));
+        }
+        List<Map<String, Object>> issues = maps(p.get("issues"));
+        if (issues.isEmpty()) {
+            sb.append("<p class=\"muted\">Aucun problème détecté.</p>");
+        }
+        for (Map<String, Object> issue : issues) {
+            sb.append(issueHtml(issue, str(p.get("id"))));
+        }
+        sb.append(PortalForms.activationBlock(v, p));
+        return sb.append("</section>").toString();
+    }
+
+    private static String fact(String key, String valueHtml) {
+        return "<div class=\"p-fact\"><span class=\"k\">" + Http.esc(key) + "</span><span class=\"v\">" + valueHtml
+                + "</span></div>";
+    }
+
+    private static String locationSection(View v, Map<String, Object> p, int num) {
+        String a = "?agent=" + enc(v.agentId());
+        return "<section class=\"card w-sec\" id=\"portal-location\">" + heading("target", num, "Emplacement")
+                + "<dl class=\"w-dl\">"
+                + dlHtml("Monde de départ", worldHtml(v.names(), a, str(p.get("world")), str(p.get("worldRole")),
+                        bool(p.get("worldLoaded"))))
+                + dl("Coin minimum", str(p.get("min")))
+                + dl("Coin maximum", str(p.get("max")))
+                + dl("Taille (x × y × z)", str(p.get("size")) + " blocs")
+                + siteHtml(v, p)
+                + dlHtml("Fichier", legacy(p) ? "<code>portals/" + Http.esc(str(p.get("id"))) + ".yml</code>"
+                        : "<code>world-portals/" + Http.esc(str(p.get("file"))) + "</code>")
+                + "</dl><p class=\"field-help\">Zone d'activation telle que le serveur la lit.</p>"
+                + PortalForms.zoneEditor(v, p) + "</section>";
+    }
+
+    private static String arrivalSection(View v, Map<String, Object> p, int num) {
+        String a = "?agent=" + enc(v.agentId());
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-arrival\">")
+                .append(heading("travel", num, "Téléportation et arrivée")).append("<dl class=\"w-dl\">")
                 .append(dlHtml("Monde d'arrivée", str(p.get("destinationWorld")).isEmpty()
                         ? "<span class=\"muted\">inconnu</span>"
                         : worldHtml(v.names(), a, str(p.get("destinationWorld")), str(p.get("destinationRole")),
@@ -290,33 +376,15 @@ public final class PortalPages {
         sb.append("</dl>");
         sb.append(bullets(list(p.get("arrival"))));
         if (!list(p.get("trigger")).isEmpty()) {
-            sb.append("<h4 class=\"w-h\">Déclenchement</h4>").append(bullets(list(p.get("trigger"))));
+            sb.append("<details class=\"p-more\"><summary>Déclenchement</summary>").append(bullets(list(p.get("trigger"))))
+                    .append("</details>");
         }
-        sb.append("</section>");
-        sb.append("</div><div>");
-        sb.append(guardsSection(p));
-        sb.append("<section class=\"card w-sec\"><h3 class=\"w-h\">").append(Icons.icon("diagnostics"))
-                .append("État</h3><p>").append(statePill(p)).append("</p>");
-        List<Map<String, Object>> issues = maps(p.get("issues"));
-        if (issues.isEmpty()) {
-            sb.append("<p class=\"muted\">Aucun problème détecté.</p>");
-        }
-        for (Map<String, Object> issue : issues) {
-            sb.append(issueHtml(issue, str(p.get("id"))));
-        }
-        sb.append("</section>");
-        sb.append(PortalForms.verifySection(v, p));
-        sb.append(PortalForms.simulateSection(v, p));
-        sb.append(v.access().testHtml());
-        sb.append(PortalForms.manageSection(v, p));
-        sb.append(PortalForms.historySection(v, p));
-        sb.append("</div></div>");
-        return sb.toString();
+        return sb.append(PortalForms.arrivalEditor(v, p)).append("</section>").toString();
     }
 
-    private static String guardsSection(Map<String, Object> p) {
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\"><h3 class=\"w-h\">")
-                .append(Icons.icon("lock")).append("3 · Règles appliquées par le serveur</h3>");
+    private static String guardsSection(View v, Map<String, Object> p, int num) {
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-rules\">")
+                .append(heading("lock", num, "Règles appliquées par le serveur"));
         List<Map<String, Object>> guards = maps(p.get("guards"));
         List<Map<String, Object>> conditions = maps(p.get("conditions"));
         if (guards.isEmpty() && conditions.isEmpty()) {
@@ -329,11 +397,12 @@ public final class PortalPages {
                     .append(Http.esc(str(g.get("title")))).append("</h4>").append(bullets(list(g.get("rules"))));
             List<Map<String, Object>> texts = maps(g.get("texts"));
             if (!texts.isEmpty()) {
-                sb.append("<dl class=\"w-dl\">");
+                sb.append("<details class=\"p-more\"><summary>Textes actuels montrés au joueur</summary>")
+                        .append("<dl class=\"w-dl\">");
                 for (Map<String, Object> t : texts) {
                     sb.append(dlHtml(str(t.get("label")), "« " + Http.esc(str(t.get("value"))) + " »"));
                 }
-                sb.append("</dl><p class=\"field-help\">Textes actuels montrés au joueur, relus du serveur.</p>");
+                sb.append("</dl><p class=\"field-help\">Relus du serveur.</p></details>");
             }
         }
         if (!conditions.isEmpty()) {
@@ -343,11 +412,11 @@ public final class PortalPages {
             }
             sb.append("</dl>");
             if ("WORLD_PORTAL".equals(str(p.get("kind")))) {
-                sb.append("<p class=\"field-help\">Vérifiées par le serveur à chaque passage, après les règles "
-                        + "ci-dessus. Un joueur refusé reste sur place et reçoit le message de la condition.</p>");
+                sb.append("<p class=\"field-help\">Vérifiées à chaque passage, après les règles ci-dessus. Un joueur "
+                        + "refusé reste sur place avec le message de la condition.</p>");
             }
         }
-        return sb.append("</section>").toString();
+        return sb.append(PortalForms.accessEditor(v, p)).append("</section>").toString();
     }
 
     // ---- Libellés -------------------------------------------------------------------------------

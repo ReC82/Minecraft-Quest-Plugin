@@ -73,16 +73,41 @@ final class PortalForms {
 
     // ---- Fiche ------------------------------------------------------------------------------------
 
+    /**
+     * Bloc « Vérifier et tester » : les trois outils côte à côte (Vérifier sans appliquer, Simuler un
+     * passage, Téléporter pour test). Vide pour un portail de zone ou sans session de gestion.
+     */
+    static String toolsSection(PortalPages.View v, Map<String, Object> p, int num) {
+        String verify = verifyTool(v, p);
+        String simulate = simulateTool(v, p);
+        if (verify.isEmpty() && simulate.isEmpty() && v.access().testHtml().isEmpty()) {
+            return "";
+        }
+        return "<section class=\"card w-sec\" id=\"portal-tests\">"
+                + PortalPages.heading("diagnostics", num, "Vérifier et tester")
+                + "<p class=\"field-help\">« Vérifier » et « Simuler » ne modifient rien et ne téléportent personne ; "
+                + "« Téléporter pour test » déplace réellement votre seul personnage.</p>"
+                + "<div class=\"p-tools\">" + verify + simulate + v.access().testHtml() + "</div></section>";
+    }
+
+    /** Verdict du dernier « Vérifier sans appliquer », rappelé dans le résumé (issue #566). */
+    static String verifyLine(PortalPages.View v, Map<String, Object> p) {
+        Map<String, Object> d = v.verify().details();
+        boolean stale = !str(d.get("fingerprint")).equals(str(p.get("fingerprint")));
+        return "<p class=\"p-verdict\"><strong>Dernière vérification :</strong> " + verdictPill(str(d.get("verdict")))
+                + " <span class=\"muted small\">" + v.verify().atHtml() + (stale ? " · précède la dernière modification"
+                : "") + "</span> <a href=\"#portal-verify\">détail</a></p>";
+    }
+
     /** « Vérifier sans appliquer » et dernier résultat (issue #566). */
-    static String verifySection(PortalPages.View v, Map<String, Object> p) {
+    private static String verifyTool(PortalPages.View v, Map<String, Object> p) {
         if (!"WORLD_PORTAL".equals(str(p.get("kind"))) || v.manage().csrf().isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-verify\"><h3 class=\"w-h\">")
-                .append(Icons.icon("diagnostics")).append("Vérifier sans appliquer</h3>")
-                .append("<p class=\"field-help\">Contrôle le départ, la zone, le monde d'arrivée, la sécurité du point "
-                        + "d'arrivée et l'aller-retour. <strong>Rien n'est modifié</strong> : aucun fichier écrit, aucun "
-                        + "monde ni chunk chargé, personne n'est téléporté.</p>");
+        StringBuilder sb = new StringBuilder("<div class=\"p-tool\" id=\"portal-verify\"><h4 class=\"w-h\">")
+                .append(Icons.icon("diagnostics")).append("Vérifier sans appliquer</h4>")
+                .append("<p class=\"field-help\">Départ, zone, monde d'arrivée, sécurité de l'arrivée et aller-retour. "
+                        + "<strong>Rien n'est modifié</strong>, aucun monde ni chunk chargé.</p>");
         PortalPages.Verify last = v.verify();
         if (last != null) {
             Map<String, Object> d = last.details();
@@ -106,7 +131,7 @@ final class PortalForms {
                 .append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(str(p.get("id")))).append("\">")
                 .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
                 .append(last == null ? "Vérifier" : "Vérifier à nouveau").append("</button></div></form>");
-        return sb.append("</section>").toString();
+        return sb.append("</div>").toString();
     }
 
     private static String verdictPill(String status) {
@@ -119,111 +144,154 @@ final class PortalForms {
         };
     }
 
-    static String manageSection(PortalPages.View v, Map<String, Object> p) {
+    /** Session autorisée à modifier ce portail (droit PORTAL_EDIT et fichier modifiable). */
+    private static boolean canEdit(PortalPages.View v, Map<String, Object> p) {
+        return v.manage().canEdit() && bool(p.get("editable"));
+    }
+
+    private static boolean active(Map<String, Object> p) {
+        return "ACTIVE".equals(str(p.get("state")));
+    }
+
+    /**
+     * Formulaire replié d'un bloc de la fiche ({@code lockedNote} : texte constant, déjà sûr). Portail
+     * actif : seulement la consigne de le désactiver d'abord, comme avant.
+     */
+    private static String editor(PortalPages.View v, Map<String, Object> p, String id, String title, String lockedNote,
+                                 String formHtml) {
+        if (!canEdit(v, p)) {
+            return "";
+        }
+        if (active(p)) {
+            return "<p class=\"muted p-locked\">" + Icons.icon("lock") + lockedNote + "</p>";
+        }
+        return "<details class=\"p-edit\"" + (id.isEmpty() ? "" : " id=\"" + id + "\"") + "><summary>"
+                + Icons.icon("edit") + Http.esc(title) + "</summary>" + formHtml + "</details>";
+    }
+
+    /** Résumé : avertissement « portail essentiel » et Activer / Désactiver (droit PORTAL_ENABLE). */
+    static String activationBlock(PortalPages.View v, Map<String, Object> p) {
         PortalPages.Manage m = v.manage();
         if (!m.any()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-manage\"><h3 class=\"w-h\">")
-                .append(Icons.icon("edit")).append("Gérer ce portail</h3>");
         if (!bool(p.get("editable"))) {
-            return sb.append("<p class=\"muted\">").append("ZONE_PORTAL".equals(str(p.get("kind")))
+            return "<p class=\"muted\">" + ("ZONE_PORTAL".equals(str(p.get("kind")))
                     ? "Portail de zone (ancien format, portals/) : il se gère avec /rpgadmin portal."
-                    : "Plusieurs fichiers déclarent cet identifiant : corriger d'abord les fichiers du serveur.")
-                    .append("</p></section>").toString();
+                    : "Plusieurs fichiers déclarent cet identifiant : corriger d'abord les fichiers du serveur.") + "</p>";
         }
-        String state = str(p.get("state"));
-        boolean active = "ACTIVE".equals(state);
+        StringBuilder sb = new StringBuilder();
         if (bool(p.get("essential"))) {
             sb.append(Ui.banner("warn", "<strong>Portail essentiel</strong> : il mène au Hub, au Wild ou aux Claims. "
                     + "Chaque modification demande une confirmation supplémentaire."));
         }
-        if (m.canEnable()) {
-            sb.append("<h4 class=\"w-h\">").append(active ? "Désactiver" : "Activer").append("</h4>");
-            sb.append(formStart(v, active ? "portal.disable" : "portal.enable", str(p.get("id"))))
-                    .append(hidden(p))
-                    .append("<p class=\"field-help\">").append(active
-                            ? "Entrer dans la zone ne téléportera plus personne. Toute la configuration est conservée."
-                            : "Entrer dans la zone téléportera aussitôt vers " + Http.esc(str(p.get("destinationWorld")))
-                            + ". Le serveur vérifie d'abord que les deux mondes sont chargés et que la zone ne "
-                            + "recouvre aucun autre portail.").append("</p>")
-                    .append(essential(p))
-                    .append(confirm(active ? "Désactiver « " + str(p.get("id")) + " »"
-                            : "Activer « " + str(p.get("id")) + " » : les joueurs seront téléportés"))
-                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm ")
-                    .append(active ? "btn-outline-secondary" : "btn-success").append("\" type=\"submit\">")
-                    .append(active ? "Désactiver le portail" : "Activer le portail")
-                    .append("</button></div></form>");
+        if (!m.canEnable()) {
+            return sb.toString();
         }
-        if (m.canEdit()) {
-            sb.append("<h4 class=\"w-h\">Nom affiché</h4>")
-                    .append(formStart(v, "portal.update", str(p.get("id")))).append(hidden(p))
-                    .append("<input type=\"hidden\" name=\"zone_mode\" value=\"keep\">")
-                    .append(field("Nom affiché", "<input type=\"text\" name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
-                            + "\" value=\"" + Http.esc(str(p.get("storedName"))) + "\">",
-                            "Vide = nom déduit de la destination. L'identifiant ne change pas."))
-                    .append(essential(p)).append(confirm("Renommer « " + str(p.get("id")) + " »"))
-                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">Enregistrer "
-                            + "le nom</button></div></form>");
-            sb.append("<h4 class=\"w-h\">Zone d'activation</h4>");
-            if (active) {
-                sb.append("<p class=\"muted\">Désactiver le portail avant de déplacer ou de redimensionner sa zone.</p>");
-            } else {
-                sb.append(formStart(v, "portal.update", str(p.get("id")))).append(hidden(p))
-                        .append(zoneFields(v, p, "")).append(essential(p))
-                        .append(confirm("Remplacer la zone de « " + str(p.get("id")) + " »"))
-                        .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
-                                + "Enregistrer la zone</button></div></form>");
-            }
-            sb.append("<h4 class=\"w-h\">Arrivée</h4>");
-            if (active) {
-                sb.append("<p class=\"muted\">Désactiver le portail avant de changer son arrivée.</p>");
-            } else {
-                sb.append(formStart(v, "portal.update", str(p.get("id")))).append(hidden(p))
-                        .append("<input type=\"hidden\" name=\"zone_mode\" value=\"keep\">")
-                        .append("<input type=\"hidden\" name=\"dest_mode\" value=\"set\">")
-                        .append(destinationFields(worlds(v), str(p.get("destinationWorld")), str(p.get("strategy")), p))
-                        .append(essential(p))
-                        .append(confirm("Remplacer l'arrivée de « " + str(p.get("id")) + " »"))
-                        .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
-                                + "Enregistrer l'arrivée</button></div></form>");
-            }
-            sb.append("<h4 class=\"w-h\" id=\"portal-access\">Conditions d'accès</h4>");
-            if (active) {
-                sb.append("<p class=\"muted\">Désactiver le portail avant de changer ses conditions d'accès.</p>");
-            } else {
-                sb.append(accessForm(v, p));
-            }
-            sb.append("<h4 class=\"w-h\" id=\"portal-messages\">Messages et avertissement</h4>");
-            sb.append(messagesPreview(p));
-            if (active) {
-                sb.append("<p class=\"muted\">Désactiver le portail avant de changer ses messages et son "
-                        + "avertissement.</p>");
-            } else if (p.containsKey("messages")) {
-                sb.append(messagesForm(v, p));
-            }
-            boolean hasReturn = p.get("returnedBy") instanceof List<?> r && !r.isEmpty();
-            if (str(p.get("returnOf")).isEmpty() && !hasReturn) {
-                sb.append("<h4 class=\"w-h\">Aller-retour</h4><p class=\"field-help\">Le retour est un second "
-                        + "portail, distinct, créé en brouillon dans <code>").append(Http.esc(str(p.get("destinationWorld"))))
-                        .append("</code>. Ce portail-ci n'est pas modifié.</p><div class=\"btnrow\"><a class=\"btn btn-sm "
-                                + "btn-outline-primary\" href=\"").append(PortalPages.PATH).append("?agent=")
-                        .append(PortalPages.enc(v.agentId())).append("&amp;return_of=").append(PortalPages.enc(str(p.get("id"))))
-                        .append("#portal-create\">Préparer le portail retour</a></div>");
-            }
-            sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">").append(Icons.icon("warning"))
-                    .append("Supprimer le portail (sa configuration seulement)</div>");
-            if (active) {
-                sb.append("<p class=\"muted\">Désactiver le portail avant de le supprimer.</p></div>");
-            } else {
-                sb.append("<p class=\"muted\">Supprime le fichier <code>world-portals/").append(Http.esc(str(p.get("file"))))
-                        .append("</code>. <strong>Aucun bloc n'est modifié</strong> ; l'emplacement et un bâtiment "
-                                + "éventuellement posé restent en place.</p>")
-                        .append(formStart(v, "portal.delete", "")).append(hidden(p)).append(essential(p))
-                        .append(confirm("Supprimer définitivement le portail « " + str(p.get("id")) + " »"))
-                        .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">")
-                        .append(Icons.icon("warning")).append("Supprimer le portail</button></div></form></div>");
-            }
+        boolean active = active(p);
+        sb.append("<div class=\"p-activation\" id=\"portal-activation\"><h4 class=\"w-h\">")
+                .append(active ? "Désactiver" : "Activer").append("</h4>")
+                .append(formStart(v, active ? "portal.disable" : "portal.enable", str(p.get("id"))))
+                .append(hidden(p))
+                .append("<p class=\"field-help\">").append(active
+                        ? "Entrer dans la zone ne téléportera plus personne. Toute la configuration est conservée."
+                        : "Entrer dans la zone téléportera aussitôt vers " + Http.esc(str(p.get("destinationWorld")))
+                        + ". Le serveur vérifie d'abord que les deux mondes sont chargés et que la zone ne "
+                        + "recouvre aucun autre portail.").append("</p>")
+                .append(essential(p))
+                .append(confirm(active ? "Désactiver « " + str(p.get("id")) + " »"
+                        : "Activer « " + str(p.get("id")) + " » : les joueurs seront téléportés"))
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm ")
+                .append(active ? "btn-outline-secondary" : "btn-success").append("\" type=\"submit\">")
+                .append(active ? "Désactiver le portail" : "Activer le portail")
+                .append("</button></div></form></div>");
+        return sb.toString();
+    }
+
+    /** Bloc Emplacement : « Modifier la zone d'activation » (portail non actif). */
+    static String zoneEditor(PortalPages.View v, Map<String, Object> p) {
+        return editor(v, p, "", "Modifier la zone d'activation",
+                "Désactiver le portail avant de déplacer ou de redimensionner sa zone.",
+                canEdit(v, p) && !active(p) ? formStart(v, "portal.update", str(p.get("id"))) + hidden(p)
+                        + zoneFields(v, p, "") + essential(p)
+                        + confirm("Remplacer la zone de « " + str(p.get("id")) + " »")
+                        + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
+                        + "Enregistrer la zone</button></div></form>" : "");
+    }
+
+    /** Bloc Téléportation : « Modifier l'arrivée » et « Préparer le portail retour » (issue #566). */
+    static String arrivalEditor(PortalPages.View v, Map<String, Object> p) {
+        StringBuilder sb = new StringBuilder(editor(v, p, "", "Modifier l'arrivée",
+                "Désactiver le portail avant de changer son arrivée.",
+                canEdit(v, p) && !active(p) ? formStart(v, "portal.update", str(p.get("id"))) + hidden(p)
+                        + "<input type=\"hidden\" name=\"zone_mode\" value=\"keep\">"
+                        + "<input type=\"hidden\" name=\"dest_mode\" value=\"set\">"
+                        + destinationFields(worlds(v), str(p.get("destinationWorld")), str(p.get("strategy")), p)
+                        + essential(p) + confirm("Remplacer l'arrivée de « " + str(p.get("id")) + " »")
+                        + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
+                        + "Enregistrer l'arrivée</button></div></form>" : ""));
+        boolean hasReturn = p.get("returnedBy") instanceof List<?> r && !r.isEmpty();
+        if (canEdit(v, p) && str(p.get("returnOf")).isEmpty() && !hasReturn) {
+            sb.append("<div class=\"p-return\"><span class=\"field-help\">Aller-retour : un second portail, "
+                    + "distinct, créé en brouillon dans <code>").append(Http.esc(str(p.get("destinationWorld"))))
+                    .append("</code> ; celui-ci n'est pas modifié.</span><a class=\"btn btn-sm btn-outline-primary\" "
+                            + "href=\"").append(PortalPages.PATH).append("?agent=")
+                    .append(PortalPages.enc(v.agentId())).append("&amp;return_of=").append(PortalPages.enc(str(p.get("id"))))
+                    .append("#portal-create\">Préparer le portail retour</a></div>");
+        }
+        return sb.toString();
+    }
+
+    /** Bloc Règles : « Modifier les conditions d'accès » (issue #567). */
+    static String accessEditor(PortalPages.View v, Map<String, Object> p) {
+        return editor(v, p, "portal-access", "Modifier les conditions d'accès",
+                "Désactiver le portail avant de changer ses conditions d'accès.",
+                canEdit(v, p) && !active(p) ? accessForm(v, p) : "");
+    }
+
+    /** Bloc « Messages et avertissement » : aperçu, puis formulaire replié (issue #569). */
+    static String messagesSection(PortalPages.View v, Map<String, Object> p, int num) {
+        if (!p.containsKey("messages")) {
+            return "";
+        }
+        return "<section class=\"card w-sec\" id=\"portal-messages\">"
+                + PortalPages.heading("dialogues", num, "Messages et avertissement") + messagesPreview(p)
+                + editor(v, p, "", "Modifier les messages et l'avertissement",
+                "Désactiver le portail avant de changer ses messages et son avertissement.",
+                canEdit(v, p) && !active(p) ? messagesForm(v, p) : "")
+                + "</section>";
+    }
+
+    /** Dernier bloc : nom affiché et suppression (droit PORTAL_EDIT). */
+    static String manageSection(PortalPages.View v, Map<String, Object> p, int num) {
+        if (!canEdit(v, p)) {
+            return "";
+        }
+        String id = str(p.get("id"));
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-manage\">")
+                .append(PortalPages.heading("edit", num, "Nom et suppression"));
+        sb.append("<details class=\"p-edit\"><summary>").append(Icons.icon("edit")).append("Renommer</summary>")
+                .append(formStart(v, "portal.update", id)).append(hidden(p))
+                .append("<input type=\"hidden\" name=\"zone_mode\" value=\"keep\">")
+                .append(field("Nom affiché", "<input type=\"text\" name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
+                        + "\" value=\"" + Http.esc(str(p.get("storedName"))) + "\">",
+                        "Vide = nom déduit de la destination. L'identifiant ne change pas."))
+                .append(essential(p)).append(confirm("Renommer « " + id + " »"))
+                .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">Enregistrer "
+                        + "le nom</button></div></form></details>");
+        sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">").append(Icons.icon("warning"))
+                .append("Supprimer le portail (sa configuration seulement)</div>");
+        if (active(p)) {
+            sb.append("<p class=\"muted\">Désactiver le portail avant de le supprimer.</p></div>");
+        } else {
+            sb.append("<details class=\"p-edit\"><summary>Supprimer…</summary>")
+                    .append("<p class=\"muted\">Supprime le fichier <code>world-portals/").append(Http.esc(str(p.get("file"))))
+                    .append("</code>. <strong>Aucun bloc n'est modifié</strong> ; l'emplacement et un bâtiment "
+                            + "éventuellement posé restent en place.</p>")
+                    .append(formStart(v, "portal.delete", "")).append(hidden(p)).append(essential(p))
+                    .append(confirm("Supprimer définitivement le portail « " + id + " »"))
+                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">")
+                    .append(Icons.icon("warning")).append("Supprimer le portail</button></div></form></details></div>");
         }
         return sb.append("</section>").toString();
     }
@@ -249,10 +317,8 @@ final class PortalForms {
         List<Map<String, Object>> rules = maps(access.get("rules"));
         int rows = Math.min(AgentActionCatalog.PORTAL_MAX_CONDITIONS, Math.max(2, rules.size() + 1));
         String id = str(p.get("id"));
-        StringBuilder sb = new StringBuilder("<p class=\"field-help\">Vérifiées <strong>par le serveur</strong> à chaque "
-                + "passage, après les règles Claims / Wild ; toutes doivent être remplies. Un joueur refusé reste sur "
-                + "place et reçoit le message de la première condition non remplie (vide = message par défaut). Rien "
-                + "n'est retiré au joueur : « Avoir un objet » vérifie seulement l'inventaire.</p>");
+        StringBuilder sb = new StringBuilder("<p class=\"field-help\">Toutes doivent être remplies. Un joueur refusé "
+                + "reçoit le message de la première condition manquante. « Avoir un objet » ne retire rien.</p>");
         sb.append(formStart(v, "portal.access", id)).append(hidden(p));
         sb.append("<div class=\"form-grid\">")
                 .append(field("Niveau RPG minimum", "<input type=\"number\" name=\"level\" min=\"1\" max=\"1000\" "
@@ -267,8 +333,14 @@ final class PortalForms {
         sb.append(StyleField.render("cooldown_message", "pa-" + id + "-cd-msg", "Message pendant l'attente",
                 str(access.get("cooldownMessage")), false, "%seconds% = secondes restantes."));
         for (int i = 0; i < rows; i++) {
+            if (i == rules.size()) {
+                sb.append("<details class=\"p-more\"><summary>Ajouter une condition</summary>");
+            }
             Map<String, Object> r = i < rules.size() ? rules.get(i) : Map.of();
             sb.append(conditionRow(id, i, r));
+        }
+        if (rows > rules.size()) {
+            sb.append("</details>");
         }
         if (rows < AgentActionCatalog.PORTAL_MAX_CONDITIONS) {
             sb.append("<p class=\"field-help\">Besoin de plus de lignes : enregistrer, la fiche en proposera une "
@@ -354,7 +426,7 @@ final class PortalForms {
         }
         Map<String, Object> m = PortalPages.maps(List.of(p.get("messages"))).get(0);
         Map<String, Object> d = PortalPages.maps(List.of(p.getOrDefault("messageDefaults", Map.of()))).get(0);
-        StringBuilder sb = new StringBuilder("<div class=\"card w-sec\" id=\"portal-messages-preview\">");
+        StringBuilder sb = new StringBuilder("<div class=\"p-preview\" id=\"portal-messages-preview\">");
         if (bool(p.get("warns"))) {
             boolean allowHide = !"false".equals(str(m.get("allowHide")));
             sb.append("<p class=\"small muted\">Aperçu de l'avertissement affiché avant chaque départ :</p>")
@@ -377,10 +449,8 @@ final class PortalForms {
         sb.append("<dl class=\"w-dl\">");
         for (String[] f : MESSAGE_FIELDS) {
             String value = effective(m, d, f[1]);
-            sb.append("<dt>").append(Http.esc(f[2])).append("</dt><dd>")
-                    .append(value.isEmpty() ? "<span class=\"muted\">—</span>" : mc(value))
-                    .append(str(m.get(f[1])).isEmpty() ? "" : " <span class=\"pill ok\">personnalisé</span>")
-                    .append("</dd>");
+            sb.append(PortalPages.dlHtml(f[2], (value.isEmpty() ? "<span class=\"muted\">—</span>" : mc(value))
+                    + (str(m.get(f[1])).isEmpty() ? "" : " <span class=\"pill ok\">personnalisé</span>")));
         }
         return sb.append("</dl></div>").toString();
     }
@@ -451,16 +521,16 @@ final class PortalForms {
     }
 
     /** Simulation AUTORISÉ / REFUSÉ (lecture seule) et dernier résultat du portail ouvert. */
-    static String simulateSection(PortalPages.View v, Map<String, Object> p) {
+    private static String simulateTool(PortalPages.View v, Map<String, Object> p) {
         if (!"WORLD_PORTAL".equals(str(p.get("kind"))) || v.manage().csrf().isEmpty()) {
             return "";
         }
         String id = str(p.get("id"));
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-simulate\"><h3 class=\"w-h\">")
-                .append(Icons.icon("diagnostics")).append("Simuler un passage</h3>")
-                .append("<p class=\"field-help\">Le serveur évalue les conditions d'accès pour un joueur <strong>"
-                        + "connecté</strong> et répond AUTORISÉ ou REFUSÉ. <strong>Personne n'est téléporté</strong>, "
-                        + "aucun délai n'est démarré, rien n'est écrit. Les règles Claims / Wild ne sont pas simulées.</p>");
+        StringBuilder sb = new StringBuilder("<div class=\"p-tool\" id=\"portal-simulate\"><h4 class=\"w-h\">")
+                .append(Icons.icon("diagnostics")).append("Simuler un passage</h4>")
+                .append("<p class=\"field-help\">Conditions d'accès évaluées pour un joueur <strong>connecté</strong> : "
+                        + "AUTORISÉ ou REFUSÉ. Personne n'est téléporté, aucun délai démarré. Règles Claims / Wild non "
+                        + "simulées.</p>");
         PortalPages.Simulation last = v.access().simulation();
         if (last != null) {
             Map<String, Object> d = last.details();
@@ -501,7 +571,7 @@ final class PortalForms {
         }
         sb.append("</datalist><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">"
                 + "Simuler (sans téléporter)</button></div></form>");
-        return sb.append("</section>").toString();
+        return sb.append("</div>").toString();
     }
 
     private static List<String> strings(Object o) {
@@ -518,8 +588,9 @@ final class PortalForms {
         if (rows.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\"><h3 class=\"w-h\">")
-                .append(Icons.icon("history")).append("Modifications depuis PlugAdmin</h3><ul class=\"w-links\">");
+        StringBuilder sb = new StringBuilder("<details class=\"card w-sec p-history\"><summary>")
+                .append(Icons.icon("history")).append("Modifications depuis PlugAdmin (").append(rows.size())
+                .append(")</summary><ul class=\"w-links\">");
         for (Map<String, Object> h : rows) {
             sb.append("<li><span><strong>").append(Http.esc(operationLabel(str(h.get("operation"))))).append("</strong> · ")
                     .append(Http.esc(str(h.get("at")))).append(" · ").append(Http.esc(str(h.get("actor"))));
@@ -531,7 +602,7 @@ final class PortalForms {
             }
             sb.append("</span></li>");
         }
-        return sb.append("</ul><p class=\"field-help\">Journal du serveur (portal-audit.yml).</p></section>").toString();
+        return sb.append("</ul><p class=\"field-help\">Journal du serveur (portal-audit.yml).</p></details>").toString();
     }
 
     // ---- Briques ----------------------------------------------------------------------------------
@@ -643,15 +714,15 @@ final class PortalForms {
      * remplacement et la libération de l'arche restent ceux de la page Emplacements (#234) : rien ici
      * ne pose ni ne retire de bloc, et lier n'active jamais le portail.
      */
-    static String constructionSection(PortalPages.View v, Map<String, Object> p) {
+    static String constructionSection(PortalPages.View v, Map<String, Object> p, int num) {
         if ("ZONE_PORTAL".equals(str(p.get("kind")))) {
             return "";
         }
         Map<String, Object> c = map(p.get("construction"));
         String site = str(p.get("site"));
         String sites = "/buildings/sites?agent=" + PortalPages.enc(v.agentId());
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-construction\"><h3 class=\"w-h\">")
-                .append(Icons.icon("box")).append("2 · Construction</h3>");
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-construction\">")
+                .append(PortalPages.heading("box", num, "Construction"));
         if (site.isEmpty()) {
             return sb.append("<p class=\"muted\">Zone saisie en coordonnées : aucune construction ne peut y être "
                     + "liée. Pour une arche, choisir une zone « depuis un emplacement » (outil d'emplacement), "
@@ -677,10 +748,9 @@ final class PortalForms {
         } else if (!placed.isEmpty() && !bool(c.get("linkable")) && !str(c.get("refusal")).isEmpty()) {
             sb.append("<p class=\"field-help\">").append(Http.esc(str(c.get("refusal")))).append("</p>");
         }
-        sb.append("<p class=\"field-help\">Poser, remplacer, réorienter ou libérer l'arche se fait sur la page "
-                + "<a href=\"").append(sites).append("\">Emplacements</a> (aperçu puis confirmation). Remplacer "
-                + "l'arche ne change ni la destination ni les conditions : il suffit de « Lier » à nouveau pour relire "
-                + "son passage. Poser ou lier une arche n'active jamais le portail.</p>");
+        sb.append("<p class=\"field-help\">Poser, remplacer ou libérer l'arche : page <a href=\"").append(sites)
+                .append("\">Emplacements</a>. Après un remplacement, « Lier » à nouveau relit son passage. Poser ou lier "
+                        + "une arche n'active jamais le portail.</p>");
         PortalPages.Manage m = v.manage();
         if (!m.canEdit() || !bool(p.get("editable"))) {
             return sb.append("</section>").toString();

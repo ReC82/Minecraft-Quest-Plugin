@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.audit.InMemoryAuditLog;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
+import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.support.TestConfig;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -115,7 +117,7 @@ class PortalsPageTest {
         login();
         runAction("portal.list", RELEVE);
         String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild&file=hub_to_wild.yml").body();
-        assertTrue(wild.contains("1 · Emplacement") && wild.contains("4 × 4 × 1 blocs"));
+        assertTrue(wild.contains("1 · Résumé et diagnostic") && wild.contains("3 · Emplacement") && wild.contains("4 × 4 × 1 blocs"));
         assertTrue(wild.contains("world-portals/hub_to_wild.yml"));
         assertTrue(wild.contains("entre 500 et 5000 blocs"));
         assertTrue(wild.contains("« Le Wild est une zone dangereuse. »"), "texte actuel de l'avertissement");
@@ -470,13 +472,51 @@ class PortalsPageTest {
             "\"linked\":\"arche_test\",\"status\":\"BUILDING_MISSING\",\"message\":\"L'arche liée n'est plus posée.\","
                     + "\"placed\":\"\",\"placedName\":\"\",\"rotation\":0,\"linkable\":false");
 
+    /** Retour propriétaire du 22/10 sur #566 : une colonne, résumé et tests en tête, formulaires repliés. */
+    @Test
+    void theFicheIsOneColumnWithSummaryAndToolsFirstAndFoldedEditors() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_569.replace("\"maxZ\":-650,\"messages\":", "\"maxZ\":-650,\"construction\":"
+                + "{\"linked\":\"arche_test\",\"status\":\"OK\",\"message\":\"\",\"placed\":\"arche_test\","
+                + "\"placedName\":\"Arche de test\",\"rotation\":90,\"linkable\":true,\"zone\":\"700,64,-651 → "
+                + "700,67,-649\",\"refusal\":\"\"},\"messages\":"));
+        String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
+        assertTrue(draft.contains("Arche de test"), "arche liée dans le relevé");
+        assertFalse(draft.contains("class=\"w-cols\""), "plus de colonne droite isolée");
+        String[] order = {"1 · Résumé et diagnostic", "2 · Vérifier et tester", "3 · Emplacement", "4 · Construction",
+                "5 · Téléportation et arrivée", "6 · Règles appliquées par le serveur", "7 · Messages et avertissement",
+                "8 · Nom et suppression"};
+        int at = -1;
+        for (String title : order) {
+            int next = draft.indexOf(title);
+            assertTrue(next > at, "numérotation continue, dans l'ordre : " + title);
+            at = next;
+        }
+        int tools = draft.indexOf("id=\"portal-tests\"");
+        assertTrue(tools < draft.indexOf("id=\"portal-verify\"") && draft.indexOf("id=\"portal-verify\"")
+                < draft.indexOf("id=\"portal-simulate\"") && draft.indexOf("id=\"portal-simulate\"")
+                < draft.indexOf("id=\"portal-location\""), "Vérifier et Simuler regroupés dans un seul bloc");
+        assertTrue(draft.indexOf("value=\"portal.enable\"") < tools, "activation dans le résumé");
+        for (String editor : List.of("Modifier la zone d'activation", "Modifier l'arrivée",
+                "Modifier les conditions d'accès", "Modifier les messages et l'avertissement", "Renommer")) {
+            assertTrue(draft.contains("<summary>" + Icons.icon("edit") + Http.esc(editor) + "</summary>"),
+                    "formulaire replié : " + editor);
+        }
+        assertFalse(draft.contains("<details class=\"p-edit\" open"), "aucun formulaire ouvert par défaut");
+        String wild = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=hub_to_wild").body();
+        assertFalse(wild.contains("<summary>" + Icons.icon("edit") + "Modifier la zone"), "portail actif : rien à déplier");
+        assertTrue(wild.contains("Désactiver le portail avant de déplacer"));
+    }
+
     @Test
     void theConstructionBlockOffersToLinkThePlacedArchWithoutActivating() throws Exception {
         start();
         login();
         runAction("portal.list", RELEVE_568);
         String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
-        assertTrue(draft.contains("2 · Construction") && draft.contains("3 · Téléportation"), "blocs numérotés");
+        assertTrue(draft.contains("4 · Construction") && draft.contains("5 · Téléportation et arrivée")
+                && draft.contains("7 · Nom et suppression"), "blocs numérotés");
         assertTrue(draft.contains("Arche de test") && draft.contains("rotation 90°"), "arche posée");
         assertTrue(draft.contains("700,64,-651 → 700,67,-649"), "zone que donnerait « Lier »");
         assertTrue(draft.contains("value=\"portal.building.link\""), "formulaire Lier");

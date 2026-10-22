@@ -579,6 +579,10 @@ class ContentPackImportTest {
                         accueil:
                           speaker: "Mineur"
                           text: "Bonjour."
+                          choices:
+                            - text: "Au revoir."
+                              actions:
+                                - type: CLOSE
                 """));
 
         assertEquals(3, a.writing());

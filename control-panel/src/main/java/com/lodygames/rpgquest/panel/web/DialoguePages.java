@@ -447,7 +447,8 @@ public final class DialoguePages {
         }
 
         if (!e.notice().isEmpty()) {
-            sb.append(Ui.banner(e.noticeTone(), Http.esc(e.notice())));
+            boolean noExit = "err".equals(e.noticeTone()) && !noExitNotice(d).isEmpty();
+            sb.append(Ui.banner(e.noticeTone(), Http.esc(e.notice()) + (noExit ? " " + endHelpLink() : "")));
         }
         if (!e.readOnly().isEmpty()) {
             sb.append(Ui.banner("warn", Http.esc(e.readOnly())));
@@ -668,7 +669,12 @@ public final class DialoguePages {
         sb.append("<h3 class=\"dlg-replies-h\">Le joueur peut répondre…</h3>");
         sb.append(hidden(DialogueForm.node(i, "c_count"), String.valueOf(node.choices.size())));
         if (node.choices.isEmpty()) {
-            sb.append("<p class=\"muted dlg-noreply\">Aucune réponse : la conversation s'arrête après cette réplique.</p>");
+            // Issue #730 : le jeu refuse une réplique sans réponse ; l'ancien texte promettait
+            // le contraire (« la conversation s'arrête »).
+            sb.append("<p class=\"dlg-noreply tone-warn\">").append(Icons.icon("warning"))
+                    .append("Cette réplique n'a pas encore de réponse. Le jeu en demande au moins une : cliquez ")
+                    .append("« Ajouter une réponse » — elle termine la conversation, sauf si vous choisissez une ")
+                    .append("autre suite dans « Ensuite… ». ").append(endHelpLink()).append("</p>");
         }
         sb.append("<ol class=\"dlg-replies\">");
         for (int j = 0; j < node.choices.size(); j++) {
@@ -1350,8 +1356,35 @@ public final class DialoguePages {
         return -1;
     }
 
+    /** Issue #730 : l'explication « Terminer une conversation » du centre de documentation. */
+    public static final String END_HELP_HREF = "/docs/dialogues#terminer-une-conversation";
+
+    static String endHelpLink() {
+        return "<a href=\"" + END_HELP_HREF + "\" target=\"_blank\" rel=\"noopener\">Comment terminer une conversation ?</a>";
+    }
+
+    /**
+     * Issue #730 — le refus d'enregistrer un dialogue dont une réplique n'a aucune réponse, nommée
+     * comme dans l'éditeur (« la réplique 2 »), ou vide si toutes en ont une.
+     */
+    public static String noExitNotice(DialogueDraft d) {
+        List<String> empty = com.lodygames.rpgquest.panel.content.DialogueValidator.nodesWithoutChoice(d);
+        if (empty.isEmpty()) {
+            return "";
+        }
+        String id = empty.get(0);
+        String which = id.equals(d.start) ? "le début de la conversation" : "la réplique " + DialogueForm.number(d, id);
+        String more = empty.size() > 1 ? " (et " + (empty.size() - 1) + " autre(s))" : "";
+        return "Enregistrement impossible : " + which + more + " n'a pas de sortie. Ajoutez une réponse qui termine "
+                + "la conversation.";
+    }
+
     /** Le message du validateur, dit sans jargon. */
     static String friendly(String message, String field) {
+        if (field.endsWith(".choices") && message.contains("aucun choix")) {
+            return "Cette réplique n'a pas de sortie : cliquez « Ajouter une réponse » (elle termine la conversation), "
+                    + "puis écrivez ce que dit le joueur.";
+        }
         if (field.endsWith(".text") && message.contains("obligatoire")) {
             return "Écrivez ce que dit le personnage.";
         }

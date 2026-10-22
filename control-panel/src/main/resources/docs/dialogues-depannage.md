@@ -197,6 +197,33 @@ Le fichier n'apparaît plus dans **« fichiers rejetés »** et le dialogue appa
 
 ---
 
+## Réplique sans réponse
+
+### Ce que cela signifie
+
+Une réplique (un nœud du fichier) n'a **aucune réponse** (`choices` vide ou absent). Le serveur
+refuse alors tout le dialogue : `nodes.r2: « choices » est obligatoire et doit contenir au moins un choix`.
+
+### Pourquoi il faut corriger
+
+Le dialogue ne se charge pas : les joueurs gardent l'ancienne version, ou n'en ont aucune.
+
+### Comment corriger
+
+Dans l'éditeur, sous la réplique signalée, cliquez **Ajouter une réponse** et laissez
+**Ensuite… → Terminer la conversation**. Voir [Terminer une conversation](/docs/dialogues#terminer-une-conversation).
+PlugAdmin refuse désormais d'enregistrer ou de mettre en jeu un tel dialogue, avant toute écriture.
+
+### Vérification
+
+L'éditeur enregistre sans message rouge, puis « Mettre en jeu » affiche « À jour en jeu ».
+
+### Référence technique
+
+Erreur `RELOAD_FAILED / INVALID_CONTENT` du rechargement ; contrôle panel `DialogueValidator` (#730).
+
+---
+
 ## Dialogue déclaré mais absent
 
 ### Ce que cela signifie

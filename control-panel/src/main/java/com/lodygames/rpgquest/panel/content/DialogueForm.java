@@ -31,6 +31,8 @@ public final class DialogueForm {
 
     /** Valeur de « Ensuite… » : la conversation se termine. */
     public static final String END = "__end";
+    /** Texte de la réponse posée d'office sur une réplique neuve (issue #730). */
+    public static final String GOODBYE = "Au revoir.";
     /** Valeur de « Ensuite… » : une nouvelle réplique, créée à l'enregistrement. */
     public static final String NEW = "__new";
 
@@ -223,6 +225,7 @@ public final class DialogueForm {
                     created.add(id);
                     DialogueDraft.Node fresh = new DialogueDraft.Node(id);
                     fresh.speaker = n.speaker;
+                    fresh.choices.add(goodbye());
                     extra.add(fresh);
                     c.next = id;
                 }
@@ -438,8 +441,17 @@ public final class DialogueForm {
         String id = freeNodeId(ids);
         DialogueDraft.Node n = new DialogueDraft.Node(id);
         n.speaker = d.nodes.isEmpty() ? "" : d.nodes.get(0).speaker;
+        n.choices.add(goodbye());
         d.nodes.add(n);
         return id;
+    }
+
+    /**
+     * Issue #730 — la réponse posée d'office sur une réplique neuve : le jeu exige au moins une
+     * réponse par réplique, et celle-ci termine la conversation. Elle se modifie ou se remplace.
+     */
+    static DialogueDraft.Choice goodbye() {
+        return new DialogueDraft.Choice(GOODBYE, "", true);
     }
 
     /**

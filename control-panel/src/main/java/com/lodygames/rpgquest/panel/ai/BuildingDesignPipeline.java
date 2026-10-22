@@ -276,9 +276,10 @@ public final class BuildingDesignPipeline {
                     project.buildingId());
             this.spent = run.spentCalls();
             this.references = referencesOf(project.id());
-            // « Repartir de zéro » n'hérite d'aucune erreur ; sinon, le journal du projet est la mémoire.
-            if (!run.fresh() && journal != null) {
-                this.memory = AttemptMemory.fromJournal(journal.store().events(BuildingAiJournal.SCOPE, project.id()));
+            // « Repartir de zéro » n'hérite d'aucune erreur ; sinon, les versions jugées du projet sont la mémoire.
+            if (!run.fresh()) {
+                this.memory = AttemptMemory.fromVersions(project, drafts.forProject(run.agentId(), project.id()),
+                        workbench);
             }
         }
 

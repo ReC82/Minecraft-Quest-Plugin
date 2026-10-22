@@ -657,6 +657,36 @@ class WorkshopFlowTest {
         assertTrue(drafts().find(draftId(withDraft)).isPresent(), "l'ancienne version reste");
     }
 
+    /**
+     * #747 — parcours réel du 22/10/2026 : la mémoire envoyée avec « Améliorer avec l'IA » ne contenait
+     * que les versions déjà améliorées une fois (relevées dans le journal). Elle couvre désormais toutes
+     * les versions jugées du projet, y compris celle qui n'a jamais été améliorée elle-même.
+     */
+    @Test
+    void theMemorySentWithAnImprovementCoversEveryJudgedVersionOfTheProject() throws Exception {
+        start();
+        String first = propose(createProject("Bibliothèque", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+        String page = get(first).body();
+        String restart = formAround(page, "value=\"restart\"");
+        String second = location(post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=restart&id="
+                + id(first) + "&draft=" + draftId(first) + "&provider=openai&request_token=" + token(restart)
+                + "&confirm=yes"));
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+
+        page = get(second).body();
+        String form = formAround(page, "value=\"correct\"");
+        post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=correct&id=" + id(second) + "&draft="
+                + draftId(second) + "&version=1&provider=openai&mode=repair&request_token=" + token(form));
+
+        assertEquals(3, aiCalls.get());
+        assertTrue(lastAiRequest.contains("MÉMOIRE DES TENTATIVES"), lastAiRequest);
+        assertTrue(lastAiRequest.contains("V-" + draftId(first).substring(0, 8)),
+                "la première version, jamais améliorée, fait partie de la mémoire");
+        assertTrue(lastAiRequest.contains("V-" + draftId(second).substring(0, 8) + " (version transmise)"));
+        assertTrue(lastAiRequest.contains("MODE : RÉPARATION TECHNIQUE"), "le mode choisi est respecté");
+    }
+
     // ---- Reprendre l'existant -------------------------------------------------------------------
 
     /** Le cas réel : la description de buildsite_0009 et ses deux brouillons de la Bibliothèque. */

@@ -8091,7 +8091,8 @@ Avec un compte **joueur normal** (ou un OP **sans** session `/rpgadmin bypass on
     s'il y en a. **Attendu** : aucun dépôt ni retrait.
 4.  Coffre personnel lié (salle des coffres, #105). **Attendu** : s'ouvre **normalement** sur le coffre
     personnel du joueur (non concerné par #675).
-5.  Établi, four (salle de préparation, #107) et coffre de l'Ender s'il y en a. **Attendu** : utilisables.
+5.  Coffre de l'Ender s'il y en a. **Attendu** : utilisable. (Établis et fours : fermés par défaut depuis
+    le retour du 22/10 — voir TC-401.)
 6.  Parler à un PNJ RPGQuest (Elias, Libraire → « Ouvrir la boutique », Lucien → « Ouvrir l'atelier »).
     **Attendu** : dialogues, boutique et atelier fonctionnent comme avant, y compris un PNJ Citizens de
     type villageois.
@@ -8106,7 +8107,7 @@ Avec un compte **joueur normal** (ou un OP **sans** session `/rpgadmin bypass on
 **Couverture automatisée** : `HubResourceLockListenerTest` (commerce refusé sur villageois et marchand
 ambulant, deux mains, un seul message, PNJ Citizens et Wild non concernés, bypass seulement en session ;
 coffres/tonneaux refusés sans perte de contenu ; fours/hauts fourneaux/fumoirs/alambics et inventaires du
-plugin libres ; pots et étagères ; transferts de hopper refusés dans le Hub seulement),
+plugin non concernés ; pots et étagères ; transferts de hopper refusés dans le Hub seulement),
 `RpgPermissionsMatrixTest` (le paquet testeur #64 n'a pas le nœud), `StorageLockedItemListenerTest`.
 
 ### TC-396 — Portails : construction liée — arche, zone de passage, liaison (issue #568, PENDING MANUAL VALIDATION)
@@ -8270,6 +8271,41 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 « Vendre »), `MerchantCatalogTradeTest` (vue unique `SELL` / `BUY` sans second onglet, indicateur sans
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
+
+### TC-401 — Hub : postes de travail fermés par défaut et exceptions (issue #675 retour du 22/10, PENDING MANUAL VALIDATION)
+
+Avec un compte **joueur normal** (ou un OP **sans** `/rpgadmin bypass on`), dans le monde Hub. Livré
+avec `hub.stations.exceptions: []` (aucune exception sur DEV). Aucun bloc, contenu ni joueur n'est
+modifié : c'est un verrou.
+
+1.  Clic droit sur un établi, un four, un haut fourneau, un fumoir, un alambic, une enclume, une meule, une
+    table de forgeron, un tailleur de pierre, un métier à tisser, une table de cartographie, une table
+    d'enchantement du Hub (ceux qui existent). **Attendu** : rien ne s'ouvre ; message gris « Les postes de
+    travail du Hub sont fermés. » au plus une fois toutes les 2 s. Tenir de la nourriture en cliquant :
+    on peut toujours manger.
+2.  Composteur, jukebox, chaudron, pot de fleurs s'il y en a. **Attendu** : rien ne se passe (« Ce bloc du
+    Hub n'est pas utilisable. »), la fleur reste dans son pot.
+3.  Lutrin avec un livre s'il y en a. **Attendu** : le livre se lit ; le bouton « Prendre » ne le donne pas.
+4.  Non-régression : coffre personnel lié (#105), coffre de l'Ender, Elias / Libraire « Ouvrir la
+    boutique » / Lucien « Ouvrir l'atelier » fonctionnent ; coffre de décor et villageois toujours fermés
+    (TC-397).
+5.  Wild puis monde des claims : établi et four. **Attendu** : utilisables comme avant.
+6.  (Admin) `/rpgadmin bypass on` avec `rpgquest.admin.hub.resources` → établi du Hub. **Attendu** :
+    s'ouvre ; `/rpgadmin bypass off` → refermé.
+7.  **Facultatif, uniquement si le propriétaire veut essayer une exception** (rien n'est créé par la
+    livraison) : ajouter dans `config.yml` du serveur une exception
+    `{ id: essai, stations: [CRAFTING_TABLE], blocks: [{ x: …, y: …, z: … }] }` sur un établi précis,
+    `/rpgadmin reload` → cet établi s'ouvre, un autre reste fermé. Avec en plus une condition
+    `QUEST_STATE` sur une quête terminée : l'établi s'ouvre après un court instant (vérification en
+    base) ; sur une quête non terminée : message de refus. Retirer l'exception ensuite.
+8.  Redémarrer DEV puis refaire 1. **Attendu** : toujours fermé.
+
+**Couverture automatisée** : `HubStationLockListenerTest` (10 tests : chaque poste fermé, un message, objet
+en main préservé, Wild/blocs ordinaires inchangés, blocs-ressources sans exception, exception par type, par
+bloc, conditions immédiates, niveau RPG, verdict asynchrone avec une seule réouverture, refus/erreur/joueur
+parti, bypass en session), `HubStationExceptionsYamlTest` (4 tests : liste vide livrée, lecture complète,
+refus lisibles). **Non couvert automatiquement** : l'ouverture réelle du menu par le serveur après un
+verdict asynchrone (API `MenuType` / inventaire du bloc) — étape 7.
 
 ### TC-400 — Fiche Portails recomposée : une colonne, résumé et tests en tête (issue #566, PENDING MANUAL VALIDATION)
 

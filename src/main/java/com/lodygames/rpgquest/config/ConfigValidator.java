@@ -903,7 +903,14 @@ public final class ConfigValidator {
             throw new ConfigValidationException(
                     "« hub.placement.max-attempts » doit être compris entre 1 et 100000 (trouvé : " + attempts + ").");
         }
-        return new HubConfig(world, guide.trim().toLowerCase(java.util.Locale.ROOT), radius, vertical, attempts);
+        java.util.List<com.lodygames.rpgquest.hub.HubStationException> stationExceptions;
+        try {
+            stationExceptions = com.lodygames.rpgquest.hub.HubStationExceptionsYaml.read(hub, world);
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException(e.getMessage());
+        }
+        return new HubConfig(world, guide.trim().toLowerCase(java.util.Locale.ROOT), radius, vertical, attempts,
+                stationExceptions);
     }
 
     private static TravelConfig validateTravel(ConfigurationSection section) throws ConfigValidationException {

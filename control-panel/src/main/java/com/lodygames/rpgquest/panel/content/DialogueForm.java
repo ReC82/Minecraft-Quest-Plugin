@@ -212,7 +212,7 @@ public final class DialogueForm {
         for (int i = 0; i < nodes; i++) {
             DialogueDraft.Node n = new DialogueDraft.Node(get(form, node(i, "id")));
             n.speaker = get(form, node(i, "speaker"));
-            n.text = get(form, node(i, "text"));
+            n.text = LineBreaks.normalize(get(form, node(i, "text")));
             int choices = count(form, node(i, "c_count"), MAX_CHOICES);
             for (int j = 0; j < choices; j++) {
                 if ("1".equals(form.get(reply(i, j, "del")))) {
@@ -517,7 +517,9 @@ public final class DialogueForm {
 
     /** Début lisible d'une réplique, sans balises : « Bonjour voyageur, tu… ». */
     public static String excerpt(String text, int max) {
-        String plain = text == null ? "" : text.replaceAll("<[^>]*>", "").replaceAll("\\s+", " ").trim();
+        // Issue #728 : un retour à la ligne (<br>) sépare deux mots, il ne les colle pas.
+        String plain = text == null ? "" : text.replaceAll("(?i)<(?:br|newline)/?>", " ")
+                .replaceAll("<[^>]*>", "").replaceAll("\\s+", " ").trim();
         return plain.length() <= max ? plain : plain.substring(0, Math.max(1, max - 1)).trim() + "…";
     }
 

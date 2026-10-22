@@ -26,6 +26,7 @@ class DialogueHelpLinksTest {
         assertResolves(DialoguePages.END_HELP_HREF);
         assertResolves("/docs/dialogues-depannage#" + Markdown.slug(DialoguePages.CONFLICT_HELP_TITLE));
         assertResolves(DialoguePages.GUIDE_HREF);
+        assertResolves(DialoguePages.LINE_BREAK_HELP_HREF);
     }
 
     @Test

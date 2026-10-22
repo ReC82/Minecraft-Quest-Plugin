@@ -1446,9 +1446,28 @@
    * ne peut pas être représenté par « une couleur + des cases » sans être aplati. On préfère
    * refuser le mode guidé plutôt que détruire du contenu existant.
    */
+  /**
+   * Issue #728 — retours à la ligne. En jeu, un vrai saut de ligne et les balises <br>, <br/>,
+   * <newline> donnent exactement le même résultat ; « </br> » s'affiche tel quel. Le mode guidé
+   * les montre tous comme un passage à la ligne (touche Entrée) et réécrit, à l'enregistrement,
+   * la forme que le texte utilisait déjà : un ancien texte n'est jamais modifié d'office.
+   */
+  var SF_BREAK_TAG = /<(?:br|newline)\/?>/gi;
+
+  function sfBreakToken(value) {
+    var m = /<(?:br|newline)\/?>/i.exec(value);
+    return m ? m[0] : "\n";
+  }
+
   function sfParse(raw) {
-    var value = String(raw == null ? "" : raw);
-    if (value === "") { return { uniform: true, text: "", color: "", decos: {} }; }
+    var value = String(raw == null ? "" : raw).replace(/\r\n?/g, "\n");
+    if (value === "") { return { uniform: true, text: "", color: "", decos: {}, br: "\n" }; }
+    var br = sfBreakToken(value);
+    value = value.replace(SF_BREAK_TAG, "\n");
+    // « </br> » n'est pas une balise pour le jeu : c'est du texte, affiché tel quel. On le met à
+    // l'abri le temps de l'analyse, puis on le rend à l'identique (l'avertissement du champ l'explique).
+    var literals = [];
+    value = value.replace(/<\/(?:br|newline)>/gi, function (m) { literals.push(m); return "\uE000"; });
     var color = "";
     var decos = {};
     var rest = value;
@@ -1479,12 +1498,14 @@
     if (rest.indexOf("<") !== -1 || rest.indexOf(">") !== -1) {
       return { uniform: false };                   // du balisage subsiste au milieu du texte
     }
-    return { uniform: true, text: rest, color: color, decos: decos };
+    rest = rest.replace(/\uE000/g, function () { return literals.shift(); });
+    return { uniform: true, text: rest, color: color, decos: decos, br: br };
   }
 
   /** Recompose une valeur MiniMessage à partir du mode guidé. */
-  function sfCompose(text, color, decos) {
+  function sfCompose(text, color, decos, br) {
     if (!text) { return ""; }
+    if (br && br !== "\n") { text = text.replace(/\r\n?|\n/g, br); }
     var open = "";
     var close = "";
     if (color) { open += "<" + color + ">"; close = "</" + color + ">" + close; }
@@ -1517,7 +1538,7 @@
     var decoBoxes = box.querySelectorAll("[data-sf-deco]");
     if (!guided || !textInput || !palette) { return; }
 
-    var state = { color: "", decos: {} };
+    var state = { color: "", decos: {}, br: "\n" };
     var mode = "guided";
 
     function paint() {
@@ -1526,7 +1547,9 @@
         swatches[s].classList.toggle("on", (swatches[s].getAttribute("data-sf-color") || "") === state.color);
       }
       if (!preview) { return; }
-      var shown = mode === "guided" ? textInput.value : String(store.value || "").replace(/<[^>]*>/g, "");
+      // Aperçu fidèle au jeu (#728) : retours à la ligne visibles, « </br> » laissé tel quel.
+      var shown = mode === "guided" ? textInput.value : String(store.value || "")
+        .replace(SF_BREAK_TAG, "\n").replace(/<(?!\/(?:br|newline)>)[^>]*>/gi, "");
       preview.textContent = shown || "— aperçu —";
       preview.style.color = mode === "guided" && state.color ? (SF_COLORS[state.color] || "") : "";
       preview.style.fontWeight = state.decos.bold && mode === "guided" ? "700" : "";
@@ -1539,7 +1562,7 @@
 
     function sync() {
       if (mode !== "guided") { return; }
-      store.value = sfCompose(textInput.value, state.color, state.decos);
+      store.value = sfCompose(textInput.value, state.color, state.decos, state.br);
       paint();
     }
 
@@ -1556,6 +1579,7 @@
         textInput.value = initial.text || "";
         state.color = initial.color || "";
         state.decos = initial.decos || {};
+        state.br = initial.br || "\n";
         for (var d = 0; d < decoBoxes.length; d++) {
           decoBoxes[d].checked = !!state.decos[decoBoxes[d].getAttribute("data-sf-deco")];
         }
@@ -1610,8 +1634,9 @@
           enterAdvanced("");
         } else {
           // Bascule explicite : on repart du texte débarrassé de son balisage.
-          var plain = String(store.value || "").replace(/<[^>]*>/g, "");
-          enterGuided({ text: plain, color: state.color, decos: state.decos });
+          var raw = String(store.value || "");
+          var plain = raw.replace(SF_BREAK_TAG, "\n").replace(/<[^>]*>/g, "");
+          enterGuided({ text: plain, color: state.color, decos: state.decos, br: sfBreakToken(raw) });
         }
       });
     }

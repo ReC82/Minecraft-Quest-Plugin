@@ -48,6 +48,40 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-22 - PlugAdmin : upload d'image de référence de l'Atelier (#283, TC-406)
+
+### Changement
+
+L'ajout d'une image de référence renvoyait la page nginx brute « 413 Request Entity Too Large » : le
+vhost PlugAdmin plafonnait tout corps de requête à 256k, alors que PlugAdmin accepte 4 Mio par image.
+`location = /buildings/workshop/image` accepte désormais 5 Mo (le reste du vhost reste à 256k) ; un
+dépassement est redirigé (303) sur le projet avec un message clair. PlugAdmin `0106726` : formats,
+taille et nombre affichés ; un refus revient toujours sur le projet (id/draft dans l'URL du formulaire).
+
+### Action serveur
+
+Aucune sur VeryGames (JAR inchangé). AWS : PlugAdmin redéployé (`scripts/plugadmin/deploy.sh`) et
+`/etc/nginx/sites-available/plugadmin` modifié (vhost PlugAdmin seul), aucune migration.
+
+### Sauvegarde préalable
+
+`/var/backups/nginx-plugadmin.20261022T194428.bak` ; ancienne app PlugAdmin sous `/opt/plugadmin/releases/`.
+
+### Déploiement
+
+Copie datée, insertion du bloc (identique à `scripts/plugadmin/nginx-plugadmin.conf`), `sudo nginx -t`
+réussi, `sudo systemctl reload nginx` ; puis `scripts/plugadmin/deploy.sh` après la CI verte de la fusion.
+
+### Validation
+
+Via `https://plugadmin.lodylands.com` : PNG 3,0 Mio ajouté et relu à l'identique ; 4,5 Mio refusé par
+PlugAdmin, 6,7 Mo refusé par nginx, tous deux redirigés sur le projet avec le message.
+
+### Rollback
+
+`sudo cp -p /var/backups/nginx-plugadmin.20261022T194428.bak /etc/nginx/sites-available/plugadmin &&
+sudo nginx -t && sudo systemctl reload nginx` ; `scripts/plugadmin/rollback.sh app` pour PlugAdmin.
+
 ## 2026-10-22 - Portail : relevé d'état agrégé VeryGames → AWS activé (#421, TC-327 C)
 
 ### Changement

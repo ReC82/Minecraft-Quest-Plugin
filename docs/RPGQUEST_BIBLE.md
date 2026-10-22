@@ -2302,6 +2302,7 @@ La conception automatique propose la même chose : case « Repartir de zéro ».
 | Stockage | `building_project_image` dans `control-panel.db` (mode 600, hors Git) ; doublons refusés (SHA-256) ; « Retirer » **efface** l'image |
 | Accès | `/buildings/workshop/image` : session et permission de l'Atelier, image servie seulement pour son projet, type détecté + `nosniff` |
 | Envoi | formulaire `multipart/form-data` lu en octets côté panel (aucun script, CSP inchangée) |
+| Limites d'envoi (22/10/2026) | **4 Mio par image** (PNG, JPEG, WebP, GIF), 4 images par projet, affichés sous le champ. Le proxy nginx accepte **5 Mo** sur cette seule route (`location = /buildings/workshop/image`, le reste du vhost reste à 256k) ; entre 4 Mio et 5 Mo PlugAdmin refuse lui-même, au-delà nginx renvoie (303) sur le projet avec le même message — jamais de page 413 brute. Le projet (`id`, `draft`) voyage dans l'URL du formulaire, donc un refus revient toujours sur ce projet, description intacte, rien d'enregistré |
 | Modèle incompatible | l'appel échoue et l'écran affiche l'erreur du fournisseur ; rien n'est écrit |
 
 Chaque image ajoute des jetons d'entrée à chaque appel : depuis #292, l'enveloppe de la conception

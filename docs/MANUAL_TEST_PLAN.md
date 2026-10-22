@@ -8461,3 +8461,24 @@ activation dans le résumé, formulaires repliés, portail actif sans formulaire
 formulaires #565–#569 inchangés et verts). Rendu local Playwright 1280 / 390 px (fiche active et brouillon avec
 conditions, messages et arche liée) : aucun débordement, aucune erreur console.
 
+### TC-406 — Atelier : ajouter une image de référence ordinaire depuis le domaine public (issue #283, PENDING MANUAL VALIDATION)
+
+PlugAdmin seul (`0106726`) + vhost nginx PlugAdmin. Aucune migration. **Gratuit** : aucun appel IA.
+Projet prêt sur DEV : « TEST #283 images de référence » (une planche de test de 3,0 Mio déjà jointe).
+
+1.  `https://plugadmin.lodylands.com` → Atelier → ouvrir un projet de test → « Images de référence ».
+    **Attendu** : sous le champ, « PNG, JPEG, WebP ou GIF. 4 Mio au plus par image, 4 images par projet ».
+2.  Ajouter une image ou une planche ChatGPT ordinaire (≤ 4 Mio). **Attendu** : retour sur le même
+    projet, « Image de référence ajoutée », vignette + nom + taille ; F5 : toujours là.
+3.  Ajouter un fichier de plus de 5 Mo. **Attendu** : pas de page « 413 Request Entity Too Large » ;
+    retour sur le même projet, encadré « Image trop lourde : 4 Mio au plus… », description intacte,
+    compteur d'images inchangé. Idem pour un fichier entre 4 et 5 Mo.
+4.  (Appel facturé, séparé) « Améliorer avec l'IA » ou « Recommencer depuis ma description » sur ce
+    projet, puis « Télécharger le journal IA » (TC-405). **Attendu** : la requête mentionne
+    « ⟦image I1 : image/png, … octets, sha256 … — pixels transmis… ⟧ » avec l'empreinte de l'image jointe.
+
+**Couverture automatisée** : `WorkshopFlowTest.anOversizedImageComesBackToItsProjectWithAClearMessage`,
+`aReferenceImageIsUploadedShownAndSentAsPixelsToTheAi` (pixels base64 dans la requête), `AiTraceTest`.
+**Vérifié par Claude le 22/10/2026 via le domaine public** (curl, session réelle) : 3,0 Mio → ajoutée,
+relue octet pour octet (SHA-256 identique) ; 4,5 Mio → refus PlugAdmin sur le projet ; 6,7 Mo → refus nginx
+redirigé sur le projet.

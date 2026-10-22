@@ -305,13 +305,11 @@ class ContentPublishServiceTest {
     // ---- Échecs, et ce qu'ils ne doivent PAS prétendre ------------------------------------------
 
     /**
-     * Le rechargement échoue : le fichier EST écrit, et le résultat doit le dire.
-     *
-     * <p>Prétendre que rien n'a été fait serait pire que l'échec, parce que l'administrateur
-     * chercherait au mauvais endroit.</p>
+     * Issue #731 : le rechargement échoue sur une ressource NOUVELLE — jamais un succès, et DEV ne
+     * garde pas un fichier que le jeu a refusé : il est retiré, et le message le dit.
      */
     @Test
-    void aFailedReloadIsNotASuccessAndSaysTheFileIsAlreadyWritten() {
+    void aFailedReloadIsNotASuccessAndWithdrawsANewFile() {
         applier.reloadFails = true;
 
         ContentPublishService.PublishOutcome result = publish(YAML_V1, "");
@@ -319,9 +317,66 @@ class ContentPublishServiceTest {
         assertFalse(result.ok());
         assertEquals("RELOAD_FAILED", result.code());
         assertFalse(result.synchronized_(), "jamais Synchronisé sans preuve");
-        assertTrue(result.message().contains("écrit sur DEV"), result.message());
-        assertTrue(Files.isRegularFile(questFile()), "le fichier est bien là");
-        assertEquals(ContentPublishStore.sha256Of(YAML_V1), result.devShaAfter());
+        assertTrue(result.message().contains("Rien n'a été mis en jeu"), result.message());
+        assertFalse(Files.exists(questFile()), "le fichier refusé ne reste pas sur DEV");
+        assertEquals("", result.devShaAfter());
+    }
+
+    /**
+     * Issue #731 : rechargement refusé sur une ressource EXISTANTE — l'ancien texte est remis, à
+     * l'octet près, l'empreinte DEV revient à celle d'avant, et la sauvegarde reste disponible.
+     */
+    @Test
+    void aFailedReloadPutsTheExistingDevFileBack() throws Exception {
+        Files.writeString(questFile(), YAML_V1);
+        String before = ContentPublishStore.sha256Of(YAML_V1);
+        applier.reloadFails = true;
+
+        ContentPublishService.PublishOutcome result = publish(YAML_V2, before);
+
+        assertFalse(result.ok());
+        assertEquals("RELOAD_FAILED", result.code());
+        assertEquals(YAML_V1, Files.readString(questFile()));
+        assertEquals(before, result.devShaBefore());
+        assertEquals(before, result.devShaAfter(), "DEV est revenu à la référence connue du panel");
+        assertFalse(result.backupPath().isEmpty(), "la sauvegarde prise avant écriture est gardée");
+        assertTrue(result.message().contains("remis dans son état d'avant"), result.message());
+    }
+
+    /**
+     * Issue #731, parcours du propriétaire : une publication refusée, puis la correction publiée
+     * avec la MÊME empreinte attendue — elle passe, sans conflit et sans rien relire.
+     */
+    @Test
+    void aCorrectionAfterARefusedPublishIsNotAConflict() throws Exception {
+        Files.writeString(questFile(), YAML_V1);
+        String before = ContentPublishStore.sha256Of(YAML_V1);
+        applier.reloadFails = true;
+        assertEquals("RELOAD_FAILED", publish(YAML_V2, before).code());
+
+        applier.reloadFails = false;
+        applier.pending.add("rpgquest:test_publish_quest");
+        ContentPublishService.PublishOutcome fixed = publish(YAML_V2, before);
+
+        assertTrue(fixed.ok(), fixed.message());
+        assertEquals("PUBLISHED", fixed.code());
+        assertEquals(YAML_V2, Files.readString(questFile()));
+    }
+
+    /** La vraie modification concurrente reste refusée : la reprise ne lève pas la protection. */
+    @Test
+    void aRealConcurrentChangeAfterARefusedPublishIsStillAConflict() throws Exception {
+        Files.writeString(questFile(), YAML_V1);
+        String before = ContentPublishStore.sha256Of(YAML_V1);
+        applier.reloadFails = true;
+        publish(YAML_V2, before);
+        Files.writeString(questFile(), YAML_V1 + "# modifié à la main\n");
+
+        applier.reloadFails = false;
+        ContentPublishService.PublishOutcome result = publish(YAML_V2, before);
+
+        assertEquals("CONFLICT", result.code());
+        assertEquals(YAML_V1 + "# modifié à la main\n", Files.readString(questFile()), "rien n'est écrasé");
     }
 
     /** Issue #371 : la référence fautive exacte et la famille requise voyagent jusqu'au panel. */

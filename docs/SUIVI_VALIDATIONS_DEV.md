@@ -304,3 +304,19 @@ Le propriétaire autorise le **développement de l'outil de création de mondes*
 ## Confirmation propriétaire #625 — 21/10/2026
 
 **Décision définitive :** [#625](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/625) — l'**Acte de propriété** est bien un **objet permanent lié au joueur** : son stockage est interdit dans tous les mondes et dans les contenants/transferts pertinents, au même titre que le **Journal des quêtes** et la **Pierre de retour**. La classification `registerStorageLocked` déjà livrée par la PR #696 / JAR `2864105d` est **confirmée** ; ne pas la retirer. **Rune de rappel consommable** et objets ordinaires non soumis à cette règle. Aucune modification/inventaire/coffre réel ni test autonome autorisés par cette confirmation documentaire. **TC-390 PENDING MANUAL VALIDATION**, ticket OPEN jusqu'au test propriétaire après démarrage DEV.
+
+
+## Autorisation propriétaire #135 — 22/10/2026 : préparation des 600 noms et plan de renommage
+
+**Décision explicite du propriétaire :** autoriser `lqorch` à **préparer** (documents, catalogue candidat, format d'import, contrôles de qualité et de doublons, tests isolés et éventuellement code inerte non activé) l'ajout des **600 noms de waypoints déjà proposés**, ainsi qu'un **plan de renommage** des waypoints existants au nom générique « Avant-poste N ». **Aucune application effective** de ces noms sur DEV n'est autorisée à ce stade.
+
+**Livrables attendus avant nouveau feu vert :**
+1. Présenter le fichier candidat des 600 noms, sa provenance dans `docs/waypoints/`, le format prévu et l'analyse des doublons, collisions, longueurs, caractères, biomes et règles de déduplication ; préciser s'il s'agit de 600 noms nouveaux ou d'un catalogue total de 600.
+2. Proposer l'import depuis PlugAdmin **en mode aperçu / simulation uniquement**, avec nombre de noms valides, rejetés, déjà présents, et plan de rollback, sans toucher au catalogue actif. Si une interface/code est préparée, la laisser non exécutée sur les données réelles.
+3. Produire un **inventaire en lecture seule** des waypoints « Avant-poste N » (identifiants stables, monde, biome, noms actuellement attribués), puis un tableau de correspondance **proposé**, soumis à validation ligne par ligne ou par lot explicite ; garantir que leurs IDs, coordonnées, bornes, découvertes et voyages restent intacts.
+4. Proposer une règle pour les futurs waypoints, et un seuil d'alerte du stock, sans activer le nouveau catalogue avant accord.
+5. Documenter le chemin de validation propriétaire et les contrôles de non-régression. Tests automatiques sur fixtures isolées permis ; aucun appel IA payant.
+
+**Interdictions absolues sans une nouvelle autorisation du propriétaire :** aucun **import ou activation du catalogue** sur DEV, aucune écriture dans le registre actif des noms, **aucun renommage ou changement d'affichage des waypoints existants**, aucune génération/attribution effective de nouveau nom, aucune création ou modification de waypoint/borne, aucune modification des données de joueur, découvertes, destinations ou mondes. Pas de déploiement qui change le comportement de nommage réel.
+
+**Gouvernance :** priorité **NORMALE**, `lqorch` peut placer la **préparation** en READY après vérification des dépendances ; la mise en application reste **WAITING_OWNER**. Ticket **OPEN** jusqu'à validation ultérieure.

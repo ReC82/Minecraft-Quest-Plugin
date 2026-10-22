@@ -129,6 +129,12 @@ public final class ActionsPages {
     }
 
     public static String list(List<AgentActionRow> all, List<Refusal> refusals, Query q, Instant now) {
+        return list(all, refusals, q, now, PlayerNames.EMPTY);
+    }
+
+    /** @param names pseudos connus ({@code player.catalog}) : la cible joueur s'affiche par son pseudo */
+    public static String list(List<AgentActionRow> all, List<Refusal> refusals, Query q, Instant now,
+                              PlayerNames names) {
         if (q.refused()) {
             return refusedList(refusals, q, now);
         }
@@ -136,7 +142,10 @@ public final class ActionsPages {
         Set<ActionView.Domain> present = new LinkedHashSet<>();
         for (AgentActionRow a : all) {
             present.add(ActionView.Domain.of(a.type()));
-            if (matches(a, q)) {
+            if (ActionView.targetsPlayer(a.type())) {
+                present.add(ActionView.Domain.PLAYERS);
+            }
+            if (matches(a, q, names)) {
                 filtered.add(a);
             }
         }
@@ -158,18 +167,18 @@ public final class ActionsPages {
                     ? "Aucune action ne correspond à ces critères."
                     : "Aucune action sur cette page."));
         } else {
-            sb.append(desktopTable(pageRows, now, q));
-            sb.append(mobileCards(pageRows, now, q));
+            sb.append(desktopTable(pageRows, now, q, names));
+            sb.append(mobileCards(pageRows, now, q, names));
         }
         sb.append(pagination(q, page, pages));
         return sb.toString();
     }
 
-    private static boolean matches(AgentActionRow a, Query q) {
+    private static boolean matches(AgentActionRow a, Query q, PlayerNames names) {
         if (q.group() != null && ActionView.Group.of(a.status()) != q.group()) {
             return false;
         }
-        if (q.domain() != null && ActionView.Domain.of(a.type()) != q.domain()) {
+        if (q.domain() != null && !q.domain().includes(a.type())) {
             return false;
         }
         if (q.search() == null || q.search().isBlank()) {
@@ -180,7 +189,7 @@ public final class ActionsPages {
         hay.append(a.type()).append(' ')
                 .append(ActionView.humanLabel(a.type())).append(' ')
                 .append(ActionView.Domain.of(a.type()).label()).append(' ')
-                .append(ActionView.target(a)).append(' ')
+                .append(ActionView.target(a, names).searchText()).append(' ')
                 .append(nz(a.resultMessage())).append(' ')
                 .append(nz(a.resultValue())).append(' ')
                 .append(nz(a.createdBy())).append(' ')
@@ -287,14 +296,14 @@ public final class ActionsPages {
      * par {@code panel.js} ({@code data-href}), et « Voir le détail » le dit en toutes lettres.
      * Avant, seules les cartes mobiles et les notifications menaient au détail.
      */
-    private static String desktopTable(List<AgentActionRow> rows, Instant now, Query q) {
+    private static String desktopTable(List<AgentActionRow> rows, Instant now, Query q, PlayerNames names) {
         StringBuilder sb = new StringBuilder(
                 "<div class=\"table-responsive d-none d-md-block\"><table class=\"table table-hover align-middle actions-table\">");
         sb.append("<thead><tr><th>Date</th><th>Domaine</th><th>Action</th><th>Cible</th>"
                 + "<th>Statut</th><th>Résultat</th><th>Acteur</th><th><span class=\"visually-hidden\">"
                 + "Détail</span></th></tr></thead><tbody>");
         for (AgentActionRow a : rows) {
-            String tgt = ActionView.target(a);
+            ActionView.Target tgt = ActionView.target(a, names);
             String res = ActionView.shortResult(a);
             String href = detailHref(a, q);
             sb.append("<tr class=\"act-row\" data-href=\"").append(Http.esc(href)).append("\">")
@@ -304,7 +313,7 @@ public final class ActionsPages {
                     .append("<td><a class=\"act-label\" href=\"").append(Http.esc(href)).append("\">")
                     .append(Http.esc(ActionView.humanLabel(a.type())))
                     .append("</a> ").append(Ui.id(a.type())).append("</td>")
-                    .append("<td>").append(tgt.isEmpty() ? "<span class=\"muted\">—</span>" : Http.esc(tgt)).append("</td>")
+                    .append("<td>").append(tgt.isEmpty() ? "<span class=\"muted\">—</span>" : tgt.html()).append("</td>")
                     .append("<td>").append(ActionView.statusBadge(a.status())).append("</td>")
                     .append("<td class=\"act-res\">").append(res.isEmpty() ? "<span class=\"muted\">—</span>" : Http.esc(res)).append("</td>")
                     .append("<td class=\"muted nowrap\">").append(Http.esc(nz(a.createdBy()))).append("</td>")
@@ -316,10 +325,10 @@ public final class ActionsPages {
         return sb.append("</tbody></table></div>").toString();
     }
 
-    private static String mobileCards(List<AgentActionRow> rows, Instant now, Query q) {
+    private static String mobileCards(List<AgentActionRow> rows, Instant now, Query q, PlayerNames names) {
         StringBuilder sb = new StringBuilder("<div class=\"d-md-none actions-cards\">");
         for (AgentActionRow a : rows) {
-            String tgt = ActionView.target(a);
+            ActionView.Target tgt = ActionView.target(a, names);
             String res = ActionView.shortResult(a);
             sb.append("<a class=\"card actions-card\" href=\"").append(Http.esc(detailHref(a, q))).append("\">")
                     .append("<div class=\"card-body\">")
@@ -327,7 +336,7 @@ public final class ActionsPages {
                     .append(ActionView.statusBadge(a.status())).append("</div>")
                     .append("<div class=\"ac-title\">").append(Http.esc(ActionView.humanLabel(a.type()))).append("</div>");
             if (!tgt.isEmpty()) {
-                sb.append("<div class=\"ac-tgt\">").append(Http.esc(tgt)).append("</div>");
+                sb.append("<div class=\"ac-tgt\">").append(tgt.compactHtml()).append("</div>");
             }
             if (!res.isEmpty()) {
                 sb.append("<div class=\"ac-res muted\">").append(Http.esc(res)).append("</div>");
@@ -376,6 +385,11 @@ public final class ActionsPages {
 
     /** @param backHref la liste d'où l'on vient (#266), déjà passée par {@link #safeBack} */
     public static String detail(AgentActionRow a, Instant now, String contextHtml, String backHref) {
+        return detail(a, now, contextHtml, backHref, PlayerNames.EMPTY);
+    }
+
+    public static String detail(AgentActionRow a, Instant now, String contextHtml, String backHref,
+                                PlayerNames names) {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader(ActionView.Domain.of(a.type()).icon(), ActionView.humanLabel(a.type()),
                 ActionView.Domain.of(a.type()).label() + " · " + ActionView.relativeTime(a.createdAt(), now),
@@ -389,7 +403,8 @@ public final class ActionsPages {
         sb.append("<dl class=\"detail-dl\">");
         row(sb, "Statut", ActionView.statusBadge(a.status()));
         row(sb, "Type technique", Ui.id(a.type()));
-        row(sb, "Cible", esc(ActionView.target(a), "—"));
+        ActionView.Target tgt = ActionView.target(a, names);
+        row(sb, "Cible", tgt.isEmpty() ? "<span class=\"muted\">—</span>" : tgt.html());
         row(sb, "Acteur", esc(a.createdBy(), "—"));
         row(sb, "Créée", esc(a.createdAt().toString(), "—"));
         row(sb, "Transmise", a.deliveredAt() == null ? "<span class=\"muted\">—</span>" : Http.esc(a.deliveredAt().toString()));

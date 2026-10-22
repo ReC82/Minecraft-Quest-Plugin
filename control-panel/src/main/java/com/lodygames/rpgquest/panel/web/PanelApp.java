@@ -96,6 +96,8 @@ public final class PanelApp {
     private final DocsPages docsPages = new DocsPages(DocLibrary.load());
     private final HomePages homePages = new HomePages(permissions);
     private final NotificationCenter notifications;
+    /** Pseudos connus des joueurs ciblés par les actions (retour du 22/10 sur #93). */
+    private final PlayerNameDirectory playerNames;
     private final ContentWorkspace contentWorkspace;
     private final com.lodygames.rpgquest.panel.ai.AiProviderRegistry aiProviders =
             new com.lodygames.rpgquest.panel.ai.AiProviderRegistry();
@@ -207,8 +209,9 @@ public final class PanelApp {
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.agentPages.useWorkshopProjects(planProjects);
+        this.playerNames = new PlayerNameDirectory(agentStore, () -> config.agents().defaultAgentId());
         this.notifications = new NotificationCenter(agentStore, agentRegistry,
-                new NotificationReadStore(config.panelDbPath()));
+                new NotificationReadStore(config.panelDbPath()), playerNames);
         this.contentEditor = new ContentEditorPages(contentWorkspace);
         // Issue #194 : suppression de contenu, aperçu + confirmation. Partage l'espace de travail
         // et le catalogue source, donc voit exactement ce que l'éditeur voit.
@@ -4562,6 +4565,7 @@ public final class PanelApp {
             return;
         }
         Instant now = Instant.now();
+        PlayerNames names = playerNames.current();
         List<AgentActionRow> actions = agentStore.recentActions(agentId, 20);
         List<Map<String, Object>> items = new java.util.ArrayList<>();
         int pending = 0;
@@ -4590,10 +4594,10 @@ public final class PanelApp {
             item.put("label", ActionView.humanLabel(a.type()));
             item.put("domain", ActionView.Domain.of(a.type()).slug());
             item.put("group", group.slug());
-            item.put("target", ActionView.target(a));
+            item.put("target", ActionView.target(a, names).primary());
             item.put("resultShort", ActionView.shortResult(a));
             item.put("age", ActionView.relativeTime(a.createdAt(), now));
-            item.put("notifHtml", ActionView.notifItemHtml(a, now));
+            item.put("notifHtml", ActionView.notifItemHtml(a, now, names));
             items.add(item);
         }
         Map<String, Object> root = new LinkedHashMap<>();
@@ -4633,7 +4637,7 @@ public final class PanelApp {
             notifications.markRead(session.userId(), row.get().id());
             Http.html(exchange, 200, renderPage("Action", session, "/actions",
                     ActionsPages.detail(row.get(), now, planContext(session, row.get()),
-                            ActionsPages.safeBack(Http.query(exchange).get("back")))));
+                            ActionsPages.safeBack(Http.query(exchange).get("back")), playerNames.current())));
             return;
         }
         if (!path.equals("/actions") && !path.equals("/actions/")) {
@@ -4646,7 +4650,7 @@ public final class PanelApp {
                 .filter(e -> "agent.action.create".equals(e.action()) && "DENIED".equals(e.result()))
                 .map(e -> ActionsPages.Refusal.of(e.ts(), e.actor(), e.target(), e.details()))
                 .toList();
-        String body = ActionsPages.list(allRecentActions(500), refusals, query, now);
+        String body = ActionsPages.list(allRecentActions(500), refusals, query, now, playerNames.current());
         Http.html(exchange, 200, renderPage("Historique des actions", session, "/actions", body));
     }
 
@@ -4791,7 +4795,7 @@ public final class PanelApp {
         String toastId = query.get("toast");
         if (toastId != null && !toastId.isBlank()) {
             return agentStore.action(toastId.trim())
-                    .map(a -> ActionView.toastHtml(a, Instant.now()))
+                    .map(a -> ActionView.toastHtml(a, Instant.now(), playerNames.current()))
                     .orElse("");
         }
         return "";

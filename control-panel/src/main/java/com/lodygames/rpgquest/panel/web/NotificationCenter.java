@@ -35,10 +35,19 @@ public final class NotificationCenter {
         this(store, registry, null);
     }
 
+    /** Pseudos connus des joueurs ciblés (retour du 22/10) ; {@code null} = cible brute. */
+    private final PlayerNameDirectory names;
+
     public NotificationCenter(AgentStore store, AgentRegistry registry, NotificationReadStore reads) {
+        this(store, registry, reads, null);
+    }
+
+    NotificationCenter(AgentStore store, AgentRegistry registry, NotificationReadStore reads,
+                       PlayerNameDirectory names) {
         this.store = store;
         this.registry = registry;
         this.reads = reads;
+        this.names = names;
     }
 
     /**
@@ -131,12 +140,13 @@ public final class NotificationCenter {
         int badge = badgeCount(recent, now, read);
 
         StringBuilder items = new StringBuilder();
+        PlayerNames known = names == null ? PlayerNames.EMPTY : names.current();
         int shown = 0;
         for (AgentActionRow a : recent) {
             if (shown++ >= MENU_SIZE) {
                 break;
             }
-            items.append(ActionView.notifItemHtml(a, now));
+            items.append(ActionView.notifItemHtml(a, now, known));
         }
         if (shown == 0) {
             items.append("<p class=\"notif-empty\">Aucune action pour le moment.</p>");

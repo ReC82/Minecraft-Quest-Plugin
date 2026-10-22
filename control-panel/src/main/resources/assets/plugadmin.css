@@ -691,6 +691,9 @@ a.home-tile:hover .home-tile-cta{opacity:1}
 .ac-top{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .ac-title{font-weight:650;font-size:14px}
 .ac-tgt{font-size:12.5px;color:var(--txt-2);margin-top:2px}
+/* #93 (22/10) : pseudo du joueur ciblé en premier, UUID en secondaire, jamais en débordement. */
+.pa-player{font-weight:600}
+.pa-uuid{display:block;font-size:11px;font-family:var(--bs-font-monospace);overflow-wrap:anywhere}
 .ac-res{font-size:12px;margin-top:4px;overflow-wrap:anywhere}
 .ac-meta{font-size:11.5px;margin-top:6px}
 

@@ -1,0 +1,28 @@
+{
+  "_comment": "#428 — copie de référence : web-api/src/main/resources/portal/material-map.json fait foi — correspondance material/entité Paper -> icône lq-*. Ordre : exact, suffixe, repli.",
+  "exact": {
+    "BREAD": "bread", "PUMPKIN_PIE": "pie", "CAKE": "pie", "COOKIE": "bread",
+    "POPPY": "flower", "DANDELION": "flower", "BLUE_ORCHID": "flower", "ALLIUM": "flower",
+    "CORNFLOWER": "flower", "OXEYE_DAISY": "flower", "LILY_OF_THE_VALLEY": "flower",
+    "APPLE": "apple", "GOLDEN_APPLE": "apple",
+    "AMETHYST_SHARD": "gem", "DIAMOND": "gem", "EMERALD": "gem", "LAPIS_LAZULI": "gem",
+    "POTION": "potion", "SPLASH_POTION": "potion", "LINGERING_POTION": "potion", "EXPERIENCE_BOTTLE": "xp",
+    "CHEST": "chest", "BARREL": "chest", "ENDER_CHEST": "chest",
+    "GRASS_BLOCK": "grass", "DIRT": "grass",
+    "MAP": "map", "FILLED_MAP": "map", "COMPASS": "waypoint", "LODESTONE": "waypoint",
+    "BOOK": "scroll", "WRITABLE_BOOK": "scroll", "WRITTEN_BOOK": "scroll", "PAPER": "scroll",
+    "GOLD_NUGGET": "coin", "GOLD_INGOT": "coin",
+    "ZOMBIE": "skull", "HUSK": "skull", "DROWNED": "skull", "SKELETON": "skull", "STRAY": "skull",
+    "WITHER_SKELETON": "skull", "SKELETON_SKULL": "skull",
+    "COD": "fish", "SALMON": "fish", "TROPICAL_FISH": "fish", "PUFFERFISH": "fish",
+    "COOKED_COD": "fish", "COOKED_SALMON": "fish", "FISHING_ROD": "fish",
+    "SPIDER": "spider", "CAVE_SPIDER": "spider", "SLIME": "slime", "MAGMA_CUBE": "slime",
+    "VILLAGER": "npc", "WANDERING_TRADER": "npc",
+    "ENDER_DRAGON": "boss", "WITHER": "boss", "ELDER_GUARDIAN": "boss", "WARDEN": "boss"
+  },
+  "suffix": {
+    "_SWORD": "sword", "_PICKAXE": "pickaxe", "_ORE": "ore",
+    "_LOG": "log", "_WOOD": "log", "_PLANKS": "log", "_TULIP": "flower"
+  },
+  "fallback": "unknown"
+}

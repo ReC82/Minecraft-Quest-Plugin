@@ -101,7 +101,7 @@ public final class NewsPageHandler implements ApiHandler {
 
     private static String list(List<NewsArticle> articles) {
         if (articles.isEmpty()) {
-            return "<p class=\"note\">Aucune actualité publiée pour le moment.</p>";
+            return PortalIcons.empty("scroll", "Aucune actualité publiée pour le moment.");
         }
         StringBuilder html = new StringBuilder();
         for (NewsArticle article : articles) {

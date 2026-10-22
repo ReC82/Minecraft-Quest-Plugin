@@ -24,6 +24,10 @@ public final class HomePageHandler implements ApiHandler {
 
     static final int LATEST_NEWS = 3;
     static final int PREVIEW = 3;
+    /** Les cinq façons de progresser, puis les quêtes (#428). */
+    private static final String HERO_ICONS = PortalIcons.icon("sword", 32) + PortalIcons.icon("pickaxe", 32)
+            + PortalIcons.icon("bread", 32) + PortalIcons.icon("fish", 32) + PortalIcons.icon("map", 32)
+            + PortalIcons.icon("scroll", 32);
 
     private final SnapshotStore store;
     private final NewsRepository news;
@@ -59,7 +63,7 @@ public final class HomePageHandler implements ApiHandler {
     }
 
     private String hero() {
-        return "<section class=\"hero\"><p><strong>" + Html.escape(site.title()) + "</strong> est un serveur "
+        return "<section class=\"hero\"><div class=\"lq-hero-icons\">" + HERO_ICONS + "</div><p><strong>" + Html.escape(site.title()) + "</strong> est un serveur "
                 + "Minecraft d'aventure : des quêtes à accomplir, des personnages à rencontrer, des villes à "
                 + "relier et cinq façons de progresser — combat, minage, agriculture, pêche et exploration.</p>"
                 + "<p>Pas besoin de compte pour suivre la vie du serveur ici.</p>"
@@ -69,7 +73,8 @@ public final class HomePageHandler implements ApiHandler {
 
     /** Carte « Le serveur » (#421) : rouge seulement pour un arrêt annoncé par le serveur lui-même. */
     private static String status(Map<String, Object> state) {
-        StringBuilder html = new StringBuilder("<section class=\"card\"><h2>Le serveur</h2>");
+        StringBuilder html = new StringBuilder("<section class=\"card\">")
+                .append(PortalIcons.heading("h2", "waypoint", "Le serveur"));
         ServerStatus status = ServerStatus.of(state);
         switch (status.kind()) {
             case ONLINE -> {
@@ -105,9 +110,10 @@ public final class HomePageHandler implements ApiHandler {
             }
         }
         String content = items.isEmpty()
-                ? "<p class=\"note\">Aucune saison ni aucun événement annoncé pour le moment.</p>"
+                ? PortalIcons.empty("trophy", "Aucune saison ni aucun événement annoncé pour le moment.")
                 : "<ul>" + items + "</ul>";
-        return "<section class=\"card\"><h2>Saison et événements</h2>" + content + "</section>";
+        return "<section class=\"card\">" + PortalIcons.heading("h2", "boss", "Saison et événements") + content
+                + "</section>";
     }
 
     private static String periodLine(String kind, Map<?, ?> period) {
@@ -119,9 +125,9 @@ public final class HomePageHandler implements ApiHandler {
 
     private String latestNews() {
         List<NewsArticle> latest = news.published().stream().limit(LATEST_NEWS).toList();
-        StringBuilder html = new StringBuilder("<h2>Dernières actualités</h2>");
+        StringBuilder html = new StringBuilder(PortalIcons.heading("h2", "scroll", "Dernières actualités"));
         if (latest.isEmpty()) {
-            return html.append("<p class=\"note\">Aucune actualité publiée pour le moment.</p>").toString();
+            return html.append(PortalIcons.empty("scroll", "Aucune actualité publiée pour le moment.")).toString();
         }
         for (NewsArticle article : latest) {
             html.append(NewsPageHandler.card(article, "h3"));
@@ -139,23 +145,23 @@ public final class HomePageHandler implements ApiHandler {
                         .append("</h3><p>").append(Html.escape(String.valueOf(announcement.get("body")))).append("</p></div>");
             }
         }
-        return html.isEmpty() ? "" : "<h2>Message du serveur</h2>" + html;
+        return html.isEmpty() ? "" : PortalIcons.heading("h2", "talk", "Message du serveur") + html;
     }
 
     private String boardsPreview(Map<String, Object> state) {
-        StringBuilder html = new StringBuilder("<h2>Classements</h2>");
+        StringBuilder html = new StringBuilder(PortalIcons.heading("h2", "trophy", "Classements"));
         if (!playerDataPublic) {
-            return html.append("<p class=\"note\">Les classements et les profils ouvriront quand les règles de "
-                    + "confidentialité auront été validées. <a href=\"/confidentialite\">En savoir plus</a></p>").toString();
+            return html.append(PortalIcons.empty("shield", "Les classements et les profils ouvriront quand les règles de "
+                    + "confidentialité auront été validées. <a href=\"/confidentialite\">En savoir plus</a>")).toString();
         }
         Map<String, List<Map<String, Object>>> boards =
                 LeaderboardsPageHandler.boards(PublicPlayerData.statistics(state.get("statistics")).get("lifetime"));
         if (boards.isEmpty()) {
-            return html.append("<p class=\"note\">Aucun classement disponible pour le moment.</p>").toString();
+            return html.append(PortalIcons.empty("trophy", "Aucun classement disponible pour le moment.")).toString();
         }
         html.append("<div class=\"grid\">");
-        boards.entrySet().stream().limit(2).forEach(board -> html.append("<section class=\"card\"><h3>")
-                .append(Html.escape(StatLabels.title(board.getKey()))).append("</h3>")
+        boards.entrySet().stream().limit(2).forEach(board -> html.append("<section class=\"card\">")
+                .append(PortalIcons.heading("h3", PortalIcons.forMetric(board.getKey()), StatLabels.title(board.getKey())))
                 .append(BoardView.render(board.getValue(), board.getKey(), PREVIEW)).append("</section>"));
         return html.append("</div><p><a href=\"/classements\">Tous les classements →</a></p>").toString();
     }

@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.webapi.http.AuthFilter;
 import com.lodygames.rpgquest.webapi.http.RateLimiter;
 import com.lodygames.rpgquest.webapi.http.RequestPipeline;
 import com.lodygames.rpgquest.webapi.news.NewsRepository;
+import com.lodygames.rpgquest.webapi.site.AssetHandler;
 import com.lodygames.rpgquest.webapi.site.HomePageHandler;
 import com.lodygames.rpgquest.webapi.site.InfoPageHandler;
 import com.lodygames.rpgquest.webapi.site.LeaderboardsPageHandler;
@@ -131,6 +132,8 @@ public final class HttpServerBootstrap {
         server.createContext("/api/", pipeline.wrap(true, new NotFoundHandler()));
 
         // Portail public (mission point 8) : jamais authentifié, jamais de connexion joueur (point 11).
+        server.createContext(AssetHandler.PREFIX,
+                pipeline.wrap(false, new AssetHandler()));
         server.createContext("/status", pipeline.wrap(false, new StatusPageHandler(snapshotStore, config.siteTitle())));
         server.createContext("/wiki", pipeline.wrap(false, new WikiPageHandler(snapshotStore, config.siteTitle())));
         server.createContext("/actualites", pipeline.wrap(false, new NewsPageHandler(news, site)));

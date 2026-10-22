@@ -1,5 +1,5 @@
 {
-  "_comment": "#428 phase 1 — correspondance material/entité Paper -> icône lq-*. Ordre : exact, suffixe, repli.",
+  "_comment": "#428 — copie de référence : web-api/src/main/resources/portal/material-map.json fait foi — correspondance material/entité Paper -> icône lq-*. Ordre : exact, suffixe, repli.",
   "exact": {
     "BREAD": "bread", "PUMPKIN_PIE": "pie", "CAKE": "pie", "COOKIE": "bread",
     "POPPY": "flower", "DANDELION": "flower", "BLUE_ORCHID": "flower", "ALLIUM": "flower",
@@ -14,6 +14,8 @@
     "GOLD_NUGGET": "coin", "GOLD_INGOT": "coin",
     "ZOMBIE": "skull", "HUSK": "skull", "DROWNED": "skull", "SKELETON": "skull", "STRAY": "skull",
     "WITHER_SKELETON": "skull", "SKELETON_SKULL": "skull",
+    "COD": "fish", "SALMON": "fish", "TROPICAL_FISH": "fish", "PUFFERFISH": "fish",
+    "COOKED_COD": "fish", "COOKED_SALMON": "fish", "FISHING_ROD": "fish",
     "SPIDER": "spider", "CAVE_SPIDER": "spider", "SLIME": "slime", "MAGMA_CUBE": "slime",
     "VILLAGER": "npc", "WANDERING_TRADER": "npc",
     "ENDER_DRAGON": "boss", "WITHER": "boss", "ELDER_GUARDIAN": "boss", "WARDEN": "boss"

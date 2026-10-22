@@ -232,6 +232,19 @@ données du snapshot (`com.lodygames.rpgquest.webapi.site.Html`). Ni paiement, n
 connexion joueur, ni modification de données à cette étape (mission point
 11) — ce sera l'objet d'une étape ultérieure.
 
+### Identité visuelle et icônes (#428)
+
+Habillage « RPG fantasy voxel » (variante B de `docs/design/428-icones/`) dans `PageLayout` : menu,
+titres, états vides et podium (or / argent / bronze) illustrés par des icônes pixel art **originales**
+(`site.PortalIcons`). Le sprite `web-api/src/main/resources/portal/lq-icons.svg` est la seule
+ressource statique du portail : `GET /assets/lq-icons.svg?v=<empreinte>` (`image/svg+xml`, cache
+un an `immutable`, `ETag`, 304 ; sans `?v`, une heure ; toute autre adresse sous `/assets/` → 404,
+autre méthode que GET/HEAD → 405). Aucune ressource externe, CSP nginx inchangée (`'self'`).
+`material-map.json` (même dossier) fait correspondre material / entité / métrique → icône : nom
+exact, suffixe (`_SWORD`, `_ORE`…), puis repli `unknown`. Régénération et règles :
+`docs/design/428-icones/README.md`. Pied de page : mention exigée par les Usage Guidelines Mojang
+(« NOT AN OFFICIAL MINECRAFT SERVICE… »).
+
 ## Mode dégradé
 
 Si `snapshot.json` est absent, illisible ou périmé (plus vieux que

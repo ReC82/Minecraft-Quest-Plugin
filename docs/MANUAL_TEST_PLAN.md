@@ -8290,6 +8290,32 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-411 — Portail public : nouvelle identité visuelle et icônes (issue #428 phase 2, PENDING MANUAL VALIDATION)
+
+Portail AWS seul (https://lodyquests.lodylands.com), aucun JAR, aucune migration, aucune donnée de joueur
+publiée (`player-data-public` reste `false`, les classements restent « pas encore publiés »). Navigateur seul,
+aucun test en jeu. Durée : 5 minutes. Acquis à ne pas régresser : TC-327 partie C (états du serveur).
+
+1.  **Ordinateur** : ouvrir l'accueil. **Attendu** : en-tête bois et or avec la gemme violette et
+    « LodyQuests », menu illustré (Accueil, Actualités, Classements, Joueurs, Infos & FAQ, Mon compte),
+    bandeau avec six icônes (épée, pioche, pain, poisson, carte, parchemin), cartes « Le serveur » et
+    « Saison et événements » encadrées, état du serveur toujours exact (« ● En ligne » + nombre de joueurs).
+2.  **Téléphone** (ou fenêtre étroite) : mêmes pages. **Attendu** : le menu passe sur plusieurs lignes, aucun
+    défilement horizontal, textes lisibles, boutons faciles à toucher.
+3.  Parcourir **Actualités, Classements, Infos & FAQ, Statut, Wiki**. **Attendu** : aucune image cassée,
+    états vides illustrés (parchemin, bouclier, trophée…), titres en serif doré.
+4.  **Pied de page** : « Site non officiel, sans lien avec Mojang ou Microsoft. Icônes pixel art originales du
+    projet. » puis « NOT AN OFFICIAL MINECRAFT SERVICE. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT. »
+5.  **Avis du propriétaire** : la direction retenue (variante B, RPG fantasy voxel) convient-elle ? Icônes à
+    redessiner ou à ajouter ? Réponse sur #428.
+
+**Couverture automatisée** : `PortalIconsTest` (sprite avec repli, toutes les icônes nommées dans les pages et
+dans `material-map.json` existent, exact → suffixe → repli, tailles 16/32/48 seulement, balisage décoratif
+versionné), `PublicPortalV1Test#iconSpriteIsServedLocallyWithLongCacheAndPagesUseIt` (sprite servi en local,
+cache, 304, 404, 405, podium, mention Mojang). Contrôle Playwright local sur données de démonstration fictives :
+8 pages × 1280 / 768 / 390 px, 0 px de débordement, 0 icône vide (captures
+`docs/design/428-icones/captures/phase2-portail/`). **Non couvert** : avis esthétique, lecteurs d'écran réels.
+
 ### TC-410 — Dialogues : aller à la ligne dans une réplique avec Entrée (issue #728, PENDING MANUAL VALIDATION)
 
 PlugAdmin seul, aucun JAR, aucune migration. **Ne pas modifier le dialogue de Musty** ni un PNJ réel : utiliser

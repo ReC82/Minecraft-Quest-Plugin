@@ -6354,6 +6354,18 @@ pseudo n'est publié (`player-data-public=false`).
     contient ni UUID, ni IP, ni position.
 8.  Téléphone (≈ 390 px) : bandeaux lisibles, aucun défilement horizontal.
 
+**C. Relevé d'état agrégé (actif sur DEV depuis le 22/10/2026, sans export nominatif)**
+
+Jeton dédié posé des deux côtés, `portal-snapshot.properties` sur DEV, `web-export.enabled: false`.
+
+9.  Serveur démarré : `/health` → `"heartbeat":"FRESH"`, `"server":"ONLINE"`, `lastUpdate` qui
+    avance toutes les 30 s ; `/` → « ● En ligne » et le **nombre** de joueurs connectés (se connecter :
+    le nombre passe à 1 sous 30 s) ; **aucun pseudo** nulle part ; `snapshot` reste `MISSING`.
+10. Arrêt du serveur depuis VeryGames : sous quelques secondes, « ● Hors ligne », bandeau « arrêt
+    annoncé par le serveur » ; au redémarrage, « ● En ligne » sous une minute.
+11. (optionnel, propriétaire) Canal coupé : après 2 minutes, « Informations non actualisées depuis
+    le … », jamais « hors ligne ». Rétablir et vérifier le retour à « ● En ligne ».
+
 ### TC-328 — Droits à récompense : remise unique en jeu (issue #422, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de #422 (migration V41), PlugAdmin à jour. Sur DEV seulement, avec un compte de

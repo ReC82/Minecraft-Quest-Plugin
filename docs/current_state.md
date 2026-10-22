@@ -367,9 +367,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   prive|public`, pages `/joueurs` et `/confidentialite` (#52–#57). **Hébergé sur AWS** depuis le
 >   15/10 (#52 : `lodyquests-portal.service`, `/health`, `scripts/web-portal/`), sans pseudo publié
 >   (`player-data-public=false`) ni boutique ; `web-export` désactivé sur DEV ; canal
->   d'acheminement vers AWS livré, inactif (#421 : `POST /api/snapshot` à jeton dédié,
+>   d'acheminement vers AWS (#421 : `POST /api/snapshot` à jeton dédié,
 >   `portal-snapshot.properties` hors Git, statut public en quatre états en ligne / hors ligne
->   annoncé / non actualisé / inconnu). Comptes (#53) faits, désactivés ; moteur d'événements (#57) fait : journal d'activité
+>   annoncé / non actualisé / inconnu) **actif depuis le 22/10 pour le seul relevé d'état agrégé**
+>   (en ligne, nombre de joueurs, toutes les 30 s, idempotent `bootId`/`sequence`) ; instantané
+>   complet toujours inactif (`web-export` désactivé). Comptes (#53) faits, désactivés ; moteur d'événements (#57) fait : journal d'activité
 >   générique `stat_activity_log` (mobs tués, pêche ; admin/debug exclus), filtres, règles de
 >   classement, objectif commun, `status: draft|cancelled`, audit `stat_period_audit` (migration
 >   **V40**), back-office PlugAdmin à faire. Droits à récompense (#422) : tranche 1 livrée,

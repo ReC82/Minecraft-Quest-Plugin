@@ -48,6 +48,43 @@ Procédure de retour arrière.
 
 ---
 
+## 2026-10-22 - Portail : relevé d'état agrégé VeryGames → AWS activé (#421, TC-327 C)
+
+### Changement
+
+JAR : `ServerStatusReporter` envoie toutes les 30 s au portail un relevé « en ligne, nombre de joueurs, capacité »
+(aucune autre donnée), indépendamment de `web-export.enabled`, et un relevé `online=false` à l'arrêt. Portail :
+`POST /api/snapshot` accepte ce relevé en périmètre fermé, idempotent (`bootId`/`sequence`), stocké dans
+`server-status.json` ; `/health` expose `heartbeat` et `lastUpdate`.
+
+### Action serveur
+
+- **Effectué le 22/10 19:27** : portail AWS `5581444` via `scripts/web-portal/deploy.sh` (CI de fusion verte),
+  ancienne app sous `/opt/lodyquests-portal/releases/20261022-192746` ; `RPGQUEST_PORTAL_SNAPSHOT_TOKEN` ajouté à
+  `/etc/lodyquests-portal/portal.env` (copie `portal.env.bak-pre421-statut-20261022-191723`). nginx inchangé.
+- **19:29** : JAR `55814445` via `scripts/deploy-verygames.sh -y --allow-no-backup --also …:RPGQuest/portal-snapshot.properties`
+  — en ligne 4231948 octets, SHA-256 `2b096e6dbeedd4322a0d67f679e880326f62bc4778e347dcf0a5d8ad1220b1ae`, retéléchargé et
+  identique ; `RPGQuest/portal-snapshot.properties` **créé** (hors Git, jeton dédié), retéléchargé et identique.
+- **19:30 et 19:31** : deux redémarrages RCON (`verygames-restart.sh`, 0 joueur) — le second pour vérifier l'arrêt annoncé.
+- **19:34–19:36** : jeton retiré puis remis côté portail (test STALE), portail redémarré deux fois.
+- **Aucune migration**, `config.yml` non touché (`web-export.enabled: false`, `player-data-public: false`), aucune donnée de joueur.
+
+### Sauvegarde préalable
+
+JAR précédent : `rpgquest-20261022T172828Z-predeploy.jar` (SHA-256 `11014ac2…`, JAR #731/#739).
+`portal-snapshot.properties` n'existait pas (rien à sauvegarder).
+
+### Validation
+
+`/health` public : UNKNOWN avant ; ONLINE/FRESH à 19:30:48 ; OFFLINE 19:31:49 (arrêt annoncé) ; ONLINE 19:32:23 ;
+STALE à 19:36:00 jeton retiré ; ONLINE 19:36:26 jeton remis. Journal portail : « nouveau démarrage reçu » / « arrêt annoncé ».
+
+### Rollback
+
+Désactiver le canal : retirer la ligne `RPGQUEST_PORTAL_SNAPSHOT_TOKEN` de `portal.env` + `systemctl restart lodyquests-portal`
+(tous les envois → 401, état « non actualisé »), ou `enabled=false` dans `RPGQuest/portal-snapshot.properties` + redémarrage.
+Code : `scripts/web-portal/rollback.sh` (portail) ; `scripts/rollback-verygames.sh` avec `rpgquest-20261022T172828Z-predeploy.jar` (JAR).
+
 ## 2026-10-22 - Dialogues : reprise après une mise en jeu refusée ou un conflit de version (#731, TC-404)
 
 ### Changement

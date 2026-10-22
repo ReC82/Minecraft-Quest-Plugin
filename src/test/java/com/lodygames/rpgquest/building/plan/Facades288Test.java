@@ -180,9 +180,16 @@ class Facades288Test {
         assertFalse(after.contains("NO_ENTRANCE"), after.toString());
         assertFalse(after.contains("OPENING_DETACHED"), after.toString());
         assertFalse(after.contains("ENTRANCE_STEP"), after.toString());
-        // #291 : le plancher dépasse le terrain d'un bloc ; la marche est posée DANS le volume.
-        assertTrue(changes.contains("marche(s) de dark_oak_stairs ajoutée(s)"), changes);
-        assertTrue(at(b, 6, 0, 16).startsWith("minecraft:dark_oak_stairs[facing=north"), at(b, 6, 0, 16));
+        // #291 : le plancher dépasse le terrain d'un bloc. Deux réparations sûres existent : une marche
+        // DANS le volume, ou la fondation enterrée (l'ancre monte). Depuis #747, l'avant-toit de Lily
+        // (murs 3..15 sous un toit 0..18) n'est plus compté comme une enveloppe ouverte : la fondation
+        // enterrée, essayée la première, n'est plus jugée « pire » et elle est retenue.
+        if (changes.contains("fondation enterrée")) {
+            assertTrue(changes.contains("l'ancre passe de y=0 à y=1"), changes);
+        } else {
+            assertTrue(changes.contains("marche(s) de dark_oak_stairs ajoutée(s)"), changes);
+            assertTrue(at(b, 6, 0, 16).startsWith("minecraft:dark_oak_stairs[facing=north"), at(b, 6, 0, 16));
+        }
     }
 
     @Test

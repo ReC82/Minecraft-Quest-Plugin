@@ -1,0 +1,105 @@
+id: eglise_du_hub
+name: "Église du Hub"
+kind: habitable
+front: SOUTH
+size:
+  x: 19
+  y: 23
+  z: 19
+anchor:
+  x: 9
+  y: 1
+  z: 9
+steps:
+  - op: box
+    from: [0, 0, 0]
+    to: [18, 0, 18]
+    block: minecraft:polished_andesite
+  - op: walls
+    from: [1, 1, 1]
+    to: [17, 12, 17]
+    block: minecraft:white_concrete
+  - op: pillars
+    from: [0, 1, 0]
+    to: [18, 12, 18]
+    spacing: 5
+    block: minecraft:quartz_block
+  - op: door
+    facade: FRONT
+    offset: 9
+    block: minecraft:dark_oak_door
+  - op: window
+    facade: LEFT
+    offset: 5
+    y: 4
+    width: 2
+    height: 4
+    block: minecraft:light_blue_stained_glass_pane
+  - op: window
+    facade: RIGHT
+    offset: 5
+    y: 4
+    width: 2
+    height: 4
+    block: minecraft:light_blue_stained_glass_pane
+  - op: window
+    facade: LEFT
+    offset: 12
+    y: 4
+    width: 2
+    height: 4
+    block: minecraft:yellow_stained_glass_pane
+  - op: window
+    facade: RIGHT
+    offset: 12
+    y: 4
+    width: 2
+    height: 4
+    block: minecraft:yellow_stained_glass_pane
+  - op: window
+    facade: BACK
+    offset: 9
+    y: 5
+    width: 3
+    height: 6
+    block: minecraft:red_stained_glass_pane
+  - op: light
+    from: [5, 11, 5]
+    to: [13, 11, 5]
+    spacing: 4
+    block: minecraft:iron_chain
+  - op: light
+    from: [7, 11, 5]
+    block: minecraft:lantern
+  - op: light
+    from: [11, 11, 5]
+    block: minecraft:lantern
+  - op: light
+    from: [7, 1, 16]
+    block: minecraft:lantern
+  - op: light
+    from: [15, 1, 15]
+    block: minecraft:lantern
+  - op: light
+    from: [0, 1, 16]
+    block: minecraft:lantern
+  - op: light
+    from: [4, 2, 2]
+    block: minecraft:lantern
+  - op: clear
+    from: [7, 1, 1]
+    to: [11, 12, 17]
+  - op: box
+    from: [7, 1, 8]
+    to: [11, 1, 8]
+    block: minecraft:quartz_block
+  - op: box
+    from: [8, 2, 8]
+    to: [10, 2, 8]
+    block: minecraft:lectern
+  - op: gable
+    from: [0, 13, 0]
+    to: [18, 16, 18]
+    axis: x
+    fill: minecraft:white_concrete
+    block: minecraft:polished_blackstone_stairs

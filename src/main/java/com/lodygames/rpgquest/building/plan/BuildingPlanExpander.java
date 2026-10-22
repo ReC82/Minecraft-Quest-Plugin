@@ -49,10 +49,18 @@ public final class BuildingPlanExpander {
      *                contourne par une autre variante du même bâtiment
      */
     public record Result(Blueprint blueprint, String error, int solidCount, long touchedCells,
-                         Map<Long, Integer> origins, BuildingPlan plan) {
+                         Map<Long, Integer> origins, BuildingPlan plan, Map<Long, Integer> cleared,
+                         List<Erasure> erasures) {
 
         public Result {
             origins = origins == null ? Map.of() : Map.copyOf(origins);
+            cleared = cleared == null ? Map.of() : Map.copyOf(cleared);
+            erasures = erasures == null ? List.of() : List.copyOf(erasures);
+        }
+
+        public Result(Blueprint blueprint, String error, int solidCount, long touchedCells,
+                      Map<Long, Integer> origins, BuildingPlan plan) {
+            this(blueprint, error, solidCount, touchedCells, origins, plan, Map.of(), List.of());
         }
 
         public Result(Blueprint blueprint, String error, int solidCount, long touchedCells) {
@@ -85,7 +93,41 @@ public final class BuildingPlanExpander {
                 public String describe(int rank) {
                     return describeStep(plan, rank);
                 }
+
+                @Override
+                public int clearedAt(int x, int y, int z) {
+                    if (x < 0 || y < 0 || z < 0) {
+                        return 0;
+                    }
+                    return cleared.getOrDefault(key(x, y, z), 0);
+                }
+
+                @Override
+                public List<Erasure> erasures() {
+                    return erasures;
+                }
+
+                @Override
+                public PlanStep.Kind kindOf(int rank) {
+                    return rank < 1 || rank > plan.steps().size() ? null : plan.steps().get(rank - 1).kind();
+                }
             };
+        }
+    }
+
+    /**
+     * Ce qu'un « clear » a effacé d'une instruction ANTÉRIEURE (#747) : {@code cells} cellules posées
+     * par l'instruction {@code erasedRank}, vidées par l'instruction {@code clearRank}.
+     *
+     * <p>Le 22/10/2026, un « clear » placé après les portes, fenêtres et lumières de l'Église du hub
+     * effaçait la porte et perçait les murs avant et arrière sur toute leur hauteur — sans qu'aucun
+     * diagnostic ne le dise. Le modèle, lui, ajoutait un second toit.</p>
+     */
+    public record Erasure(int clearRank, int erasedRank, int cells, int placed) {
+
+        /** L'instruction effacée a-t-elle perdu au moins la moitié de ce qu'elle avait posé ? */
+        public boolean major() {
+            return placed > 0 && cells * 2 >= placed;
         }
     }
 
@@ -126,16 +168,41 @@ public final class BuildingPlanExpander {
     static final class Cells {
         private final Map<Long, String> states = new LinkedHashMap<>();
         private final Map<Long, Integer> origins = new HashMap<>();
+        /** #747 : cellule vidée par un « clear » alors qu'une instruction antérieure l'avait posée. */
+        private final Map<Long, Integer> cleared = new HashMap<>();
+        /** #747 : rang du « clear » → (rang de l'instruction effacée → cellules effacées). */
+        private final Map<Integer, Map<Integer, Integer>> erased = new java.util.TreeMap<>();
+        /** #747 : cellules écrites par chaque instruction, pour mesurer la part qu'un « clear » efface. */
+        private final Map<Integer, Integer> placed = new HashMap<>();
         private int current;
 
         void put(long key, String state) {
             states.put(key, state);
             origins.put(key, current);
+            cleared.remove(key);
+            placed.merge(current, 1, Integer::sum);
         }
 
         void remove(long key) {
             states.remove(key);
             origins.remove(key);
+        }
+
+        /** Un « clear » : comme {@link #remove}, en notant ce qu'il efface d'une instruction antérieure. */
+        void clear(long key) {
+            Integer before = origins.get(key);
+            remove(key);
+            if (before != null && before > 0 && before != current) {
+                cleared.put(key, current);
+                erased.computeIfAbsent(current, k -> new java.util.TreeMap<>()).merge(before, 1, Integer::sum);
+            }
+        }
+
+        List<Erasure> erasures() {
+            List<Erasure> out = new ArrayList<>();
+            erased.forEach((clear, byStep) -> byStep.forEach((step, n) -> out.add(new Erasure(clear, step, n,
+                    placed.getOrDefault(step, 0)))));
+            return out;
         }
 
         String get(long key) {
@@ -229,7 +296,8 @@ public final class BuildingPlanExpander {
             // interdit les débordements. Si cela arrive quand même, on refuse plutôt que d'écrire.
             return Result.failure("Plan de blocs incohérent : " + broken.get());
         }
-        return new Result(blueprint, "", blocks.size(), touched, cells.origins, plan);
+        return new Result(blueprint, "", blocks.size(), touched, cells.origins, plan, cells.cleared,
+                cells.erasures());
     }
 
     /**
@@ -289,7 +357,7 @@ public final class BuildingPlanExpander {
                     cells.put(key(x, y, z), step.state());
                 }
             });
-            case CLEAR -> forEach(box, (x, y, z) -> cells.remove(key(x, y, z)));
+            case CLEAR -> forEach(box, (x, y, z) -> cells.clear(key(x, y, z)));
             case GABLE -> gable(step, cells);
             case LIGHT -> light(step, cells);
             case STAIR_RUN -> stairRun(step, cells);

@@ -109,13 +109,39 @@ public final class ArchitecturalAudit {
         int stepAt(int x, int y, int z);
 
         String describe(int rank);
+
+        /** #747 : rang du « clear » qui a vidé cette cellule après qu'une instruction l'eut posée, ou 0. */
+        default int clearedAt(int x, int y, int z) {
+            return 0;
+        }
+
+        /** #747 : ce que chaque « clear » a effacé des instructions antérieures. */
+        default List<BuildingPlanExpander.Erasure> erasures() {
+            return List.of();
+        }
+
+        /** #747 : la nature de l'instruction de ce rang, ou {@code null} si inconnue. */
+        default PlanStep.Kind kindOf(int rank) {
+            return null;
+        }
     }
 
     /** Les mesures brutes, utiles pour l'écran, les tests et les futures coupes du lot E. */
     public record Metrics(int solidCells, int glazedCells, int glazedFacades, int lightSources,
                           int openEnvelopeCellsHigh, int floors, int reachableFloors,
                           int furnishingCells, int envelopeMaterials, double topMaterialShare,
-                          String topMaterial) {
+                          String topMaterial, Map<String, Integer> palette) {
+
+        public Metrics {
+            palette = palette == null ? Map.of() : java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(palette));
+        }
+
+        public Metrics(int solidCells, int glazedCells, int glazedFacades, int lightSources,
+                       int openEnvelopeCellsHigh, int floors, int reachableFloors, int furnishingCells,
+                       int envelopeMaterials, double topMaterialShare, String topMaterial) {
+            this(solidCells, glazedCells, glazedFacades, lightSources, openEnvelopeCellsHigh, floors,
+                    reachableFloors, furnishingCells, envelopeMaterials, topMaterialShare, topMaterial, Map.of());
+        }
     }
 
     /**
@@ -195,7 +221,8 @@ public final class ArchitecturalAudit {
         }
 
         Entrance entrance = findEntrance(grid, front, r, access);
-        int openHigh = openEnvelopeCellsAbove(grid, r.openingMaxHeight());
+        List<Opening> openings = openEnvelopeCellsAbove(grid, r.openingMaxHeight(), provenance);
+        int openHigh = openings.size();
         Circulation.Analysis levels = Circulation.analyse(grid);
         Envelope envelope = envelopeMaterials(grid);
 
@@ -297,10 +324,18 @@ public final class ArchitecturalAudit {
                     "Enveloppe ouverte en hauteur : " + openHigh + " cellule(s) franchissable(s) "
                             + "sur la surface extérieure au-dessus de y="
                             + (grid.minY() + r.openingMaxHeight()) + ", alors que "
-                            + r.envelopeOpeningTolerance() + " au plus sont tolérées. C'est le "
-                            + "symptôme d'un toit dont les PIGNONS ne sont pas remplis : un toit en "
-                            + "pente couvre par le dessus, mais il faut aussi fermer les deux "
-                            + "triangles verticaux à ses extrémités avec des blocs pleins."));
+                            + r.envelopeOpeningTolerance() + " au plus sont tolérées. "
+                            + openingsLabel(openings, provenance)));
+        }
+        // #747 : un « clear » qui efface une porte, une fenêtre, une lumière, un lit ou une échelle
+        // déjà posés détruit une intention que le moteur avait calculée — sans aucun autre signe.
+        String erased = erasedArchitecture(provenance, true);
+        if (!erased.isEmpty()) {
+            findings.add(ArchitecturalFinding.blocking("CLEAR_ERASES", erased));
+        }
+        String nibbled = erasedArchitecture(provenance, false);
+        if (!nibbled.isEmpty()) {
+            findings.add(ArchitecturalFinding.warning("CLEAR_NIBBLES", nibbled));
         }
 
         // ---- Niveaux (refondu par #282) -------------------------------------------------------
@@ -360,7 +395,7 @@ public final class ArchitecturalAudit {
         return new Report(findings, new Metrics(grid.cells().size(), glazed,
                 glazedFaces.size(), lights, openHigh, levels.levels().size(),
                 levels.reachedCount(), furnishing, envelope.materials(), envelope.topShare(),
-                envelope.topMaterial()), staircases, cluttered);
+                envelope.topMaterial(), palette(grid)), staircases, cluttered);
     }
 
     /**
@@ -644,15 +679,15 @@ public final class ArchitecturalAudit {
      * <p>La hauteur de seuil écarte volontairement les ouvertures de rez-de-chaussée : une porte et
      * des fenêtres basses ne doivent pas être comptées comme des trous dans la couverture.</p>
      */
-    private static int openEnvelopeCellsAbove(AuditGrid grid, int openingMaxHeight) {
+    private static List<Opening> openEnvelopeCellsAbove(AuditGrid grid, int openingMaxHeight,
+                                                        Provenance provenance) {
         int from = grid.minY() + openingMaxHeight;
-        int open = 0;
+        List<Opening> open = new ArrayList<>();
         for (int y = Math.max(grid.minY(), from); y <= grid.maxY(); y++) {
             for (int x = grid.minX(); x <= grid.maxX(); x++) {
                 for (int z = grid.minZ(); z <= grid.maxZ(); z++) {
-                    boolean sideFace = x == grid.minX() || x == grid.maxX()
-                            || z == grid.minZ() || z == grid.maxZ();
-                    if (!sideFace) {
+                    int[] inward = inwardOf(grid, x, z);
+                    if (inward == null) {
                         continue;
                     }
                     String state = grid.at(x, y, z);
@@ -667,13 +702,162 @@ public final class ArchitecturalAudit {
                     // Sans cette condition, un toit à deux pans correct serait signalé à tort :
                     // au-dessus de ses avant-toits, les faces latérales sont du ciel ouvert, pas
                     // une fuite. C'est une faiblesse du lot A, corrigée ici.
-                    if (solidAbove(grid, x, y, z)) {
-                        open++;
+                    if (!solidAbove(grid, x, y, z)) {
+                        continue;
                     }
+                    // #747 : un mur construit en retrait sous un toit qui déborde. La cellule de
+                    // bord est alors un AVANT-TOIT, dehors : le vrai mur est juste derrière. L'Église
+                    // du hub (murs de 1 à 17 dans un volume de 19, toit de 0 à 18) comptait ainsi
+                    // 504 « ouvertures » qui n'en étaient pas — et le modèle empilait un second toit.
+                    int[] wall = wallBehind(grid, x, y, z, inward);
+                    if (wall != null) {
+                        continue;
+                    }
+                    open.add(new Opening(x, y, z, grid.faceOf(x, z), causeOf(grid, x, y, z, inward,
+                            provenance)));
                 }
             }
         }
         return open;
+    }
+
+    /** Profondeur d'avant-toit admise : un mur plein à 1 ou 2 cellules derrière le bord ferme l'enveloppe. */
+    static final int EAVE_DEPTH = 2;
+
+    /** Une cellule ouverte de l'enveloppe, sa face et ce qui l'explique (#747). */
+    record Opening(int x, int y, int z, String face, String cause) {
+    }
+
+    /**
+     * La direction vers l'intérieur depuis une cellule de face latérale, ou {@code null} hors face.
+     * Une cellule d'angle a deux composantes : elle regarde vers l'intérieur selon x ET selon z.
+     */
+    private static int[] inwardOf(AuditGrid grid, int x, int z) {
+        int ix = x == grid.minX() ? 1 : x == grid.maxX() ? -1 : 0;
+        int iz = z == grid.minZ() ? 1 : z == grid.maxZ() ? -1 : 0;
+        return ix == 0 && iz == 0 ? null : new int[] {ix, iz};
+    }
+
+    /**
+     * Le mur fermé derrière un avant-toit, dans la profondeur admise, ou {@code null}. Pour un angle,
+     * le mur peut être derrière selon x, selon z, ou en diagonale (l'angle du mur en retrait).
+     */
+    private static int[] wallBehind(AuditGrid grid, int x, int y, int z, int[] inward) {
+        for (int d = 1; d <= EAVE_DEPTH; d++) {
+            int[][] candidates = {
+                    {inward[0] * d, 0}, {0, inward[1] * d}, {inward[0] * d, inward[1] * d}};
+            for (int[] c : candidates) {
+                if (c[0] == 0 && c[1] == 0) {
+                    continue;
+                }
+                String state = grid.at(x + c[0], y, z + c[1]);
+                if (BlockSemantics.glazing(state) || !BlockSemantics.passable(state)) {
+                    return new int[] {x + c[0], y, z + c[1]};
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Pourquoi cette cellule est ouverte : un « clear » qui a vidé le mur, un pignon, ou rien de posé. */
+    private static String causeOf(AuditGrid grid, int x, int y, int z, int[] inward, Provenance provenance) {
+        for (int d = 0; d <= EAVE_DEPTH; d++) {
+            int cleared = provenance.clearedAt(x + inward[0] * d, y, z + inward[1] * d);
+            if (cleared > 0) {
+                return "vidées par l'" + provenance.describe(cleared);
+            }
+        }
+        for (int above = y + 1; above <= grid.maxY(); above++) {
+            if (!BlockSemantics.passable(grid.at(x, above, z))) {
+                int rank = provenance.stepAt(x, above, z);
+                if (rank > 0 && provenance.kindOf(rank) == PlanStep.Kind.GABLE) {
+                    return "sous le toit de l'" + provenance.describe(rank) + " : PIGNON non rempli — ferme "
+                            + "le triangle vertical à cette extrémité avec des blocs pleins (« fill: »)";
+                }
+                break;
+            }
+        }
+        return "aucune instruction n'y pose de mur alors qu'un bloc les couvre : le mur manque ou s'arrête "
+                + "trop bas sous la couverture";
+    }
+
+    /** Les ouvertures regroupées par face et par cause, avec leur étendue : où agir, et pourquoi. */
+    private static String openingsLabel(List<Opening> openings, Provenance provenance) {
+        Map<String, List<Opening>> groups = new java.util.LinkedHashMap<>();
+        for (Opening o : openings) {
+            groups.computeIfAbsent(o.face() + "|" + o.cause(), k -> new ArrayList<>()).add(o);
+        }
+        StringBuilder sb = new StringBuilder("Où :");
+        int shown = 0;
+        for (var group : groups.values()) {
+            if (shown++ == 4) {
+                sb.append(" ; et ").append(groups.size() - 4).append(" autre(s) groupe(s)");
+                break;
+            }
+            Opening first = group.get(0);
+            int minX = group.stream().mapToInt(Opening::x).min().orElse(0);
+            int maxX = group.stream().mapToInt(Opening::x).max().orElse(0);
+            int minY = group.stream().mapToInt(Opening::y).min().orElse(0);
+            int maxY = group.stream().mapToInt(Opening::y).max().orElse(0);
+            int minZ = group.stream().mapToInt(Opening::z).min().orElse(0);
+            int maxZ = group.stream().mapToInt(Opening::z).max().orElse(0);
+            sb.append(shown == 1 ? " " : " ; ").append("face ").append(first.face()).append(", x ")
+                    .append(range(minX, maxX)).append(", y ").append(range(minY, maxY)).append(", z ")
+                    .append(range(minZ, maxZ)).append(" (").append(group.size()).append(" cellule(s)) — ")
+                    .append(first.cause());
+        }
+        return sb.append(". Ne superpose PAS un second toit : il ne ferme pas ces cellules, il en crée "
+                + "d'autres. Un mur construit en retrait (jusqu'à " + EAVE_DEPTH + " cellules) sous un toit "
+                + "qui déborde n'est pas une ouverture.").toString();
+    }
+
+    private static String range(int min, int max) {
+        return min == max ? String.valueOf(min) : min + "–" + max;
+    }
+
+    /**
+     * Les « clear » qui effacent une instruction d'architecture déjà posée, ou une chaîne vide.
+     *
+     * @param major vrai : seulement les effacements graves (une porte, un lit, une échelle, ou au moins
+     *              la moitié d'une fenêtre ou d'une lumière) ; faux : seulement les autres, simples
+     *              avertissements — un « clear » qui grignote une cellule de vitrage ne refuse pas un
+     *              plan déjà accepté (Boulangerie 35ce1e1a)
+     */
+    private static String erasedArchitecture(Provenance provenance, boolean major) {
+        Map<Integer, List<String>> byClear = new java.util.TreeMap<>();
+        for (BuildingPlanExpander.Erasure e : provenance.erasures()) {
+            PlanStep.Kind kind = provenance.kindOf(e.erasedRank());
+            boolean architecture = kind == PlanStep.Kind.DOOR || kind == PlanStep.Kind.WINDOW
+                    || kind == PlanStep.Kind.LIGHT || kind == PlanStep.Kind.BED || kind == PlanStep.Kind.LADDER;
+            if (!architecture) {
+                continue;
+            }
+            boolean grave = kind == PlanStep.Kind.DOOR || kind == PlanStep.Kind.BED || kind == PlanStep.Kind.LADDER
+                    || e.major();
+            if (grave == major) {
+                byClear.computeIfAbsent(e.clearRank(), k -> new ArrayList<>()).add(e.cells() + "/" + e.placed()
+                        + " cellule(s) de l'" + provenance.describe(e.erasedRank()));
+            }
+        }
+        if (byClear.isEmpty()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        byClear.forEach((clear, erased) -> parts.add("l'" + provenance.describe(clear) + " efface "
+                + String.join(", ", erased)));
+        return "« clear » destructif : " + String.join(" ; ", parts) + ". Les instructions s'appliquent "
+                + "DANS L'ORDRE : un « clear » placé après une porte, une fenêtre, une lumière, un lit ou une "
+                + "échelle les supprime. Place chaque « clear » AVANT les instructions d'architecture, et "
+                + "limite sa zone à l'intérieur : un « clear » qui traverse un mur extérieur y perce un trou.";
+    }
+
+    /** La palette réellement construite : bloc (sans propriétés) → nombre de cellules (#747). */
+    private static Map<String, Integer> palette(AuditGrid grid) {
+        Map<String, Integer> out = new java.util.TreeMap<>();
+        for (String state : grid.cells().values()) {
+            out.merge(BlockStates.bareType(state), 1, Integer::sum);
+        }
+        return out;
     }
 
     /** Y a-t-il de la matière plus haut dans cette colonne ? */

@@ -1750,6 +1750,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   requête déclenchée ; place réservée pour une recherche globale future. Connexion et `/`
   redirigent vers `/home` ; le **Dashboard** reste sur `/dashboard` et devient une tuile ; la
   sidebar gagne une entrée « Accueil » en tête. Éditeur #46 et Documentation #49 non touchés.
+- **Historique des actions — classement « Joueurs » et pseudo en cible (#93, retour du 22/10)** —
+  `ActionView.Domain` : « Joueurs » = préfixes `player.`/`mc.`/`claim.` + toute action
+  `AgentActionCatalog.Spec.needsPlayer` (filtre `Domain.includes`, badge inchangé pour `quest.*`/`story.*`).
+  Cible joueur affichée par son pseudo via `PlayerNames`/`PlayerNameDirectory` (dernier `player.catalog`
+  réussi en base, cache par id de relevé, aucune requête serveur), UUID secondaire ; recherche pseudo ou
+  UUID. Test garde-fou `ActionPlayerTargetTest`. PlugAdmin seul, aucune migration.
 - **Toasts + centre de notifications + page `/actions` (issue #93)** *(branche
   `feat/control-panel-admin-tools`)* — les gros blocs « Actions récentes » **disparaissent** des
   pages métier (`/players`, `/npcs`, `/quests`, `/stories`, `/dialogues`) ; `/agents` garde une

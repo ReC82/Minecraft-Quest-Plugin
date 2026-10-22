@@ -1623,6 +1623,45 @@ pre.mob-cell{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85e
 /* ---- Portails (issue #564) : mêmes cartes que Mondes, césure aux espaces pour les textes ---- */
 .p-scope .w-name,.p-scope .w-title,.p-scope .w-dl dd{word-break:normal;overflow-wrap:anywhere}
 .p-scope .w-h .role{white-space:nowrap}
+/* Fiche d'un portail (retour propriétaire du 22/10 sur #566) : une colonne pleine largeur, résumé et
+   tests en tête, formulaires repliés ; textes et champs plus grands que le reste du panel. */
+.p-fiche{display:flex;flex-direction:column;gap:14px}
+.p-fiche .w-sec{padding:16px 20px}
+.p-fiche .w-h{font-size:17px}
+.p-fiche h4.w-h{font-size:15.5px;margin:12px 0 8px}
+.p-fiche .w-dl{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:8px 24px}
+.p-fiche .w-dl div,.p-fiche .w-links{font-size:15px}
+.p-fiche .w-dl dt{min-width:130px}
+.p-fiche p,.p-fiche .muted{font-size:15px}
+.p-fiche .field-help{font-size:13.5px}
+.p-fiche label{font-size:14.5px}
+.p-fiche input[type=text],.p-fiche input[type=number],.p-fiche input[list],.p-fiche select{font-size:15px;
+  padding:10px 12px;max-width:100%}
+.p-fiche .btn-sm,.p-fiche .btn.sm{font-size:14px;padding:8px 14px}
+.p-fiche .form-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.p-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:10px;margin:0 0 12px}
+@media(max-width:575.98px){.p-fiche .w-sec{padding:14px}.p-fact .v{font-size:14.5px}}
+.p-fact{background:var(--surface-2);border-radius:10px;padding:10px 12px;min-width:0;overflow-wrap:anywhere}
+.p-fact .k{display:block;font-size:12.5px;font-weight:700;color:var(--txt-faint);text-transform:uppercase;
+  letter-spacing:.03em;margin-bottom:3px}
+.p-fact .v{font-size:15.5px}
+.p-verdict{margin:0 0 10px}
+.p-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:12px}
+.p-tool{border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.p-tool h4.w-h{margin-top:0}
+.p-tool .actform{border:0;box-shadow:none;padding:0;margin:8px 0 0;background:none}
+.p-activation{border-top:1px solid var(--line);margin-top:12px;padding-top:4px}
+.p-activation .actform{border:0;box-shadow:none;padding:0;margin:0;background:none}
+details.p-edit,details.p-more{margin:12px 0 0;padding:10px 14px}
+details.p-edit>summary{font-size:15px;color:var(--primary);display:flex;align-items:center;gap:8px}
+details.p-more>summary{font-size:14.5px}
+details.p-edit .actform{border:0;box-shadow:none;padding:0;margin:6px 0 0;background:none}
+.p-locked{display:flex;align-items:center;gap:8px;margin:12px 0 0}
+.p-return{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:12px}
+.p-return .btn{margin-top:0}
+.p-preview{margin:0 0 4px}
+details.p-history{margin:0}
+details.p-history>summary{font-size:16px;color:var(--txt);display:flex;align-items:center;gap:8px}
 
 /* Issue #543 — bibliothèque « Capacités » et cartes de capacités du profil de mob (maquettes #541). */
 .cap-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}

@@ -21,13 +21,26 @@ Deux sortes de portails sont réunies dans une seule liste :
   **Ancien format** : canalisation, conditions (permission, quête, niveau RPG, coût, attente) et
   destination nommée. Aucun n'existe sur DEV aujourd'hui.
 
-Pour chaque portail, la fiche montre :
+La fiche d'un portail tient sur **une seule colonne**. Les formulaires de modification sont **repliés**
+(« Modifier la zone d'activation », « Modifier l'arrivée », « Modifier les conditions d'accès »,
+« Modifier les messages et l'avertissement », « Renommer », « Supprimer… ») : cliquer sur leur titre
+pour les ouvrir. Sur un portail **actif**, seule la consigne « Désactiver le portail avant de… » est
+affichée. Les blocs sont numérotés dans l'ordre où ils apparaissent (un bloc absent ne laisse pas de
+trou) :
+
+1. **Résumé et diagnostic** : état (Actif / Brouillon / Désactivé, *Essentiel*), départ, arrivée,
+   accès, construction, aller-retour ; dernier « Vérifier sans appliquer » ; problèmes détectés ; bouton
+   **Activer / Désactiver** ;
+2. **Vérifier et tester** : les trois outils côte à côte — *Vérifier sans appliquer*, *Simuler un
+   passage*, *Téléporter pour test* (voir plus bas) ;
+
+puis les blocs de réglage :
 
 1. **Emplacement** : monde de départ, coins minimum et maximum de la zone d'activation, taille,
    fichier ;
 2. **Construction** : l'arche posée sur l'emplacement du portail et le lien entre les deux — voir
    « Construction liée (arche) » plus bas ;
-3. **Téléportation** : monde d'arrivée (lien vers la page Mondes), type d'arrivée et ses réglages —
+3. **Téléportation et arrivée** : monde d'arrivée (lien vers la page Mondes), type d'arrivée et ses réglages —
    *point d'arrivée du monde*, *point sûr aléatoire* (`travel.random-safe-arrival` : rayon minimum,
    maximum, tentatives), *claim du joueur, sinon point sûr* (`claims.arrival`) ou *point fixe*
    (position et regard enregistrés) ; et l'aller-retour éventuel (« Retour de » / « Portail retour ») ;
@@ -38,10 +51,16 @@ Pour chaque portail, la fiche montre :
      débloqué ou claim déjà possédé, Pierre de retour garantie, OP sans effet hors mode bypass. Un
      joueur refusé est orienté vers Jo et vers le PNJ guide du village (`hub.guide-npc-id`), cité
      sous son **nom affiché actuel** (ex. Elias) ; si ce nom ne se résout pas, la fiche l'indique ;
-   - les **conditions** d'un portail de zone.
+   - les **conditions** d'un portail de zone ;
+5. **Messages et avertissement** (portail entre mondes) ;
+6. **Nom et suppression**.
+
+Ces six blocs sont numérotés à la suite des deux premiers (3 · Emplacement … 8 · Nom et suppression ;
+un portail de l'ancien format n'a ni Construction ni Messages).
 
 Un portail entre mondes peut avoir des **conditions d'accès** (niveau RPG, quête, objet, permission,
-variable, claim principal, attente entre deux passages) : elles apparaissent dans le bloc 4, sous les
+variable, claim principal, attente entre deux passages) : elles apparaissent dans le bloc « Règles
+appliquées par le serveur », sous les
 règles Wild / Claims, qui restent appliquées **avant** elles. Sans condition, la ligne
 « Déclenchement » le précise. `hub_to_wild` et `hub_to_claims` n'en ont aucune.
 
@@ -196,7 +215,7 @@ fichier.
 ## Construction liée (arche)
 
 Un portail créé **depuis un emplacement** peut suivre l'**arche** qui y est posée. Bloc
-**2 · Construction** de la fiche (`PORTAL_EDIT`).
+**Construction** de la fiche (`PORTAL_EDIT`).
 
 1. **Créer l'arche** : dans l'Atelier, *Type de construction* = **Arche de portail**, avec la largeur
    et la hauteur du **passage**. Le serveur relève le passage réel sur le plan (depuis l'ancre, au

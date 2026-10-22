@@ -67,6 +67,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > test » du personnage lié (`portal.test`, permission `PORTAL_TEST`). Sans condition : comportement inchangé. Pas de
 > migration.
 
+> **Fiche Portails recomposée (#566 retour propriétaire, 22/10/2026)** — PlugAdmin seulement : une colonne pleine
+> largeur, « Résumé et diagnostic » (état, départ, arrivée, accès, construction, dernier `portal.verify`, problèmes,
+> Activer / Désactiver) puis « Vérifier et tester » (Vérifier, Simuler, Téléporter pour test regroupés), blocs de
+> réglage numérotés à la suite, formulaires repliés (`details`). Champs, actions, permissions, empreintes et
+> confirmations inchangés ; plugin non modifié. Fiche d'un brouillon sur téléphone : ~18 050 → ~6 550 px.
+
 > **Portails : destinations (#566, 21/10/2026)** — arrivée « point fixe » (position + regard, `destination-point`)
 > contrôlée à chaque passage (position sûre la plus proche à 2 blocs, sinon refus ; chunks et téléportation
 > asynchrones), refus d'un point hors du monde ou dans un portail, arrivée modifiable hors portail actif, portail

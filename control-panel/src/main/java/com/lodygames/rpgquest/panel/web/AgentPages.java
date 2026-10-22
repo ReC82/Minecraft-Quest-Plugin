@@ -11727,23 +11727,21 @@ public final class AgentPages {
         if (!perms.can(session.effective(), Permission.PORTAL_TEST)) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec\" id=\"portal-test\"><h3 class=\"w-h\">")
-                .append(Icons.icon("travel")).append("Téléporter pour test</h3>");
+        StringBuilder sb = new StringBuilder("<div class=\"p-tool\" id=\"portal-test\"><h4 class=\"w-h\">")
+                .append(Icons.icon("travel")).append("Téléporter pour test</h4>");
         sb.append(lastPortalTest(agentId, portalId));
         if (linkedUuid == null || linkedUuid.isBlank()) {
             return sb.append(Ui.banner("warn", "Aucun personnage Minecraft n'est lié à votre compte PlugAdmin : le "
                     + "test ne déplace jamais que <strong>votre</strong> personnage. Demander au propriétaire de le "
-                    + "lier (page « Utilisateurs », personnage lié).")).append("</section>").toString();
+                    + "lier (page « Utilisateurs », personnage lié).")).append("</div>").toString();
         }
         String traveler = linkedName == null || linkedName.isBlank() ? linkedUuid : linkedName;
         sb.append("<ul class=\"w-links\">");
         for (String line : List.of(
                 "Déplace RÉELLEMENT votre personnage « " + traveler + " » (connecté) par ce portail, même en brouillon "
-                        + "ou désactivé, sans entrer dans sa zone. Aucun autre joueur n'est concerné.",
-                "Conditions d'accès vérifiées comme au passage (sans le délai entre deux passages, ni lu ni démarré) ; "
-                        + "si l'une manque, personne n'est déplacé.",
-                "Puis règles Claims / Wild comme pour un joueur : fenêtre d'avertissement du Wild, accès aux Claims.",
-                "Pour seulement vérifier les conditions, utiliser « Simuler un passage » ci-dessus.")) {
+                        + "ou désactivé. Aucun autre joueur n'est concerné.",
+                "Conditions d'accès vérifiées comme au passage (sans le délai) ; si l'une manque, personne n'est déplacé.",
+                "Puis règles Claims / Wild comme pour un joueur.")) {
             sb.append("<li><i class=\"bi bi-dot\" aria-hidden=\"true\"></i><span>").append(Http.esc(line))
                     .append("</span></li>");
         }
@@ -11759,7 +11757,7 @@ public final class AgentPages {
         sb.append(confirmBox("Je confirme téléporter mon personnage « " + traveler + " » par le portail « " + portalId
                 + " »."));
         sb.append("<button class=\"btn btn-outline-danger\" type=\"submit\">").append(Icons.icon("travel"))
-                .append("Téléporter mon personnage</button></form></section>");
+                .append("Téléporter mon personnage</button></form></div>");
         return sb.toString();
     }
 

@@ -48,6 +48,28 @@ Procédure de retour arrière.
 
 ---
 
+
+## 2026-10-22 - Atelier IA : « clear » destructifs, enveloppe et palette (#747)
+
+### Changement
+
+Audit des plans de bâtiment : nouveau code bloquant `CLEAR_ERASES` (un « clear » efface une porte, un lit,
+une échelle ou au moins la moitié d'une fenêtre/lumière posée avant lui) et avertissement `CLEAR_NIBBLES` ;
+réparation sûre qui remonte un tel « clear » avant l'architecture ; `ENVELOPE_OPEN` ne compte plus
+l'avant-toit d'un mur en retrait et localise les ouvertures par face et cause ; la palette du résultat
+compilé est ajoutée aux mesures de `building.plan.audit`. PlugAdmin : mémoire des tentatives, conformité
+au brief, modes de reprise (PR #750, #751).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement (fait par Claude le 22/10/2026 22:33, `5bfb9cef`, SHA-256
+`34c2cd21…`, backup `rpgquest-20261022T203255Z-predeploy.jar`), puis redémarrage DEV (0 joueur). Aucune
+migration, aucune configuration, aucun bâtiment posé ni modifié. PlugAdmin redéployé sur AWS (`a8a0cdb3`).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` (JAR précédent) puis redémarrage ; PlugAdmin :
+`scripts/plugadmin/rollback.sh app`.
 ## 2026-10-22 - PlugAdmin : « Recharger depuis DEV » dans l'éditeur guidé des dialogues (#732, TC-407)
 
 ### Changement

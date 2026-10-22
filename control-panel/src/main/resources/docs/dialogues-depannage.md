@@ -224,6 +224,47 @@ Erreur `RELOAD_FAILED / INVALID_CONTENT` du rechargement ; contrôle panel `Dial
 
 ---
 
+## Le serveur a une autre version de ce dialogue
+
+### Ce que cela signifie
+
+Le fichier du dialogue sur le serveur DEV a été changé **en dehors de cet éditeur** depuis votre
+dernière mise en jeu (édition directe, autre personne, autre outil). PlugAdmin refuse alors de
+mettre votre version en jeu : il ne remplace jamais une version qu'il ne connaît pas sans vous
+demander. Votre version enregistrée dans l'éditeur est **gardée**.
+
+Une mise en jeu **refusée par le jeu** (par exemple une réplique sans réponse) ne provoque pas
+ce message : le serveur remet son fichier dans l'état d'avant, rien n'est mis en jeu, et vous
+pouvez corriger puis réessayer directement.
+
+### Pourquoi il faut corriger
+
+Tant que vous n'avez pas choisi quelle version garder, votre dialogue ne peut pas être mis en jeu.
+
+### Comment corriger
+
+1. Dans l'éditeur, cliquez **Comparer les deux versions** : la page technique du dialogue
+   s'ouvre ; demandez la comparaison pour voir ce qui a changé.
+2. **Pour garder votre version** : une fois la comparaison affichée, cliquez **Écraser la version
+   DEV** et confirmez. L'autre version est sauvegardée sur le serveur avant d'être remplacée.
+3. **Pour garder celle du serveur** : ne mettez pas votre version en jeu ; recopiez dans l'éditeur
+   ce que vous voulez garder de l'autre version, puis enregistrez.
+
+Si la comparaison montre la même chose des deux côtés, cliquez **Vérifier à nouveau** : l'état du
+serveur était peut-être simplement ancien.
+
+### Vérification
+
+L'éditeur n'affiche plus l'encadré rouge ; après la mise en jeu, il indique « À jour en jeu ».
+
+### Référence technique
+
+Refus `CONFLICT` de `content.publish` : l'empreinte DEV attendue ne correspond pas au fichier. La
+référence du panel est la dernière empreinte laissée par **ses** opérations, échecs de
+rechargement compris (#731) ; un refus `RELOAD_FAILED` remet le fichier DEV dans son état d'avant.
+
+---
+
 ## Dialogue déclaré mais absent
 
 ### Ce que cela signifie

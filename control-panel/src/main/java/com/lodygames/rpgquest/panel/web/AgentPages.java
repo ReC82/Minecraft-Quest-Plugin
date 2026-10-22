@@ -7799,9 +7799,14 @@ public final class AgentPages {
         }
         var devIndex = devContentIndex(agentId);
         Optional<Map<String, Object>> lastPublish = lastPublishOf(agentId, "dialogues", slug);
-        String lastDevSha = lastPublish.map(d -> str(d.get("devShaAfter"))).orElse("");
         boolean stale = readingIsStale(agentId, "dialogues", slug);
-        String expectedDev = stale && !lastDevSha.isEmpty() ? lastDevSha : devIndex.devSha("dialogues", slug);
+        // Issue #731 : la référence est ce que NOUS avons laissé sur DEV, échec de rechargement
+        // compris — sinon la correction qui suit une publication refusée part en CONFLICT.
+        Optional<OwnWrite> own = lastOwnWrite(agentId, "dialogues", slug);
+        String lastDevSha = own.map(OwnWrite::devSha).orElse("");
+        Optional<Instant> readingAt = devReadingAt(agentId);
+        boolean ownIsNewer = own.isPresent() && (readingAt.isEmpty() || own.get().at().isAfter(readingAt.get()));
+        String expectedDev = ownIsNewer && !lastDevSha.isEmpty() ? lastDevSha : devIndex.devSha("dialogues", slug);
 
         for (AgentActionRow row : store.recentActions(agentId, 200)) {
             if (!"content.publish".equals(row.type()) || !"dialogues".equals(row.params().get("kind"))
@@ -7816,6 +7821,17 @@ public final class AgentPages {
             boolean ok = row.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS
                     && details.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false);
             String forSource = row.params().getOrDefault("expected_source_sha", "");
+            if (!ok && details.map(d -> "CONFLICT".equals(str(d.get("code")))).orElse(false)) {
+                // Issue #731 : un refus pour conflit n'est pas un échec à « réessayer » tel quel. Si
+                // DEV portait alors autre chose que notre dernière écriture et que la source, c'est
+                // une vraie modification concurrente : parcours de comparaison. Sinon (référence
+                // simplement périmée, désormais corrigée), l'état normal reprend la main.
+                String seen = details.map(d -> str(d.get("devShaAfter"))).orElse("");
+                if (!seen.isEmpty() && !seen.equals(lastDevSha) && !seen.equals(sourceSha)) {
+                    return new DialoguePages.LiveState(DialoguePages.Live.CONFLICT, "", sourceSha, expectedDev, when);
+                }
+                break;
+            }
             if (!ok && (forSource.isEmpty() || forSource.equals(sourceSha))) {
                 String msg = row.resultMessage() == null ? "" : MiniText.prettifyTokens(row.resultMessage());
                 return new DialoguePages.LiveState(DialoguePages.Live.FAILED,
@@ -7833,7 +7849,7 @@ public final class AgentPages {
         var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState, stale,
                 lastPublish.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false),
                 lastPublish.map(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed"))).orElse(false),
-                lastDevSha, sourceSha);
+                confirmedDevSha(lastPublish, own), sourceSha);
         Instant when = lastPublishAt(agentId, "dialogues", slug).orElse(null);
         return switch (state) {
             case SYNCED -> new DialoguePages.LiveState(DialoguePages.Live.UP_TO_DATE, "", sourceSha, expectedDev, when);
@@ -9067,14 +9083,14 @@ public final class AgentPages {
             String kind, String slug, String name, String declaredId, boolean sourceKnown) {
         String sourceSha = sourceCatalog.sha(kind, slug).orElse("");
         Optional<Map<String, Object>> last = lastPublishOf(agentId, kind, slug);
-        String lastDevSha = last.map(d -> str(d.get("devShaAfter"))).orElse("");
+        Optional<OwnWrite> own = lastOwnWrite(agentId, kind, slug);
         var readState = devIndex.stateOf(kind, slug, declaredId, sourceSha, sourceKnown,
-                lastDevSha);
+                own.map(OwnWrite::devSha).orElse(""));
         var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState,
                 readingIsStale(agentId, kind, slug),
                 last.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false),
                 last.map(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed"))).orElse(false),
-                lastDevSha, sourceSha);
+                confirmedDevSha(last, own), sourceSha);
         return new com.lodygames.rpgquest.panel.publish.PendingChanges.Row(kind, slug, declaredId,
                 name, state, sourceSha, devIndex.devSha(kind, slug),
                 devIndex.runtimeLoaded(kind, declaredId),
@@ -9846,11 +9862,13 @@ public final class AgentPages {
         boolean canRollback = perms.can(session.effective(), Permission.CONTENT_ROLLBACK);
         String sourceSha = sourceCatalog.sha(kind, slug).orElse("");
         Optional<Map<String, Object>> lastPublish = lastPublishOf(agentId, kind, slug);
-        String lastDevSha = lastPublish.map(d -> str(d.get("devShaAfter"))).orElse("");
+        Optional<OwnWrite> own = lastOwnWrite(agentId, kind, slug);
+        String lastDevSha = confirmedDevSha(lastPublish, own);
         String backupPath = lastPublish.map(d -> str(d.get("backupPath"))).orElse("");
 
+        // Issue #731 : un conflit se juge contre NOTRE dernière écriture, échec compris.
         var readState = devIndex.stateOf(kind, slug, declaredId, sourceSha,
-                sourceCatalog.available(), lastDevSha);
+                sourceCatalog.available(), own.map(OwnWrite::devSha).orElse(""));
         // Lot C : si le relevé est antérieur à une publication réussie qui a CONFIRMÉ le runtime,
         // c'est la publication qui dit vrai — elle a relu le moteur, le relevé non.
         boolean stale = readingIsStale(agentId, kind, slug);
@@ -10188,6 +10206,77 @@ public final class AgentPages {
             }
         }
         return Optional.empty();
+    }
+
+    /** L'empreinte qu'une de NOS opérations a laissée sur DEV, et quand (issue #731). */
+    record OwnWrite(String devSha, java.time.Instant at) {
+    }
+
+    /**
+     * La dernière empreinte que le panel a lui-même laissée sur DEV pour cette ressource — y compris
+     * par une publication <strong>échouée qui a quand même écrit</strong> (rechargement refusé).
+     *
+     * <p>Issue #731 : {@link #lastPublishOf} ne retient que les succès. Après une publication écrite
+     * puis refusée par le moteur, le fichier DEV portait donc une empreinte « inconnue », prise pour
+     * une modification tierce : la publication suivante, faite de la même session pour corriger,
+     * était refusée en CONFLICT. Une opération qui n'a rien changé (conflit, refus, contenu
+     * identique remis en place) n'est jamais retenue : c'est ce qui garde la protection contre les
+     * vraies modifications concurrentes.</p>
+     */
+    Optional<OwnWrite> lastOwnWrite(String agentId, String kind, String slug) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (row.completedAt() == null) {
+                continue;
+            }
+            Optional<Map<String, Object>> details = detailsOf(row);
+            if (details.isEmpty()) {
+                continue;
+            }
+            if ("content.publish.batch".equals(row.type())) {
+                if ("true".equals(row.params().get("dry_run"))) {
+                    continue;
+                }
+                boolean ok = Boolean.TRUE.equals(details.get().get("ok"));
+                for (Map<String, Object> item : listOfMaps(details.get().get("items"))) {
+                    if (kind.equals(str(item.get("kind"))) && slug.equals(str(item.get("slug")))
+                            && (ok || wroteDev(item))) {
+                        return Optional.of(new OwnWrite(str(item.get("devShaAfter")), row.completedAt()));
+                    }
+                }
+                continue;
+            }
+            boolean op = "content.publish".equals(row.type())
+                    || "content.publish.rollback".equals(row.type());
+            if (!op || !kind.equals(row.params().get("kind")) || !slug.equals(row.params().get("id"))) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(details.get().get("ok")) || wroteDev(details.get())) {
+                return Optional.of(new OwnWrite(str(details.get().get("devShaAfter")), row.completedAt()));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * L'empreinte que la dernière opération RÉUSSIE a confirmée — vide si une écriture plus récente
+     * (refusée par le moteur) l'a remplacée sur DEV : cette confirmation ne vaut plus pour DEV.
+     */
+    private static String confirmedDevSha(Optional<Map<String, Object>> lastPublish, Optional<OwnWrite> own) {
+        String confirmed = lastPublish.map(d -> str(d.get("devShaAfter"))).orElse("");
+        return own.isEmpty() || own.get().devSha().equals(confirmed) ? confirmed : "";
+    }
+
+    /** Une opération échouée a-t-elle laissé sur DEV autre chose que ce qu'elle y avait trouvé ? */
+    private static boolean wroteDev(Map<String, Object> outcome) {
+        if ("CONFLICT".equals(str(outcome.get("code")))) {
+            return false;
+        }
+        String before = str(outcome.get("devShaBefore"));
+        String after = str(outcome.get("devShaAfter"));
+        return !after.isEmpty() && !after.equals(before);
     }
 
     /**

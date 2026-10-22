@@ -415,6 +415,112 @@ class DialogueEditorTest {
         assertTrue(failed.contains(">Réessayer</button>") || failed.contains("Réessayer</button>"), "et on peut réessayer");
     }
 
+    // ---- Issue #731 : reprise après un refus ou un conflit ----------------------------------------
+
+    /**
+     * Parcours du propriétaire (Musty) : la mise en jeu a écrit le fichier sur DEV puis le moteur l'a
+     * refusé (ancien comportement serveur). La correction qui suit, dans le même éditeur et sans F5,
+     * repart de l'empreinte laissée par CETTE tentative : pas de faux conflit.
+     */
+    @Test
+    void aCorrectionAfterAWrittenButRefusedPublishIsNotAConflict() throws Exception {
+        start();
+        Instant t0 = Instant.now();
+        devState("lucien", sha256(LUCIEN), t0);
+        Map<String, String> f = formFields(get("/dialogues/edit/lucien").body());
+        f.put("n0_text", "Version refusée");
+        post("/dialogues/save", f, "save_publish");
+        AgentActionRow first = actions("content.publish").get(0);
+        assertEquals(sha256(LUCIEN), first.params().get("expected_dev_sha"));
+        String written = sha256("refusé par le moteur");
+        publishResult(first.id(), false, "RELOAD_FAILED", sha256(LUCIEN), written, t0.plusSeconds(2));
+
+        String failed = get("/dialogues/edit/lucien").body();
+        assertTrue(failed.contains("Mise en jeu échouée"), "un refus n'est jamais présenté comme un succès");
+        assertFalse(failed.contains("À jour en jeu"));
+        assertFalse(failed.contains("Le serveur a une autre version"), "notre propre tentative n'est pas un conflit");
+
+        Map<String, String> g = formFields(failed);
+        g.put("n0_text", "Version corrigée");
+        post("/dialogues/save", g, "save_publish");
+        List<AgentActionRow> pubs = actions("content.publish");
+        assertEquals(2, pubs.size(), "la correction part sans détour");
+        AgentActionRow second = pubs.stream().filter(a -> !a.id().equals(first.id())).findFirst().orElseThrow();
+        assertEquals(written, second.params().get("expected_dev_sha"), "référence = ce que la tentative a laissé");
+        assertTrue(Files.readString(content.resolve("dialogues/lucien.yml")).contains("Version corrigée"),
+                "le brouillon corrigé est enregistré");
+    }
+
+    /** Nouveau comportement serveur : le fichier refusé est remis en place, la référence ne bouge pas. */
+    @Test
+    void aRefusedPublishThatPutDevBackKeepsTheSameReference() throws Exception {
+        start();
+        Instant t0 = Instant.now();
+        devState("lucien", sha256(LUCIEN), t0);
+        Map<String, String> f = formFields(get("/dialogues/edit/lucien").body());
+        f.put("n0_text", "Version refusée");
+        post("/dialogues/save", f, "save_publish");
+        AgentActionRow first = actions("content.publish").get(0);
+        publishResult(first.id(), false, "RELOAD_FAILED", sha256(LUCIEN), sha256(LUCIEN), t0.plusSeconds(2));
+
+        Map<String, String> g = formFields(get("/dialogues/edit/lucien").body());
+        g.put("n0_text", "Version corrigée");
+        post("/dialogues/save", g, "save_publish");
+        AgentActionRow second = actions("content.publish").stream().filter(a -> !a.id().equals(first.id()))
+                .findFirst().orElseThrow();
+        assertEquals(sha256(LUCIEN), second.params().get("expected_dev_sha"));
+    }
+
+    /**
+     * Une VRAIE modification concurrente garde sa protection : parcours guidé (comparer, choisir),
+     * aucune mise en jeu automatique, brouillon conservé.
+     */
+    @Test
+    void aRealConcurrentChangeShowsTheGuidedChoiceAndNeverOverwrites() throws Exception {
+        start();
+        Instant t0 = Instant.now();
+        devState("lucien", sha256(LUCIEN), t0);
+        Map<String, String> f = formFields(get("/dialogues/edit/lucien").body());
+        f.put("n0_text", "Ma version");
+        post("/dialogues/save", f, "save_publish");
+        AgentActionRow first = actions("content.publish").get(0);
+        String theirs = sha256("modifié à la main sur le serveur");
+        publishResult(first.id(), false, "CONFLICT", theirs, theirs, t0.plusSeconds(2));
+
+        String page = get("/dialogues/edit/lucien").body();
+        assertTrue(page.contains("Le serveur a une autre version de ce dialogue"), page);
+        assertTrue(page.contains("votre version enregistrée ici est gardée"));
+        assertTrue(page.contains("href=\"/dialogues/diagnostic?focus=lucien\""), "comparer d'abord");
+        assertTrue(page.contains("/docs/dialogues-depannage#le-serveur-a-une-autre-version-de-ce-dialogue"));
+        assertFalse(page.contains("Réessayer</button>"), "pas de réessai aveugle");
+        assertFalse(page.contains("action=\"/dialogues/publish\""), "pas de mise en jeu directe");
+
+        Map<String, String> g = formFields(page);
+        g.put("n0_text", "Ma version, encore");
+        HttpResponse<String> res = post("/dialogues/save", g, "save_publish");
+        String location = java.net.URLDecoder.decode(res.headers().firstValue("Location").orElse(""),
+                StandardCharsets.UTF_8);
+        assertTrue(location.contains("rien n'a été remplacé"), location);
+        assertEquals(1, actions("content.publish").size(), "aucune nouvelle mise en jeu");
+        assertTrue(Files.readString(content.resolve("dialogues/lucien.yml")).contains("Ma version, encore"),
+                "le brouillon est gardé");
+    }
+
+    private void devState(String slug, String sha, Instant at) {
+        String id = store.createAction(TestConfig.AGENT_ID, "content.dev.state", Map.of(), "owner");
+        String details = "{\"files\":[{\"kind\":\"dialogues\",\"slug\":\"" + slug + "\",\"sha256\":\"" + sha
+                + "\",\"bytes\":10}],\"runtimeIds\":{\"dialogues\":[\"rpgquest:" + slug + "\"]},\"runtimeHash\":\"h\"}";
+        store.recordResult(id, TestConfig.AGENT_ID, AgentActionStatus.SUCCESS, "", "ok",
+                "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"details\":" + details + "}", at);
+    }
+
+    private void publishResult(String id, boolean ok, String code, String before, String after, Instant at) {
+        String details = "{\"ok\":" + ok + ",\"code\":\"" + code + "\",\"kind\":\"dialogues\",\"slug\":\"lucien\","
+                + "\"devShaBefore\":\"" + before + "\",\"devShaAfter\":\"" + after + "\",\"runtimeConfirmed\":false}";
+        store.recordResult(id, TestConfig.AGENT_ID, ok ? AgentActionStatus.SUCCESS : AgentActionStatus.FAILED, code,
+                "Refus " + code, "{\"action_id\":\"" + id + "\",\"status\":\"FAILED\",\"details\":" + details + "}", at);
+    }
+
     // ---- Création ------------------------------------------------------------------------------
 
     @Test

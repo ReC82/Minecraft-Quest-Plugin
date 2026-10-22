@@ -599,9 +599,7 @@ public final class DialoguePages {
                 offerPublish = true;
             }
             case CONFLICT -> {
-                tone = "err";
-                text = "Le serveur a une autre version de ce dialogue, modifiée en dehors de PlugAdmin. "
-                        + "Comparez-les dans « Détails techniques » avant de la remplacer.";
+                return conflictBox(csrf, ctx, e.slug());
             }
             case SERVER_ONLY -> {
                 tone = "info";
@@ -638,6 +636,40 @@ public final class DialoguePages {
         }
         return sb.append("</div>").toString();
     }
+
+    /**
+     * Issue #731 : le serveur a une version que ni cet éditeur ni sa dernière mise en jeu n'ont
+     * écrite. On ne remplace rien d'office : on dit ce qui se passe, que le brouillon est gardé, et
+     * comment choisir — comparer d'abord, puis garder sa version (remplacement confirmé, avec
+     * sauvegarde) ou celle du serveur.
+     */
+    static String conflictBox(String csrf, Ctx ctx, String slug) {
+        StringBuilder sb = new StringBuilder("<div class=\"dlg-live dlg-conflict tone-err\" role=\"alert\">");
+        sb.append("<p><strong>").append(Icons.icon("warning"))
+                .append("Le serveur a une autre version de ce dialogue.</strong> Quelqu'un l'a changée en dehors de "
+                        + "cet éditeur depuis votre dernière mise en jeu. Rien n'a été remplacé, et votre version "
+                        + "enregistrée ici est gardée.</p>");
+        sb.append("<ol class=\"dlg-conflict-steps\">")
+                .append("<li><strong>Comparez</strong> les deux versions pour voir ce qui a changé.</li>")
+                .append("<li><strong>Pour garder la vôtre</strong> : après la comparaison, choisissez « Écraser la "
+                        + "version DEV » et confirmez. L'autre version est sauvegardée avant d'être remplacée.</li>")
+                .append("<li><strong>Pour garder celle du serveur</strong> : ne mettez pas votre version en jeu ; "
+                        + "recopiez dans l'éditeur ce que vous voulez garder de l'autre version.</li>")
+                .append("</ol>");
+        sb.append("<div class=\"btnrow\"><a class=\"btn sm\" href=\"/dialogues/diagnostic?focus=")
+                .append(Http.esc(slug)).append("\">").append(Icons.icon("search")).append("Comparer les deux versions</a>");
+        sb.append("<form method=\"post\" action=\"/dialogues/refresh\" data-submit-once>")
+                .append(hidden("_csrf", csrf)).append(hidden("agent", ctx.agentId()))
+                .append(hidden("return", "/dialogues/edit/" + slug))
+                .append("<button class=\"btn secondary sm\" type=\"submit\">Vérifier à nouveau</button></form>")
+                .append(" <a class=\"btn secondary sm\" href=\"/docs/dialogues-depannage#")
+                .append(com.lodygames.rpgquest.panel.docs.Markdown.slug(CONFLICT_HELP_TITLE)).append("\" target=\"_blank\" rel=\"noopener\">")
+                .append("Que faire ?</a>");
+        return sb.append("</div></div>").toString();
+    }
+
+    /** Titre de la fiche de dépannage « conflit de version » (ancre = slug du titre). */
+    static final String CONFLICT_HELP_TITLE = "Le serveur a une autre version de ce dialogue";
 
     private static String nodeCard(Ctx ctx, DialogueDraft d, int i, DialogueDraft.Node node,
                                    Map<String, String> f, boolean editable, boolean unreachable,

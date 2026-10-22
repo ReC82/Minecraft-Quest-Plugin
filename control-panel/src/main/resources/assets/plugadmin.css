@@ -1176,6 +1176,10 @@ details.card.npc-more{padding:12px 16px}
 .dlg-live.tone-err{background:var(--err-soft);color:var(--err)}
 .dlg-live.tone-info{background:var(--info-soft);color:var(--info)}
 .dlg-live .muted{font-weight:500}
+.dlg-conflict{display:block}
+.dlg-conflict p{margin:0 0 6px}
+.dlg-conflict-steps{margin:0 0 8px;padding-left:1.4em;font-weight:500}
+.dlg-conflict .btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .dlg-node-h{font-size:16px;font-weight:800;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .dlg-says{font-size:14.5px;background:var(--surface-2);border-radius:var(--radius-s);padding:10px 12px}
 .dlg-replies-h{font-size:13px;font-weight:800;margin:14px 0 6px;color:var(--txt-2)}

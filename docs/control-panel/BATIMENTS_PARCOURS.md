@@ -34,7 +34,10 @@ Parcours :
    l'**aperçu du bâtiment en 3D** (tourner autour, couper au-dessus d'un niveau pour voir l'intérieur) :
    « Le bâtiment n'a pas de porte utilisable du côté de l'entrée », avec la piste de correction.
 4. **Améliorer avec l'IA** (facturé) : le motif est prérempli avec ce que la vérification a trouvé ;
-   la réponse est une nouvelle version, l'ancienne reste.
+   la réponse est une nouvelle version, l'ancienne reste. Depuis #747, la mémoire des tentatives du
+   projet (erreurs résolues, régressions, stagnation) et la conformité au brief (✓ / ✗ / ◌) partent
+   aussi ; « Nature de la reprise » choisit entre réparation technique et amélioration architecturale
+   (« Automatique » suit la suggestion affichée).
 5. **Enregistrer dans la bibliothèque** : jamais de remplacement implicite ; un nom déjà pris est signalé.
 6. **Choisir un emplacement** (depuis l'Atelier) ou **Placer sur un emplacement** (depuis la Bibliothèque) :
    les Emplacements s'ouvrent avec le bâtiment déjà choisi ; prévisualiser la pose, confirmer (#213/#234/#268).

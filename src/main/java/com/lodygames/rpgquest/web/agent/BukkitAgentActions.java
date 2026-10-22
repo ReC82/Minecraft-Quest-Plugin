@@ -3233,6 +3233,8 @@ public final class BukkitAgentActions implements AgentActions {
         out.put("envelopeMaterials", m.envelopeMaterials());
         out.put("topMaterialShare", m.topMaterialShare());
         out.put("topMaterial", m.topMaterial() == null ? "" : m.topMaterial());
+        // #747 : la palette construite, pour vérifier les exigences du brief sur le RÉSULTAT compilé.
+        out.put("palette", new java.util.LinkedHashMap<>(m.palette()));
         return out;
     }
 

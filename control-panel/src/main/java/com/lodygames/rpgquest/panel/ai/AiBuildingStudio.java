@@ -107,10 +107,26 @@ public final class AiBuildingStudio {
     public Proposal correct(String providerId, BuildingPromptBuilder.Demand demand,
                             String previousPlan, String refusal, String metrics,
                             List<AiProvider.Image> images) {
+        return correct(providerId, demand, previousPlan, refusal, metrics, images, null);
+    }
+
+    /**
+     * La reprise avec sa nature, la mémoire des tentatives et la conformité au brief (#747). Le
+     * manifeste du journal dit le mode et si chaque bloc est réellement parti dans le texte envoyé.
+     */
+    public Proposal correct(String providerId, BuildingPromptBuilder.Demand demand,
+                            String previousPlan, String refusal, String metrics,
+                            List<AiProvider.Image> images, BuildingPromptBuilder.Repair repair) {
+        BuildingPromptBuilder.Repair r = repair == null
+                ? BuildingPromptBuilder.Repair.of(BuildingPromptBuilder.RepairMode.REPAIR, "", "") : repair;
         String user = BuildingPromptBuilder.withReferences(
-                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics), images.size());
-        return run(providerId, user, images, manifest("CORRECTION", BuildingPromptBuilder.systemPrompt(), user,
-                demand, previousPlan, refusal, metrics, null, images));
+                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics, 0, 0, r), images.size());
+        Map<String, Object> m = manifest("CORRECTION", BuildingPromptBuilder.systemPrompt(), user,
+                demand, previousPlan, refusal, metrics, null, images);
+        m.put("mode", r.mode().name());
+        m.put("memory", piece(r.memory(), BuildingPromptBuilder.systemPrompt() + "\n" + user));
+        m.put("requirements", piece(r.requirements(), BuildingPromptBuilder.systemPrompt() + "\n" + user));
+        return run(providerId, user, images, m);
     }
 
     /** La passe de critique architecturale d'un plan déjà conforme (issue #282). */
@@ -121,10 +137,19 @@ public final class AiBuildingStudio {
 
     public Proposal critique(String providerId, BuildingPromptBuilder.Demand demand, String plan,
                              String metrics, String warnings, List<AiProvider.Image> images) {
+        return critique(providerId, demand, plan, metrics, warnings, images, "");
+    }
+
+    /** La critique, avec le bilan de conformité au brief de la version acceptée (#747). */
+    public Proposal critique(String providerId, BuildingPromptBuilder.Demand demand, String plan,
+                             String metrics, String warnings, List<AiProvider.Image> images,
+                             String requirements) {
         String user = BuildingPromptBuilder.withReferences(
-                BuildingPromptBuilder.critiquePrompt(demand, plan, metrics, warnings), images.size());
-        return run(providerId, user, images, manifest("CRITIQUE", BuildingPromptBuilder.systemPrompt(), user,
-                demand, plan, null, metrics, warnings, images));
+                BuildingPromptBuilder.critiquePrompt(demand, plan, metrics, warnings, requirements), images.size());
+        Map<String, Object> m = manifest("CRITIQUE", BuildingPromptBuilder.systemPrompt(), user,
+                demand, plan, null, metrics, warnings, images);
+        m.put("requirements", piece(requirements, BuildingPromptBuilder.systemPrompt() + "\n" + user));
+        return run(providerId, user, images, m);
     }
 
     /**
@@ -247,10 +272,22 @@ public final class AiBuildingStudio {
                     result.text(), null, null, null, result.exchange(), m);
         }
         AiYamlExtractor.Extraction extraction = AiYamlExtractor.extract(result.text());
+        // #747 : « I'm sorry, I can't assist with that. » (Église du hub, 22/10/2026) était rangé comme
+        // un plan, envoyé au serveur et refusé PLAN_INVALID — puis « corrigé » par un nouvel appel. Une
+        // réponse sans liste d'instructions n'est pas un plan : c'est un refus ou du texte libre.
+        if (extraction.ok() && !STEPS.matcher(extraction.yaml()).find()) {
+            String said = result.text() == null ? "" : result.text().strip();
+            return new Proposal(provider.id(), provider.label(), result.model(), result.usage(),
+                    result.text(), null, "Le modèle n'a pas rendu de plan (aucune clé « steps: ») : refus ou texte "
+                    + "libre — « " + (said.length() > 200 ? said.substring(0, 200) + "…" : said) + " ». Rien n'a été "
+                    + "soumis au serveur.", null, result.exchange(), m);
+        }
         return new Proposal(provider.id(), provider.label(), result.model(), result.usage(),
                 result.text(), extraction.ok() ? extraction.yaml() : null,
                 extraction.note(), null, result.exchange(), m);
     }
+
+    private static final java.util.regex.Pattern STEPS = java.util.regex.Pattern.compile("(?m)^\\s*steps\\s*:");
 
     private static Proposal failed(String id, String label, String error, AiProvider.Exchange exchange,
                                    Map<String, Object> manifest) {

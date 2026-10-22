@@ -1691,7 +1691,9 @@ percement visait `x=5` alors que le mur était en `x=0`, et il a vidé de l'air 
 | `NO_ENTRANCE` | passage de 2 blocs de haut traversant la façade `front`, près du sol | bloquant |
 | `GLAZING_MISSING` / `GLAZING_ONE_SIDED` | ≥ 2 cellules vitrées, sur ≥ 2 façades | bloquant |
 | `NO_LIGHT` / `DARK_AREA` | ≥ 1 source utile, et aucune cellule praticable à plus de 8 blocs | bloquant |
-| `ENVELOPE_OPEN` | couverture **et pignons** fermés (tolérance : 4 cellules) | bloquant |
+| `ENVELOPE_OPEN` | couverture **et pignons** fermés (tolérance : 4 cellules). Depuis #747 : un mur en retrait de 1 ou 2 cellules sous un toit qui déborde n'est plus compté (avant-toit) ; le refus localise les ouvertures par face, étendue et cause — vidées par tel « clear », pignon non rempli de tel « gable », ou mur absent | bloquant |
+| `CLEAR_ERASES` | *(#747)* un « clear » efface une porte, un lit, une échelle, ou au moins la moitié d'une fenêtre ou d'une lumière posée AVANT lui ; le moteur le remonte avant l'architecture quand rien d'autre ne les sépare | bloquant |
+| `CLEAR_NIBBLES` | *(#747)* un « clear » grignote moins de la moitié d'une fenêtre ou d'une lumière | avertissement |
 | `LEVEL_UNREACHABLE` | chaque niveau atteignable depuis le rez-de-chaussée — avec, depuis #282, le diagnostic en coordonnées et un escalier vérifié proposé | bloquant |
 | `LEVEL_CLUTTERED` | *(#282)* au moins 30 % de chaque plancher atteint où l'on peut se tenir debout | bloquant |
 | `ENVELOPE_MONOTONOUS` / `MATERIAL_DOMINANT` | ≥ 3 matériaux d'enveloppe, aucun au-delà de 70 % | avertissement |
@@ -2169,11 +2171,36 @@ diagnostic **complet** (le message d'action est tronqué à 500 caractères par 
 - **« Améliorer avec l'IA » fonctionne sans commentaire** : le diagnostic du dernier audit de la
   version courante (`PLAN_INVALID` compris) part de lui-même, visible sous « Ce que l'IA recevra ».
   Le champ libre devient « Vos consignes en plus (facultatif) ».
+- **Mémoire des tentatives et conformité au brief (#747).** Chaque reprise — manuelle ou automatique —
+  reçoit, en plus du motif, un résumé borné relu dans le journal IA du projet : versions vérifiées et
+  leurs codes, erreurs déjà résolues (à ne pas réintroduire), régressions, fautes qui reviennent (même
+  code et même cause, à des coordonnées différentes), meilleure version refusée, stagnation. Une version
+  `PLAN_INVALID` n'a pas été construite : elle ne « résout » rien. Elle reçoit aussi le bilan des
+  **exigences du brief** : un lexique général (cloche → `minecraft:bell`, pupitre → `lectern`, vitraux →
+  verre teinté, tapis, lanternes, bougies, fleurs, bancs → escaliers hors toit, lit, étagères, four,
+  enclume, établi, coffre) vérifié sur les blocs du plan **et** sur la palette du résultat compilé
+  (`metrics.palette` de l'audit) ; tour, autel, estrade, allée, porche, croix, cheminée, charpente sont
+  listés « ◌ à apprécier visuellement », jamais déclarés présents. Une exigence niée (« sans lit ») n'est
+  pas retenue.
+- **Réparation ou amélioration (#747).** Le formulaire propose « Nature de la reprise » :
+  *Automatique* (suggestion affichée avec sa raison), *Réparation technique* (corriger le motif, tout
+  garder) ou *Amélioration architecturale* (revoir les volumes en cause, ajouter ce qui manque au brief).
+  L'automatique choisit l'amélioration en cas de stagnation, de régression ou d'exigence vérifiable non
+  réalisée. Le bloc replié « Mémoire des tentatives et conformité au brief » montre ce qui partira, et
+  l'état des images (« Aucune image de référence attachée… » ou « N image(s) jointe(s) »).
+- **Réponse sans plan (#747).** Une réponse sans clé `steps:` (refus du modèle, texte libre) est gardée
+  comme version sans plan et n'est **jamais** soumise au serveur.
 
 **Conception automatique.** Carte du projet : l'IA conçoit, le serveur vérifie et répare, l'IA
 corrige avec le diagnostic exact, puis relit le plan **en architecte** (silhouette, façades,
 aménagement, lumière, fidélité au brief) ; un plan embelli qui régresse ne remplace jamais la
-version conforme.
+version conforme. Depuis #747 : un candidat qui **réintroduit une erreur résolue n'est pas promu** —
+la correction suivante repart de la meilleure version refusée, avec une note qui dit pourquoi ; trois
+tentatives de suite sans battre la meilleure version déclenchent une conception neuve, puis l'**arrêt**
+(« Stagnation : … ») ; un plan conforme à qui manque une exigence vérifiable du brief reçoit **une** passe
+« COMPLÉTUDE DU BRIEF » dans l'enveloppe consentie, même au niveau Standard ; une version conforme mais
+moins fidèle au brief que la précédente n'est pas retenue ; l'issue dit « INCOMPLET vis-à-vis du brief »
+plutôt que de présenter une géométrie valide comme une réussite.
 
 | Niveau | Appels au plus | Passes de critique |
 |---|---|---|

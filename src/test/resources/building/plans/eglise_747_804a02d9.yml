@@ -1,0 +1,95 @@
+id: eglise_du_hub
+name: "Église du Hub"
+kind: habitable
+front: SOUTH
+size:
+  x: 19
+  y: 23
+  z: 19
+anchor:
+  x: 9
+  y: 1
+  z: 9
+steps:
+  - op: box
+    from: [0, 0, 0]
+    to: [18, 0, 18]
+    block: minecraft:polished_andesite
+  - op: walls
+    from: [1, 1, 1]
+    to: [17, 6, 17]
+    block: minecraft:white_concrete
+  - op: gable
+    from: [0, 7, 0]
+    to: [18, 11, 18]
+    axis: x
+    fill: minecraft:white_concrete
+    block: minecraft:polished_blackstone_stairs
+  - op: pillars
+    from: [0, 1, 0]
+    to: [18, 11, 18]
+    spacing: 5
+    block: minecraft:quartz_block
+  - op: door
+    facade: FRONT
+    offset: 9
+    block: minecraft:dark_oak_door
+  - op: window
+    facade: LEFT
+    offset: 5
+    y: 2
+    width: 2
+    height: 4
+    block: minecraft:light_blue_stained_glass_pane
+  - op: window
+    facade: RIGHT
+    offset: 5
+    y: 2
+    width: 2
+    height: 4
+    block: minecraft:light_blue_stained_glass_pane
+  - op: window
+    facade: LEFT
+    offset: 12
+    y: 2
+    width: 2
+    height: 4
+    block: minecraft:yellow_stained_glass_pane
+  - op: window
+    facade: RIGHT
+    offset: 12
+    y: 2
+    width: 2
+    height: 4
+    block: minecraft:yellow_stained_glass_pane
+  - op: window
+    facade: BACK
+    offset: 9
+    y: 4
+    width: 3
+    height: 6
+    block: minecraft:red_stained_glass_pane
+  - op: light
+    from: [9, 9, 9]
+    to: [9, 9, 9]
+    block: minecraft:lantern
+  - op: staircase
+    from: [1, 1, 2]
+    direction: north
+    floor: 16
+    width: 2
+    block: minecraft:stone_brick_stairs
+  - op: box
+    from: [7, 16, 8]
+    to: [11, 16, 8]
+    block: minecraft:quartz_block
+  - op: box
+    from: [8, 17, 8]
+    to: [10, 17, 8]
+    block: minecraft:lectern
+  - op: gable
+    from: [6, 17, 6]
+    to: [12, 22, 12]
+    axis: x
+    fill: minecraft:white_concrete
+    block: minecraft:polished_blackstone_stairs

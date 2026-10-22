@@ -139,6 +139,7 @@ public final class PlanRepair {
         plan = doorway(plan, changes);
         plan = entrance(plan, changes);
         plan = lanterns(plan, changes);
+        plan = destructiveClears(plan, changes);
         List<String> after = codes(plan);
         if (changes.isEmpty() || worse(before, after) && !progressWhileInvalid(raw, plan, readNotes)) {
             return new Outcome(null, List.of(), before, before);
@@ -717,6 +718,57 @@ public final class PlanRepair {
         changes.add("Lanternes flottantes suspendues à une chaîne jusqu'au plafond : "
                 + String.join(", ", hung) + ".");
         return chained;
+    }
+
+    /**
+     * #747 : un « clear » placé APRÈS des portes, fenêtres, lumières, lits ou échelles les efface. Le
+     * moteur le remonte juste avant la première instruction d'architecture qu'il efface — seulement si
+     * rien d'autre que de l'architecture ne les sépare : les volumes qu'il vidait sont alors
+     * exactement les mêmes, seules les ouvertures et les lumières survivent. Jugé par l'audit complet.
+     */
+    static BuildingPlan destructiveClears(BuildingPlan plan, List<String> changes) {
+        Snapshot s = snapshot(plan);
+        if (s == null || s.expansion().provenance().erasures().isEmpty()) {
+            return plan;
+        }
+        List<PlanStep> steps = new ArrayList<>(plan.steps());
+        List<String> moved = new ArrayList<>();
+        Map<Integer, Integer> firstErased = new java.util.TreeMap<>(java.util.Comparator.reverseOrder());
+        for (BuildingPlanExpander.Erasure e : s.expansion().provenance().erasures()) {
+            if (architecture(plan.steps().get(e.erasedRank() - 1).kind())) {
+                firstErased.merge(e.clearRank(), e.erasedRank(), Math::min);
+            }
+        }
+        // Du dernier « clear » au premier : déplacer l'un ne décale pas les rangs des précédents.
+        for (var entry : firstErased.entrySet()) {
+            int clear = entry.getKey() - 1;
+            int target = entry.getValue() - 1;
+            boolean onlyArchitecture = true;
+            for (int i = target; i < clear; i++) {
+                onlyArchitecture &= architecture(steps.get(i).kind());
+            }
+            if (!onlyArchitecture) {
+                continue;
+            }
+            PlanStep step = steps.remove(clear);
+            steps.add(target, step);
+            moved.add("instruction " + (clear + 1) + " (clear) remontée avant l'instruction " + (target + 1));
+        }
+        if (moved.isEmpty()) {
+            return plan;
+        }
+        BuildingPlan reordered = copy(plan, steps);
+        if (worse(s.report().blockingCodes(), codes(reordered))) {
+            return plan;
+        }
+        changes.add("« clear » destructifs replacés AVANT les portes, fenêtres et lumières qu'ils effaçaient : "
+                + String.join(" ; ", moved) + ".");
+        return reordered;
+    }
+
+    private static boolean architecture(PlanStep.Kind kind) {
+        return kind == PlanStep.Kind.DOOR || kind == PlanStep.Kind.WINDOW || kind == PlanStep.Kind.LIGHT
+                || kind == PlanStep.Kind.BED || kind == PlanStep.Kind.LADDER;
     }
 
     /** L'escalier du plan, pour que les marches d'entrée gardent son style. */

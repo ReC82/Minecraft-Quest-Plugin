@@ -128,7 +128,9 @@ class BuildingDesignPipelineTest {
         journal = new AiJournalStore(db);
         pipeline.withJournal(new BuildingAiJournal(journal));
         project = projects.create(AGENT, new BuildingProjectStore.Fields("Bibliothèque du Hub",
-                "Bibliothèque médiévale de deux étages, escalier intérieur.", "bibliotheque_test", "WEST",
+                // #747 : brief sans élément vérifiable (cloche, pupitre, étagères…) — ces tests portent sur
+                // la boucle de correction ; la passe de complétude du brief a ses propres tests.
+                "Salle médiévale de deux étages, escalier intérieur.", "bibliotheque_test", "WEST",
                 19, 14), "", "owner");
         fakeAgent = new Thread(this::answerAudits, "faux-agent");
         fakeAgent.setDaemon(true);
@@ -164,6 +166,26 @@ class BuildingDesignPipelineTest {
     private void judge(AgentActionRow row) {
         String plan = row.params().getOrDefault("plan", "");
         Map<String, Object> details = new LinkedHashMap<>();
+        // #747 : « # codes:A,B » fait refuser le plan pour ces codes, un constat numéroté par code.
+        java.util.regex.Matcher marked = java.util.regex.Pattern.compile("codes:([A-Z_,]+)").matcher(plan);
+        if (marked.find()) {
+            List<String> codes = List.of(marked.group(1).split(","));
+            StringBuilder message = new StringBuilder("Plan refusé — contrat architectural non respecté. Corrige "
+                    + "PRÉCISÉMENT les points suivants :\n");
+            for (int i = 0; i < codes.size(); i++) {
+                message.append("  ").append(i + 1).append(". Constat ").append(codes.get(i)).append(" en ")
+                        .append(Math.abs(plan.hashCode() % 17)).append("/1/").append(i).append(".\n");
+            }
+            details.put("code", "ARCHITECTURE_REFUSED");
+            details.put("codes", codes);
+            details.put("message", message.toString());
+            details.put("warnings", List.of());
+            details.put("metrics", Map.of("floors", 1, "reachableFloors", 1));
+            agents.recordResult(row.id(), AGENT, AgentActionStatus.FAILED, "FAILED", message.toString(),
+                    Json.write(Map.of("action_id", row.id(), "status", "FAILED", "details", details)), Instant.now());
+            autopilot.onResult(row.id());
+            return;
+        }
         boolean ok = plan.contains("staircase") && !plan.contains("ugly-critique");
         details.put("code", ok ? "OK" : "ARCHITECTURE_REFUSED");
         details.put("codes", ok ? List.of() : List.of("LEVEL_UNREACHABLE"));
@@ -187,10 +209,15 @@ class BuildingDesignPipelineTest {
 
     private BuildingDesignRunStore.Run run(BuildingDesignPipeline.Quality quality, int maxCalls,
                                            String... plans) {
+        return runFor(project, quality, maxCalls, plans);
+    }
+
+    private BuildingDesignRunStore.Run runFor(BuildingProject target, BuildingDesignPipeline.Quality quality,
+                                              int maxCalls, String... plans) {
         synchronized (scripted) {
             scripted.addAll(List.of(plans));
         }
-        BuildingDesignRunStore.Run r = runs.start(AGENT, project.id(), "token-" + System.nanoTime(),
+        BuildingDesignRunStore.Run r = runs.start(AGENT, target.id(), "token-" + System.nanoTime(),
                 "openai", quality.name(), maxCalls, "owner").orElseThrow();
         pipeline.execute(r.id());
         return runs.find(r.id()).orElseThrow();
@@ -288,6 +315,80 @@ class BuildingDesignPipelineTest {
         assertEquals(3, r.spentCalls(), kinds(r).toString());
         assertTrue(kinds(r).contains("CONCEPTION NEUVE"), kinds(r).toString());
         assertTrue(r.outcome().contains("tourne en rond"), r.outcome());
+    }
+
+    /**
+     * #747 — Église du hub : 207e6e4f avait réparé les lanternes, 21b94ae2 les a cassées de nouveau, et
+     * la correction suivante repartait de 21b94ae2. Un candidat qui réintroduit une erreur résolue
+     * n'est plus promu : la correction repart de la meilleure version, et la raison est écrite.
+     */
+    @Test
+    void aCandidateThatReintroducesAResolvedErrorIsNotPromoted() {
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4, plan("p1 codes:UNSUPPORTED_BLOCK,DARK_AREA"),
+                plan("p2 codes:DARK_AREA"), plan("p3 codes:UNSUPPORTED_BLOCK,DARK_AREA"), plan("p4 staircase"));
+
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        assertTrue(r.passes().stream().anyMatch(p -> p.verdict().contains("non promu")
+                && p.verdict().contains("réintroduit UNSUPPORTED_BLOCK")), kinds(r).toString());
+        // La 4e requête corrige p2, pas p3 : c'est p2 qui part comme « plan refusé ».
+        assertTrue(requests.get(3).contains("# p2 codes:DARK_AREA"), "la correction repart de la meilleure version");
+        assertFalse(requests.get(3).contains("# p3 codes"), "le candidat régressif n'est pas la base");
+        assertTrue(requests.get(3).contains("MÉMOIRE DES TENTATIVES") && requests.get(3).contains("ERREURS DÉJÀ RÉSOLUES"),
+                "la mémoire structurée part avec la correction");
+        assertTrue(requests.get(3).contains("MODE : AMÉLIORATION ARCHITECTURALE"), "une régression change d'approche");
+    }
+
+    /** #747 — trois tentatives sans battre la meilleure : une conception neuve, puis un arrêt dit comme tel. */
+    @Test
+    void stagnationGetsOneFreshDesignThenStopsClearly() {
+        var r = run(BuildingDesignPipeline.Quality.EXIGEANT, 12, plan("s1 codes:ROOF_MISSING,DARK_AREA"),
+                plan("s2 codes:ROOF_MISSING,NO_LIGHT"), plan("s3 codes:ENVELOPE_OPEN,NO_LIGHT"),
+                plan("s4 codes:ENVELOPE_OPEN,DARK_AREA"), plan("s5 codes:GLAZING_MISSING,DARK_AREA"),
+                plan("s6 codes:GLAZING_MISSING,NO_LIGHT"), plan("s7 staircase"));
+
+        assertEquals(BuildingDesignRunStore.Status.STOPPED, r.status(), r.outcome());
+        assertTrue(kinds(r).contains("CONCEPTION NEUVE"), kinds(r).toString());
+        assertTrue(r.outcome().startsWith("Stagnation"), r.outcome());
+        assertTrue(r.spentCalls() < 7, "borné : " + r.spentCalls());
+    }
+
+    /** #747 — un plan conforme sans ce que le brief exige reçoit une passe de complétude, même en Standard. */
+    @Test
+    void aConformPlanMissingABriefRequirementGetsACompletenessPass() {
+        BuildingProject chapel = projects.create(AGENT, new BuildingProjectStore.Fields("Chapelle",
+                "Une chapelle avec une cloche et un pupitre.", "chapelle_test", "WEST", 19, 14), "", "owner");
+        var r = runFor(chapel, BuildingDesignPipeline.Quality.STANDARD, 4, plan("bare staircase"),
+                plan("staircase minecraft:bell minecraft:lectern"));
+
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        assertTrue(kinds(r).contains("COMPLÉTUDE DU BRIEF"), kinds(r).toString());
+        assertTrue(requests.get(1).contains("✗ Cloche"), "la passe reçoit les exigences manquantes");
+        assertTrue(drafts.find(r.finalDraftId()).orElseThrow().plan().contains("minecraft:bell"));
+        assertTrue(r.outcome().contains("Brief : 2/2"), r.outcome());
+    }
+
+    /** #747 — conforme mais toujours sans cloche après la passe : c'est dit, pas présenté comme une réussite. */
+    @Test
+    void aConformPlanThatStillMissesTheBriefIsReportedIncomplete() {
+        BuildingProject chapel = projects.create(AGENT, new BuildingProjectStore.Fields("Chapelle",
+                "Une chapelle avec une cloche.", "chapelle_test2", "WEST", 19, 14), "", "owner");
+        var r = runFor(chapel, BuildingDesignPipeline.Quality.STANDARD, 4, plan("bare staircase"),
+                plan("bare staircase again"));
+
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        assertTrue(r.outcome().contains("INCOMPLET vis-à-vis du brief") && r.outcome().contains("Cloche"), r.outcome());
+    }
+
+    /** #747 — « I'm sorry, I can't assist with that. » n'est pas un plan : rien n'est soumis au serveur. */
+    @Test
+    void aModelRefusalIsNotSubmittedAsAPlan() {
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4, "I'm sorry, I can't assist with that.");
+
+        assertEquals(BuildingDesignRunStore.Status.STOPPED, r.status(), r.outcome());
+        assertEquals(1, r.spentCalls());
+        assertFalse(kinds(r).contains("VÉRIFICATION"), kinds(r).toString());
+        assertTrue(agents.recentActions(AGENT, 50).stream().noneMatch(a -> a.type().equals("building.plan.audit")),
+                "aucun audit pour une réponse sans plan");
     }
 
     @Test
@@ -408,7 +509,7 @@ class BuildingDesignPipelineTest {
         assertTrue(requests.get(0).contains("CORRESPONDANCE AVEC LE BRIEF"), "étape 1 : la conception");
         assertTrue(requests.get(1).contains("LA CONCEPTION DÉTAILLÉE À TRADUIRE"), "étape 2 : la traduction");
         assertTrue(requests.get(1).contains("lit rose"), "le texte de la conception part avec le plan");
-        assertTrue(requests.get(1).contains("Bibliothèque médiévale de deux étages"), "le brief aussi");
+        assertTrue(requests.get(1).contains("Salle médiévale de deux étages"), "le brief aussi");
         assertEquals(1, docs.latest(project.id()).orElseThrow().version(), "la conception est conservée");
     }
 

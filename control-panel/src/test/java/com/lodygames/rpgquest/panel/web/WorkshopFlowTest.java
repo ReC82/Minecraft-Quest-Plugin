@@ -253,6 +253,9 @@ class WorkshopFlowTest {
         String main = mainCard(page);
         assertTrue(main.contains("pas de porte utilisable"), main);
         assertTrue(main.contains("Améliorer avec l&#39;IA") || main.contains("Améliorer avec l'IA"));
+        // #747 : la reprise montre ce qui partira — mémoire, conformité, images — et sa nature.
+        assertTrue(main.contains("Nature de la reprise") && main.contains("Mémoire des tentatives"), main);
+        assertTrue(main.contains("Aucune image de référence attachée au projet"), main);
         for (String jargon : new String[] {"NO_ENTRANCE", "PLAN_INVALID", "YAML", "audit", "brief"}) {
             assertFalse(main.contains(jargon), "jargon dans le parcours principal : " + jargon + " — "
                     + main.substring(Math.max(0, main.indexOf(jargon) - 200), Math.min(main.length(), main.indexOf(jargon) + 100)));

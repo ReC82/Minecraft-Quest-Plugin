@@ -29,6 +29,9 @@ public final class PlanVerdictText {
                     "Demander au moins deux fenêtres.")),
             Map.entry("GLAZING_ONE_SIDED", new Problem("Toutes les fenêtres sont du même côté.",
                     "Demander des fenêtres sur au moins deux côtés.")),
+            Map.entry("CLEAR_ERASES", new Problem("Une instruction « vider » efface une porte, une fenêtre ou "
+                    + "une lumière déjà posée.", "Demander de vider les volumes AVANT de poser portes, fenêtres et "
+                    + "lumières, sans traverser les murs extérieurs.")),
             Map.entry("NO_LIGHT", new Problem("L'intérieur n'a aucune lumière.",
                     "Demander des lanternes ou des torches à l'intérieur.")),
             Map.entry("DARK_AREA", new Problem("Une partie de l'intérieur reste dans le noir.",

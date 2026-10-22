@@ -1861,7 +1861,10 @@ public final class AgentPages {
                 .append(" npc-head\" type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#")
                 .append(slug).append("\" aria-expanded=\"").append(focused).append("\" aria-controls=\"")
                 .append(slug).append("\">");
-        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(MiniText.html(title))
+        Map<String, Object> firstObjective = firstObjective(steps);
+        sb.append("<span class=\"npc-head-main\">").append(PixelIcons.tile(PixelIcons.forQuest(str(qd.get("icon")),
+                        str(firstObjective.get("kind")), str(firstObjective.get("target")))))
+                .append("<span class=\"npc-name\">").append(MiniText.html(title))
                 .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
         sb.append("<span class=\"npc-head-badges\">");
         if (!period.isEmpty()) {
@@ -2311,7 +2314,8 @@ public final class AgentPages {
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
                 + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
                 .append(slug).append("\">");
-        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(MiniText.html(title))
+        sb.append("<span class=\"npc-head-main\">").append(PixelIcons.tile("scroll"))
+                .append("<span class=\"npc-name\">").append(MiniText.html(title))
                 .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
         sb.append("<span class=\"npc-head-badges\">");
         sb.append("<span class=\"badge text-bg-secondary\">").append(steps.size())
@@ -4067,7 +4071,8 @@ public final class AgentPages {
         sb.append("<h3 class=\"accordion-header\"><button class=\"accordion-button collapsed npc-head\" "
                 + "type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
                 .append("\" aria-expanded=\"false\" aria-controls=\"").append(slug).append("\">");
-        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(Http.esc(city.name()))
+        sb.append("<span class=\"npc-head-main\">").append(PixelIcons.tile("map"))
+                .append("<span class=\"npc-name\">").append(Http.esc(city.name()))
                 .append("</span><code class=\"tid npc-id\">").append(Http.esc(city.id())).append("</code>")
                 .append("<span class=\"npc-loc\">").append(Icons.icon("world")).append(Http.esc(city.world()))
                 .append(' ').append(Http.esc(city.centerLabel())).append("</span></span>");
@@ -5350,7 +5355,9 @@ public final class AgentPages {
         sb.append("<h3 class=\"accordion-header\"><button class=\"accordion-button collapsed npc-head\" "
                 + "type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(collapseId)
                 .append("\" aria-expanded=\"false\" aria-controls=\"").append(collapseId).append("\">");
-        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(card.nameHtml()).append("</span>");
+        String role = card.hasDefinition() ? cleanNull(str(card.row().get("role"))) : "";
+        sb.append("<span class=\"npc-head-main\">").append(PixelIcons.tile(PixelIcons.forNpcRole(role)))
+                .append("<span class=\"npc-name\">").append(card.nameHtml()).append("</span>");
         if (!roleText.isEmpty()) {
             sb.append("<span class=\"npc-role\">").append(Http.esc(roleText)).append("</span>");
         }
@@ -6113,7 +6120,7 @@ public final class AgentPages {
         sb.append("<h3 class=\"accordion-header\"><button class=\"accordion-button collapsed npc-head\" type=\"button\" "
                 + "data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" "
                 + "aria-controls=\"").append(slug).append("\">");
-        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">")
+        sb.append("<span class=\"npc-head-main\">").append(PixelIcons.tile("npc")).append("<span class=\"npc-name\">")
                 .append(rawName.isEmpty() ? Http.esc(label) : MiniText.html(rawName)).append("</span>");
         if (!place.isEmpty()) {
             sb.append("<span class=\"npc-loc\">").append(Icons.icon("world")).append(Http.esc(place)).append("</span>");
@@ -8219,7 +8226,8 @@ public final class AgentPages {
         sb.append("<button class=\"accordion-button").append(open ? "" : " collapsed")
                 .append(" npc-head\" type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
                 .append("\" aria-expanded=\"").append(open).append("\" aria-controls=\"").append(slug).append("\">");
-        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(Http.esc(human))
+        sb.append("<span class=\"npc-head-main\">").append(PixelIcons.tile("talk"))
+                .append("<span class=\"npc-name\">").append(Http.esc(human))
                 .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
         sb.append("<span class=\"npc-head-badges\">");
         sb.append("<span class=\"badge text-bg-secondary\">").append(Http.esc(str(dg.get("nodeCount"))))
@@ -13684,6 +13692,7 @@ public final class AgentPages {
                 .append("<button class=\"accordion-button collapsed\" type=\"button\" data-bs-toggle=\"collapse\" "
                         + "data-bs-target=\"#").append(collapseId).append("\" aria-expanded=\"false\" aria-controls=\"")
                 .append(collapseId).append("\">");
+        sb.append(PixelIcons.tile(PixelIcons.forMob(boss, str(m.get("entityType")))));
         sb.append(boss ? "<span class=\"badge text-bg-danger\">BOSS</span> " : "<span class=\"badge text-bg-info\">SPECIAL</span> ");
         sb.append(enabled ? "" : "<span class=\"badge text-bg-secondary\">désactivé</span> ");
         sb.append(Http.esc(MiniText.plain(str(m.get("displayName"))))).append(" <code class=\"ms-1\">")
@@ -14494,6 +14503,17 @@ public final class AgentPages {
 
     private static String str(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    /** Premier objectif structuré d'une quête ({@code quest.list}), vide si aucun. */
+    private static Map<String, Object> firstObjective(List<Object> steps) {
+        for (Object step : steps) {
+            List<Object> structured = asList(asMap(step).get("objectiveDetails"));
+            if (!structured.isEmpty()) {
+                return asMap(structured.get(0));
+            }
+        }
+        return Map.of();
     }
 
     private static List<Object> asList(Object value) {

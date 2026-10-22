@@ -14,7 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Icônes pixel art LodyQuests dans PlugAdmin (#428, phase 2b) : <strong>le même sprite et la même
+ * Icônes pixel art LodyQuests dans PlugAdmin (#428, phases 2b et 2c) : <strong>le même sprite et la même
  * table</strong> que le portail public ({@code web-api/src/main/resources/portal}), copiés par Gradle
  * sous {@code classpath:/assets/lq/} et servis en local par {@code /assets/lq/lq-icons.svg}.
  *
@@ -33,6 +33,14 @@ public final class PixelIcons {
     private static final Set<String> NAMES = names(read(SPRITE));
     private static final Map<String, String> EXACT = new LinkedHashMap<>();
     private static final Map<String, String> SUFFIX = new LinkedHashMap<>();
+    /** Rôles suggérés ({@code NpcRoles}) → icône ; un rôle libre ou absent garde l'icône {@code npc}. */
+    private static final Map<String, String> ROLES = Map.ofEntries(
+            Map.entry("aubergiste", "bread"), Map.entry("archiviste", "scroll"), Map.entry("artisan", "log"),
+            Map.entry("cartographe", "map"), Map.entry("chasseur", "sword"), Map.entry("cuisinier", "pie"),
+            Map.entry("eclaireur", "map"), Map.entry("fermier", "grass"), Map.entry("forgeron", "pickaxe"),
+            Map.entry("garde", "shield"), Map.entry("guerisseur", "potion"), Map.entry("marchand", "coin"),
+            Map.entry("mineur", "ore"), Map.entry("pecheur", "fish"), Map.entry("teleporteur", "waypoint"),
+            Map.entry("voyageur", "waypoint"), Map.entry("quest_giver", "scroll"));
 
     static {
         Map<String, Object> root = Json.parseObject(new String(read("lq/material-map.json"), StandardCharsets.UTF_8));
@@ -100,6 +108,27 @@ public final class PixelIcons {
             case "COMMAND" -> known("scroll");
             default -> known("trophy");
         };
+    }
+
+    /**
+     * Icône d'une quête (#428 phase 2c) : son {@code icon:} (champ {@code icon} de {@code quest.list})
+     * s'il a une vraie icône, sinon celle de son premier objectif, sinon un parchemin. Un agent plus
+     * ancien n'envoie pas {@code icon} : la tuile retombe alors sur le premier objectif.
+     */
+    public static String forQuest(String icon, String firstKind, String firstTarget) {
+        String byObjective = firstKind == null || firstKind.isBlank() ? "scroll" : forObjective(firstKind, firstTarget);
+        return forMaterial(icon, byObjective);
+    }
+
+    /** Icône d'un PNJ selon son rôle stocké ({@code marchand}, {@code garde}…) ; {@code npc} par défaut. */
+    public static String forNpcRole(String role) {
+        String key = role == null ? "" : role.trim().toLowerCase(Locale.ROOT);
+        return known(ROLES.getOrDefault(key, "npc"));
+    }
+
+    /** Icône d'un mob spécial (son entité, sinon un crâne) ; un boss garde toujours l'icône {@code boss}. */
+    public static String forMob(boolean boss, String entityType) {
+        return boss ? known("boss") : forMaterial(entityType, "skull");
     }
 
     /** Tuile 24 px autour d'une icône 16 px, à placer devant un libellé. */

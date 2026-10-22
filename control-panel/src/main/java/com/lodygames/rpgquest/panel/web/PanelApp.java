@@ -424,6 +424,7 @@ public final class PanelApp {
         route("/dialogues/save", this::handleDialogueSave);
         route("/dialogues/publish", this::handleDialoguePublish);
         route("/dialogues/refresh", this::handleDialogueRefresh);
+        route("/dialogues/reload", this::handleDialogueReload);
         route("/dialogues/link", this::handleDialogueLink);
         route("/dialogues/import", this::handleDialogueImport);
         route("/dialogues/ai", this::handleDialogueAiExport);
@@ -5677,8 +5678,139 @@ public final class PanelApp {
             Http.redirect(exchange, "/dialogues?err=" + enc("Ce dialogue est introuvable."));
             return;
         }
+        editing = withDialogueReload(ctx, slug, editing, query);
         dialoguePage(exchange, session, DialoguePages.title(slug, editing.draft(), ctx.users(slug)),
                 actionFeedback(query) + DialoguePages.editor(session.csrfToken(), ctx, dialogueRights(session), editing));
+    }
+
+    /**
+     * Issue #732 — {@code ?reload=<lecture>} : l'étape « Recharger depuis DEV » ; {@code ?reloaded=<lecture>} :
+     * la version vient d'être rechargée, on dit ce que le jeu utilise.
+     */
+    private DialoguePages.Editing withDialogueReload(DialoguePages.Ctx ctx, String slug, DialoguePages.Editing editing,
+                                                     Map<String, String> query) {
+        boolean applied = query.containsKey("reloaded");
+        String readId = query.getOrDefault(applied ? "reloaded" : "reload", "").trim();
+        if (readId.isEmpty() || editing.serverCopy() != null || editing.expectedSha().isEmpty()) {
+            return editing;
+        }
+        var read = agentPages.dialogueReload(ctx.agentId(), slug, readId).orElse(null);
+        if (read == null) {
+            return editing;
+        }
+        var inGame = read.ready() ? agentPages.dialogueInGame(ctx.agentId(), slug, read.text(), read.devSha())
+                : com.lodygames.rpgquest.panel.content.DialogueDevReload.InGame.UNKNOWN;
+        var reload = new DialoguePages.Reload(false, "", readId, read, inGame, editing.expectedSha(), applied);
+        if (!applied) {
+            return editing.withReload(reload);
+        }
+        boolean same = read.ready() && read.devSha().equals(editing.expectedSha());
+        String notice = same ? "Version DEV rechargée dans l'éditeur. " + DialoguePages.inGameText(inGame)
+                : "La version DEV a été rechargée, mais le fichier a changé depuis : vérifiez ce qui est affiché.";
+        boolean warn = !same || inGame == com.lodygames.rpgquest.panel.content.DialogueDevReload.InGame.OLDER
+                || inGame == com.lodygames.rpgquest.panel.content.DialogueDevReload.InGame.NOT_LOADED;
+        return new DialoguePages.Editing(slug, editing.draft(), editing.expectedSha(), editing.readOnly(), notice,
+                warn ? "warn" : "ok", editing.errors(), false, editing.hasComments(), null, reload);
+    }
+
+    /**
+     * Issue #732 — demande la lecture du fichier DEV ({@code content.dev.read}, #47) et un relevé des
+     * dialogues chargés en jeu, puis montre l'étape « Recharger depuis DEV ». Lecture seule : rien
+     * n'est écrit, ni ici ni sur DEV.
+     */
+    private void startDialogueReload(HttpExchange exchange, NpcPost post, String slug, String keptDraft)
+            throws IOException {
+        String back = "/dialogues/edit/" + slug;
+        if (!permissions.can(post.session().effective(), Permission.CONTENT_READ)) {
+            Http.redirect(exchange, back + "?err=" + enc("Vous n'avez pas le droit de lire les fichiers du serveur DEV."));
+            return;
+        }
+        String readId = agentStore.recentActions(post.agentId(), 200).stream()
+                .filter(a -> "content.dev.read".equals(a.type()) && !a.status().terminal()
+                        && "dialogues".equals(a.params().get("kind")) && slug.equals(a.params().get("id")))
+                .map(AgentActionRow::id).findFirst()
+                .orElseGet(() -> agentStore.createAction(post.agentId(), "content.dev.read",
+                        Map.of("kind", "dialogues", "id", slug), post.session().username()));
+        if (permissions.can(post.session().effective(), Permission.DIALOGUE_READ)
+                && !agentStore.hasOpenActionOfType(post.agentId(), "dialogue.list")) {
+            agentStore.createAction(post.agentId(), "dialogue.list", Map.of(), post.session().username());
+        }
+        audit.record(post.session().username(), "dialogues.reload.read", back, "PENDING", "lecture=" + readId,
+                UUID.randomUUID().toString().substring(0, 8));
+        Http.redirect(exchange, back + "?reload=" + enc(readId) + (keptDraft.isEmpty() ? ""
+                : "&ok=" + enc("Vos modifications non enregistrées ont été copiées dans les sauvegardes de PlugAdmin ("
+                        + Path.of(keptDraft).getFileName() + ").")) + "#dlg-reload");
+    }
+
+    /**
+     * Issue #732 — {@code read} : relire le fichier DEV (aucun brouillon à protéger : formulaire
+     * hors éditeur) ; {@code apply} : remplacer la version enregistrée ici par le fichier lu, octet
+     * pour octet, seulement s'il est intègre, toujours celui que l'administrateur a vu, et si la
+     * version d'ici n'a pas changé entre-temps. Elle est sauvegardée avant. DEV n'est jamais touché.
+     */
+    private void handleDialogueReload(HttpExchange exchange) throws IOException {
+        NpcPost post = dialoguePost(exchange, true);
+        if (post == null) {
+            return;
+        }
+        Map<String, String> form = post.form();
+        String slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(form.getOrDefault("slug", ""));
+        Optional<ContentWorkspace.ContentFile> file = slug.isEmpty() ? Optional.empty()
+                : contentWorkspace.read("dialogues", slug);
+        if (file.isEmpty()) {
+            Http.redirect(exchange, "/dialogues?err=" + enc("Ce dialogue est introuvable."));
+            return;
+        }
+        String back = "/dialogues/edit/" + slug;
+        if (!"apply".equals(form.get("_op"))) {
+            startDialogueReload(exchange, post, slug, "");
+            return;
+        }
+        String readId = form.getOrDefault("read_id", "").trim();
+        var read = agentPages.dialogueReload(post.agentId(), slug, readId).orElse(null);
+        String expectedDev = form.getOrDefault("expected_dev_sha", "").trim();
+        if (read == null || !read.ready() || expectedDev.isEmpty() || !expectedDev.equals(read.devSha())) {
+            Http.redirect(exchange, back + "?err=" + enc("Rien n'a été remplacé : la version DEV n'est plus celle "
+                    + "affichée, ou elle n'est pas lisible. Relisez-la, puis recommencez."));
+            return;
+        }
+        String expectedSource = form.getOrDefault("expected_sha", "").trim();
+        if (!expectedSource.equals(file.get().sha256())) {
+            Http.redirect(exchange, back + "?err=" + enc("Rien n'a été remplacé : votre version a été enregistrée "
+                    + "entre-temps. Relisez la version DEV avant de recommencer."));
+            return;
+        }
+        if (read.devSha().equals(file.get().sha256())) {
+            // Déjà identique : rien à écrire, mais la version DEV devient la référence attendue.
+            agentStore.adoptDevReference(post.agentId(), "dialogues", slug, read.devSha(), post.session().username(),
+                    Instant.now());
+            Http.redirect(exchange, back + "?reloaded=" + enc(readId));
+            return;
+        }
+        String stamp = "reload-" + java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
+                .withZone(java.time.ZoneOffset.UTC).format(Instant.now()) + "-dialogues-" + slug;
+        Optional<ContentWorkspace.Backup> backup = contentWorkspace.backup("dialogues", slug, stamp);
+        if (backup.isEmpty() || !backup.get().sha256().equals(file.get().sha256())) {
+            Http.redirect(exchange, back + "?err=" + enc("Rien n'a été remplacé : la sauvegarde de votre version n'a "
+                    + "pas pu être faite."));
+            return;
+        }
+        ContentWorkspace.WriteResult wr = contentWorkspace.write("dialogues", slug, read.text(), file.get().sha256());
+        if (!wr.ok()) {
+            Http.redirect(exchange, back + "?err=" + enc("Rien n'a été remplacé : " + wr.message()));
+            return;
+        }
+        // La version reprise devient la référence attendue sur DEV : la prochaine mise en jeu part
+        // d'elle, sans faux conflit, et une modification faite ailleurs ENSUITE reste détectée.
+        agentStore.adoptDevReference(post.agentId(), "dialogues", slug, read.devSha(), post.session().username(),
+                Instant.now());
+        audit.record(post.session().username(), "dialogues.content.reload", back, "OK",
+                "dev=" + read.shortSha() + " sauvegarde=" + backup.get().backupPath(),
+                UUID.randomUUID().toString().substring(0, 8));
+        if (!agentStore.hasOpenActionOfType(post.agentId(), "content.dev.state")) {
+            agentStore.createAction(post.agentId(), "content.dev.state", Map.of(), post.session().username());
+        }
+        Http.redirect(exchange, back + "?reloaded=" + enc(readId));
     }
 
     /** L'éditeur ouvert sur le fichier enregistré (ou, s'il n'est que sur le serveur, en lecture seule). */
@@ -6079,6 +6211,45 @@ public final class PanelApp {
         String tone = "info";
         String[] parts = op.split(":");
         switch (parts[0]) {
+            case "reload", "reload_confirm" -> {
+                // Issue #732 : jamais de brouillon perdu sans le dire. Avec des modifications non
+                // enregistrées, on demande d'abord ; abandonner exige la case cochée, et une copie est gardée.
+                boolean unsaved = !parsed.createdNodes().isEmpty() || !com.lodygames.rpgquest.panel.content.DialogueYaml
+                        .write(draft).equals(com.lodygames.rpgquest.panel.content.DialogueYaml.write(original.draft()));
+                boolean confirmed = "reload_confirm".equals(parts[0]) && "1".equals(form.get("reload_discard"));
+                if (unsaved && !confirmed) {
+                    String err = "reload_confirm".equals(parts[0])
+                            ? "Rien n'a été rechargé : cochez d'abord la case pour confirmer." : "";
+                    DialoguePages.Editing asking = new DialoguePages.Editing(slug, draft, expectedSha, "", "", "info",
+                            Map.of(), true, comments).withReload(DialoguePages.Reload.askDiscard(err));
+                    dialoguePage(exchange, post.session(), DialoguePages.title(slug, draft, ctx.users(slug)),
+                            DialoguePages.editor(post.session().csrfToken(), ctx, dialogueRights(post.session()), asking));
+                    return;
+                }
+                String kept = "";
+                if (unsaved) {
+                    String stamp = "reload-" + java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
+                            .withZone(java.time.ZoneOffset.UTC).format(Instant.now()) + "-dialogues-" + slug;
+                    Optional<Path> copy = contentWorkspace.keepDraft("dialogues", slug, stamp,
+                            com.lodygames.rpgquest.panel.content.DialogueYaml.write(draft));
+                    if (copy.isEmpty()) {
+                        DialoguePages.Editing asking = new DialoguePages.Editing(slug, draft, expectedSha, "", "", "info",
+                                Map.of(), true, comments).withReload(DialoguePages.Reload.askDiscard("Rien n'a été "
+                                        + "rechargé : la copie de secours de vos modifications n'a pas pu être faite."));
+                        dialoguePage(exchange, post.session(), DialoguePages.title(slug, draft, ctx.users(slug)),
+                                DialoguePages.editor(post.session().csrfToken(), ctx, dialogueRights(post.session()),
+                                        asking));
+                        return;
+                    }
+                    kept = copy.get().toString();
+                    audit.record(post.session().username(), "dialogues.draft.kept", "/dialogues/edit/" + slug, "OK",
+                            "copie=" + kept, UUID.randomUUID().toString().substring(0, 8));
+                }
+                startDialogueReload(exchange, post, slug, kept);
+                return;
+            }
+            case "reload_cancel" -> notice = "Rien n'a été rechargé : vos modifications sont toujours là. "
+                    + "Pensez à les enregistrer.";
             case "addreply" -> com.lodygames.rpgquest.panel.content.DialogueForm.addReply(draft, intAt(parts, 1));
             case "delreply" -> {
                 int i = intAt(parts, 1);

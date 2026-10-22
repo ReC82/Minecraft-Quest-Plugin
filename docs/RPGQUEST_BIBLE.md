@@ -3190,6 +3190,24 @@ perdu.
 C'est la traduction d'une exigence du ticket en règle vérifiable : *consentement éclairé* plutôt que
 case à cocher de plus.
 
+#### « Recharger depuis DEV » dans l'éditeur guidé (#732)
+
+Le sens inverse de la publication : reprendre dans PlugAdmin la version **enregistrée sur DEV**. Le
+bouton est dans le bandeau d'état de l'éditeur (et dans l'encadré de conflit). Il envoie le
+formulaire de l'éditeur : s'il porte des modifications non enregistrées, le serveur **demande
+d'abord** (« Annuler — garder mes modifications » par défaut ; abandonner exige une case cochée, et
+une copie `<slug>.brouillon.yml` est gardée dans `content-backups/reload-…`). Sinon il demande
+`content.dev.read` (et un relevé `dialogue.list`) : **lecture seule**. Une fois lu, le fichier ne
+remplace la source que sur un clic (« Remplacer ma version par celle de DEV »), octet pour octet,
+si l'empreinte lue et celle de la source n'ont pas bougé ; la source est sauvegardée avant.
+L'empreinte reprise est enregistrée comme **référence attendue sur DEV** (table additive
+`content_dev_reference` de `control-panel.db`) : la mise en jeu suivante part d'elle, sans faux
+conflit, et une modification faite ailleurs **ensuite** reste un conflit. Rien n'est jamais publié.
+
+« Enregistré sur DEV » et « en jeu » sont dits séparément : confirmé par la dernière mise en jeu,
+sinon comparé (début, répliques, réponses et suites) au relevé `dialogue.list` postérieur à notre
+dernière écriture ; sans relevé assez récent, « on ne sait pas encore ».
+
 #### `/content/pending` : ce qui demande une décision
 
 Une liste, pas un compteur. « 7 ressources non synchronisées » obligerait à ouvrir sept fiches pour

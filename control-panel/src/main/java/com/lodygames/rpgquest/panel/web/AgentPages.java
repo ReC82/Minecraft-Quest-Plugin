@@ -7844,6 +7844,14 @@ public final class AgentPages {
             return new DialoguePages.LiveState(devIndex.available() || !latestDetails(agentId, "dialogue.list").isEmpty()
                     ? DialoguePages.Live.SERVER_ONLY : DialoguePages.Live.UNKNOWN, "", "", expectedDev, null);
         }
+        if (ownIsNewer && !lastDevSha.isEmpty()
+                && store.devReference(agentId, "dialogues", slug).map(r -> r.devSha().equals(lastDevSha)).orElse(false)) {
+            // Issue #732 : version DEV reprise après le dernier relevé d'état, qui ne la connaît donc
+            // pas encore : DEV porte la version reprise. Identique à l'éditeur → ce que le jeu a
+            // chargé reste à vérifier ; modifiée depuis → pas encore en jeu. Jamais un faux conflit.
+            return new DialoguePages.LiveState(lastDevSha.equals(sourceSha) ? DialoguePages.Live.UNKNOWN
+                    : DialoguePages.Live.NOT_LIVE, "", sourceSha, expectedDev, null);
+        }
         var readState = devIndex.stateOf("dialogues", slug, "rpgquest:" + slug, sourceSha, sourceCatalog.available(),
                 lastDevSha);
         var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState, stale,
@@ -7861,6 +7869,56 @@ public final class AgentPages {
             case RUNTIME_ONLY -> new DialoguePages.LiveState(DialoguePages.Live.SERVER_ONLY, "", sourceSha, expectedDev, when);
             case UNKNOWN -> new DialoguePages.LiveState(DialoguePages.Live.UNKNOWN, "", sourceSha, expectedDev, when);
         };
+    }
+
+    /**
+     * Issue #732 — où en est la lecture « Recharger depuis DEV » {@code readId} de ce dialogue.
+     * Vide si l'action n'existe pas ou ne concerne pas ce dialogue (lien ancien ou forgé).
+     */
+    public Optional<com.lodygames.rpgquest.panel.content.DialogueDevReload> dialogueReload(String agentId, String slug,
+                                                                                          String readId) {
+        if (agentId == null || agentId.isBlank() || readId == null || readId.isBlank()) {
+            return Optional.empty();
+        }
+        Optional<AgentActionRow> row = store.action(readId)
+                .filter(a -> "content.dev.read".equals(a.type()) && agentId.equals(a.agentId())
+                        && "dialogues".equals(a.params().get("kind")) && slug.equals(a.params().get("id")));
+        if (row.isEmpty()) {
+            return Optional.empty();
+        }
+        AgentActionRow r = row.get();
+        if (!r.status().terminal()) {
+            return Optional.of(com.lodygames.rpgquest.panel.content.DialogueDevReload.of(true, null, Optional.empty(), ""));
+        }
+        String failed = r.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS ? null
+                : r.resultMessage() == null ? "" : MiniText.prettifyTokens(r.resultMessage());
+        // Un relevé d'état plus récent que la lecture, qui annonce une autre empreinte : DEV a bougé.
+        String newerState = devReadingAt(agentId)
+                .filter(at -> r.completedAt() != null && at.isAfter(r.completedAt()))
+                .map(at -> devContentIndex(agentId).devSha("dialogues", slug)).orElse("");
+        return Optional.of(com.lodygames.rpgquest.panel.content.DialogueDevReload.of(false, failed, detailsOf(r),
+                newerState));
+    }
+
+    /**
+     * Issue #732 — le jeu utilise-t-il le fichier DEV lu ? Confirmé par notre dernière mise en jeu,
+     * sinon comparé au relevé {@code dialogue.list} s'il est postérieur à notre dernière écriture.
+     */
+    public com.lodygames.rpgquest.panel.content.DialogueDevReload.InGame dialogueInGame(String agentId, String slug,
+                                                                                       String devText, String devSha) {
+        Optional<OwnWrite> own = lastOwnWrite(agentId, "dialogues", slug);
+        Optional<Map<String, Object>> lastPublish = lastPublishOf(agentId, "dialogues", slug);
+        String confirmed = lastPublish.filter(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed")))
+                .map(d -> confirmedDevSha(Optional.of(d), own)).orElse("");
+        Optional<Instant> surveyAt = store.latestSuccessfulActionOfType(agentId, "dialogue.list")
+                .map(AgentActionRow::completedAt).filter(java.util.Objects::nonNull);
+        // Seule une vraie écriture sur DEV rend le relevé du jeu périmé ; reprendre la version DEV
+        // dans PlugAdmin ne change rien en jeu.
+        Optional<OwnWrite> written = lastOwnOperation(agentId, "dialogues", slug);
+        boolean fresh = surveyAt.isPresent() && (written.isEmpty() || written.get().at() == null
+                || surveyAt.get().isAfter(written.get().at()));
+        return com.lodygames.rpgquest.panel.content.DialogueDevReload.inGame(devText, devSha, confirmed,
+                serverDialogueDraft(agentId, slug), fresh);
     }
 
     /**
@@ -10227,6 +10285,19 @@ public final class AgentPages {
         if (agentId == null || agentId.isBlank()) {
             return Optional.empty();
         }
+        // Issue #732 : une version DEV reprise par « Recharger depuis DEV » vaut référence, si elle
+        // est plus récente que notre dernière écriture — sinon le conflit qu'elle résout reviendrait.
+        Optional<OwnWrite> op = lastOwnOperation(agentId, kind, slug);
+        Optional<OwnWrite> adopted = store.devReference(agentId, kind, slug)
+                .map(r -> new OwnWrite(r.devSha(), r.adoptedAt()));
+        if (adopted.isPresent() && (op.isEmpty() || op.get().at() == null
+                || adopted.get().at().isAfter(op.get().at()))) {
+            return adopted;
+        }
+        return op;
+    }
+
+    private Optional<OwnWrite> lastOwnOperation(String agentId, String kind, String slug) {
         for (AgentActionRow row : store.recentActions(agentId, 200)) {
             if (row.completedAt() == null) {
                 continue;

@@ -1180,6 +1180,19 @@ details.card.npc-more{padding:12px 16px}
 .dlg-conflict p{margin:0 0 6px}
 .dlg-conflict-steps{margin:0 0 8px;padding-left:1.4em;font-weight:500}
 .dlg-conflict .btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+/* Issue #732 — « Recharger depuis DEV » : étape à part, jamais de débordement sur téléphone. */
+.dlg-reload{overflow-wrap:anywhere}
+.dlg-reload.tone-warn{border-left:4px solid var(--warn)}
+.dlg-reload p{margin:0 0 8px}
+.dlg-reload .btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.dlg-reload .btnrow form{margin:0}
+.dlg-reload pre{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12.5px}
+.dlg-ingame{font-weight:600;border-radius:var(--radius-s);padding:6px 10px}
+.dlg-ingame.tone-ok{background:var(--ok-soft);color:var(--ok)}
+.dlg-ingame.tone-warn{background:var(--warn-soft);color:var(--warn)}
+.dlg-ingame.tone-info{background:var(--info-soft);color:var(--info)}
+.dlg-check{display:flex;gap:8px;align-items:flex-start;font-weight:600;margin:4px 0}
+.dlg-reload-btn{white-space:normal}
 .dlg-node-h{font-size:16px;font-weight:800;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .dlg-says{font-size:14.5px;background:var(--surface-2);border-radius:var(--radius-s);padding:10px 12px}
 .dlg-replies-h{font-size:13px;font-weight:800;margin:14px 0 6px;color:var(--txt-2)}

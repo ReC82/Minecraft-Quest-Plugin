@@ -141,7 +141,23 @@ abstract class HttpAiProvider implements AiProvider {
     @Override
     public Result generate(Request request, AiProviderSettings settings) {
         Capture capture = new Capture(request, settings);
-        return capture.attach(send(request, settings, capture));
+        Result result = send(request, settings, capture);
+        try {
+            return capture.attach(result);
+        } catch (RuntimeException traceFailure) {
+            // La trace ne doit JAMAIS coûter la réponse : l'appel est payé, son résultat remonte, et le
+            // journal dit que la mise en forme de l'échange a échoué au lieu de prétendre qu'il n'a pas eu lieu.
+            List<String> notes = new java.util.ArrayList<>();
+            String key = settings.apiKey();
+            notes.add("Trace de l'échange impossible à mettre en forme ("
+                    + traceFailure.getClass().getSimpleName() + ") : corps envoyé et reçu non conservés.");
+            return new Result(result.ok(), result.text(), result.error() == null ? null
+                    : AiTrace.mask(result.error(), key, "Message d'erreur", notes), result.model(),
+                    result.inputTokens(), result.outputTokens(), new Exchange(
+                    AiTrace.mask(capture.endpoint, key, "Adresse appelée", notes), Map.of(), "", List.of(),
+                    capture.status, "", List.of(), "", capture.finish, notes, capture.started,
+                    java.time.Instant.now(), capture.transport));
+        }
     }
 
     private Result send(Request request, AiProviderSettings settings, Capture capture) {

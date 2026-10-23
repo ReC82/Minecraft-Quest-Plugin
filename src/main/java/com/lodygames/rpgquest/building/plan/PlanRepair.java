@@ -141,6 +141,7 @@ public final class PlanRepair {
         plan = entrance(plan, changes);
         plan = sunkFurniture(plan, changes);
         plan = lanterns(plan, changes);
+        plan = darkAreas(plan, changes);
         plan = destructiveClears(plan, changes);
         List<String> after = codes(plan);
         if (changes.isEmpty() || worse(before, after) && !progressWhileInvalid(raw, plan, readNotes)) {
@@ -868,7 +869,7 @@ public final class PlanRepair {
     // ---- 4. Les lanternes flottantes (#288) ----------------------------------------------------
 
     /** Hauteur maximale d'une chaîne de suspension ajoutée par le moteur. */
-    static final int MAX_CHAIN = 4;
+    static final int MAX_CHAIN = 8;
 
     /**
      * Suspend à une chaîne les lanternes de « light » qui flottent, quand un plafond se trouve au
@@ -916,6 +917,103 @@ public final class PlanRepair {
         changes.add("Lanternes flottantes suspendues à une chaîne jusqu'au plafond : "
                 + String.join(", ", hung) + ".");
         return chained;
+    }
+
+    /** Lanternes ajoutées au plus par réparation : au-delà, c'est l'éclairage entier à repenser. */
+    static final int MAX_ADDED_LIGHTS = 4;
+
+    private static final java.util.regex.Pattern DARK_CELL = java.util.regex.Pattern.compile(
+            "la cellule (\\d+)/(\\d+)/(\\d+) est accessible");
+
+    /**
+     * Éclaire une zone sombre mesurée par l'audit (#747) : une torche murale à hauteur de tête contre le
+     * mur voisin de la cellule nommée, ou une lanterne suspendue sous un plafond proche.
+     * Essai réel du 23/10/2026 : nef puis pied de tour refusés « zone non éclairée » à chaque correction
+     * de l'IA, sans progrès. Rien n'est ajouté sans mur ni plafond qui porte, et chaque source n'est gardée
+     * que si la zone sombre change et qu'aucun refus nouveau n'apparaît.
+     */
+    static BuildingPlan darkAreas(BuildingPlan plan, List<String> changes) {
+        BuildingPlan current = plan;
+        List<String> lit = new ArrayList<>();
+        for (int n = 0; n < MAX_ADDED_LIGHTS; n++) {
+            Snapshot s = snapshot(current);
+            if (s == null) {
+                break;
+            }
+            var dark = s.report().blocking().stream().filter(f -> f.code().equals("DARK_AREA")).findFirst();
+            if (dark.isEmpty()) {
+                break;
+            }
+            var m = DARK_CELL.matcher(dark.get().message());
+            if (!m.find()) {
+                break;
+            }
+            int x = Integer.parseInt(m.group(1));
+            int y = Integer.parseInt(m.group(2));
+            int z = Integer.parseInt(m.group(3));
+            AuditGrid grid = AuditGrid.of(s.expansion().blueprint());
+            List<PlanStep> steps = new ArrayList<>(current.steps());
+            String where = light(grid, current, x, y, z, steps);
+            if (where == null) {
+                break;
+            }
+            BuildingPlan candidate = copy(current, steps);
+            Snapshot after = snapshot(candidate);
+            boolean moved = after != null && after.report().blocking().stream()
+                    .noneMatch(f -> f.code().equals("DARK_AREA") && f.message().contains("la cellule " + x + "/" + y
+                            + "/" + z + " "));
+            if (!moved || worse(s.report().blockingCodes(), codes(candidate))) {
+                break;
+            }
+            lit.add(where + " (pour " + x + "/" + y + "/" + z + ")");
+            current = candidate;
+        }
+        if (!lit.isEmpty()) {
+            changes.add("Zones sombres éclairées : " + String.join(", ", lit) + ".");
+        }
+        return current;
+    }
+
+    /**
+     * La source ajoutée pour la cellule sombre {@code x/y/z} (où l'on se tient) : une torche murale à
+     * hauteur de tête contre un mur plein voisin, sinon une lanterne suspendue sous un plafond proche
+     * (deux blocs de hauteur libre gardés). Décrite, ou {@code null} si aucune ne tient.
+     */
+    private static String light(AuditGrid grid, BuildingPlan plan, int x, int y, int z, List<PlanStep> steps) {
+        // Au plus près de la cellule (deux cellules autour, de ses pieds à un bloc au-dessus de sa tête) :
+        // une case vide adossée à un mur plein. Un seuil de porte n'a pas de place pour une source.
+        for (int r = 0; r <= 2; r++) {
+            for (int sy = y + 1; sy <= y + 2 && sy < plan.sizeY(); sy++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    for (int dz = -r; dz <= r; dz++) {
+                        int sx = x + dx;
+                        int sz = z + dz;
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) != r || sx < 0 || sz < 0 || sx >= plan.sizeX()
+                                || sz >= plan.sizeZ() || grid.at(sx, sy, sz) != null) {
+                            continue;
+                        }
+                        for (BlockStates.Dir d : BlockStates.Dir.values()) {
+                            if (Stability.holdsFromBelow(grid.at(sx + d.dx(), sy, sz + d.dz()))) {
+                                steps.add(PlanStep.of(PlanStep.Kind.BOX, PlanBox.at(sx, sy, sz),
+                                        BlockStates.wallTorch("minecraft:wall_torch", d.opposite())));
+                                return "torche murale en " + sx + "/" + sy + "/" + sz;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (int up = y + 1; up < plan.sizeY() && up <= y + 7; up++) {
+            String at = grid.at(x, up, z);
+            if (at != null) {
+                if (!Stability.holdsFromAbove(at) || up < y + 3) {
+                    return null;
+                }
+                steps.add(PlanStep.of(PlanStep.Kind.LIGHT, PlanBox.at(x, up - 1, z), "minecraft:lantern"));
+                return "lanterne suspendue en " + x + "/" + (up - 1) + "/" + z;
+            }
+        }
+        return null;
     }
 
     /**

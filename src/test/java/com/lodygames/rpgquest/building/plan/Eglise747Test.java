@@ -334,8 +334,25 @@ class Eglise747Test {
         assertFalse(repaired.message().contains("red_carpet en"), repaired.message());
         // La marche extérieure ajoutée devant la porte (6/1/17) est à ciel ouvert : plus une « zone sombre ».
         assertFalse(repaired.message().contains("6/1/17"), repaired.message());
-        // Restent pour l'IA, légitimement : la lanterne dans le vide de la tour, et une nef sans lumière
-        // (les lanternes du plan sont au-dessus du plafond, en y=12).
-        assertEquals(java.util.List.of("UNSUPPORTED_BLOCK", "DARK_AREA"), repaired.codes(), repaired.message());
+        // La nef sans lumière (lanternes du plan au-dessus du plafond, y=12) reçoit des torches murales du
+        // moteur ; reste pour l'IA, légitimement : la lanterne pendue sous la cloche, qui ne porte rien.
+        assertTrue(v.repair().changes().stream().anyMatch(c -> c.startsWith("Zones sombres éclairées : torche murale")),
+                v.repair().changes().toString());
+        assertEquals(java.util.List.of("UNSUPPORTED_BLOCK"), repaired.codes(), repaired.message());
+    }
+
+    // ---- Essai réel, 3e appel (V-8565a125) : l'éclairage stagne, le moteur le termine ----------------
+
+    @Test
+    void theEngineLightsTheDarkCornerWithoutAnAiCall() {
+        BuildingGenerator.Verdict v = inspect("8565a125");
+        assertTrue(v.repair() != null, v.message());
+        var changes = v.repair().changes();
+
+        assertTrue(changes.stream().anyMatch(c -> c.startsWith("Zones sombres éclairées : torche murale en 6/3/1")),
+                changes.toString());
+        assertFalse(v.repair().codes().contains("DARK_AREA"), changes + "\n" + generator.inspect(v.repair().plan(), LIMITS).message());
+        // La lanterne de la tour pend SOUS la cloche, qui ne porte rien : ce choix reste à l'IA, nommé.
+        assertEquals(java.util.List.of("UNSUPPORTED_BLOCK"), v.repair().codes());
     }
 }

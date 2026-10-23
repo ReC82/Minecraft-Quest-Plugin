@@ -14,15 +14,17 @@ import java.util.Map;
  *
  * <p>Chaque cube dessiné est un bloc de la grille que le serveur construira ({@link BuildingVoxels}) :
  * un mur sans porte apparaît sans porte. Les couleurs viennent du <strong>matériau</strong> (pierre,
- * bois, brique…) et du <strong>rôle</strong> (vitre translucide, lumière jaune), pas des textures du
- * jeu. Portes, escaliers, vitres et mobilier sont des cubes ; les dalles des demi-cubes ; les lumières
- * de petits cubes. Ce sont les limites assumées de cette première version, dites à l'écran.</p>
+ * bois, brique…) et du <strong>rôle</strong>, pas des textures du jeu ; l'eau, le verre et la glace
+ * sont translucides. Depuis #786, la <strong>forme</strong> vient du bloc et de son état compilé
+ * ({@link BlockShapes}) : marches orientées, droites ou en coin, retournées ; dalles ; chaînes, barrières,
+ * murets et vitres reliés à leurs voisins ; portes, trappes, échelles, lanternes, torches, cloches. Le
+ * mobilier et les décorations restent des cubes : c'est la limite assumée, dite à l'écran.</p>
  *
  * <h2>Comment</h2>
  *
  * <p>Projection isométrique exacte (direction de vue {@code (1, 1, 1)}) : les cubes se dessinent du
  * plus lointain au plus proche en triant sur {@code u + y + v}, ce qui est exact pour une grille de
- * cubes vue sous cet angle. Une face cachée par un bloc opaque voisin n'est pas émise, ce qui garde le
+ * cubes vue sous cet angle ; les pavés d'une même cellule suivent le même ordre. Une face cachée par un bloc opaque voisin n'est pas émise, ce qui garde le
  * SVG léger. Aucun script : la CSP du panel interdit le JavaScript en ligne, et un SVG statique suffit.
  * Quatre orientations (on tourne autour du bâtiment) et une coupe par niveau (on retire tout ce qui est
  * au-dessus pour voir l'intérieur).</p>
@@ -166,46 +168,63 @@ public final class IsometricView {
     private static void drawCell(StringBuilder sb, Rotated g, int u, int y, int v, int top) {
         BuildingVoxels.Entry e = g.at(u, y, v);
         String base = color(e);
-        String opacity = e.role() == 'o' ? " fill-opacity=\".45\"" : "";
-        double y0 = y;
-        double y1 = y + 1;
-        double inset = 0;
-        if ("bottom".equals(e.shape())) {
-            y1 = y + 0.5;
-        } else if ("top".equals(e.shape())) {
-            y0 = y + 0.5;
+        String opacity = translucent(e) ? " fill-opacity=\"" + opacity(e) + "\"" : "";
+        int[] w = g.world(u, v);
+        List<BlockShapes.Box> boxes = new ArrayList<>();
+        for (BlockShapes.Box box : BlockShapes.boxes(e, (dx, dy, dz) -> g.voxels.at(w[0] + dx, y + dy, w[1] + dz))) {
+            boxes.add(g.toView(box));
         }
-        if (e.role() == '*') {
-            inset = 0.3;
-            y0 = y + 0.2;
-            y1 = y + 0.6;
-        }
-        boolean full = inset == 0 && y0 == y && y1 == y + 1;
-        double u0 = u + inset;
-        double u1 = u + 1 - inset;
-        double v0 = v + inset;
-        double v1 = v + 1 - inset;
-        // Face du dessus : visible sauf sous un bloc opaque — et toujours au niveau de coupe.
-        if (!full || y == top || !hides(e, g.at(u, y + 1, v))) {
-            face(sb, shade(base, 1.0), opacity, p(u0, y1, v0), p(u1, y1, v0), p(u1, y1, v1), p(u0, y1, v1));
-        }
-        if (!full || !hides(e, g.at(u + 1, y, v))) {
-            face(sb, shade(base, 0.8), opacity, p(u1, y0, v0), p(u1, y1, v0), p(u1, y1, v1), p(u1, y0, v1));
-        }
-        if (!full || !hides(e, g.at(u, y, v + 1))) {
-            face(sb, shade(base, 0.64), opacity, p(u0, y0, v1), p(u1, y0, v1), p(u1, y1, v1), p(u0, y1, v1));
+        // Dans la cellule, du plus lointain au plus proche, comme les cellules entre elles.
+        boxes.sort(Comparator.comparingDouble(b -> b.x0() + b.x1() + b.y0() + b.y1() + b.z0() + b.z1()));
+        for (BlockShapes.Box b : boxes) {
+            // En repère de vue : x = u, z = v. Une face sur le bord de la cellule est cachée par un
+            // voisin plein et opaque — ou par le même bloc (de l'eau contre de l'eau, une vitre contre
+            // une vitre). Le dessus reste toujours visible au niveau de coupe.
+            String fill = b.color().isEmpty() ? base : b.color();
+            double u0 = u + b.x0();
+            double u1 = u + b.x1();
+            double y0 = y + b.y0();
+            double y1 = y + b.y1();
+            double v0 = v + b.z0();
+            double v1 = v + b.z1();
+            if (b.y1() < 1 || y == top || !hides(e, g.at(u, y + 1, v))) {
+                face(sb, shade(fill, 1.0), opacity, p(u0, y1, v0), p(u1, y1, v0), p(u1, y1, v1), p(u0, y1, v1));
+            }
+            if (b.x1() < 1 || !hides(e, g.at(u + 1, y, v))) {
+                face(sb, shade(fill, 0.8), opacity, p(u1, y0, v0), p(u1, y1, v0), p(u1, y1, v1), p(u1, y0, v1));
+            }
+            if (b.z1() < 1 || !hides(e, g.at(u, y, v + 1))) {
+                face(sb, shade(fill, 0.64), opacity, p(u0, y0, v1), p(u1, y0, v1), p(u1, y1, v1), p(u0, y1, v1));
+            }
         }
     }
 
-    /** Le voisin cache-t-il la face qui le touche ? Un bloc opaque plein, ou une vitre contre une vitre. */
+    /** Le voisin cache-t-il la face qui le touche ? Un bloc plein et opaque, ou le même bloc plein. */
     private static boolean hides(BuildingVoxels.Entry self, BuildingVoxels.Entry neighbour) {
-        if (neighbour == null || !"full".equals(neighbour.shape())) {
+        if (neighbour == null) {
             return false;
         }
-        if (neighbour.symbol() == self.symbol()) {
+        if (BlockShapes.name(neighbour).equals(BlockShapes.name(self))
+                && (BlockShapes.fullCube(neighbour) || BlockShapes.liquid(BlockShapes.name(self)))) {
             return true;
         }
-        return neighbour.role() == '#' || neighbour.role() == '/';
+        return BlockShapes.fullCube(neighbour) && !translucent(neighbour);
+    }
+
+    /** Ce qu'on voit à travers : l'eau, le verre, la glace. */
+    static boolean translucent(BuildingVoxels.Entry e) {
+        String name = BlockShapes.name(e);
+        return name.equals("water") || name.contains("glass") || name.equals("ice") || name.equals("frosted_ice")
+                || name.equals("slime_block") || name.equals("honey_block")
+                || (e.role() == 'o' && !name.equals("iron_bars"));
+    }
+
+    private static String opacity(BuildingVoxels.Entry e) {
+        String name = BlockShapes.name(e);
+        if (name.equals("water")) {
+            return ".62";
+        }
+        return name.contains("stained") || name.contains("tinted") ? ".55" : ".35";
     }
 
     private static double[] p(double u, double y, double v) {
@@ -233,19 +252,39 @@ public final class IsometricView {
 
     // ---- Couleurs ----------------------------------------------------------------------------
 
+    /**
+     * Blocs reconnaissables à leur nom exact ou à un fragment précis, essayés avant les familles :
+     * l'eau ne doit jamais prendre la couleur d'une pierre, ni une chaîne celle du fer poli.
+     */
+    private static final String[][] SPECIFIC = {
+            {"water", "#2f6fd6"}, {"lava", "#e8641c"}, {"tinted_glass", "#3d3446"}, {"glass", "#bfe9f5"},
+            {"packed_ice", "#8db4ea"}, {"blue_ice", "#74a8f3"}, {"ice", "#a5c8f7"},
+            {"chain", "#3c4047"}, {"iron_bars", "#5b6068"}, {"lantern", "#ffcf4d"}, {"bell", "#e0b53a"},
+            {"ladder", "#9a7440"}, {"mossy", "#6f7d52"}, {"cracked_stone_brick", "#8a8880"},
+            {"chiseled_stone_brick", "#9c9a92"}, {"smooth_stone", "#b3b3b0"}, {"cobblestone", "#686868"},
+            {"end_stone", "#dcdea0"}, {"blackstone", "#2f2a30"}, {"deepslate", "#4d4d52"},
+            {"stone_brick", "#a6a49b"}};
+
+    /** L'écorce : un tronc ne doit pas se confondre avec les planches de la même essence. */
+    private static final String[][] BARK = {
+            {"dark_oak", "#3c2c18"}, {"spruce", "#3b2a17"}, {"birch", "#e4e1d7"}, {"jungle", "#56461d"},
+            {"acacia", "#676157"}, {"mangrove", "#544231"}, {"cherry", "#3a2230"}, {"crimson", "#5c1d32"},
+            {"warped", "#3a2c4a"}, {"pale_oak", "#5e5a55"}, {"oak", "#5b4528"}};
+
     /** Familles de matériaux, dans l'ordre où on les essaie : la plus précise d'abord. */
     private static final String[][] FAMILIES = {
-            {"dark_oak", "#4a3320"}, {"spruce", "#7a5a35"}, {"birch", "#d6c48a"}, {"jungle", "#a8754c"},
-            {"acacia", "#b5643a"}, {"mangrove", "#773933"}, {"cherry", "#e2b4a8"}, {"bamboo", "#cdb85a"},
-            {"crimson", "#7e3a56"}, {"warped", "#3a8a80"}, {"oak", "#b48c56"},
+            {"dark_oak", "#4a3320"}, {"pale_oak", "#e3d9d3"}, {"spruce", "#7a5a35"}, {"birch", "#d6c48a"},
+            {"jungle", "#a8754c"}, {"acacia", "#c26d3f"}, {"mangrove", "#773933"}, {"cherry", "#e2b4a8"},
+            {"bamboo", "#cdb85a"}, {"crimson", "#7e3a56"}, {"warped", "#3a8a80"}, {"oak", "#b8905a"},
             {"nether_brick", "#3c1f24"}, {"mud_brick", "#8c6e55"}, {"deepslate", "#4d4d52"},
-            {"end_stone", "#dcdea0"}, {"stone_brick", "#7f7f7f"}, {"brick", "#9c4f3c"},
-            {"blackstone", "#2f2a30"}, {"cobble", "#7d7d7d"},
-            {"andesite", "#8a8a8a"}, {"diorite", "#c9c9c4"}, {"granite", "#9a6b58"}, {"tuff", "#6d6f66"},
+            {"end_stone", "#dcdea0"}, {"brick", "#9c4f3c"},
+            {"blackstone", "#2f2a30"}, {"cobble", "#686868"},
+            {"andesite", "#888a8c"}, {"diorite", "#c9c9c4"}, {"granite", "#9a6b58"}, {"tuff", "#6d6f66"},
             {"sandstone", "#dccf9a"}, {"quartz", "#ece7df"}, {"calcite", "#e6e4dd"}, {"snow", "#f4f8fa"},
             {"terracotta", "#a0603f"}, {"prismarine", "#5ea597"}, {"copper", "#c06a4a"},
             {"leaves", "#4f8a3a"}, {"grass", "#6aa04a"}, {"dirt", "#7a5a3a"}, {"mud", "#4e443a"},
-            {"stone", "#8f8f8f"}, {"log", "#6b5233"}, {"wood", "#6b5233"}, {"planks", "#b48c56"},
+            {"gravel", "#857b78"}, {"sand", "#dbcf9f"}, {"clay", "#a0a6b3"},
+            {"stone", "#8f8f8f"}, {"log", "#5b4528"}, {"wood", "#5b4528"}, {"planks", "#b8905a"},
             {"bookshelf", "#8a6a3e"}, {"wool", "#e8e8e8"}, {"concrete", "#cfcfcf"}, {"iron", "#d8d8d8"},
             {"gold", "#e8c14a"}, {"hay", "#c9a93a"}};
 
@@ -255,23 +294,38 @@ public final class IsometricView {
             {"cyan", "#158991"}, {"light_blue", "#3aafd9"}, {"blue", "#35399d"}, {"purple", "#792aac"},
             {"magenta", "#bd44b3"}, {"pink", "#ed8dac"}};
 
-    /** La couleur de base d'un bloc : son rôle d'abord, puis sa teinture, puis sa famille. */
+    /** La couleur de base d'un bloc : sa teinture, puis un nom précis, son rôle, son écorce, sa famille. */
     static String color(BuildingVoxels.Entry e) {
-        String block = e.block().toLowerCase(Locale.ROOT);
+        String block = BlockShapes.name(e);
+        if (block.contains("wool") || block.contains("concrete") || block.contains("stained")
+                || block.contains("carpet") || block.contains("candle") || block.contains("bed")
+                || (block.contains("terracotta") && !block.equals("terracotta"))) {
+            for (String[] dye : DYES) {
+                if (block.startsWith(dye[0] + "_")) {
+                    return dye[1];
+                }
+            }
+        }
+        for (String[] specific : SPECIFIC) {
+            if (block.contains(specific[0])) {
+                return specific[1];
+            }
+        }
         if (e.role() == '*') {
-            return "#ffd75e";
+            return BlockShapes.FLAME;
         }
         if (e.role() == 'H') {
             return "#9a7440";
         }
-        if (e.role() == 'o' && !block.contains("stained")) {
-            return "#a8d8f0";
+        if (e.role() == 'o') {
+            return "#bfe9f5";
         }
-        if (block.contains("wool") || block.contains("concrete") || block.contains("stained")
-                || block.contains("carpet") || (block.contains("terracotta") && !block.equals("terracotta"))) {
-            for (String[] dye : DYES) {
-                if (block.startsWith(dye[0] + "_")) {
-                    return dye[1];
+        boolean trunk = block.endsWith("_log") || block.endsWith("_wood") || block.endsWith("_stem")
+                || block.endsWith("_hyphae");
+        if (trunk && !block.startsWith("stripped_")) {
+            for (String[] bark : BARK) {
+                if (block.contains(bark[0])) {
+                    return bark[1];
                 }
             }
         }
@@ -301,7 +355,7 @@ public final class IsometricView {
 
     /** La grille vue sous l'une des quatre orientations : on tourne autour, on ne la reflète jamais. */
     private static final class Rotated {
-        private final BuildingVoxels voxels;
+        final BuildingVoxels voxels;
         private final int view;
         private final int width;
         private final int depth;
@@ -312,6 +366,28 @@ public final class IsometricView {
             boolean swapped = view % 2 == 1;
             this.width = swapped ? voxels.sizeZ() : voxels.sizeX();
             this.depth = swapped ? voxels.sizeX() : voxels.sizeZ();
+        }
+
+        /** Les coordonnées {@code x, z} du monde de la cellule {@code u, v}. */
+        int[] world(int u, int v) {
+            int sx = voxels.sizeX();
+            int sz = voxels.sizeZ();
+            return switch (view) {
+                case 1 -> new int[] {sx - 1 - v, u};
+                case 2 -> new int[] {sx - 1 - u, sz - 1 - v};
+                case 3 -> new int[] {v, sz - 1 - u};
+                default -> new int[] {u, v};
+            };
+        }
+
+        /** Un pavé du monde, dans le repère de la vue : {@code x} devient {@code u}, {@code z} devient {@code v}. */
+        BlockShapes.Box toView(BlockShapes.Box b) {
+            return switch (view) {
+                case 1 -> new BlockShapes.Box(b.z0(), b.y0(), 1 - b.x1(), b.z1(), b.y1(), 1 - b.x0(), b.color());
+                case 2 -> new BlockShapes.Box(1 - b.x1(), b.y0(), 1 - b.z1(), 1 - b.x0(), b.y1(), 1 - b.z0(), b.color());
+                case 3 -> new BlockShapes.Box(1 - b.z1(), b.y0(), b.x0(), 1 - b.z0(), b.y1(), b.x1(), b.color());
+                default -> b;
+            };
         }
 
         BuildingVoxels.Entry at(int u, int y, int v) {

@@ -698,8 +698,10 @@ public final class WorkshopPages {
                             + "instructions si vous les attendiez.</p>");
         }
         sb.append("<p class=\"field-help\">Vue simplifiée : une couleur par matériau, pas les textures du jeu ; "
-                + "portes, vitres, escaliers et mobilier sont dessinés comme des cubes, les lumières comme de "
-                + "petits cubes jaunes. Chaque cube est un vrai bloc du bâtiment que le serveur construirait.</p>");
+                + "l'eau, le verre et la glace sont translucides. Escaliers, dalles, portes, trappes, chaînes, "
+                + "barrières, murets, vitres, lanternes et torches ont leur forme et leur orientation ; le mobilier "
+                + "et les décorations (coffres, lits, fleurs, panneaux suspendus…) restent des cubes. Chaque forme "
+                + "est un vrai bloc du bâtiment que le serveur construirait.</p>");
         return sb.append("</div></section>").toString();
     }
 

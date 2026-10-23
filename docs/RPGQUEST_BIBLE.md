@@ -1874,18 +1874,33 @@ Dans un projet de l'Atelier, la carte **« Aperçu du bâtiment »** dessine le 
 le construirait** : vue isométrique en SVG, rendue côté panel, sans script (CSP).
 
 - **Source** : `building.plan.preview` renvoie, en plus des coupes, `details.voxels` = `palette`
-  (`symbol`, `block`, `role`, `shape`) + `layers` (une couche par niveau, une chaîne par rangée `z`, un
+  (`symbol`, `block`, `role`, `shape`, `state` depuis #786) + `layers` (une couche par niveau, une chaîne par rangée `z`, un
   caractère par `x`, `.` = air) + `omittedReason`. Même grille que l'audit, après la même expansion
   (`PlanPreview.voxels`) ; le panel ne relit jamais le plan pour dessiner. Bornes : 120 000 cellules,
-  62 types de blocs ; au-delà, ou si un bloc sort du volume, la grille n'est **pas** transmise et le motif
-  est affiché — jamais un bâtiment tronqué présenté comme entier.
+  90 entrées de palette (lettres, chiffres, ponctuation sans `"` ni `\`) ; au-delà de 90 variantes
+  d'état, la palette retombe sur une entrée par matériau, sans états (la vue reste, dessinée comme avant
+  #786) ; au-delà de 90 matériaux, ou si un bloc sort du volume, la grille n'est **pas** transmise et le
+  motif est affiché — jamais un bâtiment tronqué présenté comme entier.
+- **États dessinés (#786)** : `state` ne garde que `facing`, `half`, `shape`, `axis`, `hanging`,
+  `attachment`, `hinge`, `open`, `face`, triés (`facing=north,half=bottom,shape=straight`). Les
+  connexions des barrières, murets, vitres et barreaux sont recalculées par le panel depuis les voisins,
+  comme le jeu ; le niveau d'eau, `waterlogged` et la redstone sont ignorés.
 - **Quand** : « Vérifier le bâtiment » demande aussi l'aperçu (gratuit, même version) ; « Afficher
   l'aperçu » le demande seul. Tourner (4 vues) et couper au-dessus d'un niveau sont de simples paramètres
   d'URL (`view`, `cut`) : aucune action serveur, aucun appel IA. Vue par défaut : celle qui montre
   l'entrée, sur la face de gauche (dit sous l'image).
-- **Limites V1, affichées à l'écran** : une couleur par matériau (pas de textures) ; portes, vitres,
-  escaliers et mobilier en cubes ; dalles en demi-cubes ; lumières en petits cubes jaunes ; vitres
-  translucides.
+- **Formes (#786, `BlockShapes`)** : marches avec leur demi-dalle et leur contremarche selon `facing`,
+  `half` (retournée) et `shape` (droite, coins intérieur/extérieur gauche/droite) ; dalles basse, haute,
+  double ; chaînes en tige selon `axis` ; barrières, murets, vitres et barreaux reliés aux voisins ;
+  portillons ; portes (fermées ou ouvertes selon la charnière), trappes, échelles et panneaux muraux
+  plaqués du côté où le jeu les pose ; lanternes posées ou suspendues ; torches (murales décalées vers
+  leur mur) ; cloches ; tapis et plaques de pression. Eau (surface abaissée), verre, vitres et glace
+  translucides ; couleurs distinctes pour l'eau, le verre, le pavé, les briques de pierre, l'écorce
+  (troncs) et les planches.
+- **Limites restantes, affichées à l'écran** : une couleur par matériau (pas de textures) ; le mobilier
+  et les décorations (coffres, lits, fleurs, panneaux suspendus…) restent des cubes ; les lumières sans
+  forme dédiée sont de petits cubes jaunes. Un plugin antérieur à #786 n'envoie pas `state` : marches
+  droites tournées vers le nord, portes fermées, chaînes verticales.
 - **Compatibilité** : un plugin plus ancien ne renvoie pas `voxels` → l'écran dit qu'il faut une version
   plus récente du plugin. Un panel plus ancien ignore le champ. Les coupes en caractères restent dans
   « Détails techniques », présentées comme un diagnostic.

@@ -137,10 +137,11 @@ class PlanPreviewVoxelsTest {
     @DisplayName("Trop de types de blocs : absente avec son motif")
     void tooManyBlockTypesAreOmittedWithTheReason() {
         List<BlueprintBlock> blocks = new ArrayList<>();
-        for (int x = 0; x < 63; x++) {
+        int types = PlanPreview.SYMBOLS.length() + 1;
+        for (int x = 0; x < types; x++) {
             blocks.add(new BlueprintBlock(x, 0, 0, "minecraft:block_" + x));
         }
-        PlanPreview.Voxels voxels = PlanPreview.voxels(new Blueprint(63, 1, 1, blocks));
+        PlanPreview.Voxels voxels = PlanPreview.voxels(new Blueprint(types, 1, 1, blocks));
         assertFalse(voxels.present());
         assertTrue(voxels.omittedReason().contains("types de blocs"), voxels.omittedReason());
     }
@@ -161,5 +162,50 @@ class PlanPreviewVoxelsTest {
         PlanPreview.Preview preview = PlanPreview.of(blueprint, Facing.NORTH, 2, 1, 0);
         assertTrue(preview.voxels().present());
         assertEquals(5, preview.voxels().layers().size());
+    }
+
+    @Test
+    @DisplayName("#786 — la palette porte les états qui changent le dessin, pas les autres")
+    void thePaletteCarriesTheDrawnStates() {
+        Blueprint blueprint = new Blueprint(4, 1, 1, List.of(
+                new BlueprintBlock(0, 0, 0, "minecraft:oak_stairs[facing=north,half=top,shape=inner_left,waterlogged=false]"),
+                new BlueprintBlock(1, 0, 0, "minecraft:oak_stairs[facing=south,half=bottom,shape=straight]"),
+                new BlueprintBlock(2, 0, 0, "minecraft:oak_fence[north=true,east=false,south=true,west=false]"),
+                new BlueprintBlock(3, 0, 0, "minecraft:iron_chain[axis=x]")));
+        PlanPreview.Voxels voxels = PlanPreview.voxels(blueprint);
+        assertTrue(voxels.present(), voxels.omittedReason());
+        List<String> states = voxels.palette().stream().map(PlanPreview.PaletteEntry::state).toList();
+        assertEquals(List.of("facing=north,half=top,shape=inner_left", "facing=south,half=bottom,shape=straight",
+                "", "axis=x"), states, "triées, sans waterlogged ni connexions");
+        assertEquals(4, voxels.palette().size(), "deux marches tournées différemment : deux entrées");
+    }
+
+    @Test
+    @DisplayName("#786 — trop de variantes d'état : la vue reste, sans les états")
+    void tooManyStateVariantsFallBackToOneEntryPerMaterial() {
+        List<BlueprintBlock> blocks = new ArrayList<>();
+        String[] facings = {"north", "south", "east", "west"};
+        String[] shapes = {"straight", "inner_left", "inner_right", "outer_left", "outer_right"};
+        int x = 0;
+        for (String material : List.of("oak", "spruce", "birch", "jungle", "acacia")) {
+            for (String facing : facings) {
+                for (String shape : shapes) {
+                    blocks.add(new BlueprintBlock(x++, 0, 0, "minecraft:" + material + "_stairs[facing=" + facing
+                            + ",half=bottom,shape=" + shape + "]"));
+                }
+            }
+        }
+        PlanPreview.Voxels voxels = PlanPreview.voxels(new Blueprint(x, 1, 1, blocks));
+        assertTrue(voxels.present(), voxels.omittedReason());
+        assertEquals(5, voxels.palette().size(), "100 variantes > " + PlanPreview.SYMBOLS.length() + " symboles");
+        assertTrue(voxels.palette().stream().allMatch(e -> e.state().isEmpty()));
+    }
+
+    @Test
+    @DisplayName("#786 — aucun symbole n'exige d'échappement JSON ni ne se confond avec l'air")
+    void symbolsAreSafe() {
+        String symbols = PlanPreview.SYMBOLS;
+        assertFalse(symbols.contains("\"") || symbols.contains("\\") || symbols.indexOf(PlanPreview.EMPTY) >= 0);
+        assertEquals(symbols.length(), symbols.chars().distinct().count(), "aucun doublon");
     }
 }

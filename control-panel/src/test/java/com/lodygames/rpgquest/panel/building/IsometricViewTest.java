@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 class IsometricViewTest {
 
     private static final BuildingVoxels.Entry STONE = new BuildingVoxels.Entry('A', "stone_bricks", '#', "full");
-    private static final BuildingVoxels.Entry GLASS = new BuildingVoxels.Entry('B', "glass_pane", 'o', "full");
+    private static final BuildingVoxels.Entry GLASS = new BuildingVoxels.Entry('B', "glass", 'o', "full");
     private static final BuildingVoxels.Entry LAMP = new BuildingVoxels.Entry('C', "lantern", '*', "full");
     private static final BuildingVoxels.Entry SLAB = new BuildingVoxels.Entry('D', "oak_slab", '/', "bottom");
 
@@ -97,7 +97,7 @@ class IsometricViewTest {
         String slab = IsometricView.svg(grid(List.of(List.of("D")), SLAB), 0, 99, "t");
         assertTrue(slab.contains("M0 -4L8 0"), "le dessus d'une dalle basse est à mi-hauteur : " + slab);
         String lamp = IsometricView.svg(grid(List.of(List.of("C")), LAMP), 0, 99, "t");
-        assertTrue(lamp.contains("#ffd75e"), "une lumière est jaune");
+        assertTrue(lamp.contains("#ffcf4d"), "une lanterne est jaune");
     }
 
     @Test
@@ -114,11 +114,11 @@ class IsometricViewTest {
 
     @Test
     void coloursFollowTheMaterialNotTheTexture() {
-        assertEquals("#b48c56", IsometricView.color(new BuildingVoxels.Entry('A', "oak_planks", '#', "full")));
+        assertEquals("#b8905a", IsometricView.color(new BuildingVoxels.Entry('A', "oak_planks", '#', "full")));
         assertEquals("#4a3320", IsometricView.color(new BuildingVoxels.Entry('A', "dark_oak_planks", '#', "full")),
                 "le chêne noir n'est pas pris pour du chêne");
         assertEquals("#a12722", IsometricView.color(new BuildingVoxels.Entry('A', "red_wool", '#', "full")));
-        assertEquals("#7f7f7f", IsometricView.color(new BuildingVoxels.Entry('A', "stone_bricks", '#', "full")),
+        assertEquals("#a6a49b", IsometricView.color(new BuildingVoxels.Entry('A', "stone_bricks", '#', "full")),
                 "des briques de pierre sont grises, pas rouges");
         assertEquals("#9c4f3c", IsometricView.color(new BuildingVoxels.Entry('A', "bricks", '#', "full")));
         assertEquals("#9a9a9a", IsometricView.color(new BuildingVoxels.Entry('A', "mystery_block", '#', "full")));
@@ -129,7 +129,7 @@ class IsometricViewTest {
         BuildingVoxels v = grid(List.of(List.of("AAB")), STONE, GLASS);
         List<IsometricView.Swatch> legend = IsometricView.legend(v, 10);
         assertEquals("stone bricks", legend.get(0).label());
-        assertEquals("glass pane", legend.get(1).label());
+        assertEquals("glass", legend.get(1).label());
     }
 
     @Test
@@ -141,5 +141,37 @@ class IsometricViewTest {
     void theTitleIsEscaped() {
         String svg = IsometricView.svg(grid(List.of(List.of("A")), STONE), 0, 99, "<script>\"");
         assertFalse(svg.contains("<script>"));
+    }
+
+    @Test
+    void waterInAWellIsTranslucentAndBlueAndTheWallBehindItShows() {
+        // #786 — l'eau du puits ne doit plus se lire comme un dallage de pierre.
+        BuildingVoxels.Entry water = new BuildingVoxels.Entry('W', "water", '+', "full");
+        String svg = IsometricView.svg(grid(List.of(List.of("AW")), STONE, water), 0, 99, "t");
+        assertTrue(svg.contains("fill=\"#2f6fd6\" fill-opacity=\".62\""), svg);
+        assertEquals(6, faces(svg), "la face du mur derrière l'eau reste dessinée");
+    }
+
+    @Test
+    void stairsTurnWithTheView() {
+        BuildingVoxels.Entry stairs = new BuildingVoxels.Entry('S', "oak_stairs", '/', "full",
+                "facing=north,half=bottom,shape=straight");
+        BuildingVoxels v = grid(List.of(List.of("S")), stairs);
+        String fromSouthEast = IsometricView.svg(v, 0, 99, "t");
+        String fromNorthWest = IsometricView.svg(v, 2, 99, "t");
+        assertEquals(6, faces(fromSouthEast), "deux pavés : la demi-dalle et la contremarche");
+        assertTrue(!fromSouthEast.equals(fromNorthWest), "la contremarche passe devant quand on fait le tour");
+        // Depuis le sud-est, la contremarche (au nord) est au fond : sa face avant, à mi-hauteur, est
+        // visible ; depuis le nord-ouest, elle est devant et cache le dessus de la demi-dalle.
+        assertTrue(fromSouthEast.contains("M-4 -2L4 2L4 -2L-4 -6Z"), fromSouthEast);
+    }
+
+    @Test
+    void aChainIsAThinRodNotACube() {
+        BuildingVoxels.Entry chain = new BuildingVoxels.Entry('C', "iron_chain", '#', "full", "axis=y");
+        String svg = IsometricView.svg(grid(List.of(List.of("C")), chain), 0, 99, "t");
+        assertEquals(3, faces(svg));
+        assertTrue(svg.contains("#3c4047"), "sombre");
+        assertFalse(svg.contains("M0 -8L8 -4"), "pas le dessus d'un cube entier");
     }
 }

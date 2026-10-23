@@ -27,8 +27,29 @@ public record BuildingVoxels(int sizeX, int sizeY, int sizeZ, Map<Character, Ent
      *
      * @param role  le rôle, dans le vocabulaire des coupes ({@code #}, {@code o}, {@code +}…)
      * @param shape {@code full}, {@code bottom} ou {@code top} (dalles)
+     * @param state les propriétés qui changent le dessin ({@code facing=north,half=bottom}), vide pour
+     *              un plugin antérieur à #786 ou un bloc sans orientation
      */
-    public record Entry(char symbol, String block, char role, String shape) {
+    public record Entry(char symbol, String block, char role, String shape, String state) {
+
+        public Entry {
+            state = state == null ? "" : state;
+        }
+
+        public Entry(char symbol, String block, char role, String shape) {
+            this(symbol, block, role, shape, "");
+        }
+
+        /** La valeur d'une propriété de l'état, ou {@code fallback} si elle est absente. */
+        public String property(String name, String fallback) {
+            for (String pair : state.split(",", -1)) {
+                int eq = pair.indexOf('=');
+                if (eq > 0 && pair.substring(0, eq).equals(name)) {
+                    return pair.substring(eq + 1);
+                }
+            }
+            return fallback;
+        }
     }
 
     public BuildingVoxels {
@@ -74,7 +95,7 @@ public record BuildingVoxels(int sizeX, int sizeY, int sizeZ, Map<Character, Ent
                     String role = text(e.get("role"));
                     if (symbol.length() == 1 && role.length() == 1) {
                         palette.put(symbol.charAt(0), new Entry(symbol.charAt(0), text(e.get("block")),
-                                role.charAt(0), text(e.get("shape"))));
+                                role.charAt(0), text(e.get("shape")), text(e.get("state"))));
                     }
                 }
             }

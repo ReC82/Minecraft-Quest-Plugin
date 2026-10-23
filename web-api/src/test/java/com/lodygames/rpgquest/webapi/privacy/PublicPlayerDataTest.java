@@ -41,7 +41,7 @@ class PublicPlayerDataTest {
 
         Map<String, Object> safe = PublicPlayerData.statistics(raw);
 
-        assertEquals(List.of("scopes", "metrics", "lifetime", "season", "events"), List.copyOf(safe.keySet()));
+        assertEquals(List.of("scopes", "metrics", "lifetime", "season", "events", "boards", "catalog"), List.copyOf(safe.keySet()));
         assertEquals(List.of(Map.of("id", "RPG_XP_COMBAT", "aggregation", "SUM", "order", "DESC",
                 "scopes", List.of("lifetime", "season", "event"))), safe.get("metrics"));
         assertEquals(Map.of("QUESTS_COMPLETED", List.of(Map.of("name", "Alice", "value", 2, "rank", 1))), safe.get("lifetime"));

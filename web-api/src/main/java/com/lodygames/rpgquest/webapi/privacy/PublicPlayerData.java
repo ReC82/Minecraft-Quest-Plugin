@@ -85,6 +85,107 @@ public final class PublicPlayerData {
             }
         }
         safe.put("events", events);
+        List<Map<String, Object>> boards = new ArrayList<>();
+        for (Object item : list(statistics.get("boards"))) {
+            Map<String, Object> board = board(item);
+            if (board != null) {
+                boards.add(board);
+            }
+        }
+        safe.put("boards", boards);
+        safe.put("catalog", catalog(statistics.get("catalog")));
+        return safe;
+    }
+
+    /**
+     * Un classement du catalogue (#734) : identité, thème, période, filtre écrit, fenêtres et lignes
+     * ({@code name}, {@code value}, {@code rank}), rien d'autre.
+     */
+    private static Map<String, Object> board(Object raw) {
+        if (!(raw instanceof Map<?, ?> board) || !(board.get("id") instanceof String id)
+                || !(board.get("name") instanceof String)) {
+            return null;
+        }
+        Map<String, Object> safe = new LinkedHashMap<>();
+        safe.put("id", id);
+        for (String key : List.of("name", "category", "icon", "metric", "period", "status", "trackedSince")) {
+            copyString(board, safe, key);
+        }
+        if (board.get("filter") instanceof Map<?, ?> filter) {
+            Map<String, Object> safeFilter = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : filter.entrySet()) {
+                safeFilter.put(String.valueOf(entry.getKey()), strings(entry.getValue()));
+            }
+            safe.put("filter", safeFilter);
+        }
+        safe.put("featured", Boolean.TRUE.equals(board.get("featured")));
+        if (board.get("size") instanceof Number size) {
+            safe.put("size", size.intValue());
+        }
+        Map<String, Object> window = window(board.get("window"));
+        if (window != null) {
+            safe.put("window", window);
+        }
+        safe.put("leaderboard", statRows(board.get("leaderboard")));
+        Map<String, Object> previous = window(board.get("previous"));
+        if (previous != null && board.get("previous") instanceof Map<?, ?> rawPrevious) {
+            previous.put("leaderboard", statRows(rawPrevious.get("leaderboard")));
+            safe.put("previous", previous);
+        }
+        return safe;
+    }
+
+    private static Map<String, Object> window(Object raw) {
+        if (!(raw instanceof Map<?, ?> window) || !(window.get("key") instanceof String)) {
+            return null;
+        }
+        Map<String, Object> safe = new LinkedHashMap<>();
+        for (String key : List.of("key", "start", "end")) {
+            copyString(window, safe, key);
+        }
+        return safe;
+    }
+
+    /** Catalogue des mesures (#734) : métriques suivies et depuis quand, familles, mesures non suivies. */
+    private static Map<String, Object> catalog(Object raw) {
+        Map<String, Object> safe = new LinkedHashMap<>();
+        if (!(raw instanceof Map<?, ?> catalog)) {
+            return safe;
+        }
+        copyString(catalog, safe, "timezone");
+        List<Map<String, Object>> metrics = new ArrayList<>();
+        for (Object item : list(catalog.get("metrics"))) {
+            if (item instanceof Map<?, ?> metric && metric.get("id") instanceof String id) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("id", id);
+                entry.put("dated", Boolean.TRUE.equals(metric.get("dated")));
+                copyString(metric, entry, "trackedSince");
+                metrics.add(entry);
+            }
+        }
+        safe.put("metrics", metrics);
+        Map<String, Object> families = new LinkedHashMap<>();
+        if (catalog.get("families") instanceof Map<?, ?> byKind) {
+            for (Map.Entry<?, ?> kind : byKind.entrySet()) {
+                List<Map<String, Object>> list = new ArrayList<>();
+                for (Object item : list(kind.getValue())) {
+                    if (item instanceof Map<?, ?> family && family.get("id") instanceof String id
+                            && family.get("label") instanceof String label) {
+                        list.add(Map.of("id", id, "label", label));
+                    }
+                }
+                families.put(String.valueOf(kind.getKey()), list);
+            }
+        }
+        safe.put("families", families);
+        List<Map<String, Object>> planned = new ArrayList<>();
+        for (Object item : list(catalog.get("planned"))) {
+            if (item instanceof Map<?, ?> entry && entry.get("id") instanceof String id
+                    && entry.get("reason") instanceof String reason) {
+                planned.add(Map.of("id", id, "reason", reason));
+            }
+        }
+        safe.put("planned", planned);
         return safe;
     }
 

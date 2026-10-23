@@ -63,6 +63,8 @@ public final class DemoData {
         statistics.put("lifetime", lifetime);
         statistics.put("season", season(profiles, now));
         statistics.put("events", events(profiles, now));
+        statistics.put("boards", boards(profiles, now));
+        statistics.put("catalog", catalog(now));
 
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("schemaVersion", 2);
@@ -151,6 +153,92 @@ public final class DemoData {
                 now.minus(Duration.ofDays(27)), "ARCHIVED");
         past.put("leaderboards", Map.of("RPG_XP_MINING", board(profiles, profile -> skill(profile, "MINING") / 8)));
         return List.of(hunt, harvest, fishing, past);
+    }
+
+    /**
+     * Catalogue de classements fictif (#734) : quelques classements de chaque période, valeurs
+     * dérivées des profils fictifs (donc cohérentes entre elles), fenêtres calées sur l'horloge.
+     */
+    private static List<Map<String, Object>> boards(List<Map<String, Object>> profiles, Instant now) {
+        Instant weekStart = now.minus(Duration.ofDays(3));
+        Instant weekEnd = now.plus(Duration.ofDays(4));
+        List<Map<String, Object>> boards = new ArrayList<>();
+        boards.add(demoBoard("demo_zombies", "Chasseurs de zombies (démo)", "combat", "skull", "ENTITY_KILL", "weekly",
+                Map.of("entity-family", List.of("zombies")), weekStart, weekEnd, now, true,
+                board(profiles, profile -> skill(profile, "COMBAT") / 90), board(profiles, profile -> skill(profile, "COMBAT") / 120)));
+        boards.add(demoBoard("demo_araignees", "Chasseurs d'araignées (démo)", "combat", "spider", "ENTITY_KILL", "weekly",
+                Map.of("entity-family", List.of("spiders")), weekStart, weekEnd, now, false,
+                board(profiles, profile -> skill(profile, "COMBAT") / 200), List.of()));
+        boards.add(demoBoard("demo_monstres_jour", "Monstres vaincus aujourd'hui (démo)", "combat", null, "ENTITY_KILL",
+                "daily", Map.of("entity-family", List.of("hostile", "boss")), now.minus(Duration.ofHours(10)),
+                now.plus(Duration.ofHours(14)), now, false, board(profiles, profile -> skill(profile, "COMBAT") / 400),
+                board(profiles, profile -> skill(profile, "COMBAT") / 300)));
+        boards.add(demoBoard("demo_minerais", "Mineurs du mois (démo)", "recolte", "ore", "BLOCK_BREAK", "monthly",
+                Map.of("block-family", List.of("ores")), now.minus(Duration.ofDays(12)), now.plus(Duration.ofDays(18)), now,
+                false, board(profiles, profile -> skill(profile, "MINING") / 25), board(profiles, profile -> skill(profile, "MINING") / 30)));
+        boards.add(demoBoard("demo_waypoints", "Waypoints découverts (démo)", "exploration", null, "WAYPOINT_DISCOVERED",
+                "lifetime", null, null, null, now, true, board(profiles, profile -> skill(profile, "EXPLORATION") / 150), null));
+        boards.add(demoBoard("demo_quetes", "Quêtes de la semaine (démo)", "aventure", null, "QUEST_COMPLETION", "weekly",
+                null, weekStart, weekEnd, now, false,
+                board(profiles, profile -> ((Number) profile.get("questsCompleted")).longValue() / 3), List.of()));
+        return boards;
+    }
+
+    private static Map<String, Object> demoBoard(String id, String name, String category, String icon, String metric,
+                                                 String period, Map<String, Object> filter, Instant start, Instant end,
+                                                 Instant now, boolean featured, List<Map<String, Object>> rows,
+                                                 List<Map<String, Object>> previousRows) {
+        Map<String, Object> board = new LinkedHashMap<>();
+        board.put("id", id);
+        board.put("name", name);
+        board.put("category", category);
+        if (icon != null) {
+            board.put("icon", icon);
+        }
+        board.put("metric", metric);
+        board.put("period", period);
+        if (filter != null) {
+            board.put("filter", filter);
+        }
+        board.put("featured", featured);
+        board.put("size", 10);
+        board.put("status", "ACTIVE");
+        board.put("trackedSince", now.minus(Duration.ofDays(40)).toString());
+        Map<String, Object> window = new LinkedHashMap<>();
+        window.put("key", "demo");
+        if (start != null) {
+            window.put("start", start.toString());
+            window.put("end", end.toString());
+        }
+        board.put("window", window);
+        board.put("leaderboard", rows.stream().filter(row -> ((Number) row.get("value")).longValue() > 0).toList());
+        if (previousRows != null && start != null) {
+            Duration length = Duration.between(start, end);
+            Map<String, Object> previous = new LinkedHashMap<>();
+            previous.put("key", "demo-previous");
+            previous.put("start", start.minus(length).toString());
+            previous.put("end", start.toString());
+            previous.put("leaderboard", previousRows.stream()
+                    .filter(row -> ((Number) row.get("value")).longValue() > 0).toList());
+            board.put("previous", previous);
+        }
+        return board;
+    }
+
+    private static Map<String, Object> catalog(Instant now) {
+        Map<String, Object> catalog = new LinkedHashMap<>();
+        catalog.put("timezone", "Europe/Brussels");
+        catalog.put("metrics", List.of(Map.of("id", "ENTITY_KILL", "dated", true, "trackedSince",
+                now.minus(Duration.ofDays(40)).toString())));
+        catalog.put("families", Map.of(
+                "entity-family", List.of(Map.of("id", "zombies", "label", "Zombies"),
+                        Map.of("id", "spiders", "label", "Araignées"), Map.of("id", "hostile", "label", "Monstres hostiles"),
+                        Map.of("id", "boss", "label", "Boss")),
+                "block-family", List.of(Map.of("id", "ores", "label", "Minerais"))));
+        catalog.put("planned", List.of(
+                Map.of("id", "PLAY_TIME", "reason", "Temps de jeu et jours actifs : pas encore mesurés."),
+                Map.of("id", "DISTANCE_TRAVELED", "reason", "Distance parcourue (marche, nage, vol) : pas encore mesurée.")));
+        return catalog;
     }
 
     private static Map<String, Object> period(String id, String name, Instant start, Instant end, String status) {

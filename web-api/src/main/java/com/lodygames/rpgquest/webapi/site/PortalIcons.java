@@ -40,16 +40,22 @@ public final class PortalIcons {
     private static final Map<String, String> SUFFIX = new LinkedHashMap<>();
 
     /** Métrique de classement (#54) → icône ; une métrique inconnue prend le trophée. */
-    private static final Map<String, String> METRICS = Map.of(
-            "RPG_XP_GLOBAL", "xp",
-            "QUESTS_COMPLETED", "scroll",
-            "ENTITY_KILL", "skull",
-            "FISH_CAUGHT", "fish",
-            "RPG_XP_COMBAT", "sword",
-            "RPG_XP_MINING", "pickaxe",
-            "RPG_XP_FARMING", "bread",
-            "RPG_XP_FISHING", "fish",
-            "RPG_XP_EXPLORATION", "map");
+    private static final Map<String, String> METRICS = Map.ofEntries(
+            Map.entry("RPG_XP_GLOBAL", "xp"),
+            Map.entry("QUESTS_COMPLETED", "scroll"),
+            Map.entry("QUEST_COMPLETION", "scroll"),
+            Map.entry("STORY_COMPLETED", "scroll"),
+            Map.entry("ENTITY_KILL", "skull"),
+            Map.entry("FISH_CAUGHT", "fish"),
+            Map.entry("BLOCK_BREAK", "pickaxe"),
+            Map.entry("WAYPOINT_DISCOVERED", "waypoint"),
+            Map.entry("CITY_DISCOVERED", "map"),
+            Map.entry("WAYSTONE_DISCOVERED", "waypoint"),
+            Map.entry("RPG_XP_COMBAT", "sword"),
+            Map.entry("RPG_XP_MINING", "pickaxe"),
+            Map.entry("RPG_XP_FARMING", "bread"),
+            Map.entry("RPG_XP_FISHING", "fish"),
+            Map.entry("RPG_XP_EXPLORATION", "map"));
 
     static {
         loadMaterialMap();

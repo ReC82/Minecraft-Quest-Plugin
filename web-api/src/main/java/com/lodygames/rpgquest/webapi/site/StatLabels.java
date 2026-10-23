@@ -31,6 +31,7 @@ public final class StatLabels {
         CATEGORIES.put("combat", new String[] {"Combat", "sword"});
         CATEGORIES.put("recolte", new String[] {"Récolte", "pickaxe"});
         CATEGORIES.put("exploration", new String[] {"Exploration", "map"});
+        CATEGORIES.put("communaute", new String[] {"Communauté", "heart"});
         CATEGORIES.put("autres", new String[] {"Autres", "trophy"});
     }
 
@@ -40,10 +41,10 @@ public final class StatLabels {
     /** Thème d'une métrique (#54) ; « autres » pour une métrique inconnue, jamais d'erreur. */
     static String category(String metric) {
         return switch (metric) {
-            case "RPG_XP_GLOBAL", "QUESTS_COMPLETED" -> "aventure";
+            case "RPG_XP_GLOBAL", "QUESTS_COMPLETED", "QUEST_COMPLETION", "STORY_COMPLETED" -> "aventure";
             case "RPG_XP_COMBAT", "ENTITY_KILL" -> "combat";
-            case "RPG_XP_MINING", "RPG_XP_FARMING", "RPG_XP_FISHING", "FISH_CAUGHT" -> "recolte";
-            case "RPG_XP_EXPLORATION" -> "exploration";
+            case "RPG_XP_MINING", "RPG_XP_FARMING", "RPG_XP_FISHING", "FISH_CAUGHT", "BLOCK_BREAK" -> "recolte";
+            case "RPG_XP_EXPLORATION", "WAYPOINT_DISCOVERED", "CITY_DISCOVERED", "WAYSTONE_DISCOVERED" -> "exploration";
             default -> "autres";
         };
     }
@@ -58,6 +59,18 @@ public final class StatLabels {
         if (metric.equals("FISH_CAUGHT")) {
             return "Prises de pêche";
         }
+        String catalogTitle = switch (metric) {
+            case "BLOCK_BREAK" -> "Blocs cassés";
+            case "QUEST_COMPLETION" -> "Quêtes terminées (par période)";
+            case "WAYPOINT_DISCOVERED" -> "Waypoints découverts";
+            case "CITY_DISCOVERED" -> "Villes découvertes";
+            case "WAYSTONE_DISCOVERED" -> "Pierres de voyage découvertes";
+            case "STORY_COMPLETED" -> "Histoires terminées";
+            default -> null;
+        };
+        if (catalogTitle != null) {
+            return catalogTitle;
+        }
         if (metric.equals("RPG_XP_GLOBAL")) {
             return "Expérience totale";
         }
@@ -69,9 +82,14 @@ public final class StatLabels {
 
     public static String unit(String metric) {
         return switch (metric) {
-            case "QUESTS_COMPLETED" -> "quêtes";
+            case "QUESTS_COMPLETED", "QUEST_COMPLETION" -> "quêtes";
             case "ENTITY_KILL" -> "monstres";
             case "FISH_CAUGHT" -> "prises";
+            case "BLOCK_BREAK" -> "blocs";
+            case "WAYPOINT_DISCOVERED" -> "waypoints";
+            case "CITY_DISCOVERED" -> "villes";
+            case "WAYSTONE_DISCOVERED" -> "pierres";
+            case "STORY_COMPLETED" -> "histoires";
             default -> "XP";
         };
     }
@@ -108,6 +126,46 @@ public final class StatLabels {
         };
     }
 
+    /**
+     * Périodes du catalogue de classements (#734) : nom de la période dans l'instantané → identifiant
+     * d'adresse, libellé du filtre. Ordre = ordre des filtres.
+     */
+    static final Map<String, String[]> BOARD_PERIODS = new LinkedHashMap<>();
+
+    static {
+        BOARD_PERIODS.put("daily", new String[] {"jour", "Aujourd'hui"});
+        BOARD_PERIODS.put("weekly", new String[] {"semaine", "Cette semaine"});
+        BOARD_PERIODS.put("monthly", new String[] {"mois", "Ce mois-ci"});
+        BOARD_PERIODS.put("season", new String[] {"saison", "Saison"});
+        BOARD_PERIODS.put("custom", new String[] {"dates", "Dates spéciales"});
+        BOARD_PERIODS.put("lifetime", new String[] {"toujours", "Depuis toujours"});
+    }
+
+    /** Fenêtre précédente d'un classement de calendrier : « Hier », « La semaine dernière »… */
+    static String previousLabel(String period) {
+        return switch (period == null ? "" : period) {
+            case "daily" -> "Hier";
+            case "weekly" -> "La semaine dernière";
+            case "monthly" -> "Le mois dernier";
+            default -> "Période précédente";
+        };
+    }
+
+    /**
+     * Bornes lisibles d'une fenêtre {@code [start, end)} : « du 19 octobre 2026 au 25 octobre 2026 »
+     * (la fin affichée est le dernier jour compris) ; un seul jour s'écrit « le 23 octobre 2026 ».
+     */
+    static String window(String start, String end) {
+        try {
+            var first = Instant.parse(start).atZone(ZONE).toLocalDate();
+            var last = Instant.parse(end).minusSeconds(1).atZone(ZONE).toLocalDate();
+            DateTimeFormatter day = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRENCH);
+            return first.equals(last) ? "le " + day.format(first) : "du " + day.format(first) + " au " + day.format(last);
+        } catch (DateTimeException | NullPointerException e) {
+            return "";
+        }
+    }
+
     /** Règle de classement d'un événement (#57), expliquée simplement. */
     public static String ranking(String ranking) {
         return switch (ranking == null ? "" : ranking) {
@@ -125,6 +183,10 @@ public final class StatLabels {
             case "entity" -> "Monstres concernés";
             case "special-mob" -> "Monstres spéciaux concernés";
             case "item" -> "Prises concernées";
+            case "entity-family" -> "Familles de monstres";
+            case "block" -> "Blocs concernés";
+            case "block-family" -> "Familles de blocs";
+            case "quest" -> "Quêtes concernées";
             default -> key;
         };
     }

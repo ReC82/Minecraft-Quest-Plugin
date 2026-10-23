@@ -8290,6 +8290,46 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-415 — Catalogue de classements par périodes (issue #734, PENDING MANUAL VALIDATION)
+
+JAR RPGQuest + portail AWS, aucune migration. `web-export.enabled` et `player-data-public` restent à
+`false` : aucun vrai pseudo publié, les vraies valeurs ne sont visibles qu'en console / base. Durée :
+10 minutes (partie A en jeu, partie B navigateur). Acquis à ne pas régresser : TC-414 (portail), événements
+#57 (`ENTITY_KILL`, `FISH_CAUGHT`), XP de minage (blocs posés jamais comptés).
+
+**A. En jeu (DEV, survie, sans mode bypass)**
+1.  Console dans la minute qui suit le démarrage (`statistics.yml` absent sur DEV). **Attendu** : des lignes
+    `Statistiques : classement « board_… » terminé, résultats figés.` (hier, semaine et mois précédents),
+    une seule fois ; aucune erreur `Statistiques :`.
+2.  Tuer 2 zombies et 1 araignée, casser 3 blocs de pierre naturelle **et** un bloc que vous avez posé,
+    pêcher un poisson, terminer une quête. **Attendu** : rien de visible en jeu (aucun message).
+3.  Passer en créatif, tuer un zombie et casser un bloc. **Attendu** : ne compte pas (voir B3).
+
+**B. Contrôle (PlugAdmin ou propriétaire, lecture seule)**
+1.  `/demo/classements/tous` sur https://lodyquests.lodylands.com. **Attendu** : bandeau « Aperçu avec des
+    joueurs fictifs », classements « (démo) » par semaine / jour / mois / depuis toujours, filtres Période
+    et Thème, « Cette semaine — du … au … », « Mesure suivie depuis le … », « La semaine dernière » repliable,
+    section « Mesures pas encore suivies ». Téléphone (390 px) : aucun défilement horizontal.
+2.  `/classements` et `/classements/tous` (vraies pages). **Attendu** : toujours « pas encore publiée »
+    (décision #55), aucun pseudo.
+3.  Facultatif, sur une copie de `data.db` ou via un export activé **temporairement par le propriétaire** :
+    `stat_activity_log` contient `ENTITY_KILL:ZOMBIE` ×2, `ENTITY_KILL:SPIDER`, `BLOCK_BREAK:STONE` ×3 (pas le
+    bloc posé, rien en créatif), `QUEST_COMPLETION:<id de la quête>`. Ne jamais modifier la base.
+4.  **Avis du propriétaire** : catalogue par défaut (23 classements) à garder, réduire ou compléter ;
+    noms, catégories, périodes, mises en avant.
+
+**Couverture automatisée** : `StatDimensionsTest` (tous les noms de `families.yml` existent dans Paper
+1.21.11, catégories boss / hostile / non hostile / exclus avec raison), `BoardPeriodTest` (jour de 25 h au
+changement d'heure, semaine ISO lundi → lundi, semaine 53, mois civil, clé d'archive), `BoardCatalogLoaderTest`
+(catalogue par défaut sans erreur, `[]`, `enabled: false`, dates personnalisées, fuseau, refus explicites, fichier
+jamais appliqué à moitié, exclusion par classement, fenêtres à figer), `BoardSourcesRepositoryTest` (découvertes
+datées et uniques, stories, famille de blocs OU bloc explicite, « suivi depuis » nul sans donnée, archive figée
+et rejeu tardif sans effet), `ActivityListenerTest` (bloc naturel compté, posé / refusé / créatif / culture pas
+mûre jamais, quête écrite seulement après enregistrement, une fois), `StatisticsServiceTest` (catalogue par
+défaut figé une fois, jamais d'archive plus ancienne), `BoardCatalogExportTest` (fenêtres, `NO_SEASON`, aucun
+UUID), `BoardCatalogPageTest` (liste blanche, filtres, bornes, ex aequo, démo étiquetée).
+**Non couvert** : comptage en jeu réel (partie A), rendu sur appareils réels.
+
 ### TC-414 — Portail public : refonte (accueil, événements, progression, podiums, fiches, aperçu fictif) (issue #56, PENDING MANUAL VALIDATION)
 
 Portail AWS seul (https://lodyquests.lodylands.com), aucun JAR, aucune migration. `player-data-public` reste

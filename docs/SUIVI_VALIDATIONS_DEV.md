@@ -388,3 +388,7 @@ Le propriétaire confirme « ok ça marche comme attendu » après la consigne :
 
 ### Validation propriétaire — 23/10/2026, TC-302 étape 12
 Après validation de OP + bypass OFF, le propriétaire confirme « ça fonctionne » pour `/rpgadmin bypass on` : il peut **casser puis replacer un bloc ordinaire du Hub**. Parcours ON validé manuellement ; bloc restauré. **Test suivant : repasser immédiatement en bypass OFF et vérifier le refus de casse/pose**, sans modifier d'autres droits. Ne pas clôturer #35 à ce stade ; autres protections avancées et builder non OP non validés manuellement.
+
+
+### Validation propriétaire — 23/10/2026, TC-302 étape 13
+Après test réussi du bypass ON (casse et pose), le propriétaire confirme « oui c'est bon » pour `/rpgadmin bypass off` : **casse et pose immédiatement refusées dans le Hub**, avec son statut OP conservé. Cycle complet **OFF → ON → OFF validé manuellement** pour casse et pose. Aucun changement de permission réelle ; #35 reste ouvert le temps de décider si le contrôle additionnel de décor (cadre/panneau) est nécessaire. Le builder non OP et les autres protections décoratives n'ont pas été testés manuellement.

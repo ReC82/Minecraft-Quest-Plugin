@@ -3,6 +3,7 @@ title: Classements du site
 category: Site public
 tags: [classements, leaderboards, portail, site, saison, événement, accueil]
 order: 0
+related: [parametres-generaux, joueurs-admin]
 ---
 
 # Classements du site

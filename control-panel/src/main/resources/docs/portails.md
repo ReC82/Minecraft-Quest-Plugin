@@ -3,6 +3,7 @@ title: Portails
 category: Monde
 tags: [portail, portails, arche, construction, lier, délier, passage, portal, hub_to_wild, hub_to_claims, wild, claims, random_safe, claim_home, fixed_point, point fixe, retour, vérifier, avertissement, diagnostic, brouillon, emplacement, activer, désactiver, conditions, accès, niveau, délai, simuler, simulation, tester, portal_test, messages, bienvenue, ne plus afficher, préférence]
 order: 2
+related: [mondes, villes, wild]
 ---
 
 # Portails

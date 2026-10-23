@@ -3,6 +3,7 @@ title: Villes
 category: Réseau de voyage
 tags: [ville, villes, centre, perimetre, decouverte, bienvenue, outil, DISCOVER_CITY, pnj, arrivee]
 order: 2
+related: [batiments-emplacements, portails, mondes]
 ---
 
 # Villes

@@ -3,6 +3,7 @@ title: Gérer les joueurs
 category: Joueurs
 tags: [joueur, player, annuaire, online, offline, hors ligne, ban, unban, bannir, débannir, modération, build, reset, recherche]
 order: 0
+related: [joueurs-reset, groupes, quetes]
 ---
 
 # Gérer les joueurs

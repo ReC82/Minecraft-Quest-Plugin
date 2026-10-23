@@ -3,6 +3,7 @@ title: Base de données (cible MariaDB)
 category: Administration
 tags: [base de données, mariadb, mysql, sqlite, migration, mot de passe, connexion, bascule, panel, isolement]
 order: 0
+related: [exploitation-serveur, serveur-depannage]
 ---
 
 # Base de données

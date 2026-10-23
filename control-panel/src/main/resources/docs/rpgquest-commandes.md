@@ -3,6 +3,7 @@ title: Commandes RPGQuest (référence)
 category: Administration serveur
 tags: [rpgadmin, rpgquest, commandes, reference, syntaxe, console, admin, aide]
 order: 1
+related: [citizens-commandes, exploitation-serveur, quetes]
 ---
 
 # Commandes RPGQuest — référence

@@ -3,6 +3,7 @@ title: Paramètres généraux
 category: Serveur
 tags: [paramètres, réglages, monnaie, lodycoins, bêta, avertissement, connexion, bypass]
 order: 0
+related: [exploitation-serveur, groupes]
 ---
 
 # Paramètres généraux

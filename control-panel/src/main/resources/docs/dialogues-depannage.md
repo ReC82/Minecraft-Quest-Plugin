@@ -3,6 +3,7 @@ title: Résoudre les problèmes de dialogues
 category: Dialogues
 tags: [dialogue, diagnostic, depannage, noeud, choix, npc, quete, warning, error]
 order: 2
+related: [dialogues, pnj-depannage, quetes-depannage, contenu-publier-sur-dev]
 ---
 
 # Résoudre les problèmes de dialogues

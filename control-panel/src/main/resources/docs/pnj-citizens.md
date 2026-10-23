@@ -3,9 +3,14 @@ title: Créer et configurer un PNJ (Citizens + RPGQuest)
 category: PNJ / Citizens
 tags: [citizens, npc, pnj, tag, skin, rpgadmin, binding, dialogue, giver]
 order: 1
+related: [pnj-depannage, citizens-commandes, dialogues, quetes]
 ---
 
 # Créer et configurer un PNJ
+
+Un **PNJ** est un personnage du jeu (Citizens) relié à une fiche RPGQuest : nom, apparence,
+emplacement, dialogue et quêtes. Commencez par le parcours simple ci-dessous ; les commandes et
+réglages avancés viennent ensuite.
 
 ## Le parcours simple dans PlugAdmin
 

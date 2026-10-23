@@ -3,6 +3,7 @@ title: Reset d'un joueur (deux portées)
 category: Joueurs / Reset
 tags: [reset, resetnew, resetfull, joueur, player, confirm, preview, op, deop, onboarding, kit, inventaire]
 order: 1
+related: [joueurs-admin, quetes]
 ---
 
 # Reset d'un joueur

@@ -407,7 +407,20 @@ seule colonne lisible sur téléphone, zones cliquables de 44 px, focus clavier 
 | `/classements` (alias `/leaderboards`) | onglets « Depuis toujours », saison, événements (`?periode=<id>`) ; top 10 par métrique, rang du plugin (ex aequo), statut et dates de la période, date de relevé | « Aucun classement » | « pas encore publiée » |
 | `/joueurs`, `/joueurs/<pseudo>`, `/joueurs?pseudo=` | liste alphabétique paginée (60), recherche, profil : XP par piste, quêtes, rangs « depuis toujours » ; initiale à la place d'un skin (pas de service tiers ni d'UUID) | liste vide | « pas encore publiée » |
 | `/infos` | rejoindre (`server-address`, `minecraft-version`), premiers pas, règles de base, FAQ | inchangée | inchangée |
+| `/evenements` (refonte, 23/10) | saison et événements rangés « En cours / À venir / Terminés » : nom, dates, compte à rebours, règles, récompenses annoncées, objectif commun (total agrégé) ; lien « Voir le classement » si publié | « Aucune saison ni aucun événement » + lien vers l'exemple fictif | **publique** : aucun pseudo ni score individuel, pas de lien vers les classements |
+| `/progression` (refonte, 23/10) | « Comment progresser » : les cinq pistes, niveau global, quêtes, commandes en jeu ; aucun montant cité (configurables) | inchangée | inchangée |
+| `/demo/classements`, `/demo/joueurs[/<pseudo>]`, `/demo/evenements` (refonte, 23/10) | **mêmes pages avec des joueurs fictifs** `Demo_*` (`site.DemoData`, calculés en mémoire, dates relatives à l'heure courante) ; bandeau « Aperçu avec des joueurs fictifs », `noindex`, sans lien canonique, `robots.txt` `Disallow: /demo/` ; les liens restent dans `/demo/` | inchangées (l'état du serveur affiché reste le vrai) | **toujours servies** : ne lisent jamais l'instantané |
 | `/robots.txt`, `/sitemap.xml` | pages stables et actualités publiées ; **jamais** de profil ; `/compte` exclu | — | — |
+
+**Refonte (23/10/2026, mission WebPortal lot 3)** : accueil avec « Commence en 3 étapes » et six tuiles
+d'accès rapide ; menu à 7 entrées (Accueil, Actualités, Événements, Classements, Joueurs, Guide, Compte) en
+grille d'icônes 4 colonnes sous 700 px ; classements en **podium** (ordre des rangs conservé dans le HTML,
+deuxième / premier / troisième à l'écran, marche selon le rang du plugin donc ex aequo compris), filtre
+**Thème** `?categorie=aventure|combat|recolte|exploration|autres` (`StatLabels.category`, thème inconnu =
+tout) combinable avec `?periode=` ; fiche joueur avec en-tête (XP totale, quêtes, meilleur rang), une barre
+par piste comparée à la piste la plus forte du joueur (aucun niveau recalculé côté portail) et médailles de
+classement. Les pages « pas encore publiées » et l'accueil proposent l'aperçu fictif. Captures :
+`docs/design/56-portail-refonte/`.
 
 Chaque page a un titre, une description et un lien canonique (`public-base-url`). Les données de
 joueurs passent toutes par la liste blanche `privacy.PublicPlayerData`. Un pseudo inconnu ou masqué,

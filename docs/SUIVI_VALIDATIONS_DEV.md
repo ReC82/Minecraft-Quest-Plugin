@@ -359,3 +359,7 @@ Capture de **Joueurs (démonstration)** après clic sur « Tous les profils » d
 **Incohérence confirmée sur deux vues** : Demo_Brasier = **5 200 XP** dans la liste des profils et dans sa fiche, contre **6 100 XP Combat** sur la fiche/classement. Vérifier la définition de « XP totale » et la cohérence des fixtures avant clôture #56, sans présumer d'une anomalie sur des données joueurs réelles.
 
 **Prochain test unique :** saisir `Brasier` dans « Chercher un pseudo », cliquer sur « Chercher », constater si Demo_Brasier est retrouvé seul et si la recherche est insensible à la casse.
+
+
+### ÉCHEC propriétaire — 23/10/2026 : recherche profil fictif WebPortal (#56 / TC-414)
+Scénario reproduit : ouvrir **Joueurs (démonstration)** avec Demo_Brasier présent, saisir **Brasier** dans « Chercher un pseudo », cliquer « Chercher ». **Observé :** page générique « Joueur » et « Aucun profil public pour ce pseudo », alors que la fiche Demo_Brasier existe et s'ouvre depuis le classement. **Attendu :** recherche dans l'espace /demo et accès à la fiche fictive correspondante. Auditer la route du formulaire, le préfixe Demo_ et la prise en charge des recherches partielles ; ne pas activer de données réelles. **TC-414 ÉCHEC sur la recherche ; #56 reste ouvert.** Refaire le parcours après correction, avec pseudo absent et casse différente.

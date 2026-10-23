@@ -83,6 +83,8 @@ class WorkshopFlowTest {
     private final AtomicInteger aiCalls = new AtomicInteger();
     /** Le dernier corps reçu par le faux fournisseur : ce que l'IA a réellement lu. */
     private volatile String lastAiRequest = "";
+    /** #747 : la réponse du faux fournisseur ; {@code null} = le plan habituel. */
+    private volatile String aiContent;
     private String dbPath;
     private int port;
     private HttpClient client;
@@ -237,6 +239,84 @@ class WorkshopFlowTest {
         HttpResponse<String> denied = get("/buildings/workshop/journal?id=" + id(project));
         assertEquals(403, denied.statusCode());
         assertFalse(denied.body().contains("JOURNAL IA"));
+    }
+
+    // ---- #747 (23/10/2026) : réponse sans plan, reprise avec le même contexte ---------------------
+
+    /**
+     * Le parcours de l'Église du hub, sans appel payant : « Améliorer avec l'IA » reçoit « I'm sorry,
+     * I can't assist with that. ». Aucune version n'est créée, la version source reste active, la page
+     * le dit en rouge et propose « Réessayer avec le même contexte » — qui renvoie la même version
+     * source, le même mode et les mêmes consignes, et le journal le prouve pièce par pièce.
+     */
+    @Test
+    void aRefusedImprovementKeepsTheLastPlanAndIsRetriedWithTheSameContext() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        String withDraft = propose(project);
+        String source = draftId(withDraft);
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+        String page = get(withDraft).body();
+
+        aiContent = "I'm sorry, I can't assist with that.";
+        HttpResponse<String> refused = post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=correct&id=" + id(project) + "&draft=" + source + "&version="
+                + field(formAround(page, "value=\"correct\""), "name=\"version\" value=\"([^\"]+)\"")
+                + "&provider=openai&mode=improve&notes=" + enc("Garder la tour.") + "&request_token=" + token(page));
+        assertEquals(303, refused.statusCode());
+        String back = location(refused);
+        assertEquals(source, draftId(back), "la version source reste affichée et active");
+        assertTrue(decoded(back).contains("err=") && decoded(back).contains("Refus du modèle"), decoded(back));
+        assertFalse(back.contains("ok="), "pas de bandeau vert");
+        assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, id(project)).size(), "aucune version créée");
+        assertEquals(2, aiCalls.get());
+
+        String failed = get(back).body();
+        assertTrue(failed.contains("Le dernier appel à l") && failed.contains("Réessayer avec le même contexte"), excerpt(failed));
+        String retryForm = formAround(failed, "name=\"retry_of\"");
+        assertTrue(retryForm.contains("value=\"improve\"") && retryForm.contains("Garder la tour."), retryForm);
+        assertTrue(retryForm.contains("name=\"draft\" value=\"" + source + "\""), retryForm);
+        assertTrue(failed.contains("Repartir de zéro"), "repartir de zéro reste un geste séparé");
+        String journal = get("/buildings/workshop/journal?id=" + id(project)).body();
+        assertTrue(journal.contains("APPEL ÉCHOUÉ : Refus du modèle"), journal);
+        assertTrue(journal.contains("version active conservée : V-" + source.substring(0, 8)), journal);
+        assertEquals(2, aiCalls.get(), "afficher l'échec ne relance rien");
+
+        aiContent = null;
+        HttpResponse<String> retried = post("/buildings/workshop/project", "_csrf=" + csrf(failed)
+                + "&_action=correct&id=" + id(project) + "&draft=" + source
+                + "&version=" + field(retryForm, "name=\"version\" value=\"([^\"]+)\"")
+                + "&mode=" + field(retryForm, "name=\"mode\" value=\"([^\"]+)\"")
+                + "&retry_of=" + field(retryForm, "name=\"retry_of\" value=\"([^\"]+)\"")
+                + "&notes=" + enc("Garder la tour.") + "&provider=openai&request_token=" + token(retryForm));
+        assertEquals(3, aiCalls.get());
+        BuildingPlanDraft created = drafts().find(draftId(location(retried))).orElseThrow();
+        assertEquals(source, created.parentId(), "la reprise repart de la version source");
+        assertTrue(lastAiRequest.contains("Garder la tour."), "les consignes repartent");
+        String after = get("/buildings/workshop/journal?id=" + id(project)).body();
+        assertTrue(after.contains("Reprise de l'appel échoué"), after);
+        Matcher same = Pattern.compile("Reprise de l'appel échoué \\S+ avec le même contexte — identiques : ([^\n]+)")
+                .matcher(after);
+        assertTrue(same.find(), after);
+        assertTrue(same.group(1).contains("previousPlan") && same.group(1).contains("refusal")
+                && same.group(1).contains("images") && same.group(1).contains("mode"), same.group(1));
+        assertFalse(same.group(1).contains("DIFFÉRENTES"), same.group(1));
+    }
+
+    /** Une réponse coupée par la limite de longueur ou vide n'est pas non plus une version (#747). */
+    @Test
+    void anEmptyAnswerCreatesNoVersionEvenForANewPlan() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        aiContent = "";
+        String page = get(project).body();
+        HttpResponse<String> res = post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=propose&id=" + id(project) + "&provider=openai&request_token=" + token(page));
+        assertTrue(decoded(location(res)).contains("Réponse vide"), decoded(location(res)));
+        assertTrue(drafts().forProject(TestConfig.AGENT_ID, id(project)).isEmpty());
+        String failed = get(project).body();
+        assertTrue(failed.contains("Réessayer avec le même contexte"), excerpt(failed));
+        assertEquals(1, aiCalls.get());
     }
 
     // ---- Vérifier, en français ---------------------------------------------------------------
@@ -1155,7 +1235,8 @@ class WorkshopFlowTest {
             lastAiRequest = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             Map<String, Object> message = new LinkedHashMap<>();
             message.put("role", "assistant");
-            message.put("content", "```yaml\n" + PLAN + "\n```");
+            String content = aiContent;
+            message.put("content", content == null ? "```yaml\n" + PLAN + "\n```" : content);
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("model", "gpt-4o");
             response.put("choices", List.of(Map.of("message", message)));

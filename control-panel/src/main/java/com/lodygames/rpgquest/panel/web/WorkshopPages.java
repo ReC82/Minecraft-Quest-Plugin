@@ -247,7 +247,22 @@ public final class WorkshopPages {
                               List<ReferenceImageStore.Info> images, CatalogState catalog,
                               boolean ownBuilding, List<BuildingDesignDocStore.Doc> designs,
                               String designConflict, String importQuery,
-                              Optional<PlanImportPreview> importPreview, RepairInfo repairInfo) {
+                              Optional<PlanImportPreview> importPreview, RepairInfo repairInfo,
+                              FailureInfo failure) {
+    }
+
+    /**
+     * #747 (23/10/2026) : le dernier appel à l'IA a échoué — refus, réponse vide, format invalide,
+     * troncature, panne — et n'a créé aucune version. La page le dit en rouge et propose de le
+     * reprendre à l'identique ; repartir de zéro reste un geste séparé et explicite.
+     *
+     * @param keptDraftId  la version source, restée active ; vide si aucune n'a de plan
+     * @param gesture      « correct » (améliorer la version source) ou « propose » (plan neuf)
+     * @param legacy       une ancienne réponse inexploitable rangée comme version avant le correctif
+     */
+    public record FailureInfo(String callId, String when, String label, String detail, String keptDraftId,
+                              int keptVersion, String gesture, String mode, String notes, String providerId,
+                              boolean legacy) {
     }
 
     /**
@@ -259,10 +274,24 @@ public final class WorkshopPages {
      * @param regressions     ce que cette version réintroduit, ou vide
      */
     public record RepairInfo(String memorySummary, List<String> complianceLines, String suggestedMode,
-                             String why, String imageNote, String regressions, String best) {
+                             String why, String imageNote, String regressions, String best,
+                             String stagnation, String bestDraftId, String notes) {
 
         public RepairInfo {
             complianceLines = List.copyOf(complianceLines == null ? List.of() : complianceLines);
+            stagnation = stagnation == null ? "" : stagnation;
+            bestDraftId = bestDraftId == null ? "" : bestDraftId;
+            notes = notes == null ? "" : notes;
+        }
+
+        public RepairInfo(String memorySummary, List<String> complianceLines, String suggestedMode, String why,
+                          String imageNote, String regressions, String best) {
+            this(memorySummary, complianceLines, suggestedMode, why, imageNote, regressions, best, "", "", "");
+        }
+
+        /** Stagnation sur une autre version que la meilleure : l'automatique n'est plus proposé. */
+        public boolean stopped() {
+            return !stagnation.isEmpty();
         }
     }
 
@@ -315,6 +344,7 @@ public final class WorkshopPages {
                 + "<a class=\"btn btn-outline-secondary\" href=\"" + BASE + "\">"
                 + Icons.icon("back") + "Atelier</a>"));
         banners(sb, v.notice(), v.error());
+        sb.append(failureCard(v));
         Optional<String> orientation = com.lodygames.rpgquest.panel.building.BriefOrientation.conflict(p);
         orientation.ifPresent(c -> sb.append(Ui.banner("warning", "<strong>Façade d'entrée contradictoire : "
                 + "les gestes payants sont suspendus.</strong> " + Http.esc(c))));
@@ -406,6 +436,13 @@ public final class WorkshopPages {
                     + "bâtiment souhaité » ci-dessous et racontez ce que vous voulez : matériaux, étages, "
                     + "pièces, style.</p>");
             case PROPOSE -> {
+                if (v.failure() != null && v.failure().legacy()) {
+                    // La reprise est dans la carte d'échec : « Créer un plan » perdrait le contexte.
+                    sb.append("<h2 class=\"h5\">Cette version ne contient pas de plan</h2><p>Voir ci-dessus : "
+                            + "la réponse de l'IA était inexploitable. Reprenez depuis la dernière version "
+                            + "exploitable.</p>");
+                    break;
+                }
                 sb.append("<h2 class=\"h5\">Prêt à demander un plan</h2><p>L'IA lit votre description et "
                         + "propose un plan de construction. Vous le vérifierez avant d'enregistrer quoi que "
                         + "ce soit.</p>");
@@ -1042,13 +1079,101 @@ public final class WorkshopPages {
         return sb.toString();
     }
 
+    /**
+     * La carte d'un appel échoué (#747) : ce qui s'est passé, ce qui n'a pas changé, et deux gestes
+     * distincts — reprendre à l'identique, ou repartir de zéro en le cochant explicitement. Aucun
+     * des deux ne part sans clic.
+     */
+    static String failureCard(ProjectView v) {
+        FailureInfo f = v.failure();
+        if (f == null) {
+            return "";
+        }
+        String kept = f.keptDraftId().isEmpty() ? "" : "V-" + f.keptDraftId().substring(0,
+                Math.min(8, f.keptDraftId().length()));
+        StringBuilder sb = new StringBuilder("<div class=\"card ws-failure-card\"><div class=\"card-body\">");
+        sb.append("<h2 class=\"h5\">").append(Icons.icon("warning")).append(f.legacy()
+                ? "Réponse inexploitable de l'IA" : "Le dernier appel à l'IA a échoué").append("</h2>");
+        sb.append(Ui.banner("err", "<strong>" + Http.esc(f.label()) + "</strong>"
+                + (f.detail().isEmpty() ? "" : " — " + Http.esc(f.detail()))
+                + (f.when().isEmpty() ? "" : " <span class=\"muted\">(" + Http.esc(f.when()) + ")</span>")));
+        sb.append("<p>").append(f.legacy() ? "Cette réponse a été rangée comme version avant le correctif du "
+                + "23/10/2026 ; elle ne contient aucun plan. " : "Aucune version n'a été créée. ")
+                .append(kept.isEmpty() ? "Aucune version antérieure n'a de plan."
+                        : "La dernière version exploitable reste <strong>" + Http.esc(kept) + "</strong>, avec son "
+                        + "diagnostic, la mémoire des tentatives et vos images.")
+                .append(" La réponse brute est conservée dans le journal IA.</p>");
+        if (!kept.isEmpty() && (v.draft() == null || !v.draft().id().equals(f.keptDraftId()))) {
+            sb.append("<p><a href=\"").append(projectUrl(v.project().id(), f.keptDraftId())).append("\">Ouvrir ")
+                    .append(Http.esc(kept)).append("</a></p>");
+        }
+        if (!v.canWrite() || v.providers().isEmpty()) {
+            return sb.append("</div></div>").toString();
+        }
+        boolean improve = "correct".equals(f.gesture()) && !f.keptDraftId().isEmpty();
+        sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
+                .append(hidden("_csrf", v.session().csrfToken()))
+                .append(hidden("_action", improve ? "correct" : "propose"))
+                .append(hidden("id", v.project().id())).append(hidden("request_token", v.requestToken()))
+                .append(hidden("retry_of", f.callId()));
+        if (!f.keptDraftId().isEmpty()) {
+            sb.append(hidden("draft", f.keptDraftId()));
+        }
+        if (improve) {
+            sb.append(hidden("version", String.valueOf(f.keptVersion())))
+                    .append(hidden("mode", f.mode().isEmpty() ? "auto" : f.mode()));
+        } else if ("propose_lessons".equals(f.gesture())) {
+            sb.append(hidden("lessons", "yes"));
+        }
+        sb.append(providerSelect(v, f.providerId()));
+        sb.append("<p class=\"field-help\">").append(improve
+                ? "Même version source (" + Http.esc(kept) + "), même nature de reprise (" + Http.esc(modeLabel(f.mode()))
+                        + "), mêmes consignes ; le diagnostic, la mémoire des tentatives et les images sont relus "
+                        + "et le journal dira s'ils sont identiques à ceux de l'appel échoué."
+                : "Même description, même conception et mêmes images que l'appel échoué.").append("</p>");
+        if (improve) {
+            sb.append("<div class=\"field\"><label for=\"ws-retry-notes\">Vos consignes (reprises telles quelles)"
+                    + "</label><textarea id=\"ws-retry-notes\" name=\"notes\" rows=\"3\">")
+                    .append(Http.esc(f.notes())).append("</textarea></div>");
+        }
+        sb.append("<p class=\"field-help\">").append(Icons.icon("warning")).append("Un appel <strong>facturé"
+                + "</strong>, sur ce clic seulement : rien n'est relancé automatiquement.</p>");
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-primary\" type=\"submit\">")
+                .append(Icons.icon("refresh")).append("Réessayer avec le même contexte</button></div></form>");
+        // Repartir de zéro : séparé, replié, et confirmé par une case — jamais le geste par défaut.
+        sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Repartir de zéro depuis ma "
+                + "description</summary><p>Un plan neuf, <strong>sans</strong> la version source ni son "
+                + "diagnostic. Les versions existantes restent consultables.</p>")
+                .append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
+                .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "restart"))
+                .append(hidden("id", v.project().id())).append(hidden("request_token", v.requestToken()));
+        if (!f.keptDraftId().isEmpty()) {
+            sb.append(hidden("draft", f.keptDraftId()));
+        }
+        sb.append(providerSelect(v, f.providerId()));
+        sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"confirm\" value=\"yes\"> Je "
+                + "confirme : repartir de zéro, <strong>un appel facturé</strong>.</label></div>")
+                .append("<div class=\"btnrow\"><button class=\"btn btn-outline-secondary\" type=\"submit\">")
+                .append("Repartir de zéro</button></div></form></details>");
+        return sb.append("</div></div>").toString();
+    }
+
+    private static String modeLabel(String mode) {
+        return switch (mode == null ? "" : mode) {
+            case "repair" -> "réparation technique";
+            case "improve" -> "amélioration architecturale";
+            default -> "automatique";
+        };
+    }
+
     /** « Améliorer avec l'IA » : payant, motif prérempli en clair, réponse = nouvelle version. */
     private static String correctionForm(ProjectView v, String reason) {
         if (v.providers().isEmpty()) {
             return noProvider();
         }
         BuildingPlanDraft d = v.draft();
-        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"" + BASE + "/project\" class=\"actform\">");
+        StringBuilder sb = new StringBuilder(stagnationChoices(v));
+        sb.append("<form method=\"post\" action=\"" + BASE + "/project\" class=\"actform\">");
         sb.append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "correct"))
                 .append(hidden("id", v.project().id())).append(hidden("draft", d.id()))
                 .append(hidden("version", String.valueOf(d.version())))
@@ -1079,6 +1204,39 @@ public final class WorkshopPages {
     }
 
     /**
+     * #747 (23/10/2026) : après une stagnation, les stratégies proposées à la place d'une nouvelle
+     * variante du même défaut — reprendre depuis la meilleure version, ou une nouvelle conception qui
+     * garde les enseignements. Rien ne part sans clic.
+     */
+    static String stagnationChoices(ProjectView v) {
+        RepairInfo info = v.repairInfo();
+        if (info == null || !info.stopped()) {
+            return "";
+        }
+        String best = "V-" + info.bestDraftId().substring(0, Math.min(8, info.bestDraftId().length()));
+        StringBuilder sb = new StringBuilder(Ui.banner("warning", "<strong>" + Http.esc(info.stagnation())
+                + "</strong> Une nouvelle correction automatique de cette version ne sera pas envoyée : "
+                + "choisissez une stratégie."));
+        sb.append("<ul class=\"ws-strategies\"><li><a class=\"btn btn-sm btn-outline-primary\" href=\"")
+                .append(projectUrl(v.project().id(), info.bestDraftId())).append("\">Reprendre depuis ")
+                .append(Http.esc(best)).append("</a> <span class=\"muted\">la version la plus proche du but ; "
+                        + "« Améliorer avec l'IA » y repart de son diagnostic et de la mémoire.</span></li>");
+        sb.append("<li><form method=\"post\" action=\"").append(BASE).append("/project\" class=\"inline\">")
+                .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "propose"))
+                .append(hidden("id", v.project().id())).append(hidden("request_token", v.requestToken()))
+                .append(hidden("draft", v.draft().id())).append(hidden("lessons", "yes"))
+                .append(providerSelect(v, v.draft().providerId()))
+                .append("<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">Nouvelle conception avec "
+                        + "les enseignements</button></form> <span class=\"muted\">un appel facturé : la "
+                        + "description, les images et ce que les versions précédentes ont appris (fautes "
+                        + "récurrentes, identifiants inexistants, éléments demandés), sans recopier d'ancien "
+                        + "plan.</span></li>");
+        sb.append("<li class=\"muted\">Ou continuer sur cette version : choisissez ci-dessous une nature de "
+                + "reprise explicite.</li></ul>");
+        return sb.toString();
+    }
+
+    /**
      * #747 : la mémoire des tentatives, la conformité au brief, les images et le choix du mode, dans
      * le formulaire d'amélioration. Le mode « automatique » suit la suggestion affichée.
      */
@@ -1104,15 +1262,23 @@ public final class WorkshopPages {
                 sb.append("<li>").append(Http.esc(line)).append("</li>");
             }
             sb.append("</ul><p class=\"field-help\">✓ et ✗ sont vérifiés sur les blocs du plan et du résultat "
-                    + "compilé ; ◌ ne se prouve par aucun bloc et reste à juger à l'aperçu.</p>");
+                    + "compilé ; ◐ est dans le plan mais NON VÉRIFIÉ dans le résultat (version non construite) ; "
+                    + "◌ ne se prouve par aucun bloc et reste à juger à l'aperçu.</p>");
+        }
+        if (!info.notes().isEmpty()) {
+            sb.append("<p class=\"field-help\">").append(Http.esc(info.notes())).append("</p>");
         }
         sb.append("<p class=\"field-help\">").append(Http.esc(info.imageNote())).append("</p></details>");
         sb.append("<div class=\"field\"><label for=\"ws-mode\">Nature de la reprise</label>"
-                + "<select id=\"ws-mode\" name=\"mode\">")
-                .append("<option value=\"auto\" selected>Automatique — ").append(Http.esc(info.suggestedMode()))
-                .append("</option><option value=\"repair\">Réparation technique : corriger le motif, tout garder</option>"
-                        + "<option value=\"improve\">Amélioration architecturale : revoir les volumes en cause, "
-                        + "ajouter ce qui manque à la description</option></select>")
+                + "<select id=\"ws-mode\" name=\"mode\">");
+        if (!info.stopped()) {
+            sb.append("<option value=\"auto\" selected>Automatique — ").append(Http.esc(info.suggestedMode()))
+                    .append("</option>");
+        }
+        sb.append("<option value=\"repair\">Réparation technique : corriger le motif, tout garder</option>"
+                        + "<option value=\"improve\"" + (info.stopped() ? " selected" : "") + ">Amélioration "
+                        + "architecturale : revoir les volumes en cause, ajouter ce qui manque à la description"
+                        + "</option></select>")
                 .append("<p class=\"field-help\">").append(Http.esc(info.why())).append("</p></div>");
         return sb.toString();
     }

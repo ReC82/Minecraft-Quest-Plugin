@@ -38,6 +38,10 @@ Parcours :
    projet (erreurs résolues, régressions, stagnation) et la conformité au brief (✓ / ✗ / ◌) partent
    aussi ; « Nature de la reprise » choisit entre réparation technique et amélioration architecturale
    (« Automatique » suit la suggestion affichée).
+   Si l'IA répond sans plan (refus, réponse vide, coupée, panne), **aucune version n'est créée** : la
+   carte rouge « Le dernier appel à l'IA a échoué » dit pourquoi et propose « Réessayer avec le même
+   contexte » ; « Repartir de zéro » est à part, à cocher. Après une stagnation, choisir une stratégie :
+   reprendre depuis la meilleure version, ou « Nouvelle conception avec les enseignements ».
 5. **Enregistrer dans la bibliothèque** : jamais de remplacement implicite ; un nom déjà pris est signalé.
 6. **Choisir un emplacement** (depuis l'Atelier) ou **Placer sur un emplacement** (depuis la Bibliothèque) :
    les Emplacements s'ouvrent avec le bâtiment déjà choisi ; prévisualiser la pose, confirmer (#213/#234/#268).

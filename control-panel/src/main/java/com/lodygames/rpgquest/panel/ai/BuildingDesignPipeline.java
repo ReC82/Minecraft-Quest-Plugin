@@ -562,6 +562,21 @@ public final class BuildingDesignPipeline {
                 stop("L'appel au fournisseur d'IA a échoué : " + p.error());
                 return null;
             }
+            // #747 (23/10/2026) : refus, réponse vide, format invalide ou troncature — un appel échoué,
+            // jamais une version. La session s'arrête : aucune relance payante qu'on n'a pas demandée.
+            var failure = AiCallFailure.of(p);
+            if (failure.isPresent()) {
+                if (journal != null) {
+                    lastCallId = journal.call(project.id(), new BuildingAiJournal.CallContext(run.id(), kind, spent,
+                            run.createdBy(), parentId, lastCallId, inputDiagnosis, context), p, "", 0,
+                            new BuildingAiJournal.FailedCall(failure.get(), parentId, "", "", "", p.providerId(), ""));
+                }
+                runs.addPass(run.id(), new Pass(kind, "", 0, nz(p.model()), tokens[0], tokens[1],
+                        "Appel échoué — " + failure.get().sentence() + " Aucune version créée."), true);
+                stop("Appel à l'IA échoué — " + failure.get().sentence() + " Aucune version n'a été créée"
+                        + (parentId == null || parentId.isEmpty() ? "." : " ; la version de départ reste intacte."));
+                return null;
+            }
             BuildingPlanDraft created = drafts.create(new BuildingPlanDraftStore.NewDraft(run.agentId(), "",
                     p.hasPlan() ? p.plan() : "", origin, parentId, "", p.providerId(), p.providerLabel(),
                     p.model(), p.usage(), p.rawResponse(), p.extractionNote(), demand.maxWidth(),

@@ -59,6 +59,16 @@ public final class BriefRequirements {
             return requirement.check() == Check.DETERMINISTIC && (!inPlan || Boolean.FALSE.equals(inResult));
         }
 
+        /**
+         * Dans le plan, mais le résultat compilé n'a pas été mesuré (version non construite) : NON
+         * VÉRIFIÉE, pas réalisée (#747) — un « clear » ou une erreur de construction peut l'effacer.
+         * Les bancs se jugent sur le plan seul, par construction.
+         */
+        public boolean unverified() {
+            return requirement.check() == Check.DETERMINISTIC && inPlan && inResult == null
+                    && !"benches".equals(requirement.id());
+        }
+
         public String line() {
             Requirement r = requirement;
             if (r.check() == Check.VISUAL) {
@@ -66,9 +76,11 @@ public final class BriefRequirements {
             }
             String where = !inPlan ? "absent du plan"
                     : Boolean.FALSE.equals(inResult) ? "dans le plan mais ABSENT du résultat compilé (effacé ?)"
-                    : inResult == null ? "présent dans le plan (résultat compilé non mesuré)"
+                    : inResult == null && !"benches".equals(r.id())
+                    ? "présent dans le plan, NON VÉRIFIÉ dans le résultat (version non construite ou non mesurée)"
+                    : inResult == null ? "présent dans le plan"
                     : "présent dans le plan et dans le résultat";
-            return (missing() ? "✗ " : "✓ ") + r.label() + " — " + where + (missing() ? " : " + r.hint() : "");
+            return (missing() ? "✗ " : unverified() ? "◐ " : "✓ ") + r.label() + " — " + where + (missing() ? " : " + r.hint() : "");
         }
     }
 
@@ -101,7 +113,10 @@ public final class BriefRequirements {
                 return "Aucune exigence reconnue dans la description.";
             }
             long deterministic = statuses.size() - visual().size();
-            return (deterministic - missing().size()) + "/" + deterministic + " exigence(s) vérifiable(s) réalisée(s)"
+            long unverified = statuses.stream().filter(Status::unverified).count();
+            return (deterministic - missing().size() - unverified) + "/" + deterministic
+                    + " exigence(s) vérifiable(s) réalisée(s)"
+                    + (unverified == 0 ? "" : ", " + unverified + " non vérifiée(s) dans le résultat")
                     + (missing().isEmpty() ? "" : " — manquent : " + String.join(", ",
                     missing().stream().map(s -> s.requirement().label()).toList()))
                     + (visual().isEmpty() ? "" : " ; " + visual().size() + " à apprécier visuellement");

@@ -82,9 +82,23 @@ public final class AiBuildingStudio {
      */
     public Proposal propose(String providerId, BuildingPromptBuilder.Demand demand,
                             List<AiProvider.Image> images) {
-        String user = BuildingPromptBuilder.withReferences(BuildingPromptBuilder.userPrompt(demand), images.size());
-        return run(providerId, user, images, manifest("PROPOSITION", BuildingPromptBuilder.systemPrompt(), user,
-                demand, null, null, null, null, images));
+        return propose(providerId, demand, images, "");
+    }
+
+    /**
+     * Une nouvelle conception qui garde les enseignements des versions précédentes (#747) : le
+     * brief, les images et la conception, plus le bloc d'enseignements — jamais un ancien plan.
+     */
+    public Proposal propose(String providerId, BuildingPromptBuilder.Demand demand,
+                            List<AiProvider.Image> images, String lessons) {
+        String user = BuildingPromptBuilder.withReferences(BuildingPromptBuilder.userPrompt(demand, lessons),
+                images.size());
+        Map<String, Object> m = manifest("PROPOSITION", BuildingPromptBuilder.systemPrompt(), user,
+                demand, null, null, null, null, images);
+        if (lessons != null && !lessons.isBlank()) {
+            m.put("lessons", piece(lessons, BuildingPromptBuilder.systemPrompt() + "\n" + user));
+        }
+        return run(providerId, user, images, m);
     }
 
     /** Redemande un plan corrigé, en montrant au modèle le refus réel du serveur. */
@@ -193,6 +207,7 @@ public final class AiBuildingStudio {
         m.put("maxHeight", demand.maxHeight());
         m.put("brief", piece(demand.brief(), sent));
         m.put("design", piece(demand.design(), sent));
+        m.put("palette", piece(BriefPalette.block(demand.brief()), sent));
         if (plan != null) {
             m.put("previousPlan", piece(plan, sent));
         }

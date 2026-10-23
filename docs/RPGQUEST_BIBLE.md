@@ -2196,8 +2196,38 @@ diagnostic **complet** (le message d'action est tronqué à 500 caractères par 
   L'automatique choisit l'amélioration en cas de stagnation, de régression ou d'exigence vérifiable non
   réalisée. Le bloc replié « Mémoire des tentatives et conformité au brief » montre ce qui partira, et
   l'état des images (« Aucune image de référence attachée… » ou « N image(s) jointe(s) »).
-- **Réponse sans plan (#747).** Une réponse sans clé `steps:` (refus du modèle, texte libre) est gardée
-  comme version sans plan et n'est **jamais** soumise au serveur.
+- **Réponse inexploitable = appel échoué, jamais une version (#747, 23/10/2026).** Refus du modèle
+  (« I'm sorry… », ou champ `refusal` de l'API), réponse vide, format invalide (texte sans `steps:`),
+  réponse tronquée (`finish_reason` `length`/`max_tokens`) et erreur réseau/API sont **typés** et
+  journalisés (`failure` dans l'événement de réponse : nature, `activeVersionKept`, contexte de reprise).
+  Aucune version n'est créée, la version source reste la version active, la page l'annonce **en rouge**
+  (carte « Le dernier appel à l'IA a échoué ») avec **« Réessayer avec le même contexte »** (même version
+  source, même nature de reprise, mêmes consignes ; diagnostic, mémoire et images relus — le journal de la
+  reprise dit, empreinte par empreinte, s'ils sont identiques à l'appel échoué) et, à part, repliée et à
+  cocher, **« Repartir de zéro »**. Rien n'est relancé sans clic. Une ancienne réponse sans plan rangée
+  comme version (avant le correctif) ouvre la même carte, depuis sa version source. La conception
+  automatique s'arrête sur un tel échec, sans créer de version.
+- **Palette d'identifiants vérifiés (#747).** Chaque demande de plan reçoit, pour ce que la description
+  nomme (cloche, vitraux, bougies, fleurs, béton, quartz, ardoise/deepslate, bois…), les identifiants
+  **réels** du registre Minecraft 1.21.11 — le même fichier que le plugin
+  (`src/main/resources/building/blocks-1.21.11.txt`, copié dans le classpath du panel au build). Elle
+  garantit l'orthographe sans rien interdire, et dit de ne jamais remplacer un identifiant refusé par un
+  nom voisin (« lion_bed » n'est pas « lime_bed ») : reprendre l'élément demandé, ou le supprimer. La
+  mémoire retient les **identifiants inventés** de toutes les versions et les transmet ensemble ; l'écran
+  liste tous ceux de la version affichée.
+- **Résolu / non vérifié (#747).** Une version arrêtée avant les contrôles d'architecture (`PLAN_INVALID`,
+  `EMPTY_STRUCTURE`) est « NON CONSTRUITE » : ses erreurs antérieures sont **non vérifiées**, jamais
+  résolues. Une exigence présente dans le plan mais dont le résultat compilé n'est pas mesuré est « ◐ non
+  vérifiée », pas réalisée. La **meilleure version** ne se choisit plus au seul nombre de codes : une
+  version non construite passe après toute version construite, et chaque exigence du brief manquante
+  compte comme un défaut. Un candidat qui perd un élément que sa version source réalisait affiche une
+  **régression de conformité**.
+- **Stagnation : reprise contrôlée (#747).** Après 3 tentatives sans battre la meilleure version,
+  « Améliorer » en mode Automatique sur une autre version que la meilleure est **refusé à coût nul** ; le
+  formulaire propose « Reprendre depuis V-… » (la plus proche du but), « Nouvelle conception avec les
+  enseignements » (un appel : description, images et bloc « ENSEIGNEMENTS » — fautes récurrentes,
+  contrôles échoués, identifiants inexistants, éléments demandés — sans recopier d'ancien plan), ou de
+  continuer en choisissant explicitement la nature de la reprise.
 
 **Conception automatique.** Carte du projet : l'IA conçoit, le serveur vérifie et répare, l'IA
 corrige avec le diagnostic exact, puis relit le plan **en architecte** (silhouette, façades,

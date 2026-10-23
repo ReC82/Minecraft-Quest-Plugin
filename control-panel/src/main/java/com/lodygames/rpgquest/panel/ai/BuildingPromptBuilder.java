@@ -555,6 +555,15 @@ public final class BuildingPromptBuilder {
 
     /** La demande concrète : les faits de l'emplacement, puis le brief de l'administrateur. */
     public static String userPrompt(Demand demand) {
+        return userPrompt(demand, "");
+    }
+
+    /**
+     * La demande, avec un bloc de plus avant la consigne finale — les enseignements des versions
+     * précédentes pour une nouvelle conception après stagnation (#747).
+     */
+    public static String userPrompt(Demand demand, String lessons) {
+        String extra = lessons == null || lessons.isBlank() ? "" : "\n" + lessons.strip() + "\n";
         return """
                 PROJET
 
@@ -575,12 +584,18 @@ public final class BuildingPromptBuilder {
                 LE BÂTIMENT SOUHAITÉ, DÉCRIT PAR L'ADMINISTRATEUR
 
                 %s
-                %s
+                %s%s%s
                 Produis maintenant le plan YAML, et rien d'autre.
                 """.formatted(demand.siteId(), demand.siteName(), demand.facing(), demand.facing(),
                 demand.maxWidth(), demand.maxDepth(), demand.maxWidth(), demand.maxDepth(),
                 demand.maxHeight(), frame(demand.facing(), demand.maxHeight()), demand.suggestedId(),
-                demand.brief(), designSection(demand));
+                demand.brief(), paletteSection(demand), designSection(demand), extra);
+    }
+
+    /** #747 : les identifiants réels de ce que la description nomme ; rien si elle ne nomme rien. */
+    private static String paletteSection(Demand demand) {
+        String palette = BriefPalette.block(demand.brief());
+        return palette.isEmpty() ? "" : "\n" + palette;
     }
 
     /**

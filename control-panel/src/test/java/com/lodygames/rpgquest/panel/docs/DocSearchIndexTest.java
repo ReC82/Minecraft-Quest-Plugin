@@ -73,4 +73,22 @@ class DocSearchIndexTest {
         assertEquals("pnj-citizens", index.search("CITIZEN").get(0).page().slug());
         assertEquals("pnj-citizens", index.search("Tag NPC").get(0).page().slug());
     }
+
+    @Test
+    void accentsDoNotMatterIssue780() {
+        List<DocSearchIndex.Hit> plain = index.search("replique");
+        List<DocSearchIndex.Hit> accented = index.search("réplique");
+        assertFalse(plain.isEmpty());
+        assertEquals(accented.stream().map(h -> h.page().slug()).toList(),
+                plain.stream().map(h -> h.page().slug()).toList());
+    }
+
+    @Test
+    void aHitLeadsToTheMostRelevantRenderedSection() {
+        DocSearchIndex.Hit hit = index.search("aller a la ligne replique").stream()
+                .filter(h -> h.page().slug().equals("dialogues")).findFirst().orElseThrow();
+        assertEquals("Aller à la ligne dans une réplique", hit.sectionTitle());
+        assertEquals("/docs/dialogues#aller-a-la-ligne-dans-une-replique", hit.href());
+        assertTrue(Markdown.headings(hit.page().markdown()).stream().anyMatch(h -> h.id().equals(hit.anchor())));
+    }
 }

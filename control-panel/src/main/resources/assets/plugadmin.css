@@ -454,7 +454,8 @@ ol,ul{margin:6px 0;padding-left:20px}
 .doc-crumbs{font-size:12.5px;color:var(--txt-2);margin:2px 0 14px}
 .doc-crumbs span{color:var(--txt-faint);margin:0 5px}
 .doc-layout{display:grid;grid-template-columns:220px 1fr;gap:26px;align-items:start}
-.doc-toc{position:sticky;top:74px;font-size:13px;border-left:2px solid var(--line);padding-left:14px}
+.doc-toc{position:sticky;top:74px;font-size:13px;border-left:2px solid var(--line);padding-left:14px;
+  max-height:calc(100vh - 96px);overflow-y:auto;overscroll-behavior:contain}
 .doc-toc-h{margin:0 0 5px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--txt-faint);font-weight:750}
 .doc-toc ul{list-style:none;margin:0 0 14px;padding:0} .doc-toc li{margin:5px 0}
 .doc-toc li.lvl3{padding-left:12px;font-size:12.5px}
@@ -466,8 +467,27 @@ ol,ul{margin:6px 0;padding-left:20px}
   border-bottom:1px solid var(--line);padding-bottom:6px;font-weight:700}
 .doc-body h3{font-size:15px;margin:22px 0 8px;color:var(--txt);font-weight:700;
   padding-left:11px;border-left:3px solid var(--primary)}
+.doc-body h4{font-size:14px;margin:18px 0 6px;color:var(--txt-2);font-weight:700}
 .doc-body h3 code{background:var(--surface-2);border-color:var(--line-2);color:var(--txt-2);font-weight:600}
 .doc-body p{margin:10px 0} .doc-body li{margin:5px 0}
+/* #780 : listes imbriquées lisibles (puces distinctes par niveau, paragraphes de suite), ancres visibles sous la barre. */
+.doc-body ul,.doc-body ol{padding-left:24px;margin:10px 0} .doc-body li > ul,.doc-body li > ol{margin:6px 0 8px}
+.doc-body ul ul{list-style:circle} .doc-body ul ul ul{list-style:square}
+.doc-body li > p{margin:6px 0}
+.doc-body li::marker{color:var(--txt-faint)} .doc-body ol > li::marker{font-weight:700;color:var(--primary)}
+.doc-body h2[id],.doc-body h3[id],.doc-body h4[id]{scroll-margin-top:76px}
+.doc-body :target{background:var(--warn-soft);border-radius:6px}
+.doc-toc-m{display:none;margin:0 0 16px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:10px 14px}
+.doc-toc-m summary{cursor:pointer;font-weight:700;font-size:13.5px}
+.doc-toc-m ol{margin:8px 0 2px;padding-left:22px} .doc-toc-m li{margin:6px 0}
+.doc-related{margin-top:28px;border-top:1px solid var(--line);padding-top:12px}
+.doc-related ul{margin:4px 0;padding-left:18px} .doc-related .muted{font-size:12px}
+.doc-pager{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}
+.doc-pager a{display:block;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-weight:650;
+  overflow-wrap:anywhere} .doc-pager a:hover{border-color:var(--primary);text-decoration:none;box-shadow:var(--shadow)}
+.doc-pager a span{display:block;font-size:11px;font-weight:600;color:var(--txt-faint);text-transform:uppercase;letter-spacing:.04em}
+.doc-pager-next{text-align:right;grid-column:2}
+.doc-hit-sec{display:block;font-size:12px;font-weight:650;color:var(--primary);margin:0 0 3px}
 /* Mini-libellés « Syntaxe » / « Paramètres » / « Exemple » / « Résultat attendu » / « Attention »
    (rendus <strong> en tête de paragraphe par la fiche de commandes) : plus lisibles, moins criards. */
 .doc-body p > strong:first-child:only-child{display:inline-block;font-size:11px;letter-spacing:.04em;
@@ -519,8 +539,11 @@ ol,ul{margin:6px 0;padding-left:20px}
   .main{padding:16px}
   .hero-facts{margin-left:0}
   .doc-layout{grid-template-columns:1fr}
-  .doc-toc{position:static;border-left:0;border-top:1px solid var(--line);padding:12px 0 0;margin-top:18px;order:2}
-  .doc-body{order:1;max-width:100%;padding:18px 18px}
+  .doc-toc{display:none}
+  .doc-toc-m{display:block}
+  .doc-body{max-width:100%;padding:18px 16px}
+  .doc-body ul,.doc-body ol{padding-left:20px}
+  .doc-pager{grid-template-columns:1fr} .doc-pager-next{grid-column:1}
   .form-grid{grid-template-columns:1fr}
   input[type=text],input[type=password],input[type=number],input[type=search],input[list],select,textarea{max-width:100%}
   .meta-k{min-width:0;display:block;margin-bottom:2px}
@@ -1371,6 +1394,9 @@ details.enc-biomes[open] summary{margin-bottom:0}
   .shell{display:block}
   .main{padding:0;max-width:none}
   .enc-row,.enc-head{break-inside:avoid}
+  .doc-layout{display:block} .doc-toc,.doc-search,.doc-pager{display:none!important}
+  .doc-toc-m{display:block} .doc-body{border:0;box-shadow:none;max-width:none;padding:0}
+  .doc-body h2,.doc-body h3{break-after:avoid} .doc-body li,.doc-tablewrap tr,.doc-callout{break-inside:avoid}
 }
 /* ---- Catalogues de quêtes : parcours simple (issue #414, remplace la carte unique de #369) ---- */
 .qc-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}

@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -15,12 +16,35 @@ import java.util.regex.Pattern;
  * syntaxe). Un résultat n'est retenu que si <strong>chaque</strong> mot de la requête apparaît
  * quelque part dans la page (ET logique) ; le classement pondère titre &gt; tag/catégorie &gt;
  * commande &gt; corps.
+ *
+ * <p>#780 : les accents ne comptent pas (« quete » trouve « quête »), et un résultat mène à la
+ * <strong>section</strong> de la fiche qui contient le plus de mots cherchés (ancre du titre rendu),
+ * avec un extrait tiré de cette section.</p>
  */
 public final class DocSearchIndex {
 
-    /** Un résultat de recherche : la fiche + un extrait contextualisé + un score. */
-    public record Hit(DocPage page, String snippet, int score) {
+    /**
+     * Un résultat de recherche : la fiche + un extrait contextualisé + un score, et la section
+     * la plus pertinente ({@code sectionTitle}/{@code anchor} vides si aucune section ne convient).
+     */
+    public record Hit(DocPage page, String snippet, int score, String sectionTitle, String anchor) {
+
+        public Hit(DocPage page, String snippet, int score) {
+            this(page, snippet, score, "", "");
+        }
+
+        /** Lien du résultat : la section si elle est connue, sinon la fiche. */
+        public String href() {
+            return "/docs/" + page.slug() + (anchor.isEmpty() ? "" : "#" + anchor);
+        }
     }
+
+    /** Une section rendue d'une fiche : titre, ancre et texte brut (titre compris). */
+    private record Section(String title, String anchor, String text, Map<String, Integer> tokens) {
+    }
+
+    private static final Pattern RENDERED_HEADING = Pattern.compile("<h([2-6]) id=\"([^\"]+)\">(.*?)</h\\1>");
+    private static final Pattern TAG = Pattern.compile("<[^>]+>");
 
     private static final Pattern TOKEN = Pattern.compile("[a-z0-9]+");
     private static final Pattern MD_NOISE = Pattern.compile("[#>*_`|\\-\\[\\]()]+");
@@ -50,7 +74,8 @@ public final class DocSearchIndex {
                     counts(page.category()),
                     counts(String.join(" ", page.commands())),
                     counts(plainBody),
-                    plainBody));
+                    plainBody,
+                    sections(page.markdown())));
         }
         return new DocSearchIndex(entries);
     }
@@ -90,7 +115,10 @@ public final class DocSearchIndex {
                 score += termScore;
             }
             if (allPresent) {
-                hits.add(new Hit(e.page, snippet(e.plainBody, terms), score));
+                Section best = bestSection(e.sections, terms);
+                hits.add(best == null
+                        ? new Hit(e.page, snippet(e.plainBody, terms), score)
+                        : new Hit(e.page, snippet(best.text(), terms), score, best.title(), best.anchor()));
             }
         }
         hits.sort(Comparator.comparingInt(Hit::score).reversed()
@@ -103,7 +131,63 @@ public final class DocSearchIndex {
 
     private record Entry(DocPage page, Map<String, Integer> title, Map<String, Integer> tags,
                          Map<String, Integer> category, Map<String, Integer> commands,
-                         Map<String, Integer> body, String plainBody) {
+                         Map<String, Integer> body, String plainBody, List<Section> sections) {
+    }
+
+    /** Découpe le rendu HTML de la fiche par titres (mêmes ancres que la page affichée). */
+    private static List<Section> sections(String markdown) {
+        String html = Markdown.render(markdown);
+        List<Section> out = new ArrayList<>();
+        Matcher m = RENDERED_HEADING.matcher(html);
+        String title = null;
+        String anchor = null;
+        int from = 0;
+        while (m.find()) {
+            if (title != null) {
+                out.add(section(title, anchor, html.substring(from, m.start())));
+            }
+            title = plain(m.group(3));
+            anchor = m.group(2);
+            from = m.end();
+        }
+        if (title != null) {
+            out.add(section(title, anchor, html.substring(from)));
+        }
+        return out;
+    }
+
+    private static Section section(String title, String anchor, String bodyHtml) {
+        String text = (title + " " + plain(bodyHtml)).strip();
+        return new Section(title, anchor, text, counts(text));
+    }
+
+    private static String plain(String html) {
+        return TAG.matcher(html).replaceAll(" ").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&#39;", "'").replace("&#10;", " ").replace("&amp;", "&")
+                .replaceAll("\\s+", " ").strip();
+    }
+
+    /** Section contenant le plus de mots cherchés (titre de section prioritaire), la première en cas d'égalité. */
+    private static Section bestSection(List<Section> sections, List<String> terms) {
+        Section best = null;
+        int bestScore = 0;
+        for (Section sec : sections) {
+            int score = 0;
+            Map<String, Integer> titleTokens = counts(sec.title());
+            for (String term : terms) {
+                if (matchCount(sec.tokens(), term) > 0) {
+                    score += 10;
+                }
+                if (matchCount(titleTokens, term) > 0) {
+                    score += 3;
+                }
+            }
+            if (score > bestScore) {
+                best = sec;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     static List<String> tokenize(String text) {
@@ -111,7 +195,7 @@ public final class DocSearchIndex {
         if (text == null) {
             return tokens;
         }
-        var m = TOKEN.matcher(text.toLowerCase(Locale.ROOT));
+        var m = TOKEN.matcher(fold(text));
         while (m.find()) {
             String tok = m.group();
             if (tok.length() >= 2 || tok.matches("[a-z]")) {
@@ -119,6 +203,12 @@ public final class DocSearchIndex {
             }
         }
         return tokens;
+    }
+
+    /** Minuscules sans accents : « Quête » et « quete » donnent le même mot. */
+    static String fold(String text) {
+        return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT);
     }
 
     private static Map<String, Integer> counts(String text) {
@@ -146,7 +236,7 @@ public final class DocSearchIndex {
     /** Extrait ~28 mots autour de la première occurrence d'un terme dans le corps. */
     static String snippet(String plainBody, List<String> terms) {
         String collapsed = plainBody.replaceAll("\\s+", " ").strip();
-        String lower = collapsed.toLowerCase(Locale.ROOT);
+        String lower = fold(collapsed);
         int at = -1;
         for (String term : terms) {
             int p = lower.indexOf(term);

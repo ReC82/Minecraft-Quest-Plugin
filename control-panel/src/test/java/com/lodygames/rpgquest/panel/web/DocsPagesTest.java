@@ -89,17 +89,17 @@ class DocsPagesTest {
         login();
 
         String tagNpc = get("/docs?q=" + enc("tag npc")).body();
-        assertTrue(tagNpc.contains("class=\"doc-hit\" href=\"/docs/pnj-citizens\""), tagNpc);
+        assertTrue(tagNpc.contains("class=\"doc-hit\" href=\"/docs/pnj-citizens"), tagNpc);
         assertTrue(tagNpc.contains("résultat"), "compteur de résultats");
 
         String skin = get("/docs?q=skin").body();
-        assertTrue(skin.contains("href=\"/docs/pnj-citizens\""), skin);
+        assertTrue(skin.contains("href=\"/docs/pnj-citizens"), skin);
 
         String reset = get("/docs?q=" + enc("reset joueur")).body();
-        assertTrue(reset.contains("href=\"/docs/joueurs-reset\""), reset);
+        assertTrue(reset.contains("href=\"/docs/joueurs-reset"), reset);
 
         String rollback = get("/docs?q=rollback").body();
-        assertTrue(rollback.contains("href=\"/docs/verygames-deploiement\""), rollback);
+        assertTrue(rollback.contains("href=\"/docs/verygames-deploiement"), rollback);
 
         String nope = get("/docs?q=zzznotfoundzzz").body();
         assertTrue(nope.contains("Aucune fiche"), nope);
@@ -166,6 +166,43 @@ class DocsPagesTest {
         assertTrue(css.contains(".doc-cmd pre{") && css.contains("overflow-x:auto"), "bloc code scrollable");
         assertFalse(css.contains(".codeblock .doc-copy,.doc-cmd .doc-copy{position:absolute;top:8px"),
                 "ancienne règle de positionnement en double retirée");
+    }
+
+    @Test
+    void sheetShowsTocFirstWithRealAnchorsRelatedSheetsAndPagerIssue780() throws Exception {
+        start();
+        login();
+        for (com.lodygames.rpgquest.panel.docs.DocPage p :
+                com.lodygames.rpgquest.panel.docs.DocLibrary.load().all()) {
+            String page = get("/docs/" + p.slug()).body();
+            // chaque entrée du sommaire pointe vers un id réellement présent dans la fiche
+            Matcher toc = Pattern.compile("<li class=\"lvl[23]\"><a href=\"#([^\"]+)\"").matcher(page);
+            while (toc.find()) {
+                assertTrue(page.contains(" id=\"" + toc.group(1) + "\""), p.slug() + " : ancre du sommaire #" + toc.group(1));
+            }
+            assertTrue(page.contains("class=\"doc-pager\""), p.slug() + " : fiche précédente / suivante");
+            assertTrue(page.contains("class=\"doc-related\""), p.slug() + " : fiches liées");
+            assertFalse(page.contains(" autofocus"), p.slug() + " : pas d'autofocus sur une fiche (clavier mobile)");
+        }
+        String dialogues = get("/docs/dialogues").body();
+        int body = dialogues.indexOf("<article class=\"doc-body\">");
+        int mobileToc = dialogues.indexOf("<details class=\"doc-toc-m\" open>", body);
+        int firstSection = dialogues.indexOf("<h2 id=", body);
+        assertTrue(body > 0 && mobileToc > body && mobileToc < firstSection, "sommaire en tête de l'article");
+        assertTrue(dialogues.contains("<a href=\"#creer-un-dialogue\">Créer un dialogue</a>"), dialogues);
+        // l'ancienne fiche « lapercu » cassait le sommaire (l-apercu) : ancre rendue = ancre du sommaire
+        assertTrue(dialogues.contains("href=\"#lapercu\"") && dialogues.contains("id=\"lapercu\""));
+        assertTrue(dialogues.contains("href=\"/docs/dialogues-depannage\">Résoudre les problèmes de dialogues</a>"));
+    }
+
+    @Test
+    void searchResultLinksToTheSectionAndIgnoresAccents() throws Exception {
+        start();
+        login();
+        String page = get("/docs?q=" + enc("aller a la ligne replique")).body();
+        assertTrue(page.contains("href=\"/docs/dialogues#aller-a-la-ligne-dans-une-replique\""), page);
+        assertTrue(page.contains("Section : Aller à la ligne dans une réplique"), page);
+        assertTrue(get("/docs").body().contains(" autofocus"), "autofocus gardé sur l'accueil");
     }
 
     private static int countOccurrences(String haystack, String needle) {

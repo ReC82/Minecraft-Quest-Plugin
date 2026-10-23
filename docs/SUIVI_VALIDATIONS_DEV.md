@@ -350,3 +350,12 @@ Capture de la fiche `Demo_Brasier` fournie par le propriétaire. **Correction im
 **#56 / TC-414 — fiche joueur fictive :** page accessible, en-tête, 5 pistes de progression, barres, médailles et liens visibles. **Incohérence de démonstration à investiguer :** le résumé affiche **5 200 XP d'expérience totale**, tandis que la seule piste Combat indique **6 100 XP** (autres pistes 1 200, 300, 400 et 900), alors que le classement XP Combat attribue déjà 6 100 à ce même joueur. Déterminer si le total est calculé avec une règle différente ou si les fixtures fictives sont incohérentes ; expliquer le sens de « expérience totale » et corriger les fixtures ou le libellé. Ne pas extrapoler à un bug des données réelles sans test.
 
 Ne pas clore #56 avant cet arbitrage ; #53 données privées réelles reste non testé.
+
+
+### Complément propriétaire — 23/10/2026 : liste des joueurs de démonstration
+
+Capture de **Joueurs (démonstration)** après clic sur « Tous les profils » depuis Demo_Brasier : navigation retour **VALIDÉE** ; grille de **12 profils fictifs en trois colonnes**, pseudos et XP visibles ; avertissement données de démonstration clairement affiché ; champ « Chercher un pseudo » présent mais **fonctionnement de la recherche non encore testé**. Capture toujours sur ordinateur avec zoom navigateur réduit, **pas** une validation mobile de cette page.
+
+**Incohérence confirmée sur deux vues** : Demo_Brasier = **5 200 XP** dans la liste des profils et dans sa fiche, contre **6 100 XP Combat** sur la fiche/classement. Vérifier la définition de « XP totale » et la cohérence des fixtures avant clôture #56, sans présumer d'une anomalie sur des données joueurs réelles.
+
+**Prochain test unique :** saisir `Brasier` dans « Chercher un pseudo », cliquer sur « Chercher », constater si Demo_Brasier est retrouvé seul et si la recherche est insensible à la casse.

@@ -689,6 +689,12 @@ secondaire** (deux waypoints du même biome n'affichent donc plus jamais le mêm
   (validé par `WaypointNameExhaustionDiagnosticTest`). Rallonger `waypoint-names.txt` change
   l'ordre mélangé des tirages, sans effet sur les noms déjà attribués (la migration V22 ne
   s'exécute plus sur une base déjà migrée).
+  **Préparation du 23/10/2026 (#135, rien d'appliqué)** : relevé `travel.catalog` en lecture seule
+  → **55** `Avant-poste N` sur 276 waypoints. Dossier `docs/waypoints/preparation-import-lot1.md`
+  (600 noms **nouveaux**, réserve totale 820, 0 doublon/collision ; options réserve du JAR ou
+  import PlugAdmin ; seuil d'alerte proposé < 50 noms libres) et plan de renommage proposé
+  `docs/waypoints/plan-renommage-avant-poste.md` (55 lignes, à appliquer via `waypoint.rename`
+  après accord). Aperçu d'import inerte, sans appelant : `waypoint.model.WaypointNameImportPreview`.
 - **Noms lisibles** (retour joueur 2026-10-04) : la réserve bundlée (`waypoint-names.txt`) ne
   concatène plus deux mots sans séparateur (ex. l'ancien `Lacgivre`) — grammaire générée
   automatiquement `<nom> de <nom>` (ex. `Lac de Givre`, `Lac d'Or` avec élision devant voyelle) ou

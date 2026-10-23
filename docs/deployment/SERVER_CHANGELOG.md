@@ -49,6 +49,29 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Gestion des classements du site depuis PlugAdmin (#735, TC-416)
+
+### Changement
+
+Page PlugAdmin **Site public → Classements** : statut (brouillon / actif / en pause / archivé), ordre,
+visibilité, mise en avant sur l'accueil, duplication, fuseau, création guidée et aperçu agrégé. Nouveau
+fichier **`plugins/RPGQuest/leaderboards.yml`**, écrit par le plugin à la demande de PlugAdmin (absent tant
+que personne n'enregistre rien ; le catalogue par défaut du JAR s'applique alors comme avant).
+Permissions PlugAdmin `LEADERBOARD_READ` / `LEADERBOARD_WRITE`. Portail : description, onglet
+« Événement », classements mis en avant sur l'accueil (si publics).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest, redéploiement de PlugAdmin et du portail AWS. **Aucune migration**, aucune
+clé `config.yml`, `statistics.yml` non touché, `leaderboards.yml` **non créé** par le déploiement,
+`web-export.enabled` reste `false`. Redémarrage DEV requis (JAR).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; PlugAdmin `scripts/plugadmin/rollback.sh` ;
+portail `scripts/web-portal/rollback.sh app`. Si `leaderboards.yml` a été créé entre-temps : un JAR antérieur
+l'ignore (catalogue par défaut) ; le laisser en place ou le retirer, sans effet sur les données de jeu.
+
 ## 2026-10-23 - Catalogue de classements par périodes (#734, TC-415)
 
 ### Changement

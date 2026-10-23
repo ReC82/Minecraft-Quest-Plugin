@@ -1856,8 +1856,8 @@ public final class PanelApp {
     private WorkshopPages.FailureInfo failureInfo(com.lodygames.rpgquest.panel.building.BuildingProject project,
                                                   List<BuildingPlanDraft> drafts, BuildingPlanDraft draft) {
         try {
-            var last = com.lodygames.rpgquest.panel.ai.FailedCalls.last(aiJournal.store().events(
-                    com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id()));
+            var events = aiJournal.store().events(com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id());
+            var last = com.lodygames.rpgquest.panel.ai.FailedCalls.last(events);
             if (last.isPresent()) {
                 var f = last.get();
                 boolean concerns = draft == null ? f.keptDraftId().isEmpty() : draft.id().equals(f.keptDraftId());
@@ -1879,9 +1879,14 @@ public final class PanelApp {
             Optional<BuildingPlanDraft> source = parent.or(() -> drafts.stream().filter(BuildingPlanDraft::hasPlan)
                     .findFirst());
             String note = draft.extractionNote() == null ? "" : draft.extractionNote();
-            return new WorkshopPages.FailureInfo("", brusselsTime(draft.createdAt()), "Réponse sans plan",
-                    note, source.map(BuildingPlanDraft::id).orElse(""), source.map(BuildingPlanDraft::version)
-                    .orElse(0), parent.isPresent() ? "correct" : "propose", "auto", "", draft.providerId(), true);
+            // L'appel qui a produit cette version, s'il est au journal : la reprise compare son contexte
+            // et rejoue la nature de reprise réellement envoyée.
+            var origin = com.lodygames.rpgquest.panel.ai.FailedCalls.producing(events, draft.id());
+            return new WorkshopPages.FailureInfo(origin.map(o -> o.callId()).orElse(""),
+                    brusselsTime(draft.createdAt()), "Réponse sans plan", note,
+                    source.map(BuildingPlanDraft::id).orElse(""), source.map(BuildingPlanDraft::version).orElse(0),
+                    parent.isPresent() ? "correct" : "propose", origin.map(o -> o.mode()).orElse("auto"), "",
+                    draft.providerId(), true);
         } catch (RuntimeException failure) {
             return null;
         }

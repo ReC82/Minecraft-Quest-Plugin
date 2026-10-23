@@ -89,6 +89,20 @@ class Eglise747RefusalTest {
         assertTrue(FailedCalls.last(later).isEmpty());
     }
 
+    /** Une ancienne réponse sans plan rangée comme version : la reprise retrouve l'appel qui l'a produite. */
+    @Test
+    void aLegacyEmptyVersionFindsTheCallThatProducedIt() {
+        Map<String, Object> manifest = Map.of("mode", "IMPROVE");
+        List<AiJournalStore.Event> events = List.of(
+                event(86, "REQUEST", "7b614092", Map.of("manifest", manifest)),
+                new AiJournalStore.Event(87, "building", "p", 87, "RESPONSE", "7b614092", "", "MANUEL", 0,
+                        "14206aa8-edd8", "", Instant.now(), 2332, "lody", "", Map.of("planExtracted", false)));
+        FailedCalls.Origin origin = FailedCalls.producing(events, "14206aa8-edd8").orElseThrow();
+        assertEquals("7b614092", origin.callId());
+        assertEquals("improve", origin.mode());
+        assertTrue(FailedCalls.producing(events, "autre").isEmpty());
+    }
+
     // ---- 2. Erreur précoce : les autres contrôles ne sont pas exécutés -------------------------
 
     @Test

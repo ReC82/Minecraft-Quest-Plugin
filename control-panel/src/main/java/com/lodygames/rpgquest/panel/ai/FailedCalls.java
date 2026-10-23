@@ -52,6 +52,35 @@ public final class FailedCalls {
                 str(retry, "mode"), str(retry, "notes"), str(retry, "provider")));
     }
 
+    /** L'appel qui a produit une version, et la nature de reprise qu'il a envoyée (« improve », « repair » ou « auto »). */
+    public record Origin(String callId, String mode) {
+    }
+
+    /**
+     * L'appel dont la réponse a produit cette version — pour reprendre une ancienne réponse sans plan
+     * rangée comme version avant le correctif du 23/10/2026.
+     */
+    @SuppressWarnings("unchecked")
+    public static Optional<Origin> producing(List<AiJournalStore.Event> events, String draftId) {
+        String callId = null;
+        for (AiJournalStore.Event e : events == null ? List.<AiJournalStore.Event>of() : events) {
+            if ("RESPONSE".equals(e.kind()) && Objects.equals(e.draftId(), draftId)) {
+                callId = e.callId();
+            }
+        }
+        if (callId == null || callId.isEmpty()) {
+            return Optional.empty();
+        }
+        String mode = "auto";
+        for (AiJournalStore.Event e : events) {
+            if ("REQUEST".equals(e.kind()) && callId.equals(e.callId())
+                    && e.body().get("manifest") instanceof Map<?, ?> m && m.get("mode") != null) {
+                mode = String.valueOf(m.get("mode")).toLowerCase(java.util.Locale.ROOT);
+            }
+        }
+        return Optional.of(new Origin(callId, mode));
+    }
+
     /**
      * La reprise envoie-t-elle le même contexte que l'appel échoué ? Compare, pièce par pièce, les
      * empreintes de l'inventaire de la requête échouée et de la nouvelle, et la liste des images.

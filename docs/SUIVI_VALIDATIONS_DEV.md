@@ -368,3 +368,10 @@ Scénario reproduit : ouvrir **Joueurs (démonstration)** avec Demo_Brasier pré
 ### Validation propriétaire — 23/10/2026 : #728 / TC-410 — VALIDÉ ET CLÔTURÉ
 
 Le propriétaire a ajouté un retour à la ligne via **Entrée** dans une réplique du dialogue **Musty** sur PlugAdmin, l'a **enregistré**, puis **mis en jeu**, et confirme avoir vérifié dans **Minecraft** que l'affichage sur deux lignes fonctionne comme attendu. Chemin complet propriétaire confirmé : édition → publication → client Minecraft. Clôture du ticket #728 autorisée et effectuée ; ne pas redemander ce test. Cela ne valide pas automatiquement les autres scénarios de dialogues ni la refonte documentaire.
+
+
+### 23/10/2026 — #475 validation refus kit Elias + divergence éditeur, #778 références obsolètes
+
+**VALIDÉ propriétaire en Minecraft :** dans la fenêtre Elias, demande de kit déjà reçu → « Tu as déjà reçu ton kit de départ. Il te sera redonné après ta prochaine mort. » + « Autres questions » / « Fermer ». Le résultat s'affiche dans le dialogue et non uniquement dans le chat. Conserver l'acquis ; ne pas répéter ce test.
+
+**À investiguer séparément :** PlugAdmin « Dialogue d'Elias » affiche « Enregistré — pas encore en jeu », tandis que le jeu présente le résultat correct. La définition visible inclut l'effet « Remettre le kit de départ », sans exposer la condition interne du moteur, et encore des références au « Guide », à « Premiers pas », à « La chasse aux cristaux » / « Garde ». **Ne pas republier cette source sans comparaison** : risque d'écraser le runtime fonctionnel. Relecture/comparaison sécurisée avec #732 ; prise en compte du nettoyage de contenu dans #778. **#475 : UX refus kit validée** ; vérifier avant clôture si les autres écarts fonctionnels du périmètre ont été couverts, sans les confondre avec l'anomalie générale de synchronisation du dialogue.

@@ -329,3 +329,15 @@ Le propriétaire autorise le **développement de l'outil de création de mondes*
 **Ne pas rester bloqué sans cause exacte :** confidentialité/TLS/DNS ≠ interdiction générale de développer. Utiliser fixtures visiblement identifiées, agrégats anonymes, environnement isolé, tests de contrat, lecture seule. Tout blocage à la mise en public de pseudos/UUID/métriques individuels, à l'activation réelle d'export DEV ou au certificat doit être isolé, documenté et remonté sous forme d'une décision propriétaire précise tout en avançant ailleurs. **Interdictions inchangées :** aucune exposition de données privées ou mineurs, aucune activation d'export nominatif, aucune écriture SQL gameplay, aucune modification réelle du monde, des joueurs ou des scores, aucun bypass TLS/auth/secrets, aucune dépense IA payante sans autorisation séparée. Pas de migration MySQL implicite.
 
 **Statut :** autorisation de développement et déploiement logiciel non destructif dans le respect des permissions existantes. Publication de données joueur réelles, liaisons comptes réels, tests en jeu et validation finale restent **WAITING_OWNER / PENDING MANUAL VALIDATION**. Tickets ouverts jusqu'à tests propriétaire ; continuer `lqorch` sans bloquer les autres chantiers.
+
+
+## Validation propriétaire — 23/10/2026 : WebPortal (#56, #428, #734)
+
+**Preuve fournie :** captures d'écran de la page d'accueil et des classements de démonstration, puis captures après utilisation des filtres « Combat » et « Nuit des squelettes » ; propriétaire confirme également avoir testé l'affichage sur mobile et le juge bon. Aucun score réel publié ni manipulation de données de jeu.
+
+- **#56 / TC-414 — PARTIEL, visuel validé :** accueil ordinateur conforme au thème sombre fantasy/voxel ; podiums et liste de classements de démonstration lisibles ; usage mobile déclaré satisfaisant. La navigation détaillée des autres rubriques et l'ensemble des scénarios TC-414 ne sont pas encore attestés. Ne pas clôturer automatiquement.
+- **#428 / TC-411 — PARTIEL, visuel validé :** icônes pixel art visibles et cohérentes sur accueil et classements ; pas d'image cassée observée sur les captures. Les TC-412/413 PlugAdmin ne sont pas couverts, et la vérification exhaustive mobile n'est pas documentée.
+- **#734 / TC-415 — PARTIEL :** filtres de la démo fonctionnels sur les deux exemples essayés ; « Combat » conserve uniquement « XP Combat », « Nuit des squelettes » affiche « Monstres vaincus » avec période/récompenses ; podiums ex aequo affichés correctement dans la démonstration. **Comptage en jeu et exactitude des résultats réels non testés** ; #734 reste ouvert.
+- **Suite en une action à la fois :** sélectionner un pseudo fictif (p. ex. « Demo_Brasier ») pour vérifier l'ouverture et le rendu de la fiche de joueur. Puis planifier séparément les tests administrateur #735 et la comptabilisation en jeu #734.
+
+Les captures sont dans la conversation propriétaire du 23/10 et ne sont pas archivées sur GitHub. Ne jamais transformer ce retour visuel en validation des traitements serveur ou de la confidentialité des joueurs.

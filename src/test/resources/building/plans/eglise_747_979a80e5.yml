@@ -1,0 +1,102 @@
+id: test_eglise_747c
+name: "TEST #747c église (ne pas utiliser)"
+kind: habitable
+front: SOUTH
+size:
+  x: 19
+  y: 23
+  z: 19
+steps:
+  - op: box
+    from: [2, 0, 2]
+    to: [12, 0, 16]
+    block: minecraft:polished_andesite
+  - op: shell
+    from: [2, 1, 2]
+    to: [12, 11, 16]
+    block: minecraft:white_concrete
+  - op: gable
+    from: [2, 12, 2]
+    to: [12, 11, 16]
+    axis: z
+    fill: minecraft:white_concrete
+    block: minecraft:polished_deepslate
+  - op: shell
+    from: [5, 1, 0]
+    to: [8, 21, 4]
+    block: minecraft:white_concrete
+  - op: box
+    from: [6, 19, 2]
+    to: [7, 19, 2]
+    block: minecraft:bell
+  - op: gable
+    from: [5, 22, 0]
+    to: [8, 19, 4]
+    axis: x
+    fill: minecraft:white_concrete
+    block: minecraft:polished_deepslate
+  - op: box
+    from: [6, 22, 2]
+    to: [6, 22, 2]
+    block: minecraft:white_concrete
+  - op: door
+    facade: FRONT
+    offset: 6
+    block: minecraft:dark_oak_door
+  - op: window
+    facade: LEFT
+    offset: 5
+    y: 2
+    width: 2
+    height: 6
+    block: minecraft:blue_stained_glass_pane
+  - op: window
+    facade: RIGHT
+    offset: 5
+    y: 2
+    width: 2
+    height: 6
+    block: minecraft:cyan_stained_glass_pane
+  - op: window
+    wall: 15
+    offset: 8
+    y: 2
+    width: 3
+    height: 8
+    block: minecraft:yellow_stained_glass_pane
+  - op: box
+    from: [7, 1, 14]
+    to: [7, 1, 14]
+    block: minecraft:quartz_block
+  - op: box
+    from: [6, 0, 5]
+    to: [8, 0, 13]
+    block: minecraft:red_carpet
+  - op: box
+    from: [5, 0, 6]
+    to: [5, 0, 11]
+    block: minecraft:oak_stairs
+  - op: box
+    from: [9, 0, 6]
+    to: [9, 0, 11]
+    block: minecraft:oak_stairs
+  - op: box
+    from: [10, 1, 14]
+    to: [10, 1, 14]
+    block: minecraft:lectern
+  - op: light
+    from: [3, 12, 3]
+    to: [11, 12, 15]
+    spacing: 3
+    block: minecraft:lantern
+  - op: light
+    from: [6, 15, 2]
+    block: minecraft:lantern
+  - op: box
+    from: [4, 1, 13]
+    to: [4, 1, 13]
+    block: minecraft:flower_pot
+  - op: box
+    from: [10, 1, 13]
+    to: [10, 1, 13]
+    block: minecraft:flower_pot

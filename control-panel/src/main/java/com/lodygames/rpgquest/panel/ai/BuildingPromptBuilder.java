@@ -623,7 +623,11 @@ public final class BuildingPromptBuilder {
                     .append(compass(turn(front, 2))).append(" · LEFT = ").append(compass(turn(front, 1)))
                     .append(" · RIGHT = ").append(compass(turn(front, 3))).append('\n')
                     .append("  Jamais « facade: ").append(front).append(" » ni un autre point cardinal : le "
-                            + "plan serait refusé.\n");
+                            + "plan serait refusé.\n")
+                    .append("  Coordonnées : NORD = z 0, SUD = z le plus grand (size.z - 1), OUEST = x 0, EST = x le "
+                            + "plus grand (size.x - 1). La façade d'entrée est donc ").append(edge(front))
+                    .append(" : porte, porche, perron et tout volume d'entrée s'y trouvent ; le fond du bâtiment est ")
+                    .append(edge(turn(front, 2))).append(".\n");
         }
         if (maxHeight > 0) {
             sb.append("  Coordonnées y permises : de 0 à size.y - 1, soit y ≤ ").append(maxHeight - 1)
@@ -637,6 +641,16 @@ public final class BuildingPromptBuilder {
     }
 
     private static final List<String> CLOCKWISE = List.of("NORTH", "EAST", "SOUTH", "WEST");
+
+    /** #747 : la rangée du plan qui porte une façade cardinale. */
+    private static String edge(String cardinal) {
+        return switch (cardinal) {
+            case "NORTH" -> "la rangée z = 0 (côté nord)";
+            case "SOUTH" -> "la rangée z = size.z - 1 (côté sud, z le plus grand)";
+            case "EAST" -> "la rangée x = size.x - 1 (côté est, x le plus grand)";
+            default -> "la rangée x = 0 (côté ouest)";
+        };
+    }
 
     /** {@code quarter} quarts de tour dans le sens horaire (LEFT = 1 depuis l'extérieur, cf. Facade). */
     private static String turn(String front, int quarter) {
@@ -725,7 +739,7 @@ public final class BuildingPromptBuilder {
                 PROJET : %s (identifiant %s)
                 Façade d'entrée : %s. Emprise maximale : %d blocs en x (largeur) × %d blocs en z
                 (longueur), hauteur maximale : %d blocs en y.
-
+                %s
                 LE BÂTIMENT SOUHAITÉ, DÉCRIT PAR L'ADMINISTRATEUR (à respecter intégralement)
 
                 %s
@@ -761,7 +775,8 @@ public final class BuildingPromptBuilder {
                 8. CORRESPONDANCE AVEC LE BRIEF — chaque exigence du brief, et l'endroit exact de la
                    conception qui la satisfait, ou la raison pour laquelle elle ne l'est pas.
                 """.formatted(demand.siteName(), demand.suggestedId(), demand.facing(),
-                demand.maxWidth(), demand.maxDepth(), demand.maxHeight(), demand.brief());
+                demand.maxWidth(), demand.maxDepth(), demand.maxHeight(), frame(demand.facing(), demand.maxHeight()),
+                demand.brief());
     }
 
     /**

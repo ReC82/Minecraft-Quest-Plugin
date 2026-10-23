@@ -307,4 +307,18 @@ class Eglise747Test {
         assertEquals(1, problems.size(), problems.toString());
         assertTrue(problems.get(0).why().contains("cloche"), problems.toString());
     }
+
+    // ---- 23/10/2026, essai réel V-979a80e5 : une fenêtre à une cellule de son mur ---------------------
+
+    @Test
+    void anOpeningOneCellOffItsWallIsSnappedToTheBuiltWallByTheEngine() {
+        BuildingGenerator.Verdict v = inspect("979a80e5");
+
+        assertTrue(v.codes().contains("PLAN_INVALID"), v.message());
+        assertTrue(v.message().contains("vise « wall: 15 »"), v.message());
+        assertTrue(v.repair() != null, "réparation attendue");
+        assertTrue(v.repair().changes().stream().anyMatch(c -> c.contains("wall 15 → 16")), v.repair().changes().toString());
+        assertTrue(v.repair().plan().contains("wall: 16"), v.repair().plan());
+        assertFalse(v.repair().codes().contains("PLAN_INVALID"), "le plan réparé se construit : " + generator.inspect(v.repair().plan(), LIMITS).message());
+    }
 }

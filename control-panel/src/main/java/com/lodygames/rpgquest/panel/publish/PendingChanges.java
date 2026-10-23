@@ -109,12 +109,15 @@ public record PendingChanges(List<Row> rows) {
     private static int priority(PublishState state) {
         return switch (state) {
             case CONFLICT -> 0;
-            case NOT_LOADED -> 1;
-            case DIFFERENT -> 2;
-            case SOURCE_ONLY -> 3;
-            case UNKNOWN -> 4;
-            case RUNTIME_ONLY -> 5;
-            default -> 6;
+            case DIVERGED -> 1;
+            case DEV_NEWER -> 2;
+            case NOT_LOADED -> 3;
+            case DIFFERENT -> 4;
+            case SOURCE_ONLY -> 5;
+            case RETIRED -> 6;
+            case UNKNOWN -> 7;
+            case RUNTIME_ONLY -> 8;
+            default -> 9;
         };
     }
 

@@ -36,7 +36,12 @@ public final class DialogueValidator {
     private static final Set<String> QUEST_STATES = Set.of(
             "NOT_STARTED", "ACTIVE", "READY_TO_TURN_IN", "COMPLETED", "FAILED", "ABANDONED");
     private static final Pattern NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");
-    private static final int MAX_TEXT = 512;
+    /**
+     * Longueur maximale d'une réplique. Le moteur n'en impose aucune ; cette borne protège seulement
+     * le formulaire. Issue #798 : à 512, le vrai dialogue d'Elias (« Les claims », 579 caractères
+     * depuis #475) ne pouvait plus être enregistré depuis l'éditeur guidé.
+     */
+    public static final int MAX_TEXT = 1024;
 
     private DialogueValidator() {
     }

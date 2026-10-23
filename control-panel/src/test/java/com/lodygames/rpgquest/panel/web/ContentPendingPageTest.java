@@ -117,9 +117,28 @@ class ContentPendingPageTest {
         assertTrue(page.contains("une_story"), "source uniquement");
         assertTrue(page.contains("un_dialogue"), "différent");
         assertTrue(page.contains("venue_du_jar"), "hors source, en lecture seule");
-        assertTrue(page.contains("Source uniquement"));
-        assertTrue(page.contains("Différent"));
+        assertTrue(page.contains("Absent de DEV"));
+        assertTrue(page.contains("Brouillon non publié"));
         assertTrue(page.contains("Hors source"));
+    }
+
+    /**
+     * Issue #798 — dès l'arrivée du relevé (sans afficher aucune page), une ressource identique des
+     * deux côtés gagne sa version commune ; une ressource différente n'en reçoit pas.
+     */
+    @Test
+    void aReadingRecordsTheCommonVersionOfIdenticalResourcesAsSoonAsItArrives() throws Exception {
+        start();
+        assertTrue(store.devReference(TestConfig.AGENT_ID, "quests", "deja_sync").isEmpty());
+
+        seed("content.dev.state", scenarioDevState());
+
+        assertEquals(sha(Q_SYNC), store.devReference(TestConfig.AGENT_ID, "quests", "deja_sync")
+                .orElseThrow().devSha());
+        assertEquals(sha("autre contenu sur dev"), store.devReference(TestConfig.AGENT_ID, "quests", "modifiee")
+                .orElseThrow().devSha(), "la référence d'un brouillon n'est pas déplacée");
+        assertTrue(store.devReference(TestConfig.AGENT_ID, "quests", "venue_du_jar").isEmpty(),
+                "hors source : rien à retenir");
     }
 
     /** Ce qui est synchronisé n'apparaît pas : la page liste ce qui demande une décision. */
@@ -678,7 +697,7 @@ class ContentPendingPageTest {
         String page = get("/content/pending?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("a_publier"), "il voit les ressources");
-        assertTrue(page.contains("Source uniquement"), "et leur état");
+        assertTrue(page.contains("Absent de DEV"), "et leur état");
         assertFalse(page.contains("Publier la sélection"), "mais aucun bouton de publication");
         assertFalse(page.contains("sel_quests/a_publier"), "ni de case à cocher");
         assertTrue(page.contains("pas le droit de publier"), "et la page le dit");
@@ -848,6 +867,12 @@ class ContentPendingPageTest {
                 contentRoot.toString()),
                 new InMemoryAuditLog(),
                 new BridgeClient(Duration.ofMillis(300), Duration.ofMillis(400)), store);
+        // Issue #798 : « modifiee » et « un_dialogue » sont des brouillons — DEV porte encore la
+        // version commune connue. Sans elle, la différence serait « Versions différentes ».
+        store.adoptDevReference(TestConfig.AGENT_ID, "quests", "modifiee", sha("autre contenu sur dev"), "owner",
+                java.time.Instant.now().minusSeconds(3600));
+        store.adoptDevReference(TestConfig.AGENT_ID, "dialogues", "un_dialogue", sha("dialogue different sur dev"),
+                "owner", java.time.Instant.now().minusSeconds(3600));
         port = app.start();
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         jar.clear();

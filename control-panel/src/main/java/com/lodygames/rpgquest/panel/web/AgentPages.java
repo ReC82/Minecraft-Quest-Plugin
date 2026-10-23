@@ -7825,7 +7825,7 @@ public final class AgentPages {
         boolean stale = readingIsStale(agentId, "dialogues", slug);
         // Issue #731 : la référence est ce que NOUS avons laissé sur DEV, échec de rechargement
         // compris — sinon la correction qui suit une publication refusée part en CONFLICT.
-        Optional<OwnWrite> own = lastOwnWrite(agentId, "dialogues", slug);
+        Optional<OwnWrite> own = referenceOf(agentId, "dialogues", slug, sourceSha, devIndex);
         String lastDevSha = own.map(OwnWrite::devSha).orElse("");
         Optional<Instant> readingAt = devReadingAt(agentId);
         boolean ownIsNewer = own.isPresent() && (readingAt.isEmpty() || own.get().at().isAfter(readingAt.get()));
@@ -7875,8 +7875,8 @@ public final class AgentPages {
             return new DialoguePages.LiveState(lastDevSha.equals(sourceSha) ? DialoguePages.Live.UNKNOWN
                     : DialoguePages.Live.NOT_LIVE, "", sourceSha, expectedDev, null);
         }
-        var readState = devIndex.stateOf("dialogues", slug, "rpgquest:" + slug, sourceSha, sourceCatalog.available(),
-                lastDevSha);
+        var readState = readState(devIndex, agentId, "dialogues", slug, "rpgquest:" + slug, sourceSha,
+                sourceCatalog.available(), own);
         var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState, stale,
                 lastPublish.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false),
                 lastPublish.map(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed"))).orElse(false),
@@ -7884,8 +7884,13 @@ public final class AgentPages {
         Instant when = lastPublishAt(agentId, "dialogues", slug).orElse(null);
         return switch (state) {
             case SYNCED -> new DialoguePages.LiveState(DialoguePages.Live.UP_TO_DATE, "", sourceSha, expectedDev, when);
-            case SOURCE_ONLY, DIFFERENT -> new DialoguePages.LiveState(DialoguePages.Live.NOT_LIVE, "", sourceSha,
+            case DIFFERENT -> new DialoguePages.LiveState(DialoguePages.Live.NOT_LIVE, "", sourceSha,
                     expectedDev, when);
+            case SOURCE_ONLY -> new DialoguePages.LiveState(DialoguePages.Live.NEW, "", sourceSha, expectedDev, when);
+            case DEV_NEWER -> new DialoguePages.LiveState(DialoguePages.Live.DEV_NEWER, "", sourceSha, expectedDev, when);
+            case DIVERGED -> new DialoguePages.LiveState(DialoguePages.Live.DIVERGED, "", sourceSha, expectedDev, when);
+            case RETIRED -> new DialoguePages.LiveState(DialoguePages.Live.FAILED,
+                    com.lodygames.rpgquest.panel.publish.RetiredContent.refusal(slug), sourceSha, expectedDev, when);
             case NOT_LOADED -> new DialoguePages.LiveState(DialoguePages.Live.FAILED,
                     "le serveur a reçu le dialogue mais ne l'a pas chargé", sourceSha, expectedDev, when);
             case CONFLICT -> new DialoguePages.LiveState(DialoguePages.Live.CONFLICT, "", sourceSha, expectedDev, when);
@@ -9160,14 +9165,102 @@ public final class AgentPages {
         return com.lodygames.rpgquest.panel.publish.PendingChanges.from(rows);
     }
 
+    /**
+     * Issue #798 — enregistre la version commune de chaque ressource que le dernier relevé montre
+     * identique dans PlugAdmin et sur DEV (voir {@link #referenceOf}). Appelé à l'arrivée de chaque
+     * relevé {@code content.dev.state} réussi.
+     */
+    public void recordCommonVersions(String agentId) {
+        var devIndex = devContentIndex(agentId);
+        if (!devIndex.available() || !sourceCatalog.available()) {
+            return;
+        }
+        for (String kind : com.lodygames.rpgquest.panel.publish.PendingChanges.KINDS) {
+            for (String slug : devIndex.devSlugs(kind)) {
+                sourceCatalog.sha(kind, slug).ifPresent(sha -> referenceOf(agentId, kind, slug, sha, devIndex));
+            }
+        }
+    }
+
+    /**
+     * Issue #798 — l'état d'une ressource, calculé comme sur toutes les pages (relevé DEV,
+     * référence commune, dernière publication).
+     */
+    public com.lodygames.rpgquest.panel.publish.PublishState stateNow(String agentId, String kind, String slug) {
+        return pendingRow(devContentIndex(agentId), agentId, kind, slug, "", "rpgquest:" + slug,
+                sourceCatalog.available()).state();
+    }
+
+    /**
+     * Issue #798 — l'état lu, à partir de la référence commune et de l'empreinte DEV la plus fraîche
+     * connue : quand une de NOS écritures est plus récente que le relevé (publication refusée au
+     * rechargement, par exemple), c'est elle qui dit ce que DEV porte — le relevé, antérieur, ferait
+     * croire que DEV a changé dans notre dos.
+     */
+    private com.lodygames.rpgquest.panel.publish.PublishState readState(
+            com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex, String agentId, String kind,
+            String slug, String declaredId, String sourceSha, boolean sourceKnown, Optional<OwnWrite> own) {
+        Optional<Instant> readingAt = devReadingAt(agentId);
+        boolean ownIsNewer = own.isPresent() && own.get().at() != null && !own.get().devSha().isEmpty()
+                && (readingAt.isEmpty() || own.get().at().isAfter(readingAt.get()));
+        String dev = ownIsNewer ? own.get().devSha() : devIndex.devSha(kind, slug);
+        String id = declaredId == null || declaredId.isBlank() ? slug : declaredId;
+        // Une version reprise ou conservée n'a rien écrit en jeu : seul un ENVOI postérieur au relevé
+        // rend son « chargé par le moteur » caduc.
+        boolean wroteSince = ownIsNewer && lastOwnOperation(agentId, kind, slug)
+                .map(o -> o.at() != null && readingAt.map(o.at()::isAfter).orElse(true)).orElse(false);
+        return com.lodygames.rpgquest.panel.publish.PublishState.of(devIndex.available(), sourceKnown, sourceSha,
+                dev, devIndex.runtimeLoaded(kind, id) && !wroteSince, own.map(OwnWrite::devSha).orElse(""),
+                com.lodygames.rpgquest.panel.publish.RetiredContent.isRetired(kind, slug));
+    }
+
+    /**
+     * Issue #798 — l'empreinte que DEV porte maintenant pour cette ressource, au mieux de ce que le
+     * panel sait : notre dernière écriture si elle est plus récente que le relevé, sinon le relevé.
+     * {@code ""} = absente.
+     */
+    public String devShaNow(String agentId, String kind, String slug) {
+        var devIndex = devContentIndex(agentId);
+        Optional<OwnWrite> own = lastOwnOperation(agentId, kind, slug);
+        Optional<Instant> readingAt = devReadingAt(agentId);
+        boolean ownIsNewer = own.isPresent() && own.get().at() != null
+                && (readingAt.isEmpty() || own.get().at().isAfter(readingAt.get()));
+        return ownIsNewer && !own.get().devSha().isEmpty() ? own.get().devSha() : devIndex.devSha(kind, slug);
+    }
+
+    /**
+     * Issue #798 — pourquoi cette publication doit être refusée, ou vide. Appelé par le panel avant
+     * TOUTE publication (fiche, éditeur, lot, création de PNJ) : contenu retiré définitivement,
+     * version plus récente sur DEV, ou versions différentes sans choix de l'administrateur. Un état
+     * inconnu (aucun relevé) laisse passer : le serveur refuse de toute façon un fichier DEV qui ne
+     * porte pas l'empreinte attendue.
+     */
+    public Optional<String> publishRefusal(String agentId, String kind, String slug) {
+        if (com.lodygames.rpgquest.panel.publish.RetiredContent.isRetired(kind, slug)) {
+            return Optional.of(com.lodygames.rpgquest.panel.publish.RetiredContent.refusal(slug));
+        }
+        if (agentId == null || agentId.isBlank() || kind == null || slug == null) {
+            return Optional.empty();
+        }
+        return switch (stateNow(agentId, kind, slug)) {
+            case DEV_NEWER -> Optional.of("DEV a une version plus récente de « " + slug + " » : la publier "
+                    + "remettrait l'ancienne. Récupérez d'abord la version de DEV depuis sa fiche. Rien n'a été "
+                    + "envoyé au serveur.");
+            case DIVERGED, CONFLICT -> Optional.of("PlugAdmin et DEV ont chacun une version différente de « "
+                    + slug + " » : ouvrez sa fiche, comparez, puis récupérez la version de DEV ou conservez votre "
+                    + "brouillon. Rien n'a été envoyé au serveur.");
+            case RETIRED -> Optional.of(com.lodygames.rpgquest.panel.publish.RetiredContent.refusal(slug));
+            default -> Optional.empty();
+        };
+    }
+
     private com.lodygames.rpgquest.panel.publish.PendingChanges.Row pendingRow(
             com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex, String agentId,
             String kind, String slug, String name, String declaredId, boolean sourceKnown) {
         String sourceSha = sourceCatalog.sha(kind, slug).orElse("");
         Optional<Map<String, Object>> last = lastPublishOf(agentId, kind, slug);
-        Optional<OwnWrite> own = lastOwnWrite(agentId, kind, slug);
-        var readState = devIndex.stateOf(kind, slug, declaredId, sourceSha, sourceKnown,
-                own.map(OwnWrite::devSha).orElse(""));
+        Optional<OwnWrite> own = referenceOf(agentId, kind, slug, sourceSha, devIndex);
+        var readState = readState(devIndex, agentId, kind, slug, declaredId, sourceSha, sourceKnown, own);
         var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState,
                 readingIsStale(agentId, kind, slug),
                 last.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false),
@@ -9258,9 +9351,10 @@ public final class AgentPages {
 
         if (all.attentionCount() > 0) {
             sb.append(Ui.banner("warn", all.attentionCount() + " ressource(s) demandent une "
-                    + "attention particulière (conflit, ou présente sur DEV sans être chargée). "
-                    + "Elles ne peuvent pas être publiées en lot : ouvrez leur fiche pour voir les "
-                    + "différences d'abord."));
+                    + "attention particulière (versions différentes, plus récente sur DEV, conflit, "
+                    + "ou présente sur DEV sans être chargée). Elles ne peuvent pas être publiées en "
+                    + "lot : ouvrez leur fiche pour comparer, puis récupérer la version de DEV ou "
+                    + "conserver votre brouillon."));
         }
 
         sb.append(pendingTable(session, agentId, shown, canPublish, "", pick));
@@ -9650,9 +9744,12 @@ public final class AgentPages {
                 "Tous états", all.total()));
         for (var state : new com.lodygames.rpgquest.panel.publish.PublishState[] {
                 com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT,
+                com.lodygames.rpgquest.panel.publish.PublishState.DIVERGED,
+                com.lodygames.rpgquest.panel.publish.PublishState.DEV_NEWER,
                 com.lodygames.rpgquest.panel.publish.PublishState.NOT_LOADED,
                 com.lodygames.rpgquest.panel.publish.PublishState.DIFFERENT,
                 com.lodygames.rpgquest.panel.publish.PublishState.SOURCE_ONLY,
+                com.lodygames.rpgquest.panel.publish.PublishState.RETIRED,
                 com.lodygames.rpgquest.panel.publish.PublishState.RUNTIME_ONLY,
                 com.lodygames.rpgquest.panel.publish.PublishState.UNKNOWN}) {
             long n = all.countOf(state);
@@ -9944,13 +10041,13 @@ public final class AgentPages {
         boolean canRollback = perms.can(session.effective(), Permission.CONTENT_ROLLBACK);
         String sourceSha = sourceCatalog.sha(kind, slug).orElse("");
         Optional<Map<String, Object>> lastPublish = lastPublishOf(agentId, kind, slug);
-        Optional<OwnWrite> own = lastOwnWrite(agentId, kind, slug);
+        Optional<OwnWrite> own = referenceOf(agentId, kind, slug, sourceSha, devIndex);
         String lastDevSha = confirmedDevSha(lastPublish, own);
         String backupPath = lastPublish.map(d -> str(d.get("backupPath"))).orElse("");
 
         // Issue #731 : un conflit se juge contre NOTRE dernière écriture, échec compris.
-        var readState = devIndex.stateOf(kind, slug, declaredId, sourceSha,
-                sourceCatalog.available(), own.map(OwnWrite::devSha).orElse(""));
+        var readState = readState(devIndex, agentId, kind, slug, declaredId, sourceSha,
+                sourceCatalog.available(), own);
         // Lot C : si le relevé est antérieur à une publication réussie qui a CONFIRMÉ le runtime,
         // c'est la publication qui dit vrai — elle a relu le moteur, le relevé non.
         boolean stale = readingIsStale(agentId, kind, slug);
@@ -10009,11 +10106,17 @@ public final class AgentPages {
             return sb.toString();
         }
 
-        boolean conflict = state == com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT;
-        if (conflict) {
-            sb.append(Ui.banner("error", "Le fichier DEV a été modifié hors du panel. "
-                    + "Publier écraserait cette modification — regardez les différences avant de "
-                    + "décider."));
+        if (state == com.lodygames.rpgquest.panel.publish.PublishState.RETIRED) {
+            sb.append(Ui.banner("error", Http.esc(com.lodygames.rpgquest.panel.publish.RetiredContent.refusal(slug))));
+            return sb.toString();
+        }
+        // Issue #798 — PlugAdmin et DEV divergent : rien ne se publie tant que l'administrateur n'a pas
+        // choisi. Comparer, puis « Récupérer depuis DEV » (la version de DEV remplace celle de
+        // PlugAdmin, sauvegardée avant) ou « Conserver mon brouillon » (la version DEV devient la
+        // référence ; elle sera sauvegardée par le serveur à la mise en jeu suivante).
+        boolean decision = state.needsDecision();
+        if (decision) {
+            sb.append(Ui.banner("error", Http.esc(state.explanation())));
         }
 
         // Comparaison : proposée dès qu'il y a quelque chose à comparer. Inutile pour une ressource
@@ -10024,33 +10127,31 @@ public final class AgentPages {
                     sourceCatalog.text(kind, slug).orElse(""), returnPath));
         }
 
-        // En CONFLIT, on n'offre PAS de remplacement aveugle : publier n'est proposé qu'une fois la
-        // différence réellement consultée POUR LE CONTENU DEV COURANT. Avoir regardé une version
-        // antérieure ne compte pas — c'est justement ce qui a changé.
-        boolean sawCurrentDev = devFileRead(agentId, kind, slug)
-                .map(d -> devSha.equals(str(d.get("sha256"))))
-                .orElse(false);
-        if (conflict && !sawCurrentDev) {
-            sb.append("<p class=\"field-help\">Consultez les différences ci-dessus avant de "
-                    + "pouvoir republier : le bouton n'apparaît qu'ensuite, pour qu'aucun "
-                    + "remplacement ne se fasse à l'aveugle.</p>");
+        // Les choix ne sont offerts qu'une fois la version DEV COURANTE réellement lue : avoir
+        // regardé une version antérieure ne compte pas — c'est justement ce qui a changé.
+        Optional<Map<String, Object>> read = devFileRead(agentId, kind, slug)
+                .filter(d -> !devSha.isEmpty() && devSha.equals(str(d.get("sha256"))));
+        if (decision && read.isEmpty()) {
+            sb.append("<p class=\"field-help\">Cliquez d'abord « Voir les différences » : les choix "
+                    + "« Récupérer depuis DEV » et « Conserver mon brouillon » apparaissent ensuite, pour "
+                    + "qu'aucun remplacement ne se fasse à l'aveugle.</p>");
             sb.append(compactRefresh(session, agentId, "content.dev.state", "Rafraîchir l'état",
                     "btn-outline-secondary", returnPath));
         }
+        if (decision && read.isPresent()) {
+            sb.append(decisionForms(session, agentId, kind, slug, sourceSha, devSha, returnPath,
+                    perms.can(session.effective(), Permission.CONTENT_PUBLISH),
+                    Boolean.TRUE.equals(read.get().get("present")) && !Boolean.TRUE.equals(read.get().get("tooLarge"))));
+        }
 
-        if (state.publishable() || (conflict && sawCurrentDev)) {
+        if (state.publishable()) {
             if (!canPublish) {
                 sb.append("<p class=\"field-help\">Vous n'avez pas le droit de publier sur "
                         + "DEV.</p>");
             } else {
-                sb.append("<p class=\"field-help\">").append(conflict
-                        ? "Vous avez consulté la version DEV ci-dessus. Publier la "
-                                + "<strong>remplacera</strong> par la source, et la modification "
-                                + "faite hors du panel sera perdue — une sauvegarde en sera prise."
-                        : "Publier copie <strong>ce seul fichier</strong> sur le serveur, recharge "
-                                + "la famille concernée, puis vérifie que le moteur la voit. "
-                                + "Aucun build, aucun redémarrage.")
-                        .append("</p>");
+                sb.append("<p class=\"field-help\">Publier copie <strong>ce seul fichier</strong> sur le "
+                        + "serveur (l'ancienne version DEV est sauvegardée avant), recharge la famille "
+                        + "concernée, puis vérifie que le moteur la voit. Aucun build, aucun redémarrage.</p>");
                 sb.append(formStart(session, agentId, "content.publish", returnPath, ""));
                 sb.append("<input type=\"hidden\" name=\"kind\" value=\"")
                         .append(Http.esc(kind)).append("\">");
@@ -10063,11 +10164,9 @@ public final class AgentPages {
                 sb.append("<input type=\"hidden\" name=\"expected_dev_sha\" value=\"")
                         .append(Http.esc(devSha)).append("\">");
                 sb.append(mutationConsent("content.publish", "", null));
-                sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm ")
-                        .append(conflict ? "btn-danger" : "btn-primary")
-                        .append("\" type=\"submit\">").append(Icons.icon("deploy"))
-                        .append(conflict ? "Écraser la version DEV"
-                                : devSha.isEmpty() ? "Publier sur DEV" : "Republier sur DEV")
+                sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
+                        .append(Icons.icon("deploy"))
+                        .append(devSha.isEmpty() ? "Publier sur DEV" : "Republier sur DEV")
                         .append("</button></div></form>");
             }
         }
@@ -10106,6 +10205,61 @@ public final class AgentPages {
                     .append("</button></div></form>");
         }
         return sb.toString();
+    }
+
+    /**
+     * Issue #798 — les deux choix offerts quand PlugAdmin et DEV divergent, une fois la version DEV
+     * courante lue. Chaque formulaire porte les deux empreintes vues à l'écran : si l'une a changé
+     * entre-temps, rien n'est remplacé.
+     */
+    private String decisionForms(Session session, String agentId, String kind, String slug, String sourceSha,
+                                 String devSha, String returnPath, boolean canPublish, boolean recoverable) {
+        boolean canWrite = perms.can(session.effective(), writePermission(kind));
+        StringBuilder sb = new StringBuilder("<div class=\"publish-decide\">");
+        sb.append("<p class=\"field-help\"><strong>Que garder ?</strong></p>");
+        if (canWrite && recoverable) {
+            sb.append("<form method=\"post\" action=\"/content/recover\">")
+                    .append(decisionHidden(session, agentId, kind, slug, sourceSha, devSha, returnPath))
+                    .append("<p class=\"field-help\">La version de DEV remplace celle de PlugAdmin. Votre version "
+                            + "est sauvegardée avant. Rien ne change en jeu.</p>")
+                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
+                    .append(Icons.icon("refresh")).append("Récupérer depuis DEV</button></div></form>");
+        }
+        if (canPublish) {
+            sb.append("<form method=\"post\" action=\"/content/keep-draft\">")
+                    .append(decisionHidden(session, agentId, kind, slug, sourceSha, devSha, returnPath))
+                    .append("<label class=\"form-check\"><input type=\"checkbox\" name=\"confirm\" value=\"true\" "
+                            + "required> Je garde ma version : celle de DEV sera remplacée à la prochaine "
+                            + "publication (elle sera sauvegardée avant).</label>")
+                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                    .append("Conserver mon brouillon</button></div></form>");
+        }
+        if (!(canWrite && recoverable) && !canPublish) {
+            sb.append("<p class=\"field-help\">Vous n'avez pas le droit de choisir : demandez à un "
+                    + "administrateur.</p>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    /** Le droit d'écrire dans PlugAdmin une ressource de cette famille. */
+    public static Permission writePermission(String kind) {
+        return switch (kind == null ? "" : kind) {
+            case "quests" -> Permission.QUEST_CONTENT_WRITE;
+            case "stories" -> Permission.STORY_CONTENT_WRITE;
+            default -> Permission.DIALOGUE_WRITE;
+        };
+    }
+
+    private static String decisionHidden(Session session, String agentId, String kind, String slug,
+                                         String sourceSha, String devSha, String returnPath) {
+        return hiddenField("_csrf", session.csrfToken()) + hiddenField("agent", agentId) + hiddenField("kind", kind)
+                + hiddenField("slug", slug) + hiddenField("expected_sha", sourceSha)
+                + hiddenField("expected_dev_sha", devSha) + hiddenField("return", returnPath);
+    }
+
+    private static String hiddenField(String name, String value) {
+        return "<input type=\"hidden\" name=\"" + Http.esc(name) + "\" value=\"" + Http.esc(value == null ? "" : value)
+                + "\">";
     }
 
     /**
@@ -10319,6 +10473,37 @@ public final class AgentPages {
             return adopted;
         }
         return op;
+    }
+
+    /**
+     * Issue #798 — la <strong>référence commune</strong> de cette ressource : la dernière version
+     * connue pour avoir été identique dans PlugAdmin et sur DEV. C'est elle qui dit qui a changé
+     * depuis : PlugAdmin (brouillon), DEV (plus récent sur DEV) ou les deux (conflit).
+     *
+     * <p>Elle venait seulement de nos propres écritures, lues dans les 200 dernières actions : une
+     * version livrée par un déploiement, ou une publication trop ancienne, n'avait donc aucune
+     * référence, et toute différence se lisait « Enregistré — pas encore en jeu » — même quand DEV
+     * était le plus récent. Désormais, chaque relevé où les deux côtés sont identiques
+     * <strong>enregistre</strong> cette version comme référence (table {@code content_dev_reference},
+     * auteur {@code auto:identique}), à l'heure du relevé. Jamais quand une de nos écritures est
+     * plus récente que le relevé : celui-ci ne dirait plus la vérité sur DEV.</p>
+     */
+    Optional<OwnWrite> referenceOf(String agentId, String kind, String slug, String sourceSha,
+                                   com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex) {
+        Optional<OwnWrite> own = lastOwnWrite(agentId, kind, slug);
+        if (agentId == null || agentId.isBlank() || sourceSha == null || sourceSha.isEmpty()
+                || !devIndex.available() || !sourceSha.equals(devIndex.devSha(kind, slug))) {
+            return own;
+        }
+        Optional<java.time.Instant> readingAt = devReadingAt(agentId);
+        if (readingAt.isEmpty() || own.map(o -> sourceSha.equals(o.devSha())).orElse(false)) {
+            return own;
+        }
+        if (own.isPresent() && own.get().at() != null && !own.get().at().isBefore(readingAt.get())) {
+            return own;
+        }
+        store.adoptDevReference(agentId, kind, slug, sourceSha, "auto:identique", readingAt.get());
+        return Optional.of(new OwnWrite(sourceSha, readingAt.get()));
     }
 
     private Optional<OwnWrite> lastOwnOperation(String agentId, String kind, String slug) {

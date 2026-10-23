@@ -145,7 +145,7 @@ public final class DialogueAiExport {
                 .append("N'invente aucune capacité.\n");
         sb.append("5. Chaque `next:` doit viser une réplique existante ; `start:` aussi. Identifiants de ")
                 .append("réplique : minuscules, chiffres, `_`, `-`. Chaque réplique a `speaker` et `text` ")
-                .append("(512 caractères max).\n");
+                .append("(").append(DialogueValidator.MAX_TEXT).append(" caractères max).\n");
         sb.append("6. Aucune quête ne démarre sans acceptation : un START_QUEST n'est porté que par une réponse ")
                 .append("dont le texte commence par « Commencer », et jamais deux fois pour la même quête. ")
                 .append("Garder les réponses « Plus tard » / « Refuser » et le suivi d'une tâche en cours.\n");

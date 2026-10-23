@@ -45,8 +45,14 @@ public final class DialoguePages {
     public enum Live {
         /** Le jeu porte exactement ce qui est enregistré. */
         UP_TO_DATE,
-        /** Enregistré, pas encore envoyé (ou modifié depuis). */
+        /** Brouillon : modifié dans PlugAdmin depuis la dernière version commune avec DEV. */
         NOT_LIVE,
+        /** Issue #798 — enregistré dans PlugAdmin, absent de DEV : jamais mis en jeu. */
+        NEW,
+        /** Issue #798 — DEV a une version plus récente que celle de PlugAdmin. */
+        DEV_NEWER,
+        /** Issue #798 — versions différentes sans version commune connue : à comparer. */
+        DIVERGED,
         /** Mise en jeu demandée, pas encore terminée. */
         PUBLISHING,
         /** La dernière mise en jeu de cette version a échoué. */
@@ -385,7 +391,10 @@ public final class DialoguePages {
         }
         return switch (live.live()) {
             case UP_TO_DATE -> chip("ok", "À jour en jeu");
-            case NOT_LIVE -> chip("warn", "Pas encore en jeu");
+            case NOT_LIVE -> chip("warn", "Brouillon non publié");
+            case NEW -> chip("warn", "Jamais mis en jeu");
+            case DEV_NEWER -> chip("warn", "Plus récent sur DEV");
+            case DIVERGED -> chip("err", "Versions différentes");
             case PUBLISHING -> chip("info", "Mise en jeu en cours…");
             case FAILED -> chip("err", "Mise en jeu échouée");
             case CONFLICT -> chip("err", "Modifié sur le serveur");
@@ -634,8 +643,24 @@ public final class DialoguePages {
             }
             case NOT_LIVE -> {
                 tone = "warn";
-                text = "Enregistré — pas encore en jeu.";
+                text = "Brouillon enregistré — vos modifications ne sont pas encore en jeu.";
                 offerPublish = true;
+            }
+            case NEW -> {
+                tone = "warn";
+                text = "Enregistré dans PlugAdmin — ce dialogue n'est pas encore sur DEV.";
+                offerPublish = true;
+            }
+            case DEV_NEWER -> {
+                // Issue #798 : la source porte encore la version commune, DEV a avancé depuis.
+                // « Mettre en jeu » remettrait l'ancienne version : on ne le propose pas.
+                tone = "warn";
+                text = "DEV a une version plus récente que celle-ci (livrée avec le plugin ou modifiée "
+                        + "ailleurs). Récupérez-la avant de modifier : mettre en jeu cette version "
+                        + "remettrait l'ancienne.";
+            }
+            case DIVERGED -> {
+                return conflictBox(csrf, ctx, e.slug(), canReload(rights, e), true, keepDraftForm(csrf, ctx, e, live, rights));
             }
             case PUBLISHING -> {
                 tone = "info";
@@ -648,7 +673,8 @@ public final class DialoguePages {
                 offerPublish = true;
             }
             case CONFLICT -> {
-                return conflictBox(csrf, ctx, e.slug(), canReload(rights, e));
+                return conflictBox(csrf, ctx, e.slug(), canReload(rights, e), false,
+                        keepDraftForm(csrf, ctx, e, live, rights));
             }
             case SERVER_ONLY -> {
                 tone = "info";
@@ -862,15 +888,32 @@ public final class DialoguePages {
     }
 
     static String conflictBox(String csrf, Ctx ctx, String slug, boolean reload) {
+        return conflictBox(csrf, ctx, slug, reload, false, "");
+    }
+
+    /**
+     * @param diverged  issue #798 — aucune version commune connue : on ne sait pas qui a changé, on
+     *                  ne prétend donc pas que « quelqu'un l'a changée »
+     * @param keepDraft le formulaire « Conserver mon brouillon », ou vide s'il n'est pas proposé
+     */
+    static String conflictBox(String csrf, Ctx ctx, String slug, boolean reload, boolean diverged,
+                              String keepDraft) {
         StringBuilder sb = new StringBuilder("<div class=\"dlg-live dlg-conflict tone-err\" role=\"alert\">");
         sb.append("<p><strong>").append(Icons.icon("warning"))
-                .append("Le serveur a une autre version de ce dialogue.</strong> Quelqu'un l'a changée en dehors de "
-                        + "cet éditeur depuis votre dernière mise en jeu. Rien n'a été remplacé, et votre version "
-                        + "enregistrée ici est gardée.</p>");
+                .append("Le serveur a une autre version de ce dialogue.</strong> ").append(diverged
+                        ? "PlugAdmin et DEV ont chacun une version différente, et rien ne dit laquelle est la plus "
+                                + "récente. Rien n'a été remplacé, et votre version enregistrée ici est gardée.</p>"
+                        : "Quelqu'un l'a changée en dehors de cet éditeur depuis votre dernière mise en jeu. Rien "
+                                + "n'a été remplacé, et votre version enregistrée ici est gardée.</p>");
         sb.append("<ol class=\"dlg-conflict-steps\">")
                 .append("<li><strong>Comparez</strong> les deux versions pour voir ce qui a changé.</li>")
-                .append("<li><strong>Pour garder la vôtre</strong> : après la comparaison, choisissez « Écraser la "
-                        + "version DEV » et confirmez. L'autre version est sauvegardée avant d'être remplacée.</li>")
+                .append(keepDraft.isEmpty()
+                        ? "<li><strong>Pour garder la vôtre</strong> : après la comparaison, choisissez « Conserver "
+                                + "mon brouillon » puis mettez en jeu. L'autre version est sauvegardée avant d'être "
+                                + "remplacée.</li>"
+                        : "<li><strong>Pour garder la vôtre</strong> : cochez la case puis « Conserver mon brouillon ». "
+                                + "Ensuite « Mettre en jeu » ; la version de DEV est sauvegardée avant d'être "
+                                + "remplacée.</li>")
                 .append(reload ? "<li><strong>Pour garder celle du serveur</strong> : cliquez « Recharger depuis "
                         + "DEV ». Votre version est sauvegardée avant d'être remplacée.</li>"
                         : "<li><strong>Pour garder celle du serveur</strong> : ne mettez pas votre version en jeu ; "
@@ -888,7 +931,28 @@ public final class DialoguePages {
                 .append(" <a class=\"btn secondary sm\" href=\"/docs/dialogues-depannage#")
                 .append(com.lodygames.rpgquest.panel.docs.Markdown.slug(CONFLICT_HELP_TITLE)).append("\" target=\"_blank\" rel=\"noopener\">")
                 .append("Que faire ?</a>");
-        return sb.append("</div></div>").toString();
+        sb.append("</div>").append(keepDraft);
+        return sb.append("</div>").toString();
+    }
+
+    /**
+     * Issue #798 — « Conserver mon brouillon » : la version de DEV, connue par son empreinte,
+     * devient la référence ; votre version redevient un brouillon publiable. Rien n'est écrit en
+     * jeu ici, et la mise en jeu suivante sauvegarde la version DEV avant de la remplacer.
+     */
+    private static String keepDraftForm(String csrf, Ctx ctx, Editing e, LiveState live, Rights rights) {
+        if (!rights.publish() || e.dirty() || live.sourceSha().isEmpty() || live.expectedDev() == null
+                || live.expectedDev().isEmpty()) {
+            return "";
+        }
+        return "<form method=\"post\" action=\"/content/keep-draft\" class=\"dlg-keep\" data-submit-once>"
+                + hidden("_csrf", csrf) + hidden("agent", ctx.agentId()) + hidden("kind", "dialogues")
+                + hidden("slug", e.slug()) + hidden("expected_sha", live.sourceSha())
+                + hidden("expected_dev_sha", live.expectedDev()) + hidden("return", "/dialogues/edit/" + e.slug())
+                + "<label class=\"dlg-check\"><input type=\"checkbox\" name=\"confirm\" value=\"true\" required> "
+                + "Je garde ma version : celle de DEV sera remplacée à la prochaine mise en jeu (elle sera "
+                + "sauvegardée avant).</label>"
+                + "<button class=\"btn secondary sm\" type=\"submit\">Conserver mon brouillon</button></form>";
     }
 
     /** Titre de la fiche de dépannage « conflit de version » (ancre = slug du titre). */
@@ -1678,7 +1742,8 @@ public final class DialoguePages {
             return "Écrivez ce que dit le personnage.";
         }
         if (field.endsWith(".text") && message.contains("trop long")) {
-            return "Cette réplique est trop longue (512 caractères au plus).";
+            return "Cette réplique est trop longue (" + com.lodygames.rpgquest.panel.content.DialogueValidator.MAX_TEXT
+                    + " caractères au plus).";
         }
         if (field.endsWith(".speaker")) {
             return message.contains("trop long") ? "Le nom affiché est trop long (128 caractères au plus)."

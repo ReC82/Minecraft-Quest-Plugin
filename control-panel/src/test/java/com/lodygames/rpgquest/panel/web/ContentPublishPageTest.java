@@ -106,7 +106,7 @@ class ContentPublishPageTest {
                 "aucun bouton Publier tant qu'on ne sait pas où l'on en est");
     }
 
-    /** Le cas de référence : source présente, DEV absent → « Source uniquement » + action claire. */
+    /** Le cas de référence : source présente, DEV absent → « Absent de DEV » + action claire. */
     @Test
     void aQuestPresentInSourceAndAbsentFromDevIsSourceOnlyAndCanBePublished() throws Exception {
         start();
@@ -115,8 +115,8 @@ class ContentPublishPageTest {
 
         String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Source uniquement"));
-        assertTrue(page.contains("absente du serveur DEV"), "l'explication, pas juste le badge");
+        assertTrue(page.contains("Absent de DEV"));
+        assertTrue(page.contains("absent du serveur DEV"), "l'explication, pas juste le badge");
         assertTrue(page.contains("name=\"type\" value=\"content.publish\""));
         assertTrue(page.contains("Publier sur DEV"));
         assertTrue(page.contains("Aucun build, aucun redémarrage"), "la promesse du ticket");
@@ -137,7 +137,7 @@ class ContentPublishPageTest {
     }
 
     /**
-     * Identique mais pas chargée : « Publié, non chargé », et <strong>pas</strong> « Synchronisé ».
+     * Identique mais pas chargée : « Sur DEV, non chargé », et <strong>pas</strong> « Synchronisé ».
      *
      * <p>C'est exactement le mensonge que #47 supprime.</p>
      */
@@ -150,14 +150,37 @@ class ContentPublishPageTest {
 
         String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Publié, non chargé"));
+        assertTrue(page.contains("Sur DEV, non chargé"));
         assertTrue(page.contains("le moteur ne le charge pas"));
         assertTrue(page.contains("Republier sur DEV"), "et on propose la bonne action");
     }
 
-    /** Présente des deux côtés mais différente : « Différent ». */
+    /**
+     * Présente des deux côtés, DEV porte encore la version commune connue : un brouillon (#798).
+     */
     @Test
-    void aModifiedSourceIsShownAsDifferent() throws Exception {
+    void aModifiedSourceIsShownAsADraft() throws Exception {
+        start();
+        store.adoptDevReference(TestConfig.AGENT_ID, "quests", "test_publish_quest", sha("autre contenu"),
+                "owner", java.time.Instant.now().minusSeconds(3600));
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha("autre contenu")),
+                "[\"rpgquest:test_publish_quest\"]"));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Brouillon non publié"));
+        assertTrue(page.contains("pas encore en jeu"));
+        assertTrue(page.contains("Republier sur DEV"));
+    }
+
+    /**
+     * Issue #798 — différentes sans version commune connue : on ne sait pas qui est le plus récent.
+     * Ni « pas encore en jeu », ni bouton de publication : comparer d'abord.
+     */
+    @Test
+    void aDifferenceWithoutACommonVersionIsNotPresentedAsADraft() throws Exception {
         start();
         seed("quest.list", RUNTIME_WITHOUT_IT);
         seed("content.dev.state", devState(
@@ -166,9 +189,10 @@ class ContentPublishPageTest {
 
         String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Différent"));
-        assertTrue(page.contains("ne sont pas en jeu"));
-        assertTrue(page.contains("Republier sur DEV"));
+        assertTrue(page.contains("Versions différentes"));
+        assertFalse(page.contains("pas encore en jeu"));
+        assertFalse(page.contains("name=\"type\" value=\"content.publish\""));
+        assertTrue(page.contains("Voir les différences"));
     }
 
     // ---- Le vrai formulaire --------------------------------------------------------------------
@@ -374,10 +398,12 @@ class ContentPublishPageTest {
 
     // ---- Le diff (issue #47, lot A) ---------------------------------------------------------------
 
-    /** Une ressource différente propose de voir les différences, en plus de republier. */
+    /** Un brouillon (version commune connue) propose de voir les différences, en plus de republier. */
     @Test
     void aDifferentResourceOffersToSeeTheDifferences() throws Exception {
         start();
+        store.adoptDevReference(TestConfig.AGENT_ID, "quests", "test_publish_quest", sha("autre contenu"),
+                "owner", java.time.Instant.now().minusSeconds(3600));
         seed("quest.list", RUNTIME_WITHOUT_IT);
         seed("content.dev.state", devState(
                 fileEntry("quests", "test_publish_quest", sha("autre contenu")),
@@ -519,50 +545,56 @@ class ContentPublishPageTest {
         seed("quest.list", RUNTIME_WITHOUT_IT);
         String devText = QUEST_YAML.replace("publication", "modifiée hors du panel");
         // DEV ne correspond ni à la source ni à notre dernière publication -> conflit.
-        seed("content.dev.state", devState(
-                fileEntry("quests", "test_publish_quest", sha(devText)),
-                "[\"rpgquest:test_publish_quest\"]"));
         seedResult("content.publish",
                 "{\"ok\":true,\"code\":\"PUBLISHED\",\"kind\":\"quests\","
                         + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\""
                         + sha("une version que nous avions publiée")
                         + "\",\"backupPath\":\"\",\"runtimeConfirmed\":true,"
                         + "\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devText)),
+                "[\"rpgquest:test_publish_quest\"]"));
 
         String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
 
         assertTrue(page.contains("Conflit"));
-        assertTrue(page.contains("modifié hors du panel"));
+        assertTrue(page.contains("ont tous deux changé"));
         assertTrue(page.contains("Voir les différences"), "on propose de regarder");
         assertFalse(page.contains("name=\"type\" value=\"content.publish\""),
                 "et PAS de publier avant d'avoir regardé");
-        assertTrue(page.contains("n'apparaît qu'ensuite"), "la page explique pourquoi");
+        assertTrue(page.contains("apparaissent ensuite"), "la page explique pourquoi");
     }
 
-    /** Après avoir consulté la version DEV courante, l'écrasement devient possible — et nommé. */
+    /**
+     * Après avoir consulté la version DEV courante, les deux choix de #798 apparaissent — récupérer
+     * la version DEV ou conserver son brouillon — mais toujours aucune publication directe.
+     */
     @Test
     void afterSeeingTheCurrentDevVersionTheOverwriteBecomesAvailableAndIsNamedAsSuch()
             throws Exception {
         start();
         seed("quest.list", RUNTIME_WITHOUT_IT);
         String devText = QUEST_YAML.replace("publication", "modifiée hors du panel");
-        seed("content.dev.state", devState(
-                fileEntry("quests", "test_publish_quest", sha(devText)),
-                "[\"rpgquest:test_publish_quest\"]"));
         seedResult("content.publish",
                 "{\"ok\":true,\"code\":\"PUBLISHED\",\"kind\":\"quests\","
                         + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\""
                         + sha("une version que nous avions publiée")
                         + "\",\"backupPath\":\"\",\"runtimeConfirmed\":true,"
                         + "\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devText)),
+                "[\"rpgquest:test_publish_quest\"]"));
         // L'administrateur consulte la version DEV COURANTE.
         seedRead(devText, sha(devText));
 
         String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("name=\"type\" value=\"content.publish\""));
-        assertTrue(page.contains("Écraser la version DEV"), "le bouton dit ce qu'il fait");
-        assertTrue(page.contains("sera perdue"), "et ce qui sera perdu");
+        assertFalse(page.contains("name=\"type\" value=\"content.publish\""), "aucun écrasement direct");
+        assertTrue(page.contains("action=\"/content/recover\""));
+        assertTrue(page.contains("Récupérer depuis DEV"));
+        assertTrue(page.contains("action=\"/content/keep-draft\""));
+        assertTrue(page.contains("Conserver mon brouillon"));
+        assertTrue(page.contains("sauvegardée avant"), "et ce qui est protégé");
     }
 
     /** Avoir consulté une version DEV ANTÉRIEURE ne vaut pas consentement. */
@@ -571,14 +603,14 @@ class ContentPublishPageTest {
         start();
         seed("quest.list", RUNTIME_WITHOUT_IT);
         String devNow = QUEST_YAML.replace("publication", "version COURANTE hors panel");
-        seed("content.dev.state", devState(
-                fileEntry("quests", "test_publish_quest", sha(devNow)),
-                "[\"rpgquest:test_publish_quest\"]"));
         seedResult("content.publish",
                 "{\"ok\":true,\"code\":\"PUBLISHED\",\"kind\":\"quests\","
                         + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\""
                         + sha("publiée jadis") + "\",\"backupPath\":\"\","
                         + "\"runtimeConfirmed\":true,\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devNow)),
+                "[\"rpgquest:test_publish_quest\"]"));
         // On a lu une version PÉRIMÉE : son empreinte ne correspond pas à celle de DEV aujourd'hui.
         seedRead("un contenu DEV périmé\n", sha("un contenu DEV périmé\n"));
 
@@ -586,7 +618,8 @@ class ContentPublishPageTest {
 
         assertFalse(page.contains("name=\"type\" value=\"content.publish\""),
                 "la lecture périmée ne doit pas débloquer l'écrasement");
-        assertTrue(page.contains("n'apparaît qu'ensuite"));
+        assertTrue(page.contains("apparaissent ensuite"));
+        assertFalse(page.contains("action=\"/content/keep-draft\""), "ni le choix de garder sa version");
     }
 
     // ---- Après un retour arrière -----------------------------------------------------------------
@@ -618,7 +651,7 @@ class ContentPublishPageTest {
 
         String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Différent"), "DEV porte volontairement une version antérieure");
+        assertTrue(page.contains("Brouillon non publié"), "DEV porte volontairement une version antérieure");
         assertFalse(page.contains("Conflit"),
                 "ce n'est pas un tiers qui a modifié le fichier, c'est nous");
     }

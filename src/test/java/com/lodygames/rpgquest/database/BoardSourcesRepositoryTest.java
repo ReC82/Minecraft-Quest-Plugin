@@ -139,6 +139,22 @@ class BoardSourcesRepositoryTest {
     }
 
     @Test
+    void participationCountsPlayersAndTotalWithoutReadingAnyName() throws Exception {
+        broke(alice, "STONE", "2026-10-20T10:00:00Z");
+        broke(alice, "STONE", "2026-10-20T10:01:00Z");
+        broke(bob, "OAK_LOG", "2026-10-20T10:02:00Z");
+        broke(bob, "OAK_LOG", "2026-10-10T10:02:00Z"); // hors fenêtre
+        StatPeriod period = week(board(StatMetric.BLOCK_BREAK, Map.of(), BoardPeriod.WEEKLY));
+        StatMetric metric = StatMetric.find(StatMetric.BLOCK_BREAK).orElseThrow();
+
+        assertEquals(new StatisticsRepository.Participation(2, 3),
+                statistics.participation(period, metric, Set.of(), Set.of()).get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(new StatisticsRepository.Participation(1, 2),
+                statistics.participation(period, metric, Set.of(bob), Set.of()).get(TIMEOUT, TimeUnit.SECONDS),
+                "un joueur exclu ne compte pas");
+    }
+
+    @Test
     void aMetricWithoutDataHasNoTrackedSinceDate() throws Exception {
         assertNull(statistics.trackedSince(StatMetric.find(StatMetric.CITY_DISCOVERED).orElseThrow())
                 .get(TIMEOUT, TimeUnit.SECONDS), "jamais une date inventée");

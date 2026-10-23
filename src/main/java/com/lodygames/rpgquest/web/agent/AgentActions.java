@@ -1528,6 +1528,58 @@ public interface AgentActions {
                 "Catalogue des prix indisponible sur ce serveur."));
     }
 
+    // ---- Classements du site public (issue #735) --------------------------------------------
+
+    /** État des classements -- action {@code leaderboard.catalog.status} ; {@code available: false} sans service. */
+    default CompletableFuture<Map<String, Object>> leaderboardCatalogStatus() {
+        return CompletableFuture.completedFuture(Map.of("available", false));
+    }
+
+    /** Prévisualisation agrégée d'un classement -- action {@code leaderboard.preview}. */
+    default CompletableFuture<Map<String, Object>> leaderboardPreview(String boardId) {
+        return CompletableFuture.completedFuture(Map.of("available", false));
+    }
+
+    /**
+     * Crée ({@code create}) ou modifie un classement -- action {@code leaderboard.save}. Codes :
+     * {@code CREATED}, {@code UPDATED}, {@code UNCHANGED}, {@code EXISTS}, {@code NOT_FOUND},
+     * {@code STALE}, {@code INVALID}, {@code STATISTICS_FILE}, {@code CURRENT_INVALID}, {@code ROLLED_BACK}.
+     */
+    default CompletableFuture<MutationResult> leaderboardSave(Map<String, Object> fields, String expectedVersion,
+                                                              boolean create) {
+        return leaderboardUnavailable();
+    }
+
+    /** Copie en brouillon -- action {@code leaderboard.duplicate}. */
+    default CompletableFuture<MutationResult> leaderboardDuplicate(String sourceId, String newId, String newName) {
+        return leaderboardUnavailable();
+    }
+
+    /** Statut -- action {@code leaderboard.status} ({@code draft}, {@code enabled}, {@code paused}, {@code archived}). */
+    default CompletableFuture<MutationResult> leaderboardStatus(String boardId, String status) {
+        return leaderboardUnavailable();
+    }
+
+    /** {@code featured} / {@code visible} -- action {@code leaderboard.flag}. */
+    default CompletableFuture<MutationResult> leaderboardFlag(String boardId, String flag, boolean value) {
+        return leaderboardUnavailable();
+    }
+
+    /** Ordre d'affichage -- action {@code leaderboard.move}. */
+    default CompletableFuture<MutationResult> leaderboardMove(String boardId, boolean up) {
+        return leaderboardUnavailable();
+    }
+
+    /** Fuseau des périodes de calendrier -- action {@code leaderboard.timezone}. */
+    default CompletableFuture<MutationResult> leaderboardTimezone(String zone) {
+        return leaderboardUnavailable();
+    }
+
+    private static CompletableFuture<MutationResult> leaderboardUnavailable() {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Gestion des classements indisponible sur ce serveur."));
+    }
+
     // ---- Catalogues de marchands (issue #17) ---------------------------------------------------
 
     /**

@@ -11289,6 +11289,35 @@ public final class AgentPages {
             new String[] {"CRAFT", "Le PNJ fabrique", "le joueur donne les ingrédients et/ou paie, il reçoit l'objet"});
 
     /**
+     * Page {@code /leaderboards} (issue #735), rendue dans {@link LeaderboardPages} : dernier relevé
+     * {@code leaderboard.catalog.status} et dernier aperçu {@code leaderboard.preview} réussis.
+     */
+    public String leaderboards(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        if (agent.isEmpty()) {
+            return LeaderboardPages.header() + noAgent();
+        }
+        String agentId = agent.get().id();
+        Optional<Map<String, Object>> loaded = latestDetails(agentId, "leaderboard.catalog.status");
+        String header = agentPicker(agentId, LeaderboardPages.PATH, "")
+                + "<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Classements du site</span>"
+                + compactRefresh(session, agentId, "leaderboard.catalog.status", "Rafraîchir les classements",
+                loaded.isPresent() ? "btn-outline-primary" : "btn-warning", LeaderboardPages.PATH) + "</div>";
+        Optional<AgentActionRow> preview = store.latestSuccessfulActionOfType(agentId, "leaderboard.preview");
+        Map<String, String> filters = new java.util.HashMap<>();
+        for (String key : List.of("statut", "categorie", "q")) {
+            String value = str(q.get(key)).trim();
+            if (!value.isEmpty() && value.length() <= 60) {
+                filters.put(key, value);
+            }
+        }
+        filters.put("agent", agentId);
+        return LeaderboardPages.render(new LeaderboardPages.View(agentId, loaded.orElse(null),
+                preview.flatMap(this::detailsOf).orElse(null), preview.map(r -> when(at(r))).orElse(""), header,
+                session.csrfToken(), perms.can(session.effective(), Permission.LEADERBOARD_WRITE), filters));
+    }
+
+    /**
      * Page {@code /prices} (issue #336) : tous les tarifs du jeu au même endroit, sans YAML — ce
      * qu'un PNJ vend, rachète ou fabrique, pour combien de pièces et contre quels ingrédients. Tout
      * passe par les actions agent {@code price.*}, validées par le serveur avant écriture (montants,

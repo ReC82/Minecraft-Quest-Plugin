@@ -45,7 +45,7 @@ class BoardCatalogLoaderTest {
     }
 
     @Test
-    void anEmptyListPublishesNoBoardAndDisabledBoardsAreSkipped() throws Exception {
+    void anEmptyListPublishesNoBoardAndDisabledBoardsArePausedNotComputed() throws Exception {
         assertEquals(List.of(), load("leaderboards: []").definition().boards());
         var result = load("""
                 leaderboards:
@@ -53,8 +53,10 @@ class BoardCatalogLoaderTest {
                   - {id: b, name: "B", metric: BLOCK_BREAK, period: daily, category: recolte, size: 5, featured: true}
                 """);
         assertTrue(result.valid(), errors(result));
-        assertEquals(List.of("b"), result.definition().boards().stream().map(StatBoard::id).toList());
-        StatBoard board = result.definition().boards().get(0);
+        assertEquals(List.of("b"), result.definition().activeBoards().stream().map(StatBoard::id).toList());
+        assertEquals(StatBoard.Status.PAUSED, result.definition().board("a").orElseThrow().status(),
+                "enabled: false (format #734) = en pause (#735)");
+        StatBoard board = result.definition().activeBoards().get(0);
         assertEquals(BoardPeriod.DAILY, board.period());
         assertEquals(5, board.size());
         assertTrue(board.featured());
@@ -130,5 +132,78 @@ class BoardCatalogLoaderTest {
         assertEquals(Optional.empty(), definition.board("season").orElseThrow()
                 .current(Instant.parse("2026-10-23T10:00:00Z"), definition.zone(), definition.currentSeason(Instant.now())),
                 "sans saison définie, aucun classement de saison n'est calculé");
+    }
+
+    // ---- Issue #735 : champs administrés depuis PlugAdmin ---------------------------------------
+
+    @Test
+    void statusOrderVisibilityAndDescriptionAreReadAndBoardsSortedByOrder() throws Exception {
+        var result = load("""
+                leaderboards:
+                  - {id: a, name: A, metric: ENTITY_KILL, period: weekly, order: 30}
+                  - {id: b, name: B, metric: ENTITY_KILL, period: weekly, order: 10, status: draft,
+                     description: "Pour les braves"}
+                  - {id: c, name: C, metric: ENTITY_KILL, period: weekly, order: 20, visible: false}
+                  - {id: d, name: D, metric: ENTITY_KILL, period: weekly, order: 5, status: archived}
+                """);
+        assertTrue(result.valid(), errors(result));
+        StatisticsDefinition definition = result.definition();
+        assertEquals(List.of("d", "b", "c", "a"), definition.boards().stream().map(StatBoard::id).toList());
+        assertEquals(List.of("c", "a"), definition.activeBoards().stream().map(StatBoard::id).toList());
+        assertEquals(List.of("a"), definition.publishedBoards().stream().map(StatBoard::id).toList(),
+                "caché = calculé mais pas publié");
+        assertEquals("Pour les braves", definition.board("b").orElseThrow().description());
+        assertEquals(List.of(), StatisticsService.endedBoardWindows(load("""
+                leaderboards: [{id: x, name: X, metric: ENTITY_KILL, period: daily, status: paused}]
+                """).definition(), Instant.parse("2026-10-23T10:00:00Z")), "un classement en pause n'est jamais figé");
+    }
+
+    @Test
+    void invalidAdministeredFieldsAreRefused() throws Exception {
+        assertFalse(load("leaderboards: [{id: x, name: X, metric: ENTITY_KILL, status: live}]").valid());
+        assertFalse(load("leaderboards: [{id: x, name: X, metric: ENTITY_KILL, order: -1}]").valid());
+        assertFalse(load("leaderboards: [{id: x, name: X, metric: ENTITY_KILL, visible: maybe}]").valid());
+        assertFalse(load("leaderboards: [{id: x, name: X, metric: ENTITY_KILL, description: \"%s\"}]"
+                .formatted("a".repeat(201))).valid());
+        assertFalse(load("leaderboards: [{id: x, name: X, metric: ENTITY_KILL, period: event}]").valid(),
+                "un classement d'événement cite son événement");
+        assertFalse(load("leaderboards: [{id: x, name: X, metric: ENTITY_KILL, period: event, event: nope}]").valid());
+        assertFalse(load("leaderboards: [{id: x, name: X, metric: ENTITY_KILL, period: weekly, event: nope}]").valid());
+    }
+
+    @Test
+    void anEventBoardFollowsItsEventDates() throws Exception {
+        var definition = load("""
+                events:
+                  - {id: halloween, name: Halloween, start: "2026-10-31T00:00:00Z", end: "2026-11-02T00:00:00Z",
+                     metrics: [ENTITY_KILL]}
+                leaderboards:
+                  - {id: spooky, name: Spooky, metric: ENTITY_KILL, period: event, event: halloween}
+                """).definition();
+        StatBoard board = definition.board("spooky").orElseThrow();
+
+        var window = board.current(Instant.parse("2026-11-01T10:00:00Z"), definition).orElseThrow();
+        assertEquals(new BoardPeriod.Window("halloween", Instant.parse("2026-10-31T00:00:00Z"),
+                Instant.parse("2026-11-02T00:00:00Z")), window);
+        assertEquals(List.of("board_spooky_halloween"), StatisticsService.endedBoardWindows(definition,
+                Instant.parse("2026-11-03T00:00:00Z")).stream().map(StatPeriod::id).toList(), "figé à la fin de l'événement");
+    }
+
+    @Test
+    void aManagedFileReplacesTheBundledCatalogueButNotAListInStatisticsYml() throws Exception {
+        YamlConfiguration managed = new YamlConfiguration();
+        managed.loadFromString("timezone: UTC\nleaderboards: [{id: m, name: M, metric: BLOCK_BREAK, period: daily}]");
+        YamlConfiguration empty = new YamlConfiguration();
+        var result = StatisticsDefinitionLoader.load(empty, managed);
+        assertTrue(result.valid(), errors(result));
+        assertEquals(StatisticsDefinitionLoader.BoardsSource.MANAGED_FILE, result.boardsSource());
+        assertEquals(List.of("m"), result.definition().boards().stream().map(StatBoard::id).toList());
+        assertEquals(ZoneId.of("UTC"), result.definition().zone());
+
+        YamlConfiguration statistics = new YamlConfiguration();
+        statistics.loadFromString("leaderboards: [{id: s, name: S, metric: BLOCK_BREAK}]");
+        var legacy = StatisticsDefinitionLoader.load(statistics, managed);
+        assertEquals(StatisticsDefinitionLoader.BoardsSource.STATISTICS_FILE, legacy.boardsSource());
+        assertEquals(List.of("s"), legacy.definition().boards().stream().map(StatBoard::id).toList());
     }
 }

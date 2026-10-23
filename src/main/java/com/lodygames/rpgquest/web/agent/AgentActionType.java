@@ -749,7 +749,35 @@ public enum AgentActionType {
      * Aucun claim, terrain, droit, variable ni mode bypass n'est modifié ; succès seulement après
      * relecture de la position réelle.
      */
-    CLAIM_TELEPORT("claim.teleport");
+    CLAIM_TELEPORT("claim.teleport"),
+    /**
+     * Issue #735 — classements du site public : source (fichier géré, statistics.yml, catalogue par
+     * défaut), fuseau, tous les classements (tous statuts) avec leur version, métriques et depuis
+     * quand elles sont suivies, familles de cibles, événements. Lecture seule, aucun pseudo.
+     */
+    LEADERBOARD_CATALOG_STATUS("leaderboard.catalog.status"),
+    /**
+     * Issue #735 — prévisualisation d'un classement : fenêtres en cours et précédente, figée ou non,
+     * nombre de participants et total <strong>agrégés</strong> (aucun pseudo, aucun UUID),
+     * avertissements (mesure jamais collectée, échantillon faible, export web désactivé). Lecture seule.
+     */
+    LEADERBOARD_PREVIEW("leaderboard.preview"),
+    /**
+     * Issue #735 — crée (brouillon) ou modifie un classement dans {@code leaderboards.yml} : validé
+     * par le vrai chargeur avant écriture, écriture atomique, ancienne version remise si le
+     * rechargement échoue. Aucune donnée joueur n'est touchée.
+     */
+    LEADERBOARD_SAVE("leaderboard.save"),
+    /** Issue #735 — copie un classement sous un nouvel identifiant, en brouillon. */
+    LEADERBOARD_DUPLICATE("leaderboard.duplicate"),
+    /** Issue #735 — statut d'un classement : draft, enabled, paused ou archived (résultats figés conservés). */
+    LEADERBOARD_STATUS("leaderboard.status"),
+    /** Issue #735 — mise en avant sur l'accueil ({@code featured}) ou visibilité sur le site ({@code visible}). */
+    LEADERBOARD_FLAG("leaderboard.flag"),
+    /** Issue #735 — monte ou descend un classement dans l'ordre d'affichage. */
+    LEADERBOARD_MOVE("leaderboard.move"),
+    /** Issue #735 — fuseau horaire des périodes de calendrier des classements. */
+    LEADERBOARD_TIMEZONE("leaderboard.timezone");
 
     private final String wire;
 

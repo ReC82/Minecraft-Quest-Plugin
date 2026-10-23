@@ -1711,6 +1711,77 @@ public final class BukkitAgentActions implements AgentActions {
         return new MutationResult(o.success(), o.code(), o.message(), effects);
     }
 
+    // ---- Classements du site public (issue #735) --------------------------------------------
+
+    private volatile com.lodygames.rpgquest.stats.LeaderboardAdminView leaderboards;
+
+    /** Issue #735 — classements gérés depuis PlugAdmin ; sans cet appel, les actions répondent « indisponible ». */
+    public void setLeaderboards(com.lodygames.rpgquest.stats.LeaderboardAdminView view) {
+        this.leaderboards = view;
+    }
+
+    @Override
+    public CompletableFuture<Map<String, Object>> leaderboardCatalogStatus() {
+        var view = leaderboards;
+        return view == null ? AgentActions.super.leaderboardCatalogStatus() : view.status();
+    }
+
+    @Override
+    public CompletableFuture<Map<String, Object>> leaderboardPreview(String boardId) {
+        var view = leaderboards;
+        return view == null ? AgentActions.super.leaderboardPreview(boardId) : view.preview(boardId);
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> leaderboardSave(Map<String, Object> fields, String expectedVersion,
+                                                             boolean create) {
+        var view = leaderboards;
+        return view == null ? AgentActions.super.leaderboardSave(fields, expectedVersion, create)
+                : done(leaderboardMutation(view.editor().save(fields, expectedVersion, create)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> leaderboardDuplicate(String sourceId, String newId, String newName) {
+        var view = leaderboards;
+        return view == null ? AgentActions.super.leaderboardDuplicate(sourceId, newId, newName)
+                : done(leaderboardMutation(view.editor().duplicate(sourceId, newId, newName)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> leaderboardStatus(String boardId, String status) {
+        var view = leaderboards;
+        var parsed = com.lodygames.rpgquest.stats.LeaderboardCatalogEditor.parseStatus(status);
+        if (view == null || parsed.isEmpty()) {
+            return AgentActions.super.leaderboardStatus(boardId, status);
+        }
+        return done(leaderboardMutation(view.editor().setStatus(boardId, parsed.get())));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> leaderboardFlag(String boardId, String flag, boolean value) {
+        var view = leaderboards;
+        return view == null ? AgentActions.super.leaderboardFlag(boardId, flag, value)
+                : done(leaderboardMutation(view.editor().setFlag(boardId, flag, value)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> leaderboardMove(String boardId, boolean up) {
+        var view = leaderboards;
+        return view == null ? AgentActions.super.leaderboardMove(boardId, up)
+                : done(leaderboardMutation(view.editor().move(boardId, up)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> leaderboardTimezone(String zone) {
+        var view = leaderboards;
+        return view == null ? AgentActions.super.leaderboardTimezone(zone)
+                : done(leaderboardMutation(view.editor().setTimezone(zone)));
+    }
+
+    private static MutationResult leaderboardMutation(com.lodygames.rpgquest.stats.LeaderboardCatalogEditor.Outcome o) {
+        return new MutationResult(o.success(), o.code(), o.message(), List.of());
+    }
+
     @Override
     public CompletableFuture<PriceCatalogView> priceCatalogStatus() {
         var service = priceCatalog;

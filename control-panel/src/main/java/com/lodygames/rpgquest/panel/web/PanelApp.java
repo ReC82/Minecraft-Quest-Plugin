@@ -372,6 +372,10 @@ public final class PanelApp {
         // les écritures passent par /agents/action (price.*, ECONOMY_WRITE).
         route("/prices", exchange -> handleBusinessPage(exchange, "/prices", "Prix et coûts",
                 Permission.ECONOMY_READ, agentPages::prices));
+        // Issue #735 — classements du site public (leaderboards.yml). Lecture : LEADERBOARD_READ ;
+        // les écritures passent par /agents/action (leaderboard.*, LEADERBOARD_WRITE).
+        route(LeaderboardPages.PATH, exchange -> handleBusinessPage(exchange, LeaderboardPages.PATH,
+                "Classements du site", Permission.LEADERBOARD_READ, agentPages::leaderboards));
         // Issue #17 — catalogues de marchands (merchants/*.yml). Lecture : ECONOMY_READ ;
         // les écritures passent par /agents/action (merchant.*, ECONOMY_WRITE).
         route("/merchants", exchange -> handleBusinessPage(exchange, "/merchants", "Marchands",

@@ -257,6 +257,14 @@ public final class AgentActionExecutor {
                 case PORTAL_TEST -> portalTest(action);
                 case CLAIM_LIST -> claimList(action);
                 case CLAIM_TELEPORT -> claimTeleport(action);
+                case LEADERBOARD_CATALOG_STATUS -> leaderboardDetails(action, actions.leaderboardCatalogStatus());
+                case LEADERBOARD_PREVIEW -> leaderboardPreview(action);
+                case LEADERBOARD_SAVE -> leaderboardSave(action);
+                case LEADERBOARD_DUPLICATE -> leaderboardDuplicate(action);
+                case LEADERBOARD_STATUS -> leaderboardStatus(action);
+                case LEADERBOARD_FLAG -> leaderboardFlag(action);
+                case LEADERBOARD_MOVE -> leaderboardMove(action);
+                case LEADERBOARD_TIMEZONE -> leaderboardTimezone(action);
                 case MERCHANT_SAVE -> merchantSave(action);
                 case MERCHANT_DUPLICATE -> merchantDuplicate(action);
                 case MERCHANT_TOGGLE -> merchantToggle(action);
@@ -2106,6 +2114,210 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « price_key » invalide."));
         }
         return actions.priceToggle(key, isTrue(action.param("enabled"))).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    // ---- Classements du site public (issue #735) --------------------------------------------
+
+    private static final java.util.regex.Pattern BOARD_ID = com.lodygames.rpgquest.stats.StatisticsDefinitionLoader.PERIOD_ID;
+    private static final java.util.regex.Pattern BOARD_FILTER_KEY = java.util.regex.Pattern.compile("[a-z-]{1,32}");
+    private static final java.util.regex.Pattern BOARD_FILTER_VALUE = java.util.regex.Pattern.compile("[A-Za-z0-9_.:/-]{1,128}");
+    private static final java.util.regex.Pattern BOARD_VERSION = java.util.regex.Pattern.compile("[0-9a-f]{12}");
+    private static final int BOARD_FILTER_MAX_VALUES = 64;
+
+    private CompletableFuture<AgentActionOutcome> leaderboardDetails(AgentAction action,
+                                                                     CompletableFuture<Map<String, Object>> view) {
+        return view.thenApply(details -> {
+            Object boards = details.get("boards");
+            int count = boards instanceof List<?> list ? list.size() : 0;
+            return AgentActionOutcome.success(action.id(), Integer.toString(count),
+                    Boolean.TRUE.equals(details.get("available")) ? count + " classement(s)."
+                            : "Gestion des classements indisponible sur ce serveur.", details);
+        }).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    private CompletableFuture<AgentActionOutcome> leaderboardPreview(AgentAction action) {
+        String id = trimOrNull(action.param("board_id"));
+        if (id == null || !BOARD_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « board_id » invalide."));
+        }
+        return actions.leaderboardPreview(id).thenApply(details -> AgentActionOutcome.success(action.id(), id,
+                Boolean.TRUE.equals(details.get("available")) ? "Prévisualisation de « " + id + " »."
+                        : String.valueOf(details.getOrDefault("message", "Prévisualisation indisponible.")), details))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /**
+     * {@code leaderboard.save} : {@code board_id}, {@code name}, {@code description}, {@code category},
+     * {@code icon}, {@code metric}, {@code filter} ({@code clé=v1,v2;clé2=v3}), {@code period},
+     * {@code event}, {@code start}/{@code end} (ISO avec fuseau), {@code size}, {@code visible},
+     * {@code featured}, {@code create}, {@code expected_version}. Forme vérifiée ici ; le vrai
+     * chargeur tranche (familles, filtres acceptés par la métrique, événement existant).
+     */
+    private CompletableFuture<AgentActionOutcome> leaderboardSave(AgentAction action) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        String error = leaderboardFields(action, fields);
+        if (error != null) {
+            return done(AgentActionOutcome.rejected(action.id(), error));
+        }
+        String expected = trimOrNull(action.param("expected_version"));
+        if (expected != null && !BOARD_VERSION.matcher(expected).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « expected_version » invalide."));
+        }
+        return actions.leaderboardSave(fields, expected, isTrue(action.param("create")))
+                .thenApply(r -> toOutcome(action, r)).exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    /** Champs d'un classement → {@code out} ; renvoie le message de refus, ou {@code null}. */
+    static String leaderboardFields(AgentAction action, Map<String, Object> out) {
+        String id = trimOrNull(action.param("board_id"));
+        if (id == null || !BOARD_ID.matcher(id).matches()) {
+            return "Paramètre « board_id » : minuscules, chiffres et _ (64 caractères au plus).";
+        }
+        out.put("id", id);
+        String name = trimOrNull(action.param("name"));
+        if (name == null || name.length() > com.lodygames.rpgquest.stats.StatisticsDefinitionLoader.LABEL_MAX
+                || name.chars().anyMatch(Character::isISOControl)) {
+            return "Paramètre « name » obligatoire, sur une ligne, 120 caractères au plus.";
+        }
+        out.put("name", name);
+        String description = trimOrNull(action.param("description"));
+        if (description != null && (description.length() > com.lodygames.rpgquest.stats.StatisticsDefinitionLoader.DESCRIPTION_MAX
+                || description.chars().anyMatch(Character::isISOControl))) {
+            return "Paramètre « description » : une ligne, 200 caractères au plus.";
+        }
+        out.put("description", description);
+        String category = trimOrNull(action.param("category"));
+        if (category != null && !com.lodygames.rpgquest.stats.StatBoard.CATEGORIES.contains(category)) {
+            return "Paramètre « category » : " + String.join(", ", com.lodygames.rpgquest.stats.StatBoard.CATEGORIES) + ".";
+        }
+        out.put("category", category);
+        String icon = trimOrNull(action.param("icon"));
+        if (icon != null && !com.lodygames.rpgquest.stats.StatisticsDefinitionLoader.ICON.matcher(icon).matches()) {
+            return "Paramètre « icon » invalide.";
+        }
+        out.put("icon", icon);
+        String metric = trimOrNull(action.param("metric"));
+        if (metric == null || com.lodygames.rpgquest.stats.StatMetric.find(metric).isEmpty()) {
+            return "Paramètre « metric » : une mesure du catalogue.";
+        }
+        out.put("metric", metric);
+        String period = trimOrNull(action.param("period"));
+        if (period == null || com.lodygames.rpgquest.stats.BoardPeriod.parse(period).isEmpty()) {
+            return "Paramètre « period » : lifetime, daily, weekly, monthly, season, event ou custom.";
+        }
+        out.put("period", period);
+        String event = trimOrNull(action.param("event"));
+        if (event != null && !BOARD_ID.matcher(event).matches()) {
+            return "Paramètre « event » invalide.";
+        }
+        out.put("event", event);
+        for (String bound : List.of("start", "end")) {
+            String raw = trimOrNull(action.param(bound));
+            if (raw != null) {
+                try {
+                    out.put(bound, java.time.OffsetDateTime.parse(raw).toInstant().toString());
+                } catch (java.time.format.DateTimeParseException e) {
+                    return "Paramètre « " + bound + " » : date ISO avec fuseau (2026-11-01T00:00:00+01:00).";
+                }
+            }
+        }
+        Integer size = parseIntOrNull(action.param("size"));
+        if (size == null || size < 1 || size > com.lodygames.rpgquest.stats.StatisticsDefinitionLoader.MAX_BOARD_SIZE) {
+            return "Paramètre « size » : nombre de joueurs entre 1 et 50.";
+        }
+        out.put("size", size);
+        Map<String, Object> filter = new LinkedHashMap<>();
+        String raw = trimOrNull(action.param("filter"));
+        if (raw != null) {
+            for (String part : raw.split(";")) {
+                if (part.isBlank()) {
+                    continue;
+                }
+                int eq = part.indexOf('=');
+                String key = eq < 0 ? "" : part.substring(0, eq).trim();
+                if (!BOARD_FILTER_KEY.matcher(key).matches()) {
+                    return "Paramètre « filter » : clé=valeur1,valeur2;… (clé « " + safe(key) + " » invalide).";
+                }
+                List<String> values = new ArrayList<>();
+                for (String value : part.substring(eq + 1).split(",")) {
+                    String v = value.trim();
+                    if (v.isEmpty()) {
+                        continue;
+                    }
+                    if (!BOARD_FILTER_VALUE.matcher(v).matches()) {
+                        return "Paramètre « filter » : valeur « " + safe(v) + " » invalide.";
+                    }
+                    values.add(v);
+                }
+                if (values.isEmpty() || values.size() > BOARD_FILTER_MAX_VALUES) {
+                    return "Paramètre « filter » : entre 1 et " + BOARD_FILTER_MAX_VALUES + " valeurs pour « " + key + " ».";
+                }
+                filter.put(key, values);
+            }
+        }
+        out.put("filter", filter);
+        out.put("visible", !"false".equals(trimOrNull(action.param("visible"))));
+        out.put("featured", isTrue(action.param("featured")));
+        return null;
+    }
+
+    private CompletableFuture<AgentActionOutcome> leaderboardDuplicate(AgentAction action) {
+        String source = trimOrNull(action.param("board_id"));
+        String target = trimOrNull(action.param("new_id"));
+        if (source == null || !BOARD_ID.matcher(source).matches() || target == null || !BOARD_ID.matcher(target).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètres « board_id » et « new_id » obligatoires "
+                    + "(minuscules, chiffres et _, 64 caractères au plus)."));
+        }
+        String name = trimOrNull(action.param("new_name"));
+        if (name != null && (name.length() > com.lodygames.rpgquest.stats.StatisticsDefinitionLoader.LABEL_MAX
+                || name.chars().anyMatch(Character::isISOControl))) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « new_name » : une ligne, 120 caractères au plus."));
+        }
+        return actions.leaderboardDuplicate(source, target, name).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    private CompletableFuture<AgentActionOutcome> leaderboardStatus(AgentAction action) {
+        String id = trimOrNull(action.param("board_id"));
+        String status = trimOrNull(action.param("status"));
+        if (id == null || !BOARD_ID.matcher(id).matches()
+                || com.lodygames.rpgquest.stats.LeaderboardCatalogEditor.parseStatus(status).isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « board_id » et « status » (draft, enabled, paused, archived) obligatoires."));
+        }
+        return actions.leaderboardStatus(id, status).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    private CompletableFuture<AgentActionOutcome> leaderboardFlag(AgentAction action) {
+        String id = trimOrNull(action.param("board_id"));
+        String flag = trimOrNull(action.param("flag"));
+        if (id == null || !BOARD_ID.matcher(id).matches() || !("featured".equals(flag) || "visible".equals(flag))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « board_id » et « flag » (featured ou visible) obligatoires."));
+        }
+        return actions.leaderboardFlag(id, flag, isTrue(action.param("value"))).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    private CompletableFuture<AgentActionOutcome> leaderboardMove(AgentAction action) {
+        String id = trimOrNull(action.param("board_id"));
+        String direction = trimOrNull(action.param("direction"));
+        if (id == null || !BOARD_ID.matcher(id).matches() || !("up".equals(direction) || "down".equals(direction))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « board_id » et « direction » (up ou down) obligatoires."));
+        }
+        return actions.leaderboardMove(id, "up".equals(direction)).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    private CompletableFuture<AgentActionOutcome> leaderboardTimezone(AgentAction action) {
+        String zone = trimOrNull(action.param("timezone"));
+        if (zone == null || zone.length() > 64 || !zone.matches("[A-Za-z0-9_+/-]{1,64}")) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « timezone » invalide (ex. Europe/Brussels)."));
+        }
+        return actions.leaderboardTimezone(zone).thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> unexpectedFailure(action, err));
     }
 

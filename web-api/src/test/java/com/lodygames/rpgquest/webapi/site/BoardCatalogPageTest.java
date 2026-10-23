@@ -102,4 +102,33 @@ class BoardCatalogPageTest {
         assertEquals("waypoints", StatLabels.unit("WAYPOINT_DISCOVERED"));
         assertEquals("exploration", StatLabels.category("CITY_DISCOVERED"));
     }
+
+    // ---- Issue #735 : description, classement d'événement, mise en avant sur l'accueil -----------
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void theDescriptionIsRelayedEscapedAndAnEventBoardWithoutEventSaysSo() {
+        Map<String, Object> described = new java.util.HashMap<>(WAYPOINTS);
+        described.put("description", "Pour les <explorateurs>");
+        Map<String, Object> event = Map.of("id", "spooky", "name", "Halloween", "category", "combat",
+                "metric", "ENTITY_KILL", "period", "event", "status", "NO_EVENT", "leaderboard", List.of());
+        Map<String, Object> stats = PublicPlayerData.statistics(Map.of("boards", List.of(described, event),
+                "catalog", CATALOG));
+
+        assertEquals("Pour les <explorateurs>", ((List<Map<String, Object>>) stats.get("boards")).get(0).get("description"));
+        String html = BoardCatalogPage.render(stats, SiteRoutes.LIVE, "", "");
+        assertTrue(html.contains("<p>Pour les &lt;explorateurs&gt;</p>"), html);
+        assertTrue(html.contains("Cet événement n'est pas programmé"), html);
+        assertTrue(html.contains("Événement"), "onglet de période");
+    }
+
+    @Test
+    void theHomePageShowsFeaturedBoardsOnly() {
+        String html = HomePageHandler.featuredBoards(relayed());
+
+        assertTrue(html.contains("classement-zombies_week"), html);
+        assertFalse(html.contains("classement-waypoints_total"), "seuls les classements mis en avant");
+        assertEquals("", HomePageHandler.featuredBoards(PublicPlayerData.statistics(Map.of("boards",
+                List.of(WAYPOINTS), "catalog", CATALOG))), "aucun mis en avant : l'aperçu historique prend le relais");
+    }
 }

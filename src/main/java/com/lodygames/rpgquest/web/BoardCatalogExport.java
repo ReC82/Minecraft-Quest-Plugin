@@ -54,10 +54,9 @@ final class BoardCatalogExport {
     static CompletableFuture<Catalog> gather(StatisticsRepository repository, StatisticsDefinition stats, Instant now,
                                              Predicate<String> archived, PublicProfilePolicy.Visibility visibility,
                                              List<QuestStatisticsRepository.Row> lifetimeQuests) {
-        Optional<StatPeriod> season = stats.currentSeason(now);
         List<CompletableFuture<BoardResult>> boards = new ArrayList<>();
-        for (StatBoard board : stats.boards()) {
-            boards.add(board(repository, stats, board, now, season, archived, visibility, lifetimeQuests));
+        for (StatBoard board : stats.publishedBoards()) {
+            boards.add(board(repository, stats, board, now, archived, visibility, lifetimeQuests));
         }
         Map<String, Instant> since = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> firsts = new ArrayList<>();
@@ -78,11 +77,11 @@ final class BoardCatalogExport {
     }
 
     private static CompletableFuture<BoardResult> board(StatisticsRepository repository, StatisticsDefinition stats,
-                                                        StatBoard board, Instant now, Optional<StatPeriod> season,
+                                                        StatBoard board, Instant now,
                                                         Predicate<String> archived,
                                                         PublicProfilePolicy.Visibility visibility,
                                                         List<QuestStatisticsRepository.Row> lifetimeQuests) {
-        Optional<BoardPeriod.Window> current = board.current(now, stats.zone(), season);
+        Optional<BoardPeriod.Window> current = board.current(now, stats);
         if (!board.statMetric().windowed()) {
             // Quêtes terminées « depuis toujours » : la source de vérité est quest_progress (#54).
             List<QuestStatisticsRepository.Row> top = lifetimeQuests.stream().limit(board.size()).toList();
@@ -91,7 +90,8 @@ final class BoardCatalogExport {
                             top.stream().map(QuestStatisticsRepository.Row::completed).toList()), null, List.of()));
         }
         if (current.isEmpty()) {
-            return CompletableFuture.completedFuture(new BoardResult(board, "NO_SEASON", null, List.of(), null, List.of()));
+            return CompletableFuture.completedFuture(new BoardResult(board,
+                    board.period() == BoardPeriod.EVENT ? "NO_EVENT" : "NO_SEASON", null, List.of(), null, List.of()));
         }
         BoardPeriod.Window window = current.get();
         Set<UUID> excluded = stats.excludedFrom(board.id());
@@ -125,6 +125,9 @@ final class BoardCatalogExport {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("id", board.id());
             entry.put("name", board.name());
+            if (board.description() != null) {
+                entry.put("description", board.description());
+            }
             entry.put("category", board.category());
             if (board.icon() != null) {
                 entry.put("icon", board.icon());

@@ -1960,6 +1960,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   ligne** / **Banni** (texte, pas que la couleur), sections **Identité / Activité / RPGQuest
   (liens) / Droits / Modération / Actions**. Chaque action déclare sa compatibilité hors ligne ;
   « donner un objet » est **en ligne uniquement** (indisponible expliqué, jamais de faux succès).
+  **Issue #788** : « État d'un joueur » de **/quests** et **/stories** réutilise cet annuaire —
+  `PlayerCatalog.lookup` résout une saisie partielle (connectés d'abord, plafond 10) ; datalist des
+  pseudos connus, choix par **UUID** avec état de connexion, message sans résultat ; pseudo complet
+  ou UUID toujours acceptés ; lecture et actions admin masquées tant que la saisie est ambiguë.
   Nouvelles permissions `PLAYER_MODERATE` (ban/unban) et `PLAYER_BUILD_WRITE` (OWNER seul). Toasts
   #93, historique dans `/actions` domaine Joueurs, fiche `/docs/joueurs-admin`.
   **`PLAYER_BUILD_WRITE` = livré comme permission mais fonctionnalité BLOQUÉE** : accorder un droit

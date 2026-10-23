@@ -9074,3 +9074,21 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 **Résultat attendu** : on trouve une étape sans lire toute la fiche ; aucune information de l'ancienne fiche n'a disparu (les détails avancés sont dans « Pour aller plus loin »).
 
 **Couverture automatisée** : `MarkdownStructureTest` (3 niveaux, suites et liens, libellés, encadrés, liens entre fiches, ancres, lint), `DocTemplateTest` (28 fiches rendables, gabarit, liens internes, 351 ancres figées), `DocsHelpLinksTest` (liens d'aide du code), `DocsPagesTest` (sommaire = ancres réelles, fiches liées, précédent/suivant, recherche par section), `DocSearchIndexTest`.
+
+### TC-427 — #788 — « État d'un joueur » : rechercher un joueur par pseudo partiel (issue #788, PENDING MANUAL VALIDATION)
+
+**But** : choisir un joueur sans connaître son pseudo complet ni son UUID, y compris hors ligne.
+
+**Prérequis** : PlugAdmin de #788 en ligne. Annuaire chargé (PlugAdmin → **Joueurs** → **Actualiser**). Lecture seule : aucun droit, quête ou progression n'est modifié par la recherche.
+
+1. PlugAdmin → **Quêtes** → section **État d'un joueur**. Commencer à taper `Ron` dans le champ : le navigateur propose les pseudos connus, avec « En ligne » / « Hors ligne ».
+2. Saisir `Ron` puis **Rechercher**. **Attendu** : « 1 joueur correspond à « Ron » — choisir : » (ou plus), **Rondoudou9000** avec l'étiquette **Hors ligne** et son UUID en petit ; aucune action admin ni bouton « Rafraîchir l'état » tant que rien n'est choisi.
+3. Cliquer **Rondoudou9000**. **Attendu** : « Joueur sélectionné : **Rondoudou9000** » avec l'étiquette **Hors ligne**, bouton **Rafraîchir l'état de Rondoudou9000** ; un clic renvoie ses quêtes (joueur hors ligne compris) ; les actions admin réapparaissent.
+4. Saisir `LoDyMcFly` complet → sélection directe, sans liste de choix. Saisir un UUID → sélection directe.
+5. Saisir `Zorglub` → « Aucun joueur connu ne correspond à « Zorglub » … », le bouton de lecture reste disponible (le serveur tranche).
+6. Même essai sur **Stories** → section État d'un joueur : `doudou` propose Rondoudou9000 et le choix reste sur la page Stories.
+7. Téléphone (≈ 390 px) : la liste de choix se lit sans défilement horizontal ; chaque joueur est un bouton facile à toucher.
+
+**Résultat attendu** : `Ron` mène à la fiche d'état de Rondoudou9000, hors ligne compris, sans saisir le pseudo complet.
+
+**Couverture automatisée** : `PlayerCatalogTest` (pseudo partiel, connectés d'abord, exact par pseudo/UUID insensible à la casse, pseudo porté par deux entrées → choix par UUID, plafond), `QuestPlayerSearchTest` (/quests et /stories : suggestions, choix par UUID, datalist, pseudo complet, aucun résultat, actions masquées tant que la saisie est ambiguë).

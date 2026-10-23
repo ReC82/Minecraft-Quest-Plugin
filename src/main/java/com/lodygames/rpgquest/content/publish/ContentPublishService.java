@@ -75,7 +75,7 @@ public final class ContentPublishService {
      * @param code             {@code PUBLISHED}, {@code UNCHANGED}, {@code CONFLICT},
      *                         {@code INVALID_KIND}, {@code INVALID_ID}, {@code EMPTY_CONTENT},
      *                         {@code BACKUP_FAILED}, {@code WRITE_FAILED}, {@code RELOAD_FAILED},
-     *                         {@code RUNTIME_MISSING}, {@code BUSY}
+     *                         {@code RUNTIME_MISSING}, {@code BUSY}, {@code RETIRED} (#798)
      * @param created          vrai si la ressource n'existait pas encore sur DEV
      * @param backupPath       chemin relatif de la sauvegarde, ou {@code ""} s'il n'y avait rien à
      *                         sauvegarder (ressource nouvelle)
@@ -182,6 +182,10 @@ public final class ContentPublishService {
         }
         if (yaml == null || yaml.isBlank()) {
             return refused("EMPTY_CONTENT", "Contenu vide : rien à publier.", kind, slug, now);
+        }
+        if (RetiredContent.isRetired(kind, slug)) {
+            // Issue #798 : un contenu retiré pour de bon ne revient jamais, quel que soit l'émetteur.
+            return refused("RETIRED", RetiredContent.refusal(slug), kind, slug, now);
         }
         if (store.resolve(kind, slug).isEmpty()) {
             // Ne devrait pas arriver après les contrôles ci-dessus — mais si un jour le motif du
@@ -706,6 +710,9 @@ public final class ContentPublishService {
         }
         if (item.expectedDevSha() == null) {
             return "empreinte DEV attendue manquante : relancer l'analyse.";
+        }
+        if (RetiredContent.isRetired(item.kind(), item.slug())) {
+            return "retirée définitivement du jeu (#778) : publication refusée.";
         }
         return null;
     }

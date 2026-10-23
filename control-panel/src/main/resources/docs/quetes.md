@@ -102,7 +102,7 @@ valeur brute, il **ne rejoue pas** une progression (pas de récompense, pas d'ef
 
 ## Identifiants techniques
 
-- Un id de quête / story est de la forme `rpgquest:<clé>` (ex. `rpgquest:crystal_hunt`,
+- Un id de quête / story est de la forme `rpgquest:<clé>` (ex. `rpgquest:guard_tier1`,
   `rpgquest:premiers_pas`). Le namespace `rpgquest:` est implicite pour la plupart des commandes.
 - Les ids exacts sont visibles :
   - dans le dépôt : `src/main/resources/quests/*.yml`, `stories/*.yml` (champ `id:`) ;

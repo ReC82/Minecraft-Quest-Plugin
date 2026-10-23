@@ -467,7 +467,10 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<List<QuestPlayerState>> questStatus(UUID playerId) {
-        return questProgressEngine.allStates(playerId).thenApply(states -> {
+        // Issue #79 : les vues d'étape viennent de la base quand le joueur est hors ligne — sans
+        // elles, toute quête active d'un joueur déconnecté s'affichait sans objectif ni compteur.
+        return questProgressEngine.allStates(playerId).thenCombine(questProgressEngine.activeStepViews(playerId),
+                (states, views) -> {
             List<QuestPlayerState> out = new ArrayList<>();
             for (QuestDefinition q : questEngine.quests()) {
                 if (q.secret()) {
@@ -477,10 +480,10 @@ public final class BukkitAgentActions implements AgentActions {
                 String currentStepId = null;
                 List<ObjectiveState> objectives = List.of();
                 if (state == QuestState.ACTIVE || state == QuestState.READY_TO_TURN_IN) {
-                    Optional<QuestStepProgressView> view = questProgressEngine.activeStepView(playerId, q.id());
-                    if (view.isPresent()) {
-                        currentStepId = view.get().stepId();
-                        objectives = objectiveStates(q, view.get());
+                    QuestStepProgressView view = views.get(q.id());
+                    if (view != null) {
+                        currentStepId = view.stepId();
+                        objectives = objectiveStates(q, view);
                     }
                 }
                 out.add(new QuestPlayerState(q.id().toString(), q.title().base(), state.name(),

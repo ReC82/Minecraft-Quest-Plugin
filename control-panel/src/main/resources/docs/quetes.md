@@ -119,6 +119,11 @@ Page **Quêtes** / **Stories** : `quest.list`, `quest.player.status`, `story.lis
 `story.advance` / `story.complete`, `player.variable.set` (mutations, confirmation obligatoire).
 Le donneur de quête (`giver:`) se pose via `quest.giver.set` depuis la page **PNJ**.
 
+« État des quêtes d'un joueur » fonctionne que le joueur soit connecté ou non : statut en français
+(code technique en infobulle), objectifs de l'étape en cours avec leur compteur, PNJ désignés par leur
+nom actuel (dernier relevé de la page PNJ). « — » = quête non commencée, terminée ou abandonnée ;
+« détail non transmis par le serveur » = quête en cours lue sur un serveur antérieur au correctif.
+
 Dans la fiche d'une quête, chaque objectif et chaque récompense est précédé d'une petite icône
 pixel art (la même que sur le portail public) : araignée, crâne, minerai, pièce, XP… L'icône est
 décorative ; le texte reste la référence. Un objet sans icône dédiée prend l'icône de son type

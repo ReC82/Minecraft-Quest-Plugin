@@ -58,10 +58,27 @@ public final class Ui {
         };
     }
 
-    /** État de quête/story (NOT_STARTED / ACTIVE / COMPLETED …) — même langage visuel. */
+    /**
+     * État de quête/story (NOT_STARTED / ACTIVE / COMPLETED …) — même langage visuel. Issue #79 :
+     * libellé français, le code technique reste consultable en infobulle.
+     */
     public static String stateBadge(String state) {
         String s = state == null || state.isBlank() ? "?" : state.trim().toUpperCase(java.util.Locale.ROOT);
-        return pill(s, kindFor(s), glyphFor(s));
+        String label = stateLabel(s);
+        String pill = pill(label, kindFor(s), glyphFor(s));
+        return label.equals(s) ? pill : pill.replaceFirst("<span class=\"pill ", "<span title=\"" + Http.esc(s) + "\" class=\"pill ");
+    }
+
+    /** Libellé français d'un état de quête/story ; un état inconnu reste affiché tel quel. */
+    static String stateLabel(String state) {
+        return switch (state) {
+            case "NOT_STARTED" -> "Non commencée";
+            case "ACTIVE" -> "En cours";
+            case "READY_TO_TURN_IN" -> "À rendre";
+            case "COMPLETED" -> "Terminée";
+            case "ABANDONED" -> "Abandonnée";
+            default -> state;
+        };
     }
 
     /** Vivacité d'un agent (ONLINE / STALE / OFFLINE / UNKNOWN) — même langage visuel. */

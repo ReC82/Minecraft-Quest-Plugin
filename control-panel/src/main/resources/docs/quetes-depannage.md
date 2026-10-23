@@ -3,6 +3,7 @@ title: Résoudre les problèmes de quêtes
 category: Quêtes / Stories
 tags: [quete, quest, diagnostic, depannage, prerequis, giver, donneur, warning, error]
 order: 2
+related: [quetes, stories-depannage, dialogues-depannage]
 ---
 
 # Résoudre les problèmes de quêtes

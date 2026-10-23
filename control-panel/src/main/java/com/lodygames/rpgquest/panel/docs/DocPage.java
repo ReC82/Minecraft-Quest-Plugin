@@ -16,12 +16,14 @@ import java.util.List;
  * @param sourcePath  chemin de la ressource d'origine, pour affichage (« Source : … »)
  * @param commands    lignes de commande repérées dans la fiche (blocs de code + code inline
  *                    ressemblant à une commande) — utilisées par la recherche
+ * @param related     identifiants des fiches liées (front matter {@code related}, #780)
  */
 public record DocPage(String slug, String title, String category, List<String> tags, int order,
-                      String markdown, String sourcePath, List<String> commands) {
+                      String markdown, String sourcePath, List<String> commands, List<String> related) {
 
     public DocPage {
         tags = tags == null ? List.of() : List.copyOf(tags);
         commands = commands == null ? List.of() : List.copyOf(commands);
+        related = related == null ? List.of() : List.copyOf(related);
     }
 }

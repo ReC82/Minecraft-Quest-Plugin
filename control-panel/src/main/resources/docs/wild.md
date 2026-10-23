@@ -3,6 +3,7 @@ title: Wild — accès, Rune / Pierre de rappel, tests
 category: Wild
 tags: [wild, rune, rappel, pierre, retour, portail, worldportal, hub, test]
 order: 1
+related: [mondes, portails, claims]
 ---
 
 # Wild — accès et retour

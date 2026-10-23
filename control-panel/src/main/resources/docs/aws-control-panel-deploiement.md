@@ -3,6 +3,7 @@ title: Déployer / rollback le Control Panel (AWS)
 category: Déploiement / Rollback
 tags: [aws, plugadmin, control-panel, deploy, rollback, deploiement, health, nginx]
 order: 1
+related: [verygames-deploiement, serveur-depannage]
 ---
 
 # Control Panel (PlugAdmin) — déploiement AWS

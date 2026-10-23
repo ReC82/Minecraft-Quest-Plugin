@@ -3,6 +3,7 @@ title: Claims — obtenir un acte, tester, commandes admin
 category: Claims
 tags: [claim, claims, acte, deed, jo, tier1, test, wand, admin, resettier1, teleport, plugadmin]
 order: 1
+related: [wild, mondes, rpgquest-commandes]
 ---
 
 # Claims — parcours et tests

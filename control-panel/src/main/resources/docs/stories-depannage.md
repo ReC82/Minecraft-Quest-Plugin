@@ -3,6 +3,7 @@ title: Résoudre les problèmes de stories
 category: Quêtes / Stories
 tags: [story, storyline, diagnostic, depannage, chaine, quete, warning, error]
 order: 3
+related: [quetes, quetes-depannage, content-packs]
 ---
 
 # Résoudre les problèmes de stories

@@ -3,6 +3,7 @@ title: Résoudre les problèmes de PNJ
 category: PNJ / Citizens
 tags: [pnj, npc, diagnostic, depannage, binding, definition, citizens, warning, error]
 order: 2
+related: [pnj-citizens, citizens-commandes, dialogues-depannage]
 ---
 
 # Résoudre les problèmes de PNJ

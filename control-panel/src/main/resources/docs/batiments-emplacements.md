@@ -3,6 +3,7 @@ title: Emplacements de construction
 category: Bâtiments
 tags: [batiment, construction, emplacement, buildsite, ancre, orientation, outil, schematic]
 order: 1
+related: [batiments-bibliotheque, villes]
 ---
 
 # Emplacements de construction

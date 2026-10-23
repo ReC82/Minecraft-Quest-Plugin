@@ -3,6 +3,7 @@ title: Content packs — exporter, et faire générer du contenu par une IA
 category: Contenu
 tags: [content-pack, export, import, schema, json-schema, ia, ai, gabarit, template, contrat]
 order: 1
+related: [contenu-publier-sur-dev, quetes, dialogues]
 ---
 
 # Content packs

@@ -1,3 +1,11 @@
+---
+title: Groupes et droits effectifs
+category: Administration
+tags: [groupes, droits, permissions, rôle, comptes, plugadmin]
+related: [joueurs-admin, parametres-generaux]
+order: 2
+---
+
 # Groupes et droits effectifs
 
 Un **groupe** est un ensemble de permissions PlugAdmin attribuable à plusieurs comptes. Un compte

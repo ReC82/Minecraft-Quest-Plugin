@@ -3,6 +3,7 @@ title: Déployer, redémarrer, rollback sur VeryGames DEV
 category: VeryGames
 tags: [verygames, deploiement, deploy, restart, rollback, jar, auto-reboot, dev]
 order: 1
+related: [aws-control-panel-deploiement, exploitation-serveur, serveur-depannage]
 ---
 
 # VeryGames DEV — déploiement / redémarrage / rollback

@@ -7,7 +7,8 @@ import java.util.Locale;
 /**
  * Parseur minimal du <em>front matter</em> d'un document Markdown du centre de documentation
  * (issue #49). Volontairement pauvre — aucune dépendance YAML : seules les clés {@code title},
- * {@code category}, {@code tags}, {@code order} sont reconnues. Un Markdown <strong>sans</strong>
+ * {@code category}, {@code tags}, {@code order} et {@code related} (#780 : identifiants des fiches
+ * liées, même syntaxe que {@code tags}) sont reconnues. Un Markdown <strong>sans</strong>
  * bloc front matter reste valide ({@link #parse} renvoie des métadonnées vides + le corps entier).
  *
  * <p>Format attendu :</p>
@@ -20,14 +21,19 @@ import java.util.Locale;
  * ---
  * # Contenu Markdown…
  * </pre>
- * {@code tags} accepte aussi la forme liste sur plusieurs lignes ({@code - citizens}).
+ * {@code tags} (et {@code related}) acceptent aussi la forme liste sur plusieurs lignes ({@code - citizens}).
  */
 public final class DocFrontMatter {
 
     /** Métadonnées extraites. Champs absents → {@code null} / liste vide / {@code order == 1_000}. */
-    public record Meta(String title, String category, List<String> tags, int order) {
+    public record Meta(String title, String category, List<String> tags, int order, List<String> related) {
         public Meta {
             tags = tags == null ? List.of() : List.copyOf(tags);
+            related = related == null ? List.of() : List.copyOf(related);
+        }
+
+        public Meta(String title, String category, List<String> tags, int order) {
+            this(title, category, tags, order, List.of());
         }
     }
 
@@ -57,6 +63,7 @@ public final class DocFrontMatter {
         String title = null;
         String category = null;
         List<String> tags = new ArrayList<>();
+        List<String> related = new ArrayList<>();
         int order = DEFAULT_ORDER;
 
         String pendingListKey = null;
@@ -67,8 +74,8 @@ public final class DocFrontMatter {
             }
             if (pendingListKey != null && trimmed.startsWith("- ")) {
                 String value = clean(trimmed.substring(2));
-                if ("tags".equals(pendingListKey) && !value.isEmpty()) {
-                    tags.add(value.toLowerCase(Locale.ROOT));
+                if (!value.isEmpty()) {
+                    ("tags".equals(pendingListKey) ? tags : related).add(value.toLowerCase(Locale.ROOT));
                 }
                 continue;
             }
@@ -89,14 +96,15 @@ public final class DocFrontMatter {
                         // garde la valeur par défaut
                     }
                 }
-                case "tags" -> {
+                case "tags", "related" -> {
+                    List<String> target = "tags".equals(key) ? tags : related;
                     if (value.isEmpty()) {
-                        pendingListKey = "tags"; // liste sur les lignes suivantes
+                        pendingListKey = key; // liste sur les lignes suivantes
                     } else {
                         for (String t : value.replace("[", "").replace("]", "").split(",")) {
-                            String tag = clean(t).toLowerCase(Locale.ROOT);
-                            if (!tag.isEmpty()) {
-                                tags.add(tag);
+                            String item = clean(t).toLowerCase(Locale.ROOT);
+                            if (!item.isEmpty()) {
+                                target.add(item);
                             }
                         }
                     }
@@ -106,7 +114,7 @@ public final class DocFrontMatter {
                 }
             }
         }
-        return new Parsed(new Meta(title, category, tags, order), body.strip());
+        return new Parsed(new Meta(title, category, tags, order, related), body.strip());
     }
 
     /** Retire espaces, guillemets simples/doubles encadrants. */

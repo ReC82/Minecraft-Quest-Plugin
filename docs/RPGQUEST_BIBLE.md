@@ -4675,6 +4675,16 @@ centre de documentation : **`pnj-depannage`**, **`dialogues-depannage`**,
 *Ce que cela signifie / Pourquoi il faut corriger / Comment corriger /
 Vérification / Référence technique*.
 
+Les fiches du centre de documentation suivent un **gabarit commun** (#780,
+`docs/control-panel/DOCS_GABARIT.md`) vérifié par les tests du Control Panel :
+front matter `title` / `category` / `tags` / `related`, introduction avant le
+premier titre, listes sur 3 niveaux au plus, liens internes et ancres existants.
+Les ancres déjà publiées (liens des messages d'erreur, `DiagnosticHelp`) sont
+figées : une section peut être déplacée, pas renommée sans mettre à jour ses liens.
+Chaque fiche affiche un sommaire en tête (colonne fixe sur ordinateur), ses fiches
+liées et la fiche précédente / suivante ; la recherche ignore les accents et mène à
+la bonne section.
+
 La page **`/diagnostics`** (issue #38) centralise tous ces diagnostics — PNJ,
 dialogues, quêtes, stories, serveur/agent, mondes — en **un seul endroit trié**
 (erreurs d'abord), pour répondre à « que dois-je corriger maintenant ? » sans

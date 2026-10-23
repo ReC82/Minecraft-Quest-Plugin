@@ -3,6 +3,7 @@ title: Commandes Citizens utiles
 category: PNJ / Citizens
 tags: [citizens, npc, skin, commandes, rpgadmin]
 order: 2
+related: [pnj-citizens, pnj-depannage, rpgquest-commandes]
 ---
 
 # Commandes Citizens utiles

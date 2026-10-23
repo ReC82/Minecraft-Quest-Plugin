@@ -80,6 +80,69 @@ public final class DocLibrary {
         return map;
     }
 
+    /** Fiche précédente dans l'ordre d'affichage (catégorie, ordre, titre), vide pour la première. */
+    public Optional<DocPage> previous(DocPage page) {
+        int at = ordered.indexOf(page);
+        return at > 0 ? Optional.of(ordered.get(at - 1)) : Optional.empty();
+    }
+
+    /** Fiche suivante dans l'ordre d'affichage, vide pour la dernière. */
+    public Optional<DocPage> next(DocPage page) {
+        int at = ordered.indexOf(page);
+        return at >= 0 && at + 1 < ordered.size() ? Optional.of(ordered.get(at + 1)) : Optional.empty();
+    }
+
+    /**
+     * Fiches liées : celles déclarées dans {@code related} (ordre conservé, identifiants inconnus
+     * ignorés), puis les autres fiches qui citent celle-ci dans leur {@code related}.
+     */
+    public List<DocPage> related(DocPage page) {
+        Map<String, DocPage> out = new LinkedHashMap<>();
+        for (String slug : page.related()) {
+            bySlug(slug).filter(p -> !p.slug().equals(page.slug())).ifPresent(p -> out.put(p.slug(), p));
+        }
+        for (DocPage other : ordered) {
+            if (!other.slug().equals(page.slug()) && other.related().contains(page.slug())) {
+                out.putIfAbsent(other.slug(), other);
+            }
+        }
+        return List.copyOf(out.values());
+    }
+
+    /**
+     * Vérifie un lien du centre d'aide ({@code /docs/fiche}, {@code /docs/fiche#section},
+     * {@code #section} relatif à {@code from}, ou {@code /docs?q=…}). Renvoie la raison s'il est
+     * cassé, {@code null} s'il mène bien à une fiche (et à une section réellement rendue).
+     * Les liens externes ({@code https://…}) ne sont pas vérifiés.
+     */
+    public String brokenLinkReason(DocPage from, String href) {
+        if (href == null || href.startsWith("https://") || href.equals("/docs") || href.startsWith("/docs?")) {
+            return null;
+        }
+        String target;
+        String anchor;
+        if (href.startsWith("#")) {
+            target = from == null ? null : from.slug();
+            anchor = href.substring(1);
+        } else if (href.startsWith("/docs/")) {
+            String rest = href.substring("/docs/".length());
+            int hash = rest.indexOf('#');
+            target = hash < 0 ? rest : rest.substring(0, hash);
+            anchor = hash < 0 ? "" : rest.substring(hash + 1);
+        } else {
+            return "lien hors du centre d'aide";
+        }
+        Optional<DocPage> page = bySlug(target);
+        if (page.isEmpty()) {
+            return "fiche inconnue « " + target + " »";
+        }
+        if (!anchor.isEmpty() && Markdown.headings(page.get().markdown()).stream()
+                .noneMatch(h -> h.id().equals(anchor))) {
+            return "section « " + anchor + " » absente de la fiche " + target;
+        }
+        return null;
+    }
+
     public boolean isEmpty() {
         return ordered.isEmpty();
     }
@@ -141,7 +204,7 @@ public final class DocLibrary {
         }
         List<String> commands = extractCommands(body);
         return new DocPage(baseSlug, title, category, parsed.meta().tags(), parsed.meta().order(),
-                body, "control-panel/src/main/resources" + ROOT + fileName, commands);
+                body, "control-panel/src/main/resources" + ROOT + fileName, commands, parsed.meta().related());
     }
 
     /** Commandes repérées : lignes des blocs {@code ```} + code inline ressemblant à une commande. */

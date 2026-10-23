@@ -4,12 +4,13 @@ category: Bâtiments
 tags: [batiment, bibliotheque, schematic, placement, pose, rotation, emprise, worldedit, rollback,
        liberer, reorienter, remplacer, baseline, terrain, historique, tour, version]
 order: 2
+related: [batiments-emplacements, villes]
 ---
 
 # Bibliothèque de bâtiments, et poser un bâtiment
 
 Un **bâtiment** est ce qu'on peut poser : des dimensions, une ancre, une façade de référence, et un
-fichier `.schem`. Un **emplacement** (voir [Emplacements de construction](batiments-emplacements.md))
+fichier `.schem`. Un **emplacement** (voir [Emplacements de construction](batiments-emplacements))
 est l'endroit où on le pose. Ce sont deux choses séparées, et c'est voulu : le même bâtiment peut
 être posé sur plusieurs emplacements.
 

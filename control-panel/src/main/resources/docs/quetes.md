@@ -3,6 +3,7 @@ title: Lancer, compléter, réinitialiser une quête / story
 category: Quêtes / Stories
 tags: [quest, story, quete, complete, start, reset, advance, variable, ids]
 order: 1
+related: [quetes-depannage, stories-depannage, dialogues, content-packs]
 ---
 
 # Quêtes et stories — commandes admin

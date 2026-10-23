@@ -3,6 +3,7 @@ title: Résoudre les problèmes de serveur et d'agent
 category: Serveur
 tags: [serveur, agent, heartbeat, offline, online, monde, world, diagnostic, depannage, plugadmin]
 order: 2
+related: [exploitation-serveur, verygames-deploiement, aws-control-panel-deploiement]
 ---
 
 # Résoudre les problèmes de serveur et d'agent

@@ -3,6 +3,7 @@ title: Publier du contenu sur DEV
 category: Contenu
 tags: [publication, publier, dev, synchronise, source, conflit, rollback, reload, deploiement]
 order: 1
+related: [content-packs, dialogues, quetes, verygames-deploiement]
 ---
 
 # Publier du contenu sur DEV

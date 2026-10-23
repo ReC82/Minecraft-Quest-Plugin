@@ -43,6 +43,10 @@ public final class AccountStore implements AutoCloseable {
     public record AuditEntry(String action, String playerName, Instant at) {
     }
 
+    /** Session ouverte, sans son jeton : seulement ce que l'export peut montrer au titulaire. */
+    public record SessionInfo(Instant createdAt, Instant expiresAt) {
+    }
+
     /** Progression personnelle stockée (#53) : JSON déjà nettoyé par {@link LinkedProgress}. */
     public record StoredProgress(String payload, Instant generatedAt, Instant receivedAt) {
     }
@@ -112,6 +116,47 @@ public final class AccountStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Nouveau mot de passe ; toutes les autres sessions du compte sont révoquées, seule
+     * {@code keptTokenHash} (celle qui a fait le changement) reste ouverte.
+     */
+    public synchronized void changePassword(String accountId, String passwordHash, String keptTokenHash)
+            throws SQLException {
+        inTransaction(() -> {
+            try (PreparedStatement update = connection.prepareStatement(
+                    "UPDATE accounts SET password_hash = ? WHERE id = ?")) {
+                update.setString(1, passwordHash);
+                update.setString(2, accountId);
+                update.executeUpdate();
+            }
+            try (PreparedStatement revoke = connection.prepareStatement(
+                    "DELETE FROM sessions WHERE account_id = ? AND token_hash <> ?")) {
+                revoke.setString(1, accountId);
+                revoke.setString(2, keptTokenHash);
+                revoke.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    /**
+     * Suppression définitive : compte, sessions, défis, liaison, progression (en cascade) et
+     * historique de liaison (sans clé étrangère, effacé explicitement). {@code false} si le compte
+     * n'existait plus.
+     */
+    public synchronized boolean deleteAccount(String accountId) throws SQLException {
+        return inTransaction(() -> {
+            try (PreparedStatement audit = connection.prepareStatement("DELETE FROM link_audit WHERE account_id = ?")) {
+                audit.setString(1, accountId);
+                audit.executeUpdate();
+            }
+            try (PreparedStatement delete = connection.prepareStatement("DELETE FROM accounts WHERE id = ?")) {
+                delete.setString(1, accountId);
+                return delete.executeUpdate() == 1;
+            }
+        });
+    }
+
     // --- sessions --------------------------------------------------------------------------
 
     public synchronized void createSession(String tokenHash, String accountId, String csrfToken, Instant now,
@@ -143,6 +188,22 @@ public final class AccountStore implements AutoCloseable {
                 return Optional.of(new Session(rs.getString("account_id"), rs.getString("csrf_token"),
                         Instant.ofEpochMilli(rs.getLong("expires_at"))));
             }
+        }
+    }
+
+    public synchronized List<SessionInfo> sessionsOf(String accountId, Instant now) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT created_at, expires_at FROM sessions WHERE account_id = ? AND expires_at > ? ORDER BY created_at")) {
+            statement.setString(1, accountId);
+            statement.setLong(2, now.toEpochMilli());
+            List<SessionInfo> sessions = new ArrayList<>();
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    sessions.add(new SessionInfo(Instant.ofEpochMilli(rs.getLong("created_at")),
+                            Instant.ofEpochMilli(rs.getLong("expires_at"))));
+                }
+            }
+            return sessions;
         }
     }
 

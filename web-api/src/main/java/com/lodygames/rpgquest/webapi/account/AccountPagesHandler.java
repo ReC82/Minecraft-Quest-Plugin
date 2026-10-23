@@ -21,7 +21,8 @@ import java.util.Optional;
 
 /**
  * Pages {@code /compte} du portail (issue #53) : inscription, connexion, déconnexion, liaison et
- * dissociation du compte Minecraft. Rendu serveur, aucun script.
+ * dissociation du compte Minecraft, changement de mot de passe, export JSON et suppression
+ * définitive du compte. Rendu serveur, aucun script.
  *
  * <p>Protections : tout {@code POST} est refusé si son {@code Origin} n'est pas le portail ou s'il
  * est marqué {@code Sec-Fetch-Site: cross-site} ; il doit porter un jeton anti-CSRF — celui de la
@@ -40,7 +41,9 @@ public final class AccountPagesHandler implements ApiHandler {
             "inscrit-limite", "Compte créé, mais limité : l'accord d'un parent est nécessaire avant de relier ton "
                     + "compte Minecraft. Connecte-toi pour voir son état.",
             "delie", "Ton compte Minecraft a été délié. C'est noté dans l'historique ci-dessous.",
-            "deconnecte", "Tu es déconnecté.");
+            "deconnecte", "Tu es déconnecté.",
+            "motdepasse", "Mot de passe changé. Tes autres connexions ont été fermées.",
+            "supprime", "Ton compte a été supprimé, avec sa liaison et ta progression. Il n'en reste rien sur ce site.");
 
     private final AccountService accounts;
     private final String siteTitle;
@@ -84,6 +87,9 @@ public final class AccountPagesHandler implements ApiHandler {
                 case "/compte/deconnexion" -> logout(exchange, form);
                 case "/compte/lien" -> createChallenge(exchange, form);
                 case "/compte/delier" -> unlink(exchange, form);
+                case "/compte/motdepasse" -> changePassword(exchange, form);
+                case "/compte/export" -> export(exchange, form);
+                case "/compte/supprimer" -> deleteAccount(exchange, form);
                 default -> page(exchange, 404, "<p>Page introuvable.</p>");
             };
         } catch (SQLException e) {
@@ -191,6 +197,60 @@ public final class AccountPagesHandler implements ApiHandler {
         return redirect(exchange, "/compte?m=delie");
     }
 
+    private int changePassword(HttpExchange exchange, Map<String, String> form) throws IOException, SQLException {
+        Optional<AccountStore.Session> session = authenticated(exchange, form);
+        Optional<String> token = Cookies.read(exchange, Cookies.SESSION);
+        if (session.isEmpty() || token.isEmpty()) {
+            return csrfRefused(exchange);
+        }
+        String replacement = form.getOrDefault("nouveau", "");
+        if (!replacement.equals(form.getOrDefault("confirmation", ""))) {
+            return dashboard(exchange, 400, session.get(),
+                    error("Les deux nouveaux mots de passe ne sont pas identiques : rien n'a changé."));
+        }
+        AccountService.PasswordChange outcome = accounts.changePassword(session.get().accountId(), token.get(),
+                form.getOrDefault("actuel", ""), replacement);
+        return switch (outcome) {
+            case CHANGED -> redirect(exchange, "/compte?m=motdepasse");
+            case WRONG_PASSWORD -> dashboard(exchange, 403, session.get(),
+                    error("Mot de passe actuel incorrect : rien n'a changé."));
+            case WEAK_PASSWORD -> dashboard(exchange, 400, session.get(), error("Le nouveau mot de passe doit faire "
+                    + "au moins " + AccountService.MIN_PASSWORD_LENGTH
+                    + " caractères, être différent de l'identifiant et de l'ancien."));
+            case TOO_MANY -> dashboard(exchange, 429, session.get(),
+                    error("Trop d'essais avec un mauvais mot de passe : attends quelques minutes."));
+        };
+    }
+
+    /** Téléchargement JSON de toutes les données du compte ; {@code POST} + CSRF, jamais un lien. */
+    private int export(HttpExchange exchange, Map<String, String> form) throws IOException, SQLException {
+        Optional<AccountStore.Session> session = authenticated(exchange, form);
+        if (session.isEmpty()) {
+            return csrfRefused(exchange);
+        }
+        exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"lodyquests-compte.json\"");
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        HttpResponses.sendJson(exchange, 200, accounts.export(session.get().accountId()));
+        return 200;
+    }
+
+    private int deleteAccount(HttpExchange exchange, Map<String, String> form) throws IOException, SQLException {
+        Optional<AccountStore.Session> session = authenticated(exchange, form);
+        if (session.isEmpty()) {
+            return csrfRefused(exchange);
+        }
+        if (!"oui".equals(form.get("confirmer"))) {
+            return dashboard(exchange, 400, session.get(),
+                    error("Coche la case de confirmation pour supprimer ton compte : rien n'a changé."));
+        }
+        if (!accounts.deleteAccount(session.get().accountId(), form.getOrDefault("motdepasse", ""))) {
+            return dashboard(exchange, 403, session.get(),
+                    error("Mot de passe incorrect, ou trop d'essais : ton compte n'a pas été supprimé."));
+        }
+        Cookies.clear(exchange, Cookies.SESSION, secureCookies);
+        return redirect(exchange, "/compte?m=supprime");
+    }
+
     // --- affichage -------------------------------------------------------------------------
 
     private int show(HttpExchange exchange, String banner) throws IOException, SQLException {
@@ -281,9 +341,40 @@ public final class AccountPagesHandler implements ApiHandler {
             }
             body.append("</ul>");
         }
+        appendAccountManagement(body, csrf);
         body.append("<form method=\"post\" action=\"/compte/deconnexion\">").append(csrf)
                 .append("<p><button type=\"submit\">Se déconnecter</button></p></form>");
         return page(exchange, status, body.toString());
+    }
+
+    private static void appendAccountManagement(StringBuilder body, String csrf) {
+        body.append("<h2>Mon compte du portail</h2>")
+                .append("<h3>Changer de mot de passe</h3><form method=\"post\" action=\"/compte/motdepasse\">")
+                .append(csrf)
+                .append("<p><label>Mot de passe actuel<br><input type=\"password\" name=\"actuel\" "
+                        + "autocomplete=\"current-password\" required maxlength=\"128\"></label></p>"
+                        + "<p><label>Nouveau mot de passe (au moins " + AccountService.MIN_PASSWORD_LENGTH
+                        + " caractères)<br><input type=\"password\" name=\"nouveau\" autocomplete=\"new-password\" "
+                        + "required minlength=\"" + AccountService.MIN_PASSWORD_LENGTH + "\" maxlength=\"128\"></label></p>"
+                        + "<p><label>Nouveau mot de passe, encore une fois<br><input type=\"password\" "
+                        + "name=\"confirmation\" autocomplete=\"new-password\" required minlength=\""
+                        + AccountService.MIN_PASSWORD_LENGTH + "\" maxlength=\"128\"></label></p>"
+                        + "<p class=\"note\">Tes autres connexions (autre navigateur, autre appareil) seront fermées.</p>"
+                        + "<p><button type=\"submit\">Changer mon mot de passe</button></p></form>")
+                .append("<h3>Télécharger mes données</h3><form method=\"post\" action=\"/compte/export\">")
+                .append(csrf)
+                .append("<p class=\"note\">Un fichier JSON avec tout ce que ce site garde sur toi : ton compte, ta "
+                        + "liaison Minecraft, son historique et ta progression reçue. Jamais ton mot de passe.</p>"
+                        + "<p><button type=\"submit\">Télécharger mes données</button></p></form>")
+                .append("<h3>Supprimer mon compte</h3><form method=\"post\" action=\"/compte/supprimer\">")
+                .append(csrf)
+                .append("<p class=\"note\">C'est définitif : ton compte, ta liaison Minecraft, son historique et ta "
+                        + "progression sont effacés. Ta partie dans Minecraft ne change pas.</p>"
+                        + "<p><label><input type=\"checkbox\" name=\"confirmer\" value=\"oui\" required> "
+                        + "Je veux supprimer mon compte pour toujours</label></p>"
+                        + "<p><label>Confirme avec ton mot de passe<br><input type=\"password\" name=\"motdepasse\" "
+                        + "autocomplete=\"current-password\" required maxlength=\"128\"></label></p>"
+                        + "<p><button type=\"submit\">Supprimer mon compte</button></p></form>");
     }
 
     static String auditLabel(AccountStore.AuditEntry entry) {

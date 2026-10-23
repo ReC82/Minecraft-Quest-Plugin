@@ -6325,6 +6325,29 @@ seuil d'âge, jeton des deux côtés, `portal-link.properties` sur DEV, redémar
 10. `journalctl -u lodyquests-portal` et `latest.log` du serveur : aucun code ni jeton.
 11. Téléphone (≈ 390 px) : formulaires lisibles, aucun défilement horizontal.
 
+### TC-418 — Gestion du compte portail : mot de passe, export, suppression (issue #53 lot 7, PENDING MANUAL VALIDATION)
+
+Prérequis : portail issu du lot 7 de #53. Aucune donnée de jeu n'est modifiée par ce test.
+
+**A. Maintenant (comptes désactivés)**
+
+1.  https://lodyquests.lodylands.com/compte → toujours « pas encore ouverts », aucun formulaire.
+2.  `POST /compte/export` ou `/compte/supprimer` sans session (ex. `curl -X POST`) → 403 « Formulaire
+    expiré ou session terminée », rien d'autre.
+
+**B. Après ouverture par le propriétaire** (compte de test, TC-326 B réussi)
+
+3.  Section « Mon compte du portail » visible sous la liaison, lisible au téléphone (≈ 390 px).
+4.  Changer de mot de passe avec un ancien faux → « Mot de passe actuel incorrect », rien ne change.
+    Avec deux nouveaux différents → refus. Puis correctement → « Mot de passe changé » ; un second
+    navigateur connecté au même compte est déconnecté ; l'ancien mot de passe ne marche plus.
+5.  « Télécharger mes données » → fichier `lodyquests-compte.json` : identifiant, liaison (UUID,
+    pseudo), progression, historique, sessions ; aucun mot de passe, aucun jeton.
+6.  « Supprimer mon compte » sans cocher la case → refus ; mot de passe faux → refus. Puis case +
+    bon mot de passe → « Ton compte a été supprimé » ; reconnexion impossible ; en jeu, `/lien` avec
+    un nouveau compte web relie à nouveau le même joueur ; la partie Minecraft est inchangée.
+7.  `journalctl -u lodyquests-portal` : aucun mot de passe, aucun jeton.
+
 ### TC-417 — Progression personnelle du joueur relié sur `/compte` (issue #53 lot 6, PENDING MANUAL VALIDATION)
 
 Prérequis : portail et JAR issus du lot 6 de #53. Aucune donnée de jeu n'est modifiée par ce test.

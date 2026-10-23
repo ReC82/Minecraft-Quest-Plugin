@@ -260,4 +260,84 @@ class AccountServiceTest {
         assertFalse(raw.contains("motdepasse-alice"));
         store = new AccountStore(tempDir.resolve("accounts.db"));
     }
+
+    // --- gestion du compte (lot 7) ---------------------------------------------------------
+
+    @Test
+    void passwordChangeNeedsTheCurrentOneAndClosesOtherSessions() throws Exception {
+        String alice = registerAndLogin("alice");
+        AccountService.NewSession here = service.login("alice", "motdepasse-alice", "ip").orElseThrow();
+        AccountService.NewSession elsewhere = service.login("alice", "motdepasse-alice", "ip2").orElseThrow();
+
+        assertEquals(AccountService.PasswordChange.WRONG_PASSWORD,
+                service.changePassword(alice, here.token(), "faux", "nouveau-secret-1"));
+        assertEquals(AccountService.PasswordChange.WEAK_PASSWORD,
+                service.changePassword(alice, here.token(), "motdepasse-alice", "court"));
+        assertEquals(AccountService.PasswordChange.WEAK_PASSWORD,
+                service.changePassword(alice, here.token(), "motdepasse-alice", "motdepasse-alice"));
+        assertEquals(AccountService.PasswordChange.CHANGED,
+                service.changePassword(alice, here.token(), "motdepasse-alice", "nouveau-secret-1"));
+
+        assertTrue(service.session(here.token()).isPresent(), "la session qui a changé le mot de passe reste ouverte");
+        assertTrue(service.session(elsewhere.token()).isEmpty(), "les autres sessions sont révoquées");
+        assertTrue(service.login("alice", "motdepasse-alice", "ip3").isEmpty());
+        assertTrue(service.login("alice", "nouveau-secret-1", "ip3").isPresent());
+    }
+
+    @Test
+    void wrongCurrentPasswordsAreThrottledPerAccount() throws Exception {
+        String alice = registerAndLogin("alice");
+        AccountService.NewSession session = service.login("alice", "motdepasse-alice", "ip").orElseThrow();
+        for (int i = 0; i < 10; i++) {
+            service.changePassword(alice, session.token(), "faux-" + i, "nouveau-secret-1");
+        }
+        assertEquals(AccountService.PasswordChange.TOO_MANY,
+                service.changePassword(alice, session.token(), "motdepasse-alice", "nouveau-secret-1"));
+        assertFalse(service.deleteAccount(alice, "motdepasse-alice"), "même limite pour la suppression");
+        clock.advance(Duration.ofMinutes(16));
+        assertEquals(AccountService.PasswordChange.CHANGED,
+                service.changePassword(alice, session.token(), "motdepasse-alice", "nouveau-secret-1"));
+    }
+
+    @Test
+    void exportContainsEverythingKeptButNoSecret() throws Exception {
+        String alice = registerAndLogin("alice");
+        AccountService.NewSession session = service.login("alice", "motdepasse-alice", "ip").orElseThrow();
+        assertEquals(LinkOutcome.LINKED, service.confirmLink(newCode(alice), ALICE_UUID, "AliceMC"));
+
+        Map<String, Object> export = service.export(alice);
+        String json = com.lodygames.rpgquest.webapi.json.Json.write(export);
+        assertEquals("lodyquests-portal-account-export", export.get("format"));
+        assertTrue(json.contains("\"login\":\"alice\""));
+        assertTrue(json.contains(ALICE_UUID.toString()));
+        assertTrue(json.contains("\"action\":\"LINKED\""));
+        assertTrue(json.contains("\"openSessions\":[{"));
+        assertTrue(json.contains("\"progress\":null"), "aucune progression inventée");
+        String hash = store.findAccount(alice).orElseThrow().passwordHash();
+        assertFalse(json.contains(hash), "jamais l'empreinte du mot de passe");
+        assertFalse(json.contains(session.token()) || json.contains(SecureTokens.sha256(session.token())));
+        assertFalse(json.contains(session.csrfToken()));
+    }
+
+    @Test
+    void deletionErasesAccountLinkHistoryAndSessionsAndFreesTheUuid() throws Exception {
+        String alice = registerAndLogin("alice");
+        AccountService.NewSession session = service.login("alice", "motdepasse-alice", "ip").orElseThrow();
+        assertEquals(LinkOutcome.LINKED, service.confirmLink(newCode(alice), ALICE_UUID, "AliceMC"));
+
+        assertFalse(service.deleteAccount(alice, "faux"));
+        assertTrue(store.findAccount(alice).isPresent());
+        assertTrue(service.deleteAccount(alice, "motdepasse-alice"));
+
+        assertTrue(store.findAccount(alice).isEmpty());
+        assertTrue(store.findLink(alice).isEmpty());
+        assertTrue(store.auditOf(alice, 100).isEmpty(), "historique effacé");
+        assertTrue(service.session(session.token()).isEmpty(), "sessions révoquées");
+        assertFalse(service.isLinked(ALICE_UUID));
+        assertTrue(service.login("alice", "motdepasse-alice", "ip").isEmpty());
+
+        String bob = registerAndLogin("bob");
+        assertEquals(LinkOutcome.LINKED, service.confirmLink(newCode(bob), ALICE_UUID, "AliceMC"),
+                "l'UUID redevient libre");
+    }
 }

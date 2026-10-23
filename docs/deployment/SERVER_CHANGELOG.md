@@ -49,6 +49,30 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Gestion du compte portail : mot de passe, export, suppression (#53 lot 7, TC-418)
+
+### Changement
+
+Portail AWS seulement : sur `/compte`, changement de mot de passe (autres sessions fermées), export
+JSON des données du compte et suppression définitive du compte (liaison, progression, historique
+effacés). Aucun schéma nouveau (`accounts.db` reste en V2). Comptes toujours désactivés
+(`accounts-enabled=false`) : rien de visible aujourd'hui.
+
+### Action serveur
+
+Serveur Minecraft : **aucune** (pas de JAR, pas de configuration). Portail :
+`scripts/web-portal/deploy.sh`. nginx inchangé (les routes `/compte/*` passaient déjà).
+
+### Validation
+
+`/compte` → « pas encore ouverts » ; `POST /compte/export` sans session → 403. TC-418.
+
+### Rollback
+
+`scripts/web-portal/rollback.sh app` (release précédente du portail).
+
+---
+
 ## 2026-10-23 - Progression personnelle des joueurs reliés au portail (#53 lot 6, TC-417)
 
 ### Changement

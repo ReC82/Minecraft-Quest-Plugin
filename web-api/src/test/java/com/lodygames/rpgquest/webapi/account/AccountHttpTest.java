@@ -358,4 +358,82 @@ class AccountHttpTest {
 
         assertFalse(get("/compte", session).body().contains("Connecté en tant que"));
     }
+
+    @Test
+    void passwordChangeKeepsThisSessionAndClosesTheOthers() throws Exception {
+        start(true);
+        String session = registerAndLogin();
+        String other = registerAndLoginAgain();
+        String csrf = hidden(get("/compte", session).body(), "csrf");
+
+        assertEquals(400, post("/compte/motdepasse", session, form("csrf", csrf, "actuel", "motdepasse-alice",
+                "nouveau", "nouveau-secret-1", "confirmation", "autre-chose-1"), null).statusCode());
+        assertEquals(403, post("/compte/motdepasse", session, form("csrf", csrf, "actuel", "faux",
+                "nouveau", "nouveau-secret-1", "confirmation", "nouveau-secret-1"), null).statusCode());
+        assertEquals(403, post("/compte/motdepasse", session, form("csrf", "faux", "actuel", "motdepasse-alice",
+                "nouveau", "nouveau-secret-1", "confirmation", "nouveau-secret-1"), null).statusCode(), "CSRF");
+        HttpResponse<String> changed = post("/compte/motdepasse", session, form("csrf", csrf, "actuel",
+                "motdepasse-alice", "nouveau", "nouveau-secret-1", "confirmation", "nouveau-secret-1"), null);
+        assertEquals(303, changed.statusCode(), changed.body());
+        assertTrue(get("/compte?m=motdepasse", session).body().contains("Mot de passe changé"));
+        assertFalse(get("/compte", other).body().contains("Connecté en tant que"), "autre session fermée");
+    }
+
+    @Test
+    void exportDownloadsJsonOnlyWithAValidSession() throws Exception {
+        start(true);
+        String session = registerAndLogin();
+        link(session);
+        assertEquals("{\"result\":\"STORED\"}",
+                progress(LINK_TOKEN, progressBody("2026-11-20T10:00:00Z", "Combat")).body());
+        String csrf = hidden(get("/compte", session).body(), "csrf");
+
+        assertEquals(403, post("/compte/export", session, form("csrf", "faux"), null).statusCode());
+        assertEquals(403, post("/compte/export", null, form("csrf", csrf), null).statusCode());
+        HttpResponse<String> export = post("/compte/export", session, form("csrf", csrf), null);
+        assertEquals(200, export.statusCode());
+        assertTrue(export.headers().firstValue("Content-Type").orElse("").startsWith("application/json"));
+        assertTrue(export.headers().firstValue("Content-Disposition").orElse("").contains("attachment"));
+        assertEquals("no-store", export.headers().firstValue("Cache-Control").orElse(""));
+        assertTrue(export.body().contains("\"playerName\":\"AliceMC\""));
+        assertTrue(export.body().contains("\"level\":7"), "la progression reçue est incluse");
+        assertFalse(export.body().contains(csrf));
+    }
+
+    @Test
+    void deletionNeedsConfirmationAndPasswordThenErasesEverything() throws Exception {
+        start(true);
+        String session = registerAndLogin();
+        link(session);
+        progress(LINK_TOKEN, progressBody("2026-11-20T10:00:00Z", "Combat"));
+        String accountId = store.findAccountByLogin("alice").orElseThrow().id();
+        String csrf = hidden(get("/compte", session).body(), "csrf");
+
+        assertEquals(400, post("/compte/supprimer", session, form("csrf", csrf, "motdepasse", "motdepasse-alice"), null)
+                .statusCode(), "case non cochée");
+        assertEquals(403, post("/compte/supprimer", session,
+                form("csrf", csrf, "confirmer", "oui", "motdepasse", "faux"), null).statusCode());
+        assertTrue(store.findAccount(accountId).isPresent());
+
+        HttpResponse<String> deleted = post("/compte/supprimer", session,
+                form("csrf", csrf, "confirmer", "oui", "motdepasse", "motdepasse-alice"), null);
+        assertEquals(303, deleted.statusCode());
+        assertTrue(cookie(deleted, Cookies.SESSION).contains("Max-Age=0"));
+        assertTrue(store.findAccount(accountId).isEmpty());
+        assertTrue(store.findProgress(accountId).isEmpty());
+        assertEquals("{\"result\":\"NOT_LINKED\"}", progress(LINK_TOKEN, PROBE).body());
+        String after = get("/compte?m=supprime", session).body();
+        assertTrue(after.contains("Ton compte a été supprimé"));
+        assertFalse(after.contains("Connecté en tant que"));
+    }
+
+    /** Deuxième connexion d'« alice » (autre navigateur). */
+    private String registerAndLoginAgain() throws Exception {
+        HttpResponse<String> page = get("/compte", null);
+        String cookies = Cookies.FORM + "=" + cookieValue(page, Cookies.FORM);
+        HttpResponse<String> login = post("/compte/connexion", cookies, form("csrf", hidden(page.body(), "csrf"),
+                "identifiant", "alice", "motdepasse", "motdepasse-alice"), null);
+        assertEquals(303, login.statusCode());
+        return Cookies.SESSION + "=" + cookieValue(login, Cookies.SESSION);
+    }
 }

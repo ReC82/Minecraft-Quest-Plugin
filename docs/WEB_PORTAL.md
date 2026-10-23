@@ -44,7 +44,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | 3 | Acheminer l'instantané du serveur Minecraft vers AWS | #421 | **fait**, inactif : `POST /api/snapshot` (jeton dédié) + envoi par le plugin (`portal-snapshot.properties` hors Git) ; statut en quatre états (en ligne, hors ligne annoncé, non actualisé, inconnu). L'activation (`web-export.enabled`, jetons des deux côtés) reste une décision du propriétaire |
 | 4 | Publication des pseudos (`player-data-public=true`, `web-export` réactivé) | #55 → #56 | **attend la décision** du propriétaire (#55) ; seuls les joueurs ayant tapé `/profile web public` seraient publiés |
 | 5 | V1 publique : actualités, profils, premiers classements | #56 | **fait** (§8) : actualités en fichiers, classements lifetime / saison / événement, profils, infos & FAQ, SEO de base ; pseudos visibles seulement après 3 et 4 ; édition des actualités depuis PlugAdmin à faire |
-| 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | **fait**, désactivé (`accounts-enabled=false`) ; export et suppression de compte à faire avant ouverture ; validation navigateur + jeu à faire |
+| 6 | Comptes joueurs et liaison UUID par code en jeu | #53 | **fait**, désactivé (`accounts-enabled=false`) ; changement de mot de passe, export JSON et suppression du compte faits (lot 7) ; consentement parental et durée du journal à décider avant ouverture ; validation navigateur + jeu à faire |
 | 7 | Saisons et événements de classement, puis moteur d'événements | #54, #57 | modèle **fait** (§4 : fenêtres du journal d'XP, archivage figé, exclusions, `statistics.yml`) ; moteur #57 **fait** (§6 : journal d'activité générique, filtres, règles de classement, objectif commun, cycle de vie audité, récompenses déclaratives) ; back-office PlugAdmin à faire |
 | 8 | Entitlements : récompenses remises par le plugin | #422 | spécification **faite** ([REWARD_ENTITLEMENTS.md](REWARD_ENTITLEMENTS.md)) ; tranche 1 **faite**, désactivée (`entitlements.yml`, V41, remise unique, archive des événements, fiche joueur PlugAdmin) ; déclaration par le portail après #53 |
 | — | Premium (VIP, pass, boutique) | — | **hors périmètre** : après cadrage juridique et règles Minecraft ; `store-enabled=false` |
@@ -68,7 +68,23 @@ Une saisie de pseudo ou d'UUID ne prouve rien. La liaison se prouve **en jeu**.
    « Code invalide ou expiré » (sans dire lequel) ; sinon liaison `compte ↔ UUID`. Le joueur reçoit
    un message simple, jamais d'information sur le compte web ;
 5. la page `/compte` montre : relié ou non, pseudo, date de liaison, 10 dernières opérations, et
-   « Délier » (mot de passe exigé). Relier de nouveau exige un nouveau code.
+   « Délier » (mot de passe exigé). Relier de nouveau exige un nouveau code ;
+6. section « Mon compte du portail » (lot 7, 23/10/2026), formulaires `POST` + jeton CSRF de session :
+   - **changer de mot de passe** (`/compte/motdepasse`) : ancien mot de passe exigé, nouveau saisi
+     deux fois (10 caractères minimum, différent de l'identifiant et de l'ancien) ; toutes les
+     **autres** sessions du compte sont révoquées, celle qui a fait le changement reste ouverte ;
+   - **télécharger mes données** (`/compte/export`) : fichier `lodyquests-compte.json`
+     (`Content-Disposition: attachment`, `no-store`, `nosniff`), format
+     `lodyquests-portal-account-export` v1 — compte (id, identifiant, statut de consentement, date),
+     liaison (UUID, pseudo, date), progression reçue, historique complet des liaisons, sessions
+     ouvertes (dates seulement). Jamais d'empreinte de mot de passe, de jeton ni de code ;
+   - **supprimer mon compte** (`/compte/supprimer`) : case de confirmation **et** mot de passe ;
+     effacement **immédiat et définitif** dans `accounts.db` du compte, de ses sessions, défis,
+     liaison, progression et historique ; cookie effacé ; l'UUID redevient libre. La partie
+     Minecraft n'est pas touchée.
+
+   Un mot de passe actuel faux (changement, suppression, dissociation) compte dans la même limite
+   que la connexion : 10 échecs par compte / 15 min, puis refus même avec le bon mot de passe.
 
 ### Progression personnelle du joueur relié (lot 6, 23/10/2026)
 
@@ -129,12 +145,13 @@ Désactivé partout aujourd'hui. Pour ouvrir (après #55) :
    `location = /api/link/progress` de `scripts/web-portal/nginx-lodyquests-portal.conf` (avec
    `/api/snapshot`, seules routes `/api/` ouvertes).
 
-Avant l'ouverture publique restent à faire : export et suppression de compte, changement de mot de
-passe, demande de consentement parental, durée de conservation du journal (PRIVACY.md §4, §7).
+Avant l'ouverture publique restent à faire : demande de consentement parental, durée de
+conservation du journal des liaisons (PRIVACY.md §4, §7). Changement de mot de passe, export et
+suppression du compte sont faits (lot 7).
 
 ### Évolutions prévues, non réalisées
 
-Changement d'identifiant ou de mot de passe ; **récupération de compte par une nouvelle preuve en
+Changement d'identifiant ; **récupération de compte par une nouvelle preuve en
 jeu** (pas besoin d'e-mail) ; e-mail facultatif si un prestataire est choisi ; MFA ; OAuth/SSO ;
 plusieurs identités Minecraft par compte (la table de liaison devra alors perdre sa clé primaire
 sur le compte, l'unicité de l'UUID restant). La liaison fournira l'identité des inscriptions aux

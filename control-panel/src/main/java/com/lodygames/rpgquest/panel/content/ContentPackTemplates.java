@@ -306,7 +306,7 @@ public final class ContentPackTemplates {
                 dependencies:
                   # Déjà présente sur le serveur de référence : l'import doit le constater, pas le supposer.
                   quests:
-                    - rpgquest:first_steps
+                    - rpgquest:premiers_pas
                   # Fournis par le pack lui-même : l'import doit les reconnaître comme satisfaites.
                   npcs:
                     - tc110_mineur
@@ -325,7 +325,7 @@ public final class ContentPackTemplates {
                       secret: false
                       giver: tc110_mineur
                       prerequisites:
-                        - rpgquest:first_steps
+                        - rpgquest:premiers_pas
                       steps:
                         - id: parler_au_mineur
                           objectives:

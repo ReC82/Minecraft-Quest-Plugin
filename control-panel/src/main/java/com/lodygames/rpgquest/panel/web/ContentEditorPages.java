@@ -468,7 +468,7 @@ public final class ContentEditorPages {
         // -- Prérequis (issue #163 : sélection recherchable, plus de saisie d'id à la main) --
         sb.append(sectionOpen("lock", "Prérequis",
                 "Quêtes que le joueur doit avoir terminées avant de pouvoir démarrer celle-ci. "
-                        + "Chercher par titre (« Premiers pas ») ou par identifiant (« first_steps »)."));
+                        + "Chercher par titre (« La requête du bûcheron ») ou par identifiant (« woodcutters_request »)."));
         sb.append(multiSelect("prereq", "Quêtes prérequises",
                 // Sémantique explicite, demandée par le ticket : ce n'est NI une séquence, NI
                 // l'ordre des quêtes d'une story. L'ordre d'affichage n'a aucun effet moteur.
@@ -873,7 +873,7 @@ public final class ContentEditorPages {
         sb.append(iconBtn("del_q:" + i, "trash", "Retirer", S_SAVE, "sec-chain"));
         sb.append("</span></div><div class=\"form-grid\">");
         sb.append(text("q." + i, "Identifiant de quête", "Namespace « rpgquest: » optionnel — "
-                + "chercher par titre (« Premiers pas ») ou par id (« first_steps »).", id,
+                + "chercher par titre (« La requête du bûcheron ») ou par id (« woodcutters_request »).", id,
                 true, false, null, "dl-quest"));
         sb.append("</div></div>");
         return sb.toString();

@@ -259,7 +259,7 @@ class ContentPackContractTest {
         }
 
         Map<String, Object> dependencies = map(pack.get("dependencies"));
-        assertTrue(list(dependencies.get("quests")).contains("rpgquest:first_steps"),
+        assertTrue(list(dependencies.get("quests")).contains("rpgquest:premiers_pas"),
                 "la quête externe utilisée en prérequis doit être déclarée en dépendance");
         assertTrue(list(dependencies.get("npcs")).contains("tc110_mineur"),
                 "une dépendance satisfaite par le pack lui-même reste déclarée : l'import doit pouvoir "

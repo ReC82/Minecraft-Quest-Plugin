@@ -8449,6 +8449,29 @@ défaut figé une fois, jamais d'archive plus ancienne), `BoardCatalogExportTest
 UUID), `BoardCatalogPageTest` (liste blanche, filtres, bornes, ex aequo, démo étiquetée).
 **Non couvert** : comptage en jeu réel (partie A), rendu sur appareils réels.
 
+### TC-414-bis — Portail public : recherche de pseudo et XP globale de l'aperçu fictif (issue #56, PENDING MANUAL VALIDATION)
+
+Retour propriétaire du 23/10 (échec de la recherche `Brasier`, 5 200 XP contre 6 100 XP Combat). Portail AWS
+seul, navigateur seul, aucun test en jeu. Durée : 3 minutes. Acquis à ne pas régresser : TC-414 (navigation,
+podiums, mobile déclaré correct).
+
+1.  https://lodyquests.lodylands.com/demo/joueurs → saisir `Brasier` → « Chercher ». **Attendu** : fiche
+    `Demo_Brasier` (adresse `/demo/joueurs/Demo_Brasier`, bandeau « joueurs fictifs » toujours présent).
+2.  Recommencer avec `demo brasier`, puis `BRAS`. **Attendu** : même fiche.
+3.  Chercher `demo_`. **Attendu** : « 12 profils correspondent à « demo_ » », liens restant dans `/demo/`.
+4.  Chercher `Zorro`. **Attendu** : « Aucun profil public ne correspond à « Zorro » » sur la page de l'aperçu.
+5.  Fiche `Demo_Brasier`. **Attendu** : « XP globale : 5 200 XP » (même valeur que la liste et le classement
+    « XP globale » de l'aperçu), phrase « L'XP globale n'est pas la somme des pistes… », pistes 6 100 / 1 200 /
+    300 / 400 / 900, « Meilleur rang : 1er en XP Combat », médailles XP globale 5e … XP Combat 1er.
+6.  **Avis** sur #56 : la règle affichée est-elle claire, ou préfères-tu une XP globale égale à la somme des
+    pistes (changement de règle du jeu, hors portail) ?
+
+**Couverture automatisée** : `PublicPortalRefonteTest#demoListProfileAndBoardsShowTheSameValues` (12 joueurs
+fictifs : règle de l'XP globale, liste = fiche = classement, pistes, chaque médaille = rang du classement,
+meilleur rang) et `#demoSearchFindsFictionalPlayersByExactPartialOrSpacedNameWithoutLeavingTheDemo` (exact,
+casse, partiel, espaces, plusieurs résultats, aucun résultat, texte échappé, recherche réelle sans joueur
+fictif). Rendu public 1280 / 390 : 0 débordement, 0 message console.
+
 ### TC-414 — Portail public : refonte (accueil, événements, progression, podiums, fiches, aperçu fictif) (issue #56, PENDING MANUAL VALIDATION)
 
 Portail AWS seul (https://lodyquests.lodylands.com), aucun JAR, aucune migration. `player-data-public` reste

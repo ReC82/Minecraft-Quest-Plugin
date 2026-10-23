@@ -384,3 +384,7 @@ Le propriétaire a cliqué « Recharger depuis DEV » depuis l'éditeur « Dialo
 
 ### Validation propriétaire — 23/10/2026, TC-302 étape 11
 Le propriétaire confirme « ok ça marche comme attendu » après la consigne : être OP, exécuter `/rpgadmin bypass off`, tenter de casser un bloc ordinaire du Hub. **Résultat validé : OP + bypass OFF ne casse pas de bloc du Hub**. Validation limitée à ce scénario ; pas encore de preuve du comportement bypass ON, du retour OFF, de la pose, des protections décoratives ou du builder non OP. #35 reste ouvert en attendant les étapes suivantes. Ne pas refaire le contrôle OFF initial sans régression.
+
+
+### Validation propriétaire — 23/10/2026, TC-302 étape 12
+Après validation de OP + bypass OFF, le propriétaire confirme « ça fonctionne » pour `/rpgadmin bypass on` : il peut **casser puis replacer un bloc ordinaire du Hub**. Parcours ON validé manuellement ; bloc restauré. **Test suivant : repasser immédiatement en bypass OFF et vérifier le refus de casse/pose**, sans modifier d'autres droits. Ne pas clôturer #35 à ce stade ; autres protections avancées et builder non OP non validés manuellement.

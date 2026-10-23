@@ -65,11 +65,22 @@ public interface AgentActions {
      *
      * <p>{@code giverId} / {@code giverName} (#75) : PNJ donneur, {@code null} si la quête n'en
      * déclare pas ({@code giver:} optionnel dans le YAML).</p>
+     *
+     * <p>{@code icon} (#428) : material de l'icône de la quête ({@code icon:} du YAML), pour la tuile
+     * pixel art de PlugAdmin ; {@code null} si inconnu (le panel retombe alors sur le premier objectif).</p>
      */
     record QuestSummary(String id, String title, String category, boolean repeatable,
                         List<String> prerequisites, List<QuestStepSummary> steps, List<String> rewards,
                         List<RewardSummary> rewardDetails, String giverId, String giverName,
-                        long cooldownSeconds, String period) {
+                        long cooldownSeconds, String period, String icon) {
+
+        /** Sans icône (constructeur d'avant l'issue #428). */
+        QuestSummary(String id, String title, String category, boolean repeatable, List<String> prerequisites,
+                     List<QuestStepSummary> steps, List<String> rewards, List<RewardSummary> rewardDetails,
+                     String giverId, String giverName, long cooldownSeconds, String period) {
+            this(id, title, category, repeatable, prerequisites, steps, rewards, rewardDetails, giverId, giverName,
+                    cooldownSeconds, period, null);
+        }
 
         /** Quête non périodique (constructeur d'avant l'issue #15 lot 2). */
         QuestSummary(String id, String title, String category, boolean repeatable, List<String> prerequisites,

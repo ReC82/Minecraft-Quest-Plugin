@@ -147,6 +147,8 @@ class QuestsCatalogTest {
         assertTrue(cat.contains("#lq-xp\"") && cat.contains("#lq-sword\""), "récompenses XP et épée");
         assertTrue(cat.contains("aria-hidden=\"true\""), "icône décorative, le libellé porte le sens");
         assertTrue(cat.contains("data-copy=\"SPIDER\""), "jeton technique de la cible conservé");
+        // #428 phase 2c : tuile d'en-tête ; sans icon: dans le payload (agent ancien), celle du 1er objectif
+        assertTrue(cat.contains("<span class=\"npc-head-main\"><span class=\"lq-tile\">"), "tuile d'en-tête");
 
         // #78 : récompenses depuis la structure
         assertTrue(cat.contains("+100 XP"), "XP");

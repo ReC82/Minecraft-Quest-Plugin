@@ -434,6 +434,10 @@ public final class AgentActionExecutor {
                 if (q.period() != null && !q.period().isBlank()) {
                     row.put("period", q.period());
                 }
+                // #428 : material de l'icône, pour la tuile pixel art de PlugAdmin.
+                if (q.icon() != null && !q.icon().isBlank()) {
+                    row.put("icon", q.icon());
+                }
                 row.put("prerequisites", q.prerequisites());
                 // #75 : PNJ donneur, seulement s'il est déclaré (giver: optionnel dans le YAML).
                 if (q.giverId() != null && !q.giverId().isBlank()) {

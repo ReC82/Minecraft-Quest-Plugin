@@ -655,9 +655,13 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, new CombatXpListener(
                 plugin, progressionService, mobService, () -> configService.current().progression())));
         // Issue #57 : journal d'activité générique des événements (un listener pour tous les concours).
-        registry.start(new PlayerListenerService(plugin, new com.lodygames.rpgquest.stats.ActivityListener(plugin,
+        var activityListener = new com.lodygames.rpgquest.stats.ActivityListener(plugin,
                 new com.lodygames.rpgquest.database.ActivityLogRepository(databaseService.databaseManager()),
-                mobService, adminBypassMode, plugin.getSLF4JLogger())));
+                mobService, adminBypassMode, plugin.getSLF4JLogger());
+        // Issue #734 : blocs cassés (jamais un bloc posé par un joueur) et quêtes terminées.
+        activityListener.usePlacedBlocks(placedBlockTracker);
+        questProgressEngine.onQuestCompleted(activityListener::questCompleting);
+        registry.start(new PlayerListenerService(plugin, activityListener));
         registry.start(new PlayerListenerService(plugin, new MiningXpListener(
                 progressionService, placedBlockTracker, () -> configService.current().progression())));
         registry.start(new PlayerListenerService(plugin, new FarmingXpListener(

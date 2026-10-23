@@ -1,0 +1,65 @@
+# Familles de cibles des classements (issue #734) — lues depuis le JAR, jamais copiées sur le serveur.
+#
+# Une famille regroupe des noms d'énumération Paper 1.21.11 (EntityType pour « entity », Material
+# pour « block »). Un classement filtre par famille (filter: {entity-family: [zombies]}) au lieu de
+# lister chaque variante. Chaque nom est vérifié contre Paper au chargement et par les tests
+# (StatDimensionsTest) : un nom inconnu est signalé, jamais compté en silence.
+#
+# Pour les blocs, « suffix » ajoute tous les matériaux dont le nom finit ainsi (DEEPSLATE_IRON_ORE…).
+# Les familles d'entités « hostile », « passive », « neutral » et « boss » sont générées depuis les
+# classes Paper (Enemy, Animals…) : elles ne se déclarent pas ici.
+entity:
+  zombies:
+    label: "Zombies"
+    members: [ZOMBIE, HUSK, DROWNED, ZOMBIE_VILLAGER, ZOMBIFIED_PIGLIN, ZOGLIN, ZOMBIE_HORSE, ZOMBIE_NAUTILUS]
+  skeletons:
+    label: "Squelettes"
+    members: [SKELETON, STRAY, BOGGED, PARCHED, WITHER_SKELETON, SKELETON_HORSE]
+  spiders:
+    label: "Araignées"
+    members: [SPIDER, CAVE_SPIDER]
+  creepers:
+    label: "Creepers"
+    members: [CREEPER]
+  endermen:
+    label: "Endermen"
+    members: [ENDERMAN, ENDERMITE]
+  illagers:
+    label: "Illageois"
+    members: [PILLAGER, VINDICATOR, EVOKER, ILLUSIONER, RAVAGER, VEX, WITCH]
+  slimes:
+    label: "Slimes et cubes de magma"
+    members: [SLIME, MAGMA_CUBE]
+  nether:
+    label: "Créatures du Nether"
+    members: [BLAZE, GHAST, PIGLIN, PIGLIN_BRUTE, HOGLIN, STRIDER, WITHER_SKELETON, MAGMA_CUBE]
+  ocean:
+    label: "Gardiens et noyés"
+    members: [GUARDIAN, ELDER_GUARDIAN, DROWNED]
+  flying:
+    label: "Créatures volantes"
+    members: [PHANTOM, GHAST, BREEZE, VEX, BLAZE]
+block:
+  ores:
+    label: "Minerais"
+    suffix: [_ORE]
+    members: [ANCIENT_DEBRIS]
+  logs:
+    label: "Bois"
+    suffix: [_LOG, _WOOD, _HYPHAE]
+    members: [CRIMSON_STEM, WARPED_STEM, STRIPPED_CRIMSON_STEM, STRIPPED_WARPED_STEM]
+  stone:
+    label: "Pierre et roches"
+    members: [STONE, COBBLESTONE, MOSSY_COBBLESTONE, DEEPSLATE, COBBLED_DEEPSLATE, GRANITE, DIORITE, ANDESITE,
+              TUFF, CALCITE, DRIPSTONE_BLOCK, NETHERRACK, BLACKSTONE, BASALT, END_STONE, SANDSTONE, RED_SANDSTONE]
+  earth:
+    label: "Terre, sable et gravier"
+    members: [DIRT, GRASS_BLOCK, COARSE_DIRT, ROOTED_DIRT, PODZOL, MYCELIUM, MUD, CLAY, SAND, RED_SAND, GRAVEL,
+              SOUL_SAND, SOUL_SOIL, SNOW_BLOCK, SNOW]
+  crops:
+    label: "Récoltes"
+    members: [WHEAT, CARROTS, POTATOES, BEETROOTS, NETHER_WART, COCOA, SWEET_BERRY_BUSH, MELON, PUMPKIN,
+              SUGAR_CANE, CACTUS, BAMBOO, KELP, KELP_PLANT, TORCHFLOWER_CROP, PITCHER_CROP]
+  leaves:
+    label: "Feuillages"
+    suffix: [_LEAVES]

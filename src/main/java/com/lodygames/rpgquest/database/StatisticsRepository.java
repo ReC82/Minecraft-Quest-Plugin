@@ -67,12 +67,12 @@ public final class StatisticsRepository {
                                                       PublicProfilePolicy.Visibility visibility,
                                                       Collection<UUID> excluded, Collection<String> excludedReasons) {
         requireWindowed(metric);
-        String sql = "SELECT p.last_name AS name, " + aggregate(period) + " AS total "
+        String sql = "SELECT p.last_name AS name, " + aggregate(period, metric) + " AS total "
                 + "FROM " + source(metric) + " g JOIN player_profiles p ON p.uuid = g.player_uuid "
                 + "WHERE " + windowFilter(period, metric, excludedReasons)
                 + " AND " + PublicProfilePolicy.visible("p", visibility)
                 + notIn("p.uuid", excluded.size())
-                + " GROUP BY p.uuid, p.last_name HAVING " + aggregate(period) + " > 0"
+                + " GROUP BY p.uuid, p.last_name HAVING " + aggregate(period, metric) + " > 0"
                 + " ORDER BY total " + period.rules().ranking().order().name() + ", p.last_name ASC, p.uuid ASC LIMIT ?";
         return database.execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -91,7 +91,7 @@ public final class StatisticsRepository {
     public CompletableFuture<Long> communityTotal(StatPeriod period, StatMetric metric, Collection<UUID> excluded,
                                                   Collection<String> excludedReasons) {
         requireWindowed(metric);
-        String sql = "SELECT COALESCE(SUM(g.amount), 0) AS total FROM " + source(metric) + " g WHERE "
+        String sql = "SELECT COALESCE(SUM(" + metric.source().amount() + "), 0) AS total FROM " + source(metric) + " g WHERE "
                 + windowFilter(period, metric, excludedReasons) + notIn("g.player_uuid", excluded.size());
         return database.execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -176,9 +176,9 @@ public final class StatisticsRepository {
             for (String metricId : period.metrics()) {
                 StatMetric metric = StatMetric.find(metricId).orElseThrow();
                 String sql = "INSERT INTO stat_period_results (period_id, metric, player_uuid, stat_value) "
-                        + "SELECT ?, ?, g.player_uuid, " + aggregate(period) + " FROM " + source(metric) + " g WHERE "
+                        + "SELECT ?, ?, g.player_uuid, " + aggregate(period, metric) + " FROM " + source(metric) + " g WHERE "
                         + windowFilter(period, metric, excludedReasons) + " GROUP BY g.player_uuid HAVING "
-                        + aggregate(period) + " > 0";
+                        + aggregate(period, metric) + " > 0";
                 try (PreparedStatement statement = connection.prepareStatement(sql)) {
                     statement.setString(1, period.id());
                     statement.setString(2, metric.id());
@@ -306,64 +306,101 @@ public final class StatisticsRepository {
         }
     }
 
-    /** Journal lu pour une métrique : l'XP ({@code xp_grants}) ou l'activité générique (#57). */
+    /** Table lue pour une métrique : sa {@link StatMetric.Source} (XP, activité, découvertes… #734). */
     private static String source(StatMetric metric) {
-        return metric.xpSkill() != null ? "xp_grants" : "stat_activity_log";
+        return metric.source().table();
     }
 
     /**
-     * Filtre SQL d'une fenêtre. Les colonnes de filtre viennent du catalogue des métriques
-     * ({@link StatMetric#filters()}), jamais du fichier ; seules les valeurs sont des paramètres.
+     * Filtre SQL d'une fenêtre. Tables, colonnes et conditions viennent du catalogue des métriques
+     * ({@link StatMetric#source()}, {@link StatMetric#filters()}), jamais du fichier ; seules les
+     * valeurs (clé, bornes, filtres, raisons exclues) sont des paramètres.
      */
     private static String windowFilter(StatPeriod period, StatMetric metric, Collection<String> excludedReasons) {
-        if (metric.xpSkill() == null) {
-            StringBuilder sql = new StringBuilder("g.action = ? AND g.created_at >= ? AND g.created_at < ?");
-            for (Map.Entry<String, List<String>> filter : filters(period, metric).entrySet()) {
-                sql.append(" AND g.").append(filter.getKey()).append(" IN (")
-                        .append(String.join(", ", java.util.Collections.nCopies(filter.getValue().size(), "?"))).append(')');
-            }
-            return sql.toString();
+        StatMetric.Source source = metric.source();
+        StringBuilder sql = new StringBuilder();
+        if (source.keyColumn() != null) {
+            sql.append("g.").append(source.keyColumn()).append(" = ? AND ");
         }
-        String reasons = excludedReasons.isEmpty() ? ""
-                : " AND (g.reason IS NULL OR g.reason NOT IN ("
-                + String.join(", ", java.util.Collections.nCopies(excludedReasons.size(), "?")) + "))";
-        return "g.skill = ? AND g.created_at >= ? AND g.created_at < ?" + reasons;
+        sql.append("g.").append(source.timeColumn()).append(" >= ? AND g.").append(source.timeColumn()).append(" < ?");
+        if (source.condition() != null) {
+            sql.append(" AND ").append(source.condition());
+        }
+        for (Map.Entry<String, List<String>> filter : filters(period, metric).entrySet()) {
+            sql.append(" AND g.").append(filter.getKey()).append(" IN (")
+                    .append(String.join(", ", java.util.Collections.nCopies(filter.getValue().size(), "?"))).append(')');
+        }
+        if (source.xp() && !excludedReasons.isEmpty()) {
+            sql.append(" AND (g.reason IS NULL OR g.reason NOT IN (")
+                    .append(String.join(", ", java.util.Collections.nCopies(excludedReasons.size(), "?"))).append("))");
+        }
+        return sql.toString();
     }
 
     private static int bindWindow(PreparedStatement statement, int index, StatPeriod period, StatMetric metric,
                                   Collection<String> excludedReasons) throws SQLException {
-        statement.setString(index++, metric.xpSkill() != null ? metric.xpSkill().name() : metric.activity());
+        StatMetric.Source source = metric.source();
+        if (source.keyColumn() != null) {
+            statement.setString(index++, source.key());
+        }
         statement.setString(index++, BOUND.format(period.start()));
         statement.setString(index++, BOUND.format(period.end()));
-        if (metric.xpSkill() == null) {
-            for (List<String> values : filters(period, metric).values()) {
-                for (String value : values) {
-                    statement.setString(index++, value);
-                }
+        for (List<String> values : filters(period, metric).values()) {
+            for (String value : values) {
+                statement.setString(index++, value);
             }
-            return index;
         }
-        for (String reason : excludedReasons) {
-            statement.setString(index++, reason);
+        if (source.xp()) {
+            for (String reason : excludedReasons) {
+                statement.setString(index++, reason);
+            }
         }
         return index;
     }
 
-    /** Colonne du journal → valeurs acceptées, dans un ordre stable (même SQL, mêmes paramètres). */
+    /** Colonne de la source → valeurs acceptées, dans un ordre stable (même SQL, mêmes paramètres). */
     private static Map<String, List<String>> filters(StatPeriod period, StatMetric metric) {
-        Map<String, List<String>> byColumn = new TreeMap<>();
+        Map<String, java.util.SortedSet<String>> byColumn = new TreeMap<>();
         for (Map.Entry<String, java.util.Set<String>> filter : period.rules().filter().entrySet()) {
             String column = metric.filters().get(filter.getKey());
             if (column != null && !filter.getValue().isEmpty()) {
-                byColumn.computeIfAbsent(column, k -> new ArrayList<>()).addAll(filter.getValue());
+                // Deux clés sur la même colonne (entity + entity-family) s'additionnent : « l'un OU l'autre ».
+                byColumn.computeIfAbsent(column, k -> new java.util.TreeSet<>()).addAll(filter.getValue());
             }
         }
-        byColumn.values().forEach(values -> values.sort(null));
-        return byColumn;
+        Map<String, List<String>> sorted = new TreeMap<>();
+        byColumn.forEach((column, values) -> sorted.put(column, List.copyOf(values)));
+        return sorted;
     }
 
-    private static String aggregate(StatPeriod period) {
-        return (period.rules().ranking().aggregation() == StatMetric.Aggregation.MAX ? "MAX" : "SUM") + "(g.amount)";
+    private static String aggregate(StatPeriod period, StatMetric metric) {
+        return (period.rules().ranking().aggregation() == StatMetric.Aggregation.MAX ? "MAX" : "SUM")
+                + "(" + metric.source().amount() + ")";
+    }
+
+    /**
+     * Premier horodatage connu d'une métrique (#734) : « suivi depuis ». {@code null} si la source est
+     * vide — jamais une date inventée. Lit l'index {@code (action, created_at)} du journal d'activité.
+     */
+    public CompletableFuture<Instant> trackedSince(StatMetric metric) {
+        requireWindowed(metric);
+        StatMetric.Source source = metric.source();
+        String sql = "SELECT MIN(g." + source.timeColumn() + ") AS first FROM " + source.table() + " g"
+                + (source.keyColumn() != null || source.condition() != null ? " WHERE " : "")
+                + (source.keyColumn() != null ? "g." + source.keyColumn() + " = ?" : "")
+                + (source.keyColumn() != null && source.condition() != null ? " AND " : "")
+                + (source.condition() != null ? source.condition() : "");
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                if (source.keyColumn() != null) {
+                    statement.setString(1, source.key());
+                }
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    String first = resultSet.next() ? resultSet.getString("first") : null;
+                    return first == null ? null : Instant.parse(first);
+                }
+            }
+        });
     }
 
     private static void requireWindowed(StatMetric metric) {

@@ -134,12 +134,48 @@ public final class StatisticsService implements PluginService {
                     pending.add(audit(period, state, now));
                 }
             }
+            for (StatPeriod window : endedBoardWindows(current, now)) {
+                if (!done.contains(window.id())) {
+                    pending.add(repository.archive(window, current.excludedXpReasons(), now).thenAccept(created -> {
+                        synchronized (nowArchived) {
+                            nowArchived.add(window.id());
+                        }
+                        if (created) {
+                            logger.info("Statistiques : classement « {} » terminé, résultats figés.", window.id());
+                        }
+                    }));
+                }
+            }
             return CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
                     .thenRun(() -> archived = Set.copyOf(nowArchived));
         }).exceptionally(error -> {
             logger.warn("Statistiques : archivage des périodes impossible, nouvel essai à la prochaine minute.", error);
             return null;
         });
+    }
+
+    /**
+     * Fenêtres de classement (#734) terminées à figer : la dernière d'un classement de calendrier
+     * (hier, la semaine ou le mois précédent), et la fenêtre d'un classement de saison ou à dates
+     * fixes une fois finie. Jamais d'historique plus ancien : seule une fenêtre réellement observée
+     * par le serveur est archivée.
+     */
+    static List<StatPeriod> endedBoardWindows(StatisticsDefinition definition, Instant now) {
+        List<StatPeriod> windows = new ArrayList<>();
+        java.util.Optional<StatPeriod> season = definition.currentSeason(now);
+        for (StatBoard board : definition.boards()) {
+            if (!board.statMetric().windowed()) {
+                continue;
+            }
+            if (board.period().calendar()) {
+                board.previous(now, definition.zone()).ifPresent(window -> windows.add(board.periodFor(window)));
+            } else if (board.period() != BoardPeriod.LIFETIME) {
+                board.current(now, definition.zone(), season)
+                        .filter(window -> !now.isBefore(window.end()))
+                        .ifPresent(window -> windows.add(board.periodFor(window)));
+            }
+        }
+        return windows;
     }
 
     /** Une transition n'est notée (et annoncée) qu'une fois, au premier tick qui l'observe. */
@@ -169,7 +205,8 @@ public final class StatisticsService implements PluginService {
         }
         loadedModified = modified;
         if (modified < 0) {
-            definition = StatisticsDefinition.EMPTY;
+            // Aucun fichier : aucune saison ni aucun événement, mais le catalogue de classements du JAR (#734).
+            definition = StatisticsDefinitionLoader.load(new YamlConfiguration()).definition();
             return;
         }
         YamlConfiguration yaml = new YamlConfiguration();

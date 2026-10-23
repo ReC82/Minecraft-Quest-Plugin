@@ -72,7 +72,7 @@ public final class StatLabels {
             return catalogTitle;
         }
         if (metric.equals("RPG_XP_GLOBAL")) {
-            return "Expérience totale";
+            return "XP globale";
         }
         if (metric.startsWith("RPG_XP_")) {
             return "XP " + label(metric.substring("RPG_XP_".length()));
@@ -93,6 +93,14 @@ public final class StatLabels {
             default -> "XP";
         };
     }
+
+    /**
+     * Règle affichée partout où l'XP globale côtoie les pistes (#56) : la piste {@code GLOBAL} est une piste à part
+     * entière, alimentée par un miroir des autres pistes et par les quêtes (docs/PROGRESSION.md) — ce n'est pas
+     * leur somme.
+     */
+    public static final String GLOBAL_XP_RULE = "L'XP globale n'est pas la somme des pistes : chaque piste y verse "
+            + "une part de son XP (la moitié par défaut) et chaque quête terminée y ajoute sa récompense.";
 
     /** Libellé français d'une piste de progression ; la clé brute si elle est inconnue. */
     public static String label(String skill) {

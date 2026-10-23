@@ -51,7 +51,8 @@ public final class LinkedProgressView {
                 .append("</span><div>");
         progress.skills().stream().filter(skill -> skill.skill().equals("GLOBAL")).findFirst().ifPresent(global ->
                 html.append("<p><span class=\"big\">Niveau ").append(global.level()).append("</span> — ")
-                        .append(StatLabels.number(global.xp())).append(" XP d'expérience totale</p>"));
+                        .append(StatLabels.number(global.xp())).append(" XP globale</p><p class=\"note\">")
+                        .append(StatLabels.GLOBAL_XP_RULE).append("</p>"));
         LinkedProgress.Standing quests = progress.quests();
         html.append("<p>").append(PortalIcons.icon("scroll", 16)).append(" <strong>")
                 .append(StatLabels.number(quests.value())).append("</strong> ")

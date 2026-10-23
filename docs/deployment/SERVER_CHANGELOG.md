@@ -49,6 +49,32 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Catalogue de classements par périodes (#734, TC-415)
+
+### Changement
+
+Classements déclaratifs (`leaderboards:` de `statistics.yml`, sinon 23 classements par défaut lus dans
+le JAR) : mobs par famille, blocs cassés, minerais, bois, récoltes, pêche, waypoints / villes / pierres
+de voyage découverts, quêtes et histoires terminées, XP RPG ; par jour, semaine, mois (Europe/Brussels),
+saison, dates ou depuis toujours. Nouvelles lignes du journal d'activité : `BLOCK_BREAK` (jamais un bloc
+posé par un joueur, ni une casse refusée, ni en créatif) et `QUEST_COMPLETION`. La dernière fenêtre
+terminée de chaque classement est figée chaque minute dans `stat_period_results` (`board_<id>_<clé>`).
+Portail : `/classements/tous` (non publié tant que #55) et aperçu fictif `/demo/classements/tous` — PR #765.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement (fait par Claude le 23/10/2026 03:54, merge `65e03067`, SHA-256
+`b15db03a…` retéléchargé identique, backup `rpgquest-20261023T015411Z-predeploy.jar` du JAR `80acb4ae`),
+puis redémarrage DEV (0 joueur) ; RPGQuest vert dans `/plugins`. **Aucune migration**, aucune
+configuration : `statistics.yml` reste absent, `web-export.enabled` reste `false`. Portail AWS redéployé
+(`65e0306`, release précédente `releases/20261023-035334`).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` (JAR `80acb4ae`) puis redémarrage ; les lignes `BLOCK_BREAK` /
+`QUEST_COMPLETION` et les archives `board_…` restent inertes pour l'ancien JAR. Portail :
+`scripts/web-portal/rollback.sh app`.
+
 ## 2026-10-23 - Icône des quêtes dans quest.list et tuiles PlugAdmin (#428 phase 2c, TC-413)
 
 ### Changement

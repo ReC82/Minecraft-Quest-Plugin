@@ -48,7 +48,7 @@ public final class LeaderboardPages {
     /**
      * @param details     dernier {@code leaderboard.catalog.status} réussi ({@code null} = jamais relevé)
      * @param preview     dernier {@code leaderboard.preview} réussi ({@code null} = aucun)
-     * @param previewWhen date de cet aperçu (texte)
+     * @param previewWhen date de cet aperçu (HTML sûr, {@code <time>})
      * @param headerHtml  sélecteur d'agent + barre « Rafraîchir » (HTML sûr)
      * @param canWrite    droit {@code LEADERBOARD_WRITE}
      * @param filters     filtres de la liste : {@code statut}, {@code categorie}, {@code q}
@@ -233,7 +233,13 @@ public final class LeaderboardPages {
                 sb.append(post(view, "leaderboard.status", id, Map.of("status", "draft"), "Remettre en brouillon",
                         "btn secondary sm", null));
             }
-            sb.append(post(view, "leaderboard.move", id, Map.of("direction", "up"), "Monter", "btn secondary sm", "up"))
+            sb.append(toggleButton(uid + "-more", "menu", "Plus…"));
+        }
+        sb.append("</div>");
+        if (writable) {
+            // Gestes secondaires repliés : la carte reste lisible (prévisualiser, modifier, activer).
+            sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-more\"><div class=\"d-flex flex-wrap gap-2\">")
+                    .append(post(view, "leaderboard.move", id, Map.of("direction", "up"), "Monter", "btn secondary sm", "up"))
                     .append(post(view, "leaderboard.move", id, Map.of("direction", "down"), "Descendre",
                             "btn secondary sm", "down"))
                     .append(post(view, "leaderboard.flag", id, Map.of("flag", "featured", "value",
@@ -246,9 +252,7 @@ public final class LeaderboardPages {
             if (!"archived".equals(status)) {
                 sb.append(toggleButton(uid + "-arc", "box", "Archiver"));
             }
-        }
-        sb.append("</div>");
-        if (writable) {
+            sb.append("</div></div>");
             sb.append("<div class=\"collapse mt-2\" id=\"").append(uid).append("-dup\">")
                     .append("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">")
                     .append(hidden(view, "leaderboard.duplicate")).append(field("board_id", id))
@@ -327,7 +331,7 @@ public final class LeaderboardPages {
         }
         Map<String, Object> b = p.get("board") instanceof Map<?, ?> m ? cast(m) : Map.of();
         sb.append("<p class=\"npc-fs-h mb-1\">").append(Icons.icon("eye")).append("Aperçu — ")
-                .append(Http.esc(str(b.get("name")))).append(" <span class=\"muted small\">(").append(Http.esc(when))
+                .append(Http.esc(str(b.get("name")))).append(" <span class=\"muted small\">(").append(when)
                 .append(")</span></p>");
         sb.append("<div>").append(Http.esc(describe(b, d, zone))).append("</div>");
         if (p.get("window") instanceof Map<?, ?> window) {

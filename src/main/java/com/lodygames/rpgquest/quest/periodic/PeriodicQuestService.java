@@ -16,11 +16,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -51,6 +53,11 @@ import org.slf4j.Logger;
  * active est abandonnée (sans récompense) ; une quête finie qui attendait seulement de la place
  * dans l'inventaire ({@code READY_TO_TURN_IN}) est conservée — elle a été réussie à temps.</p>
  *
+ * <p><strong>Annonce</strong> : une attribution automatique n'affiche ni titre « Quête commencée »
+ * ni détail d'objectifs ; une seule ligne dans le chat par catégorie réellement renouvelée. La
+ * période annoncée est mémorisée par joueur et par catégorie ({@link #announcedVariable}) : une
+ * reconnexion dans la même période ne répète rien, un redémarrage serveur non plus.</p>
+ *
  * <p>Un rafraîchissement par joueur à la fois (chaîne de futurs) : clics répétés sur l'onglet,
  * connexion et cadence de reset simultanées ne font jamais deux attributions ni deux démarrages.</p>
  */
@@ -58,6 +65,8 @@ public final class PeriodicQuestService implements PluginService {
 
     /** Variable joueur posée à la première ouverture du journal : les quêtes périodiques sont débloquées. */
     public static final String UNLOCKED_KEY = "__periodic_quests_unlocked__";
+    /** Variable joueur, une par catégorie : clé de la dernière période annoncée dans le chat. */
+    private static final String ANNOUNCED_KEY_PREFIX = "__periodic_announced_";
     private static final long CHECK_PERIOD_TICKS = 20L * 60;
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
@@ -238,20 +247,58 @@ public final class PeriodicQuestService implements PluginService {
                 fresh[0] = true;
                 return repository.assign(playerId, period.yamlKey(), key, chosen);
             });
-        }).thenCompose(rows -> startAssigned(player, rows).thenRun(() -> {
+        }).thenCompose(rows -> startAssigned(player, rows).thenCompose(started -> {
             handledKeys.computeIfPresent(playerId, (id, keys) -> {
                 keys.put(period, key);
                 return keys;
             });
-            if (fresh[0] && !rows.isEmpty() && player.isOnline()) {
-                mainThread.execute(() -> player.sendMessage(MM.deserialize(
-                        "<gold>✦ Nouvelles " + period.label().toLowerCase(java.util.Locale.ROOT)
-                                + " :</gold> <gray>ouvre ton journal de quêtes.</gray>")));
+            if (rows.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
             }
+            return announceOnce(player, period, key, fresh[0] || started > 0);
         }));
     }
 
-    private CompletableFuture<Void> startAssigned(Player player, List<Assignment> rows) {
+    /**
+     * Une ligne de chat par catégorie et par période, jamais deux : la clé annoncée est mémorisée.
+     * {@code newForPlayer = false} (tout était déjà démarré, p. ex. joueurs servis avant cette
+     * mémorisation) enregistre la période sans rien dire. Hors ligne, rien n'est enregistré : les
+     * quêtes restées {@code ASSIGNED} seront démarrées et annoncées à la prochaine connexion.
+     */
+    private CompletableFuture<Void> announceOnce(Player player, QuestPeriod period, String key, boolean newForPlayer) {
+        if (!player.isOnline()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        UUID playerId = player.getUniqueId();
+        String variable = announcedVariable(period);
+        return variables.get(playerId, variable).thenCompose(announced -> {
+            if (announced.filter(key::equals).isPresent()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return variables.set(playerId, variable, key).thenRun(() -> {
+                if (newForPlayer) {
+                    mainThread.execute(() -> {
+                        if (player.isOnline()) {
+                            player.sendMessage(MM.deserialize(announcement(period)));
+                        }
+                    });
+                }
+            });
+        });
+    }
+
+    public static String announcedVariable(QuestPeriod period) {
+        return ANNOUNCED_KEY_PREFIX + period.yamlKey() + "__";
+    }
+
+    private static String announcement(QuestPeriod period) {
+        return "<gold>✦ Nouvelles " + period.label().toLowerCase(Locale.ROOT)
+                + " disponibles :</gold> <gray>ouvre ton journal.</gray>";
+    }
+
+    /** Démarre les quêtes encore {@code ASSIGNED} ; rend le nombre réellement démarrées maintenant. */
+    private CompletableFuture<Integer> startAssigned(Player player, List<Assignment> rows) {
+        AtomicInteger started = new AtomicInteger();
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
         for (Assignment row : rows) {
             if (!PeriodicQuestAssignmentRepository.ASSIGNED.equals(row.status())) {
@@ -271,7 +318,10 @@ public final class PeriodicQuestService implements PluginService {
                         .thenCompose(outcome -> {
                             AcceptOutcome.Result result = outcome.result();
                             if (result == AcceptOutcome.Result.ACCEPTED || result == AcceptOutcome.Result.ALREADY_ACTIVE) {
-                                return repository.markStarted(player.getUniqueId(), row).thenApply(started -> null);
+                                if (result == AcceptOutcome.Result.ACCEPTED) {
+                                    started.incrementAndGet();
+                                }
+                                return repository.markStarted(player.getUniqueId(), row).thenApply(marked -> null);
                             }
                             // Modèle retiré depuis (UNKNOWN_QUEST) : la ligne reste ASSIGNED, affichée
                             // « indisponible », et sera close à la réinitialisation.
@@ -281,7 +331,7 @@ public final class PeriodicQuestService implements PluginService {
                         });
             });
         }
-        return chain;
+        return chain.thenApply(v -> started.get());
     }
 
     // ---- Connexion, déconnexion, cadence ------------------------------------

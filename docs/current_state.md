@@ -391,7 +391,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   `portal-snapshot.properties` hors Git, statut public en quatre états en ligne / hors ligne
 >   annoncé / non actualisé / inconnu) **actif depuis le 22/10 pour le seul relevé d'état agrégé**
 >   (en ligne, nombre de joueurs, toutes les 30 s, idempotent `bootId`/`sequence`) ; instantané
->   complet toujours inactif (`web-export` désactivé). Comptes (#53) faits, désactivés, avec progression personnelle du joueur relié sur `/compte` (lot 6, `POST /api/link/progress`, aperçu fictif `/demo/compte`) ; moteur d'événements (#57) fait : journal d'activité
+>   complet toujours inactif (`web-export` désactivé). Comptes (#53) faits, désactivés, avec progression personnelle du joueur relié sur `/compte` (lot 6, `POST /api/link/progress`, aperçu fictif `/demo/compte`) et gestion du compte (lot 7 : changement de mot de passe, export JSON, suppression définitive) ; moteur d'événements (#57) fait : journal d'activité
 >   générique `stat_activity_log` (mobs tués, pêche ; admin/debug exclus), filtres, règles de
 >   classement, objectif commun, `status: draft|cancelled`, audit `stat_period_audit` (migration
 >   **V40**), back-office PlugAdmin à faire. Droits à récompense (#422) : tranche 1 livrée,

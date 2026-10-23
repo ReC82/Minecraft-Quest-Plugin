@@ -51,15 +51,15 @@ Base dédiée `accounts.db` du portail (ni `data.db`, ni PlugAdmin). Elle n'exis
 | Donnée | Pourquoi | Qui la voit | Durée | Correction / export / suppression |
 | --- | --- | --- | --- | --- |
 | Identifiant interne du compte (UUID aléatoire) | clé technique | personne en public | vie du compte | supprimé avec le compte |
-| Identifiant de connexion choisi (3–32 caractères ; ni vrai nom ni pseudo conseillés) | connexion | le joueur, l'exploitant | vie du compte | export / suppression : **à réaliser** avant ouverture |
-| Empreinte du mot de passe (PBKDF2-HMAC-SHA256, 600 000 itérations, sel aléatoire) | connexion | personne | vie du compte | jamais exportée |
+| Identifiant de connexion choisi (3–32 caractères ; ni vrai nom ni pseudo conseillés) | connexion | le joueur, l'exploitant | vie du compte | export JSON et suppression immédiate depuis `/compte` (mot de passe exigé) |
+| Empreinte du mot de passe (PBKDF2-HMAC-SHA256, 600 000 itérations, sel aléatoire) | connexion | personne | vie du compte | jamais exportée ; changement depuis `/compte` (ancien exigé) ; effacée avec le compte |
 | Statut de consentement (`NOT_REQUIRED`, `PENDING`…) | appliquer la politique d'âge | l'exploitant | vie du compte | l'âge et le pays déclarés **ne sont pas conservés**, seul le statut l'est |
 | UUID Minecraft lié | relier compte ↔ joueur (preuve en jeu) | le joueur (indirectement), l'exploitant ; **jamais public** | vie de la liaison | dissociation depuis le compte (mot de passe exigé) |
 | Pseudo Minecraft au moment de la liaison | affichage sur la page du compte | le joueur, l'exploitant | vie de la liaison | dissociation |
 | Sessions : **empreinte** SHA-256 du jeton + jeton anti-CSRF | rester connecté | personne | 7 jours (absolu, `accounts-session-ttl-hours`) ; purge à expiration | déconnexion |
 | Codes de liaison : **empreinte** SHA-256 | prouver la possession du compte Minecraft | personne | 10 minutes, usage unique ; purgés une heure après expiration | un nouveau code annule le précédent |
-| Progression personnelle reçue du serveur de jeu (XP et niveaux par piste, quêtes terminées, valeur / rang / effectif par classement publié ; aucun autre pseudo, aucun UUID) | afficher sa progression sur `/compte` | **le joueur seul** (connecté) et l'exploitant ; jamais publique | vie de la liaison ; remplacée à chaque envoi | effacée à la dissociation (et avec le compte) ; export : **à réaliser** |
-| Journal des liaisons (liaison, dissociation, refus ; pseudo, UUID, date) | audit, détection d'abus | le joueur (10 derniers) et l'exploitant | **à décider** (proposé : 1 an) — pas encore de purge automatique | — |
+| Progression personnelle reçue du serveur de jeu (XP et niveaux par piste, quêtes terminées, valeur / rang / effectif par classement publié ; aucun autre pseudo, aucun UUID) | afficher sa progression sur `/compte` | **le joueur seul** (connecté) et l'exploitant ; jamais publique | vie de la liaison ; remplacée à chaque envoi | effacée à la dissociation (et avec le compte) ; incluse dans l'export JSON |
+| Journal des liaisons (liaison, dissociation, refus ; pseudo, UUID, date) | audit, détection d'abus | le joueur (10 derniers) et l'exploitant | **à décider** (proposé : 1 an) — pas encore de purge automatique | export JSON (complet) ; effacé avec le compte |
 | Compteurs d'échecs (connexion par IP et identifiant, preuves par UUID) | anti-abus | personne | mémoire seulement, 15 minutes | — |
 
 Aucun e-mail n'est demandé : pas de prestataire choisi, et la récupération de compte pourra se
@@ -107,12 +107,15 @@ forte n'est identifiée par la revue juridique.
 
 Fait : consultation (page `/compte` : liaison, pseudo, date, 10 dernières opérations, progression
 personnelle du joueur relié),
-**dissociation** Minecraft (mot de passe exigé, journalisée). À réaliser **avant l'ouverture
-publique** : **export** (fichier JSON de ses propres données), **suppression** du compte
-(désactivation immédiate, effacement après le délai décidé), changement de mot de passe, gestion et
-**retrait** des consentements. Les données
-conservées après suppression (sécurité, litige, obligation légale) seront listées ici avec leur
-durée. Avant les comptes, la seule donnée publiable est le pseudo d'un joueur ayant accepté, et
+**dissociation** Minecraft (mot de passe exigé, journalisée), et depuis le lot 7 (23/10/2026) :
+**changement de mot de passe** (ancien exigé, autres sessions fermées), **export** JSON de toutes
+ses données (`/compte/export` : compte, liaison, progression, historique complet, sessions — jamais
+de mot de passe ni de jeton), **suppression** du compte (`/compte/supprimer` : case de
+confirmation + mot de passe, effacement **immédiat et définitif** du compte, des sessions, de la
+liaison, de la progression et du journal de ses liaisons). **Rien n'est conservé après
+suppression** ; si une durée de conservation (sécurité, litige) est décidée un jour, elle sera
+listée ici. Reste à réaliser avant l'ouverture : gestion et **retrait** des consentements
+(consentement parental). Avant les comptes, la seule donnée publiable est le pseudo d'un joueur ayant accepté, et
 `/profile web prive` suffit à le retirer.
 
 ## 5. Cookies, analyse d'audience, prestataires

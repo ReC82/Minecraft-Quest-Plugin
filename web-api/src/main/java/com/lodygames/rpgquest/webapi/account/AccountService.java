@@ -7,7 +7,10 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -46,6 +49,14 @@ public final class AccountService {
         CREATED,
         ALREADY_LINKED,
         RESTRICTED,
+        TOO_MANY
+    }
+
+    public enum PasswordChange {
+        CHANGED,
+        WRONG_PASSWORD,
+        WEAK_PASSWORD,
+        /** Trop de mots de passe actuels faux sur ce compte : attendre. */
         TOO_MANY
     }
 
@@ -112,8 +123,7 @@ public final class AccountService {
         if (login == null || !LOGIN.matcher(login).matches()) {
             return RegistrationOutcome.INVALID_LOGIN;
         }
-        if (password == null || password.length() < MIN_PASSWORD_LENGTH || password.length() > MAX_PASSWORD_LENGTH
-                || password.equalsIgnoreCase(login)) {
+        if (!acceptablePassword(login, password)) {
             return RegistrationOutcome.WEAK_PASSWORD;
         }
         AgePolicy.Outcome decision = agePolicy.evaluate(region, declaredAge);
@@ -131,6 +141,11 @@ public final class AccountService {
         return consent.get().allowsPersonalFeatures()
                 ? RegistrationOutcome.CREATED
                 : RegistrationOutcome.CREATED_RESTRICTED;
+    }
+
+    private static boolean acceptablePassword(String login, String password) {
+        return password != null && password.length() >= MIN_PASSWORD_LENGTH && password.length() <= MAX_PASSWORD_LENGTH
+                && !password.equalsIgnoreCase(login);
     }
 
     /**
@@ -254,10 +269,115 @@ public final class AccountService {
 
     /** Dissociation : exige le mot de passe, comme toute action qui retire une protection. */
     public boolean unlink(String accountId, String password) throws SQLException {
-        Optional<AccountStore.Account> account = store.findAccount(accountId);
-        if (account.isEmpty() || !hasher.verify(password, account.get().passwordHash())) {
+        if (!passwordConfirmed(accountId, password)) {
             return false;
         }
         return store.unlink(accountId, clock.instant());
+    }
+
+    /**
+     * Changement de mot de passe (#53) : l'ancien est exigé ; les autres sessions du compte sont
+     * révoquées, celle de {@code sessionToken} reste ouverte.
+     */
+    public PasswordChange changePassword(String accountId, String sessionToken, String currentPassword,
+            String newPassword) throws SQLException {
+        Optional<AccountStore.Account> account = store.findAccount(accountId);
+        if (account.isEmpty()) {
+            return PasswordChange.WRONG_PASSWORD;
+        }
+        if (loginFailures.isBlocked(confirmKey(accountId))) {
+            return PasswordChange.TOO_MANY;
+        }
+        if (!passwordConfirmed(accountId, currentPassword)) {
+            return PasswordChange.WRONG_PASSWORD;
+        }
+        if (!acceptablePassword(account.get().login(), newPassword) || newPassword.equals(currentPassword)) {
+            return PasswordChange.WEAK_PASSWORD;
+        }
+        store.changePassword(accountId, hasher.hash(newPassword), SecureTokens.sha256(sessionToken));
+        return PasswordChange.CHANGED;
+    }
+
+    /**
+     * Tout ce que le portail garde sur ce compte (#53, droit d'accès #55) : compte, liaison,
+     * historique, progression reçue, sessions ouvertes. Jamais d'empreinte de mot de passe ni de jeton.
+     */
+    public Map<String, Object> export(String accountId) throws SQLException {
+        Overview overview = overview(accountId);
+        AccountStore.Account account = overview.account();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("format", "lodyquests-portal-account-export");
+        data.put("version", 1);
+        data.put("exportedAt", clock.instant().toString());
+        Map<String, Object> accountData = new LinkedHashMap<>();
+        accountData.put("id", account.id());
+        accountData.put("login", account.login());
+        accountData.put("parentalConsent", account.consent().name());
+        accountData.put("createdAt", account.createdAt().toString());
+        data.put("account", accountData);
+        data.put("minecraftLink", overview.link().map(link -> {
+            Map<String, Object> linkData = new LinkedHashMap<>();
+            linkData.put("playerUuid", link.playerUuid().toString());
+            linkData.put("playerName", link.playerName());
+            linkData.put("linkedAt", link.linkedAt().toString());
+            return (Object) linkData;
+        }).orElse(null));
+        data.put("progress", overview.link().isEmpty() ? null : store.findProgress(accountId).map(stored -> {
+            Map<String, Object> progressData = new LinkedHashMap<>();
+            progressData.put("receivedAt", stored.receivedAt().toString());
+            progressData.put("data", Json.parse(stored.payload()));
+            return (Object) progressData;
+        }).orElse(null));
+        List<Object> history = new ArrayList<>();
+        for (AccountStore.AuditEntry entry : store.auditOf(accountId, Integer.MAX_VALUE)) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("action", entry.action());
+            item.put("playerName", entry.playerName());
+            item.put("at", entry.at().toString());
+            history.add(item);
+        }
+        data.put("linkHistory", history);
+        List<Object> sessions = new ArrayList<>();
+        for (AccountStore.SessionInfo session : store.sessionsOf(accountId, clock.instant())) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("openedAt", session.createdAt().toString());
+            item.put("expiresAt", session.expiresAt().toString());
+            sessions.add(item);
+        }
+        data.put("openSessions", sessions);
+        return data;
+    }
+
+    /**
+     * Suppression définitive du compte (#53) : mot de passe exigé ; liaison, progression, historique
+     * et toutes les sessions disparaissent avec lui. L'UUID redevient libre pour une autre liaison.
+     */
+    public boolean deleteAccount(String accountId, String password) throws SQLException {
+        if (!passwordConfirmed(accountId, password)) {
+            return false;
+        }
+        return store.deleteAccount(accountId);
+    }
+
+    /**
+     * Mot de passe du titulaire pour une action sensible, avec la même limite d'échecs que la
+     * connexion : un cookie volé ne permet pas de deviner le mot de passe sans fin.
+     */
+    private boolean passwordConfirmed(String accountId, String password) throws SQLException {
+        String key = confirmKey(accountId);
+        if (loginFailures.isBlocked(key)) {
+            return false;
+        }
+        Optional<AccountStore.Account> account = store.findAccount(accountId);
+        if (account.isEmpty() || password == null || password.length() > MAX_PASSWORD_LENGTH
+                || !hasher.verify(password, account.get().passwordHash())) {
+            loginFailures.recordFailure(key);
+            return false;
+        }
+        return true;
+    }
+
+    private static String confirmKey(String accountId) {
+        return "account:" + accountId;
     }
 }

@@ -6736,6 +6736,13 @@ toutes les `progress-interval-minutes` (clé facultative du même fichier, défa
 en périodique). Pour un joueur dont la liaison est inconnue, seule une sonde UUID part ; aucune
 statistique d'un joueur non relié ne quitte le serveur. Aperçu fictif : `/demo/compte`.
 
+Gestion du compte (lot 7, portail seul) : sur `/compte`, le titulaire connecté peut **changer son
+mot de passe** (ancien exigé ; ses autres connexions sont fermées), **télécharger ses données**
+(fichier JSON : compte, liaison, progression, historique, sessions — jamais de mot de passe ni de
+jeton) et **supprimer son compte** (case + mot de passe ; effacement immédiat et définitif du
+compte, de la liaison, de la progression et de l'historique ; la partie Minecraft n'est pas
+touchée, l'UUID peut être relié de nouveau). Aucune commande ni configuration nouvelle.
+
 ### Portail — envoi de l'instantané web (#421)
 
 Aucune commande. Fichier **hors Git** `plugins/RPGQuest/portal-snapshot.properties` (modèle

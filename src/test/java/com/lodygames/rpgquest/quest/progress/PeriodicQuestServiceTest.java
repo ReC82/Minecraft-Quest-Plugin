@@ -28,12 +28,17 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.title.Title;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.EntityType;
 import org.junit.jupiter.api.AfterEach;
@@ -55,6 +60,9 @@ class PeriodicQuestServiceTest {
     private static final NamespacedKey DAILY_ZOMBIE = new NamespacedKey("rpgquest", "daily_zombie");
     private static final NamespacedKey DAILY_SKELETON = new NamespacedKey("rpgquest", "daily_skeleton");
     private static final NamespacedKey WEEKLY_CREEPER = new NamespacedKey("rpgquest", "weekly_creeper");
+    private static final NamespacedKey ORDINARY_SPIDER = new NamespacedKey("rpgquest", "ordinary_spider");
+    private static final String DAILY_ANNOUNCEMENT = "✦ Nouvelles quêtes quotidiennes disponibles : ouvre ton journal.";
+    private static final String WEEKLY_ANNOUNCEMENT = "✦ Nouvelles quêtes hebdomadaires disponibles : ouvre ton journal.";
     /** Samedi 17/10/2026 12:00 UTC. */
     private static final Instant SATURDAY_NOON = Instant.parse("2026-10-17T12:00:00Z");
 
@@ -62,6 +70,8 @@ class PeriodicQuestServiceTest {
     Path tempDir;
 
     private ServerMock server;
+    private RPGQuestPlugin plugin;
+    private YamlQuestEngine questEngine;
     private DatabaseManager database;
     private QuestProgressRepository progressRepository;
     private PlayerProfileRepository profileRepository;
@@ -85,7 +95,20 @@ class PeriodicQuestServiceTest {
         writePeriodicQuest(questsDir, DAILY_ZOMBIE, "daily", "ZOMBIE");
         writePeriodicQuest(questsDir, DAILY_SKELETON, "daily", "SKELETON");
         writePeriodicQuest(questsDir, WEEKLY_CREEPER, "weekly", "CREEPER");
-        YamlQuestEngine questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
+        Files.writeString(questsDir.resolve("ordinary_spider.yml"), """
+                id: rpgquest:ordinary_spider
+                title: "Araignées"
+                description: "Description"
+                category: hunting
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: SPIDER
+                        amount: 2
+                """);
+        this.plugin = plugin;
+        questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
         questEngine.reload();
 
         progressRepository = new QuestProgressRepository(database);
@@ -98,7 +121,11 @@ class PeriodicQuestServiceTest {
                 new NpcIdentityService(plugin, new NpcIdRepository(database), new NpcBindingRepository(database)),
                 new NoopRewardPayer());
         engine.start();
-        service = new PeriodicQuestService(plugin, questEngine, engine, assignments, variables, config::get, now::get,
+        service = newService();
+    }
+
+    private PeriodicQuestService newService() {
+        return new PeriodicQuestService(plugin, questEngine, engine, assignments, variables, config::get, now::get,
                 Runnable::run, plugin.getSLF4JLogger());
     }
 
@@ -231,12 +258,144 @@ class PeriodicQuestServiceTest {
         assertEquals(2, view.assignments().size());
     }
 
+    // ---- Annonces de l'attribution automatique (retour propriétaire du 23/10) ----------------
+
+    @Test
+    void theAutomaticAssignmentAnnouncesOneChatLinePerCategoryWithoutTitleNorObjectives() throws Exception {
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+
+        await(service.unlockAndRefresh(player));
+        server.getScheduler().performOneTick();
+
+        assertEquals(List.of(DAILY_ANNOUNCEMENT, WEEKLY_ANNOUNCEMENT), drainMessages(player),
+                "une seule ligne par catégorie, aucun détail d'objectif par quête");
+        assertTrue(player.titles.isEmpty(), "aucun titre « Quête commencée » pour une attribution automatique");
+        assertEquals(QuestState.ACTIVE, state(player, DAILY_ZOMBIE));
+        assertEquals(QuestState.ACTIVE, state(player, WEEKLY_CREEPER));
+    }
+
+    @Test
+    void reconnectingOrRestartingWithinTheSamePeriodAnnouncesNothing() throws Exception {
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+        await(service.unlockAndRefresh(player));
+        server.getScheduler().performOneTick();
+        drainMessages(player);
+
+        now.set(SATURDAY_NOON.plusSeconds(3600)); // même jour, même semaine
+        await(service.refresh(player)); // reconnexion
+        await(newService().refresh(player)); // redémarrage serveur : la mémoire est en base
+        server.getScheduler().performOneTick();
+
+        assertTrue(drainMessages(player).isEmpty(), "rien de neuf : aucune annonce");
+        assertTrue(player.titles.isEmpty());
+    }
+
+    @Test
+    void aDailyRenewalAnnouncesOnlyTheDailyCategoryOnce() throws Exception {
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+        await(service.unlockAndRefresh(player));
+        server.getScheduler().performOneTick();
+        drainMessages(player);
+
+        now.set(Instant.parse("2026-10-18T04:00:00Z")); // dimanche : reset quotidien seulement
+        // Renouvellement en ligne (cadence) et connexion qui se croisent : une seule annonce.
+        CompletableFuture<Void> first = service.refresh(player);
+        CompletableFuture<Void> second = service.refresh(player);
+        await(first);
+        await(second);
+        server.getScheduler().performOneTick();
+
+        List<String> messages = drainMessages(player);
+        assertEquals(List.of(DAILY_ANNOUNCEMENT),
+                messages.stream().filter(m -> m.startsWith("✦")).toList(),
+                "la semaine n'a pas changé : pas d'annonce hebdomadaire ; une seule quotidienne");
+        assertTrue(messages.stream().allMatch(m -> m.startsWith("✦") || m.startsWith("⌛")),
+                "seuls l'annonce et l'éventuel message d'expiration : " + messages);
+        assertTrue(player.titles.isEmpty());
+        assertEquals(Optional.of("2026-10-18"),
+                await(variables.get(player.getUniqueId(), PeriodicQuestService.announcedVariable(QuestPeriod.DAILY))));
+    }
+
+    @Test
+    void theExpiryMessageOfTheEndedPeriodIsKept() throws Exception {
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+        await(service.unlockAndRefresh(player));
+        server.getScheduler().performOneTick();
+        drainMessages(player);
+
+        now.set(Instant.parse("2026-10-18T04:00:00Z"));
+        await(service.refresh(player));
+        server.getScheduler().performOneTick();
+
+        assertEquals(2, drainMessages(player).stream().filter(m -> m.startsWith("⌛ Quête expirée")).count());
+    }
+
+    @Test
+    void playersServedBeforeTheMemoryAreNotReannouncedTheirCurrentPeriod() throws Exception {
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+        await(service.unlockAndRefresh(player));
+        server.getScheduler().performOneTick();
+        drainMessages(player);
+        // État d'un joueur servi par la version précédente : attributions démarrées, rien mémorisé.
+        await(variables.set(player.getUniqueId(), PeriodicQuestService.announcedVariable(QuestPeriod.DAILY), ""));
+        await(variables.set(player.getUniqueId(), PeriodicQuestService.announcedVariable(QuestPeriod.WEEKLY), ""));
+
+        await(service.refresh(player));
+
+        assertTrue(drainMessages(player).isEmpty(), "rien n'a été démarré maintenant : rien à annoncer");
+        assertEquals(Optional.of("2026-10-17"),
+                await(variables.get(player.getUniqueId(), PeriodicQuestService.announcedVariable(QuestPeriod.DAILY))));
+    }
+
+    @Test
+    void anOrdinaryQuestStillShowsItsStartTitleAndObjectives() throws Exception {
+        TitleRecordingPlayer player = addTitleRecordingPlayer();
+
+        assertEquals(AcceptOutcome.Result.ACCEPTED, await(engine.accept(player, ORDINARY_SPIDER)).result());
+        server.getScheduler().performOneTick();
+
+        assertEquals(1, player.titles.size(), "titre « Quête commencée » conservé pour une quête ordinaire");
+        assertTrue(drainMessages(player).size() >= 2, "en-tête + objectifs toujours annoncés dans le chat");
+    }
+
     // ---- Outils ----------------------------------------------------------------------------
 
     private PlayerMock addPlayer() throws Exception {
         PlayerMock player = server.addPlayer();
         await(profileRepository.findOrCreate(player.getUniqueId(), player.getName()));
         return player;
+    }
+
+    /** Joueur qui retient les Title Adventure reçus : MockBukkit ne les expose pas. */
+    private static final class TitleRecordingPlayer extends PlayerMock {
+        private final List<Title> titles = new CopyOnWriteArrayList<>();
+
+        TitleRecordingPlayer(ServerMock server) {
+            super(server, "Periodic", UUID.randomUUID());
+        }
+
+        @Override
+        public void showTitle(Title title) {
+            titles.add(title);
+        }
+    }
+
+    private TitleRecordingPlayer addTitleRecordingPlayer() throws Exception {
+        TitleRecordingPlayer player = new TitleRecordingPlayer(server);
+        server.addPlayer(player);
+        await(profileRepository.findOrCreate(player.getUniqueId(), player.getName()));
+        server.getScheduler().performOneTick();
+        drainMessages(player); // accueil du plugin à la connexion (Rune de rappel…), hors sujet ici
+        return player;
+    }
+
+    private static List<String> drainMessages(PlayerMock player) {
+        List<String> messages = new ArrayList<>();
+        Component message;
+        while ((message = player.nextComponentMessage()) != null) {
+            messages.add(PlainTextComponentSerializer.plainText().serialize(message));
+        }
+        return messages;
     }
 
     private QuestState state(PlayerMock player, NamespacedKey questId) throws Exception {

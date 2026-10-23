@@ -7440,6 +7440,22 @@ rapport de session). Compte **LoDyMcFly tel quel**, kit de départ déjà reçu 
 4.  Redemander aussitôt (même après déconnexion/reconnexion). **Attendu** : à nouveau la réponse de
     l'étape 1, jamais un second kit.
 
+### TC-422 — Quêtes périodiques : attribution automatique annoncée en une ligne, sans titre (issue #15 retour du 23/10, PENDING MANUAL VALIDATION)
+
+Prérequis : JAR issu de la PR #15 « annonces périodiques » sur **DEV**. Compte **LoDyMcFly tel quel**.
+**Acquis à ne pas refaire** : renouvellement quotidien du 23/10 (expiration des anciennes, nouvelles
+attributions, vue 0/2). **Aucun reset forcé, aucune réattribution, réglages `periodic-quests` inchangés.**
+
+1.  Se connecter **après** le prochain renouvellement quotidien (04:00 Europe/Paris). **Attendu** :
+    aucun grand titre « Quête commencée », aucun détail d'objectif ; une ligne « ✦ Nouvelles quêtes
+    quotidiennes disponibles : ouvre ton journal. » (plus la ligne hebdomadaire uniquement un lundi
+    après 04:00). Les « ⌛ Quête expirée » des quêtes non finies de la veille restent affichés.
+2.  Se déconnecter puis se reconnecter le même jour. **Attendu** : aucune annonce périodique.
+3.  Rester connecté au moment d'un renouvellement (04:00). **Attendu** : une seule ligne quotidienne
+    dans la minute, sans titre.
+4.  Accepter une quête ordinaire chez un PNJ. **Attendu** : annonce inchangée (titre hors dialogue,
+    objectifs dans le chat ; pas de titre pendant un dialogue, #636).
+
 ### TC-377 — Quêtes périodiques : résumé lisible sans survol, terminées à part, onglets PlugAdmin (issue #15, lot 2, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR et PlugAdmin issus de la PR #15 lot 2 sur **DEV**. Compte **LoDyMcFly tel quel**.

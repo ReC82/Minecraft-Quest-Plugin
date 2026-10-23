@@ -527,7 +527,12 @@ public final class QuestProgressEngine implements PluginService {
             notifyChanged(playerId);
             if (error == null && outcome.result() == AcceptOutcome.Result.ACCEPTED) {
                 runOnMainThread(() -> {
-                    showQuestStarted(player, quest);
+                    // Issue #15 : une attribution périodique automatique n'a ni titre « Quête
+                    // commencée » ni détail d'objectifs — PeriodicQuestService annonce une seule
+                    // ligne par catégorie renouvelée.
+                    if (!periodicAssigned) {
+                        showQuestStarted(player, quest);
+                    }
                     refreshCumulativeDiscoveryObjectives(player);
                 });
             }

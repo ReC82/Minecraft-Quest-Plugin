@@ -257,8 +257,9 @@ Tant que vous n'avez pas choisi quelle version garder, votre dialogue ne peut pa
 
 1. Dans l'éditeur, cliquez **Comparer les deux versions** : la page technique du dialogue
    s'ouvre ; demandez la comparaison pour voir ce qui a changé.
-2. **Pour garder votre version** : une fois la comparaison affichée, cliquez **Écraser la version
-   DEV** et confirmez. L'autre version est sauvegardée sur le serveur avant d'être remplacée.
+2. **Pour garder votre version** : cochez « Je garde ma version » sous l'encadré, cliquez
+   **Conserver mon brouillon**, puis **Mettre en jeu**. L'autre version est sauvegardée sur le
+   serveur avant d'être remplacée (#798).
 3. **Pour garder celle du serveur** : cliquez **Recharger depuis DEV**, puis **Remplacer ma version
    par celle de DEV**. Votre version est sauvegardée avant d'être remplacée, et la version reprise
    devient la référence : vous pouvez ensuite réappliquer votre correction et remettre en jeu.
@@ -367,8 +368,11 @@ Le panel distingue trois choses :
 2. le **fichier sur le serveur DEV** (écrit par **Mettre en jeu**) ;
 3. ce que le jeu a **réellement chargé** pour les joueurs.
 
-Le bandeau de l'éditeur les distingue : « Enregistré — pas encore en jeu », « À jour en jeu »,
-« une ancienne version est toujours en jeu »… Après une action, la page se met à jour
+Le bandeau de l'éditeur les distingue : « Brouillon enregistré — pas encore en jeu », « DEV a une
+version plus récente », « Le serveur a une autre version de ce dialogue », « À jour en jeu »,
+« une ancienne version est toujours en jeu »… (issue #798 : un brouillon n'est annoncé comme tel que
+si DEV porte encore la dernière version commune ; sinon, PlugAdmin ne devine pas qui est le plus
+récent.) Après une action, la page se met à jour
 **automatiquement** : inutile de recharger la page (F5). Une mise en jeu refusée remet le fichier
 DEV dans son état d'avant : les joueurs gardent l'ancienne version.
 

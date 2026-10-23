@@ -133,7 +133,10 @@ toute seule : pas besoin de F5.
 | Bandeau | Ce que ça veut dire | Que faire |
 |---|---|---|
 | Modifications non enregistrées | Vous avez changé quelque chose dans la page. | Enregistrez. |
-| Enregistré — pas encore en jeu | Les joueurs voient encore l'ancienne version. | **Mettre en jeu**. |
+| Brouillon enregistré — pas encore en jeu | Vous avez modifié le dialogue depuis sa dernière version commune avec DEV : les joueurs voient encore l'ancienne. | **Mettre en jeu**. |
+| Enregistré dans PlugAdmin — pas encore sur DEV | Le dialogue n'a jamais été mis en jeu. | **Mettre en jeu**. |
+| DEV a une version plus récente | DEV a changé (déploiement, autre outil), pas PlugAdmin. Mettre en jeu remettrait l'ancienne version : le bouton n'est pas proposé. | **Recharger depuis DEV**, puis modifiez. |
+| Le serveur a une autre version de ce dialogue | Les deux versions diffèrent : comparez avant de choisir. | **Comparer**, puis **Recharger depuis DEV** ou **Conserver mon brouillon**. |
 | Mise en jeu en cours… | Le serveur n'a pas encore répondu. | Attendez quelques secondes. |
 | À jour en jeu | Les joueurs voient la version enregistrée. | Testez en jeu. |
 | Mise en jeu échouée | Le serveur a refusé : le motif est affiché. | Corrigez, puis **Réessayer**. |

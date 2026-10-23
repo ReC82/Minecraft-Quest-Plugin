@@ -258,6 +258,9 @@ public final class AccountPagesHandler implements ApiHandler {
                     .append(Html.escape(DATE.format(link.linkedAt()))).append(".</p>")
                     .append("<p class=\"note\">Le skin n'est pas affiché : il faudrait le demander à un service extérieur, "
                             + "qui apprendrait alors que tu visites ce site.</p>")
+                    .append(overview.progress()
+                            .map(p -> LinkedProgressView.render(link.playerName(), p.progress(), p.receivedAt(), false))
+                            .orElseGet(LinkedProgressView::pending))
                     .append("<h3>Délier</h3><form method=\"post\" action=\"/compte/delier\">").append(csrf)
                     .append("<p><label>Confirme avec ton mot de passe<br><input type=\"password\" name=\"motdepasse\" "
                             + "autocomplete=\"current-password\" required maxlength=\"128\"></label></p>"
@@ -267,7 +270,8 @@ public final class AccountPagesHandler implements ApiHandler {
                     .append("<form method=\"post\" action=\"/compte/lien\">").append(csrf)
                     .append("<p><button type=\"submit\">Obtenir un code de liaison</button></p></form>")
                     .append("<p class=\"note\">Tu taperas ce code dans Minecraft : c'est la preuve que ce compte "
-                            + "Minecraft est bien le tien. Un code faux, expiré ou déjà utilisé est refusé.</p>");
+                            + "Minecraft est bien le tien. Un code faux, expiré ou déjà utilisé est refusé. Une fois "
+                            + "relié, tu verras ici ta progression, tes niveaux et ta place dans les classements.</p>");
         }
         if (!overview.history().isEmpty()) {
             body.append("<h2>Historique</h2><ul>");

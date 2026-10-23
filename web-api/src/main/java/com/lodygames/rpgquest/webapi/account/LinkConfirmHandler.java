@@ -28,7 +28,7 @@ public final class LinkConfirmHandler implements ApiHandler {
 
     private static final int MAX_BODY_BYTES = 2048;
     /** Pseudos Java (3–16) et préfixes Bedrock courants ({@code .}, {@code *}). */
-    private static final Pattern PLAYER_NAME = Pattern.compile("[.*]?[A-Za-z0-9_]{1,32}");
+    static final Pattern PLAYER_NAME = Pattern.compile("[.*]?[A-Za-z0-9_]{1,32}");
 
     private final AccountService accounts;
     private final AuthFilter linkAuth;

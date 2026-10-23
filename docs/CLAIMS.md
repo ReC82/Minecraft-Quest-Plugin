@@ -508,6 +508,65 @@ valeur de `config.yml`, identique pour tous les joueurs — voir
 n'est prévu (mission étape 17, point 9) : ces limites ne dépendent d'aucune
 monnaie ni d'aucun achat, uniquement du niveau RPG.
 
+## Croissance hors ligne des plantations (issue #776)
+
+Minecraft ne fait pousser les plantes (random ticks) que dans les chunks chargés **et** simulés près
+d'un joueur : une ferme quittée restait figée. `claim.growth.OfflineGrowthService` rattrape cette
+croissance **au rechargement** du chunk, sans jamais garder un chunk chargé.
+
+**Cycle.**
+
+1. Déchargement d'un chunk qui touche un claim d'un monde concerné → l'heure de jeu
+   (`World#getGameTime()`, qui n'avance que serveur allumé et ignore `/time set`) est écrite dans le
+   PDC du chunk (`rpgquest:offline_growth_since`). Elle est sauvegardée **avec** les blocs du chunk.
+2. Rechargement → la marque est lue puis **retirée aussitôt** ; la durée écoulée est plafonnée par
+   `max-catch-up-minutes` puis convertie en random ticks moyens (`randomTickSpeed` du monde : 0 = rien
+   ne pousse, comme en jeu).
+3. Le chunk est mis en file : à chaque tick, au plus **un** inventaire de chunk (instantané en
+   lecture seule, limité aux cuboïdes de claims) et au plus `blocks-per-tick` plantes traitées.
+
+**Idempotence.** Une marque ne sert qu'une fois : un second chargement sans déchargement ne rattrape
+rien. Après un crash, le chunk revient à sa dernière sauvegarde, marque **et** blocs ensemble : rien
+n'est compté deux fois. L'arrêt du serveur ne pose aucune marque (pas de croissance pendant l'arrêt,
+comme en jeu). Un chunk redéchargé avant son tour abandonne simplement le reste (perte possible,
+jamais de double croissance). Au démarrage, les chunks déjà chargés avant le plugin sont repris, et
+aucun chunk n'est traité avant que `ClaimService` ait lu les claims en base (`isLoaded`) : une marque
+n'est jamais perdue parce que les claims n'étaient pas encore connus.
+
+**Barème** (`PlantGrowthSimulator`, moyenne vanilla : `randomTickSpeed / 4096` random tick par bloc
+et par tick ; le nombre de succès attendu est arrondi au hasard) :
+
+| Plante | Chance par random tick | Condition | Plafond |
+|---|---|---|---|
+| Blé, carottes, pommes de terre | `1 / (⌊25 / f⌋ + 1)` (f vanilla : terre labourée sous la plante 3 humide / 1 sèche, voisines ¼ ; ÷2 si cultures identiques en ligne croisée ou diagonale) | lumière brute ≥ 9 | âge 7 |
+| Betteraves | idem × ⅔ | lumière ≥ 9 | âge 3 |
+| Tiges de citrouille / pastèque | idem ; au-delà de l'âge 7, chaque succès = un essai de fruit vers une face au hasard | lumière ≥ 9 ; fruit sur air avec terre labourée ou terre (dirt, herbe, podzol, mousse, boue…) dessous, **dans le même claim** | un fruit, puis tige attachée (plus d'essai) |
+| Verrues du Nether | 1/10 | aucune | âge 3 |
+| Baies sucrées | 1/5 | lumière ≥ 9 au-dessus | âge 3 |
+| Cacao | 1/5 | aucune | âge 2 |
+| Canne à sucre, cactus | 1 âge par random tick, un bloc tous les 16 | air au-dessus, dans le claim ; cactus jamais posé à côté d'un bloc solide ou de lave | colonne de 3 |
+| Pousse de bambou, bambou | 1/3 (port de `growBamboo` : feuilles, épaisseur, arrêt aléatoire) | air au-dessus, lumière ≥ 9, dans le claim | 16 |
+
+**Non couvert** (volontairement) : pousses d'arbres (un arbre pose des troncs et feuilles hors des
+plantes), fleurs de cactus, plante carnivore/torche-fleur, champignons, lianes, varech. Les fruits
+déjà présents, la terre labourée, l'eau et tout autre bloc ne sont jamais modifiés ; aucun objet
+n'est créé ni récolté ; aucune donnée joueur n'est touchée.
+
+**Garanties.** Chaque pose ou montée d'âge passe par un `BlockGrowEvent` (même événement qu'en jeu) :
+un plugin qui l'annule arrête la plante. Un voisin situé dans un chunk non chargé est traité comme
+absent, jamais lu : le mécanisme ne charge aucun chunk. Seuls les chunks rechargés et marqués sont
+visités (aucun scan global). Les protections #531 portent sur les actions des non-membres ; le
+rattrapage n'agit que dans les cuboïdes de claims et ne les contourne pas.
+
+**Limites connues.** Croissance moyenne en une fois, pas tick par tick (un seul `BlockGrowEvent` pour
+plusieurs âges d'une culture). Un chunk chargé mais hors de la distance de simulation (view-distance >
+simulation-distance) ne pousse pas en jeu et n'est pas rattrapé tant qu'il n'est pas déchargé.
+
+**Coût.** Test `OfflineGrowthServiceTest` : champ plein de 255 blés (16×16, une pierre au milieu)
+traité en ≥ 4 ticks à 64 plantes/tick, aucun chunk chargé par le mécanisme ; ≈ 0,26 s cumulées sous
+MockBukkit (simulateur lent, chiffre non représentatif de Paper). En jeu, chaque chunk traité est
+journalisé en debug (plantes, blocs, µs) et **en INFO au-delà de 20 ms cumulées**.
+
 ## Performance
 
 Les claims sont indexés par monde (`ClaimService#claimsInWorld`, reconstruit
@@ -524,7 +583,18 @@ claims:
   portal-buffer-blocks: 16
   world: claims
   block-nether-travel: true
+  offline-growth:
+    enabled: true
+    worlds: []
+    max-catch-up-minutes: 1440
+    blocks-per-tick: 256
 ```
+
+`offline-growth` (issue #776, voir « Croissance hors ligne des plantations » ci-dessus) : `enabled:
+false` coupe le rattrapage (les marques existantes sont consommées sans croissance) ; `worlds` vide =
+le seul `claims.world`, sinon la liste exacte des mondes ; `max-catch-up-minutes` de 1 à 43 200 ;
+`blocks-per-tick` de 1 à 10 000. Ajoutée automatiquement aux serveurs existants par
+`ConfigFileCompleter` (activée).
 
 `world` : nom du monde dédié au premier claim via l'Acte de propriété (voir
 « Premier claim » et « Règles du monde des claims » ci-dessus). N'affecte

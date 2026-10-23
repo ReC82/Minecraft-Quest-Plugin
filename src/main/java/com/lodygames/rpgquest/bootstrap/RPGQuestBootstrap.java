@@ -16,6 +16,8 @@ import com.lodygames.rpgquest.claim.ClaimWandListener;
 import com.lodygames.rpgquest.claim.ClaimWorldAccessGuard;
 import com.lodygames.rpgquest.claim.ClaimWorldSafetyListener;
 import com.lodygames.rpgquest.claim.ClaimsWorldRulesListener;
+import com.lodygames.rpgquest.claim.growth.OfflineGrowthService;
+import com.lodygames.rpgquest.claim.growth.PlantGrowthSimulator;
 import com.lodygames.rpgquest.claim.DeedClaimListener;
 import com.lodygames.rpgquest.command.BackpackCommand;
 import com.lodygames.rpgquest.command.ClaimCommand;
@@ -814,6 +816,12 @@ public final class RPGQuestBootstrap {
         claimsWorldRulesListener.purgeAlreadyLoadedWorld();
         registry.start(new PlayerListenerService(plugin,
                 new ClaimNetherTravelListener(() -> configService.current().claims())));
+        // Issue #776 : croissance des plantations des claims rattrapée au rechargement des chunks.
+        registry.start(new OfflineGrowthService(plugin, () -> configService.current().claims(),
+                claimService::claimsInWorld, claimService::isLoaded,
+                new PlantGrowthSimulator(new java.util.SplittableRandom(),
+                        plugin.getServer().getPluginManager()),
+                plugin.getSLF4JLogger()));
 
         // Parcours Claims cohérent (issues #21/#22/#23) : accès au monde des claims réservé au
         // déblocage réel du premier terrain (CLAIM_TIER_1 / claim existant), composé avec

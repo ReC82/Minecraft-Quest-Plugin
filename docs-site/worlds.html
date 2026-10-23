@@ -317,6 +317,20 @@
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Plantations des claims : croissance sans joueur</h2>
+    <p class="text-body-secondary">
+      Dans le monde des claims, les cultures continuent de pousser quand le joueur s'éloigne ou se déconnecte
+      (issue #776). Le serveur ne garde aucun chunk chargé : il note l'heure quand le chunk se décharge et, quand
+      il se recharge, applique d'un coup la croissance moyenne de Minecraft pour cette absence (24 h au plus par
+      défaut). Blé, carottes, pommes de terre, betteraves, citrouilles et pastèques avec leur fruit, verrues,
+      baies, cacao, canne à sucre, cactus et bambou ; pas les arbres. Lumière, terre humide et hauteurs maximales
+      sont respectées ; rien n'est récolté ni ajouté à un inventaire, et rien ne pousse hors d'un claim.
+      Réglages : <code>config.yml</code> → <code>claims.offline-growth</code> (<code>enabled</code>,
+      <code>worlds</code>, <code>max-catch-up-minutes</code>, <code>blocks-per-tick</code>).
+    </p>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Créer et gérer un monde</h2>
     <p class="text-body-secondary">
       Procédure pas-à-pas pour un monde supplémentaire géré par RPGQuest, basée uniquement sur les

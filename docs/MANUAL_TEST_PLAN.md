@@ -8585,6 +8585,34 @@ tel quel dans le guide, lien **Aide** sur la liste et l'éditeur), `DialogueHelp
 l'éditeur et renvois entre fiches mènent à une section existante, parcours normal du guide sans jargon),
 `DiagnosticHelpTest` (ancres des diagnostics). **Non couvert** : captures d'écran (non produites).
 
+### TC-420 — Claims : les plantations poussent sans joueur à proximité (issue #776, PENDING MANUAL VALIDATION)
+
+JAR RPGQuest (aucune migration de base, aucune donnée joueur). Monde `claims`, son propre claim.
+Réglage par défaut : `claims.offline-growth.enabled: true`, 24 h rattrapées au plus.
+
+1.  Dans son claim : planter du blé, des carottes ou des pommes de terre sur terre labourée **humide**
+    (eau à moins de 4 blocs), en plein jour ou avec des torches ; une tige de citrouille ou de pastèque
+    avec de la terre libre autour ; une canne à sucre au bord de l'eau. Noter l'âge visible.
+2.  S'éloigner d'au moins 15 chunks (ou retourner au Hub, ou se déconnecter) pendant **20 à 30 minutes**
+    réelles, serveur allumé. **Attendu** : rien de visible (personne n'est là).
+3.  Revenir. **Attendu** : à l'arrivée (quelques ticks après l'affichage du chunk), les cultures ont
+    avancé de plusieurs stades (blé en champ humide : souvent mûr après ~30 min) ; la canne a gagné 1 à 2
+    blocs (3 au plus) ; une tige mûre a posé **un** fruit sur une case libre avec terre dessous, jamais
+    hors du claim. Aucune récolte ni objet au sol, coffre/inventaire inchangés.
+4.  Repartir puis revenir **aussitôt** (moins d'une minute). **Attendu** : pas de nouveau bond (seule
+    la petite durée réelle compte).
+5.  (Optionnel) Une culture plantée **hors** de tout claim dans le même monde ne bénéficie pas du
+    rattrapage.
+6.  (Admin) Mettre `claims.offline-growth.enabled: false` + `/rpgquest reload`, refaire 2–3.
+    **Attendu** : plus de rattrapage.
+
+**Couverture automatisée** : `PlantGrowthSimulatorTest` (chaque type de culture, lumière, terre humide
+plus rapide que sèche, fruit unique et dans le claim, colonne de 3, cactus jamais à côté d'un bloc solide,
+bambou ≤ 16, événement annulé, voisin d'un chunk non chargé jamais lu), `OfflineGrowthServiceTest`
+(marque consommée une fois, redémarrage, plafond de durée, autres mondes / chunk sans claim / désactivé /
+liste de mondes / `randomTickSpeed 0` ignorés, étalement sur plusieurs ticks, aucun bloc non végétal
+modifié, aucun chunk chargé, coût mesuré), `ConfigValidatorTest.offlineGrowthIsEnabledByDefaultAndValidated`.
+
 ### TC-419 — Atelier : réponse sans plan, reprise avec le même contexte, stagnation (issue #747, retour du 23/10, PENDING MANUAL VALIDATION)
 
 **But.** Vérifier qu'une réponse inexploitable de l'IA ne remplace jamais le dernier plan, qu'elle se reprend

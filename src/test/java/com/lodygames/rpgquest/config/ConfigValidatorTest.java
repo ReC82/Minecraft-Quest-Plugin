@@ -351,6 +351,40 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void offlineGrowthIsEnabledByDefaultAndValidated() throws Exception {
+        OfflineGrowthConfig defaults = ConfigValidator.validate(load("")).claims().offlineGrowth();
+        assertTrue(defaults.enabled());
+        assertTrue(defaults.appliesTo("claims", "claims"));
+        assertFalse(defaults.appliesTo("world", "claims"));
+        assertEquals(1440, defaults.maxCatchUpMinutes());
+
+        OfflineGrowthConfig custom = ConfigValidator.validate(load("""
+                claims:
+                  world: claims
+                  offline-growth:
+                    enabled: true
+                    worlds: [farms]
+                    max-catch-up-minutes: 60
+                    blocks-per-tick: 32
+                """)).claims().offlineGrowth();
+        assertEquals(List.of("farms"), custom.worlds());
+        assertFalse(custom.appliesTo("claims", "claims"));
+        assertEquals(60 * 1200L, custom.maxCatchUpTicks());
+        assertEquals(32, custom.blocksPerTick());
+
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                claims:
+                  offline-growth:
+                    max-catch-up-minutes: 0
+                """)));
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                claims:
+                  offline-growth:
+                    blocks-per-tick: 0
+                """)));
+    }
+
+    @Test
     void claimsDefaultsApplyWhenSectionIsAbsent() throws Exception {
         PluginConfig config = ConfigValidator.validate(load(""));
 

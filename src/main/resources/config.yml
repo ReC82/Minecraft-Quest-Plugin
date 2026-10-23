@@ -137,6 +137,22 @@ claims:
     min-radius: 64
     max-radius: 2000
     spacing: 100
+  # Croissance des plantations sans joueur à proximité (issue #776). Minecraft ne fait pousser les
+  # cultures que dans les chunks chargés près d'un joueur : au déchargement d'un chunk touchant un
+  # claim, le plugin note l'heure de jeu dans le chunk ; à son rechargement, il applique la croissance
+  # moyenne vanilla de la durée écoulée (lumière, terre labourée humide, plafond d'âge, fruits de
+  # citrouille/pastèque, canne à sucre, cactus, bambou, verrues, baies, cacao). Aucun chunk n'est
+  # chargé par le mécanisme, aucun objet n'est créé, rien hors des claims n'est touché. Barème
+  # détaillé : docs/CLAIMS.md, « Croissance hors ligne ».
+  offline-growth:
+    # false = coupe le rattrapage (les chunks déjà marqués sont nettoyés sans croissance).
+    enabled: true
+    # Mondes concernés ; vide = le seul monde des claims (claims.world ci-dessus).
+    worlds: []
+    # Durée maximale rattrapée, en minutes de jeu (1440 = 24 h) : au-delà, l'absence est ignorée.
+    max-catch-up-minutes: 1440
+    # Nombre maximal de plantes traitées par tick serveur (étalement du coût sur plusieurs ticks).
+    blocks-per-tick: 256
 
 progression:
   # Courbe de niveaux (par compétence) : coût du niveau n -> n+1 =

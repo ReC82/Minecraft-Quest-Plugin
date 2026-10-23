@@ -82,6 +82,7 @@ public final class ClaimService implements PluginService {
 
     private volatile List<Claim> claims = List.of();
     private volatile Map<String, List<Claim>> byWorld = Map.of();
+    private volatile boolean loaded;
 
     public ClaimService(RPGQuestPlugin plugin, ClaimRepository claimRepository, ZoneRegistry zoneRegistry,
                          YamlPortalRegistry portalRegistry, ConfigService configService, ProgressionService progressionService,
@@ -109,6 +110,12 @@ public final class ClaimService implements PluginService {
     public void stop() {
         claims = List.of();
         byWorld = Map.of();
+        loaded = false;
+    }
+
+    /** {@code true} une fois les claims chargés depuis la base (asynchrone au démarrage). */
+    public boolean isLoaded() {
+        return loaded;
     }
 
     public List<Claim> claims() {
@@ -445,6 +452,7 @@ public final class ClaimService implements PluginService {
             index.computeIfAbsent(claim.world(), w -> new ArrayList<>()).add(claim);
         }
         this.byWorld = Map.copyOf(index);
+        this.loaded = true;
     }
 
     private static boolean overlapsBounds(String worldA, int aMinX, int aMinY, int aMinZ, int aMaxX, int aMaxY, int aMaxZ,

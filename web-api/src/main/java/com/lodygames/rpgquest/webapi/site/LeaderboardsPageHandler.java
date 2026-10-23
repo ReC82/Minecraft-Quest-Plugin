@@ -25,6 +25,11 @@ import java.util.regex.Pattern;
  * « Depuis toujours », puis la saison et les événements quand {@code statistics.yml} en définit
  * ({@code ?periode=<id>}). Top {@value #TOP} par métrique, rang venu du plugin (ex aequo compris),
  * portée et fraîcheur affichées. Un instantané v1 garde l'ancien classement d'XP.</p>
+ *
+ * <p>Refonte (#56) : podium par classement, filtre par thème ({@code ?categorie=combat}, voir
+ * {@link StatLabels#category}) combinable avec la période. Servie aussi sous {@code /demo/classements}
+ * avec les joueurs fictifs de {@link DemoData} ({@link SiteRoutes#DEMO}) : même rendu, bandeau,
+ * {@code noindex} ; l'état du serveur affiché reste toujours le vrai.</p>
  */
 public final class LeaderboardsPageHandler implements ApiHandler {
 
@@ -33,18 +38,31 @@ public final class LeaderboardsPageHandler implements ApiHandler {
 
     private final SnapshotStore store;
     private final Site site;
+    private final SiteRoutes routes;
 
     public LeaderboardsPageHandler(SnapshotStore store, Site site) {
+        this(store, site, SiteRoutes.LIVE);
+    }
+
+    public LeaderboardsPageHandler(SnapshotStore store, Site site, SiteRoutes routes) {
         this.store = store;
         this.site = site;
+        this.routes = routes;
     }
 
     @Override
     public int handle(HttpExchange exchange) throws IOException {
-        Map<String, Object> state = ServerState.resolve(store);
-        ServerStatus serverStatus = ServerStatus.of(state);
+        if (!routes.boards().equals(exchange.getRequestURI().getPath()) && !"/leaderboards".equals(exchange.getRequestURI().getPath())) {
+            return send(exchange, 404, ServerStatus.of(ServerState.resolve(store)), "<p>Cette page n'existe pas.</p>");
+        }
+        Map<String, Object> live = ServerState.resolve(store);
+        ServerStatus serverStatus = ServerStatus.of(live);
+        Map<String, Object> state = routes.demo() ? DemoData.state(Instant.now()) : live;
         Map<String, Object> statistics = PublicPlayerData.statistics(state.get("statistics"));
-        String requested = QueryParams.parse(exchange.getRequestURI().getRawQuery()).getOrDefault("periode", "");
+        Map<String, String> query = QueryParams.parse(exchange.getRequestURI().getRawQuery());
+        String requested = query.getOrDefault("periode", "");
+        String category = StatLabels.CATEGORIES.containsKey(query.getOrDefault("categorie", ""))
+                ? query.get("categorie") : "";
 
         List<Map<String, Object>> periods = periods(statistics);
         Map<String, Object> period = null;
@@ -52,24 +70,40 @@ public final class LeaderboardsPageHandler implements ApiHandler {
             period = PERIOD_ID.matcher(requested).matches() ? find(periods, requested) : null;
             if (period == null) {
                 return send(exchange, 404, serverStatus, "<p>Ce classement n'existe pas ou n'est plus publié.</p>"
-                        + "<p><a href=\"/classements\">Voir les classements</a></p>");
+                        + "<p><a href=\"" + routes.boards() + "\">Voir les classements</a></p>");
             }
         }
 
-        StringBuilder body = new StringBuilder(tabs(periods, period));
+        StringBuilder body = new StringBuilder(routes.banner()).append(tabs(periods, period, category));
+        Map<String, List<Map<String, Object>>> boards;
         if (period == null) {
-            body.append(lifetime(state, statistics));
+            body.append(lifetimeIntro());
+            boards = boards(statistics.get("lifetime"));
+            if (boards.isEmpty()) {
+                boards = legacyBoards(state.get("leaderboards"));
+            }
         } else {
-            body.append(periodBoards(period));
+            String blocked = periodIntro(body, period);
+            boards = blocked == null ? boards(period.get("leaderboards")) : null;
+            if (blocked != null) {
+                body.append(blocked);
+            }
         }
-        body.append(freshness(state));
+        if (boards != null) {
+            body.append(categories(boards, period, category));
+            body.append(cards(filter(boards, category)));
+        }
+        body.append(routes.demo() ? "" : freshness(state));
         return send(exchange, 200, serverStatus, body.toString());
     }
 
     private int send(HttpExchange exchange, int status, ServerStatus serverStatus, String body) throws IOException {
-        HttpResponses.sendHtml(exchange, status, PageLayout.render(site, new PageMeta(PageMeta.BOARDS,
-                "Les meilleurs aventuriers de " + site.title() + " : expérience, quêtes terminées, saisons et événements.",
-                PageMeta.BOARDS), "Classements", serverStatus, body));
+        String description = "Les meilleurs aventuriers de " + site.title()
+                + " : expérience, quêtes terminées, saisons et événements.";
+        PageMeta meta = routes.demo() ? PageMeta.demo(description, PageMeta.BOARDS)
+                : new PageMeta(PageMeta.BOARDS, description, PageMeta.BOARDS);
+        HttpResponses.sendHtml(exchange, status, PageLayout.render(site, meta,
+                routes.demo() ? "Classements (démonstration)" : "Classements", serverStatus, body));
         return status;
     }
 
@@ -91,39 +125,86 @@ public final class LeaderboardsPageHandler implements ApiHandler {
         return periods.stream().filter(period -> id.equals(period.get("id"))).findFirst().orElse(null);
     }
 
-    private static String tabs(List<Map<String, Object>> periods, Map<String, Object> selected) {
+    /** Onglets de période : « Depuis toujours », la saison, les événements (le thème choisi est conservé). */
+    private String tabs(List<Map<String, Object>> periods, Map<String, Object> selected, String category) {
         if (periods.isEmpty()) {
             return "";
         }
-        StringBuilder html = new StringBuilder("<nav aria-label=\"Période\"><ul class=\"tabs\">");
-        html.append("<li><a href=\"/classements\"").append(selected == null ? " aria-current=\"page\"" : "")
-                .append(">Depuis toujours</a></li>");
+        StringBuilder html = new StringBuilder("<p class=\"filters-label\" id=\"periode-label\">Période</p>"
+                + "<nav aria-labelledby=\"periode-label\"><ul class=\"tabs\">");
+        html.append("<li><a href=\"").append(href(null, category)).append('"')
+                .append(selected == null ? " aria-current=\"page\"" : "").append(">Depuis toujours</a></li>");
         for (Map<String, Object> period : periods) {
             String id = String.valueOf(period.get("id"));
-            html.append("<li><a href=\"/classements?periode=").append(URLEncoder.encode(id, StandardCharsets.UTF_8))
-                    .append('"').append(period == selected ? " aria-current=\"page\"" : "").append('>')
+            html.append("<li><a href=\"").append(href(id, category)).append('"')
+                    .append(period == selected ? " aria-current=\"page\"" : "").append('>')
                     .append(Html.escape(String.valueOf(period.getOrDefault("name", id)))).append("</a></li>");
         }
         return html.append("</ul></nav>").toString();
     }
 
-    private static String lifetime(Map<String, Object> state, Map<String, Object> statistics) {
-        StringBuilder html = new StringBuilder("<p>Classement <strong>depuis toujours</strong> : tout ce qui a été "
-                + "gagné depuis l'ouverture du serveur. Seuls les joueurs qui ont choisi d'afficher leur profil "
-                + "(<code>/profile web public</code> en jeu) y figurent.</p>");
-        Map<String, List<Map<String, Object>>> boards = boards(statistics.get("lifetime"));
-        if (boards.isEmpty()) {
-            boards = legacyBoards(state.get("leaderboards"));
+    /** Thèmes présents dans les classements affichés ; aucun filtre s'il n'y en a qu'un. */
+    private String categories(Map<String, List<Map<String, Object>>> boards, Map<String, Object> period, String selected) {
+        List<String> present = new ArrayList<>();
+        for (String category : StatLabels.CATEGORIES.keySet()) {
+            if (boards.keySet().stream().anyMatch(metric -> StatLabels.category(metric).equals(category))) {
+                present.add(category);
+            }
         }
-        if (boards.isEmpty()) {
-            return html.append(PortalIcons.empty("trophy", "Aucun classement disponible pour le moment.")).toString();
+        if (present.size() < 2) {
+            return "";
         }
-        return html.append(cards(boards)).toString();
+        String periodId = period == null ? null : String.valueOf(period.get("id"));
+        StringBuilder html = new StringBuilder("<p class=\"filters-label\" id=\"theme-label\">Thème</p>"
+                + "<nav aria-labelledby=\"theme-label\"><ul class=\"tabs\">");
+        html.append("<li><a href=\"").append(href(periodId, "")).append('"')
+                .append(selected.isEmpty() ? " aria-current=\"page\"" : "").append(">Tout</a></li>");
+        for (String category : present) {
+            String[] label = StatLabels.CATEGORIES.get(category);
+            html.append("<li><a href=\"").append(href(periodId, category)).append('"')
+                    .append(category.equals(selected) ? " aria-current=\"page\"" : "").append('>')
+                    .append(PortalIcons.icon(label[1], 16)).append(' ').append(Html.escape(label[0])).append("</a></li>");
+        }
+        return html.append("</ul></nav>").toString();
     }
 
-    private static String periodBoards(Map<String, Object> period) {
+    private String href(String periodId, String category) {
+        List<String> params = new ArrayList<>();
+        if (periodId != null) {
+            params.add("periode=" + URLEncoder.encode(periodId, StandardCharsets.UTF_8));
+        }
+        if (!category.isEmpty()) {
+            params.add("categorie=" + category);
+        }
+        return routes.boards() + (params.isEmpty() ? "" : "?" + String.join("&amp;", params));
+    }
+
+    private static Map<String, List<Map<String, Object>>> filter(Map<String, List<Map<String, Object>>> boards,
+                                                                  String category) {
+        if (category.isEmpty()) {
+            return boards;
+        }
+        Map<String, List<Map<String, Object>>> kept = new LinkedHashMap<>();
+        boards.forEach((metric, rows) -> {
+            if (StatLabels.category(metric).equals(category)) {
+                kept.put(metric, rows);
+            }
+        });
+        return kept;
+    }
+
+    private String lifetimeIntro() {
+        return routes.demo()
+                ? "<p>Classement <strong>depuis toujours</strong>, ici avec des joueurs fictifs.</p>"
+                : "<p>Classement <strong>depuis toujours</strong> : tout ce qui a été gagné depuis l'ouverture du "
+                        + "serveur. Seuls les joueurs qui ont choisi d'afficher leur profil (<code>/profile web "
+                        + "public</code> en jeu) y figurent.</p>";
+    }
+
+    /** En-tête d'une saison ou d'un événement ; renvoie le message qui remplace les classements, ou {@code null}. */
+    private static String periodIntro(StringBuilder html, Map<String, Object> period) {
         String status = String.valueOf(period.get("status"));
-        StringBuilder html = new StringBuilder("<p><strong>")
+        html.append("<p><strong>")
                 .append(Html.escape(String.valueOf(period.getOrDefault("name", period.get("id"))))).append("</strong> — ")
                 .append(Html.escape(StatLabels.status(status))).append(" · du ")
                 .append(Html.escape(StatLabels.dateTime(String.valueOf(period.get("start"))))).append(" au ")
@@ -131,19 +212,13 @@ public final class LeaderboardsPageHandler implements ApiHandler {
         html.append(countdown(status, period, Instant.now()));
         html.append(rules(period));
         if ("CANCELLED".equals(status)) {
-            return html.append("<p class=\"note\">Cet événement a été annulé : aucun classement ni aucune récompense.</p>")
-                    .toString();
+            return "<p class=\"note\">Cet événement a été annulé : aucun classement ni aucune récompense.</p>";
         }
         if ("SCHEDULED".equals(status)) {
-            return html.append("<p class=\"note\">Pas encore commencé : le classement s'affichera dès le début.</p>")
-                    .toString();
+            return "<p class=\"note\">Pas encore commencé : le classement s'affichera dès le début.</p>";
         }
         html.append(community(period));
-        Map<String, List<Map<String, Object>>> boards = boards(period.get("leaderboards"));
-        if (boards.isEmpty()) {
-            return html.append(PortalIcons.empty("trophy", "Aucun classement pour cette période.")).toString();
-        }
-        return html.append(cards(boards)).toString();
+        return null;
     }
 
     /** Compte à rebours (#57) : avant le début, puis jusqu'à la fin. */
@@ -211,12 +286,15 @@ public final class LeaderboardsPageHandler implements ApiHandler {
                 + "</section>";
     }
 
-    private static String cards(Map<String, List<Map<String, Object>>> boards) {
-        StringBuilder html = new StringBuilder("<div class=\"grid\">");
+    private String cards(Map<String, List<Map<String, Object>>> boards) {
+        if (boards.isEmpty()) {
+            return PortalIcons.empty("trophy", "Aucun classement disponible pour le moment.");
+        }
+        StringBuilder html = new StringBuilder("<div class=\"grid boards\">");
         for (Map.Entry<String, List<Map<String, Object>>> board : boards.entrySet()) {
             html.append("<section class=\"card\">")
                     .append(PortalIcons.heading("h2", PortalIcons.forMetric(board.getKey()), StatLabels.title(board.getKey())))
-                    .append(BoardView.render(board.getValue(), board.getKey(), TOP)).append("</section>");
+                    .append(BoardView.render(board.getValue(), board.getKey(), TOP, routes)).append("</section>");
         }
         return html.append("</div>").toString();
     }

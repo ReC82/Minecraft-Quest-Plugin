@@ -184,8 +184,8 @@ class PublicPortalV1Test {
         start(true, "");
 
         String lifetime = get("/classements").body();
-        assertTrue(lifetime.contains("Expérience totale") && lifetime.contains("Quêtes terminées"));
-        assertTrue(lifetime.indexOf("Expérience totale") < lifetime.indexOf("Quêtes terminées"));
+        assertTrue(lifetime.contains("XP globale") && lifetime.contains("Quêtes terminées"));
+        assertTrue(lifetime.indexOf("XP globale") < lifetime.indexOf("Quêtes terminées"));
         assertTrue(lifetime.contains("href=\"/classements?periode=season_01\""));
         assertTrue(lifetime.contains("4 500 XP") || lifetime.contains("4 500 XP"), "nombres lisibles");
         assertTrue(lifetime.contains("Données relevées sur le serveur le"));
@@ -209,7 +209,7 @@ class PublicPortalV1Test {
         start(true, "");
 
         String alice = get("/joueurs/alice").body();
-        assertTrue(alice.contains("d'expérience totale") && alice.contains("<strong>Minage</strong>"));
+        assertTrue(alice.contains("XP globale : ") && alice.contains("<strong>Minage</strong>"));
         assertTrue(alice.contains("Quêtes terminées<br><span class=\"note\">2<sup>e</sup>"), alice);
         HttpResponse<String> search = get("/joueurs?pseudo=Bob");
         assertEquals(303, search.statusCode());

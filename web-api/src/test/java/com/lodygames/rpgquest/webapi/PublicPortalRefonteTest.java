@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.webapi.json.Json;
+import com.lodygames.rpgquest.webapi.site.DemoData;
+import com.lodygames.rpgquest.webapi.site.StatLabels;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -211,5 +213,87 @@ class PublicPortalRefonteTest {
         String sitemap = get("/sitemap.xml").body();
         assertTrue(sitemap.contains("https://portail.example/evenements") && sitemap.contains("https://portail.example/progression"));
         assertFalse(sitemap.contains("/demo"));
+    }
+
+    /**
+     * Bug du 23/10 : la liste, la fiche et les classements fictifs doivent montrer les mêmes valeurs, et l'XP
+     * globale suivre une règle affichée (ce n'est pas la somme des pistes).
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void demoListProfileAndBoardsShowTheSameValues() throws Exception {
+        start(false);
+        Map<String, Object> state = DemoData.state(Instant.now());
+        Map<String, Object> lifetime = (Map<String, Object>) ((Map<String, Object>) state.get("statistics")).get("lifetime");
+        String list = get("/demo/joueurs").body();
+        String boards = get("/demo/classements").body();
+        List<String> tracks = List.of("COMBAT", "MINING", "FARMING", "FISHING", "EXPLORATION");
+
+        for (Map<String, Object> profile : (List<Map<String, Object>>) state.get("profiles")) {
+            String name = (String) profile.get("name");
+            Map<String, Number> skills = (Map<String, Number>) profile.get("skills");
+            long sum = tracks.stream().mapToLong(track -> skills.get(track).longValue()).sum();
+            long quests = ((Number) profile.get("questsCompleted")).longValue();
+            assertEquals(sum / 2 + quests * 50, skills.get("GLOBAL").longValue(), name + " : règle de l'XP globale");
+            String global = StatLabels.number(skills.get("GLOBAL"));
+
+            assertTrue(list.contains(">" + name + "</a><br><span class=\"note\">" + global + " XP globale</span>"),
+                    name + " : liste");
+            String sheet = get("/demo/joueurs/" + name).body();
+            assertTrue(sheet.contains("XP globale : <span class=\"big\">" + global + " XP</span>"), name + " : fiche");
+            assertTrue(sheet.contains(StatLabels.GLOBAL_XP_RULE), name + " : règle affichée sur la fiche");
+            for (String track : tracks) {
+                assertTrue(sheet.contains("<span>" + StatLabels.number(skills.get(track)) + " XP</span>"), name + " " + track);
+            }
+            long best = Long.MAX_VALUE;
+            for (Map.Entry<String, Object> board : lifetime.entrySet()) {
+                for (Map<String, Object> row : (List<Map<String, Object>>) board.getValue()) {
+                    if (name.equals(row.get("name"))) {
+                        long rank = ((Number) row.get("rank")).longValue();
+                        best = Math.min(best, rank);
+                        assertTrue(sheet.contains(StatLabels.title(board.getKey()) + "<br><span class=\"note\">" + rank + "<sup>"),
+                                name + " : rang " + board.getKey());
+                    }
+                }
+            }
+            assertTrue(sheet.contains("Meilleur rang : <strong>" + best + "<sup>"), name + " : meilleur rang");
+        }
+        for (Map<String, Object> row : (List<Map<String, Object>>) lifetime.get("RPG_XP_GLOBAL")) {
+            if (((Number) row.get("rank")).intValue() <= 10) {
+                assertTrue(boards.contains(">" + row.get("name") + "</a></span><span class=\"value\">"
+                        + StatLabels.number(row.get("value")) + " XP</span>"), row.get("name") + " : classement XP globale");
+            }
+        }
+        String brasier = get("/demo/joueurs/Demo_Brasier").body();
+        assertTrue(brasier.contains("XP globale : <span class=\"big\">5\u202f200 XP</span>")
+                || brasier.contains("XP globale : <span class=\"big\">5\u00a0200 XP</span>"), "valeur signalée");
+        assertTrue(brasier.contains("Meilleur rang : <strong>1<sup>er</sup></strong> en XP Combat"));
+    }
+
+    @Test
+    void demoSearchFindsFictionalPlayersByExactPartialOrSpacedNameWithoutLeavingTheDemo() throws Exception {
+        snapshot();
+        start(true);
+
+        for (String query : List.of("Demo_Brasier", "demo_brasier", "DEMO_BRASIER", "Brasier", "brasier", "Demo+Brasier",
+                "%20brasier%20", "bras")) {
+            HttpResponse<String> response = get("/demo/joueurs?pseudo=" + query);
+            assertEquals(303, response.statusCode(), query);
+            assertEquals("/demo/joueurs/Demo_Brasier", response.headers().firstValue("Location").orElse(""), query);
+        }
+        HttpResponse<String> several = get("/demo/joueurs?pseudo=demo_");
+        assertEquals(200, several.statusCode());
+        assertTrue(several.body().contains("12 profils correspondent") && several.body().contains("class=\"demo-banner\""));
+        assertFalse(several.body().contains("href=\"/joueurs/"), "la recherche reste dans la démonstration");
+        HttpResponse<String> none = get("/demo/joueurs?pseudo=Realname");
+        assertEquals(200, none.statusCode());
+        assertTrue(none.body().contains("Aucun profil public ne correspond"));
+        assertFalse(none.body().contains("href=\"/demo/joueurs/Realname\""), "un vrai pseudo n'existe pas en démonstration");
+        assertTrue(get("/demo/joueurs?pseudo=%3Cscript%3E").body().contains("&lt;script&gt;"), "texte cherché échappé");
+
+        HttpResponse<String> live = get("/joueurs?pseudo=realn");
+        assertEquals(303, live.statusCode());
+        assertEquals("/joueurs/Realname", live.headers().firstValue("Location").orElse(""));
+        assertEquals(200, get("/joueurs?pseudo=Demo_Brasier").statusCode(), "aucun joueur fictif parmi les vrais");
     }
 }

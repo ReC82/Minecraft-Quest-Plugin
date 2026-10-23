@@ -63,11 +63,9 @@ public final class PlayersPageHandler implements ApiHandler {
         rest = rest.startsWith("/") ? rest.substring(1) : rest;
         if (rest.isEmpty()) {
             Map<String, String> query = QueryParams.parse(exchange.getRequestURI().getRawQuery());
-            String wanted = query.getOrDefault("pseudo", "").trim();
-            if (NAME.matcher(wanted).matches()) {
-                exchange.getResponseHeaders().set("Location", routes.players() + "/" + wanted);
-                HttpResponses.sendHtml(exchange, 303, "");
-                return 303;
+            String wanted = query.getOrDefault("pseudo", "").strip();
+            if (!wanted.isEmpty()) {
+                return search(exchange, serverStatus, profiles, wanted);
             }
             int page = SitePaging.page(query);
             int pages = SitePaging.pageCount(profiles.size(), PAGE_SIZE);
@@ -97,6 +95,55 @@ public final class PlayersPageHandler implements ApiHandler {
         return 200;
     }
 
+    /**
+     * Recherche de pseudo : un pseudo exact (casse ignorée) ou un seul résultat ouvre directement la fiche, sous
+     * son pseudo exact ; sinon la liste des profils dont le pseudo contient le texte cherché. Les espaces et
+     * « _ » sont ignorés pour comparer (« brasier », « demo brasier » trouvent {@code Demo_Brasier}). Ne cherche que
+     * dans les profils de la page courante : la démonstration ne renvoie jamais vers les vraies pages.
+     */
+    private int search(HttpExchange exchange, ServerStatus serverStatus, List<Map<String, Object>> profiles,
+                       String wanted) throws IOException {
+        String shown = wanted.length() > 32 ? wanted.substring(0, 32) : wanted;
+        String needle = searchKey(shown);
+        List<Map<String, Object>> matches = needle.isEmpty() ? List.of() : profiles.stream()
+                .filter(profile -> searchKey(String.valueOf(profile.get("name"))).contains(needle))
+                .sorted(Comparator.comparing(profile -> String.valueOf(profile.get("name")).toLowerCase(Locale.ROOT)))
+                .toList();
+        Optional<Map<String, Object>> exact = matches.stream()
+                .filter(profile -> searchKey(String.valueOf(profile.get("name"))).equals(needle)).findFirst();
+        if (exact.isPresent() || matches.size() == 1) {
+            String name = String.valueOf(exact.orElse(matches.get(0)).get("name"));
+            exchange.getResponseHeaders().set("Location",
+                    routes.players() + "/" + URLEncoder.encode(name, StandardCharsets.UTF_8));
+            HttpResponses.sendHtml(exchange, 303, "");
+            return 303;
+        }
+        StringBuilder body = new StringBuilder(searchForm(shown));
+        if (matches.isEmpty()) {
+            body.append(PortalIcons.empty("npc", "Aucun profil public ne correspond à « " + Html.escape(shown) + " »."));
+        } else {
+            body.append("<p>").append(matches.size()).append(" profils correspondent à « ").append(Html.escape(shown))
+                    .append(" ».</p>").append(cards(matches));
+        }
+        body.append("<p><a href=\"").append(routes.players()).append("\">Tous les profils</a></p>");
+        HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, new PageMeta("", "", PageMeta.PLAYERS,
+                routes.demo()), routes.demo() ? "Recherche (démonstration)" : "Recherche de joueur", serverStatus,
+                routes.banner() + body));
+        return 200;
+    }
+
+    /** Clé de comparaison d'un pseudo : minuscules, sans espaces ni « _ ». */
+    static String searchKey(String name) {
+        return name.toLowerCase(Locale.ROOT).replaceAll("[\\s_]+", "");
+    }
+
+    private String searchForm(String value) {
+        return "<form method=\"get\" action=\"" + routes.players() + "\" role=\"search\">"
+                + "<label for=\"pseudo\">Chercher un pseudo</label> <input id=\"pseudo\" name=\"pseudo\" "
+                + "maxlength=\"32\" autocomplete=\"off\" value=\"" + Html.escape(value) + "\"> <button type=\"submit\">"
+                + "Chercher</button></form>";
+    }
+
     private int notFound(HttpExchange exchange, ServerStatus serverStatus) throws IOException {
         HttpResponses.sendHtml(exchange, 404, PageLayout.render(site, new PageMeta("", "", PageMeta.PLAYERS,
                 routes.demo()), "Joueur", serverStatus, "<p>Aucun profil public pour ce pseudo. Un joueur n'apparaît "
@@ -115,30 +162,33 @@ public final class PlayersPageHandler implements ApiHandler {
     }
 
     private String list(List<Map<String, Object>> profiles, int page, int pages) {
-        StringBuilder body = new StringBuilder("<form method=\"get\" action=\"" + routes.players() + "\" role=\"search\">"
-                + "<label for=\"pseudo\">Chercher un pseudo</label> <input id=\"pseudo\" name=\"pseudo\" "
-                + "maxlength=\"16\" pattern=\"[A-Za-z0-9_]{1,16}\" autocomplete=\"off\"> <button type=\"submit\">"
-                + "Chercher</button></form>");
+        StringBuilder body = new StringBuilder(searchForm(""));
         if (profiles.isEmpty()) {
             return body.append(PortalIcons.empty("npc", "Aucun profil public pour le moment.")).toString();
         }
         body.append(routes.demo() ? "<p>Joueurs fictifs de démonstration.</p>"
                 : "<p>Joueurs présents dans au moins un classement et qui ont choisi d'afficher leur profil. "
                         + "Pour masquer le tien : <code>/profile web prive</code> en jeu.</p>");
-        body.append("<ul class=\"grid\" style=\"list-style:none;padding:0\">");
         List<Map<String, Object>> sorted = profiles.stream()
                 .sorted(Comparator.comparing(profile -> String.valueOf(profile.get("name")).toLowerCase(Locale.ROOT)))
                 .skip((long) (page - 1) * PAGE_SIZE).limit(PAGE_SIZE).toList();
-        for (Map<String, Object> profile : sorted) {
+        return body.append(cards(sorted)).append(SitePaging.pager(routes.players() + "?", page, pages)).toString();
+    }
+
+    /** Cartes de profils : pseudo et XP globale, la même valeur que la fiche et le classement « XP globale ». */
+    private String cards(List<Map<String, Object>> profiles) {
+        StringBuilder body = new StringBuilder("<ul class=\"grid\" style=\"list-style:none;padding:0\">");
+        for (Map<String, Object> profile : profiles) {
             String name = String.valueOf(profile.get("name"));
             Map<?, ?> skills = profile.get("skills") instanceof Map<?, ?> map ? map : Map.of();
             body.append("<li class=\"card player-card\">").append(avatar(name)).append("<div>").append(link(routes, name));
             if (skills.get("GLOBAL") != null) {
-                body.append("<br><span class=\"note\">").append(StatLabels.number(skills.get("GLOBAL"))).append(" XP</span>");
+                body.append("<br><span class=\"note\">").append(StatLabels.number(skills.get("GLOBAL")))
+                        .append(" XP globale</span>");
             }
             body.append("</div></li>");
         }
-        return body.append("</ul>").append(SitePaging.pager(routes.players() + "?", page, pages)).toString();
+        return body.append("</ul>").toString();
     }
 
     /** Lien vers le profil réel (compatibilité des appels historiques). */
@@ -163,17 +213,21 @@ public final class PlayersPageHandler implements ApiHandler {
 
         StringBuilder body = new StringBuilder("<section class=\"profile-hero\">").append(avatar(name)).append("<div>");
         if (skills.get("GLOBAL") != null) {
-            body.append("<p><span class=\"big\">").append(StatLabels.number(skills.get("GLOBAL")))
-                    .append(" XP</span> d'expérience totale</p>");
+            body.append("<p>XP globale : <span class=\"big\">").append(StatLabels.number(skills.get("GLOBAL")))
+                    .append(" XP</span></p>");
         }
         if (profile.get("questsCompleted") != null) {
             body.append("<p>").append(PortalIcons.icon("scroll", 16)).append(" <strong>")
                     .append(StatLabels.number(profile.get("questsCompleted"))).append("</strong> quêtes terminées</p>");
         }
-        ranks.stream().mapToLong(rank -> Long.parseLong(rank[1])).min().ifPresent(best ->
+        ranks.stream().min(Comparator.comparingLong(rank -> Long.parseLong(rank[1]))).ifPresent(best ->
                 body.append("<p>").append(PortalIcons.icon("trophy", 16)).append(" Meilleur rang : <strong>")
-                        .append(ordinal(best)).append("</strong></p>"));
+                        .append(ordinal(Long.parseLong(best[1]))).append("</strong> en ")
+                        .append(Html.escape(StatLabels.title(best[0]))).append("</p>"));
         body.append("</div></section>");
+        if (skills.get("GLOBAL") != null) {
+            body.append("<p class=\"note\">").append(StatLabels.GLOBAL_XP_RULE).append("</p>");
+        }
 
         body.append(tracks(skills));
         if (!ranks.isEmpty()) {

@@ -310,6 +310,9 @@ public final class RPGQuestBootstrap {
     /** Motif d'indisponibilité de la capture de console, ou vide si elle fonctionne. */
     private java.util.Optional<String> consoleUnavailableReason = java.util.Optional.empty();
     private WebSnapshotWriter webSnapshotWriter;
+    /** Issue #735 : saisons, événements et classements, partagés avec PlugAdmin. */
+    private com.lodygames.rpgquest.stats.StatisticsService statisticsService;
+    private com.lodygames.rpgquest.database.StatisticsRepository statisticsRepository;
     private StoreClient storeClient;
     private StoreDeliveryService storeDeliveryService;
     private ModCompatService modCompatService;
@@ -613,6 +616,8 @@ public final class RPGQuestBootstrap {
         var statisticsService = new com.lodygames.rpgquest.stats.StatisticsService(plugin,
                 plugin.getDataFolder().toPath().resolve("statistics.yml"), statisticsRepository, plugin.getSLF4JLogger());
         registry.start(statisticsService);
+        this.statisticsService = statisticsService;
+        this.statisticsRepository = statisticsRepository;
         webSnapshotWriter.setStatistics(statisticsService, statisticsRepository);
         // Issue #421 : chaque instantané part aussi vers le portail AWS, et un relevé d'état agrégé
         // (en ligne, nombre de joueurs) part même sans export nominatif. Inerte tant que
@@ -1356,6 +1361,12 @@ public final class RPGQuestBootstrap {
         agentActions.setEncounters(encounterService);
         agentActions.setRewardEntitlements(rewardEntitlementService);
         agentActions.setPriceCatalog(priceCatalogService, merchantRegistry);
+        // Issue #735 : classements du site public gérés depuis PlugAdmin (leaderboards.yml).
+        if (statisticsService != null) {
+            agentActions.setLeaderboards(new com.lodygames.rpgquest.stats.LeaderboardAdminView(statisticsService,
+                    statisticsRepository, new com.lodygames.rpgquest.stats.LeaderboardCatalogEditor(statisticsService,
+                    plugin.getSLF4JLogger()), () -> configService.current().webExport().enabled()));
+        }
         agentActions.setNpcSpots(npcSpotService, claimService);
         // Issue #637 : relevé des claims et téléportation de diagnostic d'un administrateur.
         agentActions.setClaimAdmin(claimService, new com.lodygames.rpgquest.claim.ClaimAdminTeleport(plugin,

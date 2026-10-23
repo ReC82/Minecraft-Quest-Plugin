@@ -25,10 +25,39 @@ import java.util.Set;
  * @param end           fin des dates personnalisées, sinon {@code null}
  * @param size          nombre de joueurs affichés
  * @param featured      mis en avant sur l'accueil du portail
+ * @param description   phrase publique facultative sous le titre (#735), ou {@code null}
+ * @param status        cycle de vie administré depuis PlugAdmin (#735) : seul {@link Status#ENABLED} est calculé
+ * @param order         ordre d'affichage (croissant), puis ordre du fichier
+ * @param visible       publié sur le site ; un classement actif mais caché est calculé et figé sans être montré
+ * @param event         id de l'événement de {@code statistics.yml} suivi par {@link BoardPeriod#EVENT}, sinon {@code null}
  */
 public record StatBoard(String id, String name, String category, String icon, String metric,
                         Map<String, Set<String>> filter, Map<String, List<String>> declared, BoardPeriod period,
-                        Instant start, Instant end, int size, boolean featured) {
+                        Instant start, Instant end, int size, boolean featured, String description,
+                        Status status, int order, boolean visible, String event) {
+
+    /**
+     * Cycle de vie d'un classement (#735). {@link #DRAFT} : en préparation, jamais calculé ;
+     * {@link #ENABLED} : calculé, figé à la fin de chaque fenêtre, publié s'il est visible ;
+     * {@link #PAUSED} : suspendu (ni calcul ni publication), réglages conservés ; {@link #ARCHIVED} :
+     * retiré, ses résultats déjà figés restent en base.
+     */
+    public enum Status {
+        DRAFT, ENABLED, PAUSED, ARCHIVED;
+
+        public String wireName() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        public static Optional<Status> parse(String text) {
+            for (Status status : values()) {
+                if (status.wireName().equals(text)) {
+                    return Optional.of(status);
+                }
+            }
+            return Optional.empty();
+        }
+    }
 
     /** Thèmes publics, mêmes identifiants que les filtres du portail. */
     public static final List<String> CATEGORIES =
@@ -37,6 +66,24 @@ public record StatBoard(String id, String name, String category, String icon, St
     public StatBoard {
         filter = Map.copyOf(filter);
         declared = Map.copyOf(declared);
+    }
+
+    /** Classement actif, visible, sans description ni événement (catalogue #734). */
+    public StatBoard(String id, String name, String category, String icon, String metric,
+                     Map<String, Set<String>> filter, Map<String, List<String>> declared, BoardPeriod period,
+                     Instant start, Instant end, int size, boolean featured) {
+        this(id, name, category, icon, metric, filter, declared, period, start, end, size, featured, null,
+                Status.ENABLED, 0, true, null);
+    }
+
+    /** Vrai s'il est calculé et figé (actif), qu'il soit visible ou non. */
+    public boolean active() {
+        return status == Status.ENABLED;
+    }
+
+    /** Vrai s'il est montré sur le site : actif et visible. */
+    public boolean published() {
+        return active() && visible;
     }
 
     public StatMetric statMetric() {
@@ -54,6 +101,15 @@ public record StatBoard(String id, String name, String category, String icon, St
                 new EventRules(EventRanking.HIGHEST_TOTAL, filter, 0L, List.of()));
     }
 
+    /** Fenêtre en cours à {@code now} selon {@code definition} (saison montrée, événement suivi). */
+    public Optional<BoardPeriod.Window> current(Instant now, StatisticsDefinition definition) {
+        if (period == BoardPeriod.EVENT) {
+            return definition.find(event).filter(e -> e.state() == StatPeriod.State.PLANNED)
+                    .map(e -> new BoardPeriod.Window(e.id(), e.start(), e.end()));
+        }
+        return current(now, definition.zone(), definition.currentSeason(now));
+    }
+
     /** Fenêtre en cours à {@code now} ; vide pour une saison absente ou des dates pas encore commencées. */
     public Optional<BoardPeriod.Window> current(Instant now, java.time.ZoneId zone, Optional<StatPeriod> season) {
         return switch (period) {
@@ -61,6 +117,7 @@ public record StatBoard(String id, String name, String category, String icon, St
             case DAILY, WEEKLY, MONTHLY -> Optional.of(period.current(now, zone));
             case SEASON -> season.map(s -> new BoardPeriod.Window(s.id(), s.start(), s.end()));
             case CUSTOM -> Optional.of(new BoardPeriod.Window("custom", start, end));
+            case EVENT -> Optional.empty();
         };
     }
 

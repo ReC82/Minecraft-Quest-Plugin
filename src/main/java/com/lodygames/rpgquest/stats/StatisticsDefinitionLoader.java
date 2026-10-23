@@ -27,7 +27,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
  */
 public final class StatisticsDefinitionLoader {
 
-    private static final Pattern PERIOD_ID = Pattern.compile("[a-z0-9_]{1,64}");
+    public static final Pattern PERIOD_ID = Pattern.compile("[a-z0-9_]{1,64}");
     /** Valeur de filtre {@code entity}/{@code item} : un nom d'énumération Paper ({@code ZOMBIE}). */
     private static final Pattern CONSTANT = Pattern.compile("[A-Z0-9_]{1,64}");
     /** Valeur de filtre {@code special-mob} : l'id namespacé d'un mob spécial ({@code rpgquest:forest_brute}). */
@@ -35,24 +35,53 @@ public final class StatisticsDefinitionLoader {
     /** Valeur de filtre {@code entity-family}/{@code block-family} (#734) : l'id d'une famille ({@code zombies}). */
     private static final Pattern FAMILY = Pattern.compile("[a-z0-9_-]{1,64}");
     private static final Pattern ENTITLEMENT = Pattern.compile("[a-z0-9_.-]{1,64}");
-    private static final int LABEL_MAX = 120;
-    private static final Pattern ICON = Pattern.compile("[a-z0-9-]{1,32}");
+    public static final int LABEL_MAX = 120;
+    public static final Pattern ICON = Pattern.compile("[a-z0-9-]{1,32}");
     private static final String BUNDLED_BOARDS = "/stats/leaderboards.yml";
     private static final int DEFAULT_BOARD_SIZE = 10;
-    private static final int MAX_BOARD_SIZE = 50;
+    public static final int MAX_BOARD_SIZE = 50;
+    /** Longueur maximale d'une description publique (#735). */
+    public static final int DESCRIPTION_MAX = 200;
+    /** Plus grand ordre d'affichage accepté (#735). */
+    public static final int MAX_ORDER = 100_000;
     /** Clés réservées aux événements (issue #57) : une saison classe toujours par plus grand total. */
     private static final List<String> EVENT_ONLY_KEYS = List.of("ranking", "filter", "goal", "rewards");
 
     private StatisticsDefinitionLoader() {
     }
 
-    public record Result(StatisticsDefinition definition, List<String> errors) {
+    /**
+     * D'où vient la liste des classements (#735) : {@code statistics.yml} ({@code leaderboards:},
+     * historique, prioritaire), le fichier géré par PlugAdmin ({@code leaderboards.yml}) ou le
+     * catalogue par défaut du JAR.
+     */
+    public enum BoardsSource {
+        STATISTICS_FILE, MANAGED_FILE, BUNDLED;
+
+        public String wireName() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+    }
+
+    public record Result(StatisticsDefinition definition, List<String> errors, BoardsSource boardsSource) {
+        public Result(StatisticsDefinition definition, List<String> errors) {
+            this(definition, errors, BoardsSource.BUNDLED);
+        }
+
         public boolean valid() {
             return errors.isEmpty();
         }
     }
 
     public static Result load(ConfigurationSection root) {
+        return load(root, null);
+    }
+
+    /**
+     * @param managed fichier des classements géré par PlugAdmin ({@code leaderboards.yml}, #735), ou
+     *                {@code null} s'il n'existe pas. Ignoré si {@code statistics.yml} a sa propre liste.
+     */
+    public static Result load(ConfigurationSection root, ConfigurationSection managed) {
         List<String> errors = new ArrayList<>();
         List<StatPeriod> periods = new ArrayList<>();
         Set<String> ids = new HashSet<>();
@@ -60,10 +89,17 @@ public final class StatisticsDefinitionLoader {
         readPeriods(root, "events", StatScope.EVENT, periods, ids, errors);
         checkSeasonsDoNotOverlap(periods, errors);
 
-        java.time.ZoneId zone = zone(root, errors);
-        List<StatBoard> boards = root.contains("leaderboards")
-                ? readBoards(root.getMapList("leaderboards"), "leaderboards", ids, errors)
-                : readBoards(bundledBoards(), "catalogue par défaut", ids, errors);
+        BoardsSource source = root.contains("leaderboards") ? BoardsSource.STATISTICS_FILE
+                : managed != null ? BoardsSource.MANAGED_FILE : BoardsSource.BUNDLED;
+        java.time.ZoneId zone = source == BoardsSource.MANAGED_FILE && managed.contains("timezone")
+                ? zone(managed, errors) : zone(root, errors);
+        Set<String> events = new HashSet<>();
+        periods.stream().filter(period -> period.scope() == StatScope.EVENT).forEach(period -> events.add(period.id()));
+        List<StatBoard> boards = switch (source) {
+            case STATISTICS_FILE -> readBoards(root.getMapList("leaderboards"), "leaderboards", ids, events, errors);
+            case MANAGED_FILE -> readBoards(managed.getMapList("leaderboards"), "leaderboards.yml", ids, events, errors);
+            case BUNDLED -> readBoards(bundledBoards(), "catalogue par défaut", ids, events, errors);
+        };
 
         Set<String> reasons = root.contains("excluded-xp-reasons")
                 ? new LinkedHashSet<>(root.getStringList("excluded-xp-reasons"))
@@ -71,9 +107,9 @@ public final class StatisticsDefinitionLoader {
         Map<UUID, Set<String>> exclusions = readExclusions(root, ids, errors);
 
         if (!errors.isEmpty()) {
-            return new Result(StatisticsDefinition.EMPTY, List.copyOf(errors));
+            return new Result(StatisticsDefinition.EMPTY, List.copyOf(errors), source);
         }
-        return new Result(new StatisticsDefinition(periods, exclusions, reasons, boards, zone), List.of());
+        return new Result(new StatisticsDefinition(periods, exclusions, reasons, boards, zone), List.of(), source);
     }
 
     private static java.time.ZoneId zone(ConfigurationSection root, List<String> errors) {
@@ -90,7 +126,7 @@ public final class StatisticsDefinitionLoader {
     }
 
     /** Catalogue livré dans le JAR ({@code stats/leaderboards.yml}), utilisé quand le fichier n'a pas de « leaderboards ». */
-    private static List<Map<?, ?>> bundledBoards() {
+    public static List<Map<?, ?>> bundledBoards() {
         try (var in = StatisticsDefinitionLoader.class.getResourceAsStream(BUNDLED_BOARDS)) {
             if (in == null) {
                 return List.of();
@@ -107,7 +143,8 @@ public final class StatisticsDefinitionLoader {
      * Classements du catalogue (#734). Une métrique sans journal horodaté (quêtes terminées
      * « depuis toujours ») n'accepte que {@code period: lifetime} et aucun filtre.
      */
-    private static List<StatBoard> readBoards(List<Map<?, ?>> entries, String key, Set<String> ids, List<String> errors) {
+    private static List<StatBoard> readBoards(List<Map<?, ?>> entries, String key, Set<String> ids, Set<String> events,
+                                              List<String> errors) {
         List<StatBoard> boards = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             Map<?, ?> entry = entries.get(i);
@@ -120,9 +157,6 @@ public final class StatisticsDefinitionLoader {
             where = key + " « " + id + " »";
             if (!ids.add(id)) {
                 errors.add(where + " : identifiant déjà utilisé par un autre classement, une saison ou un événement.");
-                continue;
-            }
-            if (Boolean.FALSE.equals(entry.get("enabled"))) {
                 continue;
             }
             String name = text(entry.get("name"));
@@ -140,7 +174,7 @@ public final class StatisticsDefinitionLoader {
             var period = periodText == null ? java.util.Optional.of(BoardPeriod.LIFETIME)
                     : BoardPeriod.parse(periodText.toLowerCase(java.util.Locale.ROOT));
             if (period.isEmpty()) {
-                errors.add(where + " : « period » vaut lifetime, daily, weekly, monthly, season ou custom.");
+                errors.add(where + " : « period » vaut lifetime, daily, weekly, monthly, season, event ou custom.");
                 continue;
             }
             if (!metric.get().windowed() && (period.get() != BoardPeriod.LIFETIME || entry.get("filter") != null)) {
@@ -161,6 +195,21 @@ public final class StatisticsDefinitionLoader {
                 }
             } else if (entry.containsKey("start") || entry.containsKey("end")) {
                 errors.add(where + " : « start »/« end » ne s'emploient qu'avec period: custom.");
+                continue;
+            }
+            String event = text(entry.get("event"));
+            if (period.get() == BoardPeriod.EVENT) {
+                if (event == null || !events.contains(event)) {
+                    errors.add(where + " : period: event demande « event », l'id d'un événement de statistics.yml"
+                            + (event == null ? "." : " (« " + event + " » inconnu)."));
+                    continue;
+                }
+            } else if (event != null) {
+                errors.add(where + " : « event » ne s'emploie qu'avec period: event.");
+                continue;
+            }
+            BoardStatusFields fields = statusFields(entry, i, where, errors);
+            if (fields == null) {
                 continue;
             }
             String category = text(entry.get("category"));
@@ -185,9 +234,55 @@ public final class StatisticsDefinitionLoader {
             }
             boards.add(new StatBoard(id, name, category == null ? "autres" : category, icon, metricId, filter,
                     declared(entry.get("filter")), period.get(), start, end, size,
-                    Boolean.TRUE.equals(entry.get("featured"))));
+                    Boolean.TRUE.equals(entry.get("featured")), fields.description(), fields.status(), fields.order(),
+                    fields.visible(), event));
         }
+        // Ordre d'affichage (#735), puis ordre du fichier (tri stable).
+        boards.sort(java.util.Comparator.comparingInt(StatBoard::order));
         return boards;
+    }
+
+    private record BoardStatusFields(String description, StatBoard.Status status, int order, boolean visible) {
+    }
+
+    /**
+     * Champs administrés depuis PlugAdmin (#735). {@code enabled: false} (format #734) vaut
+     * {@code status: paused} ; l'ordre par défaut suit la position dans le fichier.
+     */
+    private static BoardStatusFields statusFields(Map<?, ?> entry, int index, String where, List<String> errors) {
+        String statusText = text(entry.get("status"));
+        StatBoard.Status status = Boolean.FALSE.equals(entry.get("enabled")) ? StatBoard.Status.PAUSED
+                : StatBoard.Status.ENABLED;
+        if (statusText != null) {
+            var parsed = StatBoard.Status.parse(statusText.toLowerCase(java.util.Locale.ROOT));
+            if (parsed.isEmpty()) {
+                errors.add(where + " : « status » vaut draft, enabled, paused ou archived.");
+                return null;
+            }
+            status = parsed.get();
+        }
+        String description = text(entry.get("description"));
+        if (description != null && (description.length() > DESCRIPTION_MAX
+                || description.chars().anyMatch(Character::isISOControl))) {
+            errors.add(where + " : « description » sur une ligne, " + DESCRIPTION_MAX + " caractères au plus.");
+            return null;
+        }
+        Object rawOrder = entry.get("order");
+        if (rawOrder != null && !(rawOrder instanceof Integer)) {
+            errors.add(where + " : « order » est un nombre entier.");
+            return null;
+        }
+        int order = rawOrder == null ? (index + 1) * 10 : (Integer) rawOrder;
+        if (order < 0 || order > MAX_ORDER) {
+            errors.add(where + " : « order » entre 0 et " + MAX_ORDER + ".");
+            return null;
+        }
+        Object visible = entry.get("visible");
+        if (visible != null && !(visible instanceof Boolean)) {
+            errors.add(where + " : « visible » vaut true ou false.");
+            return null;
+        }
+        return new BoardStatusFields(description, status, order, !Boolean.FALSE.equals(visible));
     }
 
     /** Filtre tel qu'écrit, valeurs normalisées et triées : ce que le portail affiche. */

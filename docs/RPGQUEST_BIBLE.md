@@ -123,6 +123,14 @@ Commandes : `sudo cp x.md /var/lib/lodyquests-portal/news/` ; aucun redémarrage
 Résultat attendu : l'actualité apparaît sur l'accueil et `/actualites` ; `/health` → `"news": N`.
 À savoir : un brouillon ou une date future reste invisible (404) ; un fichier invalide est ignoré seul, raison dans `journalctl -u lodyquests-portal`. Clés `server-address` / `minecraft-version` de `web-api.properties` pour la page `/infos`. Détail : [WEB_PORTAL.md §8](WEB_PORTAL.md#8-v1-publique-56--faite).
 
+### Classements du site gérés depuis PlugAdmin — `leaderboards.yml` (issue #735)
+Type : fichier de configuration écrit par le plugin (`plugins/RPGQuest/leaderboards.yml`) + page PlugAdmin **Site public → Classements** (`/leaderboards`) — Page docs-site : aucune (guide intégré à PlugAdmin : « Classements du site »).
+But : activer, suspendre, archiver, réordonner, mettre en avant, cacher, dupliquer et prévisualiser les classements du portail, et en créer de nouveaux (mesure, cibles, période, dates, fuseau, nombre de joueurs, icône) sans YAML.
+Contenu : liste `leaderboards:` au format de `statistics.yml` (#734) + `status` (`draft`/`enabled`/`paused`/`archived`), `order`, `visible`, `description`, `period: event` + `event: <id d'événement>` ; `timezone:` à la racine. Lu seulement si `statistics.yml` n'a pas sa propre liste `leaderboards:` (qui reste prioritaire, PlugAdmin en lecture seule).
+Persistance : fichier séparé des données de jeu ; écriture atomique validée par le serveur, ancienne version remise si refus ; résultats figés dans `stat_period_results` comme au §9, jamais supprimés.
+Résultat attendu : console `Classements : leaderboards.yml écrit depuis PlugAdmin (CREATED) — N classement(s), M actif(s).` puis `Statistiques : … classement(s) actif(s) chargés (classements : managed_file).` ; un nouveau classement naît **en brouillon** (rien de calculé ni de publié avant « Activer »).
+À savoir : permissions `LEADERBOARD_READ` / `LEADERBOARD_WRITE` ; l'aperçu ne donne que des comptes agrégés et un podium fictif ; rien n'est publié tant que `web-export.enabled` est faux (décision #55). Détail : [WEB_PORTAL.md §10](WEB_PORTAL.md#10-gestion-des-classements-depuis-plugadmin-735--faite-publication-soumise-à-55).
+
 ### Saisons, événements et exclusions de classement — `statistics.yml` (issues #54, #57)
 Type : fichier de configuration (serveur Minecraft, `plugins/RPGQuest/statistics.yml`) — Page docs-site : aucune.
 But : définir les saisons (une à la fois) et les événements (chevauchements permis) dont le plugin calcule et exporte les classements, et exclure des comptes de test ou des tricheurs des classements publics.

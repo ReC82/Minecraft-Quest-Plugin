@@ -323,6 +323,10 @@ public enum Permission {
      * administrateurs : ces réglages s'appliquent à tous les joueurs.
      */
     SETTINGS_WRITE,
+    /** Issue #735 — lire et prévisualiser les classements du site public (aucun pseudo). */
+    LEADERBOARD_READ,
+    /** Issue #735 — gérer les classements du site public (leaderboards.yml) : statut, ordre, visibilité. */
+    LEADERBOARD_WRITE,
     /**
      * Issue #42 — configurer la base MariaDB cible d'une future migration (hôte, compte, mot de
      * passe chiffré) et tester la connexion. Réservée au propriétaire par défaut : c'est un accès

@@ -551,9 +551,75 @@ catalogue calcule et archive quand même ses fenêtres (comme les saisons).
 ### Restant
 
 - Rang personnel hors top N et recherche par pseudo : identité du joueur connecté (#53).
-- Gestion depuis PlugAdmin (activer, nommer, période, mise en avant, aperçu) : #735.
+- Gestion depuis PlugAdmin (activer, nommer, période, mise en avant, aperçu) : faite, §10 (#735).
 - Historique complet des archives sur le portail (aujourd'hui : fenêtre en cours + précédente).
 - Proposition (décision propriétaire) : publier sur le portail réel la **liste** des classements et
   leur « suivi depuis » (aucun pseudo, aucune valeur) via le relevé d'état agrégé #421, avant #55.
 - Mesures non suivies listées ci-dessus : une `Source` de plus chacune quand un événement fiable existe.
+
+## 10. Gestion des classements depuis PlugAdmin (#735) — faite, publication soumise à #55
+
+**PlugAdmin → Site public → Classements** (`/leaderboards`) gère le catalogue du §9 sans YAML : une carte
+par classement (titre, ce qu'il mesure en mots simples, période avec ses bornes en heure de Bruxelles,
+statut) et des gestes directs. Permissions `LEADERBOARD_READ` (propriétaire, administrateur, testeur,
+lecture seule) et `LEADERBOARD_WRITE` (propriétaire, administrateur).
+
+### Fichier géré — `plugins/RPGQuest/leaderboards.yml`
+
+- **Séparé** de `statistics.yml` (saisons, événements, exclusions) et de toute donnée de jeu ; écrit
+  uniquement par le plugin à la demande de PlugAdmin (`stats.LeaderboardCatalogEditor`).
+- Priorité de lecture : `leaderboards:` de `statistics.yml` (format #734, PlugAdmin en lecture seule) →
+  `leaderboards.yml` → catalogue par défaut du JAR. Absent : le **premier** changement fait dans PlugAdmin
+  recopie les 23 classements par défaut dans le fichier, puis applique le changement.
+- Garanties : fichier actuel accepté par le serveur avant toute écriture ; texte validé par le vrai
+  chargeur **avec** `statistics.yml` (identifiants uniques, événement cité existant) ; écriture atomique ;
+  rechargement immédiat (`StatisticsService#reloadNow`) ; si le rechargement ne redonne pas exactement
+  les classements attendus, l'ancien fichier est remis à l'octet près. Version par entrée (formulaire
+  périmé → `STALE`), fichier modifié entre-temps → `STALE`. Relu aussi chaque minute s'il change.
+- Aucune suppression : un classement se met **en pause** ou s'**archive** ; ses résultats déjà figés
+  (`stat_period_results`) restent en base. Aucune remise à zéro de score, aucun solde, aucune récompense.
+
+Champs ajoutés au format du §9 (aussi acceptés dans `statistics.yml`) :
+
+| Clé | Valeurs | Effet |
+|---|---|---|
+| `status` | `draft`, `enabled` (défaut), `paused`, `archived` | seul `enabled` est calculé, figé et publiable ; `enabled: false` (#734) vaut `paused` |
+| `order` | entier 0–100000 (défaut : position × 10) | ordre d'affichage, puis ordre du fichier |
+| `visible` | `true` (défaut) / `false` | `false` : calculé et figé, jamais exporté (préparer avant d'annoncer) |
+| `description` | texte, 200 caractères | phrase publique sous le titre (portail) |
+| `period: event` + `event` | id d'un événement de `statistics.yml` | classement événementiel : suit les dates de l'événement (`NO_EVENT` s'il est en brouillon ou annulé) |
+| `timezone` (racine) | fuseau IANA | fuseau des jours / semaines / mois, prioritaire sur celui de `statistics.yml` |
+
+### Actions agent
+
+`leaderboard.catalog.status` (source, fuseau, tous les classements et leur version, mesures et « suivi
+depuis », familles, événements) et `leaderboard.preview` (fenêtre en cours et précédente — figée ou non —,
+participants et total **agrégés**, avertissements : brouillon, caché, mesure jamais collectée, échantillon
+de moins de 3 joueurs, export web désactivé) sont en lecture seule et **ne lisent aucun pseudo**.
+Écritures : `leaderboard.save` (création en **brouillon**, modification sans toucher au statut ni à
+l'ordre), `leaderboard.duplicate` (copie en brouillon, hors accueil), `leaderboard.status` (archiver
+demande une case de confirmation dans PlugAdmin), `leaderboard.flag` (`featured` / `visible`),
+`leaderboard.move` (renumérote 10, 20, 30…), `leaderboard.timezone`.
+
+### Formulaire guidé
+
+Quatre questions : **que mesurer** (seules les mesures réellement enregistrées, avec « suivie depuis le … »),
+**quelles cibles** (cases de familles de monstres ou de blocs + cibles exactes facultatives), **sur quelle
+période** (semaine, jour, mois, depuis toujours, saison, événement, dates personnalisées saisies en heure
+locale et converties avec le décalage du jour — changement d'heure compris), **présentation** (titre,
+description, catégorie, nombre de joueurs, icône du sprite partagé #428, visible, mis en avant). Filtres de
+la liste : statut, catégorie, recherche. L'aperçu affiche un podium **fictif** étiqueté « Données fictives ».
+
+### Portail
+
+`description` relayée (liste blanche `PublicPlayerData`) et affichée sous le titre ; onglet de période
+« Événement » ; statut `NO_EVENT` (« Cet événement n'est pas programmé ») ; seuls les classements actifs
+**et** visibles sont exportés, dans l'ordre défini ; l'accueil montre jusqu'à **3** classements mis en
+avant (`featured`) quand les données joueur sont publiques, sinon l'aperçu historique.
+
+### Restant / décisions
+
+- Publication réelle : toujours la décision #55 (`web-export.enabled`, `player-data-public`).
+- Proposition : heure de clôture configurable (aujourd'hui minuit), visibilité par catégorie, création
+  d'événements depuis PlugAdmin (aujourd'hui dans `statistics.yml`), historique complet des archives.
 

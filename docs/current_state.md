@@ -6,6 +6,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Classements du site gérés depuis PlugAdmin (#735, 23/10/2026)** — page **Site public → Classements**
+> (`/leaderboards`) : statut brouillon / actif / en pause / archivé, ordre, visibilité, mise en avant sur
+> l'accueil, duplication, fuseau, formulaire guidé (mesure, familles et cibles, période dont « événement »,
+> dates locales, présentation) et aperçu **agrégé** (participants, total, avertissements) + podium fictif.
+> Fichier `leaderboards.yml` séparé de `statistics.yml`, écriture atomique validée et restaurée si refus.
+> Portail : description, onglet « Événement », 3 classements mis en avant sur l'accueil (si publics). Aucune
+> migration. Publication réelle toujours soumise à #55. TC-416.
+>
 > **Portail public : refonte des pages (#56, 23/10/2026)** — accueil (3 étapes, tuiles), pages `/evenements`
 > (sans pseudo, publique) et `/progression`, classements en podium avec filtre par thème, fiches joueur
 > (pistes en barres, médailles), menu en grille d'icônes sur téléphone ; aperçu `/demo/…` avec des joueurs

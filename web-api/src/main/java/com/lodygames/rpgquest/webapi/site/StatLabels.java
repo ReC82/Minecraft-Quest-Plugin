@@ -137,6 +137,7 @@ public final class StatLabels {
         BOARD_PERIODS.put("weekly", new String[] {"semaine", "Cette semaine"});
         BOARD_PERIODS.put("monthly", new String[] {"mois", "Ce mois-ci"});
         BOARD_PERIODS.put("season", new String[] {"saison", "Saison"});
+        BOARD_PERIODS.put("event", new String[] {"evenement", "Événement"});
         BOARD_PERIODS.put("custom", new String[] {"dates", "Dates spéciales"});
         BOARD_PERIODS.put("lifetime", new String[] {"toujours", "Depuis toujours"});
     }

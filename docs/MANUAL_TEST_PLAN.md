@@ -8290,6 +8290,40 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-416 — Gestion des classements du site depuis PlugAdmin (issue #735, PENDING MANUAL VALIDATION)
+
+JAR RPGQuest + PlugAdmin + portail AWS, aucune migration. `leaderboards.yml` **absent** sur DEV au
+déploiement (catalogue par défaut du JAR). `web-export.enabled` et `player-data-public` restent `false` :
+aucun vrai classement n'est publié. Durée : 10 minutes, depuis PlugAdmin. Acquis à ne pas régresser : TC-415.
+
+1.  PlugAdmin → **Site public → Classements**, « Rafraîchir les classements ». **Attendu** : 23 classements
+    « Actif », bandeau « Catalogue par défaut », bandeau « Le site public n'affiche encore aucun classement
+    réel », bornes « du lundi … à 00:00 au lundi … » pour les classements hebdomadaires.
+2.  « Prévisualiser » sur « Monstres vaincus cette semaine ». **Attendu** : période en cours, période
+    précédente « résultats figés » ou « pas encore figée », nombre de participants (comptes, **aucun pseudo**),
+    podium étiqueté « Données fictives » (`Demo_…`).
+3.  « Nouveau classement » : mesure « Monstres et créatures vaincus », famille « Zombies », période « Chaque
+    jour », titre « TEST #735 zombies (ne pas garder) », « Créer le brouillon ». **Attendu** : message « créé
+    en brouillon », la carte apparaît avec le badge « Brouillon » ; `leaderboards.yml` créé sur le serveur.
+4.  Cocher une famille de **monstres** avec la mesure « Blocs cassés ». **Attendu** : refus clair, rien écrit.
+5.  Sur le brouillon : « Activer », « Mettre à l'accueil », « Monter », « Cacher du site », puis
+    « Archiver » (avec la case de confirmation). **Attendu** : badges et ordre à jour après chaque geste ;
+    archiver sans cocher la case est refusé.
+6.  Ouvrir le formulaire d'un classement dans deux onglets, enregistrer dans le premier puis dans le
+    second. **Attendu** : le second est refusé (« a changé depuis l'ouverture du formulaire »).
+7.  Site : `/classements` et `/classements/tous`. **Attendu** : toujours « pas encore publiée » (décision #55).
+8.  **Avis du propriétaire** : clarté de la page (13 ans), gestes manquants, faut-il garder le brouillon de
+    test (sinon l'archiver) ; décision sur l'heure de clôture et la visibilité par catégorie (§10 de
+    `WEB_PORTAL.md`).
+
+**Couverture automatisée** : `LeaderboardCatalogEditorTest` (premier enregistrement = copie du catalogue
+par défaut + brouillon, statuts, caché ≠ publié, archive conservée, version périmée, refus sans toucher au
+fichier, duplication, ordre, fuseau, `statistics.yml` prioritaire, événement suivi), `BoardCatalogLoaderTest`
+(statut / ordre / visibilité / description / `period: event`, refus, fichier géré), `BoardSourcesRepositoryTest`
+(participation agrégée, exclusions), `LeaderboardParamsTest`, `LeaderboardsPageTest` (liste, filtres, lecture
+seule, aperçu agrégé + podium fictif, formulaire normalisé avec décalage d'hiver, refus avant la file),
+`BoardCatalogPageTest` (description échappée, `NO_EVENT`, accueil mis en avant).
+
 ### TC-415 — Catalogue de classements par périodes (issue #734, PENDING MANUAL VALIDATION)
 
 JAR RPGQuest + portail AWS, aucune migration. `web-export.enabled` et `player-data-public` restent à

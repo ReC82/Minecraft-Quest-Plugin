@@ -102,6 +102,33 @@ public final class StatisticsRepository {
         });
     }
 
+    /** Participation agrégée d'une fenêtre (#735) : joueurs avec une valeur positive et total, sans aucun pseudo. */
+    public record Participation(long players, long total) {
+    }
+
+    /**
+     * Prévisualisation PlugAdmin (#735) : combien de joueurs ont une valeur positive sur la fenêtre,
+     * et le total. Tous les profils comptent (aucun pseudo n'est lu ni rendu), les joueurs exclus non.
+     */
+    public CompletableFuture<Participation> participation(StatPeriod period, StatMetric metric, Collection<UUID> excluded,
+                                                          Collection<String> excludedReasons) {
+        requireWindowed(metric);
+        String sql = "SELECT COUNT(*) AS players, COALESCE(SUM(t.v), 0) AS total FROM (SELECT "
+                + aggregate(period, metric) + " AS v FROM " + source(metric) + " g WHERE "
+                + windowFilter(period, metric, excludedReasons) + notIn("g.player_uuid", excluded.size())
+                + " GROUP BY g.player_uuid HAVING " + aggregate(period, metric) + " > 0) t";
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                int index = bindWindow(statement, 1, period, metric, excludedReasons);
+                bindUuids(statement, index, excluded);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    return resultSet.next() ? new Participation(resultSet.getLong("players"), resultSet.getLong("total"))
+                            : new Participation(0, 0);
+                }
+            }
+        });
+    }
+
     /** Total figé d'un objectif commun archivé (#57). */
     public CompletableFuture<Long> archivedCommunityTotal(String periodId, StatMetric metric, Collection<UUID> excluded) {
         String sql = "SELECT COALESCE(SUM(r.stat_value), 0) AS total FROM stat_period_results r "

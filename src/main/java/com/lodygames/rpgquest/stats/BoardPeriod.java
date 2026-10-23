@@ -15,7 +15,8 @@ import java.util.Optional;
  * {@code statistics.yml} (Europe/Brussels par défaut) : une fenêtre {@code [début, fin)} par jour,
  * semaine ISO (lundi → lundi) ou mois civil, identifiée par une clé stable ({@code 2026-10-23},
  * {@code 2026-W43}, {@code 2026-10}). {@link #SEASON} suit la saison montrée de {@code statistics.yml},
- * {@link #CUSTOM} des dates fixes, {@link #LIFETIME} tout le journal de la métrique.
+ * {@link #CUSTOM} des dates fixes, {@link #EVENT} les dates d'un événement (#735), {@link #LIFETIME} tout
+ * le journal de la métrique.
  */
 public enum BoardPeriod {
     LIFETIME,
@@ -23,7 +24,9 @@ public enum BoardPeriod {
     WEEKLY,
     MONTHLY,
     SEASON,
-    CUSTOM;
+    CUSTOM,
+    /** Suit les dates d'un événement de {@code statistics.yml} (#735) : un classement événementiel. */
+    EVENT;
 
     /** Fin « ouverte » d'une fenêtre {@link #LIFETIME} : bien après toute date de jeu. */
     static final Instant OPEN_END = Instant.parse("9999-01-01T00:00:00Z");

@@ -118,7 +118,7 @@ final class BoardCatalogPage {
     }
 
     @SuppressWarnings("unchecked")
-    private static String card(Map<String, Object> board, Map<String, Object> catalog, SiteRoutes routes) {
+    static String card(Map<String, Object> board, Map<String, Object> catalog, SiteRoutes routes) {
         String metric = String.valueOf(board.get("metric"));
         String icon = board.get("icon") instanceof String name ? name : PortalIcons.forMetric(metric);
         int size = board.get("size") instanceof Number number ? number.intValue() : LeaderboardsPageHandler.TOP;
@@ -126,6 +126,9 @@ final class BoardCatalogPage {
         StringBuilder html = new StringBuilder("<section class=\"card\" id=\"classement-")
                 .append(Html.escape(String.valueOf(board.get("id")))).append("\">")
                 .append(PortalIcons.heading("h2", icon, String.valueOf(board.get("name"))));
+        if (board.get("description") instanceof String description && !description.isBlank()) {
+            html.append("<p>").append(Html.escape(description)).append("</p>");
+        }
         html.append("<p class=\"note\">").append(Html.escape(when(board, period)));
         String targets = targets(board, catalog);
         if (!targets.isEmpty()) {
@@ -135,6 +138,8 @@ final class BoardCatalogPage {
         String status = String.valueOf(board.get("status"));
         if ("NO_SEASON".equals(status)) {
             html.append(PortalIcons.empty("trophy", "Aucune saison en cours : ce classement ouvrira avec la prochaine."));
+        } else if ("NO_EVENT".equals(status)) {
+            html.append(PortalIcons.empty("trophy", "Cet événement n'est pas programmé pour le moment."));
         } else if ("SCHEDULED".equals(status)) {
             html.append(PortalIcons.empty("trophy", "Pas encore commencé."));
         } else {

@@ -81,7 +81,9 @@ public enum Role {
             // Issue #140 : administrer la monnaie fait partie de l'exploitation courante.
             Permission.ECONOMY_READ, Permission.ECONOMY_WRITE,
             // Issue #335 : les paramètres généraux font partie de l'exploitation du serveur.
-            Permission.SETTINGS_READ, Permission.SETTINGS_WRITE)),
+            Permission.SETTINGS_READ, Permission.SETTINGS_WRITE,
+            // Issue #735 : les classements du site public font partie de l'exploitation courante.
+            Permission.LEADERBOARD_READ, Permission.LEADERBOARD_WRITE)),
 
     TESTER("Testeur", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ,
@@ -98,7 +100,9 @@ public enum Role {
             Permission.ECONOMY_READ,
             // Issue #213 : un testeur doit pouvoir vérifier qu'un emplacement marqué en jeu est
             // bien arrivé. Lecture seule.
-            Permission.BUILDING_READ)),
+            Permission.BUILDING_READ,
+            // Issue #735 : vérifier un classement (aperçu agrégé, sans pseudo), sans le modifier.
+            Permission.LEADERBOARD_READ)),
 
     BUILDER("Builder", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.WORLD_READ, Permission.PORTAL_READ, Permission.CONTENT_READ,
@@ -123,7 +127,7 @@ public enum Role {
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ, Permission.MOB_READ,
             // Issue #95 : l'état synthétique, oui ; la console, non — elle est plus bavarde
             // (pseudos, coordonnées, erreurs internes).
-            Permission.OPS_VIEW, Permission.ECONOMY_READ));
+            Permission.OPS_VIEW, Permission.ECONOMY_READ, Permission.LEADERBOARD_READ));
 
     private final String label;
     private final Set<Permission> permissions;

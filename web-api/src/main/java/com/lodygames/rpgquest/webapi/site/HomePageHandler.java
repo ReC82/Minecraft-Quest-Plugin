@@ -28,6 +28,8 @@ public final class HomePageHandler implements ApiHandler {
 
     static final int LATEST_NEWS = 3;
     static final int PREVIEW = 3;
+    /** Classements mis en avant au plus sur l'accueil (#735). */
+    static final int FEATURED_MAX = 3;
     /** Tuiles d'accès rapide : adresse, icône, titre, accroche. */
     private static final String[][] TILES = {
             {PageMeta.EVENTS, "boss", "Événements", "Défis du moment et à venir"},
@@ -181,6 +183,28 @@ public final class HomePageHandler implements ApiHandler {
         return html.isEmpty() ? "" : PortalIcons.heading("h2", "talk", "Message du serveur") + html;
     }
 
+    /**
+     * Classements mis en avant depuis PlugAdmin (#735, {@code featured}), dans leur ordre d'affichage :
+     * au plus {@link #FEATURED_MAX}. Vide s'il n'y en a aucun (l'aperçu historique prend le relais).
+     */
+    @SuppressWarnings("unchecked")
+    static String featuredBoards(Map<String, Object> statistics) {
+        if (!(statistics.get("boards") instanceof List<?> list)) {
+            return "";
+        }
+        Map<String, Object> catalog = statistics.get("catalog") instanceof Map<?, ?> map
+                ? (Map<String, Object>) map : Map.of();
+        List<Map<String, Object>> featured = list.stream().filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) item)
+                .filter(board -> Boolean.TRUE.equals(board.get("featured"))).limit(FEATURED_MAX).toList();
+        if (featured.isEmpty()) {
+            return "";
+        }
+        StringBuilder html = new StringBuilder("<div class=\"grid boards\">");
+        featured.forEach(board -> html.append(BoardCatalogPage.card(board, catalog, SiteRoutes.LIVE)));
+        return html.append("</div>").toString();
+    }
+
     private String boardsPreview(Map<String, Object> state) {
         StringBuilder html = new StringBuilder(PortalIcons.heading("h2", "trophy", "Classements"));
         if (!playerDataPublic) {
@@ -189,8 +213,12 @@ public final class HomePageHandler implements ApiHandler {
                     .append("<p><a class=\"button secondary\" href=\"").append(SiteRoutes.DEMO.boards())
                     .append("\">Voir un aperçu avec des joueurs fictifs</a></p>").toString();
         }
-        Map<String, List<Map<String, Object>>> boards =
-                LeaderboardsPageHandler.boards(PublicPlayerData.statistics(state.get("statistics")).get("lifetime"));
+        Map<String, Object> statistics = PublicPlayerData.statistics(state.get("statistics"));
+        String featured = featuredBoards(statistics);
+        if (!featured.isEmpty()) {
+            return html.append(featured).append("<p><a href=\"/classements\">Tous les classements →</a></p>").toString();
+        }
+        Map<String, List<Map<String, Object>>> boards = LeaderboardsPageHandler.boards(statistics.get("lifetime"));
         if (boards.isEmpty()) {
             return html.append(PortalIcons.empty("trophy", "Aucun classement disponible pour le moment.")).toString();
         }

@@ -849,6 +849,22 @@ public final class AgentActionCatalog {
         addContentWrite("price.duplicate", Permission.ECONOMY_WRITE, "Dupliquer un prix", "price.catalog.status");
         addContentWrite("price.toggle", Permission.ECONOMY_WRITE, "Activer / désactiver un prix",
                 "price.catalog.status");
+        // Issue #735 — classements du site public (leaderboards.yml, séparé des données de jeu).
+        // Lecture et prévisualisation agrégée : LEADERBOARD_READ ; gestion : LEADERBOARD_WRITE.
+        add("leaderboard.catalog.status", Permission.LEADERBOARD_READ, false, false, "Rafraîchir les classements");
+        add("leaderboard.preview", Permission.LEADERBOARD_READ, false, false, "Prévisualiser un classement");
+        addContentWrite("leaderboard.save", Permission.LEADERBOARD_WRITE, "Enregistrer un classement",
+                "leaderboard.catalog.status");
+        addContentWrite("leaderboard.duplicate", Permission.LEADERBOARD_WRITE, "Dupliquer un classement",
+                "leaderboard.catalog.status");
+        addContentWrite("leaderboard.status", Permission.LEADERBOARD_WRITE,
+                "Activer / suspendre / archiver un classement", "leaderboard.catalog.status");
+        addContentWrite("leaderboard.flag", Permission.LEADERBOARD_WRITE,
+                "Mettre en avant / masquer un classement", "leaderboard.catalog.status");
+        addContentWrite("leaderboard.move", Permission.LEADERBOARD_WRITE, "Réordonner les classements",
+                "leaderboard.catalog.status");
+        addContentWrite("leaderboard.timezone", Permission.LEADERBOARD_WRITE,
+                "Changer le fuseau horaire des classements", "leaderboard.catalog.status");
         // Issue #17 — catalogues de marchands (merchants/*.yml) : vente, rachat, mixte.
         add("merchant.catalog.status", Permission.ECONOMY_READ, false, false, "Rafraîchir les marchands");
         addContentWrite("merchant.save", Permission.ECONOMY_WRITE, "Enregistrer un marchand",
@@ -2932,6 +2948,21 @@ public final class AgentActionCatalog {
                     case "merchant.duplicate" -> MerchantForm.fillDuplicate(form, params);
                     case "merchant.toggle" -> MerchantForm.fillToggle(form, params);
                     default -> MerchantForm.fillDelete(form, params);
+                };
+                if (error != null) {
+                    return Validation.fail(error);
+                }
+            }
+            case "leaderboard.save", "leaderboard.duplicate", "leaderboard.status", "leaderboard.flag",
+                 "leaderboard.move", "leaderboard.preview", "leaderboard.timezone" -> {
+                String error = switch (type) {
+                    case "leaderboard.save" -> LeaderboardForm.fill(form, params);
+                    case "leaderboard.duplicate" -> LeaderboardForm.fillDuplicate(form, params);
+                    case "leaderboard.status" -> LeaderboardForm.fillStatus(form, params);
+                    case "leaderboard.flag" -> LeaderboardForm.fillFlag(form, params);
+                    case "leaderboard.move" -> LeaderboardForm.fillMove(form, params);
+                    case "leaderboard.preview" -> LeaderboardForm.fillPreview(form, params);
+                    default -> LeaderboardForm.fillTimezone(form, params);
                 };
                 if (error != null) {
                     return Validation.fail(error);

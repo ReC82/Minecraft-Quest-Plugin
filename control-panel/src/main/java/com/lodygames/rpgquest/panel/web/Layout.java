@@ -87,6 +87,9 @@ public final class Layout {
                                 Permission.BUILDING_READ, true),
                         new NavItem("Emplacements", "/buildings/sites", "world",
                                 Permission.BUILDING_READ, true))),
+                // Issue #735 — le site public LodyQuests : ce que les joueurs voient sur le web.
+                new NavGroup("Site public", List.of(
+                        new NavItem("Classements", LeaderboardPages.PATH, "trophy", Permission.LEADERBOARD_READ, true))),
                 new NavGroup("Serveur", List.of(
                         new NavItem("Exploitation", "/ops", "server", Permission.OPS_VIEW, true),
                         new NavItem("Paramètres généraux", "/settings", "admin", Permission.SETTINGS_READ, true))),

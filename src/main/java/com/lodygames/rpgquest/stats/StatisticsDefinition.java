@@ -16,7 +16,7 @@ import java.util.UUID;
  *
  * @param exclusions joueur → portées exclues ({@link #ALL_SCOPES}, {@code lifetime} ou un id de période)
  * @param excludedXpReasons raisons d'octroi d'XP ignorées sur les fenêtres (outils admin de test)
- * @param boards     catalogue des classements (#734), dans l'ordre d'affichage
+ * @param boards     catalogue des classements (#734), dans l'ordre d'affichage, tous statuts confondus (#735)
  * @param zone       fuseau des périodes de calendrier (jour, semaine, mois), Europe/Brussels par défaut
  */
 public record StatisticsDefinition(List<StatPeriod> periods, Map<UUID, Set<String>> exclusions,
@@ -59,6 +59,16 @@ public record StatisticsDefinition(List<StatPeriod> periods, Map<UUID, Set<Strin
             }
         }
         return excluded;
+    }
+
+    /** Classements calculés et figés (#735 : statut actif), visibles ou non. */
+    public List<StatBoard> activeBoards() {
+        return boards.stream().filter(StatBoard::active).toList();
+    }
+
+    /** Classements montrés sur le site : actifs et visibles, dans l'ordre d'affichage. */
+    public List<StatBoard> publishedBoards() {
+        return boards.stream().filter(StatBoard::published).toList();
     }
 
     public Optional<StatBoard> board(String boardId) {

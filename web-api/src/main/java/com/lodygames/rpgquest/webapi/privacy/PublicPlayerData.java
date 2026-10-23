@@ -98,7 +98,7 @@ public final class PublicPlayerData {
     }
 
     /**
-     * Un classement du catalogue (#734) : identité, thème, période, filtre écrit, fenêtres et lignes
+     * Un classement du catalogue (#734) : identité, description (#735), thème, période, filtre écrit, fenêtres et lignes
      * ({@code name}, {@code value}, {@code rank}), rien d'autre.
      */
     private static Map<String, Object> board(Object raw) {
@@ -108,7 +108,8 @@ public final class PublicPlayerData {
         }
         Map<String, Object> safe = new LinkedHashMap<>();
         safe.put("id", id);
-        for (String key : List.of("name", "category", "icon", "metric", "period", "status", "trackedSince")) {
+        for (String key : List.of("name", "description", "category", "icon", "metric", "period", "status",
+                "trackedSince")) {
             copyString(board, safe, key);
         }
         if (board.get("filter") instanceof Map<?, ?> filter) {

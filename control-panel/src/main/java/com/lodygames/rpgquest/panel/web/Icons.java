@@ -93,7 +93,9 @@ public final class Icons {
             // Issue #564 — portails (groupe « Monde »).
             Map.entry("portal", "door-open"),
             // Issue #637 — claims des joueurs.
-            Map.entry("claim", "house-lock"));
+            Map.entry("claim", "house-lock"),
+            // Issue #735 : classements du site public.
+            Map.entry("trophy", "trophy"));
 
     /** {@code <i class="bi bi-…">} avec la classe utilitaire {@code ic}. Repli discret sur « info ». */
     public static String icon(String name) {

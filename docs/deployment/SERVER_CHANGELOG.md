@@ -49,6 +49,41 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Aperçu 3D des bâtiments plus fidèle : états des blocs, eau et verre translucides (#786, TC-425)
+
+### Changement
+
+`building.plan.preview` transmet, pour chaque entrée de la palette de la vue 3D, les propriétés qui
+changent le dessin (`state` : `facing`, `half`, `shape`, `axis`, `hanging`, `attachment`, `hinge`,
+`open`, `face`). PlugAdmin dessine marches, dalles, chaînes, barrières, murets, vitres, portes, trappes,
+échelles, lanternes, torches et cloches avec leur forme et leur orientation ; eau, verre et glace
+translucides ; couleurs mieux différenciées. Aucun appel IA, aucune image générée.
+
+### Action serveur
+
+- VeryGames : remplacement du JAR RPGQuest uniquement (`c42c6bf0`), **aucune migration**, aucune
+  configuration ni aucun contenu modifié ; redémarrage (0 joueur).
+- AWS : PlugAdmin redéployé (`scripts/plugadmin/deploy.sh`, release `20261023-215318`).
+
+### Sauvegarde préalable
+
+JAR précédent (`e039d4b7`) : `rpgquest-20261023T195159Z-predeploy.jar` ; PlugAdmin précédent :
+`/opt/plugadmin/releases/` (release antérieure conservée par le script).
+
+### Validation
+
+Déployé le 23/10/2026 21:52 (JAR, SHA-256 `627975f7…` retéléchargé identique) et 21:53 (PlugAdmin,
+`BlockShapes` présent dans le JAR servi). Aperçu du « Puits du village » recalculé sur DEV depuis sa
+version 1 (action `30779407`, SUCCESS, états présents). TC-425 PENDING MANUAL VALIDATION.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh` ; PlugAdmin : release
+précédente sous `/opt/plugadmin/releases/`. Panel ancien + JAR nouveau, ou l'inverse : compatibles
+(champ `state` additif, ignoré ou supposé vide).
+
+---
+
 ## 2026-10-23 - Portail public : recherche de pseudo et XP globale cohérentes (#56, TC-414-bis)
 
 ### Changement

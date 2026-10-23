@@ -58,6 +58,7 @@ class StatisticsServiceTest {
     void onlyEndedPeriodsAreArchivedAndOnlyOnce() throws Exception {
         Path file = tempDir.resolve("statistics.yml");
         Files.writeString(file, """
+                leaderboards: []
                 seasons:
                   - {id: s1, start: "2026-10-01T00:00:00Z", end: "2026-11-01T00:00:00Z", metrics: [RPG_XP_GLOBAL]}
                   - {id: s2, start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z", metrics: [RPG_XP_GLOBAL]}
@@ -75,6 +76,23 @@ class StatisticsServiceTest {
         assertFalse(service.isArchived("later"), "événement programmé : jamais figé");
         assertEquals(Set.of("s1"), repository.archivedPeriodIds().get(10, TimeUnit.SECONDS));
         assertEquals("s2", service.definition().currentSeason(service.now()).orElseThrow().id());
+    }
+
+    @Test
+    void withoutAFileTheBundledCatalogueFreezesOnlyTheLastEndedCalendarWindowsOnce() throws Exception {
+        StatisticsService service = service(tempDir.resolve("absent.yml"), "2026-11-15T00:00:00Z");
+
+        service.refresh().get(10, TimeUnit.SECONDS);
+        service.refresh().get(10, TimeUnit.SECONDS);
+
+        assertTrue(service.definition().periods().isEmpty());
+        assertFalse(service.definition().boards().isEmpty(), "catalogue par défaut du JAR (#734)");
+        Set<String> archived = repository.archivedPeriodIds().get(10, TimeUnit.SECONDS);
+        assertTrue(archived.containsAll(Set.of("board_zombies_week_2026w45", "board_mobs_day_20261114",
+                "board_ores_month_202610")), archived.toString());
+        assertTrue(archived.stream().noneMatch(id -> id.startsWith("board_mobs_total")), "« depuis toujours » ne se fige pas");
+        assertTrue(archived.stream().noneMatch(id -> id.contains("w44")), "jamais d'historique plus ancien");
+        assertTrue(service.isArchived("board_zombies_week_2026w45"));
     }
 
     @Test
@@ -96,6 +114,7 @@ class StatisticsServiceTest {
     void draftAndCancelledEventsAreNeverArchivedAndTransitionsAreAuditedOnce() throws Exception {
         Path file = tempDir.resolve("statistics.yml");
         Files.writeString(file, """
+                leaderboards: []
                 events:
                   - {id: done, start: "2026-11-01T00:00:00Z", end: "2026-11-02T00:00:00Z", metrics: [ENTITY_KILL]}
                   - {id: live, start: "2026-11-10T00:00:00Z", end: "2026-11-20T00:00:00Z", metrics: [ENTITY_KILL]}

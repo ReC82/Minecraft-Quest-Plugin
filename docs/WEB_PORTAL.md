@@ -164,7 +164,11 @@ sa source. Ajouter une métrique = une entrée du catalogue et sa requête, sans
 | `QUESTS_COMPLETED` | `quest_progress.state = COMPLETED` (dernier état seulement, pas d'historique) | lifetime |
 | `ENTITY_KILL` (#57) | `stat_activity_log` : mob tué par un joueur, cible = type d'entité, variante = mob spécial ; filtrable `entity` / `special-mob` | season, event |
 | `FISH_CAUGHT` (#57) | `stat_activity_log` : prise de pêche, cible = matériau ; filtrable `item` | season, event |
-| blocs minés, temps de jeu, boss… | même journal (§6) : un type d'action de plus dans `ActivityListener`, aucune migration | — |
+| `BLOCK_BREAK` (#734) | `stat_activity_log` : bloc cassé, cible = matériau ; filtrable `block` / `block-family` | season, event, catalogue |
+| `QUEST_COMPLETION` (#734) | `stat_activity_log` : une ligne par complétion (quêtes répétables comprises), cible = id de quête ; filtrable `quest` | season, event, catalogue |
+| `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED` (#734) | tables existantes `waypoint_discoveries`, `city_discoveries`, `waystone_discoveries` (`discovered_at`, une ligne par lieu et par joueur) | season, event, catalogue |
+| `STORY_COMPLETED` (#734) | `story_progress.state = COMPLETED`, daté par `updated_at` | season, event, catalogue |
+| temps de jeu, distance, crafts, succès… | **non mesurés** : listés comme « mesures pas encore suivies » (§9), jamais reconstitués | — |
 
 L'XP RPG (#183) n'est ni le niveau vanilla ni une statistique Minecraft. Une métrique sans journal
 horodaté est refusée sur une saison ou un événement (`statistics.yml` invalide) : on ne publie pas
@@ -460,3 +464,96 @@ d'authentification), qui écrira ces mêmes fichiers.
 API JSON publique (l'API `/api/*` reste à jeton et fermée par nginx), cartes de partage avec
 image, avatar de skin, historique saisonnier des profils, statistiques globales du serveur (pas de
 source agrégée fiable dans l'instantané aujourd'hui), métriques kills/boss (§4, journal à créer).
+
+## 9. Catalogue de classements (#734) — fait (plugin + portail), publication soumise à #55
+
+Un classement = **une entrée déclarative** (`leaderboards:` de `statistics.yml`, ou le catalogue par
+défaut du JAR `stats/leaderboards.yml`), jamais une classe Java. Chaque fenêtre d'un classement est une
+période synthétique du moteur §4/§6 : même requête, mêmes ex aequo, même archivage idempotent.
+
+### Mesures, sources et exclusions
+
+| Mesure | Source | Ce qui ne compte jamais |
+| --- | --- | --- |
+| `ENTITY_KILL` | `stat_activity_log` (#57) | créatif/spectateur, mode bypass admin, mob de test, de spawner ou issu d'une division, victime joueur (PvP) |
+| `BLOCK_BREAK` | `stat_activity_log` | bloc posé par un joueur (`PlacedBlockTracker`, vu en `HIGH` avant que l'XP de minage n'efface la marque), casse annulée par une protection, culture pas mûre, créatif, bypass |
+| `FISH_CAUGHT` | `stat_activity_log` (#57) | créatif, bypass |
+| `QUEST_COMPLETION` | `stat_activity_log`, clé = jeton de complétion, écrite **après** l'enregistrement de la complétion | créatif, bypass ; une remise rejouée ne compte qu'une fois |
+| `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED` | tables de découvertes, avec leur vraie date | revisiter un lieu (une ligne par lieu et par joueur) |
+| `STORY_COMPLETED` | `story_progress` | histoire non terminée |
+| `RPG_XP_<PISTE>` | `xp_grants` | raisons `excluded-xp-reasons` (`admin_grant`) |
+| `QUESTS_COMPLETED` | `quest_progress` (dernier état) | — ; seulement `period: lifetime`, sans filtre |
+
+Les mesures du journal d'activité n'existent qu'à partir de leur mise en service : le portail affiche
+« Mesure suivie depuis le … » (premier horodatage réel, `trackedSince`) ; **aucun historique n'est
+reconstitué**. Les mesures demandées mais non mesurées (temps de jeu, distance, crafts, élevage,
+biomes, structures, succès, contributions communautaires, économie) sont exportées dans
+`statistics.catalog.planned` avec leur raison et affichées « pas encore suivies ».
+
+### Familles de cibles — `stats.StatDimensions`, `stats/families.yml`
+
+- Entités : catalogue **généré depuis `EntityType` de Paper 1.21.11** ; catégorie déduite de la classe
+  (`Boss`/`ElderGuardian`/`Warden` → `boss`, `Enemy` → `hostile`, autre vivant → `passive`) ; joueur,
+  porte-armure, mannequin et non-vivants exclus avec raison. Familles nommées : `zombies`, `skeletons`,
+  `spiders`, `creepers`, `endermen`, `illagers`, `slimes`, `nether`, `ocean`, `flying`.
+- Blocs : `ores` (suffixe `_ORE` + `ANCIENT_DEBRIS`), `logs`, `stone`, `earth`, `crops`, `leaves`.
+- Chaque nom est vérifié contre Paper (`StatDimensionsTest`) ; un filtre `entity-family: [zombies]`
+  est remplacé au chargement par ses membres, et combiné en « OU » avec `entity: [...]`.
+
+### Périodes — `stats.BoardPeriod`
+
+`lifetime` (tout le journal), `daily`, `weekly` (semaine ISO, lundi → lundi), `monthly`, `season` (la
+saison montrée de `statistics.yml` ; sans saison : statut `NO_SEASON`, aucun classement), `custom`
+(`start`/`end` avec fuseau). Fuseau des périodes de calendrier : `timezone:` (défaut
+`Europe/Brussels`) ; une journée de changement d'heure dure 23 h ou 25 h. Clés stables :
+`2026-10-23`, `2026-W43`, `2026-10`.
+
+**Archives** : toutes les minutes, `StatisticsService` fige la **dernière** fenêtre terminée de chaque
+classement de calendrier (hier, la semaine ou le mois précédent) et une fenêtre `season`/`custom`
+finie, sous `board_<id>_<clé>` (`stat_period_archives`/`stat_period_results`, V39 — **aucune
+migration**). Jamais d'archive plus ancienne : après un arrêt long, les fenêtres intermédiaires ne
+sont pas reconstituées. Exclusions : `exclusions[].scopes` accepte aussi un id de classement.
+
+### Format
+
+```yaml
+timezone: Europe/Brussels          # facultatif
+leaderboards:                      # absent = catalogue du JAR ; [] = aucun classement
+  - id: zombies_week               # minuscules, chiffres, _ ; unique avec saisons et événements
+    name: "Chasseurs de zombies"   # titre public, 120 caractères au plus
+    category: combat               # aventure, combat, recolte, exploration, communaute, autres
+    icon: skull                    # facultatif, icône du portail
+    metric: ENTITY_KILL
+    filter: {entity-family: [zombies]}   # entity, entity-family, special-mob, item, block, block-family, quest
+    period: weekly                 # lifetime, daily, weekly, monthly, season, custom (+ start/end)
+    size: 10                       # 1 à 50
+    featured: true                 # mise en avant
+    enabled: true                  # false = ignoré
+```
+
+Une erreur rend **tout le fichier** invalide (aucune période, aucun classement), comme §4.
+
+### Export et portail
+
+Instantané : `statistics.boards[]` (`id`, `name`, `category`, `icon`, `metric`, `period`, `filter` tel
+qu'écrit, `featured`, `size`, `status` `ACTIVE`/`SCHEDULED`/`ENDED`/`NO_SEASON`, `trackedSince`,
+`window` `{key, start, end}`, `leaderboard` `[{name, value, rank}]`, `previous` `{key, start, end,
+leaderboard}`) et `statistics.catalog` (`timezone`, `metrics[{id, dated, trackedSince, filters}]`,
+`families`, `planned`). Additif, version 2 inchangée. Le portail les relaie par la liste blanche
+`PublicPlayerData` et les affiche sur **`/classements/tous`** (filtres Période et Thème, podium,
+bornes en heure de Bruxelles, provenance, période précédente repliable, mesures non suivies) ;
+aperçu fictif étiqueté sur **`/demo/classements/tous`**. Lien depuis `/classements`.
+
+**Publication** : comme tous les classements nominatifs, rien n'est publié tant que
+`web-export.enabled` (DEV) et `player-data-public` (portail) restent à `false` (décision #55). Le
+catalogue calcule et archive quand même ses fenêtres (comme les saisons).
+
+### Restant
+
+- Rang personnel hors top N et recherche par pseudo : identité du joueur connecté (#53).
+- Gestion depuis PlugAdmin (activer, nommer, période, mise en avant, aperçu) : #735.
+- Historique complet des archives sur le portail (aujourd'hui : fenêtre en cours + précédente).
+- Proposition (décision propriétaire) : publier sur le portail réel la **liste** des classements et
+  leur « suivi depuis » (aucun pseudo, aucune valeur) via le relevé d'état agrégé #421, avant #55.
+- Mesures non suivies listées ci-dessus : une `Source` de plus chacune quand un événement fiable existe.
+

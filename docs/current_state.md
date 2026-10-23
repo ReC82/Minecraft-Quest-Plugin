@@ -394,6 +394,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   par défaut), calculés sur les fenêtres du journal `xp_grants`, figés à leur fin (migration
 >   **V39** : `stat_period_archives`, `stat_period_results`), exclusions par UUID, opérations
 >   `admin_grant` jamais comptées ; contrat `statistics.metrics` + `rank` dans l'instantané.
+>   Catalogue de classements (#734) : déclaratif (`leaderboards:` de `statistics.yml`, sinon 23
+>   classements par défaut du JAR), mesures blocs cassés / quêtes terminées (journal d'activité),
+>   découvertes waypoints / villes / pierres de voyage et stories (tables existantes), familles de
+>   mobs et de blocs générées depuis Paper, périodes jour / semaine / mois (Europe/Brussels) / saison /
+>   dates / depuis toujours, dernière fenêtre figée sans migration ; portail `/classements/tous` +
+>   aperçu fictif `/demo/classements/tous` ; publication réelle soumise à #55.
 >   Confidentialité (#55) : profils **privés par défaut** (`web-export.profile-visibility-default`,
 >   accord par `/profile web public`), liste blanche des champs dans l'API, politique d'âge
 >   configurable fermée par défaut (`accounts.*`), registre des données `docs/PRIVACY.md` ;

@@ -16,9 +16,14 @@ import java.util.UUID;
  *
  * @param exclusions joueur → portées exclues ({@link #ALL_SCOPES}, {@code lifetime} ou un id de période)
  * @param excludedXpReasons raisons d'octroi d'XP ignorées sur les fenêtres (outils admin de test)
+ * @param boards     catalogue des classements (#734), dans l'ordre d'affichage
+ * @param zone       fuseau des périodes de calendrier (jour, semaine, mois), Europe/Brussels par défaut
  */
 public record StatisticsDefinition(List<StatPeriod> periods, Map<UUID, Set<String>> exclusions,
-                                   Set<String> excludedXpReasons) {
+                                   Set<String> excludedXpReasons, List<StatBoard> boards, java.time.ZoneId zone) {
+
+    /** Fuseau par défaut des classements de calendrier : celui de la communauté. */
+    public static final java.time.ZoneId DEFAULT_ZONE = java.time.ZoneId.of("Europe/Brussels");
 
     /** Exclusion d'un joueur de toutes les portées, {@code lifetime} compris. */
     public static final String ALL_SCOPES = "*";
@@ -28,8 +33,15 @@ public record StatisticsDefinition(List<StatPeriod> periods, Map<UUID, Set<Strin
     public static final StatisticsDefinition EMPTY =
             new StatisticsDefinition(List.of(), Map.of(), DEFAULT_EXCLUDED_XP_REASONS);
 
+    /** Définition sans catalogue de classements (saisons et événements seuls, #54/#57). */
+    public StatisticsDefinition(List<StatPeriod> periods, Map<UUID, Set<String>> exclusions,
+                                Set<String> excludedXpReasons) {
+        this(periods, exclusions, excludedXpReasons, List.of(), DEFAULT_ZONE);
+    }
+
     public StatisticsDefinition {
         periods = List.copyOf(periods);
+        boards = List.copyOf(boards);
         exclusions = Map.copyOf(exclusions);
         excludedXpReasons = Set.copyOf(excludedXpReasons);
     }
@@ -47,6 +59,10 @@ public record StatisticsDefinition(List<StatPeriod> periods, Map<UUID, Set<Strin
             }
         }
         return excluded;
+    }
+
+    public Optional<StatBoard> board(String boardId) {
+        return boards.stream().filter(board -> board.id().equals(boardId)).findFirst();
     }
 
     public List<StatPeriod> events() {

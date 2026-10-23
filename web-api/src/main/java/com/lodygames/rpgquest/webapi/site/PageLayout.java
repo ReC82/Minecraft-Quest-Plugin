@@ -76,6 +76,7 @@ public final class PageLayout {
             .button { display:inline-block; min-height:44px; padding:.65rem 1.1rem; border-radius:4px; background:var(--gold);
               color:#1a1300; font-weight:700; text-decoration:none; margin:.3rem .4rem .3rem 0; box-shadow:inset 0 -3px 0 #b07f1a; }
             .button.secondary { background:transparent; color:var(--gold); border:2px solid var(--gold); box-shadow:none; }
+            details summary { cursor:pointer; min-height:44px; padding:.6rem 0; font-weight:700; }
             .tag { display:inline-block; font-size:.8rem; padding:.1rem .5rem; border-radius:1rem; background:#2c3446;
               color:var(--text); margin-right:.3rem; }
             .board { list-style:none; margin:0; padding:0; }

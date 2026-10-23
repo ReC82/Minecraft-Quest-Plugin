@@ -80,7 +80,7 @@ class PortalIconsTest {
         assertEquals(PortalIcons.FALLBACK, PortalIcons.forMaterial("ELYTRA"));
         assertEquals(PortalIcons.FALLBACK, PortalIcons.forMaterial(""));
         assertEquals(PortalIcons.FALLBACK, PortalIcons.forMaterial(null));
-        assertEquals("trophy", PortalIcons.forMetric("BLOCK_BREAK"), "métrique inconnue : trophée générique");
+        assertEquals("trophy", PortalIcons.forMetric("NOT_A_METRIC"), "métrique inconnue : trophée générique");
     }
 
     @Test

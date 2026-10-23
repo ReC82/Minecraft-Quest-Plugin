@@ -117,6 +117,7 @@ public final class QuestProgressEngine implements PluginService {
     private final Map<ObjectiveType, List<Listener>> registeredListeners = new EnumMap<>(ObjectiveType.class);
     private final List<Consumer<UUID>> progressListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<UUID>> loadListeners = new CopyOnWriteArrayList<>();
+    private final List<QuestCompletionListener> completionListeners = new CopyOnWriteArrayList<>();
     /** Jeton anti double-clic / spam / appel concurrent d'une remise d'objets (issue #123), par joueur. */
     private final java.util.Set<UUID> deliveriesInFlight = ConcurrentHashMap.newKeySet();
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
@@ -241,6 +242,19 @@ public final class QuestProgressEngine implements PluginService {
      */
     public void onProgressChanged(Consumer<UUID> listener) {
         progressListeners.add(listener);
+    }
+
+    /**
+     * Issue #734 — observateur d'une quête terminée (statistiques). Appelé sur le fil principal au
+     * moment de la remise ; l'action qu'il rend ne s'exécute qu'une fois la complétion écrite en base.
+     */
+    @FunctionalInterface
+    public interface QuestCompletionListener {
+        @Nullable Runnable completing(Player player, NamespacedKey questId, String completionToken);
+    }
+
+    public void onQuestCompleted(QuestCompletionListener listener) {
+        completionListeners.add(listener);
     }
 
     /** Issue #171 — notifié (thread quelconque) quand la progression d'un joueur vient d'être chargée. */
@@ -1605,8 +1619,16 @@ public final class QuestProgressEngine implements PluginService {
         // Complétion ET dettes dans la MÊME transaction (voir
         // QuestProgressRepository#completeQuest) : sans cela, un arrêt brutal entre
         // les deux perd soit la récompense, soit la garantie de ne pas la payer deux fois.
+        List<Runnable> onPersisted = new ArrayList<>();
+        for (QuestCompletionListener listener : completionListeners) {
+            Runnable action = listener.completing(player, quest.id(), progress.rewardGrantId());
+            if (action != null) {
+                onPersisted.add(action);
+            }
+        }
         repository.completeQuest(playerId, quest.id(), progress.rewardGrantId(), owed, hearts, drawn)
                 .thenAccept(completion -> {
+                    onPersisted.forEach(Runnable::run);
                     payRecordedMoneyRewards(playerId, quest, completion.moneyGrantIds());
                     applyHeartGrants(playerId, quest, completion.hearts());
                     if (!drawn.isEmpty() && rewardTables != null) {

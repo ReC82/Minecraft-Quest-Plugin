@@ -208,16 +208,27 @@ public final class WebSnapshotWriter implements PluginService {
                         : questStatistics.topCompleted(current.leaderboardSize(), current.profileVisibilityDefault(),
                         lifetimeExcluded);
         CompletableFuture<PeriodBoards> periods = gatherPeriods(current, stats);
+        // Issue #734 : catalogue de classements (jour, semaine, mois, saison, dates, depuis toujours).
+        CompletableFuture<BoardCatalogExport.Catalog> boardCatalog = questRows.thenCompose(quests ->
+                statisticsService == null || statisticsRepository == null
+                        ? CompletableFuture.completedFuture(BoardCatalogExport.Catalog.EMPTY)
+                        : BoardCatalogExport.gather(statisticsRepository, stats, statisticsService.now(),
+                        statisticsService::isArchived, current.profileVisibilityDefault(), quests));
         gatherLeaderboards(current, lifetimeExcluded)
                 .thenCombine(playerNames, (leaderboards, names) -> Map.entry(leaderboards, names))
                 .thenCombine(questRows, (boardsAndNames, quests) -> Map.entry(boardsAndNames, quests))
-                .thenCombine(periods, (gathered, periodBoards) -> {
+                .thenCombine(periods, (gathered, periodBoards) -> Map.entry(gathered, periodBoards))
+                .thenCombine(boardCatalog, (gatheredPeriods, boards) -> {
+                    var gathered = gatheredPeriods.getKey();
                     var leaderboards = gathered.getKey().getKey();
                     var names = gathered.getKey().getValue();
                     var quests = gathered.getValue();
                     Map<String, Object> snapshot =
                             buildSnapshot(current, playerCount, maxPlayers, names, catalog, leaderboards);
-                    snapshot.put("statistics", statistics(leaderboards, quests, periodBoards));
+                    Map<String, Object> statistics = statistics(leaderboards, quests, gatheredPeriods.getValue());
+                    statistics.put("boards", BoardCatalogExport.boards(boards));
+                    statistics.put("catalog", BoardCatalogExport.catalog(boards));
+                    snapshot.put("statistics", statistics);
                     snapshot.put("profiles", profiles(leaderboards, quests));
                     return snapshot;
                 })

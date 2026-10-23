@@ -1,0 +1,53 @@
+# Catalogue par défaut des classements (issue #734) — lu depuis le JAR, jamais copié sur le serveur.
+#
+# Utilisé tant que plugins/RPGQuest/statistics.yml ne définit pas sa propre liste « leaderboards: »
+# (une liste vide « leaderboards: [] » n'en publie aucun). Chaque entrée est déclarative : ajouter un
+# classement = ajouter un bloc, jamais une classe Java. Format complet : docs/WEB_PORTAL.md §6.
+#
+# Ces classements ne sont publiés que dans l'instantané web (web-export.enabled) et ne montrent que
+# les profils visibles (#55) : ce fichier ne publie rien à lui seul.
+leaderboards:
+  # --- Combat (journal d'activité #57 : mobs tués en survie/aventure, hors spawner, test, PvP, admin)
+  - {id: mobs_week, name: "Monstres vaincus cette semaine", category: combat, metric: ENTITY_KILL,
+     filter: {entity-family: [hostile, boss]}, period: weekly, featured: true}
+  - {id: mobs_total, name: "Monstres vaincus", category: combat, metric: ENTITY_KILL,
+     filter: {entity-family: [hostile, boss]}, period: lifetime}
+  - {id: zombies_week, name: "Chasseurs de zombies", category: combat, icon: skull, metric: ENTITY_KILL,
+     filter: {entity-family: [zombies]}, period: weekly}
+  - {id: skeletons_week, name: "Briseurs d'os", category: combat, icon: skull, metric: ENTITY_KILL,
+     filter: {entity-family: [skeletons]}, period: weekly}
+  - {id: spiders_week, name: "Chasseurs d'araignées", category: combat, icon: spider, metric: ENTITY_KILL,
+     filter: {entity-family: [spiders]}, period: weekly}
+  - {id: creepers_week, name: "Démineurs de creepers", category: combat, icon: boss, metric: ENTITY_KILL,
+     filter: {entity-family: [creepers]}, period: weekly}
+  - {id: bosses_total, name: "Boss vaincus", category: combat, icon: boss, metric: ENTITY_KILL,
+     filter: {entity-family: [boss]}, period: lifetime}
+  - {id: mobs_day, name: "Monstres vaincus aujourd'hui", category: combat, metric: ENTITY_KILL,
+     filter: {entity-family: [hostile, boss]}, period: daily}
+  - {id: mobs_month, name: "Monstres vaincus ce mois-ci", category: combat, metric: ENTITY_KILL,
+     filter: {entity-family: [hostile, boss]}, period: monthly}
+  # --- Récolte (blocs cassés en survie, hors blocs posés par un joueur et casses refusées)
+  - {id: blocks_week, name: "Blocs cassés cette semaine", category: recolte, icon: pickaxe, metric: BLOCK_BREAK,
+     period: weekly}
+  - {id: ores_month, name: "Mineurs du mois", category: recolte, icon: ore, metric: BLOCK_BREAK,
+     filter: {block-family: [ores]}, period: monthly}
+  - {id: logs_week, name: "Bûcherons de la semaine", category: recolte, icon: log, metric: BLOCK_BREAK,
+     filter: {block-family: [logs]}, period: weekly}
+  - {id: crops_week, name: "Récoltes de la semaine", category: recolte, icon: bread, metric: BLOCK_BREAK,
+     filter: {block-family: [crops]}, period: weekly}
+  - {id: fish_week, name: "Pêcheurs de la semaine", category: recolte, metric: FISH_CAUGHT, period: weekly}
+  # --- Exploration (tables de découvertes existantes, avec leur vraie date)
+  - {id: waypoints_total, name: "Waypoints découverts", category: exploration, metric: WAYPOINT_DISCOVERED,
+     period: lifetime, featured: true}
+  - {id: waypoints_month, name: "Explorateurs du mois", category: exploration, metric: WAYPOINT_DISCOVERED,
+     period: monthly}
+  - {id: cities_total, name: "Villes découvertes", category: exploration, icon: map, metric: CITY_DISCOVERED, period: lifetime}
+  - {id: waystones_total, name: "Pierres de voyage découvertes", category: exploration, metric: WAYSTONE_DISCOVERED,
+     period: lifetime}
+  # --- Aventure
+  - {id: quests_total, name: "Quêtes terminées", category: aventure, metric: QUESTS_COMPLETED, period: lifetime}
+  - {id: quests_week, name: "Quêtes de la semaine", category: aventure, metric: QUEST_COMPLETION, period: weekly,
+     featured: true}
+  - {id: stories_total, name: "Histoires terminées", category: aventure, metric: STORY_COMPLETED, period: lifetime}
+  - {id: xp_week, name: "XP RPG de la semaine", category: aventure, metric: RPG_XP_GLOBAL, period: weekly}
+  - {id: xp_day, name: "XP RPG du jour", category: aventure, metric: RPG_XP_GLOBAL, period: daily}

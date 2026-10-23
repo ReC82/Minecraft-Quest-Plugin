@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 /**
  * Lit et valide {@code statistics.yml} (issue #54). Un fichier invalide n'est jamais appliqué à
@@ -31,8 +32,14 @@ public final class StatisticsDefinitionLoader {
     private static final Pattern CONSTANT = Pattern.compile("[A-Z0-9_]{1,64}");
     /** Valeur de filtre {@code special-mob} : l'id namespacé d'un mob spécial ({@code rpgquest:forest_brute}). */
     private static final Pattern NAMESPACED = Pattern.compile("[a-z0-9_.-]{1,64}:[a-z0-9_./-]{1,128}");
+    /** Valeur de filtre {@code entity-family}/{@code block-family} (#734) : l'id d'une famille ({@code zombies}). */
+    private static final Pattern FAMILY = Pattern.compile("[a-z0-9_-]{1,64}");
     private static final Pattern ENTITLEMENT = Pattern.compile("[a-z0-9_.-]{1,64}");
     private static final int LABEL_MAX = 120;
+    private static final Pattern ICON = Pattern.compile("[a-z0-9-]{1,32}");
+    private static final String BUNDLED_BOARDS = "/stats/leaderboards.yml";
+    private static final int DEFAULT_BOARD_SIZE = 10;
+    private static final int MAX_BOARD_SIZE = 50;
     /** Clés réservées aux événements (issue #57) : une saison classe toujours par plus grand total. */
     private static final List<String> EVENT_ONLY_KEYS = List.of("ranking", "filter", "goal", "rewards");
 
@@ -53,6 +60,11 @@ public final class StatisticsDefinitionLoader {
         readPeriods(root, "events", StatScope.EVENT, periods, ids, errors);
         checkSeasonsDoNotOverlap(periods, errors);
 
+        java.time.ZoneId zone = zone(root, errors);
+        List<StatBoard> boards = root.contains("leaderboards")
+                ? readBoards(root.getMapList("leaderboards"), "leaderboards", ids, errors)
+                : readBoards(bundledBoards(), "catalogue par défaut", ids, errors);
+
         Set<String> reasons = root.contains("excluded-xp-reasons")
                 ? new LinkedHashSet<>(root.getStringList("excluded-xp-reasons"))
                 : StatisticsDefinition.DEFAULT_EXCLUDED_XP_REASONS;
@@ -61,7 +73,134 @@ public final class StatisticsDefinitionLoader {
         if (!errors.isEmpty()) {
             return new Result(StatisticsDefinition.EMPTY, List.copyOf(errors));
         }
-        return new Result(new StatisticsDefinition(periods, exclusions, reasons), List.of());
+        return new Result(new StatisticsDefinition(periods, exclusions, reasons, boards, zone), List.of());
+    }
+
+    private static java.time.ZoneId zone(ConfigurationSection root, List<String> errors) {
+        String text = text(root.get("timezone"));
+        if (text == null) {
+            return StatisticsDefinition.DEFAULT_ZONE;
+        }
+        try {
+            return java.time.ZoneId.of(text);
+        } catch (java.time.DateTimeException e) {
+            errors.add("« timezone » inconnu « " + text + " » (ex. Europe/Brussels).");
+            return StatisticsDefinition.DEFAULT_ZONE;
+        }
+    }
+
+    /** Catalogue livré dans le JAR ({@code stats/leaderboards.yml}), utilisé quand le fichier n'a pas de « leaderboards ». */
+    private static List<Map<?, ?>> bundledBoards() {
+        try (var in = StatisticsDefinitionLoader.class.getResourceAsStream(BUNDLED_BOARDS)) {
+            if (in == null) {
+                return List.of();
+            }
+            YamlConfiguration yaml = new YamlConfiguration();
+            yaml.loadFromString(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+            return yaml.getMapList("leaderboards");
+        } catch (java.io.IOException | org.bukkit.configuration.InvalidConfigurationException e) {
+            throw new IllegalStateException(BUNDLED_BOARDS + " illisible", e);
+        }
+    }
+
+    /**
+     * Classements du catalogue (#734). Une métrique sans journal horodaté (quêtes terminées
+     * « depuis toujours ») n'accepte que {@code period: lifetime} et aucun filtre.
+     */
+    private static List<StatBoard> readBoards(List<Map<?, ?>> entries, String key, Set<String> ids, List<String> errors) {
+        List<StatBoard> boards = new ArrayList<>();
+        for (int i = 0; i < entries.size(); i++) {
+            Map<?, ?> entry = entries.get(i);
+            String where = key + "[" + i + "]";
+            String id = text(entry.get("id"));
+            if (id == null || !PERIOD_ID.matcher(id).matches()) {
+                errors.add(where + " : « id » obligatoire, en minuscules, chiffres et _ (64 caractères au plus).");
+                continue;
+            }
+            where = key + " « " + id + " »";
+            if (!ids.add(id)) {
+                errors.add(where + " : identifiant déjà utilisé par un autre classement, une saison ou un événement.");
+                continue;
+            }
+            if (Boolean.FALSE.equals(entry.get("enabled"))) {
+                continue;
+            }
+            String name = text(entry.get("name"));
+            if (name == null || name.length() > LABEL_MAX) {
+                errors.add(where + " : « name » obligatoire, " + LABEL_MAX + " caractères au plus (titre public).");
+                continue;
+            }
+            String metricId = text(entry.get("metric"));
+            var metric = metricId == null ? java.util.Optional.<StatMetric>empty() : StatMetric.find(metricId);
+            if (metric.isEmpty()) {
+                errors.add(where + " : « metric » inconnue « " + metricId + " ».");
+                continue;
+            }
+            String periodText = text(entry.get("period"));
+            var period = periodText == null ? java.util.Optional.of(BoardPeriod.LIFETIME)
+                    : BoardPeriod.parse(periodText.toLowerCase(java.util.Locale.ROOT));
+            if (period.isEmpty()) {
+                errors.add(where + " : « period » vaut lifetime, daily, weekly, monthly, season ou custom.");
+                continue;
+            }
+            if (!metric.get().windowed() && (period.get() != BoardPeriod.LIFETIME || entry.get("filter") != null)) {
+                errors.add(where + " : « " + metricId + " » n'a pas d'historique daté : seulement period: lifetime, sans filtre.");
+                continue;
+            }
+            Instant start = null;
+            Instant end = null;
+            if (period.get() == BoardPeriod.CUSTOM) {
+                start = instant(entry.get("start"), where + ".start", errors);
+                end = instant(entry.get("end"), where + ".end", errors);
+                if (start == null || end == null) {
+                    continue;
+                }
+                if (!start.isBefore(end)) {
+                    errors.add(where + " : « start » doit précéder « end ».");
+                    continue;
+                }
+            } else if (entry.containsKey("start") || entry.containsKey("end")) {
+                errors.add(where + " : « start »/« end » ne s'emploient qu'avec period: custom.");
+                continue;
+            }
+            String category = text(entry.get("category"));
+            if (category != null && !StatBoard.CATEGORIES.contains(category)) {
+                errors.add(where + " : « category » vaut " + String.join(", ", StatBoard.CATEGORIES) + ".");
+                continue;
+            }
+            String icon = text(entry.get("icon"));
+            if (icon != null && !ICON.matcher(icon).matches()) {
+                errors.add(where + " : « icon » en minuscules, chiffres et - (32 caractères au plus).");
+                continue;
+            }
+            int size = entry.get("size") instanceof Number number ? number.intValue() : DEFAULT_BOARD_SIZE;
+            if (size < 1 || size > MAX_BOARD_SIZE) {
+                errors.add(where + " : « size » entre 1 et " + MAX_BOARD_SIZE + ".");
+                continue;
+            }
+            int before = errors.size();
+            Map<String, Set<String>> filter = filter(entry.get("filter"), List.of(metricId), where, errors);
+            if (errors.size() != before) {
+                continue;
+            }
+            boards.add(new StatBoard(id, name, category == null ? "autres" : category, icon, metricId, filter,
+                    declared(entry.get("filter")), period.get(), start, end, size,
+                    Boolean.TRUE.equals(entry.get("featured"))));
+        }
+        return boards;
+    }
+
+    /** Filtre tel qu'écrit, valeurs normalisées et triées : ce que le portail affiche. */
+    private static Map<String, List<String>> declared(Object raw) {
+        Map<String, List<String>> declared = new java.util.TreeMap<>();
+        if (raw instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> item : map.entrySet()) {
+                List<?> values = item.getValue() instanceof List<?> list ? list : List.of(String.valueOf(item.getValue()));
+                declared.put(String.valueOf(item.getKey()), values.stream().map(value -> String.valueOf(value).trim())
+                        .sorted().toList());
+            }
+        }
+        return declared;
     }
 
     private static void readPeriods(ConfigurationSection root, String key, StatScope scope,
@@ -168,13 +307,18 @@ public final class StatisticsDefinitionLoader {
         return new EventRules(ranking, filter, goal, rewards);
     }
 
-    private static Map<String, Set<String>> filter(Object raw, List<String> metrics, String where, List<String> errors) {
+    /**
+     * Filtre de cibles d'un événement ou d'un classement. Une famille (#734, {@code entity-family:
+     * [zombies]}) est remplacée ici par ses membres : la requête ne voit que des noms Paper.
+     */
+    static Map<String, Set<String>> filter(Object raw, List<String> metrics, String where, List<String> errors) {
         Map<String, Set<String>> filter = new java.util.LinkedHashMap<>();
         if (raw == null) {
             return filter;
         }
         if (!(raw instanceof Map<?, ?> map) || map.isEmpty()) {
-            errors.add(where + " : « filter » doit associer une clé (entity, special-mob, item) à des valeurs.");
+            errors.add(where + " : « filter » doit associer une clé (entity, entity-family, special-mob, item, block, "
+                    + "block-family, quest) à des valeurs.");
             return filter;
         }
         for (Map.Entry<?, ?> item : map.entrySet()) {
@@ -187,7 +331,9 @@ public final class StatisticsDefinitionLoader {
             }
             List<?> values = item.getValue() instanceof List<?> list ? list : List.of(String.valueOf(item.getValue()));
             Set<String> accepted = new LinkedHashSet<>();
-            Pattern format = key.equals("special-mob") ? NAMESPACED : CONSTANT;
+            var familyKind = StatDimensions.Kind.ofFilterKey(key);
+            Pattern format = familyKind.isPresent() ? FAMILY
+                    : key.equals("special-mob") || key.equals("quest") ? NAMESPACED : CONSTANT;
             for (Object value : values) {
                 String text = String.valueOf(value).trim();
                 if (format == CONSTANT) {
@@ -195,7 +341,18 @@ public final class StatisticsDefinitionLoader {
                 }
                 if (!format.matcher(text).matches()) {
                     errors.add(where + " : valeur de filtre « " + value + " » invalide pour « " + key + " »"
-                            + (format == CONSTANT ? " (nom Paper, ex. ZOMBIE ou COD)." : " (id namespacé, ex. rpgquest:forest_brute)."));
+                            + (format == CONSTANT ? " (nom Paper, ex. ZOMBIE ou COD)."
+                            : format == FAMILY ? " (id de famille, ex. zombies ou ores)."
+                            : " (id namespacé, ex. rpgquest:forest_brute)."));
+                    continue;
+                }
+                if (familyKind.isPresent()) {
+                    var family = StatDimensions.bundled().family(familyKind.get(), text);
+                    if (family.isEmpty() || family.get().members().isEmpty()) {
+                        errors.add(where + " : famille « " + text + " » inconnue pour « " + key + " ».");
+                        continue;
+                    }
+                    accepted.addAll(family.get().members());
                     continue;
                 }
                 accepted.add(text);

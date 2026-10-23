@@ -52,6 +52,9 @@ public final class LeaderboardsPageHandler implements ApiHandler {
 
     @Override
     public int handle(HttpExchange exchange) throws IOException {
+        if (BoardCatalogPage.path(routes).equals(exchange.getRequestURI().getPath())) {
+            return catalog(exchange);
+        }
         if (!routes.boards().equals(exchange.getRequestURI().getPath()) && !"/leaderboards".equals(exchange.getRequestURI().getPath())) {
             return send(exchange, 404, ServerStatus.of(ServerState.resolve(store)), "<p>Cette page n'existe pas.</p>");
         }
@@ -93,8 +96,31 @@ public final class LeaderboardsPageHandler implements ApiHandler {
             body.append(categories(boards, period, category));
             body.append(cards(filter(boards, category)));
         }
+        if (statistics.get("boards") instanceof List<?> catalog && !catalog.isEmpty()) {
+            body.append("<p><a class=\"button\" href=\"").append(BoardCatalogPage.path(routes))
+                    .append("\">Voir tous les classements : jour, semaine, mois, monstres, blocs, exploration…</a></p>");
+        }
         body.append(routes.demo() ? "" : freshness(state));
         return send(exchange, 200, serverStatus, body.toString());
+    }
+
+    /** {@code /classements/tous} (#734) : le catalogue complet, mêmes filtres de thème, plus la période. */
+    private int catalog(HttpExchange exchange) throws IOException {
+        Map<String, Object> live = ServerState.resolve(store);
+        Map<String, Object> state = routes.demo() ? DemoData.state(Instant.now()) : live;
+        Map<String, String> query = QueryParams.parse(exchange.getRequestURI().getRawQuery());
+        String category = StatLabels.CATEGORIES.containsKey(query.getOrDefault("categorie", ""))
+                ? query.get("categorie") : "";
+        String body = BoardCatalogPage.render(PublicPlayerData.statistics(state.get("statistics")), routes,
+                query.getOrDefault("periode", ""), category) + (routes.demo() ? "" : freshness(state));
+        String description = "Tous les classements de " + site.title()
+                + " : monstres, blocs, exploration, quêtes, par jour, semaine, mois et saison.";
+        PageMeta meta = routes.demo() ? PageMeta.demo(description, PageMeta.BOARDS)
+                : new PageMeta(BoardCatalogPage.path(routes), description, PageMeta.BOARDS);
+        HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, meta,
+                routes.demo() ? "Tous les classements (démonstration)" : "Tous les classements",
+                ServerStatus.of(live), body));
+        return 200;
     }
 
     private int send(HttpExchange exchange, int status, ServerStatus serverStatus, String body) throws IOException {

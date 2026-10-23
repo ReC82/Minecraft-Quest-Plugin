@@ -71,10 +71,26 @@ class ActivityListenerTest {
 
         killer = server.addPlayer();
         killer.setGameMode(GameMode.SURVIVAL);
+        tracker = new com.lodygames.rpgquest.progression.PlacedBlockTracker(plugin,
+                new com.lodygames.rpgquest.database.PlacedBlockRepository(database), plugin.getSLF4JLogger());
+        tracker.start();
+        listener.usePlacedBlocks(tracker);
+    }
+
+    private com.lodygames.rpgquest.progression.PlacedBlockTracker tracker;
+
+    /** Casse complète : capture avant l'XP de minage, effacement de la marque (comme MiningXpListener), confirmation. */
+    private void breakBlock(org.bukkit.block.Block block, boolean cancelled) {
+        org.bukkit.event.block.BlockBreakEvent event = new org.bukkit.event.block.BlockBreakEvent(block, killer);
+        listener.beforeBreak(event);
+        tracker.clearPlacement(block);
+        event.setCancelled(cancelled);
+        listener.onBreak(event);
     }
 
     @AfterEach
     void tearDown() {
+        tracker.stop();
         database.shutdown();
         MockBukkit.unmock();
     }
@@ -145,5 +161,61 @@ class ActivityListenerTest {
         die(victim);
 
         assertEquals(List.of(), journal());
+    }
+
+    @Test
+    void aNaturalBlockIsJournaledButNeverAPlayerPlacedOne() throws Exception {
+        org.bukkit.block.Block natural = world.getBlockAt(0, 64, 0);
+        natural.setType(org.bukkit.Material.IRON_ORE);
+        breakBlock(natural, false);
+
+        org.bukkit.block.Block placed = world.getBlockAt(1, 64, 0);
+        placed.setType(org.bukkit.Material.STONE);
+        tracker.onPlace(new org.bukkit.event.block.BlockPlaceEvent(placed, placed.getState(), world.getBlockAt(1, 63, 0),
+                new org.bukkit.inventory.ItemStack(org.bukkit.Material.STONE), killer, true,
+                org.bukkit.inventory.EquipmentSlot.HAND));
+        breakBlock(placed, false);
+
+        assertEquals(List.of("BLOCK_BREAK:IRON_ORE"), journal());
+    }
+
+    @Test
+    void aRefusedOrCreativeBreakAndAnUnripeCropNeverCount() throws Exception {
+        org.bukkit.block.Block block = world.getBlockAt(0, 64, 0);
+        block.setType(org.bukkit.Material.STONE);
+        breakBlock(block, true);
+        killer.setGameMode(GameMode.CREATIVE);
+        breakBlock(block, false);
+        killer.setGameMode(GameMode.SURVIVAL);
+        org.bukkit.block.Block wheat = world.getBlockAt(2, 64, 0);
+        wheat.setType(org.bukkit.Material.WHEAT);
+        breakBlock(wheat, false);
+
+        assertEquals(List.of(), journal());
+    }
+
+    @Test
+    void aBreakSeenOnlyAfterCancellationIsIgnored() throws Exception {
+        org.bukkit.block.Block block = world.getBlockAt(0, 64, 0);
+        block.setType(org.bukkit.Material.STONE);
+        // Une protection a annulé avant HIGH : beforeBreak n'est jamais appelé (ignoreCancelled).
+        org.bukkit.event.block.BlockBreakEvent event = new org.bukkit.event.block.BlockBreakEvent(block, killer);
+        event.setCancelled(true);
+        listener.onBreak(event);
+
+        assertEquals(List.of(), journal());
+    }
+
+    @Test
+    void aQuestCompletionIsJournaledOnceAfterPersistenceAndNeverInCreative() throws Exception {
+        org.bukkit.NamespacedKey quest = new org.bukkit.NamespacedKey("rpgquest", "crystal_hunt");
+        Runnable persisted = listener.questCompleting(killer, quest, "token-1");
+        assertEquals(List.of(), journal(), "rien n'est écrit avant l'enregistrement de la complétion");
+        persisted.run();
+        persisted.run();
+        killer.setGameMode(GameMode.CREATIVE);
+        assertEquals(null, listener.questCompleting(killer, quest, "token-2"));
+
+        assertEquals(List.of("QUEST_COMPLETION:rpgquest:crystal_hunt"), journal());
     }
 }

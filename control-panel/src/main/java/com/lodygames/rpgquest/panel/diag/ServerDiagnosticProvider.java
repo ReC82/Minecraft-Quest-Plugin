@@ -51,7 +51,7 @@ public final class ServerDiagnosticProvider implements DiagnosticProvider {
                     "L'agent « " + ctx.agentId() + " » n'a jamais contacté PlugAdmin.",
                     "Impossible de connaître l'état du serveur ou d'exécuter la moindre action à distance.",
                     "Vérifier que le plugin RPGQuest tourne et que sa configuration d'agent sortant est correcte.",
-                    "", "/docs/serveur-depannage#aucun-signal-de-l-agent", "/agents", "heartbeat", null));
+                    "", "/docs/serveur-depannage#aucun-signal-de-lagent", "/agents", "heartbeat", null));
             return out;
         }
 
@@ -73,7 +73,7 @@ public final class ServerDiagnosticProvider implements DiagnosticProvider {
                     "Le dernier signal de l'agent remonte à " + age + ".",
                     "Les informations affichées peuvent être légèrement en retard.",
                     "Surveiller : si le retard s'aggrave, vérifier la connectivité sortante du serveur.",
-                    "reçu " + age, "/docs/serveur-depannage#signal-de-l-agent-vieillissant", "/agents",
+                    "reçu " + age, "/docs/serveur-depannage#signal-de-lagent-vieillissant", "/agents",
                     "heartbeat", h.receivedAt()));
         }
 

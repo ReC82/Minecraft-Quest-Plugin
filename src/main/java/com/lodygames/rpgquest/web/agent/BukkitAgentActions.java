@@ -460,7 +460,7 @@ public final class BukkitAgentActions implements AgentActions {
                     q.prerequisites().stream().map(NamespacedKey::toString).toList(),
                     steps, describeRewards(q.rewards()), rewardDetails(q.rewards()),
                     q.giver(), null, q.cooldown().toSeconds(),
-                    q.isPeriodic() ? q.period().yamlKey() : null));
+                    q.isPeriodic() ? q.period().yamlKey() : null, q.icon().name()));
         }
         return out;
     }

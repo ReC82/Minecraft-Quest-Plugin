@@ -62,6 +62,24 @@ class PixelIconsTest {
     }
 
     @Test
+    void questNpcAndMobTilesFallBackSensibly() {
+        assertEquals("sword", PixelIcons.forQuest("WOODEN_SWORD", "COLLECT_ITEM", "OAK_LOG"), "icon: d'abord");
+        assertEquals("spider", PixelIcons.forQuest(null, "KILL_ENTITY", "SPIDER"), "agent ancien : 1er objectif");
+        assertEquals("chest", PixelIcons.forQuest("ELYTRA", "COLLECT_ITEM", "ELYTRA"), "icône inconnue : type d'objectif");
+        assertEquals("scroll", PixelIcons.forQuest("", "", ""), "quête sans objectif : parchemin");
+        assertEquals("coin", PixelIcons.forNpcRole("marchand"));
+        assertEquals("shield", PixelIcons.forNpcRole(" GARDE "));
+        assertEquals("npc", PixelIcons.forNpcRole("dresseur_de_dragons"), "rôle libre : icône PNJ");
+        assertEquals("npc", PixelIcons.forNpcRole(null));
+        for (var role : com.lodygames.rpgquest.panel.npc.NpcRoles.suggestions()) {
+            assertNotEquals(PixelIcons.FALLBACK, PixelIcons.forNpcRole(role.id()), role.id());
+        }
+        assertEquals("boss", PixelIcons.forMob(true, "ZOMBIE"));
+        assertEquals("spider", PixelIcons.forMob(false, "CAVE_SPIDER"));
+        assertEquals("skull", PixelIcons.forMob(false, "PHANTOM"), "entité sans icône : crâne");
+    }
+
+    @Test
     void everyMaterialOfTheShippedQuestsHasARealIcon() throws IOException {
         Map<String, String> missing = new TreeMap<>();
         int seen = 0;

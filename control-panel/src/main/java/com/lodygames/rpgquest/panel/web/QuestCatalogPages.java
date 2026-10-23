@@ -226,7 +226,7 @@ final class QuestCatalogPages {
                 + c.entries().stream().map(Entry::label).collect(Collectors.joining(" "))).toLowerCase(Locale.ROOT);
         String href = url(ctx, c.id(), "");
         StringBuilder sb = new StringBuilder("<li class=\"qc-row\" data-filter-item=\"qc-catalogs\" data-filter-text=\"")
-                .append(Http.esc(search)).append("\">");
+                .append(Http.esc(search)).append("\">").append(PixelIcons.tile("scroll"));
         sb.append("<div class=\"qc-row-main\"><a class=\"qc-row-title\" href=\"").append(Http.esc(href)).append("\">")
                 .append(Http.esc(c.name())).append("</a>");
         sb.append("<span class=\"qc-row-sub\">").append(Icons.icon("quests")).append(questCount(c.entries().size()))

@@ -49,6 +49,39 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Source des contenus PlugAdmin fiable face à DEV, publications sans écrasement (#798, TC-424)
+
+### Changement
+
+PlugAdmin retient pour chaque quête, story et dialogue sa dernière version commune avec DEV et
+affiche qui a changé (Brouillon non publié, Plus récent sur DEV, Versions différentes, Conflit,
+Retiré définitivement…) ; « Récupérer depuis DEV » et « Conserver mon brouillon » ; aucune
+publication sans ce choix. Le plugin refuse la publication de `first_steps` / `crystal_hunt`
+(code `RETIRED`). L'espace de contenu de PlugAdmin devient `/var/lib/plugadmin/content` (hors Git).
+
+### Action serveur
+
+- VeryGames : remplacement du JAR RPGQuest uniquement (`e039d4b7`), **aucune migration**, aucune
+  configuration ni aucun contenu DEV modifié (lecture FTP seule pour l'inventaire) ; redémarrage.
+- AWS : PlugAdmin redéployé ; `PLUGADMIN_CONTENT_DIR` changé dans `/etc/plugadmin/plugadmin.env`
+  (sauvegarde `plugadmin.env.pre-798-20261023T183319Z`) par
+  `scripts/plugadmin/content-workspace-reconcile.sh switch`.
+
+### Statut
+
+Effectué le 23/10/2026 : JAR transféré 20:31 (4 379 631 octets, SHA-256 `540cb5c5…` retéléchargé
+identique, backup `rpgquest-20261023T183122Z-predeploy.jar`), DEV redémarré (0 joueur) et ONLINE ;
+PlugAdmin `e039d4b7` (/health 200, routes `/content/recover` et `/content/keep-draft` servies) ;
+bascule de l'espace de contenu à 20:33 (52 fichiers vérifiés par SHA-256). TC-424 PENDING MANUAL
+VALIDATION.
+
+### Rollback
+
+JAR : `scripts/rollback-verygames.sh --latest` (backup ci-dessus = JAR `c15b4c35`) puis redémarrage.
+Espace de contenu : `scripts/plugadmin/content-workspace-reconcile.sh rollback-env
+/etc/plugadmin/plugadmin.env.pre-798-20261023T183319Z` (`/var/lib/plugadmin/content` reste en
+place). PlugAdmin : `scripts/plugadmin/rollback.sh app`.
+
 ## 2026-10-23 - PlugAdmin « État des quêtes d'un joueur » : objectifs d'un joueur hors ligne, statuts FR, noms actuels des PNJ (#79, TC-320)
 
 ### Changement

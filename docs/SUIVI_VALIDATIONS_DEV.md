@@ -363,3 +363,8 @@ Capture de **Joueurs (démonstration)** après clic sur « Tous les profils » d
 
 ### ÉCHEC propriétaire — 23/10/2026 : recherche profil fictif WebPortal (#56 / TC-414)
 Scénario reproduit : ouvrir **Joueurs (démonstration)** avec Demo_Brasier présent, saisir **Brasier** dans « Chercher un pseudo », cliquer « Chercher ». **Observé :** page générique « Joueur » et « Aucun profil public pour ce pseudo », alors que la fiche Demo_Brasier existe et s'ouvre depuis le classement. **Attendu :** recherche dans l'espace /demo et accès à la fiche fictive correspondante. Auditer la route du formulaire, le préfixe Demo_ et la prise en charge des recherches partielles ; ne pas activer de données réelles. **TC-414 ÉCHEC sur la recherche ; #56 reste ouvert.** Refaire le parcours après correction, avec pseudo absent et casse différente.
+
+
+### Validation propriétaire — 23/10/2026 : #728 / TC-410 — VALIDÉ ET CLÔTURÉ
+
+Le propriétaire a ajouté un retour à la ligne via **Entrée** dans une réplique du dialogue **Musty** sur PlugAdmin, l'a **enregistré**, puis **mis en jeu**, et confirme avoir vérifié dans **Minecraft** que l'affichage sur deux lignes fonctionne comme attendu. Chemin complet propriétaire confirmé : édition → publication → client Minecraft. Clôture du ticket #728 autorisée et effectuée ; ne pas redemander ce test. Cela ne valide pas automatiquement les autres scénarios de dialogues ni la refonte documentaire.

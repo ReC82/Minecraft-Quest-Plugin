@@ -1761,10 +1761,11 @@ public final class AgentPages {
         java.util.function.Function<String, String> cityNames = cityDirectory(agentId)::nameOf;
         // Issue #79 : noms ACTUELS des PNJ (dernier relevé npc.list), jamais un identifiant brut.
         Map<String, String> npcDisplayNames = npcDirectory(agentId).displayNames();
-        sb.append(playerStatusSection(session, agentId, player, "/quests", "quest.player.status", "quests",
+        PlayerPick pick = playerPick(agentId, player);
+        sb.append(playerStatusSection(session, agentId, pick, "/quests", "quest.player.status", "quests",
                 r -> renderQuestPlayerRow(r, cityNames, npcDisplayNames::get), questCtx.focus()));
 
-        if (!player.isEmpty()) {
+        if (pick.selected()) {
             // Issue #241 : sélecteur GÉNÉRIQUE, pour agir sur une autre quête que celle ouverte. Il
             // part de la quête ouverte s'il y en a une, et sinon d'aucune — jamais de la première
             // de la liste, qui faisait apparaître « crystal_hunt » sans rapport avec la fiche.
@@ -2276,10 +2277,11 @@ public final class AgentPages {
         }
 
         List<String> storyIds = runtimeStories.stream().map(o -> str(asMap(o).get("id"))).toList();
-        sb.append(playerStatusSection(session, agentId, player, "/stories", "story.player.status", "stories",
+        PlayerPick pick = playerPick(agentId, player);
+        sb.append(playerStatusSection(session, agentId, pick, "/stories", "story.player.status", "stories",
                 this::renderStoryPlayerRow));
 
-        if (!player.isEmpty()) {
+        if (pick.selected()) {
             sb.append("<h3>Actions admin sur une story</h3>");
             sb.append(storyActionForm(session, agentId, player, "story.advance", "Avancer d'une étape", storyIds));
             sb.append(storyActionForm(session, agentId, player, "story.complete", "Compléter toute la story", storyIds));
@@ -8826,34 +8828,55 @@ public final class AgentPages {
         String render(Map<String, Object> row);
     }
 
-    private String playerStatusSection(Session session, String agentId, String player, String page,
+    private String playerStatusSection(Session session, String agentId, PlayerPick pick, String page,
                                        String type, String listKey, RowRenderer renderer) {
-        return playerStatusSection(session, agentId, player, page, type, listKey, renderer, "");
+        return playerStatusSection(session, agentId, pick, page, type, listKey, renderer, "");
     }
 
     /** @param focus contenu ouvert à conserver en sélectionnant le joueur (issue #241), ou vide */
-    private String playerStatusSection(Session session, String agentId, String player, String page,
+    private String playerStatusSection(Session session, String agentId, PlayerPick pick, String page,
                                        String type, String listKey, RowRenderer renderer, String focus) {
+        String player = pick.ref();
         StringBuilder sb = new StringBuilder();
         sb.append("<h2 id=\"etat-joueur\">État d'un joueur</h2>");
         sb.append("<form method=\"get\" action=\"").append(page).append("\">")
                 .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">")
                 .append(focus == null || focus.isEmpty() ? ""
                         : "<input type=\"hidden\" name=\"focus\" value=\"" + Http.esc(focus) + "\">")
-                .append("<label>Joueur (nom ou UUID)</label>")
-                .append("<input type=\"text\" name=\"player\" value=\"").append(Http.esc(player))
-                .append("\" placeholder=\"LoDyMcFly\">")
-                .append("<button class=\"btn\" type=\"submit\">Sélectionner</button></form>");
+                .append("<label for=\"player-").append(Http.esc(type)).append("\">Joueur (pseudo, même partiel, ou UUID)</label>")
+                .append("<input type=\"text\" id=\"player-").append(Http.esc(type))
+                .append("\" name=\"player\" list=\"dl-known-players\" autocomplete=\"off\" value=\"")
+                .append(Http.esc(pick.exact() != null ? pick.label() : player))
+                .append("\" placeholder=\"Ron, LoDyMcFly…\">")
+                .append(knownPlayersDatalist(pick.known()))
+                .append("<button class=\"btn\" type=\"submit\">Rechercher</button></form>");
         if (player.isEmpty()) {
-            sb.append(Ui.empty("Sélectionner un joueur pour voir son état et agir dessus."));
+            sb.append(Ui.empty(pick.known().isEmpty()
+                    ? "Saisir le pseudo ou l'UUID d'un joueur. Pour des suggestions, charger l'annuaire depuis la page Joueurs."
+                    : "Saisir le début ou une partie d'un pseudo, puis choisir le joueur dans la liste."));
             return sb.toString();
         }
-        sb.append(readForm(session, agentId, type, page, player, "Rafraîchir l'état de " + player));
+        if (pick.lookup().needsChoice()) {
+            return sb.append(playerSuggestions(agentId, pick, page, focus)).toString();
+        }
+        if (pick.exact() != null) {
+            sb.append("<p>Joueur sélectionné : <strong>").append(Http.esc(pick.label())).append("</strong> ")
+                    .append(playerStateChips(pick.exact())).append(" <span class=\"faint\">")
+                    .append(Http.esc(pick.exact().uuid())).append("</span></p>");
+        } else {
+            // Ni dans l'annuaire ni proche d'un joueur connu : la saisie complète reste utilisable
+            // (annuaire ancien ou absent) — c'est le serveur qui tranche.
+            sb.append(Ui.empty(pick.known().isEmpty()
+                    ? "Annuaire des joueurs non chargé : « " + player + " » sera cherché tel quel par le serveur."
+                    : "Aucun joueur connu ne correspond à « " + player + " ». Vérifier l'orthographe, ou "
+                            + "actualiser l'annuaire depuis la page Joueurs s'il vient d'arriver."));
+        }
+        sb.append(readForm(session, agentId, type, page, player, "Rafraîchir l'état de " + pick.label()));
         Optional<AgentActionRow> row = latestForPlayer(agentId, type, player);
         if (row.isPresent() && row.get().status() == AgentActionStatus.SUCCESS) {
             List<Object> rows = detailsOf(row.get()).map(d -> asList(d.get(listKey))).orElse(List.of());
             if (rows.isEmpty()) {
-                sb.append(Ui.empty("Aucun élément à afficher pour " + player + " au dernier relevé."));
+                sb.append(Ui.empty("Aucun élément à afficher pour " + pick.label() + " au dernier relevé."));
             } else {
                 sb.append(Ui.tableOpen("Élément", "État", "Détail"));
                 for (Object o : rows) {
@@ -8865,6 +8888,71 @@ public final class AgentPages {
             sb.append(Ui.empty("Cliquer sur « Rafraîchir l'état » pour interroger le serveur."));
         }
         return sb.toString();
+    }
+
+    /**
+     * Issue #788 : la saisie d'un champ joueur, résolue contre le dernier annuaire {@code player.catalog}
+     * déjà en base (aucune requête au serveur, aucun second annuaire). {@code ref} = la valeur transmise
+     * à l'agent : un UUID quand le joueur a été choisi dans les suggestions.
+     */
+    record PlayerPick(String ref, PlayerCatalog.Lookup lookup, List<PlayerCatalog.Entry> known) {
+
+        /** Un joueur est désigné : les actions admin peuvent être proposées. */
+        boolean selected() {
+            return !ref.isEmpty() && !lookup.needsChoice();
+        }
+
+        PlayerCatalog.Entry exact() {
+            return lookup.exact();
+        }
+
+        /** Le pseudo connu plutôt qu'un UUID brut. */
+        String label() {
+            return lookup.exact() != null && lookup.exact().name() != null ? lookup.exact().displayName() : ref;
+        }
+    }
+
+    private PlayerPick playerPick(String agentId, String player) {
+        List<PlayerCatalog.Entry> known = latestDetails(agentId, "player.catalog")
+                .map(c -> PlayerCatalog.parse(c.get("players"))).orElse(List.of());
+        return new PlayerPick(player, PlayerCatalog.lookup(known, player, PlayerCatalog.DEFAULT_SUGGESTIONS), known);
+    }
+
+    /** Suggestions natives du navigateur (clavier, souris, mobile) : pseudo + état de connexion. */
+    private static String knownPlayersDatalist(List<PlayerCatalog.Entry> known) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"dl-known-players\">");
+        for (PlayerCatalog.Entry e : PlayerCatalog.view(known, "", PlayerCatalog.Filter.ALL,
+                PlayerCatalog.Sort.RECENT, 1, 500).entries()) {
+            sb.append("<option value=\"").append(Http.esc(e.name() != null ? e.displayName() : e.uuid()))
+                    .append("\" label=\"").append(e.online() ? "En ligne" : "Hors ligne").append("\"></option>");
+        }
+        return sb.append("</datalist>").toString();
+    }
+
+    /** Joueurs correspondant à une saisie partielle : chaque choix sélectionne par UUID (issue #788). */
+    private String playerSuggestions(String agentId, PlayerPick pick, String page, String focus) {
+        PlayerCatalog.Lookup lookup = pick.lookup();
+        StringBuilder sb = new StringBuilder("<p>").append(lookup.matched())
+                .append(lookup.matched() > 1 ? " joueurs correspondent" : " joueur correspond")
+                .append(" à « ").append(Http.esc(pick.ref())).append(" » — choisir :</p>")
+                .append("<ul class=\"player-suggest\">");
+        for (PlayerCatalog.Entry e : lookup.suggestions()) {
+            String href = page + "?agent=" + urlParam(agentId) + "&player=" + urlParam(e.uuid())
+                    + (focus == null || focus.isEmpty() ? "" : "&focus=" + urlParam(focus)) + "#etat-joueur";
+            sb.append("<li><a class=\"btn secondary\" href=\"").append(Http.esc(href)).append("\">")
+                    .append(Http.esc(e.displayName())).append("</a> ").append(playerStateChips(e))
+                    .append(" <span class=\"faint\">").append(Http.esc(e.uuid())).append("</span></li>");
+        }
+        sb.append("</ul>");
+        if (lookup.matched() > lookup.suggestions().size()) {
+            sb.append("<p class=\"muted\">").append(lookup.matched() - lookup.suggestions().size())
+                    .append(" autre(s) : préciser la saisie.</p>");
+        }
+        return sb.toString();
+    }
+
+    private static String urlParam(String raw) {
+        return java.net.URLEncoder.encode(raw, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private String agentPicker(String activeAgentId, String page, String player) {

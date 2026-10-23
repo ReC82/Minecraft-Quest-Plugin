@@ -168,6 +168,52 @@ public final class PlayerCatalog {
                 online, source.size() - online, banned);
     }
 
+    /**
+     * Issue #788 — résout la saisie libre d'un champ « Joueur (nom ou UUID) » contre l'annuaire.
+     *
+     * @param exact       le joueur désigné sans ambiguïté (UUID, ou pseudo complet porté par une
+     *                    seule entrée), sinon {@code null}
+     * @param suggestions joueurs dont le pseudo (ou l'UUID) contient la saisie, connectés d'abord,
+     *                    au plus {@code limit} — vide si {@code exact} est trouvé
+     * @param matched     nombre total de correspondances, au-delà de {@code limit} compris
+     */
+    public record Lookup(Entry exact, List<Entry> suggestions, int matched) {
+
+        /** Aucune entrée exacte mais des candidats : il faut choisir avant d'agir. */
+        public boolean needsChoice() {
+            return exact == null && !suggestions.isEmpty();
+        }
+    }
+
+    /** Taille par défaut de la liste de suggestions d'un champ joueur. */
+    public static final int DEFAULT_SUGGESTIONS = 10;
+
+    /**
+     * Pseudo partiel → joueurs connus, connectés ou hors ligne (issue #788). Un pseudo complet porté
+     * par plusieurs entrées (ancien pseudo repris) n'est pas « exact » : les candidats sont proposés
+     * pour choisir par UUID.
+     */
+    public static Lookup lookup(List<Entry> all, String ref, int limit) {
+        String q = ref == null ? "" : ref.trim();
+        if (q.isEmpty() || all == null || all.isEmpty()) {
+            return new Lookup(null, List.of(), 0);
+        }
+        List<Entry> sameName = new ArrayList<>();
+        for (Entry e : all) {
+            if (q.equalsIgnoreCase(e.uuid())) {
+                return new Lookup(e, List.of(), 1);
+            }
+            if (e.name() != null && q.equalsIgnoreCase(e.name().trim())) {
+                sameName.add(e);
+            }
+        }
+        if (sameName.size() == 1) {
+            return new Lookup(sameName.get(0), List.of(), 1);
+        }
+        Page page = view(all, q, Filter.ALL, Sort.RECENT, 1, Math.max(1, limit));
+        return new Lookup(null, page.entries(), page.matched());
+    }
+
     // ---- helpers -----------------------------------------------------------------------------
 
     private static String str(Object v) {

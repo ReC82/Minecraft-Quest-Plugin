@@ -160,4 +160,54 @@ class PlayerCatalogTest {
         assertEquals(3, p99.page());
         assertEquals(30, p99.entries().size());
     }
+
+    // ---- Issue #788 : saisie partielle d'un champ joueur ---------------------------------------
+
+    private static List<PlayerCatalog.Entry> lookupFixture() {
+        return PlayerCatalog.parse(List.of(
+                row("aaaaaaaa-0000-4000-8000-000000000001", "LoDyMcFly", true, false, 1L, 300L),
+                row("aaaaaaaa-0000-4000-8000-000000000002", "Rondoudou9000", false, false, 1L, 200L),
+                row("aaaaaaaa-0000-4000-8000-000000000003", "Ronan", true, false, 1L, 100L),
+                row("aaaaaaaa-0000-4000-8000-000000000004", "Twin", false, false, 1L, 50L),
+                row("aaaaaaaa-0000-4000-8000-000000000005", "twin", false, false, 1L, 40L)));
+    }
+
+    @Test
+    void aPartialNameProposesKnownPlayersOnlineOrOfflineOnlineFirst() {
+        PlayerCatalog.Lookup l = PlayerCatalog.lookup(lookupFixture(), "ron", 10);
+        assertTrue(l.needsChoice());
+        assertEquals(List.of("Ronan", "Rondoudou9000"), l.suggestions().stream().map(PlayerCatalog.Entry::name).toList());
+        assertEquals(2, l.matched());
+    }
+
+    @Test
+    void aFullNameOrUuidSelectsDirectlyWhateverTheCase() {
+        assertEquals("Rondoudou9000", PlayerCatalog.lookup(lookupFixture(), "RONDOUDOU9000", 10).exact().name());
+        assertEquals("Ronan", PlayerCatalog.lookup(lookupFixture(),
+                "AAAAAAAA-0000-4000-8000-000000000003", 10).exact().name());
+        assertFalse(PlayerCatalog.lookup(lookupFixture(), "Ronan", 10).needsChoice());
+    }
+
+    @Test
+    void aNameCarriedByTwoEntriesMustBeChosenByUuid() {
+        PlayerCatalog.Lookup l = PlayerCatalog.lookup(lookupFixture(), "twin", 10);
+        assertEquals(null, l.exact());
+        assertEquals(2, l.suggestions().size());
+    }
+
+    @Test
+    void noMatchOrNoCatalogYieldsNeitherSelectionNorChoice() {
+        PlayerCatalog.Lookup none = PlayerCatalog.lookup(lookupFixture(), "zzz", 10);
+        assertFalse(none.needsChoice());
+        assertEquals(null, none.exact());
+        assertEquals(0, none.matched());
+        assertFalse(PlayerCatalog.lookup(List.of(), "Ron", 10).needsChoice());
+    }
+
+    @Test
+    void suggestionsAreCappedButTheTotalIsKept() {
+        PlayerCatalog.Lookup l = PlayerCatalog.lookup(lookupFixture(), "n", 2);
+        assertEquals(2, l.suggestions().size());
+        assertEquals(4, l.matched());
+    }
 }

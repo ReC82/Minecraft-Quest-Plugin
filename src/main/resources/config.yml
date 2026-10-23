@@ -306,7 +306,7 @@ hub:
   #         - { x: 12, y: 64, z: -30 }
   #       conditions:
   #         - type: QUEST_STATE
-  #           quest: rpgquest:crystal_hunt
+  #           quest: rpgquest:guard_tier1
   #           state: COMPLETED
   #       message: "<gray>Termine la chasse au cristal pour utiliser cet établi.</gray>"
   stations:

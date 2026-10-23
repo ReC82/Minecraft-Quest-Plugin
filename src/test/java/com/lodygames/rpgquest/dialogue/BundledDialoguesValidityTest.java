@@ -13,11 +13,9 @@ import com.lodygames.rpgquest.dialogue.model.CloseAction;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestAvailableCondition;
-import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.player.StarterToolKitService;
-import com.lodygames.rpgquest.quest.model.QuestState;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -326,7 +324,8 @@ class BundledDialoguesValidityTest {
                         "le nœud « " + node.id() + " » doit être atteignable depuis l'accueil");
             }
         }
-        assertEquals(7, offers, "les sept quêtes du Garde doivent toutes passer par une explication");
+        // Sept avant #778 ; first_steps et crystal_hunt ont été retirées, restent les cinq paliers.
+        assertEquals(5, offers, "les cinq quêtes de Gauthier doivent toutes passer par une explication");
     }
 
     /** Issue #238 — les anciens libellés génériques ou trompeurs ne doivent pas revenir. */
@@ -422,7 +421,8 @@ class BundledDialoguesValidityTest {
      * Issue #80 : un clic droit sur Bûcheron Bob n'ouvrait rien. Le clic ouvre le dialogue dont l'id
      * est celui du PNJ ; le « giver » de la quête n'est qu'une déclaration. Ce test garde la chaîne
      * entière : giver de la quête = clé du dialogue, qui propose la quête, seulement si elle est
-     * acceptable, et explique le prérequis au lieu de se taire.
+     * acceptable. Depuis #778, la quête n'a plus de prérequis : Bob ne renvoie plus vers aucune autre
+     * quête ni vers le garde.
      */
     @Test
     void theWoodcutterOffersHisQuestFromTheDialogueTheClickOpens() {
@@ -446,10 +446,50 @@ class BundledDialoguesValidityTest {
         assertTrue(greeting.choices().stream().anyMatch(c -> offerNode.equals(c.next())
                         && c.conditions().equals(List.of(new QuestAvailableCondition(questId)))),
                 "l'accueil mène à l'offre, gardée par QUEST_AVAILABLE");
-        NamespacedKey prerequisite = NamespacedKey.fromString(quest.getStringList("prerequisites").getFirst());
-        assertTrue(greeting.choices().stream().anyMatch(c -> c.conditions().contains(
-                        new NegatedCondition(new QuestStateCondition(prerequisite, QuestState.COMPLETED)))),
-                "prérequis non rempli : Bob l'explique au lieu de ne rien proposer");
+        assertTrue(quest.getStringList("prerequisites").isEmpty(), "woodcutters_request sans prérequis (#778)");
+        String all = bob.nodes().values().stream()
+                .map(n -> n.text().base() + n.choices())
+                .reduce("", String::concat);
+        assertFalse(all.contains("Premiers pas") || all.contains("Garde") || all.contains("first_steps"),
+                "Bob ne doit plus renvoyer vers Premiers pas ni vers le Garde (#778)");
+    }
+
+    /**
+     * Issue #778 — first_steps et crystal_hunt sont retirées définitivement : aucune valeur d'aucun
+     * contenu embarqué (dialogues, quêtes, stories, marchands, PNJ) ne doit plus les désigner. Les
+     * commentaires YAML, qui ne sont jamais chargés, peuvent en garder la trace historique.
+     */
+    @Test
+    void noBundledContentStillReferencesTheRetiredQuests() throws Exception {
+        java.nio.file.Path resources = java.nio.file.Path.of("src/main/resources");
+        List<String> offenders = new java.util.ArrayList<>();
+        for (String folder : List.of("dialogues", "quests", "stories", "merchants", "npcs")) {
+            try (var files = java.nio.file.Files.list(resources.resolve(folder))) {
+                for (java.nio.file.Path file : files.filter(f -> f.toString().endsWith(".yml")).toList()) {
+                    YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file.toFile());
+                    String values = yaml.getValues(true).values().toString();
+                    if (values.contains("first_steps") || values.contains("crystal_hunt")) {
+                        offenders.add(folder + "/" + file.getFileName());
+                    }
+                }
+            }
+        }
+        assertTrue(offenders.isEmpty(), () -> "références à une quête retirée : " + offenders);
+    }
+
+    /** Issue #778 — le Garde s'appelle Gauthier partout où son nom s'affiche ; son id reste « guard ». */
+    @Test
+    void theGuardIsDisplayedAsGauthier() {
+        DialogueDefinition guard = guard();
+        assertEquals(new NamespacedKey("rpgquest", "guard"), guard.id());
+        guard.nodes().values().forEach(node ->
+                assertEquals("Gauthier", node.speaker(), () -> "locuteur de " + node.id()));
+        for (int tier = 1; tier <= 5; tier++) {
+            assertEquals("<gold>Gauthier — Palier " + tier + "</gold>",
+                    read("/quests/guard_tier" + tier + ".yml").getString("title"));
+        }
+        assertEquals("<yellow>Gauthier</yellow>", read("/npcs/guard.yml").getString("display_name"));
+        assertEquals("guard", read("/npcs/guard.yml").getString("id"));
     }
 
     /** Issue #218 : chaque palier suivant (3 à 5) est proposé par le Guide, d'après STARTER_KIT_TIER. */

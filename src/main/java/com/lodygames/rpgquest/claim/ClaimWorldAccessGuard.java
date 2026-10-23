@@ -22,8 +22,9 @@ import org.bukkit.entity.Player;
  *
  * <ul>
  *   <li>variable de déblocage {@code CLAIM_TIER_1 == "true"} ({@link ClaimService#hasClaimTierOne})
- *       — accordée par la dernière quête de l'histoire principale (voir {@code
- *       quests/crystal_hunt.yml}), effacée par {@code /rpgadmin player resetnew} ; <em>ou</em></li>
+ *       — accordée par la quête « Gauthier — Palier 1 » (voir {@code quests/guard_tier1.yml} ;
+ *       l'ancienne voie {@code crystal_hunt} est retirée depuis #778), effacée par
+ *       {@code /rpgadmin player resetnew} ; <em>ou</em></li>
  *   <li>le joueur possède déjà un claim principal ({@link ClaimService#mainClaimOf}) — il a déjà
  *       prouvé son droit et doit toujours pouvoir retourner chez lui, même si la variable a
  *       divergé.</li>

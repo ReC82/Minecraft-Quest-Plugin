@@ -38,7 +38,7 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
  * StoryService} à la main, sans jamais enregistrer {@link QuestProgressConnectionListener} ni
  * {@code StoryConnectionListener} auprès d'un vrai serveur), ce test utilise volontairement le
  * plugin <strong>réellement</strong> démarré via {@code MockBukkit.load(RPGQuestPlugin.class)}
- * (même patron que {@link CrystalHuntIntegrationTest}) et déclenche de <strong>vrais</strong>
+ * (même patron que {@link QuestVerticalSliceIntegrationTest}) et déclenche de <strong>vrais</strong>
  * événements Bukkit ({@link PlayerQuitEvent}/{@link PlayerJoinEvent}, mort/réapparition, changement
  * de monde) : c'est le seul moyen d'exercer exactement le câblage de production (bootstrap complet,
  * les deux connection listeners réellement enregistrés) plutôt qu'une reconstruction simplifiée qui
@@ -49,13 +49,18 @@ class QuestStoryProgressPersistenceIntegrationTest {
     private static final long TIMEOUT_SECONDS = 5;
     private static final NamespacedKey BREAK_QUEST = new NamespacedKey("rpgquest", "break_quest");
     private static final NamespacedKey PREMIERS_PAS = new NamespacedKey("rpgquest", "premiers_pas");
-    private static final NamespacedKey FIRST_STEPS = new NamespacedKey("rpgquest", "first_steps");
+    // Issue #778 : first_steps et crystal_hunt (anciennes 2e et 3e quêtes de main_story) sont
+    // retirées ; le test porte donc sur une story de test de même forme, écrite par le test.
+    private static final NamespacedKey SPIDERS = new NamespacedKey("rpgquest", "test_story_spiders");
+    private static final NamespacedKey FINAL = new NamespacedKey("rpgquest", "test_story_final");
+    private static final String TEST_STORY = "test_story";
     private static final String MAIN_STORY = "main_story";
 
     private ServerMock server;
     private RPGQuestPlugin plugin;
     private QuestProgressEngine engine;
     private StoryService storyService;
+    private String storyUnderTest = MAIN_STORY;
 
     @BeforeEach
     void setUp() {
@@ -101,38 +106,39 @@ class QuestStoryProgressPersistenceIntegrationTest {
 
     @Test
     void storyOnItsSecondQuestSurvivesDisconnectAndReconnect() throws Exception {
+        writeThreeQuestStory();
         PlayerMock player = join();
-        storyService.start(player.getUniqueId(), player.getName(), MAIN_STORY).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        storyService.start(player.getUniqueId(), player.getName(), TEST_STORY).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         awaitUntil(() -> stateOf(player, PREMIERS_PAS) == QuestState.ACTIVE);
 
-        // Complète premiers_pas (TALK_TO_NPC libraire) -> la story doit avancer toute seule vers first_steps.
+        // Complète premiers_pas (TALK_TO_NPC libraire) -> la story doit avancer toute seule vers la 2e quête.
         engine.handleTalkToNpc(player, "libraire");
-        awaitUntil(() -> stateOf(player, FIRST_STEPS) == QuestState.ACTIVE);
+        awaitUntil(() -> stateOf(player, SPIDERS) == QuestState.ACTIVE);
         awaitUntil(() -> currentIndexOf(player) == 1);
-        assertEquals(1, currentIndexOf(player), "la story doit être sur sa 2e quête (first_steps) avant déconnexion");
+        assertEquals(1, currentIndexOf(player), "la story doit être sur sa 2e quête (araignées) avant déconnexion");
 
-        // 4 araignées sur les 10 requises par first_steps : progression partielle avant reconnexion.
+        // 4 araignées sur les 10 requises par la 2e quête : progression partielle avant reconnexion.
         for (int i = 0; i < 4; i++) {
             engine.handleKillEntity(player, EntityType.SPIDER);
         }
-        assertCounter(player, FIRST_STEPS, 4, "avant déconnexion : 4/10 araignées attendu");
+        assertCounter(player, SPIDERS, 4, "avant déconnexion : 4/10 araignées attendu");
 
         reconnect(player);
 
         awaitUntil(() -> currentIndexOf(player) == 1);
         assertEquals(1, currentIndexOf(player), "l'index de la story (2e quête) doit survivre à la reconnexion");
         assertEquals(StoryState.ACTIVE, stateOfStory(player), "la story doit rester ACTIVE après reconnexion");
-        assertEquals(QuestState.ACTIVE, stateOf(player, FIRST_STEPS), "first_steps doit rester la quête courante après reconnexion");
-        assertCounter(player, FIRST_STEPS, 4,
+        assertEquals(QuestState.ACTIVE, stateOf(player, SPIDERS), "la 2e quête doit rester la quête courante après reconnexion");
+        assertCounter(player, SPIDERS, 4,
                 "le compteur d'araignées (4/10) doit avoir survécu à la reconnexion, jamais remis à 0/10");
 
-        // Les 6 araignées restantes doivent suffire à terminer first_steps et faire avancer la story.
+        // Les 6 araignées restantes doivent suffire à terminer la 2e quête et faire avancer la story.
         for (int i = 0; i < 6; i++) {
             engine.handleKillEntity(player, EntityType.SPIDER);
         }
-        assertEquals(QuestState.COMPLETED, stateOf(player, FIRST_STEPS));
+        assertEquals(QuestState.COMPLETED, stateOf(player, SPIDERS));
         awaitUntil(() -> currentIndexOf(player) == 2);
-        assertEquals(2, currentIndexOf(player), "la story doit avoir avancé vers sa 3e quête (crystal_hunt)");
+        assertEquals(2, currentIndexOf(player), "la story doit avoir avancé vers sa 3e quête");
     }
 
     // ---- 3. progression -> death/respawn -> reste identique -----------------------------------
@@ -276,13 +282,13 @@ class QuestStoryProgressPersistenceIntegrationTest {
 
     private StoryState stateOfStory(PlayerMock player) throws Exception {
         List<StoryService.StoryInfo> infos = storyService.info(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        return infos.stream().filter(i -> i.story().id().equals(MAIN_STORY)).findFirst().orElseThrow().state();
+        return infos.stream().filter(i -> isStoryUnderTest(i.story().id())).findFirst().orElseThrow().state();
     }
 
     private int currentIndexOf(PlayerMock player) {
         try {
             List<StoryService.StoryInfo> infos = storyService.info(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            return infos.stream().filter(i -> i.story().id().equals(MAIN_STORY)).findFirst().orElseThrow().currentIndex();
+            return infos.stream().filter(i -> isStoryUnderTest(i.story().id())).findFirst().orElseThrow().currentIndex();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -294,6 +300,58 @@ class QuestStoryProgressPersistenceIntegrationTest {
             server.getScheduler().performTicks(1);
             Thread.sleep(10);
         }
+    }
+
+    /** Story observée par le test : l'embarquée, sauf si le test a écrit la story de test. */
+    private boolean isStoryUnderTest(String storyId) {
+        return storyUnderTest.equals(storyId);
+    }
+
+    /** premiers_pas (embarquée) → 10 araignées → quête finale : la forme de l'ancienne main_story. */
+    private void writeThreeQuestStory() throws Exception {
+        Path questsDir = plugin.getDataFolder().toPath().resolve("quests");
+        Files.writeString(questsDir.resolve("test_story_spiders.yml"), """
+                id: %s
+                title: "Araignées"
+                description: "Fixture de test"
+                category: test
+                repeatable: false
+                steps:
+                  - id: kill_spiders
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: SPIDER
+                        amount: 10
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 5
+                """.formatted(SPIDERS));
+        Files.writeString(questsDir.resolve("test_story_final.yml"), """
+                id: %s
+                title: "Finale"
+                description: "Fixture de test"
+                category: test
+                repeatable: false
+                steps:
+                  - id: report
+                    objectives:
+                      - type: TALK_TO_NPC
+                        npc: guard
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 5
+                """.formatted(FINAL));
+        engine.reloadQuestDefinitions();
+        Files.writeString(plugin.getDataFolder().toPath().resolve("stories/test_story.yml"), """
+                id: %s
+                name: "Histoire de test"
+                quests:
+                  - %s
+                  - %s
+                  - %s
+                """.formatted(TEST_STORY, PREMIERS_PAS, SPIDERS, FINAL));
+        storyService.reloadDefinitions();
+        storyUnderTest = TEST_STORY;
     }
 
     private void writeBreakBlockQuest(Material material, int amount) throws Exception {

@@ -22,7 +22,9 @@ offers:
     custom-item: rpgquest:forest_blade
     quantity: 1
     price: 250
-    required-quest: rpgquest:first_steps
+    # Issue #778 : first_steps a été retirée ; le verrou passe sur la première quête de Gauthier
+    # (le garde), sans quoi cette offre serait devenue inachetable pour tout le monde.
+    required-quest: rpgquest:guard_tier1
     required-quest-state: COMPLETED
 
   - direction: BUY_FROM_PLAYER

@@ -19,7 +19,9 @@ import org.slf4j.Logger;
 public final class YamlQuestEngine implements QuestEngine {
 
     private static final String[] BUNDLED_EXAMPLES =
-            {"premiers_pas.yml", "first_steps.yml", "woodcutters_request.yml", "crystal_hunt.yml",
+            {"premiers_pas.yml", "woodcutters_request.yml",
+                    // Issue #778 : first_steps.yml et crystal_hunt.yml retirées définitivement — ni
+                    // embarquées, ni recréées au démarrage.
                     "guard_tier1.yml", "guard_tier2.yml", "guard_tier3.yml", "guard_tier4.yml", "guard_tier5.yml",
                     // Issue #218 : quêtes de montée aux paliers 2 à 5 du kit de départ.
                     "kit_tier2.yml", "kit_tier3.yml", "kit_tier4.yml", "kit_tier5.yml",

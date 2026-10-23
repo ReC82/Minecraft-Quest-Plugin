@@ -28,7 +28,7 @@ import org.bukkit.configuration.MemoryConfiguration;
  *         required-level: 5                     # facultatif, niveau RPG (#532)
  *         conditions:                           # mêmes clés que access.conditions d'un portail (#567)
  *           - type: QUEST_STATE
- *             quest: rpgquest:crystal_hunt
+ *             quest: rpgquest:guard_tier1
  *             state: COMPLETED
  *         message: "&lt;gray&gt;Termine la chasse au cristal pour utiliser cet établi.&lt;/gray&gt;"
  * </pre>

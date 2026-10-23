@@ -9035,3 +9035,21 @@ d'autre que ce qui est demandé.
 retirées, conflits concurrents, publication individuelle et groupée, publication échouée),
 `PublishStateTest`, `ContentPublishPageTest`, `ContentPendingPageTest`, `ContentPublishServiceTest`
 (refus `RETIRED` côté plugin).
+
+### TC-425 — #786 — aperçu 3D fidèle : eau et verre translucides, marches et dalles selon leurs états, blocs fins (issue #786, PENDING MANUAL VALIDATION)
+
+**But** : l'aperçu de l'Atelier montre la forme réelle des blocs compilés, sans IA ni appel payant.
+
+**Prérequis** : JAR et PlugAdmin de #786 sur DEV ; projet existant **« Puits du village »** dans l'Atelier.
+
+1. PlugAdmin → Atelier → « Puits du village ». Dans « Aperçu du bâtiment », cliquer **« Mettre à jour l'aperçu »** (ou « Afficher l'aperçu ») : gratuit, rien n'est posé, ni la construction ni le plan ne changent.
+2. **Attendu** : l'eau du bassin est **bleue et translucide** (on voit la paroi de pavé derrière), plus grise ; le pavé (gris foncé) se distingue du bois ; les troncs (`oak log`) sont brun foncé, distincts des marches (`oak stairs`, bois clair).
+3. **Attendu** : le toit montre des **marches** (demi-dalle + contremarche), orientées vers le faîte des deux côtés ; plus un plateau plein.
+4. **Attendu** : la **chaîne** (`iron chain`) est une tige fine sombre sous le toit, plus un cube.
+5. Tourner la vue (4 orientations) : la géométrie tourne avec le bâtiment (contremarches, chaîne), sans miroir.
+6. Écran de 390 px (téléphone) : même rendu, légende lisible, sans débordement horizontal.
+7. **Attendu** : la note sous la légende ne cite plus que les simplifications restantes (couleurs sans textures, mobilier/décorations en cubes).
+
+**Résultat attendu** : on juge le puits comme en jeu avant de le placer. Ne pas regénérer le puits (aucun appel IA).
+
+**Couverture automatisée** : `BlockShapesTest` (marches droites/coins/retournées, dalles, chaîne, barrière, vitre/barreaux, muret, porte et charnière, trappe, échelle, lanterne, torche murale, cloche, eau, couleurs distinctes), `IsometricViewTest` (eau translucide dans un puits, marche qui tourne avec la vue, chaîne fine), `PlanPreviewVoxelsTest` (états transmis, repli sans états, symboles sûrs).

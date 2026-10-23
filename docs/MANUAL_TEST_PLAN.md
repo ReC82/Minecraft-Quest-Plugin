@@ -8585,6 +8585,33 @@ tel quel dans le guide, lien **Aide** sur la liste et l'éditeur), `DialogueHelp
 l'éditeur et renvois entre fiches mènent à une section existante, parcours normal du guide sans jargon),
 `DiagnosticHelpTest` (ancres des diagnostics). **Non couvert** : captures d'écran (non produites).
 
+### TC-421 — Atelier : conception structurée avant le plan, marches d'entrée, exigences mesurées (issue #747, retour du 23/10 fin de matinée, PENDING MANUAL VALIDATION)
+
+**But.** Vérifier que « Créer un plan » conçoit d'abord le bâtiment (volumes nommés et reliés, éléments
+rattachés), que le plan reçoit ce contrat, que les exigences sont mesurées sur le résultat compilé (une cloche
+ne fait pas un clocher) et que les ajouts non demandés sont signalés. Ne rien poser en jeu. **Ne pas modifier
+l'Église du hub** : consultation seulement ; les essais payants se font sur un projet de test.
+
+1. Gratuit — ouvrir l'Église du hub, version V-2caffe63 (réparée en V-fa3cf1de). Déplier « Améliorer avec l'IA »
+   → « Mémoire des tentatives et conformité au brief ». **Attendu** : « ✗ Tour distincte du corps principal —
+   ABSENTE du résultat compilé : aucune partie d'au moins 3 × 3 colonnes… », « ✗ Cloche dans la tour »,
+   « ✓ Cloche … » (la cloche existe, pas le clocher), « ✗ Allée centrale … tapis … », et « ⚠ Lit(s) — ajout
+   NON DEMANDÉ par la description ».
+2. Gratuit — même page, onglet « Conception détaillée » : « pas encore rédigée » (l'Église n'en a jamais eu).
+3. Projet de test un NOUVEAU projet de test : « Créer un plan avec
+   l'IA ». **Attendu** : deux appels facturés (conception puis plan) ; « Conception détaillée — version 1 » avec,
+   dessous, « Structure lue par le panel » (volumes ✓/✗, tour distincte, éléments placés). Télécharger le
+   journal IA : « MANUEL — CONCEPTION AVANT LE PLAN », puis « MANUEL — CRÉER UN PLAN » dont le contexte dit
+   « Conception structurée transmise : N volume(s)… » et dont la requête contient « CONTRAT DE VOLUMES ».
+4. Gratuit — aperçu 3D de la nouvelle version : juger à l'œil nef, tour-clocher, bancs, allée, chœur.
+   **Un statut vert n'est pas une validation esthétique.**
+5. (Facultatif, gratuit) Détails techniques → coller un plan dont le mur de façade occupe la dernière rangée du
+   volume avec « staircase facade: FRONT floor: 0 » → Vérifier : refus « marches d'entrée (façade FRONT) … deux
+   solutions » (plus de « escalier entièrement à l'intérieur »), puis version « Réparé par le moteur » en
+   « anchor: y: 1 ».
+
+**Attendu.** Aucun bâtiment placé, aucune version de l'Église modifiée. **Non couvert** : la qualité esthétique.
+
 ### TC-420 — Claims : les plantations poussent sans joueur à proximité (issue #776, PENDING MANUAL VALIDATION)
 
 JAR RPGQuest (aucune migration de base, aucune donnée joueur). Monde `claims`, son propre claim.

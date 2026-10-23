@@ -49,6 +49,42 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Atelier IA : bâtiment utilisable — moteur et PlugAdmin (#747, TC-421)
+
+### Changement
+
+JAR RPGQuest `7093bc80` (PR #784, #785, #787, #789) : marches d'entrée par façade cohérentes avec une porte,
+refus dédié si la façade occupe le bord du volume, attache des cloches calculée, réparations sûres (`wall:`,
+toit en bloc plein, mobilier posé dans le sol, zones sombres, chaînes jusqu'à 8), `DARK_AREA` hors cellules à
+ciel ouvert. PlugAdmin `8bb79159` : conception structurée avant le plan, contrat de volumes, exigences mesurées
+sur l'aperçu compilé. Aucune migration, aucun contenu ni bâtiment touché.
+
+### Action serveur
+
+Remplacement du JAR + redémarrage (4 déploiements successifs le 23/10 : `d5fab1c9`, `8bb79159`, `e72a550e`,
+`7093bc80`) ; PlugAdmin redéployé deux fois sur AWS.
+
+### Sauvegarde préalable
+
+`rpgquest-20261023T113122Z-predeploy.jar` (JAR `4cc191cb`, avant #747), puis une sauvegarde par déploiement
+(dernière : `rpgquest-20261023T134323Z-predeploy.jar` = JAR `e72a550e`).
+
+### Déploiement
+
+23/10/2026 15:43 : `scripts/deploy-verygames.sh -y` (CI verte sur `7093bc8`), JAR 4 376 657 octets, SHA-256
+retéléchargé identique (`1dad952a…`) ; `scripts/verygames-restart.sh`, DEV en ligne, RPGQuest actif.
+
+### Validation
+
+TC-421 (PENDING MANUAL VALIDATION). Essai réel par Claude sur un projet de test PlugAdmin uniquement.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` avec la sauvegarde voulue, puis redémarrage ; PlugAdmin :
+`scripts/plugadmin/rollback.sh app`.
+
+---
+
 ## 2026-10-23 - Claims : croissance des plantations sans joueur à proximité (#776, TC-420)
 
 ### Changement

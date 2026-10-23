@@ -138,6 +138,14 @@ public final class BlockStates {
         return material + "[hanging=" + hanging + ",waterlogged=false]";
     }
 
+    /**
+     * Une cloche (#747). {@code attachment} : {@code floor}, {@code ceiling}, {@code single_wall} ou
+     * {@code double_wall} ; pour une attache murale, {@code facing} désigne le mur qui la porte.
+     */
+    public static String bell(String attachment, Dir facing) {
+        return "minecraft:bell[attachment=" + attachment + ",facing=" + facing.value() + ",powered=false]";
+    }
+
     /** Une torche murale. {@code facing} est la direction vers laquelle la torche pointe. */
     public static String wallTorch(String material, Dir facing) {
         return material + "[facing=" + facing.value() + "]";

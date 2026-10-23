@@ -108,6 +108,56 @@ class PromptPlanConsistencyTest {
         }
     }
 
+    /**
+     * #747 — les exemples minimaux, ENSEMBLE, dans le bâtiment que le prompt décrit pour eux : le
+     * moteur les accepte et tout tient. Avant, l'en-tête renvoyait à « l'exemple complet » (une autre
+     * taille, des murs sur toute la profondeur) : les marches d'entrée de façade y étaient refusées,
+     * et les « pillars » listés après la porte l'auraient remplacée. Un exemple ne vaut que dans le
+     * contexte où on le montre.
+     */
+    @Test
+    void theMinimalExamplesTogetherAreAcceptedInTheBuildingTheyDescribe() {
+        String header = section("UN EXEMPLE MINIMAL PAR INSTRUCTION D'ARCHITECTURE", "L'ORDRE COMPTE");
+        assertTrue(header.contains("x 9, y 9, z 8, SANS « anchor »") && header.contains("[0,1,1] à [8,8,7]")
+                && header.contains("plancher d'étage en y=5"), header);
+        StringBuilder yaml = new StringBuilder("""
+                id: exemples_minimaux
+                name: "Contexte des exemples"
+                kind: habitable
+                front: NORTH
+                size:
+                  x: 9
+                  y: 9
+                  z: 8
+                steps:
+                  - op: box
+                    from: [0, 0, 1]
+                    to: [8, 0, 7]
+                    block: minecraft:stone_bricks
+                  - op: walls
+                    from: [0, 1, 1]
+                    to: [8, 8, 7]
+                    block: minecraft:stone_bricks
+                  - op: box
+                    from: [1, 5, 2]
+                    to: [7, 5, 6]
+                    block: minecraft:spruce_planks
+                """);
+        for (String fragment : fragments(header)) {
+            yaml.append(fragment);
+        }
+        List<String> problems = new ArrayList<>();
+        BuildingPlan plan = BuildingPlanYaml.read(yaml.toString(), problems)
+                .orElseThrow(() -> new AssertionError("contexte refusé : " + problems + "\n" + yaml));
+        BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
+        assertTrue(expansion.ok(), expansion.error() + "\n" + yaml);
+        AuditGrid grid = AuditGrid.of(expansion.blueprint());
+        assertTrue(Stability.unsupported(grid).isEmpty(), Stability.unsupported(grid).toString());
+        assertTrue(Stability.brokenAssemblies(grid).isEmpty(), Stability.brokenAssemblies(grid).toString());
+        assertTrue(expansion.blueprint().blocks().stream().anyMatch(b -> b.x() == 4 && b.y() == 1 && b.z() == 1
+                && b.state().contains("_door[")), "la porte survit aux autres exemples");
+    }
+
     /** Toutes les instructions d'architecture du moteur ont leur exemple — aucune n'est oubliée. */
     @Test
     void everyArchitecturalInstructionHasAMinimalExample() {
@@ -219,15 +269,15 @@ class PromptPlanConsistencyTest {
                 size:
                   x: 9
                   y: 9
-                  z: 7
+                  z: 8
                 steps:
                   - op: box
-                    from: [0, 0, 0]
-                    to: [8, 0, 6]
+                    from: [0, 0, 1]
+                    to: [8, 0, 7]
                     block: minecraft:stone_bricks
                   - op: walls
-                    from: [0, 1, 0]
-                    to: [8, 4, 6]
+                    from: [0, 1, 1]
+                    to: [8, 8, 7]
                     block: minecraft:stone_bricks
                 """ + step;
     }

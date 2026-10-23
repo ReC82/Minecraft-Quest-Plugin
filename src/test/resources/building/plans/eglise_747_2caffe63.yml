@@ -1,0 +1,109 @@
+id: eglise_du_hub
+name: "Église du hub"
+kind: habitable
+front: SOUTH
+size:
+  x: 17
+  y: 23
+  z: 19
+steps:
+  - op: box
+    from: [3, 0, 0]
+    to: [13, 0, 18]
+    block: minecraft:polished_diorite
+  - op: walls
+    from: [3, 1, 0]
+    to: [13, 9, 18]
+    block: minecraft:white_concrete
+  - op: pillars
+    from: [3, 1, 0]
+    to: [13, 9, 18]
+    spacing: 5
+    block: minecraft:smooth_quartz
+  - op: door
+    facade: FRONT
+    offset: 8
+    block: minecraft:dark_oak_door
+  - op: staircase
+    facade: FRONT
+    offset: 8
+    width: 3
+    floor: 0
+    block: minecraft:polished_andesite_stairs
+  - op: window
+    facade: LEFT
+    offset: 4
+    y: 3
+    width: 2
+    height: 5
+    block: minecraft:light_blue_stained_glass_pane
+  - op: window
+    facade: RIGHT
+    offset: 4
+    y: 3
+    width: 2
+    height: 5
+    block: minecraft:light_blue_stained_glass_pane
+  - op: window
+    facade: FRONT
+    offset: 8
+    y: 7
+    width: 3
+    height: 5
+    block: minecraft:light_blue_stained_glass_pane
+  - op: light
+    from: [5, 8, 6]
+    to: [11, 8, 6]
+    spacing: 6
+    block: minecraft:lantern
+  - op: box
+    from: [5, 1, 3]
+    to: [11, 1, 5]
+    block: minecraft:red_carpet
+  - op: box
+    from: [5, 1, 6]
+    to: [11, 1, 18]
+    block: minecraft:smooth_stone
+  - op: box
+    from: [5, 2, 6]
+    to: [5, 2, 7]
+    block: minecraft:polished_andesite_stairs
+  - op: box
+    from: [11, 2, 6]
+    to: [11, 2, 7]
+    block: minecraft:polished_andesite_stairs
+  - op: box
+    from: [6, 2, 18]
+    to: [10, 2, 18]
+    block: minecraft:quartz_block
+  - op: box
+    from: [7, 3, 18]
+    to: [9, 3, 18]
+    block: minecraft:lectern
+  - op: bed
+    from: [5, 1, 15]
+    direction: north
+    block: minecraft:white_bed
+  - op: gable
+    from: [3, 10, 0]
+    to: [13, 12, 18]
+    axis: z
+    fill: minecraft:polished_diorite
+    block: minecraft:polished_deepslate_stairs
+  - op: box
+    from: [7, 10, 18]
+    to: [9, 12, 18]
+    block: minecraft:light_blue_stained_glass
+  - op: box
+    from: [8, 13, 0]
+    to: [8, 16, 0]
+    block: minecraft:cobbled_deepslate
+  - op: ladder
+    facade: BACK
+    from: [8, 1, 18]
+    to: [8, 4, 18]
+    block: minecraft:ladder
+  - op: box
+    from: [7, 17, 1]
+    to: [9, 17, 1]
+    block: minecraft:bell

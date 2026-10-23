@@ -267,6 +267,7 @@ public final class BuildingPlanExpander {
         }
 
         settleLanterns(cells, plan);
+        settleBells(cells);
 
         List<BlueprintBlock> blocks = new ArrayList<>(cells.states.size());
         for (int y = 0; y < plan.sizeY(); y++) {
@@ -385,6 +386,9 @@ public final class BuildingPlanExpander {
      */
     private static Optional<String> staircase(PlanStep step, Cells cells, BuildingPlan plan) {
         Optional<Staircase> parsed = plan.staircase(step);
+        if (parsed.isPresent() && step.facade() != null && facadeWallOnEdge(step, parsed.get(), cells, plan)) {
+            return Optional.of(noRoomForEntrySteps(step, plan));
+        }
         if (parsed.isEmpty()) {
             return Optional.of("direction de montée inconnue.");
         }
@@ -394,7 +398,39 @@ public final class BuildingPlanExpander {
         // restent soumis à la règle — ils ne percent jamais un mur.
         boolean exterior = stair.onTerrain(plan.anchorY());
         int[] bounds = materialBounds(cells);
+        // #747 : des marches d'entrée montent vers la PORTE. Leur palier est le seuil : une porte ou un
+        // mur de façade s'y trouvent normalement — jamais vidés. Une volée plus large que la porte
+        // bute sur le mur de part et d'autre, comme un perron ; il suffit qu'une voie mène au seuil.
+        boolean doorstep = exterior && step.facade() != null;
+        java.util.Set<Long> kept = new java.util.HashSet<>();
+        int openLanes = 0;
+        int lanes = 0;
+        if (doorstep) {
+            for (Staircase.Placement p : stair.placements()) {
+                if (p.clears() && stair.landing(p)) {
+                    String there = cells.get(key(p.x(), p.y(), p.z()));
+                    if (there != null) {
+                        kept.add(key(p.x(), p.y(), p.z()));
+                    }
+                    if (p.y() == stair.floor() + 1) {
+                        lanes++;
+                        if (there == null || BlockSemantics.passable(there)) {
+                            openLanes++;
+                        }
+                    }
+                }
+            }
+            if (lanes > 0 && openLanes == 0) {
+                return Optional.of("marches d'entrée (façade " + step.facade() + ") : elles butent sur le mur "
+                        + "sur toute leur largeur — aucune voie ne mène à une porte ni à un passage. Centre-les sur "
+                        + "la porte (même « offset » que l'instruction door) ; le moteur pose la porte, les marches "
+                        + "la desservent.");
+            }
+        }
         for (Staircase.Placement p : stair.placements()) {
+            if (kept.contains(key(p.x(), p.y(), p.z()))) {
+                continue;
+            }
             boolean envelope = bounds != null && (p.x() <= bounds[0] || p.x() >= bounds[3]
                     || p.z() <= bounds[2] || p.z() >= bounds[5])
                     && !(exterior && !p.clears());
@@ -425,6 +461,9 @@ public final class BuildingPlanExpander {
             }
         }
         for (Staircase.Placement p : stair.placements()) {
+            if (kept.contains(key(p.x(), p.y(), p.z()))) {
+                continue;
+            }
             if (p.clears()) {
                 cells.remove(key(p.x(), p.y(), p.z()));
             } else {
@@ -463,6 +502,85 @@ public final class BuildingPlanExpander {
             boolean stand = Stability.holdsFromBelow(y > 0 ? cells.get(key(x, y - 1, z)) : null);
             if (hang || stand) {
                 cells.states.put(k, BlockStates.lantern(BlockStates.bareType(e.getValue()), hang));
+            }
+        }
+    }
+
+    /**
+     * Les marches d'entrée repérées par façade se posent sur la rangée du bord du volume (#472) :
+     * elles peuvent y remplacer le bord d'un plateau ou d'un sol, jamais un MUR. Un mur de façade
+     * sur cette rangée — de la matière au-dessus du terrain, au droit des voies — ne laisse aucune
+     * place aux marches (#747).
+     *
+     * <p>Église du hub, V-2caffe63 (23/10/2026) : sol et murs sur toute la profondeur (z 0 à 18),
+     * « staircase facade: FRONT » posait la marche sous la porte, dans le mur de façade, et le refus
+     * demandait un escalier « entièrement à l'intérieur » — le message de l'escalier entre deux
+     * niveaux. La géométrie était bien impossible ; le diagnostic ne disait ni pourquoi ni quoi faire.</p>
+     */
+    private static boolean facadeWallOnEdge(PlanStep step, Staircase atEdge, Cells cells, BuildingPlan plan) {
+        boolean lanesAlongX = !step.facade().direction(plan.front()).alongX();
+        int ground = plan.anchorY();
+        for (int lane = 0; lane < atEdge.width(); lane++) {
+            for (int y = ground + 1; y <= ground + 2; y++) {
+                long k = lanesAlongX ? key(atEdge.x() + lane, y, atEdge.z()) : key(atEdge.x(), y, atEdge.z() + lane);
+                if (cells.get(k) != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Le refus des marches d'entrée quand la façade occupe déjà le bord du volume (#747). */
+    private static String noRoomForEntrySteps(PlanStep step, BuildingPlan plan) {
+        BlockStates.Dir out = step.facade().direction(plan.front());
+        String axis = out.alongX() ? "x" : "z";
+        int edge = Staircase.edgePlane(out, plan.sizeX(), plan.sizeZ());
+        int behind = edge + (out == BlockStates.Dir.SOUTH || out == BlockStates.Dir.EAST ? -1 : 1);
+        return "marches d'entrée (façade " + step.facade() + ") : le moteur les pose DEVANT le bâtiment, "
+                + "sur le terrain, dans la rangée libre qui précède le mur de cette façade. Or ce mur (ou "
+                + "le sol) occupe déjà la dernière rangée du volume, " + axis + "=" + edge + " : il ne reste "
+                + "aucune place pour elles. Deux solutions, au choix : (1) entrée de plain-pied — écris "
+                + "« anchor: y: 1 » (le sol en y=0 s'enfonce dans le terrain) et retire cette instruction ; "
+                + "(2) laisse une rangée libre devant la façade — arrête sol et murs en " + axis + "=" + behind
+                + ", les marches iront en " + axis + "=" + edge + ". Ce ne sont pas des marches intérieures : "
+                + "ne les déplace pas dans la nef.";
+    }
+
+    /**
+     * Une cloche écrite sans propriétés choisit son attache sur la grille FINALE (#747), comme une
+     * lanterne : sous une poutre ({@code ceiling}) s'il y a de quoi la tenir au-dessus, posée
+     * ({@code floor}) sur un appui, sinon contre un mur ({@code single_wall}, ou {@code double_wall}
+     * entre deux appuis opposés). L'état par défaut de Minecraft est « posée » : la cloche d'un clocher
+     * « suspendue sous une poutre » était donc posée sur le vide, et tombait à la première mise à jour.
+     * Sans aucun appui, l'état reste tel quel et l'audit de stabilité la refuse en la nommant.
+     */
+    private static void settleBells(Cells cells) {
+        for (var e : new ArrayList<>(cells.states.entrySet())) {
+            String state = e.getValue();
+            if (!"minecraft:bell".equals(state) && !"bell".equals(state)) {
+                continue;
+            }
+            long k = e.getKey();
+            int x = (int) (k >>> 40);
+            int y = (int) ((k >>> 20) & 0xFFFFF);
+            int z = (int) (k & 0xFFFFF);
+            String settled = null;
+            if (Stability.holdsFromAbove(cells.get(key(x, y + 1, z)))) {
+                settled = BlockStates.bell("ceiling", BlockStates.Dir.NORTH);
+            } else if (Stability.holdsFromBelow(y > 0 ? cells.get(key(x, y - 1, z)) : null)) {
+                settled = BlockStates.bell("floor", BlockStates.Dir.NORTH);
+            } else {
+                for (BlockStates.Dir d : BlockStates.Dir.values()) {
+                    if (Stability.holdsFromBelow(cells.get(key(x + d.dx(), y, z + d.dz())))) {
+                        boolean both = Stability.holdsFromBelow(cells.get(key(x - d.dx(), y, z - d.dz())));
+                        settled = BlockStates.bell(both ? "double_wall" : "single_wall", d);
+                        break;
+                    }
+                }
+            }
+            if (settled != null) {
+                cells.states.put(k, settled);
             }
         }
     }

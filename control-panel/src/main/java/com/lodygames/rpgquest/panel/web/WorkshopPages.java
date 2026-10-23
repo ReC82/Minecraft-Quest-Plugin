@@ -480,6 +480,7 @@ public final class WorkshopPages {
                 .append(d.createdBy() == null || d.createdBy().isBlank() ? "" : " par " + Http.esc(d.createdBy()))
                 .append(d.model() == null || d.model().isBlank() ? "" : " (" + Http.esc(d.model()) + ")")
                 .append(", ").append(v.designs().size()).append(" version(s) conservée(s).</p>"));
+        current.ifPresent(d -> sb.append(designStructure(v, d.text())));
         if (v.designConflict() != null) {
             sb.append(Ui.banner("warning", "Votre texte n'a pas été enregistré : il est réaffiché ci-dessous."));
         }
@@ -513,6 +514,27 @@ public final class WorkshopPages {
                             + "vos images. La version actuelle reste conservée.</p></form>");
         }
         return sb.append("</details>").toString();
+    }
+
+    /**
+     * #747 : ce que le panel LIT dans la conception — volumes, éléments — et ses lacunes face à la
+     * description. C'est exactement ce qui partira avec le plan (« CONTRAT DE VOLUMES »).
+     */
+    private static String designStructure(ProjectView v, String design) {
+        var structure = com.lodygames.rpgquest.panel.ai.ArchitecturalDesign.parse(design);
+        var p = v.project();
+        StringBuilder sb = new StringBuilder("<div class=\"ws-design-structure\"><p><strong>Structure lue par le panel"
+                + "</strong> — transmise au plan comme contrat de volumes :</p><ul>");
+        if (!structure.structured()) {
+            sb.append("<li>✗ Aucune ligne « VOLUME … » lisible : le plan n'aura pas de structure à suivre. Réécrivez la "
+                    + "conception avec l'IA, ou ajoutez une ligne par volume (VOLUME nom | rôle: … | x A..B | z A..B | "
+                    + "y A..B | toit: … | relié à: …).</li>");
+        } else {
+            for (var f : structure.check(p.brief(), p.maxWidth(), p.maxDepth(), p.maxHeight())) {
+                sb.append("<li>").append(Http.esc(f.line())).append("</li>");
+            }
+        }
+        return sb.append("</ul></div>").toString();
     }
 
     /**

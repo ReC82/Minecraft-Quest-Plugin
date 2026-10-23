@@ -183,4 +183,128 @@ class Eglise747Test {
 
         assertTrue(report.blockingCodes().contains("CLEAR_ERASES"), report.blocking().toString());
     }
+
+    // ---- 23/10/2026 : V-2caffe63, « marches d'entrée » refusées comme un escalier intérieur --------
+
+    @Test
+    void entryStepsAgainstAFacadeOnTheVolumeEdgeAreRefusedWithTheEntranceDiagnostic() {
+        BuildingGenerator.Verdict v = inspect("2caffe63");
+
+        assertTrue(v.codes().contains("PLAN_INVALID"), v.message());
+        // La géométrie reste impossible (la marche irait sous la porte, dans le mur de façade z=18) ;
+        // le diagnostic dit désormais pourquoi et les deux façons de faire, sans parler d'escalier intérieur.
+        assertTrue(v.message().contains("Instruction 5 (STAIRCASE) : marches d'entrée (façade FRONT)"), v.message());
+        assertTrue(v.message().contains("z=18") && v.message().contains("« anchor: y: 1 »"), v.message());
+        assertFalse(v.message().contains("entièrement à l'intérieur"), v.message());
+        // La réparation sûre du moteur est inchangée : marches inutiles retirées, entrée de plain-pied.
+        assertTrue(v.repair() != null && v.repair().changes().stream()
+                .anyMatch(c -> c.startsWith("Retrait de l'instruction 5 (staircase")), String.valueOf(v.repair()));
+        assertTrue(v.repair().plan().contains("anchor:\n  x: 8\n  y: 1"), v.repair().plan());
+    }
+
+    @Test
+    void entryStepsInFrontOfASetBackFacadeAreStillAccepted() {
+        // Même église, corps en retrait d'une rangée : la rangée z=18 est libre pour la marche.
+        String yaml = """
+                id: chapelle_perron
+                name: "Chapelle"
+                kind: habitable
+                front: SOUTH
+                size:
+                  x: 11
+                  y: 11
+                  z: 12
+                steps:
+                  - op: box
+                    from: [0, 0, 0]
+                    to: [10, 0, 10]
+                    block: minecraft:stone_bricks
+                  - op: walls
+                    from: [0, 1, 0]
+                    to: [10, 6, 10]
+                    block: minecraft:white_concrete
+                  - op: box
+                    from: [0, 6, 0]
+                    to: [10, 6, 10]
+                    block: minecraft:oak_planks
+                  - op: door
+                    facade: FRONT
+                    offset: 5
+                    block: minecraft:oak_door
+                  - op: staircase
+                    facade: FRONT
+                    offset: 5
+                    width: 3
+                    floor: 0
+                    block: minecraft:stone_brick_stairs
+                """;
+        java.util.List<String> problems = new java.util.ArrayList<>();
+        BuildingPlan plan = BuildingPlanYaml.read(yaml, problems).orElseThrow(() -> new AssertionError(problems));
+        BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
+
+        assertTrue(expansion.ok(), expansion.error());
+        assertTrue(expansion.blueprint().blocks().stream().anyMatch(b -> b.z() == 11 && b.y() == 0
+                && b.state().startsWith("minecraft:stone_brick_stairs[facing=north")), "marche en z=11");
+        // Le palier est le seuil : la porte reste, et l'on entre depuis le terrain sans sauter.
+        assertTrue(expansion.blueprint().blocks().stream().anyMatch(b -> b.x() == 5 && b.y() == 1 && b.z() == 10
+                && b.state().contains("_door[")), "porte conservée");
+        assertFalse(audit(yaml).blockingCodes().contains("NO_ENTRANCE"), audit(yaml).blocking().toString());
+    }
+
+    // ---- Les cloches : attache calculée sur la grille finale -----------------------------------------
+
+    private static BuildingPlanExpander.Result expandBell(String extra) {
+        String yaml = """
+                id: clocher_test
+                name: "Clocher"
+                kind: decoration
+                front: SOUTH
+                size:
+                  x: 5
+                  y: 8
+                  z: 5
+                steps:
+                  - op: walls
+                    from: [0, 0, 0]
+                    to: [4, 4, 4]
+                    block: minecraft:stone_bricks
+                  - op: box
+                    from: [0, 5, 0]
+                    to: [4, 5, 4]
+                    block: minecraft:dark_oak_planks
+                %s""".formatted(extra);
+        java.util.List<String> problems = new java.util.ArrayList<>();
+        BuildingPlan plan = BuildingPlanYaml.read(yaml, problems).orElseThrow(() -> new AssertionError(problems));
+        return BuildingPlanExpander.expand(plan);
+    }
+
+    @Test
+    void aBellUnderABeamHangsFromItInsteadOfStandingOnAir() {
+        BuildingPlanExpander.Result r = expandBell("""
+                  - op: box
+                    from: [2, 4, 2]
+                    block: minecraft:bell
+                """);
+
+        assertTrue(r.ok(), r.error());
+        String bell = r.blueprint().blocks().stream().filter(b -> b.x() == 2 && b.y() == 4 && b.z() == 2)
+                .findFirst().orElseThrow().state();
+        assertEquals("minecraft:bell[attachment=ceiling,facing=north,powered=false]", bell);
+        AuditGrid grid = AuditGrid.of(r.blueprint());
+        assertTrue(Stability.unsupported(grid).isEmpty(), Stability.unsupported(grid).toString());
+    }
+
+    @Test
+    void aFloatingBellIsNamedAsUnsupported() {
+        BuildingPlanExpander.Result r = expandBell("""
+                  - op: box
+                    from: [2, 7, 2]
+                    block: minecraft:bell
+                """);
+
+        assertTrue(r.ok(), r.error());
+        var problems = Stability.unsupported(AuditGrid.of(r.blueprint()));
+        assertEquals(1, problems.size(), problems.toString());
+        assertTrue(problems.get(0).why().contains("cloche"), problems.toString());
+    }
 }

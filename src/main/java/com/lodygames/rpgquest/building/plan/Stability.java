@@ -75,6 +75,7 @@ final class Stability {
                 || type.endsWith("candle") || type.endsWith("_sapling") || type.endsWith("_banner")
                 || type.endsWith("_sign") || type.endsWith("_button") || type.equals("lever")
                 || type.equals("ladder") || type.endsWith("_door") || type.endsWith("_bed")
+                || type.equals("bell")
                 || SMALL_PLANTS.contains(type) || TALL_PLANTS.contains(type);
     }
 
@@ -133,6 +134,8 @@ final class Stability {
                 if (!holdsFromBelow(grid.at(x - d[0], y, z - d[1]))) {
                     why = "aucun mur derrière lui (en " + (x - d[0]) + "/" + y + "/" + (z - d[1]) + ")";
                 }
+            } else if (type.equals("bell")) {
+                why = bell(grid, state, x, y, z, below, above);
             } else if (type.endsWith("_hanging_sign")) {
                 if (!holdsFromAbove(above)) {
                     why = "enseigne suspendue sans rien au-dessus";
@@ -174,6 +177,24 @@ final class Stability {
         out.sort(java.util.Comparator.comparingInt(Problem::y).thenComparingInt(Problem::z)
                 .thenComparingInt(Problem::x));
         return out;
+    }
+
+    /**
+     * Une cloche tient selon son attache (#747) : posée sur un appui, suspendue sous un bloc, ou
+     * contre le mur que désigne {@code facing}. Une cloche « flottante » au sommet d'une colonne
+     * se détache à la première mise à jour, comme une lanterne.
+     */
+    private static String bell(AuditGrid grid, String state, int x, int y, int z, String below, String above) {
+        String attachment = prop(state, "attachment");
+        int[] d = step(prop(state, "facing"));
+        return switch (attachment.isEmpty() ? "floor" : attachment) {
+            case "ceiling" -> holdsFromAbove(above) ? null
+                    : "cloche suspendue sans poutre ni bloc au-dessus pour la tenir";
+            case "single_wall", "double_wall" -> holdsFromBelow(grid.at(x + d[0], y, z + d[1])) ? null
+                    : "cloche murale sans mur qui la porte (en " + (x + d[0]) + "/" + y + "/" + (z + d[1]) + ")";
+            default -> holdsFromBelow(below) ? null
+                    : "cloche posée sur le vide, sans poutre au-dessus ni mur à côté pour la tenir";
+        };
     }
 
     /** Les assemblages de plusieurs blocs dont une moitié manque ou ne correspond pas. */

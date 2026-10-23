@@ -1656,11 +1656,20 @@ public final class PanelApp {
         if (replay.isPresent()) {
             return replay.get();
         }
-        var demand = demandOf(project);
         // #747 : « Nouvelle conception avec les enseignements » — après une stagnation, repartir de la
         // description en gardant ce que les versions précédentes ont appris, sans recopier leur plan.
         boolean withLessons = "yes".equals(f.getOrDefault("lessons", ""));
         String lessons = withLessons ? lessonsOf(project) : "";
+        // #747 (23/10/2026) : concevoir AVANT de placer. Sans conception en vigueur — ou pour une nouvelle
+        // conception —, le panel la fait d'abord rédiger (volumes nommés et reliés, éléments rattachés),
+        // puis le plan la traduit. Le plan de V-2caffe63 avait été écrit d'un seul jet, conception vide.
+        Optional<String> designFailure = withLessons || designOf(project).isEmpty()
+                ? designBeforePlan(session, project, f, lessons) : Optional.empty();
+        if (designFailure.isPresent()) {
+            planDrafts.fulfil(f.get("request_token"), "");
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null, designFailure.get()));
+        }
+        var demand = demandOf(project);
         var proposal = aiBuildingStudio.propose(f.getOrDefault("provider", "").trim(), demand,
                 referencesOf(project.id()), lessons);
         // #747 : si l'appel échoue, la version affichée (ou la plus récente qui a un plan) reste active.
@@ -1672,6 +1681,7 @@ public final class PanelApp {
                 ? "Nouvelle conception après stagnation : brief, contraintes, conception en vigueur et "
                         + "ENSEIGNEMENTS des versions précédentes (aucun ancien plan transmis)."
                 : "Demande neuve : brief, contraintes et conception en vigueur ; aucun plan ni diagnostic antérieur."));
+        context.add(designStructure(project, demand.design()));
         if (!retryOf.isEmpty()) {
             context.add(com.lodygames.rpgquest.panel.ai.FailedCalls.sameContext(aiJournal.store().events(
                     com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id()), retryOf, proposal.manifest()));
@@ -1681,6 +1691,49 @@ public final class PanelApp {
                 new com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext("", "MANUEL — CRÉER UN PLAN", 0,
                         session.username(), "", "", "", context),
                 new RetryContext(withLessons ? "propose_lessons" : "propose", kept, "", "", retryOf));
+    }
+
+    /**
+     * #747 : la conception rédigée avant le plan — un appel facturé, journalisé comme tel. Vide si elle
+     * est enregistrée ; sinon le motif à afficher (rien n'a été construit, la version active reste).
+     */
+    private Optional<String> designBeforePlan(Session session,
+                                              com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                              Map<String, String> f, String lessons) {
+        var proposal = aiBuildingStudio.design(f.getOrDefault("provider", "").trim(), demandOf(project),
+                referencesOf(project.id()), lessons);
+        aiJournal.call(project.id(), manualCall(session, "MANUEL — CONCEPTION AVANT LE PLAN", "", "",
+                lessons.isBlank() ? "Conception structurée (volumes, éléments) rédigée avant le plan : brief, "
+                        + "contraintes et images ; aucun plan ni diagnostic transmis."
+                        : "Nouvelle conception structurée avant le plan, avec les ENSEIGNEMENTS des versions "
+                        + "précédentes ; aucun ancien plan transmis."), proposal, "", 0);
+        audit.record(session.username(), "building.design.write", "project=" + project.id() + " provider="
+                        + proposal.providerId() + " model=" + proposal.model() + " usage=" + proposal.usage()
+                        + " before=plan", proposal.callOk() ? "OK" : "FAILED", proposal.callOk() ? "" : proposal.error(),
+                UUID.randomUUID().toString().substring(0, 8));
+        if (!proposal.callOk() || proposal.rawResponse() == null || proposal.rawResponse().isBlank()) {
+            return Optional.of("La conception rédigée avant le plan a échoué : " + (proposal.callOk()
+                    ? "réponse vide" : proposal.error()) + ". Aucun plan n'a été demandé ; la version affichée reste "
+                    + "la version active.");
+        }
+        var saved = designDocs.save(project.id(), proposal.rawResponse(),
+                com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Origin.AI, proposal.providerId(),
+                proposal.model(), proposal.usage(), session.username(), -1);
+        return saved.doc().isPresent() ? Optional.empty() : Optional.of("Conception non enregistrée : "
+                + saved.refusal() + " Aucun plan n'a été demandé.");
+    }
+
+    /** #747 : une ligne de journal sur la structure de la conception transmise au plan. */
+    private static String designStructure(com.lodygames.rpgquest.panel.building.BuildingProject project, String design) {
+        if (design == null || design.isBlank()) {
+            return "Aucune conception en vigueur.";
+        }
+        var structure = com.lodygames.rpgquest.panel.ai.ArchitecturalDesign.parse(design);
+        var gaps = structure.gaps(project.brief(), project.maxWidth(), project.maxDepth(), project.maxHeight());
+        return "Conception structurée transmise : " + structure.volumes().size() + " volume(s), "
+                + structure.elements().size() + " élément(s)" + (gaps.isEmpty() ? ", aucune lacune relevée."
+                : ", " + gaps.size() + " lacune(s) transmise(s) au plan : " + String.join(" ; ",
+                gaps.stream().map(com.lodygames.rpgquest.panel.ai.ArchitecturalDesign.Finding::text).toList()));
     }
 
     /**
@@ -1820,7 +1873,8 @@ public final class PanelApp {
         var memory = com.lodygames.rpgquest.panel.ai.AttemptMemory.fromVersions(project,
                 planDrafts.forProject(project.agentId(), project.id()), planWorkbench);
         Map<String, Object> palette = paletteOf(audit);
-        var compliance = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(brief, draft.plan(), palette);
+        var compliance = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(brief, draft.plan(), palette,
+                voxelsOf(draft), designOf(project));
         var regressions = memory.regressionsOf(draft.id());
         com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode mode;
         String why;
@@ -1913,9 +1967,11 @@ public final class PanelApp {
                     .filter(b -> plan.memory().find(draft.id()).map(c -> b.score() < c.score()).orElse(false))
                     .map(b -> "Version refusée la plus proche du but : " + b.shortId() + " (" + b.codes().size()
                             + " point(s) à corriger). Elle reste consultable ; vous pouvez repartir d'elle.").orElse("");
-            return new WorkshopPages.RepairInfo(plan.memory().summary(),
-                    plan.compliance().statuses().stream().map(
-                            com.lodygames.rpgquest.panel.ai.BriefRequirements.Status::line).toList(),
+            List<String> complianceLines = new java.util.ArrayList<>(plan.compliance().statuses().stream().map(
+                    com.lodygames.rpgquest.panel.ai.BriefRequirements.Status::line).toList());
+            plan.compliance().extras().forEach(extra -> complianceLines.add("⚠ " + extra
+                    + " — ajout NON DEMANDÉ par la description (transmis à l'IA pour être retiré)"));
+            return new WorkshopPages.RepairInfo(plan.memory().summary(), complianceLines,
                     plan.repair().mode().label(), "Suggestion " + plan.why() + ".",
                     images == 0 ? "Aucune image de référence attachée au projet : l'appel part sans image."
                             : images + " image(s) de référence jointe(s) à l'appel (pixels transmis au fournisseur ; "
@@ -1949,12 +2005,15 @@ public final class PanelApp {
             return "";
         }
         var before = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(project.brief(), parent.get().plan(),
-                paletteOf(planWorkbench.state(parent.get(), BuildingPlanDraftStore.Check.AUDIT)));
+                paletteOf(planWorkbench.state(parent.get(), BuildingPlanDraftStore.Check.AUDIT)),
+                voxelsOf(parent.get()), designOf(project));
         java.util.Set<String> hadBefore = new java.util.LinkedHashSet<>();
         before.statuses().stream().filter(st -> st.requirement().check()
-                        == com.lodygames.rpgquest.panel.ai.BriefRequirements.Check.DETERMINISTIC && !st.missing())
-                .forEach(st -> hadBefore.add(st.requirement().id()));
-        List<String> lost = current.missing().stream().filter(st -> hadBefore.contains(st.requirement().id()))
+                        != com.lodygames.rpgquest.panel.ai.BriefRequirements.Check.VISUAL && !st.missing()
+                        && !st.unverified())
+                .forEach(st -> hadBefore.add(st.requirement().id() + ":" + st.requirement().word()));
+        List<String> lost = current.missing().stream().filter(st -> hadBefore.contains(st.requirement().id() + ":"
+                        + st.requirement().word()))
                 .map(st -> st.requirement().label()).toList();
         return lost.isEmpty() ? "" : "Régression de conformité : cette version a perdu " + String.join(", ", lost)
                 + ", présent(s) dans la version source V-" + parent.get().id().substring(0,
@@ -1986,6 +2045,25 @@ public final class PanelApp {
     record WorkshopRepairPlan(com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Repair repair,
                               com.lodygames.rpgquest.panel.ai.AttemptMemory memory,
                               com.lodygames.rpgquest.panel.ai.BriefRequirements.Report compliance, String why) {
+    }
+
+    /**
+     * #747 : la grille compilée de l'aperçu de cette version, pour MESURER tour, allée et volumes ;
+     * {@code null} si l'aperçu n'est pas à jour ou n'a pas de grille.
+     */
+    private com.lodygames.rpgquest.panel.building.BuildingVoxels voxelsOf(BuildingPlanDraft draft) {
+        var preview = planWorkbench.state(draft, BuildingPlanDraftStore.Check.PREVIEW);
+        if (!preview.current() || preview.status() != BuildingPlanWorkbench.Status.DONE) {
+            return null;
+        }
+        var voxels = com.lodygames.rpgquest.panel.building.BuildingVoxels.from(preview.details());
+        return voxels.present() ? voxels : null;
+    }
+
+    /** #747 : le texte de la conception en vigueur du projet, ou vide. */
+    private String designOf(com.lodygames.rpgquest.panel.building.BuildingProject project) {
+        return designDocs.latest(project.id()).map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text)
+                .orElse("");
     }
 
     /** La palette du résultat compilé, mesurée par la dernière vérification de cette version (#747). */

@@ -191,13 +191,29 @@ public final class AttemptMemory {
             }
             Map<String, Object> palette = paletteOf(state);
             int missing = project == null || project.brief() == null ? -1
-                    : BriefRequirements.evaluate(project.brief(), draft.plan(), palette).missing().size();
+                    : BriefRequirements.evaluate(project.brief(), draft.plan(), palette, voxelsOf(workbench.state(
+                    draft, com.lodygames.rpgquest.panel.building.BuildingPlanDraftStore.Check.PREVIEW))).missing().size();
             out.add(new Attempt(draft.id(), draft.version(), verdict.accepted(), verdict.codes(), verdict.accepted()
                     ? List.of() : issuesOf(verdict.codes(),
                     com.lodygames.rpgquest.panel.building.PlanDiagnosis.of(project, state)), missing,
                     new ArrayList<>(BlockRegistry.vanilla().unknownIn(draft.plan()).keySet())));
         }
         return new AttemptMemory(out);
+    }
+
+    /** #747 : la grille compilée de l'aperçu à jour, ou {@code null} — tour et allée sont alors « non mesurées ». */
+    private static com.lodygames.rpgquest.panel.building.BuildingVoxels voxelsOf(
+            com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.CheckState preview) {
+        try {
+            if (!preview.current() || preview.status()
+                    != com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.Status.DONE) {
+                return null;
+            }
+            var voxels = com.lodygames.rpgquest.panel.building.BuildingVoxels.from(preview.details());
+            return voxels.present() ? voxels : null;
+        } catch (RuntimeException unreadable) {
+            return null;
+        }
     }
 
     /** La palette du résultat compilé relevée par la vérification ; vide si inconnue. */
@@ -486,8 +502,16 @@ public final class AttemptMemory {
         Map<String, Integer> recurring = recurringFaults();
         if (!recurring.isEmpty()) {
             sb.append("Fautes qui revenaient d'une version à l'autre :\n");
-            recurring.forEach((fault, n) -> sb.append("- ").append(fault).append(" (").append(n)
-                    .append(" versions)\n"));
+            // #747 : la cause sert à regrouper (nombres masqués « # ») ; le modèle reçoit le sens du code et
+            // le dernier endroit réellement mesuré — « # bloc(s) en #/#/# » ne lui apprenait rien.
+            recurring.forEach((fault, n) -> {
+                String code = fault.contains(" — ") ? fault.substring(0, fault.indexOf(" — ")) : fault;
+                String where = lastLocation(fault);
+                sb.append("- ").append(code).append(" — ")
+                        .append(com.lodygames.rpgquest.panel.building.PlanVerdictText.of(code).text())
+                        .append(" (").append(n).append(" versions").append(where.isEmpty() ? "" : " ; dernier "
+                                + "endroit mesuré : " + where).append(")\n");
+            });
         }
         Set<String> seen = new LinkedHashSet<>();
         attempts.stream().filter(Attempt::evaluable).forEach(a -> seen.addAll(a.codes()));
@@ -508,6 +532,19 @@ public final class AttemptMemory {
         }
         String text = sb.toString();
         return text.length() > PROMPT_CHARS ? text.substring(0, PROMPT_CHARS) + "\n[…]\n" : text;
+    }
+
+    /** L'endroit mesuré de la dernière occurrence d'une faute (« code — cause »), ou vide. */
+    private String lastLocation(String fault) {
+        for (int i = attempts.size() - 1; i >= 0; i--) {
+            for (Issue issue : attempts.get(i).issues()) {
+                String key = issue.code() + (issue.cause().isEmpty() ? "" : " — " + issue.cause());
+                if (key.equals(fault) && !issue.location().isEmpty()) {
+                    return issue.location();
+                }
+            }
+        }
+        return "";
     }
 
     /** Les fautes (code + cause) revenues dans au moins trois versions : celles que les corrections ratent. */

@@ -392,3 +392,7 @@ Après validation de OP + bypass OFF, le propriétaire confirme « ça fonctionn
 
 ### Validation propriétaire — 23/10/2026, TC-302 étape 13
 Après test réussi du bypass ON (casse et pose), le propriétaire confirme « oui c'est bon » pour `/rpgadmin bypass off` : **casse et pose immédiatement refusées dans le Hub**, avec son statut OP conservé. Cycle complet **OFF → ON → OFF validé manuellement** pour casse et pose. Aucun changement de permission réelle ; #35 reste ouvert le temps de décider si le contrôle additionnel de décor (cadre/panneau) est nécessaire. Le builder non OP et les autres protections décoratives n'ont pas été testés manuellement.
+
+
+### Validation propriétaire complémentaire et clôture — 23/10/2026, #35
+Le propriétaire confirme que, avec bypass OFF, cliquer sur un objet dans un cadre du Hub **ne le fait pas tourner**. Ce résultat complète le cycle **OP / OFF : casse refusée ; ON : casse et pose autorisées ; retour OFF : casse et pose refusées immédiatement**. Critère fonctionnel à l'origine de la réouverture de #35 validé sur DEV. Le propriétaire n'a pas testé manuellement tous les autres éléments de décor, ni la matrice builder non OP : ces couvertures restent uniquement automatisées (rapport PR #791, 106 tests verts) et ne sont pas présentées comme manuellement vérifiées. **Clôture de #35** sur le parcours cible ; les anomalies futures éventuelles seront suivies séparément. Ne pas fermer automatiquement #321.

@@ -52,6 +52,13 @@ public final class AttemptMemory {
     /** Le code d'un plan illisible ou inexpansible : il ne juge aucun autre contrôle. */
     public static final String INVALID = "PLAN_INVALID";
 
+    /**
+     * Les codes qui arrêtent la vérification avant les contrôles d'architecture (#747, 23/10/2026) :
+     * une version qui les porte n'a pas été jugée sur le reste — ses autres erreurs sont « non
+     * vérifiées », jamais « résolues ».
+     */
+    public static final Set<String> EARLY_STOP = Set.of(INVALID, "EMPTY_STRUCTURE");
+
     private static final int PROMPT_CHARS = 4_000;
 
     /**
@@ -80,22 +87,35 @@ public final class AttemptMemory {
 
     /** Une version vérifiée par le serveur. */
     public record Attempt(String draftId, int version, boolean accepted, List<String> codes,
-                          List<Issue> issues) {
+                          List<Issue> issues, int missingRequirements, List<String> unknownBlocks) {
 
         public Attempt {
             draftId = draftId == null ? "" : draftId;
             codes = List.copyOf(codes == null ? List.of() : codes);
             issues = List.copyOf(issues == null ? List.of() : issues);
+            unknownBlocks = List.copyOf(unknownBlocks == null ? List.of() : unknownBlocks);
+        }
+
+        /** Sans conformité au brief ni identifiants relevés (forme antérieure). */
+        public Attempt(String draftId, int version, boolean accepted, List<String> codes, List<Issue> issues) {
+            this(draftId, version, accepted, codes, issues, -1, List.of());
         }
 
         /** Le plan a-t-il été construit, donc jugé sur tous les contrôles ? */
         public boolean evaluable() {
-            return accepted || !codes.contains(INVALID);
+            return accepted || codes.stream().noneMatch(EARLY_STOP::contains);
         }
 
-        /** Moins c'est mieux : 0 accepté, le nombre de codes sinon, un plan illisible tout en bas. */
+        /**
+         * Moins c'est mieux. Pas au seul nombre de codes (#747, 23/10/2026) : une version arrêtée tôt
+         * (plan illisible) n'a qu'UN code mais n'a pas été jugée sur le reste — elle passe après toute
+         * version construite ; et chaque exigence du brief manquante compte comme un défaut.
+         * Acceptée : 0 + exigences manquantes ; construite et refusée : 20 + codes + exigences
+         * manquantes ; non construite : 100 et plus.
+         */
         public int score() {
-            return accepted ? 0 : evaluable() ? codes.size() : 100;
+            int missing = Math.max(0, missingRequirements);
+            return accepted ? missing : evaluable() ? 20 + codes.size() + missing : 100 + missing;
         }
 
         public String shortId() {
@@ -169,11 +189,28 @@ public final class AttemptMemory {
             if (!verdict.available()) {
                 continue;
             }
+            Map<String, Object> palette = paletteOf(state);
+            int missing = project == null || project.brief() == null ? -1
+                    : BriefRequirements.evaluate(project.brief(), draft.plan(), palette).missing().size();
             out.add(new Attempt(draft.id(), draft.version(), verdict.accepted(), verdict.codes(), verdict.accepted()
                     ? List.of() : issuesOf(verdict.codes(),
-                    com.lodygames.rpgquest.panel.building.PlanDiagnosis.of(project, state))));
+                    com.lodygames.rpgquest.panel.building.PlanDiagnosis.of(project, state)), missing,
+                    new ArrayList<>(BlockRegistry.vanilla().unknownIn(draft.plan()).keySet())));
         }
         return new AttemptMemory(out);
+    }
+
+    /** La palette du résultat compilé relevée par la vérification ; vide si inconnue. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> paletteOf(
+            com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.CheckState state) {
+        try {
+            Object p = com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.from(state.details()).metrics()
+                    .get("palette");
+            return p instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+        } catch (RuntimeException unreadable) {
+            return Map.of();
+        }
     }
 
     /** La même mémoire, avec une vérification de plus (remplace celle de la même version). */
@@ -373,7 +410,10 @@ public final class AttemptMemory {
         return out;
     }
 
-    /** La meilleure version refusée mais construite : le moins de codes, la plus récente à égalité. */
+    /**
+     * La meilleure version refusée mais construite, selon {@link Attempt#score()} (codes ET exigences
+     * du brief manquantes), la plus récente à égalité.
+     */
     public Optional<Attempt> bestRefused() {
         Attempt best = null;
         for (Attempt a : attempts) {
@@ -402,6 +442,72 @@ public final class AttemptMemory {
     /** {@value #STAGNATION} tentatives de suite sans faire mieux que la meilleure : on tourne en rond. */
     public boolean stagnating() {
         return !attempts.isEmpty() && !last().get().accepted() && sinceImprovement() >= STAGNATION;
+    }
+
+    /**
+     * Les erreurs NON VÉRIFIÉES d'une version arrêtée tôt (#747) : celles qu'une version construite
+     * avait relevées, et dont rien ne dit qu'elles ont disparu — le contrôle n'a pas été exécuté.
+     * Vide si la version a été construite.
+     */
+    public List<String> unverifiedFor(String draftId) {
+        Optional<Attempt> reference = find(draftId);
+        if (reference.isEmpty() || reference.get().evaluable()) {
+            return List.of();
+        }
+        Set<String> out = new LinkedHashSet<>();
+        for (Attempt a : attempts) {
+            if (a.evaluable() && !a.accepted()) {
+                out.addAll(a.codes());
+            }
+        }
+        out.removeAll(EARLY_STOP);
+        return List.copyOf(out);
+    }
+
+    /** Les identifiants inexistants employés par les versions vérifiées, dans l'ordre d'apparition. */
+    public List<String> inventedBlocks() {
+        Set<String> out = new LinkedHashSet<>();
+        attempts.forEach(a -> out.addAll(a.unknownBlocks()));
+        return List.copyOf(out);
+    }
+
+    /**
+     * Les enseignements à garder pour une NOUVELLE conception (#747) : ce qui a échoué de façon
+     * répétée, les identifiants inventés, les erreurs que des versions avaient résolues. Aucun plan
+     * n'est recopié : c'est la conception qui repart, pas la correction.
+     */
+    public String lessonsBlock() {
+        if (attempts.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("ENSEIGNEMENTS DES ").append(attempts.size())
+                .append(" VERSION(S) PRÉCÉDENTE(S) — nouvelle conception : ne recopie aucun ancien plan, "
+                        + "mais n'y refais pas ces erreurs\n\n");
+        Map<String, Integer> recurring = recurringFaults();
+        if (!recurring.isEmpty()) {
+            sb.append("Fautes qui revenaient d'une version à l'autre :\n");
+            recurring.forEach((fault, n) -> sb.append("- ").append(fault).append(" (").append(n)
+                    .append(" versions)\n"));
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        attempts.stream().filter(Attempt::evaluable).forEach(a -> seen.addAll(a.codes()));
+        seen.removeAll(EARLY_STOP);
+        if (!seen.isEmpty()) {
+            sb.append("Contrôles du serveur déjà échoués (à respecter dès la première version) : ")
+                    .append(String.join(", ", seen)).append('\n');
+        }
+        List<String> invented = inventedBlocks();
+        if (!invented.isEmpty()) {
+            sb.append("Identifiants INEXISTANTS déjà employés — ne les réemploie pas, ni un nom voisin : ")
+                    .append(String.join(", ", invented)).append('\n');
+        }
+        long early = attempts.stream().filter(a -> !a.evaluable()).count();
+        if (early > 0) {
+            sb.append(early).append(" version(s) n'ont pas pu être construites (plan illisible) : respecte "
+                    + "strictement la forme des instructions.\n");
+        }
+        String text = sb.toString();
+        return text.length() > PROMPT_CHARS ? text.substring(0, PROMPT_CHARS) + "\n[…]\n" : text;
     }
 
     /** Les fautes (code + cause) revenues dans au moins trois versions : celles que les corrections ratent. */
@@ -439,8 +545,12 @@ public final class AttemptMemory {
         for (int i = from; i < attempts.size(); i++) {
             Attempt a = attempts.get(i);
             sb.append("- ").append(a.shortId()).append(a.draftId().equals(currentDraftId) ? " (version transmise)" : "")
-                    .append(" : ").append(a.accepted() ? "ACCEPTÉE" : (a.evaluable() ? "refusée — " : "illisible — ")
-                            + String.join(", ", a.codes()));
+                    .append(" : ").append(a.accepted() ? "ACCEPTÉE" : (a.evaluable() ? "refusée — " : "NON CONSTRUITE — ")
+                            + String.join(", ", a.codes()) + (a.evaluable() ? ""
+                            : " (vérification arrêtée avant les contrôles d'architecture : rien n'y est vérifié)"));
+            if (a.missingRequirements() > 0) {
+                sb.append(" ; ").append(a.missingRequirements()).append(" exigence(s) du brief manquante(s)");
+            }
             List<Regression> regs = regressionsOf(i);
             if (!regs.isEmpty()) {
                 sb.append(" ⚠ RÉGRESSION : ").append(String.join(", ", regs.stream().map(r -> r.code()
@@ -454,6 +564,18 @@ public final class AttemptMemory {
             List<String> parts = new ArrayList<>();
             resolved.forEach((code, by) -> parts.add(code + " (absent de " + by.shortId() + ")"));
             sb.append(String.join(", ", parts)).append('\n');
+        }
+        List<String> unverified = unverifiedFor(currentDraftId);
+        if (!unverified.isEmpty()) {
+            sb.append("\nNON VÉRIFIÉ sur la version transmise (elle n'a pas été construite) : ")
+                    .append(String.join(", ", unverified)).append(" — ces erreurs ne sont PAS résolues ; "
+                            + "corrige d'abord ce qui empêche la construction, sans les réintroduire.\n");
+        }
+        List<String> invented = inventedBlocks();
+        if (!invented.isEmpty()) {
+            sb.append("\nIDENTIFIANTS INEXISTANTS déjà employés dans ce projet : ").append(String.join(", ", invented))
+                    .append(" — ne les réemploie pas, et ne les remplace pas par un nom voisin : reprends "
+                            + "l'élément demandé avec un identifiant réel, ou supprime-le s'il n'est pas demandé.\n");
         }
         Map<String, Integer> recurring = recurringFaults();
         if (!recurring.isEmpty()) {

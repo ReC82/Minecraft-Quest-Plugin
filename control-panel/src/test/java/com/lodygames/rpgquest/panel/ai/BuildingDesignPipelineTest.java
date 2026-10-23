@@ -364,7 +364,10 @@ class BuildingDesignPipelineTest {
         assertTrue(kinds(r).contains("COMPLÉTUDE DU BRIEF"), kinds(r).toString());
         assertTrue(requests.get(1).contains("✗ Cloche"), "la passe reçoit les exigences manquantes");
         assertTrue(drafts.find(r.finalDraftId()).orElseThrow().plan().contains("minecraft:bell"));
-        assertTrue(r.outcome().contains("Brief : 2/2"), r.outcome());
+        // #747 (23/10/2026) : le faux serveur ne mesure pas la palette du résultat — la présence dans le
+        // résultat compilé n'est donc pas vérifiée, et le bilan le dit au lieu de la déclarer réalisée.
+        assertTrue(r.outcome().contains("Brief : 0/2 exigence(s) vérifiable(s) réalisée(s), 2 non vérifiée(s)"),
+                r.outcome());
     }
 
     /** #747 — conforme mais toujours sans cloche après la passe : c'est dit, pas présenté comme une réussite. */
@@ -389,6 +392,9 @@ class BuildingDesignPipelineTest {
         assertFalse(kinds(r).contains("VÉRIFICATION"), kinds(r).toString());
         assertTrue(agents.recentActions(AGENT, 50).stream().noneMatch(a -> a.type().equals("building.plan.audit")),
                 "aucun audit pour une réponse sans plan");
+        // #747 (23/10/2026) : un refus est un appel échoué typé, jamais une version.
+        assertTrue(r.outcome().contains("Refus du modèle"), r.outcome());
+        assertTrue(r.finalDraftId().isEmpty(), "aucune version créée");
     }
 
     @Test

@@ -346,6 +346,7 @@ public final class BuildingAiJournalExport {
             out.append("  corps JSON envoyé (textes longs renvoyés plus bas) :\n")
                     .append(indent(str(b, "skeleton"), "    ")).append('\n');
         }
+        failure(out, b);
         texts(out, texts, e.seq(), printed);
     }
 
@@ -371,6 +372,7 @@ public final class BuildingAiJournalExport {
         }
         out.append("  plan extrait : ").append(Boolean.TRUE.equals(b.get("planExtracted"))
                 ? "oui, empreinte " + str(b, "planSha256") : "non").append('\n');
+        failure(out, b);
         if (!e.draftId().isEmpty()) {
             out.append("  version produite : V-").append(shortId(e.draftId())).append(" (").append(e.draftId())
                     .append(", n° ").append(b.getOrDefault("producedVersion", "?")).append(")\n");
@@ -390,6 +392,31 @@ public final class BuildingAiJournalExport {
                     .append(indent(str(b, "skeleton"), "    ")).append('\n');
         }
         texts(out, textList(b.get("texts")), e.seq(), printed);
+    }
+
+    /** #747 : l'appel échoué — sa nature, la version restée active, le contexte de reprise. */
+    @SuppressWarnings("unchecked")
+    private static void failure(StringBuilder out, Map<String, Object> b) {
+        if (!(b.get("failure") instanceof Map<?, ?> raw)) {
+            return;
+        }
+        Map<String, Object> f = (Map<String, Object>) raw;
+        out.append("  APPEL ÉCHOUÉ : ").append(str(f, "label")).append(str(f, "detail").isEmpty() ? ""
+                : " — " + str(f, "detail")).append('\n');
+        String kept = str(f, "activeVersionKept");
+        out.append("  version créée : non ; version active conservée : ")
+                .append(kept.isEmpty() ? "aucune (demande neuve)" : "V-" + shortId(kept) + " (" + kept + ")")
+                .append('\n');
+        if (f.get("retry") instanceof Map<?, ?> r) {
+            Map<String, Object> retry = (Map<String, Object>) r;
+            out.append("  contexte de reprise conservé : geste ").append(blank(str(retry, "gesture")))
+                    .append(", mode ").append(blank(str(retry, "mode"))).append(", consignes ")
+                    .append(str(retry, "notes").isEmpty() ? "aucune" : str(retry, "notes").length() + " caractère(s)")
+                    .append('\n');
+        }
+        if (!str(f, "retryOf").isEmpty()) {
+            out.append("  reprise de l'appel échoué : ").append(str(f, "retryOf")).append('\n');
+        }
     }
 
     private static void validation(StringBuilder out, Event e, Labels labels) {

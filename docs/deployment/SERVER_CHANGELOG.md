@@ -49,6 +49,33 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Atelier IA : réponse sans plan, reprise avec le même contexte, palette, stagnation (#747, TC-419)
+
+### Changement
+
+PlugAdmin seulement : une réponse inexploitable de l'IA (refus, vide, format invalide, tronquée,
+erreur réseau/API) devient un appel échoué typé et journalisé, jamais une version ; la version source
+reste active ; « Réessayer avec le même contexte » et « Repartir de zéro » (séparé, à cocher). Palette
+d'identifiants vérifiés (registre 1.21.11) jointe aux demandes ; identifiants inventés mémorisés ;
+« non vérifié » distinct de « résolu » ; meilleure version pondérée par la conformité ; stagnation →
+reprise contrôlée. Aucun schéma nouveau (`control-panel.db` inchangé, `data.db` non concerné).
+
+### Action serveur
+
+Serveur Minecraft : **aucune** (pas de JAR, pas de configuration, pas de redémarrage). PlugAdmin :
+`scripts/plugadmin/deploy.sh`.
+
+### Validation
+
+TC-419 (PENDING MANUAL VALIDATION). Tests automatiques sans appel payant (`Eglise747RefusalTest`,
+`WorkshopFlowTest`, `BuildingDesignPipelineTest`).
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app`.
+
+---
+
 ## 2026-10-23 - Gestion du compte portail : mot de passe, export, suppression (#53 lot 7, TC-418)
 
 ### Changement

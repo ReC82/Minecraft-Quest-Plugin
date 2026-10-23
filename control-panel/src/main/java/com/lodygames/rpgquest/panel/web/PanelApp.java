@@ -1482,7 +1482,7 @@ public final class PanelApp {
                 conflictText, idTaken, isoView, isoCut, latestRun,
                 referenceImages.list(project.get().id()), catalog, ownBuilding,
                 designDocs.history(project.get().id()), designText, importQuery, importPreview,
-                repairInfo(project.get(), draft));
+                repairInfo(project.get(), draft), failureInfo(project.get(), drafts, draft));
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -1657,12 +1657,48 @@ public final class PanelApp {
             return replay.get();
         }
         var demand = demandOf(project);
+        // #747 : « Nouvelle conception avec les enseignements » — après une stagnation, repartir de la
+        // description en gardant ce que les versions précédentes ont appris, sans recopier leur plan.
+        boolean withLessons = "yes".equals(f.getOrDefault("lessons", ""));
+        String lessons = withLessons ? lessonsOf(project) : "";
         var proposal = aiBuildingStudio.propose(f.getOrDefault("provider", "").trim(), demand,
-                referencesOf(project.id()));
+                referencesOf(project.id()), lessons);
+        // #747 : si l'appel échoue, la version affichée (ou la plus récente qui a un plan) reste active.
+        String kept = planDrafts.find(f.get("draft")).filter(d -> d.hasPlan() && project.id().equals(d.projectId()))
+                .or(() -> planDrafts.forProject(agentId, project.id()).stream().filter(BuildingPlanDraft::hasPlan)
+                        .findFirst()).map(BuildingPlanDraft::id).orElse("");
+        String retryOf = f.getOrDefault("retry_of", "").trim();
+        List<String> context = new java.util.ArrayList<>(List.of(withLessons
+                ? "Nouvelle conception après stagnation : brief, contraintes, conception en vigueur et "
+                        + "ENSEIGNEMENTS des versions précédentes (aucun ancien plan transmis)."
+                : "Demande neuve : brief, contraintes et conception en vigueur ; aucun plan ni diagnostic antérieur."));
+        if (!retryOf.isEmpty()) {
+            context.add(com.lodygames.rpgquest.panel.ai.FailedCalls.sameContext(aiJournal.store().events(
+                    com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id()), retryOf, proposal.manifest()));
+        }
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
-                BuildingPlanDraft.Origin.AI_PROPOSAL, "", demand, false, manualCall(session,
-                        "MANUEL — CRÉER UN PLAN", "", "", "Demande neuve : brief, contraintes et conception en "
-                                + "vigueur ; aucun plan ni diagnostic antérieur."));
+                BuildingPlanDraft.Origin.AI_PROPOSAL, "", demand, false,
+                new com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext("", "MANUEL — CRÉER UN PLAN", 0,
+                        session.username(), "", "", "", context),
+                new RetryContext(withLessons ? "propose_lessons" : "propose", kept, "", "", retryOf));
+    }
+
+    /**
+     * #747 : les enseignements d'un projet pour une nouvelle conception — mémoire des tentatives
+     * (fautes récurrentes, contrôles échoués, identifiants inventés) et exigences de la description.
+     */
+    private String lessonsOf(com.lodygames.rpgquest.panel.building.BuildingProject project) {
+        var memory = com.lodygames.rpgquest.panel.ai.AttemptMemory.fromVersions(project,
+                planDrafts.forProject(project.agentId(), project.id()), planWorkbench);
+        var requirements = com.lodygames.rpgquest.panel.ai.BriefRequirements.extract(project.brief());
+        StringBuilder sb = new StringBuilder(memory.lessonsBlock());
+        if (!requirements.isEmpty()) {
+            sb.append(sb.isEmpty() ? "" : "\n").append("ÉLÉMENTS DEMANDÉS PAR LA DESCRIPTION — tous dans la "
+                    + "première version, aucun en moins : ").append(String.join(", ", requirements.stream()
+                    .map(com.lodygames.rpgquest.panel.ai.BriefRequirements.Requirement::label).toList()))
+                    .append('\n');
+        }
+        return sb.toString();
     }
 
     /**
@@ -1701,6 +1737,10 @@ public final class PanelApp {
                             + "le diagnostic du serveur partira de lui-même avec la demande dès qu'il "
                             + "sera connu. Rien n'a été demandé à l'IA."));
         }
+        Optional<String> stagnation = stagnationStop(project, draft, f);
+        if (stagnation.isPresent()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), draft.id(), null, stagnation.get()));
+        }
         Optional<PlanOutcome> replay = replayedRequest(session, project.id(), f);
         if (replay.isPresent()) {
             return replay.get();
@@ -1719,10 +1759,8 @@ public final class PanelApp {
         var references = referencesOf(project.id());
         var proposal = aiBuildingStudio.correct(f.getOrDefault("provider", "").trim(), demand,
                 draft.plan(), reason, measured, references, plan.repair());
-        return keepProposal(session, agentId, project, f.get("request_token"), proposal,
-                BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true,
-                new com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext("", "MANUEL — AMÉLIORER AVEC L'IA",
-                        0, session.username(), draft.id(), "", sentDiagnosis, List.of(
+        String retryOf = f.getOrDefault("retry_of", "").trim();
+        List<String> context = new java.util.ArrayList<>(List.of(
                         "Version " + draft.id().substring(0, Math.min(8, draft.id().length())) + " transmise avec "
                                 + "le motif : diagnostic de sa dernière vérification"
                                 + (sentDiagnosis.isEmpty() ? " (aucun)" : " (empreinte " + sentDiagnosis + ")")
@@ -1731,7 +1769,44 @@ public final class PanelApp {
                         "Conformité au brief : " + plan.compliance().summary(),
                         "Mode : " + plan.repair().mode().label() + " — " + plan.why(),
                         references.isEmpty() ? "Aucune image de référence attachée au projet : l'appel part sans image."
-                                : references.size() + " image(s) de référence jointe(s) à l'appel.")));
+                                : references.size() + " image(s) de référence jointe(s) à l'appel."));
+        if (!retryOf.isEmpty()) {
+            context.add(com.lodygames.rpgquest.panel.ai.FailedCalls.sameContext(aiJournal.store().events(
+                    com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id()), retryOf, proposal.manifest()));
+        }
+        return keepProposal(session, agentId, project, f.get("request_token"), proposal,
+                BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true,
+                new com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext("", "MANUEL — AMÉLIORER AVEC L'IA",
+                        0, session.username(), draft.id(), "", sentDiagnosis, context),
+                new RetryContext("correct", draft.id(), f.getOrDefault("mode", "auto"),
+                        f.getOrDefault("notes", f.getOrDefault("reason", "")), retryOf));
+    }
+
+    /**
+     * #747 (23/10/2026) : après une stagnation, « Améliorer » en mode automatique sur une autre
+     * version que la meilleure n'est plus envoyé — 19 tentatives sans progrès avec un simple
+     * avertissement, c'est ce qu'il fallait arrêter. Refus à coût nul, avec trois issues : reprendre
+     * depuis la meilleure version, nouvelle conception avec les enseignements, ou continuer sur cette
+     * version en choisissant EXPLICITEMENT la nature de la reprise. La reprise d'un appel échoué
+     * n'est pas concernée : elle rejoue une demande déjà décidée.
+     */
+    private Optional<String> stagnationStop(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                            BuildingPlanDraft draft, Map<String, String> f) {
+        if (!"auto".equalsIgnoreCase(f.getOrDefault("mode", "auto").trim())
+                || !f.getOrDefault("retry_of", "").isBlank()) {
+            return Optional.empty();
+        }
+        var memory = com.lodygames.rpgquest.panel.ai.AttemptMemory.fromVersions(project,
+                planDrafts.forProject(project.agentId(), project.id()), planWorkbench);
+        var best = memory.bestRefused();
+        if (!memory.stagnating() || best.isEmpty() || best.get().draftId().equals(draft.id())) {
+            return Optional.empty();
+        }
+        return Optional.of("Stagnation : " + memory.sinceImprovement() + " tentatives sans faire mieux que "
+                + best.get().shortId() + ". Rien n'a été demandé à l'IA. Choisissez une stratégie dans « Améliorer "
+                + "avec l'IA » : reprendre depuis " + best.get().shortId() + " (la version la plus proche du but), "
+                + "une nouvelle conception qui garde les enseignements, ou continuer sur cette version en "
+                + "choisissant vous-même la nature de la reprise.");
     }
 
     /**
@@ -1774,6 +1849,54 @@ public final class PanelApp {
                 memory.promptBlock(draft.id()), compliance.promptBlock()), memory, compliance, why);
     }
 
+    /**
+     * #747 (23/10/2026) : le dernier appel échoué du projet, s'il concerne la version affichée — ou
+     * une ancienne réponse inexploitable rangée comme version avant le correctif. Ne lève jamais.
+     */
+    private WorkshopPages.FailureInfo failureInfo(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                                  List<BuildingPlanDraft> drafts, BuildingPlanDraft draft) {
+        try {
+            var events = aiJournal.store().events(com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, project.id());
+            var last = com.lodygames.rpgquest.panel.ai.FailedCalls.last(events);
+            if (last.isPresent()) {
+                var f = last.get();
+                boolean concerns = draft == null ? f.keptDraftId().isEmpty() : draft.id().equals(f.keptDraftId());
+                Optional<BuildingPlanDraft> kept = drafts.stream().filter(d -> d.id().equals(f.keptDraftId()))
+                        .findFirst();
+                if (concerns) {
+                    return new WorkshopPages.FailureInfo(f.callId(), brusselsTime(f.at()), f.label(), f.detail(),
+                            f.keptDraftId(), kept.map(BuildingPlanDraft::version).orElse(0), f.gesture(), f.mode(),
+                            f.notes(), f.providerId(), false);
+                }
+            }
+            if (draft == null || draft.hasPlan()) {
+                return null;
+            }
+            // Avant le correctif, une réponse sans plan devenait une version (V-14206aa8) : la reprise
+            // repart de sa version source si elle a un plan, sinon de la plus récente qui en a un.
+            Optional<BuildingPlanDraft> parent = drafts.stream().filter(d -> d.id().equals(draft.parentId())
+                    && d.hasPlan()).findFirst();
+            Optional<BuildingPlanDraft> source = parent.or(() -> drafts.stream().filter(BuildingPlanDraft::hasPlan)
+                    .findFirst());
+            String note = draft.extractionNote() == null ? "" : draft.extractionNote();
+            // L'appel qui a produit cette version, s'il est au journal : la reprise compare son contexte
+            // et rejoue la nature de reprise réellement envoyée.
+            var origin = com.lodygames.rpgquest.panel.ai.FailedCalls.producing(events, draft.id());
+            return new WorkshopPages.FailureInfo(origin.map(o -> o.callId()).orElse(""),
+                    brusselsTime(draft.createdAt()), "Réponse sans plan", note,
+                    source.map(BuildingPlanDraft::id).orElse(""), source.map(BuildingPlanDraft::version).orElse(0),
+                    parent.isPresent() ? "correct" : "propose", origin.map(o -> o.mode()).orElse("auto"), "",
+                    draft.providerId(), true);
+        } catch (RuntimeException failure) {
+            return null;
+        }
+    }
+
+    private static String brusselsTime(java.time.Instant at) {
+        return at == null ? "" : java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
+                .withZone(java.time.ZoneId.of("Europe/Brussels")).format(at);
+    }
+
     /** #747 : ce que l'écran montre de la reprise qui partirait avec « Améliorer avec l'IA ». */
     private WorkshopPages.RepairInfo repairInfo(com.lodygames.rpgquest.panel.building.BuildingProject project,
                                                 BuildingPlanDraft draft) {
@@ -1785,6 +1908,7 @@ public final class PanelApp {
             var plan = workshopRepairPlan(project, draft, audit, project.brief(), "auto");
             int images = referenceImages.list(project.id()).size();
             var regressions = plan.memory().regressionsOf(draft.id());
+            String lost = lostRequirements(project, draft, plan.compliance());
             String best = plan.memory().bestRefused().filter(b -> !b.draftId().equals(draft.id()))
                     .filter(b -> plan.memory().find(draft.id()).map(c -> b.score() < c.score()).orElse(false))
                     .map(b -> "Version refusée la plus proche du but : " + b.shortId() + " (" + b.codes().size()
@@ -1796,14 +1920,66 @@ public final class PanelApp {
                     images == 0 ? "Aucune image de référence attachée au projet : l'appel part sans image."
                             : images + " image(s) de référence jointe(s) à l'appel (pixels transmis au fournisseur ; "
                             + "le journal IA en garde le type, la taille et l'empreinte).",
-                    regressions.isEmpty() ? "" : "Cette version réintroduit une erreur déjà corrigée : " + String.join(
+                    ((regressions.isEmpty() ? "" : "Cette version réintroduit une erreur déjà corrigée : " + String.join(
                             " ; ", regressions.stream().map(r -> com.lodygames.rpgquest.panel.building.PlanVerdictText.of(
-                            r.code()).text() + " (corrigé en " + r.resolvedBy().shortId() + ")").toList()),
-                    best);
+                            r.code()).text() + " (corrigé en " + r.resolvedBy().shortId() + ")").toList()) + ". ")
+                            + lost).trim(),
+                    best, stagnationStop(project, draft, Map.of()).map(m -> "Stagnation : "
+                            + plan.memory().sinceImprovement() + " tentatives sans progrès.").orElse(""),
+                    plan.memory().bestRefused().map(com.lodygames.rpgquest.panel.ai.AttemptMemory.Attempt::draftId)
+                            .orElse(""), memoryNotes(plan.memory(), draft));
         } catch (RuntimeException failure) {
             // L'aide ne doit jamais empêcher d'afficher le projet.
             return null;
         }
+    }
+
+    /**
+     * #747 : les éléments demandés que la version source réalisait et que celle-ci a perdus — une
+     * régression de conformité, aussi visible qu'une erreur réintroduite. Vide sans version source.
+     */
+    private String lostRequirements(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                    BuildingPlanDraft draft,
+                                    com.lodygames.rpgquest.panel.ai.BriefRequirements.Report current) {
+        if (draft.parentId() == null || draft.parentId().isBlank()) {
+            return "";
+        }
+        var parent = planDrafts.find(draft.parentId()).filter(BuildingPlanDraft::hasPlan);
+        if (parent.isEmpty()) {
+            return "";
+        }
+        var before = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(project.brief(), parent.get().plan(),
+                paletteOf(planWorkbench.state(parent.get(), BuildingPlanDraftStore.Check.AUDIT)));
+        java.util.Set<String> hadBefore = new java.util.LinkedHashSet<>();
+        before.statuses().stream().filter(st -> st.requirement().check()
+                        == com.lodygames.rpgquest.panel.ai.BriefRequirements.Check.DETERMINISTIC && !st.missing())
+                .forEach(st -> hadBefore.add(st.requirement().id()));
+        List<String> lost = current.missing().stream().filter(st -> hadBefore.contains(st.requirement().id()))
+                .map(st -> st.requirement().label()).toList();
+        return lost.isEmpty() ? "" : "Régression de conformité : cette version a perdu " + String.join(", ", lost)
+                + ", présent(s) dans la version source V-" + parent.get().id().substring(0,
+                Math.min(8, parent.get().id().length())) + ".";
+    }
+
+    /** #747 : ce que l'écran dit en plus — erreurs non vérifiées, identifiants inventés. */
+    private static String memoryNotes(com.lodygames.rpgquest.panel.ai.AttemptMemory memory, BuildingPlanDraft draft) {
+        List<String> parts = new java.util.ArrayList<>();
+        var unverified = memory.unverifiedFor(draft.id());
+        if (!unverified.isEmpty()) {
+            parts.add("Cette version n'a pas été construite : " + String.join(", ", unverified)
+                    + " — non vérifié (le contrôle n'a pas été exécuté), pas résolu.");
+        }
+        var unknown = com.lodygames.rpgquest.panel.ai.BlockRegistry.vanilla().unknownIn(draft.plan());
+        if (!unknown.isEmpty()) {
+            parts.add("Identifiants inexistants dans cette version (" + unknown.size() + ") : "
+                    + String.join(", ", unknown.keySet()) + ".");
+        }
+        var invented = memory.inventedBlocks();
+        if (!invented.isEmpty()) {
+            parts.add("Identifiants inventés dans ce projet, transmis pour ne pas les réemployer : "
+                    + String.join(", ", invented) + ".");
+        }
+        return String.join(" ", parts);
     }
 
     /** #747 : la reprise préparée pour une version, et de quoi l'expliquer à l'écran et au journal. */
@@ -2166,7 +2342,8 @@ public final class PanelApp {
                                      BuildingPlanDraft.Origin origin, String parentId,
                                      com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demand,
                                      boolean correction,
-                                     com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext journalContext) {
+                                     com.lodygames.rpgquest.panel.ai.BuildingAiJournal.CallContext journalContext,
+                                     RetryContext retry) {
         // L'audit retient le fournisseur, le modèle et l'issue — jamais la clé, jamais la description.
         audit.record(session.username(), "building.plan.generate",
                 "project=" + project.id() + " provider=" + proposal.providerId() + " model=" + proposal.model()
@@ -2174,12 +2351,19 @@ public final class PanelApp {
                 proposal.callOk() ? "OK" : "FAILED",
                 proposal.callOk() ? (proposal.hasPlan() ? "plan proposé" : "aucun plan exploitable") : proposal.error(),
                 UUID.randomUUID().toString().substring(0, 8));
-        if (!proposal.callOk()) {
-            aiJournal.call(project.id(), journalContext, proposal, "", 0);
-            return PlanOutcome.redirect(projectLocation(project.id(), parentId, null,
-                    "L'IA n'a pas répondu : " + proposal.error() + " Aucune version n'a été créée."));
+        // #747 (23/10/2026) : une réponse inexploitable — refus, vide, format invalide, troncature,
+        // panne — n'est JAMAIS une version. La version source reste la version active, intacte ; la
+        // réponse brute reste lisible dans le journal IA, avec ce qu'il faut pour la reprendre à
+        // l'identique. Aucun nouvel appel n'est émis sans un clic de l'administrateur.
+        var failure = com.lodygames.rpgquest.panel.ai.AiCallFailure.of(proposal);
+        if (failure.isPresent()) {
+            String kept = retry.keptDraftId();
+            aiJournal.call(project.id(), journalContext, proposal, "", 0,
+                    new com.lodygames.rpgquest.panel.ai.BuildingAiJournal.FailedCall(failure.get(), kept,
+                            retry.gesture(), retry.mode(), retry.notes(), proposal.providerId(), retry.retryOf()));
+            return PlanOutcome.redirect(projectLocation(project.id(), kept, null, failureMessage(failure.get(),
+                    kept)));
         }
-        // Même sans plan exploitable, la réponse a été payée : elle est conservée.
         BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId, "",
                 proposal.hasPlan() ? proposal.plan() : "", origin, parentId, "", proposal.providerId(),
                 proposal.providerLabel(), proposal.model(), proposal.usage(), proposal.rawResponse(),
@@ -2202,6 +2386,34 @@ public final class PanelApp {
                         : "Plan reçu. La vérification n'a pas pu partir : " + verifyRefused.get())
                 : "L'IA a répondu sans plan exploitable. Sa réponse est conservée dans les détails techniques ; "
                         + "redemandez un plan.", null));
+    }
+
+    /**
+     * #747 : ce qu'il faut pour rejouer un appel à l'identique s'il échoue — la version source (qui
+     * reste active), le geste, la nature de la reprise et les consignes telles que saisies. Le
+     * diagnostic, la mémoire et les images sont relus de la version source et du projet au moment
+     * de la reprise ; le journal compare leurs empreintes à celles de l'appel échoué.
+     *
+     * @param retryOf l'appel échoué que cette demande reprend ; vide pour une demande ordinaire
+     */
+    record RetryContext(String gesture, String keptDraftId, String mode, String notes, String retryOf) {
+
+        RetryContext {
+            gesture = gesture == null ? "" : gesture;
+            keptDraftId = keptDraftId == null ? "" : keptDraftId;
+            mode = mode == null ? "" : mode;
+            notes = notes == null ? "" : notes;
+            retryOf = retryOf == null ? "" : retryOf;
+        }
+    }
+
+    /** Le bandeau d'un appel échoué : rouge, la nature de l'échec, ce qui n'a pas changé (#747). */
+    static String failureMessage(com.lodygames.rpgquest.panel.ai.AiCallFailure failure, String keptDraftId) {
+        return "Appel à l'IA échoué — " + failure.sentence() + " Aucune version n'a été créée"
+                + (keptDraftId.isEmpty() ? "." : " : la version V-" + keptDraftId.substring(0,
+                Math.min(8, keptDraftId.length())) + " reste la version active, avec son diagnostic.")
+                + " Rien n'a été relancé : « Réessayer avec le même contexte » ci-dessous renvoie la même "
+                + "demande (un nouvel appel facturé, sur votre seul clic).";
     }
 
     /**

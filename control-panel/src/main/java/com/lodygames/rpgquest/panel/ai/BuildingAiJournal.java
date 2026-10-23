@@ -57,6 +57,50 @@ public final class BuildingAiJournal {
         }
     }
 
+    /**
+     * Un appel échoué (#747) : sa nature, la version qui reste active, et le contexte de reprise.
+     *
+     * @param keptDraftId la version source, inchangée et toujours active ; vide pour une demande neuve
+     * @param gesture     le geste à rejouer : « correct » ou « propose »
+     * @param mode        la nature de reprise demandée (« auto », « repair », « improve »)
+     * @param notes       les consignes de l'administrateur, telles que saisies
+     * @param retryOf     l'appel échoué que celui-ci reprenait déjà, s'il y en a un
+     */
+    public record FailedCall(AiCallFailure failure, String keptDraftId, String gesture, String mode, String notes,
+                             String providerId, String retryOf) {
+
+        public FailedCall {
+            keptDraftId = nz(keptDraftId);
+            gesture = nz(gesture);
+            mode = nz(mode);
+            notes = nz(notes);
+            providerId = nz(providerId);
+            retryOf = nz(retryOf);
+        }
+
+        Map<String, Object> body() {
+            Map<String, Object> b = new LinkedHashMap<>();
+            b.put("kind", failure.kind().name());
+            b.put("label", failure.kind().label());
+            b.put("detail", failure.detail());
+            b.put("versionCreated", false);
+            b.put("activeVersionKept", keptDraftId);
+            Map<String, Object> retry = new LinkedHashMap<>();
+            retry.put("gesture", gesture);
+            retry.put("draftId", keptDraftId);
+            retry.put("mode", mode);
+            retry.put("notes", notes);
+            retry.put("provider", providerId);
+            b.put("retry", retry);
+            b.put("retryOf", retryOf);
+            return b;
+        }
+    }
+
+    private static String shortId(String id) {
+        return "V-" + id.substring(0, Math.min(8, id.length()));
+    }
+
     /** Empreinte courte d'un diagnostic : codes et texte exact, comme la comparaison de #655. */
     public static String fingerprint(List<String> codes, String diagnosis) {
         return AiTrace.sha256(String.join(",", codes == null ? List.of() : codes) + "\n"
@@ -70,6 +114,18 @@ public final class BuildingAiJournal {
      */
     public String call(String projectId, CallContext ctx, AiBuildingStudio.Proposal p, String producedDraftId,
                        int producedVersion) {
+        return call(projectId, ctx, p, producedDraftId, producedVersion, null);
+    }
+
+    /**
+     * Même chose pour un appel échoué (#747) : sa nature, la version restée active et de quoi le
+     * reprendre à l'identique sont rangés dans l'événement de réponse — c'est ce que la page du projet
+     * relit pour proposer « Réessayer avec le même contexte », et ce que le journal exporté montre.
+     *
+     * @param failure {@code null} si l'appel a produit une version
+     */
+    public String call(String projectId, CallContext ctx, AiBuildingStudio.Proposal p, String producedDraftId,
+                       int producedVersion, FailedCall failure) {
         String callId = UUID.randomUUID().toString().substring(0, 8);
         try {
             AiProvider.Exchange x = p.exchange();
@@ -85,6 +141,9 @@ public final class BuildingAiJournal {
                 request.put("skeleton", x.requestSkeleton());
                 request.put("texts", texts(x.requestTexts()));
                 request.put("redactions", x.redactions());
+            }
+            if (x == null && failure != null) {
+                request.put("failure", failure.body());
             }
             store.append(SCOPE, projectId, new NewEvent(x == null ? "CALL_NOT_SENT" : "REQUEST", callId, ctx.runId(),
                     ctx.operation(), ctx.attempt(), nz(ctx.inputDraftId()), parent(ctx), started, -1, ctx.actor(),
@@ -107,15 +166,21 @@ public final class BuildingAiJournal {
             response.put("producedVersion", producedVersion);
             response.put("skeleton", x.responseSkeleton());
             response.put("texts", texts(x.responseTexts()));
-            String summary = p.callOk()
+            String summary = failure != null ? "Appel échoué — " + failure.failure().kind().label()
+                    + " ; aucune version créée" + (failure.keptDraftId().isEmpty() ? ""
+                    : ", la version " + shortId(failure.keptDraftId()) + " reste la version active")
+                    : p.callOk()
                     ? (p.hasPlan() ? "Réponse reçue, plan extrait" : "Réponse reçue, aucun plan exploitable")
                     : "Échec : " + p.error();
+            if (failure != null) {
+                response.put("failure", failure.body());
+            }
             store.append(SCOPE, projectId, new NewEvent(p.callOk() ? "RESPONSE" : "CALL_ERROR", callId, ctx.runId(),
                     ctx.operation(), ctx.attempt(), nz(producedDraftId), "call:" + callId,
                     x.finishedAt() == null ? Instant.now() : x.finishedAt(), x.durationMillis(), ctx.actor(), summary,
                     response));
-        } catch (RuntimeException failure) {
-            warn(projectId, failure);
+        } catch (RuntimeException broken) {
+            warn(projectId, broken);
         }
         return callId;
     }

@@ -72,6 +72,13 @@ tasks {
             include("lq-icons.svg", "material-map.json")
             into("assets/lq")
         }
+        // Issue #747 : le registre des blocs de la version servie, celui que le plugin vérifie. Le
+        // panel y prend la palette d'identifiants valides donnée à l'IA et relève d'un coup tous les
+        // identifiants inventés d'un plan — jamais une liste recopiée à la main.
+        from(rootProject.file("src/main/resources/building")) {
+            include("blocks-*.txt")
+            into("building")
+        }
     }
 
     compileJava {

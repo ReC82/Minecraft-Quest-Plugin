@@ -8585,6 +8585,31 @@ tel quel dans le guide, lien **Aide** sur la liste et l'éditeur), `DialogueHelp
 l'éditeur et renvois entre fiches mènent à une section existante, parcours normal du guide sans jargon),
 `DiagnosticHelpTest` (ancres des diagnostics). **Non couvert** : captures d'écran (non produites).
 
+### TC-419 — Atelier : réponse sans plan, reprise avec le même contexte, stagnation (issue #747, retour du 23/10, PENDING MANUAL VALIDATION)
+
+**But.** Vérifier qu'une réponse inexploitable de l'IA ne remplace jamais le dernier plan, qu'elle se reprend
+à l'identique, et qu'une stagnation propose une stratégie au lieu d'un avertissement. Ne rien poser en jeu.
+**Uniquement sur un projet de test** (« TEST #747 … (ne pas utiliser) ») ; jamais l'Église du hub ni un autre
+projet réel. Au plus 2 appels payants.
+
+1. Gratuit — ouvrir l'Église du hub **sans rien cliquer de payant** : la version V-14206aa8 (réponse
+   « I'm sorry… » du 23/10) affiche la carte rouge « Réponse inexploitable de l'IA », la version source
+   V-1e5df166 en lien, « Réessayer avec le même contexte » et « Repartir de zéro » replié, à cocher. **Attendu** :
+   aucun bandeau vert, pas de « Créer un plan » mis en avant.
+2. Gratuit — sur l'Église (ou le projet de test), déplier « Améliorer avec l'IA » : bandeau « Stagnation : … »,
+   bouton « Reprendre depuis V-… », « Nouvelle conception avec les enseignements » ; « Nature de la reprise »
+   sans option Automatique. Le bloc « Mémoire des tentatives » liste les identifiants inexistants
+   (`stained_glass`, `potted_yellow_flower`, `lion_bed`…) et les versions « NON CONSTRUITE ».
+3. Projet de test — « Améliorer avec l'IA » (1 appel). Si l'IA refuse : carte rouge, aucune nouvelle version
+   dans l'historique ; « Réessayer avec le même contexte » (1 appel). Télécharger le journal IA : « APPEL
+   ÉCHOUÉ : … », « version active conservée : V-… », puis pour la reprise « Reprise de l'appel échoué …
+   identiques : … » sans « DIFFÉRENTES ».
+4. Journal : la requête porte `palette` (« présent mot pour mot : oui ») et le bloc « PALETTE D'IDENTIFIANTS
+   VÉRIFIÉS ».
+
+**Attendu.** Aucun projet, version, image ou bâtiment existant modifié. **Non couvert** : la cause exacte des
+refus du modèle (aléatoire côté fournisseur, voir rapport du 23/10/2026).
+
 ### TC-408 — Atelier : mémoire des tentatives, conformité au brief et nature de la reprise (issue #747, PENDING MANUAL VALIDATION)
 
 **But.** Vérifier que « Améliorer avec l'IA » transmet la mémoire des tentatives et la conformité au

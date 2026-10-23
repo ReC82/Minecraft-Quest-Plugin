@@ -1,0 +1,267 @@
+# PNJ Guide (Citizens), créé/configuré manuellement par un administrateur — voir
+# docs/NPC_DIALOGUES_QUESTS_GUIDE.md. Ce fichier ne crée jamais le PNJ, seulement son dialogue.
+#
+# Rôle (issue #11) : le Guide est le centre d'aide / d'orientation du Hub de départ.
+# - « Comment fonctionne le jeu ? » ouvre un menu d'aide structuré (nœud « help_menu ») ;
+#   chaque sujet est un nœud avec un texte court et un retour au menu. L'orientation vers les
+#   autres PNJ reste TEXTUELLE (nom + rôle + explication) — pas de waypoint / halo / navigation.
+# - le contenu vit à 100 % dans ce fichier de dialogue (données, pas de code) : un autre Hub aura
+#   son propre fichier « guide_<hub>.yml » et son entrée dans hub-guides/<hub>.yml
+#   (voir com.lodygames.rpgquest.hub.HubGuideRegistry et docs/HUB_GUIDE.md) — l'architecture
+#   n'est jamais figée sur un seul Hub / un seul Guide.
+#
+# Règle (mission « Rune de rappel ») :
+# - « Récupérer une rune de rappel » (re)donne rpgquest:rune_rappel gratuitement dès qu'elle manque
+#   (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais consommé (voir
+#   travel.ItemTravelService, cooldown). Chaque nouveau joueur en reçoit déjà une automatiquement.
+#
+# Règles (issue #235 — onboarding compréhensible) :
+# - aucune mutation de gameplay derrière un libellé générique : un choix qui démarre une quête
+#   la NOMME (« Commencer la quête : … »), et l'explication précède le démarrage ;
+# - « Comment améliorer mon kit ? » (nœud « kit_progress ») affiche le palier actuel, le palier
+#   suivant et les matériaux attendus — tout DÉRIVÉ de config.yml et de la quête de déblocage, donc
+#   jamais à recopier ici. Les libellés qui entourent ces valeurs sont dans ce fichier, donc
+#   éditables depuis le Control Panel ;
+# - la quête rpgquest:kit_tier2 n'était démarrable par AUCUN dialogue avant #235 : elle n'existait
+#   que dans config.yml. C'est ici qu'elle est proposée, par son PNJ donneur (giver: guide).
+#
+# Règle (issue #26, partie A — kit d'outils en bois) :
+# - « Demander mon kit de départ » appelle GIVE_STARTER_KIT (voir player.StarterToolKitService) :
+#   aucune remise automatique, le droit se renouvelle à chaque mort du joueur, remise tout ou rien
+#   (voir config.yml → starter-tool-kit). Le service gère lui-même tous les messages (déjà reçu,
+#   pas assez de place, réussite) — ce choix est toujours proposé, sans condition de dialogue.
+id: rpgquest:guide
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Guide"
+    text: "<white>Bienvenue au village !</white> <gray>Je suis le Guide : je t'explique comment fonctionne le monde, je te dis à qui parler, et je te remets ton équipement de secours quand tu en as besoin.</gray>"
+    choices:
+      # Issue #235 : ce choix REMPLACE « Très bien, j'y vais. », qui démarrait une quête sans le
+      # dire. Il mène à un nœud qui explique ce qu'il y a à faire et NOMME la quête ; le démarrage
+      # est un second geste, explicite. Une mutation de gameplay ne se cache pas derrière une
+      # phrase polie.
+      - text: "Par où commencer ?"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:premiers_pas
+            state: NOT_STARTED
+        next: intro_quest
+
+      # Issue #235 : le joueur doit pouvoir connaître son palier de kit et savoir comment
+      # l'améliorer SANS le Control Panel ni commande admin. Toujours proposé : le nœud s'adapte,
+      # y compris au palier maximum.
+      - text: "Comment améliorer mon kit ?"
+        next: kit_progress
+
+      - text: "Comment fonctionne le jeu ?"
+        next: help_menu
+
+      - text: "La rune de rappel"
+        conditions:
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:rune_rappel
+        actions:
+          - type: RUN_SAFE_COMMAND
+            command: "customitem give %player% rpgquest:rune_rappel 1"
+          - type: CLOSE
+
+      - text: "Demander mon kit de départ"
+        actions:
+          - type: GIVE_STARTER_KIT
+          - type: CLOSE
+
+      # Issue #123/#218 : branche de remise GÉNÉRIQUE — aucune quête, aucun matériau et aucun PNJ
+      # n'est nommé ici. HAS_PENDING_DELIVERY n'est vraie que si une quête active du joueur demande
+      # de remettre des objets à CE PNJ (déduit de la clé du dialogue, « rpgquest:guide » → PNJ
+      # « guide ») : le choix reste donc invisible le reste du temps. C'est par ici que passent les
+      # matériaux du palier suivant du kit.
+      - text: "J'ai des matériaux"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
+
+      - text: "D'accord !"
+        actions:
+          - type: CLOSE
+
+  # Issue #235 — la quête d'introduction est EXPLIQUÉE puis NOMMÉE avant de démarrer. Le joueur
+  # sait donc ce qu'il accepte, et ce qu'il devra faire ensuite.
+  intro_quest:
+    speaker: "Guide"
+    text: "<gray>Rien de compliqué pour commencer : va te présenter au <white>Libraire</white>, juste à côté — c'est lui qui te remettra ton <white>journal des quêtes</white>. Si tu veux, je l'inscris comme ta première quête : elle s'appelle <white>Premiers pas</white>.</gray>"
+    choices:
+      - text: "Commencer : Premiers pas"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:premiers_pas
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:premiers_pas
+          - type: CLOSE
+      - text: "Pas tout de suite"
+        actions:
+          - type: CLOSE
+
+  # Issue #235 — progression du kit, entièrement DÉRIVÉE : %kit_tier_current% et %kit_tier_next%
+  # viennent des paliers de config.yml, %kit_upgrade_requirements% des objectifs de la quête de
+  # déblocage (unlock-quest:) avec ce qui est DÉJÀ remis. Aucun matériau, aucune quantité et aucun
+  # nom de palier n'est écrit ici : modifier le palier 2 ou sa quête change ce texte tout seul.
+  #
+  # Issue #238 — le bouton ne porte plus que l'action : « Commencer la quête : Premiers pas dans le
+  # Wild » (237 px) dépassait de loin la largeur réelle d'un bouton (150 px).
+  #
+  # %kit_unlock_quest% nomme cette quête dans le CORPS, parce qu'un libellé de bouton ne peut pas
+  # porter de placeholder (la substitution ne s'applique qu'au texte du nœud). Remis le 2026-10-11
+  # avec le JAR qui enregistre ce placeholder : avant lui, un placeholder inconnu étant laissé TEL
+  # QUEL à l'écran, le joueur aurait lu « %kit_unlock_quest% ».
+  #
+  # Au palier maximum, %kit_tier_next% rend une phrase complète (« aucune — tu as déjà… ») et
+  # %kit_upgrade_requirements% rend « rien de particulier » : ce nœud unique reste donc juste.
+  kit_progress:
+    speaker: "Guide"
+    text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>La quête qui l'améliore :</gray> %kit_unlock_quest%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
+    choices:
+      - text: "Commencer l'amélioration"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:kit_tier2
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:kit_tier2
+          - type: CLOSE
+      - text: "J'ai des matériaux"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
+      - text: "← Autres questions"
+        next: greeting
+      - text: "Merci !"
+        actions:
+          - type: CLOSE
+
+  help_menu:
+    speaker: "Guide"
+    text: "<white>Sur quoi veux-tu de l'aide ?</white>"
+    choices:
+      - text: "Les quêtes"
+        next: help_quetes
+      - text: "Où consulter mes quêtes ?"
+        next: help_journal
+      - text: "Comment fonctionne le Wild ?"
+        next: help_wild
+      - text: "Les claims"
+        next: help_claims
+      - text: "Les marchands"
+        next: help_marchands
+      - text: "À qui parler pour quoi ?"
+        next: help_qui
+      - text: "Rien, merci."
+        actions:
+          - type: CLOSE
+
+  help_quetes:
+    speaker: "Guide"
+    text: "<gray>Les quêtes s'obtiennent en parlant aux PNJ. Une fois acceptée, une quête a des objectifs (récolter, vaincre, parler…) qui progressent en jouant. Quand tous les objectifs d'une quête sont remplis, retourne voir le PNJ concerné pour la rendre et toucher tes récompenses.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_journal:
+    speaker: "Guide"
+    text: "<gray>Va voir le Libraire, juste à côté : il te remet un <white>journal des quêtes</white>. Un clic droit dessus ouvre une fenêtre avec deux onglets : « Quêtes en cours » et « Quêtes terminées ». Seules les quêtes que tu as déjà acceptées y figurent.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_wild:
+    speaker: "Guide"
+    text: "<gray>Le Wild est la zone d'aventure hors du village : monstres, ressources et Waystones s'y trouvent. On y accède par le portail du village. Emporte toujours une <white>rune de rappel</white> — elle te ramène ici si les choses tournent mal. Chaque nouveau venu en reçoit une ; je peux t'en redonner une si tu l'as perdue.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_claims:
+    speaker: "Guide"
+    text: "<gray>Un claim est un terrain qui t'appartient et que personne d'autre ne peut modifier. Le droit d'en poser un <white>se mérite</white> : il faut d'abord terminer <white>l'histoire principale</white> du village (ta dernière étape, <white>La chasse aux cristaux</white>, se rend au Garde). Une fois ce droit acquis, parle à <white>Jo</white> : il te remet un acte de propriété, et un clic droit avec l'acte dans le monde des claims pose ton terrain. Une Pierre de retour t'est donnée en arrivant là-bas pour revenir au village. Tant que tu n'as pas ce droit, le portail vers le monde des claims reste fermé.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_marchands:
+    speaker: "Guide"
+    text: "<gray>Les marchands PNJ achètent et vendent des objets contre des pièces. Fais un clic droit sur un marchand pour ouvrir sa vitrine. Entre joueurs, l'hôtel des ventes (/market) permet d'acheter et de vendre librement.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_qui:
+    speaker: "Guide"
+    text: "<gray>Pour tes quêtes et ton journal : <white>le Libraire</white>. Pour ton premier terrain, une fois l'histoire principale terminée au Garde : <white>Jo</white>, le spécialiste des claims. Pour acheter et vendre : <white>les marchands</white> du village. Et pour te repérer ou une explication : reviens me voir, moi le Guide.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  # Issue #123 — %delivery_status% liste ce qui a déjà été remis et ce qui manque, lu sur la
+  # progression réelle juste avant l'affichage. « Donner les matériaux que j'ai » traite TOUS les
+  # objectifs de remise de ce PNJ en une seule fois, ne retire jamais plus que le reliquat, et ce
+  # qui est remis est acquis définitivement (survit à la mort, à une reconnexion, à un redémarrage).
+  delivery:
+    speaker: "Guide"
+    text: "<white>Voyons ce que tu m'apportes :</white><newline>%delivery_status%"
+    choices:
+      - text: "Donner mes matériaux"
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_after:
+    speaker: "Guide"
+    text: "<white>%delivery_status%</white>"
+    choices:
+      - text: "Donner encore"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Tout est remis"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+            negate: true
+        next: delivery_done
+      - text: "Plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_done:
+    speaker: "Guide"
+    text: "<gold>Tout est là. Ton équipement de secours s'améliorera dès ta prochaine demande.</gold>"
+    choices:
+      - text: "Parfait"
+        actions:
+          - type: CLOSE

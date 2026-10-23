@@ -739,4 +739,33 @@ class ContentPublishServiceTest {
                 "un rechargement, puis un second qui rétablit l'ensemble d'avant");
         assertFalse(outcome.synchronized_());
     }
+
+    // ---- Issue #798 — contenus retirés définitivement (#778) ----------------------------------
+
+    /** first_steps et crystal_hunt ne reviennent jamais, quel que soit l'émetteur : rien n'est écrit. */
+    @Test
+    void aRetiredQuestIsRefusedAloneAndInABatchWithoutTouchingTheDisk() {
+        for (String slug : List.of("first_steps", "crystal_hunt")) {
+            String yaml = "id: rpgquest:" + slug + "\ntitle: \"Ancienne quête\"\n";
+            ContentPublishService.PublishOutcome single = service.publish(PublishKind.QUESTS, slug, yaml, "",
+                    "rpgquest:" + slug);
+            assertFalse(single.ok());
+            assertEquals("RETIRED", single.code());
+            assertTrue(single.message().contains("retiré définitivement"), single.message());
+
+            ContentPublishService.BatchOutcome batch = service.publishBatch(List.of(
+                    new ContentPublishService.BatchItem(PublishKind.QUESTS, "test_publish_quest", YAML_V1, "",
+                            "rpgquest:test_publish_quest"),
+                    new ContentPublishService.BatchItem(PublishKind.QUESTS, slug, yaml, "", "rpgquest:" + slug)),
+                    false);
+            assertFalse(batch.ok());
+            assertEquals("INVALID", batch.items().get(0).status(), "le lot entier est refusé");
+            assertFalse(Files.exists(dataFolder.resolve("quests").resolve(slug + ".yml")));
+        }
+        assertFalse(Files.exists(questFile()), "aucune autre ressource du lot n'a été écrite");
+        assertTrue(applier.calls.isEmpty(), "aucun rechargement : " + applier.calls);
+        assertTrue(RetiredContent.isRetired(PublishKind.QUESTS, "CRYSTAL_HUNT"));
+        assertFalse(RetiredContent.isRetired(PublishKind.QUESTS, "premiers_pas"));
+        assertFalse(RetiredContent.isRetired(PublishKind.DIALOGUES, "first_steps"));
+    }
 }

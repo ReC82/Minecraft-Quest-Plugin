@@ -33,8 +33,8 @@ public enum PublishState {
      * <p>C'est l'état du cas de référence de #47 : la quête existe, elle est validée, et elle
      * n'est tout simplement jamais arrivée sur le serveur.</p>
      */
-    SOURCE_ONLY("Source uniquement", "warn",
-            "Enregistrée dans la source éditable, mais absente du serveur DEV : elle n'existe pas "
+    SOURCE_ONLY("Absent de DEV", "warn",
+            "Enregistré dans PlugAdmin, mais absent du serveur DEV : ce contenu n'existe pas "
                     + "en jeu.",
             "Publier sur DEV"),
 
@@ -50,26 +50,56 @@ public enum PublishState {
             null),
 
     /**
-     * Les deux existent, mais leur contenu diffère.
+     * Les deux existent, DEV porte encore la version commune connue, et la source a changé depuis :
+     * un <strong>brouillon</strong> enregistré, pas encore publié.
      *
-     * <p>Le cas le plus courant après une édition : on a enregistré, on n'a pas publié. C'est aussi
-     * celui que l'ancien {@code SYNCED} masquait.</p>
+     * <p>Issue #798 : cet état n'est plus accordé sans <em>référence commune</em> connue. Sans elle,
+     * « différent » ne dit pas qui est le plus récent — et l'ancien libellé « pas encore en jeu »
+     * faisait passer une source périmée pour un brouillon à publier.</p>
      */
-    DIFFERENT("Différent", "warn",
-            "La source et le fichier DEV ne sont pas identiques : vos dernières modifications ne "
-                    + "sont pas en jeu.",
+    DIFFERENT("Brouillon non publié", "warn",
+            "Vous avez modifié ce contenu dans PlugAdmin depuis la dernière version commune avec DEV : "
+                    + "vos modifications ne sont pas encore en jeu.",
             "Publier sur DEV"),
 
     /**
-     * Le fichier DEV a changé en dehors du panel.
+     * Issue #798 — la source porte encore la version commune, mais DEV a changé depuis : la version
+     * la plus récente est sur DEV (livrée avec le plugin, ou modifiée en jeu). Publier la source
+     * ramènerait une ancienne version : on propose de récupérer celle de DEV.
+     */
+    DEV_NEWER("Plus récent sur DEV", "warn",
+            "DEV a une version plus récente que celle de PlugAdmin. Publier remettrait l'ancienne : "
+                    + "récupérez d'abord la version de DEV.",
+            "Récupérer depuis DEV"),
+
+    /**
+     * Issue #798 — les deux versions diffèrent et aucune version commune n'est connue (ou DEV a
+     * retiré une ressource que nous avions en commun) : on ne sait pas laquelle est la bonne. Rien
+     * n'est publié tant que l'administrateur n'a pas comparé puis choisi.
+     */
+    DIVERGED("Versions différentes", "err",
+            "PlugAdmin et DEV ont chacun une version différente, et rien ne dit laquelle est la plus "
+                    + "récente. Comparez, puis récupérez celle de DEV ou conservez votre brouillon.",
+            "Comparer"),
+
+    /**
+     * Le fichier DEV a changé en dehors du panel <strong>et</strong> la source aussi.
      *
      * <p>Publier écraserait un travail dont on ne sait rien. On exige donc une analyse explicite —
      * et surtout on ne tranche pas à la place de l'administrateur.</p>
      */
     CONFLICT("Conflit", "err",
-            "Le fichier DEV a été modifié hors du panel depuis la dernière analyse. Publier "
-                    + "écraserait cette modification.",
+            "Le fichier DEV et votre version ont tous deux changé depuis la dernière version commune. "
+                    + "Publier écraserait la modification faite sur DEV.",
             "Voir les différences"),
+
+    /**
+     * Issue #798 — contenu retiré définitivement (#778). Il ne doit jamais revenir en jeu, même si
+     * un ancien fichier traîne dans la source : la publication est refusée, seule ou en lot.
+     */
+    RETIRED("Retiré définitivement", "err",
+            "Ce contenu a été retiré du jeu pour de bon : il ne peut plus être publié.",
+            "Ne pas publier"),
 
     /**
      * Le fichier est sur DEV mais le moteur ne le charge pas.
@@ -78,7 +108,7 @@ public enum PublishState {
      * une publication dont le rechargement a échoué. Le distinguer de « Différent » compte : ici le
      * contenu est bon, c'est le chargement qui ne l'est pas.</p>
      */
-    NOT_LOADED("Publié, non chargé", "err",
+    NOT_LOADED("Sur DEV, non chargé", "err",
             "Le fichier est présent sur DEV mais le moteur ne le charge pas : vérifiez que "
                     + "l'identifiant déclaré correspond au nom du fichier.",
             "Republier"),
@@ -136,7 +166,15 @@ public enum PublishState {
 
     /** Vrai si l'état exige une décision humaine avant d'écrire. */
     public boolean needsAttention() {
-        return this == CONFLICT || this == NOT_LOADED;
+        return needsDecision() || this == NOT_LOADED;
+    }
+
+    /**
+     * Issue #798 — PlugAdmin et DEV divergent : il faut comparer, puis « Récupérer depuis DEV » ou
+     * « Conserver mon brouillon ». Aucune publication, seule ou en lot, tant que ce choix n'est pas fait.
+     */
+    public boolean needsDecision() {
+        return this == CONFLICT || this == DIVERGED || this == DEV_NEWER;
     }
 
     /**
@@ -151,18 +189,31 @@ public enum PublishState {
      * @param sourceSha     empreinte de la source, {@code ""} si absente
      * @param devSha        empreinte du fichier DEV, {@code ""} si absent
      * @param runtimeLoaded le moteur porte-t-il cet identifiant ?
-     * @param lastPublished empreinte DEV connue à la dernière publication réussie, {@code ""} si
-     *                      aucune. Sert à distinguer « différent parce que je n'ai pas publié » de
-     *                      « différent parce que quelqu'un a touché DEV »
+     * @param lastPublished la <strong>référence commune</strong> : la dernière version connue pour
+     *                      avoir été identique des deux côtés (notre dernière écriture, une version
+     *                      reprise de DEV, ou une égalité relevée), {@code ""} si aucune. C'est elle
+     *                      qui dit QUI a changé : la source (brouillon), DEV (plus récent sur DEV),
+     *                      ou les deux (conflit). Sans elle, on ne devine pas (issue #798)
      */
     public static PublishState of(boolean devKnown, boolean sourceKnown,
                                   String sourceSha, String devSha,
                                   boolean runtimeLoaded, String lastPublished) {
+        return of(devKnown, sourceKnown, sourceSha, devSha, runtimeLoaded, lastPublished, false);
+    }
+
+    /**
+     * {@link #of(boolean, boolean, String, String, boolean, String)}, en sachant si la ressource est
+     * retirée définitivement ({@link RetiredContent}).
+     */
+    public static PublishState of(boolean devKnown, boolean sourceKnown,
+                                  String sourceSha, String devSha,
+                                  boolean runtimeLoaded, String lastPublished, boolean retired) {
         if (!devKnown || !sourceKnown) {
             return UNKNOWN;
         }
         String source = sourceSha == null ? "" : sourceSha;
         String dev = devSha == null ? "" : devSha;
+        String base = lastPublished == null ? "" : lastPublished;
 
         if (source.isEmpty() && dev.isEmpty()) {
             return UNKNOWN;
@@ -170,20 +221,28 @@ public enum PublishState {
         if (source.isEmpty()) {
             return RUNTIME_ONLY;
         }
+        if (retired) {
+            return RETIRED;
+        }
         if (dev.isEmpty()) {
-            return SOURCE_ONLY;
+            // Absente de DEV alors que nous avions une version commune : DEV l'a retirée. La
+            // republier sans décision la ferait revenir en douce.
+            return base.isEmpty() ? SOURCE_ONLY : DIVERGED;
         }
-        // Le fichier DEV ne correspond ni à la source, ni à ce que nous y avions publié : quelqu'un
-        // d'autre l'a modifié. C'est un conflit, pas un simple écart.
-        if (!dev.equals(source) && lastPublished != null && !lastPublished.isEmpty()
-                && !dev.equals(lastPublished)) {
-            return CONFLICT;
+        if (dev.equals(source)) {
+            // Identiques — mais le moteur doit l'avoir confirmé pour mériter « Synchronisé ».
+            return runtimeLoaded ? SYNCED : NOT_LOADED;
         }
-        if (!dev.equals(source)) {
+        if (base.isEmpty()) {
+            return DIVERGED;
+        }
+        if (dev.equals(base)) {
             return DIFFERENT;
         }
-        // Identiques — mais le moteur doit l'avoir confirmé pour mériter « Synchronisé ».
-        return runtimeLoaded ? SYNCED : NOT_LOADED;
+        if (source.equals(base)) {
+            return DEV_NEWER;
+        }
+        return CONFLICT;
     }
 
     /**

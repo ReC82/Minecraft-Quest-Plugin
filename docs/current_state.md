@@ -6,6 +6,17 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Source des contenus PlugAdmin fiable face à DEV (#798, 23/10/2026)** — PlugAdmin retient pour chaque
+> quête, story et dialogue sa **dernière version commune** avec DEV (`content_dev_reference`) et en déduit
+> qui a changé : « Brouillon non publié » (seul publiable avec « Absent de DEV » et « Sur DEV, non
+> chargé »), « Plus récent sur DEV », « Versions différentes », « Conflit », « Retiré définitivement »
+> (`first_steps`, `crystal_hunt`). Les états à décider proposent **Comparer**, **Récupérer depuis DEV**
+> (`/content/recover`, sauvegarde avant) et **Conserver mon brouillon** (`/content/keep-draft`) ; aucune
+> publication — fiche, éditeur, lot, création de PNJ — ne passe sans ce choix (`publishRefusal`), et le
+> plugin refuse lui-même les deux quêtes retirées (code `RETIRED`). L'espace de travail n'est plus l'arbre
+> Git du propriétaire (resté sur `feature/249`, cause de la divergence) mais
+> `/var/lib/plugadmin/content`, amorcé depuis DEV par `scripts/plugadmin/content-workspace-reconcile.sh`.
+
 > **Retrait de `first_steps` / `crystal_hunt`, le Garde devient « Gauthier » (#778, 23/10/2026)** — les
 > quêtes `rpgquest:first_steps` (« Premiers pas » au Garde, 10 araignées) et `rpgquest:crystal_hunt` (« La
 > chasse aux cristaux / aux monstres ») sont **retirées définitivement** : plus embarquées ni recréées au
@@ -1387,8 +1398,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **État de déploiement SCINDÉ de #238/#153** *(2026-10-11)* — à savoir avant toute reprise. Le
   **contenu** de #238 est **en ligne sur DEV** : les quatre dialogues (`guard`, `guide`, `jo`,
   `libraire`) ont été publiés par le **moteur #47**, qui passe par l'agent sortant en HTTPS et
-  **n'utilise pas le FTP**. La source PlugAdmin étant le dépôt lui-même
-  (`PLUGADMIN_CONTENT_DIR=/srv/rpgquest/repo/src/main/resources`), le certificat FTPS expiré de
+  **n'utilise pas le FTP**. La source PlugAdmin étant alors le dépôt lui-même
+  (`PLUGADMIN_CONTENT_DIR=/srv/rpgquest/repo/src/main/resources`, remplacé par
+  `/var/lib/plugadmin/content` le 23/10/2026, #798), le certificat FTPS expiré de
   VeryGames **ne bloque que ce qui exige un nouveau JAR**.
   **Restent donc en attente d'un JAR**, et seulement eux : la localisation des objectifs dans le chat
   (#238), la règle de placement « sommet de tronc » (#153), et le placeholder `%kit_unlock_quest%`

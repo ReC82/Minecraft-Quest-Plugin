@@ -3254,6 +3254,47 @@ Sans relevé du serveur, l'état est `UNKNOWN` et **aucun bouton Publier n'appar
 « Source uniquement » sans avoir interrogé DEV serait exactement le genre d'affirmation gratuite que
 ce ticket corrige.
 
+#### Issue #798 : la version commune, et une source qui n'appartient plus à Git
+
+**Le défaut.** `PLUGADMIN_CONTENT_DIR` pointait sur l'arbre Git du propriétaire, resté sur une
+branche du 12/10 pendant que les sessions livraient le contenu sur DEV par `--also`. Sans version
+commune connue, chaque écart valait `DIFFERENT` (« Enregistré — pas encore en jeu ») : Elias et
+Gauthier, plus récents sur DEV, passaient pour des brouillons à publier, et `first_steps` /
+`crystal_hunt` (retirées par #778) pour des contenus à créer.
+
+**La règle.** Chaque ressource a une **version commune** (`content_dev_reference` de
+`control-panel.db`) : notre dernière écriture, une version reprise de DEV, une version conservée, ou
+une égalité constatée par un relevé (`auto:identique`, enregistrée à l'heure du relevé, jamais si une
+de nos écritures est plus récente). `PublishState.of` en déduit **qui** a changé :
+
+| Source / DEV par rapport à la version commune | État | Publiable |
+|---|---|---|
+| identiques | `SYNCED` / `NOT_LOADED` (« Sur DEV, non chargé ») | `NOT_LOADED` seulement |
+| source changée, DEV = commune | `DIFFERENT` (« Brouillon non publié ») | oui |
+| source = commune, DEV changé | `DEV_NEWER` (« Plus récent sur DEV ») | **non** |
+| les deux changés | `CONFLICT` | **non** |
+| aucune version commune, ou DEV a retiré une ressource commune | `DIVERGED` (« Versions différentes ») | **non** |
+| jamais publiée, absente de DEV | `SOURCE_ONLY` (« Absent de DEV ») | oui |
+| `first_steps`, `crystal_hunt` | `RETIRED` (« Retiré définitivement ») | **jamais** |
+
+Les trois états « à décider » proposent, après lecture de la version DEV **courante** :
+**Récupérer depuis DEV** (`POST /content/recover` : sauvegarde de la version PlugAdmin, écriture de la
+version DEV lue — à l'empreinte près —, nouvelle version commune) ou **Conserver mon brouillon**
+(`POST /content/keep-draft`, case à cocher : la version DEV vue devient la version commune ; la
+publication suivante la sauvegarde côté serveur). Les deux refusent si l'une des deux versions a
+bougé depuis l'affichage.
+
+**Un seul garde-fou pour toutes les publications** : `AgentPages.publishRefusal`, appelé par
+`PanelApp.enrichPublish` (fiche, éditeur de dialogues, lot, création de PNJ) — un lot qui contient
+une seule ressource refusée est refusé en entier, avant tout envoi. Côté plugin,
+`content.publish.RetiredContent` refuse aussi `first_steps` / `crystal_hunt` (code `RETIRED`, seul
+ou en lot) : un ancien panel ou une action forgée ne peut pas les faire revenir.
+
+**La source.** Depuis le 23/10/2026, `PLUGADMIN_CONTENT_DIR=/var/lib/plugadmin/content`, espace
+dédié hors Git, amorcé depuis DEV par `scripts/plugadmin/content-workspace-reconcile.sh`
+(`snapshot` → `plan` → `seed` → `switch`, retour arrière `rollback-env`). Voir
+`docs/control-panel/CONFIGURATION.md`.
+
 #### Permissions
 
 `CONTENT_PUBLISH` et `CONTENT_ROLLBACK` sont **dédiées**, et l'**Éditeur de contenu ne les a pas** :

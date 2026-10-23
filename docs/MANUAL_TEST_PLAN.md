@@ -8985,3 +8985,30 @@ réinitialisation, aucun raccourci de complétion (#778 interdit tout reset et t
 **Couverture automatisée** : `QuestVerticalSliceIntegrationTest` (ex-`CrystalHuntIntegrationTest`, sur
 fixtures ; progression orpheline tolérée, ni récompense ni purge), `QuestStoryProgressPersistenceIntegrationTest`, `BundledDialoguesValidityTest` (aucune référence à une quête retirée dans le contenu
 embarqué), `YamlQuestEngineTest`, `StoryRegistryTest`.
+
+### TC-424 — #798 — source PlugAdmin fiable face à DEV : statuts, récupération, publication sûre (issue #798, PENDING MANUAL VALIDATION)
+
+PlugAdmin et JAR de la livraison #798. Espace de travail PlugAdmin = `/var/lib/plugadmin/content`
+(amorcé depuis DEV le 23/10). Compte PlugAdmin **Propriétaire**. Une étape à la fois ; ne rien publier
+d'autre que ce qui est demandé.
+
+1.  **Contenu → Changements en attente**, cliquer **« État DEV »**, attendre. **Attendu** : aucune ligne
+    « Brouillon non publié » pour un contenu que vous n'avez pas modifié ; seuls `cuire_un_truc` et
+    `mira_cartographer` (vos brouillons jamais publiés) apparaissent en « Absent de DEV », **non cochés** ;
+    `first_steps` et `crystal_hunt` n'apparaissent nulle part.
+2.  **Dialogues → Elias** : **Attendu** : bandeau « À jour en jeu » (ou « on ne sait pas encore » puis
+    « À jour » après **Vérifier**) ; le texte d'accueil est celui vu en jeu (version #475/#778, kit de
+    départ). **Pas** de « Enregistré — pas encore en jeu ».
+3.  Modifier **une** réplique d'Elias (ajouter un mot à la fin), **Enregistrer**. **Attendu** :
+    « Brouillon enregistré — vos modifications ne sont pas encore en jeu » et le bouton **Mettre en jeu**.
+4.  **Mettre en jeu**. **Attendu** : « À jour en jeu » quelques secondes après. En jeu, parler à Elias :
+    la réplique modifiée apparaît ; « Demander mon kit de départ » et l'amélioration du kit fonctionnent
+    comme avant.
+5.  (Facultatif, pour remettre le texte) refaire 3-4 en retirant le mot ajouté.
+6.  **Contenu → Changements en attente** : **Attendu** : toujours ni `first_steps` ni `crystal_hunt` ;
+    Elias n'y figure plus.
+
+**Couverture automatisée** : `ContentSourceSafetyTest` (Elias #249/#475/#778, Gauthier, Bob, quêtes
+retirées, conflits concurrents, publication individuelle et groupée, publication échouée),
+`PublishStateTest`, `ContentPublishPageTest`, `ContentPendingPageTest`, `ContentPublishServiceTest`
+(refus `RETIRED` côté plugin).

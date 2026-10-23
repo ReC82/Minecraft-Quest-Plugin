@@ -111,12 +111,16 @@ public record DevContentIndex(Map<String, String> fileShaByKey,
         return out;
     }
 
-    /** L'état d'une ressource, en combinant source et DEV. */
+    /**
+     * L'état d'une ressource, en combinant source et DEV.
+     *
+     * @param lastPublished la référence commune connue (voir {@link PublishState#of})
+     */
     public PublishState stateOf(String kind, String slug, String expectedId,
                                 String sourceSha, boolean sourceKnown, String lastPublished) {
         return PublishState.of(available, sourceKnown, sourceSha, devSha(kind, slug),
                 runtimeLoaded(kind, expectedId == null || expectedId.isBlank() ? slug : expectedId),
-                lastPublished);
+                lastPublished, RetiredContent.isRetired(kind, slug));
     }
 
     private static String key(String kind, String slug) {

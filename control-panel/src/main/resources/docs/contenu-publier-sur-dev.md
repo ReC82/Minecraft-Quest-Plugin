@@ -30,12 +30,23 @@ section **Publication sur DEV** qui l'affiche.
 | État | Ce que ça veut dire | Ce qu'il faut faire |
 |---|---|---|
 | **Synchronisé** | fichier identique **et** le moteur la voit en jeu | rien |
-| **Source uniquement** | enregistrée, mais absente du serveur : elle n'existe pas en jeu | **Publier sur DEV** |
-| **Différent** | les deux existent, mais pas avec le même contenu : vos modifications ne sont pas en jeu | **Republier** |
-| **Publié, non chargé** | le fichier est là, mais le moteur ne le charge pas | vérifier l'identifiant, puis republier |
-| **Conflit** | le fichier DEV a été modifié **hors du panel** | regarder avant de décider |
-| **Hors source** | chargée par le serveur, absente de la source : elle vient du JAR ou a été déposée à la main | rien à publier |
+| **Brouillon non publié** | vous l'avez modifiée dans PlugAdmin ; DEV porte encore la dernière version commune | **Republier** |
+| **Absent de DEV** | enregistrée dans PlugAdmin, mais absente du serveur : elle n'existe pas en jeu | **Publier sur DEV** |
+| **Plus récent sur DEV** | DEV a changé depuis la dernière version commune (déploiement, autre outil), pas PlugAdmin | **Récupérer depuis DEV** |
+| **Versions différentes** | les deux diffèrent et rien ne dit laquelle est la plus récente | **Comparer**, puis choisir |
+| **Conflit** | DEV **et** PlugAdmin ont changé depuis la dernière version commune | **Comparer**, puis choisir |
+| **Sur DEV, non chargé** | le fichier est là, mais le moteur ne le charge pas | vérifier l'identifiant, puis republier |
+| **Retiré définitivement** | contenu retiré du jeu sur décision du propriétaire (`first_steps`, `crystal_hunt`, #778) | rien : il ne peut plus être publié |
+| **Hors source** | chargée par le serveur, absente de PlugAdmin : elle vient du JAR ou a été déposée à la main | rien à publier |
 | **État inconnu** | aucun relevé du serveur | cliquer **« État DEV »** |
+
+> [!IMPORTANT]
+> **La « dernière version commune » (issue #798).** Pour savoir *qui* a changé, PlugAdmin retient,
+> pour chaque ressource, la dernière version identique des deux côtés : celle qu'il a publiée, celle
+> qu'il a récupérée de DEV, ou celle qu'un relevé a trouvée identique. Sans elle, une différence ne
+> dit pas qui est le plus récent : l'état est **Versions différentes**, et **rien ne se publie** tant
+> que vous n'avez pas choisi. Avant #798, ce cas s'affichait « Différent » / « Enregistré — pas encore
+> en jeu », comme un brouillon — alors que DEV portait parfois la version la plus récente.
 
 > [!NOTE]
 > **« Synchronisé » se mérite.** Il n'est affiché qu'après une **relecture du runtime** confirmant
@@ -49,7 +60,7 @@ section **Publication sur DEV** qui l'affiche.
 
 C'est normal, et c'est voulu. Le panel ne devine pas l'état du serveur : cliquez sur **« État
 DEV »** dans la barre « Catalogue » pour le relever. Sans ce relevé, aucun bouton **Publier**
-n'apparaît — afficher « Source uniquement » sans avoir interrogé le serveur serait une affirmation
+n'apparaît — afficher « Absent de DEV » sans avoir interrogé le serveur serait une affirmation
 gratuite.
 
 ---
@@ -79,7 +90,8 @@ Ce que le serveur fait, dans cet ordre :
 
 ## Voir les différences
 
-Quand une ressource est **Différente** ou en **Conflit**, le bouton **« Voir les différences »**
+Quand une ressource diffère de DEV (brouillon, versions différentes, plus récente sur DEV ou
+conflit), le bouton **« Voir les différences »**
 affiche la comparaison ligne à ligne entre le fichier du serveur et votre source.
 
 Sens de lecture, et c'est le seul qui compte devant ce bouton :
@@ -107,13 +119,22 @@ Au-delà de 256 Kio ou 4000 lignes, la comparaison est refusée avec un message 
 restent comparables. Un diff très long est tronqué à 400 lignes affichées, mais les compteurs
 annoncent l'ampleur réelle.
 
-### En cas de conflit : pas de remplacement aveugle
+### Versions différentes, plus récent sur DEV, conflit : choisir, jamais à l'aveugle
 
-Le bouton **Publier n'apparaît pas** tant que vous n'avez pas consulté la version DEV **courante**.
-Avoir regardé une version antérieure ne compte pas — c'est précisément ce qui a changé.
+**Aucun bouton Publier** dans ces trois états, ni sur la fiche ni en lot : le panel refuse aussi
+côté serveur une publication forgée. Cliquez d'abord **« Voir les différences »** : deux choix
+apparaissent alors, seulement pour la version DEV **courante** (avoir regardé une version antérieure
+ne compte pas — c'est précisément ce qui a changé).
 
-Une fois la différence consultée, le bouton apparaît sous le nom **« Écraser la version DEV »**, et
-la page annonce que la modification faite hors du panel sera perdue (une sauvegarde en est prise).
+| Choix | Ce qu'il fait | En jeu |
+|---|---|---|
+| **Récupérer depuis DEV** | la version de DEV remplace celle de PlugAdmin ; la vôtre est **sauvegardée avant** | rien ne change |
+| **Conserver mon brouillon** (case à cocher) | votre version est gardée ; la version DEV vue devient la version commune, et la ressource redevient un **brouillon publiable** | rien ne change |
+
+Après « Conserver mon brouillon », **Publier** remplace la version de DEV : le serveur la
+**sauvegarde avant** (retour arrière possible). Si l'une des deux versions a bougé entre l'affichage
+et le clic, rien n'est fait : comparez à nouveau. Dans l'éditeur de dialogues, « Récupérer depuis
+DEV » s'appelle **« Recharger depuis DEV »** (#732).
 
 ---
 
@@ -125,7 +146,8 @@ qui ne sont pas synchronisées.
 Pour chacune : type, nom, identifiant, état, empreinte source, empreinte DEV, chargée ou non,
 dernière vérification, et un lien vers sa fiche.
 
-Les **problèmes d'abord** : conflits, puis « publié non chargé », puis le reste.
+Les **problèmes d'abord** : conflits, versions différentes, plus récent sur DEV, puis « sur DEV,
+non chargé », puis le reste. **Rien n'est pré-coché** : chaque ressource se coche à la main.
 
 ### Filtrer
 
@@ -144,9 +166,11 @@ Cochez celles que vous voulez publier, puis **« Publier la sélection »**.
 > vérification du runtime. Aucune protection n'est contournée.
 
 > [!WARNING]
-> Une ressource en **Conflit** n'est pas sélectionnable ici. Ouvrez sa fiche pour voir les
-> différences d'abord : c'est la seule façon de ne pas écraser à l'aveugle le travail de quelqu'un
-> d'autre.
+> Une ressource en **Conflit**, **Versions différentes**, **Plus récent sur DEV** ou **Retiré
+> définitivement** n'est pas sélectionnable ici, et un lot qui la contiendrait quand même est refusé
+> en entier, avant tout envoi. Ouvrez sa fiche pour comparer, puis récupérer la version de DEV ou
+> conserver votre brouillon : c'est la seule façon de ne pas écraser à l'aveugle une version plus
+> récente.
 
 **Succès partiel** : si une ressource est refusée, les autres partent quand même, et le message
 nomme celle qui a échoué avec son motif. Chaque ressource a sa propre sauvegarde — annuler tout le
@@ -174,7 +198,7 @@ le runtime.
 > [!NOTE]
 > La règle ne bouge pas : **« Synchronisé » n'est affiché que si la publication a confirmé le
 > runtime**, et seulement si l'empreinte qu'elle a laissée sur DEV correspond encore à votre source.
-> Si vous avez modifié la source depuis, l'état reste « Différent ».
+> Si vous avez modifié la source depuis, l'état reste « Brouillon non publié ».
 
 Cliquer **« État DEV »** consolide l'affichage.
 
@@ -197,7 +221,7 @@ l'envoi. Publier enverrait une version que vous n'avez pas vue.
 
 Le fichier est bien sur le serveur et la famille a été rechargée, mais le moteur ne porte pas
 l'identifiant attendu. Presque toujours la même cause : **l'identifiant déclaré dans le YAML ne
-correspond pas au nom du fichier**. L'état devient « Publié, non chargé ».
+correspond pas au nom du fichier**. L'état devient « Sur DEV, non chargé ».
 
 ### « Identifiant de ressource invalide »
 

@@ -60,9 +60,42 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `RPGQUEST_PANEL_BASE_URL` | non | surcharge `panel.base-url` |
 | `RPGQUEST_PANEL_DB` | non | surcharge `panel.db` |
 | `RPGQUEST_PANEL_CONFIG` | non | chemin d'un `control-panel.properties` alternatif |
-| `PLUGADMIN_CONTENT_DIR` | non | surcharge `content.repo-dir` (éditeur guidé #46/#145). Absent → éditeur en lecture seule. Pour activer l'enregistrement, voir « Droits d'écriture du workspace de contenu » ci-dessous — **deux** conditions sont nécessaires, pas une. |
+| `PLUGADMIN_CONTENT_DIR` | non | surcharge `content.repo-dir` (éditeur guidé #46/#145). Absent → éditeur en lecture seule. Sur AWS : `/var/lib/plugadmin/content`, espace dédié hors Git (#798, voir plus bas). Pour activer l'enregistrement, voir « Droits d'écriture du workspace de contenu » ci-dessous — **deux** conditions sont nécessaires, pas une. |
 | `RPGQUEST_RCON_PASSWORD_<CIBLE>` | pour le redémarrage #95 | mot de passe RCON de la cible (ex. `RPGQUEST_RCON_PASSWORD_DEV`). Absent → la fonction « redémarrer » s'affiche **indisponible** avec son motif ; jamais journalisé, jamais réaffiché, jamais dans un message d'erreur |
 | `PANEL_DISABLED` | non | `true` → kill-switch (prioritaire sur `panel.disabled`) |
+
+### Espace de travail de contenu dédié (issue #798)
+
+Depuis le 23/10/2026, `PLUGADMIN_CONTENT_DIR=/var/lib/plugadmin/content` sur l'instance AWS : un
+dossier **qui n'appartient à aucune branche Git**, propriété de `plugadmin`, déjà inscrit dans le
+bac à sable (`ReadWritePaths=/var/lib/plugadmin`) — les ACL et le drop-in de #162 ne sont plus
+nécessaires pour lui.
+
+**Pourquoi.** Avant, la valeur était l'arbre Git du propriétaire
+(`/srv/rpgquest/repo/src/main/resources`). Les sessions de développement travaillent dans des
+worktrees et livrent le contenu par `deploy-verygames.sh --also` : cet arbre n'était jamais mis à
+jour. Resté sur `feature/249-audit-architectural` (dernier checkout le 12/10), il montrait comme
+« brouillons » des versions plus anciennes que DEV (Elias, Gauthier) et les quêtes retirées
+`first_steps`/`crystal_hunt` — qu'une publication groupée aurait remises en jeu. Un `git checkout`
+aurait de même changé d'un coup tout le contenu « source » de PlugAdmin.
+
+**Comment l'écart reste visible.** PlugAdmin retient pour chaque ressource la dernière version
+commune avec DEV (table `content_dev_reference`) : un contenu livré ensuite sur DEV par un
+déploiement s'affiche **« Plus récent sur DEV »** avec **« Récupérer depuis DEV »**, jamais comme un
+brouillon à publier. Voir l'aide « Publier du contenu sur DEV ».
+
+**Inventaire et réconciliation** — `scripts/plugadmin/content-workspace-reconcile.sh` :
+
+```bash
+SNAP=$(scripts/plugadmin/content-workspace-reconcile.sh snapshot)   # DEV (FTP, lecture seule) + espace actuel, MANIFEST SHA-256
+scripts/plugadmin/content-workspace-reconcile.sh plan "$SNAP"        # SAME / DEV_ONLY / SOURCE_ONLY / DIFFERENT / RETIRED
+scripts/plugadmin/content-workspace-reconcile.sh seed "$SNAP" --keep dialogues/mon_brouillon   # versions DEV + brouillons choisis
+scripts/plugadmin/content-workspace-reconcile.sh switch "$SNAP" [--apply]   # refuse si /var/lib/plugadmin/content existe
+```
+
+`switch --apply` sauvegarde `/etc/plugadmin/plugadmin.env` (`.pre-798-<horodatage>`) avant de
+changer la variable ; retour arrière : `content-workspace-reconcile.sh rollback-env <sauvegarde>`
+(le dossier `/var/lib/plugadmin/content` est laissé en place, rien n'est perdu).
 
 ### Droits d'écriture du workspace de contenu (issue #162)
 

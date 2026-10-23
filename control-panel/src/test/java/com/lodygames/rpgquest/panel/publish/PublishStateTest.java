@@ -114,13 +114,58 @@ class PublishStateTest {
                 PublishState.of(true, true, SHA_B, SHA_A, true, SHA_A));
     }
 
-    /** Sans publication antérieure connue, on ne peut pas accuser : c'est « différent ». */
+    // ---- Issue #798 : qui a changé depuis la dernière version commune ? --------------------------
+
+    /**
+     * Sans version commune connue, une différence ne dit pas qui est le plus récent : ni
+     * « brouillon » ni « conflit », mais « versions différentes » — et rien ne se publie.
+     *
+     * <p>Avant #798, ce cas valait « Différent » (« Enregistré — pas encore en jeu ») : c'est ce qui
+     * présentait la source restée sur une vieille branche comme un brouillon à publier.</p>
+     */
     @Test
-    void withoutAKnownPreviousPublishADifferenceIsNotAccusedOfBeingAConflict() {
-        assertEquals(PublishState.DIFFERENT,
-                PublishState.of(true, true, SHA_A, SHA_B, true, ""));
-        assertEquals(PublishState.DIFFERENT,
-                PublishState.of(true, true, SHA_A, SHA_B, true, null));
+    void withoutACommonVersionADifferenceIsDivergedAndNotPublishable() {
+        for (String base : new String[] {"", null}) {
+            PublishState state = PublishState.of(true, true, SHA_A, SHA_B, true, base);
+            assertEquals(PublishState.DIVERGED, state);
+            assertFalse(state.publishable());
+            assertTrue(state.needsDecision());
+        }
+    }
+
+    /** La source porte encore la version commune, DEV a avancé : la version récente est sur DEV. */
+    @Test
+    void devMovedWhileTheSourceKeptTheCommonVersionIsNewerOnDev() {
+        PublishState state = PublishState.of(true, true, SHA_A, SHA_B, true, SHA_A);
+
+        assertEquals(PublishState.DEV_NEWER, state);
+        assertFalse(state.publishable(), "publier remettrait l'ancienne version");
+        assertTrue(state.needsDecision());
+        assertEquals("Récupérer depuis DEV", state.action());
+    }
+
+    /** Une ressource commune que DEV a retirée ne revient pas en douce : il faut choisir. */
+    @Test
+    void aCommonResourceRemovedFromDevIsNotSilentlyRecreated() {
+        assertEquals(PublishState.DIVERGED, PublishState.of(true, true, SHA_A, "", false, SHA_A));
+        assertEquals(PublishState.SOURCE_ONLY, PublishState.of(true, true, SHA_A, "", false, ""),
+                "jamais publiée : une création normale");
+    }
+
+    /** Un contenu retiré définitivement l'est dans tous les cas, même identique à DEV. */
+    @Test
+    void aRetiredResourceIsRetiredWhateverTheFiles() {
+        for (String dev : new String[] {"", SHA_A, SHA_B}) {
+            PublishState state = PublishState.of(true, true, SHA_A, dev, true, "", true);
+            assertEquals(PublishState.RETIRED, state, "dev=" + dev);
+            assertFalse(state.publishable());
+        }
+        assertTrue(RetiredContent.isRetired("quests", "first_steps"));
+        assertTrue(RetiredContent.isRetired("quests", "rpgquest:CRYSTAL_HUNT"));
+        assertFalse(RetiredContent.isRetired("quests", "premiers_pas"), "l'autre « Premiers pas » reste");
+        assertFalse(RetiredContent.isRetired("dialogues", "first_steps"));
+        assertEquals(PublishState.RETIRED, DevContentIndex.from(Map.of()).stateOf("quests", "first_steps",
+                "rpgquest:first_steps", SHA_A, true, ""));
     }
 
     // ---- Ne rien affirmer sans relevé -----------------------------------------------------------

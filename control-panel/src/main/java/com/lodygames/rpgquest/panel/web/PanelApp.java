@@ -253,7 +253,10 @@ public final class PanelApp {
                 config.agents().thresholds(), opsAgentId, null);
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
-        this.agentEndpoints.onResult(workshopAutopilot::onResult);
+        this.agentEndpoints.onResult(id -> {
+            workshopAutopilot.onResult(id);
+            recordCommonVersions(id);
+        });
         PasswordHasher hasher = new PasswordHasher();
         this.users = new UserDirectory(userRepository, hasher);
         this.groups = new GroupDirectory(groupRepository);
@@ -429,6 +432,8 @@ public final class PanelApp {
         route("/dialogues/publish", this::handleDialoguePublish);
         route("/dialogues/refresh", this::handleDialogueRefresh);
         route("/dialogues/reload", this::handleDialogueReload);
+        route("/content/recover", this::handleContentRecover);
+        route("/content/keep-draft", this::handleContentKeepDraft);
         route("/dialogues/link", this::handleDialogueLink);
         route("/dialogues/import", this::handleDialogueImport);
         route("/dialogues/ai", this::handleDialogueAiExport);
@@ -3944,7 +3949,7 @@ public final class PanelApp {
         if (!publish.valid()) {
             return new InitialDialogue(null, publish.error());
         }
-        PublishEnrichment enriched = enrichPublish(publish.params());
+        PublishEnrichment enriched = enrichPublish(agentId, publish.params());
         return enriched.error() != null ? new InitialDialogue(null, enriched.error())
                 : new InitialDialogue(agentStore.createAction(agentId, "content.publish", enriched.params(), username), null);
     }
@@ -6207,6 +6212,200 @@ public final class PanelApp {
         Http.redirect(exchange, back + "?reloaded=" + enc(readId));
     }
 
+    /**
+     * Issue #798 — dès qu'un relevé {@code content.dev.state} réussit, chaque ressource identique des
+     * deux côtés y gagne sa version commune. Sans cela, elle n'était retenue qu'à l'affichage d'une
+     * page d'état : une modification enregistrée juste après le relevé, sans passer par une telle
+     * page, se serait lue « Versions différentes » au lieu de « Brouillon non publié ».
+     */
+    private void recordCommonVersions(String actionId) {
+        try {
+            agentStore.action(actionId)
+                    .filter(a -> "content.dev.state".equals(a.type())
+                            && a.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS)
+                    .ifPresent(a -> agentPages.recordCommonVersions(a.agentId()));
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING, "event=content_common_versions_failed action=" + actionId
+                    + " cause=" + e);
+        }
+    }
+
+    // ---- Issue #798 : Récupérer depuis DEV / Conserver mon brouillon ------------------------------
+
+    /** Un choix posté depuis une fiche : la ressource et les deux empreintes vues à l'écran. */
+    private record ContentChoice(Session session, String agentId, String kind, String slug, String expectedSource,
+                                 String expectedDev, String back, boolean confirmed) {
+    }
+
+    /**
+     * Lit et vérifie un choix « Récupérer depuis DEV » / « Conserver mon brouillon » : session, CSRF,
+     * agent, famille et identifiant valides, droit demandé. {@code null} si la réponse est déjà
+     * envoyée (refus).
+     */
+    private ContentChoice contentChoice(HttpExchange exchange, java.util.function.Function<String, Permission> permission)
+            throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return null;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return null;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return null;
+        }
+        String kind = form.getOrDefault("kind", "").trim();
+        String slug = com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(form.getOrDefault("slug", "").trim());
+        String agentId = form.getOrDefault("agent", "").trim();
+        String fallback = switch (kind) {
+            case "quests" -> "/quests";
+            case "stories" -> "/stories";
+            default -> "/dialogues/edit/" + slug;
+        };
+        String requested = form.getOrDefault("return", "");
+        String back = requested.equals("/dialogues/edit/" + slug) ? requested : safeReturnPath(requested, fallback);
+        if (!ContentWorkspace.KINDS.contains(kind) || slug.isEmpty() || agentRegistry.byId(agentId).isEmpty()) {
+            Http.redirect(exchange, withError(back, agentId, null, "Requête invalide : rien n'a été changé."));
+            return null;
+        }
+        if (!permissions.can(session.effective(), permission.apply(kind))) {
+            forbidden(exchange, session, back);
+            return null;
+        }
+        return new ContentChoice(session, agentId, kind, slug, form.getOrDefault("expected_sha", "").trim(),
+                form.getOrDefault("expected_dev_sha", "").trim(), back, "true".equals(form.get("confirm")));
+    }
+
+    /**
+     * « Récupérer depuis DEV » (issue #798, toutes familles ; #732 pour l'éditeur de dialogues) : la
+     * version DEV lue — et seulement elle, à l'empreinte près — remplace celle de PlugAdmin, qui est
+     * sauvegardée avant. Rien n'est écrit en jeu. La version reprise devient la référence commune.
+     */
+    private void handleContentRecover(HttpExchange exchange) throws IOException {
+        ContentChoice c = contentChoice(exchange, AgentPages::writePermission);
+        if (c == null) {
+            return;
+        }
+        String back = c.back();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String target = c.kind() + "/" + c.slug();
+        if (com.lodygames.rpgquest.panel.publish.RetiredContent.isRetired(c.kind(), c.slug())) {
+            audit.record(c.session().username(), "content.recover", target, "DENIED", "contenu retiré", rid);
+            Http.redirect(exchange, withError(back, c.agentId(), null,
+                    "« " + c.slug() + " » a été retiré définitivement du jeu : il n'est pas récupéré."));
+            return;
+        }
+        Optional<Map<String, Object>> read = agentPages.devFileRead(c.agentId(), c.kind(), c.slug());
+        String devText = read.map(d -> String.valueOf(d.getOrDefault("text", ""))).orElse("");
+        String devSha = read.map(d -> String.valueOf(d.getOrDefault("sha256", ""))).orElse("");
+        boolean usable = read.isPresent() && Boolean.TRUE.equals(read.get().get("present"))
+                && !Boolean.TRUE.equals(read.get().get("tooLarge")) && !devText.isEmpty()
+                && devSha.equals(c.expectedDev()) && devSha.equals(sha256Hex(devText));
+        if (!usable) {
+            audit.record(c.session().username(), "content.recover", target, "DENIED", "lecture DEV absente ou périmée", rid);
+            Http.redirect(exchange, withError(back, c.agentId(), null, "Rien n'a été remplacé : la version DEV n'est "
+                    + "plus celle affichée, ou elle n'a pas été lue. Cliquez « Voir les différences », puis "
+                    + "recommencez."));
+            return;
+        }
+        Optional<ContentWorkspace.ContentFile> file = contentWorkspace.read(c.kind(), c.slug());
+        String current = file.map(ContentWorkspace.ContentFile::sha256).orElse("");
+        if (!current.equals(c.expectedSource())) {
+            audit.record(c.session().username(), "content.recover", target, "DENIED", "source modifiée entre-temps", rid);
+            Http.redirect(exchange, withError(back, c.agentId(), null, "Rien n'a été remplacé : la version de "
+                    + "PlugAdmin a changé depuis l'affichage. Rechargez la page pour comparer à nouveau."));
+            return;
+        }
+        String detail = "dev=" + devSha.substring(0, Math.min(12, devSha.length()));
+        if (!current.equals(devSha)) {
+            String stamp = "recover-" + java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
+                    .withZone(java.time.ZoneOffset.UTC).format(Instant.now()) + "-" + c.kind() + "-" + c.slug();
+            if (file.isPresent()) {
+                Optional<ContentWorkspace.Backup> backup = contentWorkspace.backup(c.kind(), c.slug(), stamp);
+                if (backup.isEmpty() || !backup.get().sha256().equals(current)) {
+                    audit.record(c.session().username(), "content.recover", target, "FAILED", "sauvegarde impossible", rid);
+                    Http.redirect(exchange, withError(back, c.agentId(), null, "Rien n'a été remplacé : la sauvegarde "
+                            + "de votre version n'a pas pu être faite."));
+                    return;
+                }
+                detail += " sauvegarde=" + backup.get().backupPath();
+            }
+            ContentWorkspace.WriteResult wr = contentWorkspace.write(c.kind(), c.slug(), devText, current);
+            if (!wr.ok()) {
+                audit.record(c.session().username(), "content.recover", target, "FAILED", wr.message(), rid);
+                Http.redirect(exchange, withError(back, c.agentId(), null, "Rien n'a été remplacé : " + wr.message()));
+                return;
+            }
+        }
+        agentStore.adoptDevReference(c.agentId(), c.kind(), c.slug(), devSha, c.session().username(), Instant.now());
+        audit.record(c.session().username(), "content.recover", target, "OK", detail, rid);
+        if (!agentStore.hasOpenActionOfType(c.agentId(), "content.dev.state")) {
+            agentStore.createAction(c.agentId(), "content.dev.state", Map.of(), c.session().username());
+        }
+        Http.redirect(exchange, appendContext(back, c.agentId(), null) + "&ok=" + enc("Version de DEV récupérée "
+                + "dans PlugAdmin. Votre ancienne version est sauvegardée. Rien n'a changé en jeu."));
+    }
+
+    /**
+     * « Conserver mon brouillon » (issue #798) : l'administrateur a comparé et garde SA version. La
+     * version DEV vue à l'écran devient la référence commune : la ressource redevient un brouillon
+     * publiable, seul ou en lot. Rien n'est écrit, ni dans PlugAdmin ni en jeu ; la publication
+     * suivante sauvegardera la version DEV avant de la remplacer (côté serveur).
+     */
+    private void handleContentKeepDraft(HttpExchange exchange) throws IOException {
+        ContentChoice c = contentChoice(exchange, kind -> Permission.CONTENT_PUBLISH);
+        if (c == null) {
+            return;
+        }
+        boolean confirmed = c.confirmed();
+        String back = c.back();
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String target = c.kind() + "/" + c.slug();
+        if (!confirmed) {
+            Http.redirect(exchange, withError(back, c.agentId(), null,
+                    "Cochez « Je garde ma version » pour conserver votre brouillon : rien n'a changé."));
+            return;
+        }
+        if (com.lodygames.rpgquest.panel.publish.RetiredContent.isRetired(c.kind(), c.slug())) {
+            Http.redirect(exchange, withError(back, c.agentId(), null,
+                    com.lodygames.rpgquest.panel.publish.RetiredContent.refusal(c.slug())));
+            return;
+        }
+        String current = contentWorkspace.read(c.kind(), c.slug()).map(ContentWorkspace.ContentFile::sha256).orElse("");
+        String devNow = agentPages.devShaNow(c.agentId(), c.kind(), c.slug());
+        if (current.isEmpty() || !current.equals(c.expectedSource()) || !devNow.equals(c.expectedDev())) {
+            audit.record(c.session().username(), "content.keep-draft", target, "DENIED", "versions changées", rid);
+            Http.redirect(exchange, withError(back, c.agentId(), null, "Rien n'a changé : une des deux versions a "
+                    + "bougé depuis l'affichage. Comparez à nouveau avant de choisir."));
+            return;
+        }
+        if (!agentPages.stateNow(c.agentId(), c.kind(), c.slug()).needsDecision()) {
+            Http.redirect(exchange, appendContext(back, c.agentId(), null) + "&ok="
+                    + enc("Il n'y avait pas de choix à faire : rien n'a changé."));
+            return;
+        }
+        agentStore.adoptDevReference(c.agentId(), c.kind(), c.slug(), devNow, "keep-draft:" + c.session().username(),
+                Instant.now());
+        audit.record(c.session().username(), "content.keep-draft", target, "OK",
+                "référence=" + (devNow.isEmpty() ? "(absente de DEV)" : devNow.substring(0, 12)), rid);
+        Http.redirect(exchange, appendContext(back, c.agentId(), null) + "&ok=" + enc("Votre brouillon est conservé. "
+                + "Vous pouvez maintenant le mettre en jeu ; la version de DEV sera sauvegardée avant."));
+    }
+
+    private static String sha256Hex(String text) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 indisponible", e);
+        }
+    }
+
     /** L'éditeur ouvert sur le fichier enregistré (ou, s'il n'est que sur le serveur, en lecture seule). */
     private DialoguePages.Editing dialogueEditing(DialoguePages.Ctx ctx, String slug, Map<String, String> query) {
         Optional<ContentWorkspace.ContentFile> file = slug.isEmpty() ? Optional.empty()
@@ -6802,9 +7001,13 @@ public final class PanelApp {
         if (live.live() == DialoguePages.Live.PUBLISHING) {
             return "!Une mise en jeu de ce dialogue est déjà en cours.";
         }
-        if (live.live() == DialoguePages.Live.CONFLICT) {
+        if (live.live() == DialoguePages.Live.CONFLICT || live.live() == DialoguePages.Live.DIVERGED) {
             return "!Le serveur a une autre version de ce dialogue : rien n'a été remplacé et votre version est "
                     + "gardée. Cliquez « Comparer les deux versions » pour choisir laquelle garder.";
+        }
+        if (live.live() == DialoguePages.Live.DEV_NEWER) {
+            return "!DEV a une version plus récente de ce dialogue : rien n'a été remplacé. Cliquez « Recharger "
+                    + "depuis DEV » pour la récupérer avant de la modifier.";
         }
         Map<String, String> publishForm = new java.util.LinkedHashMap<>();
         publishForm.put("kind", "dialogues");
@@ -6816,7 +7019,7 @@ public final class PanelApp {
         if (!v.valid()) {
             return "!" + v.error();
         }
-        PublishEnrichment enriched = enrichPublish(v.params());
+        PublishEnrichment enriched = enrichPublish(agentId, v.params());
         if (enriched.error() != null) {
             return "!" + enriched.error();
         }
@@ -7078,8 +7281,8 @@ public final class PanelApp {
         // le contenu publié, et il n'a jamais besoin de connaître un chemin.
         java.util.Map<String, String> outgoing = v.params();
         if ("content.publish".equals(type) || "content.publish.batch".equals(type)) {
-            PublishEnrichment enriched = "content.publish".equals(type) ? enrichPublish(outgoing)
-                    : enrichPublishBatch(outgoing);
+            PublishEnrichment enriched = "content.publish".equals(type) ? enrichPublish(agentId, outgoing)
+                    : enrichPublishBatch(agentId, outgoing);
             if (enriched.error() != null) {
                 audit.record(session.username(), "agent.action.create",
                         auditTarget, "DENIED", enriched.error(), rid);
@@ -7229,7 +7432,7 @@ public final class PanelApp {
         PublishEnrichment enriched = !refused.isEmpty()
                 ? new PublishEnrichment(null, String.join(" | ", refused))
                 : !validation.valid() ? new PublishEnrichment(null, validation.error())
-                        : enrichPublishBatch(validation.params());
+                        : enrichPublishBatch(agentId, validation.params());
         if (enriched.error() != null) {
             audit.record(session.username(), "content.pending.publish",
                     "agent=" + agentId + " selected=" + selected.size(), "DENIED", enriched.error(), rid);
@@ -7279,7 +7482,7 @@ public final class PanelApp {
      * panel, l'empreinte source revérifiée. Une seule ressource en défaut refuse le lot entier — on
      * ne publie pas « ce qui passe » d'un pack.
      */
-    private PublishEnrichment enrichPublishBatch(java.util.Map<String, String> params) {
+    private PublishEnrichment enrichPublishBatch(String agentId, java.util.Map<String, String> params) {
         int count = Integer.parseInt(params.get("count"));
         java.util.Map<String, String> out = new java.util.LinkedHashMap<>(params);
         java.util.List<String> errors = new java.util.ArrayList<>();
@@ -7288,7 +7491,7 @@ public final class PanelApp {
             one.put("kind", params.get("kind_" + i));
             one.put("id", params.get("id_" + i));
             one.put("expected_source_sha", params.getOrDefault("expected_source_sha_" + i, ""));
-            PublishEnrichment enriched = enrichPublish(one);
+            PublishEnrichment enriched = enrichPublish(agentId, one);
             out.remove("expected_source_sha_" + i);
             if (enriched.error() != null) {
                 errors.add(one.get("kind") + "/" + one.get("id") + " : " + enriched.error());
@@ -7322,10 +7525,17 @@ public final class PanelApp {
      *       un faux échec quand les deux diffèrent.</li>
      * </ol>
      */
-    private PublishEnrichment enrichPublish(java.util.Map<String, String> params) {
+    private PublishEnrichment enrichPublish(String agentId, java.util.Map<String, String> params) {
         String kind = params.get("kind");
         String slug = params.get("id");
         String expectedSource = params.getOrDefault("expected_source_sha", "");
+        // Issue #798 — un seul garde-fou pour TOUTES les publications (fiche, éditeur, lot, création
+        // de PNJ) : jamais un contenu retiré, jamais une version plus ancienne que celle de DEV,
+        // jamais un écrasement sans que l'administrateur ait choisi sa version.
+        java.util.Optional<String> refusal = agentPages.publishRefusal(agentId, kind, slug);
+        if (refusal.isPresent()) {
+            return new PublishEnrichment(null, refusal.get());
+        }
         if (!contentWorkspace.configured()) {
             return new PublishEnrichment(null,
                     "Aucun espace de travail source configuré : rien à publier.");

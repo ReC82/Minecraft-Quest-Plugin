@@ -1,0 +1,43 @@
+id: rpgquest:guard_tier1
+title: "<gold>Le Garde — Palier 1</gold>"
+description: "<gray>Prouve ta valeur au village en repoussant les menaces qui rôdent autour de ses murs.</gray>"
+category: combat
+giver: guard
+icon: WOODEN_SWORD
+repeatable: false
+
+# Issue #179 : parcours simplifié du Garde pour obtenir les claims de palier 1 à 5 — chaîne
+# parallèle à rpgquest:crystal_hunt (jamais modifiée), quatre objectifs KILL_ENTITY simultanés
+# par quête, aucun report d'une quête à l'autre (chaque quête réinitialise son propre compteur
+# via QuestObjectiveIndex, voir QuestProgressEngine).
+steps:
+  - id: prove_worth
+    objectives:
+      - type: KILL_ENTITY
+        entity: SPIDER
+        amount: 5
+      - type: KILL_ENTITY
+        entity: ZOMBIE
+        amount: 5
+      - type: KILL_ENTITY
+        entity: SKELETON
+        amount: 5
+      - type: KILL_ENTITY
+        entity: CREEPER
+        amount: 5
+
+rewards:
+  - type: EXPERIENCE
+    amount: 20
+  # Débloque le droit de créer un premier claim 5x5 (voir ClaimService#CLAIM_TIER_1_KEY) — chemin
+  # alternatif et plus simple que rpgquest:crystal_hunt pour obtenir le même droit (idempotent : si
+  # le joueur l'a déjà via crystal_hunt, re-poser "true" ne change rien).
+  - type: VARIABLE
+    key: CLAIM_TIER_1
+    value: "true"
+  # Si un claim principal existe déjà (ex. posé via crystal_hunt) et est déjà à ce palier ou plus
+  # grand, ClaimService#upgradeTier renvoie ALREADY_AT_TIER_OR_HIGHER (idempotent, rien n'est
+  # modifié). Sans claim posé, NO_CLAIM_YET (idempotent) : l'entitlement VARIABLE ci-dessus suffit,
+  # highestEntitledTier posera directement le bon palier à la première pose de l'Acte.
+  - type: COMMAND
+    command: "rpgadmin claim grant-tier %player% TIER_1"

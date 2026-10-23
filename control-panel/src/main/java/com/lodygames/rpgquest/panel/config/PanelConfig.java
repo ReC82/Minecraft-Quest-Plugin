@@ -22,8 +22,9 @@ import java.util.Optional;
  * @param targets            cibles RPGQuest connues (au moins une)
  * @param defaultTargetId    cible sélectionnée par défaut
  * @param agents             configuration du canal « agent sortant » (issue #51)
- * @param contentRepoDir     racine du checkout Git source du contenu éditable (#46) — typiquement
- *                           {@code <repo>/src/main/resources} ; {@code null} = éditeur désactivé
+ * @param contentRepoDir     racine de l'espace de travail du contenu éditable (#46) — en service
+ *                           {@code /var/lib/plugadmin/content}, hors de tout checkout Git (#798) ;
+ *                           {@code null} = éditeur désactivé
  * @param ops                configuration « exploitation serveur » (issue #95) : points d'accès
  *                           RCON par cible et délais du redémarrage
  */

@@ -818,7 +818,7 @@ public final class RPGQuestBootstrap {
                 new ClaimNetherTravelListener(() -> configService.current().claims())));
         // Issue #776 : croissance des plantations des claims rattrapée au rechargement des chunks.
         registry.start(new OfflineGrowthService(plugin, () -> configService.current().claims(),
-                claimService::claimsInWorld,
+                claimService::claimsInWorld, claimService::isLoaded,
                 new PlantGrowthSimulator(new java.util.SplittableRandom(),
                         plugin.getServer().getPluginManager()),
                 plugin.getSLF4JLogger()));

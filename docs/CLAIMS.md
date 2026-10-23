@@ -529,7 +529,9 @@ croissance **au rechargement** du chunk, sans jamais garder un chunk chargé.
 rien. Après un crash, le chunk revient à sa dernière sauvegarde, marque **et** blocs ensemble : rien
 n'est compté deux fois. L'arrêt du serveur ne pose aucune marque (pas de croissance pendant l'arrêt,
 comme en jeu). Un chunk redéchargé avant son tour abandonne simplement le reste (perte possible,
-jamais de double croissance).
+jamais de double croissance). Au démarrage, les chunks déjà chargés avant le plugin sont repris, et
+aucun chunk n'est traité avant que `ClaimService` ait lu les claims en base (`isLoaded`) : une marque
+n'est jamais perdue parce que les claims n'étaient pas encore connus.
 
 **Barème** (`PlantGrowthSimulator`, moyenne vanilla : `randomTickSpeed / 4096` random tick par bloc
 et par tick ; le nombre de succès attendu est arrondi au hasard) :

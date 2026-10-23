@@ -8,6 +8,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.bukkit.Chunk;
@@ -57,6 +58,7 @@ public final class OfflineGrowthService implements PluginService, Listener {
     private final Plugin plugin;
     private final Supplier<ClaimConfig> config;
     private final Function<String, List<Claim>> claimsInWorld;
+    private final BooleanSupplier claimsReady;
     private final PlantGrowthSimulator simulator;
     private final NamespacedKey sinceKey;
     private final Logger logger;
@@ -68,11 +70,12 @@ public final class OfflineGrowthService implements PluginService, Listener {
     private long nanosSpent;
 
     public OfflineGrowthService(Plugin plugin, Supplier<ClaimConfig> config,
-                                Function<String, List<Claim>> claimsInWorld, PlantGrowthSimulator simulator,
-                                Logger logger) {
+                                Function<String, List<Claim>> claimsInWorld, BooleanSupplier claimsReady,
+                                PlantGrowthSimulator simulator, Logger logger) {
         this.plugin = plugin;
         this.config = config;
         this.claimsInWorld = claimsInWorld;
+        this.claimsReady = claimsReady;
         this.simulator = simulator;
         this.sinceKey = new NamespacedKey(plugin, KEY_NAME);
         this.logger = logger;
@@ -82,6 +85,14 @@ public final class OfflineGrowthService implements PluginService, Listener {
     public void start() {
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         task = plugin.getServer().getScheduler().runTaskTimer(plugin, this::processBatch, 1L, 1L);
+        // Chunks déjà chargés avant le plugin (aucun ChunkLoadEvent ne viendra pour eux).
+        for (World world : plugin.getServer().getWorlds()) {
+            if (appliesTo(world)) {
+                for (Chunk chunk : world.getLoadedChunks()) {
+                    consumeMark(chunk);
+                }
+            }
+        }
     }
 
     @Override
@@ -105,7 +116,17 @@ public final class OfflineGrowthService implements PluginService, Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(ChunkLoadEvent event) {
-        Chunk chunk = event.getChunk();
+        if (!event.isNewChunk()) {
+            consumeMark(event.getChunk());
+        }
+    }
+
+    /**
+     * Lit puis retire la marque et met le chunk en file. Les claims touchés sont résolus au traitement,
+     * pas ici : au démarrage, un chunk peut se charger avant que {@code ClaimService} ait fini de lire la
+     * base.
+     */
+    private void consumeMark(Chunk chunk) {
         PersistentDataContainer pdc = chunk.getPersistentDataContainer();
         Long since = pdc.get(sinceKey, PersistentDataType.LONG);
         if (since == null) {
@@ -118,16 +139,18 @@ public final class OfflineGrowthService implements PluginService, Listener {
         }
         long elapsed = Math.min(world.getGameTime() - since, config.get().offlineGrowth().maxCatchUpTicks());
         Integer speed = world.getGameRuleValue(GameRules.RANDOM_TICK_SPEED);
-        List<Claim> claims = claimsTouching(chunk);
-        if (elapsed <= 0 || speed == null || speed <= 0 || claims.isEmpty()) {
+        if (elapsed <= 0 || speed == null || speed <= 0) {
             return;
         }
-        jobs.add(new ChunkJob(world, chunk.getX(), chunk.getZ(), claims,
+        jobs.add(new ChunkJob(world, chunk.getX(), chunk.getZ(),
                 PlantGrowthSimulator.expectedRandomTicks(elapsed, speed)));
     }
 
     /** Un tick : au plus un inventaire de chunk et {@code blocks-per-tick} plantes. */
     void processBatch() {
+        if (jobs.isEmpty() || !claimsReady.getAsBoolean()) {
+            return;
+        }
         int budget = config.get().offlineGrowth().blocksPerTick();
         boolean scanned = false;
         while (budget > 0 && !jobs.isEmpty()) {
@@ -141,7 +164,7 @@ public final class OfflineGrowthService implements PluginService, Listener {
                 if (scanned) {
                     return;
                 }
-                job.plants = scan(job);
+                job.plants = scan(job, job.world.getChunkAt(job.chunkX, job.chunkZ));
                 scanned = true;
             }
             while (budget > 0 && job.next < job.plants.size()) {
@@ -176,12 +199,12 @@ public final class OfflineGrowthService implements PluginService, Listener {
     }
 
     /** Inventaire des plantes dans les cuboïdes de claims du chunk, sur un instantané (lecture seule). */
-    private List<PlantPosition> scan(ChunkJob job) {
-        ChunkSnapshot snapshot = job.world.getChunkAt(job.chunkX, job.chunkZ).getChunkSnapshot(false, false, false);
+    private List<PlantPosition> scan(ChunkJob job, Chunk chunk) {
+        ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false);
         int baseX = job.chunkX << 4;
         int baseZ = job.chunkZ << 4;
         List<PlantPosition> plants = new ArrayList<>();
-        for (Claim claim : job.claims) {
+        for (Claim claim : claimsTouching(chunk)) {
             int minY = Math.max(claim.minY(), job.world.getMinHeight());
             int maxY = Math.min(claim.maxY(), job.world.getMaxHeight() - 1);
             for (int x = Math.max(claim.minX(), baseX); x <= Math.min(claim.maxX(), baseX + 15); x++) {
@@ -232,18 +255,16 @@ public final class OfflineGrowthService implements PluginService, Listener {
         private final World world;
         private final int chunkX;
         private final int chunkZ;
-        private final List<Claim> claims;
         private final double randomTicks;
         private List<PlantPosition> plants;
         private int next;
         private int changed;
         private long nanos;
 
-        private ChunkJob(World world, int chunkX, int chunkZ, List<Claim> claims, double randomTicks) {
+        private ChunkJob(World world, int chunkX, int chunkZ, double randomTicks) {
             this.world = world;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
-            this.claims = claims;
             this.randomTicks = randomTicks;
         }
     }

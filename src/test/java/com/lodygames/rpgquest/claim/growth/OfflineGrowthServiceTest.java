@@ -48,6 +48,7 @@ class OfflineGrowthServiceTest {
     private final Claim farm = new Claim("farm", UUID.randomUUID(), "claims", 0, 0, 0, 15, 100, 15, Set.of(),
             ClaimFlags.defaults());
     private OfflineGrowthConfig growth = OfflineGrowthConfig.DEFAULTS;
+    private boolean claimsReady = true;
 
     @BeforeEach
     void setUp() {
@@ -72,7 +73,7 @@ class OfflineGrowthServiceTest {
     private OfflineGrowthService service() {
         ClaimConfig config = new ClaimConfig(64, 384, 3, 16, "claims", true, 64, 2000, 100, growth);
         return new OfflineGrowthService(plugin, () -> config,
-                world -> world.equals("claims") ? List.of(farm) : List.of(),
+                world -> world.equals("claims") ? List.of(farm) : List.of(), () -> claimsReady,
                 new PlantGrowthSimulator(new Random(7), server.getPluginManager()),
                 LoggerFactory.getLogger(OfflineGrowthServiceTest.class));
     }
@@ -190,6 +191,21 @@ class OfflineGrowthServiceTest {
         unloadAndReload(service, claims, 24 * ONE_HOUR);
         drain(service);
         assertEquals(0, age(plant));
+    }
+
+    @Test
+    void chunkLoadedBeforeClaimsAreReadWaitsInsteadOfLosingItsMark() {
+        Block plant = wheat(claims, 3, 3);
+        OfflineGrowthService service = service();
+        claimsReady = false;
+        unloadAndReload(service, claims, 24 * ONE_HOUR);
+        service.processBatch();
+        assertEquals(1, service.pendingChunks(), "en attente des claims, pas abandonné");
+        assertEquals(0, age(plant));
+
+        claimsReady = true;
+        drain(service);
+        assertEquals(7, age(plant));
     }
 
     @Test

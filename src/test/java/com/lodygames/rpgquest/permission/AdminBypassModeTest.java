@@ -109,7 +109,18 @@ class AdminBypassModeTest {
 
         PlayerMock op = op();
         assertTrue(RpgPermissions.canRunLegacyAdminBranch(op), "OP : commandes d'administration intactes, mode OFF");
-        assertTrue(RpgPermissions.canBuildInHub(op, "world_hub"));
+        assertTrue(RpgPermissions.canBuildInHub(op, "world_hub"),
+                "droit détenu ; depuis #35 (23/10) il n'est armé au Hub que pendant une session");
+        assertTrue(RpgPermissions.hasHubBuilderNode(builder, "world_hub"));
+    }
+
+    @Test
+    void theLegacyUmbrellaAloneMayOpenASession() {
+        PlayerMock admin = server.addPlayer();
+        admin.addAttachment(plugin, RpgPermissions.LEGACY_ADMIN_WORLD, true);
+
+        assertEquals(AdminBypassMode.Outcome.ENABLED, mode.enable(admin), "l'ombrelle implique tout");
+        assertTrue(mode.isActive(admin));
     }
 
     @Test

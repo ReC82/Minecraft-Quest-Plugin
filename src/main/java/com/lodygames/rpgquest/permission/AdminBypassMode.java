@@ -70,7 +70,7 @@ public final class AdminBypassMode {
 
     /** Ouvre (ou rouvre, en repartant de zéro) la session du joueur. */
     public Outcome enable(Player player) {
-        if (player == null || !player.hasPermission(PERMISSION)) {
+        if (player == null || !canOpen(player)) {
             return Outcome.NO_PERMISSION;
         }
         GameSettings s = settings();
@@ -149,9 +149,18 @@ public final class AdminBypassMode {
 
     private EndReason reasonToEnd(Player player, Session s) {
         return !settings().adminBypassAvailable() ? EndReason.UNAVAILABLE
-                : !player.hasPermission(PERMISSION) ? EndReason.PERMISSION_LOST
+                : !canOpen(player) ? EndReason.PERMISSION_LOST
                 : clock.getAsLong() >= s.until() ? EndReason.EXPIRED
                 : null;
+    }
+
+    /**
+     * Nœud dédié, ou l'ombrelle historique qui « implique tout » : depuis #35 (réouverture du 23/10),
+     * un administrateur non OP portant seulement {@link RpgPermissions#LEGACY_ADMIN_WORLD} construit
+     * au Hub via une session — il doit donc pouvoir l'ouvrir.
+     */
+    private static boolean canOpen(Player player) {
+        return RpgPermissions.hasBypass(player, PERMISSION);
     }
 
     /** Arrêt du plugin : aucune session ne survit. */

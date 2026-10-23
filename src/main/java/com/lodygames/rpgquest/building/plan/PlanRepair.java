@@ -133,6 +133,7 @@ public final class PlanRepair {
             // Rien de sûr à faire : la faute n'est pas dans le catalogue.
             return new Outcome(null, List.of(), before, before);
         }
+        plan = wrongWall(plan, changes);
         plan = openings(plan, changes);
         plan = needlessEntrySteps(plan, changes);
         plan = circulation(plan, changes);
@@ -225,12 +226,57 @@ public final class PlanRepair {
                     : new PlanStep(step.kind(), step.box(), state, step.axis(), step.facade(),
                             step.numbers(), fill));
         }
-        if (renamed.isEmpty()) {
-            return plan;
+        if (!renamed.isEmpty()) {
+            renamed.forEach((from, to) -> changes.add("Bloc « " + from + " » inconnu en Minecraft "
+                    + BlockCatalog.VERSION + " : remplacé par « " + to + " », le bloc de ce matériau."));
         }
-        renamed.forEach((from, to) -> changes.add("Bloc « " + from + " » inconnu en Minecraft "
-                + BlockCatalog.VERSION + " : remplacé par « " + to + " », le bloc de ce matériau."));
-        return copy(plan, steps);
+        return gableStairs(renamed.isEmpty() ? plan : copy(plan, steps), changes);
+    }
+
+    /**
+     * Un toit {@code gable} écrit avec un bloc PLEIN reçoit l'escalier du même matériau (#747) : le moteur
+     * oriente des marches, et un bloc sans propriété « facing » est refusé par le registre — tout le plan
+     * avec lui. Essai réel du 23/10/2026 (V-979a80e5) : « block: minecraft:polished_deepslate » sur deux
+     * toits. Le candidat n'est retenu que s'il existe dans le registre et que c'est un escalier ; le
+     * bloc plein devient le « fill » des pignons s'il n'y en avait pas.
+     */
+    static BuildingPlan gableStairs(BuildingPlan plan, List<String> changes) {
+        List<PlanStep> steps = new ArrayList<>();
+        boolean changed = false;
+        for (int i = 0; i < plan.steps().size(); i++) {
+            PlanStep step = plan.steps().get(i);
+            String type = BlockStates.bareType(step.state());
+            String stairs = step.kind() == PlanStep.Kind.GABLE && !type.endsWith("_stairs")
+                    ? stairsOf(type) : null;
+            if (stairs == null) {
+                steps.add(step);
+                continue;
+            }
+            String fill = step.fill() == null || step.fill().isBlank() ? type : step.fill();
+            steps.add(new PlanStep(step.kind(), step.box(), stairs, step.axis(), step.facade(), step.numbers(), fill));
+            changes.add("Instruction " + (i + 1) + " (gable) : « " + type + " » est un bloc plein, sans marches à "
+                    + "orienter — toit en « " + stairs + " », le bloc plein garni les pignons.");
+            changed = true;
+        }
+        return changed ? copy(plan, steps) : plan;
+    }
+
+    /** L'escalier réel d'un matériau plein, ou {@code null} : quartz_block → quartz_stairs, bricks → brick_stairs. */
+    static String stairsOf(String type) {
+        List<String> candidates = new ArrayList<>();
+        candidates.add(type + "_stairs");
+        for (String[] suffix : new String[][] {{"_planks", "_stairs"}, {"_block", "_stairs"},
+            {"_bricks", "_brick_stairs"}, {"_tiles", "_tile_stairs"}, {"bricks", "brick_stairs"}}) {
+            if (type.endsWith(suffix[0])) {
+                candidates.add(type.substring(0, type.length() - suffix[0].length()) + suffix[1]);
+            }
+        }
+        for (String c : candidates) {
+            if (BlockCatalog.vanilla().known(c) && BlockCatalog.vanilla().hasProperty(c, "facing")) {
+                return c;
+            }
+        }
+        return null;
     }
 
     private static String plural(String state, Map<String, String> renamed) {
@@ -401,6 +447,65 @@ public final class PlanRepair {
                     + " : offset " + offset + " → " + chosen + ", pour tomber dans le mur construit "
                     + "(angles exclus) au lieu d'en sortir.");
             current = fixed;
+        }
+        return current;
+    }
+
+    /** Écart maximal entre le « wall: » écrit et le mur réellement construit, pour le recaler. */
+    static final int MAX_WALL_SHIFT = 2;
+
+    private static final java.util.regex.Pattern WRONG_WALL = java.util.regex.Pattern.compile(
+            "^Instruction (\\d+) \\((DOOR|WINDOW)\\) : .*vise « wall: (-?\\d+) », mais aucun mur construit.*\\(murs : ([^)]*)\\)",
+            java.util.regex.Pattern.DOTALL);
+
+    /**
+     * Recale une porte ou une fenêtre dont le « wall: » manque d'une ou deux cellules le mur construit
+     * de sa façade (#747). Église de test, V-979a80e5 (23/10/2026) : « wall: 15 » pour un mur en z=16 —
+     * refus PLAN_INVALID, donc aucun autre contrôle exécuté, et un appel payant pour une cellule. Le mur
+     * retenu est le plus proche parmi ceux que l'expanseur a listés, à {@value #MAX_WALL_SHIFT} cellules
+     * au plus ; il n'est gardé que si l'expanseur accepte alors l'instruction.
+     */
+    static BuildingPlan wrongWall(BuildingPlan plan, List<String> changes) {
+        BuildingPlan current = plan;
+        for (int guard = 0; guard < plan.steps().size(); guard++) {
+            BuildingPlanExpander.Result r = BuildingPlanExpander.expand(current);
+            if (r.ok()) {
+                return current;
+            }
+            var m = WRONG_WALL.matcher(r.error());
+            if (!m.find()) {
+                return current;
+            }
+            int rank = Integer.parseInt(m.group(1));
+            int written = Integer.parseInt(m.group(3));
+            Integer nearest = null;
+            var wall = java.util.regex.Pattern.compile("[xz]=(-?\\d+)").matcher(m.group(4));
+            while (wall.find()) {
+                int w = Integer.parseInt(wall.group(1));
+                if (Math.abs(w - written) <= MAX_WALL_SHIFT
+                        && (nearest == null || Math.abs(w - written) < Math.abs(nearest - written))) {
+                    nearest = w;
+                }
+            }
+            if (nearest == null) {
+                return current;
+            }
+            PlanStep step = current.steps().get(rank - 1);
+            Map<String, Integer> numbers = new HashMap<>(step.numbers());
+            numbers.put("wall", nearest);
+            List<PlanStep> steps = new ArrayList<>(current.steps());
+            steps.set(rank - 1, new PlanStep(step.kind(), step.box(), step.state(), step.axis(), step.facade(),
+                    numbers, step.fill()));
+            BuildingPlan candidate = copy(current, steps);
+            BuildingPlanExpander.Result after = BuildingPlanExpander.expand(candidate);
+            if (!candidate.validate().isEmpty()
+                    || !after.ok() && after.error().startsWith("Instruction " + rank + " (")) {
+                return current;
+            }
+            String described = BuildingPlanExpander.describeStep(current, rank);
+            changes.add(described.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + described.substring(1)
+                    + " : wall " + written + " → " + nearest + ", le mur réellement construit de cette façade.");
+            current = candidate;
         }
         return current;
     }

@@ -75,6 +75,10 @@ class Eglise747DesignTest {
         assertTrue(user.contains("ÉLÉMENT <exigence> | volume: <nom>"), user);
         assertTrue(user.contains("est un VOLUME À PART"), user);
         assertTrue(user.contains("N'ajoute AUCUN élément fonctionnel que la description ne demande pas"), user);
+        // Essai réel du 23/10 (V-979a80e5) : sans repère, la tour d'entrée a été conçue au NORD (z=0).
+        assertTrue(user.contains("SUD = z le plus grand (size.z - 1)"), user);
+        assertTrue(user.contains("La façade d'entrée est donc la rangée z = size.z - 1 (côté sud, z le plus grand)"),
+                user);
     }
 
     @Test

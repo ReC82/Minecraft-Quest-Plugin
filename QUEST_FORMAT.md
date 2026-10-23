@@ -12,8 +12,8 @@ category: gathering
 giver: woodcutter_bob              # optionnel : id stable du PNJ donneur (cf. /rpgadmin npc tag)
 repeatable: true
 
-prerequisites:
-  - rpgquest:first_steps
+prerequisites:                     # optionnel (le fichier livré n'en a plus depuis #778)
+  - rpgquest:premiers_pas
 
 steps:
   - id: chop_wood

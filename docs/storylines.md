@@ -20,12 +20,13 @@ Toujours **pas implémenté** à cette étape (mission, section 4) : chapitres, 
 **natives à la Story**, agrandissement de claim au-delà du premier (TIER_1), équipement légendaire,
 points de compétence, PNJ Story du Wild, GUI Story.
 
-Un premier exemple concret de « déblocage » via une Story existe désormais (mission « premier claim
-5×5 ») : `crystal_hunt` (dernière quête de `main_story`) porte une récompense `VARIABLE` qui
-débloque `CLAIM_TIER_1`, prérequis vérifié par `claim.ClaimService` pour le premier claim d'un
-joueur — voir [docs/CLAIMS.md](CLAIMS.md). Ce n'est pas une récompense **native** de `StoryService`
-(toujours accrochée à la dernière quête, comme n'importe quelle récompense `VARIABLE` de quête),
-mais démontre que le mécanisme de déblocage fonctionne de bout en bout.
+Le premier exemple concret de « déblocage » (mission « premier claim 5×5 ») passait par
+`crystal_hunt`, alors dernière quête de `main_story`. Cette quête est **retirée depuis #778** (tout
+comme `first_steps`) : `CLAIM_TIER_1`, prérequis vérifié par `claim.ClaimService` pour le premier
+claim d'un joueur, est désormais posé par la récompense `VARIABLE` de `rpgquest:guard_tier1`
+(« Gauthier — Palier 1 »), une quête hors Story — voir [docs/CLAIMS.md](CLAIMS.md). Une Story n'a
+toujours pas de récompense **native** dans `StoryService` : un déblocage reste une récompense
+`VARIABLE` ordinaire accrochée à une quête.
 
 ## Fichiers de définition
 
@@ -37,9 +38,10 @@ id: main_story
 name: "Histoire principale"
 quests:
   - rpgquest:premiers_pas
-  - rpgquest:first_steps
-  - rpgquest:crystal_hunt
 ```
+
+Depuis #778, `main_story` ne contient plus que `premiers_pas` (la quête du Libraire) : `first_steps`
+et `crystal_hunt` sont retirées définitivement.
 
 - `id` — stable, sert de clé de persistance (`story_progress.story_id`). Ne jamais renommer un id
   de Story déjà utilisé en production (voir « Renommer un id » plus bas).
@@ -257,7 +259,7 @@ Pour rejouer le scénario de test depuis zéro :
 
 Une seule commande, ciblée : remet la Story `story_test` en `NOT_STARTED` **et** les 3 quêtes
 qu'elle référence en `NOT_STARTED`, sans toucher à l'inventaire, l'économie, ni aux autres quêtes du
-joueur (ex. `first_steps`/`crystal_hunt` en cours restent intactes). Privilégier systématiquement
+joueur (ex. `woodcutters_request`/`guard_tier1` en cours restent intactes). Privilégier systématiquement
 cette commande à un wipe de `data.db` — jamais nécessaire pour ce scénario.
 
 Pour repartir des définitions elles-mêmes (rare) : supprimer

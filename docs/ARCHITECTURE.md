@@ -233,8 +233,8 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
         seule la donnée est portée, la même limite déjà documentée pour
         `locale` dans les décisions techniques.
     -   Identifiants **namespacés** via `org.bukkit.NamespacedKey` (pas un
-        type maison) : `id: first_steps` est résolu dans le namespace par
-        défaut `rpgquest`, `id: monpack:first_steps` référence un autre
+        type maison) : `id: premiers_pas` est résolu dans le namespace par
+        défaut `rpgquest`, `id: monpack:premiers_pas` référence un autre
         namespace. Comme `ConfigurationSection`, c'est un type Bukkit léger,
         sans dépendance à un serveur vivant — testable en JUnit pur.
 -   **`QuestDefinitionParser`** (package-privé) — valide **un seul fichier**
@@ -1241,17 +1241,20 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 ## Parcours RPG complet (dialogue → quête → combat/récolte → fabrication → remise → récompense)
 
 Vertical slice minimal reliant tous les systèmes livrés, construit sur
-l'existant plutôt qu'un nouveau système dédié :
+l'existant plutôt qu'un nouveau système dédié. Il s'appuyait à l'origine sur
+les quêtes embarquées `first_steps` et `crystal_hunt`, **retirées
+définitivement par #778** ; le même enchaînement est désormais porté par deux
+quêtes *fixtures* de test (`rpgquest:test_slice_intro` →
+`rpgquest:test_slice_hunt`, mêmes objectifs et récompenses), écrites dans le
+dossier de quêtes du plugin par le test :
 
 1.  Marquer l'entité qui joue le rôle du garde avec
     `/rpgadmin npc tag guard` (identité stable, indépendante de son nom
-    affiché — voir package `npc`), puis lui parler (`dialogues/guard.yml`)
-    → accepter `first_steps` (déjà existante depuis l'étape 3).
-2.  Tuer 10 araignées → remise automatique de `first_steps`
+    affiché — « Gauthier » depuis #778, voir package `npc`) et accepter la
+    quête d'introduction.
+2.  Tuer 10 araignées → remise automatique de l'introduction
     (`TALK_TO_NPC`-free : uniquement `KILL_ENTITY`, une seule étape).
-3.  Reparler au garde (nouveau choix, visible seulement une fois
-    `first_steps` `COMPLETED` et `crystal_hunt` `NOT_STARTED`) → accepter
-    `crystal_hunt` (nouvelle quête, prérequis `first_steps`).
+3.  Accepter la quête de chasse (`giver: guard`, prérequis : l'introduction).
 4.  Tuer 5 araignées supplémentaires (`spider_fang` tombe automatiquement,
     voir `SpiderFangDropListener` ci-dessus) → étape `hunt_spiders`.
 5.  Récolter 2 `refined_crystal` (`COLLECT_ITEM material: AMETHYST_SHARD`,
@@ -1267,15 +1270,20 @@ l'existant plutôt qu'un nouveau système dédié :
     base, voir « Limites connues » ; une épée en diamant ordinaire validerait
     aussi cette étape).
 7.  Reparler au garde → dernier objectif (`TALK_TO_NPC npc: guard`) →
-    remise automatique de `crystal_hunt` → récompense `COMMAND`
+    remise automatique → récompense `COMMAND`
     (`customitem give %player% rpgquest:miner_pickaxe 1`, exécutée par la
     console, donc sans dépendre d'une permission du joueur).
 
-Couvert de bout en bout par `CrystalHuntIntegrationTest`
-(`quest.progress`), qui utilise volontairement le plugin **réellement**
-démarré (`MockBukkit.load(RPGQuestPlugin.class)`) plutôt que des
-définitions synthétiques, pour exercer les quêtes/objets/recettes tels
-qu'embarqués dans le jar.
+Couvert de bout en bout par `QuestVerticalSliceIntegrationTest`
+(`quest.progress`, ex-`CrystalHuntIntegrationTest`), qui utilise
+volontairement le plugin **réellement** démarré
+(`MockBukkit.load(RPGQuestPlugin.class)`) pour exercer les objets, recettes,
+commandes de récompense et le droit au premier claim tels qu'embarqués dans
+le jar. Un second test vérifie qu'une progression vers une quête retirée est
+tolérée : ni erreur, ni récompense, ni purge.
+
+Dans le contenu de jeu livré, le droit au premier claim (`CLAIM_TIER_1`)
+s'obtient uniquement par `rpgquest:guard_tier1` (« Gauthier — Palier 1 »).
 
 ## `admin` (commandes d'administration du monde)
 
@@ -2533,7 +2541,7 @@ Fabrication → Remise → Récompense
     base. En conditions réelles, la latence réseau d'un vrai client rend
     cette fenêtre infranchissable ; le risque ne s'est manifesté qu'en test
     automatisé (interaction immédiate, sans latence, avec le joueur simulé
-    juste après `server.addPlayer()` — voir `CrystalHuntIntegrationTest`,
+    juste après `server.addPlayer()` — voir `QuestVerticalSliceIntegrationTest`,
     qui attend explicitement la fin du chargement avant d'interagir).
     Risque jugé acceptable et documenté plutôt que corrigé dans cette
     étape (correctif non trivial — fusion au lieu de remplacement, ou
@@ -2543,7 +2551,8 @@ Fabrication → Remise → Récompense
     vanilla de même matériau de base** — limitation préexistante depuis
     l'étape 4 (l'objectif compare uniquement
     `event.getRecipe().getResult().getType()`), réutilisée telle quelle
-    par la quête `crystal_hunt` (voir « Parcours RPG complet ») : fabriquer
+    par la quête de chasse du « Parcours RPG complet » (autrefois
+    `crystal_hunt`, retirée par #778, aujourd'hui une fixture de test) : fabriquer
     une épée en diamant vanilla ordinaire valide donc aussi l'étape
     « forger une lame », pas seulement `forest_blade`. Même famille de
     limitation assumée que `TALK_TO_NPC` (identification par un critère

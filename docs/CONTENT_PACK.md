@@ -51,7 +51,7 @@ content:
 ## 2. Identifiants et références
 
 - Un `id` est un **identifiant métier stable**, jamais un chemin de fichier.
-- Quêtes / dialogues : `namespace:clé` (ex. `rpgquest:first_steps`). Une clé sans `:` reçoit le
+- Quêtes / dialogues : `namespace:clé` (ex. `rpgquest:premiers_pas`). Une clé sans `:` reçoit le
   namespace `rpgquest`.
 - Stories / PNJ : clé simple minuscule (`main`, `guide`) — `[a-z0-9_-]` (stories) /
   `[a-z0-9._-]` (PNJ).
@@ -78,7 +78,7 @@ content:
 ## 3. Famille `quests`
 
 ```yaml
-- id: rpgquest:first_steps
+- id: rpgquest:premiers_pas
   title: "Premiers pas"              # chaîne, OU table { default: "...", en: "..." }
   description: "Fais connaissance avec le village."
   category: tutorial                 # obligatoire, non vide
@@ -136,7 +136,7 @@ content:
 - id: main
   name: "Histoire principale"        # chaîne OU table de traductions
   secret: false
-  quests: [rpgquest:first_steps, rpgquest:crystal_hunt]     # >= 1, ordonnées
+  quests: [rpgquest:premiers_pas, rpgquest:woodcutters_request]     # >= 1, ordonnées
 ```
 
 Une story est un **conteneur ordonné de quêtes existantes** : `quests` n'est jamais résolu au
@@ -166,12 +166,12 @@ chargement (les quêtes peuvent être dans le même pack ou déjà sur le serveu
         - text: "Merci"
           conditions:
             - type: QUEST_STATE
-              quest: rpgquest:first_steps
+              quest: rpgquest:premiers_pas
               state: COMPLETED
               negate: true           # optionnel — inverse la condition
           actions:
             - type: START_QUEST
-              quest: rpgquest:first_steps
+              quest: rpgquest:premiers_pas
           next: greeting
 ```
 

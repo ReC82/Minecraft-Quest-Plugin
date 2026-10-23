@@ -6,6 +6,21 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Retrait de `first_steps` / `crystal_hunt`, le Garde devient « Gauthier » (#778, 23/10/2026)** — les
+> quêtes `rpgquest:first_steps` (« Premiers pas » au Garde, 10 araignées) et `rpgquest:crystal_hunt` (« La
+> chasse aux cristaux / aux monstres ») sont **retirées définitivement** : plus embarquées ni recréées au
+> démarrage (`YamlQuestEngine#BUNDLED_EXAMPLES`), plus de choix dans `guard.yml`, plus dans `main_story`
+> (qui ne contient plus que `rpgquest:premiers_pas`, la quête homonyme du Libraire, conservée).
+> `CLAIM_TIER_1` ne s'obtient plus que par `rpgquest:guard_tier1` ; un joueur ayant rendu `crystal_hunt`
+> garde son droit. Le PNJ `guard` (id inchangé) s'affiche « Gauthier » : locuteur du dialogue,
+> `display_name` de `npcs/guard.yml`, titres « Gauthier — Palier 1..5 » ; Jo et Elias (`guide`) renvoient
+> vers « Gauthier — Palier 1 ». `woodcutters_request` (Bob) sans prérequis, dialogue sans renvoi vers le
+> Garde ; offre `forest_blade` du marchand verrouillée par `guard_tier1` `COMPLETED`. Progression orpheline
+> vers une quête retirée tolérée (ni erreur, ni récompense, ni purge). `CrystalHuntIntegrationTest` →
+> `QuestVerticalSliceIntegrationTest` (fixtures). PlugAdmin : exemples et modèles purgés. Les fichiers déjà
+> présents sur un serveur ne sont pas mis à jour par le JAR (republier `guard.yml`, `woodcutter_bob.yml`,
+> `jo.yml`, `guide.yml`, quêtes et story concernées). Aucune migration. PENDING MANUAL VALIDATION (TC-423).
+
 > **Classements du site gérés depuis PlugAdmin (#735, 23/10/2026)** — page **Site public → Classements**
 > (`/leaderboards`) : statut brouillon / actif / en pause / archivé, ordre, visibilité, mise en avant sur
 > l'accueil, duplication, fuseau, formulaire guidé (mesure, familles et cibles, période dont « événement »,
@@ -621,8 +636,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   l'hébergeur, log serveur inatteignable car la racine FTP est `plugins/`, `save-all` ≠ point de
   restauration) ; #131 et #210 annoncés comme lots suivants.
 - **Parcours Claims cohérent (issues #21/#22/#23)** — le portail Hub → `claims` est réservé aux
-  joueurs qui ont réellement débloqué leur premier terrain (`CLAIM_TIER_1 == "true"` accordé par la
-  dernière quête de l'histoire principale, ou claim déjà existant) : `claim.ClaimWorldAccessGuard`
+  joueurs qui ont réellement débloqué leur premier terrain (`CLAIM_TIER_1 == "true"` accordé par
+  « Gauthier — Palier 1 » `rpgquest:guard_tier1` depuis #778 — à l'origine par `crystal_hunt`, retirée —,
+  ou claim déjà existant) : `claim.ClaimWorldAccessGuard`
   (composé avec l'avertissement Wild via `travel.CompositeWorldPortalEntryGuard`) refuse l'entrée
   sans téléporter et oriente vers Jo/le Guide ; seul le bypass explicite `rpgquest.admin.world`
   passe outre. `claim.ClaimWorldSafetyListener` garantit qu'aucun joueur ne reste coincé : Pierre
@@ -632,9 +648,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   claim existant) grâce à `negate: true` sur une condition de dialogue (`dialogue.model.NegatedCondition`).
   Prérequis **opérationnels** (à provisionner par serveur, non portés par le code) : les 4 PNJ Citizens
   liés `guide` / `libraire` / **`guard`** / `jo` doivent exister physiquement (`/rpgadmin npc tag <id>`),
-  `dialogues/guard.yml` doit contenir la branche `crystal_hunt`, et un World-Portal `world_hub → claims`
-  doit être configuré. Sans PNJ `guard`, `first_steps` et `crystal_hunt` sont indémarrables et
-  `CLAIM_TIER_1` n'est jamais accordé. Toute validation #21/#22 se fait avec un compte **non opéré**
+  `dialogues/guard.yml` doit proposer « Gauthier — Palier 1 » (version #778), et un World-Portal
+  `world_hub → claims` doit être configuré. Sans PNJ `guard` (affiché « Gauthier »), `guard_tier1` est
+  indémarrable et `CLAIM_TIER_1` n'est jamais accordé. Toute validation #21/#22 se fait avec un compte **non opéré**
   (`rpgquest.admin.world`, défaut `op`, contourne le contrôle d'éligibilité et n'est jamais renvoyé
   — décisions journalisées `[claims-access]` / `[claims-safety]` / `[claims-retour]`). Voir
   `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b.
@@ -1988,7 +2004,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   reste **strictement** celui du moteur (`StoryDefinition` : `id`, `name`, `secret`, liste
   ordonnée de `questIds`) — aucun champ inventé. **Sélection recherchable des quêtes** : la
   datalist `dl-quest` porte désormais le **titre humain** en plus de l'id
-  (`<option value="first_steps" label="Premiers pas">`) ; `RefData` transporte `id -> titre`
+  (`<option value="premiers_pas" label="Premiers pas">`) ; `RefData` transporte `id -> titre`
   depuis le dernier `quest.list`, `questLabel()` le résout (namespace `rpgquest:` toléré), le
   combo `panel.js` filtre sur le **titre et l'id**. **Ordre clair** : chaque ligne de la chaîne
   affiche le rang `N.` + le titre humain au-dessus de l'identifiant technique éditable, avec les

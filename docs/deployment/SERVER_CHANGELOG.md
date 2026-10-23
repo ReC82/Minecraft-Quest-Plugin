@@ -49,6 +49,55 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Retrait définitif de first_steps et crystal_hunt, Garde affiché « Gauthier » (#778, #80, TC-423)
+
+### Changement
+
+JAR RPGQuest `68811e17` (PR #795) : `quests/first_steps.yml` et `quests/crystal_hunt.yml` ne sont plus embarquées ni
+recréées au démarrage. Contenus mis à jour : Garde (`guard`, affiché « Gauthier », offres retirées), Bob
+(`woodcutters_request` sans prérequis, dialogue sans renvoi vers Premiers pas), Jo et Elias (premier terrain via
+« Gauthier — Palier 1 »), titres des paliers, `main_story` (= `premiers_pas`), offre `forest_blade` du marchand
+(verrou `guard_tier1`). Aucune migration ; progressions joueurs intactes (une progression vers une quête retirée est
+ignorée sans erreur ni récompense). PlugAdmin `68811e17` (exemples et liste des quêtes embarquées).
+
+### Action serveur
+
+- JAR remplacé ; 13 fichiers republiés via `--also` (le JAR ne met jamais à jour un fichier existant) :
+  `dialogues/{guard,woodcutter_bob,jo,guide}.yml`, `quests/woodcutters_request.yml`, `quests/guard_tier1..5.yml`,
+  `stories/main_story.yml`, `merchants/village_merchant.yml`, `npcs/guard.yml`.
+- `RPGQuest/quests/crystal_hunt.yml` et `RPGQuest/quests/first_steps.yml` **supprimés** après sauvegarde (FTP).
+- Nom Citizens du PNJ n° 6 (`guard`) : « Garde » → « Gauthier » par l'action PlugAdmin `npc.identity.rename`
+  (`29666459`) ; elle a aussi posé l'apparence par défaut de PlugAdmin (règle #197).
+
+### Sauvegarde préalable
+
+- JAR : `rpgquest-20261023T162321Z-predeploy.jar` ; contenus : `extra-20261023T162321Z/` (+ `MANIFEST.txt`) ;
+  quêtes retirées : `retire-778-20261023-162749/` (+ `MANIFEST.txt`, SHA-256 contrôlés), dans
+  `~/.local/share/rpgquest/verygames-backups/` sur l'hôte AWS. `data.db` non touchée.
+
+### Déploiement
+
+Le 23/10/2026 : CI verte sur `68811e17` → `scripts/deploy-verygames.sh -y --also …` (« Déploiement terminé ») →
+suppression sauvegardée des 2 quêtes → `scripts/verygames-restart.sh` (DEV ONLINE à 18:29:07, seul le propriétaire
+était connecté avant) → `scripts/plugadmin/deploy.sh` (PlugAdmin `68811e17`, health OK).
+
+### Validation
+
+JAR distant retéléchargé, SHA-256 `0d834c21…` identique au local ; FTP `quests/` : 32 fichiers, sans les 2 retirés
+(pas de recréation au redémarrage) ; `quest.list` : 31 quêtes, aucune mention de `first_steps`/`crystal_hunt`,
+`woodcutters_request` sans prérequis ; `dialogue.list` : `guard` 18 répliques, `woodcutter_bob`, `guide`, `jo` sans
+référence retirée ni avertissement ; `npc.list` : `guard` = « Gauthier », LINKED. Test en jeu : PENDING MANUAL
+VALIDATION (TC-423).
+
+### Rollback
+
+`scripts/rollback-verygames.sh` avec le JAR `rpgquest-20261023T162321Z-predeploy.jar` et, pour chaque contenu,
+`--also <backup>/<remote_path>:<remote_path>` depuis `extra-20261023T162321Z/` ; ré-uploader les deux quêtes depuis
+`retire-778-20261023-162749/RPGQuest/quests/` ; nom Citizens : « Modifier le nom » → « Garde » dans PlugAdmin. Puis
+redémarrage DEV.
+
+---
+
 ## 2026-10-23 - Quêtes périodiques : attribution automatique annoncée en une ligne (#15, TC-422)
 
 ### Changement

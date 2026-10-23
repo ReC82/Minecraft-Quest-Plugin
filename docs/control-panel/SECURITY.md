@@ -67,7 +67,7 @@ Table append-only `audit_log` dans `control-panel.db` :
 | `ts` | `2026-09-07T20:15:03Z` |
 | `actor` | `owner` |
 | `action` | `actions/quest-complete` |
-| `target` | `player=Rondoudou9000 quest=rpgquest:crystal_hunt env=DEV` |
+| `target` | `player=Rondoudou9000 quest=rpgquest:guard_tier1 env=DEV` |
 | `result` | `COMPLETED` / `DENIED:permission` / `ERROR:bridge_unreachable` |
 | `details` | JSON court, **sans secret** (payload validé, code d'erreur, corrélation) |
 | `request_id` | corrélation avec les logs HTTP et le log `[web-admin]` du plugin |

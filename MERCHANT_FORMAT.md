@@ -36,7 +36,7 @@ offers:
     quantity: 1
     price: 250
     required-permission: rpgquest.vip
-    required-quest: rpgquest:first_steps
+    required-quest: rpgquest:guard_tier1
     required-quest-state: COMPLETED   # par défaut si omis : COMPLETED
     required-level: 5                  # niveau RPG GLOBAL (vanilla si progression.vanilla-xp-progression: true, #532)
 ```
@@ -83,7 +83,7 @@ offers:
 offers:
   - price-ref: pain_x4                # clé d'un prix de PlugAdmin → Prix et coûts
   - price-ref: epee_forgee            # un prix CRAFT : fabrication (pièces + ingrédients)
-    required-quest: rpgquest:first_steps
+    required-quest: rpgquest:guard_tier1
 ```
 
 -   Sens, objet, quantité et montant viennent du catalogue `prices.yml`

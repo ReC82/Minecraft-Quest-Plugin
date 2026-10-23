@@ -415,7 +415,7 @@ class DialogueEditorTest {
     }
 
     /**
-     * Issue #373 : le VRAI dialogue du Garde (scalaires {@code text: >}, commentaires, 22 répliques).
+     * Issue #373 : le VRAI dialogue du Garde (scalaires {@code text: >}, commentaires, 18 répliques depuis #778).
      * L'éditeur n'en montrait que deux, et l'enregistrement sans changement était refusé.
      */
     @Test
@@ -429,8 +429,8 @@ class DialogueEditorTest {
         assertFalse(page.contains("Réplique introuvable"), "toutes les suites sont résolues");
         assertFalse(page.contains("lecture seule"), "le fichier est éditable");
         Map<String, String> f = formFields(page);
-        assertEquals("22", f.get("n_count"), "les 22 répliques sont dans le formulaire");
-        assertTrue(page.contains("Le Garde — Palier 5"), "une réplique écrite en « text: > » s'affiche");
+        assertEquals("18", f.get("n_count"), "les 18 répliques sont dans le formulaire");
+        assertTrue(page.contains("Gauthier — Palier 5"), "une réplique écrite en « text: > » s'affiche");
 
         HttpResponse<String> res = post("/dialogues/save", f, "save");
         assertEquals(303, res.statusCode(), "aucune erreur à l'enregistrement sans changement");
@@ -443,7 +443,7 @@ class DialogueEditorTest {
         DialogueDraft before = DialogueYaml.read(original).draft();
         before.nodes.get(0).text = "<white>Bienvenue, voyageur.</white>";
         assertEquals(DialogueYaml.write(before), DialogueYaml.write(after));
-        assertEquals(22, after.nodes.size());
+        assertEquals(18, after.nodes.size());
     }
 
     @Test

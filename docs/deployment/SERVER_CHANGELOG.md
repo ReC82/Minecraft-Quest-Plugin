@@ -49,6 +49,37 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Hub : un OP ne construit qu'en mode bypass ON (#35 rouvert, TC-302)
+
+### Changement
+
+JAR RPGQuest `04afc09f` (PR #791) : au Hub, la casse, la pose, les seaux, le feu et le décor (cadres,
+tableaux, porte-armures, panneaux, terre labourée, poudre d'os) ne sont permis qu'à un compte non OP
+portant `rpgquest.build.hub.<monde>`/`.*`, ou pendant `/rpgadmin bypass on`. Un OP bypass OFF joue comme
+un joueur normal. Aucune migration.
+
+### Action serveur
+
+Remplacement du JAR + redémarrage. LuckPerms, groupes et statut OP inchangés.
+
+### Sauvegarde préalable
+
+`rpgquest-20261023T143419Z-predeploy.jar` (JAR `7093bc80`).
+
+### Déploiement
+
+23/10/2026 16:34 : `scripts/deploy-verygames.sh -y` (CI verte sur `04afc09`), JAR 4 377 891 octets, SHA-256
+retéléchargé identique (`b80c13a6…`) ; `scripts/verygames-restart.sh` à 0 joueur, RPGQuest actif.
+
+### Validation
+
+TC-302 étapes 11–15 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+`scripts/rollback-verygames.sh` avec la sauvegarde ci-dessus, puis redémarrage.
+
+
 ## 2026-10-23 - Atelier IA : bâtiment utilisable — moteur et PlugAdmin (#747, TC-421)
 
 ### Changement

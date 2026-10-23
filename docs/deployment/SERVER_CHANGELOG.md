@@ -49,6 +49,45 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - PlugAdmin « État des quêtes d'un joueur » : objectifs d'un joueur hors ligne, statuts FR, noms actuels des PNJ (#79, TC-320)
+
+### Changement
+
+JAR RPGQuest `c15b4c35` (PR #797) : `quest.player.status` relit en base (lecture seule) l'étape et les compteurs des
+quêtes en cours quand le joueur est **hors ligne** — avant, toutes ses quêtes en cours arrivaient sans étape ni
+objectif (colonne « Détail » = « — » dans PlugAdmin). PlugAdmin `c15b4c35` : statuts en français (code technique en
+infobulle), PNJ nommés depuis le dernier `npc.list`, « détail non transmis par le serveur » pour une quête en cours
+sans étape. Format du payload inchangé (champs legacy conservés). Aucune migration, aucune écriture de progression.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement ; aucun fichier de contenu ni de configuration. PlugAdmin redéployé sur l'hôte AWS.
+
+### Sauvegarde préalable
+
+JAR : `rpgquest-20261023T171157Z-predeploy.jar` dans `~/.local/share/rpgquest/verygames-backups/` (hôte AWS).
+PlugAdmin : release précédente conservée par `scripts/plugadmin/deploy.sh`. `data.db` non touchée.
+
+### Déploiement
+
+Le 23/10/2026 : CI verte sur le merge `c15b4c35` → `scripts/deploy-verygames.sh -y` (« Déploiement terminé ») →
+`scripts/verygames-restart.sh` (seul LoDyMcFly en ligne avant ; DEV ONLINE ensuite) → `scripts/plugadmin/deploy.sh`
+(`/health` ONLINE au second essai, `DEPLOYED` commit `c15b4c35`).
+
+### Validation
+
+JAR distant retéléchargé, SHA-256 `0680a2d7…` identique au local. Lecture `quest.player.status` de LoDyMcFly **hors
+ligne** (action `966f6420`, 0 joueur connecté) : 8 quêtes en cours, chacune avec étape, objectifs structurés et
+compteurs (ex. Garde palier 2 : 10/10, 10/10, 8/10, 2/10). PlugAdmin servi : `Ui.class` et l'aide `quetes.md` du JAR
+installé contiennent le correctif. Test visuel en jeu/PlugAdmin : PENDING MANUAL VALIDATION (TC-320 étapes 5-6).
+
+### Rollback
+
+`scripts/rollback-verygames.sh` avec `rpgquest-20261023T171157Z-predeploy.jar` puis redémarrage DEV ;
+`scripts/plugadmin/rollback.sh app` pour PlugAdmin. Aucune donnée à restaurer.
+
+---
+
 ## 2026-10-23 - Retrait définitif de first_steps et crystal_hunt, Garde affiché « Gauthier » (#778, #80, TC-423)
 
 ### Changement

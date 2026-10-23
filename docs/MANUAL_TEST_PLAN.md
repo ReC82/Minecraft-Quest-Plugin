@@ -6332,8 +6332,9 @@ Prérequis : portail issu du lot 7 de #53. Aucune donnée de jeu n'est modifiée
 **A. Maintenant (comptes désactivés)**
 
 1.  https://lodyquests.lodylands.com/compte → toujours « pas encore ouverts », aucun formulaire.
-2.  `POST /compte/export` ou `/compte/supprimer` sans session (ex. `curl -X POST`) → 403 « Formulaire
-    expiré ou session terminée », rien d'autre.
+2.  `POST /compte/export` ou `/compte/supprimer` (ex. `curl -X POST`) → la même page « pas encore
+    ouverts » (aucun fichier, aucun formulaire) : tant que les comptes sont fermés, aucune route de
+    compte n'est servie. Une fois ouverts, sans session → 403 « Formulaire expiré ou session terminée ».
 
 **B. Après ouverture par le propriétaire** (compte de test, TC-326 B réussi)
 

@@ -243,9 +243,13 @@ public final class BuildingPromptBuilder {
                                   RIGHT) et « offset » (le CENTRE de la volée le long de la façade,
                                   par défaut le milieu), SANS « from » ni « direction ». Le moteur
                                   pose la volée sur la rangée du bord du volume de cette façade,
-                                  au niveau du terrain, montant vers l'intérieur. Laisse cette
-                                  rangée libre devant le plateau (sinon les marches prennent la
-                                  place de son bord). Plateau en y=0 : « floor: 0 », une marche.
+                                  au niveau du terrain, montant vers l'intérieur. Cette rangée
+                                  doit être LIBRE DE MUR : façade (porte comprise) en retrait
+                                  d'une rangée, sinon le plan est refusé. Devant une porte, le
+                                  palier est son seuil : centre la volée sur la porte (même
+                                  « offset »). Plateau ou sol en y=0, sans anchor : « floor: 0 »,
+                                  une marche. Avec « anchor: y: 1 », l'entrée est déjà de
+                                  plain-pied : n'écris AUCUNE marche d'entrée.
                                   2) ESCALIER ENTRE DEUX NIVEAUX à l'intérieur : « from » (la
                                   PREMIÈRE MARCHE, posée sur le sol du niveau de départ : y = y du
                                   sol + 1), « direction » (le POINT CARDINAL vers lequel on monte :
@@ -270,8 +274,7 @@ public final class BuildingPromptBuilder {
                                   et le haut, en points COMPLETS [x, y, z] : trois nombres, mêmes
                                   x et z, seul y change), « block ». Place-la sur la cellule
                                   INTÉRIEURE juste contre ce mur : dans un bâtiment « front: NORTH »
-                                  de profondeur 7, le mur arrière (BACK) est en z = 6, donc
-                                  l'échelle est en z = 5.
+                                  dont le mur arrière (BACK) est en z = 7, l'échelle est en z = 6.
 
                 Seules « door » et « window » se repèrent par « facade » et « offset ». TOUTES les
                 autres instructions prennent des coordonnées COMPLÈTES [x, y, z] — trois nombres,
@@ -293,9 +296,16 @@ public final class BuildingPromptBuilder {
 
                 UN EXEMPLE MINIMAL PAR INSTRUCTION D'ARCHITECTURE
 
-                (Pour un bâtiment « front: NORTH » de taille x 9, y 9, z 7 — celui de l'exemple
-                complet plus bas. Chaque bloc est valide tel quel.)
+                (Pour un bâtiment « front: NORTH » de taille x 9, y 9, z 8, SANS « anchor » : sol
+                en y=0 et murs de [0,1,1] à [8,8,7], plancher d'étage en y=5 ; la rangée z=0, devant
+                la façade, reste libre pour les marches d'entrée. Chaque bloc est valide tel quel,
+                et tous tiennent ensemble dans ce bâtiment.)
 
+                  - op: pillars
+                    from: [0, 1, 1]
+                    to: [8, 4, 7]
+                    spacing: 4
+                    block: minecraft:oak_log
                   - op: door
                     facade: FRONT
                     offset: 4
@@ -325,26 +335,22 @@ public final class BuildingPromptBuilder {
                     floor: 0
                     block: minecraft:oak_stairs
                   - op: bed
-                    from: [6, 1, 5]
+                    from: [6, 1, 3]
                     direction: east
                     block: minecraft:red_bed
                   - op: ladder
                     facade: BACK
-                    from: [1, 1, 5]
-                    to: [1, 4, 5]
+                    from: [1, 1, 6]
+                    to: [1, 4, 6]
                     block: minecraft:ladder
-                  - op: pillars
-                    from: [0, 1, 0]
-                    to: [8, 4, 6]
-                    spacing: 4
-                    block: minecraft:oak_log
 
                 L'ORDRE COMPTE
 
                 Les instructions s'appliquent dans l'ordre, et une instruction postérieure recouvre
                 une antérieure sur la même cellule :
 
-                  1. pose le sol et les murs ;
+                  1. pose le sol, les murs et les « pillars » (posés APRÈS une porte, ils la
+                     remplaceraient) ;
                   2. « clear » l'intérieur pour creuser les pièces ;
                   3. pose les portes et les fenêtres (elles percent et dégagent elles-mêmes) ;
                   4. pose les lumières, puis le mobilier ; l'escalier « staircase » peut être
@@ -358,10 +364,12 @@ public final class BuildingPromptBuilder {
 
                   [ ] UNE ENTRÉE PRATICABLE. Une porte (« op: door ») DANS un mur extérieur, qu'un
                       joueur venu du terrain franchit jusqu'au sol intérieur SANS SAUTER. Le
-                      terrain est juste sous la couche « anchor.y » : avec un sol en y=0, mets
-                      « anchor: y: 1 » (la fondation s'enfonce, l'entrée est de plain-pied), ou
-                      pose devant la porte des marches d'entrée : « op: staircase » avec
-                      « facade: FRONT ». Une porte posée hors des murs ne compte pas.
+                      terrain est juste sous la couche « anchor.y ». Choisis UNE des deux
+                      entrées, jamais les deux : (a) « anchor: y: 1 » avec un sol en y=0 — la
+                      fondation s'enfonce, l'entrée est de plain-pied, AUCUNE marche ; (b) sans
+                      anchor, façade en retrait d'une rangée et « op: staircase » avec « facade:
+                      FRONT », « floor: 0 », centré sur la porte. Une porte posée hors des murs ne
+                      compte pas.
                   [ ] DES VITRAGES DANS LES MURS, sur au moins DEUX façades différentes. Utilise
                       « op: window » ; une vitre posée hors d'un mur ne compte pas.
                   [ ] DE LA LUMIÈRE, à moins de 8 blocs de tout point intérieur.

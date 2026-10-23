@@ -134,14 +134,19 @@ public record Staircase(int x, int y, int z, BlockStates.Dir dir, int floor, int
         int span = step.facade().span(front, sizeX, sizeZ);
         int width = step.number("width", 1);
         int start = step.number("offset", span / 2) - (Math.max(1, width) - 1) / 2;
-        int plane = switch (out) {
+        int plane = edgePlane(out, sizeX, sizeZ);
+        boolean alongX = !out.alongX();
+        return new Staircase(alongX ? start : plane, groundY, alongX ? plane : start,
+                out.opposite(), step.number("floor", groundY), width, step.state());
+    }
+
+    /** La rangée du bord du volume du côté {@code out} : x ou z selon la façade. */
+    public static int edgePlane(BlockStates.Dir out, int sizeX, int sizeZ) {
+        return switch (out) {
             case NORTH, WEST -> 0;
             case SOUTH -> sizeZ - 1;
             case EAST -> sizeX - 1;
         };
-        boolean alongX = !out.alongX();
-        return new Staircase(alongX ? start : plane, groundY, alongX ? plane : start,
-                out.opposite(), step.number("floor", groundY), width, step.state());
     }
 
     /** Une direction cardinale écrite en minuscules, ou {@code null}. */
@@ -264,6 +269,18 @@ public record Staircase(int x, int y, int z, BlockStates.Dir dir, int floor, int
             }
         }
         return out;
+    }
+
+    /** Une cellule du palier : les deux blocs libres après la dernière marche d'une voie. */
+    public boolean landing(Placement p) {
+        int n = steps();
+        for (int lane = 0; lane < width; lane++) {
+            if (p.x() == x + laneX() * lane + dir.dx() * n && p.z() == z + laneZ() * lane + dir.dz() * n
+                    && (p.y() == floor + 1 || p.y() == floor + 2)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Les appuis d'une volée intérieure, qui ne part jamais du terrain (planificateur #282). */

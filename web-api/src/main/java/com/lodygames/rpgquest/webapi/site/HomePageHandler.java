@@ -18,12 +18,25 @@ import java.util.Map;
  * actualités, saison et événements, aperçu des classements, appel à rejoindre.
  *
  * <p>Chaque bloc se dégrade seul : sans instantané, les actualités et la présentation restent ;
- * sans {@code player-data-public}, aucun pseudo n'est lu et l'aperçu des classements l'annonce.</p>
+ * sans {@code player-data-public}, aucun pseudo n'est lu et l'aperçu des classements l'annonce, avec un
+ * lien vers l'aperçu fictif {@code /demo/classements}.</p>
+ *
+ * <p>Refonte (#56) : bandeau d'accueil, « Commence en 3 étapes », tuiles d'accès rapide, puis l'état du
+ * serveur, la saison, les actualités et le podium des classements.</p>
  */
 public final class HomePageHandler implements ApiHandler {
 
     static final int LATEST_NEWS = 3;
     static final int PREVIEW = 3;
+    /** Tuiles d'accès rapide : adresse, icône, titre, accroche. */
+    private static final String[][] TILES = {
+            {PageMeta.EVENTS, "boss", "Événements", "Défis du moment et à venir"},
+            {PageMeta.BOARDS, "trophy", "Classements", "Les meilleurs aventuriers"},
+            {PageMeta.PROGRESSION, "xp", "Progresser", "Les cinq pistes d'expérience"},
+            {PageMeta.NEWS, "scroll", "Actualités", "Nouveautés du serveur"},
+            {PageMeta.PLAYERS, "npc", "Joueurs", "Profils publics"},
+            {PageMeta.INFO, "map", "Guide", "Rejoindre, règles et FAQ"},
+    };
     /** Les cinq façons de progresser, puis les quêtes (#428). */
     private static final String HERO_ICONS = PortalIcons.icon("sword", 32) + PortalIcons.icon("pickaxe", 32)
             + PortalIcons.icon("bread", 32) + PortalIcons.icon("fish", 32) + PortalIcons.icon("map", 32)
@@ -52,6 +65,7 @@ public final class HomePageHandler implements ApiHandler {
         }
         Map<String, Object> state = ServerState.resolve(store);
         StringBuilder body = new StringBuilder(hero());
+        body.append(steps()).append(tiles());
         body.append("<div class=\"grid\">").append(status(state)).append(periods(state)).append("</div>");
         body.append(latestNews());
         body.append(serverMessages(state));
@@ -67,8 +81,27 @@ public final class HomePageHandler implements ApiHandler {
                 + "Minecraft d'aventure : des quêtes à accomplir, des personnages à rencontrer, des villes à "
                 + "relier et cinq façons de progresser — combat, minage, agriculture, pêche et exploration.</p>"
                 + "<p>Pas besoin de compte pour suivre la vie du serveur ici.</p>"
-                + "<p><a class=\"button\" href=\"/infos#rejoindre\">Comment rejoindre</a>"
-                + "<a class=\"button secondary\" href=\"/actualites\">Les actualités</a></p></section>";
+                + "<p><a class=\"button\" href=\"/infos#rejoindre\">Rejoindre l'aventure</a>"
+                + "<a class=\"button secondary\" href=\"/evenements\">Les événements</a></p></section>";
+    }
+
+    private static String steps() {
+        return PortalIcons.heading("h2", "waypoint", "Commence en 3 étapes") + "<ol class=\"steps\">"
+                + "<li><strong>Rejoins le serveur</strong><br>Minecraft Java Edition, menu Multijoueur. "
+                + "<a href=\"/infos#rejoindre\">Comment faire</a></li>"
+                + "<li><strong>Parle aux personnages</strong><br>Clic droit sur un personnage : certains ont une quête pour toi.</li>"
+                + "<li><strong>Progresse</strong><br>Gagne de l'expérience dans cinq domaines. "
+                + "<a href=\"/progression\">Comment progresser</a></li></ol>";
+    }
+
+    private static String tiles() {
+        StringBuilder html = new StringBuilder("<nav aria-label=\"Accès rapide\"><ul class=\"tiles\">");
+        for (String[] tile : TILES) {
+            html.append("<li><a class=\"tile-link\" href=\"").append(tile[0]).append("\">")
+                    .append(PortalIcons.tile(tile[1], true)).append("<strong>").append(tile[2])
+                    .append("</strong><span class=\"note\">").append(tile[3]).append("</span></a></li>");
+        }
+        return html.append("</ul></nav>").toString();
     }
 
     /** Carte « Le serveur » (#421) : rouge seulement pour un arrêt annoncé par le serveur lui-même. */
@@ -113,7 +146,7 @@ public final class HomePageHandler implements ApiHandler {
                 ? PortalIcons.empty("trophy", "Aucune saison ni aucun événement annoncé pour le moment.")
                 : "<ul>" + items + "</ul>";
         return "<section class=\"card\">" + PortalIcons.heading("h2", "boss", "Saison et événements") + content
-                + "</section>";
+                + "<p><a href=\"/evenements\">Tous les événements</a></p></section>";
     }
 
     private static String periodLine(String kind, Map<?, ?> period) {
@@ -152,17 +185,19 @@ public final class HomePageHandler implements ApiHandler {
         StringBuilder html = new StringBuilder(PortalIcons.heading("h2", "trophy", "Classements"));
         if (!playerDataPublic) {
             return html.append(PortalIcons.empty("shield", "Les classements et les profils ouvriront quand les règles de "
-                    + "confidentialité auront été validées. <a href=\"/confidentialite\">En savoir plus</a>")).toString();
+                    + "confidentialité auront été validées. <a href=\"/confidentialite\">En savoir plus</a>"))
+                    .append("<p><a class=\"button secondary\" href=\"").append(SiteRoutes.DEMO.boards())
+                    .append("\">Voir un aperçu avec des joueurs fictifs</a></p>").toString();
         }
         Map<String, List<Map<String, Object>>> boards =
                 LeaderboardsPageHandler.boards(PublicPlayerData.statistics(state.get("statistics")).get("lifetime"));
         if (boards.isEmpty()) {
             return html.append(PortalIcons.empty("trophy", "Aucun classement disponible pour le moment.")).toString();
         }
-        html.append("<div class=\"grid\">");
+        html.append("<div class=\"grid boards\">");
         boards.entrySet().stream().limit(2).forEach(board -> html.append("<section class=\"card\">")
                 .append(PortalIcons.heading("h3", PortalIcons.forMetric(board.getKey()), StatLabels.title(board.getKey())))
-                .append(BoardView.render(board.getValue(), board.getKey(), PREVIEW)).append("</section>"));
+                .append(BoardView.render(board.getValue(), board.getKey(), PREVIEW, SiteRoutes.LIVE)).append("</section>"));
         return html.append("</div><p><a href=\"/classements\">Tous les classements →</a></p>").toString();
     }
 }

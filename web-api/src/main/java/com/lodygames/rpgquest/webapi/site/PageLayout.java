@@ -20,10 +20,11 @@ public final class PageLayout {
     private static final List<String[]> MENU = List.of(
             new String[] {PageMeta.HOME, "Accueil", "grass"},
             new String[] {PageMeta.NEWS, "Actualités", "scroll"},
+            new String[] {PageMeta.EVENTS, "Événements", "boss"},
             new String[] {PageMeta.BOARDS, "Classements", "trophy"},
             new String[] {PageMeta.PLAYERS, "Joueurs", "npc"},
-            new String[] {PageMeta.INFO, "Infos & FAQ", "map"},
-            new String[] {PageMeta.ACCOUNT, "Mon compte", "shield"});
+            new String[] {PageMeta.INFO, "Guide", "map"},
+            new String[] {PageMeta.ACCOUNT, "Compte", "shield"});
 
     private static final String STYLE = """
             :root { color-scheme: dark; --bg:#121626; --panel:#1d2236; --line:#6b4c2c; --wood:#3a2a1a; --wood-dark:#1e140a;
@@ -108,8 +109,71 @@ public final class PageLayout {
             footer ul { list-style:none; display:flex; flex-wrap:wrap; gap:.3rem 1rem; padding:0; margin:.5rem 0; }
             footer a { display:inline-block; padding:.4rem 0; }
             .legal { font-size:.8rem; letter-spacing:.02em; }
+            .demo-banner { display:flex; align-items:center; gap:.8rem; margin:0 0 1rem; padding:.8rem 1rem; border-radius:6px;
+              background:repeating-linear-gradient(135deg, #3b2f12 0 14px, #2f2610 14px 28px); border:3px solid var(--gold); }
+            .demo-banner p { margin:0; }
+            .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:.8rem; margin:1rem 0;
+              list-style:none; padding:0; }
+            .tile-link { display:flex; flex-direction:column; align-items:center; gap:.4rem; text-align:center; height:100%;
+              padding:1rem .6rem; background:var(--panel); border:3px solid var(--line); border-radius:6px;
+              text-decoration:none; color:var(--text); }
+            .tile-link strong { color:var(--title); font-family:var(--serif); font-size:1.1rem; }
+            .tile-link span.note { font-size:.85rem; }
+            .tile-link:hover { border-color:var(--gold); }
+            .steps { counter-reset:step; list-style:none; padding:0; display:grid; gap:.8rem;
+              grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
+            .steps li { counter-increment:step; background:var(--panel); border:2px solid var(--line); border-radius:6px;
+              padding:.8rem 1rem .8rem 3.4rem; position:relative; }
+            .steps li::before { content:counter(step); position:absolute; left:.8rem; top:.8rem; width:2rem; height:2rem;
+              border-radius:4px; background:var(--gold); color:#1a1300; font-weight:800; display:flex; align-items:center;
+              justify-content:center; }
+            .podium { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); align-items:end; gap:.4rem;
+              margin:.4rem 0 .8rem; padding:0; list-style:none; }
+            .podium li { display:flex; flex-direction:column; align-items:center; text-align:center; min-width:0; }
+            .podium .who { overflow-wrap:anywhere; font-weight:700; font-size:.95rem; }
+            .podium .value { font-variant-numeric:tabular-nums; font-size:.85rem; color:var(--muted); }
+            .podium .step { width:100%; margin-top:.3rem; border-radius:4px 4px 0 0; display:flex; align-items:flex-start;
+              justify-content:center; padding-top:.3rem; font-weight:800; font-size:1.3rem; color:#1a1300;
+              box-shadow:inset 0 3px 0 rgba(255,255,255,.35), inset 0 -4px 0 rgba(0,0,0,.25); }
+            .podium .p1 .step { height:5.5rem; background:var(--gold); }
+            .podium .p2 .step { height:4rem; background:var(--silver); }
+            .podium .p3 .step { height:3rem; background:var(--bronze); }
+            .podium .crown { color:var(--gold); }
+            .grid.boards { grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+            .podium .who, .board .who { overflow-wrap:break-word; }
+            .podium .pos1 { order:2; } .podium .pos2 { order:1; } .podium .pos3 { order:3; }
+            .chip { display:inline-block; font-size:.85rem; font-weight:700; padding:.15rem .6rem; border-radius:1rem;
+              background:#2c3446; color:var(--text); }
+            .chip.active { background:#1e5a34; color:#d8ffe4; } .chip.scheduled { background:#1f4466; color:#d9eeff; }
+            .chip.ended { background:#3a3f4c; color:#e1e4ea; } .chip.cancelled { background:#5a2323; color:#ffe1de; }
+            .profile-hero { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; background:linear-gradient(135deg,
+              #3b2a55, #1f3a4a); border:3px solid #8b6234; border-radius:6px; padding:1rem 1.2rem; margin-bottom:1rem; }
+            .profile-hero .avatar { width:5rem; height:5rem; font-size:2.6rem; }
+            .profile-hero p { margin:.2rem 0; }
+            .big { font-size:1.6rem; font-weight:800; color:var(--gold); }
+            .tracks { list-style:none; margin:0; padding:0; display:grid; gap:.7rem; }
+            .tracks li { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:.3rem .7rem; }
+            .meter { grid-column:2 / 4; height:.8rem; border-radius:.4rem; background:#2c3446; overflow:hidden;
+              border:1px solid var(--wood-dark); }
+            .meter span { display:block; height:100%; background:linear-gradient(90deg, #b07f1a, var(--gold)); }
+            .medals { display:flex; flex-wrap:wrap; gap:.6rem; list-style:none; padding:0; margin:.4rem 0; }
+            .medals li { display:flex; align-items:center; gap:.5rem; background:var(--panel); border:2px solid var(--line);
+              border-radius:6px; padding:.5rem .8rem; }
+            .medals .rank { width:2rem; height:2rem; border-radius:50%; display:inline-flex; align-items:center;
+              justify-content:center; background:#2c3446; font-weight:800; }
+            .medals .podium-1 { background:var(--gold); color:#1a1300; } .medals .podium-2 { background:var(--silver); color:#1a1d24; }
+            .medals .podium-3 { background:var(--bronze); color:#1f1206; }
+            .player-card { display:flex; align-items:center; gap:.7rem; }
+            .player-card .avatar { width:2.6rem; height:2.6rem; font-size:1.3rem; }
+            .filters-label { margin:.6rem 0 0; font-weight:700; }
+            @media (max-width: 700px) {
+              nav ul { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:.25rem; }
+              nav a { flex-direction:column; justify-content:center; gap:.15rem; padding:.35rem .1rem; font-size:.78rem;
+                text-align:center; }
+              nav .lq-ico { width:24px; height:24px; }
+              .brand { font-size:1.2rem; } }
             @media (max-width: 600px) { h1 { font-size:1.55rem; } .hero { padding:1rem; } body { font-size:1rem; }
-              nav a { padding:.55rem .5rem; } }
+              .podium .who { font-size:.85rem; } }
             """;
 
     private PageLayout() {
@@ -135,6 +199,9 @@ public final class PageLayout {
         String banner = status.bannerHtml();
         String fullTitle = pageTitle.equals(site.title()) ? site.title() : pageTitle + " — " + site.title();
         StringBuilder head = new StringBuilder();
+        if (meta.noindex()) {
+            head.append("<meta name=\"robots\" content=\"noindex, nofollow\">\n");
+        }
         if (!meta.description().isEmpty()) {
             head.append("<meta name=\"description\" content=\"").append(Html.escape(meta.description())).append("\">\n");
             head.append("<meta property=\"og:description\" content=\"").append(Html.escape(meta.description())).append("\">\n");
@@ -167,7 +234,7 @@ public final class PageLayout {
                 %s
                 </main>
                 <footer><div class="bar">
-                <ul><li><a href="/status">Statut du serveur</a></li><li><a href="/wiki">Wiki</a></li><li><a href="/infos">Règles et FAQ</a></li><li><a href="/confidentialite">Confidentialité</a></li></ul>
+                <ul><li><a href="/status">Statut du serveur</a></li><li><a href="/progression">Progresser</a></li><li><a href="/wiki">Wiki</a></li><li><a href="/infos">Règles et FAQ</a></li><li><a href="/confidentialite">Confidentialité</a></li></ul>
                 <p>%s est un serveur Minecraft communautaire. Site non officiel, sans lien avec Mojang ou Microsoft.
                 Icônes pixel art originales du projet.</p>
                 <p class="legal" lang="en">NOT AN OFFICIAL MINECRAFT SERVICE. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.</p>

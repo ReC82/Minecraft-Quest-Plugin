@@ -8290,6 +8290,39 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-414 — Portail public : refonte (accueil, événements, progression, podiums, fiches, aperçu fictif) (issue #56, PENDING MANUAL VALIDATION)
+
+Portail AWS seul (https://lodyquests.lodylands.com), aucun JAR, aucune migration. `player-data-public` reste
+`false` : aucun vrai pseudo publié. Navigateur seul, aucun test en jeu. Durée : 8 minutes. Acquis à ne pas
+régresser : TC-411 (identité visuelle), TC-327 partie C (états du serveur), « aucun pseudo » sur les vraies pages.
+
+1.  **Ordinateur** : accueil. **Attendu** : bandeau avec « Rejoindre l'aventure » et « Les événements »,
+    « Commence en 3 étapes », six tuiles (Événements, Classements, Progresser, Actualités, Joueurs, Guide),
+    puis Le serveur (état exact), Saison et événements, actualités, et sous « Classements » le bouton
+    « Voir un aperçu avec des joueurs fictifs ».
+2.  **Téléphone** : accueil. **Attendu** : menu en grille d'icônes (4 par ligne), aucun défilement horizontal,
+    tuiles sur deux colonnes, boutons faciles à toucher.
+3.  **Événements** (menu). **Attendu** : aujourd'hui « Aucune saison ni aucun événement… » et un lien vers
+    l'exemple fictif ; l'exemple montre En cours / À venir / Terminés, comptes à rebours, objectif commun.
+4.  **Classements** (menu). **Attendu** : toujours « pas encore publiée » + bouton vers l'aperçu fictif.
+    L'aperçu : bandeau rayé « Aperçu avec des joueurs fictifs », pseudos tous `Demo_…`, podium or / argent /
+    bronze, onglets Période et Thème (Combat ne garde que les classements de combat).
+5.  Cliquer un pseudo `Demo_…` de l'aperçu. **Attendu** : fiche avec grande initiale, XP totale, quêtes,
+    meilleur rang, cinq barres de pistes, médailles ; le lien « Tous les profils » reste dans l'aperçu.
+6.  **Guide** puis pied de page **Progresser**. **Attendu** : page « Comment progresser » lisible par un
+    joueur de 13 ans ; signaler toute phrase fausse par rapport au jeu.
+7.  **Avis du propriétaire** sur #56 : navigation, accueil, podiums, fiches ; publier l'aperçu fictif tel
+    quel ou le retirer ?
+
+**Couverture automatisée** : `PublicPortalRefonteTest` (pages démo étiquetées, `noindex`, sans lien canonique,
+sans aucune donnée réelle même avec un instantané présent, liens restant dans `/demo/` ; démo disponible avec
+`player-data-public=false` et proposée par l'accueil et les pages non publiées ; fiche démo ; `/evenements`
+sans pseudo et sans lien de classement non publié ; filtre par thème qui garde la période ; ordre du podium et
+ex aequo ; accueil et progression ; `robots.txt` `Disallow: /demo/`, sitemap), `PublicPortalV1Test` étendu
+(« aucun pseudo » sur `/evenements`, `/progression` et les pages démo ; accessibilité des nouvelles pages).
+Contrôle Playwright local (12 pages × 1280 / 768 / 390 px) : 0 px de débordement, 0 icône vide ; captures
+`docs/design/56-portail-refonte/`. **Non couvert** : avis esthétique, lecteurs d'écran réels.
+
 ### TC-413 — PlugAdmin : icônes pixel art dans les listes de contenu (issue #428 phase 2c, PENDING MANUAL VALIDATION)
 
 PlugAdmin seul (AWS). Navigateur seul, aucun test en jeu, aucune donnée de joueur touchée. Durée : 3 minutes.

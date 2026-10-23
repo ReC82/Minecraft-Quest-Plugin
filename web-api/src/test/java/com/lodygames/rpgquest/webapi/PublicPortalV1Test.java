@@ -166,7 +166,8 @@ class PublicPortalV1Test {
         start(false, "");
 
         for (String path : List.of("/", "/classements", "/leaderboards", "/joueurs", "/joueurs/Alice",
-                "/classements?periode=season_01", "/sitemap.xml", "/infos", "/actualites")) {
+                "/classements?periode=season_01", "/sitemap.xml", "/infos", "/actualites", "/evenements",
+                "/progression", "/demo/classements", "/demo/joueurs", "/demo/evenements")) {
             HttpResponse<String> response = get(path);
             for (String name : List.of("Alice", "Bob")) {
                 assertFalse(response.body().contains(name), path + " publie " + name);
@@ -208,8 +209,8 @@ class PublicPortalV1Test {
         start(true, "");
 
         String alice = get("/joueurs/alice").body();
-        assertTrue(alice.contains("Expérience totale") && alice.contains("XP Minage"));
-        assertTrue(alice.contains("Quêtes terminées : <strong>2<sup>e</sup>"), alice);
+        assertTrue(alice.contains("d'expérience totale") && alice.contains("<strong>Minage</strong>"));
+        assertTrue(alice.contains("Quêtes terminées<br><span class=\"note\">2<sup>e</sup>"), alice);
         HttpResponse<String> search = get("/joueurs?pseudo=Bob");
         assertEquals(303, search.statusCode());
         assertEquals("/joueurs/Bob", search.headers().firstValue("Location").orElse(""));
@@ -251,7 +252,8 @@ class PublicPortalV1Test {
         start(false, "");
 
         for (String path : List.of("/", "/actualites", "/classements", "/joueurs", "/infos", "/status",
-                "/confidentialite", "/compte")) {
+                "/confidentialite", "/compte", "/evenements", "/progression", "/demo/classements", "/demo/joueurs",
+                "/demo/joueurs/Demo_Aube", "/demo/evenements")) {
             String body = get(path).body();
             assertTrue(body.contains("name=\"viewport\""), path);
             assertTrue(body.contains("href=\"#contenu\"") && body.contains("<main id=\"contenu\">"), path);
@@ -270,7 +272,7 @@ class PublicPortalV1Test {
         assertTrue(home.contains("/assets/lq-icons.svg?v=" + version + "#lq-trophy"), "menu illustré (#428)");
         assertTrue(home.contains("NOT AN OFFICIAL MINECRAFT SERVICE. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT."));
         assertFalse(home.contains("<use href=\"http"), "aucune icône distante");
-        assertTrue(get("/classements").body().contains("class=\"rank podium-1\""), "podium or / argent / bronze");
+        assertTrue(get("/classements").body().contains("class=\"p1 pos1\""), "podium or / argent / bronze");
 
         HttpResponse<String> sprite = get("/assets/lq-icons.svg?v=" + version);
         assertEquals(200, sprite.statusCode());

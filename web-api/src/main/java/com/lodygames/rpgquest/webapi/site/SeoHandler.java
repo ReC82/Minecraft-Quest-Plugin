@@ -18,7 +18,8 @@ import java.util.List;
  */
 public final class SeoHandler implements ApiHandler {
 
-    private static final List<String> PAGES = List.of(PageMeta.HOME, PageMeta.NEWS, PageMeta.BOARDS, PageMeta.INFO,
+    private static final List<String> PAGES = List.of(PageMeta.HOME, PageMeta.NEWS, PageMeta.EVENTS, PageMeta.BOARDS, PageMeta.INFO,
+            PageMeta.PROGRESSION,
             "/status", "/wiki", "/confidentialite");
 
     private final NewsRepository news;
@@ -34,7 +35,7 @@ public final class SeoHandler implements ApiHandler {
         String path = exchange.getRequestURI().getPath();
         if (path.equals("/robots.txt")) {
             String sitemap = site.baseUrl().isEmpty() ? "" : "Sitemap: " + site.baseUrl() + "/sitemap.xml\n";
-            return send(exchange, "text/plain; charset=utf-8", "User-agent: *\nDisallow: /compte\nDisallow: /api/\n" + sitemap);
+            return send(exchange, "text/plain; charset=utf-8", "User-agent: *\nDisallow: /compte\nDisallow: /api/\nDisallow: /demo/\n" + sitemap);
         }
         if (path.equals("/sitemap.xml")) {
             return send(exchange, "application/xml; charset=utf-8", sitemap());

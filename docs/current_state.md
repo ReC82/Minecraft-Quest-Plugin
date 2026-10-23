@@ -6,6 +6,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Portail public : refonte des pages (#56, 23/10/2026)** — accueil (3 étapes, tuiles), pages `/evenements`
+> (sans pseudo, publique) et `/progression`, classements en podium avec filtre par thème, fiches joueur
+> (pistes en barres, médailles), menu en grille d'icônes sur téléphone ; aperçu `/demo/…` avec des joueurs
+> fictifs `Demo_*` (`site.DemoData`, bandeau, `noindex`, jamais l'instantané). `player-data-public` inchangé
+> (false) : les vrais classements restent non publiés. Portail AWS seul. TC-414.
+>
 > **Portail public : identité visuelle et icônes (#428 phase 2, 23/10/2026)** — habillage « RPG fantasy
 > voxel » (variante B) sur toutes les pages du portail `web-api` ; 28 icônes pixel art originales servies en
 > local (`GET /assets/lq-icons.svg`, cache versionné), résolveur `PortalIcons` material / métrique → icône avec

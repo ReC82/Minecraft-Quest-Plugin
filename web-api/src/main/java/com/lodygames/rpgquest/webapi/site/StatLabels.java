@@ -5,8 +5,10 @@ import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /** Libellés français des métriques (#54), des statuts de période et des dates affichées (#56). */
 public final class StatLabels {
@@ -21,7 +23,29 @@ public final class StatLabels {
     static final List<String> PREFERRED = List.of("RPG_XP_GLOBAL", "QUESTS_COMPLETED", "ENTITY_KILL", "FISH_CAUGHT",
             "RPG_XP_COMBAT", "RPG_XP_MINING", "RPG_XP_FARMING", "RPG_XP_FISHING", "RPG_XP_EXPLORATION");
 
+    /** Thèmes des classements (#56) : identifiant d'adresse → libellé, icône. Ordre = ordre des filtres. */
+    static final Map<String, String[]> CATEGORIES = new LinkedHashMap<>();
+
+    static {
+        CATEGORIES.put("aventure", new String[] {"Aventure", "scroll"});
+        CATEGORIES.put("combat", new String[] {"Combat", "sword"});
+        CATEGORIES.put("recolte", new String[] {"Récolte", "pickaxe"});
+        CATEGORIES.put("exploration", new String[] {"Exploration", "map"});
+        CATEGORIES.put("autres", new String[] {"Autres", "trophy"});
+    }
+
     private StatLabels() {
+    }
+
+    /** Thème d'une métrique (#54) ; « autres » pour une métrique inconnue, jamais d'erreur. */
+    static String category(String metric) {
+        return switch (metric) {
+            case "RPG_XP_GLOBAL", "QUESTS_COMPLETED" -> "aventure";
+            case "RPG_XP_COMBAT", "ENTITY_KILL" -> "combat";
+            case "RPG_XP_MINING", "RPG_XP_FARMING", "RPG_XP_FISHING", "FISH_CAUGHT" -> "recolte";
+            case "RPG_XP_EXPLORATION" -> "exploration";
+            default -> "autres";
+        };
     }
 
     public static String title(String metric) {

@@ -18,14 +18,18 @@ import com.lodygames.rpgquest.webapi.http.RateLimiter;
 import com.lodygames.rpgquest.webapi.http.RequestPipeline;
 import com.lodygames.rpgquest.webapi.news.NewsRepository;
 import com.lodygames.rpgquest.webapi.site.AssetHandler;
+import com.lodygames.rpgquest.webapi.site.EventsPageHandler;
 import com.lodygames.rpgquest.webapi.site.HomePageHandler;
 import com.lodygames.rpgquest.webapi.site.InfoPageHandler;
 import com.lodygames.rpgquest.webapi.site.LeaderboardsPageHandler;
 import com.lodygames.rpgquest.webapi.site.NewsPageHandler;
+import com.lodygames.rpgquest.webapi.site.PageMeta;
 import com.lodygames.rpgquest.webapi.site.PlayersPageHandler;
 import com.lodygames.rpgquest.webapi.site.PrivacyPageHandler;
+import com.lodygames.rpgquest.webapi.site.ProgressionPageHandler;
 import com.lodygames.rpgquest.webapi.site.SeoHandler;
 import com.lodygames.rpgquest.webapi.site.Site;
+import com.lodygames.rpgquest.webapi.site.SiteRoutes;
 import com.lodygames.rpgquest.webapi.site.StatusPageHandler;
 import com.lodygames.rpgquest.webapi.site.UnpublishedPageHandler;
 import com.lodygames.rpgquest.webapi.site.WikiPageHandler;
@@ -149,6 +153,16 @@ public final class HttpServerBootstrap {
         server.createContext("/joueurs", pipeline.wrap(false, config.playerDataPublic()
                 ? new PlayersPageHandler(snapshotStore, site)
                 : new UnpublishedPageHandler(site, "Joueurs", "/joueurs")));
+        server.createContext(PageMeta.EVENTS, pipeline.wrap(false, new EventsPageHandler(snapshotStore, site,
+                SiteRoutes.LIVE, config.playerDataPublic())));
+        server.createContext(PageMeta.PROGRESSION, pipeline.wrap(false, new ProgressionPageHandler(site)));
+        // #56 : aperçu avec des joueurs FICTIFS (DemoData) — jamais l'instantané, toujours étiqueté et noindex.
+        server.createContext(SiteRoutes.DEMO.boards(), pipeline.wrap(false,
+                new LeaderboardsPageHandler(snapshotStore, site, SiteRoutes.DEMO)));
+        server.createContext(SiteRoutes.DEMO.players(), pipeline.wrap(false,
+                new PlayersPageHandler(snapshotStore, site, SiteRoutes.DEMO)));
+        server.createContext(SiteRoutes.DEMO.events(), pipeline.wrap(false,
+                new EventsPageHandler(snapshotStore, site, SiteRoutes.DEMO, false)));
         server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle(),
                 config.playerDataPublic(), config.agePolicy())));
 

@@ -595,7 +595,12 @@ rien n'est accordé).
 une première fois (variable `__periodic_quests_unlocked__`). Ensuite, pour chaque période, le
 plugin choisit `daily-count` quêtes quotidiennes et `weekly-count` hebdomadaires parmi les modèles
 chargés — sélection déterministe par joueur et par période, qui **évite les quêtes de la période
-précédente** tant que la réserve le permet — et les **démarre** aussitôt (« Quête commencée »).
+précédente** tant que la réserve le permet — et les **démarre** aussitôt, **sans** titre « Quête
+commencée » ni détail des objectifs (#15, retour du 23/10) : une seule ligne de chat par catégorie
+réellement renouvelée, « ✦ Nouvelles quêtes quotidiennes disponibles : ouvre ton journal. » (idem
+« hebdomadaires »). La période annoncée est mémorisée par joueur et par catégorie (variables joueur
+`__periodic_announced_daily__` / `__periodic_announced_weekly__`) : une reconnexion ou un
+redémarrage dans la même période n'annoncent rien. Les quêtes ordinaires gardent leur titre.
 L'attribution est persistée (`periodic_quest_assignments`, schéma V42) : reconnexion, clics
 répétés sur l'onglet, redémarrage ou deux appels simultanés ne réattribuent jamais une période.
 Les quêtes non attribuées restent invisibles : l'onglet ne montre que les quêtes du joueur pour la
@@ -605,7 +610,7 @@ quêtes dans 15 h 20 min ». Elles n'apparaissent plus dans « en cours » / « 
 **Réinitialisation.** Heure locale `reset-time` dans le fuseau `timezone` (défaut 04:00
 Europe/Paris), chaque jour ; la semaine change le `weekly-reset-day` (défaut lundi) à la même
 heure. Les joueurs en ligne sont renouvelés au plus une minute après le reset (« ✦ Nouvelles
-quêtes quotidiennes : ouvre ton journal »), les autres à leur connexion. Une quête de la période
+quêtes quotidiennes disponibles : ouvre ton journal. »), les autres à leur connexion. Une quête de la période
 échue encore en cours **expire sans récompense** (« ⌛ Quête expirée ») ; une quête réussie qui
 attendait seulement de la place dans l'inventaire (`READY_TO_TURN_IN`) est conservée et remise.
 Une quête reprise d'une période à l'autre repart de zéro (compteurs effacés au démarrage, y compris

@@ -489,8 +489,9 @@ ol,ul{margin:6px 0;padding-left:20px}
 .doc-pager-next{text-align:right;grid-column:2}
 .doc-hit-sec{display:block;font-size:12px;font-weight:650;color:var(--primary);margin:0 0 3px}
 /* Mini-libellés « Syntaxe » / « Paramètres » / « Exemple » / « Résultat attendu » / « Attention »
-   (rendus <strong> en tête de paragraphe par la fiche de commandes) : plus lisibles, moins criards. */
-.doc-body p > strong:first-child:only-child{display:inline-block;font-size:11px;letter-spacing:.04em;
+   (paragraphe réduit à un **libellé**, classe doc-label posée par Markdown — #780 : l'ancien sélecteur
+   :only-child transformait aussi un mot en gras au milieu d'une phrase). */
+.doc-body p.doc-label > strong{display:inline-block;font-size:11px;letter-spacing:.04em;
   text-transform:uppercase;color:var(--txt-faint);font-weight:750;margin-top:4px}
 .doc-body code{background:var(--surface-3);border:1px solid var(--line);border-radius:5px;padding:1px 5px;
   font-size:12.5px;color:#243b53;overflow-wrap:anywhere}

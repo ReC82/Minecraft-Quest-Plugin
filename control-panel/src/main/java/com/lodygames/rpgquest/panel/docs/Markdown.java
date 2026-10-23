@@ -52,6 +52,7 @@ public final class Markdown {
     private static final Pattern NUMBER = Pattern.compile("^(\\d+)[.)]\\s+");
     /** Lien vers une autre fiche par son identifiant ({@code fiche} ou {@code fiche#section}). */
     private static final Pattern DOC_REF = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*(?:#[a-z0-9-]+)?");
+    private static final Pattern LABEL = Pattern.compile("\\*\\*[^*]+\\*\\*\\s*:?");
     private static final Pattern RAW_TAG = Pattern.compile(
             "</?(?:a|b|br|i|u|p|em|strong|span|div|img|script|style|iframe|table|tr|td|th|ul|ol|li|code|pre|kbd"
                     + "|h[1-6]|sup|sub|small|font|center|hr)(?:\\s[^>]*)?/?>", Pattern.CASE_INSENSITIVE);
@@ -176,7 +177,9 @@ public final class Markdown {
                 para.append(' ').append(next.strip());
             }
             i = j - 1;
-            out.append("<p>").append(inline(para.toString())).append("</p>");
+            // Paragraphe réduit à un libellé gras (« **Syntaxe** ») : mini-titre des fiches de commandes.
+            boolean label = LABEL.matcher(para).matches();
+            out.append(label ? "<p class=\"doc-label\">" : "<p>").append(inline(para.toString())).append("</p>");
         }
     }
 

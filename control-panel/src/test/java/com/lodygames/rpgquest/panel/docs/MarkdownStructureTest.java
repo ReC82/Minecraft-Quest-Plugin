@@ -65,6 +65,14 @@ class MarkdownStructureTest {
     }
 
     @Test
+    void onlyAParagraphMadeOfABoldLabelIsMarkedAsLabel() {
+        assertEquals("<p class=\"doc-label\"><strong>Syntaxe</strong></p>", Markdown.render("**Syntaxe**"));
+        // un mot en gras au milieu d'une phrase n'est pas un libellé (#780 : « AVANT » en mini-titre)
+        assertEquals("<p>PlugAdmin refuse <strong>avant</strong> d&#39;écrire.</p>",
+                Markdown.render("PlugAdmin refuse **avant** d'écrire."));
+    }
+
+    @Test
     void bulletStartingWithANumberKeepsTheNumber() {
         assertEquals("<ul><li>2024. une année</li></ul>", Markdown.render("- 2024. une année"));
     }

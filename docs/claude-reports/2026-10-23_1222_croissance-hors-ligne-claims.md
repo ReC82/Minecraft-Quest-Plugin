@@ -8,8 +8,8 @@
 * Branche Git : `feature/776-croissance-hors-ligne-claims` → fusionnée dans `chore/257-ci-github-actions` (PR #781, fusion `4cc191cb`) ; rapport : `docs/776-rapport-croissance-hors-ligne`
 * Commit actuel si disponible : `4cc191cb` (code déployé)
 * Début de la tâche : 2026-10-23 11:37:11
-* Fin de la tâche : 2026-10-23 12:26:00
-* Durée totale : 00:48:49
+* Fin de la tâche : 2026-10-23 12:23:59
+* Durée totale : 00:46:48
 
 ## Demande
 Ticket P0 du propriétaire #776 (session autonome lqorch) : faire progresser le farming des claims sans

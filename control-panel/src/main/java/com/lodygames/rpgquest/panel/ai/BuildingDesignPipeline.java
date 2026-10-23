@@ -664,7 +664,25 @@ public final class BuildingDesignPipeline {
         private BriefRequirements.Report compliance(BuildingPlanDraft draft, Judgement j) {
             Object palette = j == null ? null : j.verdict().metrics().get("palette");
             return BriefRequirements.evaluate(project.brief(), draft.plan(),
-                    palette instanceof Map<?, ?> map ? castPalette(map) : Map.of());
+                    palette instanceof Map<?, ?> map ? castPalette(map) : Map.of(), voxels(draft), demand.design());
+        }
+
+        /**
+         * #747 : la grille compilée de l'aperçu, qui part avec l'audit ; attendue quelques secondes au
+         * plus — sans elle, tour, allée et volumes restent « non mesurés », jamais présumés.
+         */
+        private com.lodygames.rpgquest.panel.building.BuildingVoxels voxels(BuildingPlanDraft draft) {
+            Instant deadline = Instant.now().plus(Duration.ofSeconds(5));
+            var state = workbench.state(draft, BuildingPlanDraftStore.Check.PREVIEW);
+            while (state.status() == BuildingPlanWorkbench.Status.PENDING && Instant.now().isBefore(deadline)) {
+                sleep(250);
+                state = workbench.state(draft, BuildingPlanDraftStore.Check.PREVIEW);
+            }
+            if (!state.current() || state.status() != BuildingPlanWorkbench.Status.DONE) {
+                return null;
+            }
+            var voxels = com.lodygames.rpgquest.panel.building.BuildingVoxels.from(state.details());
+            return voxels.present() ? voxels : null;
         }
 
         private BuildingPromptBuilder.Demand withPitfalls() {

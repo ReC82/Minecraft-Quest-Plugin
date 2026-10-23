@@ -1,0 +1,34 @@
+Construire une petite église blanche de village, de style médiéval sobre et élégant, entièrement aménagée à l’intérieur.
+
+EXTÉRIEUR
+Murs principalement en béton blanc, avec encadrements et détails en quartz. Soubassement discret en pierre claire. Toiture à deux pans en ardoise des abîmes, pour contraster avec les façades blanches.
+
+Une tour-clocher carrée est intégrée à la façade, au-dessus du porche d’entrée. Sa partie supérieure comporte des ouvertures laissant voir une cloche suspendue sous une poutre. Terminer la tour par une petite toiture pointue et une croix sobre.
+
+Entrée accueillante avec une double porte en bois, un encadrement légèrement travaillé et deux lanternes fixées sur des supports. Prévoir un accès facile, sans saut ni obstacle au seuil.
+
+VITRAUX
+Installer plusieurs fenêtres verticales sur les murs latéraux, avec des vitraux en verre coloré bleu, cyan, jaune et quelques touches de rouge. Créer des motifs simples, symétriques et harmonieux.
+
+Ajouter un grand vitrail derrière l’autel, bien visible depuis l’entrée. Les fenêtres doivent traverser les murs et être visibles aussi bien depuis l’intérieur que depuis l’extérieur.
+
+INTÉRIEUR
+Créer une nef ouverte avec une allée centrale reliant directement l’entrée au chœur.
+
+Disposer des rangées de bancs en bois de chaque côté de l’allée, tournées vers l’autel. Réaliser les assises avec des escaliers en chêne ou en sapin et ajouter des dossiers sobres. Laisser suffisamment de place pour circuler entre les bancs et rejoindre le chœur.
+
+Au fond de l’église, aménager une estrade basse avec un accès par une large marche. Installer dessus un autel en quartz et un pupitre sur le côté. Réserver derrière l’autel une place libre pour accueillir ensuite un PNJ prêtre. Ne pas générer le personnage.
+
+Le chœur doit rester dégagé et accessible depuis l’allée centrale. Le grand vitrail arrière forme le décor derrière l’autel.
+
+DÉCORATION
+Sol en pierre claire avec un motif discret. Tapis rouge dans l’allée centrale, s’arrêtant au pied de l’estrade.
+
+Charpente apparente en bois sombre sous le toit. Éclairage chaleureux avec des lanternes réellement fixées aux poutres ou aux murs. Quelques bougies sur des supports et deux compositions florales près du chœur.
+
+Conserver une ambiance lumineuse, paisible et soignée. Éviter l’accumulation de décorations.
+
+CONTRAINTES
+Le bâtiment doit être fermé et couvert, avec un intérieur réellement accessible. Aucun bloc flottant, passage condamné ou élément de décoration devant les portes.
+
+Construire uniquement l’église et ses éléments intégrés. Ne pas générer de personnage, de cimetière, de bâtiment voisin ou de terrain environnant.

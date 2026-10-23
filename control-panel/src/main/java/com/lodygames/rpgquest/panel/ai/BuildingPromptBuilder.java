@@ -663,7 +663,14 @@ public final class BuildingPromptBuilder {
                 place et dans sa matière. Si un élément est impossible avec les instructions du
                 moteur, fais l'équivalent le plus proche et garde tout le reste. Le brief ci-dessus
                 reste la référence en cas de doute.
-                """.formatted(demand.design());
+                """.formatted(demand.design()) + contractSection(demand);
+    }
+
+    /** #747 : les volumes et éléments lus dans la conception, à tenir par le plan. */
+    private static String contractSection(Demand demand) {
+        String contract = ArchitecturalDesign.parse(demand.design()).contract(demand.brief(), demand.maxWidth(),
+                demand.maxDepth(), demand.maxHeight());
+        return contract.isEmpty() ? "" : "\n" + contract;
     }
 
     /**
@@ -725,6 +732,20 @@ public final class BuildingPromptBuilder {
 
                 Rédige la conception sous EXACTEMENT ces titres :
 
+                0. VOLUMES ET ÉLÉMENTS — la partie que le panel LIT et vérifie, puis impose au plan.
+                   Une ligne par volume, EXACTEMENT sous cette forme (coordonnées du plan, bornes
+                   incluses, dans l'emprise ; y bas = le sol du volume, y haut = le haut de ses murs,
+                   le toit au-dessus et sous la hauteur maximale) :
+                   VOLUME <nom> | rôle: <corps principal, tour, porche, abside, annexe…> | x A..B | z A..B | y A..B | toit: <deux pans axe x, deux pans axe z, pointu, plat, aucun> | relié à: <autre volume> par <porte, arche, ouverture, escalier>
+                   Tout élément DISTINCT que la description demande (tour, clocher, porche, abside,
+                   aile…) est un VOLUME À PART, avec sa propre emprise d'au moins 3 × 3, relié à un
+                   autre volume — jamais une colonne ni un bloc posé sur un autre volume. Une tour
+                   monte plus haut que le corps principal et porte son propre toit.
+                   Puis une ligne par exigence de la description (mobilier, décor, ouvertures,
+                   circulation), rattachée à un volume :
+                   ÉLÉMENT <exigence> | volume: <nom> | position: <x, y, z ou zone> | blocs: minecraft:…
+                   N'ajoute AUCUN élément fonctionnel que la description ne demande pas (lit, four,
+                   coffre…).
                 1. PROGRAMME ET ESPACES — chaque pièce demandée : étage, emprise en coordonnées du
                    plan, fonction.
                 2. VOLUMES, FAÇADES ET TOITURE — corps de bâtiment (dimensions, retrait dans le

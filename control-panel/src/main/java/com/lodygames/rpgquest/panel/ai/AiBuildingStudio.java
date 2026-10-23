@@ -172,11 +172,24 @@ public final class AiBuildingStudio {
      */
     public Proposal design(String providerId, BuildingPromptBuilder.Demand demand,
                            List<AiProvider.Image> images) {
+        return design(providerId, demand, images, "");
+    }
+
+    /**
+     * La conception, avec les enseignements des versions précédentes (#747) : une nouvelle conception
+     * après stagnation repart de la description ET de ce qui a échoué, au niveau des volumes.
+     */
+    public Proposal design(String providerId, BuildingPromptBuilder.Demand demand,
+                           List<AiProvider.Image> images, String lessons) {
         String system = BuildingPromptBuilder.designSystemPrompt();
-        String user = BuildingPromptBuilder.withReferences(BuildingPromptBuilder.designUserPrompt(demand),
+        String extra = lessons == null || lessons.isBlank() ? "" : "\n" + lessons.strip() + "\n";
+        String user = BuildingPromptBuilder.withReferences(BuildingPromptBuilder.designUserPrompt(demand) + extra,
                 images.size());
-        return run(providerId, system, user, images, false, manifest("CONCEPTION_DETAILLEE", system, user, demand,
-                null, null, null, null, images));
+        Map<String, Object> m = manifest("CONCEPTION_DETAILLEE", system, user, demand, null, null, null, null, images);
+        if (!extra.isEmpty()) {
+            m.put("lessons", piece(lessons, system + "\n" + user));
+        }
+        return run(providerId, system, user, images, false, m);
     }
 
     private Proposal run(String providerId, String userPrompt, List<AiProvider.Image> images,

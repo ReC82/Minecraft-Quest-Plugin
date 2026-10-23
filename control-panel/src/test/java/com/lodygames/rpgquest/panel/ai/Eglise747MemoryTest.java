@@ -188,9 +188,11 @@ class Eglise747MemoryTest {
         assertTrue(byId.get("benches").missing(), "les seuls escaliers sont ceux du toit");
         assertFalse(byId.get("lectern").missing(), "le pupitre est là");
         assertEquals(Boolean.TRUE, byId.get("stained_glass").inResult());
-        // Une tour ne se prouve par aucun bloc : jamais déclarée présente ni manquante.
+        // Une tour ne se prouve par aucun bloc : sans la grille compilée, elle n'est ni présente ni
+        // manquante — « non mesurée » (#747, 23/10 : elle se MESURE quand la grille est là).
         assertFalse(byId.get("tower").missing());
-        assertTrue(byId.get("tower").line().startsWith("◌"), byId.get("tower").line());
+        assertTrue(byId.get("tower").line().startsWith("◐ Tour distincte du corps principal — non mesurée"),
+                byId.get("tower").line());
         assertFalse(report.complete());
         assertTrue(report.promptBlock().contains("✗ Cloche"), report.promptBlock());
     }

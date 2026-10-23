@@ -37,9 +37,12 @@ import java.util.regex.Pattern;
  */
 public final class BriefRequirements {
 
-    /** Comment une exigence se vérifie. */
+    /**
+     * Comment une exigence se vérifie : un bloc précis (déterministe), une mesure géométrique sur le
+     * résultat compilé (#747 : une tour, une allée), ou l'œil seulement.
+     */
     public enum Check {
-        DETERMINISTIC, VISUAL
+        DETERMINISTIC, MEASURED, VISUAL
     }
 
     /**
@@ -51,11 +54,22 @@ public final class BriefRequirements {
     public record Requirement(String id, String label, Check check, Pattern blocks, String hint, String word) {
     }
 
-    /** L'état d'une exigence : présente dans le plan ? dans le résultat compilé (si connu) ? */
-    public record Status(Requirement requirement, boolean inPlan, Boolean inResult) {
+    /**
+     * L'état d'une exigence : présente dans le plan ? dans le résultat compilé (si connu) ?
+     *
+     * @param evidence pour une exigence mesurée, ce que la mesure a trouvé (ou pas)
+     */
+    public record Status(Requirement requirement, boolean inPlan, Boolean inResult, String evidence) {
 
-        /** Manquante : absente du plan, ou du résultat quand celui-ci est connu. */
+        public Status(Requirement requirement, boolean inPlan, Boolean inResult) {
+            this(requirement, inPlan, inResult, "");
+        }
+
+        /** Manquante : absente du plan, ou du résultat quand celui-ci est connu (ou mesurée absente). */
         public boolean missing() {
+            if (requirement.check() == Check.MEASURED) {
+                return Boolean.FALSE.equals(inResult);
+            }
             return requirement.check() == Check.DETERMINISTIC && (!inPlan || Boolean.FALSE.equals(inResult));
         }
 
@@ -65,12 +79,21 @@ public final class BriefRequirements {
          * Les bancs se jugent sur le plan seul, par construction.
          */
         public boolean unverified() {
+            if (requirement.check() == Check.MEASURED) {
+                return inResult == null;
+            }
             return requirement.check() == Check.DETERMINISTIC && inPlan && inResult == null
                     && !"benches".equals(requirement.id());
         }
 
         public String line() {
             Requirement r = requirement;
+            if (r.check() == Check.MEASURED) {
+                return (inResult == null ? "◐ " : inResult ? "✓ " : "✗ ") + r.label() + " — "
+                        + (inResult == null ? "non mesurée (aperçu du résultat compilé indisponible)"
+                        : (inResult ? "mesurée sur le résultat compilé : " : "ABSENTE du résultat compilé : ")
+                        + evidence + (inResult ? "" : " — " + r.hint()));
+            }
             if (r.check() == Check.VISUAL) {
                 return "◌ " + r.label() + " — à apprécier visuellement (aucun bloc ne la prouve)";
             }
@@ -84,11 +107,21 @@ public final class BriefRequirements {
         }
     }
 
-    /** Le bilan de conformité d'une version au brief. */
-    public record Report(List<Status> statuses) {
+    /**
+     * Le bilan de conformité d'une version au brief.
+     *
+     * @param extras les éléments posés par le plan que la description ne demande pas (#747 : un lit
+     *               dans une église) — signalés, jamais retirés en silence
+     */
+    public record Report(List<Status> statuses, List<String> extras) {
 
         public Report {
             statuses = List.copyOf(statuses == null ? List.of() : statuses);
+            extras = List.copyOf(extras == null ? List.of() : extras);
+        }
+
+        public Report(List<Status> statuses) {
+            this(statuses, List.of());
         }
 
         public List<Status> missing() {
@@ -110,7 +143,7 @@ public final class BriefRequirements {
         /** Une ligne pour le journal et l'écran. */
         public String summary() {
             if (statuses.isEmpty()) {
-                return "Aucune exigence reconnue dans la description.";
+                return "Aucune exigence reconnue dans la description." + extrasSuffix();
             }
             long deterministic = statuses.size() - visual().size();
             long unverified = statuses.stream().filter(Status::unverified).count();
@@ -119,17 +152,26 @@ public final class BriefRequirements {
                     + (unverified == 0 ? "" : ", " + unverified + " non vérifiée(s) dans le résultat")
                     + (missing().isEmpty() ? "" : " — manquent : " + String.join(", ",
                     missing().stream().map(s -> s.requirement().label()).toList()))
-                    + (visual().isEmpty() ? "" : " ; " + visual().size() + " à apprécier visuellement");
+                    + (visual().isEmpty() ? "" : " ; " + visual().size() + " à apprécier visuellement")
+                    + extrasSuffix();
+        }
+
+        private String extrasSuffix() {
+            return extras.isEmpty() ? "" : " ; ajout(s) non demandé(s) : " + String.join(", ", extras);
         }
 
         /** Le bloc du prompt : ce que le brief exige et que la version transmise ne réalise pas. */
         public String promptBlock() {
-            if (statuses.isEmpty()) {
+            if (statuses.isEmpty() && extras.isEmpty()) {
                 return "";
             }
             StringBuilder sb = new StringBuilder("CONFORMITÉ AU BRIEF — exigences relevées dans la description\n\n");
             for (Status s : statuses) {
                 sb.append("- ").append(s.line()).append('\n');
+            }
+            for (String extra : extras) {
+                sb.append("- ⚠ ").append(extra).append(" — AJOUT NON DEMANDÉ par la description : retire-le, ou "
+                        + "remplace-le par un élément qu'elle demande.\n");
             }
             if (!missing().isEmpty()) {
                 sb.append("\nUn plan qui passe les contrôles techniques sans ces éléments N'EST PAS terminé : "
@@ -149,6 +191,22 @@ public final class BriefRequirements {
     private static Entry visual(String id, String label, String trigger) {
         return new Entry(id, label, Check.VISUAL, Pattern.compile(trigger), null, "");
     }
+
+    private static Entry measured(String id, String label, String trigger, String hint) {
+        return new Entry(id, label, Check.MEASURED, Pattern.compile(trigger), null, hint);
+    }
+
+    /**
+     * Les éléments FONCTIONNELS qu'un plan ajoute volontiers par habitude (#747 : le lit de l'église) :
+     * présents sans être demandés, ils sont signalés. Le décor courant (tapis, lanternes…) ne l'est pas.
+     */
+    private static final Set<String> FLAGGED_EXTRAS = Set.of("bed", "furnace", "anvil", "crafting", "chest",
+            "bookshelf");
+
+    /** Exigence dérivée : la cloche est-elle DANS la tour, quand la description demande les deux ? */
+    private static final Requirement BELL_IN_TOWER = new Requirement("bell_tower", "Cloche dans la tour",
+            Check.MEASURED, null, "suspends la cloche dans la partie haute de la tour (chambre des cloches), "
+            + "sous une poutre", "");
 
     /** Le lexique : déclencheurs (texte sans accents, minuscules) → bloc qui réalise l'élément. */
     private static final List<Entry> LEXICON = List.of(
@@ -183,10 +241,13 @@ public final class BriefRequirements {
                     "pose une minecraft:crafting_table"),
             det("chest", "Coffre(s)", "\\b(coffres?|tonneaux?)\\b", "^minecraft:(chest|barrel|trapped_chest)$",
                     "pose un minecraft:chest ou un minecraft:barrel"),
-            visual("tower", "Tour distincte du corps principal", "\\b(tours?|clochers?|tourelles?|donjons?)\\b"),
+            measured("tower", "Tour distincte du corps principal", "\\b(tours?|clochers?|tourelles?|donjons?)\\b",
+                    "construis la tour comme un volume à part (ses murs sur sa propre emprise, d'au moins 3 × 3), "
+                            + "qui dépasse le toit du corps principal d'au moins 4 blocs, avec son propre toit"),
             visual("altar", "Autel", "\\bautels?\\b"),
             visual("dais", "Estrade / podium", "\\b(estrades?|podiums?)\\b"),
-            visual("aisle", "Allée centrale", "\\ballees?\\b"),
+            measured("aisle", "Allée centrale", "\\ballees?\\b",
+                    "trace l'allée par une file continue de tapis au sol, de l'entrée vers le fond"),
             visual("porch", "Porche", "\\bporches?\\b"),
             visual("cross", "Croix", "\\bcroix\\b"),
             visual("chimney", "Cheminée", "\\bcheminees?\\b"),
@@ -241,6 +302,52 @@ public final class BriefRequirements {
      * @param palette bloc → cellules du résultat compilé ; {@code null} ou vide si inconnu
      */
     public static Report evaluate(String brief, String planYaml, Map<String, ?> palette) {
+        return evaluate(brief, planYaml, palette, null);
+    }
+
+    /**
+     * Le même bilan, avec les MESURES prises sur la grille compilée de l'aperçu (#747) : tour, allée,
+     * cloche dans la tour. Sans grille, ces exigences restent « non mesurées » — jamais présumées.
+     */
+    public static Report evaluate(String brief, String planYaml, Map<String, ?> palette,
+                                  com.lodygames.rpgquest.panel.building.BuildingVoxels voxels) {
+        return evaluate(brief, planYaml, palette, voxels, "");
+    }
+
+    /**
+     * Le bilan complet : exigences du brief, et chaque VOLUME de la conception structurée mesuré sur le
+     * résultat compilé (#747) — un volume prévu mais non construit est une exigence manquante.
+     */
+    public static Report evaluate(String brief, String planYaml, Map<String, ?> palette,
+                                  com.lodygames.rpgquest.panel.building.BuildingVoxels voxels, String design) {
+        Report base = evaluateBrief(brief, planYaml, palette, voxels);
+        ArchitecturalDesign structure = ArchitecturalDesign.parse(design);
+        if (!structure.structured()) {
+            return base;
+        }
+        java.util.Optional<CompiledMeasures> measures = CompiledMeasures.of(voxels);
+        List<Status> out = new ArrayList<>(base.statuses());
+        for (ArchitecturalDesign.Volume v : structure.volumes()) {
+            Requirement r = new Requirement("volume", "Volume « " + v.name() + " » de la conception", Check.MEASURED,
+                    null, "construis-le à ses coordonnées (" + v.coordinates() + "), avec ses propres murs et son toit",
+                    v.name());
+            if (measures.isEmpty()) {
+                out.add(new Status(r, true, null, ""));
+                continue;
+            }
+            int[] reach = measures.get().perimeterReaching(v.x0(), v.x1(), v.z0(), v.z1(), v.y1());
+            boolean realised = reach[1] > 0 && reach[0] * 10 >= reach[1] * 7;
+            out.add(new Status(r, true, realised, reach[0] + "/" + reach[1] + " colonnes de son pourtour montent "
+                    + "jusqu'à y=" + (v.y1() - 1) + " ou plus"));
+        }
+        return new Report(out, base.extras());
+    }
+
+    private static Report evaluateBrief(String brief, String planYaml, Map<String, ?> palette,
+                                        com.lodygames.rpgquest.panel.building.BuildingVoxels voxels) {
+        java.util.Optional<CompiledMeasures> measures = CompiledMeasures.of(voxels);
+        Matcher front = FRONT.matcher(planYaml == null ? "" : planYaml);
+        String axis = CompiledMeasures.entranceAxis(front.find() ? front.group(1) : "");
         List<Requirement> requirements = extract(brief);
         Set<String> planBlocks = planBlocks(planYaml);
         Set<String> furnitureBlocks = furnitureBlocks(planYaml);
@@ -249,6 +356,10 @@ public final class BriefRequirements {
         for (Requirement r : requirements) {
             if (r.check() == Check.VISUAL) {
                 out.add(new Status(r, false, null));
+                continue;
+            }
+            if (r.check() == Check.MEASURED) {
+                out.add(measure(r, measures, axis));
                 continue;
             }
             // Les bancs se reconnaissent à des escaliers posés hors toit et hors volée : ceux d'un
@@ -261,10 +372,53 @@ public final class BriefRequirements {
                     : palette.keySet().stream().anyMatch(b -> r.blocks().matcher(b).matches());
             out.add(new Status(r, inPlan, inResult));
         }
-        return new Report(out);
+        boolean tower = requirements.stream().anyMatch(r -> "tower".equals(r.id()));
+        boolean bell = requirements.stream().anyMatch(r -> "bell".equals(r.id()));
+        if (tower && bell) {
+            out.add(measure(BELL_IN_TOWER, measures, axis));
+        }
+        Set<String> requested = new java.util.HashSet<>();
+        requirements.forEach(r -> requested.add(r.id()));
+        List<String> extras = new ArrayList<>();
+        for (Entry e : LEXICON) {
+            if (FLAGGED_EXTRAS.contains(e.id()) && !requested.contains(e.id())
+                    && furnitureBlocks.stream().anyMatch(b -> e.blocks().matcher(b).matches())) {
+                extras.add(e.label());
+            }
+        }
+        return new Report(out, extras);
+    }
+
+    /** Une mesure sur le résultat compilé ; « non mesurée » sans grille. */
+    private static Status measure(Requirement r, java.util.Optional<CompiledMeasures> measures, String axis) {
+        if (measures.isEmpty()) {
+            return new Status(r, true, null, "");
+        }
+        CompiledMeasures m = measures.get();
+        return switch (r.id()) {
+            case "tower" -> m.highPart().map(h -> new Status(r, true, true, h.describe()))
+                    .orElseGet(() -> new Status(r, true, false, "aucune partie d'au moins 3 × 3 colonnes (un pourtour de murs) ne dépasse "
+                            + "de " + CompiledMeasures.TOWER_RISE + " blocs la hauteur médiane du bâtiment (y="
+                            + m.medianTop() + ")"));
+            case "bell_tower" -> m.bellInHighPart().map(c -> new Status(r, true, true, "cloche en " + c[0] + "/"
+                            + c[1] + "/" + c[2] + ", dans la partie haute"))
+                    .orElseGet(() -> new Status(r, true, false, m.highPart().isEmpty() ? "pas de partie haute qui "
+                            + "puisse l'abriter" : m.cellsOf("bell").isEmpty() ? "aucune cloche dans le résultat"
+                            : "la cloche n'est pas dans la partie haute (" + m.highPart().get().describe() + ")"));
+            case "aisle" -> {
+                CompiledMeasures.Run run = m.longestCarpetRun(axis);
+                String found = run.length() == 0 ? "aucun tapis" + (axis.isEmpty() ? "" : " en file selon " + axis
+                        + " (l'axe de l'entrée)") : "plus longue file de tapis : " + run.length() + " blocs selon "
+                        + run.axis() + (axis.isEmpty() ? "" : " (l'axe de l'entrée)") + ", depuis " + run.x() + "/"
+                        + run.y() + "/" + run.z();
+                yield new Status(r, true, m.hasAisle(axis), found);
+            }
+            default -> new Status(r, true, null, "");
+        };
     }
 
     private static final Pattern BLOCK = Pattern.compile("minecraft:[a-z0-9_]+");
+    private static final Pattern FRONT = Pattern.compile("(?m)^front:\\s*([A-Za-z]+)");
     private static final Pattern OP = Pattern.compile("(?m)^\\s*-\\s*op:\\s*([a-z_]+)");
 
     /** Tous les blocs cités par le plan (sans propriétés). */

@@ -85,6 +85,8 @@ class WorkshopFlowTest {
     private volatile String lastAiRequest = "";
     /** #747 : la réponse du faux fournisseur ; {@code null} = le plan habituel. */
     private volatile String aiContent;
+    /** #747 : réponses à rendre dans l'ordre, avant {@link #aiContent}. */
+    private final java.util.Queue<String> aiAnswers = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private String dbPath;
     private int port;
     private HttpClient client;
@@ -967,7 +969,7 @@ class WorkshopFlowTest {
     @Test
     void theDetailedDesignIsWrittenEditedAndFollowedByThePlan() throws Exception {
         start();
-        String project = createProject("Maison de Lily", BRIEF);
+        String project = createProjectWithoutDesign("Maison de Lily", BRIEF);
         String page = get(project).body();
         assertTrue(page.contains("Conception détaillée — pas encore rédigée"), "la carte est proposée");
         String form = formAround(page, "value=\"design_write\"");
@@ -993,6 +995,39 @@ class WorkshopFlowTest {
         propose(project);
         assertTrue(lastAiRequest.contains("LA CONCEPTION DÉTAILLÉE À TRADUIRE"), "le plan suit la conception");
         assertTrue(lastAiRequest.contains("lit rose, tapis rose"), "la version modifiée à la main");
+    }
+
+    /**
+     * #747 (23/10/2026) : concevoir AVANT de placer. Sans conception en vigueur, « Créer un plan » la fait
+     * d'abord rédiger (un appel, journalisé), puis le plan la traduit avec son contrat de volumes.
+     */
+    @Test
+    void creatingAPlanWithoutADesignWritesTheStructuredDesignFirst() throws Exception {
+        start();
+        String project = createProjectWithoutDesign("Chapelle", "Une petite chapelle avec une tour-clocher et des bancs.");
+        String nextAnswer = """
+                0. VOLUMES ET ÉLÉMENTS
+                VOLUME nef | rôle: corps principal | x 2..10 | z 2..12 | y 0..6 | toit: deux pans axe x | relié à: tour par arche
+                VOLUME tour | rôle: tour-clocher | x 4..8 | z 13..17 | y 0..12 | toit: pointu | relié à: nef par arche
+                ÉLÉMENT Bancs | volume: nef | position: x 3..9, z 4..10, y 1 | blocs: minecraft:oak_stairs
+                """;
+        aiAnswers.add(nextAnswer);
+        String back = decoded(propose(project));
+
+        assertEquals(2, aiCalls.get(), "la conception, puis le plan");
+        assertTrue(back.contains("ok="), back);
+        assertTrue(lastAiRequest.contains("LA CONCEPTION DÉTAILLÉE À TRADUIRE"), "le plan suit la conception");
+        assertTrue(lastAiRequest.contains("CONTRAT DE VOLUMES") && lastAiRequest.contains("- tour (tour-clocher) : "
+                + "x 4...8, z 13...17, y 0...12"), "le contrat de volumes part avec le plan");
+        assertTrue(get(project).body().contains("Conception détaillée — version 1"), "la conception est conservée");
+        String journal = get("/buildings/workshop/journal?id=" + id(project)).body();
+        assertTrue(journal.contains("MANUEL — CONCEPTION AVANT LE PLAN"), journal);
+        assertTrue(journal.contains("Conception structurée transmise : 2 volume(s), 1 élément(s), aucune lacune relevée."),
+                journal);
+
+        // Un second plan suit la conception en vigueur : aucun nouvel appel de conception.
+        propose(project);
+        assertEquals(3, aiCalls.get(), "un seul appel de plus");
     }
 
     // ---- #290 : reprendre, republier, retirer puis réenregistrer ---------------------------------
@@ -1235,7 +1270,8 @@ class WorkshopFlowTest {
             lastAiRequest = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             Map<String, Object> message = new LinkedHashMap<>();
             message.put("role", "assistant");
-            String content = aiContent;
+            String queued = aiAnswers.poll();
+            String content = queued != null ? queued : aiContent;
             message.put("content", content == null ? "```yaml\n" + PLAN + "\n```" : content);
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("model", "gpt-4o");
@@ -1313,7 +1349,21 @@ class WorkshopFlowTest {
         assertEquals(200, res.statusCode(), res.body());
     }
 
+    /**
+     * Un projet doté d'une conception saisie à la main (gratuite) : « Créer un plan » n'a donc pas à la
+     * faire rédiger d'abord (#747) — ces parcours portent sur le plan, un appel = un plan.
+     */
     private String createProject(String name, String brief) throws Exception {
+        String project = createProjectWithoutDesign(name, brief);
+        String page = get(project).body();
+        HttpResponse<String> saved = post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=design_save&id=" + id(project) + "&design_version=0&design="
+                + enc("Conception de test saisie à la main."));
+        assertEquals(303, saved.statusCode(), excerpt(saved.body()));
+        return project;
+    }
+
+    private String createProjectWithoutDesign(String name, String brief) throws Exception {
         String page = get("/buildings/workshop/new").body();
         HttpResponse<String> res = post("/buildings/workshop/new", "_csrf=" + csrf(page) + "&name=" + enc(name)
                 + "&brief=" + enc(brief) + "&front=WEST&max_width=19&max_height=14&building_id=bibliotheque_v2");

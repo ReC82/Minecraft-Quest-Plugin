@@ -65,7 +65,8 @@ Serveur Minecraft : **aucune** (pas de JAR, pas de configuration). Portail :
 
 ### Validation
 
-`/compte` → « pas encore ouverts » ; `POST /compte/export` sans session → 403. TC-418.
+`/compte` et `POST /compte/export` → « pas encore ouverts » (comptes fermés). TC-418. Déployé le
+23/10/2026 06:49 (`dfee636c`, sauvegarde `releases/20261023-064919`).
 
 ### Rollback
 

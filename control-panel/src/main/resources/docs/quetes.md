@@ -125,6 +125,14 @@ Le donneur de quête (`giver:`) se pose via `quest.giver.set` depuis la page **P
 nom actuel (dernier relevé de la page PNJ). « — » = quête non commencée, terminée ou abandonnée ;
 « détail non transmis par le serveur » = quête en cours lue sur un serveur antérieur au correctif.
 
+Choisir le joueur (Quêtes et Stories) : saisir **une partie de son pseudo** (`Ron`), puis
+**Rechercher**. Les joueurs connus qui correspondent — connectés ou hors ligne, connectés d'abord —
+s'affichent avec leur état ; cliquer le bon le sélectionne par son UUID, sans ambiguïté. Pendant la
+saisie, le navigateur propose aussi les pseudos connus (clavier, souris ou mobile). Un pseudo complet
+ou un UUID sélectionne directement. Les suggestions viennent de l'annuaire de la page **Joueurs**
+(dernier relevé, rien n'est demandé au serveur) : un joueur arrivé depuis n'y figure qu'après
+« Actualiser » sur cette page ; son pseudo complet reste utilisable en attendant.
+
 Dans la fiche d'une quête, chaque objectif et chaque récompense est précédé d'une petite icône
 pixel art (la même que sur le portail public) : araignée, crâne, minerai, pièce, XP… L'icône est
 décorative ; le texte reste la référence. Un objet sans icône dédiée prend l'icône de son type

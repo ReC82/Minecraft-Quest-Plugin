@@ -1759,8 +1759,10 @@ public final class AgentPages {
         // charg\u00e9es par le serveur (une qu\u00eate \u00ab source uniquement \u00bb \u00e9chouerait c\u00f4t\u00e9 agent).
         List<String> questIds = runtimeQuests.stream().map(o -> str(asMap(o).get("id"))).toList();
         java.util.function.Function<String, String> cityNames = cityDirectory(agentId)::nameOf;
+        // Issue #79 : noms ACTUELS des PNJ (dernier relevé npc.list), jamais un identifiant brut.
+        Map<String, String> npcDisplayNames = npcDirectory(agentId).displayNames();
         sb.append(playerStatusSection(session, agentId, player, "/quests", "quest.player.status", "quests",
-                r -> renderQuestPlayerRow(r, cityNames), questCtx.focus()));
+                r -> renderQuestPlayerRow(r, cityNames, npcDisplayNames::get), questCtx.focus()));
 
         if (!player.isEmpty()) {
             // Issue #241 : sélecteur GÉNÉRIQUE, pour agir sur une autre quête que celle ouverte. Il
@@ -2054,7 +2056,8 @@ public final class AgentPages {
     }
 
     static String renderQuestPlayerRow(Map<String, Object> r,
-                                       java.util.function.Function<String, String> cityNames) {
+                                       java.util.function.Function<String, String> cityNames,
+                                       java.util.function.Function<String, String> npcNames) {
         StringBuilder sb = new StringBuilder();
         sb.append("<tr><td><div class=\"entity-name\" style=\"font-size:13.5px\">")
                 .append(MiniText.html(str(r.get("title")))).append("</div>")
@@ -2073,7 +2076,7 @@ public final class AgentPages {
                     sb.append("<br>");
                 }
                 // Issue #79 : libellé tiré de la structure (FR), l'identifiant technique en second.
-                ObjectiveText.Objective o = ObjectiveText.fromStatus(ob, cityNames);
+                ObjectiveText.Objective o = ObjectiveText.fromStatus(ob, cityNames, npcNames);
                 sb.append(Http.esc(o.label()));
                 if (o.hasTarget()) {
                     sb.append(Ui.rawValue(o.rawTarget()));
@@ -2085,11 +2088,19 @@ public final class AgentPages {
                     sb.append(" <span class=\"badge text-bg-success\">fait</span>");
                 }
             }
+        } else if (isInProgress(str(r.get("state")))) {
+            // Issue #79 : une quête en cours a toujours une étape ; son absence vient d'un serveur
+            // qui ne l'a pas transmise (JAR antérieur au correctif « joueur hors ligne »).
+            sb.append("détail non transmis par le serveur");
         } else {
             sb.append("—");
         }
         sb.append("</td></tr>");
         return sb.toString();
+    }
+
+    private static boolean isInProgress(String state) {
+        return "ACTIVE".equals(state) || "READY_TO_TURN_IN".equals(state);
     }
 
     /**

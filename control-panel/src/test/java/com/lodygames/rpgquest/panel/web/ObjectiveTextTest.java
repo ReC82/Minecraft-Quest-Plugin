@@ -199,7 +199,7 @@ class ObjectiveTextTest {
                 statusRow("BREAK_BLOCK", "OAK_LOG", 4, 20, "IN_PROGRESS"),
                 statusRow("TALK_TO_NPC", "woodcutter_bob", 1, 1, "COMPLETED")));
 
-        String html = AgentPages.renderQuestPlayerRow(quest, id -> id);
+        String html = AgentPages.renderQuestPlayerRow(quest, id -> id, id -> null);
 
         assertTrue(html.contains("Casser Bûche de chêne (x20)"), html);
         assertTrue(html.contains("OAK_LOG"), "identifiant technique en second : " + html);

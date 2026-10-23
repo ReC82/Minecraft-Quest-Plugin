@@ -44,6 +44,18 @@ public final class ObjectiveText {
      */
     public static Objective fromSummary(Map<String, Object> summary,
                                         java.util.function.Function<String, String> cityNames) {
+        return fromSummary(summary, cityNames, id -> null);
+    }
+
+    /**
+     * Comme {@link #fromSummary(Map, java.util.function.Function)}, avec le nom affiché ACTUEL des
+     * PNJ (issue #79) : {@code npcNames} rend le nom d'un identifiant, ou {@code null} s'il est
+     * inconnu — l'identifiant humanisé sert alors de repli.
+     */
+    public static Objective fromSummary(Map<String, Object> summary,
+                                        java.util.function.Function<String, String> cityNames,
+                                        java.util.function.Function<String, String> npcNames) {
+        java.util.function.Function<String, String> prettyNpc = token -> prettyNpc(token, npcNames);
         String kind = str(summary.get("kind")).toUpperCase(Locale.ROOT);
         String target = str(summary.get("target"));
         int amount = asInt(summary.get("amount"));
@@ -56,19 +68,19 @@ public final class ObjectiveText {
             case "SMELT_ITEM" -> countable("Cuire", MinecraftNames.humanize(target), amount, target);
             case "BREAK_BLOCK" -> countable("Casser", MinecraftNames.humanize(target), amount, target);
             case "PLACE_BLOCK" -> countable("Placer", MinecraftNames.humanize(target), amount, target);
-            case "TALK_TO_NPC" -> new Objective("Parler à " + prettyNpc(target), target);
+            case "TALK_TO_NPC" -> new Objective("Parler à " + prettyNpc.apply(target), target);
             // #123 : deux cibles — l'objet compté (« target ») et le PNJ qui le reçoit (« npc »).
             // Le libellé nomme les deux, sinon « Rapporter du cuir » ne dirait pas à qui.
             case "DELIVER_ITEM_TO_NPC" -> {
                 String item = MinecraftNames.humanize(target);
                 // Un destinataire réellement absent est NOMMÉ comme tel : « à ? » laissait croire à
                 // un défaut d'affichage alors que la définition serait, elle, incomplète.
-                String receiver = npc.isBlank() ? "(PNJ non défini)" : prettyNpc(npc);
+                String receiver = npc.isBlank() ? "(PNJ non défini)" : prettyNpc.apply(npc);
                 String label = "Rapporter " + item + (amount > 1 ? " (x" + amount + ")" : "")
                         + " à " + receiver;
                 yield new Objective(label, target);
             }
-            case "REACH_LOCATION" -> new Objective("Se rendre dans " + prettyNpc(target), target);
+            case "REACH_LOCATION" -> new Objective("Se rendre dans " + prettyNpc(target, id -> null), target);
             // Issue #185 : la portée ET la règle de comptage apparaissent dans le résumé. Le ticket
             // interdit de les laisser implicites — elles changent ce que le joueur doit faire.
             case "DISCOVER_WAYPOINT" -> {
@@ -107,10 +119,17 @@ public final class ObjectiveText {
      */
     public static Objective fromStatus(Map<String, Object> row,
                                        java.util.function.Function<String, String> cityNames) {
+        return fromStatus(row, cityNames, id -> null);
+    }
+
+    /** Comme {@link #fromStatus(Map, java.util.function.Function)}, avec les noms actuels des PNJ. */
+    public static Objective fromStatus(Map<String, Object> row,
+                                       java.util.function.Function<String, String> cityNames,
+                                       java.util.function.Function<String, String> npcNames) {
         if (str(row.get("kind")).isBlank()) {
             return new Objective(MinecraftNames.humanizeTokens(str(row.get("description"))), null);
         }
-        return fromSummary(row, cityNames);
+        return fromSummary(row, cityNames, npcNames);
     }
 
     /**
@@ -134,8 +153,13 @@ public final class ObjectiveText {
         return new Objective(label, target);
     }
 
-    private static String prettyNpc(String token) {
-        return token == null || token.isBlank() ? "?" : MiniText.prettifyId(token);
+    private static String prettyNpc(String token, java.util.function.Function<String, String> npcNames) {
+        if (token == null || token.isBlank()) {
+            return "?";
+        }
+        String name = npcNames.apply(token);
+        String plain = name == null ? "" : MiniText.plain(name).trim();
+        return plain.isEmpty() ? MiniText.prettifyId(token) : plain;
     }
 
     private static String str(Object value) {

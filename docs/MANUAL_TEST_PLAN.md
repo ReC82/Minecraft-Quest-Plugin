@@ -6188,6 +6188,11 @@ casse ou de remise). **Durée** : 5 minutes.
     l'identifiant technique en second (`OAK_LOG`), puis la progression `4/20`.
 3.  Terminer un objectif en jeu, rafraîchir : la ligne porte le badge vert « fait ».
 4.  Une remise à un PNJ affiche l'objet **et** le PNJ (« Rapporter … à … »).
+5.  (Correctif 23/10) Joueur **déconnecté** : « Rafraîchir » affiche quand même les objectifs et
+    compteurs des quêtes en cours (Garde palier 2, Explorateur, quotidiennes…), jamais « — ».
+6.  Les statuts sont en français (« En cours », « Terminée », « Non commencée », « Abandonnée »), le
+    code technique en infobulle ; les PNJ portent leur nom actuel (« à Elias », « Gauthier »,
+    « Marchand égaré »), jamais un identifiant brut.
 
 ### TC-322 — Page « Voyages » simplifiée (issue #412, PENDING MANUAL VALIDATION)
 

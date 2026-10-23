@@ -1,0 +1,405 @@
+{
+ "action_id": "00000000-0000-0000-0000-000000000079",
+ "status": "SUCCESS",
+ "value": "Joueur",
+ "message": "33 quête(s) pour Joueur.",
+ "details": {
+  "player_uuid": "00000000-0000-0000-0000-000000000001",
+  "player_name": "Joueur",
+  "quests": [
+   {
+    "questId": "rpgquest:crystal_hunt",
+    "title": "<gold>La chasse aux cristaux</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:daily_demo_bucheron",
+    "title": "<gold>Bois du jour</gold>",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:daily_demo_chasseur",
+    "title": "<gold>Patrouille du jour</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:daily_demo_mineur",
+    "title": "<gold>Pierre du jour</gold>",
+    "state": "ACTIVE",
+    "currentStepId": "miner",
+    "objectives": [
+     {
+      "description": "Casser STONE",
+      "current": 6,
+      "required": 32,
+      "state": "IN_PROGRESS",
+      "kind": "BREAK_BLOCK",
+      "target": "STONE",
+      "amount": 32,
+      "raw": "Casser STONE (x32)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     }
+    ]
+   },
+   {
+    "questId": "rpgquest:encounter_bandit_spiders",
+    "title": "<gold>Les toiles du sous-bois</gold>",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:encounter_merchant_cactus",
+    "title": "<gold>Marchandise du désert</gold>",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:encounter_smith_ore",
+    "title": "<gold>Du minerai pour la forge</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:first_steps",
+    "title": "<gold>Premiers pas</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:guard_tier1",
+    "title": "<gold>Le Garde — Palier 1</gold>",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:guard_tier2",
+    "title": "<gold>Le Garde — Palier 2</gold>",
+    "state": "ACTIVE",
+    "currentStepId": "prove_worth",
+    "objectives": [
+     {
+      "description": "Tuer SPIDER",
+      "current": 10,
+      "required": 10,
+      "state": "COMPLETED",
+      "kind": "KILL_ENTITY",
+      "target": "SPIDER",
+      "amount": 10,
+      "raw": "Tuer SPIDER (x10)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     },
+     {
+      "description": "Tuer ZOMBIE",
+      "current": 10,
+      "required": 10,
+      "state": "COMPLETED",
+      "kind": "KILL_ENTITY",
+      "target": "ZOMBIE",
+      "amount": 10,
+      "raw": "Tuer ZOMBIE (x10)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     },
+     {
+      "description": "Tuer SKELETON",
+      "current": 4,
+      "required": 10,
+      "state": "IN_PROGRESS",
+      "kind": "KILL_ENTITY",
+      "target": "SKELETON",
+      "amount": 10,
+      "raw": "Tuer SKELETON (x10)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     },
+     {
+      "description": "Tuer CREEPER",
+      "current": 1,
+      "required": 10,
+      "state": "IN_PROGRESS",
+      "kind": "KILL_ENTITY",
+      "target": "CREEPER",
+      "amount": 10,
+      "raw": "Tuer CREEPER (x10)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     }
+    ]
+   },
+   {
+    "questId": "rpgquest:guard_tier3",
+    "title": "<gold>Le Garde — Palier 3</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:guard_tier4",
+    "title": "<gold>Le Garde — Palier 4</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:guard_tier5",
+    "title": "<gold>Le Garde — Palier 5</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:help_recolte",
+    "title": "<green>Le stock de Tania</green>",
+    "state": "ACTIVE",
+    "currentStepId": "ramasser_bois",
+    "objectives": [
+     {
+      "description": "Collecter OAK_LOG",
+      "current": 1,
+      "required": 5,
+      "state": "IN_PROGRESS",
+      "kind": "COLLECT_ITEM",
+      "target": "OAK_LOG",
+      "amount": 5,
+      "raw": "Collecter OAK_LOG (x5)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     }
+    ]
+   },
+   {
+    "questId": "rpgquest:jeff_nettoyage",
+    "title": "<red>Nettoyage des alentours</red>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:jeff_skeleton",
+    "title": "Tuer des squelettes",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:junior_chantier",
+    "title": "<gold>Petit chantier</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:kit_tier2",
+    "title": "<gold>Premiers pas dans le Wild</gold>",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:kit_tier3",
+    "title": "<gold>Explorateur</gold>",
+    "state": "ACTIVE",
+    "currentStepId": "rapporter_les_materiaux",
+    "objectives": [
+     {
+      "description": "Remettre STICK à Elias",
+      "current": 1,
+      "required": 4,
+      "state": "IN_PROGRESS",
+      "kind": "DELIVER_ITEM_TO_NPC",
+      "target": "STICK",
+      "amount": 4,
+      "raw": "Remettre STICK à guide (x4)",
+      "npc": "guide",
+      "worlds": [],
+      "countMode": null
+     },
+     {
+      "description": "Remettre COBBLESTONE à Elias",
+      "current": 0,
+      "required": 6,
+      "state": "NOT_STARTED",
+      "kind": "DELIVER_ITEM_TO_NPC",
+      "target": "COBBLESTONE",
+      "amount": 6,
+      "raw": "Remettre COBBLESTONE à guide (x6)",
+      "npc": "guide",
+      "worlds": [],
+      "countMode": null
+     },
+     {
+      "description": "Remettre LEATHER à Elias",
+      "current": 0,
+      "required": 5,
+      "state": "NOT_STARTED",
+      "kind": "DELIVER_ITEM_TO_NPC",
+      "target": "LEATHER",
+      "amount": 5,
+      "raw": "Remettre LEATHER à guide (x5)",
+      "npc": "guide",
+      "worlds": [],
+      "countMode": null
+     },
+     {
+      "description": "Remettre WHEAT à Elias",
+      "current": 0,
+      "required": 3,
+      "state": "NOT_STARTED",
+      "kind": "DELIVER_ITEM_TO_NPC",
+      "target": "WHEAT",
+      "amount": 3,
+      "raw": "Remettre WHEAT à guide (x3)",
+      "npc": "guide",
+      "worlds": [],
+      "countMode": null
+     }
+    ]
+   },
+   {
+    "questId": "rpgquest:kit_tier4",
+    "title": "<gold>Aventurier</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:kit_tier5",
+    "title": "<gold>Vétéran du Wild</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:lily_fleurs",
+    "title": "Des fleurs pour Lily",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:lily_ingredients",
+    "title": "La vieille recette",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:lily_julius",
+    "title": "Sur la piste de Julius",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:lily_pumpkin",
+    "title": "Une citrouille pour Lily",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:lily_repas",
+    "title": "Un repas pour Lily",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:lily_tarte",
+    "title": "La tarte de maman",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:premiers_pas",
+    "title": "<gold>Premiers pas</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:st0_meet_people",
+    "title": "Rencontrez les villageois.",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:test_coeur_bonus",
+    "title": "Test — Cœur supplémentaire",
+    "state": "COMPLETED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:test_smelt",
+    "title": "<dark_aqua><bold>Cuire un truc</bold></dark_aqua>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   },
+   {
+    "questId": "rpgquest:weekly_demo_expedition",
+    "title": "<gold>Expédition de la semaine</gold>",
+    "state": "ACTIVE",
+    "currentStepId": "rassembler",
+    "objectives": [
+     {
+      "description": "Casser COAL_ORE",
+      "current": 1,
+      "required": 12,
+      "state": "IN_PROGRESS",
+      "kind": "BREAK_BLOCK",
+      "target": "COAL_ORE",
+      "amount": 12,
+      "raw": "Casser COAL_ORE (x12)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     },
+     {
+      "description": "Tuer SKELETON",
+      "current": 8,
+      "required": 8,
+      "state": "COMPLETED",
+      "kind": "KILL_ENTITY",
+      "target": "SKELETON",
+      "amount": 8,
+      "raw": "Tuer SKELETON (x8)",
+      "npc": null,
+      "worlds": [],
+      "countMode": null
+     }
+    ]
+   },
+   {
+    "questId": "rpgquest:woodcutters_request",
+    "title": "<gold>La requête du bûcheron</gold>",
+    "state": "NOT_STARTED",
+    "currentStepId": null,
+    "objectives": []
+   }
+  ]
+ },
+ "finished_at": "2026-10-20T19:44:13.226554970Z"
+}

@@ -220,6 +220,33 @@ class QuestProgressEngineTest {
                 "un seul kill après reconnexion doit suffire : le compteur (1/2) doit avoir survécu à la reconnexion");
     }
 
+    /**
+     * Issue #79 — régression du 23/10 : PlugAdmin consulte souvent un joueur déconnecté. Les vues
+     * d'étape doivent alors venir de la base (étape + compteurs persistés), sans charger le joueur.
+     */
+    @Test
+    void activeStepViewsReadPersistedProgressWhenThePlayerIsOffline() throws Exception {
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // 1/2
+        Map<NamespacedKey, QuestStepProgressView> online =
+                engine.activeStepViews(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.unloadForPlayer(player.getUniqueId());
+        assertTrue(engine.activeStepView(player.getUniqueId(), KILL_QUEST).isEmpty(),
+                "précondition : plus de cache mémoire pour un joueur déconnecté");
+
+        Map<NamespacedKey, QuestStepProgressView> offline =
+                engine.activeStepViews(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(online, offline, "hors ligne, la vue lue en base égale celle du cache en ligne");
+        QuestStepProgressView view = offline.get(KILL_QUEST);
+        assertEquals(1, view.objectives().size());
+        assertEquals(1, view.objectives().get(0).current());
+        assertEquals(2, view.objectives().get(0).total());
+        assertFalse(engine.isLoaded(player.getUniqueId()), "une lecture ne recharge pas le joueur");
+    }
+
     @Test
     void twoIdenticalObjectivesInTwoQuestsProgressIndependently() throws Exception {
         writeKillQuest(KILL_QUEST_TWO, "kill_quest_two.yml", 1, false, null);

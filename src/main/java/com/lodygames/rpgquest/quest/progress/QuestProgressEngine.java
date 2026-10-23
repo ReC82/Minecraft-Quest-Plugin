@@ -55,6 +55,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntUnaryOperator;
 import java.util.function.ToIntBiFunction;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -876,12 +877,53 @@ public final class QuestProgressEngine implements PluginService {
             return Optional.empty();
         }
         QuestStep step = questOpt.get().steps().get(progress.currentStepIndex());
+        return Optional.of(stepView(step, progress::counter));
+    }
+
+    /**
+     * Issue #79 — vues des étapes courantes de toutes les quêtes actives du joueur, qu'il soit
+     * connecté ou non. Connecté (progression chargée) : le cache mémoire, seul à jour. Hors ligne :
+     * relecture SQL asynchrone de l'étape et des compteurs persistés, résolue comme le ferait
+     * {@link #loadForPlayer} à la reconnexion. Lecture seule : rien n'est mis en cache ni écrit.
+     */
+    public CompletableFuture<Map<NamespacedKey, QuestStepProgressView>> activeStepViews(UUID playerId) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive != null) {
+            Map<NamespacedKey, QuestStepProgressView> views = new LinkedHashMap<>();
+            for (NamespacedKey questId : playerActive.keySet()) {
+                activeStepView(playerId, questId).ifPresent(view -> views.put(questId, view));
+            }
+            return CompletableFuture.completedFuture(views);
+        }
+        return repository.findAll(playerId).thenCompose(records -> {
+            Map<NamespacedKey, QuestStepProgressView> views = new ConcurrentHashMap<>();
+            List<CompletableFuture<Void>> loads = new ArrayList<>();
+            for (QuestProgressRecord record : records) {
+                if (record.state() != QuestState.ACTIVE && record.state() != QuestState.READY_TO_TURN_IN) {
+                    continue;
+                }
+                Optional<QuestDefinition> questOpt = questEngine.find(record.questId());
+                if (questOpt.isEmpty() || questOpt.get().steps().isEmpty()) {
+                    continue;
+                }
+                QuestDefinition quest = questOpt.get();
+                QuestStep step = quest.steps().get(Math.max(0, indexOfStep(quest, record.currentStepId())));
+                loads.add(repository.findObjectiveProgress(playerId, record.questId(), step.id())
+                        .thenAccept(counters -> views.put(record.questId(),
+                                stepView(step, i -> counters.getOrDefault(i, 0)))));
+            }
+            return CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new))
+                    .thenApply(ignored -> Map.copyOf(views));
+        });
+    }
+
+    private QuestStepProgressView stepView(QuestStep step, IntUnaryOperator counter) {
         List<ObjectiveProgressView> objectives = new ArrayList<>();
         for (int i = 0; i < step.objectives().size(); i++) {
             QuestObjective objective = step.objectives().get(i);
-            objectives.add(new ObjectiveProgressView(describeObjective(objective), progress.counter(i), requiredAmount(objective)));
+            objectives.add(new ObjectiveProgressView(describeObjective(objective), counter.applyAsInt(i), requiredAmount(objective)));
         }
-        return Optional.of(new QuestStepProgressView(step.id(), objectives));
+        return new QuestStepProgressView(step.id(), objectives);
     }
 
     // ---- Boss de quête (issue #171) ---------------------------------------

@@ -233,7 +233,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `player.variable.get` | `player` \| `player_uuid` ; `key` | `PlayerVariableRepository#get` | `present`, `value` |
 | `player.list` | — | `Server#getOnlinePlayers` | `players[]` (uuid, name, world, x/y/z) |
 | `quest.list` | — | `YamlQuestEngine#quests` | `quests[]` — voir **Payload `quest.list`** ci-dessous |
-| `quest.player.status` | `player` | `QuestProgressEngine#allStates` / `activeStepView` | `quests[]` (state, étape, objectifs current/required **+ structure** #79) — voir **Payload `quest.player.status`** ci-dessous |
+| `quest.player.status` | `player` | `QuestProgressEngine#allStates` / `activeStepViews` (cache si connecté, base sinon) | `quests[]` (state, étape, objectifs current/required **+ structure** #79) — voir **Payload `quest.player.status`** ci-dessous |
 | `story.list` | — | `StoryService#stories` | `stories[]` (id, titre, quêtes ordonnées) |
 | `story.player.status` | `player` | `StoryService#info` | `stories[]` (state, étape courante/total, quête courante) |
 | `item.list` | — | `YamlCustomItemRegistry#items` | `items[]` (id, displayName, type) |
@@ -294,7 +294,9 @@ les agents à jour.
 
 Chaque entrée de `quests[]` : `questId`, `title`, `state` (`NOT_STARTED`, `ACTIVE`,
 `READY_TO_TURN_IN`, `COMPLETED`…), `currentStepId` (`null` hors quête en cours) et `objectives[]`
-(étape courante seulement). Chaque objectif :
+(étape courante seulement). Joueur **connecté ou non** : hors ligne, l'étape et les compteurs sont relus
+en base (lecture seule) — avant le correctif du 23/10/2026, un joueur déconnecté recevait
+`currentStepId: null` et `objectives: []` pour toutes ses quêtes en cours. Chaque objectif :
 
 | Champ | Type | Détail |
 |---|---|---|

@@ -341,3 +341,12 @@ Le propriétaire autorise le **développement de l'outil de création de mondes*
 - **Suite en une action à la fois :** sélectionner un pseudo fictif (p. ex. « Demo_Brasier ») pour vérifier l'ouverture et le rendu de la fiche de joueur. Puis planifier séparément les tests administrateur #735 et la comptabilisation en jeu #734.
 
 Les captures sont dans la conversation propriétaire du 23/10 et ne sont pas archivées sur GitHub. Ne jamais transformer ce retour visuel en validation des traitements serveur ou de la confidentialité des joueurs.
+
+
+### Complément propriétaire — 23/10/2026 : fiche fictive Demo_Brasier
+
+Capture de la fiche `Demo_Brasier` fournie par le propriétaire. **Correction importante : capture réalisée sur ordinateur avec zoom navigateur à 50 %, et NON une preuve du rendu mobile**. Le propriétaire avait déclaré séparément avoir essayé le mobile et trouvé le rendu bon, sans preuve de cette fiche en véritable viewport mobile.
+
+**#56 / TC-414 — fiche joueur fictive :** page accessible, en-tête, 5 pistes de progression, barres, médailles et liens visibles. **Incohérence de démonstration à investiguer :** le résumé affiche **5 200 XP d'expérience totale**, tandis que la seule piste Combat indique **6 100 XP** (autres pistes 1 200, 300, 400 et 900), alors que le classement XP Combat attribue déjà 6 100 à ce même joueur. Déterminer si le total est calculé avec une règle différente ou si les fixtures fictives sont incohérentes ; expliquer le sens de « expérience totale » et corriger les fixtures ou le libellé. Ne pas extrapoler à un bug des données réelles sans test.
+
+Ne pas clore #56 avant cet arbitrage ; #53 données privées réelles reste non testé.

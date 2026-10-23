@@ -63,6 +63,14 @@ WHEAT, CACTUS, ARROW, armures `_HELMET`… , outils `_AXE`…) : tous les materi
 ont une vraie icône (test de couverture). Captures : `captures/phase2b-plugadmin/`. Reste :
 catalogues, PNJ, Voyages, Mobs.
 
+**Phase 2c — PlugAdmin (en-têtes de contenu).** Même `PixelIcons`, une tuile devant le nom de
+chaque élément de liste : quêtes (`icon:` du YAML, transmis par `quest.list` depuis le JAR #428 2c ;
+sinon icône du premier objectif ; sinon parchemin), histoires (parchemin), dialogues (bulle),
+villes (carte), PNJ selon leur rôle (marchand → pièce, garde → bouclier, forgeron → pioche,
+cartographe → carte, pêcheur → poisson… ; rôle libre → PNJ), Citizens non rattachés (PNJ), mobs
+spéciaux (entité, sinon crâne) et boss (boss), catalogues de quêtes (parchemin), lieux et bornes
+de **Voyages** (waypoint). Captures : `captures/phase2c-plugadmin/`. Test manuel : TC-413.
+
 ## Intégration prévue (phases 2-3, après accord)
 
 1. Sprite et `lq-icons.css` versionnés **une seule fois** et servis en local par les deux applications

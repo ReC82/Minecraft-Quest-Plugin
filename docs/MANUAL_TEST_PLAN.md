@@ -8290,6 +8290,29 @@ aux rachats, changement d'onglet sans échange, onglet vide signalé et non cliq
 échange), `MerchantPriceCatalogTradeTest` (offres `price-ref` réparties par type de prix), tests marchands
 existants (double clic, inventaire plein, étal/prix changés) inchangés et verts.
 
+### TC-413 — PlugAdmin : icônes pixel art dans les listes de contenu (issue #428 phase 2c, PENDING MANUAL VALIDATION)
+
+PlugAdmin seul (AWS). Navigateur seul, aucun test en jeu, aucune donnée de joueur touchée. Durée : 3 minutes.
+Acquis à ne pas régresser : TC-412 (fiches de quête), filtres et recherche des listes.
+
+1.  **Ordinateur** : PlugAdmin → **Quêtes**. **Attendu** : une petite tuile bois devant le titre de chaque
+    quête (épée, crâne, minerai, fleur…), titres, badges et identifiants inchangés ; ouvrir / fermer une
+    quête fonctionne comme avant.
+2.  **Catalogues de quêtes**, **Stories**, **Dialogues**, **Villes**, **PNJ** (icône selon le rôle :
+    pièce pour un marchand, bouclier pour un garde…), **Mobs spéciaux & boss** (icône « boss » pour un boss),
+    **Voyages** (lieux et bornes : waypoint). **Attendu** : une tuile devant chaque nom, aucune image cassée.
+3.  **Téléphone** : Quêtes, PNJ et Voyages. **Attendu** : tuile alignée avec le nom, aucun défilement horizontal.
+4.  **Avis** sur #428 : utile ou trop chargé ? Icônes de rôle à changer ?
+
+**Couverture automatisée** : `PixelIconsTest#questNpcAndMobTilesFallBackSensibly` (icône de quête → premier
+objectif → parchemin, chaque rôle suggéré a une vraie icône, rôle libre → PNJ, boss / entité / crâne),
+`QuestsCatalogTest#structuredPayloadIsUsedWithoutReparsingStrings` (tuile d'en-tête),
+`QuestListPayloadTest#iconIsPresentOnlyWhenKnown` (champ `icon` du payload), pages Quêtes, Catalogues, Stories,
+Dialogues, Villes, PNJ, Mobs, Voyages inchangées par ailleurs (tests de pages verts). Captures locales
+1280 / 768 / 390 px : `docs/design/428-icones/captures/phase2c-plugadmin/`. **Non couvert** : avis esthétique ;
+l'icône `icon:` des quêtes n'apparaît sur DEV qu'après le prochain déploiement du JAR (avant : icône du
+premier objectif).
+
 ### TC-412 — PlugAdmin : icônes pixel art sur les fiches de quête (issue #428 phase 2b, PENDING MANUAL VALIDATION)
 
 PlugAdmin seul (AWS), aucun JAR, aucune migration, aucune donnée de joueur touchée. Navigateur seul, aucun

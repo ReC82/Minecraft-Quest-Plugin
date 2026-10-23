@@ -49,6 +49,37 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Quêtes périodiques : attribution automatique annoncée en une ligne (#15, TC-422)
+
+### Changement
+
+JAR RPGQuest `a2b68cde` (PR #793) : l'attribution automatique des quotidiennes/hebdomadaires n'affiche plus le
+titre « Quête commencée » ni le détail des objectifs ; une seule ligne de chat par catégorie renouvelée, mémorisée
+par joueur (variables `__periodic_announced_daily__` / `__periodic_announced_weekly__`). Aucune migration.
+
+### Action serveur
+
+Remplacement du JAR + redémarrage. `config.yml` (`periodic-quests`), quêtes et données joueurs inchangés.
+
+### Sauvegarde préalable
+
+`rpgquest-20261023T151453Z-predeploy.jar` (JAR `04afc09f`, SHA-256 `b80c13a6…`).
+
+### Déploiement
+
+23/10/2026 17:15 : `scripts/deploy-verygames.sh -y` (CI verte sur `a2b68cd`), JAR 4 378 962 octets, SHA-256
+retéléchargé identique (`ba668be8…`) ; `scripts/verygames-restart.sh` (seul LoDyMcFly en ligne), RPGQuest actif.
+
+### Validation
+
+TC-422 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+`scripts/rollback-verygames.sh` avec la sauvegarde ci-dessus, puis redémarrage. Les variables d'annonce restent
+en base sans effet sur l'ancien JAR.
+
+
 ## 2026-10-23 - Hub : un OP ne construit qu'en mode bypass ON (#35 rouvert, TC-302)
 
 ### Changement

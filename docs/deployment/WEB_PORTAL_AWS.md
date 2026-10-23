@@ -31,7 +31,8 @@ base, avec son propre cookie, et ne donnent aucun droit ni sur le jeu ni sur Plu
 L'API `/api/*` (jeton `RPGQUEST_WEB_API_TOKEN`) est fermée deux fois : aucun jeton n'est configuré
 (401) et nginx répond 404 sur `/api/` côté public. Seule exception, `location = /api/link/confirm`
 (POST, jeton dédié `RPGQUEST_PORTAL_LINK_TOKEN`, 401 sans lui, 503 tant que les comptes sont
-fermés) : le serveur Minecraft y envoie la preuve d'un `/lien <code>`. Seconde exception,
+fermés) : le serveur Minecraft y envoie la preuve d'un `/lien <code>` ; même règle pour
+`location = /api/link/progress` (progression des joueurs reliés, même jeton). Autre exception,
 `location = /api/snapshot` (#421 : POST, 1 Mo, jeton dédié `RPGQUEST_PORTAL_SNAPSHOT_TOKEN`, 401
 sans lui) : le serveur Minecraft y pousse son instantané.
 
@@ -204,8 +205,11 @@ Après activation (WEB_PORTAL.md §2, « Mise en route ») :
 5. un second compte web qui tente de lier le même joueur → « Ton compte Minecraft est déjà relié… » ;
 6. « Délier » avec un mauvais mot de passe → refus ; avec le bon → « délié », ligne
    « dissociation de <pseudo> » ;
-7. « Se déconnecter », puis bouton Précédent du navigateur → plus connecté ;
-8. `journalctl -u lodyquests-portal` et `latest.log` : aucun code ni jeton.
+7. relié : se déconnecter du serveur Minecraft, recharger `/compte` → « Ma progression » (niveaux,
+   quêtes, classements) ; avant cela, « Ta progression arrivera ici… » ; après « Délier », plus de
+   progression ;
+8. « Se déconnecter », puis bouton Précédent du navigateur → plus connecté ;
+9. `journalctl -u lodyquests-portal` et `latest.log` : aucun code ni jeton.
 
 Côté Minecraft, hors comptes : rien à vérifier pour ce lot — le plugin n'est pas modifié et `web-export` reste
 désactivé. La première vérification en jeu viendra avec #421 (`/health` passant à `FRESH`).

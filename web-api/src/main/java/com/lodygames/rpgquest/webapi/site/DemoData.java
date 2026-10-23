@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi.site;
 
+import com.lodygames.rpgquest.webapi.account.LinkedProgress;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -72,6 +73,62 @@ public final class DemoData {
         state.put("statistics", statistics);
         state.put("profiles", profiles);
         return state;
+    }
+
+    /**
+     * Progression personnelle fictive de {@code Demo_Aube} (#53), pour l'aperçu {@code /demo/compte} :
+     * rangs calculés sur les mêmes joueurs fictifs que les classements de démonstration. Niveaux selon
+     * la courbe par défaut du plugin (100 XP, ×1,15 par niveau).
+     */
+    public static LinkedProgress personalProgress(Instant now) {
+        List<Map<String, Object>> profiles = profiles();
+        Map<String, Object> me = profiles.get(0);
+        String name = (String) me.get("name");
+        List<LinkedProgress.Skill> skills = new ArrayList<>();
+        for (String track : java.util.stream.Stream.concat(java.util.stream.Stream.of("GLOBAL"), TRACKS.stream()).toList()) {
+            long xp = skill(me, track);
+            skills.add(new LinkedProgress.Skill(track, xp, demoLevel(xp)));
+        }
+        List<LinkedProgress.Board> boards = List.of(
+                demoBoard("xp_total", "Aventuriers les plus expérimentés", "aventure", "RPG_XP_GLOBAL", "lifetime", "lifetime",
+                        standing(profiles, name, profile -> skill(profile, "GLOBAL"))),
+                demoBoard("combat_semaine", "Combattants de la semaine", "combat", "RPG_XP_COMBAT", "weekly", "demo-semaine",
+                        standing(profiles, name, profile -> skill(profile, "COMBAT") / 7)),
+                demoBoard("exploration_saison", "Explorateurs de la saison", "exploration", "RPG_XP_EXPLORATION", "season",
+                        "demo_saison", standing(profiles, name, profile -> skill(profile, "EXPLORATION") / 4)),
+                demoBoard("peche_jour", "Pêcheurs du jour", "recolte", "FISH_CAUGHT", "daily", "demo-jour",
+                        new LinkedProgress.Standing(0, 0, 0)));
+        return new LinkedProgress(now.minus(Duration.ofMinutes(7)), skills,
+                standing(profiles, name, profile -> ((Number) profile.get("questsCompleted")).longValue()), boards);
+    }
+
+    private static LinkedProgress.Board demoBoard(String id, String title, String category, String metric, String period,
+                                                  String window, LinkedProgress.Standing standing) {
+        return new LinkedProgress.Board(id, title, category, null, metric, period, window, "ACTIVE", standing);
+    }
+
+    private static LinkedProgress.Standing standing(List<Map<String, Object>> profiles, String name,
+                                                    ToLongFunction<Map<String, Object>> value) {
+        List<Map<String, Object>> rows = board(profiles, value);
+        for (Map<String, Object> row : rows) {
+            if (row.get("name").equals(name)) {
+                return new LinkedProgress.Standing(((Number) row.get("value")).longValue(),
+                        ((Number) row.get("rank")).intValue(), rows.size());
+            }
+        }
+        return new LinkedProgress.Standing(0, 0, 0);
+    }
+
+    private static int demoLevel(long xp) {
+        int level = 1;
+        double cost = 100;
+        long remaining = xp;
+        while (level < 100 && remaining >= Math.round(cost)) {
+            remaining -= Math.round(cost);
+            cost *= 1.15;
+            level++;
+        }
+        return level;
     }
 
     private static List<Map<String, Object>> profiles() {

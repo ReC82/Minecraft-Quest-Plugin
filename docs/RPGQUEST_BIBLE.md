@@ -6730,6 +6730,12 @@ surcharge. Absent : `/lien` répond « pas activée » et ne contacte rien. Aucu
 `data.db` : la liaison vit dans la base du portail. Parcours et sécurité :
 [WEB_PORTAL.md §2](WEB_PORTAL.md).
 
+Progression personnelle (lot 6) : une fois relié, le joueur voit sur `/compte` ses niveaux, ses
+quêtes et sa place sur chaque classement. Le plugin l'envoie après `/lien`, à la déconnexion et
+toutes les `progress-interval-minutes` (clé facultative du même fichier, défaut `15`, `0` = jamais
+en périodique). Pour un joueur dont la liaison est inconnue, seule une sonde UUID part ; aucune
+statistique d'un joueur non relié ne quitte le serveur. Aperçu fictif : `/demo/compte`.
+
 ### Portail — envoi de l'instantané web (#421)
 
 Aucune commande. Fichier **hors Git** `plugins/RPGQuest/portal-snapshot.properties` (modèle

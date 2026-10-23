@@ -313,6 +313,9 @@ public final class RPGQuestBootstrap {
     /** Issue #735 : saisons, événements et classements, partagés avec PlugAdmin. */
     private com.lodygames.rpgquest.stats.StatisticsService statisticsService;
     private com.lodygames.rpgquest.database.StatisticsRepository statisticsRepository;
+    private PortalLinkConfig portalLinkConfig = PortalLinkConfig.disabled();
+    private PortalLinkClient portalLinkClient;
+    private com.lodygames.rpgquest.web.link.LinkedProgressPublisher linkedProgressPublisher;
     private StoreClient storeClient;
     private StoreDeliveryService storeDeliveryService;
     private ModCompatService modCompatService;
@@ -619,6 +622,21 @@ public final class RPGQuestBootstrap {
         this.statisticsService = statisticsService;
         this.statisticsRepository = statisticsRepository;
         webSnapshotWriter.setStatistics(statisticsService, statisticsRepository);
+        // Issue #53 : « /lien » et progression personnelle des joueurs reliés au portail. Inerte tant
+        // que plugins/RPGQuest/portal-link.properties (hors Git) ne l'active pas.
+        portalLinkConfig = new PortalLinkConfigLoader(plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
+        if (portalLinkConfig.enabled()) {
+            portalLinkClient = new PortalLinkClient(portalLinkConfig);
+            var linkedProgress = new com.lodygames.rpgquest.web.link.LinkedProgressBuilder(progressionRepository,
+                    progressionService::curve,
+                    new com.lodygames.rpgquest.database.QuestStatisticsRepository(databaseService.databaseManager()),
+                    statisticsRepository, statisticsService::definition, statisticsService::isArchived,
+                    statisticsService::now);
+            linkedProgressPublisher = new com.lodygames.rpgquest.web.link.LinkedProgressPublisher(plugin,
+                    portalLinkClient::pushProgress, linkedProgress::build, portalLinkConfig.progressIntervalMinutes(),
+                    plugin.getSLF4JLogger());
+            registry.start(linkedProgressPublisher);
+        }
         // Issue #421 : chaque instantané part aussi vers le portail AWS, et un relevé d'état agrégé
         // (en ligne, nombre de joueurs) part même sans export nominatif. Inerte tant que
         // plugins/RPGQuest/portal-snapshot.properties (hors Git) ne l'active pas.
@@ -1860,12 +1878,12 @@ public final class RPGQuestBootstrap {
 
         // Issue #53 : « /lien <code> » prouve au portail que le joueur contrôle ce compte Minecraft.
         // Inerte tant que plugins/RPGQuest/portal-link.properties (hors Git) ne l'active pas.
-        PortalLinkConfig portalLinkConfig = new PortalLinkConfigLoader(plugin.getDataFolder().toPath(),
-                plugin.getSLF4JLogger()).load();
-        LinkCommand linkCommand = new LinkCommand(portalLinkConfig,
-                portalLinkConfig.enabled() ? new PortalLinkClient(portalLinkConfig) : null,
+        LinkCommand linkCommand = new LinkCommand(portalLinkConfig, portalLinkClient,
                 new LinkAttemptGuard(java.time.Duration.ofSeconds(5), java.time.Clock.systemUTC()),
                 plugin.getSLF4JLogger());
+        if (linkedProgressPublisher != null) {
+            linkCommand.onLinked(linkedProgressPublisher::onLinked);
+        }
         var lien = plugin.getCommand("lien");
         if (lien != null) {
             lien.setExecutor(linkCommand);

@@ -52,6 +52,25 @@ public final class QuestStatisticsRepository {
         });
     }
 
+    /**
+     * Quêtes terminées par un joueur, son rang et l'effectif (issue #53) — tous profils confondus,
+     * sans les {@code excluded}. Vide s'il n'en a terminé aucune.
+     */
+    public CompletableFuture<java.util.Optional<StatisticsRepository.Standing>> standing(UUID player,
+                                                                                          Collection<UUID> excluded) {
+        String sql = "WITH t AS (SELECT q.player_uuid AS u, COUNT(*) AS v FROM quest_progress q "
+                + "WHERE q.state = 'COMPLETED'" + StatisticsRepository.notIn("q.player_uuid", excluded.size())
+                + " GROUP BY q.player_uuid) SELECT m.v AS mine, (SELECT COUNT(*) FROM t) AS players, "
+                + "(SELECT COUNT(*) FROM t o WHERE o.v > m.v) AS better FROM t m WHERE m.u = ?";
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                int index = StatisticsRepository.bindUuids(statement, 1, excluded);
+                statement.setString(index, player.toString());
+                return StatisticsRepository.standing(statement);
+            }
+        });
+    }
+
     public record Row(String name, long completed) {
     }
 }

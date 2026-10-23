@@ -164,6 +164,15 @@ Jeton : `RPGQUEST_PORTAL_LINK_TOKEN` (variable d'environnement uniquement). Il a
 401 sans le bon jeton (le jeton général `RPGQUEST_WEB_API_TOKEN` ne l'ouvre pas), 503 si les
 comptes sont fermés. Pages, sécurité et parcours : [WEB_PORTAL.md §2](WEB_PORTAL.md).
 
+Le même jeton authentifie `POST /api/link/progress` (progression personnelle des joueurs reliés,
+64 Kio au plus) :
+
+- sonde `{"uuid"}` → `{"result":"LINKED|NOT_LINKED"}`, aucune écriture ;
+- envoi `{"uuid","name","progress":{"generatedAt","skills":[{"skill","xp","level"}],"quests":{"completed","rank"?,"players"?},"boards":[{"id","name","category","icon"?,"metric","period","window","status":"ACTIVE|ENDED","value","rank"?,"players"?}]}}`
+  → `{"result":"STORED|NOT_LINKED|THROTTLED"}` ; tout champ hors contrat, négatif ou incohérent
+  (`rank` > `players`) → 400 et rien d'écrit. `STORED` aussi pour un envoi plus ancien que celui
+  gardé (sans effet). 401 sans le bon jeton, 503 si les comptes sont fermés.
+
 ## Réception de l'instantané (`POST /api/snapshot`, issue #421)
 
 Le plugin écrit `snapshot.json` chez VeryGames ; le portail tourne sur AWS. Le plugin **pousse**

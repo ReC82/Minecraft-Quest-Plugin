@@ -29,7 +29,7 @@ import java.util.UUID;
  */
 public final class AccountStore implements AutoCloseable {
 
-    private static final int CURRENT_VERSION = 1;
+    private static final int CURRENT_VERSION = 2;
 
     public record Account(String id, String login, String passwordHash, ParentalConsentStatus consent, Instant createdAt) {
     }
@@ -41,6 +41,17 @@ public final class AccountStore implements AutoCloseable {
     }
 
     public record AuditEntry(String action, String playerName, Instant at) {
+    }
+
+    /** Progression personnelle stockée (#53) : JSON déjà nettoyé par {@link LinkedProgress}. */
+    public record StoredProgress(String payload, Instant generatedAt, Instant receivedAt) {
+    }
+
+    /** Issue d'un envoi de progression. */
+    public enum ProgressWrite {
+        STORED,
+        NOT_LINKED,
+        THROTTLED
     }
 
     private final Connection connection;
@@ -281,6 +292,68 @@ public final class AccountStore implements AutoCloseable {
         }
     }
 
+    // --- progression des joueurs reliés (#53) -----------------------------------------------
+
+    public synchronized boolean isLinked(UUID playerUuid) throws SQLException {
+        return isUuidLinked(playerUuid);
+    }
+
+    /**
+     * Remplace la progression du compte relié à {@code playerUuid}. Rien n'est écrit si l'UUID n'est
+     * relié à aucun compte, si le précédent envoi date de moins de {@code minInterval}, ou si
+     * {@code generatedAt} n'est pas plus récent que la valeur stockée (rejeu ou retard : sans effet).
+     */
+    public synchronized ProgressWrite saveProgress(UUID playerUuid, String payload, Instant generatedAt, Instant now,
+            java.time.Duration minInterval) throws SQLException {
+        return inTransaction(() -> {
+            String accountId;
+            try (PreparedStatement find = connection.prepareStatement(
+                    "SELECT account_id FROM minecraft_links WHERE player_uuid = ?")) {
+                find.setString(1, playerUuid.toString());
+                try (ResultSet rs = find.executeQuery()) {
+                    if (!rs.next()) {
+                        return ProgressWrite.NOT_LINKED;
+                    }
+                    accountId = rs.getString(1);
+                }
+            }
+            Optional<StoredProgress> previous = findProgress(accountId);
+            if (previous.isPresent()) {
+                if (previous.get().receivedAt().plus(minInterval).isAfter(now)) {
+                    return ProgressWrite.THROTTLED;
+                }
+                if (!generatedAt.isAfter(previous.get().generatedAt())) {
+                    return ProgressWrite.STORED;
+                }
+            }
+            try (PreparedStatement upsert = connection.prepareStatement(
+                    "INSERT INTO linked_progress (account_id, payload, generated_at, received_at) VALUES (?, ?, ?, ?) "
+                            + "ON CONFLICT (account_id) DO UPDATE SET payload = excluded.payload, "
+                            + "generated_at = excluded.generated_at, received_at = excluded.received_at")) {
+                upsert.setString(1, accountId);
+                upsert.setString(2, payload);
+                upsert.setLong(3, generatedAt.toEpochMilli());
+                upsert.setLong(4, now.toEpochMilli());
+                upsert.executeUpdate();
+            }
+            return ProgressWrite.STORED;
+        });
+    }
+
+    public synchronized Optional<StoredProgress> findProgress(String accountId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT payload, generated_at, received_at FROM linked_progress WHERE account_id = ?")) {
+            statement.setString(1, accountId);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (!rs.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new StoredProgress(rs.getString("payload"),
+                        Instant.ofEpochMilli(rs.getLong("generated_at")), Instant.ofEpochMilli(rs.getLong("received_at"))));
+            }
+        }
+    }
+
     private boolean isUuidLinked(UUID playerUuid) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT 1 FROM minecraft_links WHERE player_uuid = ?")) {
@@ -333,6 +406,9 @@ public final class AccountStore implements AutoCloseable {
         }
         if (version < 1) {
             applyV1();
+        }
+        if (version < 2) {
+            applyV2();
         }
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA user_version = " + CURRENT_VERSION);
@@ -392,6 +468,21 @@ public final class AccountStore implements AutoCloseable {
                     )
                     """);
             statement.execute("CREATE INDEX IF NOT EXISTS idx_link_audit_account ON link_audit (account_id)");
+        }
+    }
+
+    private void applyV2() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Progression personnelle (#53) : rattachée à la LIAISON, effacée avec elle (dissociation,
+            // suppression du compte). Jamais d'UUID ici, jamais lisible par un autre compte.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS linked_progress (
+                        account_id TEXT PRIMARY KEY REFERENCES minecraft_links (account_id) ON DELETE CASCADE,
+                        payload TEXT NOT NULL,
+                        generated_at INTEGER NOT NULL,
+                        received_at INTEGER NOT NULL
+                    )
+                    """);
         }
     }
 

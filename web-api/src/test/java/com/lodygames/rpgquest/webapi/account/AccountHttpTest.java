@@ -103,7 +103,15 @@ class AccountHttpTest {
     }
 
     private HttpResponse<String> confirm(String token, String json) throws Exception {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + "/api/link/confirm"))
+        return postJson("/api/link/confirm", token, json);
+    }
+
+    private HttpResponse<String> progress(String token, String json) throws Exception {
+        return postJson("/api/link/progress", token, json);
+    }
+
+    private HttpResponse<String> postJson(String path, String token, String json) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + path))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json));
         if (token != null) {
@@ -234,6 +242,98 @@ class AccountHttpTest {
                 form("csrf", csrf, "motdepasse", "motdepasse-alice"), null);
         assertEquals(303, unlinked.statusCode());
         assertTrue(get("/compte?m=delie", session).body().contains("dissociation de AliceMC"));
+    }
+
+    private static final String PROBE = "{\"uuid\":\"" + ALICE_UUID + "\"}";
+
+    private static String progressBody(String generatedAt, String boardName) {
+        return "{\"uuid\":\"" + ALICE_UUID + "\",\"name\":\"AliceMC\",\"progress\":{\"generatedAt\":\"" + generatedAt
+                + "\",\"skills\":[{\"skill\":\"GLOBAL\",\"xp\":1234,\"level\":7},{\"skill\":\"COMBAT\",\"xp\":600,\"level\":4}],"
+                + "\"quests\":{\"completed\":3,\"rank\":2,\"players\":9},"
+                + "\"boards\":[{\"id\":\"combat_semaine\",\"name\":\"" + boardName + "\",\"category\":\"combat\","
+                + "\"metric\":\"RPG_XP_COMBAT\",\"period\":\"weekly\",\"window\":\"2026-W47\",\"status\":\"ACTIVE\","
+                + "\"value\":42,\"rank\":1,\"players\":5},"
+                + "{\"id\":\"peche_jour\",\"name\":\"Pêcheurs du jour\",\"category\":\"recolte\",\"metric\":\"FISH_CAUGHT\","
+                + "\"period\":\"daily\",\"window\":\"2026-11-20\",\"status\":\"ACTIVE\",\"value\":0}]}}";
+    }
+
+    /** Relie « alice » à {@link #ALICE_UUID} par le vrai parcours (code puis preuve). */
+    private void link(String session) throws Exception {
+        String csrf = hidden(get("/compte", session).body(), "csrf");
+        Matcher code = Pattern.compile("/lien ([A-Z0-9]{8})").matcher(
+                post("/compte/lien", session, form("csrf", csrf), null).body());
+        assertTrue(code.find());
+        assertEquals("{\"result\":\"LINKED\"}", confirm(LINK_TOKEN,
+                "{\"code\":\"" + code.group(1) + "\",\"uuid\":\"" + ALICE_UUID + "\",\"name\":\"AliceMC\"}").body());
+    }
+
+    @Test
+    void linkedProgressIsStoredOnlyForTheLinkedAccountAndShownOnlyToItsOwner() throws Exception {
+        start(true);
+        String session = registerAndLogin();
+
+        assertEquals(401, progress(null, PROBE).statusCode());
+        assertEquals(401, progress(API_TOKEN, PROBE).statusCode(), "le jeton général n'ouvre pas cette route");
+        assertEquals("{\"result\":\"NOT_LINKED\"}", progress(LINK_TOKEN, PROBE).body());
+        assertEquals("{\"result\":\"NOT_LINKED\"}",
+                progress(LINK_TOKEN, progressBody("2026-11-20T10:00:00Z", "Combat")).body(), "rien n'est gardé");
+        assertTrue(get("/compte", session).body().contains("Aucun compte Minecraft relié"));
+
+        link(session);
+        assertTrue(get("/compte", session).body().contains("Ta progression arrivera ici"), "aucune valeur inventée");
+        assertEquals("{\"result\":\"LINKED\"}", progress(LINK_TOKEN, PROBE).body());
+        assertEquals("{\"result\":\"STORED\"}",
+                progress(LINK_TOKEN, progressBody("2026-11-20T10:00:00Z", "Combattants <b>semaine</b>")).body());
+        assertEquals("{\"result\":\"THROTTLED\"}",
+                progress(LINK_TOKEN, progressBody("2026-11-20T10:01:00Z", "Autre")).body(), "envoi trop rapproché");
+
+        String dashboard = get("/compte", session).body();
+        assertTrue(dashboard.contains("Ma progression"));
+        assertTrue(dashboard.contains("Niveau 7"));
+        assertTrue(dashboard.contains("Combattants &lt;b&gt;semaine&lt;/b&gt;"), "texte échappé");
+        assertTrue(dashboard.contains("2<sup>e</sup> sur 9 joueurs"));
+        assertTrue(dashboard.contains("Pas encore classé"));
+        assertFalse(get("/compte", null).body().contains("Ma progression"), "jamais sans session");
+
+        String csrf = hidden(dashboard, "csrf");
+        post("/compte/delier", session, form("csrf", csrf, "motdepasse", "motdepasse-alice"), null);
+        assertTrue(store.findProgress(store.findAccountByLogin("alice").orElseThrow().id()).isEmpty(),
+                "la progression disparaît avec la liaison");
+        assertEquals("{\"result\":\"NOT_LINKED\"}", progress(LINK_TOKEN, PROBE).body());
+        assertFalse(get("/compte", session).body().contains("Ma progression"));
+    }
+
+    @Test
+    void progressRejectsAnythingOutsideTheContract() throws Exception {
+        start(true);
+        link(registerAndLogin());
+
+        assertEquals(400, progress(LINK_TOKEN, "pas du json").statusCode());
+        assertEquals(400, progress(LINK_TOKEN, "{\"uuid\":\"x\"}").statusCode());
+        String valid = progressBody("2026-11-20T10:00:00Z", "Combat");
+        assertEquals(400, progress(LINK_TOKEN, valid.replace("\"xp\":600", "\"xp\":-1")).statusCode(), "négatif");
+        assertEquals(400, progress(LINK_TOKEN, valid.replace("\"rank\":1,\"players\":5", "\"rank\":6,\"players\":5"))
+                .statusCode(), "rang hors effectif");
+        assertEquals(400, progress(LINK_TOKEN, valid.replace("\"status\":\"ACTIVE\"", "\"status\":\"X\"")).statusCode());
+        assertEquals(400, progress(LINK_TOKEN, valid.replace("\"metric\":\"RPG_XP_COMBAT\"", "\"metric\":\"<x>\""))
+                .statusCode());
+        assertEquals(400, progress(LINK_TOKEN, valid.replace("\"name\":\"AliceMC\"", "\"name\":\"<x>\"")).statusCode());
+        assertEquals(400, progress(LINK_TOKEN, "{\"uuid\":\"" + ALICE_UUID + "\",\"name\":\"A\",\"progress\":\""
+                + "x".repeat(LinkProgressHandler.MAX_BODY_BYTES) + "\"}").statusCode(), "trop long");
+        assertTrue(store.findProgress(store.findAccountByLogin("alice").orElseThrow().id()).isEmpty());
+    }
+
+    @Test
+    void demoAccountPageIsLabelledAndNotIndexed() throws Exception {
+        start(false);
+
+        HttpResponse<String> demo = get("/demo/compte", null);
+        assertEquals(200, demo.statusCode());
+        assertTrue(demo.body().contains("joueurs fictifs"));
+        assertTrue(demo.body().contains("noindex"));
+        assertTrue(demo.body().contains("Ma progression"));
+        assertTrue(demo.body().contains("Demo_Aube"));
+        assertFalse(demo.body().contains("<form"), "aucun formulaire de compte dans l'aperçu");
     }
 
     @Test

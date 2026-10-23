@@ -56,6 +56,44 @@ class PortalLinkClientTest {
     }
 
     @Test
+    void aProbeSendsOnlyTheUuidAndAPushSendsTheProgress() throws Exception {
+        java.util.List<String> bodies = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/link/progress", exchange -> {
+            String received = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            bodies.add(received);
+            byte[] reply = (received.contains("progress") ? "{\"result\":\"STORED\"}" : "{\"result\":\"LINKED\"}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, reply.length);
+            exchange.getResponseBody().write(reply);
+            exchange.close();
+        });
+        server.start();
+        try {
+            PortalLinkClient client = new PortalLinkClient(new PortalLinkConfig(true,
+                    "http://127.0.0.1:" + server.getAddress().getPort(), "jeton-liaison", 2000, 5000));
+            UUID uuid = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+            assertEquals(ProgressReply.LINKED, client.pushProgress(uuid, "AliceMC", null).get(5, TimeUnit.SECONDS));
+            assertEquals(ProgressReply.STORED, client.pushProgress(uuid, "AliceMC",
+                    java.util.Map.of("quests", java.util.Map.of("completed", 3))).get(5, TimeUnit.SECONDS));
+
+            assertEquals("{\"uuid\":\"" + uuid + "\"}", bodies.get(0), "la sonde ne contient que l'UUID");
+            assertTrue(bodies.get(1).contains("\"name\":\"AliceMC\""));
+            assertTrue(bodies.get(1).contains("\"completed\":3"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void unknownProgressRepliesAreUnavailable() {
+        assertEquals(ProgressReply.UNAVAILABLE, ProgressReply.parse("AUTRE"));
+        assertEquals(ProgressReply.UNAVAILABLE, ProgressReply.parse("UNAVAILABLE"));
+        assertEquals(ProgressReply.NOT_LINKED, ProgressReply.parse("NOT_LINKED"));
+    }
+
+    @Test
     void unreachablePortalBecomesUnavailable() throws Exception {
         PortalLinkConfig config = new PortalLinkConfig(true, "http://127.0.0.1:1", "t", 500, 1000);
 

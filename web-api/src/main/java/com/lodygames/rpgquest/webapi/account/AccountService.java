@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.webapi.account;
 
+import com.lodygames.rpgquest.webapi.json.Json;
 import com.lodygames.rpgquest.webapi.privacy.AgePolicy;
 import com.lodygames.rpgquest.webapi.privacy.ParentalConsentStatus;
 import java.sql.SQLException;
@@ -56,8 +57,15 @@ public final class AccountService {
     }
 
     public record Overview(AccountStore.Account account, Optional<AccountStore.Link> link,
-            List<AccountStore.AuditEntry> history) {
+            List<AccountStore.AuditEntry> history, Optional<PersonalProgress> progress) {
     }
+
+    /** Progression du joueur relié, telle que reçue du serveur de jeu, et quand elle est arrivée. */
+    public record PersonalProgress(LinkedProgress progress, Instant receivedAt) {
+    }
+
+    /** Écart minimal entre deux enregistrements de progression d'un même joueur. */
+    static final Duration PROGRESS_MIN_INTERVAL = Duration.ofSeconds(30);
 
     private final AccountStore store;
     private final PasswordHasher hasher;
@@ -175,7 +183,14 @@ public final class AccountService {
     public Overview overview(String accountId) throws SQLException {
         AccountStore.Account account = store.findAccount(accountId)
                 .orElseThrow(() -> new IllegalStateException("Session sans compte"));
-        return new Overview(account, store.findLink(accountId), store.auditOf(accountId, 10));
+        Optional<AccountStore.Link> link = store.findLink(accountId);
+        Optional<PersonalProgress> progress = Optional.empty();
+        if (link.isPresent()) {
+            progress = store.findProgress(accountId).map(stored -> new PersonalProgress(
+                    LinkedProgress.fromWire(Json.parse(stored.payload())),
+                    stored.receivedAt()));
+        }
+        return new Overview(account, link, store.auditOf(accountId, 10), progress);
     }
 
     public Challenge createChallenge(String accountId) throws SQLException {
@@ -216,6 +231,25 @@ public final class AccountService {
             linkFailures.recordFailure(failureKey);
         }
         return outcome;
+    }
+
+    /** Sonde du serveur de jeu (#53) : cet UUID est-il relié ? Rien n'est écrit ni journalisé. */
+    public boolean isLinked(UUID playerUuid) throws SQLException {
+        return settings.enabled() && store.isLinked(playerUuid);
+    }
+
+    /**
+     * Progression envoyée par le serveur de jeu pour {@code playerUuid} (#53) : conservée seulement si
+     * cet UUID est relié, et effacée avec la liaison.
+     */
+    public AccountStore.ProgressWrite recordProgress(UUID playerUuid, LinkedProgress progress) throws SQLException {
+        if (!settings.enabled()) {
+            return AccountStore.ProgressWrite.NOT_LINKED;
+        }
+        Instant now = clock.instant();
+        // Une date future (horloge décalée, envoi forgé) ne doit pas bloquer les envois suivants.
+        Instant generatedAt = progress.generatedAt().isAfter(now) ? now : progress.generatedAt();
+        return store.saveProgress(playerUuid, Json.write(progress.toWire()), generatedAt, now, PROGRESS_MIN_INTERVAL);
     }
 
     /** Dissociation : exige le mot de passe, comme toute action qui retire une protection. */

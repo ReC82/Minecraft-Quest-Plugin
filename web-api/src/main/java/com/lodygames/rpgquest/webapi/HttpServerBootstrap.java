@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.webapi;
 import com.lodygames.rpgquest.webapi.account.AccountPagesHandler;
 import com.lodygames.rpgquest.webapi.account.AccountService;
 import com.lodygames.rpgquest.webapi.account.LinkConfirmHandler;
+import com.lodygames.rpgquest.webapi.account.LinkProgressHandler;
 import com.lodygames.rpgquest.webapi.ingest.SnapshotIngestHandler;
 import com.lodygames.rpgquest.webapi.api.AnnouncementsHandler;
 import com.lodygames.rpgquest.webapi.api.CatalogHandler;
@@ -17,6 +18,7 @@ import com.lodygames.rpgquest.webapi.http.AuthFilter;
 import com.lodygames.rpgquest.webapi.http.RateLimiter;
 import com.lodygames.rpgquest.webapi.http.RequestPipeline;
 import com.lodygames.rpgquest.webapi.news.NewsRepository;
+import com.lodygames.rpgquest.webapi.site.DemoAccountPageHandler;
 import com.lodygames.rpgquest.webapi.site.AssetHandler;
 import com.lodygames.rpgquest.webapi.site.EventsPageHandler;
 import com.lodygames.rpgquest.webapi.site.HomePageHandler;
@@ -128,6 +130,8 @@ public final class HttpServerBootstrap {
         if (accountService != null) {
             server.createContext("/api/link/confirm", pipeline.wrap(false,
                     new LinkConfirmHandler(accountService, config.accounts().linkToken())));
+            server.createContext("/api/link/progress", pipeline.wrap(false,
+                    new LinkProgressHandler(accountService, config.accounts().linkToken())));
         }
 
         // #421 : instantané poussé par le serveur Minecraft, authentifié par son jeton dédié.
@@ -163,6 +167,7 @@ public final class HttpServerBootstrap {
                 new PlayersPageHandler(snapshotStore, site, SiteRoutes.DEMO)));
         server.createContext(SiteRoutes.DEMO.events(), pipeline.wrap(false,
                 new EventsPageHandler(snapshotStore, site, SiteRoutes.DEMO, false)));
+        server.createContext(DemoAccountPageHandler.PATH, pipeline.wrap(false, new DemoAccountPageHandler(site)));
         server.createContext("/confidentialite", pipeline.wrap(false, new PrivacyPageHandler(snapshotStore, config.siteTitle(),
                 config.playerDataPublic(), config.agePolicy())));
 

@@ -6325,6 +6325,31 @@ seuil d'âge, jeton des deux côtés, `portal-link.properties` sur DEV, redémar
 10. `journalctl -u lodyquests-portal` et `latest.log` du serveur : aucun code ni jeton.
 11. Téléphone (≈ 390 px) : formulaires lisibles, aucun défilement horizontal.
 
+### TC-417 — Progression personnelle du joueur relié sur `/compte` (issue #53 lot 6, PENDING MANUAL VALIDATION)
+
+Prérequis : portail et JAR issus du lot 6 de #53. Aucune donnée de jeu n'est modifiée par ce test.
+
+**A. Maintenant (comptes désactivés, aucune donnée réelle)**
+
+1.  Navigateur : https://lodyquests.lodylands.com/demo/compte. **Attendu** : bandeau « joueurs
+    fictifs », « Ma progression » de `Demo_Aube` : niveau global, pistes avec barres, quêtes « 1ᵉʳ sur
+    12 joueurs » ou équivalent, classements avec podium et une ligne « Pas encore classé » ; aucun
+    formulaire. Téléphone (≈ 390 px) : lisible, aucun défilement horizontal.
+2.  https://lodyquests.lodylands.com/compte → toujours « pas encore ouverts ».
+
+**B. Après ouverture par le propriétaire** (TC-326 B réussi, joueur relié)
+
+3.  Juste après `/lien XXXXXXXX` : recharger `/compte` → « Ma progression » apparaît en quelques
+    secondes (sinon « Ta progression arrivera ici… »).
+4.  Jouer (tuer un mob, terminer une quête), se déconnecter du serveur, recharger `/compte` →
+    valeurs à jour et heure d'envoi récente.
+5.  `/profile web prive` en jeu : la progression reste visible sur `/compte` (espace privé), mais le
+    joueur n'apparaît pas sur les classements publics.
+6.  « Délier » → plus de « Ma progression » ; se reconnecter au serveur puis se déconnecter : rien ne
+    réapparaît.
+7.  Un autre compte web connecté ne voit jamais cette progression ; `/compte` sans session non plus.
+8.  `journalctl -u lodyquests-portal` et `latest.log` : aucun contenu de progression, aucun jeton.
+
 ### TC-327 — Statut du serveur sur le portail et acheminement de l'instantané (issue #421, PENDING MANUAL VALIDATION)
 
 Prérequis : portail et plugin issus de #421. Aucune donnée de jeu n'est modifiée par ce test ; aucun

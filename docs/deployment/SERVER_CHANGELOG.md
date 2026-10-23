@@ -49,6 +49,32 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Portail public : recherche de pseudo et XP globale cohérentes (#56, TC-414-bis)
+
+### Changement
+
+Portail AWS seulement. Recherche « Chercher un pseudo » (vraies pages et aperçu `/demo/joueurs`) :
+casse, espaces et « _ » ignorés, recherche partielle ; pseudo exact ou résultat unique → fiche, sinon
+liste des correspondances ou « Aucun profil public ne correspond » ; l'aperçu ne renvoie jamais vers
+`/joueurs`. « Expérience totale » devient « XP globale » (liste, fiche, classements, compte) avec la
+règle affichée sur la fiche (ce n'est pas la somme des pistes) ; « Meilleur rang » nomme son classement.
+`player-data-public`, `web-export.enabled`, `accounts-enabled` inchangés.
+
+### Action serveur
+
+Serveur Minecraft : **aucune**. Portail : `scripts/web-portal/deploy.sh`. nginx inchangé.
+
+### Validation
+
+Déployé le 23/10/2026 21:07 (`a2149a92`, sauvegarde `releases/20261023-210720`). URLs publiques vérifiées.
+TC-414-bis (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+`scripts/web-portal/rollback.sh app` (release précédente du portail).
+
+---
+
 ## 2026-10-23 - Source des contenus PlugAdmin fiable face à DEV, publications sans écrasement (#798, TC-424)
 
 ### Changement

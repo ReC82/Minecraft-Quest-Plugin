@@ -3269,7 +3269,7 @@ public final class BukkitAgentActions implements AgentActions {
         List<Map<String, String>> palette = new ArrayList<>(source.palette().size());
         for (var entry : source.palette()) {
             palette.add(Map.of("symbol", String.valueOf(entry.symbol()), "block", entry.block(),
-                    "role", String.valueOf(entry.role()), "shape", entry.shape()));
+                    "role", String.valueOf(entry.role()), "shape", entry.shape(), "state", entry.state()));
         }
         return new BuildingVoxelsView(palette, source.layers(), source.omittedReason());
     }

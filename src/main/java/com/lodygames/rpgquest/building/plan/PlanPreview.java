@@ -125,10 +125,19 @@ public final class PlanPreview {
      * @param symbol le caractère qui la désigne dans les couches
      * @param block  le type de bloc, sans ses propriétés ({@code stone_bricks})
      * @param role   son rôle, dans le vocabulaire des coupes ({@link #SOLID}, {@link #GLAZING}…)
-     * @param shape  {@code full}, ou {@code bottom}/{@code top} pour une dalle — la seule forme que
-     *               la vue dessine autrement qu'un cube
+     * @param shape  {@code full}, ou {@code bottom}/{@code top} pour une dalle
+     * @param state  les propriétés qui changent la forme dessinée, triées
+     *               ({@code facing=north,half=bottom,shape=straight}), vide sinon (issue #786)
      */
-    public record PaletteEntry(char symbol, String block, char role, String shape) {
+    public record PaletteEntry(char symbol, String block, char role, String shape, String state) {
+
+        public PaletteEntry {
+            state = state == null ? "" : state;
+        }
+
+        public PaletteEntry(char symbol, String block, char role, String shape) {
+            this(symbol, block, role, shape, "");
+        }
     }
 
     /**
@@ -163,8 +172,22 @@ public final class PlanPreview {
         }
     }
 
-    /** Les symboles de la palette : lisibles, sans le {@link #EMPTY}, sans échappement JSON. */
-    static final String SYMBOLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    /**
+     * Les symboles de la palette : sans le {@link #EMPTY}, sans échappement JSON (ni guillemet ni
+     * barre oblique inverse). Lettres et chiffres d'abord ; la ponctuation n'est utile que depuis
+     * que les états (marches tournées, portes ouvertes…) font des entrées distinctes (#786).
+     */
+    static final String SYMBOLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+            + "!#$%&()*+,-/:;<=>?@[]^_`{|}~";
+
+    /**
+     * Les propriétés d'état qui changent ce que la vue dessine (#786). Les connexions des barrières,
+     * murets et vitres n'en font pas partie : le panel les déduit des voisins, comme le jeu. Le
+     * niveau de l'eau, l'alimentation en redstone ou le {@code waterlogged} n'y figurent pas non plus :
+     * ils multiplieraient les entrées sans rien changer au dessin.
+     */
+    private static final java.util.Set<String> DRAWN_PROPERTIES = java.util.Set.of(
+            "facing", "half", "shape", "axis", "hanging", "attachment", "hinge", "open", "face");
 
     /**
      * Prend les coupes.
@@ -253,6 +276,16 @@ public final class PlanPreview {
 
     /** La grille entière, couche par couche (issue #273). */
     static Voxels voxels(Blueprint blueprint) {
+        Voxels withStates = voxels(blueprint, true);
+        // Trop de variantes (toutes les orientations de plusieurs escaliers…) : plutôt que pas de vue
+        // du tout, la vue d'avant #786, un matériau par entrée, dessinée sans les états.
+        return withStates.present() || !withStates.omittedReason().startsWith(TOO_MANY_TYPES) ? withStates
+                : voxels(blueprint, false);
+    }
+
+    private static final String TOO_MANY_TYPES = "Trop de types de blocs différents";
+
+    private static Voxels voxels(Blueprint blueprint, boolean states) {
         long cells = (long) blueprint.sizeX() * blueprint.sizeY() * blueprint.sizeZ();
         if (cells > Voxels.MAX_CELLS) {
             return Voxels.omitted("Bâtiment trop grand pour la vue en 3D (" + cells
@@ -274,15 +307,16 @@ public final class PlanPreview {
                         + "dessinée, voir le résultat de la vérification.");
             }
             String shape = shape(block.state());
-            String key = block.material() + "|" + shape;
+            String drawn = states ? drawnState(block.state()) : "";
+            String key = block.material() + "|" + shape + "|" + drawn;
             PaletteEntry entry = palette.get(key);
             if (entry == null) {
                 if (palette.size() >= SYMBOLS.length()) {
-                    return Voxels.omitted("Trop de types de blocs différents pour la vue en 3D "
+                    return Voxels.omitted(TOO_MANY_TYPES + " pour la vue en 3D "
                             + "(plus de " + SYMBOLS.length() + ").");
                 }
                 entry = new PaletteEntry(SYMBOLS.charAt(palette.size()), block.material(),
-                        role(block.state()), shape);
+                        role(block.state()), shape, drawn);
                 palette.put(key, entry);
             }
             grid[block.y()][block.z()][block.x()] = entry.symbol();
@@ -296,6 +330,24 @@ public final class PlanPreview {
             layers.add(rows);
         }
         return new Voxels(new ArrayList<>(palette.values()), layers, "");
+    }
+
+    /** Les propriétés de {@link #DRAWN_PROPERTIES} présentes dans l'état, triées par nom. */
+    static String drawnState(String state) {
+        int open = state == null ? -1 : state.indexOf('[');
+        if (open < 0 || !state.endsWith("]")) {
+            return "";
+        }
+        java.util.TreeMap<String, String> kept = new java.util.TreeMap<>();
+        for (String pair : state.substring(open + 1, state.length() - 1).split(",", -1)) {
+            int eq = pair.indexOf('=');
+            if (eq > 0 && DRAWN_PROPERTIES.contains(pair.substring(0, eq))) {
+                kept.put(pair.substring(0, eq), pair.substring(eq + 1));
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        kept.forEach((k, v) -> sb.append(sb.isEmpty() ? "" : ",").append(k).append('=').append(v));
+        return sb.toString();
     }
 
     /** Une dalle se dessine en demi-bloc, en bas ou en haut ; tout le reste en cube. */

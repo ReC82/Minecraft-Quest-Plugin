@@ -49,6 +49,45 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Claims : croissance des plantations sans joueur à proximité (#776, TC-420)
+
+### Changement
+
+JAR RPGQuest `4cc191cb` (PR #781) : au déchargement d'un chunk touchant un claim du monde `claims`,
+l'heure de jeu est notée dans le PDC du chunk ; au rechargement, la croissance moyenne vanilla de
+l'absence (24 h max) est appliquée aux plantes (cultures, tiges + un fruit, verrues, baies, cacao,
+canne, cactus, bambou), par lots, via `BlockGrowEvent`, dans les claims seulement. Aucun chunk
+chargé par le mécanisme, aucun objet créé, aucune migration, aucune donnée joueur.
+
+### Action serveur
+
+Remplacement du JAR + redémarrage. `config.yml` : section `claims.offline-growth` ajoutée
+automatiquement au démarrage par `ConfigFileCompleter` (`enabled: true`, `worlds: []`,
+`max-catch-up-minutes: 1440`, `blocks-per-tick: 256`) — relue sur DEV après redémarrage.
+
+### Sauvegarde préalable
+
+`rpgquest-20261023T102018Z-predeploy.jar` (JAR précédent `d7441bb1`), dans le dossier de sauvegardes
+AWS du script.
+
+### Déploiement
+
+23/10/2026 12:20 : `scripts/deploy-verygames.sh -y` (CI verte sur `4cc191c`), JAR en ligne
+4 369 346 octets, SHA-256 retéléchargé identique (`cd3ce7d4…`) ; `scripts/verygames-restart.sh`
+(seul le propriétaire était connecté), DEV de nouveau en ligne, RPGQuest actif.
+
+### Validation
+
+TC-420 (PENDING MANUAL VALIDATION). Aucune plantation forcée ni simulée sur DEV par Claude.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` avec la sauvegarde ci-dessus, puis redémarrage ; ou simplement
+`claims.offline-growth.enabled: false` + `/rpgquest reload`. Les marques déjà posées dans les
+chunks (`rpgquest:offline_growth_since`) sont ignorées par l'ancien JAR (sans effet).
+
+---
+
 ## 2026-10-23 - Atelier IA : réponse sans plan, reprise avec le même contexte, palette, stagnation (#747, TC-419)
 
 ### Changement

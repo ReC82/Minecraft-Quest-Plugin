@@ -43,6 +43,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > Aucun bypass (ni OP, ni maintenance #191). Bouton et panneaux ordinaires inchangés ; aucun bloc
 > réécrit, aucune migration. PENDING MANUAL VALIDATION (TC-386).
 
+> **Croissance hors ligne des plantations des claims (#776, 23/10/2026)** — `claim.growth.OfflineGrowthService`
+> marque l'heure de jeu dans le PDC d'un chunk touchant un claim à son déchargement et, au rechargement,
+> consomme la marque puis applique la croissance moyenne vanilla (`PlantGrowthSimulator` : cultures, tiges et
+> fruit unique, verrues, baies, cacao, canne/cactus ≤ 3, bambou ≤ 16 ; lumière, terre humide, plafonds),
+> par lots (`blocks-per-tick`), via `BlockGrowEvent`, dans les cuboïdes de claims seulement, sans charger de
+> chunk. Config `claims.offline-growth` (activée, monde des claims, 24 h max). Arbres non couverts.
+> Aucune migration. PENDING MANUAL VALIDATION (TC-420).
+
 > **Claims dans PlugAdmin (#637, 21/10/2026)** — page `/claims` (groupe « RPGQuest », sous Joueurs),
 > permission `CLAIM_READ` (Propriétaire, Administrateur, Testeur), action agent `claim.list` : tous les
 > claims persistés (propriétaire UUID + pseudo connu, claim principal = `ClaimService#mainClaimOf`,

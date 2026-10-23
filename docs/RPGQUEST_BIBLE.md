@@ -6027,6 +6027,14 @@ Persistance : oui — SQLite (flags du claim).
 
 Bypass : `rpgquest.admin.world` (même permission que le bypass des zones protégées) exempte l'acteur direct d'une action, jamais la victime.
 
+### Croissance des plantations sans joueur (issue #776)
+
+But : les cultures d'un claim continuent de pousser quand personne n'est à côté.
+Fonctionnement : au déchargement d'un chunk touchant un claim (monde `claims.world` par défaut), l'heure de jeu est notée dans le chunk ; à son rechargement, la croissance moyenne vanilla de l'absence est appliquée en une fois (blé, carottes, pommes de terre, betteraves, tiges et fruits de citrouille/pastèque, verrues, baies, cacao, canne à sucre, cactus, bambou), par lots de `blocks-per-tick` plantes par tick. Lumière, terre labourée humide/sèche, plafonds d'âge et de hauteur respectés ; `BlockGrowEvent` émis (annulable) ; aucun objet créé, aucun bloc hors plantes modifié, rien hors des claims, aucun chunk chargé par le mécanisme. Arbres non couverts.
+Configuration : `config.yml` → `claims.offline-growth` (`enabled: true`, `worlds: []` = monde des claims, `max-catch-up-minutes: 1440`, `blocks-per-tick: 256`), complétée automatiquement au démarrage.
+Persistance : marque `rpgquest:offline_growth_since` dans le PDC du chunk (consommée au rechargement) ; aucune table, aucune donnée joueur.
+Détail du barème : `docs/CLAIMS.md`, « Croissance hors ligne des plantations ». Test : TC-420.
+
 ### Accès au monde des claims et retour au Hub (issues #21/#22/#23)
 
 Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, `travel.CompositeWorldPortalEntryGuard`, `dialogues/guide.yml`, `dialogues/jo.yml`, `quests/crystal_hunt.yml`.

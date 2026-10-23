@@ -571,7 +571,34 @@ public final class ConfigValidator {
         }
 
         return new ClaimConfig(maxWidth, maxHeight, maxClaimsPerPlayer, portalBufferBlocks, world, blockNetherTravel,
-                arrivalMin, arrivalMax, arrivalSpacing);
+                arrivalMin, arrivalMax, arrivalSpacing, validateOfflineGrowth(claims));
+    }
+
+    /** Issue #776 : {@code claims.offline-growth}, absente = valeurs par défaut (activée). */
+    private static OfflineGrowthConfig validateOfflineGrowth(ConfigurationSection claims) throws ConfigValidationException {
+        ConfigurationSection growth = claims.getConfigurationSection("offline-growth");
+        if (growth == null) {
+            return OfflineGrowthConfig.DEFAULTS;
+        }
+        boolean enabled = growth.getBoolean("enabled", true);
+        List<String> worlds = new ArrayList<>();
+        for (String world : growth.getStringList("worlds")) {
+            if (world == null || world.isBlank()) {
+                throw new ConfigValidationException("« claims.offline-growth.worlds » contient un nom de monde vide.");
+            }
+            worlds.add(world.trim());
+        }
+        int maxMinutes = growth.getInt("max-catch-up-minutes", OfflineGrowthConfig.DEFAULT_MAX_CATCH_UP_MINUTES);
+        if (maxMinutes < 1 || maxMinutes > OfflineGrowthConfig.MAX_CATCH_UP_MINUTES_LIMIT) {
+            throw new ConfigValidationException("« claims.offline-growth.max-catch-up-minutes » doit être compris entre 1 et "
+                    + OfflineGrowthConfig.MAX_CATCH_UP_MINUTES_LIMIT + ", valeur trouvée : " + maxMinutes);
+        }
+        int blocksPerTick = growth.getInt("blocks-per-tick", OfflineGrowthConfig.DEFAULT_BLOCKS_PER_TICK);
+        if (blocksPerTick < 1 || blocksPerTick > OfflineGrowthConfig.BLOCKS_PER_TICK_LIMIT) {
+            throw new ConfigValidationException("« claims.offline-growth.blocks-per-tick » doit être compris entre 1 et "
+                    + OfflineGrowthConfig.BLOCKS_PER_TICK_LIMIT + ", valeur trouvée : " + blocksPerTick);
+        }
+        return new OfflineGrowthConfig(enabled, worlds, maxMinutes, blocksPerTick);
     }
 
     private static ClaimConfig defaultClaims() {

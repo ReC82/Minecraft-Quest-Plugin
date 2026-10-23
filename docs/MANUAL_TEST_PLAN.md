@@ -9053,3 +9053,24 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 **Résultat attendu** : on juge le puits comme en jeu avant de le placer. Ne pas regénérer le puits (aucun appel IA).
 
 **Couverture automatisée** : `BlockShapesTest` (marches droites/coins/retournées, dalles, chaîne, barrière, vitre/barreaux, muret, porte et charnière, trappe, échelle, lanterne, torche murale, cloche, eau, couleurs distinctes), `IsometricViewTest` (eau translucide dans un puits, marche qui tourne avec la vue, chaîne fine), `PlanPreviewVoxelsTest` (états transmis, repli sans états, symboles sûrs).
+
+### TC-426 — #780 — centre de documentation : sommaire, listes imbriquées, navigation (issue #780, PENDING MANUAL VALIDATION)
+
+**But** : « Faire parler un personnage » (et toutes les fiches) se lisent sans liste cassée, phrase coupée ni lien déplacé, et on s'y retrouve.
+
+**Prérequis** : PlugAdmin de #780 en ligne. Aucun contenu de jeu n'est touché.
+
+1. Ordinateur (fenêtre large) : PlugAdmin → **Documentation** → **Faire parler un personnage**.
+2. **Attendu** : à gauche, « Sur cette fiche » liste les 6 grandes parties (Créer, Modifier, Enregistrer puis mettre en jeu, Tester en jeu, Dépanner, Pour aller plus loin) et leurs sous-parties ; la colonne reste visible en descendant et défile seule si elle est longue. Cliquer une entrée amène à la bonne section (titre surligné, non caché sous la barre du haut).
+3. Partie **Modifier un dialogue** → « Une réponse du joueur » : **Ensuite…** a trois sous-puces (Terminer / Le personnage répond / Une nouvelle réplique…) ; aucune phrase coupée en deux, chaque lien (« Aller à la ligne dans une réplique », « Conditions et autres effets ») est dans sa phrase.
+4. Tableau « Ce que dit le bandeau » : 3 colonnes lisibles.
+5. Bas de fiche : **Fiches liées** (Résoudre les problèmes de dialogues, Créer et configurer un PNJ…) et **Fiche précédente / Fiche suivante**.
+6. Téléphone (≈ 390 px) : le **Sommaire (6 parties)** est en tête, au-dessus du texte ; aucun défilement horizontal de la page ; le tableau défile dans son cadre.
+7. Depuis l'éditeur d'un dialogue : lien **En savoir plus** sous « Le personnage dit… » → section « Aller à la ligne dans une réplique » ; « Comment terminer une conversation ? » → section « Terminer une conversation ».
+8. Recherche : taper `aller a la ligne` (sans accent) → le 1er résultat indique « Section : Aller à la ligne dans une réplique » et y mène directement.
+9. Ouvrir 2 autres fiches au hasard (par ex. Commandes RPGQuest, Portails) : sommaire, fiches liées, précédent/suivant présents ; les libellés « Syntaxe / Exemple » restent en petits titres, mais un mot en gras dans une phrase reste un mot en gras normal.
+10. Optionnel : imprimer la fiche (PDF) : pas de colonne de sommaire coupée, sommaire en tête.
+
+**Résultat attendu** : on trouve une étape sans lire toute la fiche ; aucune information de l'ancienne fiche n'a disparu (les détails avancés sont dans « Pour aller plus loin »).
+
+**Couverture automatisée** : `MarkdownStructureTest` (3 niveaux, suites et liens, libellés, encadrés, liens entre fiches, ancres, lint), `DocTemplateTest` (28 fiches rendables, gabarit, liens internes, 351 ancres figées), `DocsHelpLinksTest` (liens d'aide du code), `DocsPagesTest` (sommaire = ancres réelles, fiches liées, précédent/suivant, recherche par section), `DocSearchIndexTest`.

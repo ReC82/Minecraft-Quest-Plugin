@@ -49,7 +49,7 @@ en jeu par le propriétaire reste à faire là où c'est indiqué.
 | 8 | Entitlements : récompenses remises par le plugin | #422 | spécification **faite** ([REWARD_ENTITLEMENTS.md](REWARD_ENTITLEMENTS.md)) ; tranche 1 **faite**, désactivée (`entitlements.yml`, V41, remise unique, archive des événements, fiche joueur PlugAdmin) ; déclaration par le portail après #53 |
 | — | Premium (VIP, pass, boutique) | — | **hors périmètre** : après cadrage juridique et règles Minecraft ; `store-enabled=false` |
 
-## 2. Comptes joueurs et liaison au compte Minecraft (#53) — fait, désactivé
+## 2. Comptes joueurs, liaison au compte Minecraft et progression personnelle (#53) — fait, désactivé
 
 Une saisie de pseudo ou d'UUID ne prouve rien. La liaison se prouve **en jeu**.
 
@@ -70,6 +70,36 @@ Une saisie de pseudo ou d'UUID ne prouve rien. La liaison se prouve **en jeu**.
 5. la page `/compte` montre : relié ou non, pseudo, date de liaison, 10 dernières opérations, et
    « Délier » (mot de passe exigé). Relier de nouveau exige un nouveau code.
 
+### Progression personnelle du joueur relié (lot 6, 23/10/2026)
+
+Une fois relié, `/compte` montre au **seul titulaire** du compte (session obligatoire, `no-store`) :
+niveau global et XP, niveau et XP de chaque piste, quêtes terminées avec rang et effectif, et sa
+place sur **chaque classement publié** (#734/#735) — valeur, « 2ᵉ sur 9 joueurs », période, ou
+« pas encore classé ». C'est visible **même si son profil public est privé** (`/profile web prive`) :
+c'est son espace, pas une publication. Le rang compte tous les joueurs classés, profils privés
+compris, sans les exclus de modération ; il ne révèle qu'un nombre, jamais un pseudo.
+
+Acheminement (même sens que l'instantané #421 : le serveur Minecraft initie, AWS reçoit) :
+
+1. le plugin (`web.link.LinkedProgressPublisher`) envoie juste après un `/lien` accepté, à la
+   déconnexion, et toutes les `progress-interval-minutes` (défaut 15, `0` = pas d'envoi périodique)
+   pour les joueurs connectés ;
+2. tant qu'il ne sait pas si un joueur est relié, il envoie une **sonde** `{"uuid"}` seule ;
+   `NOT_LINKED` est retenu jusqu'au redémarrage (un `/lien` accepté le remplace) : **aucune
+   statistique d'un joueur non relié ne quitte le serveur** ;
+3. pour un joueur relié, `web.link.LinkedProgressBuilder` calcule hors du thread principal
+   (`ProgressionRepository`, `quest_progress`, `StatisticsRepository.liveStanding/archivedStanding`,
+   mêmes fenêtres, exclusions et raisons d'XP ignorées que les classements publics) et
+   `POST /api/link/progress` l'envoie avec le jeton de liaison ;
+4. le portail valide par **liste blanche** (`account.LinkedProgress` : champs bornés, 100
+   classements, 64 Kio ; tout écart → 400, rien d'écrit), garde la valeur seulement si l'UUID est
+   relié, ignore un envoi plus ancien que celui stocké et un envoi à moins de 30 s du précédent
+   (`THROTTLED`) ; table `linked_progress` d'`accounts.db` (V2), **effacée avec la liaison** ;
+5. avant le premier envoi, `/compte` dit quand la progression arrivera — aucune valeur inventée.
+
+Aperçu sans compte ni donnée réelle : **`/demo/compte`** (joueur fictif `Demo_Aube`, bandeau
+« joueurs fictifs », `noindex`).
+
 ### Règles de sécurité réalisées
 
 | Exigence (#53) | Réalisation |
@@ -82,6 +112,7 @@ Une saisie de pseudo ou d'UUID ne prouve rien. La liaison se prouve **en jeu**.
 | CSRF / session | cookie `lq_session` `HttpOnly; Secure; SameSite=Lax`, jeton neuf à chaque connexion, invalidé côté serveur à la déconnexion ; jeton CSRF par session sur tout formulaire connecté, double soumission (`lq_form`, `SameSite=Strict`) avant connexion ; `Origin` / `Sec-Fetch-Site` étrangers refusés ; `Cache-Control: no-store` |
 | mot de passe haché moderne | PBKDF2-HMAC-SHA256, 600 000 itérations, sel 16 octets (JDK, aucune dépendance) ; vérification à coût constant même pour un identifiant inconnu |
 | aucune réutilisation PlugAdmin | autre base (`accounts.db`), autre cookie, autre service ; le compte ne donne **aucun** droit, ni sur le jeu ni sur PlugAdmin |
+| progression privée | jamais publique ni dans l'instantané : `/compte` du titulaire seul ; sonde sans statistiques pour un joueur non relié ; liste blanche, bornes et anti-rejeu (`generatedAt` croissant) côté portail ; effacée à la dissociation |
 | mineurs (#55) | `AgePolicy` décide ; sous le seuil, le compte est créé **limité** (`PENDING`) et ne peut pas se lier ; refus = rien n'est enregistré |
 
 ### Mise en route (décision du propriétaire)
@@ -94,8 +125,9 @@ Désactivé partout aujourd'hui. Pour ouvrir (après #55) :
 2. serveur Minecraft — `plugins/RPGQuest/portal-link.properties` (modèle
    `scripts/portal-link.properties.example`) avec `enabled=true`, `base-url` et **le même jeton** ;
    redémarrage du serveur ;
-3. nginx — le vhost doit contenir le bloc `location = /api/link/confirm` de
-   `scripts/web-portal/nginx-lodyquests-portal.conf` (seule route `/api/` ouverte).
+3. nginx — le vhost doit contenir les blocs `location = /api/link/confirm` et
+   `location = /api/link/progress` de `scripts/web-portal/nginx-lodyquests-portal.conf` (avec
+   `/api/snapshot`, seules routes `/api/` ouvertes).
 
 Avant l'ouverture publique restent à faire : export et suppression de compte, changement de mot de
 passe, demande de consentement parental, durée de conservation du journal (PRIVACY.md §4, §7).

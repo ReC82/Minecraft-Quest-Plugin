@@ -49,6 +49,42 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Progression personnelle des joueurs reliés au portail (#53 lot 6, TC-417)
+
+### Changement
+
+Un joueur relié par `/lien` voit sur `/compte` ses niveaux, ses quêtes et sa place sur chaque
+classement publié. Le plugin envoie cette progression (après `/lien`, à la déconnexion, toutes les
+15 min) par `POST /api/link/progress` — **seulement si `portal-link.properties` est activé**, ce
+qui n'est pas le cas sur DEV : aucun envoi aujourd'hui. Portail : `accounts.db` passe en V2 (table
+`linked_progress`, créée seulement si les comptes sont activés), aperçu fictif `/demo/compte`, route
+nginx exacte `/api/link/progress`.
+
+### Action serveur
+
+Remplacement du JAR uniquement. Aucune configuration, aucune donnée, aucun monde. Nouvelle clé
+**facultative** `progress-interval-minutes` dans `portal-link.properties` (absente = 15).
+
+### Sauvegarde préalable
+
+Sauvegarde datée habituelle de `deploy-verygames.sh` (JAR + `data.db`). Portail : sauvegarde du
+dossier de l'application par `scripts/web-portal/deploy.sh` ; vhost nginx copié avant remplacement.
+
+### Déploiement
+
+`scripts/deploy-verygames.sh` (JAR), `scripts/web-portal/deploy.sh` (portail), vhost nginx mis à
+jour depuis `scripts/web-portal/nginx-lodyquests-portal.conf` puis `nginx -t` et rechargement.
+
+### Validation
+
+`/demo/compte` 200 ; `/compte` « pas encore ouverts » ; `POST /api/link/progress` sans jeton → 401,
+`GET` → 403 ; `/api/status` → 404. En jeu : rien à observer tant que la liaison est désactivée.
+
+### Rollback
+
+JAR précédent (sauvegarde du déploiement) ; portail : sauvegarde de `deploy.sh` ; nginx : vhost
+copié. La table `linked_progress` peut rester (inutilisée par l'ancienne version).
+
 ## 2026-10-23 - Gestion des classements du site depuis PlugAdmin (#735, TC-416)
 
 ### Changement

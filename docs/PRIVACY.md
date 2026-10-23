@@ -58,6 +58,7 @@ Base dédiée `accounts.db` du portail (ni `data.db`, ni PlugAdmin). Elle n'exis
 | Pseudo Minecraft au moment de la liaison | affichage sur la page du compte | le joueur, l'exploitant | vie de la liaison | dissociation |
 | Sessions : **empreinte** SHA-256 du jeton + jeton anti-CSRF | rester connecté | personne | 7 jours (absolu, `accounts-session-ttl-hours`) ; purge à expiration | déconnexion |
 | Codes de liaison : **empreinte** SHA-256 | prouver la possession du compte Minecraft | personne | 10 minutes, usage unique ; purgés une heure après expiration | un nouveau code annule le précédent |
+| Progression personnelle reçue du serveur de jeu (XP et niveaux par piste, quêtes terminées, valeur / rang / effectif par classement publié ; aucun autre pseudo, aucun UUID) | afficher sa progression sur `/compte` | **le joueur seul** (connecté) et l'exploitant ; jamais publique | vie de la liaison ; remplacée à chaque envoi | effacée à la dissociation (et avec le compte) ; export : **à réaliser** |
 | Journal des liaisons (liaison, dissociation, refus ; pseudo, UUID, date) | audit, détection d'abus | le joueur (10 derniers) et l'exploitant | **à décider** (proposé : 1 an) — pas encore de purge automatique | — |
 | Compteurs d'échecs (connexion par IP et identifiant, preuves par UUID) | anti-abus | personne | mémoire seulement, 15 minutes | — |
 
@@ -104,7 +105,8 @@ forte n'est identifiée par la revue juridique.
 
 ## 4. Droits des joueurs (#53 : en partie réalisé)
 
-Fait : consultation (page `/compte` : liaison, pseudo, date, 10 dernières opérations),
+Fait : consultation (page `/compte` : liaison, pseudo, date, 10 dernières opérations, progression
+personnelle du joueur relié),
 **dissociation** Minecraft (mot de passe exigé, journalisée). À réaliser **avant l'ouverture
 publique** : **export** (fichier JSON de ses propres données), **suppression** du compte
 (désactivation immédiate, effacement après le délai décidé), changement de mot de passe, gestion et

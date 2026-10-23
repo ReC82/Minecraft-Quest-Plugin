@@ -62,9 +62,11 @@ Permissions PlugAdmin `LEADERBOARD_READ` / `LEADERBOARD_WRITE`. Portail : descri
 
 ### Action serveur
 
-Remplacement du JAR RPGQuest, redéploiement de PlugAdmin et du portail AWS. **Aucune migration**, aucune
-clé `config.yml`, `statistics.yml` non touché, `leaderboards.yml` **non créé** par le déploiement,
-`web-export.enabled` reste `false`. Redémarrage DEV requis (JAR).
+Remplacement du JAR RPGQuest (fait par Claude le 23/10/2026 05:24, merge `d7441bb1`, 4 328 585 octets,
+SHA-256 `d4317119…` retéléchargé identique, backup `rpgquest-20261023T032409Z-predeploy.jar` du JAR
+`65e03067`), redémarrage DEV (0 joueur), RPGQuest vert ; PlugAdmin et portail AWS redéployés (`d7441bb`).
+**Aucune migration**, aucune clé `config.yml`, `statistics.yml` non touché, `leaderboards.yml` **non créé**
+(vérifié : `fileExists: false`, source `bundled`), `web-export.enabled` reste `false`.
 
 ### Rollback
 

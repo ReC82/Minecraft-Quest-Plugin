@@ -129,6 +129,66 @@ public final class StatisticsRepository {
         });
     }
 
+    /**
+     * Place d'un joueur sur une métrique (issue #53) : sa valeur, son rang (ex-aequo au même rang,
+     * comme {@link #rank}) et le nombre de joueurs classés. Le rang se compte parmi tous les joueurs
+     * ayant une valeur positive — profils privés compris, exclus de modération non — : il ne révèle
+     * qu'un nombre, jamais un pseudo. Vide si le joueur n'a pas de valeur positive.
+     */
+    public record Standing(long value, int rank, long players) {
+    }
+
+    /** {@link Standing} sur la fenêtre en direct d'une période. */
+    public CompletableFuture<java.util.Optional<Standing>> liveStanding(StatPeriod period, StatMetric metric, UUID player,
+                                                                        Collection<UUID> excluded,
+                                                                        Collection<String> excludedReasons) {
+        requireWindowed(metric);
+        String values = "SELECT g.player_uuid AS u, " + aggregate(period, metric) + " AS v FROM " + source(metric)
+                + " g WHERE " + windowFilter(period, metric, excludedReasons) + notIn("g.player_uuid", excluded.size())
+                + " GROUP BY g.player_uuid HAVING " + aggregate(period, metric) + " > 0";
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(standingSql(values, period))) {
+                int index = bindWindow(statement, 1, period, metric, excludedReasons);
+                index = bindUuids(statement, index, excluded);
+                statement.setString(index, player.toString());
+                return standing(statement);
+            }
+        });
+    }
+
+    /** {@link Standing} dans les résultats figés d'une période archivée. */
+    public CompletableFuture<java.util.Optional<Standing>> archivedStanding(StatPeriod period, StatMetric metric,
+                                                                            UUID player, Collection<UUID> excluded) {
+        String values = "SELECT r.player_uuid AS u, r.stat_value AS v FROM stat_period_results r "
+                + "WHERE r.period_id = ? AND r.metric = ? AND r.stat_value > 0" + notIn("r.player_uuid", excluded.size());
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(standingSql(values, period))) {
+                statement.setString(1, period.id());
+                statement.setString(2, metric.id());
+                int index = bindUuids(statement, 3, excluded);
+                statement.setString(index, player.toString());
+                return standing(statement);
+            }
+        });
+    }
+
+    /** Valeur du joueur, rang et effectif à partir d'une sous-requête {@code (u, v)} ; dernier paramètre = UUID. */
+    static String standingSql(String values, StatPeriod period) {
+        String better = period.rules().ranking().order() == StatMetric.SortOrder.ASC ? "<" : ">";
+        return "WITH t AS (" + values + ") SELECT m.v AS mine, (SELECT COUNT(*) FROM t) AS players, "
+                + "(SELECT COUNT(*) FROM t o WHERE o.v " + better + " m.v) AS better FROM t m WHERE m.u = ?";
+    }
+
+    static java.util.Optional<Standing> standing(PreparedStatement statement) throws SQLException {
+        try (ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next()) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(new Standing(resultSet.getLong("mine"),
+                    (int) Math.min(Integer.MAX_VALUE, resultSet.getLong("better") + 1), resultSet.getLong("players")));
+        }
+    }
+
     /** Total figé d'un objectif commun archivé (#57). */
     public CompletableFuture<Long> archivedCommunityTotal(String periodId, StatMetric metric, Collection<UUID> excluded) {
         String sql = "SELECT COALESCE(SUM(r.stat_value), 0) AS total FROM stat_period_results r "

@@ -37,6 +37,7 @@ class PortalLinkConfigLoaderTest {
         assertTrue(config.enabled());
         assertEquals("https://lodyquests.lodylands.com", config.baseUrl());
         assertFalse(config.toString().contains("secret-de-liaison"), "jamais le jeton dans les journaux");
+        assertEquals(PortalLinkConfig.DEFAULT_PROGRESS_INTERVAL_MINUTES, config.progressIntervalMinutes());
     }
 
     @Test

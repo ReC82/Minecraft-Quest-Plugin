@@ -24,3 +24,6 @@ base-url=https://lodyquests.lodylands.com
 token=REMPLACER_PAR_LE_JETON_DE_LIAISON
 #connect-timeout-ms=5000
 #request-timeout-ms=10000
+# Progression personnelle des joueurs RELIÉS envoyée au portail (#53) : après /lien, à la
+# déconnexion et toutes les N minutes pour les connectés (0 = pas d envoi périodique).
+#progress-interval-minutes=15

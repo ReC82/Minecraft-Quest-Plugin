@@ -21,6 +21,8 @@ import org.slf4j.Logger;
  * <tr><td>{@code token}</td><td>{@code RPGQUEST_PORTAL_LINK_TOKEN}</td><td>(aucun — obligatoire)</td></tr>
  * <tr><td>{@code connect-timeout-ms}</td><td>—</td><td>{@code 5000}</td></tr>
  * <tr><td>{@code request-timeout-ms}</td><td>—</td><td>{@code 10000}</td></tr>
+ * <tr><td>{@code progress-interval-minutes}</td><td>—</td><td>{@code 15} ({@code 0} : seulement après
+ * {@code /lien} et à la déconnexion)</td></tr>
  * </table>
  */
 public final class PortalLinkConfigLoader {
@@ -49,6 +51,8 @@ public final class PortalLinkConfigLoader {
         String token = settings.text("token", "RPGQUEST_PORTAL_LINK_TOKEN", "");
         int connectTimeout = settings.boundedInt("connect-timeout-ms", 5000, 500, 30_000);
         int requestTimeout = settings.boundedInt("request-timeout-ms", 10_000, 1000, 60_000);
+        int progressInterval = settings.boundedInt("progress-interval-minutes",
+                PortalLinkConfig.DEFAULT_PROGRESS_INTERVAL_MINUTES, 0, 1440);
 
         if (!enabled) {
             logger.info("Liaison portail (/lien) désactivée (enabled != true dans {}).", FILE_NAME);
@@ -64,7 +68,8 @@ public final class PortalLinkConfigLoader {
                     baseUrl);
             return PortalLinkConfig.disabled();
         }
-        PortalLinkConfig config = new PortalLinkConfig(true, baseUrl, token, connectTimeout, requestTimeout);
+        PortalLinkConfig config = new PortalLinkConfig(true, baseUrl, token, connectTimeout, requestTimeout,
+                progressInterval);
         logger.info("Liaison portail (/lien) configurée : {}", config);
         return config;
     }

@@ -26,12 +26,18 @@ public final class LinkCommand implements TabExecutor {
     private final PortalLinkClient client;
     private final LinkAttemptGuard guard;
     private final Logger logger;
+    private java.util.function.BiConsumer<java.util.UUID, String> onLinked = (uuid, name) -> { };
 
     public LinkCommand(PortalLinkConfig config, PortalLinkClient client, LinkAttemptGuard guard, Logger logger) {
         this.config = config;
         this.client = client;
         this.guard = guard;
         this.logger = logger;
+    }
+
+    /** Prévenu (hors du thread principal) quand le portail confirme une liaison : premier envoi de progression. */
+    public void onLinked(java.util.function.BiConsumer<java.util.UUID, String> listener) {
+        this.onLinked = listener;
     }
 
     @Override
@@ -64,6 +70,9 @@ public final class LinkCommand implements TabExecutor {
             guard.finish(player.getUniqueId());
             LinkReply result = error != null || reply == null ? LinkReply.UNAVAILABLE : reply;
             logger.info("Liaison portail : {} pour {}.", result, player.getName());
+            if (result == LinkReply.LINKED) {
+                onLinked.accept(player.getUniqueId(), player.getName());
+            }
             if (player.isOnline()) {
                 player.sendMessage(MM.deserialize(result.playerMessage()));
             }

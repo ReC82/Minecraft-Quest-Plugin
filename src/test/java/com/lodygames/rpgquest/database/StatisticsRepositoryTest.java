@@ -210,6 +210,79 @@ class StatisticsRepositoryTest {
                 .get(TIMEOUT, TimeUnit.SECONDS), "profil privé par défaut (#55) : absent");
     }
 
+    private java.util.Optional<StatisticsRepository.Standing> liveStanding(UUID player, Set<UUID> excluded)
+            throws Exception {
+        return statistics.liveStanding(SEASON_1, COMBAT, player, excluded, ADMIN).get(TIMEOUT, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void personalStandingCountsEveryRankedPlayerWithCompetitionTies() throws Exception {
+        grant(alice, SkillType.COMBAT, 50, "combat_kill", "2026-11-08T10:00:00Z");
+        grant(bob, SkillType.COMBAT, 50, "combat_kill", "2026-11-08T10:00:00Z");
+        grant(carol, SkillType.COMBAT, 20, "combat_kill", "2026-11-08T10:00:00Z");
+        grant(carol, SkillType.COMBAT, 999, "admin_grant", "2026-11-08T10:00:00Z");
+
+        assertEquals(new StatisticsRepository.Standing(50, 1, 3), liveStanding(alice, Set.of()).orElseThrow());
+        assertEquals(new StatisticsRepository.Standing(50, 1, 3), liveStanding(bob, Set.of()).orElseThrow());
+        assertEquals(new StatisticsRepository.Standing(20, 3, 3), liveStanding(carol, Set.of()).orElseThrow(),
+                "ex aequo au rang 1, le suivant est 3e ; l'octroi admin est ignoré");
+        assertEquals(new StatisticsRepository.Standing(20, 2, 2), liveStanding(carol, Set.of(bob)).orElseThrow(),
+                "un joueur exclu ne compte plus");
+        assertTrue(liveStanding(alice, Set.of(alice)).isEmpty(), "un joueur exclu n'a pas de place");
+    }
+
+    @Test
+    void personalStandingIncludesPrivateProfilesButIsEmptyWithoutValue() throws Exception {
+        grant(alice, SkillType.COMBAT, 5, "combat_kill", "2026-11-08T10:00:00Z");
+
+        // Profil privé par défaut (#55) : absent du classement public, mais sa propre place existe.
+        assertEquals(List.of(), statistics.liveTop(SEASON_1, COMBAT, 10, Visibility.PRIVATE, Set.of(), ADMIN)
+                .get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(new StatisticsRepository.Standing(5, 1, 1), liveStanding(alice, Set.of()).orElseThrow());
+        assertTrue(liveStanding(bob, Set.of()).isEmpty(), "aucune valeur : aucune place inventée");
+    }
+
+    @Test
+    void archivedStandingReadsFrozenResults() throws Exception {
+        grant(alice, SkillType.COMBAT, 30, "combat_kill", "2026-11-08T10:00:00Z");
+        grant(bob, SkillType.COMBAT, 40, "combat_kill", "2026-11-08T10:00:00Z");
+        statistics.archive(SEASON_1, ADMIN, Instant.parse("2026-12-01T00:00:05Z")).get(TIMEOUT, TimeUnit.SECONDS);
+        progression.resetPlayer(alice).get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(new StatisticsRepository.Standing(30, 2, 2),
+                statistics.archivedStanding(SEASON_1, COMBAT, alice, Set.of()).get(TIMEOUT, TimeUnit.SECONDS).orElseThrow());
+        assertEquals(new StatisticsRepository.Standing(30, 1, 1),
+                statistics.archivedStanding(SEASON_1, COMBAT, alice, Set.of(bob)).get(TIMEOUT, TimeUnit.SECONDS).orElseThrow());
+    }
+
+    private void quest(UUID player, String questId, String state) throws Exception {
+        database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO quest_progress (player_uuid, quest_id, state, updated_at) VALUES (?, ?, ?, ?)")) {
+                statement.setString(1, player.toString());
+                statement.setString(2, questId);
+                statement.setString(3, state);
+                statement.setString(4, "2026-11-08T10:00:00Z");
+                return statement.executeUpdate();
+            }
+        }).get(TIMEOUT, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void personalQuestStandingCountsOnlyCompletedQuests() throws Exception {
+        QuestStatisticsRepository quests = new QuestStatisticsRepository(database);
+        quest(alice, "q1", "COMPLETED");
+        quest(alice, "q2", "ACTIVE");
+        quest(bob, "q1", "COMPLETED");
+        quest(bob, "q2", "COMPLETED");
+
+        assertEquals(new StatisticsRepository.Standing(1, 2, 2),
+                quests.standing(alice, List.of()).get(TIMEOUT, TimeUnit.SECONDS).orElseThrow());
+        assertEquals(new StatisticsRepository.Standing(1, 1, 1),
+                quests.standing(alice, List.of(bob)).get(TIMEOUT, TimeUnit.SECONDS).orElseThrow());
+        assertTrue(quests.standing(carol, List.of()).get(TIMEOUT, TimeUnit.SECONDS).isEmpty());
+    }
+
     @Test
     void aRealisticJournalIsRankedQuickly() throws Exception {
         int players = 500;

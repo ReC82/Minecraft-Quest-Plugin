@@ -139,6 +139,7 @@ public final class PlanRepair {
         plan = circulation(plan, changes);
         plan = doorway(plan, changes);
         plan = entrance(plan, changes);
+        plan = sunkFurniture(plan, changes);
         plan = lanterns(plan, changes);
         plan = destructiveClears(plan, changes);
         List<String> after = codes(plan);
@@ -255,7 +256,7 @@ public final class PlanRepair {
             String fill = step.fill() == null || step.fill().isBlank() ? type : step.fill();
             steps.add(new PlanStep(step.kind(), step.box(), stairs, step.axis(), step.facade(), step.numbers(), fill));
             changes.add("Instruction " + (i + 1) + " (gable) : « " + type + " » est un bloc plein, sans marches à "
-                    + "orienter — toit en « " + stairs + " », le bloc plein garni les pignons.");
+                    + "orienter — toit en « " + stairs + " », le bloc plein garnit les pignons.");
             changed = true;
         }
         return changed ? copy(plan, steps) : plan;
@@ -508,6 +509,98 @@ public final class PlanRepair {
             current = candidate;
         }
         return current;
+    }
+
+    /**
+     * Relève d'un bloc le mobilier posé DANS la couche supérieure d'un sol (#747). Essai réel du
+     * 23/10/2026 (V-979a80e5) : sol « box » en y=0, puis tapis de l'allée et bancs en y=0 — ils
+     * remplaçaient le sol au lieu de s'y poser (27 tapis « rien sous lui », un sol troué). Seuls les
+     * blocs qui ne sont jamais un revêtement de sol voulu sont concernés (tapis, escaliers-assises,
+     * bougies, fleurs et pots, pupitre) ; une « box » d'un bloc plein différent reste un motif de sol.
+     * Le déplacement n'est gardé que si la couche du dessus était libre et qu'aucun refus nouveau
+     * n'apparaît.
+     */
+    static BuildingPlan sunkFurniture(BuildingPlan plan, List<String> changes) {
+        BuildingPlan current = plan;
+        for (int i = 0; i < current.steps().size(); i++) {
+            PlanStep step = current.steps().get(i);
+            PlanBox b = step.box();
+            if (step.kind() != PlanStep.Kind.BOX || b.minY() != b.maxY() || !furniture(step.state())) {
+                continue;
+            }
+            int target = surface(current, i);
+            if (target < 0) {
+                continue;
+            }
+            List<PlanStep> steps = new ArrayList<>(current.steps());
+            PlanBox lifted = new PlanBox(b.minX(), target, b.minZ(), b.maxX(), target, b.maxZ());
+            steps.set(i, new PlanStep(step.kind(), lifted, step.state(), step.axis(), step.facade(), step.numbers(),
+                    step.fill()));
+            BuildingPlan candidate = copy(current, steps);
+            if (!candidate.validate().isEmpty() || worse(codes(current), codes(candidate))) {
+                continue;
+            }
+            String described = BuildingPlanExpander.describeStep(current, i + 1);
+            changes.add(described.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + described.substring(1)
+                    + " : posé DANS le sol (y=" + b.minY() + ") qu'il remplaçait — relevé sur le sol, en y="
+                    + target + ".");
+            current = candidate;
+        }
+        return current;
+    }
+
+    private static boolean furniture(String state) {
+        String t = BlockStates.bareType(state);
+        return t.endsWith("_carpet") || t.endsWith("_stairs") || t.endsWith("candle") || t.startsWith("minecraft:potted_")
+                || t.equals("minecraft:flower_pot") || t.equals("minecraft:lectern");
+    }
+
+    /**
+     * La couche où poser ce mobilier, sur le plan compilé SANS lui : il doit avoir remplacé de la
+     * matière (toute sa zone était pleine à sa hauteur), et la première couche entièrement libre au-dessus,
+     * à deux blocs au plus, doit reposer sur de la matière partout. {@code -1} sinon.
+     */
+    private static int surface(BuildingPlan plan, int rank) {
+        List<PlanStep> without = new ArrayList<>(plan.steps());
+        without.remove(rank);
+        BuildingPlan rest = copy(plan, without);
+        if (rest.validate().isPresent()) {
+            return -1;
+        }
+        BuildingPlanExpander.Result r = BuildingPlanExpander.expand(rest);
+        if (!r.ok()) {
+            return -1;
+        }
+        java.util.Set<String> solid = new java.util.HashSet<>();
+        for (var block : r.blueprint().blocks()) {
+            if (!BlockSemantics.passable(block.state())) {
+                solid.add(block.x() + "/" + block.y() + "/" + block.z());
+            }
+        }
+        java.util.Set<String> any = new java.util.HashSet<>();
+        r.blueprint().blocks().forEach(block -> any.add(block.x() + "/" + block.y() + "/" + block.z()));
+        PlanBox b = plan.steps().get(rank).box();
+        if (!layer(b, b.minY(), solid, true)) {
+            return -1;
+        }
+        for (int t = b.minY() + 1; t <= b.minY() + 2 && t < plan.sizeY(); t++) {
+            if (layer(b, t, any, false)) {
+                return layer(b, t - 1, solid, true) ? t : -1;
+            }
+        }
+        return -1;
+    }
+
+    /** Toute la zone de {@code b} à la hauteur {@code y} est dans {@code cells} (full) ou hors (!full). */
+    private static boolean layer(PlanBox b, int y, java.util.Set<String> cells, boolean full) {
+        for (int x = b.minX(); x <= b.maxX(); x++) {
+            for (int z = b.minZ(); z <= b.maxZ(); z++) {
+                if (cells.contains(x + "/" + y + "/" + z) != full) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**

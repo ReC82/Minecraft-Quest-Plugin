@@ -961,6 +961,17 @@ public final class ArchitecturalAudit {
     private record Dark(boolean found, int x, int y, int z, int distance) {
     }
 
+    /** Rien d'opaque au-dessus de cette cellule, jusqu'au sommet de la grille : elle est dehors. */
+    private static boolean openSky(AuditGrid grid, int x, int y, int z) {
+        for (int above = y + 1; above <= grid.maxY(); above++) {
+            String state = grid.at(x, above, z);
+            if (state != null && !BlockSemantics.passable(state)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * La cellule accessible la plus éloignée d'une source, si elle dépasse la distance autorisée.
      *
@@ -984,6 +995,12 @@ public final class ArchitecturalAudit {
             int z = AuditGrid.keyZ(k);
             int y = AuditGrid.keyY(k);
             int x = AuditGrid.keyX(k);
+            if (openSky(grid, x, y, z)) {
+                // #747 : une marche ou un perron à ciel ouvert est éclairé par le jour. Essai réel du
+                // 23/10/2026 : la marche ajoutée devant la porte par la réparation moteur (6/1/17)
+                // était refusée « zone non éclairée » à 15 blocs de toute lanterne.
+                continue;
+            }
             int best = Integer.MAX_VALUE;
             for (int[] s : sources) {
                 int d = Math.max(Math.abs(s[0] - x), Math.max(Math.abs(s[1] - y), Math.abs(s[2] - z)));

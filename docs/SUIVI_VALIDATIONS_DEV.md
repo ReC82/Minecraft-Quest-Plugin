@@ -380,3 +380,7 @@ Le propriétaire a ajouté un retour à la ligne via **Entrée** dans une répli
 ### 23/10/2026 — #475 / #732 : relecture sans écriture du dialogue Elias
 
 Le propriétaire a cliqué « Recharger depuis DEV » depuis l'éditeur « Dialogue d'Elias » (qui affichait « Enregistré — pas encore en jeu »). **Résultat confirmé par captures :** l'outil a lu **12 répliques** sur DEV, empreinte affichée `2535600206eb`, signale « Elle est différente de votre version enregistrée ici », et surtout **« En jeu : c'est bien cette version que les joueurs voient. »** Le chemin de lecture en sécurité de #732 fonctionne pour ce cas : aucune publication ou remplacement engagé. La divergence entre copie PlugAdmin et source DEV/runtime est réelle, pas une simple erreur de statut. **Prochain geste : « Comparer les versions » en lecture seule** ; ne pas cliquer sur « Mettre en jeu » ou « Remplacer ma version par celle de DEV » avant analyse des différences et conservation des éléments du kit validés en jeu.
+
+
+### Validation propriétaire — 23/10/2026, TC-302 étape 11
+Le propriétaire confirme « ok ça marche comme attendu » après la consigne : être OP, exécuter `/rpgadmin bypass off`, tenter de casser un bloc ordinaire du Hub. **Résultat validé : OP + bypass OFF ne casse pas de bloc du Hub**. Validation limitée à ce scénario ; pas encore de preuve du comportement bypass ON, du retour OFF, de la pose, des protections décoratives ou du builder non OP. #35 reste ouvert en attendant les étapes suivantes. Ne pas refaire le contrôle OFF initial sans régression.

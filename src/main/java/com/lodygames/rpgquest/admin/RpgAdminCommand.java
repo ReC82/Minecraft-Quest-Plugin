@@ -1336,7 +1336,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         player.sendMessage(MM.deserialize(
                                 "<red><bold>⚠ Mode bypass administrateur ACTIVÉ</bold></red> <gray>— <d>.</gray>\n"
                                         + "<gray>Tu contournes les protections RPGQuest pour lesquelles tu as un droit "
-                                        + "de bypass (monde Claims, claims, zones, combat Hub). Ton jeu n'est plus celui "
+                                        + "de bypass (monde Claims, claims, zones, combat Hub, construction au Hub). Ton jeu n'est plus celui "
                                         + "d'un joueur normal : <white>/rpgadmin bypass off</white> pour revenir.</gray>",
                                 Placeholder.unparsed("d", describe(status))));
                     }

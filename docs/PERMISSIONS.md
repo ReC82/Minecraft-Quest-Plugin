@@ -8,7 +8,7 @@
 
 | Nœud | Défaut | Accorde | N'accorde pas |
 |---|---|---|---|
-| `rpgquest.build.hub.<monde>` | non | poser/casser dans **ce** Hub (nom du monde, ex. `rpgquest.build.hub.world_hub`) | les autres Hubs, les claims, le monde Claims, les zones |
+| `rpgquest.build.hub.<monde>` | non | poser/casser dans **ce** Hub (nom du monde, ex. `rpgquest.build.hub.world_hub`) — permanent pour un compte **non OP** ; pour un OP, seulement en mode bypass (#35) | les autres Hubs, les claims, le monde Claims, les zones |
 | `rpgquest.build.hub.*` | non | tous les Hubs | claims, monde Claims, zones |
 | `rpgquest.build.wild` | non | **sans effet** aujourd'hui : le Wild n'a pas de protection de construction | aucun bypass |
 | `rpgquest.bypass.claim` | non | modifier dans le claim d'un autre joueur | construction Hub, accès au monde Claims |
@@ -26,7 +26,7 @@
 | `rpgquest.admin.hub.resources` | **OP** | commercer avec un villageois vanilla, ouvrir un coffre / tonneau / hopper et utiliser un poste de travail fermé du Hub (établi, four, enclume…, hors exception), **uniquement en mode bypass** (#675) | construction |
 | `rpgquest.admin.debug` | **OP** | outils de débogage | — |
 | `rpgquest.admin` | **OP** | commandes d'administration (`/rpgquest reload`, `/quest admin`…) | — |
-| `rpgquest.admin.world` | **OP** | **ancien nœud global** : construction de tous les Hubs, tous les bypass (**uniquement en mode bypass**, #35), branches historiques de `/rpgadmin` | — |
+| `rpgquest.admin.world` | **OP** | **ancien nœud global** : construction de tous les Hubs et tous les bypass (**uniquement en mode bypass**, #35 — permet aussi d'ouvrir la session), branches historiques de `/rpgadmin` | — |
 | `rpgquest.quest`, `.item`, `.money`, `.market`, `.claim`, `.progression`, `.backpack`… | tous | commandes joueur | — |
 
 PlugAdmin (rôles du panel) et OP Minecraft sont indépendants : changer l'un ne change pas l'autre.
@@ -46,8 +46,19 @@ une **session explicite** :
 - **OFF par défaut**, jamais en base : fermé à la déconnexion, au redémarrage, au rechargement.
 - Le mode **n'ajoute aucun droit** : il arme seulement les nœuds de bypass que le compte détient
   déjà (un compte avec `rpgquest.bypass.zone` seul ne contourne que les zones).
-- Les **droits d'administration** (commandes, outils) et de **construction** (`rpgquest.build.*`,
-  construction au Hub via l'ombrelle) n'en dépendent pas et restent inchangés pour un OP.
+- Les **droits d'administration** (commandes, outils) n'en dépendent pas et restent inchangés pour un OP.
+- **Construction au Hub** (correctif du 23/10 : un OP bypass OFF cassait encore un bloc du Hub, parce
+  que l'ombrelle `rpgquest.admin.world`, défaut OP, donnait la construction en permanence) :
+  - un compte **non OP** portant `rpgquest.build.hub.<monde>` ou `rpgquest.build.hub.*` (attribué
+    explicitement, par LuckPerms ou un groupe) construit **en permanence**, dans son seul périmètre ;
+  - un **OP** ne construit au Hub **que bypass ON** (`/rpgadmin bypass on`), même s'il porte aussi un
+    nœud builder : pour un OP, Bukkit (nœud non déclaré = défaut OP) et LuckPerms (`enable-ops`)
+    répondent « oui » à tout, sans distinguer un octroi explicite ; l'ombrelle seule (compte non OP)
+    suit la même règle et suffit à ouvrir la session ;
+  - même règle pour la pose, les seaux, le feu, les cadres et tableaux (poser, casser, frapper,
+    tourner, garnir), les porte-armures, la réécriture de panneaux, le piétinement de terre labourée
+    et la poudre d'os ; les explosions ne cassent rien au Hub, pour personne ;
+  - contrôlé à chaque action : `/rpgadmin bypass off` refuse immédiatement, sans reconnexion.
 - Réglages globaux dans PlugAdmin > Paramètres généraux > Administration : mode proposé ou désactivé
   pour tous (désactiver coupe les sessions en cours, l'administrateur est prévenu), durée maximale
   (0 = jusqu'à la déconnexion). Aucun de ces réglages n'active le mode pour quelqu'un.

@@ -23,6 +23,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Cow;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enderman;
+import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.TraderLlama;
 import org.bukkit.entity.WanderingTrader;
 import org.bukkit.entity.Zombie;
@@ -31,12 +32,15 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -232,16 +236,71 @@ class HubWorldProtectionListenerTest {
         assertTrue(event.isCancelled());
     }
 
+    // ---- Issue #35 (réouverture du 23/10) : un OP bypass OFF joue comme un joueur normal au Hub ----
+
     @Test
-    void blockBreakByABypassingAdminInTheHubIsAllowed() {
-        PlayerMock admin = server.addPlayer();
-        admin.setOp(true); // rpgquest.admin.world est "default: op"
-        Block block = hub.getBlockAt(0, 64, 0);
-        BlockBreakEvent event = new BlockBreakEvent(block, admin);
+    void anOpWithBypassOffCannotBreakOrPlaceInTheHub() {
+        PlayerMock op = server.addPlayer();
+        op.setOp(true);
 
-        listener.onBreak(event);
+        assertTrue(breakAt(op).isCancelled(), "le statut OP seul ne doit permettre aucune casse au Hub");
+        assertTrue(placeAt(op).isCancelled(), "le statut OP seul ne doit permettre aucune pose au Hub");
+    }
 
-        assertFalse(event.isCancelled(), "un administrateur doit pouvoir construire dans le Hub");
+    @Test
+    void anOpBuildsOnlyWhileTheBypassIsOnAndIsRefusedAgainRightAfterOff() {
+        PlayerMock op = server.addPlayer();
+        op.setOp(true);
+        assertTrue(breakAt(op).isCancelled(), "OFF : refusé");
+
+        assertTrue(bypass.enable(op) == com.lodygames.rpgquest.permission.AdminBypassMode.Outcome.ENABLED);
+        assertFalse(breakAt(op).isCancelled(), "ON : casse autorisée");
+        assertFalse(placeAt(op).isCancelled(), "ON : pose autorisée");
+
+        bypass.disable(op.getUniqueId());
+        assertTrue(breakAt(op).isCancelled(), "retour à OFF : refus immédiat, sans reconnexion");
+        assertTrue(placeAt(op).isCancelled(), "retour à OFF : refus immédiat, sans reconnexion");
+    }
+
+    @Test
+    void anOpWithBypassOffCannotUseBucketsFireOrDecorEither() {
+        PlayerMock op = server.addPlayer();
+        op.setOp(true);
+        Block target = hub.getBlockAt(0, 65, 0);
+        BlockIgniteEvent ignite = new BlockIgniteEvent(target, BlockIgniteEvent.IgniteCause.FLINT_AND_STEEL, op);
+        SignChangeEvent sign = new SignChangeEvent(hub.getBlockAt(0, 64, 0), op,
+                java.util.List.of(net.kyori.adventure.text.Component.text("x")), org.bukkit.block.sign.Side.FRONT);
+
+        PlayerBucketEmptyEvent bucket = bucketEmpty(op);
+        listener.onBucketEmpty(bucket);
+        listener.onIgnite(ignite);
+        listener.onSignChange(sign);
+
+        assertTrue(bucket.isCancelled(), "seau : même logique que la pose");
+        assertTrue(ignite.isCancelled(), "briquet : même logique que la pose");
+        assertTrue(sign.isCancelled(), "réécrire un panneau du Hub : même logique");
+    }
+
+    @Test
+    void anOpHoldingAnExplicitBuilderNodeStillNeedsTheBypass() {
+        // Pour un OP, Bukkit/LuckPerms ne distinguent pas un octroi explicite d'un défaut OP.
+        PlayerMock op = server.addPlayer();
+        op.setOp(true);
+        op.addAttachment(plugin, "rpgquest.build.hub.world_hub", true);
+
+        assertTrue(breakAt(op).isCancelled());
+
+        bypass.enable(op);
+        assertFalse(breakAt(op).isCancelled());
+    }
+
+    @Test
+    void aNormalPlayerIsRefusedEvenWithASessionAttempt() {
+        PlayerMock player = server.addPlayer();
+        assertTrue(bypass.enable(player) == com.lodygames.rpgquest.permission.AdminBypassMode.Outcome.NO_PERMISSION);
+
+        assertTrue(breakAt(player).isCancelled());
+        assertTrue(placeAt(player).isCancelled());
     }
 
     @Test
@@ -437,16 +496,15 @@ class HubWorldProtectionListenerTest {
     }
 
     @Test
-    void theLegacyUmbrellaStillWorksForExistingAdmins() {
-        // Compatibilité explicite : un administrateur déjà autorisé ne doit rien reconfigurer.
+    void theLegacyUmbrellaBuildsOnlyDuringABypassSession() {
+        // #35 (23/10) : l'ombrelle est un droit d'administrateur, pas un droit builder permanent.
+        // Elle suffit à ouvrir la session (elle « implique tout »), même sans rpgquest.admin.bypass.
         PlayerMock admin = server.addPlayer();
         admin.addAttachment(plugin, "rpgquest.admin.world", true);
-        Block block = hub.getBlockAt(0, 64, 0);
-        BlockBreakEvent event = new BlockBreakEvent(block, admin);
+        assertTrue(breakAt(admin).isCancelled());
 
-        listener.onBreak(event);
-
-        assertFalse(event.isCancelled());
+        bypass.enable(admin);
+        assertFalse(breakAt(admin).isCancelled());
     }
 
     @Test
@@ -593,6 +651,77 @@ class HubWorldProtectionListenerTest {
         listener.onBurn(event);
 
         assertFalse(event.isCancelled());
+    }
+
+    // ---- Décor non-bloc (#35) ---------------------------------------------------------------------
+
+    @Test
+    void aNormalPlayerCannotTouchHubDecorButAHubBuilderCan() {
+        PlayerMock player = server.addPlayer();
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.world_hub", true);
+        ItemFrame frame = hub.spawn(new Location(hub, 0.5, 64, 0.5), ItemFrame.class);
+
+        PlayerInteractEntityEvent rotateByPlayer = new PlayerInteractEntityEvent(player, frame);
+        PlayerInteractEntityEvent rotateByBuilder = new PlayerInteractEntityEvent(builder, frame);
+        HangingBreakByEntityEvent breakByPlayer = new HangingBreakByEntityEvent(frame, player);
+        HangingBreakByEntityEvent breakByBuilder = new HangingBreakByEntityEvent(frame, builder);
+        EntityDamageByEntityEvent hitByPlayer = new EntityDamageByEntityEvent(
+                player, frame, EntityDamageEvent.DamageCause.ENTITY_ATTACK, 1.0);
+        listener.onInteractEntity(rotateByPlayer);
+        listener.onInteractEntity(rotateByBuilder);
+        listener.onHangingBreak(breakByPlayer);
+        listener.onHangingBreak(breakByBuilder);
+        listener.onEntityDamage(hitByPlayer);
+
+        assertTrue(rotateByPlayer.isCancelled());
+        assertFalse(rotateByBuilder.isCancelled());
+        assertTrue(breakByPlayer.isCancelled());
+        assertFalse(breakByBuilder.isCancelled());
+        assertTrue(hitByPlayer.isCancelled(), "frapper un cadre en fait tomber l'objet");
+    }
+
+    @Test
+    void tramplingHubFarmlandIsRefusedToANormalPlayer() {
+        PlayerMock player = server.addPlayer();
+        Block farmland = hub.getBlockAt(0, 64, 0);
+        farmland.setType(Material.FARMLAND);
+        PlayerInteractEvent event = new PlayerInteractEvent(player, Action.PHYSICAL, null, farmland, BlockFace.UP);
+
+        listener.onTrample(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void decorInAnotherWorldIsNeverTouched() {
+        PlayerMock player = server.addPlayer();
+        ItemFrame frame = other.spawn(new Location(other, 0.5, 64, 0.5), ItemFrame.class);
+        PlayerInteractEntityEvent event = new PlayerInteractEntityEvent(player, frame);
+
+        listener.onInteractEntity(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    private BlockBreakEvent breakAt(PlayerMock player) {
+        BlockBreakEvent event = new BlockBreakEvent(hub.getBlockAt(0, 64, 0), player);
+        listener.onBreak(event);
+        return event;
+    }
+
+    private BlockPlaceEvent placeAt(PlayerMock player) {
+        Block block = hub.getBlockAt(0, 64, 0);
+        block.setType(Material.STONE);
+        BlockPlaceEvent event = new BlockPlaceEvent(block, block.getState(), block.getRelative(0, -1, 0),
+                new ItemStack(Material.STONE), player, true, EquipmentSlot.HAND);
+        listener.onPlace(event);
+        return event;
+    }
+
+    private PlayerBucketEmptyEvent bucketEmpty(PlayerMock player) {
+        return new PlayerBucketEmptyEvent(player, hub.getBlockAt(0, 65, 0), hub.getBlockAt(0, 64, 0),
+                BlockFace.UP, Material.WATER_BUCKET, new ItemStack(Material.BUCKET), EquipmentSlot.HAND);
     }
 
     private static PlayerInteractEvent rightClick(PlayerMock player, Block block) {

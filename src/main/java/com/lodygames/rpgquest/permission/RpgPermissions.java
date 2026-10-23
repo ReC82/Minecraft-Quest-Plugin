@@ -104,6 +104,21 @@ public final class RpgPermissions {
                 || who.hasPermission(buildHub(hubWorldName));
     }
 
+    /**
+     * {@code true} si {@code who} porte un nœud <strong>builder</strong> de ce Hub (le monde précis
+     * ou le joker tous-Hubs), <em>sans</em> l'ombrelle historique.
+     *
+     * <p>Issue #35 (réouverture du 23/10) : c'est le seul droit de construction <strong>permanent</strong>
+     * au Hub, et seulement pour un compte <strong>non OP</strong>. Pour un OP, la réponse de
+     * {@code hasPermission} ne distingue pas un octroi explicite d'un défaut OP (Bukkit répond
+     * {@code true} à un OP pour tout nœud non déclaré, comme {@code rpgquest.build.hub.<monde>},
+     * et LuckPerms {@code enable-ops} fait de même) : un OP ne construit donc au Hub que pendant
+     * une session {@code /rpgadmin bypass on}.</p>
+     */
+    public static boolean hasHubBuilderNode(Permissible who, String hubWorldName) {
+        return who != null && (who.hasPermission(BUILD_HUB_ALL) || who.hasPermission(buildHub(hubWorldName)));
+    }
+
     // ---- Bypass de protection, séparés les uns des autres --------------------------------------
 
     /** Contourner la protection des claims d'autrui. Distinct de toute permission de construction. */
@@ -199,8 +214,8 @@ public final class RpgPermissions {
      *
      * <h3>Pourquoi pas l'ombrelle {@link #LEGACY_ADMIN_WORLD}</h3>
      *
-     * <p>L'ombrelle accorde aussi la construction dans le Hub <em>en permanence</em>
-     * ({@link #canBuildInHub}) et les bypass de claims/zones/monde des claims dès qu'une session
+     * <p>L'ombrelle accorde aussi la construction dans le Hub ({@link #canBuildInHub}, pendant une
+     * session {@code /rpgadmin bypass on} depuis #35) et les bypass de claims/zones/monde des claims dès qu'une session
      * {@code /rpgadmin bypass on} est ouverte. Un testeur qui la porterait ne jouerait plus comme un
      * joueur normal — exactement ce que #64 doit éviter. Ce paquet n'est consulté par
      * <strong>aucune</strong> protection : ni Hub, ni Wild, ni claims, ni zones, ni waypoints.</p>

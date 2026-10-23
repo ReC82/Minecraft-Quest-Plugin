@@ -203,10 +203,12 @@
     </table>
     <p class="text-body-secondary">
       <strong>Tester comme un joueur, même en OP (#35)</strong> : être OP ne contourne plus les règles de jeu
-      (monde Claims, claims, zones, combat au Hub). Pour intervenir, <code>/rpgadmin bypass on</code> : la barre
+      (monde Claims, claims, zones, combat au Hub, construction au Hub). Pour intervenir, <code>/rpgadmin bypass on</code> : la barre
       d'action affiche en permanence « ⚠ MODE ADMIN / BYPASS ACTIF ». <code>/rpgadmin bypass off</code> rétablit
       les règles ; la déconnexion et le redémarrage le coupent aussi. Avant de conclure qu'une protection est
-      cassée, vérifier que cette barre n'est <em>pas</em> affichée.
+      cassée, vérifier que cette barre n'est <em>pas</em> affichée. Construction au Hub : un OP n'y casse ni
+      n'y pose rien bypass OFF ; seul un compte <strong>non OP</strong> portant explicitement
+      <code>rpgquest.build.hub.&lt;monde&gt;</code> (ou <code>.*</code>) y construit en permanence.
     </p>
   </section>
 

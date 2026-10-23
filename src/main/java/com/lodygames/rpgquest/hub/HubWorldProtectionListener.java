@@ -7,8 +7,11 @@ import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.function.Supplier;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Hanging;
+import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
@@ -16,17 +19,25 @@ import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockFertilizeEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.hanging.HangingBreakByEntityEvent;
+import org.bukkit.event.hanging.HangingPlaceEvent;
+import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.world.EntitiesLoadEvent;
 
 /**
@@ -56,10 +67,25 @@ import org.bukkit.event.world.EntitiesLoadEvent;
  * démarrage ({@link #sweepAlreadyLoaded}) et à chaque nouveau chargement de chunk
  * ({@link #onEntitiesLoad}) — jamais un chargement forcé de tout le monde.</p>
  *
- * <p>Bypass ({@code rpgquest.admin.world}) uniquement pour la casse/pose de bloc — jamais pour les
- * dégâts aux joueurs, qui n'ont pas de raison de viser un administrateur dans un monde de spawn
- * paisible. Construire est un <em>droit de construction</em> (#27/#200), pas un contournement de
- * règle de jeu : il ne dépend pas du mode bypass administrateur (#35).</p>
+ * <p><strong>Construction (casse, pose, seaux, feu, décor)</strong> — jamais pour les dégâts aux
+ * joueurs, qui n'ont pas de raison de viser un administrateur dans un monde de spawn paisible :
+ * <ul>
+ *   <li>un compte <strong>non OP</strong> portant un nœud builder explicite
+ *       ({@code rpgquest.build.hub.<monde>} ou {@code rpgquest.build.hub.*}, #200) construit en
+ *       permanence dans ce Hub ;</li>
+ *   <li>tout autre droit — statut OP, ombrelle {@code rpgquest.admin.world} (défaut {@code op}),
+ *       nœud builder détenu par un OP — ne compte que pendant une session
+ *       {@code /rpgadmin bypass on} (#35, réouverture du 23/10 : un OP bypass OFF cassait un bloc
+ *       du Hub, parce que l'ombrelle était acceptée en permanence). Pour un OP, Bukkit et
+ *       LuckPerms ne distinguent pas un octroi explicite d'un défaut OP : il passe donc toujours
+ *       par la session.</li>
+ * </ul>
+ * Le contrôle est refait à chaque événement : {@code /rpgadmin bypass off} refuse immédiatement,
+ * sans reconnexion.</p>
+ *
+ * <p>Au-delà des blocs, les modifications du décor par un joueur suivent le même droit : poser,
+ * casser ou frapper un cadre/tableau, tourner ou garnir un cadre, manipuler un porte-armure,
+ * réécrire un panneau, piétiner de la terre labourée, fertiliser à la poudre d'os.</p>
  *
  * <p><strong>Salles de préparation (issue #107)</strong> : les établis et autres blocs utilitaires
  * vanilla du Hub restent <strong>utilisables</strong> (aucun clic droit n'est annulé ici) mais ne
@@ -92,6 +118,14 @@ public final class HubWorldProtectionListener implements Listener {
             event.setCancelled(true);
             return;
         }
+        // ---- Cadres et tableaux : frapper un cadre en fait tomber l'objet (décor, #35) -----------
+        if (event.getEntity() instanceof Hanging hanging) {
+            Player actor = resolveAttacker(event);
+            if (actor != null && isHub(hanging.getWorld()) && !isBypassingBuild(actor)) {
+                event.setCancelled(true);
+            }
+            return;
+        }
         // ---- Dégâts aux entités protégées (issues #30/#31) --------------------------------------
         if (!(event.getEntity() instanceof LivingEntity victim) || !isHub(victim.getWorld())) {
             return;
@@ -112,7 +146,11 @@ public final class HubWorldProtectionListener implements Listener {
         if (!(event instanceof EntityDamageByEntityEvent byEntity)) {
             return null;
         }
-        Entity damager = byEntity.getDamager();
+        return playerBehind(byEntity.getDamager());
+    }
+
+    /** Joueur derrière une entité : lui-même, ou le tireur d'un projectile ; sinon {@code null}. */
+    private static Player playerBehind(Entity damager) {
         if (damager instanceof Player player) {
             return player;
         }
@@ -152,6 +190,66 @@ public final class HubWorldProtectionListener implements Listener {
             return;
         }
         if (isHub(event.getBlock().getWorld()) && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    // ---- Décor non-bloc : cadres, tableaux, porte-armures, panneaux, cultures (#35) ---------------
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onHangingPlace(HangingPlaceEvent event) {
+        Player player = event.getPlayer();
+        if (isHub(event.getEntity().getWorld()) && (player == null || !isBypassingBuild(player))) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Casser un cadre ou un tableau n'est ni un {@link BlockBreakEvent}, ni un dégât d'entité vivante. */
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onHangingBreak(HangingBreakByEntityEvent event) {
+        Player remover = playerBehind(event.getRemover());
+        if (remover != null && isHub(event.getEntity().getWorld()) && !isBypassingBuild(remover)) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Tourner un cadre, y poser ou en retirer un objet. */
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onInteractEntity(PlayerInteractEntityEvent event) {
+        if (event.getRightClicked() instanceof ItemFrame frame && isHub(frame.getWorld())
+                && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onArmorStandManipulate(PlayerArmorStandManipulateEvent event) {
+        if (isHub(event.getRightClicked().getWorld()) && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onSignChange(SignChangeEvent event) {
+        if (isHub(event.getBlock().getWorld()) && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Piétiner une terre labourée (PHYSICAL n'a pas de main : pas de filtre de main ici). */
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onTrample(PlayerInteractEvent event) {
+        Block block = event.getClickedBlock();
+        if (event.getAction() == Action.PHYSICAL && block != null && block.getType() == Material.FARMLAND
+                && isHub(block.getWorld()) && !isBypassingBuild(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onFertilize(BlockFertilizeEvent event) {
+        Player player = event.getPlayer();
+        if (player != null && isHub(event.getBlock().getWorld()) && !isBypassingBuild(player)) {
             event.setCancelled(true);
         }
     }
@@ -250,12 +348,16 @@ public final class HubWorldProtectionListener implements Listener {
     }
 
     /**
-     * Construction autorisée dans CE Hub (issue #200) : le monde précis
-     * ({@code rpgquest.build.hub.<monde>}), tous les Hubs ({@code rpgquest.build.hub.*}), ou
-     * l'ombrelle historique. L'identifiant de Hub vient de la configuration réelle
-     * ({@code hub.world}), jamais d'une constante en dur.
+     * Construction autorisée dans CE Hub, <em>à cet instant</em> (issues #200/#35) : nœud builder
+     * explicite d'un compte non OP, ou session {@code /rpgadmin bypass on} avec un droit de
+     * construction (nœud builder ou ombrelle historique). L'identifiant de Hub vient de la
+     * configuration réelle ({@code hub.world}), jamais d'une constante en dur.
      */
     private boolean isBypassingBuild(Player player) {
-        return RpgPermissions.canBuildInHub(player, config.get().world());
+        String hubWorld = config.get().world();
+        if (bypass.isActive(player)) {
+            return RpgPermissions.canBuildInHub(player, hubWorld);
+        }
+        return !player.isOp() && RpgPermissions.hasHubBuilderNode(player, hubWorld);
     }
 }

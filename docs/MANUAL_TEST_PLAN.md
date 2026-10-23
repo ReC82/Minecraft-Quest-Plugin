@@ -4164,7 +4164,7 @@ le résumé de récompenses de TC-014).
 | TC-276 | Rattrapage ciblé d'une instance du Hub restée sans borne #156 | ✅ | | **VALIDÉ 2026-10-11** par le propriétaire — `minecraft:swamp@0,0`, SUCCESS/PAIRED, 16→17 bornes, 7→6 manques, borne physique et bouton fonctionnels en jeu |
 | TC-277 | Reprise après mort dans le Wild : Hub → borne → waypoint découvert #156 (PENDING — **dernier critère de #156**) | | | |
 | TC-278 | Filtre des instances du Hub : états, recherche, mobile #236 (PENDING) | | | |
-| TC-302 | Mode bypass administrateur explicite, OP/DEOP × ON/OFF × Claims #35/#321 (PENDING) | | | |
+| TC-302 | Mode bypass administrateur explicite, OP/DEOP × ON/OFF × Claims + construction Hub #35/#321 (PENDING) | | | |
 
 ---
 
@@ -5727,13 +5727,28 @@ rouge « ⚠ MODE ADMIN / BYPASS ACTIF » ne doit pas être affichée. **Durée*
     « désactivé (mode retiré dans PlugAdmin…) » sous ~2 s ; `/rpgadmin bypass on` → refusé.
     Remettre « Proposé ».
 11. Bypass OFF, compte OP : frapper une vache au Hub → **annulé** ; casser un bloc au Hub →
-    **autorisé** (droit de construction, inchangé). Bypass ON : la vache peut être frappée.
+    **refusé** (correctif du 23/10 : l'ancienne réponse « autorisé » était le bug signalé). Bypass
+    ON : la vache peut être frappée.
+
+**Revalidation ciblée — construction au Hub d'un OP (réouverture de #35 du 23/10)** :
+
+12. Compte **OP**, `/rpgadmin bypass status` → « inactif ». Au Hub : casser un bloc, poser un bloc,
+    vider un seau d'eau, allumer un briquet, tourner un cadre ou réécrire un panneau s'il y en a.
+    **Attendu** : tout est refusé, comme pour un joueur normal.
+13. `/rpgadmin bypass on` (barre d'action rouge) → casser puis poser un bloc → **autorisé**.
+    Reposer le bloc cassé pour ne rien abîmer.
+14. `/rpgadmin bypass off` puis, **sans se reconnecter**, casser un bloc → **refusé immédiatement**.
+15. (Optionnel, si un compte builder **non OP** existe déjà — ne rien créer ni modifier dans
+    LuckPerms pour ce test) : ce compte casse/pose au Hub → autorisé ; un joueur normal → refusé.
 
 **Couverture automatique** : `AdminBypassModeTest` (OFF par défaut, ON/OFF, DEOP, nœuds armés
 seulement, retrait PlugAdmin, durée maximale, permission perdue, indicateur, déconnexion, arrêt),
 `ClaimWorldAccessGuardTest` (OP sans bypass refusé, OP bypass ON puis OFF, DEOP, `CLAIM_TIER_1`
 `false`/`TRUE`/`oui`/`1` refusés, OP éligible accepté, nœud sans session, session sans nœud,
-retrait PlugAdmin), listeners claims/zones/Hub (OP sans session bloqué), `GameSettingsTest`,
+retrait PlugAdmin), listeners claims/zones/Hub (OP sans session bloqué ; `HubWorldProtectionListenerTest` :
+OP OFF casse/pose/seau/feu/panneau refusés, ON autorisé, retour OFF refusé immédiatement, OP avec nœud
+builder toujours soumis à la session, ombrelle non OP via session, builder non OP permanent, décor —
+cadres, piétinement — refusé au joueur normal), `GameSettingsTest`,
 `SettingsPageTest` (rubrique Administration).
 
 ### TC-303 — PNJ récurrents par instance de biome, étape 1 : apparition, unicité, réparation (issue #13, PENDING MANUAL VALIDATION)

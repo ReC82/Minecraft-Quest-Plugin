@@ -98,7 +98,7 @@ permissions:
     description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
     default: true
   rpgquest.admin.world:
-    description: "OMBRELLE HISTORIQUE (issues #27/#200). La détenir implique TOUS les droits découpés ci-dessous : construction dans les Hubs, bypass claims/zones/monde des claims (uniquement pendant une session /rpgadmin bypass on, issue #35), et toutes les branches de /rpgadmin. Conservée pour ne casser aucun administrateur existant. NE JAMAIS l'attribuer à un groupe builder ou éditeur de PNJ : elle donne tout."
+    description: "OMBRELLE HISTORIQUE (issues #27/#200). La détenir implique TOUS les droits découpés ci-dessous : construction dans les Hubs et bypass claims/zones/monde des claims (uniquement pendant une session /rpgadmin bypass on, issue #35 — elle permet aussi d'ouvrir cette session), et toutes les branches de /rpgadmin. Conservée pour ne casser aucun administrateur existant. NE JAMAIS l'attribuer à un groupe builder ou éditeur de PNJ : elle donne tout."
     default: op
   rpgquest.admin.command:
     description: "Entrer dans /rpgadmin, SANS autoriser aucune branche (issue #200). Chaque sous-commande exige en plus son propre nœud, ou l'ombrelle rpgquest.admin.world. Un compte ne portant que ce nœud peut ouvrir la commande et n'exécuter aucune opération."
@@ -130,7 +130,7 @@ permissions:
     description: "Villes (issue #178) : obtenir l'outil de ville (/rpgadmin ville outil), choisir le centre d'une nouvelle ville d'un clic droit et déplacer le centre d'une ville existante. Aucun bloc n'est modifié, aucun PNJ ni bâtiment n'est posé. Nom, taille, activation et suppression se gèrent dans PlugAdmin. L'ombrelle rpgquest.admin.world l'implique."
     default: false
   rpgquest.build.hub.*:
-    description: "Construire dans TOUS les mondes de Hub (issue #200). N'accorde aucun bypass de claim, de zone protégée, de waypoint, ni aucune commande d'administration."
+    description: "Construire dans TOUS les mondes de Hub (issue #200). Permanent pour un compte NON OP ; pour un OP, ne compte que pendant /rpgadmin bypass on (issue #35 : Bukkit ne distingue pas un octroi explicite d'un défaut OP). N'accorde aucun bypass de claim, de zone protégée, de waypoint, ni aucune commande d'administration."
     default: false
   rpgquest.build.wild:
     description: "Construire dans le Wild (issue #200). SANS EFFET à ce jour : le Wild n'a aucune restriction de construction, un joueur ordinaire y construit déjà librement. Ce nœud existe pour la convention et pour un éventuel verrou futur ; il n'accorde AUCUN bypass de zone protégée, de claim ou de waypoint — or le Wild en contient."

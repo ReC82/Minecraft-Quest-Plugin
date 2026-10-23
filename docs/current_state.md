@@ -1800,6 +1800,21 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Quêtes / Joueurs / Dialogues. Accès : authentifié, permission `DOCS_READ` (tous les rôles).
   **V2** : édition depuis le navigateur, permissions fines, indexation des `docs/` du dépôt,
   historique Git par fiche.
+- **Centre de documentation — présentation et rendu (issue #780, rattaché à #729)** — moteur
+  `panel.docs.Markdown` revu : listes imbriquées sur n'importe quelle profondeur (une ligne de suite,
+  lien compris, reste dans l'élément dont la puce est à sa gauche), paragraphes de suite, `<ol start>`,
+  encadrés rendus comme le reste (listes comprises), liens entre fiches par identifiant
+  (`fiche#section` → `/docs/fiche#section`), ancres dédoublonnées (`-2`), `Markdown.headings` source
+  unique du sommaire (l'ancien sommaire donnait `l-apercu` quand la page rendait `lapercu`),
+  `Markdown.lint` (structure non rendable refusée). Fiche : sommaire en colonne fixe défilante sur
+  ordinateur, sommaire dépliable en tête d'article sur téléphone, « Fiches liées » (front matter
+  `related`), fiche précédente / suivante, impression propre ; recherche sans accents qui mène à la
+  section la plus pertinente. « Faire parler un personnage » réorganisée en étapes (créer, modifier,
+  enregistrer/mettre en jeu, tester, dépanner, pour aller plus loin), toutes les anciennes ancres
+  gardées. 28 fiches auditées : gabarit commun `docs/control-panel/DOCS_GABARIT.md`, vérifié par
+  `DocTemplateTest` (dont 351 ancres figées dans `docs-guard/anchors-780.txt`) et `DocsHelpLinksTest`
+  (tous les liens d'aide du code Java) — qui a révélé deux liens de diagnostic serveur cassés
+  (`#aucun-signal-de-lagent`, `#signal-de-lagent-vieillissant`), corrigés.
 - **Refonte graphique du Control Panel (issue #92)** *(branche `feat/control-panel-admin-tools`)* —
   sortie du thème « tout noir » vers un **thème clair** : design system interne en *custom
   properties* (`Layout.CSS`), iconographie **SVG locale** (`Icons.java`, sprite `<symbol>`/`<use>` —

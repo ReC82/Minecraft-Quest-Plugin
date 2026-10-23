@@ -109,34 +109,38 @@ entité-là n'est jamais recréée par un tiers. Le nom affiché
 Le parcours d'un nouveau joueur jusqu'au **déblocage du premier claim**
 (`CLAIM_TIER_1`) dépend de **4 PNJ Citizens qui doivent exister en jeu** et
 être liés via `/rpgadmin npc tag <id>` (jamais par leur nom affiché — voir
-§1). Si l'un d'eux manque, la chaîne `stories/main_story.yml`
-(`premiers_pas → first_steps → crystal_hunt`) est rompue et le claim ne se
-débloque jamais.
+§1). Si l'un d'eux manque, le parcours (`premiers_pas` de
+`stories/main_story.yml`, puis « Gauthier — Palier 1 » `guard_tier1`, puis
+l'acte remis par Jo) est rompu et le claim ne se débloque jamais. Depuis
+#778, `main_story` ne contient plus que `premiers_pas` : `first_steps` et
+`crystal_hunt` sont retirées.
 
 | Id de liaison (exact) | Rôle dans la chaîne | Dialogue | Sans ce PNJ… |
 |---|---|---|---|
 | `guide` | Démarre `premiers_pas` ; centre d'aide du Hub | `dialogues/guide.yml` | Le joueur n'a aucun point d'entrée. |
 | `libraire` | Cible de rendu de `premiers_pas` (`TALK_TO_NPC libraire`) ; remet le journal | `dialogues/libraire.yml` | `premiers_pas` ne se termine jamais. |
-| **`guard`** | **Démarre `first_steps` ; démarre ET valide `crystal_hunt`** (dont la récompense pose `CLAIM_TIER_1="true"`) | `dialogues/guard.yml` | **`first_steps` et `crystal_hunt` sont indémarrables → `CLAIM_TIER_1` jamais accordé.** C'est la panne « je ne trouve pas le Garde / je ne trouve pas *La chasse aux cristaux* ». |
+| **`guard`** (affiché « Gauthier ») | **Démarre ET valide `guard_tier1`..`guard_tier5`** (« Gauthier — Palier N » ; la récompense du palier 1 pose `CLAIM_TIER_1="true"`) | `dialogues/guard.yml` | **`guard_tier1` est indémarrable → `CLAIM_TIER_1` jamais accordé.** C'est la panne « je ne trouve pas Gauthier / le garde ». |
 | `jo` | Remet `rpgquest:acte_propriete` une fois `CLAIM_TIER_1="true"` | `dialogues/jo.yml` | Le joueur a le droit mais pas l'acte. |
 
-Le **nom affiché** est libre (« Garde », « Le Garde »…) : seul l'**id de
-liaison** compte, et il doit être exactement `guard`. Un PNJ nommé « Garde »
-mais non lié `guard` n'ouvre **rien** et ne valide **aucune** quête.
+Le **nom affiché** est libre (« Gauthier » depuis #778 dans
+`npcs/guard.yml`, autrefois « Garde ») : seul l'**id de liaison** compte, et
+il doit être exactement `guard`. Un PNJ nommé « Gauthier » mais non lié
+`guard` n'ouvre **rien** et ne valide **aucune** quête.
 
 Vérifier l'état réel côté serveur : table `npc_citizens_bindings` de
 `data.db` (une ligne par PNJ lié), ou en jeu `/rpgadmin npc info` en visant
 chaque PNJ.
 
-### Créer et lier le Garde (procédure exacte)
+### Créer et lier Gauthier, le garde (procédure exacte)
 
-Prérequis : `dialogues/guard.yml` **à jour** (il doit contenir la branche
-« J'ai entendu dire que tu avais besoin d'aide pour forger un équipement »
-et le nœud `crystal_hunt_accepted` — sinon `crystal_hunt` reste
-indémarrable même avec le PNJ) + serveur redémarré.
+Prérequis : `dialogues/guard.yml` **à jour** (version #778 : locuteur
+« Gauthier », choix « Obtenir un terrain » → nœud `offer_tier1`, plus aucune
+offre `first_steps` / `crystal_hunt` — un fichier antérieur déjà présent sur
+le serveur n'est jamais remplacé par le JAR, il faut le republier) + serveur
+redémarré.
 
 ```
-/npc create Garde --type player      # crée le PNJ et le sélectionne
+/npc create Gauthier --type player   # crée le PNJ et le sélectionne
 /npc skin <pseudo>                    # optionnel, cosmétique
 # se placer à ≤ 6 blocs, regarder DROIT le PNJ :
 /rpgadmin npc info                    # -> "Cette entité n'est pas identifiée."
@@ -326,9 +330,10 @@ complet et section 6 pour la procédure en jeu.
 ### Fichier
 
 Un fichier par quête, dans `plugins/RPGQuest/quests/*.yml` (développement
-local : `run/plugins/RPGQuest/quests/*.yml`). Trois quêtes d'exemple sont
-déjà générées : `first_steps.yml`, `woodcutters_request.yml`,
-`crystal_hunt.yml` — utilisables comme référence. Le champ `giver:` ne fait
+local : `run/plugins/RPGQuest/quests/*.yml`). Des quêtes d'exemple sont
+déjà générées, dont `premiers_pas.yml`, `woodcutters_request.yml` et
+`guard_tier1.yml` — utilisables comme référence (`first_steps.yml` et
+`crystal_hunt.yml` ne sont plus livrées depuis #778). Le champ `giver:` ne fait
 que **déclarer** le donneur : c'est son dialogue (id = id du PNJ) qui propose
 la quête. `woodcutters_request` est donc livrée avec `dialogues/woodcutter_bob.yml`,
 amorcé lui aussi s'il manque (#80) ; sans lui, un clic droit sur Bob n'ouvrait rien.

@@ -95,7 +95,7 @@ la taille du claim doit être vérifiée indépendamment des quêtes.
 
 - `quest complete` / `story advance` / `story complete` **appliquent** les
   récompenses de chaque quête complétée, y compris les `VARIABLE`
-  (`CLAIM_TIER_1=true` est posée à la complétion de `crystal_hunt`).
+  (`CLAIM_TIER_1=true` est posée à la complétion de `guard_tier1`).
 - **Aucun double gain** sur répétition accidentelle : `forceComplete` renvoie
   « déjà terminée » pour une quête déjà `COMPLETED` et ne re-crédite rien.
 - L'acceptation (`quest start`, ou l'auto-accept de la quête suivante par
@@ -130,44 +130,44 @@ Pour repartir d'un état réellement propre :
 
 ## Workflow : tester rapidement une étape du parcours principal
 
-Contexte : parcours `premiers_pas → first_steps → crystal_hunt` (story
-`main_story`), dont la dernière quête accorde `CLAIM_TIER_1`. Rappel : pour un
-joueur normal, `main_story` n'est **pas** démarrée automatiquement — la chaîne se
-joue via les PNJ (Guide, Libraire, **Garde**). Ces raccourcis permettent de sauter
-les étapes déjà validées.
+Contexte (depuis #778) : `main_story` ne contient plus que `premiers_pas`
+(Guide → Libraire) ; le droit au premier claim (`CLAIM_TIER_1`) s'obtient
+uniquement par « Gauthier — Palier 1 » (`guard_tier1`, PNJ `guard` affiché
+« Gauthier »). Les anciennes quêtes `first_steps` et `crystal_hunt` sont
+retirées : les commandes qui les citaient ne fonctionnent plus (id inconnu).
+Rappel : pour un joueur normal, `main_story` n'est **pas** démarrée
+automatiquement — le parcours se joue via les PNJ (Guide, Libraire,
+**Gauthier**, Jo). Ces raccourcis permettent de sauter les étapes déjà validées.
 
-### A. Tester `crystal_hunt` / Jo / portail Claims sans refaire le début
+### A. Tester Jo / portail Claims sans refaire le début
 
 ```
 /rpgadmin player resetnew Rondoudou9000 confirm
 # … tester manuellement Guide + Libraire si besoin …
-/rpgadmin quest complete Rondoudou9000 rpgquest:first_steps
-# clic droit sur le Garde en jeu -> il doit proposer « La chasse aux cristaux »
-/rpgadmin quest complete Rondoudou9000 rpgquest:crystal_hunt
+# clic droit sur Gauthier en jeu -> il doit proposer « Obtenir un terrain » (palier 1)
+/rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier1
 /rpgadmin player variable get Rondoudou9000 CLAIM_TIER_1        # -> true
 # … tester Jo (« réclamer mon acte »), le portail Hub -> claims, la Pierre de retour …
 ```
 
-### B. Piloter via la story (démarre la story si besoin, avance étape par étape)
+### B. Piloter via la story
 
 ```
 /rpgadmin player resetnew Rondoudou9000 confirm
 /rpgadmin story advance Rondoudou9000 main_story
-#  -> « premiers_pas » complétée ; à tester : « first_steps » (étape 2/3)
-/rpgadmin story advance Rondoudou9000 main_story
-#  -> « first_steps » complétée ; à tester : « crystal_hunt » (étape 3/3)
-/rpgadmin story advance Rondoudou9000 main_story
-#  -> « crystal_hunt » complétée ; Story TERMINÉE ; CLAIM_TIER_1 posée
+#  -> « premiers_pas » complétée ; Story TERMINÉE (une seule étape depuis #778)
 ```
+
+`main_story` ne pose plus `CLAIM_TIER_1` : enchaîner avec le workflow A ou D.
 
 ### C. Aller directement à la fin d'une story
 
 ```
 /rpgadmin story complete Rondoudou9000 main_story
-#  -> premiers_pas, first_steps, crystal_hunt complétées dans l'ordre ; CLAIM_TIER_1 posée
+#  -> premiers_pas complétée ; CLAIM_TIER_1 n'est PAS posée (voir A)
 ```
 
-### D. Tester les 5 paliers du Garde sans tuer un seul mob (issue #179)
+### D. Tester les 5 paliers de Gauthier sans tuer un seul mob (issue #179)
 
 ```
 /rpgadmin player resetnew Rondoudou9000 confirm
@@ -177,7 +177,7 @@ les étapes déjà validées.
 /rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier4
 /rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier5
 # chaque complétion applique ses récompenses (VARIABLE CLAIM_TIER_n + montée
-# réelle du claim si déjà posé) ; reparler au Garde après chaque étape doit
+# réelle du claim si déjà posé) ; reparler à Gauthier après chaque étape doit
 # proposer le palier suivant, puis un message de clôture après le 5e.
 ```
 

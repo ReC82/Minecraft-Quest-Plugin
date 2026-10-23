@@ -484,14 +484,18 @@ Permission : `rpgquest.quest` (toutes), joueur uniquement (jamais console).
 
 Persistance : oui pour tout ce qui touche à l'état (`accept`/`abandon`) — SQLite `quest_progress` + `quest_objective_progress` (migration V2). `list`/`progress` sont en lecture seule.
 
-### Chaîne de paliers du Garde — `guard_tier1`..`guard_tier5` (issue #179)
+### Chaîne de paliers de Gauthier (le Garde) — `guard_tier1`..`guard_tier5` (issue #179)
 
-Parcours combat simplifié pour obtenir les claims de palier 1 à 5 (voir
-[docs/CLAIMS.md](../CLAIMS.md), section « Montée de palier ») — **chemin
-parallèle à `crystal_hunt`, jamais modifié**, même PNJ donneur (`guard`).
+Parcours combat pour obtenir les claims de palier 1 à 5 (voir
+[docs/CLAIMS.md](../CLAIMS.md), section « Montée de palier »), donné par le
+PNJ d'id technique `guard`, affiché **« Gauthier »** depuis #778 (le mot
+« garde » reste son rôle : « Gauthier, le garde du village »). Depuis #778,
+c'est la **seule** voie vers `CLAIM_TIER_1` : l'ancienne chaîne parallèle
+`first_steps` → `crystal_hunt` est retirée (voir plus bas).
 
 Cinq quêtes (`rpgquest:guard_tier1` → `rpgquest:guard_tier5`,
-`src/main/resources/quests/guard_tier{1..5}.yml`), chacune :
+`src/main/resources/quests/guard_tier{1..5}.yml`, titres « Gauthier — Palier
+1 » à « Gauthier — Palier 5 »), chacune :
 
 -   **une seule étape**, **quatre objectifs `KILL_ENTITY` simultanés**
     (araignées, zombies, squelettes, creepers), tous requis avant de
@@ -506,7 +510,8 @@ Cinq quêtes (`rpgquest:guard_tier1` → `rpgquest:guard_tier5`,
     invisible dans le dialogue tant que le palier N n'est pas `COMPLETED` ;
 -   `repeatable: false` ;
 -   récompenses : `EXPERIENCE` (20×N), `VARIABLE CLAIM_TIER_N=true`
-    (entitlement, même mécanisme que `crystal_hunt` pour `CLAIM_TIER_1`),
+    (entitlement ; idempotent pour un joueur qui détenait déjà `CLAIM_TIER_1`
+    via l'ancienne `crystal_hunt`),
     `COMMAND: "rpgadmin claim grant-tier %player% TIER_N"` (montée réelle du
     claim déjà posé, idempotente dans tous les cas).
 
@@ -518,8 +523,20 @@ courant `NOT_STARTED`, palier 1 sans condition de prérequis dialogue — le
 Après `guard_tier5` `COMPLETED`, un choix dédié (« J'ai fini tout ce que tu
 m'as demandé... ») mène à `guard_tiers_done` — un message cohérent de
 clôture, **jamais** un rappel d'objectif resté bloqué sur un état périmé
-(voir l'issue #158 pour le symptôme évité). Les branches `first_steps`/
-`crystal_hunt` existantes ne sont pas modifiées.
+(voir l'issue #158 pour le symptôme évité). Locuteur de tous les nœuds :
+« Gauthier ».
+
+**Quêtes retirées (#778)** : `rpgquest:first_steps` (« Premiers pas » au
+Garde, 10 araignées — à ne pas confondre avec `rpgquest:premiers_pas`, la
+quête homonyme du Libraire, **conservée**) et `rpgquest:crystal_hunt` (« La
+chasse aux cristaux / aux monstres ») ne sont plus embarquées ni recréées au
+démarrage (`YamlQuestEngine#BUNDLED_EXAMPLES`), ne figurent plus dans
+`main_story` et n'ont plus aucun choix dans `guard.yml`. Un joueur qui avait
+rendu `crystal_hunt` **garde** son `CLAIM_TIER_1`. Une progression joueur
+restée en base vers l'une de ces quêtes est **tolérée** : ni erreur, ni
+récompense, ni purge. `woodcutters_request` (Bob) n'a plus de prérequis et
+l'offre `forest_blade` de `merchants/village_merchant.yml` exige désormais
+`rpgquest:guard_tier1` `COMPLETED`.
 
 **Test en jeu sans grinder** : `/rpgadmin quest complete <joueur> guard_tierN`
 complète instantanément une quête de palier avec ses récompenses (donc la
@@ -560,7 +577,7 @@ La bossbar (`ui.TrackedQuestSummary`) affiche désormais un **résumé** :
 |---|---|
 | 1 objectif comptable | `Titre — Araignée 2/5` |
 | 1 remise à un PNJ nommé | `Titre — Cactus (à remettre à Marchand) 0/12` ; si le nom ne tient pas : `Cactus (à remettre) 0/12` |
-| 1 objectif binaire (parler, lieu) | `Titre — Parler à Garde` (pas de « 0/1 ») |
+| 1 objectif binaire (parler, lieu) | `Titre — Parler à Gauthier` (pas de « 0/1 ») |
 | 2 objectifs ou plus | `Titre — 3/5 objectifs` |
 | quête à plusieurs étapes | `Titre — Étape 2/3 · …` |
 
@@ -674,7 +691,7 @@ Les 10 types existent **tous** réellement dans le code (`ObjectiveType` enum, e
 |---|---|---|---|---|
 | `BREAK_BLOCK` | `material` (Bukkit `Material`), `amount` (> 0) | `BreakBlockObjective` | `BlockBreakEvent` (`QuestBlockBreakListener`, `ignoreCancelled = true`) | **Global** — aucun champ `world` ; compte dans n'importe quel monde. |
 | `PLACE_BLOCK` | `material`, `amount` (> 0) | `PlaceBlockObjective` | `BlockPlaceEvent` (`QuestBlockPlaceListener`, `ignoreCancelled = true`) | Global, idem. |
-| `KILL_ENTITY` | `entity` (Bukkit `EntityType`), `amount` (> 0) | `KillEntityObjective` | `EntityDeathEvent` (`QuestEntityDeathListener`) — **seulement** si `event.getEntity().getKiller()` est le joueur (kill direct) | Global, idem (ex. `first_steps` : `entity: SPIDER`, `amount: 10`). **Limite connue** : une mort provoquée indirectement (piège, chute, autre mob, dégât de zone) ne compte jamais, même si le joueur en est la cause ultime — cohérent avec `SpiderFangDropListener` (TC-043). |
+| `KILL_ENTITY` | `entity` (Bukkit `EntityType`), `amount` (> 0) | `KillEntityObjective` | `EntityDeathEvent` (`QuestEntityDeathListener`) — **seulement** si `event.getEntity().getKiller()` est le joueur (kill direct) | Global, idem (ex. `guard_tier1` : `entity: SPIDER`, `amount: 5`, parmi quatre objectifs). **Limite connue** : une mort provoquée indirectement (piège, chute, autre mob, dégât de zone) ne compte jamais, même si le joueur en est la cause ultime — cohérent avec `SpiderFangDropListener` (TC-043). |
 | `COLLECT_ITEM` | `material`, `amount` (> 0) | `CollectItemObjective` | `EntityPickupItemEvent` (`QuestItemPickupListener`, `ignoreCancelled = true`) | Global, idem. **Limite connue** : compte uniquement un ramassage physique au sol par le joueur ; recevoir l'objet autrement (coffre, `/give`, craft, troc marchand) ne progresse jamais cet objectif. |
 | `CRAFT_ITEM` | `material`, `amount` (> 0) | `CraftItemObjective` | `CraftItemEvent` (`QuestCraftItemListener`, priorité `MONITOR`, `ignoreCancelled = true`) — matériau du résultat du craft. **Compte le nombre réel d'objets fabriqués** (#34) : une recette de 4 planches compte +4 ; clic simple = 1 craft si le curseur peut recevoir le résultat (sinon 0) ; Q/Ctrl+Q = 1 craft ; shift-clic / touche numérique / main secondaire = quantité réellement arrivée dans l'inventaire, mesurée au tick suivant et plafonnée par les ingrédients de la grille (inventaire plein ou slots partiels comptés exactement) ; clonage créatif et double-clic = 0. Toujours plafonné à `amount`. | Global, idem. **Limite connue** (documentée dans `MANUAL_TEST_PLAN.md` TC-012) : ne distingue pas un objet personnalisé d'un objet vanilla du même `Material`. |
 | `TALK_TO_NPC` | `npc` (id logique RPGQuest attribué par `/rpgadmin npc tag`, **pas** le nom affiché — voir section 5) | `TalkToNpcObjective` | `PlayerInteractEntityEvent` (`QuestNpcInteractListener`, entité vanilla/Citizens non géré) **ou** `NPCRightClickEvent` (`QuestCitizensNpcInteractListener`, uniquement si Citizens est actif et gère l'entité) — jamais les deux sur la même entité | Implicitement lié au monde où se trouve le PNJ visé, mais le champ lui-même ne porte pas de monde. À ne pas confondre avec l'identification par nom affiché utilisée par le système de **dialogue** (section 4/5) : `TALK_TO_NPC` (quête) exige un id logique posé au préalable via `/rpgadmin npc tag`, une entité renommée sans être taguée ne progresse jamais cet objectif. |
@@ -1129,7 +1146,7 @@ toujours le chemin de sauvegarde, pour qu'une restauration ne se devine pas.
 
 - **Chaîne de quêtes d'une story** : une story est une liste **ordonnée** de quêtes existantes
   (modèle moteur : `id`, `name`, `secret`, `questIds` — rien d'autre). La sélection d'une quête
-  est recherchable **par titre humain (« Premiers pas ») ou par id technique (« first_steps »)** :
+  est recherchable **par titre humain (« La requête du bûcheron ») ou par id technique (« woodcutters_request »)** :
   la datalist `dl-quest` porte le titre en `label`, alimenté par le dernier relevé `quest.list`.
   Chaque ligne de la chaîne affiche le rang `N.` et le titre humain **au-dessus** de
   l'identifiant technique, avec les contrôles monter / descendre / retirer ; une quête absente du
@@ -3738,7 +3755,7 @@ faire maintenant » (`messages.yml` → `quest.step-advanced-header`), avec les 
 démarrage : quantité pour un objectif comptable (`quest.started-objective`), aucune quantité pour un
 objectif binaire — parler à un PNJ, atteindre un lieu (`quest.started-objective-single`). Pour
 `TALK_TO_NPC` et `DELIVER_ITEM_TO_NPC`, le PNJ est **nommé** par son `display_name` (balises
-MiniMessage retirées) : « Parler à Garde », « Cristal (à remettre à Garde) ». Sans définition de PNJ
+MiniMessage retirées) : « Parler à Gauthier », « <objet> (à remettre à Gauthier) ». Sans définition de PNJ
 pour cet id, le libellé générique « Parler au PNJ » est conservé — l'identifiant logique n'est
 jamais montré. Rien n'est annoncé après la dernière étape (le résumé de récompenses s'en charge).
 Les nouvelles clés sont ajoutées automatiquement au `messages.yml` du serveur au démarrage.
@@ -5204,10 +5221,10 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
     cooldown-message: ""         # vide = message par défaut ; %seconds% = secondes restantes
     conditions:                  # 8 au plus, toutes exigées ; mêmes clés que dans un dialogue
       - type: QUEST_STATE        # QUEST_STATE | HAS_ITEM | HAS_PERMISSION | VARIABLE_EQUALS | HAS_MAIN_CLAIM
-        quest: rpgquest:crystal_hunt
+        quest: rpgquest:guard_tier1
         state: COMPLETED
         negate: false            # true = le joueur ne doit PAS remplir la condition
-        message: "<red>Termine d'abord la chasse au cristal.</red>"   # vide = message par défaut du type
+        message: "<red>Termine d'abord Gauthier — Palier 1.</red>"   # vide = message par défaut du type
   ```
   Lecture par le parseur des dialogues (`DialogueConditionYaml` → `DialogueDefinitionParser#parseCondition`) : aucune
   syntaxe libre, aucun autre type. Une section illisible ou un type non proposé fait **ignorer le fichier** au
@@ -6069,9 +6086,9 @@ Détail du barème : `docs/CLAIMS.md`, « Croissance hors ligne des plantations 
 
 ### Accès au monde des claims et retour au Hub (issues #21/#22/#23)
 
-Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, `travel.CompositeWorldPortalEntryGuard`, `dialogues/guide.yml`, `dialogues/jo.yml`, `quests/crystal_hunt.yml`.
+Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, `travel.CompositeWorldPortalEntryGuard`, `dialogues/guide.yml`, `dialogues/jo.yml`, `quests/guard_tier1.yml`.
 
-**Condition réelle du premier claim** : la variable joueur `CLAIM_TIER_1 == "true"`, accordée par la récompense `VARIABLE` de `rpgquest:crystal_hunt` (dernière quête de `main_story`, rendue au Garde) **ou**, depuis l'issue #179, par `rpgquest:guard_tier1` (chemin parallèle et plus simple, même Garde, voir section 3 « Chaîne de paliers du Garde »). `/rpgadmin player resetnew` l'efface (avec tous les claims), `/claim admin resettier1` la met à `"false"`.
+**Condition réelle du premier claim** : la variable joueur `CLAIM_TIER_1 == "true"`, accordée par la récompense `VARIABLE` de `rpgquest:guard_tier1` (« Gauthier — Palier 1 », rendue à Gauthier, PNJ `guard`, voir section 3 « Chaîne de paliers de Gauthier »). Depuis #778, c'est la seule voie : l'ancienne `rpgquest:crystal_hunt` est retirée, mais un joueur qui l'avait rendue conserve son droit. `/rpgadmin player resetnew` l'efface (avec tous les claims), `/claim admin resettier1` la met à `"false"`.
 
 **Portail Hub → `claims` fermé tant que le premier claim n'est pas débloqué** : `ClaimWorldAccessGuard` (un `travel.WorldPortalEntryGuard`, composé avec l'avertissement d'entrée dans le Wild) refuse l'entrée d'un joueur qui n'a ni `CLAIM_TIER_1 == "true"` ni claim existant — **aucune téléportation**, message d'orientation vers Jo / le Guide. Seul `rpgquest.admin.world` passe outre ; aucune permission de build/admin ne contourne la règle par accident.
 
@@ -6079,12 +6096,12 @@ Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, 
 
 **Aucun joueur coincé, retour Hub sans commande** : `ClaimWorldSafetyListener` (sur `PlayerChangedWorldEvent` / `PlayerJoinEvent`) donne automatiquement une `rpgquest:pierre_retour` (voyage claims → Hub, clic droit, jamais consommée) à tout joueur éligible qui arrive dans le monde des claims sans en avoir une ; un joueur non éligible qui s'y retrouve autrement (`/tp`, reconnexion) est renvoyé au Hub. Inventaire plein : le joueur est déjà sur place, l'objet tombe donc **à ses pieds** et le message le dit (il annonçait « tu reçois » dans les deux cas — issue #22). `/claim admin sendhome` et `/spawn` restent auxiliaires.
 
-**Dialogues alignés** : `guide.yml` (`help_claims`) énonce le prérequis réel (finir l'histoire principale au Garde, *puis* voir Jo) ; `jo.yml` adapte son texte aux 3 états — non débloqué (« Comment obtenir mon premier terrain ? », via `negate` sur `VARIABLE_EQUALS CLAIM_TIER_1`), débloqué sans claim (remet l'Acte), claim existant (retour / limites). Le choix « Obtenir une Pierre de retour » n'exige plus un claim **déjà posé** (`HAS_MAIN_CLAIM`) mais seulement `CLAIM_TIER_1 == "true"` (issue #22) : ce recours devenait inaccessible exactement quand il sert, pour un joueur débloqué qui n'a pas encore choisi son terrain.
+**Dialogues alignés** : `guide.yml` (`help_claims`) énonce le prérequis réel (rendre « Gauthier — Palier 1 » à Gauthier, *puis* voir Jo) ; `jo.yml` adapte son texte aux 3 états — non débloqué (« Comment obtenir mon premier terrain ? », via `negate` sur `VARIABLE_EQUALS CLAIM_TIER_1`), débloqué sans claim (remet l'Acte), claim existant (retour / limites). Le choix « Obtenir une Pierre de retour » n'exige plus un claim **déjà posé** (`HAS_MAIN_CLAIM`) mais seulement `CLAIM_TIER_1 == "true"` (issue #22) : ce recours devenait inaccessible exactement quand il sert, pour un joueur débloqué qui n'a pas encore choisi son terrain.
 
 **Prérequis opérationnels de ce parcours (non portés par le code, à provisionner sur chaque serveur)** :
 
-- **4 PNJ Citizens liés** — `guide`, `libraire`, **`guard`**, `jo` (via `/rpgadmin npc tag <id>`, jamais par le nom affiché ; mapping en base `npc_citizens_bindings`). Le PNJ **`guard`** démarre `first_steps` **et** démarre/valide `crystal_hunt` : sans lui, `CLAIM_TIER_1` ne peut **jamais** être accordé et le déblocage du claim est impossible (voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b).
-- **`dialogues/guard.yml` à jour** — doit contenir la branche `crystal_hunt` (choix « J'ai entendu dire… » + nœud `crystal_hunt_accepted`). Un `guard.yml` antérieur ne permet de démarrer que `first_steps`.
+- **4 PNJ Citizens liés** — `guide`, `libraire`, **`guard`**, `jo` (via `/rpgadmin npc tag <id>`, jamais par le nom affiché ; mapping en base `npc_citizens_bindings`). Le PNJ **`guard`** (affiché « Gauthier ») démarre et valide `guard_tier1`..`guard_tier5` : sans lui, `CLAIM_TIER_1` ne peut **jamais** être accordé et le déblocage du claim est impossible (voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b).
+- **`dialogues/guard.yml` à jour** — doit proposer « Gauthier — Palier 1 » (nœud `offer_tier1` → `guard_tier1_accepted`). Un `guard.yml` antérieur à #778 propose encore les quêtes retirées `first_steps` / `crystal_hunt` : un JAR ne met jamais à jour un dialogue déjà présent sur le serveur, il faut republier ce fichier.
 - **Un World-Portal RPGQuest** `world_hub → claims` (`world-portals/hub_to_claims.yml`, `destination-world` = `claims.world`). `ClaimWorldAccessGuard` ne contrôle que les World-Portals : une téléportation par un autre moyen (`/mv tp`, `/tp`) est rattrapée par `ClaimWorldSafetyListener`, pas par le garde d'entrée.
 
 **Arrivée dans le monde des claims : `CLAIM_HOME` (issues #73, #208, 13/10/2026)** — le portail réel

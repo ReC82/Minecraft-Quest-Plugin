@@ -8944,3 +8944,39 @@ Projet prêt sur DEV : « TEST #283 images de référence » (une planche de tes
 **Vérifié par Claude le 22/10/2026 via le domaine public** (curl, session réelle) : 3,0 Mio → ajoutée,
 relue octet pour octet (SHA-256 identique) ; 4,5 Mio → refus PlugAdmin sur le projet ; 6,7 Mo → refus nginx
 redirigé sur le projet.
+
+> Les TC antérieurs portant sur `first_steps`/`crystal_hunt` sont obsolètes depuis #778 (quêtes retirées).
+
+### TC-423 — #778 — retrait first_steps/crystal_hunt, Gauthier, Bob sans prérequis (issue #778, PENDING MANUAL VALIDATION)
+
+JAR RPGQuest (aucune migration). Contenu à jour sur le serveur : `dialogues/guard.yml`,
+`dialogues/woodcutter_bob.yml`, `dialogues/jo.yml`, `dialogues/guide.yml`, `npcs/guard.yml`,
+`quests/guard_tier1..5.yml`, `quests/woodcutters_request.yml`, `stories/main_story.yml`,
+`merchants/village_merchant.yml` (un JAR ne met jamais à jour un fichier déjà présent : republier via
+PlugAdmin ou `--also`). Compte **non OP**, progression existante **conservée** : aucune
+réinitialisation, aucun raccourci de complétion (#778 interdit tout reset et toute récompense automatique).
+
+1.  **Gauthier** (PNJ `guard`) : clic droit. **Attendu** : locuteur « Gauthier », accueil « Je suis
+    Gauthier, le garde du village… » ; **aucun** choix « Premiers pas » ni « La chasse aux monstres ».
+    « Obtenir un terrain » (palier 1) est proposé ; « Terrain : palier N » n'apparaît qu'après le
+    palier précédent rendu ; un palier déjà rendu ne réapparaît pas.
+2.  **Bob** (`woodcutter_bob`) : clic droit → « Du travail ? ». **Attendu** : mène directement à l'offre
+    « La requête du bûcheron », sans renvoi vers « Premiers pas » ni vers le garde. « Commencer
+    (j'accepte) », couper 20 bûches de chêne, revenir parler à Bob. **Attendu** : quête terminée,
+    récompense reçue (30 XP, 16 planches de chêne).
+3.  **Journal** (`/quests`) : **Attendu** : les quêtes de paliers s'intitulent « Gauthier — Palier N » ;
+    donneur affiché « Gauthier ».
+4.  **Elias** (`guide`) → « Les claims » : **Attendu** : le texte cite « Gauthier — Palier 1 » (plus
+    « l'histoire principale » ni « La chasse aux cristaux ») ; « À qui parler pour quoi ? » cite
+    Gauthier puis Jo. **Jo** → « Mon premier terrain » (sans droit) : **Attendu** : renvoi vers
+    « Gauthier — Palier 1 ».
+5.  Après redémarrage du serveur : `/quest list` (ou PlugAdmin, action `quest.list`). **Attendu** :
+    `first_steps` et `crystal_hunt` absentes ; `premiers_pas` (Libraire) toujours présente ;
+    `/rpgadmin quest start <joueur> first_steps` refusé (id inconnu). Aucune erreur au démarrage dans
+    les logs, y compris pour un joueur qui avait une progression sur ces quêtes.
+6.  (Optionnel) Marchand du village : l'épée `forest_blade` n'est achetable qu'après « Gauthier —
+    Palier 1 » rendu.
+
+**Couverture automatisée** : `QuestVerticalSliceIntegrationTest` (ex-`CrystalHuntIntegrationTest`, sur
+fixtures ; progression orpheline tolérée, ni récompense ni purge), `QuestStoryProgressPersistenceIntegrationTest`, `BundledDialoguesValidityTest` (aucune référence à une quête retirée dans le contenu
+embarqué), `YamlQuestEngineTest`, `StoryRegistryTest`.

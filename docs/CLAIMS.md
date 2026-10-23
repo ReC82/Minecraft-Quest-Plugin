@@ -126,10 +126,12 @@ commande, via un objet spécial remis par un PNJ.
 1. **`CLAIM_TIER_1`** — variable joueur persistante (`player_variables`,
    voir `PlayerVariableRepository`), valeur attendue exactement `"true"`
    (`ClaimService#CLAIM_TIER_1_KEY`/`CLAIM_TIER_1_VALUE`). Débloquée
-   aujourd'hui par la récompense `VARIABLE` de la dernière quête de
-   `main_story` (`crystal_hunt.yml`) — n'importe quelle quête/Story future
-   peut l'accorder de la même façon (`type: VARIABLE`, `key: CLAIM_TIER_1`,
-   `value: "true"`), aucun couplage en dur à `crystal_hunt`.
+   aujourd'hui par la récompense `VARIABLE` de « Gauthier — Palier 1 »
+   (`guard_tier1.yml`, PNJ `guard`) — seule voie depuis #778, qui a retiré
+   l'ancienne `crystal_hunt` (un joueur qui l'avait rendue garde son droit).
+   N'importe quelle quête/Story future peut l'accorder de la même façon
+   (`type: VARIABLE`, `key: CLAIM_TIER_1`, `value: "true"`), aucun couplage
+   en dur à une quête.
 2. **PNJ Jo** — créé/configuré **manuellement** par un administrateur
    (Citizens), jamais par RPGQuest (voir
    [docs/NPC_DIALOGUES_QUESTS_GUIDE.md](NPC_DIALOGUES_QUESTS_GUIDE.md) pour
@@ -152,8 +154,9 @@ commande, via un objet spécial remis par un PNJ.
    reste jamais muet après un reset :
    -   *claim non débloqué* (`CLAIM_TIER_1` ≠ `"true"` — via `negate: true`
        sur `VARIABLE_EQUALS` — **et** `NO_MAIN_CLAIM`) : option « Comment
-       obtenir mon premier terrain ? » → explique qu'il faut d'abord
-       terminer l'histoire principale (`crystal_hunt`, rendue au Garde) ;
+       obtenir mon premier terrain ? » (libellé actuel : « Mon premier
+       terrain ») → explique qu'il faut d'abord rendre « Gauthier — Palier
+       1 » (`guard_tier1`) à Gauthier, le garde du village ;
    -   *débloqué, aucun claim* : option « Je viens réclamer mon acte de
        propriété » (ci-dessus) ;
    -   *claim existant* (`HAS_MAIN_CLAIM`) : « Me rendre sur ma propriété »,
@@ -166,15 +169,15 @@ commande, via un objet spécial remis par un PNJ.
    filet de sécurité, et reste masquée par `LACKS_CUSTOM_ITEM` dès que le
    joueur en détient une.
    Le dialogue du **Guide** (`guide.yml`, nœud `help_claims`) énonce
-   désormais le même prérequis réel : le droit se mérite en terminant
-   l'histoire principale, *puis* Jo remet l'acte — plus aucune promesse que
+   désormais le même prérequis réel : le droit se mérite en rendant
+   « Gauthier — Palier 1 », *puis* Jo remet l'acte — plus aucune promesse que
    Jo donne un acte « sur simple demande ».
 3. **Acte de propriété** (`rpgquest:acte_propriete`, objet personnalisé
    `QUEST_ITEM`, non empilable) — remis via l'action de dialogue
    `RUN_SAFE_COMMAND` (`customitem give %player% rpgquest:acte_propriete 1`,
    `customitem` whitelisté dans `dialogue.allowed-commands`), même
-   mécanisme déjà utilisé par la récompense `COMMAND` de `crystal_hunt`
-   pour `miner_pickaxe`.
+   mécanisme que les récompenses `COMMAND` de quête (ex. `woodcutters_request`
+   pour ses planches).
 4. **Pose du claim** — clic droit sur un bloc avec l'Acte, **dans le monde
    des claims** (`claims.world`, voir Configuration) :
    -   1er clic droit sur une cible : **aperçu** (message chat, bornes
@@ -409,7 +412,7 @@ réservé pour ce claim depuis sa création — aucune collision avec un claim
 voisin n'est donc possible par construction (une vérification explicite
 reste faite par prudence, voir ci-dessous).
 
-### Montée de palier (issue #179 — parcours du Garde)
+### Montée de palier (issue #179 — parcours de Gauthier, le garde)
 
 `ClaimService#upgradeTier(UUID owner, ClaimTier newTier)` fait grandir le
 **claim principal déjà posé** d'un joueur jusqu'à `newTier`, **centré sur le
@@ -423,21 +426,20 @@ déclenchement de la récompense) ; `NOT_SQUARE`, `OVERLAPS_CLAIM`,
 `OVERLAPS_RESERVATION` (défense en profondeur, normalement inatteignables
 par construction pour un claim posé via l'Acte).
 
-**Déclenché par les cinq quêtes du Garde** (`rpgquest:guard_tier1`..`guard_tier5`,
+**Déclenché par les cinq quêtes de Gauthier** (PNJ `guard`, « Gauthier — Palier 1..5 », `rpgquest:guard_tier1`..`guard_tier5`,
 voir [docs/RPGQUEST_BIBLE.md](RPGQUEST_BIBLE.md)) : chaque palier propose
 une quête à étape unique avec quatre objectifs `KILL_ENTITY` simultanés
 (araignées/zombies/squelettes/creepers, 5/10/20/40/80 selon le palier,
 **aucun report d'une quête à l'autre** — chaque quête réinitialise son
 propre compteur), prérequis chaîné au palier précédent. Les récompenses
-accordent l'entitlement `CLAIM_TIER_n` (`VARIABLE`, même mécanisme que
-`crystal_hunt` pour `CLAIM_TIER_1`) **et** déclenchent la montée réelle via
+accordent l'entitlement `CLAIM_TIER_n` (`VARIABLE`) **et** déclenchent la montée réelle via
 `COMMAND: "rpgadmin claim grant-tier %player% TIER_n"` — idempotent dans
 tous les cas (joueur déjà à ce palier, ou sans claim posé).
 
-Ce parcours du Garde est **un chemin parallèle et plus simple** vers
-`CLAIM_TIER_1`, indépendant de `crystal_hunt` (jamais modifié) : les deux
-peuvent accorder la même entitlement sans conflit (écriture idempotente de
-la même variable).
+Depuis #778, ce parcours est **la seule voie** vers `CLAIM_TIER_1` :
+l'ancien chemin parallèle `crystal_hunt` est retiré. Un joueur qui avait
+déjà le droit par cette quête le conserve ; rendre ensuite `guard_tier1`
+réécrit la même variable sans conflit (écriture idempotente).
 
 ### `/rpgadmin claim grant-tier <joueur> <TIER_n>`
 

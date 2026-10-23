@@ -332,7 +332,7 @@ Arrêt propre (`stop` en console, ou bouton "Arrêter" du panel).
     journal — voir [docs/LOCAL_SERVER.md](../LOCAL_SERVER.md)).
 -   À ce stade, `run/plugins/RPGQuest/` (équivalent `/plugins/RPGQuest/`
     côté VeryGames) ne contient que les exemples générés par défaut
-    (`first_steps`, `crystal_hunt`, `central_village`...), pas encore les
+    (`premiers_pas`, `woodcutters_request`, `guard_tier1`, `central_village`...), pas encore les
     données réelles du monde Hub.
 
 ### 9. Arrêter le serveur
@@ -612,15 +612,16 @@ neuve ou migration complète) :
     appliquées : world_hub`).
 -   [ ] **PNJ Citizens obligatoires du parcours principal présents ET liés**
     (`/rpgadmin npc info` en visant chacun) : `guide`, `libraire`,
-    **`guard`**, `jo`. Sans le PNJ lié **`guard`**, `first_steps` et
-    `crystal_hunt` sont indémarrables → `CLAIM_TIER_1` jamais accordé →
+    **`guard`** (affiché « Gauthier »), `jo`. Sans le PNJ lié **`guard`**,
+    `guard_tier1` (« Gauthier — Palier 1 ») est indémarrable →
+    `CLAIM_TIER_1` jamais accordé →
     premier claim impossible. Créer/lier : voir
     `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b. Vérif base :
     `SELECT npc_id FROM npc_citizens_bindings;` doit lister `guard`.
--   [ ] `plugins/RPGQuest/dialogues/guard.yml` contient la branche
-    `crystal_hunt` (choix « J'ai entendu dire… » + nœud
-    `crystal_hunt_accepted`) — un `guard.yml` périmé ne démarre que
-    `first_steps`.
+-   [ ] `plugins/RPGQuest/dialogues/guard.yml` est la version #778
+    (locuteur « Gauthier », choix « Obtenir un terrain » → `offer_tier1`,
+    aucune offre `first_steps` / `crystal_hunt`, quêtes retirées) — le JAR
+    ne remplace jamais un `guard.yml` déjà présent, il faut le republier.
 -   [ ] World-Portal `world_hub → claims` configuré
     (`plugins/RPGQuest/world-portals/hub_to_claims.yml`,
     `destination-world` = `claims.world`).

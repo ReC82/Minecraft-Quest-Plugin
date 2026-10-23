@@ -131,9 +131,9 @@ hub:
         required-level: 5                # facultatif : niveau RPG (règle #532, comme les portails)
         conditions:                      # facultatif : mêmes clés que access.conditions d'un portail (#567)
           - type: QUEST_STATE
-            quest: rpgquest:crystal_hunt
+            quest: rpgquest:guard_tier1
             state: COMPLETED
-        message: "<gray>Termine la chasse au cristal pour utiliser cet établi.</gray>"
+        message: "<gray>Termine Gauthier — Palier 1 pour utiliser cet établi.</gray>"
 ```
 
 - Conditions admises : celles des portails (`QUEST_STATE`, `HAS_ITEM`, `HAS_PERMISSION`,

@@ -321,4 +321,21 @@ class Eglise747Test {
         assertTrue(v.repair().plan().contains("wall: 16"), v.repair().plan());
         assertFalse(v.repair().codes().contains("PLAN_INVALID"), "le plan réparé se construit : " + generator.inspect(v.repair().plan(), LIMITS).message());
     }
+
+    @Test
+    void furnitureLaidInsideTheFloorLayerIsLiftedOntoTheFloor() {
+        BuildingGenerator.Verdict v = inspect("979a80e5");
+
+        var changes = v.repair().changes();
+        assertTrue(changes.stream().anyMatch(c -> c.startsWith("Instruction 13 (box minecraft:red_carpet")
+                && c.contains("relevé sur le sol, en y=2")), changes.toString());
+        assertTrue(changes.stream().anyMatch(c -> c.startsWith("Instruction 14 (box minecraft:oak_stairs")), changes.toString());
+        BuildingGenerator.Verdict repaired = generator.inspect(v.repair().plan(), LIMITS);
+        assertFalse(repaired.message().contains("red_carpet en"), repaired.message());
+        // La marche extérieure ajoutée devant la porte (6/1/17) est à ciel ouvert : plus une « zone sombre ».
+        assertFalse(repaired.message().contains("6/1/17"), repaired.message());
+        // Restent pour l'IA, légitimement : la lanterne dans le vide de la tour, et une nef sans lumière
+        // (les lanternes du plan sont au-dessus du plafond, en y=12).
+        assertEquals(java.util.List.of("UNSUPPORTED_BLOCK", "DARK_AREA"), repaired.codes(), repaired.message());
+    }
 }

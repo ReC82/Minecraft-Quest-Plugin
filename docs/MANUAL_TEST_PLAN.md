@@ -8309,9 +8309,9 @@ objectif → parchemin, chaque rôle suggéré a une vraie icône, rôle libre �
 `QuestsCatalogTest#structuredPayloadIsUsedWithoutReparsingStrings` (tuile d'en-tête),
 `QuestListPayloadTest#iconIsPresentOnlyWhenKnown` (champ `icon` du payload), pages Quêtes, Catalogues, Stories,
 Dialogues, Villes, PNJ, Mobs, Voyages inchangées par ailleurs (tests de pages verts). Captures locales
-1280 / 768 / 390 px : `docs/design/428-icones/captures/phase2c-plugadmin/`. **Non couvert** : avis esthétique ;
-l'icône `icon:` des quêtes n'apparaît sur DEV qu'après le prochain déploiement du JAR (avant : icône du
-premier objectif).
+1280 / 768 / 390 px : `docs/design/428-icones/captures/phase2c-plugadmin/`. **Non couvert** : avis esthétique.
+JAR `80acb4ae` déployé sur DEV le 23/10 : `quest.list` renvoie `icon` pour 33/33 quêtes (vérifié) ; `BRICKS`,
+`PUMPKIN` et `RED_DYE` n'ont pas d'icône dédiée et prennent celle du premier objectif.
 
 ### TC-412 — PlugAdmin : icônes pixel art sur les fiches de quête (issue #428 phase 2b, PENDING MANUAL VALIDATION)
 

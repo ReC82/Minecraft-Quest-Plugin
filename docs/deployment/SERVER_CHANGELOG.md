@@ -49,6 +49,26 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-23 - Icône des quêtes dans quest.list et tuiles PlugAdmin (#428 phase 2c, TC-413)
+
+### Changement
+
+Le payload d'agent `quest.list` transmet le material `icon:` de chaque quête (champ `icon`, absent s'il
+est inconnu, rétrocompatible). PlugAdmin affiche une tuile pixel art devant chaque élément des listes de
+contenu (quêtes, histoires, dialogues, villes, PNJ, mobs, catalogues, Voyages) — PR #761.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement (fait par Claude le 23/10/2026 02:11, `80acb4ae`, SHA-256
+`68dee2d3…`, backup `rpgquest-20261023T001127Z-predeploy.jar` du JAR `5bfb9cef`), puis redémarrage DEV
+(0 joueur) ; RPGQuest vert dans `/plugins`. Aucune migration, aucune configuration, aucun contenu.
+PlugAdmin redéployé sur AWS (`80acb4a`). Vérifié : `quest.list` de DEV renvoie `icon` pour 33/33 quêtes.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` (JAR `5bfb9cef`) puis redémarrage ; PlugAdmin :
+`scripts/plugadmin/rollback.sh app`. Le panel reste compatible avec l'ancien JAR (tuile = premier objectif).
+
 ## 2026-10-22 - Atelier IA : « clear » destructifs, enveloppe et palette (#747)
 
 ### Changement

@@ -2228,6 +2228,33 @@ diagnostic **complet** (le message d'action est tronqué à 500 caractères par 
   enseignements » (un appel : description, images et bloc « ENSEIGNEMENTS » — fautes récurrentes,
   contrôles échoués, identifiants inexistants, éléments demandés — sans recopier d'ancien plan), ou de
   continuer en choisissant explicitement la nature de la reprise.
+- **Concevoir avant de placer (#747, 23/10/2026).** « Créer un plan avec l'IA » sur un projet sans
+  conception — et « Nouvelle conception avec les enseignements » — font d'abord rédiger une **conception
+  structurée** (un appel facturé de plus, journalisé « MANUEL — CONCEPTION AVANT LE PLAN ») : une ligne
+  `VOLUME nom | rôle: … | x A..B | z A..B | y A..B | toit: … | relié à: … par …` par volume, et une ligne
+  `ÉLÉMENT exigence | volume: … | position: … | blocs: …` par exigence. Un élément distinct demandé (tour,
+  clocher, porche, abside…) est un volume à part, d'au moins 3 × 3, relié à un autre. Le prompt de conception
+  reçoit le repère du bâtiment (NORD = z 0, SUD = z max, rangée de la façade d'entrée). Le panel lit ces
+  lignes (« Structure lue par le panel » sous la conception), les vérifie contre la description et les limites
+  (volumes hors limites, liens vers un volume inconnu, tour absente ou pas plus haute que le corps principal,
+  exigence non placée) et les transmet au plan comme **CONTRAT DE VOLUMES**, lacunes comprises. Rien n'est
+  propre à un bâtiment.
+- **Exigences mesurées sur le résultat compilé (#747).** Sur la grille de l'aperçu (celle que le plugin
+  construit) : *tour distincte* = au moins 3 × 3 colonnes contiguës (8 au moins) qui dépassent de 4 blocs la
+  hauteur médiane ; *cloche dans la tour* (si la description demande les deux : « cloche présente » ne fait pas
+  un clocher) ; *allée* = file continue d'au moins 5 tapis dans l'axe de l'entrée, sur 40 % de la longueur ;
+  chaque *volume de la conception* = 70 % des colonnes de son pourtour montent jusqu'au haut de ses murs. Sans
+  aperçu : « ◐ non mesurée », jamais présumée. Les **ajouts fonctionnels non demandés** (lit, four, enclume,
+  établi, coffre, étagères) sont signalés « ⚠ … ajout NON DEMANDÉ » et transmis à l'IA pour être retirés.
+  Autel, estrade, porche, croix, charpente restent « ◌ à apprécier visuellement ».
+- **Marches d'entrée (#747).** `staircase` avec `facade` se pose sur la rangée du bord du volume ; devant une
+  porte, son palier est le seuil (porte et murs conservés). Si le mur de façade occupe déjà cette rangée, le
+  refus dit « marches d'entrée (façade …) » et les deux solutions (`anchor: y: 1` sans marches, ou façade en
+  retrait d'une rangée) ; la réparation moteur retire alors les marches inutiles et enterre la fondation.
+- **Réparations moteur ajoutées (#747).** Une porte ou fenêtre dont `wall:` manque de 1 à 2 cellules le mur
+  construit de sa façade est recalée sur ce mur ; un toit `gable` écrit en bloc plein reçoit l'escalier du même
+  matériau (le bloc plein garnit les pignons) ; une cloche écrite sans propriétés prend son attache sur la grille
+  finale (sous une poutre, posée, ou murale) et une cloche flottante est refusée (`UNSUPPORTED_BLOCK`).
 
 **Conception automatique.** Carte du projet : l'IA conçoit, le serveur vérifie et répare, l'IA
 corrige avec le diagnostic exact, puis relit le plan **en architecte** (silhouette, façades,

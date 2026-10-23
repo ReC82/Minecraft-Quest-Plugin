@@ -29,7 +29,9 @@ Parcours :
 1. **Atelier → Nouveau projet** : nom, « Décrivez le bâtiment souhaité », côté de l'entrée ; sous « Taille
    et nom technique », trois limites distinctes : largeur X, longueur Z, hauteur Y (#305 — par ex.
    13 × 9 × 7).
-2. **Créer un plan avec l'IA** (appel facturé, annoncé, protégé du double clic).
+2. **Créer un plan avec l'IA** (appel facturé, annoncé, protégé du double clic). Depuis #747, sans conception
+   détaillée, l'Atelier la fait d'abord rédiger (un appel de plus) : volumes nommés et reliés, éléments rattachés ;
+   « Structure lue par le panel » montre ce que le plan devra tenir (contrat de volumes) et ses lacunes.
 3. **Vérifier le bâtiment** (gratuit) : le résultat s'affiche dans le projet, en français, avec
    l'**aperçu du bâtiment en 3D** (tourner autour, couper au-dessus d'un niveau pour voir l'intérieur) :
    « Le bâtiment n'a pas de porte utilisable du côté de l'entrée », avec la piste de correction.
@@ -37,7 +39,8 @@ Parcours :
    la réponse est une nouvelle version, l'ancienne reste. Depuis #747, la mémoire des tentatives du
    projet (erreurs résolues, régressions, stagnation) et la conformité au brief (✓ / ✗ / ◌) partent
    aussi ; « Nature de la reprise » choisit entre réparation technique et amélioration architecturale
-   (« Automatique » suit la suggestion affichée).
+   (« Automatique » suit la suggestion affichée). Tour, cloche dans la tour, allée et volumes de la conception
+   sont **mesurés** sur l'aperçu compilé ; un meuble non demandé (lit…) est signalé « ⚠ ajout non demandé ».
    Si l'IA répond sans plan (refus, réponse vide, coupée, panne), **aucune version n'est créée** : la
    carte rouge « Le dernier appel à l'IA a échoué » dit pourquoi et propose « Réessayer avec le même
    contexte » ; « Repartir de zéro » est à part, à cocher. Après une stagnation, choisir une stratégie :

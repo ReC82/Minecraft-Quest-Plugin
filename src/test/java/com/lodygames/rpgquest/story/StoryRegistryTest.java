@@ -30,7 +30,8 @@ class StoryRegistryTest {
 
         assertTrue(Files.exists(storiesDirectory.resolve("main_story.yml")));
         assertTrue(registry.find("main_story").isPresent(), "l'exemple embarqué doit être chargé");
-        assertEquals(3, registry.find("main_story").orElseThrow().questIds().size());
+        assertEquals(1, registry.find("main_story").orElseThrow().questIds().size(),
+                "first_steps et crystal_hunt retirées de l'histoire principale (#778)");
     }
 
     @Test

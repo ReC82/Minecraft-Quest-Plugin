@@ -133,9 +133,9 @@ class ContentDeletionPagesTest {
     @Test
     @DisplayName("Un exemple embarqué est signalé dans l'aperçu, avec sa conséquence au redémarrage")
     void previewWarnsAboutBundledExample() throws IOException {
-        writeQuest("first_steps", "Premiers pas", List.of());
+        writeQuest("premiers_pas", "Premiers pas", List.of());
 
-        String html = pages.preview("quests", "first_steps", false, "jeton", null);
+        String html = pages.preview("quests", "premiers_pas", false, "jeton", null);
 
         assertTrue(html.contains("exemples "), html);
         assertTrue(html.contains("recrée au démarrage"), html);

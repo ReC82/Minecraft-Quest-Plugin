@@ -21,7 +21,7 @@ import org.bukkit.configuration.MemoryConfiguration;
  *   cooldown-message: ""
  *   conditions:
  *     - type: QUEST_STATE          # mêmes clés que dans un dialogue
- *       quest: rpgquest:crystal_hunt
+ *       quest: rpgquest:guard_tier1
  *       state: COMPLETED
  *       negate: false
  *       message: "&lt;red&gt;Termine d'abord la chasse au cristal.&lt;/red&gt;"

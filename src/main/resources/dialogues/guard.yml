@@ -1,6 +1,12 @@
 id: rpgquest:guard
 start: greeting
 
+# Issue #778 — le Garde s'appelle désormais Gauthier (nom AFFICHÉ seulement : l'id technique
+# « guard », ses liaisons Citizens et ses quêtes de paliers restent inchangés). Les quêtes
+# obsolètes « Premiers pas » (first_steps) et « La chasse aux monstres » (crystal_hunt) ont été
+# retirées définitivement : leurs choix et leurs nœuds ont disparu de ce dialogue, il n'y reste
+# aucune référence vers elles. Le droit au premier terrain s'obtient par « Gauthier — Palier 1 ».
+#
 # Issue #238 — UX du dialogue remise à plat, sur le MÊME motif que le Guide corrigé par #235 :
 #
 #   accueil → option courte → nœud d'explication (nom de la quête + but + ce qu'il faudra faire)
@@ -21,24 +27,9 @@ start: greeting
 
 nodes:
   greeting:
-    speaker: "Garde"
-    text: "<white>Bienvenue voyageur. Le village a besoin d'aide.</white>"
+    speaker: "Gauthier"
+    text: "<white>Bienvenue voyageur. Je suis Gauthier, le garde du village, et le village a besoin d'aide.</white>"
     choices:
-      - text: "Premiers pas"
-        conditions:
-          - type: QUEST_STATE
-            quest: rpgquest:first_steps
-            state: NOT_STARTED
-        next: offer_first_steps
-      - text: "La chasse aux monstres"
-        conditions:
-          - type: QUEST_STATE
-            quest: rpgquest:first_steps
-            state: COMPLETED
-          - type: QUEST_STATE
-            quest: rpgquest:crystal_hunt
-            state: NOT_STARTED
-        next: offer_crystal_hunt
       - text: "Obtenir un terrain"
         conditions:
           - type: QUEST_STATE
@@ -110,46 +101,10 @@ nodes:
   # Un nœud par quête. Il NOMME la quête, dit son but, et dit ce qu'il faudra faire — avant tout
   # engagement. Le START_QUEST ne vit que sur le bouton « Commencer : … ».
 
-  offer_first_steps:
-    speaker: "Garde"
-    text: >
-      <white>La quête s'appelle <gold>Premiers pas</gold>.</white><newline>
-      <gray>But : apprendre les bases du combat sans t'éloigner du village.</gray><newline>
-      <gray>Ce qu'il faudra faire : éliminer 10 araignées, puis revenir me voir.</gray>
-    choices:
-      - text: "Commencer : Premiers pas"
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:first_steps
-        next: accepted
-      - text: "Pas maintenant"
-        next: greeting
-
-  # Les cibles ne sont volontairement PAS recopiées ici : cette quête est éditable depuis le
-  # Control Panel (#47), et un dialogue qui répète ses objectifs finit par mentir dès la première
-  # modification — c'est exactement ce qui était arrivé, le Garde parlant encore de « crocs
-  # d'araignée » et de « forger une lame » pour une quête devenue une chasse. La liste exacte
-  # s'affiche dans le chat au démarrage (issue #235) et reste dans le journal, toujours à jour.
-  offer_crystal_hunt:
-    speaker: "Garde"
-    text: >
-      <white>La quête s'appelle <gold>La chasse aux monstres</gold>.</white><newline>
-      <gray>But : prouver ta valeur au combat pour le village.</gray><newline>
-      <gray>Ce qu'il faudra faire : les cibles exactes s'afficheront dans le chat dès que tu
-      accepteras, et resteront dans ton journal de quêtes.</gray>
-    choices:
-      - text: "Commencer : La chasse"
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:crystal_hunt
-        next: crystal_hunt_accepted
-      - text: "Pas maintenant"
-        next: greeting
-
   offer_tier1:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
-      <white>La quête s'appelle <gold>Le Garde — Palier 1</gold>.</white><newline>
+      <white>La quête s'appelle <gold>Gauthier — Palier 1</gold>.</white><newline>
       <gray>But : obtenir le droit de poser ton premier terrain.</gray><newline>
       <gray>Ce qu'il faudra faire : repousser les quatre menaces qui rôdent autour des murs —
       5 araignées, 5 zombies, 5 squelettes et 5 creepers — puis revenir me voir.</gray>
@@ -163,9 +118,9 @@ nodes:
         next: greeting
 
   offer_tier2:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
-      <white>La quête s'appelle <gold>Le Garde — Palier 2</gold>.</white><newline>
+      <white>La quête s'appelle <gold>Gauthier — Palier 2</gold>.</white><newline>
       <gray>But : agrandir ton terrain d'un palier.</gray><newline>
       <gray>Ce qu'il faudra faire : 10 araignées, 10 zombies, 10 squelettes et 10 creepers, puis
       revenir me voir.</gray>
@@ -179,9 +134,9 @@ nodes:
         next: greeting
 
   offer_tier3:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
-      <white>La quête s'appelle <gold>Le Garde — Palier 3</gold>.</white><newline>
+      <white>La quête s'appelle <gold>Gauthier — Palier 3</gold>.</white><newline>
       <gray>But : agrandir ton terrain d'un palier.</gray><newline>
       <gray>Ce qu'il faudra faire : 20 araignées, 20 zombies, 20 squelettes et 20 creepers, puis
       revenir me voir.</gray>
@@ -195,9 +150,9 @@ nodes:
         next: greeting
 
   offer_tier4:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
-      <white>La quête s'appelle <gold>Le Garde — Palier 4</gold>.</white><newline>
+      <white>La quête s'appelle <gold>Gauthier — Palier 4</gold>.</white><newline>
       <gray>But : agrandir ton terrain d'un palier.</gray><newline>
       <gray>Ce qu'il faudra faire : 40 araignées, 40 zombies, 40 squelettes et 40 creepers, puis
       revenir me voir. Peu de villageois tiennent ce rythme.</gray>
@@ -211,9 +166,9 @@ nodes:
         next: greeting
 
   offer_tier5:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
-      <white>La quête s'appelle <gold>Le Garde — Palier 5</gold>.</white><newline>
+      <white>La quête s'appelle <gold>Gauthier — Palier 5</gold>.</white><newline>
       <gray>But : agrandir ton terrain une dernière fois.</gray><newline>
       <gray>Ce qu'il faudra faire : 80 araignées, 80 zombies, 80 squelettes et 80 creepers, puis
       revenir me voir. C'est le dernier effort que je te demanderai.</gray>
@@ -231,7 +186,7 @@ nodes:
   # travel.WildConditionsService et dialogue.DialogueTextPlaceholders. Rien n'est modifié dans le
   # Wild par cette lecture.
   wild_conditions:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: "<white>%wild_conditions%</white>"
     choices:
       - text: "Merci"
@@ -243,7 +198,7 @@ nodes:
   # plus que le reliquat, et ce qui est remis est acquis définitivement (survit à la mort, à une
   # reconnexion et à un redémarrage).
   delivery:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: "<white>Voilà où nous en sommes :</white><newline>%delivery_status%"
     choices:
       - text: "Donner mes matériaux"
@@ -255,7 +210,7 @@ nodes:
           - type: CLOSE
 
   delivery_after:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: "<white>%delivery_status%</white>"
     choices:
       # Dépôt partiel : le joueur peut enchaîner s'il a encore quelque chose d'utile.
@@ -277,34 +232,15 @@ nodes:
           - type: CLOSE
 
   delivery_done:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: "<gold>Tu as remis tout ce que je t'avais demandé. C'est en sécurité ici.</gold>"
     choices:
       - text: "Parfait"
         actions:
           - type: CLOSE
 
-  accepted:
-    speaker: "Garde"
-    text: "<green>Bien ! Reviens me voir une fois prêt.</green>"
-    choices:
-      - text: "D'accord"
-        actions:
-          - type: CLOSE
-
-  # Même raison que offer_crystal_hunt : aucune cible recopiée. Le chat vient d'afficher la liste
-  # réelle, et le journal la garde.
-  crystal_hunt_accepted:
-    speaker: "Garde"
-    text: >
-      <green>Bonne chasse. Reviens me voir quand tu auras fait ce qui est demandé.</green>
-    choices:
-      - text: "D'accord"
-        actions:
-          - type: CLOSE
-
   guard_tier1_accepted:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
       <green>Fais tes preuves : élimine 5 araignées, 5 zombies, 5 squelettes
       et 5 creepers. Reviens me voir une fois les quatre menaces repoussées.</green>
@@ -314,7 +250,7 @@ nodes:
           - type: CLOSE
 
   guard_tier2_accepted:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
       <green>Un terrain plus grand, un effort plus grand : 10 araignées,
       10 zombies, 10 squelettes et 10 creepers. Reviens me voir une fois
@@ -325,7 +261,7 @@ nodes:
           - type: CLOSE
 
   guard_tier3_accepted:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
       <green>Toujours plus : 20 araignées, 20 zombies, 20 squelettes et
       20 creepers. Reviens me voir une fois les quatre menaces repoussées.</green>
@@ -335,7 +271,7 @@ nodes:
           - type: CLOSE
 
   guard_tier4_accepted:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
       <green>Peu de villageois tiennent ce rythme : 40 araignées, 40 zombies,
       40 squelettes et 40 creepers. Reviens me voir une fois les quatre
@@ -346,7 +282,7 @@ nodes:
           - type: CLOSE
 
   guard_tier5_accepted:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
       <green>Le dernier effort que je te demande : 80 araignées, 80 zombies,
       80 squelettes et 80 creepers. Reviens me voir une fois les quatre
@@ -357,7 +293,7 @@ nodes:
           - type: CLOSE
 
   guard_tiers_done:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
       <gold>Tu as largement prouvé ta valeur au village. Je n'ai rien de
       plus à te confier pour ton terrain pour l'instant — mais le village
@@ -371,7 +307,7 @@ nodes:
   # en cours : vrai pour Premiers pas seulement, faux pour toutes les autres. Il ne promet plus une
   # récompense qu'il ne connaît pas.
   reward_info:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: >
       <gray>Chaque quête a sa propre récompense. Elle est écrite dans ton journal de quêtes, et
       je te la remets en main propre quand tu reviens me voir.</gray>
@@ -380,7 +316,7 @@ nodes:
         next: greeting
 
   refused:
-    speaker: "Garde"
+    speaker: "Gauthier"
     text: "<gray>Comme tu voudras. Reviens me voir si tu changes d'avis.</gray>"
     choices:
       - text: "D'accord"

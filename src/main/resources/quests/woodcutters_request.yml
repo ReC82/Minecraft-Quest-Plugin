@@ -6,8 +6,8 @@ giver: woodcutter_bob
 icon: OAK_LOG
 repeatable: true
 
-prerequisites:
-  - rpgquest:first_steps
+# Issue #778 : plus aucun prérequis — l'ancien verrou rpgquest:first_steps (quête retirée) a été
+# supprimé. Une progression existante sur cette quête est conservée telle quelle.
 
 steps:
   - id: chop_wood

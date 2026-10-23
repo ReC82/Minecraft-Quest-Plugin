@@ -323,9 +323,9 @@ class ContentDeletionAnalyzerTest {
     @Test
     @DisplayName("Un exemple embarqué prévient de sa réapparition au redémarrage")
     void bundledExampleWarnsAboutReappearance() throws IOException {
-        writeQuest("first_steps", "Premiers pas", List.of());
+        writeQuest("premiers_pas", "Premiers pas", List.of());
 
-        DeletionPlan plan = analyzer.analyze("quests", "first_steps", false);
+        DeletionPlan plan = analyzer.analyze("quests", "premiers_pas", false);
 
         assertTrue(plan.bundledExample());
         assertTrue(plan.notes().stream().anyMatch(n -> n.contains("recrée au démarrage")),

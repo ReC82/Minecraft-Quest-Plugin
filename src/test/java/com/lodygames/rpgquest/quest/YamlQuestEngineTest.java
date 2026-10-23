@@ -22,9 +22,10 @@ class YamlQuestEngineTest {
         engine.start();
 
         assertTrue(Files.exists(tempDir.resolve("quests/premiers_pas.yml")));
-        assertTrue(Files.exists(tempDir.resolve("quests/first_steps.yml")));
         assertTrue(Files.exists(tempDir.resolve("quests/woodcutters_request.yml")));
-        assertTrue(Files.exists(tempDir.resolve("quests/crystal_hunt.yml")));
+        // Issue #778 : retirées définitivement, elles ne doivent plus jamais être recréées.
+        assertFalse(Files.exists(tempDir.resolve("quests/first_steps.yml")));
+        assertFalse(Files.exists(tempDir.resolve("quests/crystal_hunt.yml")));
         for (int tier = 1; tier <= 5; tier++) {
             assertTrue(Files.exists(tempDir.resolve("quests/guard_tier" + tier + ".yml")),
                     "guard_tier" + tier + ".yml doit être généré (issue #179)");
@@ -34,7 +35,7 @@ class YamlQuestEngineTest {
         assertEquals(0, engine.lastReport().issues().size(), () -> "issues: " + engine.lastReport().issues());
         assertTrue(Files.exists(tempDir.resolve("quests/daily_demo_bucheron.yml")),
                 "modèles de démonstration des quêtes périodiques générés (issue #15)");
-        assertEquals(20, engine.quests().size());
+        assertEquals(18, engine.quests().size(), "20 avant #778 : first_steps et crystal_hunt retirées");
     }
 
     @Test

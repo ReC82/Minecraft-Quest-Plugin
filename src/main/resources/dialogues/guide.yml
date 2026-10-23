@@ -265,7 +265,7 @@ nodes:
 
   help_claims:
     speaker: "%npc_name%"
-    text: "<gray>Un claim est un terrain qui t'appartient et que personne d'autre ne peut modifier. Le droit d'en poser un <white>se mérite</white> : il faut d'abord terminer <white>l'histoire principale</white> du village (ta dernière étape, <white>La chasse aux cristaux</white>, se rend au Garde). Une fois ce droit acquis, parle à <white>Jo</white> : il te remet un acte de propriété, et un clic droit avec l'acte dans le monde des claims pose ton terrain. Une Pierre de retour t'est donnée en arrivant là-bas pour revenir au village. Tant que tu n'as pas ce droit, le portail vers le monde des claims reste fermé.</gray>"
+    text: "<gray>Un claim est un terrain qui t'appartient et que personne d'autre ne peut modifier. Le droit d'en poser un <white>se mérite</white> : il faut d'abord rendre à <white>Gauthier</white>, le garde du village, sa quête <white>Gauthier — Palier 1</white>. Une fois ce droit acquis, parle à <white>Jo</white> : il te remet un acte de propriété, et un clic droit avec l'acte dans le monde des claims pose ton terrain. Une Pierre de retour t'est donnée en arrivant là-bas pour revenir au village. Tant que tu n'as pas ce droit, le portail vers le monde des claims reste fermé.</gray>"
     choices:
       - text: "← Autres questions"
         next: help_menu
@@ -285,7 +285,7 @@ nodes:
 
   help_qui:
     speaker: "%npc_name%"
-    text: "<gray>Pour tes quêtes et ton journal : <white>le Libraire</white>. Pour ton premier terrain, une fois l'histoire principale terminée au Garde : <white>Jo</white>, le spécialiste des claims. Pour acheter et vendre : <white>les marchands</white> du village. Et pour te repérer ou une explication : reviens me voir, moi, %npc_name%.</gray>"
+    text: "<gray>Pour tes quêtes et ton journal : <white>le Libraire</white>. Pour ton premier terrain : <white>Gauthier</white>, le garde, te le fait mériter, puis <white>Jo</white>, le spécialiste des claims, te remet l'acte. Pour acheter et vendre : <white>les marchands</white> du village. Et pour te repérer ou une explication : reviens me voir, moi, %npc_name%.</gray>"
     choices:
       - text: "← Autres questions"
         next: help_menu

@@ -94,7 +94,7 @@ public final class ContentExportPages {
             sb.append("<option value=\"").append(fam[0]).append("\">").append(Http.esc(fam[1])).append("</option>");
         }
         sb.append("</select></label>");
-        sb.append("<label>Identifiants <input type=\"text\" name=\"ids\" placeholder=\"rpgquest:first_steps, rpgquest:crystal_hunt\" "
+        sb.append("<label>Identifiants <input type=\"text\" name=\"ids\" placeholder=\"rpgquest:premiers_pas, rpgquest:woodcutters_request\" "
                 + "autocomplete=\"off\" spellcheck=\"false\"></label>");
         sb.append("<button type=\"submit\" class=\"btn\">Exporter la sélection</button>");
         sb.append("<p class=\"muted\">Séparés par des virgules ou des espaces. Laisser vide = toute la famille.</p>");

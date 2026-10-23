@@ -39,7 +39,7 @@ public final class ContentDeletionAnalyzer {
      * réel du dépôt, donc une dérive est détectée au lieu d'être subie.</p>
      */
     public static final List<String> BUNDLED_QUESTS = List.of(
-            "premiers_pas", "first_steps", "woodcutters_request", "crystal_hunt",
+            "premiers_pas", "woodcutters_request",
             "guard_tier1", "guard_tier2", "guard_tier3", "guard_tier4", "guard_tier5",
             "kit_tier2", "kit_tier3", "kit_tier4", "kit_tier5",
             "encounter_bandit_spiders", "encounter_merchant_cactus", "encounter_smith_ore",

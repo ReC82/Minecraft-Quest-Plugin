@@ -56,8 +56,8 @@ class MiniYamlFidelityTest {
         DialogueDraft d = r.draft();
 
         // Inventaire relevé avec SnakeYAML sur le fichier source (rapport #373).
-        assertEquals(22, d.nodes.size(), "répliques");
-        assertEquals(43, d.choiceCount(), "réponses");
+        assertEquals(18, d.nodes.size(), "répliques");
+        assertEquals(35, d.choiceCount(), "réponses");
         int nexts = 0;
         int conditions = 0;
         int actions = 0;
@@ -73,15 +73,17 @@ class MiniYamlFidelityTest {
                 }
             }
         }
-        assertEquals(31, nexts, "suites");
-        assertEquals(16, conditions, "conditions");
-        assertEquals(21, actions, "actions");
+        assertEquals(25, nexts, "suites");
+        assertEquals(13, conditions, "conditions");
+        assertEquals(17, actions, "actions");
         assertTrue(!Diagnostic.hasError(DialogueValidator.validate(d)), DialogueValidator.validate(d).toString());
 
-        DialogueDraft.Node offer = d.nodes.stream().filter(n -> n.id.equals("offer_first_steps")).findFirst().orElseThrow();
-        assertEquals("<white>La quête s'appelle <gold>Premiers pas</gold>.</white><newline> <gray>But : apprendre les "
-                + "bases du combat sans t'éloigner du village.</gray><newline> <gray>Ce qu'il faudra faire : éliminer "
-                + "10 araignées, puis revenir me voir.</gray>", offer.text, "le « > » n'est plus pris pour le texte");
+        // Inventaire mis à jour par #778 (offres first_steps / crystal_hunt retirées du Garde).
+        DialogueDraft.Node offer = d.nodes.stream().filter(n -> n.id.equals("offer_tier1")).findFirst().orElseThrow();
+        assertEquals("<white>La quête s'appelle <gold>Gauthier — Palier 1</gold>.</white><newline> <gray>But : obtenir "
+                + "le droit de poser ton premier terrain.</gray><newline> <gray>Ce qu'il faudra faire : repousser les "
+                + "quatre menaces qui rôdent autour des murs — 5 araignées, 5 zombies, 5 squelettes et 5 creepers — "
+                + "puis revenir me voir.</gray>", offer.text, "le « > » n'est plus pris pour le texte");
     }
 
     @Test

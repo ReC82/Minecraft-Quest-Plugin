@@ -376,7 +376,7 @@ final class PortalForms {
                 .append("negate\" value=\"true\"").append(bool(r.get("negate")) ? " checked" : "")
                 .append("> Inverser (le joueur ne doit PAS remplir la condition)</label></div>");
         sb.append("<div class=\"form-grid\">")
-                .append(field("Quête", text(prefix + "quest", str(r.get("quest")), "rpgquest:crystal_hunt"),
+                .append(field("Quête", text(prefix + "quest", str(r.get("quest")), "rpgquest:guard_tier1"),
                         "Quête dans un état."))
                 .append(field("État de la quête", states.toString(), ""))
                 .append(field("Objet (matériau)", text(prefix + "material", str(r.get("material")), "DIAMOND"),

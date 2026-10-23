@@ -2,8 +2,8 @@
 # Indépendante de Citizens : ce PNJ peut être configuré ici avant même
 # d'exister physiquement en jeu (voir docs/NPC_FORMAT.md).
 id: guard
-display_name: "<yellow>Garde</yellow>"
-description: "Garde du village — donneur de la quête de la chasse aux cristaux."
+display_name: "<yellow>Gauthier</yellow>"
+description: "Gauthier, garde du village — donneur des quêtes de paliers de terrain (#179). Id technique « guard » inchangé (#778)."
 dialogue: rpgquest:guard
 role: quest_giver
 enabled: true

@@ -9,7 +9,7 @@ order: 1
 
 Une fiche par commande utile : **ce qu'elle fait** d'abord, puis **comment exactement**
 (syntaxe, paramètres, exemple copiable, résultat attendu). Les identifiants des exemples
-(`LoDyMcFly`, `guard`, `first_steps`, `main_story`, `world_hub`…) sont des valeurs de test
+(`LoDyMcFly`, `guard`, `woodcutters_request`, `main_story`, `world_hub`…) sont des valeurs de test
 valides — remplacez-les par les vôtres.
 
 Toutes les sous-commandes `/rpgadmin` demandent la permission `rpgquest.admin.world`.
@@ -331,8 +331,8 @@ gauche, ou n'importe quel autre objet en main : rien n'est créé.
 
 Raccourcis d'administration / test (issue #36). Ils réutilisent le moteur de quête (jamais
 d'écriture directe en base) et sont **journalisés** avec l'exécutant, la cible et l'opération.
-Utilisables depuis la console. L'identifiant de quête peut être court (`first_steps`) ou
-namespacé (`rpgquest:first_steps`).
+Utilisables depuis la console. L'identifiant de quête peut être court (`woodcutters_request`) ou
+namespacé (`rpgquest:woodcutters_request`).
 
 ### Démarrer une quête — `/rpgadmin quest start`
 
@@ -354,12 +354,12 @@ respectés par défaut.
 **Exemple**
 
 ```
-/rpgadmin quest start LoDyMcFly first_steps
+/rpgadmin quest start LoDyMcFly woodcutters_request
 ```
 
 **Résultat attendu**
 
-`Quête démarrée pour LoDyMcFly : rpgquest:first_steps`. Si des prérequis manquent, la commande
+`Quête démarrée pour LoDyMcFly : rpgquest:woodcutters_request`. Si des prérequis manquent, la commande
 les liste et suggère `force`.
 
 ---
@@ -379,12 +379,12 @@ n'est re-crédité. Cible **en ligne**.
 **Exemple**
 
 ```
-/rpgadmin quest complete LoDyMcFly first_steps
+/rpgadmin quest complete LoDyMcFly woodcutters_request
 ```
 
 **Résultat attendu**
 
-`Quête complétée (récompenses appliquées) pour LoDyMcFly : rpgquest:first_steps`.
+`Quête complétée (récompenses appliquées) pour LoDyMcFly : rpgquest:woodcutters_request`.
 
 ---
 
@@ -402,7 +402,7 @@ Fonctionne **hors ligne**.
 **Exemple**
 
 ```
-/rpgadmin quest reset LoDyMcFly first_steps
+/rpgadmin quest reset LoDyMcFly woodcutters_request
 ```
 
 **Résultat attendu**

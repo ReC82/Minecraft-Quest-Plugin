@@ -10,8 +10,9 @@
 # Règles (mêmes que les PNJ récurrents de #13) :
 #  - L'offre n'apparaît que si la quête est réellement acceptable MAINTENANT (QUEST_AVAILABLE : ni
 #    active, prérequis remplis) ; seul « Commencer (j'accepte) » porte le START_QUEST (#238).
-#  - Prérequis de la quête : rpgquest:first_steps (Premiers pas, au Garde). Tant qu'elle n'est pas
-#    terminée, Bob le dit au lieu de se taire.
+#  - Issue #778 : la quête n'a plus AUCUN prérequis (l'ancien verrou « Premiers pas », quête retirée,
+#    a disparu avec elle). Bob ne renvoie plus vers aucune autre quête ni vers le garde : tant que
+#    la tâche n'est pas en cours, « Du travail ? » mène directement à son offre.
 #  - L'étape « report_to_npc » (TALK_TO_NPC woodcutter_bob) progresse sur le même clic, AVANT
 #    l'ouverture de ce dialogue (QuestCitizensNpcInteractListener, priorité LOW) : rapporter le bois
 #    se fait en parlant à Bob, sans bouton dédié.
@@ -28,17 +29,6 @@ nodes:
           - type: QUEST_AVAILABLE
             quest: rpgquest:woodcutters_request
         next: offer
-      - text: "Du travail ?"
-        conditions:
-          - type: QUEST_STATE
-            quest: rpgquest:first_steps
-            state: COMPLETED
-            negate: true
-          - type: QUEST_STATE
-            quest: rpgquest:woodcutters_request
-            state: ACTIVE
-            negate: true
-        next: not_yet
       - text: "Où en est ma tâche ?"
         conditions:
           - type: QUEST_STATE
@@ -78,14 +68,6 @@ nodes:
     text: "<gray>Pas de souci. Si tu changes d'avis, je ne bouge pas d'ici.</gray>"
     choices:
       - text: "Au revoir"
-        actions:
-          - type: CLOSE
-
-  not_yet:
-    speaker: "Bûcheron Bob"
-    text: "<white>Je n'envoie personne en forêt sans un minimum d'expérience.</white><newline><gray>Termine d'abord <gold>Premiers pas</gold> auprès du <white>Garde</white>, puis reviens me voir : j'aurai du travail pour toi.</gray>"
-    choices:
-      - text: "Compris"
         actions:
           - type: CLOSE
 

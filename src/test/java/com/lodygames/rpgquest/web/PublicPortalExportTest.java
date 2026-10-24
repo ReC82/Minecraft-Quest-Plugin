@@ -184,19 +184,71 @@ class PublicPortalExportTest {
     }
 
     @Test
-    void profilesCarryOnlyWhatTheBoardsSayAndNeverAnUuid() throws Exception {
-        Map<SkillType, List<ProgressionRepository.LeaderboardRow>> boards = new EnumMap<>(SkillType.class);
-        boards.put(SkillType.GLOBAL, progression.topPlayers(SkillType.GLOBAL, 10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS));
+    void profilesCarryOnlyPersistedValuesAndNeverAnUuid() throws Exception {
+        var activity = new com.lodygames.rpgquest.database.ActivityLogRepository(database);
+        var statistics = new com.lodygames.rpgquest.database.StatisticsRepository(database);
+        java.time.Instant at = java.time.Instant.parse("2026-10-20T10:00:00Z");
+        activity.record(new com.lodygames.rpgquest.database.ActivityLogRepository.Activity("k1", alice,
+                com.lodygames.rpgquest.stats.StatMetric.ENTITY_KILL, "ZOMBIE", null, 1, at)).get(TIMEOUT, TimeUnit.SECONDS);
+        activity.record(new com.lodygames.rpgquest.database.ActivityLogRepository.Activity("k2", alice,
+                com.lodygames.rpgquest.stats.StatMetric.ENTITY_KILL, "SKELETON", null, 1, at)).get(TIMEOUT, TimeUnit.SECONDS);
+        // Un retry de la même action ne compte pas deux fois.
+        activity.record(new com.lodygames.rpgquest.database.ActivityLogRepository.Activity("k2", alice,
+                com.lodygames.rpgquest.stats.StatMetric.ENTITY_KILL, "SKELETON", null, 1, at)).get(TIMEOUT, TimeUnit.SECONDS);
+        var kills = statistics.lifetimeTotals(com.lodygames.rpgquest.stats.StatMetric.find(
+                com.lodygames.rpgquest.stats.StatMetric.ENTITY_KILL).orElseThrow(), 10, PUBLIC, List.of())
+                .get(TIMEOUT, TimeUnit.SECONDS);
+        Map<SkillType, List<ProgressionRepository.LeaderboardRow>> skills = new EnumMap<>(SkillType.class);
+        skills.put(SkillType.GLOBAL, progression.topPlayers(SkillType.GLOBAL, 10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS));
 
-        var result = WebSnapshotWriter.profiles(boards, questStatistics.topCompleted(10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS));
+        var result = WebSnapshotWriter.profiles(new WebSnapshotWriter.ProfileSources(skills,
+                questStatistics.topCompleted(10, PUBLIC).get(TIMEOUT, TimeUnit.SECONDS),
+                Map.of(com.lodygames.rpgquest.stats.StatMetric.ENTITY_KILL, kills)));
 
         assertEquals(2, result.size());
         Map<String, Object> alicesProfile = result.get(0);
         assertEquals("Alice", alicesProfile.get("name"));
         assertEquals(Map.of("GLOBAL", 500L), alicesProfile.get("skills"));
         assertEquals(2L, alicesProfile.get("questsCompleted"));
+        assertEquals(Map.of("ENTITY_KILL", 2L), alicesProfile.get("stats"));
+        assertNull(result.get(1).get("stats"), "aucune valeur inventée pour Bob");
         assertFalse(result.toString().contains(alice.toString()), "jamais d'UUID dans l'export public");
-        assertTrue(alicesProfile.keySet().stream().allMatch(k -> List.of("name", "skills", "questsCompleted").contains(k)));
+        assertTrue(alicesProfile.keySet().stream()
+                .allMatch(k -> List.of("name", "skills", "questsCompleted", "stats").contains(k)));
+    }
+
+    @Test
+    void lifetimeTotalsSkipHiddenAndExcludedPlayersAndRefuseXp() throws Exception {
+        var activity = new com.lodygames.rpgquest.database.ActivityLogRepository(database);
+        var statistics = new com.lodygames.rpgquest.database.StatisticsRepository(database);
+        var metric = com.lodygames.rpgquest.stats.StatMetric.find(com.lodygames.rpgquest.stats.StatMetric.BLOCK_BREAK).orElseThrow();
+        java.time.Instant at = java.time.Instant.parse("2026-10-20T10:00:00Z");
+        activity.record(new com.lodygames.rpgquest.database.ActivityLogRepository.Activity("b1", alice,
+                metric.id(), "STONE", null, 3, at)).get(TIMEOUT, TimeUnit.SECONDS);
+        activity.record(new com.lodygames.rpgquest.database.ActivityLogRepository.Activity("b2", bob,
+                metric.id(), "STONE", null, 5, at)).get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(List.of(new com.lodygames.rpgquest.database.StatisticsRepository.RankedRow("Bob", 5, 1),
+                new com.lodygames.rpgquest.database.StatisticsRepository.RankedRow("Alice", 3, 2)),
+                statistics.lifetimeTotals(metric, 10, PUBLIC, List.of()).get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(List.of("Alice"), statistics.lifetimeTotals(metric, 10, PUBLIC, List.of(bob))
+                .get(TIMEOUT, TimeUnit.SECONDS).stream().map(row -> row.name()).toList());
+        variables.set(alice, PublicProfilePolicy.HIDDEN_KEY, PublicProfilePolicy.HIDDEN_VALUE).get(TIMEOUT, TimeUnit.SECONDS);
+        assertEquals(List.of("Bob"), statistics.lifetimeTotals(metric, 10, PUBLIC, List.of())
+                .get(TIMEOUT, TimeUnit.SECONDS).stream().map(row -> row.name()).toList());
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> statistics.lifetimeTotals(
+                com.lodygames.rpgquest.stats.StatMetric.find("RPG_XP_GLOBAL").orElseThrow(), 10, PUBLIC, List.of()));
+    }
+
+    @Test
+    void everyVisiblePlayerGetsAProfileNotOnlyTheTopOfABoard() {
+        List<ProgressionRepository.LeaderboardRow> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            rows.add(new ProgressionRepository.LeaderboardRow("P" + i, 100 - i));
+        }
+        var result = WebSnapshotWriter.profiles(new WebSnapshotWriter.ProfileSources(
+                Map.of(SkillType.GLOBAL, rows), List.of(), Map.of()));
+        assertEquals(25, result.size());
     }
 
     @Test

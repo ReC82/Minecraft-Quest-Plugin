@@ -20,6 +20,14 @@ class PublicPlayerDataTest {
     }
 
     @Test
+    void profileStatsKeepOnlyNumericCatalogIds() {
+        Object raw = List.of(Map.of("name", "Alice", "stats", Map.of("ENTITY_KILL", 12, "BLOCK_BREAK", "beaucoup",
+                "x; drop", 3, "world", 4)));
+
+        assertEquals(List.of(Map.of("name", "Alice", "stats", Map.of("ENTITY_KILL", 12))), PublicPlayerData.profiles(raw));
+    }
+
+    @Test
     void malformedEntriesAreDroppedNotGuessed() {
         assertEquals(List.of(), PublicPlayerData.profiles(List.of(Map.of("uuid", "u-1"), "Alice", 3)));
         assertEquals(List.of(), PublicPlayerData.profiles("pas une liste"));

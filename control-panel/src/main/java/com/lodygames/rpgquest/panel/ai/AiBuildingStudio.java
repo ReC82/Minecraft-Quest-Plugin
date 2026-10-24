@@ -26,10 +26,63 @@ public final class AiBuildingStudio {
 
     private final AiProviderRegistry registry;
     private final AiSettingsStore settings;
+    private final Trial trial;
 
     public AiBuildingStudio(AiProviderRegistry registry, AiSettingsStore settings) {
+        this(registry, settings, Trial.NONE);
+    }
+
+    private AiBuildingStudio(AiProviderRegistry registry, AiSettingsStore settings, Trial trial) {
         this.registry = registry;
         this.settings = settings;
+        this.trial = trial;
+    }
+
+    /**
+     * #747 : le modèle et le plafond de sortie d'UN essai, choisis explicitement par l'administrateur —
+     * jamais enregistrés dans les réglages du fournisseur. Le journal IA les montre à côté du modèle
+     * configuré.
+     *
+     * @param model     vide : modèle configuré
+     * @param maxTokens 0 : plafond configuré
+     */
+    public record Trial(String model, int maxTokens) {
+
+        public static final Trial NONE = new Trial("", 0);
+
+        /** Un identifiant de modèle tel que les fournisseurs les écrivent (gpt-5-mini, claude-…, gemini-…). */
+        public static final java.util.regex.Pattern MODEL = java.util.regex.Pattern.compile(
+                "[A-Za-z0-9][A-Za-z0-9._:-]{0,63}");
+
+        public static final int MIN_TOKENS = 256;
+        public static final int MAX_TOKENS = 32_000;
+
+        public Trial {
+            model = model == null ? "" : model.trim();
+            maxTokens = Math.max(0, maxTokens);
+        }
+
+        public boolean active() {
+            return !model.isEmpty() || maxTokens > 0;
+        }
+
+        /** Le motif de refus d'un essai mal formé ; vide s'il est valable. */
+        public java.util.Optional<String> invalid() {
+            if (!model.isEmpty() && !MODEL.matcher(model).matches()) {
+                return java.util.Optional.of("Modèle d'essai invalide : lettres, chiffres, « . », « - », « _ » ou « : », "
+                        + "64 caractères au plus.");
+            }
+            if (maxTokens > 0 && (maxTokens < MIN_TOKENS || maxTokens > MAX_TOKENS)) {
+                return java.util.Optional.of("Plafond de sortie de l'essai invalide : de " + MIN_TOKENS + " à "
+                        + MAX_TOKENS + " jetons.");
+            }
+            return java.util.Optional.empty();
+        }
+    }
+
+    /** Le même atelier, pour un essai isolé (#747) ; lui-même si l'essai est vide. */
+    public AiBuildingStudio forTrial(Trial chosen) {
+        return chosen == null || !chosen.active() ? this : new AiBuildingStudio(registry, settings, chosen);
     }
 
     /**
@@ -268,7 +321,7 @@ public final class AiBuildingStudio {
         if (provider == null) {
             return failed(providerId, providerId, "Fournisseur inconnu : « " + providerId + " ».", null, manifest);
         }
-        AiProviderSettings config = settings.get(provider.id());
+        AiProviderSettings config = settings.get(provider.id()).forTrial(trial.model(), trial.maxTokens());
         if (!config.enabled()) {
             return failed(provider.id(), provider.label(),
                     "Le fournisseur « " + provider.label() + " » est désactivé.", null, manifest);
@@ -285,6 +338,11 @@ public final class AiBuildingStudio {
         m.put("provider", provider.id());
         m.put("configuredModel", config.model().isEmpty() ? provider.defaultModel() + " (défaut du fournisseur)"
                 : config.model());
+        if (trial.active()) {
+            // #747 : un essai isolé le dit dans le journal ; les réglages enregistrés n'ont pas changé.
+            m.put("trial", Map.of("model", trial.model(), "maxOutputTokens", trial.maxTokens(),
+                    "savedSettingsUnchanged", true));
+        }
         m.put("maxOutputTokens", call.maxOutputTokens());
         m.put("timeoutSeconds", config.timeoutSeconds());
         AiProvider.Result result = provider.generate(call, config);

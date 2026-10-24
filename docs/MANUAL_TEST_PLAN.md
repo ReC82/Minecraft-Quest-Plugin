@@ -9092,3 +9092,22 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 **Résultat attendu** : `Ron` mène à la fiche d'état de Rondoudou9000, hors ligne compris, sans saisir le pseudo complet.
 
 **Couverture automatisée** : `PlayerCatalogTest` (pseudo partiel, connectés d'abord, exact par pseudo/UUID insensible à la casse, pseudo porté par deux entrées → choix par UUID, plafond), `QuestPlayerSearchTest` (/quests et /stories : suggestions, choix par UUID, datalist, pseudo complet, aucun résultat, actions masquées tant que la saisie est ambiguë).
+
+### TC-428 — #747 — Atelier : enregistrer malgré les avertissements, exigences actualisées, essai de modèle (issue #747, lot A du 24/10, PENDING MANUAL VALIDATION)
+
+**But** : une version compilée entièrement mais refusée pour un défaut contournable s'enregistre et se pose sur geste explicite, marquée « avec avertissements » ; les consignes données dans « Améliorer » sont conservées et prioritaires ; un modèle d'essai ne vaut que pour son appel.
+
+**Prérequis** : JAR et PlugAdmin du lot A #747 (24/10) en ligne sur DEV. Projet de test **« TEST #747c église (ne pas utiliser) »** (jamais l'Église du hub). Un emplacement de test libre dans un monde de test.
+
+1. Atelier → projet de test → **Historique de ce projet** → ouvrir **V-8776ad09**. Cliquer **Vérifier le bâtiment** (gratuit) si la vérification affichée date d'avant le 24/10.
+   **Attendu** : la carte « Vérifier » liste « Des blocs tomberaient à la pose… » et propose, replié, **« Enregistrer malgré les avertissements »** : `UNSUPPORTED_BLOCK` et son effet (« peut se détacher et tomber en objet… »), une case à cocher.
+2. Sans cocher la case, cliquer **Enregistrer avec avertissements**. **Attendu** : « Cochez la confirmation… Rien n'a été envoyé. »
+3. Cocher, cliquer. **Attendu** : « Enregistré avec avertissements » (icône d'alerte) et le bandeau « Version non conforme, enregistrée à votre demande… » ; **Bibliothèque** : la description du bâtiment se termine par « ENREGISTRÉ AVEC AVERTISSEMENTS ACCEPTÉS : UNSUPPORTED_BLOCK. ».
+4. **Choisir un emplacement** → emplacement de test → prévisualiser la pose. **Attendu** : avertissement « Bâtiment non conforme, enregistré avec avertissements acceptés… ». Poser (geste habituel), puis en jeu : l'église complète est posée (nef, tour, cloche, allée) ; la lanterne sous la cloche peut manquer ou tomber. **Retirer le bâtiment et restaurer le terrain** ensuite.
+5. Ouvrir la dernière version **V-007bcdcc** (`PLAN_INVALID`). **Attendu** : aucun « Enregistrer malgré les avertissements » ; l'explication précise du refus reste affichée.
+6. Sur une version acceptée d'un projet de test, **Améliorer avec l'IA** avec la consigne « Ajoute un lit rouge. ». Sur la version suivante, rouvrir « Améliorer » : **Attendu** : la ligne « 1 exigence(s) actualisée(s) conservée(s), prioritaires… — la plus récente : « Ajoute un lit rouge. » » ; le lit n'est plus signalé « ajout non demandé ». Journal IA (export texte) : bloc « EXIGENCES ACTUALISÉES PAR L'ADMINISTRATEUR » dans la requête, et « TA PROPOSITION PRÉCÉDENTE A PASSÉ LES CONTRÔLES DU SERVEUR ».
+7. Dans un formulaire payant, ouvrir « Essai avec un autre modèle », saisir `gpt 5` (avec une espace). **Attendu** : « Modèle d'essai invalide… Rien n'a été demandé à l'IA. » ; **Fournisseurs d'IA** : le modèle enregistré n'a pas changé.
+
+**Résultat attendu** : l'église V-8776ad09 s'enregistre et se pose après acceptation de son unique défaut ; V-007bcdcc reste bloquée ; les consignes repartent à chaque reprise.
+
+**Couverture automatisée** : `AcceptableDefects747Test` (plugin : V-8776ad09 et V-007bcdcc réels — défaut déclaré contournable avec son effet, refus sans confirmation, enregistrement marqué, confirmation d'autres défauts refusée, `PLAN_INVALID` jamais contournable, impossibilités), `RequirementUpdates747Test` (consigne de la cabane prioritaire, dédoublonnage, clôture par la description, bornes), `WorkshopFlowTest` (formulaire, case obligatoire, codes transmis, « Enregistré avec avertissements », impossibilité sans formulaire, consignes conservées d'un appel à l'autre, version acceptée non « refusée », modèle d'essai pour un seul appel, modèle mal formé refusé sans appel).

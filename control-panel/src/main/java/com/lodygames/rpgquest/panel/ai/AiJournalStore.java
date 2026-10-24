@@ -244,6 +244,33 @@ public final class AiJournalStore {
         return out;
     }
 
+    /** Les seuls événements de ces types pour un sujet, dans l'ordre (#747 : sans relire les gros corps d'appel). */
+    public List<Event> events(String scope, String subjectId, java.util.Set<String> kinds) {
+        List<Event> out = new ArrayList<>();
+        if (kinds == null || kinds.isEmpty()) {
+            return out;
+        }
+        String marks = String.join(",", java.util.Collections.nCopies(kinds.size(), "?"));
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT * FROM ai_journal_event WHERE scope = ? AND subject_id = ? AND kind IN (" + marks
+                        + ") ORDER BY seq")) {
+            ps.setString(1, scope);
+            ps.setString(2, subjectId);
+            int i = 3;
+            for (String kind : kinds) {
+                ps.setString(i++, kind);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(read(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture impossible du journal IA", e);
+        }
+        return out;
+    }
+
     /** Le dernier événement d'un sujet, s'il y en a. */
     public Optional<Event> last(String scope, String subjectId) {
         List<Event> all = events(scope, subjectId);

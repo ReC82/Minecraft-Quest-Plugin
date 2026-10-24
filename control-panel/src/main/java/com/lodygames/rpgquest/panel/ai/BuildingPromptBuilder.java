@@ -675,8 +675,9 @@ public final class BuildingPromptBuilder {
                 Traduis-la FIDÈLEMENT dans le vocabulaire du plan : chaque pièce, chaque meuble,
                 chaque élément de décoration et chaque accès qu'elle prévoit doit apparaître, à sa
                 place et dans sa matière. Si un élément est impossible avec les instructions du
-                moteur, fais l'équivalent le plus proche et garde tout le reste. Le brief ci-dessus
-                reste la référence en cas de doute.
+                moteur, fais l'équivalent le plus proche et garde tout le reste. En cas de
+                contradiction, l'ordre de priorité est : les EXIGENCES ACTUALISÉES de l'administrateur
+                (s'il y en a, à la fin de sa description), puis sa description, puis cette conception.
                 """.formatted(demand.design()) + contractSection(demand);
     }
 
@@ -847,7 +848,7 @@ public final class BuildingPromptBuilder {
      * @param memory       le bloc « MÉMOIRE DES TENTATIVES » ({@link AttemptMemory#promptBlock}) ; vide si aucune
      * @param requirements le bloc « CONFORMITÉ AU BRIEF » ({@link BriefRequirements.Report#promptBlock}) ; vide si aucun
      */
-    public record Repair(RepairMode mode, String memory, String requirements) {
+    public record Repair(RepairMode mode, String memory, String requirements, boolean accepted) {
 
         public Repair {
             mode = mode == null ? RepairMode.REPAIR : mode;
@@ -855,8 +856,21 @@ public final class BuildingPromptBuilder {
             requirements = requirements == null ? "" : requirements.trim();
         }
 
+        public Repair(RepairMode mode, String memory, String requirements) {
+            this(mode, memory, requirements, false);
+        }
+
         public static Repair of(RepairMode mode, String memory, String requirements) {
-            return new Repair(mode, memory, requirements);
+            return new Repair(mode, memory, requirements, false);
+        }
+
+        /**
+         * #747 : la version reprise a PASSÉ les contrôles du serveur — la reprise est une demande de
+         * modification, pas la correction d'un refus. La cabane du 23/10 se lisait « refusée » à cause
+         * d'un simple avertissement de mobilier.
+         */
+        public Repair accepted(boolean passed) {
+            return new Repair(mode, memory, requirements, passed);
         }
     }
 
@@ -883,13 +897,12 @@ public final class BuildingPromptBuilder {
         return """
                 %s
 
-                TA PROPOSITION PRÉCÉDENTE A ÉTÉ REFUSÉE PAR LE SERVEUR
+                %s
                 %s
 
-                Motif exact :
                 %s
                 %s
-                Plan refusé :
+                %s
                 %s
                 %s%s
                 Les coordonnées citées par le motif sont MESURÉES sur la grille construite : elles
@@ -899,10 +912,15 @@ public final class BuildingPromptBuilder {
                 nulle part. Si une zone sort du volume, ramène-la dans les dimensions déclarées
                 (de 0 à size-1). Un plan identique au précédent est refusé sans être lu.
                 Produis le plan YAML corrigé, et rien d'autre.
-                """.formatted(userPrompt(demand), budget,
+                """.formatted(userPrompt(demand),
+                r.accepted() ? "TA PROPOSITION PRÉCÉDENTE A PASSÉ LES CONTRÔLES DU SERVEUR ; L'ADMINISTRATEUR DEMANDE "
+                        + "DES MODIFICATIONS" : "TA PROPOSITION PRÉCÉDENTE A ÉTÉ REFUSÉE PAR LE SERVEUR", budget,
+                r.accepted() ? "Ce qui est demandé (remarques du serveur et consignes de l'administrateur) :"
+                        : "Motif exact :",
                 refusal == null || refusal.isBlank() ? "motif non transmis" : refusal.trim(),
                 measured,
-                previousPlan == null ? "" : previousPlan.trim(),
+                (r.accepted() ? "Plan accepté, à modifier :\n" : "Plan refusé :\n")
+                        + (previousPlan == null ? "" : previousPlan.trim()),
                 context(r), instruction(r.mode()));
     }
 

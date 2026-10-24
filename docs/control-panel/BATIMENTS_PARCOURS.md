@@ -45,7 +45,16 @@ Parcours :
    carte rouge « Le dernier appel à l'IA a échoué » dit pourquoi et propose « Réessayer avec le même
    contexte » ; « Repartir de zéro » est à part, à cocher. Après une stagnation, choisir une stratégie :
    reprendre depuis la meilleure version, ou « Nouvelle conception avec les enseignements ».
+   Depuis le 24/10 (#747), ce que vous écrivez dans « Améliorer » devient une **exigence actualisée** : elle
+   repart avec tous les appels suivants et prime sur la description et la conception (« pièce vide » puis
+   « ajoute un lit » : le lit l'emporte). Modifier la description les remplace. Le volet replié « Essai avec un
+   autre modèle » choisit un modèle et un plafond de sortie **pour cet appel seulement**.
 5. **Enregistrer dans la bibliothèque** : jamais de remplacement implicite ; un nom déjà pris est signalé.
+   Une version refusée uniquement pour des défauts contournables (lanterne sans support, zone sombre, fenêtres,
+   accès…) propose, dans « Vérifier », **« Enregistrer malgré les avertissements »** : défauts et effets en jeu
+   listés, case à cocher, aucun appel IA. Le serveur revérifie les défauts ; la version reste « Enregistré avec
+   avertissements » et la pose le rappelle. Un plan illisible, un bloc inconnu, une zone hors volume ou un lit /
+   une porte incomplets restent bloqués.
 6. **Choisir un emplacement** (depuis l'Atelier) ou **Placer sur un emplacement** (depuis la Bibliothèque) :
    les Emplacements s'ouvrent avec le bâtiment déjà choisi ; prévisualiser la pose, confirmer (#213/#234/#268).
 7. Retirer un bâtiment : **« Retirer le bâtiment et restaurer le terrain »**, en tête de la fiche d'un

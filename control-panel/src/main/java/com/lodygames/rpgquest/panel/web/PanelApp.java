@@ -1380,10 +1380,11 @@ public final class PanelApp {
             // tranche dans « Le bâtiment souhaité ».
             Optional<String> orientation = PAID_WORKSHOP_GESTURES.contains(gesture)
                     ? com.lodygames.rpgquest.panel.building.BriefOrientation.conflict(project.get())
+                    .map(o -> o + " Rien n'a été demandé à l'IA.").or(() -> trialRefusal(f))
                     : Optional.empty();
             PlanOutcome outcome = orientation.isPresent()
                     ? PlanOutcome.redirect(projectLocation(project.get().id(), f.get("draft"), null,
-                            orientation.get() + " Rien n'a été demandé à l'IA."))
+                            orientation.get()))
                     : switch (gesture) {
                 case "project_save" -> projectSave(session, project.get(), f);
                 case "propose" -> planPropose(session, agentId, project.get(), f);
@@ -1577,10 +1578,52 @@ public final class PanelApp {
      * La demande faite à l'IA, à partir du projet — jamais d'un emplacement. #289 : avec la
      * conception détaillée en vigueur, que chaque plan, correction et critique doit respecter.
      */
+    /**
+     * #747 : l'atelier IA d'un geste — avec le modèle et le plafond d'essai choisis dans le formulaire,
+     * s'il y en a (validés en amont par {@link #trialRefusal}). Les réglages enregistrés ne changent pas.
+     */
+    private com.lodygames.rpgquest.panel.ai.AiBuildingStudio studioFor(Map<String, String> f) {
+        return aiBuildingStudio.forTrial(trialOf(f));
+    }
+
+    private static com.lodygames.rpgquest.panel.ai.AiBuildingStudio.Trial trialOf(Map<String, String> f) {
+        return new com.lodygames.rpgquest.panel.ai.AiBuildingStudio.Trial(f.getOrDefault("trial_model", ""),
+                parseIntOr(f.getOrDefault("trial_max_tokens", "").trim(), 0));
+    }
+
+    /** Le refus d'un essai mal formé, avant tout appel ; vide s'il est valable ou absent. */
+    static Optional<String> trialRefusal(Map<String, String> f) {
+        String tokens = f.getOrDefault("trial_max_tokens", "").trim();
+        if (!tokens.isEmpty() && !tokens.matches("[0-9]{1,6}")) {
+            return Optional.of("Plafond de sortie de l'essai invalide : un nombre de jetons. Rien n'a été demandé à l'IA.");
+        }
+        return trialOf(f).invalid().map(why -> why + " Rien n'a été demandé à l'IA.");
+    }
+
+    /** #747 : les consignes données depuis la dernière modification de la description, relues dans le journal. */
+    private com.lodygames.rpgquest.panel.ai.RequirementUpdates updatesOf(
+            com.lodygames.rpgquest.panel.building.BuildingProject p) {
+        try {
+            return com.lodygames.rpgquest.panel.ai.RequirementUpdates.fromJournal(aiJournal.store().events(
+                    com.lodygames.rpgquest.panel.ai.BuildingAiJournal.SCOPE, p.id(),
+                    com.lodygames.rpgquest.panel.ai.RequirementUpdates.JOURNAL_KINDS));
+        } catch (RuntimeException unreadable) {
+            LOG.log(System.Logger.Level.WARNING, "Exigences actualisées illisibles pour le projet " + p.id() + " : "
+                    + unreadable.getMessage());
+            return com.lodygames.rpgquest.panel.ai.RequirementUpdates.none();
+        }
+    }
+
+    /** #747 : la description et ses exigences actualisées — ce que les contrôles de conformité lisent. */
+    private String currentBrief(com.lodygames.rpgquest.panel.building.BuildingProject p) {
+        var updates = updatesOf(p);
+        return updates.isEmpty() ? p.brief() : p.brief() + "\n" + updates.text();
+    }
+
     private com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demandOf(
             com.lodygames.rpgquest.panel.building.BuildingProject p) {
         return new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(p.id(), p.name(), p.front(),
-                p.briefForAi(), p.maxWidth(), p.maxDepth(), p.maxHeight(), p.buildingId(),
+                p.briefForAi() + updatesOf(p).promptBlock(), p.maxWidth(), p.maxDepth(), p.maxHeight(), p.buildingId(),
                 designDocs.latest(p.id()).map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text)
                         .orElse(""));
     }
@@ -1600,7 +1643,7 @@ public final class PanelApp {
         if (replay.isPresent()) {
             return replay.get();
         }
-        var proposal = aiBuildingStudio.design(f.getOrDefault("provider", "").trim(), demandOf(project),
+        var proposal = studioFor(f).design(f.getOrDefault("provider", "").trim(), demandOf(project),
                 referencesOf(project.id()));
         aiJournal.call(project.id(), manualCall(session, "MANUEL — CONCEPTION DÉTAILLÉE", "", "",
                 "Rédaction de la conception détaillée depuis le brief et les contraintes ; aucun plan ni "
@@ -1675,7 +1718,7 @@ public final class PanelApp {
             return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null, designFailure.get()));
         }
         var demand = demandOf(project);
-        var proposal = aiBuildingStudio.propose(f.getOrDefault("provider", "").trim(), demand,
+        var proposal = studioFor(f).propose(f.getOrDefault("provider", "").trim(), demand,
                 referencesOf(project.id()), lessons);
         // #747 : si l'appel échoue, la version affichée (ou la plus récente qui a un plan) reste active.
         String kept = planDrafts.find(f.get("draft")).filter(d -> d.hasPlan() && project.id().equals(d.projectId()))
@@ -1705,7 +1748,7 @@ public final class PanelApp {
     private Optional<String> designBeforePlan(Session session,
                                               com.lodygames.rpgquest.panel.building.BuildingProject project,
                                               Map<String, String> f, String lessons) {
-        var proposal = aiBuildingStudio.design(f.getOrDefault("provider", "").trim(), demandOf(project),
+        var proposal = studioFor(f).design(f.getOrDefault("provider", "").trim(), demandOf(project),
                 referencesOf(project.id()), lessons);
         aiJournal.call(project.id(), manualCall(session, "MANUEL — CONCEPTION AVANT LE PLAN", "", "",
                 lessons.isBlank() ? "Conception structurée (volumes, éléments) rédigée avant le plan : brief, "
@@ -1748,7 +1791,7 @@ public final class PanelApp {
     private String lessonsOf(com.lodygames.rpgquest.panel.building.BuildingProject project) {
         var memory = com.lodygames.rpgquest.panel.ai.AttemptMemory.fromVersions(project,
                 planDrafts.forProject(project.agentId(), project.id()), planWorkbench);
-        var requirements = com.lodygames.rpgquest.panel.ai.BriefRequirements.extract(project.brief());
+        var requirements = com.lodygames.rpgquest.panel.ai.BriefRequirements.extract(currentBrief(project));
         StringBuilder sb = new StringBuilder(memory.lessonsBlock());
         if (!requirements.isEmpty()) {
             sb.append(sb.isEmpty() ? "" : "\n").append("ÉLÉMENTS DEMANDÉS PAR LA DESCRIPTION — tous dans la "
@@ -1808,14 +1851,17 @@ public final class PanelApp {
                 ? com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop.formatMetrics(
                         com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.from(audit.details()).metrics())
                 : "";
+        // #747 : la consigne devient une exigence actualisée AVANT l'appel — elle part avec celui-ci et
+        // avec tous les suivants, et prime sur la description et la conception (cabane du 23/10).
+        aiJournal.requirementUpdate(project.id(), session.username(), draft.id(), f.getOrDefault("notes", ""));
         var demand = demandOf(project);
         // #739 : le verdict transmis est relevé dans le journal, avec son empreinte, avant l'appel.
         String sentDiagnosis = journalVerdict(session, project, draft, audit);
         // #747 : la mémoire des tentatives du projet (relue dans son journal), la conformité au brief
         // et la nature de la reprise partent avec le motif — plus seulement le dernier diagnostic.
-        var plan = workshopRepairPlan(project, draft, audit, project.brief(), f.getOrDefault("mode", "auto"));
+        var plan = workshopRepairPlan(project, draft, audit, currentBrief(project), f.getOrDefault("mode", "auto"));
         var references = referencesOf(project.id());
-        var proposal = aiBuildingStudio.correct(f.getOrDefault("provider", "").trim(), demand,
+        var proposal = studioFor(f).correct(f.getOrDefault("provider", "").trim(), demand,
                 draft.plan(), reason, measured, references, plan.repair());
         String retryOf = f.getOrDefault("retry_of", "").trim();
         List<String> context = new java.util.ArrayList<>(List.of(
@@ -1904,8 +1950,10 @@ public final class PanelApp {
             mode = com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.RepairMode.REPAIR;
             why = "automatique : ni stagnation, ni régression, description réalisée sur les points vérifiables";
         }
+        boolean passed = audit != null && audit.current() && audit.status() == BuildingPlanWorkbench.Status.DONE
+                && com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.from(audit.details()).accepted();
         return new WorkshopRepairPlan(com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Repair.of(mode,
-                memory.promptBlock(draft.id()), compliance.promptBlock()), memory, compliance, why);
+                memory.promptBlock(draft.id()), compliance.promptBlock()).accepted(passed), memory, compliance, why);
     }
 
     /**
@@ -1964,7 +2012,7 @@ public final class PanelApp {
         }
         try {
             var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
-            var plan = workshopRepairPlan(project, draft, audit, project.brief(), "auto");
+            var plan = workshopRepairPlan(project, draft, audit, currentBrief(project), "auto");
             int images = referenceImages.list(project.id()).size();
             var regressions = plan.memory().regressionsOf(draft.id());
             String lost = lostRequirements(project, draft, plan.compliance());
@@ -1976,6 +2024,10 @@ public final class PanelApp {
                     com.lodygames.rpgquest.panel.ai.BriefRequirements.Status::line).toList());
             plan.compliance().extras().forEach(extra -> complianceLines.add("⚠ " + extra
                     + " — ajout NON DEMANDÉ par la description (transmis à l'IA pour être retiré)"));
+            var updates = updatesOf(project);
+            if (!updates.isEmpty()) {
+                complianceLines.add(0, updates.summary());
+            }
             return new WorkshopPages.RepairInfo(plan.memory().summary(), complianceLines,
                     plan.repair().mode().label(), "Suggestion " + plan.why() + ".",
                     images == 0 ? "Aucune image de référence attachée au projet : l'appel part sans image."
@@ -2009,7 +2061,7 @@ public final class PanelApp {
         if (parent.isEmpty()) {
             return "";
         }
-        var before = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(project.brief(), parent.get().plan(),
+        var before = com.lodygames.rpgquest.panel.ai.BriefRequirements.evaluate(currentBrief(project), parent.get().plan(),
                 paletteOf(planWorkbench.state(parent.get(), BuildingPlanDraftStore.Check.AUDIT)),
                 voxelsOf(parent.get()), designOf(project));
         java.util.Set<String> hadBefore = new java.util.LinkedHashSet<>();
@@ -2584,6 +2636,27 @@ public final class PanelApp {
                                 + "envoyé."));
             }
             fields.put("replace", republish ? "true" : "false");
+            // #747 : enregistrer malgré des défauts contournables. Le panel exige la case cochée et
+            // une vérification À JOUR de cette révision dont les défauts sont exactement ceux
+            // confirmés ; le plugin refait le même contrôle sur le plan reçu.
+            String acceptDefects = f.getOrDefault("accept_defects", "").trim();
+            if (!acceptDefects.isEmpty()) {
+                if (!"yes".equals(f.getOrDefault("accept_confirm", ""))) {
+                    return PlanOutcome.redirect(projectLocation(project.id(), current.id(), null,
+                            "Cochez la confirmation : vous enregistrez une version avec des défauts connus. Rien "
+                                    + "n'a été envoyé."));
+                }
+                var defects = com.lodygames.rpgquest.panel.building.AcceptableDefects.of(
+                        planWorkbench.state(current, BuildingPlanDraftStore.Check.AUDIT));
+                if (defects.isEmpty() || !com.lodygames.rpgquest.panel.building.AcceptableDefects.param(defects)
+                        .equals(acceptDefects)) {
+                    return PlanOutcome.redirect(projectLocation(project.id(), current.id(), null,
+                            "Les défauts confirmés ne sont plus ceux de la dernière vérification de cette révision "
+                                    + "(plan modifié ou vérification périmée). Vérifiez de nouveau, relisez les "
+                                    + "défauts, puis confirmez. Rien n'a été envoyé."));
+                }
+                fields.put("accept_defects", acceptDefects);
+            }
             String expectedVersion = f.getOrDefault("expected_version", "").trim();
             if (republish && !expectedVersion.isEmpty() && !"0".equals(expectedVersion)) {
                 fields.put("expected_version", expectedVersion);

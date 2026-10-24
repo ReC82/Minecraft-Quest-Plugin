@@ -444,6 +444,63 @@ class WorkshopFlowTest {
         assertTrue(main.contains("Choisir un emplacement"));
     }
 
+    /** #747 : un refus dont le seul défaut est contournable, tel que le plugin le déclare. */
+    private static final String AUDIT_ACCEPTABLE = "{\"code\":\"ARCHITECTURE_REFUSED\","
+            + "\"codes\":[\"UNSUPPORTED_BLOCK\"],\"message\":\"Une lanterne pend sans support.\","
+            + "\"buildingId\":\"bibliotheque_v2\",\"blocks\":1500,\"warnings\":[],"
+            + "\"acceptable\":{\"UNSUPPORTED_BLOCK\":\"peut tomber en objet\"},"
+            + "\"metrics\":{\"floors\":1,\"reachableFloors\":1}}";
+
+    /**
+     * #747 (23/10/2026) : « si on a un aperçu on devrait pouvoir le construire avec un avertissement ».
+     * Le défaut et son effet sont affichés, la case est obligatoire, les codes partent au serveur, et
+     * la version enregistrée reste « avec avertissements ».
+     */
+    @Test
+    void aCompleteGridWithAcceptableDefectsCanBeSavedOnlyAfterExplicitConfirmation() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_ACCEPTABLE);
+        String page = get(withDraft).body();
+        assertTrue(page.contains("Enregistrer malgré les avertissements"), mainCard(page));
+        assertTrue(page.contains("peut tomber en objet"), "l'effet en jeu est affiché");
+        String form = formAround(page, "name=\"accept_defects\"");
+        String base = "_csrf=" + csrf(page) + "&_action=generate"
+                + "&id=" + field(form, "name=\"id\" value=\"([^\"]+)\"")
+                + "&draft=" + field(form, "name=\"draft\" value=\"([^\"]+)\"")
+                + "&version=" + field(form, "name=\"version\" value=\"([^\"]+)\"")
+                + "&plan=" + enc(unescape(field(form, "name=\"plan\" value=\"([^\"]*)\"")))
+                + "&accept_defects=UNSUPPORTED_BLOCK";
+
+        post("/buildings/workshop/project", base);
+        assertTrue(store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .noneMatch(a -> "building.generate".equals(a.type())), "sans la case, rien ne part");
+        post("/buildings/workshop/project", base.replace("UNSUPPORTED_BLOCK", "DARK_AREA") + "&accept_confirm=yes");
+        assertTrue(store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .noneMatch(a -> "building.generate".equals(a.type())), "d'autres défauts que ceux vérifiés : refus");
+
+        post("/buildings/workshop/project", base + "&accept_confirm=yes");
+        AgentActionRow queued = latest("building.generate");
+        assertEquals("UNSUPPORTED_BLOCK", queued.params().get("accept_defects"));
+        store.recordResult(queued.id(), TestConfig.AGENT_ID, AgentActionStatus.SUCCESS, "", "ok",
+                "{\"action_id\":\"" + queued.id() + "\",\"status\":\"SUCCESS\",\"message\":\"ok\","
+                        + "\"details\":{\"code\":\"GENERATED_WITH_WARNINGS\",\"buildingId\":\"bibliotheque_v2\","
+                        + "\"message\":\"AVEC AVERTISSEMENTS ACCEPTÉS (UNSUPPORTED_BLOCK)\"}}", Instant.now());
+        String main = mainCard(get(withDraft).body());
+        assertTrue(main.contains("Enregistré avec avertissements"), main);
+        assertTrue(main.contains("Version non conforme"), main);
+        assertEquals(1, aiCalls.get(), "aucun appel à l'IA pour enregistrer");
+    }
+
+    /** #747 : une impossibilité (plan illisible) n'offre jamais l'enregistrement malgré défauts. */
+    @Test
+    void anImpossiblePlanNeverOffersToSaveWithWarnings() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+        assertFalse(get(withDraft).body().contains("Enregistrer malgré les avertissements"));
+    }
+
     /** Le nom technique du PROJET s'impose au plan de l'IA — sans quoi on viserait la V1. */
     @Test
     void theProjectNameReplacesTheModelsIdentifierAsANewVersion() throws Exception {
@@ -463,6 +520,64 @@ class WorkshopFlowTest {
         BuildingPlanDraft d = drafts().find(draftId(recovered)).orElseThrow();
         assertEquals(2, d.version(), "l'alignement est une nouvelle version, tracée");
         assertEquals(2, drafts().revisions(d.id()).size());
+    }
+
+    /**
+     * #747 — Cabane du Hub (23/10/2026) : « pièce vide » puis, dans « Améliorer », un lit et un coffre.
+     * La consigne part comme EXIGENCE ACTUALISÉE prioritaire, une version acceptée n'est plus dite
+     * « refusée », et la consigne repart avec la reprise suivante, à côté de la nouvelle. L'essai avec un
+     * autre modèle ne vaut que pour son appel.
+     */
+    @Test
+    void ownerInstructionsBecomeLastingPriorityRequirementsAndATrialModelIsUsedOnlyForItsCall() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        String page = get(withDraft).body();
+        String form = formAround(page, "value=\"correct\"");
+        assertTrue(form.contains("Essai avec un autre modèle"), "le choix d'essai est proposé");
+
+        String first = location(post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=correct&id="
+                + id(withDraft) + "&draft=" + draftId(withDraft) + "&version=1&provider=openai&request_token="
+                + token(form) + "&notes=" + enc("Ajoute un lit rouge et un coffre.")
+                + "&trial_model=gpt-5-mini&trial_max_tokens=16000"));
+        assertEquals(2, aiCalls.get());
+        assertTrue(lastAiRequest.contains("\"model\":\"gpt-5-mini\""), lastAiRequest.substring(0, 200));
+        assertTrue(lastAiRequest.contains("\"max_completion_tokens\":16000"));
+        assertTrue(lastAiRequest.contains("EXIGENCES ACTUALISÉES PAR L'ADMINISTRATEUR"));
+        assertTrue(lastAiRequest.contains("PASSÉ LES CONTRÔLES DU SERVEUR"), "une version acceptée n'est pas « refusée »");
+        assertFalse(lastAiRequest.contains("A ÉTÉ REFUSÉE PAR LE SERVEUR"));
+
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        page = get(first).body();
+        form = formAround(page, "value=\"correct\"");
+        assertTrue(page.contains("exigence(s) actualisée(s) conservée(s)"), "l'écran dit ce qui repart");
+        post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=correct&id=" + id(withDraft)
+                + "&draft=" + draftId(first) + "&version=1&provider=openai&request_token=" + token(form)
+                + "&notes=" + enc("Ajoute aussi un four."));
+        assertEquals(3, aiCalls.get());
+        assertTrue(lastAiRequest.contains("\"model\":\"gpt-4o\""), "sans essai : le modèle configuré");
+        assertTrue(lastAiRequest.contains("Ajoute un lit rouge et un coffre.")
+                && lastAiRequest.contains("Ajoute aussi un four."), "les deux consignes repartent");
+        int block = lastAiRequest.indexOf("EXIGENCES ACTUALISÉES");
+        assertTrue(lastAiRequest.indexOf("Ajoute un lit rouge", block) < lastAiRequest.indexOf("Ajoute aussi un four", block),
+                "de la plus ancienne à la plus récente");
+    }
+
+    /** #747 : un modèle d'essai mal formé est refusé avant tout appel. */
+    @Test
+    void aMalformedTrialModelIsRefusedWithoutAnyCall() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+        String page = get(withDraft).body();
+        String form = formAround(page, "value=\"correct\"");
+        String shown = location(post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=correct&id="
+                + id(withDraft) + "&draft=" + draftId(withDraft) + "&version=1&provider=openai&request_token="
+                + token(form) + "&trial_model=" + enc("gpt 5; rm")));
+        assertEquals(1, aiCalls.get());
+        assertTrue(get(shown).body().contains("Modèle d&#39;essai invalide")
+                || get(shown).body().contains("Modèle d'essai invalide"));
     }
 
     // ---- Versions, redémarrage --------------------------------------------------------------

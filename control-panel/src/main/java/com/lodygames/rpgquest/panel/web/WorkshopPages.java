@@ -561,8 +561,10 @@ public final class WorkshopPages {
                         "Réenregistrer dans la bibliothèque", true)).append("</div>");
             }
         } else {
-            sb.append("<h2 class=\"h5\">").append(Icons.icon("check"))
-                    .append("Enregistré dans la bibliothèque")
+            // #747 : une version enregistrée malgré ses défauts le reste, jamais « conforme ».
+            boolean withDefects = "GENERATED_WITH_WARNINGS".equals(String.valueOf(v.generate().details().get("code")));
+            sb.append("<h2 class=\"h5\">").append(Icons.icon(withDefects ? "warning" : "check"))
+                    .append(withDefects ? "Enregistré avec avertissements" : "Enregistré dans la bibliothèque")
                     .append(v.catalog().version() > 0 ? " — version " + v.catalog().version() : "")
                     .append("</h2><p>« ").append(Http.esc(p.name()))
                     .append(" » peut maintenant être posé sur un ou plusieurs emplacements, sans nouvel "
@@ -572,6 +574,11 @@ public final class WorkshopPages {
                     .append("<a class=\"btn btn-outline-primary\" href=\"/buildings/sites?place=")
                     .append(Http.esc(p.buildingId())).append("\">")
                     .append(Icons.icon("world")).append("Choisir un emplacement</a></div>");
+            if (withDefects) {
+                sb.append(Ui.banner("warning", "<strong>Version non conforme, enregistrée à votre demande</strong> "
+                        + "avec ses défauts connus : " + Http.esc(String.valueOf(v.generate().details()
+                        .getOrDefault("message", ""))) + " Examinez-la en jeu, puis retouchez-la."));
+            }
         }
         sb.append(resumeForm(v, "Reprendre la conception"));
         sb.append("<p class=\"field-help\">Reprendre crée une nouvelle version à partir de celle-ci, sans "
@@ -974,7 +981,53 @@ public final class WorkshopPages {
         }
         divergence.ifPresent(d -> sb.append("<li><strong>").append(Http.esc(d)).append("</strong></li>"));
         sb.append("</ul>");
+        sb.append(acceptDefectsForm(v));
         sb.append(correctionForm(v, correctionReason(v)));
+        return sb.toString();
+    }
+
+    /**
+     * #747 : enregistrer une version refusée pour des défauts CONTOURNABLES (lumière, support
+     * décoratif, accessibilité…), après lecture de chacun et de son effet en jeu. Le serveur revérifie
+     * que ce sont exactement les défauts du plan ; la version reste « avec avertissements », jamais
+     * « conforme ». Rien n'est proposé pour une impossibilité (plan illisible, bloc inconnu, hors
+     * volume, grille vide, lit ou porte incomplets).
+     */
+    static String acceptDefectsForm(ProjectView v) {
+        java.util.Map<String, String> defects = com.lodygames.rpgquest.panel.building.AcceptableDefects.of(v.audit());
+        if (defects.isEmpty() || !v.canWrite() || (v.idTaken() && !v.ownBuilding())) {
+            return "";
+        }
+        BuildingPlanDraft d = v.draft();
+        boolean republish = v.idTaken() && v.ownBuilding();
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry\" id=\"ws-accept-defects\"><summary>")
+                .append(Icons.icon("warning")).append("Enregistrer malgré les avertissements</summary>");
+        sb.append("<p>Le serveur a construit cette version en entier ; ses défauts ne l'empêchent pas d'exister. "
+                + "Vous pouvez l'enregistrer telle quelle pour l'examiner en jeu et la retoucher, sans appel à "
+                + "l'IA. Elle restera marquée « avec avertissements », jamais « conforme ».</p><ul class=\"ws-problems\">");
+        defects.forEach((code, effect) -> sb.append("<li><strong>").append(Http.esc(PlanVerdictText.of(code).text()))
+                .append("</strong> <span class=\"muted\">(").append(Http.esc(code)).append(") — en jeu : ")
+                .append(Http.esc(effect)).append("</span></li>"));
+        sb.append("</ul><form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
+                .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "generate"))
+                .append(hidden("id", v.project().id())).append(hidden("draft", d.id()))
+                .append(hidden("version", String.valueOf(d.version()))).append(hidden("plan", d.plan()))
+                .append(hidden("accept_defects", com.lodygames.rpgquest.panel.building.AcceptableDefects.param(defects)));
+        if (republish) {
+            sb.append(hidden("republish", "yes")).append(hidden("republish_confirm", "yes"))
+                    .append(hidden("expected_version", String.valueOf(v.catalog().version())));
+        }
+        sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"accept_confirm\" value=\"yes\"> "
+                + "J'ai lu ces défauts et leurs effets ; j'enregistre cette version exacte (")
+                .append(Http.esc(d.id().substring(0, Math.min(8, d.id().length())))).append(", révision ")
+                .append(d.version()).append(") avec ses avertissements")
+                .append(republish ? ", à la place de la version " + v.catalog().version() + " de la bibliothèque "
+                        + "(archivée ; les exemplaires posés ne changent pas)" : "")
+                .append(".</label></div><div class=\"btnrow\"><button class=\"btn btn-outline-secondary\" "
+                        + "type=\"submit\">").append(Icons.icon("save"))
+                .append("Enregistrer avec avertissements</button></div></form>");
+        sb.append("<p class=\"field-help\">Aucun bloc n'est posé : la pose reste le geste habituel depuis la "
+                + "bibliothèque, avec ses contrôles d'emplacement et sa sauvegarde de restauration.</p></details>");
         return sb.toString();
     }
 
@@ -1321,6 +1374,26 @@ public final class WorkshopPages {
     }
 
     private static String providerSelect(ProjectView v, String chosen) {
+        return providerChoice(v, chosen) + trialFields();
+    }
+
+    /**
+     * #747 : un essai isolé avec un autre modèle (et un autre plafond de sortie, utile aux modèles qui
+     * raisonnent), sans toucher aux réglages enregistrés du fournisseur. Replié : vide, c'est le modèle
+     * configuré qui répond.
+     */
+    static String trialFields() {
+        return "<details class=\"npc-registry\"><summary class=\"muted\">Essai avec un autre modèle (facultatif)</summary>"
+                + "<div class=\"field\"><label>Modèle pour cet appel seulement <input type=\"text\" name=\"trial_model\" "
+                + "maxlength=\"64\" placeholder=\"vide = modèle configuré\" pattern=\"[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}\">"
+                + "</label></div><div class=\"field\"><label>Plafond de jetons de sortie pour cet appel <input type=\"number\" "
+                + "name=\"trial_max_tokens\" min=\"256\" max=\"32000\" placeholder=\"vide = réglage enregistré\"></label></div>"
+                + "<p class=\"field-help\">Les réglages du fournisseur ne changent pas. Le modèle doit exister chez ce "
+                + "fournisseur, et lire les images si le projet en a. Le journal IA note le modèle de l'essai et la "
+                + "consommation réelle.</p></details>";
+    }
+
+    private static String providerChoice(ProjectView v, String chosen) {
         if (v.providers().size() == 1) {
             return hidden("provider", v.providers().get(0).id());
         }

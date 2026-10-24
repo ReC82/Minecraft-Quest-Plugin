@@ -31,6 +31,10 @@ import java.util.regex.Pattern;
  */
 public final class ArchitecturalDesign {
 
+    /** Un toit de volume qui n'est pas plat : deux pans, pointu, en pente, à pignons. */
+    private static final java.util.regex.Pattern PITCHED_ROOF = java.util.regex.Pattern.compile(
+            "\\b(pans?|pointu|pente|pignons?|gable)");
+
     /** Un volume déclaré. Coordonnées du plan, bornes incluses ; {@code y1} = haut des murs. */
     public record Volume(String name, String role, int x0, int x1, int z0, int z1, int y0, int y1, String roof,
                          String link) {
@@ -180,6 +184,15 @@ public final class ArchitecturalDesign {
         }
         for (BriefRequirements.Requirement r : wanted) {
             if ("tower".equals(r.id())) {
+                continue;
+            }
+            if ("roof".equals(r.id())) {
+                // #747 (24/10) : un toit se déclare sur la ligne VOLUME (« toit: deux pans »), pas en ÉLÉMENT.
+                Optional<Volume> pitched = volumes.stream().filter(v -> PITCHED_ROOF.matcher(
+                        BriefRequirements.fold(v.roof())).find()).findFirst();
+                out.add(pitched.map(v -> new Finding(true, r.label() + " : " + v.name() + " (toit : " + v.roof() + ")"))
+                        .orElseGet(() -> new Finding(false, r.label() + " : aucun VOLUME ne déclare un toit à pans ou "
+                                + "pointu (« toit: deux pans axe x/z » ou « pointu »).")));
                 continue;
             }
             Optional<Element> placed = elements.stream().filter(el -> matches(r, el)).findFirst();

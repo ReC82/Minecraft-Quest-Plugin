@@ -1,0 +1,11 @@
+Conserver les dimensions, les murs, les fenêtres et la toiture de cette cabane.
+
+Aligner le seuil de la porte avec le plancher intérieur pour supprimer le renfoncement, en conservant un accès praticable depuis l’extérieur.
+
+Aménager la pièce avec :
+- Un lit rouge contre un mur, avec ses deux parties complètes et un côté libre pour y accéder.
+- Un coffre dont le couvercle peut s’ouvrir.
+- Une table de fabrication et un four contre le mur opposé au lit.
+- Les deux torches fixées aux murs plutôt que posées au sol.
+
+Garder un passage dégagé depuis la porte jusqu’à chaque équipement. Ne pas obstruer les fenêtres. Ne pas ajouter d’étage, de cloison ni d’autre décoration.

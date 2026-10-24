@@ -196,6 +196,9 @@ public final class BuildingPromptBuilder {
                 - op: box     → remplit toute la zone.
                 - op: shell   → ne pose que l'enveloppe (les six faces), intérieur vide.
                 - op: walls   → ne pose que les quatre murs verticaux : ni sol, ni plafond.
+                                  Bâtiment DE PLAIN-PIED sous un toit « gable » : « walls », pas
+                                  « shell » — le dessus d'un shell est un plancher, que le moteur
+                                  relie alors par un escalier.
                 - op: clear   → VIDE la zone. Pas de clé « block ». Les instructions
                                 s'appliquent DANS L'ORDRE : un « clear » posé après une porte,
                                 une fenêtre, une lumière ou un meuble les EFFACE. Place les
@@ -699,6 +702,8 @@ public final class BuildingPromptBuilder {
               Porte               op: door — deux moitiés, orientation et dégagement calculés
               Fenêtres, vitraux   instruction window, minecraft:glass_pane ou <couleur>_stained_glass_pane
               Lumière             op: light (lanternes posées ou suspendues, minecraft:iron_chain), torches
+              Torche murale       op: box, block "minecraft:wall_torch[facing=<vers la pièce>]" dans la
+                                  cellule contre le mur ; minecraft:torch est une torche POSÉE au sol
               Escaliers           op: staircase — entre étages, ou marches d'entrée (facade: FRONT)
               Tapis               minecraft:<couleur>_carpet, posé SUR le sol (il lui faut un bloc dessous)
               Plantes en pot      minecraft:potted_<plante> (potted_poppy, potted_fern, potted_azalea_bush…)

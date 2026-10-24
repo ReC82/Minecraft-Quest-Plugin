@@ -23,7 +23,8 @@ import java.util.Optional;
  * de {@code status} qui n'atteste que le portail. {@code heartbeat} dit si le relevé d'état agrégé
  * envoyé par le serveur Minecraft arrive (MISSING / FRESH / STALE) et {@code lastUpdate} date le
  * dernier relevé pris en compte : de quoi diagnostiquer le canal VeryGames → AWS depuis n'importe
- * quelle machine.</p>
+ * quelle machine. {@code sync} décrit le dernier instantané complet (données de jeu) et
+ * {@code load} la charge annoncée par le serveur (TPS, MSPT).</p>
  */
 public final class HealthHandler implements ApiHandler {
 
@@ -48,6 +49,8 @@ public final class HealthHandler implements ApiHandler {
         body.put("server", server.kind().name());
         body.put("heartbeat", heartbeatState());
         body.put("lastUpdate", server.lastUpdate() == null ? null : server.lastUpdate().toString());
+        body.put("sync", syncState());
+        body.put("load", load());
         body.put("playerDataPublic", playerDataPublic);
         body.put("store", storeEnabled);
         body.put("news", news.published().size());
@@ -61,6 +64,47 @@ public final class HealthHandler implements ApiHandler {
             return "MISSING";
         }
         return store.isHeartbeatStale(heartbeat.get()) ? "STALE" : "FRESH";
+    }
+
+    /**
+     * #421 — instantané complet (toutes les 10 à 15 min) : état des données de jeu, date et numéro
+     * du dernier reçu, coût de sa collecte mesuré par le plugin. Aucune donnée de joueur.
+     */
+    private Map<String, Object> syncState() {
+        Map<String, Object> sync = new LinkedHashMap<>();
+        Optional<Map<String, Object>> snapshot = store.current();
+        sync.put("data", snapshot.isEmpty() ? "MISSING" : store.isDataStale(snapshot.get()) ? "STALE" : "FRESH");
+        sync.put("lastSync", snapshot.map(data -> data.get("generatedAt")).orElse(null));
+        sync.put("sequence", snapshot.map(data -> data.get("sequence")).orElse(null));
+        snapshot.map(data -> data.get("export")).filter(Map.class::isInstance).map(Map.class::cast)
+                .ifPresent(export -> {
+                    Map<String, Object> cost = new LinkedHashMap<>();
+                    for (String key : EXPORT_KEYS) {
+                        if (export.get(key) instanceof Number number) {
+                            cost.put(key, number);
+                        }
+                    }
+                    sync.put("export", cost);
+                });
+        return sync;
+    }
+
+    private static final java.util.List<String> EXPORT_KEYS = java.util.List.of(
+            "intervalSeconds", "collectMs", "mainThreadMs", "profiles");
+
+    /** Charge du serveur de jeu au dernier relevé d'état (TPS, MSPT), si le plugin l'envoie. */
+    private Map<String, Object> load() {
+        Map<String, Object> load = new LinkedHashMap<>();
+        store.currentHeartbeat().map(beat -> beat.get("server")).filter(Map.class::isInstance).map(Map.class::cast)
+                .ifPresent(server -> {
+                    if (server.get("tps") instanceof Number tps) {
+                        load.put("tps", tps);
+                    }
+                    if (server.get("mspt") instanceof Number mspt) {
+                        load.put("mspt", mspt);
+                    }
+                });
+        return load;
     }
 
     private String snapshotState() {

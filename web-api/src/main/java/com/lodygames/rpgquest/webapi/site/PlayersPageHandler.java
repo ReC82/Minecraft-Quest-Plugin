@@ -51,6 +51,11 @@ public final class PlayersPageHandler implements ApiHandler {
         this.routes = routes;
     }
 
+    /** Date du dernier instantané reçu (#421), jamais sur l'aperçu fictif. */
+    private String freshness(Map<String, Object> state) {
+        return routes.demo() ? "" : LeaderboardsPageHandler.freshness(state);
+    }
+
     @Override
     public int handle(HttpExchange exchange) throws IOException {
         Map<String, Object> live = ServerState.resolve(store);
@@ -77,7 +82,7 @@ public final class PlayersPageHandler implements ApiHandler {
                             ? PageMeta.demo(description, PageMeta.PLAYERS)
                             : new PageMeta(PageMeta.PLAYERS, description, PageMeta.PLAYERS),
                     routes.demo() ? "Joueurs (démonstration)" : "Joueurs", serverStatus,
-                    routes.banner() + list(profiles, page, pages)));
+                    routes.banner() + list(profiles, page, pages) + freshness(state)));
             return 200;
         }
         String name = rest.length() <= 48 ? URLDecoder.decode(rest, StandardCharsets.UTF_8) : "";
@@ -91,7 +96,7 @@ public final class PlayersPageHandler implements ApiHandler {
                         ? PageMeta.demo(description, PageMeta.PLAYERS)
                         : new PageMeta(routes.players() + "/" + URLEncoder.encode(shown, StandardCharsets.UTF_8),
                                 description, PageMeta.PLAYERS),
-                shown, serverStatus, routes.banner() + detail(profile.get(), state)));
+                shown, serverStatus, routes.banner() + detail(profile.get(), state) + freshness(state)));
         return 200;
     }
 

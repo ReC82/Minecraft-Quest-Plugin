@@ -31,7 +31,8 @@ public final class WebApiMain {
 
     public static void main(String[] args) throws IOException {
         WebApiConfig config = WebApiConfigLoader.load();
-        SnapshotStore snapshotStore = new SnapshotStore(config.snapshotFile(), config.snapshotMaxAgeSeconds(), LOGGER);
+        SnapshotStore snapshotStore = new SnapshotStore(config.snapshotFile(), config.snapshotMaxAgeSeconds(),
+                config.snapshotIngest().dataMaxAgeSeconds(), LOGGER);
 
         // #52 : la boutique (mission étape 22) n'entre pas dans le portail communautaire V1 — sans
         // store-enabled=true, ni store.db ni products.json ne sont ouverts.

@@ -578,6 +578,28 @@ class WorkshopFlowTest {
         assertTrue(get(shown).body().contains("Le plan envoyé est vide"));
     }
 
+    /**
+     * #747 (24/10) : version acceptée, description non réalisée (torches murales demandées, aucune posée) —
+     * « Améliorer » part sans consigne, avec les écarts mesurés comme motif, et rien n'est rangé comme consigne.
+     */
+    @Test
+    void anAcceptedVersionMissingARequirementIsImprovedWithItsMeasuredGapsAsMotive() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", "Une petite bibliothèque de plain-pied en pierre, "
+                + "éclairée par deux torches fixées aux murs."));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        String page = get(withDraft).body();
+        assertTrue(mainCard(page).contains("la description n&#39;est pas entièrement réalisée")
+                || mainCard(page).contains("la description n'est pas entièrement réalisée"), mainCard(page));
+        String form = formAround(page, "value=\"correct\"");
+        post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=correct&id=" + id(withDraft)
+                + "&draft=" + draftId(withDraft) + "&version=1&provider=openai&request_token=" + token(form));
+        assertEquals(2, aiCalls.get(), "l'amélioration est partie sans consigne");
+        assertTrue(lastAiRequest.contains("la description n'est pas réalisée") && lastAiRequest.contains("Torches murales"),
+                lastAiRequest.substring(0, Math.min(400, lastAiRequest.length())));
+        assertFalse(lastAiRequest.contains("EXIGENCES ACTUALISÉES PAR L'ADMINISTRATEUR"), "aucune consigne n'a été inventée");
+    }
+
     /** #747 : un modèle d'essai mal formé est refusé avant tout appel. */
     @Test
     void aMalformedTrialModelIsRefusedWithoutAnyCall() throws Exception {

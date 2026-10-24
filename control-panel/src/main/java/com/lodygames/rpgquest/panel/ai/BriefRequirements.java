@@ -136,6 +136,21 @@ public final class BriefRequirements {
             return missing().isEmpty();
         }
 
+        /**
+         * #747 (24/10) : le motif d'une reprise d'une version ACCEPTÉE dont la description n'est pas
+         * réalisée — exigences manquantes et ajouts non demandés, mesurés. Vide si rien n'est à reprendre.
+         */
+        public String gapsMotive() {
+            if (missing().isEmpty() && extras.isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder("La version passe les contrôles techniques, mais la description "
+                    + "n'est pas réalisée :");
+            missing().forEach(st -> sb.append("\n- ").append(st.line()));
+            extras.forEach(extra -> sb.append("\n- ⚠ ").append(extra).append(" — ajout NON DEMANDÉ : retire-le."));
+            return sb.toString();
+        }
+
         public boolean isEmpty() {
             return statuses.isEmpty();
         }

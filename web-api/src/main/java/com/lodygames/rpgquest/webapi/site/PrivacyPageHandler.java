@@ -45,7 +45,9 @@ public final class PrivacyPageHandler implements ApiHandler {
                 %s
                 <ul>
                 <li>le <strong>pseudo Minecraft</strong> des joueurs qui ont choisi de se montrer ;</li>
-                <li>leur <strong>XP par piste</strong> et leur <strong>nombre de quêtes terminées</strong>.</li>
+                <li>leur <strong>XP par piste</strong> et leur <strong>nombre de quêtes terminées</strong> ;</li>
+                <li>leurs <strong>statistiques de jeu</strong> : créatures tuées, blocs cassés, prises de pêche,
+                waypoints, villes et pierres de voyage découverts, histoires terminées.</li>
                 </ul>
                 <h2>Ce qu'il ne publie jamais</h2>
                 <ul>
@@ -57,7 +59,7 @@ public final class PrivacyPageHandler implements ApiHandler {
                 <p>Par défaut, ton profil est <strong>privé</strong> : tu n'apparais nulle part tant que tu ne
                 l'as pas demandé. En jeu : <code>/profile web public</code> pour te montrer,
                 <code>/profile web prive</code> pour te retirer (effet à la prochaine mise à jour du site,
-                quelques secondes à quelques minutes), <code>/profile web</code> pour voir ton réglage.</p>
+                en général sous un quart d'heure), <code>/profile web</code> pour voir ton réglage.</p>
                 <h2>Comptes et mineurs</h2>
                 %s
                 <p>Avant l'ouverture des comptes, une politique de confidentialité complète — âge minimal,

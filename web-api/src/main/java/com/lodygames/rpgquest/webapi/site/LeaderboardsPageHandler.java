@@ -77,7 +77,8 @@ public final class LeaderboardsPageHandler implements ApiHandler {
             }
         }
 
-        StringBuilder body = new StringBuilder(routes.banner()).append(tabs(periods, period, category));
+        StringBuilder body = new StringBuilder(routes.banner()).append(routes.demo() ? "" : unavailable(state))
+                .append(tabs(periods, period, category));
         Map<String, List<Map<String, Object>>> boards;
         if (period == null) {
             body.append(lifetimeIntro());
@@ -111,7 +112,7 @@ public final class LeaderboardsPageHandler implements ApiHandler {
         Map<String, String> query = QueryParams.parse(exchange.getRequestURI().getRawQuery());
         String category = StatLabels.CATEGORIES.containsKey(query.getOrDefault("categorie", ""))
                 ? query.get("categorie") : "";
-        String body = BoardCatalogPage.render(PublicPlayerData.statistics(state.get("statistics")), routes,
+        String body = (routes.demo() ? "" : unavailable(state)) + BoardCatalogPage.render(PublicPlayerData.statistics(state.get("statistics")), routes,
                 query.getOrDefault("periode", ""), category) + (routes.demo() ? "" : freshness(state));
         String description = "Tous les classements de " + site.title()
                 + " : monstres, blocs, exploration, quêtes, par jour, semaine, mois et saison.";
@@ -359,6 +360,19 @@ public final class LeaderboardsPageHandler implements ApiHandler {
         }
         return boards;
     }
+
+    /**
+     * Avis affiché en tête des vraies pages Joueurs et Classements quand aucune donnée de jeu n'est affichée
+     * (#56) : sans relevé complet récent ({@link ServerState#SYNCED_AT} absent), les listes vides ne veulent pas
+     * dire « personne », mais « pas de données pour l'instant ». Vide quand les données sont là.
+     */
+    static String unavailable(Map<String, Object> state) {
+        return state.get(ServerState.SYNCED_AT) != null ? ""
+                : "<p class=\"unknown\">" + UNAVAILABLE + "</p>";
+    }
+
+    static final String UNAVAILABLE = "Profils et classements momentanément indisponibles : le site n'a pas de "
+            + "relevé récent des joueurs. Ils reviendront d'eux-mêmes au prochain relevé du serveur de jeu.";
 
     static String freshness(Map<String, Object> state) {
         String when = StatLabels.dateTime(state.get("generatedAt") instanceof String text ? text : null);

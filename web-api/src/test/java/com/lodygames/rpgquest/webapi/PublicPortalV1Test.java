@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.webapi.json.Json;
+import com.lodygames.rpgquest.webapi.site.StatLabels;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -223,6 +224,44 @@ class PublicPortalV1Test {
         assertEquals("/joueurs/Bob", search.headers().firstValue("Location").orElse(""));
         assertEquals(404, get("/joueurs/Carol").statusCode());
         assertEquals(200, get("/joueurs?pseudo=%3Cx%3E").statusCode(), "pseudo invalide : la liste, pas une redirection");
+    }
+
+    @Test
+    void withoutARecentSnapshotRealPagesSayDataIsUnavailableInsteadOfEmpty() throws Exception {
+        snapshot();
+        Path file = tempDir.resolve("snapshot.json");
+        String old = Instant.now().minusSeconds(7200).toString();
+        Files.writeString(file, Files.readString(file).replaceFirst("\"generatedAt\"\\s*:\\s*\"[^\"]+\"",
+                "\"generatedAt\":\"" + old + "\""));
+        start(true, "");
+
+        for (String path : List.of("/joueurs", "/joueurs/Alice", "/joueurs?pseudo=ali")) {
+            HttpResponse<String> response = get(path);
+            assertEquals(503, response.statusCode(), path + " : un profil existant ne doit pas paraître inconnu");
+            assertTrue(response.body().contains("momentanément indisponibles"), path);
+            assertFalse(response.body().contains("Aucun profil public"), path);
+        }
+        for (String path : List.of("/", "/classements", "/classements/tous")) {
+            HttpResponse<String> response = get(path);
+            assertEquals(200, response.statusCode(), path);
+            assertTrue(response.body().contains("momentanément indisponibles"), path);
+            assertFalse(response.body().contains("Alice"), path);
+        }
+        assertFalse(get("/demo/joueurs").body().contains("momentanément indisponibles"), "la démonstration n'en dépend pas");
+    }
+
+    @Test
+    void freshDataShowsNoUnavailabilityNoticeAndUnitsAgreeWithTheValue() throws Exception {
+        snapshot();
+        start(true, "");
+
+        for (String path : List.of("/", "/joueurs", "/joueurs/Alice", "/classements", "/classements/tous")) {
+            assertFalse(get(path).body().contains("momentanément indisponibles"), path);
+        }
+        assertEquals("quête", StatLabels.unit("QUESTS_COMPLETED", 1));
+        assertEquals("quêtes", StatLabels.unit("QUESTS_COMPLETED", 2));
+        assertEquals("ville", StatLabels.unit("CITY_DISCOVERED", 0));
+        assertEquals("XP", StatLabels.unit("RPG_XP_GLOBAL", 1));
     }
 
     @Test

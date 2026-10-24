@@ -213,6 +213,10 @@ public final class HomePageHandler implements ApiHandler {
                     .append("<p><a class=\"button secondary\" href=\"").append(SiteRoutes.DEMO.boards())
                     .append("\">Voir un aperçu avec des joueurs fictifs</a></p>").toString();
         }
+        String unavailable = LeaderboardsPageHandler.unavailable(state);
+        if (!unavailable.isEmpty()) {
+            return html.append(unavailable).toString();
+        }
         Map<String, Object> statistics = PublicPlayerData.statistics(state.get("statistics"));
         String featured = featuredBoards(statistics);
         if (!featured.isEmpty()) {

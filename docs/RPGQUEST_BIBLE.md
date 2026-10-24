@@ -2292,6 +2292,33 @@ diagnostic **complet** (le message d'action est tronqué à 500 caractères par 
   construit de sa façade est recalée sur ce mur ; un toit `gable` écrit en bloc plein reçoit l'escalier du même
   matériau (le bloc plein garnit les pignons) ; une cloche écrite sans propriétés prend son attache sur la grille
   finale (sous une poutre, posée, ou murale) et une cloche flottante est refusée (`UNSUPPORTED_BLOCK`).
+- **Enregistrer malgré les avertissements (#747, 24/10/2026).** Une version refusée **seulement** pour des
+  défauts contournables, sur une grille complète, propose « Enregistrer malgré les avertissements » : chaque
+  défaut est affiché avec son effet en jeu, une case de confirmation est obligatoire, et rien n'est demandé à
+  l'IA. Contournables : `UNSUPPORTED_BLOCK` (décor sans support, peut tomber en objet), `DARK_AREA`, `NO_LIGHT`,
+  `GLAZING_MISSING`, `GLAZING_ONE_SIDED`, `ROOF_MISSING`, `ENVELOPE_OPEN`, `OPENING_DETACHED`, `CLEAR_ERASES`,
+  `NO_ENTRANCE`, `ENTRANCE_STEP`, `NO_PASSAGE`, `LEVEL_UNREACHABLE`, `LEVEL_CLUTTERED`. Jamais contournables :
+  plan illisible ou inexpansible (`PLAN_INVALID`, bloc ou opération inconnus, hors volume, limites du projet),
+  grille vide (`EMPTY_STRUCTURE`), lit ou porte incomplets (`BROKEN_ASSEMBLY`), passage de portail absent. Le
+  contrôle est **côté serveur** : `building.generate` reçoit `accept_defects` (codes séparés par des virgules) et
+  n'écrit rien si ces codes ne sont pas **exactement** ceux qu'il relève sur le plan reçu (`WARNINGS_CHANGED`)
+  ou si l'un n'est pas contournable (`DEFECT_NOT_ACCEPTABLE`) ; le panel exige en plus une vérification à jour
+  de la même révision. Le bâtiment porte « ENREGISTRÉ AVEC AVERTISSEMENTS ACCEPTÉS : … » dans sa description,
+  le résultat le code `GENERATED_WITH_WARNINGS`, l'Atelier « Enregistré avec avertissements » — jamais
+  « conforme » — et l'aperçu de pose le rappelle. La pose reste le geste habituel de la bibliothèque (contrôles
+  d'emplacement, sauvegarde de restauration).
+- **Exigences actualisées (#747, 24/10/2026).** Les consignes écrites dans « Améliorer avec l'IA » sont rangées
+  dans le journal du projet (`REQUIREMENT_UPDATE`) et repartent avec **chaque** appel suivant (plan,
+  conception, reprise, critique), dans un bloc « EXIGENCES ACTUALISÉES PAR L'ADMINISTRATEUR » placé après la
+  description : il **prime** sur la description initiale et sur la conception, la consigne la plus récente
+  l'emportant en cas de contradiction (« pièce vide » puis « ajoute un lit »). Les contrôles de conformité
+  lisent la description **et** ces consignes (un lit demandé n'est plus « ajout non demandé »). Modifier la
+  description les clôt. Au plus 6 consignes / 3 000 caractères, les plus récentes. Une version qui a passé les
+  contrôles est reprise comme « demande de modifications », plus comme « proposition refusée ».
+- **Essai avec un autre modèle (#747, 24/10/2026).** Chaque formulaire payant de l'Atelier a un volet replié
+  « Essai avec un autre modèle (facultatif) » : modèle et plafond de jetons de sortie (256 à 32 000) **pour cet
+  appel seulement** ; les réglages enregistrés du fournisseur ne changent pas. Le journal IA note `trial` à côté
+  du modèle configuré, et le modèle réellement servi. Un identifiant mal formé est refusé sans appel.
 
 **Conception automatique.** Carte du projet : l'IA conçoit, le serveur vérifie et répare, l'IA
 corrige avec le diagnostic exact, puis relit le plan **en architecte** (silhouette, façades,

@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Stream;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
@@ -31,6 +32,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
@@ -235,6 +239,48 @@ class ClaimWorldSafetyListenerTest {
 
         pumpUntil(() -> hasReturnStone(player), "Pierre de retour pour un propriétaire de claim");
         assertEquals("claims", player.getWorld().getName(), "un propriétaire n'est jamais renvoyé");
+    }
+
+    /**
+     * Issue #321 (24/10) — filet d'arrivée, matrice OP × bypass × {@code CLAIM_TIER_1} : c'est lui
+     * qui couvre tous les chemins qui ne passent pas par le portail (vanilla {@code /tp},
+     * Multiverse, {@code /rpgadmin world tp}, {@code /claim admin tp}, portails historiques,
+     * connexion dans le monde). Un OP sans session ouverte y est traité comme n'importe quel joueur.
+     */
+    static Stream<Arguments> arrivalMatrix() {
+        java.util.List<Arguments> cases = new java.util.ArrayList<>();
+        for (boolean op : java.util.List.of(false, true)) {
+            for (boolean bypassRequested : java.util.List.of(false, true)) {
+                for (String tier : Arrays.asList(null, "false", "true", "TRUE", "oui")) {
+                    cases.add(Arguments.of(op, bypassRequested, tier));
+                }
+            }
+        }
+        return cases.stream();
+    }
+
+    @ParameterizedTest(name = "OP={0} bypass={1} CLAIM_TIER_1={2}")
+    @MethodSource("arrivalMatrix")
+    void anArrivalByAnyRouteFollowsTheSameRuleForOpAndNonOp(boolean op, boolean bypassRequested, String tier)
+            throws Exception {
+        PlayerMock player = addPlayer();
+        player.setOp(op);
+        if (tier != null) {
+            variableRepository.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, tier)
+                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+        boolean bypassOpened = bypassRequested
+                && bypass.enable(player) == com.lodygames.rpgquest.permission.AdminBypassMode.Outcome.ENABLED;
+        assertEquals(bypassRequested && op, bypassOpened, "seul un OP peut ouvrir la session, et jamais implicitement");
+
+        arriveInClaims(player);
+
+        if (bypassOpened || "true".equals(tier)) {
+            pumpUntil(() -> hasReturnStone(player), "Pierre de retour pour une présence légitime");
+            assertEquals("claims", player.getWorld().getName(), "présence légitime : jamais renvoyé");
+        } else {
+            pumpUntil(() -> player.getWorld().getName().equals("world_hub"), "renvoi au Hub sans déblocage");
+        }
     }
 
     /**

@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Stream;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -37,6 +38,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
@@ -336,6 +340,87 @@ class ClaimWorldAccessGuardTest {
         assertFalse(guard.allowEntry(op, TO_CLAIMS));
         awaitRefusal(op);
         assertEquals(AdminBypassMode.Outcome.UNAVAILABLE, bypass.enable(op), "ni rouvrable");
+    }
+
+    // ---- Issue #321 (24/10) : matrice complète OP × bypass × CLAIM_TIER_1 × claim possédé -----
+
+    /** {@code null} = variable absente ; « TRUE » et « oui » = valeurs invalides (seul « true » exact débloque). */
+    private static final List<String> TIER_VALUES = Arrays.asList(null, "false", "true", "TRUE", "oui");
+
+    static Stream<Arguments> accessMatrix() {
+        List<Arguments> cases = new ArrayList<>();
+        for (boolean op : List.of(false, true)) {
+            for (boolean bypassRequested : List.of(false, true)) {
+                for (String tier : TIER_VALUES) {
+                    for (boolean ownsClaim : List.of(false, true)) {
+                        cases.add(Arguments.of(op, bypassRequested, tier, ownsClaim));
+                    }
+                }
+            }
+        }
+        return cases.stream();
+    }
+
+    /**
+     * Règle attendue, écrite une seule fois : le statut OP n'apparaît que dans la possibilité
+     * d'ouvrir une session de bypass (nœud {@code rpgquest.admin.bypass}, {@code default: op}) ; il
+     * n'intervient jamais dans la règle gameplay elle-même.
+     * <ul>
+     *   <li>session ouverte (donc OP) → entrée immédiate, contrôle CLAIM_TIER_1 non appliqué ;</li>
+     *   <li>sinon claim déjà possédé → entrée immédiate, quelle que soit la variable ;</li>
+     *   <li>sinon {@code CLAIM_TIER_1 == "true"} exact → entrée après lecture asynchrone ;</li>
+     *   <li>sinon → refus, aucune téléportation.</li>
+     * </ul>
+     */
+    @ParameterizedTest(name = "OP={0} bypass={1} CLAIM_TIER_1={2} claim={3}")
+    @MethodSource("accessMatrix")
+    void accessMatrixIsTheSameForOpAndNonOpWithoutAnExplicitBypass(
+            boolean op, boolean bypassRequested, String tier, boolean ownsClaim) throws Exception {
+        PlayerMock player = addPlayer();
+        player.setOp(op);
+        if (ownsClaim) {
+            // Un claim ne se pose qu'avec le déblocage réel ; la variable est ensuite ramenée à la
+            // valeur du cas, pour prouver que la propriété suffit seule (droit légitime conservé).
+            grantTierOne(player);
+            World claimWorld = server.addSimpleWorld("world_for_claim");
+            assertEquals(ClaimService.CreateOutcome.CREATED, claimService.create(player, "main_" + player.getUniqueId(),
+                            new Location(claimWorld, 0, 60, 0), new Location(claimWorld, 4, 63, 4))
+                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            server.getScheduler().performTicks(2);
+            variableRepository.deleteAllForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+        if (tier != null) {
+            variableRepository.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, tier)
+                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+        boolean bypassOpened = false;
+        if (bypassRequested) {
+            AdminBypassMode.Outcome outcome = bypass.enable(player);
+            assertEquals(op ? AdminBypassMode.Outcome.ENABLED : AdminBypassMode.Outcome.NO_PERMISSION, outcome,
+                    "seul un OP (rpgquest.admin.bypass) peut ouvrir la session");
+            bypassOpened = outcome == AdminBypassMode.Outcome.ENABLED;
+        }
+        assertEquals(bypassOpened, bypass.isActive(player), "aucune session implicite");
+
+        boolean immediate = guard.allowEntry(player, TO_CLAIMS);
+
+        if (bypassOpened || ownsClaim) {
+            assertTrue(immediate, "session explicite ou claim possédé : entrée immédiate");
+            assertTrue(drainMessages(player).stream().noneMatch(m -> m.contains("réservé aux joueurs")));
+            assertEquals(0, teleportNowCalls.get(), "autorisé de façon synchrone");
+        } else if ("true".equals(tier)) {
+            assertFalse(immediate, "contrôle asynchrone, comme pour tout joueur");
+            pumpUntil(() -> teleportNowCalls.get() >= 1, "téléportation relancée pour CLAIM_TIER_1=true");
+        } else {
+            assertFalse(immediate, "aucun déblocage : refus, OP ou non");
+            awaitRefusal(player);
+            server.getScheduler().performTicks(5);
+            assertEquals(0, teleportNowCalls.get(), "aucune téléportation sans déblocage");
+        }
+        if (op) {
+            assertTrue(player.hasPermission(RpgPermissions.LEGACY_ADMIN_WORLD),
+                    "les droits d'administration de l'OP restent intacts");
+        }
     }
 
     // ---- Issue #22 : on n'entre pas sans le moyen de repartir ------------------------------

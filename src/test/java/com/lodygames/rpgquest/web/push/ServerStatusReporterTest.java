@@ -43,6 +43,20 @@ class ServerStatusReporterTest {
     }
 
     @Test
+    void serverLoadIsRoundedAndOmittedWhenUnknown() {
+        Map<?, ?> server = (Map<?, ?>) ServerStatusReporter.report("boot-0123456789", 1, Instant.EPOCH, true, 0, 20,
+                19.98765, 12.3456).get("server");
+
+        // Contrat partagé avec StatusReportIngest.SERVER_KEYS (web-api).
+        assertEquals(Set.of("online", "playerCount", "maxPlayers", "tps", "mspt"), server.keySet());
+        assertEquals(19.99, server.get("tps"));
+        assertEquals(12.35, server.get("mspt"));
+        Map<?, ?> unknown = (Map<?, ?>) ServerStatusReporter.report("boot-0123456789", 1, Instant.EPOCH, true, 0, 20,
+                Double.NaN, null).get("server");
+        assertEquals(Set.of("online", "playerCount", "maxPlayers"), unknown.keySet());
+    }
+
+    @Test
     void bootIdIsRandomAndMatchesThePortalPattern() {
         String first = ServerStatusReporter.newBootId();
         String second = ServerStatusReporter.newBootId();

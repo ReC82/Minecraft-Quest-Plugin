@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.config.WebExportConfig;
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -62,5 +64,37 @@ class SnapshotPushConfigLoaderTest {
 
         Files.writeString(file, "enabled=true\nbase-url=http://127.0.0.1:8092\ntoken=t\n");
         assertTrue(load(file, Map.of()).enabled(), "HTTP local accepté (tests, tunnel)");
+    }
+
+    @Test
+    void fullSnapshotToThePortalIsOptInWithItsOwnBoundedInterval(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve(SnapshotPushConfigLoader.FILE_NAME);
+        Files.writeString(file, "enabled=true\nbase-url=https://portail.example\ntoken=t\n");
+        SnapshotPushConfig statusOnly = load(file, Map.of());
+        assertFalse(statusOnly.snapshotEnabled(), "relevé d'état seul par défaut");
+        WebExportConfig base = new WebExportConfig(false, "web-export", 30, false, 10, java.util.List.of(),
+                java.util.List.of(), PublicProfilePolicy.Visibility.PRIVATE);
+        assertEquals(base, statusOnly.applyTo(base), "config.yml inchangé");
+
+        Files.writeString(file, "enabled=true\nbase-url=https://portail.example\ntoken=t\nsnapshot-enabled=true\n"
+                + "snapshot-interval-seconds=60\nsnapshot-profile-visibility=PUBLIC\n");
+        SnapshotPushConfig beta = load(file, Map.of());
+        assertTrue(beta.snapshotEnabled());
+        assertEquals(SnapshotPushConfig.MIN_SNAPSHOT_INTERVAL_SECONDS, beta.snapshotIntervalSeconds(), "10 min au plus court");
+        WebExportConfig effective = beta.applyTo(base);
+        assertTrue(effective.enabled(), "l'export tourne pour le portail");
+        assertEquals(600, effective.intervalSeconds());
+        assertEquals(PublicProfilePolicy.Visibility.PUBLIC, effective.profileVisibilityDefault());
+        assertEquals(base.leaderboardSize(), effective.leaderboardSize());
+
+        Files.writeString(file, "enabled=true\nbase-url=https://portail.example\ntoken=t\nsnapshot-enabled=true\n"
+                + "snapshot-profile-visibility=tout-le-monde\n");
+        SnapshotPushConfig defaults = load(file, Map.of());
+        assertEquals(900, defaults.snapshotIntervalSeconds(), "15 min par défaut");
+        assertEquals(PublicProfilePolicy.Visibility.PRIVATE, defaults.applyTo(base).profileVisibilityDefault(),
+                "valeur inconnue : visibilité de config.yml conservée");
+
+        Files.writeString(file, "enabled=false\nsnapshot-enabled=true\n");
+        assertEquals(base, load(file, Map.of()).applyTo(base), "canal fermé : rien n'est activé");
     }
 }

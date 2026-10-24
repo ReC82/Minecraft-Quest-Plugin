@@ -66,7 +66,7 @@ public final class ServerStatusReporter implements PluginService {
     public void start() {
         long period = intervalSeconds * 20L;
         task = Bukkit.getScheduler().runTaskTimer(plugin,
-                () -> submit(true, Bukkit.getOnlinePlayers().size(), Bukkit.getMaxPlayers()), 20L, period);
+                () -> submit(true, Bukkit.getOnlinePlayers().size(), Bukkit.getMaxPlayers(), tps(), mspt()), 20L, period);
     }
 
     @Override
@@ -94,10 +94,20 @@ public final class ServerStatusReporter implements PluginService {
 
     /** Programme un envoi sur le fil dédié, sauf si le précédent n'est pas terminé. */
     boolean submit(boolean online, int playerCount, int maxPlayers) {
+        return submit(online, playerCount, maxPlayers, null, null);
+    }
+
+    /**
+     * @param tps   TPS moyen sur une minute (Paper), {@code null} si inconnu
+     * @param mspt  durée moyenne d'un tick en ms (Paper), {@code null} si inconnue — mesure de la
+     *              charge pendant l'export de l'instantané complet, lue côté portail dans {@code /health}
+     */
+    boolean submit(boolean online, int playerCount, int maxPlayers, Double tps, Double mspt) {
         if (!sending.compareAndSet(false, true)) {
             return false;
         }
-        String json = nextReport(online, playerCount, maxPlayers);
+        String json = Json.write(report(bootId, sequence.incrementAndGet(), clock.instant(), online, playerCount,
+                maxPlayers, tps, mspt));
         try {
             executor.execute(() -> {
                 try {
@@ -125,6 +135,11 @@ public final class ServerStatusReporter implements PluginService {
     /** Corps exact du relevé : les seules clés que le portail accepte (périmètre fermé). */
     static Map<String, Object> report(String bootId, long sequence, Instant generatedAt, boolean online,
                                       int playerCount, int maxPlayers) {
+        return report(bootId, sequence, generatedAt, online, playerCount, maxPlayers, null, null);
+    }
+
+    static Map<String, Object> report(String bootId, long sequence, Instant generatedAt, boolean online,
+                                      int playerCount, int maxPlayers, Double tps, Double mspt) {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("schemaVersion", SCHEMA_VERSION);
         root.put("kind", "status");
@@ -135,12 +150,39 @@ public final class ServerStatusReporter implements PluginService {
         server.put("online", online);
         server.put("playerCount", Math.max(0, playerCount));
         server.put("maxPlayers", Math.max(0, maxPlayers));
+        putLoad(server, "tps", tps, 100);
+        putLoad(server, "mspt", mspt, 60_000);
         root.put("server", server);
         return root;
     }
 
+    /** TPS moyen sur une minute (API Paper), {@code null} si le serveur ne le fournit pas. */
+    private static Double tps() {
+        try {
+            return Bukkit.getTPS()[0];
+        } catch (UnsupportedOperationException e) {
+            return null;
+        }
+    }
+
+    /** Durée moyenne d'un tick en ms (API Paper), {@code null} si le serveur ne la fournit pas. */
+    private static Double mspt() {
+        try {
+            return Bukkit.getAverageTickTime();
+        } catch (UnsupportedOperationException e) {
+            return null;
+        }
+    }
+
+    /** Valeur de charge arrondie au centième, omise si inconnue ou hors des bornes acceptées par le portail. */
+    private static void putLoad(Map<String, Object> server, String key, Double value, double max) {
+        if (value != null && Double.isFinite(value) && value >= 0) {
+            server.put(key, Math.round(Math.min(value, max) * 100) / 100.0);
+        }
+    }
+
     /** Identifiant de démarrage aléatoire (aucun lien avec un joueur ni avec la machine). */
-    static String newBootId() {
+    public static String newBootId() {
         byte[] random = new byte[12];
         new SecureRandom().nextBytes(random);
         return "boot-" + HexFormat.of().formatHex(random);

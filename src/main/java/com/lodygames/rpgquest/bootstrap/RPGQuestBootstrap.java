@@ -312,6 +312,8 @@ public final class RPGQuestBootstrap {
     /** Motif d'indisponibilité de la capture de console, ou vide si elle fonctionne. */
     private java.util.Optional<String> consoleUnavailableReason = java.util.Optional.empty();
     private WebSnapshotWriter webSnapshotWriter;
+    private com.lodygames.rpgquest.web.push.SnapshotPushConfig snapshotPushConfig =
+            com.lodygames.rpgquest.web.push.SnapshotPushConfig.disabled();
     /** Issue #735 : saisons, événements et classements, partagés avec PlugAdmin. */
     private com.lodygames.rpgquest.stats.StatisticsService statisticsService;
     private com.lodygames.rpgquest.database.StatisticsRepository statisticsRepository;
@@ -608,9 +610,13 @@ public final class RPGQuestBootstrap {
                 () -> configService.current().hud(), plugin.getSLF4JLogger());
         registry.start(playerHudService);
 
+        // Issue #421 : plugins/RPGQuest/portal-snapshot.properties (hors Git) peut activer l'envoi de
+        // l'instantané complet au portail AWS à sa propre période, indépendamment de config.yml.
+        snapshotPushConfig = new com.lodygames.rpgquest.web.push.SnapshotPushConfigLoader(
+                plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
         webSnapshotWriter = new WebSnapshotWriter(
                 plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,
-                () -> configService.current().webExport(), plugin.getSLF4JLogger());
+                this::effectiveWebExport, plugin.getSLF4JLogger());
         // Issue #54 : statistique « quêtes terminées », lue dans quest_progress (aucun compteur parallèle).
         webSnapshotWriter.setQuestStatistics(
                 new com.lodygames.rpgquest.database.QuestStatisticsRepository(databaseService.databaseManager()));
@@ -642,8 +648,6 @@ public final class RPGQuestBootstrap {
         // Issue #421 : chaque instantané part aussi vers le portail AWS, et un relevé d'état agrégé
         // (en ligne, nombre de joueurs) part même sans export nominatif. Inerte tant que
         // plugins/RPGQuest/portal-snapshot.properties (hors Git) ne l'active pas.
-        var snapshotPushConfig = new com.lodygames.rpgquest.web.push.SnapshotPushConfigLoader(
-                plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
         if (snapshotPushConfig.enabled()) {
             webSnapshotWriter.setPortalPush(
                     new com.lodygames.rpgquest.web.push.SnapshotPushClient(snapshotPushConfig, plugin.getSLF4JLogger()));
@@ -651,7 +655,10 @@ public final class RPGQuestBootstrap {
                     new com.lodygames.rpgquest.web.push.SnapshotPushClient(snapshotPushConfig, plugin.getSLF4JLogger(),
                             "du relevé d'état"),
                     snapshotPushConfig.statusIntervalSeconds()));
-            if (!configService.current().webExport().enabled()) {
+            if (snapshotPushConfig.snapshotEnabled()) {
+                plugin.getSLF4JLogger().info("Portail : instantané complet envoyé toutes les {} s (snapshot-enabled=true).",
+                        snapshotPushConfig.snapshotIntervalSeconds());
+            } else if (!configService.current().webExport().enabled()) {
                 plugin.getSLF4JLogger().info("Portail : relevé d'état agrégé seul (web-export.enabled=false) — "
                         + "aucun classement ni pseudo envoyé tant que l'export reste désactivé.");
             }
@@ -1391,7 +1398,7 @@ public final class RPGQuestBootstrap {
         if (statisticsService != null) {
             agentActions.setLeaderboards(new com.lodygames.rpgquest.stats.LeaderboardAdminView(statisticsService,
                     statisticsRepository, new com.lodygames.rpgquest.stats.LeaderboardCatalogEditor(statisticsService,
-                    plugin.getSLF4JLogger()), () -> configService.current().webExport().enabled()));
+                    plugin.getSLF4JLogger()), () -> effectiveWebExport().enabled()));
         }
         agentActions.setNpcSpots(npcSpotService, claimService);
         // Issue #637 : relevé des claims et téléportation de diagnostic d'un administrateur.
@@ -1734,6 +1741,11 @@ public final class RPGQuestBootstrap {
         return claimService;
     }
 
+    /** Export web réellement appliqué : {@code config.yml}, éventuellement relayé par le portail (#421). */
+    private com.lodygames.rpgquest.config.WebExportConfig effectiveWebExport() {
+        return snapshotPushConfig.applyTo(configService.current().webExport());
+    }
+
     public WebSnapshotWriter webSnapshotWriter() {
         return webSnapshotWriter;
     }
@@ -1850,7 +1862,7 @@ public final class RPGQuestBootstrap {
         ProfileCommand profileCommand = new ProfileCommand(progressionService);
         // Issue #55 : « /profile web prive|public » — le choix est une variable joueur persistante.
         profileCommand.setVariables(variableRepository);
-        profileCommand.setVisibilityDefault(() -> configService.current().webExport().profileVisibilityDefault());
+        profileCommand.setVisibilityDefault(() -> effectiveWebExport().profileVisibilityDefault());
         var profile = plugin.getCommand("profile");
         if (profile != null) {
             profile.setExecutor(profileCommand);

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.web.push;
 
+import com.lodygames.rpgquest.player.PublicProfilePolicy;
 import com.lodygames.rpgquest.web.LocalSettingsFile;
 import java.nio.file.Path;
 import java.util.function.UnaryOperator;
@@ -24,6 +25,11 @@ import org.slf4j.Logger;
  * <tr><td>{@code connect-timeout-ms}</td><td>—</td><td>{@code 5000}</td></tr>
  * <tr><td>{@code request-timeout-ms}</td><td>—</td><td>{@code 10000}</td></tr>
  * <tr><td>{@code status-interval-seconds}</td><td>—</td><td>{@code 30} (10–300)</td></tr>
+ * <tr><td>{@code snapshot-enabled}</td><td>—</td><td>{@code false} : instantané complet seulement si
+ *     {@code web-export.enabled}</td></tr>
+ * <tr><td>{@code snapshot-interval-seconds}</td><td>—</td><td>{@code 900} (600–3600)</td></tr>
+ * <tr><td>{@code snapshot-profile-visibility}</td><td>—</td><td>(vide : celle de {@code config.yml}) ;
+ *     {@code public} ou {@code private}</td></tr>
  * </table>
  */
 public final class SnapshotPushConfigLoader {
@@ -54,6 +60,11 @@ public final class SnapshotPushConfigLoader {
         int requestTimeout = settings.boundedInt("request-timeout-ms", 10_000, 1000, 60_000);
         int statusInterval = settings.boundedInt("status-interval-seconds",
                 SnapshotPushConfig.DEFAULT_STATUS_INTERVAL_SECONDS, 10, 300);
+        boolean snapshotEnabled = settings.flag("snapshot-enabled", null);
+        int snapshotInterval = settings.boundedInt("snapshot-interval-seconds",
+                SnapshotPushConfig.DEFAULT_SNAPSHOT_INTERVAL_SECONDS, SnapshotPushConfig.MIN_SNAPSHOT_INTERVAL_SECONDS,
+                SnapshotPushConfig.MAX_SNAPSHOT_INTERVAL_SECONDS);
+        PublicProfilePolicy.Visibility visibility = visibility(settings.text("snapshot-profile-visibility", null, ""));
 
         if (!enabled) {
             logger.info("Envoi d'instantané au portail désactivé (enabled != true dans {}).", FILE_NAME);
@@ -69,8 +80,23 @@ public final class SnapshotPushConfigLoader {
                     baseUrl);
             return SnapshotPushConfig.disabled();
         }
-        SnapshotPushConfig config = new SnapshotPushConfig(true, baseUrl, token, connectTimeout, requestTimeout, statusInterval);
+        SnapshotPushConfig config = new SnapshotPushConfig(true, baseUrl, token, connectTimeout, requestTimeout, statusInterval,
+                snapshotEnabled, snapshotInterval, visibility);
         logger.info("Envoi d'instantané au portail configuré : {}", config);
         return config;
+    }
+
+    /** {@code public} / {@code private} (casse indifférente) ; toute autre valeur garde celle de {@code config.yml}. */
+    private PublicProfilePolicy.Visibility visibility(String raw) {
+        if (raw.isBlank()) {
+            return null;
+        }
+        try {
+            return PublicProfilePolicy.Visibility.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            logger.warn("snapshot-profile-visibility « {} » inconnue dans {} (attendu public ou private) : "
+                    + "visibilité de config.yml conservée.", raw, FILE_NAME);
+            return null;
+        }
     }
 }

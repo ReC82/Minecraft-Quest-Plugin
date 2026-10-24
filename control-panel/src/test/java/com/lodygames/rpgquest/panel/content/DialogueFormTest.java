@@ -166,14 +166,157 @@ class DialogueFormTest {
         assertEquals(Map.of("type", "HAS_MAIN_CLAIM"), cond);
     }
 
+    // ---- Issue #815 : supprimer une réplique orpheline sans casser les liens ----------------
+
+    /** start → a → b ; a → c ; orphan → b ; loner (se cite lui-même) ; entries → gated. */
+    private static final String GRAPH = """
+            id: rpgquest:graphe
+            start: start
+            entries:
+              - node: gated
+                conditions:
+                  - type: QUEST_STATE
+                    quest: rpgquest:x
+                    state: COMPLETED
+            nodes:
+              start:
+                speaker: "T"
+                text: "Début"
+                choices:
+                  - text: "Vers A"
+                    next: a
+              a:
+                speaker: "T"
+                text: "A"
+                choices:
+                  - text: "Vers B"
+                    next: b
+                  - text: "Vers C"
+                    next: c
+              b:
+                speaker: "T"
+                text: "B"
+                choices:
+                  - text: "Fin"
+                    actions:
+                      - type: CLOSE
+              c:
+                speaker: "T"
+                text: "C"
+                choices:
+                  - text: "Retour à A"
+                    next: a
+              orphan:
+                speaker: "T"
+                text: "Plus personne ne vient ici"
+                choices:
+                  - text: "OK"
+                    next: b
+                  - text: "Fin"
+                    actions:
+                      - type: CLOSE
+              loner:
+                speaker: "T"
+                text: "Seul"
+                choices:
+                  - text: "Encore"
+                    next: loner
+              gated:
+                speaker: "T"
+                text: "Après la quête"
+                choices:
+                  - text: "Fin"
+                    actions:
+                      - type: CLOSE
+            """;
+
+    private static DialogueDraft graph() {
+        DialogueYaml.ReadResult r = DialogueYaml.read(GRAPH);
+        assertTrue(r.ok(), () -> String.join("; ", r.problems()));
+        return r.draft();
+    }
+
     @Test
-    void removingALineRedirectsItsRepliesToTheEndAndSaysHowMany() {
-        DialogueDraft d = DialogueYaml.read(COMPLEX).draft();
-        assertEquals(-1, DialogueForm.removeNode(d, 0), "la réplique de départ ne se retire pas");
-        assertEquals(1, DialogueForm.removeNode(d, 1));
-        DialogueDraft.Choice c = d.nodes.get(0).choices.get(2);
-        assertEquals("", c.next);
-        assertTrue(c.close);
+    void anIsolatedLineIsRemovedWithItsRepliesAndNothingElseMoves() {
+        DialogueDraft d = graph();
+        String before = DialogueYaml.write(graph());
+        DialogueForm.Removal r = DialogueForm.removeOrphanNode(d, "orphan");
+        assertTrue(r.allowed());
+        assertTrue(d.nodes.stream().noneMatch(n -> n.id.equals("orphan")));
+        assertEquals(List.of("start", "a", "b", "c", "loner", "gated"), d.nodes.stream().map(n -> n.id).toList(),
+                "les identifiants des autres répliques ne changent pas");
+        assertEquals("b", d.nodes.get(1).choices.get(0).next, "la cible de la réplique supprimée reste en place");
+        assertTrue(DialogueValidator.validate(d).stream().noneMatch(x -> x.level() == Diagnostic.Level.ERROR),
+                "aucune référence cassée");
+        DialogueDraft expected = DialogueYaml.read(before).draft();
+        expected.nodes.removeIf(n -> n.id.equals("orphan"));
+        assertEquals(DialogueYaml.write(expected), DialogueYaml.write(d), "seule la réplique orpheline disparaît");
+    }
+
+    @Test
+    void aReferencedLineIsRefusedAndEveryIncomingLinkIsListed() {
+        DialogueDraft d = graph();
+        DialogueForm.Removal r = DialogueForm.removeOrphanNode(d, "b");
+        assertEquals(DialogueForm.RemovalBlock.REFERENCED, r.block());
+        assertEquals(List.of(new DialogueForm.Incoming(DialogueForm.Incoming.Kind.CHOICE, "a", 0, -1),
+                new DialogueForm.Incoming(DialogueForm.Incoming.Kind.CHOICE, "orphan", 0, -1)), r.incoming(),
+                "toutes les réponses qui y mènent, même depuis une réplique elle-même inatteignable");
+        assertEquals(7, d.nodes.size(), "rien n'a été retiré");
+    }
+
+    @Test
+    void cyclesAndMultipleBranchesKeepTheirTargets() {
+        DialogueDraft d = graph();
+        assertEquals(DialogueForm.RemovalBlock.REFERENCED, DialogueForm.removal(d, "a").block(), "atteinte par start et par c");
+        assertEquals(2, DialogueForm.incoming(d, "a").size());
+        assertEquals(DialogueForm.RemovalBlock.REFERENCED, DialogueForm.removal(d, "c").block());
+    }
+
+    @Test
+    void theStartLineIsNeverRemoved() {
+        DialogueDraft d = graph();
+        DialogueForm.Removal r = DialogueForm.removeOrphanNode(d, "start");
+        assertEquals(DialogueForm.RemovalBlock.START, r.block());
+        assertEquals(7, d.nodes.size());
+    }
+
+    @Test
+    void aConditionalEntryIsAnIncomingLink() {
+        DialogueDraft d = graph();
+        DialogueForm.Removal r = DialogueForm.removeOrphanNode(d, "gated");
+        assertEquals(DialogueForm.RemovalBlock.REFERENCED, r.block());
+        assertEquals(DialogueForm.Incoming.Kind.ENTRY, r.incoming().get(0).kind());
+        assertFalse(DialogueForm.unreachable(d).contains("gated"), "une entrée atteint sa réplique : pas de badge");
+    }
+
+    @Test
+    void aLineThatOnlyPointsToItselfIsStillAnOrphan() {
+        DialogueDraft d = graph();
+        assertTrue(DialogueForm.removeOrphanNode(d, "loner").allowed(), "sa propre réponse part avec elle");
+        assertTrue(DialogueValidator.validate(d).stream().noneMatch(x -> x.level() == Diagnostic.Level.ERROR));
+    }
+
+    @Test
+    void unknownLinesAreReportedMissing() {
+        assertEquals(DialogueForm.RemovalBlock.MISSING, DialogueForm.removal(graph(), "nope").block());
+        assertEquals(DialogueForm.RemovalBlock.MISSING, DialogueForm.removal(graph(), "").block());
+    }
+
+    @Test
+    void anEntryToAMissingLineIsAValidationError() {
+        DialogueDraft d = graph();
+        d.nodes.removeIf(n -> n.id.equals("gated"));
+        assertTrue(DialogueValidator.validate(d).stream()
+                .anyMatch(x -> x.level() == Diagnostic.Level.ERROR && x.field().equals("entries[0]")));
+    }
+
+    @Test
+    void theFormKeepsEntriesAndVariantsItDoesNotShow() {
+        DialogueDraft saved = graph();
+        saved.nodes.get(1).variants.add("A bis");
+        DialogueDraft fromForm = DialogueForm.parse(DialogueForm.fields(saved)).draft();
+        DialogueForm.keepUnshown(fromForm, saved);
+        assertEquals(DialogueYaml.write(saved), DialogueYaml.write(fromForm));
     }
 
     @Test

@@ -170,7 +170,8 @@ Cette réplique ne sera **jamais affichée** en jeu.
 ### Comment corriger
 
 Ouvrir le dialogue, puis soit choisir cette réplique dans **Ensuite…** d'une réponse, soit
-**Réglages de la réplique → Retirer cette réplique** si elle est inutile. Voir
+**Supprimer cette réplique…** (en bas de sa carte) si elle est inutile. Si ce bouton manque, une
+réponse y mène encore : **Réglages de la réplique** dit laquelle. Voir
 [Une réplique que personne n'atteint](/docs/dialogues#une-replique-que-personne-natteint).
 
 ### Vérification

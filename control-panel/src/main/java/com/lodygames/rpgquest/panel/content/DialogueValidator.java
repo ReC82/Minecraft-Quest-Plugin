@@ -95,6 +95,14 @@ public final class DialogueValidator {
         } else if (!nodeIds.contains(start)) {
             out.add(Diagnostic.error("start", "Le nœud de départ « " + start + " » n'existe pas."));
         }
+        // Issue #815 : une entrée conditionnelle vers une réplique disparue ferait refuser le dialogue en jeu.
+        for (int e = 0; e < d.entries.size(); e++) {
+            String node = d.entries.get(e).node == null ? "" : d.entries.get(e).node.trim();
+            if (!nodeIds.contains(node)) {
+                out.add(Diagnostic.error("entries[" + e + "]", "L'entrée conditionnelle pointe vers un nœud inexistant « "
+                        + node + " »."));
+            }
+        }
 
         for (DialogueDraft.Node n : d.nodes) {
             for (int i = 0; i < n.choices.size(); i++) {

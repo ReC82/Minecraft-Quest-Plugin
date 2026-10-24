@@ -375,7 +375,10 @@ nodes:
         mettre en jeu une réplique sans réponse, avant toute écriture sur le serveur (le moteur
         refuserait le fichier : <code>choices</code> est obligatoire).</li>
       <li>Une réplique marquée « Aucune réponse n'y mène » ne sera jamais vue : la choisir dans
-        <em>Ensuite…</em> d'une réponse.</li>
+        <em>Ensuite…</em> d'une réponse, ou cliquer <strong>Supprimer cette réplique…</strong> puis
+        confirmer (#815). Le bouton n'existe que si rien n'y mène : ni le début de la conversation,
+        ni une réponse d'une autre réplique, ni une entrée conditionnelle. PlugAdmin le revérifie au
+        clic ; rien ne change en jeu avant « Enregistrer » puis « Mettre en jeu ».</li>
       <li><strong>Enregistrer</strong> garde les modifications dans PlugAdmin ;
         <strong>Mettre en jeu</strong> les envoie au serveur, qui les charge sans redémarrage.
         Le bandeau distingue « Enregistré — pas encore en jeu » et « À jour en jeu ».</li>

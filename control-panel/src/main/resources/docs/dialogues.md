@@ -64,8 +64,10 @@ lui parle. Les suivantes s'appellent **Réplique 2**, **Réplique 3**… Dans ch
 - **Le joueur peut répondre…** : une ligne par réponse (**Réponse du joueur**). Le détail de
   chaque réponse est juste en dessous.
 - **Ajouter une réponse** : une réponse de plus pour le joueur.
-- **Réglages de la réplique** (replié) : le nom affiché au-dessus de la phrase, et
-  **Retirer cette réplique**.
+- **Réglages de la réplique** (replié) : le nom affiché au-dessus de la phrase. Si la réplique ne
+  peut pas être supprimée, la raison y est écrite.
+- **Supprimer cette réplique…** : seulement sur une réplique que plus rien n'atteint (voir
+  [Une réplique que personne n'atteint](#une-replique-que-personne-natteint)).
 
 #### Une réponse du joueur
 
@@ -151,10 +153,21 @@ réponse n'a « Le personnage répond : cette réplique » dans **Ensuite…**. 
 **Ajouter une réplique**, ou quand on change la suite d'une réponse.
 
 - Pour la rendre visible : choisissez-la dans **Ensuite…** d'une réponse.
-- Si elle ne sert à rien : **Réglages de la réplique → Retirer cette réplique**.
+- Si elle ne sert à rien : cliquez **Supprimer cette réplique…** en bas de sa carte, puis
+  **Oui, supprimer cette réplique**. Elle part avec ses propres réponses ; les autres répliques
+  ne changent pas (seuls leurs numéros se resserrent).
+- Rien ne change en jeu avant **Enregistrer** puis **Mettre en jeu**. Avant d'enregistrer,
+  **Recharger depuis DEV** la fait revenir.
 
-Retirer une réplique ne casse rien : les réponses qui y menaient terminent alors la conversation
-(PlugAdmin le dit).
+Le bouton n'apparaît pas :
+
+- sur le **début de la conversation**, qui ne se supprime jamais ;
+- sur une réplique **encore utilisée** : une réponse (même dans une autre réplique inutilisée) la
+  choisit dans **Ensuite…**, ou une entrée conditionnelle du fichier y mène. **Réglages de la
+  réplique** liste ces réponses : changez d'abord leur **Ensuite…**, enregistrez, puis supprimez.
+
+PlugAdmin revérifie tout au moment du clic : une réplique redevenue utilisée entre-temps n'est
+pas supprimée, et le message dit pourquoi.
 
 ### Supprimer un dialogue
 

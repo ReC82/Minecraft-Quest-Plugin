@@ -408,3 +408,7 @@ Dans PlugAdmin → Dialogues → Elias, le propriétaire confirme le bandeau exa
 
 ### 24/10/2026 — #798 TC-424 étape 2 validée par le propriétaire
 Dans PlugAdmin → Dialogues → Elias, après ajout du mot « Bienvenue ! » à la première réplique puis **Enregistrer** sans publication, le propriétaire confirme le bandeau exact **« Brouillon enregistré — vos modifications ne sont pas encore en jeu. »** Enregistrement séparé de la publication validé côté interface. La version Minecraft n'a pas encore été contrôlée après brouillon ; **étape suivante : publication contrôlée du seul dialogue Elias via « Mettre en jeu », constater « À jour en jeu », puis contrôler en Minecraft**. Ne pas publier en lot ni modifier d'autres contenus ; #798 reste ouvert.
+
+
+### 24/10/2026 — #798 TC-424 étape 3 validée par le propriétaire
+Depuis l'éditeur PlugAdmin du seul dialogue Elias, après enregistrement du brouillon comportant « Bienvenue ! », le propriétaire a déclenché « Mettre en jeu ». L'interface a d'abord affiché **« Mise en jeu en cours… La page se met à jour quand le serveur a répondu. »**, puis après quelques secondes **« À jour en jeu — les joueurs voient la version enregistrée. (à l'instant) »**. Publication individuelle et synchronisation de statut confirmées côté PlugAdmin. **Étape suivante : parler à Elias en Minecraft et constater que « Bienvenue ! » apparaît**, puis vérifier que la remise/refus de kit fonctionne toujours. Ne pas déclarer le fonctionnement en jeu validé sans test. #798 reste ouvert.

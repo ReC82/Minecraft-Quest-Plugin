@@ -73,18 +73,34 @@ destination (« Portail vers le Wild »).
 
 ## Créer et gérer un portail
 
-**Créer un portail en brouillon** (bas de la liste, `PORTAL_EDIT`) : identifiant définitif, nom
-affiché facultatif, zone d'activation, monde d'arrivée et type d'arrivée. Le brouillon est écrit
-dans `world-portals/<id>.yml` avec `enabled: false` et `draft: true` : **il ne téléporte personne**.
+**Créer un portail en brouillon** (bas de la liste, `PORTAL_EDIT`) : un formulaire en cinq étapes
+numérotées — **Portail** (nom affiché facultatif, identifiant définitif), **Emplacement et zone de
+passage**, **Destination et arrivée**, **Vérification** (synthèse : trajet monde de départ → monde
+d'arrivée, zone, arrivée, statut « brouillon inactif », collision annoncée avec un portail connu),
+puis **Créer le brouillon**. Le brouillon est écrit dans `world-portals/<id>.yml` avec
+`enabled: false` et `draft: true` : **il ne téléporte personne**. Trois gestes restent distincts :
+poser l'arche (page Emplacements), créer le brouillon (ici), activer (fiche du portail).
 
-La **zone d'activation** se règle de deux façons :
+La **zone de passage** se règle de trois façons ; le **monde de départ** n'est demandé qu'en
+coordonnées, sinon c'est celui de l'emplacement :
 
-- **autour d'un emplacement** marqué en jeu avec l'outil d'emplacement (page **Emplacements**) :
+- **depuis une arche posée** (recommandé, action `portal.create` avec `zone_mode=building`) : la
+  liste montre les arches de portail posées sur un emplacement, avec la zone que le serveur déduit
+  de leur passage, de l'ancre et de la rotation de la pose — **en lecture seule**, rien à mesurer.
+  Le brouillon naît **lié** à l'arche (comme après « Lier l'arche posée »). Une arche déjà utilisée
+  par un portail, sans zone de passage, ou dont le passage recouvre un portail existant n'est pas
+  sélectionnable (la raison est affichée) ;
+- **emplacement sans arche** marqué en jeu avec l'outil d'emplacement (page **Emplacements**) :
   largeur (en travers de la face de l'emplacement), hauteur (vers le haut depuis le bloc
   d'ancrage), profondeur (le long de la face), centrées sur l'emplacement. Exemple : une arche
   3 × 4 × 1 face au nord couvre 3 blocs en X, 4 en Y, 1 en Z. Le fichier garde `site:` et
   `size:` ; la page Emplacements affiche alors « Utilisé par le portail … » ;
-- **en coordonnées** : deux coins, comme `hub_to_wild` et `hub_to_claims`.
+- **coordonnées manuelles** : le monde de départ et deux coins, comme `hub_to_wild` et `hub_to_claims`.
+
+Pour l'arrivée, les coordonnées X/Y/Z et l'orientation ne s'affichent que pour **Point fixe**.
+L'**orientation à l'arrivée** et l'**inclinaison du regard à l'arrivée** décrivent où regarde le
+joueur après la téléportation (pas l'orientation de l'arche) : inclinaison 0° = devant soi,
+-90° = vers le ciel, +90° = vers le sol.
 
 32 blocs au plus de chaque côté. Une zone qui recouvre celle d'un autre portail est **refusée** à
 l'enregistrement et **au rechargement** du serveur (le portail déjà chargé garde sa zone, le fichier

@@ -1720,6 +1720,43 @@ details.p-edit .actform{border:0;box-shadow:none;padding:0;margin:6px 0 0;backgr
 .p-locked{display:flex;align-items:center;gap:8px;margin:12px 0 0}
 .p-return{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:12px}
 .p-return .btn{margin-top:0}
+/* Issue #565 (retour du 24/10) — création progressive : étapes, cartes de choix, groupes conditionnels. */
+.p-create .w-h{font-size:18px}
+.p-lifecycle{margin:0 0 14px;padding-left:22px;font-size:14.5px;color:var(--txt-2)}
+.p-lifecycle li{margin:2px 0}
+.p-wizard{display:flex;flex-direction:column;gap:14px;background:none;border:0;box-shadow:none;padding:0}
+.p-step{border:1px solid var(--line);border-radius:12px;padding:14px 16px 12px;margin:0;min-width:0;background:var(--surface)}
+.p-step>legend{float:left;width:100%;display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;margin:0 0 4px;padding:0}
+.p-step>legend+*{clear:both}
+.p-step-n{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;
+  background:var(--primary-soft);color:var(--primary);font-size:14px;flex:none}
+.p-step-help{margin:0 0 10px}
+.p-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:8px;margin:0 0 12px}
+.p-choice,.p-arch{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;cursor:pointer;min-width:0;background:var(--surface-2);font-size:14.5px;font-weight:400}
+.p-choice input,.p-arch input{margin-top:4px;flex:none}
+.p-choice span,.p-arch span{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.p-choice small,.p-arch small{color:var(--txt-faint);font-size:13px}
+.p-choice:has(input:checked),.p-arch:has(input:checked){border-color:var(--primary);background:var(--primary-soft)}
+.p-choice:has(input:disabled),.p-arch.is-off{opacity:.6;cursor:not-allowed}
+.p-arches{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px;margin:0 0 8px}
+.p-arch-dl{margin:4px 0 0;display:grid;gap:2px}
+.p-arch-dl div{display:flex;flex-wrap:wrap;gap:0 6px;font-size:13.5px}
+.p-arch-dl dt{font-weight:600;color:var(--txt-2)}.p-arch-dl dd{margin:0}
+.p-arch .p-arch-why{color:#8a5a0c}
+.p-zone .p-mode{display:none}
+.p-zone:has(input[name=zone_mode][value=building]:checked) .p-mode-building,
+.p-zone:has(input[name=zone_mode][value=site]:checked) .p-mode-site,
+.p-zone:has(input[name=zone_mode][value=coords]:checked) .p-mode-coords{display:block}
+.p-dest .p-fixed{display:none}
+.p-dest:has(input[name=strategy][value=FIXED_POINT]:checked) .p-fixed{display:block}
+.p-dest:has(input[name=strategy][value=FIXED_POINT]:checked) .p-nofixed{display:none}
+@supports not selector(:has(*)){.p-zone .p-mode,.p-dest .p-fixed{display:block}}
+.p-summary{background:var(--surface-2);border-radius:10px;padding:12px 14px}
+.p-summary .w-dl{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:6px 20px;margin:0 0 8px}
+.p-collision{color:var(--err);font-weight:600;margin:0 0 8px}
+.p-wizard .btnrow .btn{font-size:15px;padding:9px 18px}
+@media(max-width:575.98px){.p-step{padding:12px}.p-step>legend{font-size:15px}.p-choices{grid-template-columns:1fr}}
 .p-preview{margin:0 0 4px}
 details.p-history{margin:0}
 details.p-history>summary{font-size:16px;color:var(--txt);display:flex;align-items:center;gap:8px}

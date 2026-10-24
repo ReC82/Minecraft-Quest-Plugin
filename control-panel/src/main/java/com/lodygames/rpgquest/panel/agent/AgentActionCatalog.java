@@ -3425,6 +3425,18 @@ public final class AgentActionCatalog {
                     params.put(k, String.valueOf(v));
                 }
             }
+            case "building" -> {
+                // #565 : zone = passage de l'arche posée, déduit par le plugin (contrat #568). Création
+                // seulement : un portail existant se lie depuis sa fiche (« Lier l'arche posée »).
+                if (!"portal.create".equals(type)) {
+                    return "Mode de zone inconnu.";
+                }
+                String site = buildSiteId(Map.of("id", trim(form.get("arch_site"))));
+                if (site == null) {
+                    return "Choisir l'arche posée dont le passage sera la zone du portail.";
+                }
+                params.put("site", site);
+            }
             case "coords" -> {
                 for (String k : PORTAL_CORNERS) {
                     Integer v = intIn(form.get(k), -30_000_000, 30_000_000);

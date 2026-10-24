@@ -1828,6 +1828,11 @@ public final class PanelApp {
         var generate = planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE);
         String reason = correctionMotive(project, audit, generate,
                 f.getOrDefault("notes", f.getOrDefault("reason", "")));
+        if (reason.isEmpty() && audit.current() && audit.status() == BuildingPlanWorkbench.Status.DONE) {
+            // #747 (24/10) : version acceptée, mais la description (et ses exigences actualisées) n'est pas
+            // réalisée — les écarts mesurés deviennent le motif, sans rien ranger comme consigne.
+            reason = workshopRepairPlan(project, draft, audit, currentBrief(project), "auto").compliance().gapsMotive();
+        }
         if (reason.isEmpty()) {
             boolean judged = audit.current()
                     && audit.status() == BuildingPlanWorkbench.Status.DONE;

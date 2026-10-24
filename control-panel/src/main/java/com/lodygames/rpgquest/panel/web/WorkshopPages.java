@@ -1077,9 +1077,14 @@ public final class WorkshopPages {
             sb.append("<p class=\"field-help\">Le bâtiment rejoint la bibliothèque. Aucun bloc n'est posé "
                     + "dans le monde : vous choisirez ensuite un emplacement.</p>");
         }
-        if (divergence.isPresent() || !verdict.warnings().isEmpty()) {
-            sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Améliorer avec l'IA"
-                    + "</summary>").append(correctionForm(v, correctionReason(v))).append("</details>");
+        // #747 (24/10) : une version acceptée qui ne réalise pas toute la description se reprend aussi — les
+        // écarts mesurés (✗ manquant, ⚠ ajout non demandé) partent alors comme motif.
+        boolean gaps = v.repairInfo() != null && v.repairInfo().complianceLines().stream()
+                .anyMatch(l -> l.startsWith("✗") || l.startsWith("⚠"));
+        if (divergence.isPresent() || !verdict.warnings().isEmpty() || gaps) {
+            sb.append("<details class=\"npc-registry\"").append(gaps ? " open" : "").append("><summary class=\"muted\">")
+                    .append(gaps ? "Améliorer avec l'IA — la description n'est pas entièrement réalisée" : "Améliorer avec l'IA")
+                    .append("</summary>").append(correctionForm(v, correctionReason(v))).append("</details>");
         }
         return sb.toString();
     }

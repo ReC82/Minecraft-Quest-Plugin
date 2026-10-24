@@ -5730,6 +5730,13 @@ rouge « ⚠ MODE ADMIN / BYPASS ACTIF » ne doit pas être affichée. **Durée*
     **refusé** (correctif du 23/10 : l'ancienne réponse « autorisé » était le bug signalé). Bypass
     ON : la vache peut être frappée.
 
+**Volet #321 sans second compte OP (24/10)** : les étapes 1, 3, 6, 7 et 8 sont prouvées par les
+matrices automatiques ci-dessous (même code que le serveur, base SQLite réelle, défauts `op` de
+`plugin.yml` appliqués). Avec le seul compte du propriétaire, déjà contrôlé : `status` → « inactif ».
+Ne **jamais** modifier ce compte (droits, claims, variables, OP) pour rejouer l'étape 1 : un compte
+OP qui possède déjà un claim ou `CLAIM_TIER_1 = true` entre légitimement (règle « déjà débloqué »),
+ce qui ne prouve rien sur le refus. L'étape 1 en jeu n'est rejouable qu'avec un futur compte de test.
+
 **Revalidation ciblée — construction au Hub d'un OP (réouverture de #35 du 23/10)** :
 
 12. Compte **OP**, `/rpgadmin bypass status` → « inactif ». Au Hub : casser un bloc, poser un bloc,
@@ -5745,7 +5752,12 @@ rouge « ⚠ MODE ADMIN / BYPASS ACTIF » ne doit pas être affichée. **Durée*
 seulement, retrait PlugAdmin, durée maximale, permission perdue, indicateur, déconnexion, arrêt),
 `ClaimWorldAccessGuardTest` (OP sans bypass refusé, OP bypass ON puis OFF, DEOP, `CLAIM_TIER_1`
 `false`/`TRUE`/`oui`/`1` refusés, OP éligible accepté, nœud sans session, session sans nœud,
-retrait PlugAdmin), listeners claims/zones/Hub (OP sans session bloqué ; `HubWorldProtectionListenerTest` :
+retrait PlugAdmin ; **matrice #321 du 24/10** : 40 cas OP/non-OP × bypass demandé ON/OFF ×
+`CLAIM_TIER_1` absente/`false`/`true`/`TRUE`/`oui` × claim possédé ou non),
+`ClaimWorldSafetyListenerTest` (**matrice d'arrivée #321**, 20 cas : tout chemin hors portail —
+`/tp` vanilla, Multiverse, `/rpgadmin world tp`, `/claim admin tp`, portails historiques, connexion
+dans le monde — renvoie au Hub un OP sans session ni déblocage), `BypassOnlyThroughAdminModeTest`
+(aucun code ne lit un nœud de bypass hors `AdminBypassMode`), listeners claims/zones/Hub (OP sans session bloqué ; `HubWorldProtectionListenerTest` :
 OP OFF casse/pose/seau/feu/panneau refusés, ON autorisé, retour OFF refusé immédiatement, OP avec nœud
 builder toujours soumis à la session, ombrelle non OP via session, builder non OP permanent, décor —
 cadres, piétinement — refusé au joueur normal), `GameSettingsTest`,

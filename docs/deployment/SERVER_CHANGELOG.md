@@ -69,11 +69,14 @@ JAR + `data.db` + configuration par `scripts/deploy-verygames.sh` (sauvegarde da
 
 ### Déploiement
 
-`scripts/deploy-verygames.sh -y` après CI verte du commit de fusion. Aucune migration de base.
+Effectué le 25/10 à 01:25 : `scripts/deploy-verygames.sh -y` (CI verte sur `e17afa2`), puis
+`scripts/verygames-restart.sh` (0 joueur connecté). Sauvegarde : `rpgquest-20261024T232538Z-predeploy.jar`
+(JAR `9d0cd6c5`, SHA-256 `6503f237…`). Aucune migration de base.
 
 ### Validation
 
-Empreinte du JAR servi = JAR construit ; test en jeu : PENDING MANUAL VALIDATION (TC-430).
+JAR servi retéléchargé : 4 404 838 octets, SHA-256 `bc505c88…` = JAR construit, contient `QuestTitleQueue`.
+Test en jeu : PENDING MANUAL VALIDATION (TC-430).
 
 ### Rollback
 

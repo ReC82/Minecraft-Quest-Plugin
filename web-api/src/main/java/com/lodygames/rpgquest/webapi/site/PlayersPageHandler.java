@@ -246,7 +246,8 @@ public final class PlayersPageHandler implements ApiHandler {
         }
         if (profile.get("questsCompleted") != null) {
             body.append("<p>").append(PortalIcons.icon("scroll", 16)).append(" <strong>")
-                    .append(StatLabels.number(profile.get("questsCompleted"))).append("</strong> quêtes terminées</p>");
+                    .append(StatLabels.number(profile.get("questsCompleted"))).append("</strong> ")
+                    .append(questsDone(profile.get("questsCompleted"))).append("</p>");
         }
         ranks.stream().min(Comparator.comparingLong(rank -> Long.parseLong(rank[1]))).ifPresent(best ->
                 body.append("<p>").append(PortalIcons.icon("trophy", 16)).append(" Meilleur rang : <strong>")
@@ -302,6 +303,12 @@ public final class PlayersPageHandler implements ApiHandler {
             html.append("</span></li>");
         }
         return html.append("</ul>").toString();
+    }
+
+    /** « 1 quête terminée », « 12 quêtes terminées ». */
+    static String questsDone(Object count) {
+        String unit = StatLabels.unit("QUESTS_COMPLETED", count);
+        return unit + (unit.endsWith("s") ? " terminées" : " terminée");
     }
 
     /** Début de suivi de chaque métrique, lu dans le catalogue de l'instantané (#734). */

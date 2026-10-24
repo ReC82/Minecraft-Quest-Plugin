@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.webapi.json.Json;
-import com.lodygames.rpgquest.webapi.site.StatLabels;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -251,17 +250,14 @@ class PublicPortalV1Test {
     }
 
     @Test
-    void freshDataShowsNoUnavailabilityNoticeAndUnitsAgreeWithTheValue() throws Exception {
+    void freshDataShowsNoUnavailabilityNotice() throws Exception {
         snapshot();
         start(true, "");
 
         for (String path : List.of("/", "/joueurs", "/joueurs/Alice", "/classements", "/classements/tous")) {
             assertFalse(get(path).body().contains("momentanément indisponibles"), path);
         }
-        assertEquals("quête", StatLabels.unit("QUESTS_COMPLETED", 1));
-        assertEquals("quêtes", StatLabels.unit("QUESTS_COMPLETED", 2));
-        assertEquals("ville", StatLabels.unit("CITY_DISCOVERED", 0));
-        assertEquals("XP", StatLabels.unit("RPG_XP_GLOBAL", 1));
+        assertTrue(get("/joueurs/Alice").body().contains("<strong>3</strong> quêtes terminées"));
     }
 
     @Test

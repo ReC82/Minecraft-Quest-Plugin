@@ -374,6 +374,9 @@ nodes:
         « Au revoir. » → <em>Terminer la conversation</em>. PlugAdmin refuse d'enregistrer ou de
         mettre en jeu une réplique sans réponse, avant toute écriture sur le serveur (le moteur
         refuserait le fichier : <code>choices</code> est obligatoire).</li>
+      <li><strong>Aucune réponse ne mène à une réplique absente</strong> : le moteur refuserait tout le
+        dialogue. Si un fichier écrit hors de PlugAdmin contient un tel lien, la mise en jeu (seule ou
+        en lot) est refusée avant tout envoi, en nommant la réponse et la réplique.</li>
       <li>Une réplique marquée « Aucune réponse n'y mène » ne sera jamais vue : la choisir dans
         <em>Ensuite…</em> d'une réponse, ou cliquer <strong>Supprimer cette réplique…</strong> puis
         confirmer (#815). Le bouton n'existe que si rien n'y mène : ni le début de la conversation,

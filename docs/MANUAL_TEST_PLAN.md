@@ -6481,6 +6481,21 @@ dans les journaux du serveur. Une étape à la fois, avec l'accès bêta :
 21. Fiche de Madix666 : pas de section Statistiques (aucune valeur journalisée), aucune valeur 0
     inventée.
 
+**F. Pages Joueurs, Fiche, Classements et Recherche avec les vraies données (issue #56, portail AWS
+`c6f7279` depuis le 24/10/2026 23:24)**
+
+Navigateur seul, avec l'accès bêta. Une étape à la fois (3 min) :
+
+22. `/joueurs` : les 3 testeurs avec leur XP globale, et en bas « Données relevées sur le serveur le … »
+    (moins de 15 min). Pas de phrase « présents dans au moins un classement ».
+23. Taper `rondou` dans « Chercher un pseudo » → fiche **Rondoudou9000** directement ; taper `o` →
+    liste « 2 profils correspondent » ; taper `zzzz` → « Aucun profil public ne correspond ».
+24. Fiche de Madix666 : « **1 quête terminée** » (singulier) ; `/classements` : « Madix666 1 quête ».
+25. Noter l'XP Minage de ta fiche ; en jeu, miner un minerai : `/skills` montre le gain (le jeu
+    n'affiche pas l'XP totale) ; au plus 15 min après, la fiche augmente du même montant.
+26. (Facultatif, pendant un redémarrage DEV annoncé) : `/joueurs` répond « Profils et classements
+    momentanément indisponibles » (et non « Aucun profil public ») puis revient seul au relevé suivant.
+
 ### TC-328 — Droits à récompense : remise unique en jeu (issue #422, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de #422 (migration V41), PlugAdmin à jour. Sur DEV seulement, avec un compte de

@@ -593,8 +593,15 @@ public final class RPGQuestBootstrap {
         registry.start(progressionService);
         // Issues #69 / #209 : un seul canal pour l'action bar — la progression d'un objectif n'est
         // plus effacée par l'XP de combat du même kill, envoyée au tick suivant.
-        var actionBarFeedback = new com.lodygames.rpgquest.feedback.ActionBarFeedback();
+        // Issue #817 : plusieurs quêtes qui progressent ou se terminent ensemble — compteurs
+        // attribués et courts, informations mises en file, titres de fin de quête en file.
+        java.util.function.BiConsumer<Runnable, Long> mainThreadLater = (task, delayMillis) ->
+                plugin.getServer().getScheduler().runTaskLater(plugin, task, Math.max(1L, (delayMillis + 49L) / 50L));
+        var actionBarFeedback = new com.lodygames.rpgquest.feedback.ActionBarFeedback(
+                System::currentTimeMillis, mainThreadLater);
         questProgressEngine.setActionBar(actionBarFeedback);
+        questProgressEngine.setTitleQueue(new com.lodygames.rpgquest.feedback.QuestTitleQueue(
+                System::currentTimeMillis, mainThreadLater));
         questProgressEngine.setCustomItemRegistry(customItemRegistry);
         // Issue #70 : « Parler à Garde » plutôt que « Parler au PNJ » dans l'annonce des objectifs.
         // Le nom affiché est du MiniMessage : seules ses balises sont retirées, jamais l'id montré.

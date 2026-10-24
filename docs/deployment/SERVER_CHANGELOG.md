@@ -49,6 +49,49 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-24 - Portail : vrais joueurs en bêta restreinte, instantané complet toutes les 15 min (#421, TC-327 D)
+
+### Changement
+
+Plugin : l'instantané complet (pseudos, XP par piste, quêtes terminées, classements, profils — jamais d'UUID, d'IP,
+d'inventaire ni de position) part vers le portail AWS toutes les 15 min si `portal-snapshot.properties` contient
+`snapshot-enabled=true`, numéroté (`bootId`/`sequence`), réessayé 2 fois (30 s, 2 min) si le portail est
+injoignable ; relevé d'état avec TPS/MSPT ; correctif : l'export planifié ne partait jamais (#832). Portail :
+doublons/retards ignorés, données affichées entre deux envois (1 h max), `/health` `sync` + `load`, date de relevé
+sur Joueurs. Accès bêta nginx sur tout le site sauf `/health`, `/demo/` et les routes machine.
+
+### Action serveur
+
+- VeryGames : JAR `69a6c068` puis `455379aa` (**aucune migration**) ; `RPGQuest/portal-snapshot.properties`
+  complété (`snapshot-enabled=true`, `snapshot-interval-seconds=900`, `snapshot-profile-visibility=public`) via
+  `--also` ; **`config.yml` inchangé** (`web-export.enabled: false`). Deux redémarrages RCON (20:01, 0 joueur ;
+  20:48, LoDyMcFly prévenu par `say [Maintenance]` 65 s avant).
+- AWS : portail `69a6c06` (`scripts/web-portal/deploy.sh`) ; `player-data-public=true` dans
+  `/etc/lodyquests-portal/web-api.properties` ; vhost nginx `lodyquests-portal` (include du snippet bêta,
+  `auth_basic off` des routes machine, blocs `/health` et `/demo/`) + `/etc/nginx/snippets/lodyquests-portal-beta.conf`
+  + `/etc/nginx/lodyquests-portal-beta.htpasswd` (compte partagé `beta`, hors Git) ; `nginx -t` puis reload.
+
+### Sauvegarde préalable
+
+JAR : `rpgquest-20261024T180031Z-predeploy.jar` (= `e9b4376a`), puis `rpgquest-20261024T184640Z-predeploy.jar`
+(= `69a6c068`) ; `portal-snapshot.properties` : `verygames-backups/extra-20261024T180031Z/` ; portail :
+`/opt/lodyquests-portal/releases/20261024-194558` ; `web-api.properties.bak-pre421-beta-20261024-*` ; vhost :
+`/etc/nginx/sites-available/lodyquests-portal.bak-pre421-beta-20261024-193050`.
+
+### Validation
+
+JAR SHA-256 `4096ebc7…` retéléchargé identique ; propriétés retéléchargées identiques. Instantanés réels n° 1
+(20:49:01, 18 081 o, 3 joueurs) et n° 2 (21:04:01, +900 s ; 1er essai 502 pendant un arrêt volontaire du portail,
+2e essai STORED 30 s plus tard). Pages Joueurs / fiche / Classements / recherche 200 avec l'accès bêta, 401 sans ;
+`/demo/joueurs` public. TC-327 D PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Retirer les données de joueurs : `player-data-public=false` + `sudo systemctl restart lodyquests-portal`
+(immédiat). Arrêter l'envoi : retirer les 3 lignes `snapshot-*` (copie `extra-20261024T180031Z`) + redémarrage DEV.
+JAR : `scripts/rollback-verygames.sh` (sauvegardes ci-dessus). Portail : `scripts/web-portal/rollback.sh`. nginx :
+remettre la sauvegarde du vhost, supprimer le snippet, `nginx -t`, reload.
+
 ## 2026-10-24 - Atelier IA : enregistrer avec avertissements, exigences actualisées, essai de modèle, mesures (#747 lot A, TC-428)
 
 ### Changement

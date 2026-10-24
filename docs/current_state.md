@@ -419,13 +419,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   arrière (#211) ; badge de notifications par compte, lu/non lu (#293).
 > - **Portail web** : instantané v2 (statistiques par portée, profils publics), `/profile web
 >   prive|public`, pages `/joueurs` et `/confidentialite` (#52–#57). **Hébergé sur AWS** depuis le
->   15/10 (#52 : `lodyquests-portal.service`, `/health`, `scripts/web-portal/`), sans pseudo publié
->   (`player-data-public=false`) ni boutique ; `web-export` désactivé sur DEV ; canal
+>   15/10 (#52 : `lodyquests-portal.service`, `/health`, `scripts/web-portal/`), sans boutique ;
+>   **depuis le 24/10, vrais joueurs en bêta restreinte** (#421 : instantané complet toutes les
+>   15 min via `snapshot-enabled=true` de `portal-snapshot.properties`, numéroté et réessayé,
+>   `player-data-public=true`, tout le site derrière l'accès bêta nginx sauf `/health` et `/demo/`) ;
+>   `web-export.enabled` reste `false` dans `config.yml` ; canal
 >   d'acheminement vers AWS (#421 : `POST /api/snapshot` à jeton dédié,
 >   `portal-snapshot.properties` hors Git, statut public en quatre états en ligne / hors ligne
 >   annoncé / non actualisé / inconnu) **actif depuis le 22/10 pour le seul relevé d'état agrégé**
->   (en ligne, nombre de joueurs, toutes les 30 s, idempotent `bootId`/`sequence`) ; instantané
->   complet toujours inactif (`web-export` désactivé). Comptes (#53) faits, désactivés, avec progression personnelle du joueur relié sur `/compte` (lot 6, `POST /api/link/progress`, aperçu fictif `/demo/compte`) et gestion du compte (lot 7 : changement de mot de passe, export JSON, suppression définitive) ; moteur d'événements (#57) fait : journal d'activité
+>   (en ligne, nombre de joueurs, TPS/MSPT, toutes les 30 s, idempotent `bootId`/`sequence`). Comptes (#53) faits, désactivés, avec progression personnelle du joueur relié sur `/compte` (lot 6, `POST /api/link/progress`, aperçu fictif `/demo/compte`) et gestion du compte (lot 7 : changement de mot de passe, export JSON, suppression définitive) ; moteur d'événements (#57) fait : journal d'activité
 >   générique `stat_activity_log` (mobs tués, pêche ; admin/debug exclus), filtres, règles de
 >   classement, objectif commun, `status: draft|cancelled`, audit `stat_period_audit` (migration
 >   **V40**), back-office PlugAdmin à faire. Droits à récompense (#422) : tranche 1 livrée,

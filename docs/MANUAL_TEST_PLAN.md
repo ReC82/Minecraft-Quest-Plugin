@@ -6447,6 +6447,25 @@ Jeton dédié posé des deux côtés, `portal-snapshot.properties` sur DEV, `web
 11. (optionnel, propriétaire) Canal coupé : après 2 minutes, « Informations non actualisées depuis
     le … », jamais « hors ligne ». Rétablir et vérifier le retour à « ● En ligne ».
 
+**D. Vrais joueurs en bêta restreinte (actif sur DEV depuis le 24/10/2026 20:49)**
+
+Instantané complet toutes les 15 min (`snapshot-enabled=true`), portail derrière l'accès bêta
+(identifiant `beta`, mot de passe remis hors Git par Claude), `player-data-public=true` sur AWS.
+Une étape à la fois, ordinateur ou téléphone :
+
+12. Ouvrir https://lodyquests.lodylands.com **sans** accès bêta : le navigateur demande un
+    identifiant. Annuler → page refusée. https://lodyquests.lodylands.com/demo/joueurs s'ouvre sans
+    identifiant et ne montre que des joueurs `Demo_*`.
+13. Se connecter avec l'accès bêta → **Joueurs** : LoDyMcFly, Rondoudou9000, Madix666 et, en bas,
+    « Données relevées sur le serveur le … » (moins de 15 min).
+14. Ouvrir sa fiche : XP Combat / Minage / Agriculture et quêtes terminées = celles de `/skills` et
+    du journal en jeu au moment du relevé.
+15. **Classements** : mêmes trois joueurs, rangs cohérents avec la fiche.
+16. Recherche : taper « rondou » → fiche de Rondoudou9000 ; « zzzz » → « Aucun profil public ne
+    correspond ».
+17. (optionnel) Gagner de l'XP en jeu, attendre au plus 15 min, recharger la fiche : la valeur et
+    la date changent.
+
 ### TC-328 — Droits à récompense : remise unique en jeu (issue #422, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de #422 (migration V41), PlugAdmin à jour. Sur DEV seulement, avec un compte de

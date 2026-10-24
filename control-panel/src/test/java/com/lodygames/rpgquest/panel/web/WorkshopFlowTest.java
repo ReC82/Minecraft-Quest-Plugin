@@ -891,6 +891,43 @@ class WorkshopFlowTest {
     }
 
     /**
+     * #283 (lot B, 24/10/2026) : les images de référence repartent en pixels à CHAQUE étape manuelle —
+     * plan, « Améliorer avec l'IA », « Recommencer depuis ma description » — et restent attachées au
+     * projet après une nouvelle conception. Le journal DEV le montrait ; aucun test ne le gardait.
+     */
+    @Test
+    void referenceImagesAreKeptAndSentAsPixelsAtEveryManualStepIncludingRestart() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        upload(get(project).body(), id(project), "facade.png", PNG);
+        String pixels = "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(PNG);
+
+        String withDraft = propose(project);
+        assertTrue(lastAiRequest.contains(pixels), "plan : les pixels partent");
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+
+        String page = get(withDraft).body();
+        String form = formAround(page, "value=\"correct\"");
+        String improved = location(post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=correct&id="
+                + id(withDraft) + "&draft=" + draftId(withDraft) + "&version=1&provider=openai&request_token="
+                + token(form)));
+        assertEquals(2, aiCalls.get());
+        assertTrue(lastAiRequest.contains(pixels), "amélioration : les pixels repartent");
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+
+        page = get(improved).body();
+        form = formAround(page, "value=\"restart\"");
+        String next = location(post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=restart&id="
+                + id(withDraft) + "&draft=" + draftId(improved) + "&provider=openai&request_token=" + token(form)
+                + "&confirm=yes"));
+        assertEquals(3, aiCalls.get());
+        assertTrue(lastAiRequest.contains(pixels), "recommencer : les pixels repartent");
+        assertFalse(lastAiRequest.contains("PROPOSITION PRÉCÉDENTE"), "ni plan ni erreur transmis");
+        assertEquals("", drafts().find(draftId(next)).orElseThrow().parentId());
+        assertTrue(get(next).body().contains("(facultatif, 1 / 4)"), "l'image reste attachée au projet");
+    }
+
+    /**
      * #747 — parcours réel du 22/10/2026 : la mémoire envoyée avec « Améliorer avec l'IA » ne contenait
      * que les versions déjà améliorées une fois (relevées dans le journal). Elle couvre désormais toutes
      * les versions jugées du projet, y compris celle qui n'a jamais été améliorée elle-même.

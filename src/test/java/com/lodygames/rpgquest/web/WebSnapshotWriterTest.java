@@ -141,6 +141,20 @@ class WebSnapshotWriterTest {
     }
 
     @Test
+    void firstScheduledTickExportsWithoutBeingForced() throws Exception {
+        WebSnapshotWriter writer = new WebSnapshotWriter(
+                plugin, tempDir, progressionRepository, customItemRegistry, () -> config(true), plugin.getSLF4JLogger());
+        writer.start();
+        try {
+            server.getScheduler().performTicks(101);
+
+            assertTrue(awaitFile(snapshotFile()).contains("\"schemaVersion\""), "export planifié, sans triggerNow()");
+        } finally {
+            writer.stop();
+        }
+    }
+
+    @Test
     void stopCancelsSchedulingAndShutsDownCleanly() {
         WebSnapshotWriter writer = new WebSnapshotWriter(
                 plugin, tempDir, progressionRepository, customItemRegistry, () -> config(true), plugin.getSLF4JLogger());

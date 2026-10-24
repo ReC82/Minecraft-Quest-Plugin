@@ -2315,6 +2315,18 @@ diagnostic **complet** (le message d'action est tronqué à 500 caractères par 
   lisent la description **et** ces consignes (un lit demandé n'est plus « ajout non demandé »). Modifier la
   description les clôt. Au plus 6 consignes / 3 000 caractères, les plus récentes. Une version qui a passé les
   contrôles est reprise comme « demande de modifications », plus comme « proposition refusée ».
+- **Mesures ajoutées par l'essai supervisé (#747, 24/10/2026).** *Toiture en pente* (« deux pans », « deux
+  pentes », « pignons », « toit pointu ») : au moins une instruction `gable` et, sur la grille compilée, 40 % des
+  colonnes bâties coiffées d'un escalier ou d'une dalle ; dans la conception, un `VOLUME … | toit: deux pans…`
+  ou `pointu` la satisfait. *Torches murales* (« torches fixées aux murs », « murales ») : `minecraft:wall_torch`
+  dans le plan et le résultat (`minecraft:torch` est une torche posée au sol). « Table de fabrication » = établi.
+  Description *de plain-pied* (« plain-pied », « un seul niveau », « sans … étage ») + escalier intérieur
+  (`staircase` sans `facade`, `floor` ≥ 1) → « ⚠ Escalier vers un étage », transmis pour retrait ; le prompt dit
+  d'utiliser `walls` et non `shell` sous un toit de plain-pied (le dessus d'un `shell` est un plancher). Une
+  version **acceptée** qui ne réalise pas toute la description se reprend sans consigne : « Améliorer avec l'IA »
+  s'ouvre et les écarts mesurés partent comme motif. Une réparation du moteur se compare à la version que l'IA
+  devait améliorer. Un envoi sans texte de plan n'est plus enregistré comme révision. nginx PlugAdmin : 150 s
+  pour `/buildings/workshop/project` (un modèle qui raisonne répond en ~70 s).
 - **Essai avec un autre modèle (#747, 24/10/2026).** Chaque formulaire payant de l'Atelier a un volet replié
   « Essai avec un autre modèle (facultatif) » : modèle et plafond de jetons de sortie (256 à 32 000) **pour cet
   appel seulement** ; les réglages enregistrés du fournisseur ne changent pas. Le journal IA note `trial` à côté

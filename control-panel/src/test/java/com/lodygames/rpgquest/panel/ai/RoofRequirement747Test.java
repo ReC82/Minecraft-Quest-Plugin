@@ -79,4 +79,14 @@ class RoofRequirement747Test {
                 .statuses().stream().filter(st -> "roof".equals(st.requirement().id())).findFirst().orElseThrow();
         assertTrue(kept.unverified() && !kept.missing(), "avec ses gable mais sans grille : non vérifiée, pas manquante");
     }
+
+    @Test
+    void theDesignDeclaresTheRoofOnItsVolumeLineNotAsAnElement() {
+        String pitched = "VOLUME nef | rôle: corps principal | x 2..12 | z 2..16 | y 0..11 | toit: deux pans axe z\n";
+        String flat = "VOLUME nef | rôle: corps principal | x 2..12 | z 2..16 | y 0..11 | toit: plat\n";
+        assertTrue(ArchitecturalDesign.parse(pitched).gaps(BRIEF, 19, 19, 23).stream()
+                .noneMatch(f -> f.text().startsWith("Toiture en pente")));
+        assertTrue(ArchitecturalDesign.parse(flat).gaps(BRIEF, 19, 19, 23).stream()
+                .anyMatch(f -> f.text().startsWith("Toiture en pente") && f.text().contains("aucun VOLUME")));
+    }
 }

@@ -49,6 +49,41 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-24 - Atelier IA : enregistrer avec avertissements, exigences actualisées, essai de modèle, mesures (#747 lot A, TC-428)
+
+### Changement
+
+Plugin : `building.generate` accepte `accept_defects` — une grille complète refusée uniquement pour des défauts
+contournables s'enregistre si l'administrateur a confirmé exactement ces défauts (contrôle serveur) ; marquée
+« ENREGISTRÉ AVEC AVERTISSEMENTS ACCEPTÉS », rappelée à la pose. PlugAdmin : formulaire « Enregistrer malgré les
+avertissements », exigences actualisées (consignes d'« Améliorer » conservées et prioritaires), essai avec un autre
+modèle pour un seul appel, mesures toit / torches murales / plain-pied, reprise d'une version acceptée sur ses
+écarts mesurés, plan vide refusé.
+
+### Action serveur
+
+- VeryGames : remplacement du JAR RPGQuest uniquement (`e9b4376a`), **aucune migration**, aucune configuration ni
+  contenu modifié ; redémarrage (seul le propriétaire connecté).
+- AWS : PlugAdmin redéployé (`e9b4376a`, `83c6c2f8`, `36369d0c`, `0209cda8`) ; nginx PlugAdmin : `proxy_read_timeout 150s`
+  sur `location = /buildings/workshop/project` (sauvegarde `/etc/nginx/sites-available/.plugadmin.bak-747-20261024-155119`).
+
+### Sauvegarde préalable
+
+JAR précédent (`c42c6bf0`) : `rpgquest-20261024T133722Z-predeploy.jar` ; PlugAdmin : releases sous
+`/opt/plugadmin/releases/` ; vhost nginx sauvegardé.
+
+### Validation
+
+JAR SHA-256 `efe11346…` retéléchargé identique ; `/health` ONLINE et classes nouvelles présentes dans le JAR servi ;
+audit de V-8776ad09 sur DEV : `acceptable` = `UNSUPPORTED_BLOCK` et formulaire affiché. TC-428 PENDING MANUAL VALIDATION.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` (JAR ci-dessus) puis `scripts/verygames-restart.sh` ; PlugAdmin :
+`scripts/plugadmin/rollback.sh app` ; nginx : remettre la sauvegarde puis `sudo systemctl reload nginx`. Panel ancien +
+JAR nouveau compatibles (paramètre facultatif) ; panel nouveau + JAR ancien : l'enregistrement avec défauts est
+refusé « non disponible », le reste fonctionne.
+
 ## 2026-10-23 - Aperçu 3D des bâtiments plus fidèle : états des blocs, eau et verre translucides (#786, TC-425)
 
 ### Changement

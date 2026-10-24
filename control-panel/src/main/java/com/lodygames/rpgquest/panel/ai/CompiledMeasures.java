@@ -141,6 +141,34 @@ public final class CompiledMeasures {
         return Optional.ofNullable(best);
     }
 
+    /** Part minimale des colonnes bâties coiffées d'un escalier ou d'une dalle pour parler de toit en pente. */
+    public static final int PITCHED_PERCENT = 40;
+
+    /**
+     * #747 (24/10/2026) : combien de colonnes bâties se terminent par un escalier ou une dalle — la
+     * signature d'un toit à pans — sur combien. Un « shell » fermé ne fait qu'un toit plat : gpt-5-mini a
+     * retiré les deux toits de l'église de test et le plan restait « conforme ».
+     *
+     * @return {@code {coiffées, bâties}}
+     */
+    public int[] pitchedColumns() {
+        int pitched = 0;
+        int built = 0;
+        for (int x = 0; x < voxels.sizeX(); x++) {
+            for (int z = 0; z < voxels.sizeZ(); z++) {
+                if (top[x][z] < 0) {
+                    continue;
+                }
+                built++;
+                String b = bareOf(voxels.at(x, top[x][z], z).block());
+                if (b.endsWith("_stairs") || b.endsWith("_slab")) {
+                    pitched++;
+                }
+            }
+        }
+        return new int[] {pitched, built};
+    }
+
     /** Les cellules d'un bloc donné ({@code minecraft:bell}…), comme {@code {x, y, z}}. */
     public List<int[]> cellsOf(String block) {
         String bare = block.startsWith("minecraft:") ? block.substring("minecraft:".length()) : block;

@@ -230,6 +230,10 @@ public final class BriefRequirements {
             det("benches", "Bancs / assises", "\\b(bancs?|assises?|banquettes?)\\b", "^minecraft:[a-z_]+_stairs$",
                     "pose des rangées d'escaliers en bois au niveau du sol (op: box avec un bloc *_stairs), "
                             + "en plus de ceux du toit"),
+            det("wall_torch", "Torches murales", "\\btorches? (murales?|(fixees? )?aux murs?|fixees? (aux|sur les) murs?)",
+                    "^minecraft:(soul_)?wall_torch$",
+                    "pose des torches murales : op: box, block \"minecraft:wall_torch[facing=…]\" contre un mur plein "
+                            + "(minecraft:torch est une torche posée au sol)"),
             det("bed", "Lit(s)", "\\blits?\\b", "^minecraft:[a-z_]+_bed$", "pose un lit avec « op: bed »"),
             det("bookshelf", "Étagères de livres", "\\b(bibliotheques?|etageres?|livres)\\b",
                     "^minecraft:(chiseled_)?bookshelf$", "pose des minecraft:bookshelf le long des murs"),
@@ -237,13 +241,17 @@ public final class BriefRequirements {
                     "pose un minecraft:furnace ou un minecraft:smoker"),
             det("anvil", "Enclume", "\\benclumes?\\b", "^minecraft:(chipped_|damaged_)?anvil$",
                     "pose une minecraft:anvil"),
-            det("crafting", "Établi", "\\b(etablis?|tables? de craft)\\b", "^minecraft:crafting_table$",
+            det("crafting", "Établi", "\\b(etablis?|tables? de (craft|fabrication))\\b", "^minecraft:crafting_table$",
                     "pose une minecraft:crafting_table"),
             det("chest", "Coffre(s)", "\\b(coffres?|tonneaux?)\\b", "^minecraft:(chest|barrel|trapped_chest)$",
                     "pose un minecraft:chest ou un minecraft:barrel"),
             measured("tower", "Tour distincte du corps principal", "\\b(tours?|clochers?|tourelles?|donjons?)\\b",
                     "construis la tour comme un volume à part (ses murs sur sa propre emprise, d'au moins 3 × 3), "
                             + "qui dépasse le toit du corps principal d'au moins 4 blocs, avec son propre toit"),
+            measured("roof", "Toiture en pente (pans, toit pointu)",
+                    "\\b(deux (pans|pentes)|[a-z]+ pans\\b|pignons?|toit(ure)?s? (pointue?s?|en pente))",
+                    "couvre le bâtiment d'un toit « op: gable » (deux pans, pignons fermés) — un « shell » fermé ne "
+                            + "fait qu'un toit plat ; une tour garde son propre toit"),
             visual("altar", "Autel", "\\bautels?\\b"),
             visual("dais", "Estrade / podium", "\\b(estrades?|podiums?)\\b"),
             measured("aisle", "Allée centrale", "\\ballees?\\b",
@@ -345,6 +353,7 @@ public final class BriefRequirements {
 
     private static Report evaluateBrief(String brief, String planYaml, Map<String, ?> palette,
                                         com.lodygames.rpgquest.panel.building.BuildingVoxels voxels) {
+        boolean extraLevels = false;
         java.util.Optional<CompiledMeasures> measures = CompiledMeasures.of(voxels);
         Matcher front = FRONT.matcher(planYaml == null ? "" : planYaml);
         String axis = CompiledMeasures.entranceAxis(front.find() ? front.group(1) : "");
@@ -356,6 +365,10 @@ public final class BriefRequirements {
         for (Requirement r : requirements) {
             if (r.check() == Check.VISUAL) {
                 out.add(new Status(r, false, null));
+                continue;
+            }
+            if ("roof".equals(r.id())) {
+                out.add(roof(r, planYaml, measures));
                 continue;
             }
             if (r.check() == Check.MEASURED) {
@@ -377,6 +390,11 @@ public final class BriefRequirements {
         if (tower && bell) {
             out.add(measure(BELL_IN_TOWER, measures, axis));
         }
+        if (SINGLE_LEVEL.matcher(fold(brief)).find() && hasInteriorStaircase(planYaml)) {
+            // #747 (24/10) : cabane « sans étage » — le dessus d'un « shell » sous le toit lu comme un plancher,
+            // et relié par un escalier, ajouté par le moteur ou par l'IA.
+            extraLevels = true;
+        }
         Set<String> requested = new java.util.HashSet<>();
         requirements.forEach(r -> requested.add(r.id()));
         List<String> extras = new ArrayList<>();
@@ -386,7 +404,62 @@ public final class BriefRequirements {
                 extras.add(e.label());
             }
         }
+        if (extraLevels) {
+            extras.add("Escalier vers un étage (la description demande un seul niveau : sous le toit, « walls » "
+                    + "plutôt que « shell », dont le dessus fait un plancher)");
+        }
         return new Report(out, extras);
+    }
+
+    /** Une description de plain-pied : « de plain-pied », « un seul niveau », « sans … étage », « ne pas ajouter d'étage ». */
+    private static final Pattern SINGLE_LEVEL = Pattern.compile(
+            "\\b(plain-pied|plain pied|un seul (niveau|etage)|(sans|ni|pas)\\b[^.;\\n]{0,40}\\betages?)\\b");
+
+    private static final Pattern FLOOR_KEY = Pattern.compile("(?m)^\\s+floor:\\s*(\\d+)");
+
+    /** Un « op: staircase » intérieur : sans « facade » (marches d'entrée), vers un plancher au-dessus du sol. */
+    static boolean hasInteriorStaircase(String plan) {
+        String text = plan == null ? "" : plan;
+        Matcher op = OP.matcher(text);
+        List<Integer> starts = new ArrayList<>();
+        List<String> kinds = new ArrayList<>();
+        while (op.find()) {
+            starts.add(op.start());
+            kinds.add(op.group(1));
+        }
+        for (int i = 0; i < starts.size(); i++) {
+            if (!"staircase".equals(kinds.get(i))) {
+                continue;
+            }
+            String step = text.substring(starts.get(i), i + 1 < starts.size() ? starts.get(i + 1) : text.length());
+            Matcher floor = FLOOR_KEY.matcher(step);
+            if (!step.contains("facade:") && floor.find() && Integer.parseInt(floor.group(1)) >= 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * #747 : le toit en pente demandé — une instruction « gable » dans le plan, et sur la grille compilée au
+     * moins {@link CompiledMeasures#PITCHED_PERCENT} % des colonnes coiffées d'un escalier ou d'une dalle.
+     */
+    private static Status roof(Requirement r, String planYaml, java.util.Optional<CompiledMeasures> measures) {
+        Matcher op = OP.matcher(planYaml == null ? "" : planYaml);
+        int gables = 0;
+        while (op.find()) {
+            gables += "gable".equals(op.group(1)) ? 1 : 0;
+        }
+        if (measures.isEmpty()) {
+            // Sans grille : un plan sans aucun « gable » n'a pas de toit en pente, c'est certain.
+            return new Status(r, gables > 0, gables > 0 ? null : Boolean.FALSE, gables + " instruction(s) « gable » "
+                    + "dans le plan");
+        }
+        int[] c = measures.get().pitchedColumns();
+        boolean realised = c[1] > 0 && c[0] * 100 >= c[1] * CompiledMeasures.PITCHED_PERCENT;
+        return new Status(r, gables > 0, realised, gables + " instruction(s) « gable » ; " + c[0] + "/" + c[1]
+                + " colonnes coiffées d'un escalier ou d'une dalle (" + CompiledMeasures.PITCHED_PERCENT
+                + " % attendus)");
     }
 
     /** Une mesure sur le résultat compilé ; « non mesurée » sans grille. */

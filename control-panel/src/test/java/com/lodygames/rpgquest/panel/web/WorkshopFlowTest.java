@@ -564,6 +564,20 @@ class WorkshopFlowTest {
                 "de la plus ancienne à la plus récente");
     }
 
+    /** #747 (24/10) : un envoi sans texte de plan ne crée jamais de révision vide. */
+    @Test
+    void anEmptySubmittedPlanNeverBecomesARevision() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        String page = get(withDraft).body();
+        String shown = location(post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=audit&id="
+                + id(withDraft) + "&draft=" + draftId(withDraft) + "&version=1&plan="));
+        BuildingPlanDraft d = drafts().find(draftId(withDraft)).orElseThrow();
+        assertEquals(1, d.version(), "aucune révision");
+        assertEquals(PLAN, d.plan());
+        assertTrue(get(shown).body().contains("Le plan envoyé est vide"));
+    }
+
     /** #747 : un modèle d'essai mal formé est refusé avant tout appel. */
     @Test
     void aMalformedTrialModelIsRefusedWithoutAnyCall() throws Exception {

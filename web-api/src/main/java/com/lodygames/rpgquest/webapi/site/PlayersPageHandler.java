@@ -271,7 +271,8 @@ public final class PlayersPageHandler implements ApiHandler {
             html.append("<li>").append(PortalIcons.tile(PortalIcons.forMetric(metric), false)).append("<strong>")
                     .append(Html.escape(creatures ? "Créatures tuées" : StatLabels.title(metric))).append("</strong><span>")
                     .append(StatLabels.number(entry.getValue())).append(' ')
-                    .append(Html.escape(creatures ? "créatures, animaux compris" : StatLabels.unit(metric)));
+                    .append(Html.escape(creatures ? "créatures, animaux compris" : singular(StatLabels.unit(metric),
+                            entry.getValue())));
             if (since.get(metric) != null) {
                 html.append("<br><span class=\"note\">depuis le ").append(Html.escape(StatLabels.date(since.get(metric))))
                         .append("</span>");
@@ -279,6 +280,12 @@ public final class PlayersPageHandler implements ApiHandler {
             html.append("</span></li>");
         }
         return html.append("</ul>").toString();
+    }
+
+    /** « 1 ville », pas « 1 villes » : les unités du catalogue sont des pluriels réguliers en -s. */
+    static String singular(String unit, Object value) {
+        return value instanceof Number number && number.longValue() == 1 && unit.endsWith("s")
+                ? unit.substring(0, unit.length() - 1) : unit;
     }
 
     /** Début de suivi de chaque métrique, lu dans le catalogue de l'instantané (#734). */

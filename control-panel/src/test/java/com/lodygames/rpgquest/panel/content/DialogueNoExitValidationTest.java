@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.panel.content;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.panel.web.DialoguePages;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -51,5 +52,32 @@ class DialogueNoExitValidationTest {
         assertEquals(id, fresh.id);
         assertEquals(1, fresh.choices.size());
         assertTrue(fresh.choices.get(0).close);
+    }
+
+    /** Lot C du 24/10 — chaque lien vers une réplique absente, que le moteur refuse, est nommé. */
+    @Test
+    void everyLinkToAMissingLineIsNamedLikeTheEditorDoes() {
+        assertEquals("", DialoguePages.brokenLinkNotice(musty(true)));
+
+        DialogueDraft reply = musty(true);
+        reply.nodes.get(1).choices.add(new DialogueDraft.Choice("Et après ?", "r9", false));
+        assertTrue(DialoguePages.brokenLinkNotice(reply).startsWith(
+                "Mise en jeu impossible : la réponse 2 de la réplique 2 mène à une réplique qui n'existe plus (« r9 »)"),
+                DialoguePages.brokenLinkNotice(reply));
+
+        DialogueDraft closing = musty(true);
+        closing.nodes.get(1).choices.get(0).next = "r9";
+        assertTrue(DialoguePages.brokenLinkNotice(closing).contains("« r9 »"),
+                "le moteur juge le lien même d'une réponse qui termine la conversation");
+
+        DialogueDraft entry = musty(true);
+        DialogueDraft.Entry e = new DialogueDraft.Entry();
+        e.node = "gone";
+        entry.entries.add(e);
+        assertTrue(DialoguePages.brokenLinkNotice(entry).contains("entrée conditionnelle"));
+
+        DialogueDraft start = musty(true);
+        start.start = "gone";
+        assertTrue(DialoguePages.brokenLinkNotice(start).startsWith("Mise en jeu impossible : le début de la conversation"));
     }
 }

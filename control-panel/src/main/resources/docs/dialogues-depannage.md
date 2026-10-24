@@ -109,12 +109,16 @@ vise un nœud inconnu).
 
 ### Pourquoi il faut corriger
 
-En jeu, ce choix bloquera ou fermera la conversation de façon inattendue.
+Le serveur refuse **tout le dialogue** (« référence un nœud inexistant ») : les joueurs gardent
+l'ancienne version, ou n'en ont aucune. PlugAdmin refuse donc de le mettre en jeu, seul ou dans un
+lot, **avant tout envoi** : « Mise en jeu impossible : la réponse 2 de la réplique 3 mène à une
+réplique qui n'existe plus (« r9 »)… Rien n'a été envoyé au serveur. » Le même refus nomme le
+début de la conversation ou une entrée conditionnelle qui désigneraient une réplique absente.
 
 ### Comment corriger
 
 1. Ouvrir **Dialogues**, puis le dialogue concerné.
-2. Repérer la réponse dont **Ensuite…** affiche « Réplique introuvable — choisissez une suite ».
+2. Repérer la réponse nommée par le message, dont **Ensuite…** affiche « Réplique introuvable — choisissez une suite ».
 3. Choisir une autre suite (une réplique existante, *Une nouvelle réplique…* ou *Terminer la
    conversation*), **ou** **Supprimer cette réponse**.
 4. **Enregistrer et mettre en jeu**.

@@ -1814,10 +1814,50 @@ public final class DialoguePages {
             return "";
         }
         String id = empty.get(0);
-        String which = id.equals(d.start) ? "le début de la conversation" : "la réplique " + DialogueForm.number(d, id);
+        String which = lineName(d, id);
         String more = empty.size() > 1 ? " (et " + (empty.size() - 1) + " autre(s))" : "";
         return "Enregistrement impossible : " + which + more + " n'a pas de sortie. Ajoutez une réponse qui termine "
                 + "la conversation.";
+    }
+
+    /** Une réplique nommée comme dans l'éditeur : « le début de la conversation » ou « la réplique 2 ». */
+    private static String lineName(DialogueDraft d, String nodeId) {
+        return nodeId.equals(d.start) ? "le début de la conversation" : "la réplique " + DialogueForm.number(d, nodeId);
+    }
+
+    /**
+     * Lot C du 24/10 (#730) — le premier lien vers une réplique absente, que le moteur refuse à coup
+     * sûr (« nœud inexistant ») : départ, entrée conditionnelle ou réponse, nommés comme dans
+     * l'éditeur ; vide si tous les liens mènent à une réplique présente. Une réponse marquée
+     * « termine la conversation » est vérifiée aussi : le moteur juge son {@code next} quand même.
+     */
+    public static String brokenLinkNotice(DialogueDraft d) {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        d.nodes.forEach(n -> ids.add(n.id == null ? "" : n.id.trim()));
+        String start = d.start == null ? "" : d.start.trim();
+        if (!start.isEmpty() && !ids.contains(start)) {
+            return "Mise en jeu impossible : le début de la conversation désigne une réplique qui n'existe pas (« "
+                    + start + " »).";
+        }
+        for (DialogueDraft.Entry entry : d.entries) {
+            String node = entry.node == null ? "" : entry.node.trim();
+            if (!ids.contains(node)) {
+                return "Mise en jeu impossible : une entrée conditionnelle mène à une réplique qui n'existe plus (« "
+                        + node + " »).";
+            }
+        }
+        for (DialogueDraft.Node n : d.nodes) {
+            for (int i = 0; i < n.choices.size(); i++) {
+                String next = n.choices.get(i).next == null ? "" : n.choices.get(i).next.trim();
+                if (!next.isEmpty() && !ids.contains(next)) {
+                    return "Mise en jeu impossible : la réponse " + (i + 1) + " "
+                            + lineName(d, n.id.trim()).replaceFirst("^le ", "du ").replaceFirst("^la ", "de la ")
+                            + " mène à une réplique qui n'existe plus (« " + next + " »). Choisissez une autre "
+                            + "suite dans l'éditeur.";
+                }
+            }
+        }
+        return "";
     }
 
     /** Le message du validateur, dit sans jargon. */

@@ -120,10 +120,23 @@ public final class WorldPortalAdminService {
      * Zone demandée : depuis un emplacement ({@code site} + dimensions) ou en coordonnées ({@code
      * world} + {@code explicit}).
      */
-    public record ZoneRequest(String site, int width, int height, int depth, String world, Zone explicit) {
+    public record ZoneRequest(String site, int width, int height, int depth, String world, Zone explicit,
+                              boolean fromBuilding) {
+
+        public ZoneRequest(String site, int width, int height, int depth, String world, Zone explicit) {
+            this(site, width, height, depth, world, explicit, false);
+        }
 
         public static ZoneRequest fromSite(String site, int width, int height, int depth) {
             return new ZoneRequest(site, width, height, depth, null, null);
+        }
+
+        /**
+         * Issue #565 (contrat #568) : la zone est le passage de l'arche posée sur {@code site}, et le
+         * portail naît lié à cette arche — rien à mesurer ni à saisir.
+         */
+        public static ZoneRequest fromBuilding(String site) {
+            return new ZoneRequest(site, 0, 0, 0, null, null, true);
         }
 
         public static ZoneRequest explicit(String world, Zone zone) {
@@ -255,7 +268,8 @@ public final class WorldPortalAdminService {
         if (badDestination != null) {
             return badDestination;
         }
-        Details details = new Details(clean(req.name()), zone.site(), true, zone.width(), zone.height(), zone.depth());
+        Details details = new Details(clean(req.name()), zone.site(), true, zone.width(), zone.height(), zone.depth(),
+                zone.building());
         Zone z = zone.zone();
         String returnOf = req.returnOf() == null ? "" : req.returnOf().strip();
         WorldPortalDefinition draft = new WorldPortalDefinition(id, zone.world(), z.minX(), z.minY(), z.minZ(),
@@ -273,8 +287,9 @@ public final class WorldPortalAdminService {
             case CREATED -> {
                 record(actor, "CREATE_DRAFT", id, null, draft);
                 yield new Result(true, "CREATED", "Brouillon « " + id + " » créé" + (returnOf.isEmpty() ? ""
-                        : " (retour de « " + returnOf + " »)") + ". Il ne téléporte personne tant qu'il n'est pas "
-                        + "activé.", id, List.of("fichier world-portals/" + id + ".yml créé",
+                        : " (retour de « " + returnOf + " »)") + (zone.building().isEmpty() ? ""
+                        : ", lié à l'arche « " + zone.building() + " » (zone = son passage)")
+                        + ". Il ne téléporte personne tant qu'il n'est pas activé.", id, List.of("fichier world-portals/" + id + ".yml créé",
                         returnOf.isEmpty() ? "aucun bloc, aucun emplacement ni aucun joueur touché"
                                 : "portail « " + returnOf + " » inchangé ; aucun bloc ni joueur touché"));
             }
@@ -325,7 +340,7 @@ public final class WorldPortalAdminService {
                 return r.error();
             }
             updated = current.withZone(r.zone(), new Details(newName, r.site(), d.draft(), r.width(), r.height(),
-                    r.depth()));
+                    r.depth(), r.building()));
             Result overlap = overlapWithZonePortals(updated, ctx);
             if (overlap != null) {
                 return overlap;
@@ -771,10 +786,11 @@ public final class WorldPortalAdminService {
         return new Lookup(p, null);
     }
 
-    private record Resolved(String world, Zone zone, String site, int width, int height, int depth, Result error) {
+    private record Resolved(String world, Zone zone, String site, int width, int height, int depth, String building,
+                            Result error) {
 
         static Resolved failed(String code, String message) {
-            return new Resolved(null, null, "", 0, 0, 0, Result.refused(code, message));
+            return new Resolved(null, null, "", 0, 0, 0, "", Result.refused(code, message));
         }
     }
 
@@ -798,9 +814,12 @@ public final class WorldPortalAdminService {
                 return Resolved.failed("SOURCE_NOT_LOADED", "Le monde de l'emplacement « " + s.world()
                         + " » n'est pas chargé.");
             }
+            if (req.fromBuilding()) {
+                return fromBuilding(s, ctx);
+            }
             try {
                 Zone z = PortalZone.around(s.x(), s.y(), s.z(), s.facing(), req.width(), req.height(), req.depth());
-                return new Resolved(s.world(), z, s.id(), req.width(), req.height(), req.depth(), null);
+                return new Resolved(s.world(), z, s.id(), req.width(), req.height(), req.depth(), "", null);
             } catch (IllegalArgumentException e) {
                 return Resolved.failed("INVALID_SIZE", e.getMessage());
             }
@@ -816,7 +835,28 @@ public final class WorldPortalAdminService {
         if (tooBig != null) {
             return Resolved.failed("INVALID_SIZE", tooBig);
         }
-        return new Resolved(world, req.explicit(), "", 0, 0, 0, null);
+        return new Resolved(world, req.explicit(), "", 0, 0, 0, "", null);
+    }
+
+    /** Zone = passage de l'arche posée sur l'emplacement (mêmes règles que {@link #linkBuilding}). */
+    private static Resolved fromBuilding(BuildingSite s, Context ctx) {
+        Optional<PortalBuildingLink.SiteBuilding> onSite = ctx.buildings().apply(s.id());
+        if (onSite.isEmpty()) {
+            return Resolved.failed("NO_BUILDING", "Aucune arche n'est posée sur l'emplacement « " + s.id()
+                    + " » : la poser depuis la page Emplacements, ou saisir la zone à la main.");
+        }
+        PortalBuildingLink.SiteBuilding sb = onSite.get();
+        if (!sb.placement().world().equals(s.world())) {
+            return Resolved.failed("WORLD_CHANGE_REFUSED", "La construction est dans « " + sb.placement().world()
+                    + " », pas dans le monde de l'emplacement (" + s.world() + ").");
+        }
+        PortalBuildingLink.Derived derived = PortalBuildingLink.derive(sb);
+        if (!derived.ok()) {
+            return Resolved.failed(derived.code(), derived.message());
+        }
+        Zone z = derived.zone();
+        return new Resolved(s.world(), z, s.id(), z.maxX() - z.minX() + 1, z.maxY() - z.minY() + 1,
+                z.maxZ() - z.minZ() + 1, sb.placement().buildingId(), null);
     }
 
     private static Result overlapWithZonePortals(WorldPortalDefinition p, Context ctx) {

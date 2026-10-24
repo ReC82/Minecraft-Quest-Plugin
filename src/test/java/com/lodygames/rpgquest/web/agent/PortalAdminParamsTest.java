@@ -39,6 +39,19 @@ class PortalAdminParamsTest {
     }
 
     @Test
+    void createFromAPlacedArchNeedsOnlyTheSiteAndIsRefusedOnUpdate() {
+        var p = PortalAdminParams.parse(Kind.CREATE, Map.of("confirm", "true", "id", "porte", "zone_mode", "building",
+                "site", "buildsite_0008", "destination_world", "wild"));
+
+        assertNull(p.error());
+        assertTrue(p.operation().zone().fromBuilding());
+        assertEquals("buildsite_0008", p.operation().zone().site());
+        assertEquals(0, p.operation().zone().width(), "aucune dimension saisie : le passage de l'arche fait foi");
+        assertNotNull(PortalAdminParams.parse(Kind.UPDATE, Map.of("confirm", "true", "id", "porte", "expected", FP,
+                "zone_mode", "building", "site", "buildsite_0008")).error(), "un portail existant se lie (« Lier »)");
+    }
+
+    @Test
     void coordinatesAreNormalisedMinMax() {
         Map<String, String> m = new HashMap<>(Map.of("confirm", "true", "id", "arche", "zone_mode", "coords",
                 "world", "world_hub", "min_x", "5", "min_y", "70", "min_z", "-3"));

@@ -41,6 +41,29 @@ final class PortalListDetails {
             history.add(row);
         }
         details.put("history", history);
+        // #565 : arches de portail posées et passage déduit, pour créer un brouillon depuis l'arche.
+        List<Map<String, Object>> arches = new ArrayList<>();
+        for (PortalOverview.Arch a : view.arches()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("site", a.site());
+            row.put("siteName", a.siteName());
+            row.put("world", a.world());
+            row.put("building", a.building());
+            row.put("name", a.name());
+            row.put("rotation", a.rotation());
+            if (a.zone() != null) {
+                row.put("minX", a.zone().minX());
+                row.put("minY", a.zone().minY());
+                row.put("minZ", a.zone().minZ());
+                row.put("maxX", a.zone().maxX());
+                row.put("maxY", a.zone().maxY());
+                row.put("maxZ", a.zone().maxZ());
+            }
+            row.put("refusal", a.refusal());
+            row.put("usedBy", a.usedBy());
+            arches.add(row);
+        }
+        details.put("arches", arches);
         return details;
     }
 

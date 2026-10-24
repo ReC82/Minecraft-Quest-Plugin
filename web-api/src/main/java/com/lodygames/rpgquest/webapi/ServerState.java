@@ -15,9 +15,17 @@ import java.util.Optional;
  * <p>#421 : {@code server.status} distingue {@link ServerStatus.Kind#UNKNOWN} (aucun instantané),
  * {@link ServerStatus.Kind#STALE} (instantané trop ancien), {@link ServerStatus.Kind#OFFLINE} (arrêt
  * annoncé par le serveur) et {@link ServerStatus.Kind#ONLINE} ; {@code server.lastUpdate} date le
- * dernier relevé. Hors {@code ONLINE}, les données de jeu restent repliées sur le mode dégradé.</p>
+ * dernier relevé. Hors {@code ONLINE}, les données de jeu restent repliées sur le mode dégradé. En
+ * ligne, elles viennent du dernier instantané complet tant qu'il a moins de
+ * {@code snapshot-data-max-age-seconds} ({@link #SYNCED_AT} le date).</p>
  */
 public final class ServerState {
+
+    /**
+     * Date de génération de l'instantané complet dont viennent les données de jeu affichées, absente
+     * si aucune n'est affichée (#421 : « dernière synchronisation »).
+     */
+    public static final String SYNCED_AT = "syncedAt";
 
     private ServerState() {
     }
@@ -41,13 +49,15 @@ public final class ServerState {
         }
         Map<String, Object> fresh = new LinkedHashMap<>(data);
         fresh.put("server", onlineServer(data.get("server"), generatedAt));
+        fresh.put(SYNCED_AT, generatedAt);
         return fresh;
     }
 
     /**
      * #421 — le relevé d'état agrégé fait foi pour l'état du serveur dès qu'il est au moins aussi
      * récent que l'instantané complet. Les données de jeu (classements, catalogue…) ne viennent que
-     * d'un instantané complet frais : sans lui, elles restent vides, jamais inventées.
+     * d'un instantané complet assez récent ({@link SnapshotStore#isDataStale}) : sans lui, elles
+     * restent vides, jamais inventées.
      */
     private static Map<String, Object> fromHeartbeat(SnapshotStore store, Map<String, Object> heartbeat,
                                                      Optional<Map<String, Object>> snapshot) {
@@ -60,9 +70,10 @@ public final class ServerState {
         }
         Map<String, Object> fresh = degraded("online", ServerStatus.Kind.ONLINE, receivedAt);
         Map<String, Object> server = new LinkedHashMap<>();
-        snapshot.filter(data -> !store.isStale(data) && isOnline(data)).ifPresent(data -> {
+        snapshot.filter(data -> !store.isDataStale(data) && isOnline(data)).ifPresent(data -> {
             fresh.putAll(data);
             copyInto(server, data.get("server"));
+            fresh.put(SYNCED_AT, data.get("generatedAt"));
         });
         // Les compteurs du relevé, plus récent, remplacent ceux de l'instantané : jamais additionnés.
         copyInto(server, heartbeat.get("server"));

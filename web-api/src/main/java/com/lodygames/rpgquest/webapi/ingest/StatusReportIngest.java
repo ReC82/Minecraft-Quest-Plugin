@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
  * <p><strong>Périmètre fermé</strong> : seules les clés {@link #ROOT_KEYS} et, sous {@code server},
  * {@link #SERVER_KEYS} sont admises — tout autre champ est refusé (400) avant écriture. Le relevé ne
  * peut donc transporter ni pseudo, ni UUID, ni coordonnée : uniquement « en ligne ? » et deux
- * compteurs.</p>
+ * compteurs, plus la charge facultative du serveur ({@code tps}, {@code mspt}).</p>
  *
  * <p><strong>Idempotence</strong> : le plugin numérote ses relevés ({@code sequence}) au sein d'un
  * démarrage ({@code bootId}). Un relevé déjà reçu ({@link Result#DUPLICATE}) ou dépassé
@@ -42,10 +42,12 @@ final class StatusReportIngest {
     static final String KIND = "status";
     static final int SCHEMA_VERSION = 1;
     static final Set<String> ROOT_KEYS = Set.of("schemaVersion", "kind", "generatedAt", "bootId", "sequence", "server");
-    static final Set<String> SERVER_KEYS = Set.of("online", "playerCount", "maxPlayers");
-    private static final Pattern BOOT_ID = Pattern.compile("[A-Za-z0-9-]{8,64}");
+    static final Set<String> SERVER_KEYS = Set.of("online", "playerCount", "maxPlayers", "tps", "mspt");
+    static final Pattern BOOT_ID = Pattern.compile("[A-Za-z0-9-]{8,64}");
     private static final int MAX_PLAYERS = 100_000;
     private static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
+    private static final double MAX_TPS = 100;
+    private static final double MAX_MSPT = 60_000;
 
     private final Path file;
     private final Clock clock;
@@ -58,7 +60,8 @@ final class StatusReportIngest {
     }
 
     /** Relevé validé, prêt à comparer et à stocker. */
-    record Report(String bootId, long sequence, Instant generatedAt, boolean online, int playerCount, int maxPlayers) {
+    record Report(String bootId, long sequence, Instant generatedAt, boolean online, int playerCount, int maxPlayers,
+                  Double tps, Double mspt) {
     }
 
     static Report validate(Map<?, ?> root, Instant now) {
@@ -91,7 +94,10 @@ final class StatusReportIngest {
         }
         int playerCount = (int) wholeNumber(server.get("playerCount"), "server.playerCount", MAX_PLAYERS);
         int maxPlayers = (int) wholeNumber(server.get("maxPlayers"), "server.maxPlayers", MAX_PLAYERS);
-        return new Report(bootId, sequence, generatedAt, online, playerCount, maxPlayers);
+        // Charge du serveur (facultative) : de quoi mesurer l'effet de l'export sans lire les journaux VeryGames.
+        Double tps = optionalDecimal(server.get("tps"), "server.tps", MAX_TPS);
+        Double mspt = optionalDecimal(server.get("mspt"), "server.mspt", MAX_MSPT);
+        return new Report(bootId, sequence, generatedAt, online, playerCount, maxPlayers, tps, mspt);
     }
 
     /** Compare au dernier relevé stocké et l'écrit s'il est plus récent. Sérialisé : un seul écrivain. */
@@ -115,18 +121,26 @@ final class StatusReportIngest {
     }
 
     static Result decide(Map<?, ?> previous, Report report) {
+        return decide(previous, report.bootId(), report.sequence(), report.generatedAt());
+    }
+
+    /**
+     * Règle commune au relevé d'état et à l'instantané complet : un envoi déjà reçu (même démarrage,
+     * même numéro) est un doublon, un numéro inférieur ou un démarrage plus ancien est dépassé.
+     */
+    static Result decide(Map<?, ?> previous, String bootId, long sequence, Instant generatedAt) {
         if (previous == null) {
             return Result.STORED;
         }
-        if (report.bootId().equals(previous.get("bootId"))) {
+        if (bootId.equals(previous.get("bootId"))) {
             long last = previous.get("sequence") instanceof Number n ? n.longValue() : -1L;
-            if (report.sequence() == last) {
+            if (sequence == last) {
                 return Result.DUPLICATE;
             }
-            return report.sequence() > last ? Result.STORED : Result.OUT_OF_ORDER;
+            return sequence > last ? Result.STORED : Result.OUT_OF_ORDER;
         }
         Instant lastGenerated = instant(previous.get("generatedAt"));
-        return lastGenerated == null || !report.generatedAt().isBefore(lastGenerated)
+        return lastGenerated == null || !generatedAt.isBefore(lastGenerated)
                 ? Result.STORED : Result.OUT_OF_ORDER;
     }
 
@@ -141,6 +155,12 @@ final class StatusReportIngest {
         server.put("online", report.online());
         server.put("playerCount", report.playerCount());
         server.put("maxPlayers", report.maxPlayers());
+        if (report.tps() != null) {
+            server.put("tps", report.tps());
+        }
+        if (report.mspt() != null) {
+            server.put("mspt", report.mspt());
+        }
         root.put("server", server);
         return root;
     }
@@ -173,7 +193,18 @@ final class StatusReportIngest {
         }
     }
 
-    private static long wholeNumber(Object raw, String name, long max) {
+    private static Double optionalDecimal(Object raw, String name, double max) {
+        if (raw == null) {
+            return null;
+        }
+        if (!(raw instanceof Number number) || !Double.isFinite(number.doubleValue())
+                || number.doubleValue() < 0 || number.doubleValue() > max) {
+            throw new MalformedRequestException("Relevé d'état : « " + name + " » doit être un nombre entre 0 et " + max + ".");
+        }
+        return Math.round(number.doubleValue() * 100) / 100.0;
+    }
+
+    static long wholeNumber(Object raw, String name, long max) {
         if (!(raw instanceof Number number) || number.doubleValue() != Math.floor(number.doubleValue())
                 || number.doubleValue() < 0 || number.doubleValue() > max) {
             throw new MalformedRequestException("Relevé d'état : « " + name + " » doit être un entier entre 0 et " + max + ".");
@@ -181,7 +212,7 @@ final class StatusReportIngest {
         return number.longValue();
     }
 
-    private static Instant instant(Object raw) {
+    static Instant instant(Object raw) {
         try {
             return raw instanceof String text ? Instant.parse(text) : null;
         } catch (DateTimeParseException e) {

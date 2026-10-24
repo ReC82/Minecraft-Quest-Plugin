@@ -113,8 +113,9 @@ Deux contenus empruntent le même canal sortant `POST /api/snapshot` (jeton déd
   `portal-snapshot.properties` est actif, **indépendamment de `web-export.enabled`**. Stocké dans
   `/var/lib/lodyquests-portal/web-export/server-status.json` ; idempotent (`bootId` + `sequence` :
   `DUPLICATE` / `OUT_OF_ORDER` accusés sans écriture) ;
-- **instantané complet** `snapshot.json` — seulement si `web-export.enabled: true` (décision du
-  propriétaire, #55 ; `player-data-public` reste `false`).
+- **instantané complet** `snapshot.json` — si `snapshot-enabled=true` dans
+  `portal-snapshot.properties` (bêta restreinte du 24/10, voir plus bas) ou si
+  `web-export.enabled: true` ; toutes les 15 min par défaut, numéroté, réessayé.
 
 Mise en service du relevé d'état (aucune donnée de joueur) :
 
@@ -147,6 +148,41 @@ lodyquests-portal | grep "Relevé d'état"`), jamais de jeton.
 Revenir en arrière : `enabled=false` dans `portal-snapshot.properties` (ou retirer le jeton de
 `portal.env` : tout envoi reçoit 401, journalisé une fois côté plugin) ; l'état passe en « non
 actualisé », jamais « hors ligne ».
+
+### Vrais joueurs en bêta restreinte (#421, décision du 24/10)
+
+Le portail affiche les vrais pseudos, XP, quêtes, classements, la recherche et la date de
+synchronisation, **derrière un accès bêta** tant que l'ouverture publique (#55) n'est pas décidée.
+
+1. serveur Minecraft — dans `plugins/RPGQuest/portal-snapshot.properties` (copie locale hors Git,
+   jamais `config.yml`) : `snapshot-enabled=true`, `snapshot-interval-seconds=900` (600 = 10 min si
+   les mesures le permettent), `snapshot-profile-visibility=public` ; transfert
+   `scripts/deploy-verygames.sh --also <fichier>:RPGQuest/portal-snapshot.properties` (sauvegarde
+   automatique) puis redémarrage. Le journal dit « Portail : instantané complet envoyé toutes les
+   900 s » ;
+2. accès bêta nginx — `scripts/web-portal/nginx-lodyquests-portal-beta.conf.example` copié en
+   `/etc/nginx/snippets/lodyquests-portal-beta.conf` ; comptes dans
+   `/etc/nginx/lodyquests-portal-beta.htpasswd` (`root:www-data`, 640, une ligne
+   `identifiant:$(openssl passwd -apr1)` par testeur) ; le vhost en service doit contenir l'`include`,
+   le `auth_basic off` des routes machine et les blocs `/health` et `/demo/` du modèle (copie datée
+   du vhost avant édition) ; `sudo nginx -t && sudo systemctl reload nginx` ;
+3. portail — `player-data-public=true` dans `/etc/lodyquests-portal/web-api.properties` (copie datée
+   avant), `sudo systemctl restart lodyquests-portal` ;
+4. vérifier : `curl -s https://lodyquests.lodylands.com/health` → `"sync":{"data":"FRESH",…}` et
+   `"load":{"tps":…}` ; `curl -s -o /dev/null -w '%{http_code}' https://lodyquests.lodylands.com/joueurs`
+   → `401` sans accès, `200` avec `-u <identifiant>` ; `/demo/joueurs` → `200` sans accès.
+
+Les identifiants bêta sont remis au propriétaire hors Git, hors ticket et hors journal.
+
+| `/health` `sync` | Signification | Où regarder |
+|---|---|---|
+| `data: MISSING` | aucun instantané complet reçu | `snapshot-enabled` absent côté serveur ; journal « Instantané portail : … » |
+| `data: STALE` | dernier instantané > `snapshot-data-max-age-seconds` (1 h) | journal plugin « Instantané portail : … envoi UNAVAILABLE » / « REJECTED » ; `journalctl -u lodyquests-portal | grep Instantané` |
+| `data: FRESH` | données affichées, `lastSync` les date | — |
+
+Revenir à l'état précédent (aucune donnée de joueur publiée) : `player-data-public=false` +
+redémarrage du portail (immédiat) ; puis `snapshot-enabled=false` côté serveur au prochain
+redémarrage. Ouvrir au public (décision #55) : supprimer le snippet bêta, `nginx -t`, reload.
 
 Sans jeton, contrôle de fermeture : `curl -s -o /dev/null -w '%{http_code}\n' -X POST
 https://lodyquests.lodylands.com/api/snapshot` → `401`.

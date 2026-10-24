@@ -20,7 +20,10 @@ import org.slf4j.Logger;
  */
 public class SnapshotPushClient {
 
-    /** Résultat d'un envoi, pour les tests et le journal. */
+    /**
+     * Résultat d'un envoi, pour les tests et le journal : {@code REJECTED} est définitif (jeton,
+     * format, taille), {@code UNAVAILABLE} passager (réseau, 429, 5xx).
+     */
     public enum Outcome { STORED, REJECTED, UNAVAILABLE }
 
     private final SnapshotPushConfig config;
@@ -58,7 +61,8 @@ public class SnapshotPushClient {
                 return Outcome.STORED;
             }
             failed("le portail a répondu HTTP " + response.statusCode() + describe(response.statusCode()));
-            return Outcome.REJECTED;
+            // 429 / 5xx (portail en redémarrage, nginx 502…) : passager, l'appelant peut réessayer.
+            return response.statusCode() == 429 || response.statusCode() >= 500 ? Outcome.UNAVAILABLE : Outcome.REJECTED;
         } catch (IOException e) {
             failed("portail injoignable (" + e.getClass().getSimpleName() + ")");
             return Outcome.UNAVAILABLE;

@@ -38,7 +38,8 @@ import java.util.logging.Logger;
  * <p>Un corps {@code "kind": "status"} est un <em>relevé d'état agrégé</em> (en ligne, nombre de
  * joueurs), envoyé par le plugin même quand l'export nominatif est désactivé : il est validé en
  * périmètre fermé et stocké à part, de façon idempotente, par {@link StatusReportIngest}. La réponse
- * indique {@code STORED}, {@code DUPLICATE} ou {@code OUT_OF_ORDER} (toujours 200).</p>
+ * indique {@code STORED}, {@code DUPLICATE} ou {@code OUT_OF_ORDER} (toujours 200). L'instantané
+ * complet numéroté suit la même règle (voir {@link #storeVersioned}).</p>
  */
 public final class SnapshotIngestHandler implements ApiHandler {
 
@@ -49,6 +50,7 @@ public final class SnapshotIngestHandler implements ApiHandler {
     /** Tolérance de décalage d'horloge entre VeryGames et AWS. */
     private static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
     private static final int MAX_DEPTH = 32;
+    private static final Logger LOGGER = Logger.getLogger("rpgquest-webapi");
 
     private final Path snapshotFile;
     private final int maxBytes;
@@ -62,7 +64,7 @@ public final class SnapshotIngestHandler implements ApiHandler {
         this.auth = new AuthFilter(settings.token());
         this.clock = clock;
         this.statusReports = new StatusReportIngest(SnapshotStore.heartbeatFile(snapshotFile), clock,
-                Logger.getLogger("rpgquest-webapi"));
+                LOGGER);
     }
 
     @Override
@@ -96,9 +98,64 @@ public final class SnapshotIngestHandler implements ApiHandler {
             return 200;
         }
         validate(root);
-        writeAtomic(json);
-        HttpResponses.sendJson(exchange, 200, Map.of("result", "STORED"));
+        StatusReportIngest.Result result = storeVersioned(root, json);
+        HttpResponses.sendJson(exchange, 200, Map.of("result", result.name()));
         return 200;
+    }
+
+    /**
+     * Instantané numéroté ({@code bootId} + {@code sequence}, plugin ≥ #421 lot 1 réel) : un renvoi
+     * après une erreur réseau dont la première tentative était arrivée est un doublon, un envoi en
+     * retard est dépassé — ni l'un ni l'autre n'est écrit. Un instantané sans numéro (plugin plus
+     * ancien) remplace le précédent comme avant.
+     */
+    private synchronized StatusReportIngest.Result storeVersioned(Map<?, ?> root, String json) throws IOException {
+        Version version = version(root);
+        if (version != null) {
+            StatusReportIngest.Result result = StatusReportIngest.decide(readCurrent(), version.bootId(),
+                    version.sequence(), version.generatedAt());
+            if (result != StatusReportIngest.Result.STORED) {
+                return result;
+            }
+        }
+        writeAtomic(json);
+        if (version != null) {
+            LOGGER.info("Instantané du serveur de jeu reçu : n° " + version.sequence() + ", " + json.length()
+                    + " caractères.");
+        }
+        return StatusReportIngest.Result.STORED;
+    }
+
+    private record Version(String bootId, long sequence, Instant generatedAt) {
+    }
+
+    /** {@code null} si l'instantané n'est pas numéroté ; refus (400) si la numérotation est incomplète. */
+    private static Version version(Map<?, ?> root) {
+        Object bootId = root.get("bootId");
+        Object sequence = root.get("sequence");
+        if (bootId == null && sequence == null) {
+            return null;
+        }
+        if (!(bootId instanceof String text) || !StatusReportIngest.BOOT_ID.matcher(text).matches()) {
+            throw new MalformedRequestException("« bootId » invalide.");
+        }
+        if (!(sequence instanceof Number number) || number.doubleValue() != Math.floor(number.doubleValue())
+                || number.doubleValue() < 0) {
+            throw new MalformedRequestException("« sequence » doit être un entier positif.");
+        }
+        return new Version(text, number.longValue(), StatusReportIngest.instant(root.get("generatedAt")));
+    }
+
+    private Map<?, ?> readCurrent() throws IOException {
+        Path absolute = snapshotFile.toAbsolutePath();
+        if (!Files.exists(absolute)) {
+            return null;
+        }
+        try {
+            return Json.parse(Files.readString(absolute, StandardCharsets.UTF_8)) instanceof Map<?, ?> map ? map : null;
+        } catch (JsonParseException e) {
+            return null; // illisible : le nouvel instantané le remplace
+        }
     }
 
     /** Corps complet, ou {@code null} s'il dépasse {@link #maxBytes} (annoncé ou réel). */
@@ -176,7 +233,7 @@ public final class SnapshotIngestHandler implements ApiHandler {
         }
     }
 
-    private synchronized void writeAtomic(String json) throws IOException {
+    private void writeAtomic(String json) throws IOException {
         Path absolute = snapshotFile.toAbsolutePath();
         Path directory = absolute.getParent();
         Files.createDirectories(directory);

@@ -14,6 +14,11 @@ snapshot-file=web-export/snapshot.json
 # doit rester supérieur à web-export.interval-seconds côté plugin.
 snapshot-max-age-seconds=120
 
+# Âge au-delà duquel les DONNÉES DE JEU d'un instantané complet (joueurs, classements, profils) ne
+# sont plus affichées (#421). L'instantané n'arrive que toutes les 10 à 15 min ; l'état du serveur,
+# lui, se juge sur le relevé d'état (30 s) et snapshot-max-age-seconds. 60 à 604800, défaut 3600.
+#snapshot-data-max-age-seconds=3600
+
 rate-limit-per-minute=60
 
 site-title=RPGQuest

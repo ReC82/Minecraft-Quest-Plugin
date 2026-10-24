@@ -78,13 +78,21 @@ public final class WebApiConfigLoader {
                 snapshotIngest(properties, snapshotTokenFromEnv));
     }
 
-    /** Réception de l'instantané (#421) : clé {@code snapshot-ingest-max-bytes}, jeton par l'environnement. */
+    /**
+     * Réception de l'instantané (#421) : clés {@code snapshot-ingest-max-bytes} et
+     * {@code snapshot-data-max-age-seconds}, jeton par l'environnement.
+     */
     private static SnapshotIngestSettings snapshotIngest(Properties properties, String token) {
         int maxBytes = parseInt(properties, "snapshot-ingest-max-bytes", SnapshotIngestSettings.DEFAULT_MAX_BYTES);
         if (maxBytes < 64 * 1024 || maxBytes > 8 * 1024 * 1024) {
             throw new IllegalStateException("« snapshot-ingest-max-bytes » doit être compris entre 65536 et 8388608.");
         }
-        return new SnapshotIngestSettings(token, maxBytes);
+        long dataMaxAge = parseLong(properties, "snapshot-data-max-age-seconds",
+                SnapshotIngestSettings.DEFAULT_DATA_MAX_AGE_SECONDS);
+        if (dataMaxAge < 60 || dataMaxAge > 7 * 24 * 3600) {
+            throw new IllegalStateException("« snapshot-data-max-age-seconds » doit être compris entre 60 et 604800.");
+        }
+        return new SnapshotIngestSettings(token, maxBytes, dataMaxAge);
     }
 
     /** Portail public (#56) : clés {@code news-dir}, {@code server-address}, {@code minecraft-version}. */

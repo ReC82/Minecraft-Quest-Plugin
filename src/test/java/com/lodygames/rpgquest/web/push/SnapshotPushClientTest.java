@@ -40,6 +40,9 @@ class SnapshotPushClientTest {
 
             status.set(401);
             assertEquals(SnapshotPushClient.Outcome.REJECTED, client.push("{}"));
+
+            status.set(502);
+            assertEquals(SnapshotPushClient.Outcome.UNAVAILABLE, client.push("{}"), "nginx sans portail : passager");
         } finally {
             server.stop(0);
         }

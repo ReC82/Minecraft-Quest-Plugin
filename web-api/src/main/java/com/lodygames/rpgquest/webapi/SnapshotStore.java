@@ -36,11 +36,21 @@ public final class SnapshotStore {
     public static final String HEARTBEAT_FILE_NAME = "server-status.json";
 
     private final long maxAgeSeconds;
+    private final long dataMaxAgeSeconds;
     private final JsonFileCache snapshot;
     private final JsonFileCache heartbeat;
 
     public SnapshotStore(Path snapshotFile, long maxAgeSeconds, Logger logger) {
+        this(snapshotFile, maxAgeSeconds, maxAgeSeconds, logger);
+    }
+
+    /**
+     * @param dataMaxAgeSeconds âge au-delà duquel les données de jeu d'un instantané complet ne sont
+     *        plus affichées (#421 : instantané toutes les 15 min, relevé d'état toutes les 30 s)
+     */
+    public SnapshotStore(Path snapshotFile, long maxAgeSeconds, long dataMaxAgeSeconds, Logger logger) {
         this.maxAgeSeconds = maxAgeSeconds;
+        this.dataMaxAgeSeconds = Math.max(maxAgeSeconds, dataMaxAgeSeconds);
         this.snapshot = new JsonFileCache(snapshotFile, "Snapshot", logger);
         this.heartbeat = new JsonFileCache(heartbeatFile(snapshotFile), "Relevé d'état", logger);
     }
@@ -70,9 +80,18 @@ public final class SnapshotStore {
         return isOlderThanMaxAge(heartbeat.get("receivedAt"));
     }
 
+    /** {@code true} si les données de jeu de {@code snapshot} sont trop anciennes pour être montrées. */
+    public boolean isDataStale(Map<String, Object> snapshot) {
+        return isOlderThan(snapshot.get("generatedAt"), dataMaxAgeSeconds);
+    }
+
     private boolean isOlderThanMaxAge(Object raw) {
+        return isOlderThan(raw, maxAgeSeconds);
+    }
+
+    private static boolean isOlderThan(Object raw, long seconds) {
         Instant at = instant(raw);
-        return at == null || at.isBefore(Instant.now().minusSeconds(maxAgeSeconds));
+        return at == null || at.isBefore(Instant.now().minusSeconds(seconds));
     }
 
     /** Date ISO-8601 lue dans un instantané ou un relevé, ou {@code null}. */

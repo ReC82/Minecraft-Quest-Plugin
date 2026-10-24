@@ -125,6 +125,17 @@ public final class WebSnapshotWriter implements PluginService {
         this.portalPush = portalPush;
     }
 
+    /** Tests : délais entre les essais d'envoi (ms). */
+    void setRetryDelaysMillis(long... delays) {
+        this.retryDelaysMillis = delays.clone();
+    }
+
+    /** Numérotation des instantanés envoyés au portail (#421) : renvoi = doublon, jamais deux écritures. */
+    private final String bootId = com.lodygames.rpgquest.web.push.ServerStatusReporter.newBootId();
+    private final java.util.concurrent.atomic.AtomicLong sequence = new java.util.concurrent.atomic.AtomicLong();
+    /** Attente avant chaque nouvel essai d'envoi au portail après une panne passagère (ms). */
+    private long[] retryDelaysMillis = {30_000L, 120_000L};
+
     private BukkitTask task;
     private volatile boolean stopping = false;
     /** Au moins un instantané publié (ou en cours) pendant cette exécution du plugin. */
@@ -174,6 +185,11 @@ public final class WebSnapshotWriter implements PluginService {
         }
     }
 
+    /** Un instantané est en cours de collecte, d'écriture ou d'envoi (tests). */
+    boolean isWriting() {
+        return writeInProgress;
+    }
+
     /** Force une génération immédiate, quel que soit l'intervalle configuré (outil de test/admin). */
     public void triggerNow() {
         tick(true);
@@ -193,6 +209,7 @@ public final class WebSnapshotWriter implements PluginService {
             return;
         }
         writeInProgress = true;
+        long startNanos = System.nanoTime();
 
         int playerCount = Bukkit.getOnlinePlayers().size();
         int maxPlayers = Bukkit.getMaxPlayers();
@@ -214,7 +231,12 @@ public final class WebSnapshotWriter implements PluginService {
                         ? CompletableFuture.completedFuture(BoardCatalogExport.Catalog.EMPTY)
                         : BoardCatalogExport.gather(statisticsRepository, stats, statisticsService.now(),
                         statisticsService::isArchived, current.profileVisibilityDefault(), quests));
-        gatherLeaderboards(current, lifetimeExcluded)
+        CompletableFuture<Map<SkillType, List<ProgressionRepository.LeaderboardRow>>> leaderboardRows =
+                gatherLeaderboards(current, lifetimeExcluded);
+        // Part synchrone de la collecte (compteurs, catalogue, lancement des lectures async) : la
+        // seule qui pèse sur le tick du serveur, mesurée pour l'exploitation (#421).
+        long mainThreadMillis = (System.nanoTime() - startNanos) / 1_000_000L;
+        leaderboardRows
                 .thenCombine(playerNames, (leaderboards, names) -> Map.entry(leaderboards, names))
                 .thenCombine(questRows, (boardsAndNames, quests) -> Map.entry(boardsAndNames, quests))
                 .thenCombine(periods, (gathered, periodBoards) -> Map.entry(gathered, periodBoards))
@@ -230,6 +252,11 @@ public final class WebSnapshotWriter implements PluginService {
                     statistics.put("catalog", BoardCatalogExport.catalog(boards));
                     snapshot.put("statistics", statistics);
                     snapshot.put("profiles", profiles(leaderboards, quests));
+                    snapshot.put("bootId", bootId);
+                    snapshot.put("sequence", sequence.incrementAndGet());
+                    snapshot.put("export", exportCost(current.intervalSeconds(),
+                            (System.nanoTime() - startNanos) / 1_000_000L, mainThreadMillis,
+                            ((List<?>) snapshot.get("profiles")).size()));
                     return snapshot;
                 })
                 .thenAccept(snapshot -> {
@@ -549,21 +576,59 @@ public final class WebSnapshotWriter implements PluginService {
         });
     }
 
+    /** Coût de la collecte, publié avec l'instantané (lu dans {@code /health} du portail). */
+    static Map<String, Object> exportCost(int intervalSeconds, long collectMillis, long mainThreadMillis, int profiles) {
+        Map<String, Object> export = new LinkedHashMap<>();
+        export.put("intervalSeconds", intervalSeconds);
+        export.put("collectMs", collectMillis);
+        export.put("mainThreadMs", mainThreadMillis);
+        export.put("profiles", profiles);
+        return export;
+    }
+
     /** Fil d'export uniquement : fichier local, puis portail (#421) — un envoi raté ne bloque rien. */
     private void publish(WebExportConfig current, String json) {
         published = true;
         writeAtomic(current, json);
         SnapshotPushClient push = portalPush;
         if (push != null) {
-            push.push(json);
+            pushWithRetries(push, json);
         }
     }
 
     /**
-     * Issue #421 — à l'arrêt du plugin, publie un dernier instantané {@code server.online = false} :
-     * c'est la seule façon pour le portail d'annoncer « hors ligne » plutôt qu'« état inconnu ».
-     * Rien n'est publié si aucun instantané ne l'a été pendant cette exécution. L'envoi part du fil
-     * d'export ; {@link #stop()} l'attend au plus quelques secondes.
+     * Envoi au portail avec quelques nouveaux essais si le portail est injoignable ou répond une
+     * erreur passagère. Le corps renvoyé est identique (même {@code bootId}/{@code sequence}) : si
+     * le premier essai était arrivé, le portail répond « doublon » sans rien réécrire. Un refus
+     * définitif (jeton, format) n'est pas réessayé. Les essais occupent le fil d'export, ce qui
+     * empêche un nouvel instantané de partir en parallèle.
+     */
+    SnapshotPushClient.Outcome pushWithRetries(SnapshotPushClient push, String json) {
+        long started = System.nanoTime();
+        SnapshotPushClient.Outcome outcome = push.push(json);
+        int attempt = 1;
+        while (outcome == SnapshotPushClient.Outcome.UNAVAILABLE && attempt <= retryDelaysMillis.length && !stopping) {
+            try {
+                Thread.sleep(retryDelaysMillis[attempt - 1]);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            attempt++;
+            outcome = push.push(json);
+        }
+        logger.info("Instantané portail : {} octets, envoi {} en {} ms ({} essai(s)).",
+                json.getBytes(StandardCharsets.UTF_8).length, outcome, (System.nanoTime() - started) / 1_000_000L,
+                attempt);
+        return outcome;
+    }
+
+    /**
+     * Issue #421 — à l'arrêt du plugin, écrit un dernier instantané local {@code server.online = false}.
+     * Il n'est pas envoyé au portail : l'arrêt y est annoncé par le relevé d'état
+     * ({@code ServerStatusReporter}), et le dernier instantané complet reçu (classements, profils)
+     * doit y rester jusqu'au suivant. Rien n'est écrit si aucun instantané ne l'a été pendant cette
+     * exécution. {@link #stop()} attend l'écriture au plus quelques secondes.
      */
     private void announceShutdown() {
         WebExportConfig current = config.get();
@@ -572,7 +637,7 @@ public final class WebSnapshotWriter implements PluginService {
         }
         String json = Json.write(shutdownSnapshot(Bukkit.getMaxPlayers(), Instant.now()));
         try {
-            ioExecutor.execute(() -> publish(current, json));
+            ioExecutor.execute(() -> writeAtomic(current, json));
         } catch (RejectedExecutionException e) {
             // déjà arrêté
         }

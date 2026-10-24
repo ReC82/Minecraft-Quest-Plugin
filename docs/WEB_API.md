@@ -192,8 +192,34 @@ donc chaque instantané (même sens que l'agent PlugAdmin : le serveur Minecraft
 Côté plugin : fichier hors Git `plugins/RPGQuest/portal-snapshot.properties` (modèle
 `scripts/portal-snapshot.properties.example`) ; envoi depuis le fil `RPGQuest-WebExport`, jamais le
 thread principal ; un échec est journalisé une fois (statut HTTP ou « injoignable », jamais le jeton
-ni le contenu), puis au rétablissement. À l'arrêt du plugin, un dernier instantané minimal
-`server.online=false` (sans aucune donnée de joueur) est publié.
+ni le contenu), puis au rétablissement. À l'arrêt du plugin, l'instantané minimal
+`server.online=false` n'est plus écrit que localement : l'arrêt est annoncé au portail par le relevé
+d'état, et le dernier instantané complet y reste jusqu'au suivant.
+
+### Instantané complet réel (bêta restreinte, #421 — 24/10)
+
+- **Activation** : `snapshot-enabled=true` dans `portal-snapshot.properties` (hors Git, propre au
+  serveur). L'export tourne alors pour le portail toutes les `snapshot-interval-seconds` (**900 s**
+  par défaut, 600 au plus court, 3600 au plus long), même si `web-export.enabled` reste `false` dans
+  `config.yml` ; `snapshot-profile-visibility=public|private` remplace, pour cet envoi et pour
+  `/profile web`, `web-export.profile-visibility-default`. `/profile web prive` reste respecté.
+- **Numérotation** : chaque instantané porte `bootId` (aléatoire par démarrage) et `sequence`
+  (croissante). Même règle que le relevé d'état : déjà reçu → `DUPLICATE`, plus ancien →
+  `OUT_OF_ORDER`, rien n'est écrit. Un instantané non numéroté (plugin plus ancien) remplace le
+  précédent comme avant ; `bootId` sans `sequence` (ou l'inverse) → `400`.
+- **Nouveaux essais** : portail injoignable ou `429`/`5xx` → deux nouveaux essais (30 s puis 2 min)
+  avec **le même corps** ; un refus définitif (`400`, `401`, `413`) n'est pas réessayé. Les essais
+  occupent le fil d'export : aucun autre instantané ne part en parallèle.
+- **Coût mesuré** : bloc `export` = `intervalSeconds`, `collectMs` (collecte totale), `mainThreadMs`
+  (part sur le thread principal), `profiles` ; une ligne de journal par envoi (taille en octets,
+  résultat, durée, essais). Le relevé d'état ajoute `server.tps` et `server.mspt` (API Paper,
+  facultatifs, bornés 0–100 et 0–60 000).
+- **Affichage** : les données de jeu d'un instantané restent affichées tant que le relevé d'état
+  dit le serveur en ligne et que l'instantané a moins de `snapshot-data-max-age-seconds` (défaut
+  3600 s) ; au-delà, elles sont retirées (jamais montrées comme actuelles). `syncedAt` (état résolu)
+  et la mention « Données relevées sur le serveur le … » (Joueurs, fiches, Classements) les datent.
+- **`/health`** : `sync` = `data` (`MISSING` / `FRESH` / `STALE`), `lastSync`, `sequence`, `export` ;
+  `load` = `tps`, `mspt` du dernier relevé.
 
 ### Relevé d'état agrégé (`"kind": "status"`)
 

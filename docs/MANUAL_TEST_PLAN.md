@@ -6466,6 +6466,21 @@ Une étape à la fois, ordinateur ou téléphone :
 17. (optionnel) Gagner de l'XP en jeu, attendre au plus 15 min, recharger la fiche : la valeur et
     la date changent.
 
+**E. Statistiques persistées sur les fiches (issue #54, actif sur DEV depuis le 24/10/2026 21:46)**
+
+Chaque joueur visible a une fiche (plus seulement le top 10), avec une section « Statistiques » lue
+dans les journaux du serveur. Une étape à la fois, avec l'accès bêta :
+
+18. Ouvrir sa fiche (`/joueurs/LoDyMcFly`) → section **Statistiques** : Créatures tuées (animaux
+    compris), Blocs cassés, Waypoints découverts, Villes découvertes, chacune avec « depuis le … ».
+19. Comparer « Waypoints découverts » et « Villes découvertes » avec ce que tu as découvert en jeu ;
+    « Créatures tuées » est **supérieur** au classement « Monstres » (qui ne compte que les hostiles
+    et les boss) : c'est attendu.
+20. En jeu, tuer un zombie ou découvrir un waypoint, attendre au plus 15 min, recharger la fiche :
+    la valeur augmente de 1.
+21. Fiche de Madix666 : pas de section Statistiques (aucune valeur journalisée), aucune valeur 0
+    inventée.
+
 ### TC-328 — Droits à récompense : remise unique en jeu (issue #422, PENDING MANUAL VALIDATION)
 
 Prérequis : JAR issu de #422 (migration V41), PlugAdmin à jour. Sur DEV seulement, avec un compte de

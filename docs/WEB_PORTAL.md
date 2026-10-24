@@ -186,9 +186,18 @@ sur le compte, l'unicité de l'UUID restant). La liaison fournira l'identité de
   ]
 },
 "profiles": [
-  {"name": "Alice", "skills": {"GLOBAL": 4500}, "questsCompleted": 12}
+  {"name": "Alice", "skills": {"GLOBAL": 4500}, "questsCompleted": 12,
+   "stats": {"ENTITY_KILL": 99, "BLOCK_BREAK": 1530, "CITY_DISCOVERED": 2}}
 ]
 ```
+
+`profiles` (#54, 24/10/2026) : **tous** les joueurs au profil visible ayant de l'XP, une quête terminée ou une
+statistique (plafond 1 000, les plus fortes XP globales gardées au-delà) — plus seulement ceux d'un top 10. `stats` :
+totaux persistés depuis le début de leur journal (`statistics.catalog.metrics[].trackedSince`) de `ENTITY_KILL`,
+`BLOCK_BREAK`, `FISH_CAUGHT`, `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED`, `STORY_COMPLETED`
+(`StatisticsRepository.lifetimeTotals`, lecture asynchrone des tables existantes, aucun compteur parallèle) ; une
+métrique sans valeur pour le joueur est absente, jamais 0 inventé. La fiche `/joueurs/<pseudo>` les affiche
+(section « Statistiques », date de début de suivi).
 
 `season` vaut `null` et `events` `[]` tant qu'aucun `statistics.yml` n'existe. `status` :
 `SCHEDULED` (pas encore commencée, classements vides), `ACTIVE`, `ENDED` (terminée, pas encore
@@ -309,7 +318,7 @@ Fait :
   affiche le réglage. Le filtre est appliqué dans les requêtes SQL d'export
   (`player.PublicProfilePolicy`) : aucune donnée d'un joueur non visible n'atteint l'instantané ;
 - côté portail, une **liste blanche** (`privacy.PublicPlayerData`) ne laisse sortir de l'API que
-  `name`, `skills`, `questsCompleted`, `totalXp`, `value` ; aucun pseudo tant que
+  `name`, `skills`, `questsCompleted`, `stats` (identifiants de métrique → nombre), `totalXp`, `value` ; aucun pseudo tant que
   `player-data-public=false` ;
 - **politique d'âge configurable** (`privacy.AgePolicy`, clés `accounts.*`) : sans pays configuré,
   aucun compte ne peut s'ouvrir ; statut de consentement parental représentable

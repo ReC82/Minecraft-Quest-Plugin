@@ -438,6 +438,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   par défaut), calculés sur les fenêtres du journal `xp_grants`, figés à leur fin (migration
 >   **V39** : `stat_period_archives`, `stat_period_results`), exclusions par UUID, opérations
 >   `admin_grant` jamais comptées ; contrat `statistics.metrics` + `rank` dans l'instantané.
+>   Fiches (#54, 24/10/2026) : une fiche par joueur visible (plafond 1 000, plus seulement le top 10)
+>   avec `stats` = totaux persistés monstres / blocs / pêche / waypoints / villes / pierres / histoires
+>   depuis le début de leur journal, section « Statistiques » de `/joueurs/<pseudo>`.
 >   Catalogue de classements (#734) : déclaratif (`leaderboards:` de `statistics.yml`, sinon 23
 >   classements par défaut du JAR), mesures blocs cassés / quêtes terminées (journal d'activité),
 >   découvertes waypoints / villes / pierres de voyage et stories (tables existantes), familles de

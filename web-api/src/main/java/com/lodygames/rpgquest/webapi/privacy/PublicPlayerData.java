@@ -15,10 +15,15 @@ import java.util.Map;
  */
 public final class PublicPlayerData {
 
+    private static final java.util.regex.Pattern METRIC_ID = java.util.regex.Pattern.compile("[A-Z][A-Z_]{0,39}");
+
     private PublicPlayerData() {
     }
 
-    /** Profils : {@code name}, {@code skills} (piste → nombre), {@code questsCompleted}. */
+    /**
+     * Profils : {@code name}, {@code skills} (piste → nombre), {@code questsCompleted} et {@code stats}
+     * (métrique du catalogue → total, #54 ; seuls des identifiants {@code MAJUSCULES_SOULIGNÉS}).
+     */
     public static List<Map<String, Object>> profiles(Object raw) {
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object item : list(raw)) {
@@ -30,6 +35,11 @@ public final class PublicPlayerData {
                 }
                 if (profile.get("questsCompleted") instanceof Number count) {
                     safe.put("questsCompleted", count);
+                }
+                if (profile.get("stats") instanceof Map<?, ?> stats) {
+                    Map<String, Object> metrics = numbersByKey(stats);
+                    metrics.keySet().removeIf(id -> !METRIC_ID.matcher(id).matches());
+                    safe.put("stats", metrics);
                 }
                 result.add(safe);
             }

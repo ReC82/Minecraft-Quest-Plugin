@@ -63,6 +63,19 @@ public final class WebSnapshotWriter implements PluginService {
 
     private static final long HOUSEKEEPING_INTERVAL_TICKS = 100L; // 5 s
     private static final MiniMessage MM = MiniMessage.miniMessage();
+    /**
+     * Plafond des fiches exportées (#54) : tous les profils visibles, pas seulement ceux d'un top 10.
+     * Au-delà, les plus fortes XP globales sont gardées (une fiche ≈ 0,2 Ko).
+     */
+    static final int PROFILE_LIMIT = 1000;
+    /**
+     * Statistiques persistées publiées sur une fiche (#54), totalisées depuis le début de leur
+     * journal ({@code statistics.catalog.metrics[].trackedSince}). Les quêtes terminées viennent de
+     * {@code quest_progress} et l'XP de {@code player_skills} : ni l'une ni l'autre n'est recomptée ici.
+     */
+    static final List<String> PROFILE_METRICS = List.of(StatMetric.ENTITY_KILL, StatMetric.BLOCK_BREAK,
+            StatMetric.FISH_CAUGHT, StatMetric.WAYPOINT_DISCOVERED, StatMetric.CITY_DISCOVERED,
+            StatMetric.WAYSTONE_DISCOVERED, StatMetric.STORY_COMPLETED);
 
     private final Plugin plugin;
     private final Path dataFolder;
@@ -236,6 +249,7 @@ public final class WebSnapshotWriter implements PluginService {
                         statisticsService::isArchived, current.profileVisibilityDefault(), quests));
         CompletableFuture<Map<SkillType, List<ProgressionRepository.LeaderboardRow>>> leaderboardRows =
                 gatherLeaderboards(current, lifetimeExcluded);
+        CompletableFuture<ProfileSources> profileSources = gatherProfileSources(current, lifetimeExcluded);
         // Part synchrone de la collecte (compteurs, catalogue, lancement des lectures async) : la
         // seule qui pèse sur le tick du serveur, mesurée pour l'exploitation (#421).
         long mainThreadMillis = (System.nanoTime() - startNanos) / 1_000_000L;
@@ -243,7 +257,10 @@ public final class WebSnapshotWriter implements PluginService {
                 .thenCombine(playerNames, (leaderboards, names) -> Map.entry(leaderboards, names))
                 .thenCombine(questRows, (boardsAndNames, quests) -> Map.entry(boardsAndNames, quests))
                 .thenCombine(periods, (gathered, periodBoards) -> Map.entry(gathered, periodBoards))
-                .thenCombine(boardCatalog, (gatheredPeriods, boards) -> {
+                .thenCombine(boardCatalog, (gatheredPeriods, boards) -> Map.entry(gatheredPeriods, boards))
+                .thenCombine(profileSources, (gatheredBoards, sources) -> {
+                    var gatheredPeriods = gatheredBoards.getKey();
+                    var boards = gatheredBoards.getValue();
                     var gathered = gatheredPeriods.getKey();
                     var leaderboards = gathered.getKey().getKey();
                     var names = gathered.getKey().getValue();
@@ -254,7 +271,7 @@ public final class WebSnapshotWriter implements PluginService {
                     statistics.put("boards", BoardCatalogExport.boards(boards));
                     statistics.put("catalog", BoardCatalogExport.catalog(boards));
                     snapshot.put("statistics", statistics);
-                    snapshot.put("profiles", profiles(leaderboards, quests));
+                    snapshot.put("profiles", profiles(sources));
                     snapshot.put("bootId", bootId);
                     snapshot.put("sequence", sequence.incrementAndGet());
                     snapshot.put("export", exportCost(current.intervalSeconds(),
@@ -549,26 +566,91 @@ public final class WebSnapshotWriter implements PluginService {
         return row;
     }
 
+    /** Données des fiches (#54) : XP par piste, quêtes terminées et totaux des {@link #PROFILE_METRICS}. */
+    record ProfileSources(Map<SkillType, List<ProgressionRepository.LeaderboardRow>> skills,
+                          List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row> quests,
+                          Map<String, List<StatisticsRepository.RankedRow>> metrics) {
+        static final ProfileSources NONE = new ProfileSources(Map.of(), List.of(), Map.of());
+    }
+
     /**
-     * Profils publics limités (#56) : uniquement les joueurs déjà présents dans un classement
-     * (donc non masqués, #55), avec ce que ces classements disent d'eux — rien de plus. Ni UUID, ni
-     * position, ni inventaire, ni date de connexion.
+     * Mêmes sources que les classements, mais pour tous les profils visibles (#54, {@link #PROFILE_LIMIT}) :
+     * lectures asynchrones, aucune copie ni compteur parallèle.
      */
-    static List<Map<String, Object>> profiles(Map<SkillType, List<ProgressionRepository.LeaderboardRow>> leaderboards,
-                                              List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row> quests) {
-        Map<String, Map<String, Object>> byName = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (Map.Entry<SkillType, List<ProgressionRepository.LeaderboardRow>> entry : leaderboards.entrySet()) {
-            for (ProgressionRepository.LeaderboardRow row : entry.getValue()) {
-                profile(byName, row.name()).computeIfAbsent("skills", k -> new LinkedHashMap<String, Object>());
-                @SuppressWarnings("unchecked")
-                Map<String, Object> skills = (Map<String, Object>) byName.get(row.name()).get("skills");
-                skills.put(entry.getKey().name(), row.totalXp());
+    private CompletableFuture<ProfileSources> gatherProfileSources(WebExportConfig current, Set<UUID> excluded) {
+        PublicProfilePolicy.Visibility visibility = current.profileVisibilityDefault();
+        Map<SkillType, List<ProgressionRepository.LeaderboardRow>> skills =
+                java.util.Collections.synchronizedMap(new EnumMap<>(SkillType.class));
+        Map<String, List<StatisticsRepository.RankedRow>> metrics =
+                java.util.Collections.synchronizedMap(new LinkedHashMap<>());
+        List<CompletableFuture<?>> futures = new ArrayList<>();
+        for (SkillType skill : current.leaderboardSkills()) {
+            futures.add(progressionRepository.topPlayers(skill, PROFILE_LIMIT, visibility, excluded)
+                    .thenAccept(rows -> skills.put(skill, rows)));
+        }
+        CompletableFuture<List<com.lodygames.rpgquest.database.QuestStatisticsRepository.Row>> quests =
+                questStatistics == null ? CompletableFuture.completedFuture(List.of())
+                        : questStatistics.topCompleted(PROFILE_LIMIT, visibility, excluded);
+        futures.add(quests);
+        if (statisticsRepository != null) {
+            for (String id : PROFILE_METRICS) {
+                futures.add(statisticsRepository.lifetimeTotals(StatMetric.find(id).orElseThrow(), PROFILE_LIMIT,
+                        visibility, excluded).thenAccept(rows -> metrics.put(id, rows)));
             }
         }
-        for (var row : quests) {
+        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                .thenApply(ignored -> new ProfileSources(new EnumMap<>(skills), quests.join(), orderedMetrics(metrics)));
+    }
+
+    private static Map<String, List<StatisticsRepository.RankedRow>> orderedMetrics(
+            Map<String, List<StatisticsRepository.RankedRow>> metrics) {
+        Map<String, List<StatisticsRepository.RankedRow>> ordered = new LinkedHashMap<>();
+        for (String id : PROFILE_METRICS) {
+            if (metrics.containsKey(id)) {
+                ordered.put(id, metrics.get(id));
+            }
+        }
+        return ordered;
+    }
+
+    /**
+     * Fiches publiques (#54/#56) : chaque joueur au profil visible ayant de l'XP, une quête terminée ou
+     * une statistique, avec ses valeurs persistées — rien de plus. Ni UUID, ni position, ni inventaire,
+     * ni date de connexion. Triées par pseudo ; au-delà de {@link #PROFILE_LIMIT}, les plus fortes XP
+     * globales sont gardées.
+     */
+    static List<Map<String, Object>> profiles(ProfileSources sources) {
+        Map<String, Map<String, Object>> byName = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Map.Entry<SkillType, List<ProgressionRepository.LeaderboardRow>> entry : sources.skills().entrySet()) {
+            for (ProgressionRepository.LeaderboardRow row : entry.getValue()) {
+                section(profile(byName, row.name()), "skills").put(entry.getKey().name(), row.totalXp());
+            }
+        }
+        for (var row : sources.quests()) {
             profile(byName, row.name()).put("questsCompleted", row.completed());
         }
-        return new ArrayList<>(byName.values());
+        for (Map.Entry<String, List<StatisticsRepository.RankedRow>> entry : sources.metrics().entrySet()) {
+            for (StatisticsRepository.RankedRow row : entry.getValue()) {
+                section(profile(byName, row.name()), "stats").put(entry.getKey(), row.value());
+            }
+        }
+        List<Map<String, Object>> result = new ArrayList<>(byName.values());
+        if (result.size() > PROFILE_LIMIT) {
+            result.sort(java.util.Comparator.comparingLong(WebSnapshotWriter::globalXp).reversed());
+            result = new ArrayList<>(result.subList(0, PROFILE_LIMIT));
+            result.sort(java.util.Comparator.comparing(p -> String.valueOf(p.get("name")), String.CASE_INSENSITIVE_ORDER));
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> section(Map<String, Object> profile, String key) {
+        return (Map<String, Object>) profile.computeIfAbsent(key, k -> new LinkedHashMap<String, Object>());
+    }
+
+    private static long globalXp(Map<String, Object> profile) {
+        return profile.get("skills") instanceof Map<?, ?> skills && skills.get(SkillType.GLOBAL.name()) instanceof Number xp
+                ? xp.longValue() : 0L;
     }
 
     private static Map<String, Object> profile(Map<String, Map<String, Object>> byName, String name) {

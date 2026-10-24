@@ -85,6 +85,40 @@ public final class StatisticsRepository {
     }
 
     /**
+     * Totaux « depuis le début du suivi » d'une métrique journalisée (#54, fiches du portail) : toute
+     * la source, sans fenêtre, pour les {@code limit} premiers joueurs au profil visible (#55), sans
+     * les {@code excluded}. L'XP n'y passe pas : son total depuis toujours est {@code player_skills}.
+     */
+    public CompletableFuture<List<RankedRow>> lifetimeTotals(StatMetric metric, int limit,
+                                                             PublicProfilePolicy.Visibility visibility,
+                                                             Collection<UUID> excluded) {
+        requireWindowed(metric);
+        StatMetric.Source source = metric.source();
+        if (source.xp()) {
+            throw new IllegalArgumentException("l'XP depuis toujours se lit dans player_skills : " + metric.id());
+        }
+        String sum = "SUM(" + source.amount() + ")";
+        String sql = "SELECT p.last_name AS name, " + sum + " AS total "
+                + "FROM " + source.table() + " g JOIN player_profiles p ON p.uuid = g.player_uuid WHERE "
+                + (source.keyColumn() != null ? "g." + source.keyColumn() + " = ? AND " : "")
+                + (source.condition() != null ? source.condition() + " AND " : "")
+                + PublicProfilePolicy.visible("p", visibility) + notIn("p.uuid", excluded.size())
+                + " GROUP BY p.uuid, p.last_name HAVING " + sum + " > 0"
+                + " ORDER BY total DESC, p.last_name ASC, p.uuid ASC LIMIT ?";
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                int index = 1;
+                if (source.keyColumn() != null) {
+                    statement.setString(index++, source.key());
+                }
+                index = bindUuids(statement, index, excluded);
+                statement.setInt(index, limit);
+                return ranked(statement);
+            }
+        });
+    }
+
+    /**
      * Total de tous les participants d'un objectif commun (#57), en direct. Les profils privés
      * comptent (aucun pseudo n'est lu), les joueurs exclus non.
      */

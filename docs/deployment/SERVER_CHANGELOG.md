@@ -49,6 +49,29 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-24 - Portail : fiches de tous les joueurs avec leurs statistiques persistées (#54)
+
+### Changement
+
+Plugin : l'instantané exporte une fiche pour **chaque** joueur au profil visible (plafond 1 000), plus seulement ceux
+d'un top 10, avec ses totaux persistés (monstres vaincus, blocs cassés, prises de pêche, waypoints, villes, pierres
+de voyage, histoires) lus dans les journaux existants. Portail : liste blanche `stats`, section « Statistiques » de
+la fiche. Aucune donnée nouvelle collectée, aucun UUID/IP/position/inventaire.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest (**aucune migration**, aucun fichier de configuration) + redémarrage DEV ; portail AWS
+`scripts/web-portal/deploy.sh`. Un portail ancien ignore simplement `stats`.
+
+### Validation
+
+`/health` du portail : `sync.export.profiles` = nombre de joueurs visibles ; fiche `/joueurs/<pseudo>` (accès bêta) :
+section « Statistiques ».
+
+### Rollback
+
+`scripts/rollback-verygames.sh` (JAR précédent) + `scripts/verygames-restart.sh` ; portail `scripts/web-portal/rollback.sh`.
+
 ## 2026-10-24 - Portail : vrais joueurs en bêta restreinte, instantané complet toutes les 15 min (#421, TC-327 D)
 
 ### Changement

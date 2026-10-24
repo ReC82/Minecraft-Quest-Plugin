@@ -141,7 +141,7 @@ numérique, piste de classement inconnue...) renvoie `400`.
 | `GET /api/profiles` | profils publics limités et `statistics` par portée (instantané v2, #54/#56 — voir [WEB_PORTAL.md](WEB_PORTAL.md)) |
 
 Les trois routes à pseudos passent par une liste blanche (`privacy.PublicPlayerData`, #55) : seuls
-`name`, `skills`, `questsCompleted`, `totalXp` et `value` en sortent ; tout autre champ de
+`name`, `skills`, `questsCompleted`, `stats` (métrique → total, #54), `totalXp` et `value` en sortent ; tout autre champ de
 l'instantané est ignoré.
 
 Toute route inconnue sous `/api/` renvoie `404` (toujours après vérification

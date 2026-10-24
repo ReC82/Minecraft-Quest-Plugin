@@ -235,6 +235,7 @@ public final class PlayersPageHandler implements ApiHandler {
         }
 
         body.append(tracks(skills));
+        body.append(stats(profile, state));
         if (!ranks.isEmpty()) {
             body.append(PortalIcons.heading("h2", "trophy", "Médailles de classement")).append("<ul class=\"medals\">");
             for (String[] rank : ranks) {
@@ -246,10 +247,49 @@ public final class PlayersPageHandler implements ApiHandler {
             body.append("</ul>");
         }
         return body.append("<p class=\"note\">Valeurs « depuis toujours »")
-                .append(routes.demo() ? " (fictives)." : ", relevées au dernier export du serveur. Seules les catégories "
-                        + "où ce joueur figure au classement sont affichées.")
+                .append(routes.demo() ? " (fictives)." : ", relevées au dernier export du serveur. Une catégorie "
+                        + "sans valeur pour ce joueur n'est pas affichée.")
                 .append("</p><p><a href=\"").append(routes.players()).append("\">Tous les profils</a> · <a href=\"")
                 .append(routes.boards()).append("\">Classements</a></p>").toString();
+    }
+
+    /**
+     * Statistiques persistées du joueur (#54) : totaux du journal du serveur, chacun daté de son début de
+     * suivi quand l'instantané le donne. Rien n'est recalculé ni complété ici.
+     */
+    private static String stats(Map<String, Object> profile, Map<String, Object> state) {
+        if (!(profile.get("stats") instanceof Map<?, ?> stats) || stats.isEmpty()) {
+            return "";
+        }
+        Map<String, String> since = trackedSince(state);
+        StringBuilder html = new StringBuilder(PortalIcons.heading("h2", "trophy", "Statistiques"))
+                .append("<ul class=\"tracks\">");
+        for (Map.Entry<?, ?> entry : stats.entrySet()) {
+            String metric = String.valueOf(entry.getKey());
+            html.append("<li>").append(PortalIcons.tile(PortalIcons.forMetric(metric), false)).append("<strong>")
+                    .append(Html.escape(StatLabels.title(metric))).append("</strong><span>")
+                    .append(StatLabels.number(entry.getValue())).append(' ').append(Html.escape(StatLabels.unit(metric)));
+            if (since.get(metric) != null) {
+                html.append("<br><span class=\"note\">depuis le ").append(Html.escape(StatLabels.date(since.get(metric))))
+                        .append("</span>");
+            }
+            html.append("</span></li>");
+        }
+        return html.append("</ul>").toString();
+    }
+
+    /** Début de suivi de chaque métrique, lu dans le catalogue de l'instantané (#734). */
+    private static Map<String, String> trackedSince(Map<String, Object> state) {
+        Map<String, String> since = new java.util.HashMap<>();
+        Object catalog = PublicPlayerData.statistics(state.get("statistics")).get("catalog");
+        if (catalog instanceof Map<?, ?> map && map.get("metrics") instanceof List<?> metrics) {
+            for (Object item : metrics) {
+                if (item instanceof Map<?, ?> metric && metric.get("trackedSince") instanceof String date) {
+                    since.put(String.valueOf(metric.get("id")), date);
+                }
+            }
+        }
+        return since;
     }
 
     /** Pistes de progression, chacune comparée à la plus forte du joueur (aucun niveau recalculé ici). */

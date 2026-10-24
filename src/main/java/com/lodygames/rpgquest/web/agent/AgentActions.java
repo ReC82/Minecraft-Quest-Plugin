@@ -819,6 +819,21 @@ public interface AgentActions {
     }
 
     /**
+     * #747 — publie malgré des défauts d'architecture que l'administrateur a confirmés ; le serveur
+     * vérifie qu'ils sont exactement ceux du plan et tous contournables. Vide : comportement habituel.
+     */
+    default CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml, boolean replace,
+                                                                       int expectedVersion,
+                                                                       java.util.Set<String> acceptedDefects) {
+        if (acceptedDefects != null && !acceptedDefects.isEmpty()) {
+            return CompletableFuture.completedFuture(new BuildingGenerationView(false, "UNAVAILABLE",
+                    "L'enregistrement malgré des défauts n'est pas disponible sur ce serveur.",
+                    "", "", 0, 0, 0, 0, 0, false, List.of()));
+        }
+        return buildingGenerate(planYaml, replace, expectedVersion);
+    }
+
+    /**
      * Ce qu'une génération a réellement produit (issue #94) — jamais ce qui avait été demandé.
      *
      * @param blocks nombre de blocs de matière effectivement posés dans le plan

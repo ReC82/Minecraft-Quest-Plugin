@@ -3970,7 +3970,21 @@ public final class AgentActionExecutor {
             }
             expected = Integer.parseInt(expectedRaw);
         }
-        return actions.buildingGenerate(plan, replace, expected)
+        // #747 : les défauts d'architecture que l'administrateur a lus et confirmés. Le serveur
+        // vérifie lui-même qu'ils sont exactement ceux du plan, et tous contournables.
+        String acceptRaw = trimOrNull(action.param("accept_defects"));
+        java.util.Set<String> accepted = new java.util.TreeSet<>();
+        if (acceptRaw != null) {
+            for (String code : acceptRaw.split(",")) {
+                String c = code.trim();
+                if (!c.matches("[A-Z_]{3,40}")) {
+                    return done(AgentActionOutcome.rejected(action.id(),
+                            "Paramètre « accept_defects » invalide : codes de défaut séparés par des virgules."));
+                }
+                accepted.add(c);
+            }
+        }
+        return actions.buildingGenerate(plan, replace, expected, accepted)
                 .thenApply(r -> {
                     Map<String, Object> details = new LinkedHashMap<>();
                     details.put("code", r.code());
@@ -4030,6 +4044,10 @@ public final class AgentActionExecutor {
                     details.put("warnings", v.warnings());
                     details.put("exists", v.exists());
                     details.put("metrics", v.metrics());
+                    // #747 : les défauts que l'administrateur peut accepter pour enregistrer quand
+                    // même — vide si un seul code est une impossibilité ou si la grille est vide.
+                    details.put("acceptable", com.lodygames.rpgquest.building.plan.AcceptableDefects.of(
+                            v.code(), v.blocks(), v.codes()));
                     // #282 : le message COMPLET — le résultat de l'action est tronqué à 500
                     // caractères par le panel, et le diagnostic géométrique dépasse souvent.
                     details.put("message", v.message());

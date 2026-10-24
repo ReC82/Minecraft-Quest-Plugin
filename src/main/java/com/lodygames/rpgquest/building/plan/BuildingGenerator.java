@@ -345,6 +345,20 @@ public final class BuildingGenerator {
      *                        n'est écrit ({@code VERSION_CONFLICT}). 0 : pas de contrôle
      */
     public Result generate(String planYaml, boolean replace, int expectedVersion) {
+        return generate(planYaml, replace, expectedVersion, java.util.Set.of());
+    }
+
+    /**
+     * Génère, en acceptant au besoin des défauts d'architecture CONFIRMÉS par l'administrateur (#747).
+     *
+     * @param acceptedDefects les codes que l'administrateur a lus et acceptés ; vide : aucun défaut
+     *                        bloquant n'est toléré. S'ils ne sont pas EXACTEMENT ceux que l'audit
+     *                        relève sur ce plan, ou si l'un d'eux n'est pas contournable
+     *                        ({@link AcceptableDefects}), rien n'est écrit
+     */
+    public Result generate(String planYaml, boolean replace, int expectedVersion,
+                           java.util.Set<String> acceptedDefects) {
+        java.util.Set<String> accepted = acceptedDefects == null ? java.util.Set.of() : acceptedDefects;
         List<String> problems = new ArrayList<>();
         Optional<BuildingPlan> parsed = BuildingPlanYaml.read(planYaml, problems);
         if (parsed.isEmpty()) {
@@ -390,10 +404,23 @@ public final class BuildingGenerator {
         ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
                 expansion.blueprint(), plan.front(), plan.rules(), expansion.provenance(),
                 plan.anchorY());
-        if (audit.refused()) {
+        boolean withDefects = false;
+        if (audit.refused() && accepted.isEmpty()) {
             return new Result(false, "ARCHITECTURE_REFUSED", refusalText(plan, audit),
                     plan.id(), "", plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                     expansion.solidCount(), 0, false, List.of());
+        }
+        if (!accepted.isEmpty()) {
+            // #747 : l'administrateur a confirmé des défauts. Le serveur relit LUI-MÊME ceux du plan
+            // reçu : une confirmation qui ne correspond plus (autre version, plan modifié) ou qui
+            // couvrirait une impossibilité n'écrit rien.
+            Optional<String[]> refused = AcceptableDefects.refusal(audit.blockingCodes(), accepted);
+            if (refused.isPresent()) {
+                return new Result(false, refused.get()[0], refused.get()[1] + "\n" + refusalText(plan, audit),
+                        plan.id(), "", plan.sizeX(), plan.sizeY(), plan.sizeZ(),
+                        expansion.solidCount(), 0, false, List.of());
+            }
+            withDefects = true;
         }
 
         // #568 : une arche de portail doit dire où est son passage — relevé sur la grille, avant
@@ -433,7 +460,8 @@ public final class BuildingGenerator {
 
         int version = existing.map(definition -> definition.version() + 1).orElse(1);
         BuildingDefinition definition = new BuildingDefinition(plan.id(), plan.name(),
-                "Généré depuis un plan (issue #94).", schematic,
+                "Généré depuis un plan (issue #94)." + (withDefects
+                        ? " " + AcceptableDefects.descriptionNote(audit.blockingCodes()) : ""), schematic,
                 plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                 plan.anchorX(), plan.anchorY(), plan.anchorZ(),
                 plan.front(), plan.materials(), version, plan.kind(), passage.orElse(null));
@@ -471,8 +499,19 @@ public final class BuildingGenerator {
         for (ArchitecturalFinding warning : audit.warnings()) {
             effects.add("⚠ " + warning.message());
         }
-        return new Result(true, existing.isPresent() ? "REGENERATED" : "GENERATED",
-                "Bâtiment « " + plan.name() + " » généré : " + plan.sizeX() + " × " + plan.sizeZ()
+        for (ArchitecturalFinding defect : withDefects ? audit.blocking() : List.<ArchitecturalFinding>of()) {
+            effects.add("⚠ défaut accepté " + defect.code() + " — " + AcceptableDefects.effect(defect.code())
+                    .orElse("") + " : " + defect.message());
+        }
+        if (withDefects) {
+            logger.info("[building] " + plan.id() + " enregistré AVEC défauts acceptés par l'administrateur : "
+                    + String.join(", ", audit.blockingCodes()) + ".");
+        }
+        return new Result(true, withDefects ? AcceptableDefects.GENERATED_WITH_WARNINGS
+                        : existing.isPresent() ? "REGENERATED" : "GENERATED",
+                (withDefects ? "AVEC AVERTISSEMENTS ACCEPTÉS (" + String.join(", ", audit.blockingCodes())
+                        + ") — non conforme au contrat architectural. " : "")
+                + "Bâtiment « " + plan.name() + " » généré : " + plan.sizeX() + " × " + plan.sizeZ()
                         + " × " + plan.sizeY() + " blocs d'emprise, " + expansion.solidCount()
                         + " blocs de matière, version " + version + ". "
                         + (existing.isPresent()

@@ -336,6 +336,12 @@ public final class BuildingPlacementService {
         if (!gateway.available()) {
             warnings.add("Sans moteur de schematics, aucun retour arrière ne serait possible.");
         }
+        // #747 : un bâtiment enregistré malgré des défauts connus le rappelle à chaque pose.
+        int mark = building.description().indexOf(com.lodygames.rpgquest.building.plan.AcceptableDefects.MARK);
+        if (mark >= 0) {
+            warnings.add("Bâtiment non conforme, enregistré avec avertissements acceptés : "
+                    + building.description().substring(mark) + " Vérifiez-le en jeu après la pose.");
+        }
 
         return new Preview(found, building, rotation, footprint, refusals, warnings,
                 nonAir.isPresent() ? nonAir.getAsLong() : -1L);

@@ -467,8 +467,8 @@ seule colonne lisible sur téléphone, zones cliquables de 44 px, focus clavier 
 | --- | --- | --- | --- |
 | `/` | présentation, statut du serveur, saison et événements (noms et dates), 3 dernières actualités, message du serveur, aperçu de 2 classements (top 3), « Comment rejoindre » | présentation et actualités intactes, statut « État inconnu » (« Hors ligne » seulement après un arrêt annoncé par le serveur, #421) | aperçu remplacé par « ouvriront quand… » ; aucun pseudo |
 | `/actualites`, `/actualites/<slug>` | liste paginée (10 par page), filtre `?categorie=`, article complet | **inchangées** : ne lisent pas l'instantané | inchangées |
-| `/classements` (alias `/leaderboards`) | onglets « Depuis toujours », saison, événements (`?periode=<id>`) ; top 10 par métrique, rang du plugin (ex aequo), statut et dates de la période, date de relevé | « Aucun classement » | « pas encore publiée » |
-| `/joueurs`, `/joueurs/<pseudo>`, `/joueurs?pseudo=` | liste alphabétique paginée (60) avec l'XP globale, recherche (casse, espaces et « _ » ignorés ; pseudo exact ou résultat unique → fiche, sinon liste des pseudos contenant le texte), profil : XP globale (même valeur que la liste et le classement « XP globale », règle affichée : ce n'est pas la somme des pistes), XP par piste, quêtes, rangs « depuis toujours », meilleur rang avec son classement ; initiale à la place d'un skin (pas de service tiers ni d'UUID) | liste vide | « pas encore publiée » |
+| `/classements` (alias `/leaderboards`) | onglets « Depuis toujours », saison, événements (`?periode=<id>`) ; top 10 par métrique, rang du plugin (ex aequo), unité accordée (« 1 quête »), statut et dates de la période, date de relevé | avis « Profils et classements momentanément indisponibles » en tête (24/10, aussi sur `/classements/tous` et l'aperçu de l'accueil) | « pas encore publiée » |
+| `/joueurs`, `/joueurs/<pseudo>`, `/joueurs?pseudo=` | liste alphabétique paginée (60) avec l'XP globale, recherche (casse, espaces et « _ » ignorés ; pseudo exact ou résultat unique → fiche, sinon liste des pseudos contenant le texte), profil : XP globale (même valeur que la liste et le classement « XP globale », règle affichée : ce n'est pas la somme des pistes), XP par piste, quêtes, statistiques persistées (#54), rangs « depuis toujours », meilleur rang avec son classement ; initiale à la place d'un skin (pas de service tiers ni d'UUID) ; tous les joueurs visibles, pas seulement ceux d'un classement | **503** + `Retry-After: 300` et le même avis, pour la liste, la fiche et la recherche (24/10) : un profil existant ne paraît jamais « inconnu » (404) pendant un redémarrage ou une coupure du relevé | « pas encore publiée » |
 | `/infos` | rejoindre (`server-address`, `minecraft-version`), premiers pas, règles de base, FAQ | inchangée | inchangée |
 | `/evenements` (refonte, 23/10) | saison et événements rangés « En cours / À venir / Terminés » : nom, dates, compte à rebours, règles, récompenses annoncées, objectif commun (total agrégé) ; lien « Voir le classement » si publié | « Aucune saison ni aucun événement » + lien vers l'exemple fictif | **publique** : aucun pseudo ni score individuel, pas de lien vers les classements |
 | `/progression` (refonte, 23/10) | « Comment progresser » : les cinq pistes, niveau global, quêtes, commandes en jeu ; aucun montant cité (configurables) | inchangée | inchangée |
@@ -484,6 +484,12 @@ tout) combinable avec `?periode=` ; fiche joueur avec en-tête (XP totale, quêt
 par piste comparée à la piste la plus forte du joueur (aucun niveau recalculé côté portail) et médailles de
 classement. Les pages « pas encore publiées » et l'accueil proposent l'aperçu fictif. Captures :
 `docs/design/56-portail-refonte/`.
+
+**Données indisponibles (24/10/2026, bêta réelle)** : « sans instantané » couvre tout état où aucune donnée de
+jeu n'est affichée (`ServerState.SYNCED_AT` absent) — aucun relevé, arrêt annoncé, relevé complet plus ancien
+que `snapshot-data-max-age-seconds` même si le relevé d'état est frais. Les vraies pages le disent
+explicitement (`LeaderboardsPageHandler.unavailable`) au lieu d'afficher « Personne pour l'instant » ou « Aucun
+profil public » ; elles reviennent seules au relevé suivant. L'aperçu `/demo` n'en dépend pas.
 
 Chaque page a un titre, une description et un lien canonique (`public-base-url`). Les données de
 joueurs passent toutes par la liste blanche `privacy.PublicPlayerData`. Un pseudo inconnu ou masqué,

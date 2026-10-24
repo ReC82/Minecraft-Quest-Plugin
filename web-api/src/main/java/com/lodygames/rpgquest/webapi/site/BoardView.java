@@ -61,7 +61,8 @@ final class BoardView {
     }
 
     private static String value(Map<String, Object> row, String metric) {
-        return StatLabels.number(row.get("value")) + ' ' + Html.escape(StatLabels.unit(metric));
+        return StatLabels.number(row.get("value")) + ' '
+                + Html.escape(StatLabels.unit(metric, row.get("value")));
     }
 
     /** Or, argent, bronze pour les trois premiers rangs (ex aequo compris, #428). */

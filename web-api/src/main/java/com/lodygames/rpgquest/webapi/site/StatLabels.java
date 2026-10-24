@@ -94,6 +94,13 @@ public final class StatLabels {
         };
     }
 
+    /** Unité accordée à la valeur : « 1 quête », « 2 quêtes » (les unités du catalogue sont des pluriels en -s). */
+    public static String unit(String metric, Object value) {
+        String unit = unit(metric);
+        return value instanceof Number number && Math.abs(number.longValue()) <= 1 && unit.endsWith("s")
+                ? unit.substring(0, unit.length() - 1) : unit;
+    }
+
     /**
      * Règle affichée partout où l'XP globale côtoie les pistes (#56) : la piste {@code GLOBAL} est une piste à part
      * entière, alimentée par un miroir des autres pistes et par les quêtes (docs/PROGRESSION.md) — ce n'est pas

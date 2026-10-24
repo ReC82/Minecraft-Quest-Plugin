@@ -24,8 +24,8 @@ import java.util.regex.Pattern;
  * {@code GET /joueurs} et {@code GET /joueurs/<pseudo>} — profils publics limités (#56).
  *
  * <p>Ne montre que ce que l'instantané publie, après la liste blanche {@link PublicPlayerData} : les
- * joueurs présents dans un classement et non masqués (#55), leurs XP de pistes, leurs quêtes terminées
- * et leurs rangs. Jamais d'UUID, de position ni de date de connexion — l'export ne les contient pas.
+ * joueurs non masqués (#55), leurs XP de pistes, leurs quêtes terminées, leurs statistiques persistées
+ * (#54) et leurs rangs. Jamais d'UUID, de position ni de date de connexion — l'export ne les contient pas.
  * Pas d'avatar de skin : il faudrait appeler un service tiers avec l'UUID du joueur ; une initiale en
  * tient lieu. Un pseudo inconnu ou masqué donne la même réponse : « aucun profil public ».</p>
  */
@@ -69,13 +69,16 @@ public final class PlayersPageHandler implements ApiHandler {
         if (rest.isEmpty()) {
             Map<String, String> query = QueryParams.parse(exchange.getRequestURI().getRawQuery());
             String wanted = query.getOrDefault("pseudo", "").strip();
-            if (!wanted.isEmpty()) {
+            if (!wanted.isEmpty() && !unavailable(state)) {
                 return search(exchange, serverStatus, profiles, wanted);
             }
             int page = SitePaging.page(query);
             int pages = SitePaging.pageCount(profiles.size(), PAGE_SIZE);
             if (page > pages) {
                 return notFound(exchange, serverStatus);
+            }
+            if (unavailable(state)) {
+                return sendUnavailable(exchange, serverStatus);
             }
             String description = "Les aventuriers de " + site.title() + " qui ont choisi d'afficher leur profil.";
             HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, routes.demo()
@@ -84,6 +87,9 @@ public final class PlayersPageHandler implements ApiHandler {
                     routes.demo() ? "Joueurs (démonstration)" : "Joueurs", serverStatus,
                     routes.banner() + list(profiles, page, pages) + freshness(state)));
             return 200;
+        }
+        if (unavailable(state)) {
+            return sendUnavailable(exchange, serverStatus);
         }
         String name = rest.length() <= 48 ? URLDecoder.decode(rest, StandardCharsets.UTF_8) : "";
         Optional<Map<String, Object>> profile = NAME.matcher(name).matches() ? find(profiles, name) : Optional.empty();
@@ -149,10 +155,27 @@ public final class PlayersPageHandler implements ApiHandler {
                 + "Chercher</button></form>";
     }
 
+    /** Vraies pages sans relevé récent (#56) : aucune donnée de joueur à montrer, ce n'est pas « aucun profil ». */
+    private boolean unavailable(Map<String, Object> state) {
+        return !routes.demo() && !LeaderboardsPageHandler.unavailable(state).isEmpty();
+    }
+
+    /**
+     * 503 explicite plutôt qu'un 404 trompeur : un profil existant ne doit pas paraître « inconnu » pendant un
+     * redémarrage ou une coupure du relevé. La liste garde son formulaire de recherche.
+     */
+    private int sendUnavailable(HttpExchange exchange, ServerStatus serverStatus) throws IOException {
+        exchange.getResponseHeaders().set("Retry-After", "300");
+        HttpResponses.sendHtml(exchange, 503, PageLayout.render(site, new PageMeta("", "", PageMeta.PLAYERS, true),
+                "Joueurs", serverStatus, searchForm("") + LeaderboardsPageHandler.unavailable(Map.of())
+                        + "<p><a href=\"" + routes.boards() + "\">Classements</a></p>"));
+        return 503;
+    }
+
     private int notFound(HttpExchange exchange, ServerStatus serverStatus) throws IOException {
         HttpResponses.sendHtml(exchange, 404, PageLayout.render(site, new PageMeta("", "", PageMeta.PLAYERS,
                 routes.demo()), "Joueur", serverStatus, "<p>Aucun profil public pour ce pseudo. Un joueur n'apparaît "
-                + "ici que s'il figure dans un classement et a choisi d'afficher son profil.</p><p><a href=\""
+                + "ici que s'il a choisi d'afficher son profil.</p><p><a href=\""
                 + routes.players() + "\">Tous les profils publics</a></p>"));
         return 404;
     }
@@ -172,7 +195,7 @@ public final class PlayersPageHandler implements ApiHandler {
             return body.append(PortalIcons.empty("npc", "Aucun profil public pour le moment.")).toString();
         }
         body.append(routes.demo() ? "<p>Joueurs fictifs de démonstration.</p>"
-                : "<p>Joueurs présents dans au moins un classement et qui ont choisi d'afficher leur profil. "
+                : "<p>Joueurs qui ont choisi d'afficher leur profil. "
                         + "Pour masquer le tien : <code>/profile web prive</code> en jeu.</p>");
         List<Map<String, Object>> sorted = profiles.stream()
                 .sorted(Comparator.comparing(profile -> String.valueOf(profile.get("name")).toLowerCase(Locale.ROOT)))
@@ -271,8 +294,7 @@ public final class PlayersPageHandler implements ApiHandler {
             html.append("<li>").append(PortalIcons.tile(PortalIcons.forMetric(metric), false)).append("<strong>")
                     .append(Html.escape(creatures ? "Créatures tuées" : StatLabels.title(metric))).append("</strong><span>")
                     .append(StatLabels.number(entry.getValue())).append(' ')
-                    .append(Html.escape(creatures ? "créatures, animaux compris" : singular(StatLabels.unit(metric),
-                            entry.getValue())));
+                    .append(Html.escape(creatures ? "créatures, animaux compris" : StatLabels.unit(metric, entry.getValue())));
             if (since.get(metric) != null) {
                 html.append("<br><span class=\"note\">depuis le ").append(Html.escape(StatLabels.date(since.get(metric))))
                         .append("</span>");
@@ -280,12 +302,6 @@ public final class PlayersPageHandler implements ApiHandler {
             html.append("</span></li>");
         }
         return html.append("</ul>").toString();
-    }
-
-    /** « 1 ville », pas « 1 villes » : les unités du catalogue sont des pluriels réguliers en -s. */
-    static String singular(String unit, Object value) {
-        return value instanceof Number number && number.longValue() == 1 && unit.endsWith("s")
-                ? unit.substring(0, unit.length() - 1) : unit;
     }
 
     /** Début de suivi de chaque métrique, lu dans le catalogue de l'instantané (#734). */

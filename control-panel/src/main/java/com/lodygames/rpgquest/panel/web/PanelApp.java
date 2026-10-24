@@ -2058,6 +2058,14 @@ public final class PanelApp {
             return "";
         }
         var parent = planDrafts.find(draft.parentId()).filter(BuildingPlanDraft::hasPlan);
+        // #747 (24/10) : une réparation du moteur se compare à la version que l'IA devait améliorer, pas à
+        // la réponse brute de l'IA — celle-ci avait déjà perdu les deux toits de l'église de test.
+        if (parent.isPresent() && draft.origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR
+                && parent.get().origin() != BuildingPlanDraft.Origin.ENGINE_REPAIR
+                && parent.get().parentId() != null && !parent.get().parentId().isBlank()) {
+            var aiOutput = parent;
+            parent = planDrafts.find(aiOutput.get().parentId()).filter(BuildingPlanDraft::hasPlan).or(() -> aiOutput);
+        }
         if (parent.isEmpty()) {
             return "";
         }
@@ -2569,6 +2577,12 @@ public final class PanelApp {
         BuildingPlanDraft draft = found.get();
         int expected = parseIntOr(f.get("version"), -1);
         String submitted = f.getOrDefault("plan", "").replace("\r\n", "\n");
+        // #747 (24/10) : un envoi sans texte de plan (formulaire tronqué, script) enregistrait une révision
+        // VIDE de la version — son plan disparaissait de l'écran. Rien n'est enregistré ni envoyé.
+        if (submitted.isBlank() && draft.hasPlan()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), draft.id(), null,
+                    "Le plan envoyé est vide : rien n'a été enregistré ni envoyé, la version reste inchangée."));
+        }
         var saved = planDrafts.save(draft.id(), expected, submitted, session.username());
         switch (saved.outcome()) {
             case STALE -> {

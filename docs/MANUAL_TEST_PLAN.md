@@ -8629,8 +8629,8 @@ sans F5), TC-403, TC-404, TC-407. Durée : 10 minutes, dont 3 en jeu.
     avec déjà une réponse « Au revoir. ». Y écrire « Du pain frais ! » → **Enregistrer et mettre en jeu** →
     « À jour en jeu ». En jeu : « Tu vends quoi ? » → « Du pain frais ! » → « Au revoir. » ferme.
 6.  **Réplique inaccessible** : **Ajouter une réplique** → carte en bas marquée « Aucune réponse n'y mène ».
-    La choisir dans **Ensuite…** d'une réponse → l'étiquette disparaît après **Enregistrer**. (Ou **Réglages de
-    la réplique → Retirer cette réplique**.)
+    La choisir dans **Ensuite…** d'une réponse → l'étiquette disparaît après **Enregistrer**. (Ou **Supprimer
+    cette réplique… → Oui, supprimer cette réplique** : voir TC-429, #815.)
 7.  **Réplique sans réponse** : sur Réplique 2, **Supprimer cette réponse** (la seule) → **Enregistrer**.
     **Attendu** : « Enregistrement impossible : la réplique 2 n'a pas de sortie… » + lien « Comment terminer une
     conversation ? » qui ouvre la section **Terminer une conversation** du guide (pas le haut de la page). Rien
@@ -9113,3 +9113,21 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 **Résultat attendu** : l'église V-8776ad09 s'enregistre et se pose après acceptation de son unique défaut ; V-007bcdcc reste bloquée ; les consignes repartent à chaque reprise.
 
 **Couverture automatisée** : `AcceptableDefects747Test` (plugin : V-8776ad09 et V-007bcdcc réels — défaut déclaré contournable avec son effet, refus sans confirmation, enregistrement marqué, confirmation d'autres défauts refusée, `PLAN_INVALID` jamais contournable, impossibilités), `RequirementUpdates747Test` (consigne de la cabane prioritaire, dédoublonnage, clôture par la description, bornes), `WorkshopFlowTest` (formulaire, case obligatoire, codes transmis, « Enregistré avec avertissements », impossibilité sans formulaire, consignes conservées d'un appel à l'autre, version acceptée non « refusée », modèle d'essai pour un seul appel, modèle mal formé refusé sans appel).
+
+### TC-429 — #815 — supprimer une réplique orpheline sans casser les liens (issue #815, PENDING MANUAL VALIDATION)
+
+**But** : une réplique que plus rien n'atteint se supprime depuis l'éditeur guidé, après confirmation, sans toucher aux autres répliques ; le début et les répliques encore utilisées sont refusés avec une explication.
+
+**Prérequis** : PlugAdmin #815 en ligne sur DEV. Dialogue de **Gauthier** (`guard`) dont la réponse « Les récompenses » a été retirée par le propriétaire le 24/10 : la réplique « Chaque quête a sa propre récompense… » est orpheline. Seul le propriétaire fait ce geste sur Gauthier.
+
+1. PlugAdmin → **Dialogues** → **Gauthier**. **Attendu** : la carte « Chaque quête a sa propre récompense… » porte « Aucune réponse n'y mène » et, en bas, **Supprimer cette réplique…**. Aucune autre carte n'a ce bouton.
+2. Ouvrir **Réglages de la réplique** d'une autre carte (ex. Réplique 2). **Attendu** : « Cette réplique ne peut pas être supprimée : elle est utilisée… » avec un lien vers chaque réponse qui y mène. Sur le début : « Le début de la conversation ne peut pas être supprimé. »
+3. Cliquer **Supprimer cette réplique…**. **Attendu** : encadré en haut « Supprimer la réplique N ? » avec un extrait du texte, « elle sera retirée avec sa réponse », « rien ne change en jeu tant que… ». Cliquer **Annuler** → « Rien n'a été supprimé. », la carte est toujours là.
+4. Recommencer et cliquer **Oui, supprimer cette réplique**. **Attendu** : « Réplique N supprimée… Cliquez « Enregistrer »… », la carte a disparu, les numéros suivants se resserrent, « Modifications non enregistrées ».
+5. **Enregistrer et mettre en jeu**. **Attendu** : « À jour en jeu ».
+6. En jeu, parler à Gauthier et parcourir ses choix (paliers, conditions du Wild, livraison). **Attendu** : toutes les conversations fonctionnent, aucune ne mène à la réplique supprimée.
+7. Sur téléphone : refaire les étapes 1 à 3 sur un dialogue de test. **Attendu** : bouton et encadré lisibles, boutons qui passent à la ligne sans déborder.
+
+**Résultat attendu** : la réplique 17 a disparu de l'éditeur, du fichier DEV et du jeu ; rien d'autre n'a changé.
+
+**Couverture automatisée** : `DialogueFormTest` (réplique isolée retirée avec ses réponses et rien d'autre, réplique référencée refusée avec toutes ses références même depuis une réplique orpheline, branches multiples et boucle, début refusé, entrée conditionnelle = référence et non « Aucune réponse n'y mène », réplique qui ne pointe que sur elle-même supprimable, entrée vers une réplique disparue refusée à la validation, entrées et variantes conservées par le formulaire), `DialogueEditorTest` (copie de `guard.yml` du dépôt : refus tant que « Les récompenses » y mène, confirmation, annulation, rien d'écrit avant « Enregistrer », fichier final = original moins la réponse et la réplique ; dialogue de test : un seul bouton, requêtes forgées refusées pour le début, une réplique ciblée et une entrée conditionnelle, verdict recalculé sur la saisie envoyée, entrée conditionnelle gardée à l'enregistrement).

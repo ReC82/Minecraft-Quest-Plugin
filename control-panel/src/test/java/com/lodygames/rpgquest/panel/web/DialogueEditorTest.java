@@ -446,13 +446,124 @@ class DialogueEditorTest {
         assertEquals(18, after.nodes.size());
     }
 
+    // ---- Issue #815 : supprimer une réplique orpheline -----------------------------------------
+
+    /**
+     * Le cas du propriétaire, rejoué sur une COPIE de {@code guard.yml} du dépôt (jamais le contenu
+     * de DEV) : la réponse « Les récompenses » retirée, sa réplique devient orpheline, se supprime
+     * après confirmation, et l'enregistrement ne touche à rien d'autre.
+     */
     @Test
-    void removingALineSaysWhichRepliesNowEndTheConversation() throws Exception {
+    void theGuardRewardLineCanBeRemovedOnceNothingLeadsToIt() throws Exception {
+        Path source = Path.of("..", "src", "main", "resources", "dialogues", "guard.yml");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(source), "guard.yml introuvable");
         start();
-        Files.writeString(content.resolve("dialogues/sage.yml"), COMPLEX);
-        Map<String, String> f = formFields(get("/dialogues/edit/sage").body());
-        String page = post("/dialogues/save", f, "delnode:1").body();
-        assertTrue(page.contains("1 réponse(s) qui y menaient terminent maintenant la conversation"), "dit, pas silencieux");
+        String original = Files.readString(source);
+        Files.writeString(content.resolve("dialogues/guard.yml"), original);
+        Map<String, String> f = formFields(get("/dialogues/edit/guard").body());
+
+        // Encore ciblée : refusée, avec la réponse qui y mène.
+        String refused = post("/dialogues/save", f, "delnode:reward_info").body();
+        assertTrue(refused.contains("Cette réplique est utilisée. Modifiez d&#39;abord la réponse qui y mène")
+                || refused.contains("Cette réplique est utilisée. Modifiez d'abord la réponse qui y mène"), "refus expliqué");
+        assertTrue(refused.contains("Les récompenses"), "la réponse qui y mène est nommée");
+        assertTrue(formFields(refused).containsValue("reward_info"), "la réplique est toujours là");
+
+        String rewardsKey = f.entrySet().stream().filter(x -> x.getValue().equals("Les récompenses")).findFirst()
+                .orElseThrow().getKey();
+        f.put(rewardsKey.replace("_text", "_del"), "1");
+        String asking = post("/dialogues/save", f, "delnode_ask:reward_info").body();
+        assertTrue(asking.contains("id=\"dlg-rm-ask\""), "confirmation demandée");
+        assertTrue(asking.contains("value=\"delnode:reward_info\""));
+        assertEquals(original, Files.readString(content.resolve("dialogues/guard.yml")), "rien d'écrit avant confirmation");
+
+        Map<String, String> g = formFields(asking);
+        String cancelled = post("/dialogues/save", g, "delnode_cancel").body();
+        assertTrue(cancelled.contains("Rien n&#39;a été supprimé") || cancelled.contains("Rien n'a été supprimé"));
+        assertTrue(formFields(cancelled).containsValue("reward_info"));
+
+        String removed = post("/dialogues/save", g, "delnode:reward_info").body();
+        assertTrue(removed.contains("supprimée, avec ses réponses"), "dit");
+        assertEquals(original, Files.readString(content.resolve("dialogues/guard.yml")), "brouillon : rien d'écrit");
+        Map<String, String> h = formFields(removed);
+        assertFalse(h.containsValue("reward_info"));
+        assertEquals("17", h.get("n_count"));
+
+        assertEquals(303, post("/dialogues/save", h, "save").statusCode());
+        DialogueDraft after = DialogueYaml.read(Files.readString(content.resolve("dialogues/guard.yml"))).draft();
+        DialogueDraft expected = DialogueYaml.read(original).draft();
+        expected.nodes.removeIf(n -> n.id.equals("reward_info"));
+        expected.nodes.forEach(n -> n.choices.removeIf(c -> c.text.equals("Les récompenses")));
+        assertEquals(DialogueYaml.write(expected), DialogueYaml.write(after), "seules la réponse et la réplique partent");
+    }
+
+    private static final String TEST_GRAPH = """
+            id: rpgquest:test_orphelins
+            start: start
+            entries:
+              - node: gated
+                conditions:
+                  - type: QUEST_STATE
+                    quest: rpgquest:x
+                    state: COMPLETED
+            nodes:
+              start:
+                speaker: "T"
+                text: "Début"
+                choices:
+                  - text: "Vers B"
+                    next: b
+              b:
+                speaker: "T"
+                text: "B"
+                choices:
+                  - text: "Fin"
+                    actions:
+                      - type: CLOSE
+              orphan:
+                speaker: "T"
+                text: "Orpheline"
+                choices:
+                  - text: "Vers B"
+                    next: b
+              gated:
+                speaker: "T"
+                text: "Après la quête"
+                choices:
+                  - text: "Fin"
+                    actions:
+                      - type: CLOSE
+            """;
+
+    @Test
+    void onlyOrphanLinesOfferTheButtonAndTheServerRechecksEveryGesture() throws Exception {
+        start();
+        Files.writeString(content.resolve("dialogues/test_orphelins.yml"), TEST_GRAPH);
+        String page = get("/dialogues/edit/test_orphelins").body();
+        assertEquals(1, count(page, "value=\"delnode_ask:"), "un seul bouton : la réplique orpheline");
+        assertTrue(page.contains("value=\"delnode_ask:orphan\""));
+        assertTrue(page.contains("Le début de la conversation ne peut pas être supprimé."));
+        assertTrue(page.contains("une entrée conditionnelle du dialogue"), "l'entrée conditionnelle est une référence");
+        Map<String, String> f = formFields(page);
+
+        // Requêtes forgées (bouton absent) : le serveur refuse quand même.
+        for (String id : List.of("start", "b", "gated")) {
+            String res = post("/dialogues/save", f, "delnode:" + id).body();
+            assertTrue(res.contains("ne peut pas être supprimé") || res.contains("est utilisée"), id);
+            assertTrue(formFields(res).containsValue(id), id + " toujours là");
+        }
+
+        // Rendue de nouveau atteignable dans le formulaire non enregistré : plus supprimable.
+        Map<String, String> linked = new java.util.LinkedHashMap<>(f);
+        linked.put("n0_c0_next", "orphan");
+        String res = post("/dialogues/save", linked, "delnode:orphan").body();
+        assertTrue(res.contains("est utilisée"), "le verdict suit la saisie envoyée, pas l'affichage précédent");
+
+        String removed = post("/dialogues/save", f, "delnode:orphan").body();
+        assertEquals(303, post("/dialogues/save", formFields(removed), "save").statusCode());
+        String saved = Files.readString(content.resolve("dialogues/test_orphelins.yml"));
+        assertFalse(saved.contains("orphan:"));
+        assertTrue(saved.contains("entries:") && saved.contains("node: gated"), "l'entrée conditionnelle est gardée");
     }
 
     // ---- Mise en jeu ---------------------------------------------------------------------------

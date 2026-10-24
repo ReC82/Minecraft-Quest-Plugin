@@ -216,18 +216,26 @@ public final class DialoguePages {
      */
     public record Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
                           String notice, String noticeTone, Map<String, List<String>> errors,
-                          boolean dirty, boolean hasComments, DialogueServerCopy serverCopy, Reload reload) {
+                          boolean dirty, boolean hasComments, DialogueServerCopy serverCopy, Reload reload,
+                          String askRemove) {
 
         public Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
                        String notice, String noticeTone, Map<String, List<String>> errors,
                        boolean dirty, boolean hasComments, DialogueServerCopy serverCopy) {
-            this(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments, serverCopy, null);
+            this(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments, serverCopy, null,
+                    "");
         }
 
         /** Le même éditeur, avec l'étape « Recharger depuis DEV » à afficher. */
         public Editing withReload(Reload r) {
             return new Editing(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments,
-                    serverCopy, r);
+                    serverCopy, r, askRemove);
+        }
+
+        /** Issue #815 — le même éditeur, qui demande confirmation avant de supprimer la réplique {@code nodeId}. */
+        public Editing withAskRemove(String nodeId) {
+            return new Editing(slug, draft, expectedSha, readOnly, notice, noticeTone, errors, dirty, hasComments,
+                    serverCopy, reload, nodeId == null ? "" : nodeId);
         }
 
         public Editing(String slug, DialogueDraft draft, String expectedSha, String readOnly,
@@ -525,6 +533,9 @@ public final class DialoguePages {
                 + "aria-hidden=\"true\"").append(editable ? "" : " disabled").append("></button>");
         if (editable && e.reload() != null && e.reload().askDiscard()) {
             sb.append(reloadAsk(e.reload(), e.slug()));
+        }
+        if (editable && !e.askRemove().isEmpty() && DialogueForm.removal(d, e.askRemove()).allowed()) {
+            sb.append(removeAsk(d, e.askRemove()));
         }
 
         Map<String, String> f = DialogueForm.fields(d);
@@ -1011,12 +1022,89 @@ public final class DialoguePages {
                 .append("<input class=\"form-control\" id=\"dlg-n").append(i).append("-speaker\" name=\"")
                 .append(DialogueForm.node(i, "speaker")).append("\" maxlength=\"128\" value=\"")
                 .append(Http.esc(node.speaker)).append("\"").append(editable ? "" : " readonly").append(">");
-        if (editable && !isStart && d.nodes.size() > 1) {
-            sb.append("<button class=\"btn secondary sm npc-danger dlg-rm\" type=\"submit\" name=\"_op\" value=\"delnode:")
-                    .append(i).append("\" formnovalidate>").append(Icons.icon("trash")).append("Retirer cette réplique</button>");
+        DialogueForm.Removal removal = DialogueForm.removal(d, node.id);
+        if (editable && !removal.allowed()) {
+            sb.append(removalRefusalHtml(d, removal));
         }
         sb.append("</details>");
+        if (editable && removal.allowed()) {
+            // Issue #815 : visible sur la carte, et seulement quand plus rien ne mène à cette réplique.
+            sb.append("<div class=\"dlg-rm-node\"><button class=\"btn secondary sm npc-danger\" type=\"submit\" ")
+                    .append("name=\"_op\" value=\"delnode_ask:").append(Http.esc(node.id)).append("\" formnovalidate>")
+                    .append(Icons.icon("trash")).append("Supprimer cette réplique…</button></div>");
+        }
         return sb.append("</section>").toString();
+    }
+
+    /**
+     * Issue #815 — la confirmation avant de supprimer une réplique orpheline, en tête du formulaire
+     * (comme « Recharger depuis DEV ») : chaque bouton renvoie la saisie telle quelle.
+     */
+    private static String removeAsk(DialogueDraft d, String nodeId) {
+        DialogueDraft.Node node = d.nodes.stream().filter(n -> n.id.equals(nodeId)).findFirst().orElseThrow();
+        int replies = node.choices.size();
+        StringBuilder sb = new StringBuilder("<section class=\"card dlg-card dlg-reload tone-warn\" id=\"dlg-rm-ask\" ")
+                .append("role=\"alertdialog\" aria-labelledby=\"dlg-rm-ask-h\">");
+        sb.append("<h2 class=\"dlg-node-h\" id=\"dlg-rm-ask-h\">").append(Icons.icon("trash"))
+                .append("Supprimer la réplique ").append(DialogueForm.number(d, nodeId)).append(" ?</h2>");
+        String ex = DialogueForm.excerpt(node.text, 80);
+        if (!ex.isEmpty()) {
+            sb.append("<p class=\"dlg-says\">« ").append(Http.esc(ex)).append(" »</p>");
+        }
+        sb.append("<p>Aucune réponse n'y mène. Elle sera retirée avec ")
+                .append(replies == 1 ? "sa réponse" : "ses " + replies + " réponses")
+                .append(". Les autres répliques ne changent pas.</p>");
+        sb.append("<p class=\"form-text\">Rien ne change en jeu tant que vous n'avez pas cliqué « Enregistrer », "
+                + "puis « Mettre en jeu ». Avant d'enregistrer, « Recharger depuis DEV » la fait revenir.</p>");
+        sb.append("<div class=\"btnrow\">")
+                .append("<button class=\"btn sm npc-danger\" type=\"submit\" name=\"_op\" value=\"delnode:")
+                .append(Http.esc(nodeId)).append("\" formnovalidate>").append(Icons.icon("trash"))
+                .append("Oui, supprimer cette réplique</button>")
+                .append("<button class=\"btn secondary sm\" type=\"submit\" name=\"_op\" value=\"delnode_cancel\" ")
+                .append("formnovalidate>Annuler</button></div>");
+        return sb.append("</section>").toString();
+    }
+
+    /** Pourquoi une réplique ne peut pas être supprimée, en une phrase (texte brut, pour les bandeaux). */
+    public static String removalRefusal(DialogueDraft d, DialogueForm.Removal r) {
+        return switch (r.block()) {
+            case NONE -> "";
+            case MISSING -> "Cette réplique n'existe plus : rien n'a été supprimé.";
+            case START -> "Le début de la conversation ne peut pas être supprimé.";
+            case REFERENCED -> "Cette réplique est utilisée. Modifiez d'abord la réponse qui y mène : "
+                    + String.join(" ; ", r.incoming().stream().map(in -> incomingLabel(d, in)).toList()) + ".";
+        };
+    }
+
+    /** La même explication, avec un lien vers chaque réponse qui mène à la réplique. */
+    private static String removalRefusalHtml(DialogueDraft d, DialogueForm.Removal r) {
+        if (r.block() != DialogueForm.RemovalBlock.REFERENCED) {
+            return "<p class=\"form-text dlg-rm-blocked\">" + Http.esc(removalRefusal(d, r)) + "</p>";
+        }
+        StringBuilder sb = new StringBuilder("<p class=\"form-text dlg-rm-blocked\">Cette réplique ne peut pas être ")
+                .append("supprimée : elle est utilisée. Modifiez d'abord la réponse qui y mène :</p>")
+                .append("<ul class=\"form-text dlg-rm-refs\">");
+        for (DialogueForm.Incoming in : r.incoming()) {
+            String label = Http.esc(incomingLabel(d, in));
+            sb.append("<li>").append(in.kind() == DialogueForm.Incoming.Kind.CHOICE
+                    ? "<a href=\"#r-" + Http.esc(in.fromNode()) + "-c" + in.choiceIndex() + "\">" + label + "</a>"
+                    : label).append("</li>");
+        }
+        return sb.append("</ul>").toString();
+    }
+
+    private static String incomingLabel(DialogueDraft d, DialogueForm.Incoming in) {
+        return switch (in.kind()) {
+            case START -> "c'est le début de la conversation";
+            case ENTRY -> "une entrée conditionnelle du dialogue (réglage avancé du fichier)";
+            case CHOICE -> {
+                String from = in.fromNode().equals(d.start) ? "Début de la conversation"
+                        : "Réplique " + DialogueForm.number(d, in.fromNode());
+                DialogueDraft.Node n = d.nodes.stream().filter(x -> x.id.equals(in.fromNode())).findFirst().orElse(null);
+                String text = n == null ? "" : DialogueForm.excerpt(n.choices.get(in.choiceIndex()).text, 40);
+                yield from + (text.isEmpty() ? "" : ", réponse « " + text + " »");
+            }
+        };
     }
 
     private static String replyItem(Ctx ctx, DialogueDraft d, int i, int j, DialogueDraft.Choice c,

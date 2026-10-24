@@ -6201,7 +6201,7 @@ public final class PanelApp {
         boolean warn = !same || inGame == com.lodygames.rpgquest.panel.content.DialogueDevReload.InGame.OLDER
                 || inGame == com.lodygames.rpgquest.panel.content.DialogueDevReload.InGame.NOT_LOADED;
         return new DialoguePages.Editing(slug, editing.draft(), editing.expectedSha(), editing.readOnly(), notice,
-                warn ? "warn" : "ok", editing.errors(), false, editing.hasComments(), null, reload);
+                warn ? "warn" : "ok", editing.errors(), false, editing.hasComments(), null, reload, "");
     }
 
     /**
@@ -6890,6 +6890,7 @@ public final class PanelApp {
         var draft = parsed.draft();
         // L'identifiant ne change jamais depuis l'éditeur : c'est par lui que personnages et quêtes le retrouvent.
         draft.id = original.draft().id;
+        com.lodygames.rpgquest.panel.content.DialogueForm.keepUnshown(draft, original.draft());
         boolean comments = file.get().text().lines().anyMatch(l -> l.trim().startsWith("#"));
 
         String notice = "";
@@ -6949,12 +6950,28 @@ public final class PanelApp {
                 notice = "Réplique ajoutée en bas de la page. Choisissez-la dans « Ensuite… » d'une réponse pour "
                         + "qu'on puisse l'atteindre.";
             }
-            case "delnode" -> {
-                int n = com.lodygames.rpgquest.panel.content.DialogueForm.removeNode(draft, intAt(parts, 1));
-                notice = n < 0 ? "" : n == 0 ? "Réplique retirée." : "Réplique retirée. " + n + " réponse(s) qui y menaient "
-                        + "terminent maintenant la conversation.";
-                tone = n > 0 ? "warn" : "info";
+            case "delnode_ask", "delnode" -> {
+                // Issue #815 : le verdict est recalculé ici, sur le dialogue tel qu'il vient d'être
+                // envoyé (références de toutes sortes comprises), jamais déduit du bouton affiché.
+                String nodeId = parts.length > 1 ? parts[1] : "";
+                var verdict = com.lodygames.rpgquest.panel.content.DialogueForm.removal(draft, nodeId);
+                if (!verdict.allowed()) {
+                    notice = DialoguePages.removalRefusal(draft, verdict);
+                    tone = "err";
+                } else if ("delnode_ask".equals(parts[0])) {
+                    DialoguePages.Editing asking = new DialoguePages.Editing(slug, draft, expectedSha, "", "", "info",
+                            Map.of(), true, comments).withAskRemove(nodeId);
+                    dialoguePage(exchange, post.session(), DialoguePages.title(slug, draft, ctx.users(slug)),
+                            DialoguePages.editor(post.session().csrfToken(), ctx, dialogueRights(post.session()), asking));
+                    return;
+                } else {
+                    int number = com.lodygames.rpgquest.panel.content.DialogueForm.number(draft, nodeId);
+                    com.lodygames.rpgquest.panel.content.DialogueForm.removeOrphanNode(draft, nodeId);
+                    notice = "Réplique " + number + " supprimée, avec ses réponses. Cliquez « Enregistrer » pour "
+                            + "confirmer : rien n'a encore changé en jeu.";
+                }
             }
+            case "delnode_cancel" -> notice = "Rien n'a été supprimé.";
             case "addcd", "addfx" -> {
                 String kind = parts[0].substring(3);
                 int i = intAt(parts, 1);

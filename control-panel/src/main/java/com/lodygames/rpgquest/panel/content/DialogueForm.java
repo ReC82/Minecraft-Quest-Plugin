@@ -237,6 +237,23 @@ public final class DialogueForm {
         return new Parsed(d, List.copyOf(created));
     }
 
+    /**
+     * Reprend du fichier enregistré ce que l'éditeur simple n'affiche pas : les entrées
+     * conditionnelles du dialogue et les répliques alternatives de chaque réplique (#158). Sans
+     * cela, un enregistrement depuis l'éditeur les perdrait, et le calcul des références entrantes
+     * (#815) ignorerait les entrées.
+     */
+    public static void keepUnshown(DialogueDraft target, DialogueDraft saved) {
+        target.entries.clear();
+        target.entries.addAll(saved.entries);
+        Map<String, List<String>> variants = new LinkedHashMap<>();
+        saved.nodes.forEach(n -> variants.put(n.id, n.variants));
+        for (DialogueDraft.Node n : target.nodes) {
+            n.variants.clear();
+            n.variants.addAll(variants.getOrDefault(n.id, List.of()));
+        }
+    }
+
     private static DialogueDraft.Choice parseChoice(Map<String, String> form, int i, int j) {
         DialogueDraft.Choice c = new DialogueDraft.Choice();
         c.text = get(form, reply(i, j, "text"));
@@ -455,36 +472,90 @@ public final class DialogueForm {
     }
 
     /**
-     * Retire une réplique. Les réponses qui y menaient terminent désormais la conversation, et on
-     * le dit : le nombre renvoyé sert au message affiché. La réplique de départ ne se retire pas.
-     *
-     * @return le nombre de réponses redirigées, ou {@code -1} si rien n'a été retiré
+     * Ce qui empêche de supprimer une réplique (issue #815). {@link #NONE} = suppression permise.
      */
-    public static int removeNode(DialogueDraft d, int nodeIndex) {
-        if (nodeIndex < 0 || nodeIndex >= d.nodes.size()) {
-            return -1;
+    public enum RemovalBlock { NONE, MISSING, START, REFERENCED }
+
+    /**
+     * Une référence entrante vers une réplique : la réplique de départ du dialogue ({@code start}),
+     * une entrée conditionnelle ({@code entries[entryIndex]}) ou la réponse {@code choiceIndex} de la
+     * réplique {@code fromNode} (« Ensuite… »). Ce sont les trois seules façons dont le jeu atteint une
+     * réplique ({@code DialogueDefinitionParser}) ; {@code OPEN_DIALOGUE} ouvre un dialogue, jamais
+     * une réplique précise.
+     */
+    public record Incoming(Kind kind, String fromNode, int choiceIndex, int entryIndex) {
+        public enum Kind { START, ENTRY, CHOICE }
+    }
+
+    /** Verdict de suppression d'une réplique, calculé sur le graphe complet. */
+    public record Removal(RemovalBlock block, List<Incoming> incoming) {
+        public boolean allowed() {
+            return block == RemovalBlock.NONE;
         }
-        DialogueDraft.Node gone = d.nodes.get(nodeIndex);
-        if (gone.id.equals(d.start) || d.nodes.size() == 1) {
-            return -1;
+    }
+
+    /**
+     * Toutes les références entrantes vers {@code nodeId}. Une réponse de la réplique elle-même qui
+     * y revient n'en est pas une : elle disparaît avec la réplique.
+     */
+    public static List<Incoming> incoming(DialogueDraft d, String nodeId) {
+        List<Incoming> out = new ArrayList<>();
+        if (nodeId.equals(trim(d.start))) {
+            out.add(new Incoming(Incoming.Kind.START, "", -1, -1));
         }
-        d.nodes.remove(nodeIndex);
-        int redirected = 0;
+        for (int e = 0; e < d.entries.size(); e++) {
+            if (nodeId.equals(trim(d.entries.get(e).node))) {
+                out.add(new Incoming(Incoming.Kind.ENTRY, "", -1, e));
+            }
+        }
         for (DialogueDraft.Node n : d.nodes) {
-            for (DialogueDraft.Choice c : n.choices) {
-                if (gone.id.equals(c.next == null ? "" : c.next.trim())) {
-                    c.next = "";
-                    if (!c.close) {
-                        Map<String, String> close = new LinkedHashMap<>();
-                        close.put("type", "CLOSE");
-                        c.actions.add(close);
-                        c.close = true;
-                    }
-                    redirected++;
+            if (n.id.equals(nodeId)) {
+                continue;
+            }
+            for (int j = 0; j < n.choices.size(); j++) {
+                if (nodeId.equals(trim(n.choices.get(j).next))) {
+                    out.add(new Incoming(Incoming.Kind.CHOICE, n.id, j, -1));
                 }
             }
         }
-        return redirected;
+        return out;
+    }
+
+    /**
+     * Peut-on supprimer {@code nodeId} ? Jamais la réplique de départ, jamais une réplique encore
+     * atteinte par une entrée ou par une réponse d'une autre réplique.
+     */
+    public static Removal removal(DialogueDraft d, String nodeId) {
+        String id = trim(nodeId);
+        if (id.isEmpty() || d.nodes.stream().noneMatch(n -> n.id.equals(id))) {
+            return new Removal(RemovalBlock.MISSING, List.of());
+        }
+        List<Incoming> refs = incoming(d, id);
+        if (id.equals(trim(d.start))) {
+            return new Removal(RemovalBlock.START, refs);
+        }
+        return new Removal(refs.isEmpty() ? RemovalBlock.NONE : RemovalBlock.REFERENCED, refs);
+    }
+
+    /**
+     * Issue #815 — supprime une réplique que plus rien n'atteint, avec ses propres réponses. Le
+     * verdict est recalculé ici sur le dialogue reçu, jamais déduit de l'affichage : une réplique
+     * de départ ou encore référencée reste en place. Les identifiants des autres répliques ne
+     * changent pas ; seuls les numéros affichés (« Réplique 5 ») se resserrent.
+     *
+     * @return le verdict ; la réplique n'a été retirée que s'il est {@link Removal#allowed()}
+     */
+    public static Removal removeOrphanNode(DialogueDraft d, String nodeId) {
+        Removal r = removal(d, nodeId);
+        if (r.allowed()) {
+            String id = trim(nodeId);
+            d.nodes.removeIf(n -> n.id.equals(id));
+        }
+        return r;
+    }
+
+    private static String trim(String s) {
+        return s == null ? "" : s.trim();
     }
 
     // ---- libellés lisibles ---------------------------------------------------------------
@@ -523,13 +594,15 @@ public final class DialogueForm {
         return plain.length() <= max ? plain : plain.substring(0, Math.max(1, max - 1)).trim() + "…";
     }
 
-    /** Ids de répliques auxquelles aucune réponse ne mène (hors départ). */
+    /** Ids de répliques que le jeu ne peut jamais atteindre depuis le départ ou une entrée conditionnelle. */
     public static Set<String> unreachable(DialogueDraft d) {
         Set<String> seen = new LinkedHashSet<>();
         List<String> todo = new ArrayList<>();
         if (d.startNode() != null) {
             todo.add(d.start);
         }
+        // Une entrée conditionnelle (#158) atteint sa réplique sans passer par une réponse.
+        d.entries.forEach(e -> todo.add(trim(e.node)));
         while (!todo.isEmpty()) {
             String id = todo.remove(todo.size() - 1);
             if (!seen.add(id)) {

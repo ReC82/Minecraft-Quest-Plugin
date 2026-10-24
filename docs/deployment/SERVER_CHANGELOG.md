@@ -49,6 +49,39 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - Plugin : notifications de plusieurs quêtes simultanées lisibles (#817)
+
+### Changement
+
+JAR plugin : ActionBar multi-quêtes courte et attribuée, XP/pièces mises en file au lieu d'être collées au
+compteur d'une autre quête, compteur d'étape close retiré, titres « Quête terminée » en file. Nouvelle clé
+`quest.objective-progress-entry` dans `messages.yml`, ajoutée automatiquement au fichier serveur au démarrage
+(fusion des clés manquantes ; aucune clé existante modifiée).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement + redémarrage. Ne pas toucher `messages.yml` (fusion automatique),
+`data.db`, quêtes, mondes.
+
+### Sauvegarde préalable
+
+JAR + `data.db` + configuration par `scripts/deploy-verygames.sh` (sauvegarde datée, jamais écrasée).
+
+### Déploiement
+
+`scripts/deploy-verygames.sh -y` après CI verte du commit de fusion. Aucune migration de base.
+
+### Validation
+
+Empreinte du JAR servi = JAR construit ; test en jeu : PENDING MANUAL VALIDATION (TC-430).
+
+### Rollback
+
+`scripts/rollback-verygames.sh` (ou procédure `VERYGAMES.md`) vers la sauvegarde datée du déploiement, puis
+redémarrage. La clé ajoutée à `messages.yml` est ignorée par l'ancien JAR.
+
+---
+
 ## 2026-10-25 - PlugAdmin : lien vers une réplique absente refusé avant mise en jeu (#730, lot C)
 
 ### Changement

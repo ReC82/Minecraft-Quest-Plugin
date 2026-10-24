@@ -46,13 +46,13 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
  * troncature se fait sur le texte brut, déjà débarrassé de ses balises : aucune balise
  * MiniMessage ne peut être coupée en deux.</p>
  */
-final class TrackedQuestSummary {
+public final class TrackedQuestSummary {
 
     /** Largeur minimale de l'écran, en pixels mis à l'échelle (règle d'échelle GUI vanilla). */
     static final int MIN_SCALED_SCREEN_PX = 320;
 
     /** Largeur maximale du résumé, avec une marge sous {@link #MIN_SCALED_SCREEN_PX}. */
-    static final int MAX_WIDTH_PX = 300;
+    public static final int MAX_WIDTH_PX = 300;
 
     /**
      * Un nom traduit par le client ne peut pas être mesuré côté serveur : on l'estime d'après sa clé
@@ -237,7 +237,7 @@ final class TrackedQuestSummary {
     }
 
     /** Largeur d'un composant ; chaque nom traduit par le client compte pour son estimation. */
-    static int estimatedWidthOf(Component component) {
+    public static int estimatedWidthOf(Component component) {
         StringBuilder text = new StringBuilder();
         ESTIMATING_FLATTENER.flatten(component, text::append);
         return widthOf(text.toString());
@@ -267,7 +267,7 @@ final class TrackedQuestSummary {
 
     private static int advance(int codePoint) {
         return switch (codePoint) {
-            case '!', ',', '.', ':', ';', '|', 'i', '\'', 'î', 'ï' -> 2;
+            case '!', ',', '.', ':', ';', '|', 'i', '\'', 'î', 'ï', '·' -> 2;
             case '`', 'l' -> 3;
             case ' ', 'I', 't', '[', ']', '(', ')', '{', '}', '"', '*' -> 4;
             case 'f', 'k', '<', '>' -> 5;

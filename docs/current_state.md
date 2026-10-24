@@ -6,6 +6,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Notifications de plusieurs quêtes simultanées (#817, 25/10/2026)** — `feedback.ActionBarFeedback` :
+> une action qui fait progresser plusieurs quêtes donne une ligne courte (libellé une fois, titre abrégé
+> + compteur par quête, `quest.objective-progress-entry`), jamais plus large que 300 px estimés (titres
+> raccourcis, puis libellé retiré, puis « +N ») ; XP et pièces mises en file (≤ 2 s) au lieu d'être collées
+> au compteur d'une autre quête ; étape close / quête terminée retirée de la ligne. `feedback.QuestTitleQueue` :
+> « Quête terminée » en file (au plus 3), « Quête commencée » ne masque jamais une fin. Bilans chat
+> inchangés. Pas de config, pas de migration. TC-430.
+
 > **Source des contenus PlugAdmin fiable face à DEV (#798, 23/10/2026)** — PlugAdmin retient pour chaque
 > quête, story et dialogue sa **dernière version commune** avec DEV (`content_dev_reference`) et en déduit
 > qui a changé : « Brouillon non publié » (seul publiable avec « Absent de DEV » et « Sur DEV, non

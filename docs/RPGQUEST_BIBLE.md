@@ -923,20 +923,39 @@ passent par le **chat** et jamais par l'ActionBar, qui appartient à la progress
 une notification d'économie y effacerait l'avancement affiché.
 
 **Progression visible à chaque kill — canal partagé de l'ActionBar** (`feedback.ActionBarFeedback`,
-issues #69 / #209). L'ActionBar n'affiche qu'une ligne : l'XP de combat du même kill (« +5 XP
+issues #69 / #209 / #817). L'ActionBar n'affiche qu'une ligne : l'XP de combat du même kill (« +5 XP
 (Combat) », envoyée au tick suivant par `ProgressionService`) effaçait « Araignées : 3/10 » avant
-qu'on puisse le lire. Règle désormais :
+qu'on puisse le lire ; et une bûche qui compte pour trois quêtes produisait une ligne d'environ
+700 px (écran minimal : 320 px), où les récompenses d'une quête terminée semblaient appartenir à une
+autre (#817). Règle désormais :
 
-- une progression d'objectif est **prioritaire** et reste affichée **2 s** ;
-- plusieurs objectifs qui avancent dans cette fenêtre (un kill qui compte pour deux quêtes, kills
-  rapides) sont **regroupés** sur la ligne, un par objectif avec sa dernière valeur, au plus **3**
-  (les plus récents) — séparés par « · » ;
-- un message d'XP pendant la fenêtre est **ajouté** à la ligne (« Araignées : 3/10 · +5 XP
-  (Combat) ») ; hors fenêtre, il s'affiche seul comme avant.
+- une progression d'objectif est **prioritaire** et reste affichée **2 s** ; plusieurs objectifs qui
+  avancent dans cette fenêtre sont **regroupés**, au plus **3** (les plus récents) ;
+- une seule quête concernée : `quest.objective-progress` (« Bûche de chêne 5/20 ») ;
+- plusieurs quêtes : le libellé de l'objectif **une seule fois**, puis une entrée courte par quête
+  (`quest.objective-progress-entry`, titre abrégé à 12 caractères) — « Bûche de chêne : Bois du jour
+  19/20, Le stock 7/20 » ;
+- la ligne ne dépasse jamais **300 px estimés** (même budget que la bossbar #71, tout facteur GUI) :
+  titres raccourcis (10 puis 8 caractères), puis libellé commun retiré quand tous les compteurs
+  portent sur le même objectif (« La requête… 5/20, Le stock de… 7/20, Bois du jour 19/20 »), puis
+  les compteurs les plus anciens résumés en « +N » ;
+- un message d'information (XP, pièces) pendant la fenêtre n'est **plus collé** aux compteurs : il
+  est **mis en file** et affiché seul dès que la fenêtre se libère, au plus tard **2 s** après son
+  arrivée (les 2 plus récents, sans doublon). Hors fenêtre, il s'affiche seul immédiatement ;
+- une étape close, une quête terminée ou abandonnée **sort** de la ligne : son « 20/20 » ne revient
+  pas sur les progressions suivantes.
 
 Les valeurs viennent du moteur **après** mutation : aucun compteur parallèle, aucun message pour un
-kill qui ne fait rien progresser. Le suivi d'une quête dans le journal n'est pas nécessaire. Le
-format reste `quest.objective-progress` de `messages.yml`.
+kill qui ne fait rien progresser, aucun compteur dans le chat.
+
+**Grands titres de quête — file** (`feedback.QuestTitleQueue`, #817). Un Title n'a qu'un
+emplacement : « Quête terminée » est prioritaire — affiché tout de suite si l'écran est libre,
+sinon mis en file et affiché à la fin du précédent (≈ 2,75 s chacun, au plus 3 en attente ; au-delà
+le titre est abandonné, jamais le bilan). « Quête commencée » a la priorité la plus basse : il n'est
+pas montré pendant qu'une fin de quête est affichée ou attendue, et une fin le remplace aussitôt. Le
+bilan des récompenses de **chaque** quête part immédiatement dans le chat, sous son nom
+(`quest.reward-summary-header`) : aucune récompense n'est perdue ni attribuée à une autre quête.
+L'étape suivante reste annoncée dans le chat (`quest.step-advanced-header`).
 
 **Bourse dans le journal de quêtes** (`QuestJournalService`, issue #16) : le solde réel est affiché
 dans un emplacement **inerte** de la barre du haut de la liste (`BALANCE_SLOT`) et de la vue détail

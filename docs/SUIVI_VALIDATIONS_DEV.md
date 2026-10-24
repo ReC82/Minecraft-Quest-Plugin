@@ -404,3 +404,7 @@ Le propriétaire confirme en jeu : l'ancien Garde est bien devenu **Gauthier**, 
 
 ### 24/10/2026 — #798 TC-424 étape 1 validée par le propriétaire
 Dans PlugAdmin → Dialogues → Elias, le propriétaire confirme le bandeau exact **« À jour en jeu — les joueurs voient la version enregistrée. »** La divergence de statut auparavant constatée pour Elias est résolue dans cet état. **Ne pas confondre avec validation complète** : l'enregistrement d'une modification locale, publication contrôlée et vérification Minecraft restent à tester. Prochaine étape : modifier uniquement une réplique de greeting, enregistrer en brouillon **sans mettre en jeu**, vérifier le nouveau statut.
+
+
+### 24/10/2026 — #798 TC-424 étape 2 validée par le propriétaire
+Dans PlugAdmin → Dialogues → Elias, après ajout du mot « Bienvenue ! » à la première réplique puis **Enregistrer** sans publication, le propriétaire confirme le bandeau exact **« Brouillon enregistré — vos modifications ne sont pas encore en jeu. »** Enregistrement séparé de la publication validé côté interface. La version Minecraft n'a pas encore été contrôlée après brouillon ; **étape suivante : publication contrôlée du seul dialogue Elias via « Mettre en jeu », constater « À jour en jeu », puis contrôler en Minecraft**. Ne pas publier en lot ni modifier d'autres contenus ; #798 reste ouvert.

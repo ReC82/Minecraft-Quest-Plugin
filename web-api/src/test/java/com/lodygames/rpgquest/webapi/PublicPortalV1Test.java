@@ -99,7 +99,7 @@ class PublicPortalV1Test {
                 "statistics", statistics,
                 "profiles", List.of(
                         Map.of("name", "Alice", "skills", Map.of("GLOBAL", 4500, "MINING", 1200), "questsCompleted", 3,
-                                "stats", Map.of("ENTITY_KILL", 1234, "CITY_DISCOVERED", 2),
+                                "stats", Map.of("ENTITY_KILL", 1234, "CITY_DISCOVERED", 1),
                                 "uuid", "uuid-secret", "email", "alice@example.org"),
                         Map.of("name", "Bob", "skills", Map.of("GLOBAL", 300), "questsCompleted", 7)))),
                 StandardCharsets.UTF_8);
@@ -214,9 +214,9 @@ class PublicPortalV1Test {
         String alice = get("/joueurs/alice").body();
         assertTrue(alice.contains("XP globale : ") && alice.contains("<strong>Minage</strong>"));
         assertTrue(alice.contains("Quêtes terminées<br><span class=\"note\">2<sup>e</sup>"), alice);
-        assertTrue(alice.contains("<strong>Monstres vaincus</strong><span>1\u202f234 monstres<br><span class=\"note\">"
+        assertTrue(alice.contains("<strong>Créatures tuées</strong><span>1\u202f234 créatures, animaux compris<br><span class=\"note\">"
                 + "depuis le 16 octobre 2026</span>"), alice);
-        assertTrue(alice.contains("<strong>Villes découvertes</strong><span>2 villes</span>"), alice);
+        assertTrue(alice.contains("<strong>Villes découvertes</strong><span>1 ville</span>"), alice);
         assertFalse(get("/joueurs/Bob").body().contains(">Statistiques<"), "aucune section sans valeur");
         HttpResponse<String> search = get("/joueurs?pseudo=Bob");
         assertEquals(303, search.statusCode());

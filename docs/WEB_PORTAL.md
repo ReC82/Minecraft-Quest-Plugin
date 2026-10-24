@@ -197,7 +197,8 @@ totaux persistés depuis le début de leur journal (`statistics.catalog.metrics[
 `BLOCK_BREAK`, `FISH_CAUGHT`, `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED`, `STORY_COMPLETED`
 (`StatisticsRepository.lifetimeTotals`, lecture asynchrone des tables existantes, aucun compteur parallèle) ; une
 métrique sans valeur pour le joueur est absente, jamais 0 inventé. La fiche `/joueurs/<pseudo>` les affiche
-(section « Statistiques », date de début de suivi).
+(section « Statistiques », date de début de suivi). `ENTITY_KILL` y est **sans filtre** (« Créatures tuées, animaux
+compris ») : il dépasse donc le classement `mobs_total`, limité aux familles `hostile` + `boss`.
 
 `season` vaut `null` et `events` `[]` tant qu'aucun `statistics.yml` n'existe. `status` :
 `SCHEDULED` (pas encore commencée, classements vides), `ACTIVE`, `ENDED` (terminée, pas encore

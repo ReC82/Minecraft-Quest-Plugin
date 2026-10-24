@@ -8,7 +8,10 @@
 # affichés via un Title Adventure (jamais le chat) au démarrage/à la fin
 # d'une quête ; objective-progress via l'ActionBar à chaque progression d'un
 # objectif (qu'elle le complète ou non). Volontairement hors du chat pour ne
-# pas le spammer — voir docs-site/quests.html.
+# pas le spammer — voir docs-site/quests.html. Issue #817 : plusieurs fins de
+# quête simultanées s'affichent l'une après l'autre (jamais l'une sur l'autre),
+# et plusieurs quêtes qui progressent ensemble partagent une ligne courte
+# (objective-progress-entry).
 #
 # reward-summary-header/reward-line-* sont l'exception : envoyés dans le chat,
 # une seule fois à la remise (jamais à l'acceptation ni en cours de route), et
@@ -59,8 +62,13 @@ quest:
   started-objective-single: "<yellow> • <objective></yellow>"
   step-advanced-header: "<gold><bold>Étape suivante :</bold></gold> <white><quest></white> <gray>— à faire maintenant (détails dans ton journal de quêtes) :</gray>"
   objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
-  # Issue #178 (et #69/#209) : quand UN même événement fait progresser plusieurs quêtes (une ville
-  # découverte compte pour deux quêtes), chaque ligne nomme sa quête pour rester lisible.
+  # Issue #817 : quand la ligne d'ActionBar concerne PLUSIEURS quêtes (une bûche qui compte pour
+  # trois quêtes), le libellé de l'objectif n'est écrit qu'une fois, suivi d'une entrée courte par
+  # quête : « Bûche de chêne : Bois du jour 19/20, Le stock de… 7/20 ». <quest> est le titre abrégé
+  # (12 caractères, moins si besoin) : la ligne tient sur l'écran minimal de Minecraft quel que soit
+  # le facteur d'échelle GUI ; à défaut, le libellé commun disparaît, puis les plus anciens → « +N ».
+  objective-progress-entry: "<white><quest></white> <gray><current>/<total></gray>"
+  # Issue #178 : forme nommée d'origine, utilisée seulement sans le canal partagé d'ActionBar.
   objective-progress-named: "<white><quest></white> <dark_gray>·</dark_gray> <yellow><objective></yellow> <gray><current>/<total></gray>"
   completed-title: "<gold><bold>Quête terminée</bold></gold>"
   completed-subtitle: "<white><quest></white>"

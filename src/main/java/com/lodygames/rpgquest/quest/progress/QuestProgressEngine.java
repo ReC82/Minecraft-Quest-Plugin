@@ -59,6 +59,7 @@ import java.util.function.IntUnaryOperator;
 import java.util.function.ToIntBiFunction;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -160,6 +161,8 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     private com.lodygames.rpgquest.feedback.ActionBarFeedback actionBar;
+    /** Issue #817 : file des grands titres ; {@code null} (tests) = titres affichés directement. */
+    private com.lodygames.rpgquest.feedback.@Nullable QuestTitleQueue titleQueue;
     private @Nullable HeartBonusService heartBonusService;
     /** Tables de récompenses aléatoires (issue #177) ; {@code null} = tirages indisponibles. */
     private @Nullable RewardTables rewardTables;
@@ -209,6 +212,10 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     /** Issue #185 — branché une seule fois au démarrage (voir {@code bootstrap.RPGQuestBootstrap}). */
+    public void setTitleQueue(com.lodygames.rpgquest.feedback.QuestTitleQueue titleQueue) {
+        this.titleQueue = titleQueue;
+    }
+
     public void setDiscoveredWaypointCounter(ToIntBiFunction<UUID, List<String>> counter) {
         this.discoveredWaypointCounter = counter;
     }
@@ -671,6 +678,7 @@ public final class QuestProgressEngine implements PluginService {
         }
 
         playerActive.remove(questId);
+        forgetActionBarCounters(playerId, questId);
         repository.upsertState(playerId, questId, QuestState.ABANDONED, null).exceptionally(error -> {
             logger.error("Impossible de persister l'abandon de {} pour {}", questId, playerId, error);
             return null;
@@ -802,8 +810,9 @@ public final class QuestProgressEngine implements PluginService {
                     logger.error("Impossible de persister l'avancement forcé de {} pour {}", questId, playerId, error);
                     return null;
                 });
-                showObjectiveProgress(player, questId + "/" + step.id() + "/" + i, step.objectives().get(i),
-                        required, required);
+                showObjectiveProgress(player,
+                        new ObjectiveRef(questId, progress.currentStepIndex(), step.id(), i, step.objectives().get(i)),
+                        required, required, false);
             }
         }
         checkStepCompletion(player, quest, progress);
@@ -1500,12 +1509,7 @@ public final class QuestProgressEngine implements PluginService {
                     logger.error("Impossible de persister la progression de {} pour {}", ref.questId(), playerId, error);
                     return null;
                 });
-        if (named) {
-            showNamedObjectiveProgress(player, ref, updated, required);
-        } else {
-            showObjectiveProgress(player, ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex(),
-                    ref.objective(), updated, required);
-        }
+        showObjectiveProgress(player, ref, updated, required, named);
 
         if (updated >= required) {
             questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
@@ -1521,6 +1525,8 @@ public final class QuestProgressEngine implements PluginService {
         }
 
         UUID playerId = player.getUniqueId();
+        // Issue #817 : l'étape est close — son compteur ne doit plus revenir sur l'action bar.
+        forgetActionBarCounters(playerId, quest.id());
         int nextIndex = progress.currentStepIndex() + 1;
         if (nextIndex < quest.steps().size()) {
             progress.advanceToStep(nextIndex);
@@ -1637,6 +1643,7 @@ public final class QuestProgressEngine implements PluginService {
         if (playerActive != null) {
             playerActive.remove(quest.id());
         }
+        forgetActionBarCounters(playerId, quest.id());
 
         // Montants monétaires de CETTE quête, dans leur ordre de déclaration. Chacun devient une
         // dette distincte : plusieurs récompenses MONEY sur une même complétion doivent toutes
@@ -1832,7 +1839,12 @@ public final class QuestProgressEngine implements PluginService {
         // Issue #636 : quête acceptée depuis un dialogue — la fenêtre reste lisible, le nœud
         // suivant le dit déjà ; les objectifs ci-dessous restent dans le chat.
         if (!dialogueFocus.isFocused(player.getUniqueId())) {
-            player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+            Title started = Title.title(title, subtitle, FEEDBACK_TITLE_TIMES);
+            if (titleQueue != null) {
+                titleQueue.started(player, started);
+            } else {
+                player.showTitle(started);
+            }
         }
 
         // Une quête sans étape ne passe pas la validation du parseur, mais on ne le suppose pas ici.
@@ -1898,7 +1910,14 @@ public final class QuestProgressEngine implements PluginService {
         Component title = messagesService.current().format("quest.completed-title");
         Component subtitle = messagesService.current().format(
                 "quest.completed-subtitle", Placeholder.parsed("quest", quest.title().base()));
-        player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+        // Issue #817 : deux quêtes terminées ensemble — la seconde attend la fin de la première au
+        // lieu de l'effacer ; le bilan de chacune part immédiatement dans le chat.
+        Title completed = Title.title(title, subtitle, FEEDBACK_TITLE_TIMES);
+        if (titleQueue != null) {
+            titleQueue.completed(player, completed);
+        } else {
+            player.showTitle(completed);
+        }
         sendRewardSummary(player, completion, false);
     }
 
@@ -1979,42 +1998,40 @@ public final class QuestProgressEngine implements PluginService {
         }, 20L);
     }
 
-    /** Comme {@link #showObjectiveProgress}, préfixé du titre de la quête (plusieurs quêtes concernées). */
-    private void showNamedObjectiveProgress(Player player, ObjectiveRef ref, int current, int total) {
+    private void forgetActionBarCounters(UUID playerId, NamespacedKey questId) {
+        if (actionBar != null) {
+            actionBar.forgetQuest(playerId, questId.toString());
+        }
+    }
+
+    /**
+     * Affiche la progression d'un objectif. Par le canal partagé (#69 / #209 / #817), qui regroupe
+     * les compteurs récents et les attribue à leur quête quand il y en a plusieurs ; sans lui
+     * (tests), un message par progression, nommant la quête si le même événement en touche plusieurs.
+     */
+    private void showObjectiveProgress(Player player, ObjectiveRef ref, int current, int total, boolean named) {
         if (!player.isOnline()) {
             return;
         }
         String title = questEngine.find(ref.questId()).map(q -> q.title().base()).orElse(ref.questId().getKey());
-        Component message = messagesService.current().format("quest.objective-progress-named",
-                Placeholder.parsed("quest", title),
-                Placeholder.component("objective", ObjectiveLabels.targetName(ref.objective(), npcNames)),
-                Placeholder.unparsed("current", String.valueOf(current)),
-                Placeholder.unparsed("total", String.valueOf(total)));
-        String key = ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex();
-        if (actionBar != null) {
-            actionBar.objective(player, key, message);
-        } else {
-            player.sendActionBar(message);
-        }
-    }
-
-    private void showObjectiveProgress(Player player, String key, QuestObjective objective, int current,
-                                       int total) {
-        if (!player.isOnline()) {
-            return;
-        }
         // Issue #71 : même libellé qu'au démarrage (#238) et que le journal — « Araignée 3/5 »,
         // traduit côté client, jamais « Tuer SPIDER » ni l'identifiant d'un PNJ.
-        Component message = messagesService.current().format("quest.objective-progress",
-                Placeholder.component("objective", ObjectiveLabels.targetName(objective, npcNames)),
-                Placeholder.unparsed("current", String.valueOf(current)),
+        Component label = ObjectiveLabels.targetName(ref.objective(), npcNames);
+        var messages = messagesService.current();
+        TagResolver counts = TagResolver.resolver(Placeholder.unparsed("current", String.valueOf(current)),
                 Placeholder.unparsed("total", String.valueOf(total)));
-        // #69 / #209 : par le canal partagé, la progression n'est plus écrasée par l'XP du même kill.
+        Component alone = messages.format("quest.objective-progress", Placeholder.component("objective", label), counts);
         if (actionBar != null) {
-            actionBar.objective(player, key, message);
-        } else {
-            player.sendActionBar(message);
+            actionBar.objective(player, new com.lodygames.rpgquest.feedback.ActionBarFeedback.Progress(
+                    ref.questId().toString(), ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex(),
+                    title, label, alone, shortTitle -> messages.format("quest.objective-progress-entry",
+                            Placeholder.unparsed("quest", shortTitle), counts)));
+            return;
         }
+        player.sendActionBar(named
+                ? messages.format("quest.objective-progress-named", Placeholder.parsed("quest", title),
+                        Placeholder.component("objective", label), counts)
+                : alone);
     }
 
     /**

@@ -6944,9 +6944,14 @@ Aucune commande. Fichier **hors Git** `plugins/RPGQuest/portal-snapshot.properti
 (`"kind": "status"` : en ligne, nombre de joueurs, capacité — aucune autre donnée, le portail refuse
 tout champ en plus) part toutes les `status-interval-seconds` (30 s par défaut, 10–300), **même avec
 `web-export.enabled: false`**, numéroté `bootId`/`sequence` (doublons et retards ignorés par le
-portail) ; à l'arrêt, un dernier relevé annonce l'arrêt. Avec `web-export.enabled: true`, chaque `snapshot.json`
-est aussi envoyé à `POST /api/snapshot` du portail, depuis le fil d'export ; à l'arrêt du plugin,
-un instantané minimal `server.online=false` annonce l'arrêt. Absent : rien ne part vers AWS. Le
+portail) ; à l'arrêt, un dernier relevé annonce l'arrêt. Avec `snapshot-enabled=true` dans ce
+fichier (bêta restreinte, 24/10), ou avec `web-export.enabled: true`, l'**instantané complet**
+(pseudos, XP, quêtes, classements, profils — jamais d'UUID, d'IP, d'inventaire ni de position) est
+aussi envoyé à `POST /api/snapshot`, toutes les `snapshot-interval-seconds` (900 s par défaut,
+600–3600), numéroté `bootId`/`sequence`, réessayé deux fois (30 s, 2 min) si le portail est
+injoignable ; `snapshot-profile-visibility=public|private` fixe qui est nommé (sauf
+`/profile web prive`). Le relevé d'état transmet aussi TPS et MSPT. L'instantané d'arrêt reste
+local. Absent : rien ne part vers AWS. Le
 portail affiche alors l'état du serveur en quatre cas : en ligne, hors ligne (arrêt annoncé), non
 actualisé depuis …, inconnu. Détail : [WEB_API.md](WEB_API.md) ; exploitation :
 [deployment/WEB_PORTAL_AWS.md](deployment/WEB_PORTAL_AWS.md).

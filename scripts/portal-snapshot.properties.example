@@ -15,9 +15,14 @@
 #   1. le RELEVÉ D'ÉTAT AGRÉGÉ (toujours, toutes les status-interval-seconds) : « en ligne ? »,
 #      nombre de joueurs connectés, capacité — rien d'autre ; le portail refuse tout champ en plus.
 #      Il suffit à afficher En ligne / Hors ligne (arrêt annoncé) / Non actualisé / Inconnu.
-#   2. l'instantané complet snapshot.json, SEULEMENT si web-export.enabled: true dans config.yml
-#      (décision du propriétaire, #55) : jamais d'UUID, d'IP ni de position ; seuls les joueurs
-#      passés en « /profile web public » y sont nommés.
+#   2. l'instantané complet snapshot.json (pseudos, XP, quêtes, classements, profils) :
+#      - si snapshot-enabled=true ci-dessous (bêta restreinte du 24/10), toutes les
+#        snapshot-interval-seconds, même avec web-export.enabled: false dans config.yml ;
+#      - sinon seulement si web-export.enabled: true dans config.yml.
+#      Jamais d'UUID, d'IP, d'inventaire ni de position. Les joueurs nommés suivent
+#      snapshot-profile-visibility (ou web-export.profile-visibility-default) ; « /profile web prive »
+#      est toujours respecté. Numéroté (bootId + sequence) : un renvoi après erreur réseau n'est
+#      jamais écrit deux fois. Injoignable ou 429/5xx : 2 nouveaux essais (30 s, 2 min).
 
 # Transfert VeryGames (après avoir remplacé le jeton) :
 #   scripts/deploy-verygames.sh --also scripts/portal-snapshot.properties:RPGQuest/portal-snapshot.properties
@@ -35,3 +40,12 @@ token=REMPLACER_PAR_LE_JETON_D_INSTANTANE
 #request-timeout-ms=10000
 # Période du relevé d'état agrégé (10 à 300 s ; le portail le juge périmé après 120 s par défaut).
 #status-interval-seconds=30
+#
+# Instantané complet vers le portail (bêta, #421). false par défaut : relevé d'état seul.
+#snapshot-enabled=true
+# Période en secondes : 900 (15 min) par défaut, 600 (10 min) au plus court, 3600 au plus long.
+#snapshot-interval-seconds=900
+# Visibilité d'un joueur qui n'a jamais tapé « /profile web » : public (bêta, tous les joueurs sauf
+# ceux en « /profile web prive ») ou private (seuls ceux en « /profile web public »). Vide : celle
+# de config.yml (web-export.profile-visibility-default).
+#snapshot-profile-visibility=public

@@ -19,9 +19,13 @@ snapshot-file=web-export/snapshot.json
 snapshot-max-age-seconds=120
 # Taille maximale d'un instantané reçu (octets, 65536 à 8388608) ; nginx plafonne à 1 Mo.
 #snapshot-ingest-max-bytes=1048576
+# Données de jeu (joueurs, classements) d'un instantané complet affichées au plus tant de secondes :
+# il arrive toutes les 15 min (snapshot-interval-seconds du plugin). Défaut 3600.
+#snapshot-data-max-age-seconds=3600
 
 # CONFIDENTIALITÉ (#55) : aucun pseudo, profil ni classement publié tant que le propriétaire n'a
 # pas validé les règles et réactivé l'export. Ne passer à true que sur sa décision écrite.
+# Bêta du 24/10 (#421) : true sur AWS, avec l'accès bêta nginx (nginx-lodyquests-portal-beta.conf.example).
 player-data-public=false
 
 # COMPTES JOUEURS (#53) — désactivés : aucune base accounts.db n'est ouverte, /compte annonce

@@ -7674,9 +7674,10 @@ public final class PanelApp {
 
     /**
      * Issue #730 — un dialogue que le moteur refuserait à coup sûr n'est pas envoyé : le serveur
-     * écrirait le fichier sur DEV avant de le rejeter au rechargement. Seule la règle structurelle
-     * partagée avec le moteur (au moins une réponse par réplique) bloque ici, pour ne pas refuser
-     * un dialogue existant que le jeu accepte ; un YAML que le panel ne sait pas lire reste jugé par
+     * écrirait le fichier sur DEV avant de le rejeter au rechargement. Seules les règles structurelles
+     * partagées avec le moteur (au moins une réponse par réplique ; aucun lien vers une réplique
+     * absente, lot C du 24/10) bloquent ici, pour ne pas refuser un dialogue existant que le jeu
+     * accepte ; un YAML que le panel ne sait pas lire reste jugé par
      * le serveur, comme avant.
      *
      * @return le motif du refus, ou {@code null}
@@ -7690,9 +7691,12 @@ public final class PanelApp {
             return null;
         }
         String noExit = DialoguePages.noExitNotice(read.draft());
-        return noExit.isEmpty() ? null
-                : noExit.replace("Enregistrement impossible", "Mise en jeu impossible") + " Rien n'a été envoyé au "
-                        + "serveur. Explication : " + DialoguePages.END_HELP_HREF;
+        if (!noExit.isEmpty()) {
+            return noExit.replace("Enregistrement impossible", "Mise en jeu impossible") + " Rien n'a été envoyé au "
+                    + "serveur. Explication : " + DialoguePages.END_HELP_HREF;
+        }
+        String brokenLink = DialoguePages.brokenLinkNotice(read.draft());
+        return brokenLink.isEmpty() ? null : brokenLink + " Rien n'a été envoyé au serveur.";
     }
 
     /**

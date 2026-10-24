@@ -324,6 +324,59 @@ class DialogueEditorTest {
         assertEquals(broken, Files.readString(content.resolve("dialogues/musty_test.yml")), "la source reste telle quelle");
     }
 
+    /**
+     * Lot C du 24/10 (#730) — une réponse qui mène à une réplique disparue : le moteur refuse tout le
+     * dialogue (« nœud inexistant »). Le panel le dit avant l'envoi, seul ou en lot, en nommant la
+     * réplique comme l'éditeur.
+     */
+    @Test
+    void aReplyLeadingToAMissingLineIsNeverSentAloneOrInABatch() throws Exception {
+        start();
+        String broken = """
+                id: rpgquest:dangling_test
+                start: start
+                nodes:
+                  start:
+                    speaker: "Musty"
+                    text: "Salut !"
+                    choices:
+                      - text: "Au revoir."
+                      - text: "Tu vends quoi ?"
+                        next: r9
+                """;
+        Files.writeString(content.resolve("dialogues/dangling_test.yml"), broken);
+        String token = csrf(get("/dialogues/edit/dangling_test").body());
+
+        HttpResponse<String> one = post("/dialogues/publish", Map.of("_csrf", token, "agent", TestConfig.AGENT_ID,
+                "slug", "dangling_test", "expected_sha", sha256(broken)), null);
+        String where = java.net.URLDecoder.decode(one.headers().firstValue("Location").orElse(""), StandardCharsets.UTF_8);
+        assertTrue(where.contains("Mise en jeu impossible : la réponse 2 du début de la conversation mène à une "
+                + "réplique qui n'existe plus"), where);
+
+        Map<String, String> batch = new LinkedHashMap<>();
+        batch.put("_csrf", token);
+        batch.put("agent", TestConfig.AGENT_ID);
+        batch.put("type", "content.publish.batch");
+        batch.put("return", "/content/import");
+        batch.put("count", "2");
+        batch.put("kind_0", "dialogues");
+        batch.put("id_0", "lucien");
+        batch.put("expected_dev_sha_0", "");
+        batch.put("expected_source_sha_0", sha256(LUCIEN));
+        batch.put("kind_1", "dialogues");
+        batch.put("id_1", "dangling_test");
+        batch.put("expected_dev_sha_1", "");
+        batch.put("expected_source_sha_1", sha256(broken));
+        batch.put("confirm", "true");
+        HttpResponse<String> lot = post("/agents/action", batch, null);
+        String lotWhere = java.net.URLDecoder.decode(lot.headers().firstValue("Location").orElse(""), StandardCharsets.UTF_8);
+        assertTrue(lotWhere.contains("dialogues/dangling_test : Mise en jeu impossible"), lotWhere);
+
+        assertTrue(actions("content.publish").isEmpty() && actions("content.publish.batch").isEmpty(),
+                "ni seul ni en lot : le lot entier est refusé");
+        assertEquals(broken, Files.readString(content.resolve("dialogues/dangling_test.yml")), "la source reste telle quelle");
+    }
+
     @Test
     void anEmptyReplyIsRefusedNearItsFieldAndNothingIsLost() throws Exception {
         start();

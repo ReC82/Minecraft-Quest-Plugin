@@ -266,9 +266,12 @@ public final class PlayersPageHandler implements ApiHandler {
                 .append("<ul class=\"tracks\">");
         for (Map.Entry<?, ?> entry : stats.entrySet()) {
             String metric = String.valueOf(entry.getKey());
+            // Sur la fiche, ENTITY_KILL n'a pas de filtre : animaux compris, à la différence du classement « Monstres ».
+            boolean creatures = metric.equals("ENTITY_KILL");
             html.append("<li>").append(PortalIcons.tile(PortalIcons.forMetric(metric), false)).append("<strong>")
-                    .append(Html.escape(StatLabels.title(metric))).append("</strong><span>")
-                    .append(StatLabels.number(entry.getValue())).append(' ').append(Html.escape(StatLabels.unit(metric)));
+                    .append(Html.escape(creatures ? "Créatures tuées" : StatLabels.title(metric))).append("</strong><span>")
+                    .append(StatLabels.number(entry.getValue())).append(' ')
+                    .append(Html.escape(creatures ? "créatures, animaux compris" : StatLabels.unit(metric)));
             if (since.get(metric) != null) {
                 html.append("<br><span class=\"note\">depuis le ").append(Html.escape(StatLabels.date(since.get(metric))))
                         .append("</span>");

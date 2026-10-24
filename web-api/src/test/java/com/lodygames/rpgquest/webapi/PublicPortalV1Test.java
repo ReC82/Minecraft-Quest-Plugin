@@ -214,7 +214,7 @@ class PublicPortalV1Test {
         String alice = get("/joueurs/alice").body();
         assertTrue(alice.contains("XP globale : ") && alice.contains("<strong>Minage</strong>"));
         assertTrue(alice.contains("Quêtes terminées<br><span class=\"note\">2<sup>e</sup>"), alice);
-        assertTrue(alice.contains("<strong>Monstres vaincus</strong><span>1\u202f234 monstres<br><span class=\"note\">"
+        assertTrue(alice.contains("<strong>Créatures tuées</strong><span>1\u202f234 créatures, animaux compris<br><span class=\"note\">"
                 + "depuis le 16 octobre 2026</span>"), alice);
         assertTrue(alice.contains("<strong>Villes découvertes</strong><span>2 villes</span>"), alice);
         assertFalse(get("/joueurs/Bob").body().contains(">Statistiques<"), "aucune section sans valeur");

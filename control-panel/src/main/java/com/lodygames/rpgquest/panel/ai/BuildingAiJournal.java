@@ -225,6 +225,24 @@ public final class BuildingAiJournal {
         }
     }
 
+    /**
+     * #747 : une consigne de l'administrateur donnée avec une demande d'amélioration — elle devient une
+     * exigence actualisée, relue par {@link RequirementUpdates} pour tous les appels suivants du projet.
+     */
+    public void requirementUpdate(String projectId, String actor, String draftId, String notes) {
+        if (notes == null || notes.isBlank()) {
+            return;
+        }
+        try {
+            store.append(SCOPE, projectId, new NewEvent(RequirementUpdates.KIND, "", "", "EXIGENCES ACTUALISÉES", 0,
+                    nz(draftId), draftId == null || draftId.isEmpty() ? "" : "draft:" + draftId, Instant.now(), -1,
+                    actor, "Consigne de l'administrateur conservée comme exigence actualisée",
+                    Map.of("notes", notes.strip())));
+        } catch (RuntimeException failure) {
+            warn(projectId, failure);
+        }
+    }
+
     /** Début d'une conception automatique, avec l'enveloppe consentie. */
     public void runStart(String projectId, String runId, String actor, Map<String, Object> settings) {
         try {

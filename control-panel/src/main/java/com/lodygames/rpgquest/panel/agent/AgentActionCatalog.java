@@ -1264,6 +1264,15 @@ public final class AgentActionCatalog {
                         params.put("expected_version", expected);
                     }
                 }
+                // #747 : les défauts d'architecture confirmés par l'administrateur. Seule la forme
+                // est contrôlée ici ; le plugin vérifie qu'ils sont ceux du plan et contournables.
+                if ("building.generate".equals(type) && !trim(form.get("accept_defects")).isEmpty()) {
+                    String accepted = trim(form.get("accept_defects"));
+                    if (!accepted.matches("[A-Z_]{3,40}(,[A-Z_]{3,40}){0,19}")) {
+                        return Validation.fail("Défauts acceptés invalides : codes séparés par des virgules.");
+                    }
+                    params.put("accept_defects", accepted);
+                }
                 // #282 : les bornes du projet, pour que la réparation déterministe du plugin
                 // puisse agrandir le volume au lieu d'araser un toit. Optionnelles, entières.
                 // #305 : « max_depth » (Z) distinct de « max_width » (X) ; le plugin refuse un plan

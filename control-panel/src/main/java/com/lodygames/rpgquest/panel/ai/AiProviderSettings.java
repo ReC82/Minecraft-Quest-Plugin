@@ -39,6 +39,19 @@ public record AiProviderSettings(String providerId, boolean enabled, String apiK
                 DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_TIMEOUT_SECONDS);
     }
 
+    /**
+     * #747 : les réglages d'UN essai — un autre modèle et/ou un autre plafond de jetons de sortie,
+     * choisis explicitement pour cet appel ; les réglages enregistrés ne changent pas.
+     *
+     * @param trialModel     vide : le modèle configuré
+     * @param trialMaxTokens 0 : le plafond configuré
+     */
+    public AiProviderSettings forTrial(String trialModel, int trialMaxTokens) {
+        return new AiProviderSettings(providerId, enabled, apiKey, baseUrl,
+                trialModel == null || trialModel.isBlank() ? model : trialModel.trim(),
+                trialMaxTokens > 0 ? trialMaxTokens : maxOutputTokens, timeoutSeconds);
+    }
+
     public boolean hasKey() {
         return !apiKey.isEmpty();
     }

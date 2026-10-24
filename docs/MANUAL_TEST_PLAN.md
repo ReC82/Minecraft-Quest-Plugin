@@ -8921,7 +8921,11 @@ rattachement), #130 (réplique ajoutée visible sans F5).
 saisie conservée, réparation puis une seule mise en jeu ; source invalide refusée en publication seule et en
 lot), `DialogueNoExitValidationTest` (erreur sur la seule réplique fautive, `start → r2` valide avec une
 réponse terminale, réplique neuve avec sortie), `DialogueDefinitionParserTest` (plus de « nœud inexistant »
-vers une réplique présente mais refusée), `ContentPackImportTest`.
+vers une réplique présente mais refusée), `ContentPackImportTest`. **Lot C du 24/10 (PR #843)** : un lien vers
+une réplique absente (réponse, entrée conditionnelle, départ) dans un fichier source déjà cassé est lui aussi
+refusé avant envoi, seul ou en lot (`DialogueEditorTest.aReplyLeadingToAMissingLineIsNeverSentAloneOrInABatch`,
+`DialogueNoExitValidationTest.everyLinkToAMissingLineIsNamedLikeTheEditorDoes`). Pas d'étape manuelle : l'éditeur
+guidé et l'import refusent déjà d'enregistrer un tel lien, le cas ne naît que d'un fichier écrit hors PlugAdmin.
 
 ### TC-402 — Historique des actions : actions joueur dans « Joueurs » et pseudo en cible (issue #93 retour du 22/10, PENDING MANUAL VALIDATION)
 

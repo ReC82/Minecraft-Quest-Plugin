@@ -4044,6 +4044,9 @@ Règles que le guide rend visibles :
   réplique de fin porte une réponse « Au revoir. » → « Terminer la conversation ». PlugAdmin le
   vérifie avant toute écriture (enregistrement, mise en jeu seule ou en lot, #730), lien d'erreur
   `/docs/dialogues#terminer-une-conversation`.
+- **Aucun lien vers une réplique absente** (`start`, `entries[].node`, `choices[].next`) : le moteur
+  refuse tout le dialogue ; PlugAdmin refuse la mise en jeu seule ou en lot avant tout envoi, en
+  nommant la réponse et la réplique (lot C du 24/10, PR #843).
 - Une réplique sans réponse entrante est marquée « Aucune réponse n'y mène » (diagnostic
   `NODE_UNREACHABLE`).
 - « Enregistrer » écrit la source PlugAdmin ; « Mettre en jeu » publie sur DEV et recharge. Le

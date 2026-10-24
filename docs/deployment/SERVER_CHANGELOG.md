@@ -49,6 +49,37 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - PlugAdmin : lien vers une réplique absente refusé avant mise en jeu (#730, lot C)
+
+### Changement
+
+PlugAdmin seul (`6a5e020a`, PR #843) : la mise en jeu d'un dialogue (fiche, éditeur, lot) est refusée avant
+tout envoi si une réponse, une entrée conditionnelle ou le départ mène à une réplique absente — le moteur le
+refusait de toute façon après l'avoir écrit sur DEV. Message localisé (« la réponse 2 de la réplique 3… »).
+
+### Action serveur
+
+Aucune sur VeryGames : JAR plugin inchangé, aucun fichier de contenu, aucune configuration.
+
+### Sauvegarde préalable
+
+Release PlugAdmin précédente (`40122070`) conservée sous `/opt/plugadmin/releases/` par `deploy.sh`.
+
+### Déploiement
+
+`scripts/plugadmin/deploy.sh` le 25/10 00:22 (validation = CI verte sur `6a5e020`). Aucune migration.
+
+### Validation
+
+`/health` 200 ; `DialoguePages.brokenLinkNotice` et la fiche `dialogues-depannage.md` mise à jour présents dans
+le JAR servi. Test en jeu : PENDING MANUAL VALIDATION (TC-403).
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app`.
+
+---
+
 ## 2026-10-24 - Portail : fiches de tous les joueurs avec leurs statistiques persistées (#54)
 
 ### Changement

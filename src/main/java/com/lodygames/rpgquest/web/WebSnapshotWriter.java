@@ -205,7 +205,10 @@ public final class WebSnapshotWriter implements PluginService {
             return;
         }
         long now = clock.getAsLong();
-        if (writeInProgress || (!force && now - lastWriteMillis < current.intervalSeconds() * 1000L)) {
+        // Premier export de l'exécution : immédiat. (« now - Long.MIN_VALUE » déborde en négatif et
+        // bloquait tout export planifié — seul triggerNow() en produisait un, #421.)
+        boolean due = lastWriteMillis == Long.MIN_VALUE || now - lastWriteMillis >= current.intervalSeconds() * 1000L;
+        if (writeInProgress || (!force && !due)) {
             return;
         }
         writeInProgress = true;

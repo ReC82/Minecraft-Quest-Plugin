@@ -65,7 +65,10 @@ de la vérification, coupes en caractères (diagnostic — ce n'est pas un aper�
 versions, réponse du modèle, **« Copier le diagnostic »**.
 
 Sous la fiche, deux sections distinctes (#308) : **« Historique de ce projet »** (ses seules versions ;
-« il est neuf » s'il n'en a aucune) et, repliée, **« Importer un plan d'un autre projet ou de l'historique
+« il est neuf » s'il n'en a aucune ; depuis #828 : identifiant court copiable `V-xxxxxxxx`, statut réel
+Conforme / Avertissements acceptables / Bloqué / Non vérifiée avec ses codes, version affichée encadrée,
+« Reprendre V-… », « Copier le lien », « Aller à une version » par identifiant, et lien direct
+`/buildings/workshop/project?draft=V-xxxxxxxx`) et, repliée, **« Importer un plan d'un autre projet ou de l'historique
 global »** — recherche, « Examiner avant import » (provenance, dimensions, entrée, incompatibilités, rien
 d'écrit), puis « Importer comme nouvelle version de ce projet » : une copie, source inchangée, sans IA.
 

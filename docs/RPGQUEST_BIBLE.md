@@ -1846,7 +1846,18 @@ fiche :
 
 - **« Historique de ce projet — versions du plan (n) »** : uniquement les versions dont le `project_id`
   est ce projet. Un projet neuf affiche « Aucune version de plan pour ce projet : il est neuf. » — un plan
-  d'un autre bâtiment n'y apparaît jamais.
+  d'un autre bâtiment n'y apparaît jamais. Depuis #828, chaque version y porte son **identifiant court
+  copiable** (`V-` + 8 caractères, ex. `V-8776ad09` — clic pour copier), sa date, sa provenance et le
+  **statut réel de sa dernière vérification** : **Conforme**, **Avertissements acceptables** (défauts que
+  le serveur déclare contournables), **Bloqué** (dont `PLAN_INVALID`, jamais contournable),
+  **Vérification en cours** ou **Non vérifiée**, avec les codes et une phrase d'explication (« vérifiée sur
+  le texte n°k » si la vérification porte sur un texte antérieur de la version). La version affichée est
+  encadrée et nommée dans le titre (« affichée : V-… ») ; les autres portent **« Reprendre V-… »** et
+  **« Copier le lien »** (adresse complète). **« Aller à une version »** accepte l'identifiant court ou
+  complet, sans casse. Lien profond sans connaître le projet : `/buildings/workshop/project?draft=V-8776ad09`
+  redirige vers le projet qui la contient ; une version absente ou ambiguë est signalée en clair (la
+  version par défaut reste affichée). Consulter l'historique n'appelle aucune IA, n'enregistre rien et ne
+  pose rien en jeu.
 - **« Importer un plan d'un autre projet ou de l'historique global »**, replié par défaut : recherche
   (nom technique, nom ou identifiant d'action) parmi les actions de l'agent qui portent un plan et
   n'appartiennent à aucun brouillon, ou identifiant d'action collé (plan d'un autre projet, ancien

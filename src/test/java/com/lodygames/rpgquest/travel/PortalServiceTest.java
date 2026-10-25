@@ -244,6 +244,53 @@ class PortalServiceTest {
     }
 
     @Test
+    void aRefusingDestinationGuardPreventsTheTeleportAndTakesNoMoney() throws Exception {
+        portalRegistry.create(basicPortal("gate", "village", 0, 0, null, null, null, 30L));
+        PlayerMock player = addPlayer();
+        walletRepository.credit(player.getUniqueId(), 100, "TEST", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        AtomicInteger checks = new AtomicInteger();
+        // Issue #829 : garde qui refuse (ne rappelle jamais onAllowed), comme l'accès Claims non débloqué.
+        portalService.setDestinationGuard((p, destinationWorld, sourceId, onAllowed) -> {
+            assertEquals("world", destinationWorld);
+            assertEquals("gate", sourceId);
+            checks.incrementAndGet();
+        });
+
+        portalService.handleMove(player, insideZone());
+        awaitUntil(() -> checks.get() == 1);
+        awaitTicks(20);
+
+        assertEquals(new Location(world, 0.5, 61, 0.5), player.getLocation(), "refusé : jamais déplacé");
+        assertEquals(100L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                "refusé avant le débit : rien n'est prélevé");
+    }
+
+    @Test
+    void anAllowingDestinationGuardDebitsThenTeleports() throws Exception {
+        portalRegistry.create(basicPortal("gate", "village", 0, 0, null, null, null, 30L));
+        PlayerMock player = addPlayer();
+        walletRepository.credit(player.getUniqueId(), 100, "TEST", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        AtomicInteger checks = new AtomicInteger();
+        portalService.setDestinationGuard((p, destinationWorld, sourceId, onAllowed) -> {
+            checks.incrementAndGet();
+            onAllowed.run();
+        });
+
+        portalService.handleMove(player, insideZone());
+        boolean teleportStarted = false;
+        try {
+            awaitUntil(() -> getBalanceNow(player) == 70L);
+            awaitTicks(5); // la téléportation suit le débit au tick suivant.
+        } catch (org.mockbukkit.mockbukkit.exception.UnimplementedOperationException teleportAsync) {
+            teleportStarted = true; // MockBukkit ne simule pas teleportAsync : la téléportation a bien été lancée.
+        }
+
+        assertEquals(1, checks.get());
+        assertTrue(teleportStarted, "autorisé : la téléportation est lancée après le débit");
+        assertEquals(70L, walletRepository.balance(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    @Test
     void cooldownPreventsImmediateReuse() throws Exception {
         portalRegistry.create(basicPortal("gate", "village", 0, 30, null, null, null, null));
         PlayerMock player = addPlayer();

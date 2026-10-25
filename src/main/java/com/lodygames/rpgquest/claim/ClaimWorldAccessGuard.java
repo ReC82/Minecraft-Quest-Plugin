@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.claim;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.ClaimConfig;
+import com.lodygames.rpgquest.travel.PortalDestinationGuard;
 import com.lodygames.rpgquest.travel.PortalTeleporter;
 import com.lodygames.rpgquest.travel.WorldPortalEntryGuard;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
@@ -15,7 +16,8 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.entity.Player;
 
 /**
- * {@link WorldPortalEntryGuard} pour l'entrée dans le monde des claims ({@link ClaimConfig#world()},
+ * {@link WorldPortalEntryGuard} (et, depuis #829, {@link PortalDestinationGuard} des portails
+ * historiques) pour l'entrée dans le monde des claims ({@link ClaimConfig#world()},
  * issues #21/#22/#23) : un portail simple vers ce monde ne laisse passer que les joueurs qui ont
  * <strong>réellement</strong> débloqué leur premier terrain — c'est-à-dire la même vérité que
  * {@code ClaimService.create(...)} exige pour un premier claim, jamais une copie :
@@ -51,7 +53,7 @@ import org.bukkit.entity.Player;
  * {@code PlayerMoveEvent} tant qu'une est déjà en vol ; {@link #cleared} est un laissez-passer à
  * usage unique consommé par le passage relancé.</p>
  */
-public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
+public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard, PortalDestinationGuard {
 
     /** Même nœud que {@link ClaimsWorldRulesListener} : le seul contournement explicitement prévu. */
     static final String BYPASS_PERMISSION = "rpgquest.admin.world";
@@ -100,31 +102,63 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
         if (cleared.remove(playerId)) {
             return true; // contrôle réussi tout juste effectué : ce passage-ci est le nôtre.
         }
+        return evaluate(player, portal.destinationWorld(), "le portail " + portal.id(), () -> {
+            cleared.add(playerId);
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> cleared.remove(playerId), CLEARED_TTL_TICKS);
+            teleporter.teleportNow(player, portal);
+        }) == Decision.ALLOWED;
+    }
+
+    /**
+     * Issue #829 : même règle pour les portails historiques ({@code PortalService}), appliquée
+     * <strong>avant</strong> le déplacement et avant tout débit — le filet d'arrivée
+     * ({@link ClaimWorldSafetyListener}) n'est plus le seul contrôle sur ce chemin.
+     */
+    @Override
+    public void checkEntry(Player player, String destinationWorld, String sourceId, Runnable onAllowed) {
+        if (!destinationWorld.equals(config.get().world())) {
+            onAllowed.run(); // pas le monde des claims : jamais concerné.
+            return;
+        }
+        if (evaluate(player, destinationWorld, "le portail historique " + sourceId, onAllowed) == Decision.ALLOWED) {
+            onAllowed.run();
+        }
+    }
+
+    /** Décision immédiate ; {@code PENDING} = lecture en base en vol, {@code onAsyncAllowed} suivra peut-être. */
+    private enum Decision { ALLOWED, REFUSED, PENDING }
+
+    /**
+     * Règle d'entrée commune aux deux familles de portails. {@code onAsyncAllowed} n'est exécuté
+     * (sur le thread principal) que si la décision est {@link Decision#PENDING} puis favorable.
+     */
+    private Decision evaluate(Player player, String destinationWorld, String via, Runnable onAsyncAllowed) {
+        UUID playerId = player.getUniqueId();
         // Issues #35/#321 : un OP n'entre plus « par défaut ». Le contournement exige le mode bypass
         // administrateur activé explicitement (/rpgadmin bypass on, visible en jeu) ET le nœud dédié
         // OU l'ombrelle historique (#200). Le correctif #22 est intégralement préservé — le bypass
         // n'est jamais refusé, et il ne dispense jamais du moyen de repartir.
         if (bypass.allows(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
             plugin.getSLF4JLogger().info(
-                    "[claims-access] {} : entrée dans « {} » via le portail {} AUTORISÉE par le mode bypass "
+                    "[claims-access] {} : entrée dans « {} » via {} AUTORISÉE par le mode bypass "
                             + "administrateur ({}) — contrôle CLAIM_TIER_1 non appliqué.",
-                    player.getName(), portal.destinationWorld(), portal.id(), RpgPermissions.BYPASS_CLAIM_WORLD);
+                    player.getName(), destinationWorld, via, RpgPermissions.BYPASS_CLAIM_WORLD);
             // Le bypass n'est jamais refusé — mais il ne dispense pas du moyen de repartir
             // (issue #22) : la Pierre de retour est garantie au mieux, sans bloquer le passage.
             ensureReturn(player, false);
-            return true; // bypass explicitement prévu (admin/build de monde).
+            return Decision.ALLOWED; // bypass explicitement prévu (admin/build de monde).
         }
         if (claimService.mainClaimOf(playerId).isPresent()) {
             if (!ensureReturn(player, true)) {
-                return false; // sans retour possible, entrer serait un piège (issue #22).
+                return Decision.REFUSED; // sans retour possible, entrer serait un piège (issue #22).
             }
             plugin.getSLF4JLogger().info(
-                    "[claims-access] {} : entrée dans « {} » autorisée (possède déjà un claim principal).",
-                    player.getName(), portal.destinationWorld());
-            return true; // possède déjà un claim : retour chez lui toujours autorisé.
+                    "[claims-access] {} : entrée dans « {} » via {} autorisée (possède déjà un claim principal).",
+                    player.getName(), destinationWorld, via);
+            return Decision.ALLOWED; // possède déjà un claim : retour chez lui toujours autorisé.
         }
         if (!pendingChecks.add(playerId)) {
-            return false; // une lecture est déjà en vol : ne pas la relancer, ne pas spammer.
+            return Decision.PENDING; // une lecture est déjà en vol : ne pas la relancer, ne pas spammer.
         }
         claimService.hasClaimTierOne(playerId).whenComplete((unlocked, error) -> runOnMainThread(() -> {
             pendingChecks.remove(playerId);
@@ -144,19 +178,19 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
                     return; // éligible, mais sans retour possible : aucune téléportation (issue #22).
                 }
                 plugin.getSLF4JLogger().info(
-                        "[claims-access] {} : entrée dans « {} » autorisée (CLAIM_TIER_1 débloqué) — téléportation relancée.",
-                        player.getName(), portal.destinationWorld());
-                cleared.add(playerId);
-                plugin.getServer().getScheduler().runTaskLater(plugin, () -> cleared.remove(playerId), CLEARED_TTL_TICKS);
-                teleporter.teleportNow(player, portal);
+                        "[claims-access] {} : entrée dans « {} » via {} autorisée (CLAIM_TIER_1 débloqué) — "
+                                + "téléportation relancée.",
+                        player.getName(), destinationWorld, via);
+                onAsyncAllowed.run();
             } else {
                 plugin.getSLF4JLogger().info(
-                        "[claims-access] {} : entrée dans « {} » REFUSÉE (CLAIM_TIER_1 non débloqué, aucun claim) — aucune téléportation.",
-                        player.getName(), portal.destinationWorld());
+                        "[claims-access] {} : entrée dans « {} » via {} REFUSÉE (CLAIM_TIER_1 non débloqué, aucun "
+                                + "claim) — aucune téléportation.",
+                        player.getName(), destinationWorld, via);
                 refuse(player);
             }
         }));
-        return false;
+        return Decision.PENDING;
     }
 
     /**

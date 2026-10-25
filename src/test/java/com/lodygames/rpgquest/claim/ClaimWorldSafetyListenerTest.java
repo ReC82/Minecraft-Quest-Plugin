@@ -383,4 +383,169 @@ class ClaimWorldSafetyListenerTest {
 
         pumpUntil(() -> hasReturnStone(player), "Pierre de retour donnée à la connexion dans le monde des claims");
     }
+
+    // ---- Issue #829 : défaillances bornées du filet d'arrivée ---------------------------------
+
+    private static final long[] SHORT_RETRIES = {2L, 4L};
+    private static final java.util.concurrent.CompletableFuture<Boolean> DB_DOWN =
+            java.util.concurrent.CompletableFuture.failedFuture(new IllegalStateException("base indisponible (test)"));
+
+    private ClaimWorldSafetyListener listenerWith(
+            java.util.function.Function<java.util.UUID, java.util.concurrent.CompletableFuture<Boolean>> lookup,
+            java.util.function.Supplier<Optional<Location>> hub) {
+        ClaimReturnService returnService = new ClaimReturnService(plugin, customItemRegistry,
+                () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+        return new ClaimWorldSafetyListener(plugin, claimService, returnService, () -> CLAIMS_CONFIG, hub, bypass,
+                lookup, SHORT_RETRIES);
+    }
+
+    private void arriveInClaims(PlayerMock player, ClaimWorldSafetyListener target) {
+        player.setLocation(new Location(claimsWorld, 0.5, 64, 0.5));
+        target.onWorldChange(new PlayerChangedWorldEvent(player, hubWorld));
+    }
+
+    @Test
+    void aTransientDatabaseFailureIsRetriedAndAnEligiblePlayerStays() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        ClaimWorldSafetyListener flaky = listenerWith(id -> calls.incrementAndGet() == 1
+                ? DB_DOWN : java.util.concurrent.CompletableFuture.completedFuture(true),
+                () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+
+        arriveInClaims(player, flaky);
+
+        pumpUntil(() -> calls.get() == 2, "nouvel essai après l'échec de lecture");
+        server.getScheduler().performTicks(20);
+        assertEquals("claims", player.getWorld().getName(), "éligible après le nouvel essai : jamais renvoyé");
+        assertTrue(hasReturnStone(player));
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    void aPersistentDatabaseFailureSendsThePlayerBackToTheHubAfterBoundedRetries() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        ClaimWorldSafetyListener down = listenerWith(id -> {
+            calls.incrementAndGet();
+            return DB_DOWN;
+        }, () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+
+        arriveInClaims(player, down);
+
+        awaitMessageContaining(player, "par précaution", "renvoi au Hub faute de vérification possible");
+        assertEquals("world_hub", player.getWorld().getName(), "accès non vérifiable : jamais laissé dans Claims");
+        server.getScheduler().performTicks(40);
+        assertEquals(3, calls.get(), "1 lecture + 2 nouveaux essais, puis plus rien");
+    }
+
+    @Test
+    void anUnresolvedHubTargetIsRetriedBoundedThenReportedWithoutLooping() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.concurrent.atomic.AtomicInteger resolutions = new java.util.concurrent.atomic.AtomicInteger();
+        ClaimWorldSafetyListener noHub = listenerWith(id -> java.util.concurrent.CompletableFuture.completedFuture(false),
+                () -> {
+                    resolutions.incrementAndGet();
+                    return Optional.empty();
+                });
+
+        arriveInClaims(player, noHub);
+
+        awaitMessageContaining(player, "Un administrateur a été prévenu", "échec du renvoi signalé");
+        server.getScheduler().performTicks(40);
+        assertEquals(3, resolutions.get(), "renvoi retenté deux fois seulement : aucune boucle");
+        assertEquals("claims", player.getWorld().getName());
+        assertTrue(hasReturnStone(player), "le moyen de repartir reste garanti");
+    }
+
+    @Test
+    void aHubTargetInsideTheClaimsWorldIsNeverUsedAndALateTargetIsUsedOnRetry() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.concurrent.atomic.AtomicInteger resolutions = new java.util.concurrent.atomic.AtomicInteger();
+        ClaimWorldSafetyListener lateHub = listenerWith(id -> java.util.concurrent.CompletableFuture.completedFuture(false),
+                () -> resolutions.incrementAndGet() == 1
+                        ? Optional.of(new Location(claimsWorld, 0, 64, 0)) // mal configuré : ignoré
+                        : Optional.of(new Location(hubWorld, 0, 64, 0)));
+
+        arriveInClaims(player, lateHub);
+
+        pumpUntil(() -> player.getWorld().getName().equals("world_hub"), "renvoi au Hub au nouvel essai");
+        assertEquals(2, resolutions.get());
+    }
+
+    @Test
+    void leavingTheClaimsWorldStopsPendingRetries() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        ClaimWorldSafetyListener down = listenerWith(id -> {
+            calls.incrementAndGet();
+            return DB_DOWN;
+        }, () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+
+        arriveInClaims(player, down);
+        pumpUntil(() -> calls.get() == 1, "première lecture");
+        player.setLocation(new Location(hubWorld, 5, 64, 5)); // reparti par ses propres moyens
+
+        server.getScheduler().performTicks(40);
+        assertEquals(1, calls.get(), "aucun nouvel essai pour un joueur qui n'est plus dans Claims");
+    }
+
+    // ---- Issue #829 : téléportations internes au monde des claims ------------------------------
+
+    private void teleportWithinClaims(PlayerMock player, ClaimWorldSafetyListener target, Location to,
+                                      org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause) {
+        Location from = player.getLocation();
+        player.setLocation(to);
+        target.onTeleportWithinClaimsWorld(new org.bukkit.event.player.PlayerTeleportEvent(player, from, to, cause));
+    }
+
+    @Test
+    void anInternalCommandTeleportOfANonEligiblePlayerReplaysTheEntryCheck() throws Exception {
+        PlayerMock player = addPlayer();
+        player.setLocation(new Location(claimsWorld, 0.5, 64, 0.5));
+
+        teleportWithinClaims(player, listener, new Location(claimsWorld, 200.5, 64, 200.5),
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.COMMAND);
+
+        pumpUntil(() -> player.getWorld().getName().equals("world_hub"), "renvoi au Hub après /tp interne");
+    }
+
+    @Test
+    void anEligiblePlayerTeleportedIntoSomeoneElsesClaimStaysButGainsNoRight() throws Exception {
+        PlayerMock owner = addPlayer();
+        grantTierOne(owner);
+        assertEquals(ClaimService.CreateOutcome.CREATED, claimService.create(owner, "main_" + owner.getUniqueId(),
+                        new Location(claimsWorld, 100, 60, 100), new Location(claimsWorld, 110, 70, 110))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        server.getScheduler().performTicks(2);
+        PlayerMock visitor = addPlayer();
+        grantTierOne(visitor);
+        visitor.setLocation(new Location(claimsWorld, 0.5, 64, 0.5));
+
+        Location inside = new Location(claimsWorld, 105.5, 64, 105.5);
+        teleportWithinClaims(visitor, listener, inside, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.COMMAND);
+
+        pumpUntil(() -> hasReturnStone(visitor), "contrôle rejoué : éligible, Pierre garantie");
+        server.getScheduler().performTicks(10);
+        assertEquals(inside, visitor.getLocation(), "accès au monde légitime : jamais déplacé");
+        var claim = claimService.claimAt("claims", 105, 64, 105).orElseThrow();
+        assertFalse(claim.isTrusted(visitor.getUniqueId()), "la présence n'accorde aucun droit sur le claim d'autrui");
+    }
+
+    @Test
+    void gameplayMovesInsideTheClaimsWorldAreNotChecked() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        ClaimWorldSafetyListener counting = listenerWith(id -> {
+            calls.incrementAndGet();
+            return java.util.concurrent.CompletableFuture.completedFuture(false);
+        }, () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+        player.setLocation(new Location(claimsWorld, 0.5, 64, 0.5));
+
+        teleportWithinClaims(player, counting, new Location(claimsWorld, 8.5, 64, 8.5),
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.ENDER_PEARL);
+
+        server.getScheduler().performTicks(10);
+        assertEquals(0, calls.get(), "perle de l'Ender : aucun contrôle d'entrée");
+        assertEquals("claims", player.getWorld().getName());
+    }
 }

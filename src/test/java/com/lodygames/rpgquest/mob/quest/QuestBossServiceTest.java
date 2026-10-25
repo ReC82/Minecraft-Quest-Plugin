@@ -136,7 +136,7 @@ class QuestBossServiceTest {
         registry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
         registry.reload();
         mobService = new SpecialMobService(plugin, registry, zoneRegistry, items, plugin.getSLF4JLogger(),
-                new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()));
+                new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()), world -> true);
 
         waypoints.add(new Waypoint("wp-1", "Pierre aux Corbeaux", "wild", "plains@0,0", "minecraft:plains", 0, 0,
                 0, 64, 0, "NORTH", 1, true, Instant.EPOCH));

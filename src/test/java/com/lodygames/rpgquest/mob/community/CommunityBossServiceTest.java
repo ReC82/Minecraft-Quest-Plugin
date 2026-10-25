@@ -100,7 +100,7 @@ class CommunityBossServiceTest {
         registry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
         registry.reload();
         mobService = new SpecialMobService(plugin, registry, zoneRegistry, items, plugin.getSLF4JLogger(),
-                new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()));
+                new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()), world -> true);
         settingsStore = new CommunityBossSettingsStore(mobsDir, plugin.getSLF4JLogger());
         settingsStore.save(new CommunityBossSettings(true, 15, 1));
 

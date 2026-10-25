@@ -69,7 +69,7 @@ class CombatXpListenerTest {
         SpecialMobService mobService = new SpecialMobService(
                 plugin, mobRegistry, zoneRegistry, new com.lodygames.rpgquest.item.YamlCustomItemRegistry(
                         tempDir.resolve("items"), plugin.getSLF4JLogger()), plugin.getSLF4JLogger(),
-                new MobSpawnSettingsStore(tempDir.resolve("mobs"), plugin.getSLF4JLogger()));
+                new MobSpawnSettingsStore(tempDir.resolve("mobs"), plugin.getSLF4JLogger()), world -> true);
 
         listener = new CombatXpListener(plugin, progression, mobService, () -> config);
 

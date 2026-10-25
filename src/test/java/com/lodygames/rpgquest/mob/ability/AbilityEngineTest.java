@@ -102,7 +102,7 @@ class AbilityEngineTest {
         YamlCustomItemRegistry items = new YamlCustomItemRegistry(itemsDir, plugin.getSLF4JLogger());
         items.start();
         service = new SpecialMobService(plugin, registry, new ZoneRegistry(tempDir.resolve("zones"), plugin.getSLF4JLogger()),
-                items, plugin.getSLF4JLogger(), new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()));
+                items, plugin.getSLF4JLogger(), new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()), world -> true);
         return registry.find(new NamespacedKey("rpgquest", "summoner")).orElseThrow();
     }
 

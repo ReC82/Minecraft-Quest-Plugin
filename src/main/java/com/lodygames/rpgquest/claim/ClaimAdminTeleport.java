@@ -29,6 +29,9 @@ import org.bukkit.entity.Player;
  * activé). Être téléporté sur un claim ne donne <strong>aucun</strong> droit d'y construire : la
  * protection reste appliquée par {@link ClaimProtectionListener}.</p>
  *
+ * <p>Issue #829, décision D2 : vers le claim d'un autre joueur, le mode bypass explicite (#35) est
+ * exigé, comme pour {@code /claim admin tp} — sinon {@link Code#REFUSED} avant tout déplacement.</p>
+ *
  * <h2>Pas de faux succès</h2>
  *
  * <p>Le monde des claims renvoie au Hub tout joueur non éligible ({@link ClaimWorldSafetyListener}).
@@ -127,6 +130,12 @@ public final class ClaimAdminTeleport {
                         + "des claims exige d'avoir débloqué son premier terrain (CLAIM_TIER_1) ou d'y posséder un "
                         + "claim. Activez le mode administrateur en jeu (/rpgadmin bypass on) puis réessayez. "
                         + "Rien n'a été modifié."));
+            } else if (!ClaimVisitPolicy.MEMBERS_ONLY.allowsDirectTeleport(travelerId, claim)
+                    && !bypass.allows(traveler, RpgPermissions.BYPASS_CLAIM_WORLD)) {
+                // Issue #829, décision D2 : même règle que ClaimWorldSafetyListener, annoncée avant d'essayer.
+                out.complete(Result.of(Code.REFUSED, "Téléportation directe dans le claim d'un autre joueur refusée "
+                        + "sans mode administrateur : activez-le en jeu (/rpgadmin bypass on) puis réessayez. Rien "
+                        + "n'a été modifié."));
             } else {
                 move(travelerId, claim, out);
             }

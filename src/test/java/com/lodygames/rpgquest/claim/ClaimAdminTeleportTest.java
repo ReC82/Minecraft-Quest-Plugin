@@ -58,6 +58,8 @@ class ClaimAdminTeleportTest {
     private ClaimService claimService;
     private ClaimAdminTeleport teleport;
     private World claimsWorld;
+    private RPGQuestPlugin plugin;
+    private final AdminBypassMode bypass = new AdminBypassMode(() -> GameSettings.DEFAULTS);
 
     @BeforeEach
     void setUp() throws Exception {
@@ -83,8 +85,8 @@ class ClaimAdminTeleportTest {
         claimService.start();
         ClaimConfig claims = new ClaimConfig(100, 256, 1, 0, "claims", true);
         // MockBukkit n'implémente pas teleportAsync : téléportation synchrone, même contrat (booléen).
-        teleport = new ClaimAdminTeleport(plugin, claimService, () -> claims,
-                new AdminBypassMode(() -> GameSettings.DEFAULTS),
+        this.plugin = plugin;
+        teleport = new ClaimAdminTeleport(plugin, claimService, () -> claims, bypass,
                 (player, location) -> CompletableFuture.completedFuture(player.teleport(location)));
     }
 
@@ -103,6 +105,14 @@ class ClaimAdminTeleportTest {
                     .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         }
         return player;
+    }
+
+    /** Issue #829 (D2) : session {@code /rpgadmin bypass on} explicite avec le nœud du monde des claims. */
+    private PlayerMock withBypass(PlayerMock admin) {
+        admin.addAttachment(plugin, com.lodygames.rpgquest.permission.RpgPermissions.BYPASS_CLAIM_WORLD, true);
+        admin.addAttachment(plugin, AdminBypassMode.PERMISSION, true);
+        assertEquals(AdminBypassMode.Outcome.ENABLED, bypass.enable(admin));
+        return admin;
     }
 
     private Claim createClaim(PlayerMock owner, int minX, int minZ, int maxX, int maxZ) throws Exception {
@@ -137,7 +147,7 @@ class ClaimAdminTeleportTest {
     @Test
     void movesOnlyTheAdministratorToASafeSpotOfTheClaimAndChangesNothingElse() throws Exception {
         PlayerMock owner = addPlayer(true);
-        PlayerMock admin = addPlayer(true);
+        PlayerMock admin = withBypass(addPlayer(true));
         Claim before = createClaim(owner, -2, -2, 2, 2);
         setGround(0, 0);
         Location ownerBefore = owner.getLocation().clone();
@@ -174,7 +184,7 @@ class ClaimAdminTeleportTest {
     @Test
     void refusesExplicitlyWhenNoSafeSpotExistsInTheClaim() throws Exception {
         PlayerMock owner = addPlayer(true);
-        PlayerMock admin = addPlayer(true);
+        PlayerMock admin = withBypass(addPlayer(true));
         Claim claim = createClaim(owner, -1, -1, 1, 1);
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) {
@@ -207,7 +217,7 @@ class ClaimAdminTeleportTest {
     @Test
     void aSecondRequestWhileTheFirstIsRunningIsRefusedAndNeverSentTwice() throws Exception {
         PlayerMock owner = addPlayer(true);
-        PlayerMock admin = addPlayer(true);
+        PlayerMock admin = withBypass(addPlayer(true));
         Claim claim = createClaim(owner, -2, -2, 2, 2);
         setGround(0, 0);
 
@@ -235,5 +245,31 @@ class ClaimAdminTeleportTest {
 
         assertEquals(ClaimAdminTeleport.Code.WORLD_UNAVAILABLE,
                 await(teleport.teleport(admin.getUniqueId(), claim.id(), owner.getUniqueId())).code());
+    }
+
+    @Test
+    void anEligibleAdministratorWithoutBypassIsRefusedForSomeoneElsesClaimBeforeMoving() throws Exception {
+        PlayerMock owner = addPlayer(true);
+        PlayerMock admin = addPlayer(true);
+        admin.setOp(true); // l'OP seul ne suffit pas (décision D2, issue #829).
+        Claim claim = createClaim(owner, -2, -2, 2, 2);
+        setGround(0, 0);
+        Location adminBefore = admin.getLocation().clone();
+
+        ClaimAdminTeleport.Result result = await(teleport.teleport(admin.getUniqueId(), claim.id(), owner.getUniqueId()));
+
+        assertEquals(ClaimAdminTeleport.Code.REFUSED, result.code());
+        assertTrue(result.message().contains("/rpgadmin bypass on"), result.message());
+        assertEquals(adminBefore, admin.getLocation(), "aucun déplacement");
+    }
+
+    @Test
+    void anOwnerReachesTheirOwnClaimWithoutBypass() throws Exception {
+        PlayerMock owner = addPlayer(true);
+        Claim claim = createClaim(owner, -2, -2, 2, 2);
+        setGround(0, 0);
+
+        assertEquals(ClaimAdminTeleport.Code.TELEPORTED,
+                await(teleport.teleport(owner.getUniqueId(), claim.id(), owner.getUniqueId())).code());
     }
 }

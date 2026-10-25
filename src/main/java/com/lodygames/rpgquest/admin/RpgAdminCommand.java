@@ -1757,6 +1757,14 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     Placeholder.unparsed("name", name)));
             return;
         }
+        // Issue #829 (D1) : vers le monde des claims, mode bypass explicite obligatoire, même pour un OP.
+        if (world.get().getName().equals(plugin.bootstrap().configService().current().claims().world())
+                && !com.lodygames.rpgquest.claim.ClaimAdminTeleportGate.permits(adminBypassMode, player)) {
+            plugin.getSLF4JLogger().info("[claims-safety] /rpgadmin world tp {} refusé à {} : mode bypass inactif.",
+                    name, player.getName());
+            player.sendMessage(MM.deserialize(com.lodygames.rpgquest.claim.ClaimAdminTeleportGate.REFUSAL));
+            return;
+        }
         // Plus de log TP-TRACE ad hoc ici : teleportAsync() déclenche PlayerTeleportEvent, capté
         // génériquement par WorldPortalTeleportListener#onTeleport (event=external_teleport) —
         // superflu et incohérent de dupliquer un log spécifique à cette seule commande.

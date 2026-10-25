@@ -1,11 +1,13 @@
 package com.lodygames.rpgquest.command;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.claim.ClaimAdminTeleportGate;
 import com.lodygames.rpgquest.claim.ClaimSelectionService;
 import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.claim.ClaimTeleportService;
 import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.database.ClaimActionOutcome;
+import com.lodygames.rpgquest.permission.AdminBypassMode;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,13 +49,16 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
     private final ClaimService claimService;
     private final ClaimSelectionService selectionService;
     private final ClaimTeleportService claimTeleportService;
+    /** Issue #829 (D1) : {@code /claim admin tp} exige le mode bypass explicite, même pour un OP. */
+    private final AdminBypassMode bypass;
 
     public ClaimCommand(RPGQuestPlugin plugin, ClaimService claimService, ClaimSelectionService selectionService,
-                         ClaimTeleportService claimTeleportService) {
+                         ClaimTeleportService claimTeleportService, AdminBypassMode bypass) {
         this.plugin = plugin;
         this.claimService = claimService;
         this.selectionService = selectionService;
         this.claimTeleportService = claimTeleportService;
+        this.bypass = bypass;
     }
 
     @Override
@@ -153,11 +158,18 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
      * joueur ciblé) vers une position sûre du claim principal de {@code <joueur>}, et affiche
      * claimId/monde/centre/taille active. Fonctionne même si {@code <joueur>} est hors ligne (voir
      * {@link #resolveTargetPlayer}). Ne remplace jamais l'UX de Jo (voir {@link
-     * #handleAdminSendHome}, qui téléporte le joueur ciblé lui-même, jamais l'admin).
+     * #handleAdminSendHome}, qui téléporte le joueur ciblé lui-même, jamais l'admin). Issue #829
+     * (D1) : refusé sans mode bypass explicite actif, même pour un OP.
      */
     private void handleAdminTp(Player sender, String[] args) {
         if (args.length < 3) {
             sender.sendMessage(MM.deserialize("<yellow>/claim admin tp <joueur></yellow>"));
+            return;
+        }
+        if (!ClaimAdminTeleportGate.permits(bypass, sender)) {
+            plugin.getSLF4JLogger().info("[claims-safety] /claim admin tp {} refusé à {} : mode bypass inactif.",
+                    args[2], sender.getName());
+            sender.sendMessage(MM.deserialize(ClaimAdminTeleportGate.REFUSAL));
             return;
         }
         resolveTargetPlayer(sender, args[2], (targetId, targetName) -> {
@@ -249,7 +261,7 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize(
                 "<yellow>/claim admin resettier1 <joueur></yellow> <gray>- supprime ses claims et réinitialise CLAIM_TIER_1</gray>"));
         sender.sendMessage(MM.deserialize(
-                "<yellow>/claim admin tp <joueur></yellow> <gray>- outil admin/debug : te téléporte sur le claim de ce joueur (fonctionne hors ligne)</gray>"));
+                "<yellow>/claim admin tp <joueur></yellow> <gray>- outil admin/debug : te téléporte sur le claim de ce joueur (fonctionne hors ligne, mode bypass actif requis)</gray>"));
         sender.sendMessage(MM.deserialize(
                 "<yellow>/claim admin sendhome <joueur></yellow> <gray>- usage interne (dialogue de Jo) : téléporte ce joueur en ligne vers son propre claim</gray>"));
     }
@@ -484,7 +496,7 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize("<yellow>/claim list</yellow> <gray>- liste tes claims</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/claim flag redstone <true|false></yellow> <gray>- redstone publique sur le claim où tu te trouves</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/claim admin resettier1 <joueur></yellow> <gray>- (" + ADMIN_PERMISSION + ") supprime ses claims et réinitialise CLAIM_TIER_1</gray>"));
-        sender.sendMessage(MM.deserialize("<yellow>/claim admin tp <joueur></yellow> <gray>- (" + ADMIN_PERMISSION + ") outil admin/debug : te téléporte sur le claim de ce joueur (fonctionne hors ligne)</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/claim admin tp <joueur></yellow> <gray>- (" + ADMIN_PERMISSION + ") outil admin/debug : te téléporte sur le claim de ce joueur (fonctionne hors ligne, mode bypass actif requis)</gray>"));
     }
 
     private void runOnMainThread(Runnable task) {

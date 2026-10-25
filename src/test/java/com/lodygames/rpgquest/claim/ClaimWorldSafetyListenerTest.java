@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.config.ConfigService;
 import com.lodygames.rpgquest.database.ClaimRepository;
@@ -509,26 +510,126 @@ class ClaimWorldSafetyListenerTest {
         pumpUntil(() -> player.getWorld().getName().equals("world_hub"), "renvoi au Hub après /tp interne");
     }
 
-    @Test
-    void anEligiblePlayerTeleportedIntoSomeoneElsesClaimStaysButGainsNoRight() throws Exception {
-        PlayerMock owner = addPlayer();
+    // ---- Issue #829, décision D2 : pas de téléportation directe dans le claim d'autrui --------
+
+    private static final org.bukkit.event.player.PlayerTeleportEvent.TeleportCause COMMAND =
+            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.COMMAND;
+
+    /** Claim de {@code owner} sur (100..110, 60..70, 100..110) dans le monde des claims. */
+    private Claim claimOf(PlayerMock owner) throws Exception {
         grantTierOne(owner);
         assertEquals(ClaimService.CreateOutcome.CREATED, claimService.create(owner, "main_" + owner.getUniqueId(),
                         new Location(claimsWorld, 100, 60, 100), new Location(claimsWorld, 110, 70, 110))
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
         server.getScheduler().performTicks(2);
+        return claimService.find("main_" + owner.getUniqueId()).orElseThrow();
+    }
+
+    private static Location insideClaim(World world) {
+        return new Location(world, 105.5, 64, 105.5);
+    }
+
+    /** Événement construit (jamais {@code callEvent}) puis présenté au seul handler D2 ; rend l'événement. */
+    private org.bukkit.event.player.PlayerTeleportEvent directTeleport(
+            PlayerMock player, ClaimWorldSafetyListener target, Location from, Location to,
+            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause) {
+        var event = new org.bukkit.event.player.PlayerTeleportEvent(player, from, to, cause);
+        target.onDirectTeleportIntoClaim(event);
+        return event;
+    }
+
+    @Test
+    void anEligiblePlayerCannotTeleportDirectlyIntoSomeoneElsesClaim() throws Exception {
+        claimOf(addPlayer());
         PlayerMock visitor = addPlayer();
         grantTierOne(visitor);
-        visitor.setLocation(new Location(claimsWorld, 0.5, 64, 0.5));
+        visitor.setOp(true); // ni l'éligibilité ni l'OP ne suffisent.
+        Location from = new Location(claimsWorld, 0.5, 64, 0.5);
 
-        Location inside = new Location(claimsWorld, 105.5, 64, 105.5);
-        teleportWithinClaims(visitor, listener, inside, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.COMMAND);
+        var event = directTeleport(visitor, listener, from, insideClaim(claimsWorld), COMMAND);
 
-        pumpUntil(() -> hasReturnStone(visitor), "contrôle rejoué : éligible, Pierre garantie");
-        server.getScheduler().performTicks(10);
-        assertEquals(inside, visitor.getLocation(), "accès au monde légitime : jamais déplacé");
-        var claim = claimService.claimAt("claims", 105, 64, 105).orElseThrow();
-        assertFalse(claim.isTrusted(visitor.getUniqueId()), "la présence n'accorde aucun droit sur le claim d'autrui");
+        assertTrue(event.isCancelled(), "/tp vers le claim d'autrui refusé sans bypass");
+        awaitMessageContaining(visitor, "Téléportation refusée", "message de refus clair");
+    }
+
+    @ParameterizedTest(name = "cause={0}")
+    @org.junit.jupiter.params.provider.EnumSource(value = org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.class,
+            names = {"COMMAND", "PLUGIN", "SPECTATE"})
+    void everyDirectTeleportCauseIsRefusedEvenFromAnotherWorld(
+            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause) throws Exception {
+        claimOf(addPlayer());
+        PlayerMock visitor = addPlayer();
+
+        var event = directTeleport(visitor, listener, new Location(hubWorld, 0.5, 64, 0.5), insideClaim(claimsWorld), cause);
+
+        assertTrue(event.isCancelled(), cause + " depuis le Hub vers le claim d'autrui : refusé");
+    }
+
+    @ParameterizedTest(name = "cause={0}")
+    @org.junit.jupiter.params.provider.EnumSource(value = org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.class,
+            names = {"ENDER_PEARL", "CONSUMABLE_EFFECT", "DISMOUNT", "UNKNOWN", "NETHER_PORTAL"})
+    void gameplayAndUnidentifiableMovesIntoAForeignClaimAreNotRefused(
+            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause) throws Exception {
+        claimOf(addPlayer());
+        PlayerMock visitor = addPlayer();
+
+        var event = directTeleport(visitor, listener, new Location(claimsWorld, 0.5, 64, 0.5), insideClaim(claimsWorld), cause);
+
+        assertFalse(event.isCancelled(), cause + " : déplacement de gameplay ou non identifiable, jamais refusé ici");
+    }
+
+    @Test
+    void theOwnerAndTrustedMembersMayTeleportIntoTheClaim() throws Exception {
+        PlayerMock owner = addPlayer();
+        Claim claim = claimOf(owner);
+        PlayerMock member = addPlayer();
+        assertEquals(com.lodygames.rpgquest.database.ClaimActionOutcome.SUCCESS,
+                claimService.trust(owner.getUniqueId(), claim.id(), member.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        server.getScheduler().performTicks(2);
+        Location from = new Location(claimsWorld, 0.5, 64, 0.5);
+
+        assertFalse(directTeleport(owner, listener, from, insideClaim(claimsWorld), COMMAND).isCancelled(), "propriétaire");
+        assertFalse(directTeleport(member, listener, from, insideClaim(claimsWorld), COMMAND).isCancelled(), "membre");
+    }
+
+    @Test
+    void aTeleportOutsideAnyClaimOrWithinTheClaimAlreadyEnteredOnFootIsAllowed() throws Exception {
+        claimOf(addPlayer());
+        PlayerMock visitor = addPlayer();
+
+        assertFalse(directTeleport(visitor, listener, new Location(claimsWorld, 0.5, 64, 0.5),
+                new Location(claimsWorld, 300.5, 64, 300.5), COMMAND).isCancelled(), "hors de tout claim");
+        assertFalse(directTeleport(visitor, listener, new Location(claimsWorld, 101.5, 64, 101.5),
+                insideClaim(claimsWorld), COMMAND).isCancelled(), "déjà dans ce claim (entré à pied) : rien n'est gagné");
+    }
+
+    @Test
+    void onlyAnExplicitBypassSessionAllowsADirectTeleportIntoSomeoneElsesClaim() throws Exception {
+        claimOf(addPlayer());
+        PlayerMock admin = addPlayer();
+        admin.setOp(true);
+        Location from = new Location(claimsWorld, 0.5, 64, 0.5);
+        assertTrue(directTeleport(admin, listener, from, insideClaim(claimsWorld), COMMAND).isCancelled(),
+                "OP sans session bypass : refusé");
+
+        assertEquals(com.lodygames.rpgquest.permission.AdminBypassMode.Outcome.ENABLED, bypass.enable(admin));
+
+        assertFalse(directTeleport(admin, listener, from, insideClaim(claimsWorld), COMMAND).isCancelled(),
+                "session /rpgadmin bypass on : exception administrative");
+    }
+
+    @Test
+    void aFutureVisitPolicyCanOpenAClaimWithoutTouchingTheListener() throws Exception {
+        claimOf(addPlayer());
+        PlayerMock friend = addPlayer();
+        ClaimReturnService returnService = new ClaimReturnService(plugin, customItemRegistry,
+                () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+        ClaimWorldSafetyListener withFriends = new ClaimWorldSafetyListener(plugin, claimService, returnService,
+                () -> CLAIMS_CONFIG, () -> Optional.of(new Location(hubWorld, 0, 64, 0)), bypass,
+                claimService::hasClaimTierOne, SHORT_RETRIES, (visitor, claim) -> visitor.equals(friend.getUniqueId()));
+
+        assertFalse(directTeleport(friend, withFriends, new Location(claimsWorld, 0.5, 64, 0.5),
+                insideClaim(claimsWorld), COMMAND).isCancelled(), "visiteur autorisé par la politique");
     }
 
     @Test

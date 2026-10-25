@@ -686,7 +686,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   appliquent le même garde avant débit/téléportation ; le filet retente une lecture en échec ou un
   renvoi impossible (5 s puis 15 s) puis renvoie au Hub par précaution ou alerte les administrateurs,
   sans boucle ; un `/tp` interne au monde des claims rejoue le contrôle (présence ≠ droit sur le claim
-  d'autrui). Les dialogues du Guide (`help_claims`) et de Jo reflètent
+  d'autrui). Décisions D1/D2 (#829, 25/10) : une téléportation commande/plugin/spectateur vers
+  l'intérieur du claim d'autrui est annulée sans bypass explicite (`claim.ClaimVisitPolicy`,
+  extensible aux futurs amis) ; `/rpgadmin world tp <claims>` et `/claim admin tp` exigent le mode
+  bypass actif, même pour un OP. Les dialogues du Guide (`help_claims`) et de Jo reflètent
   exactement ce prérequis, et Jo adapte son texte aux 3 états (non débloqué / débloqué sans claim /
   claim existant) grâce à `negate: true` sur une condition de dialogue (`dialogue.model.NegatedCondition`).
   Prérequis **opérationnels** (à provisionner par serveur, non portés par le code) : les 4 PNJ Citizens

@@ -468,7 +468,7 @@ class DialogueEditorTest {
     }
 
     /**
-     * Issue #373 : le VRAI dialogue du Garde (scalaires {@code text: >}, commentaires, 18 répliques depuis #778).
+     * Issue #373 : le VRAI dialogue du Garde (scalaires {@code text: >}, commentaires, 23 répliques depuis #841).
      * L'éditeur n'en montrait que deux, et l'enregistrement sans changement était refusé.
      */
     @Test
@@ -482,7 +482,7 @@ class DialogueEditorTest {
         assertFalse(page.contains("Réplique introuvable"), "toutes les suites sont résolues");
         assertFalse(page.contains("lecture seule"), "le fichier est éditable");
         Map<String, String> f = formFields(page);
-        assertEquals("18", f.get("n_count"), "les 18 répliques sont dans le formulaire");
+        assertEquals("23", f.get("n_count"), "les 23 répliques sont dans le formulaire");
         assertTrue(page.contains("Gauthier — Palier 5"), "une réplique écrite en « text: > » s'affiche");
 
         HttpResponse<String> res = post("/dialogues/save", f, "save");
@@ -496,7 +496,7 @@ class DialogueEditorTest {
         DialogueDraft before = DialogueYaml.read(original).draft();
         before.nodes.get(0).text = "<white>Bienvenue, voyageur.</white>";
         assertEquals(DialogueYaml.write(before), DialogueYaml.write(after));
-        assertEquals(18, after.nodes.size());
+        assertEquals(23, after.nodes.size());
     }
 
     // ---- Issue #815 : supprimer une réplique orpheline -----------------------------------------
@@ -540,7 +540,7 @@ class DialogueEditorTest {
         assertEquals(original, Files.readString(content.resolve("dialogues/guard.yml")), "brouillon : rien d'écrit");
         Map<String, String> h = formFields(removed);
         assertFalse(h.containsValue("reward_info"));
-        assertEquals("17", h.get("n_count"));
+        assertEquals("22", h.get("n_count"));
 
         assertEquals(303, post("/dialogues/save", h, "save").statusCode());
         DialogueDraft after = DialogueYaml.read(Files.readString(content.resolve("dialogues/guard.yml"))).draft();

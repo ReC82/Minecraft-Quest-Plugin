@@ -6,6 +6,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Gauthier dit où en est le palier en cours (#841, 25/10/2026)** — jeton de dialogue générique
+> `%quest_progress:<quête>%` (`ui.QuestProgressText`) : titre de la quête + une ligne par objectif de
+> l'étape courante, rendue par `ui.ObjectiveLabels#counterLine`, désormais partagée avec le journal
+> (mêmes compteurs, lus sur `QuestProgressEngine#activeStepView`). Les arguments de jeton acceptent
+> un espace de noms (`rpgquest:guard_tier1`). `dialogues/guard.yml` : « Où en suis-je ? » sous
+> `QUEST_STATE guard_tierN ACTIVE`, répliques alignées sur la fin automatique du palier ; « Les récompenses »
+> laissé intact dans le seed (retiré par le propriétaire sur DEV seulement). Aucune migration. TC-433.
+
 > **Notifications de plusieurs quêtes simultanées (#817, 25/10/2026)** — `feedback.ActionBarFeedback` :
 > une action qui fait progresser plusieurs quêtes donne une ligne courte (libellé une fois, titre abrégé
 > + compteur par quête, `quest.objective-progress-entry`), jamais plus large que 300 px estimés (titres

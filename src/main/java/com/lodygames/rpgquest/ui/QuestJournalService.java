@@ -975,25 +975,9 @@ public final class QuestJournalService implements QuestJournalUi {
         return lore;
     }
 
-    /**
-     * Une ligne de compteur, courte : « Araignée 3/5 ». Le nom vient de la clé de traduction
-     * vanilla (voir {@link ObjectiveLabels}), donc le client l'affiche en français — jamais
-     * « Tuer SPIDER ». Un objectif binaire (parler, atteindre) n'affiche pas de compteur.
-     */
+    /** Une ligne de compteur, courte : « Araignée 3/5 » — règle partagée, voir {@link ObjectiveLabels#counterLine}. */
     private Component counterLine(ObjectiveProgressView progress, QuestObjective objective) {
-        boolean done = progress.current() >= progress.total();
-        // Issue #475 : une remise nomme son PNJ destinataire (« à remettre à Guide »), même règle
-        // que l'annonce des objectifs (#70) — le joueur sait à qui apporter les objets restants.
-        Component name = objective != null
-                ? ObjectiveLabels.targetName(objective, questProgressEngine.npcNameResolver())
-                : Component.text(progress.description());
-        Component line = Component.text("• ", done ? NamedTextColor.GREEN : NamedTextColor.GRAY)
-                .append(name.colorIfAbsent(done ? NamedTextColor.GREEN : NamedTextColor.GRAY));
-        if (objective == null || ObjectiveLabels.isCountable(objective)) {
-            line = line.append(Component.text(" " + progress.current() + "/" + progress.total(),
-                    done ? NamedTextColor.GREEN : NamedTextColor.WHITE));
-        }
-        return line.decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false);
+        return ObjectiveLabels.counterLine(progress, objective, questProgressEngine.npcNameResolver());
     }
 
     /** Objectifs de l'étape {@code stepId} tels que définis par la quête (ordre identique à la vue). */

@@ -9251,3 +9251,21 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 **Résultat attendu** : création compréhensible sans jargon, aucune saisie incohérente (monde ou dimensions en double), aucune action envoyée pendant les étapes 1 à 4.
 
 **Couverture automatisée** : `WorldPortalBuildingLinkTest` (brouillon depuis une arche posée : zone = passage tourné, monde de l'emplacement, lien OK, jamais actif, audit ; refus NO_BUILDING / NOT_A_PORTAL / NO_PASSAGE sans fichier écrit ; refus OVERLAPS ; relevé `arches` avec passage et portails utilisateurs), `PortalAdminParamsTest` (`zone_mode=building` en création seulement), `PortalsPageTest` (cinq étapes dans l'ordre, arche libre présélectionnée et zone affichée, arches utilisée / sans passage désactivées, monde de départ seulement en coordonnées, point fixe à part, libellés d'inclinaison, synthèse et zones connues ; mise en file avec le seul emplacement de l'arche, groupe non choisi ignoré, `portal.update` en mode arche refusé ; sans arche : mode manuel seulement).
+
+### TC-433 — Gauthier dit où en est le palier de terrain en cours (issue #841, PENDING MANUAL VALIDATION)
+
+**But** : pendant un palier de Gauthier en cours, son accueil propose « Où en suis-je ? », qui affiche le palier et les compteurs réels `n/N` des quatre objectifs, identiques au journal ; le choix n'apparaît pas sans palier actif ; aucune réplique ne demande plus de « revenir voir » Gauthier (le palier se termine tout seul).
+
+**Prérequis** : JAR #841 en ligne sur DEV **et** dialogue `guard` #841 mis en jeu depuis PlugAdmin (sans « Les récompenses », déjà retiré par le propriétaire). Compte du propriétaire, sans reset ni progression forcée.
+
+1. Avec un palier en cours (ex. **Gauthier — Palier 2** avec quelques monstres déjà tués) : clic droit sur Gauthier. **Attendu** : « Où en suis-je ? » présent (une seule fois), en plus de « Comment est le Wild ? » et « Non merci ».
+2. Cliquer « Où en suis-je ? ». **Attendu** : « Voilà où tu en es : », le titre du palier, puis quatre lignes « • Araignée 3/10 », « • Zombie … », « • Squelette … », « • Creeper … » (noms en français, lignes remplies en vert), puis « Le palier se valide tout seul… ». « Merci » ramène à l'accueil.
+3. Ouvrir le journal (livre) sur le même palier. **Attendu** : mêmes compteurs que l'étape 2.
+4. Tuer un monstre compté, revenir voir Gauthier → « Où en suis-je ? ». **Attendu** : le compteur concerné a augmenté de 1.
+5. Se déconnecter / reconnecter (et, si possible, après un redémarrage DEV). **Attendu** : mêmes compteurs qu'avant.
+6. Avec un compte **sans** palier en cours (palier suivant pas encore commencé, ou tous terminés). **Attendu** : pas de « Où en suis-je ? » ; « Terrain : palier N » ou « J'ai fini mes paliers » inchangés.
+7. Démarrer un palier (« Commencer : Palier N »). **Attendu** : la réplique dit que le palier se valide tout seul et propose « Où en suis-je ? » ; plus de « Reviens me voir une fois les quatre menaces repoussées ».
+
+**Résultat attendu** : le joueur sait, sans commande ni fichier, quel palier est en cours, ce qui reste à faire, et que la fin est automatique.
+
+**Couverture automatisée** : `QuestProgressTextTest` (quête active à quatre objectifs : titre + quatre compteurs, nom traduit, ligne identique à celle du journal ; quête non en cours ; quête inconnue → jeton visible ; quête à plusieurs étapes et objectif binaire ; id nu ou `rpgquest:…`), `BundledDialoguesValidityTest#theGuardTellsTheActiveTierProgressAndNeverPromisesAReturnVisit` (un choix « Où en suis-je ? » par palier sous `QUEST_STATE … ACTIVE`, nœud avec `%quest_progress:…%`, offres NOT_STARTED / COMPLETED inchangées, plus aucune promesse de retour), `QuestJournalServiceTest` (lignes du journal inchangées après mise en commun de `ObjectiveLabels#counterLine`).

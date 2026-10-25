@@ -49,6 +49,43 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - Plugin + contenu : Gauthier affiche l'avancement du palier en cours (#841)
+
+### Changement
+
+JAR plugin : nouveau jeton de dialogue `%quest_progress:<quête>%` (titre + compteurs `n/N` du journal ;
+arguments de jeton avec espace de noms acceptés). Contenu : dialogue `guard` — choix « Où en suis-je ? »
+par palier actif, répliques « revenir me voir » remplacées par la fin automatique. PlugAdmin : guide des
+dialogues (section « Montrer au joueur où il en est »).
+
+### Action serveur
+
+1. Remplacement du JAR RPGQuest + redémarrage (**avant** le dialogue : sans le JAR, le jeton resterait
+   affiché tel quel).
+2. Dialogue `guard` mis en jeu depuis PlugAdmin (source `/var/lib/plugadmin/content`, #798) — jamais par
+   le seed du JAR, qui ne remplace pas un fichier existant. Ne pas toucher `data.db`, quêtes, progressions.
+
+### Sauvegarde préalable
+
+JAR + `data.db` + configuration par `scripts/deploy-verygames.sh` ; le moteur de publication #47 garde la
+version précédente du dialogue.
+
+### Déploiement
+
+Voir le rapport de session #841 (`docs/claude-reports/`).
+
+### Validation
+
+Test en jeu : PENDING MANUAL VALIDATION (TC-433).
+
+### Rollback
+
+`scripts/rollback-verygames.sh` vers la sauvegarde datée, puis redémarrage ; le dialogue se restaure par le
+retour arrière de publication de PlugAdmin (« Détails techniques »). L'ancien JAR laisserait le jeton
+`%quest_progress:…%` visible : restaurer aussi le dialogue précédent dans ce cas.
+
+---
+
 ## 2026-10-25 - Plugin : notifications de plusieurs quêtes simultanées lisibles (#817)
 
 ### Changement

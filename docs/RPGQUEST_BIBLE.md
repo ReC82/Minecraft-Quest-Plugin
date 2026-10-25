@@ -6542,6 +6542,7 @@ d'icônes/récompenses (#196) sont des lots distincts.
 
 Réglé depuis le Control Panel (`mobs/spawn-settings.yml`, jamais édité à la main) :
 
+0. **Mondes Wild uniquement (issue #851)** : le tirage n'a lieu que dans un monde Wild configuré (`wild.worlds` de `config.yml`, vide = `travel.wild-world`), **jamais** dans `hub.world` ni dans `claims.world`, même s'ils sont déclarés Wild par erreur. La liste `worlds` d'un profil **restreint** ces mondes Wild et ne les étend jamais : `worlds: []` = tout le Wild (et non « tous les mondes ») ; un profil qui liste le Hub n'y apparaît pas. Un cochon né naturellement au Hub ou dans les Claims ne devient donc jamais un « Cochon Creeper ». Les apparitions de test depuis PlugAdmin et les boss (communautaires, de quête) ne passent pas par ce tirage.
 1. **Throttle global** (`chance`, 0 à 1) : évalué une seule fois par spawn naturel éligible, *avant* d'examiner les profils individuels. Résout l'ambiguïté d'un pourcentage par-profil cumulé.
 2. Seulement si ce tirage réussit, chaque profil `SPECIAL` activé et compatible (type/monde/biome/zone, sous son `max-population`) tire indépendamment sa propre `spawn-chance`.
 3. Zéro résultat → rien. Un résultat → appliqué. **Plusieurs résultats simultanés → tirage pondéré explicite** entre eux (poids = la `spawn-chance` de chacun), jamais le premier trouvé dans le registre.

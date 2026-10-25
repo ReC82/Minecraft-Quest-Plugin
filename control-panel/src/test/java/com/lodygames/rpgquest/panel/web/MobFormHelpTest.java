@@ -105,7 +105,8 @@ class MobFormHelpTest {
             "Nom affiché au-dessus du mob",           // display_name
             "retiré du tirage aléatoire du Wild",     // enabled
             "Probabilité propre à ce profil",         // spawn_chance
-            "Mondes où ce profil peut apparaître",    // worlds
+            "Mondes Wild où ce profil peut apparaître", // worlds
+            "jamais au Hub ni dans les Claims",       // worlds (issue #851)
             "Biomes où ce profil peut apparaître",    // biomes
             "Zones RPGQuest autorisées",              // zones
             "Nombre maximum de mobs issus de",        // max_population

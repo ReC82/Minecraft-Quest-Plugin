@@ -68,11 +68,13 @@ aucune donnée joueur modifiés. PlugAdmin inchangé.
 
 ### Sauvegarde préalable
 
-JAR + `data.db` + configuration par `scripts/deploy-verygames.sh`.
+Automatique (JAR seul, aucune migration ni donnée modifiée) : `rpgquest-20261025T095744Z-predeploy.jar`
+(= JAR #734 `ce59b076`, SHA-256 `458380e7…`).
 
 ### Déploiement
 
-Voir le rapport de session #829 D1/D2 (`docs/claude-reports/`).
+Fait le 25/10 vers 10:58 (heure locale) : JAR `56e754d8` (PR #869, 4 431 966 o, SHA-256 `da8e14eb…`
+retéléchargé identique), DEV redémarré (LoDyMcFly seul en ligne, 0 joueur au retour), RPGQuest actif.
 
 ### Validation
 

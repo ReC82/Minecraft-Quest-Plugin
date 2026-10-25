@@ -9310,3 +9310,18 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 Pannes de base / Hub introuvable : non rejouables sans altérer DEV — couvertes uniquement par les tests automatisés.
 
 **Couverture automatisée** : `ClaimWorldAccessGuardTest#aHistoricPortalToTheClaimsWorldRefusesANonEligiblePlayerBeforeMovingThem`, `#aHistoricPortalLetsAnUnlockedPlayerThroughExactlyOnceWithAReturnStone`, `#aHistoricPortalLetsAClaimOwnerAndAnExplicitBypassThroughImmediately`, `#anOpWithoutTheBypassModeIsRefusedByAHistoricPortalToo`, `#historicPortalsToAnotherWorldAreNeverAffected` ; `PortalServiceTest#aRefusingDestinationGuardPreventsTheTeleportAndTakesNoMoney`, `#anAllowingDestinationGuardDebitsThenTeleports` ; `ClaimWorldSafetyListenerTest#aTransientDatabaseFailureIsRetriedAndAnEligiblePlayerStays`, `#aPersistentDatabaseFailureSendsThePlayerBackToTheHubAfterBoundedRetries`, `#anUnresolvedHubTargetIsRetriedBoundedThenReportedWithoutLooping`, `#aHubTargetInsideTheClaimsWorldIsNeverUsedAndALateTargetIsUsedOnRetry`, `#leavingTheClaimsWorldStopsPendingRetries`, `#anInternalCommandTeleportOfANonEligiblePlayerReplaysTheEntryCheck`, `#anEligiblePlayerTeleportedIntoSomeoneElsesClaimStaysButGainsNoRight`, `#gameplayMovesInsideTheClaimsWorldAreNotChecked`.
+
+### TC-437 — Classements par type de créature sur le portail bêta (issue #734, PENDING MANUAL VALIDATION)
+
+**But** : chaque créature réellement tuée (zombie, squelette, araignée…) a son propre classement, distinct du cumul « Monstres » ; un mob spécial RPGQuest a le sien, séparé de sa créature de base ; rien n'est inventé pour les types jamais tués.
+
+**Prérequis** : JAR et portail #734 (`split: entity`) en ligne ; accès bêta du portail. Aucune donnée de joueur modifiée.
+
+1. Ouvrir https://lodyquests.lodylands.com/classements/creatures (ordinateur puis téléphone). **Attendu** : onglets « Depuis toujours / Ce mois-ci / Cette semaine », onglets de catégorie avec effectifs, champ « Chercher une créature », une carte par type déjà vaincu (au moins Zombie et Squelette sur DEV), aucune barre de défilement horizontale.
+2. Taper `araignee` puis Chercher. **Attendu** : seule la carte Araignée (accents ignorés).
+3. En survie, tuer 2 zombies et 1 squelette (hors spawner, bypass inactif), attendre le relevé suivant (15 min au plus). **Attendu** : onglet « Cette semaine » : +2 dans Zombie, +1 dans Squelette ; le classement « Monstres vaincus cette semaine » de `/classements/tous` augmente de 3 ; aucune autre carte ne bouge.
+4. (Si un mob spécial apparaît.) Le tuer. **Attendu** : carte à son nom public, « Mobs spéciaux · variante de … » ; la carte de sa créature de base **ne** bouge **pas**.
+5. Tuer une créature jamais tuée jusque-là (ex. un lapin). **Attendu** : au relevé suivant, nouvelle carte « Lapin » dans « Non hostiles », « suivi depuis » = date du jour.
+6. https://lodyquests.lodylands.com/demo/classements/creatures : bandeau « données de démonstration », joueurs Demo_*, ligne « Déjà vaincus, mais personne sur cette période : Ender Dragon. »
+
+**Couverture automatisée** : `BoardCatalogExportTest#aSplitBoardPublishesOneRankingPerCreatureTypeActuallyKilled`, `#splitIsOnlyAcceptedForCreatureKills` ; `StatDimensionsTest#everyCountableCreatureHasAFrenchName` ; `CreatureBoardsPageTest` (6 tests : liste blanche, cartes et résumé, catégorie et recherche, périodes, lien depuis le catalogue, démo).

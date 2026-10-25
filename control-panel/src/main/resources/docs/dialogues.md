@@ -330,6 +330,21 @@ Ce que PlugAdmin garde quand vous enregistrez :
 - Un fichier qu'il ne sait pas relire entièrement s'ouvre en lecture seule, avec la raison —
   jamais avec des répliques en moins.
 
+### Montrer au joueur où il en est dans une quête
+
+Écrivez dans le texte d'une réplique `%quest_progress:` suivi de l'identifiant de la quête et d'un
+`%` — par exemple `%quest_progress:guard_tier1%` (ou `%quest_progress:rpgquest:guard_tier1%`, tel
+qu'il apparaît dans une condition « État d'une quête »). En jeu, le personnage affiche à cet endroit
+le titre de la quête puis une ligne par objectif avec son compteur (« • Araignée 3/5 »), **les mêmes
+que dans le journal**.
+
+- Si la quête n'est pas en cours pour ce joueur : « Cette quête n'est pas en cours. »
+- Si l'identifiant est faux : le texte `%quest_progress:…%` reste visible tel quel, pour que l'erreur
+  se voie en test.
+
+Pour ne proposer la question qu'au bon moment, ajoutez sur la réponse « Où en suis-je ? » la
+condition **État d'une quête : en cours**. Exemple livré : Gauthier, un choix par palier de terrain.
+
 ### Modifier un dialogue avec une IA
 
 Pour une transformation qui touche beaucoup de conditions, d'effets et de textes (par exemple

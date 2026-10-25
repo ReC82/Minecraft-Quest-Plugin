@@ -226,6 +226,12 @@ nodes:
           <td>Direction et distance approximative de cette ville depuis le joueur qui lit :
             « au nord, à environ 420 blocs », « tout près : tu y es déjà », ou « loin d'ici, dans un
             autre monde… ». Aucune coordonnée, aucun waypoint débloqué (issue #180).</td></tr>
+        <tr><td><code>%quest_progress:id_quête%</code></td>
+          <td>Avancement réel de cette quête pour le joueur qui lit : son titre, puis une ligne par
+            objectif avec le même compteur que le journal (« • Araignée 3/5 »). Identifiant nu
+            (<code>guard_tier1</code>) ou complet (<code>rpgquest:guard_tier1</code>). « Cette quête
+            n'est pas en cours. » si elle ne l'est pas ; identifiant inconnu : marqueur visible
+            (issue #841).</td></tr>
         <tr><td><code>%wild_conditions%</code></td>
           <td>État réel du monde d'exploration (<code>config.yml</code> → <code>travel.wild-world</code>) :
             « Il fait jour dans le Wild. Le temps est clair. », « … Il pleut. », « … Un orage est en cours. »,

@@ -38,6 +38,10 @@ lqorch stop --now             # arrêter tout de suite (la session en cours est 
 lqorch skip 13 "raison"       # mettre un ticket de côté (BLOCKED) et passer au suivant
 lqorch add 13 --prio 30 --deps 35,321 --note "…"   # ajouter / remettre en file
 lqorch set 13 next_action "…" # corriger un champ
+lqorch auto                   # file automatique agent:auto (#836) : examen à blanc, ordre et motifs d'exclusion
+lqorch auto hold 54 "recette TC-327 E"   # ne jamais sélectionner seul ce ticket (même après un commentaire)
+lqorch auto release 54        # le libérer (repris à la prochaine activité GitHub du propriétaire)
+lqorch config set auto_select 0   # couper la sélection automatique (auto_comment 0 : sans commentaire GitHub)
 lqorch log [13] / lqorch sessions
 sudo systemctl start|stop|status lodyquests-orch
 journalctl -u lodyquests-orch
@@ -48,7 +52,26 @@ journalctl -u lodyquests-orch
 - **Sélection** : d'abord un ticket interrompu (RUNNING/TESTING), puis le READY le plus prioritaire
   dont les dépendances sont fermées sur GitHub ou traitées ici. Un ticket fermé sur GitHub sort de
   la file. File vide → une session de **tri** (#0) relit le backlog et propose jusqu'à 6 tickets
-  (au plus une fois toutes les 6 h).
+  (au plus une fois toutes les 6 h) — mais seulement si la **file automatique** n'a rien trouvé.
+- **File automatique (#836)** : file locale vide → le superviseur lit les issues **ouvertes**
+  labellisées `agent:auto` et arme la plus prioritaire (`priority:P0` → `P3`, puis numéro le plus
+  ancien), une seule à la fois. Écartées, avec leur motif visible dans `lqorch auto` :
+  - sans `agent:auto`, sans label `priority:P*` ou avec plusieurs ; labels `blocked`, `in-progress`,
+    `duplicate`, `invalid`, `wontfix` ;
+  - déjà dans la file locale (READY / RUNNING / TESTING : ses propres règles s'appliquent) ;
+    FAILED (relance manuelle `lqorch add`) ; retenues par `lqorch auto hold` ;
+  - **déjà traitées ici** (DONE / WAITING_OWNER / BLOCKED) **sans activité nouvelle du
+    propriétaire** : seul un commentaire GitHub postérieur à la dernière prise en compte, posté hors
+    de toute fenêtre de session (+5 min) et sans le marqueur `<!-- lqorch`, réarme le ticket. Les
+    rapports des sessions ne relancent donc jamais leur propre ticket (pas de boucle) ;
+  - PR ouverte sur une branche `…/N-…` (travail concurrent) ;
+  - dépendances ouvertes : colonne `deps` locale + lignes « Dépend de / Bloqué par / Prérequis /
+    Depends on #N » du ticket (levée si fermée, ou DONE / WAITING_OWNER ici).
+  La prise en charge est tracée (événement `auto_select`, `next_action` « Sélection automatique… ») et
+  annoncée par un commentaire sur le ticket. **Le label rend éligible, il n'autorise rien** :
+  déploiement, appel payant ou opération réelle restent soumis au ticket et au prompt de session.
+  Une édition du corps du ticket ou un changement de label ne réarme pas un ticket déjà traité :
+  écrire un commentaire, ou `lqorch add N`.
 - **Fin de session** : la session écrit un rapport JSON (statut, branche, PR, tests, blocages,
   prochaine action). Sans rapport : nouvelle tentative avec délai croissant, abandon (FAILED) après
   3 tentatives — jamais de boucle.

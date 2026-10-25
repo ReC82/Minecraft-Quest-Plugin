@@ -305,3 +305,200 @@ class SupervisorTest(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeGitHub:
+    """Faux GitHub en mémoire pour la file automatique (#836) : issues, commentaires, PR ouvertes."""
+
+    def __init__(self):
+        self.issues, self.comments, self.prs, self.closed, self.posted, self.paths = {}, {}, [], set(), [], []
+
+    def issue(self, n, *labels, updated="2026-10-25T07:00:00Z", body=""):
+        self.issues[n] = {"number": n, "title": f"ticket {n}", "body": body, "updated_at": updated,
+                          "labels": [{"name": lab} for lab in labels]}
+
+    def comment(self, n, at, body="retour du propriétaire"):
+        self.comments.setdefault(n, []).append({"created_at": at, "body": body})
+        self.issues[n]["updated_at"] = max(self.issues[n]["updated_at"], at)
+
+    def gh_json(self, path):
+        self.paths.append(path)
+        base = path.split("?")[0]
+        page = int(path.split("page=")[-1]) if "page=" in path else 1
+        if page > 1:
+            return []
+        if base.endswith("/issues"):
+            assert "state=open" in path and "labels=agent:auto" in path
+            return [i for n, i in sorted(self.issues.items()) if n not in self.closed]
+        if base.endswith("/pulls"):
+            return self.prs
+        if base.endswith("/comments"):
+            return self.comments.get(int(base.split("/")[-2]), [])
+        n = int(base.split("/")[-1])
+        if n in self.issues or n in self.closed:
+            return {"state": "closed" if n in self.closed else "open", "title": f"ticket {n}"}
+        return {"state": "open", "title": f"ticket {n}"}
+
+
+class AutoSelectTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.con.execute("DELETE FROM tasks")
+        self.con.commit()
+        self.gh = FakeGitHub()
+        for target, fake in (("gh_json", self.gh.gh_json),
+                             ("gh_comment", lambda n, body: self.gh.posted.append((n, body)) or True)):
+            patcher = mock.patch.object(self.mod, target, fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def local(self, n, status, ended="2026-10-25T06:00:00Z", **fields):
+        self.con.execute("INSERT INTO tasks(issue,title,status,priority,updated_at) VALUES(?,?,?,50,?)",
+                         (n, f"ticket {n}", status, ended))
+        self.con.execute("INSERT INTO sessions(id,issue,started_at,ended_at,outcome) VALUES(?,?,?,?,'COMPLETED')",
+                         (f"s{n}", n, "2026-10-25T05:00:00Z", ended))
+        self.con.commit()
+        if fields:
+            self.mod.update_task(self.con, n, **fields)
+
+    def picked(self):
+        t = self.mod.auto_select(self.con)
+        return t["issue"] if t else None
+
+    def test_new_labelled_ticket_is_armed_ready_and_announced(self):
+        self.gh.issue(734, "agent:auto", "priority:P1")
+        t = self.mod.auto_select(self.con)
+        self.assertEqual((t["issue"], t["status"], t["priority"]), (734, "READY", 10))
+        self.assertIn("priority:P1", t["next_action"])
+        self.assertEqual([n for n, _ in self.gh.posted], [734])
+        self.assertIn("<!-- lqorch", self.gh.posted[0][1])
+        # Armé une seule fois : la file locale le porte désormais, la sélection automatique ne le rejoue pas.
+        self.assertIsNone(self.picked())
+        self.assertEqual(self.mod.next_task(self.con)["issue"], 734)
+
+    def test_priority_p0_to_p3_then_oldest_first(self):
+        for n, prio in ((50, "P3"), (40, "P1"), (30, "P2"), (45, "P0"), (20, "P1")):
+            self.gh.issue(n, "agent:auto", f"priority:{prio}")
+        eligible, _ = self.mod.auto_candidates(self.con)
+        self.assertEqual([e["issue"] for e in eligible], [45, 20, 40, 30, 50])
+
+    def test_missing_or_double_priority_and_missing_auto_label_are_excluded(self):
+        self.gh.issue(1, "agent:auto")
+        self.gh.issue(2, "agent:auto", "priority:P0", "priority:P2")
+        self.gh.issue(3, "priority:P0", "bug")
+        self.gh.issue(4, "agent:auto", "priority:P2", "blocked")
+        eligible, excluded = self.mod.auto_candidates(self.con)
+        self.assertEqual(eligible, [])
+        self.assertEqual({e["issue"] for e in excluded}, {1, 2, 3, 4})
+        self.assertIsNone(self.picked())
+        self.assertEqual(self.gh.posted, [])
+
+    def test_closed_ticket_is_never_selected(self):
+        self.gh.issue(9, "agent:auto", "priority:P0")
+        self.gh.closed.add(9)
+        self.assertIsNone(self.picked())
+
+    def test_waiting_owner_without_new_activity_is_excluded(self):
+        self.gh.issue(54, "agent:auto", "priority:P0", updated="2026-10-25T05:30:00Z")
+        self.local(54, "WAITING_OWNER")
+        self.assertIsNone(self.picked())
+
+    def test_comments_from_sessions_never_rearm(self):
+        self.gh.issue(56, "agent:auto", "priority:P0", updated="2026-10-25T05:00:00Z")
+        self.local(56, "WAITING_OWNER")
+        self.gh.comment(56, "2026-10-25T06:00:01Z", "rapport posté une seconde après la fin de session")
+        self.gh.comment(56, "2026-10-25T09:00:00Z", "commentaire interactif\n<!-- lqorch-session x -->")
+        self.assertIsNone(self.picked())
+        # Activité déjà examinée : le tour suivant ne relit même plus les commentaires.
+        calls = len(self.gh.paths)
+        self.assertIsNone(self.picked())
+        self.assertFalse(any("/comments" in p for p in self.gh.paths[calls:]))
+
+    def test_owner_decision_after_last_session_rearms_once(self):
+        self.gh.issue(829, "agent:auto", "priority:P1", updated="2026-10-25T05:00:00Z")
+        self.local(829, "DONE", next_action="Propriétaire : TC-436")
+        self.gh.comment(829, "2026-10-25T07:48:29Z", "## Décisions propriétaire — D1 …")
+        t = self.mod.auto_select(self.con)
+        self.assertEqual((t["issue"], t["status"]), (829, "READY"))
+        self.assertIn("2026-10-25T07:48:29Z", t["next_action"])
+        self.assertIn("TC-436", t["next_action"])
+        # La session rend son rapport : la décision est prise en compte, plus de reprise en boucle.
+        self.mod.update_task(self.con, 829, status="WAITING_OWNER", auto_seen_at=self.mod.iso())
+        self.assertIsNone(self.picked())
+
+    def test_held_ticket_is_excluded_even_with_owner_activity_until_released(self):
+        self.gh.issue(54, "agent:auto", "priority:P0", updated="2026-10-25T05:00:00Z")
+        self.local(54, "WAITING_OWNER")
+        self.assertEqual(self.cli("auto", "hold", "54", "recette TC-327 E").returncode, 0)
+        self.gh.comment(54, "2099-01-01T00:00:00Z")
+        self.assertIsNone(self.picked())
+        self.assertEqual(self.cli("auto", "release", "54").returncode, 0)
+        self.assertEqual(self.picked(), 54)
+
+    def test_dependencies_from_local_state_and_ticket_body(self):
+        self.gh.issue(10, "agent:auto", "priority:P0", body="Contexte\n- **Dépend de** #900 et #901\n")
+        self.gh.issue(11, "agent:auto", "priority:P1")
+        self.gh.issue(900, "bug")
+        self.gh.closed.add(901)
+        self.assertEqual(self.picked(), 11)
+        self.gh.closed.add(900)
+        self.mod.update_task(self.con, 11, status="WAITING_OWNER", auto_seen_at="2099-01-01T00:00:00Z")
+        self.assertEqual(self.picked(), 10)
+        self.assertEqual(self.mod.task(self.con, 10)["deps"], "900,901")
+
+    def test_dependency_on_waiting_owner_ticket_is_met(self):
+        self.gh.issue(734, "agent:auto", "priority:P1")
+        self.local(421, "WAITING_OWNER")
+        self.con.execute("INSERT INTO tasks(issue,title,status,deps,updated_at) VALUES(734,'t','DONE','421',"
+                         "'2026-10-25T05:00:00Z')")
+        self.con.commit()
+        self.gh.comment(734, "2026-10-25T07:51:13Z")
+        self.assertEqual(self.picked(), 734)
+
+    def test_open_pull_request_on_ticket_branch_is_concurrent_work(self):
+        self.gh.issue(565, "agent:auto", "priority:P2")
+        self.gh.prs = [{"number": 900, "head": {"ref": "feature/565-portails-ux"}}]
+        self.assertIsNone(self.picked())
+        self.gh.prs = [{"number": 901, "head": {"ref": "feature/5650-autre"}}]
+        self.assertEqual(self.picked(), 565)
+
+    def test_failed_ticket_and_local_queue_are_left_to_their_own_rules(self):
+        self.gh.issue(1, "agent:auto", "priority:P0")
+        self.gh.issue(2, "agent:auto", "priority:P0")
+        self.local(1, "FAILED")
+        self.local(2, "RUNNING")
+        self.gh.comment(1, "2099-01-01T00:00:00Z")
+        self.assertIsNone(self.picked())
+
+    def test_disabled_selection_and_unreachable_github(self):
+        self.gh.issue(7, "agent:auto", "priority:P0")
+        self.mod.ctl_set(self.con, "cfg.auto_select", 0)
+        self.assertIsNone(self.picked())
+        self.mod.ctl_set(self.con, "cfg.auto_select", 1)
+        with mock.patch.object(self.mod, "gh_json", lambda path: None):
+            self.assertIsNone(self.picked())
+
+    def test_empty_queue_runs_selected_ticket_then_moves_to_next_without_repeat(self):
+        self.gh.issue(734, "agent:auto", "priority:P1")
+        self.gh.issue(829, "agent:auto", "priority:P1")
+        self.gh.issue(565, "agent:auto", "priority:P2")
+        done = []
+        for _ in range(4):
+            t = self.mod.next_task(self.con) or self.mod.auto_select(self.con)
+            if t is None:
+                break
+            self.assertEqual(self.mod.run_session(self.con, t), "COMPLETED")
+            done.append(t["issue"])
+        self.assertEqual(done, [734, 829, 565])
+        self.assertEqual([n for n, _ in self.gh.posted], [734, 829, 565])
+        # Les rapports des sessions (commentaires pendant la session) ne relancent rien.
+        for n in done:
+            self.gh.comment(n, self.mod.iso())
+        self.assertIsNone(self.mod.next_task(self.con) or self.mod.auto_select(self.con))
+
+    def test_dry_run_view_arms_nothing(self):
+        self.gh.issue(7, "agent:auto", "priority:P0")
+        with mock.patch.object(self.mod, "gh_json", self.gh.gh_json):
+            self.assertEqual(self.mod.cmd_auto(self.con, mock.Mock(action="show", issue=None, reason="")), 0)
+        self.assertIsNone(self.mod.task(self.con, 7))
+        self.assertEqual(self.gh.posted, [])

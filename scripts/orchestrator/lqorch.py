@@ -17,6 +17,8 @@ Commandes :
   lqorch add N [--prio P] [--deps 35,321] [--note "…"]   ajouter / remettre en file
   lqorch set N champ valeur                               corriger un champ d'un ticket
   lqorch log [N]           derniers événements
+  lqorch auto [hold N [raison] | release N]   file automatique agent:auto (#836) : examen à blanc,
+                           retenir un ticket (jamais sélectionné seul) ou le libérer
   lqorch sessions          dernières sessions
   lqorch run               boucle du superviseur (service systemd)
 
@@ -30,6 +32,7 @@ import hashlib
 import json
 import os
 import queue
+import re
 import threading
 import signal
 import sqlite3
@@ -84,6 +87,11 @@ SETTINGS = {
     "session_max_seconds": ("LQ_SESSION_MAX", 4 * 3600, 600, 12 * 3600, "Durée maximale d'une session."),
     "session_idle_seconds": ("LQ_SESSION_IDLE", 75 * 60, 300, 4 * 3600,
                              "Session coupée après ce délai sans aucune sortie."),
+    "auto_select": ("LQ_AUTO_SELECT", 1, 0, 1,
+                    "File vide : choisir seul le prochain ticket ouvert labellisé agent:auto, par priority:P0→P3 "
+                    "(#836). 0 = désactivé."),
+    "auto_comment": ("LQ_AUTO_COMMENT", 1, 0, 1,
+                     "Signaler par un commentaire GitHub chaque prise en charge automatique. 0 = journal local seul."),
 }
 
 STATUSES = ("READY", "RUNNING", "TESTING", "BLOCKED", "WAITING_OWNER", "DONE", "FAILED")
@@ -122,6 +130,13 @@ def db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, issue INTEGER, kind TEXT, message TEXT);
     CREATE TABLE IF NOT EXISTS control(key TEXT PRIMARY KEY, value TEXT);
     """)
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(tasks)")}
+    # #836 : colonnes additives ; une base plus ancienne est complétée sans perte.
+    if "auto_hold" not in cols:
+        con.execute("ALTER TABLE tasks ADD COLUMN auto_hold INTEGER NOT NULL DEFAULT 0")
+    if "auto_seen_at" not in cols:
+        con.execute("ALTER TABLE tasks ADD COLUMN auto_seen_at TEXT DEFAULT ''")
+    con.commit()
     return con
 
 
@@ -245,6 +260,207 @@ def next_task(con):
             continue
         return task(con, t["issue"])
     return None
+
+
+# ---------------------------------------------------------------- file automatique (#836)
+#
+# Quand la file locale est vide, le superviseur cherche lui-même un ticket ouvert labellisé
+# `agent:auto`. Le label rend un ticket ÉLIGIBLE ; il n'autorise rien de plus (ni déploiement, ni
+# appel payant, ni opération réelle) : les restrictions du ticket et du prompt de session restent
+# entières. Un ticket déjà traité ici (DONE / WAITING_OWNER / BLOCKED) n'est repris que si une
+# activité GitHub nouvelle, extérieure aux sessions (décision ou retour du propriétaire), est
+# apparue depuis sa dernière prise en compte : jamais en boucle sur son propre rapport.
+
+AUTO_LABEL = "agent:auto"
+PRIORITY_LABELS = {"priority:P0": 0, "priority:P1": 1, "priority:P2": 2, "priority:P3": 3}
+EXCLUDE_LABELS = {"blocked", "duplicate", "invalid", "wontfix", "in-progress"}
+# Les sessions et le superviseur terminent leurs commentaires GitHub par ce marqueur.
+SESSION_MARKER = "<!-- lqorch"
+# Un commentaire posté pendant une session (ou juste après) vient de la session.
+SESSION_MARGIN_SECONDS = 300
+DEPS_LINE = re.compile(r"^[\s>*_-]*(?:\*\*)?\s*(?:dépend(?:ances?)?(?:\s+de)?|depends\s+on|bloqué\s+par"
+                       r"|blocked\s+by|prérequis)\b.*$", re.IGNORECASE | re.MULTILINE)
+
+
+def gh_list(path):
+    """Toutes les pages d'une liste GitHub, ou None si une page est illisible."""
+    items, page = [], 1
+    sep = "&" if "?" in path else "?"
+    while True:
+        data = gh_json(f"{path}{sep}per_page=100&page={page}")
+        if not isinstance(data, list):
+            return None
+        items += data
+        if len(data) < 100 or page >= 10:
+            return items
+        page += 1
+
+
+def parse_iso(ts):
+    return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def body_deps(body):
+    """Tickets cités sur une ligne « Dépend de / Bloqué par / Prérequis / Depends on » du ticket."""
+    found = []
+    for line in DEPS_LINE.findall(body or ""):
+        found += [n for n in re.findall(r"#(\d+)", line) if n not in found]
+    return found
+
+
+def merged_deps(local, body):
+    out = [d.strip().lstrip("#") for d in (local or "").split(",") if d.strip()]
+    return ",".join(out + [n for n in body_deps(body) if n not in out])
+
+
+def session_windows(con):
+    margin = SESSION_MARGIN_SECONDS
+    return [(s["started_at"], iso(datetime.fromtimestamp(parse_iso(s["ended_at"] or iso()).timestamp() + margin,
+                                                         timezone.utc)))
+            for s in con.execute("SELECT started_at, ended_at FROM sessions WHERE started_at IS NOT NULL")]
+
+
+def seen_at(con, t):
+    """Jusqu'où l'activité GitHub du ticket a déjà été prise en compte."""
+    if t["auto_seen_at"]:
+        return t["auto_seen_at"]
+    last = con.execute("SELECT MAX(ended_at) m FROM sessions WHERE issue=?", (t["issue"],)).fetchone()["m"]
+    return last or t["updated_at"] or ""
+
+
+def external_activity(issue, since, windows):
+    """Heure du dernier commentaire postérieur à `since` qui ne vient ni d'une session ni du
+    superviseur ; "" s'il n'y en a pas ; None si GitHub ne répond pas."""
+    comments = gh_list(f"repos/{REPO}/issues/{issue}/comments" + (f"?since={since}" if since else ""))
+    if comments is None:
+        return None
+    latest = ""
+    for c in comments:
+        ts = c.get("created_at") or ""
+        if ts <= since or SESSION_MARKER in (c.get("body") or ""):
+            continue
+        if any(start <= ts <= end for start, end in windows):
+            continue
+        latest = max(latest, ts)
+    return latest
+
+
+def auto_candidates(con, dry=False):
+    """(admissibles triés P0→P3 puis ancienneté, écartés avec leur motif) ; (None, motif) si GitHub
+    est injoignable. Lecture seule, à part la mémorisation des activités déjà examinées (sauf `dry`)."""
+    issues = gh_list(f"repos/{REPO}/issues?state=open&labels={AUTO_LABEL}")
+    if issues is None:
+        return None, [dict(issue=None, title="", reason="GitHub injoignable : aucune sélection automatique.")]
+    prs = gh_list(f"repos/{REPO}/pulls?state=open")
+    windows = session_windows(con)
+    eligible, excluded = [], []
+    for it in issues:
+        if "pull_request" in it:
+            continue
+        n, title = it["number"], it.get("title", "")
+        labels = {lab.get("name") for lab in it.get("labels", [])}
+
+        def skip(reason):
+            excluded.append(dict(issue=n, title=title, reason=reason))
+
+        if AUTO_LABEL not in labels:
+            skip(f"sans label {AUTO_LABEL}")
+            continue
+
+        ranks = sorted(PRIORITY_LABELS[lab] for lab in labels if lab in PRIORITY_LABELS)
+        if len(ranks) != 1:
+            skip("aucun label priority:P0…P3" if not ranks else "plusieurs labels priority:P*")
+            continue
+        if labels & EXCLUDE_LABELS:
+            skip("label " + ", ".join(sorted(labels & EXCLUDE_LABELS)))
+            continue
+        t = task(con, n)
+        rearm = ""
+        if t:
+            if t["status"] in ("READY", "RUNNING", "TESTING"):
+                skip(f"déjà dans la file locale ({t['status']}{', ' + t['blockers'] if t['blockers'] else ''})")
+                continue
+            if t["auto_hold"]:
+                skip(f"{t['status']}, retenu par le propriétaire (lqorch auto release {n} pour le libérer)")
+                continue
+            if t["status"] == "FAILED":
+                skip("FAILED : relance manuelle seulement (lqorch add)")
+                continue
+            seen = seen_at(con, t)
+            if (it.get("updated_at") or "") <= seen:
+                skip(f"{t['status']} : aucune activité GitHub depuis {seen}")
+                continue
+            activity = external_activity(n, seen, windows)
+            if activity is None:
+                skip("commentaires GitHub illisibles")
+                continue
+            if not activity:
+                # Tout ce qui a bougé vient des sessions : inutile de le relire au prochain tour.
+                if not dry:
+                    update_task(con, n, auto_seen_at=it.get("updated_at") or iso())
+                skip(f"{t['status']} : rien de nouveau hors sessions depuis {seen}")
+                continue
+            rearm = activity
+        concurrent = [p for p in prs or [] if re.search(rf"(^|/){n}-", (p.get("head") or {}).get("ref", ""))]
+        if concurrent:
+            skip(f"PR ouverte #{concurrent[0]['number']} ({concurrent[0]['head']['ref']}) : travail concurrent")
+            continue
+        deps = merged_deps(t["deps"] if t else "", it.get("body"))
+        missing = deps_satisfied(con, deps)
+        if missing:
+            skip(f"dépendances ouvertes : {', '.join('#' + str(m) for m in missing)}")
+            continue
+        eligible.append(dict(issue=n, title=title, rank=ranks[0], deps=deps, rearm=rearm,
+                             status=t["status"] if t else ""))
+    eligible.sort(key=lambda c: (c["rank"], c["issue"]))
+    return eligible, excluded
+
+
+def gh_comment(issue, body):
+    try:
+        out = subprocess.run([GH, "issue", "comment", str(issue), "--repo", REPO, "--body", body],
+                             capture_output=True, text=True, timeout=60)
+        return out.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def auto_select(con):
+    """File vide : arme le ticket agent:auto le plus prioritaire et le rend, ou None."""
+    if not setting(con, "auto_select")[0]:
+        return None
+    eligible, excluded = auto_candidates(con)
+    ctl_set(con, "auto_last", json.dumps(dict(at=iso(), eligible=eligible or [], excluded=excluded),
+                                         ensure_ascii=False))
+    if not eligible:
+        return None
+    c = eligible[0]
+    n = c["issue"]
+    why = (f"Sélection automatique (#836) : agent:auto, priority:P{c['rank']}, "
+           + (f"nouvelle activité du propriétaire sur GitHub le {c['rearm']} (ticket {c['status']} jusque-là)"
+              if c["rearm"] else "ticket nouveau pour le superviseur"))
+    next_action = (why + ". Relire d'abord les commentaires GitHub récents : ils priment sur l'état enregistré. "
+                   "Le label n'autorise ni déploiement, ni appel payant, ni opération réelle non prévus par le ticket.")
+    t = task(con, n)
+    if t:
+        update_task(con, n, status="READY", attempts=0, not_before="", priority=c["rank"] * 10, deps=c["deps"],
+                    blockers="", auto_seen_at=iso(),
+                    next_action=next_action + (f" (Précédente : {t['next_action'][:300]})" if t["next_action"] else ""))
+    else:
+        con.execute("""INSERT INTO tasks(issue,title,priority,deps,note,next_action,auto_seen_at,updated_at)
+                       VALUES(?,?,?,?,?,?,?,?)""", (n, c["title"], c["rank"] * 10, c["deps"], why, next_action,
+                                                    iso(), iso()))
+        con.commit()
+    event(con, n, "auto_select", why)
+    if setting(con, "auto_comment")[0]:
+        others = ", ".join(f"#{e['issue']} (P{e['rank']})" for e in eligible[1:6]) or "aucun"
+        ok = gh_comment(n, f"🤖 **lqorch — prise en charge automatique** : {why}.\n\n"
+                           f"Une session démarre sur ce ticket. Les restrictions écrites ici restent applicables ; "
+                           f"le label `agent:auto` n'autorise aucun déploiement, appel payant ou opération réelle "
+                           f"qu'elles ne prévoient pas. Suivants admissibles : {others}.\n\n<!-- lqorch:auto -->")
+        if not ok:
+            event(con, n, "auto_select", "Commentaire GitHub de prise en charge non publié (gh en échec).")
+    return task(con, n)
 
 
 # ---------------------------------------------------------------- quota
@@ -458,6 +674,8 @@ def run_session(con, t):
                 (iso(), outcome, proc.returncode, (report.get("summary") or detail)[:2000], cost, session_id))
     con.commit()
     apply_outcome(con, t["issue"], outcome, detail, reset, report)
+    # L'activité GitHub de la session (rapport, commentaires) ne doit pas réarmer le ticket (#836).
+    update_task(con, t["issue"], auto_seen_at=iso())
     return outcome
 
 
@@ -621,6 +839,8 @@ def supervise():
             continue
         t = next_task(con)
         if t is None:
+            t = auto_select(con)
+        if t is None:
             last = ctl_get(con, "last_triage")
             if not last or time.time() - float(last) > TRIAGE_EVERY_SECONDS:
                 ctl_set(con, "last_triage", time.time())
@@ -701,9 +921,67 @@ def cmd_status(con, _):
               "le quota restant réel n'est pas connu.")
     else:
         print("Fournisseur : aucune donnée de quota observée (rien n'est déduit de l'interface claude.ai).")
+    print(auto_summary(con))
     counts = con.execute("SELECT status, COUNT(*) c FROM tasks GROUP BY status").fetchall()
     print("Tickets : " + ", ".join(f"{r['status']} {r['c']}" for r in counts))
     print("Réglages : lqorch config")
+
+
+def auto_summary(con):
+    if not setting(con, "auto_select")[0]:
+        return "File automatique agent:auto : désactivée (lqorch config set auto_select 1)."
+    try:
+        last = json.loads(ctl_get(con, "auto_last") or "{}")
+    except json.JSONDecodeError:
+        last = {}
+    if not last:
+        return "File automatique agent:auto : activée, pas encore d'examen (lqorch auto pour un examen à blanc)."
+    elig = ", ".join(f"#{e['issue']} P{e['rank']}" for e in last.get("eligible", [])) or "aucun admissible"
+    return (f"File automatique agent:auto : dernier examen {local(last['at'])} — {elig} ; "
+            f"{len(last.get('excluded', []))} écarté(s) (détail : lqorch auto).")
+
+
+def cmd_auto(con, args):
+    if args.action in ("hold", "release"):
+        if args.issue is None:
+            print("usage : lqorch auto hold N [raison] | lqorch auto release N")
+            return 2
+        if not task(con, args.issue):
+            state, title = issue_state(args.issue)
+            con.execute("INSERT INTO tasks(issue,title,status,priority,updated_at) VALUES(?,?,'WAITING_OWNER',50,?)",
+                        (args.issue, title, iso()))
+            con.commit()
+        hold = args.action == "hold"
+        fields = dict(auto_hold=1 if hold else 0, auto_seen_at=iso())
+        if hold and args.reason:
+            fields["blockers"] = args.reason
+        update_task(con, args.issue, **fields)
+        event(con, args.issue, "control", f"auto {args.action}" + (f" : {args.reason}" if args.reason else ""))
+        print(f"#{args.issue} : " + ("retenu, jamais sélectionné automatiquement." if hold else
+                                    "libéré ; sélectionnable à la prochaine activité GitHub du propriétaire."))
+        return 0
+    cur = con.execute("SELECT issue FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1").fetchone()
+    local_ready = [r["issue"] for r in con.execute(
+        "SELECT issue FROM tasks WHERE status IN ('READY','RUNNING','TESTING') ORDER BY priority, issue")]
+    print("File automatique (#836) — examen à blanc, rien n'est armé ni commenté.")
+    print(f"  sélection automatique : {'activée' if setting(con, 'auto_select')[0] else 'DÉSACTIVÉE'}"
+          f" ; commentaire de prise en charge : {'oui' if setting(con, 'auto_comment')[0] else 'non'}")
+    print(f"  en cours : {'#' + str(cur['issue']) if cur else 'aucune session'}")
+    print(f"  file locale (passe avant la file automatique) : {', '.join('#' + str(i) for i in local_ready) or 'vide'}")
+    eligible, excluded = auto_candidates(con, dry=True)
+    if eligible is None:
+        print("  " + excluded[0]["reason"])
+        return 1
+    print("Admissibles, dans l'ordre où ils seront pris :")
+    for i, e in enumerate(eligible, 1):
+        print(f"  {i}. #{e['issue']} P{e['rank']} {e['title'][:70]}"
+              + (f" — repris : activité propriétaire {e['rearm']}" if e["rearm"] else " — nouveau"))
+    if not eligible:
+        print("  aucun")
+    print("Écartés :")
+    for e in sorted(excluded, key=lambda x: x["issue"] or 0):
+        print(f"  #{e['issue']} {e['title'][:50]} — {e['reason']}")
+    return 0
 
 
 def cmd_queue(con, _):
@@ -766,7 +1044,8 @@ def cmd_skip(con, args):
     if not task(con, args.issue):
         print("Ticket absent de la file.")
         return
-    update_task(con, args.issue, status="BLOCKED", blockers=args.reason or "Mis de côté par le propriétaire (skip).")
+    update_task(con, args.issue, status="BLOCKED", auto_hold=1, auto_seen_at=iso(),
+                blockers=args.reason or "Mis de côté par le propriétaire (skip).")
     event(con, args.issue, "control", "skip")
     print(f"#{args.issue} → BLOCKED")
 
@@ -775,6 +1054,7 @@ def cmd_add(con, args):
     t = task(con, args.issue)
     if t:
         update_task(con, args.issue, status="READY", attempts=0, not_before="", priority=args.prio,
+                    auto_hold=0, auto_seen_at=iso(),
                     deps=args.deps if args.deps is not None else t["deps"],
                     note=args.note if args.note is not None else t["note"])
     else:
@@ -792,7 +1072,11 @@ def cmd_set(con, args):
     if args.field not in allowed:
         print("Champ inconnu.")
         return
-    update_task(con, args.issue, **{args.field: args.value})
+    fields = {args.field: args.value}
+    if args.field == "status":
+        # Un statut posé à la main vaut prise en compte de l'activité GitHub jusqu'ici (#836).
+        fields["auto_seen_at"] = iso()
+    update_task(con, args.issue, **fields)
     event(con, args.issue, "control", f"set {args.field}")
     print("ok")
 
@@ -832,6 +1116,10 @@ def main():
     s.add_argument("action", nargs="?", choices=("show", "set", "unset"), default="show")
     s.add_argument("name", nargs="?")
     s.add_argument("value", nargs="?")
+    s = sub.add_parser("auto")
+    s.add_argument("action", nargs="?", choices=("show", "hold", "release"), default="show")
+    s.add_argument("issue", type=int, nargs="?")
+    s.add_argument("reason", nargs="?", default="")
     s = sub.add_parser("log")
     s.add_argument("issue", type=int, nargs="?")
     args = p.parse_args()
@@ -842,7 +1130,7 @@ def main():
         p.error("usage : lqorch config [show | set NOM VALEUR | unset NOM]")
     code = {"status": cmd_status, "queue": cmd_queue, "pause": cmd_mode, "resume": cmd_mode, "stop": cmd_mode,
             "skip": cmd_skip, "add": cmd_add, "set": cmd_set, "log": cmd_log, "sessions": cmd_sessions,
-            "config": cmd_config, "reload": cmd_reload}[args.cmd](con, args)
+            "config": cmd_config, "reload": cmd_reload, "auto": cmd_auto}[args.cmd](con, args)
     sys.exit(code or 0)
 
 

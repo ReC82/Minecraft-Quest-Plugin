@@ -57,6 +57,7 @@ public final class PortalService implements PluginService {
     private final PortalCooldownRepository cooldownRepository;
     private final Logger logger;
     private volatile RequiredLevelRule requiredLevelRule = RequiredLevelRule.VANILLA;
+    private volatile PortalDestinationGuard destinationGuard = PortalDestinationGuard.ALLOW_ALL;
 
     private final Map<UUID, ChannelingSession> channeling = new ConcurrentHashMap<>();
     private final Map<UUID, String> currentPortalByPlayer = new ConcurrentHashMap<>();
@@ -77,6 +78,14 @@ public final class PortalService implements PluginService {
     /** Issue #532 : règle partagée de {@code required-level} (niveau RPG ou vanilla selon la config). */
     public void setRequiredLevelRule(RequiredLevelRule requiredLevelRule) {
         this.requiredLevelRule = Objects.requireNonNull(requiredLevelRule, "requiredLevelRule");
+    }
+
+    /**
+     * Issue #829 : garde d'entrée du monde de destination (accès au monde des claims), consulté
+     * avant tout débit et avant la téléportation — même règle que les portails simples.
+     */
+    public void setDestinationGuard(PortalDestinationGuard destinationGuard) {
+        this.destinationGuard = Objects.requireNonNull(destinationGuard, "destinationGuard");
     }
 
     @Override
@@ -356,8 +365,15 @@ public final class PortalService implements PluginService {
             return;
         }
 
+        Location target = safeLocation.get();
+        // Issue #829 : contrôle d'accès au monde AVANT le débit et le déplacement ; le filet
+        // d'arrivée du monde des claims n'est plus le seul rempart sur ce chemin.
+        destinationGuard.checkEntry(player, world.getName(), portal.id(), () -> chargeThenTeleport(player, portal, target));
+    }
+
+    private void chargeThenTeleport(Player player, PortalDefinition portal, Location safeLocation) {
         if (portal.cost() == null) {
-            finishTeleport(player, portal, safeLocation.get());
+            finishTeleport(player, portal, safeLocation);
             return;
         }
         economyService.debit(player.getUniqueId(), portal.cost(), TransactionType.PORTAL_USE, portal.id())
@@ -372,7 +388,7 @@ public final class PortalService implements PluginService {
                         player.sendMessage(MM.deserialize("<red>Fonds insuffisants.</red>"));
                         return;
                     }
-                    finishTeleport(player, portal, safeLocation.get());
+                    finishTeleport(player, portal, safeLocation);
                 }))
                 .exceptionally(error -> {
                     logger.error("Échec du débit lors d'une téléportation par portail pour {}", player.getUniqueId(), error);

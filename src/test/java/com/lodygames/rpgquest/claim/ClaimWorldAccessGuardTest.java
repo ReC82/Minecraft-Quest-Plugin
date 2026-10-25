@@ -544,4 +544,76 @@ class ClaimWorldAccessGuardTest {
         assertTrue(drainMessages(player).isEmpty());
         assertEquals(0, teleportNowCalls.get());
     }
+
+    // ---- Issue #829 : portails historiques (PortalService) --------------------------------------
+
+    @Test
+    void aHistoricPortalToTheClaimsWorldRefusesANonEligiblePlayerBeforeMovingThem() throws Exception {
+        PlayerMock player = addPlayer();
+        AtomicInteger allowed = new AtomicInteger();
+
+        guard.checkEntry(player, "claims", "old_gate", allowed::incrementAndGet);
+
+        awaitRefusal(player);
+        server.getScheduler().performTicks(5);
+        assertEquals(0, allowed.get(), "aucune téléportation ni débit pour un joueur non éligible");
+    }
+
+    @Test
+    void aHistoricPortalLetsAnUnlockedPlayerThroughExactlyOnceWithAReturnStone() throws Exception {
+        PlayerMock player = addPlayer();
+        grantTierOne(player);
+        AtomicInteger allowed = new AtomicInteger();
+
+        guard.checkEntry(player, "claims", "old_gate", allowed::incrementAndGet);
+
+        pumpUntil(() -> allowed.get() == 1, "passage autorisé après lecture de CLAIM_TIER_1");
+        server.getScheduler().performTicks(5);
+        assertEquals(1, allowed.get(), "jamais deux téléportations");
+        assertTrue(hasReturnStone(player), "Pierre de retour garantie avant d'entrer (#22)");
+        assertEquals(0, teleportNowCalls.get(), "le portail simple n'est pas relancé pour un portail historique");
+    }
+
+    @Test
+    void aHistoricPortalLetsAClaimOwnerAndAnExplicitBypassThroughImmediately() throws Exception {
+        PlayerMock owner = addPlayer();
+        grantTierOne(owner);
+        World other = server.addSimpleWorld("world_for_claim");
+        assertEquals(ClaimService.CreateOutcome.CREATED, claimService.create(owner, "main_" + owner.getUniqueId(),
+                        new Location(other, 0, 60, 0), new Location(other, 4, 63, 4))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        server.getScheduler().performTicks(2);
+        PlayerMock admin = addPlayer();
+        admin.setOp(true);
+        armBypass(admin);
+        AtomicInteger allowed = new AtomicInteger();
+
+        guard.checkEntry(owner, "claims", "old_gate", allowed::incrementAndGet);
+        guard.checkEntry(admin, "claims", "old_gate", allowed::incrementAndGet);
+
+        assertEquals(2, allowed.get(), "propriétaire et bypass explicite passent sans attendre la base");
+    }
+
+    @Test
+    void anOpWithoutTheBypassModeIsRefusedByAHistoricPortalToo() throws Exception {
+        PlayerMock op = addPlayer();
+        op.setOp(true);
+        AtomicInteger allowed = new AtomicInteger();
+
+        guard.checkEntry(op, "claims", "old_gate", allowed::incrementAndGet);
+
+        awaitRefusal(op);
+        assertEquals(0, allowed.get(), "être OP ne suffit pas (#35/#321)");
+    }
+
+    @Test
+    void historicPortalsToAnotherWorldAreNeverAffected() throws Exception {
+        PlayerMock player = addPlayer();
+        AtomicInteger allowed = new AtomicInteger();
+
+        guard.checkEntry(player, "world_hub", "village_gate", allowed::incrementAndGet);
+
+        assertEquals(1, allowed.get());
+        assertFalse(hasReturnStone(player), "aucune Pierre de retour hors du monde des claims");
+    }
 }

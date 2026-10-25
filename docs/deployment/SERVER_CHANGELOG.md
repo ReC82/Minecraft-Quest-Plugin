@@ -49,6 +49,38 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - Plugin : accès Claims durci — portails historiques, filet d'arrivée borné, /tp interne (#829)
+
+### Changement
+
+JAR plugin : les portails historiques (`portals/`, `PortalService`) appliquent le contrôle d'accès au
+monde des claims avant tout débit et toute téléportation ; le filet d'arrivée retente (5 s puis 15 s) une
+lecture en base en échec ou un renvoi au Hub impossible, puis renvoie au Hub par précaution ou alerte les
+administrateurs en ligne, sans boucle ; un `/tp` qui reste dans le monde des claims rejoue le contrôle
+(aucun droit accordé sur le claim d'autrui). `/rpgadmin world tp claims` et `/claim admin tp` inchangés.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redémarrage. Aucune configuration, aucune migration, aucune donnée modifiées.
+
+### Sauvegarde préalable
+
+JAR + `data.db` + configuration par `scripts/deploy-verygames.sh`.
+
+### Déploiement
+
+Voir le rapport de session #829 (`docs/claude-reports/`).
+
+### Validation
+
+Tests automatisés `ClaimWorldAccessGuardTest`, `ClaimWorldSafetyListenerTest`, `PortalServiceTest` ; en jeu :
+PENDING MANUAL VALIDATION (TC-436). Console : `[claims-access]` / `[claims-safety]`.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` vers la sauvegarde datée, puis redémarrage (l'ancien JAR ne contrôle plus
+les portails historiques ni les `/tp` internes, et laisse sur place en cas d'échec).
+
 ## 2026-10-25 - Plugin : /market sell refuse les objets liés au joueur (#852)
 
 ### Changement

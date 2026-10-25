@@ -857,6 +857,8 @@ public final class RPGQuestBootstrap {
         ClaimWorldAccessGuard claimWorldAccessGuard = new ClaimWorldAccessGuard(
                 plugin, claimService, claimReturnService, () -> configService.current().claims(),
                 worldPortalTeleportListener, adminBypassMode);
+        // Issue #829 : les portails historiques appliquent la même règle avant de déplacer le joueur.
+        portalService.setDestinationGuard(claimWorldAccessGuard);
         claimWorldAccessGuard.setGuideName(() -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(
                 configService.current().hub().guideNpcId(), questProgressEngine.npcNameResolver()));
         // Avertissement de danger avant l'entrée dans le Wild (issue #161, qui couvre la partie B de

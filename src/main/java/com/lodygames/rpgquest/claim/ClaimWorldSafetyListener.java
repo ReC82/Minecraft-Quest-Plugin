@@ -5,10 +5,18 @@ import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.permission.AdminBypassMode;
 import com.lodygames.rpgquest.permission.RpgPermissions;
+import java.util.EnumSet;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -17,6 +25,8 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 
 /**
  * Filet de sécurité du monde des claims (issues #21/#22/#23) : garantit qu'<strong>aucun joueur ne
@@ -41,12 +51,34 @@ import org.bukkit.event.player.PlayerJoinEvent;
  *       sans aucune sortie (issue #22, blocage signalé le 05/10).</li>
  * </ul>
  *
+ * <p><strong>Défaillances bornées (issue #829).</strong> Si la lecture de {@code CLAIM_TIER_1}
+ * échoue, elle est retentée {@link #DEFAULT_RETRY_DELAYS_TICKS} fois (5 s puis 15 s) ; si elle
+ * échoue encore, le joueur est ramené au Hub <em>par précaution</em> (même choix que le portail,
+ * qui refuse l'entrée quand la base ne répond pas) — jamais laissé sur place sans vérification. Si
+ * aucun point de retour au Hub ne se résout (ou si la téléportation est refusée), le renvoi est
+ * retenté avec les mêmes délais, puis l'échec est journalisé en {@code ERROR} et signalé aux
+ * administrateurs en ligne. Aucune boucle : chaque arrivée lance une seule chaîne d'essais, annulée
+ * dès que le joueur quitte le monde, se déconnecte ou arrive à nouveau.</p>
+ *
+ * <p><strong>Téléportations internes (issue #829).</strong> Un {@code /tp} (commande, plugin,
+ * spectateur) qui reste dans le monde des claims ne change pas de monde : il repasse donc ici par
+ * le même contrôle d'éligibilité. Être présent dans le monde n'accorde <strong>aucun</strong> droit
+ * sur les claims d'autrui — la protection des blocs reste celle de {@link ClaimProtectionListener}
+ * ({@code Claim#isTrusted}) ; l'arrivée dans un claim dont le joueur n'est pas membre est seulement
+ * tracée.</p>
+ *
  * <p>Même patron que {@code player.StarterKitListener} (don unique d'un objet de secours à la
  * connexion) et {@link ClaimsWorldRulesListener} (règles attachées au monde des claims).</p>
  */
 public final class ClaimWorldSafetyListener implements Listener {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
+    /** Issue #829 : délais (ticks) des nouveaux essais après un échec — 5 s puis 15 s, puis on renonce. */
+    static final long[] DEFAULT_RETRY_DELAYS_TICKS = {100L, 300L};
+    /** Téléportations internes au monde des claims qui repassent par le contrôle (issue #829). */
+    private static final Set<PlayerTeleportEvent.TeleportCause> CHECKED_INTERNAL_CAUSES = EnumSet.of(
+            PlayerTeleportEvent.TeleportCause.COMMAND, PlayerTeleportEvent.TeleportCause.PLUGIN,
+            PlayerTeleportEvent.TeleportCause.SPECTATE, PlayerTeleportEvent.TeleportCause.UNKNOWN);
 
     private final RPGQuestPlugin plugin;
     private final ClaimService claimService;
@@ -54,19 +86,36 @@ public final class ClaimWorldSafetyListener implements Listener {
     private final Supplier<ClaimConfig> config;
     /** Cible de repli au Hub (spawn du village configuré, sinon spawn du monde Hub) — jamais une position figée. */
     private final Supplier<Optional<Location>> hubReturnTarget;
+    private final Function<UUID, CompletableFuture<Boolean>> tierOneLookup;
+    private final long[] retryDelaysTicks;
 
     /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
     private final AdminBypassMode bypass;
 
+    /** Issue #829 : jeton de la dernière arrivée par joueur — une chaîne d'essais périmée s'arrête d'elle-même. */
+    private final Map<UUID, Long> arrivalTokens = new ConcurrentHashMap<>();
+    private final AtomicLong tokenSequence = new AtomicLong();
+
     public ClaimWorldSafetyListener(RPGQuestPlugin plugin, ClaimService claimService,
                                      ClaimReturnService returnService, Supplier<ClaimConfig> config,
                                      Supplier<Optional<Location>> hubReturnTarget, AdminBypassMode bypass) {
+        this(plugin, claimService, returnService, config, hubReturnTarget, bypass,
+                claimService::hasClaimTierOne, DEFAULT_RETRY_DELAYS_TICKS);
+    }
+
+    /** Variante de test : lecture d'éligibilité et délais de nouvel essai injectables. */
+    ClaimWorldSafetyListener(RPGQuestPlugin plugin, ClaimService claimService,
+                             ClaimReturnService returnService, Supplier<ClaimConfig> config,
+                             Supplier<Optional<Location>> hubReturnTarget, AdminBypassMode bypass,
+                             Function<UUID, CompletableFuture<Boolean>> tierOneLookup, long[] retryDelaysTicks) {
         this.plugin = plugin;
         this.claimService = claimService;
         this.returnService = returnService;
         this.config = config;
         this.hubReturnTarget = hubReturnTarget;
         this.bypass = bypass;
+        this.tierOneLookup = tierOneLookup;
+        this.retryDelaysTicks = retryDelaysTicks.clone();
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -85,8 +134,48 @@ public final class ClaimWorldSafetyListener implements Listener {
         }
     }
 
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onQuit(PlayerQuitEvent event) {
+        arrivalTokens.remove(event.getPlayer().getUniqueId());
+    }
+
+    /**
+     * Issue #829 : un {@code /tp} qui reste dans le monde des claims ne déclenche aucun
+     * {@link PlayerChangedWorldEvent} — on rejoue donc le contrôle d'arrivée au tick suivant (une
+     * fois la position appliquée). Les déplacements de gameplay (perle, fruit de chorus, lit…) ne
+     * sont pas concernés.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTeleportWithinClaimsWorld(PlayerTeleportEvent event) {
+        Location from = event.getFrom();
+        Location to = event.getTo();
+        if (to == null || from.getWorld() == null || !from.getWorld().equals(to.getWorld())
+                || !isClaimsWorld(to.getWorld()) || !CHECKED_INTERNAL_CAUSES.contains(event.getCause())) {
+            return;
+        }
+        Player player = event.getPlayer();
+        traceForeignClaimArrival(player, to, event.getCause());
+        runOnMainThread(() -> {
+            if (player.isOnline() && isClaimsWorld(player.getWorld())) {
+                handleArrival(player);
+            }
+        });
+    }
+
+    /** Trace seulement : la présence n'accorde aucun droit, {@link ClaimProtectionListener} protège les blocs. */
+    private void traceForeignClaimArrival(Player player, Location to, PlayerTeleportEvent.TeleportCause cause) {
+        claimService.claimAt(to.getWorld().getName(), to.getBlockX(), to.getBlockY(), to.getBlockZ())
+                .filter(claim -> !claim.isTrusted(player.getUniqueId()))
+                .ifPresent(claim -> plugin.getSLF4JLogger().info(
+                        "[claims-safety] {} téléporté ({}) dans le claim « {} » de {} sans en être membre : "
+                                + "présence seulement, aucun droit de construction (protection du claim inchangée).",
+                        player.getName(), cause, claim.id(), claim.owner()));
+    }
+
     private void handleArrival(Player player) {
         UUID playerId = player.getUniqueId();
+        long token = tokenSequence.incrementAndGet();
+        arrivalTokens.put(playerId, token);
         // Issue #200 : même règle que le garde d'accès — nœud dédié OU ombrelle historique.
         // Le correctif #22 est préservé : un porteur du bypass reçoit malgré tout sa Pierre.
         if (bypass.allows(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
@@ -113,13 +202,29 @@ public final class ClaimWorldSafetyListener implements Listener {
             ensureReturnStone(player);
             return;
         }
-        claimService.hasClaimTierOne(playerId).whenComplete((unlocked, error) -> runOnMainThread(() -> {
-            if (!player.isOnline() || !isClaimsWorld(player.getWorld())) {
+        verifyEligibility(player, token, 0);
+    }
+
+    /** Lecture de {@code CLAIM_TIER_1}, retentée au plus {@code retryDelaysTicks.length} fois (issue #829). */
+    private void verifyEligibility(Player player, long token, int attempt) {
+        UUID playerId = player.getUniqueId();
+        tierOneLookup.apply(playerId).whenComplete((unlocked, error) -> runOnMainThread(() -> {
+            if (!isCurrent(player, token)) {
                 return;
             }
             if (error != null) {
-                plugin.getSLF4JLogger().error("Filet de sécurité du monde des claims : contrôle impossible pour {}", playerId, error);
-                ensureReturnStone(player); // au pire, on garantit le moyen de repartir.
+                ensureReturnStone(player); // au pire, on garantit le moyen de repartir pendant l'attente.
+                if (attempt < retryDelaysTicks.length) {
+                    plugin.getSLF4JLogger().warn(
+                            "[claims-safety] contrôle d'éligibilité impossible pour {} (essai {}/{}) — nouvel essai dans {} ticks.",
+                            player.getName(), attempt + 1, retryDelaysTicks.length + 1, retryDelaysTicks[attempt], error);
+                    later(retryDelaysTicks[attempt], player, token, () -> verifyEligibility(player, token, attempt + 1));
+                    return;
+                }
+                plugin.getSLF4JLogger().error(
+                        "[claims-safety] contrôle d'éligibilité impossible pour {} après {} essais : renvoi au Hub par "
+                                + "précaution (accès non vérifié).", player.getName(), attempt + 1, error);
+                sendBackToHub(player, token, 0, false);
                 return;
             }
             if (Boolean.TRUE.equals(unlocked) || claimService.mainClaimOf(playerId).isPresent()) {
@@ -131,7 +236,7 @@ public final class ClaimWorldSafetyListener implements Listener {
                 plugin.getSLF4JLogger().info(
                         "[claims-safety] {} NON éligible dans « {} » : renvoi au Hub.",
                         player.getName(), player.getWorld().getName());
-                sendBackToHub(player);
+                sendBackToHub(player, token, 0, true);
             }
         }));
     }
@@ -145,20 +250,63 @@ public final class ClaimWorldSafetyListener implements Listener {
         returnService.ensureReturnStone(player, true);
     }
 
-    private void sendBackToHub(Player player) {
-        Optional<Location> target = hubReturnTarget.get();
-        if (target.isEmpty()) {
-            plugin.getSLF4JLogger().warn(
-                    "Filet de sécurité du monde des claims : aucun point de retour au Hub résolu pour {} — "
-                            + "don d'une Pierre de retour à la place.", player.getName());
-            ensureReturnStone(player);
+    /**
+     * Renvoie le joueur au Hub. Un point de retour introuvable (ou situé dans le monde des claims) ou
+     * une téléportation refusée sont retentés avec les mêmes délais bornés, puis signalés (issue #829).
+     *
+     * @param verified {@code true} : non-éligibilité constatée ; {@code false} : accès non vérifiable.
+     */
+    private void sendBackToHub(Player player, long token, int attempt, boolean verified) {
+        Optional<Location> target = hubReturnTarget.get().filter(location -> !isClaimsWorld(location.getWorld()));
+        if (target.isPresent() && player.teleport(target.get())) {
+            if (verified) {
+                player.sendMessage(MM.deserialize(
+                        "<red>Le monde des claims est réservé aux joueurs qui ont débloqué leur premier terrain.</red>"));
+                player.sendMessage(MM.deserialize(
+                        "<gray>Tu es ramené au village. Termine l'histoire principale puis parle à <white>Jo</white> pour obtenir ton acte de propriété.</gray>"));
+            } else {
+                player.sendMessage(MM.deserialize(
+                        "<red>Impossible de vérifier ton accès au monde des claims pour le moment.</red>"));
+                player.sendMessage(MM.deserialize(
+                        "<gray>Tu es ramené au village par précaution. Réessaie dans un instant ; si cela dure, "
+                                + "signale-le à un administrateur.</gray>"));
+            }
             return;
         }
-        player.teleport(target.get());
-        player.sendMessage(MM.deserialize(
-                "<red>Le monde des claims est réservé aux joueurs qui ont débloqué leur premier terrain.</red>"));
-        player.sendMessage(MM.deserialize(
-                "<gray>Tu es ramené au village. Termine l'histoire principale puis parle à <white>Jo</white> pour obtenir ton acte de propriété.</gray>"));
+        ensureReturnStone(player); // le moyen de repartir reste garanti pendant l'attente.
+        if (attempt < retryDelaysTicks.length) {
+            plugin.getSLF4JLogger().warn(
+                    "[claims-safety] renvoi au Hub de {} impossible (essai {}/{} : {}) — nouvel essai dans {} ticks.",
+                    player.getName(), attempt + 1, retryDelaysTicks.length + 1,
+                    target.isEmpty() ? "aucun point de retour résolu" : "téléportation refusée", retryDelaysTicks[attempt]);
+            later(retryDelaysTicks[attempt], player, token, () -> sendBackToHub(player, token, attempt + 1, verified));
+            return;
+        }
+        plugin.getSLF4JLogger().error(
+                "[claims-safety] ÉCHEC du renvoi au Hub de {} après {} essais : le joueur reste dans « {} » avec une "
+                        + "Pierre de retour. Vérifier le spawn du village et le monde Hub.",
+                player.getName(), attempt + 1, player.getWorld().getName());
+        player.sendMessage(MM.deserialize("<red>Le retour au village est indisponible pour le moment.</red>"));
+        player.sendMessage(MM.deserialize("<gray>Un administrateur a été prévenu.</gray>"));
+        plugin.getServer().broadcast(MM.deserialize(
+                "<red>[RPGQuest] Renvoi au Hub impossible pour <white><name></white> (monde des claims) : "
+                        + "vérifier le spawn du village.</red>",
+                Placeholder.unparsed("name", player.getName())),
+                RpgPermissions.LEGACY_ADMIN_WORLD);
+    }
+
+    /** Planifie {@code task} si, à l'échéance, cette arrivée est toujours la dernière du joueur. */
+    private void later(long delayTicks, Player player, long token, Runnable task) {
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (isCurrent(player, token)) {
+                task.run();
+            }
+        }, delayTicks);
+    }
+
+    private boolean isCurrent(Player player, long token) {
+        return player.isOnline() && isClaimsWorld(player.getWorld())
+                && Long.valueOf(token).equals(arrivalTokens.get(player.getUniqueId()));
     }
 
     private boolean isClaimsWorld(World world) {

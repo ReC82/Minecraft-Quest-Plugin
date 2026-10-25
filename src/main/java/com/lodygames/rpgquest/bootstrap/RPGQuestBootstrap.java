@@ -1204,6 +1204,9 @@ public final class RPGQuestBootstrap {
                         "npc_name", (context, npcId) -> com.lodygames.rpgquest.npc.NpcNameTokens.escapedName(
                                 npcId, questProgressEngine.npcNameResolver()),
                         "city_name", (context, cityId) -> activeCity(cityId).map(c -> c.name()).orElse(null),
+                        // Issue #841 : avancement d'une quête citée par son id (« Où en suis-je ? ») —
+                        // mêmes compteurs que le journal. Quête inconnue : jeton laissé visible.
+                        "quest_progress", (context, rawQuestId) -> questProgressText(context, rawQuestId),
                         "city_direction", (context, cityId) -> activeCity(cityId).map(c -> {
                             org.bukkit.Location at = context.player() == null ? null : context.player().getLocation();
                             return at == null || at.getWorld() == null
@@ -1564,6 +1567,23 @@ public final class RPGQuestBootstrap {
                 .map(quest -> "<gold>Quête terminée : " + com.lodygames.rpgquest.npc.NpcNameTokens.resolve(
                         quest.title().base(), questProgressEngine.npcNameResolver()) + "</gold>")
                 .orElse(null);
+    }
+
+    /**
+     * Issue #841 — {@code %quest_progress:<quête>%} : avancement réel de la quête pour le joueur qui
+     * lit, lu dans le cache de progression (comme le journal). {@code null} = quête inconnue.
+     */
+    private String questProgressText(com.lodygames.rpgquest.dialogue.DialoguePlaceholderContext context,
+                                     String rawQuestId) {
+        org.bukkit.NamespacedKey questId = com.lodygames.rpgquest.ui.QuestProgressText.questKey(rawQuestId);
+        if (questId == null) {
+            return null;
+        }
+        java.util.Optional<com.lodygames.rpgquest.quest.progress.QuestStepProgressView> view =
+                context.player() == null ? java.util.Optional.empty()
+                        : questProgressEngine.activeStepView(context.player().getUniqueId(), questId);
+        return com.lodygames.rpgquest.ui.QuestProgressText.render(
+                questEngine.find(questId).orElse(null), view, questProgressEngine.npcNameResolver());
     }
 
     /** Issue #180 — ville citée dans un dialogue : seulement si elle existe et est active. */

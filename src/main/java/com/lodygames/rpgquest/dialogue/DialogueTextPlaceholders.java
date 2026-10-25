@@ -36,11 +36,14 @@ import org.bukkit.entity.Player;
  *       — l'identifiant stable d'une ville plutôt que son nom écrit en dur dans le texte. Une valeur
  *       à argument qui renvoie {@code null} (ville inconnue, par exemple) laisse le jeton visible,
  *       comme une clé inconnue.</li>
+ *   <li>Issue #841 : l'argument peut porter un espace de noms, {@code
+ *       %quest_progress:rpgquest:guard_tier1%}, pour recopier tel quel l'identifiant d'une quête
+ *       écrit dans une condition {@code QUEST_STATE}.</li>
  * </ul>
  */
 public final class DialogueTextPlaceholders {
 
-    private static final Pattern TOKEN = Pattern.compile("%([a-z0-9_]+)(?::([a-z0-9_.-]+))?%");
+    private static final Pattern TOKEN = Pattern.compile("%([a-z0-9_]+)(?::([a-z0-9_.:-]+))?%");
 
     private final Map<String, Function<DialoguePlaceholderContext, String>> values;
     private final Map<String, BiFunction<DialoguePlaceholderContext, String, String>> valuesWithArgument;

@@ -49,6 +49,47 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - Plugin + portail : classements par type de créature tuée (#734)
+
+### Changement
+
+JAR plugin : un classement `ENTITY_KILL` avec `split: entity` publie un classement par type de
+créature réellement tué (journal `stat_activity_log` existant ; mob spécial RPGQuest à part, catégories
+boss / spécial / hostile / non hostile, noms français). Trois classements par défaut dans le catalogue
+du JAR (`kills_by_type_total`, `_month`, `_week` : 26 au total). Portail AWS : page
+`/classements/creatures` (+ `/demo/classements/creatures`), liens depuis `/classements` et
+`/classements/tous`.
+
+### Action serveur
+
+- Remplacer uniquement le JAR RPGQuest, puis redémarrer DEV. **Aucune migration**, aucun fichier de
+  configuration (DEV n'a pas de `statistics.yml` : le catalogue du JAR s'applique).
+- Portail : `scripts/web-portal/deploy.sh` (code seul, configuration, secrets et nginx intacts).
+- **Ne pas** modifier `web-export.enabled`, `player-data-public` ni l'accès bêta nginx.
+
+### Sauvegarde préalable
+
+Automatique : `rpgquest-20261025T090103Z-predeploy.jar` (= JAR #829 `36fc6693`, SHA-256 `f55dec92…`) ;
+portail : release précédente conservée sous `/opt/lodyquests-portal/releases/`.
+
+### Déploiement
+
+Fait le 25/10 vers 10:01 (heure locale) : JAR `ce59b076` (4 428 693 o, SHA-256 `458380e7…`
+retéléchargé identique), DEV redémarré (0 joueur au redémarrage), portail AWS `ce59b07`.
+
+### Validation
+
+`/health` : snapshot FRESH, server ONLINE ; instantané réel : 3 classements `split` avec 14 types
+(dont 2 mobs spéciaux) ; `/classements/creatures` (+ `?periode=semaine`, `?q=araignee`,
+`?type=special`), `/classements/tous`, `/classements` → 200 ; démo → 200 ; Playwright 1280/390 :
+0 débordement.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` (ou remise de `rpgquest-20261025T090103Z-predeploy.jar`) puis
+redémarrage ; un JAR antérieur ignore les classements `split` (aucune donnée à nettoyer).
+Portail : `scripts/web-portal/rollback.sh`.
+
 ## 2026-10-25 - Plugin : accès Claims durci — portails historiques, filet d'arrivée borné, /tp interne (#829)
 
 ### Changement

@@ -11,9 +11,12 @@ import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
 import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
+import com.lodygames.rpgquest.quest.progress.ObjectiveProgressView;
 import java.util.Optional;
 import java.util.function.Function;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 
 /**
  * Libellé <strong>court et lisible</strong> d'un objectif, pour les infobulles du journal.
@@ -103,6 +106,34 @@ public final class ObjectiveLabels {
                     .orElseGet(() -> targetName(objective));
             default -> targetName(objective);
         };
+    }
+
+    /**
+     * Une ligne de compteur, courte : « • Araignée 3/5 », grise en cours, verte une fois remplie. Le
+     * nom vient de {@link #targetName(QuestObjective, Function)} — jamais « Tuer SPIDER ». Un
+     * objectif binaire (parler, atteindre) n'affiche pas de compteur.
+     *
+     * <p>Seule règle de ligne d'objectif : le journal (infobulles) et, issue #841, le jeton de
+     * dialogue {@code %quest_progress:<quête>%} l'utilisent tous les deux, pour que le PNJ affiche
+     * exactement les mêmes compteurs que le journal.</p>
+     *
+     * @param objective définition de l'objectif, {@code null} si inconnue (description brute utilisée)
+     */
+    public static Component counterLine(ObjectiveProgressView progress, QuestObjective objective,
+                                        Function<String, Optional<String>> npcNames) {
+        boolean done = progress.current() >= progress.total();
+        // Issue #475 : une remise nomme son PNJ destinataire (« à remettre à Guide »), même règle
+        // que l'annonce des objectifs (#70) — le joueur sait à qui apporter les objets restants.
+        Component name = objective != null
+                ? targetName(objective, npcNames)
+                : Component.text(progress.description());
+        Component line = Component.text("• ", done ? NamedTextColor.GREEN : NamedTextColor.GRAY)
+                .append(name.colorIfAbsent(done ? NamedTextColor.GREEN : NamedTextColor.GRAY));
+        if (objective == null || isCountable(objective)) {
+            line = line.append(Component.text(" " + progress.current() + "/" + progress.total(),
+                    done ? NamedTextColor.GREEN : NamedTextColor.WHITE));
+        }
+        return line.decoration(TextDecoration.ITALIC, false);
     }
 
     /**

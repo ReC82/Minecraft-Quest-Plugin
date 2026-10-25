@@ -49,6 +49,40 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - Plugin : pas de téléportation directe dans le claim d'autrui, bypass obligatoire pour les TP admin (#829, D1/D2)
+
+### Changement
+
+JAR plugin (décisions propriétaire D1/D2 du 25/10) : une téléportation commande/plugin/spectateur
+(`/tp`, `/mv tp`…) vers l'intérieur d'un claim dont le joueur n'est ni propriétaire ni membre est
+annulée avec un message, même pour un OP éligible — seule une session `/rpgadmin bypass on` fait
+exception ; marcher jusqu'au claim, la perle de l'Ender et la protection des blocs sont inchangés.
+`/rpgadmin world tp <monde des claims>` et `/claim admin tp` exigent le mode bypass actif ; la
+téléportation de diagnostic PlugAdmin (`claim.teleport`) refuse explicitement le claim d'autrui sans
+bypass.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redémarrage. Aucune configuration, aucune migration, aucun claim ni
+aucune donnée joueur modifiés. PlugAdmin inchangé.
+
+### Sauvegarde préalable
+
+JAR + `data.db` + configuration par `scripts/deploy-verygames.sh`.
+
+### Déploiement
+
+Voir le rapport de session #829 D1/D2 (`docs/claude-reports/`).
+
+### Validation
+
+TC-436 étapes 6 à 8 (PENDING MANUAL VALIDATION). Console : `[claims-safety] téléportation (COMMAND)
+de … REFUSÉE`, `/claim admin tp … refusé à … : mode bypass inactif`.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` (JAR précédent) puis redémarrage ; aucune donnée à nettoyer.
+
 ## 2026-10-25 - Plugin + portail : classements par type de créature tuée (#734)
 
 ### Changement

@@ -1897,7 +1897,8 @@ public final class RPGQuestBootstrap {
             market.setTabCompleter(marketCommand);
         }
 
-        ClaimCommand claimCommand = new ClaimCommand(plugin, claimService, claimSelectionService, claimTeleportService);
+        ClaimCommand claimCommand = new ClaimCommand(plugin, claimService, claimSelectionService, claimTeleportService,
+                adminBypassMode);
         var claim = plugin.getCommand("claim");
         if (claim != null) {
             claim.setExecutor(claimCommand);

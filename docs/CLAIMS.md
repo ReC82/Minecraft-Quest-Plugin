@@ -40,7 +40,7 @@ Deux façons d'obtenir un claim, qui **partagent le même moteur**
 -   `/claim admin resettier1 <joueur>` — **admin uniquement**
     (`rpgquest.admin.world`, pas `rpgquest.claim`), voir « Réinitialisation
     admin (test/QA) » plus bas.
--   `/claim admin tp <joueur>` — **admin/debug uniquement**
+-   `/claim admin tp <joueur>` — **admin/debug uniquement**, mode bypass actif obligatoire (#829, D1)
     (`rpgquest.admin.world`), voir « Retour à son claim (PNJ Jo / commande
     admin) » plus bas.
 
@@ -306,9 +306,39 @@ déplacements de gameplay (perle de l'Ender, fruit de chorus…) ne sont pas
 contrôlés. **Présence ≠ droit de construire** : arriver dans le claim
 d'autrui n'accorde aucun droit, la protection reste celle de
 `ClaimProtectionListener` (`Claim#isTrusted`) ; l'arrivée est seulement
-tracée (`[claims-safety] … sans en être membre`). Refuser purement et
-simplement un `/tp` vers le claim d'autrui reste une décision
-propriétaire (non tranchée, voir #829).
+tracée (`[claims-safety] … sans en être membre`).
+
+**Pas de téléportation directe dans le claim d'autrui (issue #829,
+décision D2 du propriétaire, 25/10/2026).** Une téléportation par
+commande, plugin ou spectateur (`/tp`, `/mv tp`, téléportation vers un
+joueur…), **depuis n'importe quel monde**, dont la destination est à
+l'intérieur d'un claim dont le joueur téléporté n'est ni propriétaire ni
+membre est **annulée** avec le message « Téléportation refusée : cette
+destination se trouve dans le terrain d'un autre joueur. » (console
+`[claims-safety] téléportation (COMMAND) de … REFUSÉE`). Être OP ou
+éligible au monde ne suffit pas ; seul le mode bypass explicite
+(`/rpgadmin bypass on`, nœud `rpgquest.bypass.claimworld`) fait exception.
+Restent **permis** : marcher jusqu'au claim et y entrer (présence et
+exploration), la perle de l'Ender et les autres déplacements de gameplay,
+un `/tp` à l'intérieur du claim où le joueur se trouve déjà, une
+téléportation vers une coordonnée hors de tout claim, et la cause
+`UNKNOWN` (origine non identifiable, seulement tracée). La règle « qui peut
+arriver par téléportation » est isolée dans `claim.ClaimVisitPolicy`
+(aujourd'hui `MEMBERS_ONLY` = `Claim#isTrusted`), point d'extension prévu
+pour un futur système d'amis / autorisations de visite. La protection des
+blocs est inchangée.
+
+**Commandes admin de téléportation (issue #829, décision D1).**
+`/rpgadmin world tp <monde des claims>` et `/claim admin tp <joueur>`
+exigent une session `/rpgadmin bypass on` active (nœud
+`rpgquest.bypass.claimworld` ou ombrelle) — **même pour un OP**. Sinon :
+« Téléportation administrative vers le monde des claims refusée : active
+d'abord le mode administrateur avec /rpgadmin bypass on. », aucun
+déplacement (`claim.ClaimAdminTeleportGate`). La téléportation de
+diagnostic PlugAdmin (`claim.teleport`, #637) applique la même règle D2 :
+vers le claim d'un autre joueur, résultat `REFUSED` explicite sans bypass.
+`/rpgadmin world tp` vers un autre monde et `/claim admin sendhome` (Jo,
+vers son propre claim) sont inchangés.
 
 **Portails historiques (issue #829).** `travel.PortalService` (portails
 `portals/` à canalisation) applique désormais `ClaimWorldAccessGuard`

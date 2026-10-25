@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.claim;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.permission.AdminBypassMode;
@@ -64,8 +65,17 @@ import org.bukkit.event.player.PlayerTeleportEvent;
  * spectateur) qui reste dans le monde des claims ne change pas de monde : il repasse donc ici par
  * le même contrôle d'éligibilité. Être présent dans le monde n'accorde <strong>aucun</strong> droit
  * sur les claims d'autrui — la protection des blocs reste celle de {@link ClaimProtectionListener}
- * ({@code Claim#isTrusted}) ; l'arrivée dans un claim dont le joueur n'est pas membre est seulement
- * tracée.</p>
+ * ({@code Claim#isTrusted}).</p>
+ *
+ * <p><strong>Téléportation directe dans le claim d'autrui (issue #829, décision D2 du 25/10).</strong>
+ * Une téléportation par commande, plugin ou spectateur ({@link #REFUSED_DIRECT_CAUSES}), depuis
+ * n'importe quel monde, dont la destination est à l'intérieur d'un claim que {@link ClaimVisitPolicy}
+ * n'ouvre pas au joueur téléporté est <strong>annulée</strong> avec un message — l'OP ou la seule
+ * éligibilité au monde ne suffisent pas ; seul le mode bypass explicite (#35, nœud {@code
+ * rpgquest.bypass.claimworld}) fait exception. La présence et l'exploration ne sont pas concernées :
+ * marcher jusqu'au claim, une perle de l'Ender ou un {@code /tp} à l'intérieur d'un claim où le joueur
+ * se trouve déjà restent permis. La cause {@code UNKNOWN} n'est pas refusée (origine non
+ * identifiable) : seulement tracée, comme toute arrivée permise dans le claim d'autrui.</p>
  *
  * <p>Même patron que {@code player.StarterKitListener} (don unique d'un objet de secours à la
  * connexion) et {@link ClaimsWorldRulesListener} (règles attachées au monde des claims).</p>
@@ -79,6 +89,10 @@ public final class ClaimWorldSafetyListener implements Listener {
     private static final Set<PlayerTeleportEvent.TeleportCause> CHECKED_INTERNAL_CAUSES = EnumSet.of(
             PlayerTeleportEvent.TeleportCause.COMMAND, PlayerTeleportEvent.TeleportCause.PLUGIN,
             PlayerTeleportEvent.TeleportCause.SPECTATE, PlayerTeleportEvent.TeleportCause.UNKNOWN);
+    /** Décision D2 (issue #829) : téléportations directes refusées vers le claim d'autrui. */
+    static final Set<PlayerTeleportEvent.TeleportCause> REFUSED_DIRECT_CAUSES = EnumSet.of(
+            PlayerTeleportEvent.TeleportCause.COMMAND, PlayerTeleportEvent.TeleportCause.PLUGIN,
+            PlayerTeleportEvent.TeleportCause.SPECTATE);
 
     private final RPGQuestPlugin plugin;
     private final ClaimService claimService;
@@ -88,6 +102,7 @@ public final class ClaimWorldSafetyListener implements Listener {
     private final Supplier<Optional<Location>> hubReturnTarget;
     private final Function<UUID, CompletableFuture<Boolean>> tierOneLookup;
     private final long[] retryDelaysTicks;
+    private final ClaimVisitPolicy visitPolicy;
 
     /** Issue #35 : seul chemin d'un contournement — session explicite + nœud dédié, jamais l'OP seul. */
     private final AdminBypassMode bypass;
@@ -100,7 +115,7 @@ public final class ClaimWorldSafetyListener implements Listener {
                                      ClaimReturnService returnService, Supplier<ClaimConfig> config,
                                      Supplier<Optional<Location>> hubReturnTarget, AdminBypassMode bypass) {
         this(plugin, claimService, returnService, config, hubReturnTarget, bypass,
-                claimService::hasClaimTierOne, DEFAULT_RETRY_DELAYS_TICKS);
+                claimService::hasClaimTierOne, DEFAULT_RETRY_DELAYS_TICKS, ClaimVisitPolicy.MEMBERS_ONLY);
     }
 
     /** Variante de test : lecture d'éligibilité et délais de nouvel essai injectables. */
@@ -108,6 +123,16 @@ public final class ClaimWorldSafetyListener implements Listener {
                              ClaimReturnService returnService, Supplier<ClaimConfig> config,
                              Supplier<Optional<Location>> hubReturnTarget, AdminBypassMode bypass,
                              Function<UUID, CompletableFuture<Boolean>> tierOneLookup, long[] retryDelaysTicks) {
+        this(plugin, claimService, returnService, config, hubReturnTarget, bypass, tierOneLookup, retryDelaysTicks,
+                ClaimVisitPolicy.MEMBERS_ONLY);
+    }
+
+    /** Variante complète : politique de visite injectable (futur système d'amis, tests). */
+    ClaimWorldSafetyListener(RPGQuestPlugin plugin, ClaimService claimService,
+                             ClaimReturnService returnService, Supplier<ClaimConfig> config,
+                             Supplier<Optional<Location>> hubReturnTarget, AdminBypassMode bypass,
+                             Function<UUID, CompletableFuture<Boolean>> tierOneLookup, long[] retryDelaysTicks,
+                             ClaimVisitPolicy visitPolicy) {
         this.plugin = plugin;
         this.claimService = claimService;
         this.returnService = returnService;
@@ -116,6 +141,7 @@ public final class ClaimWorldSafetyListener implements Listener {
         this.bypass = bypass;
         this.tierOneLookup = tierOneLookup;
         this.retryDelaysTicks = retryDelaysTicks.clone();
+        this.visitPolicy = visitPolicy;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -137,6 +163,43 @@ public final class ClaimWorldSafetyListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
         arrivalTokens.remove(event.getPlayer().getUniqueId());
+    }
+
+    /**
+     * Issue #829, décision D2 : annule une téléportation directe ({@link #REFUSED_DIRECT_CAUSES}) vers
+     * l'intérieur d'un claim que {@link ClaimVisitPolicy} n'ouvre pas au joueur téléporté. Priorité
+     * {@code HIGH} : les observateurs {@code MONITOR} (filet d'arrivée, traces) voient l'annulation.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDirectTeleportIntoClaim(PlayerTeleportEvent event) {
+        Location to = event.getTo();
+        if (to == null || to.getWorld() == null || !REFUSED_DIRECT_CAUSES.contains(event.getCause())) {
+            return;
+        }
+        Player player = event.getPlayer();
+        Optional<Claim> target = claimAt(to).filter(claim -> !visitPolicy.allowsDirectTeleport(player.getUniqueId(), claim));
+        if (target.isEmpty() || target.equals(claimAt(event.getFrom()))) {
+            return; // hors claim, claim ouvert au joueur, ou déplacement à l'intérieur du claim où il se trouve déjà.
+        }
+        Claim claim = target.get();
+        if (bypass.allows(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
+            plugin.getSLF4JLogger().info("[claims-safety] {} téléporté ({}) dans le claim « {} » de {} : permis par le "
+                    + "mode bypass administrateur.", player.getName(), event.getCause(), claim.id(), claim.owner());
+            return;
+        }
+        event.setCancelled(true);
+        plugin.getSLF4JLogger().info("[claims-safety] téléportation ({}) de {} vers le claim « {} » de {} REFUSÉE : "
+                + "ni propriétaire ni membre, aucun bypass actif.", event.getCause(), player.getName(), claim.id(), claim.owner());
+        player.sendMessage(MM.deserialize(
+                "<red>Téléportation refusée : cette destination se trouve dans le terrain d'un autre joueur.</red>"));
+        player.sendMessage(MM.deserialize(
+                "<gray>Tu peux t'y rendre à pied, mais pas t'y téléporter directement sans y être invité.</gray>"));
+    }
+
+    private Optional<Claim> claimAt(Location location) {
+        World world = location == null ? null : location.getWorld();
+        return world == null ? Optional.empty()
+                : claimService.claimAt(world.getName(), location.getBlockX(), location.getBlockY(), location.getBlockZ());
     }
 
     /**
@@ -162,9 +225,12 @@ public final class ClaimWorldSafetyListener implements Listener {
         });
     }
 
-    /** Trace seulement : la présence n'accorde aucun droit, {@link ClaimProtectionListener} protège les blocs. */
+    /**
+     * Trace seulement une arrivée permise (bypass, cause {@code UNKNOWN}, claim où il se trouvait déjà) : la
+     * présence n'accorde aucun droit, {@link ClaimProtectionListener} protège les blocs.
+     */
     private void traceForeignClaimArrival(Player player, Location to, PlayerTeleportEvent.TeleportCause cause) {
-        claimService.claimAt(to.getWorld().getName(), to.getBlockX(), to.getBlockY(), to.getBlockZ())
+        claimAt(to)
                 .filter(claim -> !claim.isTrusted(player.getUniqueId()))
                 .ifPresent(claim -> plugin.getSLF4JLogger().info(
                         "[claims-safety] {} téléporté ({}) dans le claim « {} » de {} sans en être membre : "

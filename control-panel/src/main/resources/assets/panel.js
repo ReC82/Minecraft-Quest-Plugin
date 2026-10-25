@@ -2146,6 +2146,7 @@
     run("initSubmitOnce", initSubmitOnce);
     run("initRewardItems", initRewardItems);
     run("initAbilityCards", initAbilityCards);
+    run("initPortalWizard", initPortalWizard);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.
     window.addEventListener("load", upgradeToasts);
@@ -2392,6 +2393,97 @@
         window.location.href = href;
       });
     }
+  }
+
+  // Issue #565 — création d'un portail (/portals) : la synthèse de l'étape 4 suit le formulaire
+  // (trajet, zone, arrivée) et annonce une zone en coordonnées qui recouvre un portail connu. Sans
+  // JavaScript, la synthèse reste générique ; le serveur revérifie tout à l'envoi.
+  function initPortalWizard() {
+    var forms = document.querySelectorAll("form[data-portal-wizard]");
+    for (var i = 0; i < forms.length; i++) { wirePortalWizard(forms[i]); }
+  }
+
+  function wirePortalWizard(form) {
+    var box = form.querySelector("[data-portal-summary]");
+    if (!box) { return; }
+    var known = (box.getAttribute("data-portal-zones") || "").split(";").filter(Boolean).map(function (row) {
+      var c = row.split("|");
+      return { id: c[0], world: c[1], b: c.slice(2).map(Number) };
+    });
+    function val(name) {
+      var el = form.elements[name];
+      return el && typeof el.value === "string" ? el.value.trim() : "";
+    }
+    function picked(name) { return form.querySelector("input[name=\"" + name + "\"]:checked"); }
+    function title(input) {
+      var strong = input && input.parentNode.querySelector("strong");
+      return strong ? strong.textContent : "";
+    }
+    function set(key, text) {
+      var el = box.querySelector("[data-sum=\"" + key + "\"]");
+      if (el) { el.textContent = text; }
+    }
+    function update() {
+      var mode = picked("zone_mode");
+      var source = "";
+      var zone = "à choisir à l'étape 2";
+      var corners = null;
+      if (mode && mode.value === "building") {
+        var arch = picked("arch_site");
+        if (arch) {
+          source = arch.getAttribute("data-world");
+          zone = title(arch) + " : passage " + arch.getAttribute("data-zone").split("|").join(" → ");
+        } else {
+          zone = "choisir une arche posée";
+        }
+      } else if (mode && mode.value === "site") {
+        var sel = form.elements.site;
+        var opt = sel && sel.options[sel.selectedIndex];
+        if (opt) {
+          source = opt.getAttribute("data-world") || "";
+          zone = val("width") + " × " + val("height") + " × " + val("depth") + " blocs autour de « " + opt.value + " »";
+        }
+      } else if (mode && mode.value === "coords") {
+        source = val("world");
+        var c = ["min_x", "min_y", "min_z", "max_x", "max_y", "max_z"].map(function (k) {
+          var n = parseInt(val(k), 10);
+          return isNaN(n) ? null : n;
+        });
+        if (c.indexOf(null) < 0) {
+          corners = [Math.min(c[0], c[3]), Math.min(c[1], c[4]), Math.min(c[2], c[5]),
+            Math.max(c[0], c[3]), Math.max(c[1], c[4]), Math.max(c[2], c[5])];
+          zone = corners.slice(0, 3).join(", ") + " → " + corners.slice(3).join(", ");
+        } else {
+          zone = "saisir les deux coins";
+        }
+      }
+      set("route", (source || "monde de départ ?") + " → " + (val("destination_world") || "monde d'arrivée ?"));
+      set("zone", zone);
+      var strategy = picked("strategy");
+      var arrival = strategy ? title(strategy) : "à choisir";
+      if (strategy && strategy.value === "FIXED_POINT") {
+        var pt = [val("point_x"), val("point_y"), val("point_z")];
+        arrival += pt.indexOf("") < 0 ? " " + pt.join(", ") : " (coordonnées à saisir)";
+      }
+      set("arrival", arrival);
+      var hit = null;
+      if (corners) {
+        for (var i = 0; i < known.length && !hit; i++) {
+          var b = known[i].b;
+          if (known[i].world === source && corners[0] <= b[3] && corners[3] >= b[0] && corners[1] <= b[4]
+              && corners[4] >= b[1] && corners[2] <= b[5] && corners[5] >= b[2]) { hit = known[i].id; }
+        }
+      }
+      var warn = box.querySelector("[data-sum=\"collision\"]");
+      if (warn) {
+        warn.hidden = !hit;
+        warn.textContent = hit ? "Collision : cette zone recouvre le portail « " + hit + " ». Le serveur refusera "
+          + "le brouillon." : "";
+      }
+    }
+    form.addEventListener("input", update);
+    form.addEventListener("change", update);
+    update();
   }
 
   function upgradeToasts() {

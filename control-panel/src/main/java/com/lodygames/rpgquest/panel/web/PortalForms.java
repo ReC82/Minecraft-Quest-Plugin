@@ -31,14 +31,21 @@ final class PortalForms {
 
     // ---- Création ---------------------------------------------------------------------------------
 
+    /**
+     * Formulaire progressif de création (retour propriétaire du 24/10) : cinq étapes numérotées —
+     * Portail, Emplacement et zone de passage, Destination et arrivée, Vérification, Créer le brouillon.
+     * Les groupes non choisis sont masqués en CSS ({@code :has}) et ignorés par le serveur ; {@code
+     * panel.js} remplit la synthèse en direct (sans script, elle explique ce que le serveur revérifie).
+     */
     static String createSection(PortalPages.View v) {
         List<String> worlds = worlds(v);
-        StringBuilder sb = new StringBuilder("<section class=\"card w-sec mt-3\" id=\"portal-create\"><h3 class=\"w-h\">")
-                .append(Icons.icon("plus")).append("Créer un portail en brouillon</h3>")
-                .append("<p class=\"field-help\">Le brouillon est enregistré sur le serveur mais <strong>ne téléporte "
-                        + "personne</strong> tant qu'il n'est pas activé depuis sa fiche. Aucun bloc n'est posé : la "
-                        + "zone d'activation se règle sur un emplacement marqué en jeu avec l'outil d'emplacement, "
-                        + "ou en coordonnées.</p>");
+        StringBuilder sb = new StringBuilder("<section class=\"card w-sec mt-3 p-create\" id=\"portal-create\">")
+                .append("<h3 class=\"w-h\">").append(Icons.icon("plus")).append("Créer un portail en brouillon</h3>")
+                .append("<ol class=\"p-lifecycle\"><li><strong>Arche</strong> : construite dans l'Atelier ou la "
+                        + "Bibliothèque, posée depuis la page Emplacements (facultatif).</li><li><strong>Brouillon"
+                        + "</strong> : créé ici, enregistré sur le serveur, il <strong>ne téléporte personne</strong>."
+                        + "</li><li><strong>Activation</strong> : plus tard, depuis la fiche du portail, après "
+                        + "vérification.</li></ol>");
         if (worlds.isEmpty()) {
             return sb.append(Ui.banner("info", "Aucun monde chargé dans le relevé : rafraîchir les portails."))
                     .append("</section>").toString();
@@ -46,7 +53,8 @@ final class PortalForms {
         Map<String, Object> outbound = v.returnOf().isEmpty() ? null : PortalPages.maps(v.details().get("portals"))
                 .stream().filter(p -> v.returnOf().equals(str(p.get("id"))) && bool(p.get("editable")))
                 .findFirst().orElse(null);
-        sb.append(formStart(v, "portal.create", ""));
+        sb.append(formStart(v, "portal.create", "").replace("class=\"actform\"",
+                "class=\"actform p-wizard\" data-portal-wizard"));
         if (outbound != null) {
             sb.append(Ui.banner("info", "<strong>Portail retour de <code>" + Http.esc(v.returnOf()) + "</code></strong> : "
                     + "il partira de <code>" + Http.esc(str(outbound.get("destinationWorld"))) + "</code> et ramènera "
@@ -55,20 +63,63 @@ final class PortalForms {
                     .append("<input type=\"hidden\" name=\"return_of\" value=\"").append(Http.esc(v.returnOf()))
                     .append("\">");
         }
-        sb.append("<div class=\"form-grid\">")
-                .append(field("Identifiant (définitif)", "<input type=\"text\" name=\"id\" required pattern=\"[a-z0-9_\\-]{3,48}\" "
-                        + "maxlength=\"48\" placeholder=\"arche_du_marche\" autocomplete=\"off\">",
-                        "3 à 48 caractères : minuscules, chiffres, « _ », « - ». Il ne changera plus."))
+        sb.append(step(1, "Portail", "Comment le portail s'appelle."))
+                .append("<div class=\"form-grid\">")
                 .append(field("Nom affiché", "<input type=\"text\" name=\"name\" maxlength=\"" + AgentActionCatalog.PORTAL_MAX_NAME
-                        + "\" placeholder=\"Arche du marché\">", "Facultatif ; sinon « Portail vers … »."))
-                .append("</div>");
-        sb.append(zoneFields(v, null, outbound == null ? "" : str(outbound.get("destinationWorld"))));
+                        + "\" placeholder=\"Arche du marché\" data-sum-src=\"name\">", "Facultatif ; sinon « Portail vers … »."))
+                .append(field("Identifiant", "<input type=\"text\" name=\"id\" required pattern=\"[a-z0-9_\\-]{3,48}\" "
+                        + "maxlength=\"48\" placeholder=\"arche_du_marche\" autocomplete=\"off\" data-sum-src=\"id\">",
+                        "Nom technique définitif : 3 à 48 minuscules, chiffres, « _ » ou « - »."))
+                .append("</div></fieldset>");
+        sb.append(step(2, "Emplacement et zone de passage", "Où le joueur entre dans le portail. Le monde de départ "
+                + "est celui de l'emplacement choisi."));
+        sb.append(zoneFields(v, null, outbound == null ? "" : str(outbound.get("destinationWorld")), true));
+        sb.append("</fieldset>");
+        sb.append(step(3, "Destination et arrivée", "Où le joueur arrive après la téléportation."));
         sb.append(destinationFields(worlds, outbound == null ? "" : str(outbound.get("world")),
                 outbound == null ? "" : "FIXED_POINT", null));
-        sb.append(confirm("Je crée un brouillon : il ne téléportera personne tant que je ne l'active pas."));
-        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
-                .append(Icons.icon("plus")).append("Créer le brouillon</button></div></form></section>");
+        sb.append("</fieldset>");
+        sb.append(step(4, "Vérification", "Relire avant de créer : rien n'est encore enregistré."))
+                .append(summary(v)).append("</fieldset>");
+        sb.append(step(5, "Créer le brouillon", "Le brouillon reste inactif : il ne téléportera personne."))
+                .append(confirm("Je crée un brouillon : il ne téléportera personne tant que je ne l'active pas."))
+                .append("<p class=\"field-help\">Créer le brouillon ne pose ni ne retire aucun bloc et ne touche à "
+                        + "aucun portail existant. L'activation se fait plus tard, depuis la fiche du portail.</p>")
+                .append("<div class=\"btnrow\"><button class=\"btn btn-primary\" type=\"submit\">")
+                .append(Icons.icon("plus")).append("Créer le brouillon</button></div></fieldset></form></section>");
         return sb.toString();
+    }
+
+    /** Ouvre une étape numérotée du formulaire de création (fermée par l'appelant). */
+    private static String step(int n, String title, String help) {
+        return "<fieldset class=\"p-step\"><legend><span class=\"p-step-n\" aria-hidden=\"true\">" + n
+                + "</span>" + Http.esc(title) + "</legend><p class=\"field-help p-step-help\">" + Http.esc(help) + "</p>";
+    }
+
+    /**
+     * Étape 4 : synthèse. Les {@code data-sum} sont remplis par {@code panel.js} depuis le formulaire ;
+     * le statut, lui, est toujours « brouillon inactif ». Les zones des portails existants ({@code
+     * data-portal-zones}) servent à annoncer une collision avant l'envoi ; le serveur la revérifie.
+     */
+    private static String summary(PortalPages.View v) {
+        StringBuilder zones = new StringBuilder();
+        for (Map<String, Object> p : PortalPages.maps(v.details().get("portals"))) {
+            zones.append(zones.isEmpty() ? "" : ";").append(str(p.get("id"))).append("|").append(str(p.get("world")));
+            for (String k : List.of("minX", "minY", "minZ", "maxX", "maxY", "maxZ")) {
+                zones.append("|").append(num(p.get(k)));
+            }
+        }
+        return "<div class=\"p-summary\" data-portal-summary data-portal-zones=\"" + Http.esc(zones.toString()) + "\">"
+                + "<dl class=\"w-dl\">"
+                + PortalPages.dlHtml("Trajet", "<span data-sum=\"route\">monde de départ → monde d'arrivée</span>")
+                + PortalPages.dlHtml("Zone de passage", "<span data-sum=\"zone\">selon l'étape 2</span>")
+                + PortalPages.dlHtml("Arrivée", "<span data-sum=\"arrival\">selon l'étape 3</span>")
+                + PortalPages.dlHtml("Statut après création", "<span class=\"pill warn\">Brouillon</span> inactif : "
+                        + "personne n'est téléporté")
+                + "</dl><p class=\"p-collision\" data-sum=\"collision\" hidden></p>"
+                + "<p class=\"field-help\">À l'envoi, le serveur revérifie tout : identifiant libre, monde chargé, "
+                + "zone sans chevauchement avec un autre portail, taille, arrivée valide. En cas de refus, rien n'est "
+                + "enregistré.</p></div>";
     }
 
     // ---- Fiche ------------------------------------------------------------------------------------
@@ -213,7 +264,7 @@ final class PortalForms {
         return editor(v, p, "", "Modifier la zone d'activation",
                 "Désactiver le portail avant de déplacer ou de redimensionner sa zone.",
                 canEdit(v, p) && !active(p) ? formStart(v, "portal.update", str(p.get("id"))) + hidden(p)
-                        + zoneFields(v, p, "") + essential(p)
+                        + zoneFields(v, p, "", false) + essential(p)
                         + confirm("Remplacer la zone de « " + str(p.get("id")) + " »")
                         + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">"
                         + "Enregistrer la zone</button></div></form>" : "");
@@ -609,34 +660,73 @@ final class PortalForms {
 
     /**
      * Arrivée : monde, stratégie et point fixe. {@code p} non {@code null} : valeurs actuelles du portail.
-     * Sans JavaScript, les champs du point restent visibles ; le serveur les ignore hors « point fixe ».
+     * Les champs du point ne s'affichent que pour « point fixe » (CSS) ; le serveur les ignore sinon.
      */
     private static String destinationFields(List<String> worlds, String world, String strategy, Map<String, Object> p) {
         // Monde actuel absent du relevé (non chargé) : gardé en tête de liste plutôt que remplacé en silence.
         List<String> choices = world.isEmpty() || worlds.contains(world) ? worlds
                 : java.util.stream.Stream.concat(java.util.stream.Stream.of(world), worlds.stream()).toList();
-        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\">")
-                .append(p == null ? "<legend class=\"small\">Arrivée</legend>" : "")
+        String selected = strategy.isEmpty() ? "WORLD_SPAWN" : strategy;
+        StringBuilder sb = new StringBuilder("<div class=\"p-dest\">")
                 .append("<div class=\"form-grid\">")
-                .append(field("Monde d'arrivée", select("destination_world", choices, world), "Un monde chargé ; le "
+                .append(field("Monde d'arrivée", world.isEmpty() ? select("destination_world", choices, world)
+                        .replaceFirst(">", "><option value=\"\" selected disabled>— Choisir le monde d'arrivée —</option>")
+                        : select("destination_world", choices, world), "Un monde chargé ; le "
                         + "portail ne charge jamais un monde lui-même."))
-                .append(field("Arrivée", strategySelect(strategy), "« Claim du joueur » : seulement vers le monde des "
-                        + "claims."))
-                .append("</div><div class=\"form-grid\">");
+                .append("</div><div class=\"p-choices\" role=\"radiogroup\" aria-label=\"Point d'arrivée\">");
+        for (String s : STRATEGIES) {
+            sb.append(choice("strategy", s, s.equals(selected), false, strategyTitle(s), strategyHelp(s)));
+        }
+        sb.append("</div><p class=\"field-help p-nofixed\">Point fixe non retenu : aucune coordonnée à saisir, "
+                + "l'arrivée est calculée par le serveur à chaque passage.</p><div class=\"p-fixed\">"
+                + "<p class=\"field-help\">Coordonnées du point d'arrivée, puis orientation du joueur <strong>après "
+                + "la téléportation</strong> (ce n'est pas l'orientation de l'arche).</p><div class=\"form-grid\">");
         String[] keys = {"point_x", "point_y", "point_z", "point_yaw", "point_pitch"};
-        String[] labels = {"Point fixe · X", "Point fixe · Y (pieds)", "Point fixe · Z", "Regard horizontal (°)",
-                "Regard vertical (°)"};
+        String[] labels = {"X", "Y (hauteur des pieds)", "Z", "Orientation à l'arrivée (°)",
+                "Inclinaison du regard à l'arrivée (°)"};
+        String[] helps = {"", "", "", "Où le joueur regarde : 0 = sud, 90 = ouest, 180 = nord, -90 = est (F3 en jeu). "
+                + "Vide = 0.", "0° = devant soi, -90° = vers le ciel, +90° = vers le sol. Vide = 0."};
         String[] current = {"pointX", "pointY", "pointZ", "pointYaw", "pointPitch"};
         for (int i = 0; i < keys.length; i++) {
             Object value = p == null ? null : p.get(current[i]);
             sb.append(field(labels[i], "<input type=\"text\" inputmode=\"decimal\" name=\"" + keys[i] + "\" value=\""
-                    + Http.esc(value == null ? "" : decimalText(value)) + "\" maxlength=\"14\">", i == 3
-                    ? "0 = sud, 90 = ouest, 180 = nord, -90 = est (F3 en jeu)." : i == 4 ? "-90 ciel, 0 horizon, 90 sol." : ""));
+                    + Http.esc(value == null ? "" : decimalText(value)) + "\" maxlength=\"14\">", helps[i]));
         }
-        return sb.append("</div><p class=\"field-help\">Point fixe seulement. Le serveur refuse un point hors des "
-                + "hauteurs du monde ou dans la zone d'un portail. À chaque passage, un point non sûr (lave, vide, "
-                + "bloc plein) est remplacé par la position sûre la plus proche à 2 blocs au plus ; sinon le passage "
-                + "est refusé.</p></fieldset>").toString();
+        return sb.append("</div><p class=\"field-help\">Le serveur refuse un point hors des hauteurs du monde ou "
+                + "dans la zone d'un portail. À chaque passage, un point non sûr (lave, vide, bloc plein) est remplacé "
+                + "par la position sûre la plus proche à 2 blocs au plus ; sinon le passage est refusé.</p></div></div>")
+                .toString();
+    }
+
+    private static final List<String> STRATEGIES = List.of("WORLD_SPAWN", "RANDOM_SAFE", "CLAIM_HOME", "FIXED_POINT");
+
+    private static String strategyTitle(String s) {
+        return switch (s) {
+            case "WORLD_SPAWN" -> "Point d'arrivée du monde";
+            case "RANDOM_SAFE" -> "Point sûr au hasard";
+            case "CLAIM_HOME" -> "Claim du joueur";
+            case "FIXED_POINT" -> "Point fixe";
+            default -> s;
+        };
+    }
+
+    private static String strategyHelp(String s) {
+        return switch (s) {
+            case "WORLD_SPAWN" -> "Le spawn du monde d'arrivée.";
+            case "RANDOM_SAFE" -> "Un endroit sûr tiré au hasard à chaque passage.";
+            case "CLAIM_HOME" -> "Son claim, sinon un point sûr. Seulement vers le monde des claims.";
+            case "FIXED_POINT" -> "Des coordonnées précises, à saisir ci-dessous.";
+            default -> "";
+        };
+    }
+
+    /** Une carte de choix (bouton radio + titre + aide), lisible au doigt sur mobile. */
+    private static String choice(String name, String value, boolean checked, boolean disabled, String title,
+                                 String help) {
+        return "<label class=\"p-choice\"><input type=\"radio\" name=\"" + name + "\" value=\"" + Http.esc(value)
+                + "\"" + (checked ? " checked" : "") + (disabled ? " disabled" : "") + "><span><strong>"
+                + Http.esc(title) + "</strong>" + (help.isEmpty() ? "" : "<small>" + Http.esc(help) + "</small>")
+                + "</span></label>";
     }
 
     private static String decimalText(Object value) {
@@ -649,47 +739,67 @@ final class PortalForms {
 
     /**
      * Choix de la zone. {@code p} non {@code null} : valeurs actuelles du portail (modification) ;
-     * {@code sourceWorld} : monde de départ présélectionné (portail retour).
+     * {@code sourceWorld} : monde de départ présélectionné en coordonnées (portail retour) ;
+     * {@code withArch} : propose « depuis une arche posée » (création — un portail existant se lie
+     * depuis son bloc Construction). Le monde de départ n'est demandé qu'en coordonnées : sinon il est
+     * celui de l'emplacement.
      */
-    private static String zoneFields(PortalPages.View v, Map<String, Object> p, String sourceWorld) {
-        boolean bySite = p == null || !str(p.get("site")).isEmpty();
+    private static String zoneFields(PortalPages.View v, Map<String, Object> p, String sourceWorld, boolean withArch) {
         List<PortalPages.SiteOption> sites = p == null ? v.manage().sites()
                 : v.manage().sites().stream().filter(s -> s.world().equals(str(p.get("world")))).toList();
-        String currentSite = p == null ? "" : str(p.get("site"));
-        StringBuilder sb = new StringBuilder("<fieldset class=\"mb-2\">")
-                .append(p == null ? "<legend class=\"small\">Zone d'activation</legend>" : "");
-        sb.append("<label class=\"inline\"><input type=\"radio\" name=\"zone_mode\" value=\"site\"")
-                .append(bySite ? " checked" : "").append(sites.isEmpty() ? " disabled" : "")
-                .append("> Autour d'un emplacement marqué en jeu</label>");
+        List<Map<String, Object>> arches = withArch ? PortalPages.maps(v.details().get("arches")) : List.of();
+        List<Map<String, Object>> portals = PortalPages.maps(v.details().get("portals"));
+        boolean anyArch = arches.stream().anyMatch(a -> archRefusal(a, portals).isEmpty());
+        String mode = p != null ? (str(p.get("site")).isEmpty() || sites.isEmpty() ? "coords" : "site")
+                : anyArch ? "building" : sites.isEmpty() ? "coords" : "site";
+        StringBuilder sb = new StringBuilder("<div class=\"p-zone\"><div class=\"p-choices\" role=\"radiogroup\" "
+                + "aria-label=\"Zone de passage\">");
+        if (withArch) {
+            sb.append(choice("zone_mode", "building", mode.equals("building"), !anyArch, "Depuis une arche posée",
+                    "Recommandé : la zone est le passage de l'arche, rien à mesurer."));
+        }
+        sb.append(choice("zone_mode", "site", mode.equals("site"), sites.isEmpty(),
+                withArch ? "Emplacement sans arche" : "Autour d'un emplacement",
+                "Un emplacement marqué en jeu, avec largeur, hauteur et profondeur."));
+        sb.append(choice("zone_mode", "coords", mode.equals("coords"), false, "Coordonnées manuelles",
+                "Le monde et deux coins opposés de la zone."));
+        sb.append("</div>");
+        if (withArch) {
+            sb.append("<div class=\"p-mode p-mode-building\">").append(archChoices(v, arches, portals)).append("</div>");
+        }
+        sb.append("<div class=\"p-mode p-mode-site\">");
         if (sites.isEmpty()) {
             sb.append("<p class=\"field-help\">Aucun emplacement").append(p == null ? "" : " dans ce monde")
                     .append(" dans le dernier relevé de la page <a href=\"/buildings/sites\">Emplacements</a> : en "
                             + "marquer un en jeu avec l'outil d'emplacement, puis rafraîchir.</p>");
         } else {
+            String currentSite = p == null ? "" : str(p.get("site"));
             StringBuilder options = new StringBuilder();
             for (PortalPages.SiteOption s : sites) {
-                options.append("<option value=\"").append(Http.esc(s.id())).append("\"")
-                        .append(s.id().equals(currentSite) ? " selected" : "").append(">")
-                        .append(Http.esc(s.name() + " (" + s.id() + ") — " + s.world() + " " + s.position() + ", face "
-                                + s.facing())).append("</option>");
+                options.append("<option value=\"").append(Http.esc(s.id())).append("\" data-world=\"")
+                        .append(Http.esc(s.world())).append("\"").append(s.id().equals(currentSite) ? " selected" : "")
+                        .append(">").append(Http.esc(s.name() + " — monde " + s.world() + ", " + s.position() + ", face "
+                                + s.facing() + " (" + s.id() + ")")).append("</option>");
             }
             int w = p == null || num(p.get("width")) == 0 ? 3 : num(p.get("width"));
             int h = p == null || num(p.get("height")) == 0 ? 4 : num(p.get("height"));
             int d = p == null || num(p.get("depth")) == 0 ? 1 : num(p.get("depth"));
             sb.append("<div class=\"form-grid\">")
-                    .append(field("Emplacement", "<select name=\"site\">" + options + "</select>", ""))
+                    .append(field("Emplacement", "<select name=\"site\">" + options + "</select>",
+                            "Le monde de départ est celui de l'emplacement."))
+                    .append("</div><div class=\"form-grid p-dims\">")
                     .append(field("Largeur", number("width", w, 1), "en travers de la face"))
                     .append(field("Hauteur", number("height", h, 1), "vers le haut depuis le bloc d'ancrage"))
                     .append(field("Profondeur", number("depth", d, 1), "le long de la face"))
                     .append("</div><p class=\"field-help\">Largeur et profondeur sont centrées sur l'emplacement. "
                             + "Exemple : 3 × 4 × 1 = une arche de 3 blocs de large, 4 de haut, 1 d'épaisseur.</p>");
         }
-        sb.append("<label class=\"inline\"><input type=\"radio\" name=\"zone_mode\" value=\"coords\"")
-                .append(bySite && !sites.isEmpty() ? "" : " checked").append("> En coordonnées (deux coins)</label>");
-        sb.append("<div class=\"form-grid\">");
+        sb.append("</div><div class=\"p-mode p-mode-coords\"><div class=\"form-grid\">");
         if (p == null) {
-            sb.append(field("Monde de départ", select("world", worlds(v), sourceWorld), ""));
+            sb.append(field("Monde de départ", select("world", worlds(v), sourceWorld), "Seulement pour une zone en "
+                    + "coordonnées."));
         }
+        sb.append("</div><div class=\"form-grid p-corners\">");
         String[] keys = {"min_x", "min_y", "min_z", "max_x", "max_y", "max_z"};
         String[] labels = {"Coin 1 · X", "Coin 1 · Y", "Coin 1 · Z", "Coin 2 · X", "Coin 2 · Y", "Coin 2 · Z"};
         String[] current = {"minX", "minY", "minZ", "maxX", "maxY", "maxZ"};
@@ -699,8 +809,87 @@ final class PortalForms {
                     + "\" step=\"1\">", ""));
         }
         return sb.append("</div><p class=\"field-help\">").append(AgentActionCatalog.PORTAL_MAX_SIDE)
-                .append(" blocs au plus de chaque côté. La zone ne doit recouvrir aucun autre portail : le serveur "
-                        + "le vérifie à l'enregistrement et à chaque rechargement.</p></fieldset>").toString();
+                .append(" blocs au plus de chaque côté.</p></div><p class=\"field-help\">La zone ne doit recouvrir "
+                        + "aucun autre portail : le serveur le vérifie à l'enregistrement et à chaque rechargement.</p>"
+                        + "</div>").toString();
+    }
+
+    /**
+     * Arches de portail posées (relevé {@code arches}, contrat #568) : passage déduit par le serveur,
+     * affiché en lecture seule. Une arche déjà rattachée à un portail, sans passage ou dont le passage
+     * recouvre un portail existant n'est pas sélectionnable.
+     */
+    private static String archChoices(PortalPages.View v, List<Map<String, Object>> arches,
+                                      List<Map<String, Object>> portals) {
+        String sitesPage = "/buildings/sites?agent=" + PortalPages.enc(v.agentId());
+        if (arches.isEmpty()) {
+            return "<p class=\"field-help\">Aucune arche de portail posée dans le dernier relevé. En générer une "
+                    + "(Atelier IA ou Bibliothèque, type « portail »), la poser depuis la page <a href=\"" + sitesPage
+                    + "\">Emplacements</a>, puis rafraîchir les portails.</p>";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"p-arches\">");
+        boolean first = true;
+        for (Map<String, Object> a : arches) {
+            String refusal = archRefusal(a, portals);
+            boolean ok = refusal.isEmpty();
+            String zone = archZone(a);
+            sb.append("<label class=\"p-arch").append(ok ? "" : " is-off").append("\"><input type=\"radio\" "
+                    + "name=\"arch_site\" value=\"").append(Http.esc(str(a.get("site")))).append("\"")
+                    .append(ok && first ? " checked" : "").append(ok ? "" : " disabled")
+                    .append(" data-world=\"").append(Http.esc(str(a.get("world")))).append("\" data-zone=\"")
+                    .append(Http.esc(zone)).append("\"><span><strong>")
+                    .append(Http.esc(str(a.get("name")).isEmpty() ? str(a.get("building")) : str(a.get("name"))))
+                    .append("</strong><dl class=\"p-arch-dl\">")
+                    .append(PortalPages.dl("Emplacement", (str(a.get("siteName")).isEmpty() ? ""
+                            : str(a.get("siteName")) + " ") + "(" + str(a.get("site")) + ")"))
+                    .append(PortalPages.dl("Monde de départ", str(a.get("world"))))
+                    .append(PortalPages.dl("Rotation de la pose", num(a.get("rotation")) + "°"))
+                    .append(zone.isEmpty() ? "" : PortalPages.dl("Zone de passage", zone.replace("|", " → ")
+                            + " (" + archSize(a) + ")"))
+                    .append("</dl>").append(ok ? "" : "<small class=\"p-arch-why\">" + Http.esc(refusal) + "</small>")
+                    .append("</span></label>");
+            first &= !ok;
+        }
+        return sb.append("</div><p class=\"field-help\">Zone déduite par le serveur du passage déclaré par l'arche, "
+                + "de son ancre et de sa rotation : elle n'est pas modifiable ici. Le brouillon naît lié à l'arche ; "
+                + "la reposer ou la tourner plus tard demandera « Lier à nouveau » depuis sa fiche.</p>").toString();
+    }
+
+    /** Pourquoi une arche n'est pas proposée ({@code ""} : elle l'est). */
+    private static String archRefusal(Map<String, Object> a, List<Map<String, Object>> portals) {
+        if (!str(a.get("refusal")).isEmpty()) {
+            return str(a.get("refusal"));
+        }
+        List<?> used = a.get("usedBy") instanceof List<?> l ? l : List.of();
+        if (!used.isEmpty()) {
+            return "Déjà utilisée par le portail « " + String.join(", ", used.stream().map(PortalPages::str).toList())
+                    + " ».";
+        }
+        for (Map<String, Object> p : portals) {
+            if (str(p.get("world")).equals(str(a.get("world"))) && overlaps(a, p)) {
+                return "Son passage recouvre la zone du portail « " + str(p.get("id")) + " ».";
+            }
+        }
+        return "";
+    }
+
+    private static boolean overlaps(Map<String, Object> a, Map<String, Object> b) {
+        return num(a.get("minX")) <= num(b.get("maxX")) && num(a.get("maxX")) >= num(b.get("minX"))
+                && num(a.get("minY")) <= num(b.get("maxY")) && num(a.get("maxY")) >= num(b.get("minY"))
+                && num(a.get("minZ")) <= num(b.get("maxZ")) && num(a.get("maxZ")) >= num(b.get("minZ"));
+    }
+
+    private static String archZone(Map<String, Object> a) {
+        if (!a.containsKey("minX")) {
+            return "";
+        }
+        return num(a.get("minX")) + ", " + num(a.get("minY")) + ", " + num(a.get("minZ")) + "|" + num(a.get("maxX"))
+                + ", " + num(a.get("maxY")) + ", " + num(a.get("maxZ"));
+    }
+
+    private static String archSize(Map<String, Object> a) {
+        return (num(a.get("maxX")) - num(a.get("minX")) + 1) + " × " + (num(a.get("maxY")) - num(a.get("minY")) + 1)
+                + " × " + (num(a.get("maxZ")) - num(a.get("minZ")) + 1) + " blocs";
     }
 
     private static List<String> worlds(PortalPages.View v) {
@@ -835,15 +1024,6 @@ final class PortalForms {
         for (String value : values) {
             sb.append("<option value=\"").append(Http.esc(value)).append("\"").append(value.equals(selected) ? " selected" : "")
                     .append(">").append(Http.esc(value)).append("</option>");
-        }
-        return sb.append("</select>").toString();
-    }
-
-    private static String strategySelect(String selected) {
-        StringBuilder sb = new StringBuilder("<select name=\"strategy\">");
-        for (String s : List.of("WORLD_SPAWN", "RANDOM_SAFE", "CLAIM_HOME", "FIXED_POINT")) {
-            sb.append("<option value=\"").append(s).append("\"").append(s.equals(selected) ? " selected" : "")
-                    .append(">").append(Http.esc(PortalPages.strategyLabel(s))).append("</option>");
         }
         return sb.append("</select>").toString();
     }

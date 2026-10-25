@@ -168,7 +168,7 @@ class PortalsPageTest {
         String draft = get("/portals?agent=" + TestConfig.AGENT_ID + "&portal=arche_marche").body();
         assertTrue(draft.contains("test_world 100.5, 64.0, -20.5 (regard 90°)"), "point affiché");
         assertTrue(draft.contains("name=\"dest_mode\" value=\"set\""), "formulaire d'arrivée");
-        assertTrue(draft.contains("<option value=\"FIXED_POINT\" selected>"), "stratégie actuelle présélectionnée");
+        assertTrue(draft.contains("name=\"strategy\" value=\"FIXED_POINT\" checked"), "stratégie actuelle présélectionnée");
         assertTrue(draft.contains("name=\"point_x\" value=\"100.5\"") && draft.contains("name=\"point_yaw\" value=\"90\""));
         assertTrue(draft.contains("value=\"portal.verify\"") && draft.contains("Vérifier sans appliquer"));
         assertTrue(draft.contains("return_of=arche_marche"), "préparer le portail retour");
@@ -244,6 +244,70 @@ class PortalsPageTest {
         assertTrue(page.contains("<option value=\"test_world\">"), "mondes chargés proposés en arrivée");
         assertTrue(page.contains("Brouillons · 1") && page.contains(">Brouillon<"));
         assertFalse(page.contains("Téléporter") || page.contains("player.teleport"), "aucun test de téléportation");
+        assertTrue(page.contains("name=\"zone_mode\" value=\"building\" disabled")
+                && page.contains("Aucune arche de portail posée"), "sans arche posée : mode manuel seulement");
+    }
+
+    /** Retour du 24/10 : trois arches posées — une libre, une déjà utilisée, une sans passage. */
+    static final String RELEVE_ARCHES = RELEVE_565.replace("\"worlds\":[", "\"arches\":["
+            + "{\"site\":\"buildsite_0007\",\"siteName\":\"Place du marché\",\"world\":\"world_hub\","
+            + "\"building\":\"arche_test\",\"name\":\"Arche de pierre\",\"rotation\":0,\"minX\":699,\"minY\":64,"
+            + "\"minZ\":-650,\"maxX\":701,\"maxY\":67,\"maxZ\":-650,\"refusal\":\"\",\"usedBy\":[\"arche_marche\"]},"
+            + "{\"site\":\"buildsite_0008\",\"siteName\":\"Porte nord\",\"world\":\"world_hub\","
+            + "\"building\":\"arche_test\",\"name\":\"Arche de pierre\",\"rotation\":90,\"minX\":800,\"minY\":64,"
+            + "\"minZ\":-651,\"maxX\":800,\"maxY\":67,\"maxZ\":-649,\"refusal\":\"\",\"usedBy\":[]},"
+            + "{\"site\":\"buildsite_0009\",\"siteName\":\"\",\"world\":\"world_hub\",\"building\":\"arche_nue\","
+            + "\"name\":\"Arche nue\",\"rotation\":0,\"refusal\":\"« Arche nue » est une arche sans zone de passage "
+            + "déclarée.\",\"usedBy\":[]}],\"worlds\":[");
+
+    @Test
+    void theCreationFormIsProgressiveAndTakesTheZoneOfAPlacedArchReadOnly() throws Exception {
+        start();
+        login();
+        runAction("portal.list", RELEVE_ARCHES);
+        String page = get("/portals?agent=" + TestConfig.AGENT_ID).body();
+        String form = page.substring(page.indexOf("id=\"portal-create\""));
+        int last = -1;
+        for (String step : List.of("Portail", "Emplacement et zone de passage", "Destination et arrivée",
+                "Vérification", "Créer le brouillon")) {
+            int at = form.indexOf("</span>" + step + "</legend>");
+            assertTrue(at > last, "étape « " + step + " » dans l'ordre");
+            last = at;
+        }
+        assertTrue(form.contains("name=\"zone_mode\" value=\"building\" checked"), "arche posée proposée d'abord");
+        assertTrue(form.contains("name=\"arch_site\" value=\"buildsite_0008\" checked"), "seule arche libre");
+        assertTrue(form.contains("800, 64, -651 → 800, 67, -649 (1 × 4 × 3 blocs)"), "zone déduite affichée");
+        assertTrue(form.contains("name=\"arch_site\" value=\"buildsite_0007\" disabled")
+                && form.contains("Déjà utilisée par le portail « arche_marche »"));
+        assertTrue(form.contains("name=\"arch_site\" value=\"buildsite_0009\" disabled")
+                && form.contains("sans zone de passage"));
+        assertFalse(form.contains("name=\"arch_width\""), "aucune dimension à saisir pour une arche");
+        assertTrue(form.indexOf("name=\"world\"") > form.indexOf("p-mode-coords"),
+                "monde de départ demandé seulement en coordonnées");
+        assertTrue(form.contains("name=\"strategy\" value=\"WORLD_SPAWN\" checked"));
+        assertTrue(form.indexOf("name=\"point_x\"") > form.indexOf("class=\"p-fixed\""), "point fixe à part");
+        assertTrue(form.contains("Inclinaison du regard à l&#39;arrivée") && form.contains("-90° = vers le ciel")
+                && !form.contains("Regard vertical"));
+        assertTrue(form.contains("data-portal-summary") && form.contains("Statut après création")
+                && form.contains("hub_to_wild|world_hub|737|66|-673|740|69|-673"), "synthèse et zones connues");
+    }
+
+    @Test
+    void aDraftFromAPlacedArchIsQueuedWithTheSiteOnly() throws Exception {
+        start();
+        login();
+        String token = csrf(get("/portals?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=portal.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=porte_nord&zone_mode=building&arch_site=buildsite_0008&site=buildsite_0001"
+                + "&width=3&height=4&depth=1&destination_world=wild&strategy=RANDOM_SAFE&confirm=true");
+        post("/agents/action", "_csrf=" + token + "&type=portal.update&agent=" + TestConfig.AGENT_ID
+                + "&return=/portals&id=arche_marche&expected=bbbbbbbbbbbbbbbbbbbbbbbb&zone_mode=building"
+                + "&arch_site=buildsite_0008&confirm=true");
+        String queued = pollActions();
+        assertTrue(queued.contains("\"zone_mode\":\"building\"") && queued.contains("\"site\":\"buildsite_0008\""),
+                queued);
+        assertFalse(queued.contains("\"width\"") || queued.contains("buildsite_0001"), "groupe non choisi ignoré");
+        assertFalse(queued.contains("portal.update"), "un portail existant se lie depuis sa fiche");
     }
 
     @Test

@@ -256,6 +256,96 @@ class WorldPortalBuildingLinkTest {
         assertTrue(e.issues().stream().anyMatch(i -> i.code().equals("PORTAL_BUILDING_LINK_BROKEN")));
     }
 
+    // ---- #565 : création d'un brouillon « depuis une arche posée » -------------------------------
+
+    private static final String SITE_2 = "buildsite_0008";
+
+    private void addSecondSite() {
+        sites.put(SITE_2, new BuildingSite(SITE_2, "Porte nord", "", "", "world_hub",
+                800, 64, -650, Facing.NORTH, SiteStatus.EMPTY, "LoDyMcFly", Instant.EPOCH));
+    }
+
+    private void placeOnSecondSite(BuildingDefinition definition, int degrees) {
+        var f = definition.footprintAt("world_hub", 800, 64, -650, degrees);
+        placed.put(SITE_2, new SiteBuilding(new BuildingPlacement(SITE_2, definition.id(), 1, "", "world_hub",
+                800, 64, -650, degrees, f.minX(), f.minY(), f.minZ(), f.maxX(), f.maxY(), f.maxZ(),
+                "backup.schem", "claude", Instant.EPOCH), definition));
+    }
+
+    private Result createFromArch(String id) {
+        return service.create(new CreateRequest(id, "Porte nord", ZoneRequest.fromBuilding(SITE_2), "wild",
+                DestinationStrategy.RANDOM_SAFE), "claude", ctx());
+    }
+
+    @Test
+    void aDraftCreatedFromAPlacedArchTakesItsPassageAndIsBornLinkedButInactive() throws Exception {
+        addSecondSite();
+        placeOnSecondSite(ARCH, 90);
+
+        Result r = createFromArch("porte_nord");
+
+        assertTrue(r.ok(), r.message());
+        assertTrue(r.message().contains("lié à l'arche « arche_test »"), r.message());
+        WorldPortalDefinition p = registry.find("porte_nord").orElseThrow();
+        assertEquals("world_hub", p.world(), "monde de départ = celui de l'emplacement");
+        assertEquals(new Zone(800, 64, -651, 800, 67, -649), p.zone(), "zone = passage tourné de 90°");
+        assertEquals(SITE_2, p.details().site());
+        assertEquals("arche_test", p.details().building());
+        assertEquals(State.DRAFT, p.state());
+        assertFalse(p.enabled(), "créer depuis une arche n'active jamais le portail");
+        assertEquals(PortalBuildingLink.Status.OK, PortalBuildingLink.status(p, Optional.of(placed.get(SITE_2))));
+        assertEquals("CREATE_DRAFT", audit.recent(1).get(0).operation());
+    }
+
+    @Test
+    void aDraftFromAnArchIsRefusedWithoutAUsablePassageAndWritesNothing() {
+        addSecondSite();
+        assertEquals("NO_BUILDING", createFromArch("porte_nord").code());
+        placed.put(SITE_2, new SiteBuilding(new BuildingPlacement(SITE_2, "maison", 1, "", "world_hub", 800, 64,
+                -650, 0, 798, 64, -650, 802, 68, -646, "backup.schem", "claude", Instant.EPOCH),
+                new BuildingDefinition("maison", "Maison", "", "maison.schem", 5, 5, 5, 2, 0, 0, Facing.NORTH,
+                        List.of(), 1)));
+        assertEquals("NOT_A_PORTAL", createFromArch("porte_nord").code());
+        placeOnSecondSite(arch("arche_nue", null), 0);
+        assertEquals("NO_PASSAGE", createFromArch("porte_nord").code());
+
+        assertTrue(registry.find("porte_nord").isEmpty());
+        assertFalse(Files.exists(dir.resolve("porte_nord.yml")));
+    }
+
+    @Test
+    void aDraftFromAnArchOverlappingAnExistingPortalIsRefused() {
+        place(ARCH, 0);
+        sites.put(SITE_2, new BuildingSite(SITE_2, "Même place", "", "", "world_hub",
+                700, 64, -650, Facing.NORTH, SiteStatus.EMPTY, "LoDyMcFly", Instant.EPOCH));
+        placed.put(SITE_2, placed.get(SITE));
+
+        assertEquals("OVERLAPS", createFromArch("doublon").code());
+        assertTrue(registry.find("doublon").isEmpty());
+    }
+
+    @Test
+    void thePortalListOffersPlacedArchesWithTheirPassageAndWhoUsesThem() {
+        addSecondSite();
+        place(ARCH, 0);
+        placeOnSecondSite(ARCH, 90);
+        var in = new PortalOverview.Inputs(registry.portals(), List.of("arche_marche.yml"), List.of(), List.of(),
+                List.of(), List.of(), Map.of("world_hub", "0, 64, 0", "test_world", "0, 64, 0"), ROLES,
+                new RandomSafeArrivalConfig(500, 5000, 20), new PortalOverview.ClaimArrival(200, 3000, 64, 40), null,
+                id -> Optional.ofNullable(sites.get(id)), List.of(), id -> Optional.ofNullable(placed.get(id)),
+                List.copyOf(placed.values()));
+
+        List<PortalOverview.Arch> arches = PortalOverview.build(in).arches();
+
+        assertEquals(2, arches.size());
+        assertEquals(SITE, arches.get(0).site());
+        assertEquals(List.of("arche_marche"), arches.get(0).usedBy());
+        assertEquals("Porte nord", arches.get(1).siteName());
+        assertEquals(new Zone(800, 64, -651, 800, 67, -649), arches.get(1).zone());
+        assertEquals("", arches.get(1).refusal());
+        assertTrue(arches.get(1).usedBy().isEmpty());
+    }
+
     @Test
     void aBuildingKeyWithoutSiteIsIgnoredOnLoad() throws Exception {
         Files.writeString(dir.resolve("orphelin.yml"), String.join("\n", "id: orphelin", "world: world_hub",

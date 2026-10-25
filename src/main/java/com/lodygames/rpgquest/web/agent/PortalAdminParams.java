@@ -25,7 +25,8 @@ import org.bukkit.configuration.MemoryConfiguration;
  *   <li>{@code confirm=true} obligatoire pour toutes ;</li>
  *   <li>{@code id} ; {@code expected} (empreinte lue par la page) sauf pour la création ;</li>
  *   <li>zone : {@code zone_mode=site} + {@code site}, {@code width}, {@code height}, {@code depth},
- *       ou {@code zone_mode=coords} + {@code world} (création) et {@code min_x}…{@code max_z} ;
+ *       ou {@code zone_mode=coords} + {@code world} (création) et {@code min_x}…{@code max_z},
+ *       ou {@code zone_mode=building} + {@code site} (création : passage de l'arche posée) ;
  *       {@code zone_mode=keep} (ou absent) en modification = zone inchangée ;</li>
  *   <li>création : {@code destination_world}, {@code strategy} ({@code WORLD_SPAWN} par défaut) ;
  *       modification : les mêmes avec {@code dest_mode=set} (absent ou {@code keep} = arrivée
@@ -84,6 +85,9 @@ final class PortalAdminParams {
                     return Parsed.fail("Largeur, hauteur et profondeur doivent être des nombres entiers.");
                 }
                 zone = ZoneRequest.fromSite(trim(p.get("site")), w, h, d);
+            } else if (mode.equals("building") && kind == Kind.CREATE) {
+                // #565 : zone = passage de l'arche posée sur l'emplacement, portail lié dès sa création.
+                zone = ZoneRequest.fromBuilding(trim(p.get("site")));
             } else if (mode.equals("coords")) {
                 int[] c = new int[CORNERS.length];
                 for (int i = 0; i < CORNERS.length; i++) {
@@ -97,7 +101,8 @@ final class PortalAdminParams {
                         Math.max(c[0], c[3]), Math.max(c[1], c[4]), Math.max(c[2], c[5]));
                 zone = ZoneRequest.explicit(trim(p.get("world")), z);
             } else if (kind == Kind.CREATE || !(mode.isEmpty() || mode.equals("keep"))) {
-                return Parsed.fail("Zone : choisir « site » (emplacement) ou « coords » (coordonnées).");
+                return Parsed.fail("Zone : choisir « building » (arche posée, création), « site » (emplacement) "
+                        + "ou « coords » (coordonnées).");
             }
         }
         DestinationStrategy strategy = DestinationStrategy.WORLD_SPAWN;

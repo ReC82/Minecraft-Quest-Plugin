@@ -68,12 +68,26 @@ public final class PortalOverview {
                          Map<String, String> loadedWorlds, Roles roles, RandomSafeArrivalConfig randomSafe,
                          ClaimArrival claimArrival, GuideNpc guide,
                          Function<String, Optional<BuildingSite>> sites, List<PortalAuditLog.Entry> history,
-                         Function<String, Optional<PortalBuildingLink.SiteBuilding>> buildings) {
+                         Function<String, Optional<PortalBuildingLink.SiteBuilding>> buildings,
+                         List<PortalBuildingLink.SiteBuilding> placed) {
 
         public Inputs {
             sites = sites == null ? id -> Optional.empty() : sites;
             history = history == null ? List.of() : List.copyOf(history);
             buildings = buildings == null ? id -> Optional.empty() : buildings;
+            placed = placed == null ? List.of() : List.copyOf(placed);
+        }
+
+        /** Sans liste des constructions posées (#565 UX) : conserve les appelants antérieurs. */
+        public Inputs(List<WorldPortalDefinition> worldPortals, List<String> worldPortalFiles,
+                      List<PortalLoadIssue> worldPortalSkipped, List<PortalDefinition> zonePortals,
+                      List<PortalLoadIssue> zonePortalIssues, List<Destination> destinations,
+                      Map<String, String> loadedWorlds, Roles roles, RandomSafeArrivalConfig randomSafe,
+                      ClaimArrival claimArrival, GuideNpc guide,
+                      Function<String, Optional<BuildingSite>> sites, List<PortalAuditLog.Entry> history,
+                      Function<String, Optional<PortalBuildingLink.SiteBuilding>> buildings) {
+            this(worldPortals, worldPortalFiles, worldPortalSkipped, zonePortals, zonePortalIssues, destinations,
+                    loadedWorlds, roles, randomSafe, claimArrival, guide, sites, history, buildings, null);
         }
 
         /** Sans constructions relevées (#568) : conserve les appelants antérieurs. */
@@ -84,7 +98,7 @@ public final class PortalOverview {
                       ClaimArrival claimArrival, GuideNpc guide,
                       Function<String, Optional<BuildingSite>> sites, List<PortalAuditLog.Entry> history) {
             this(worldPortals, worldPortalFiles, worldPortalSkipped, zonePortals, zonePortalIssues, destinations,
-                    loadedWorlds, roles, randomSafe, claimArrival, guide, sites, history, null);
+                    loadedWorlds, roles, randomSafe, claimArrival, guide, sites, history, null, null);
         }
 
         /** Sans emplacements ni journal (#565) : conserve les appelants antérieurs. */
@@ -174,9 +188,34 @@ public final class PortalOverview {
         }
     }
 
+    /**
+     * Arche de portail posée sur un emplacement (issue #565, contrat #568) : la zone de passage que
+     * prendrait un brouillon créé « depuis l'arche posée », déduite par le serveur de l'ancre et de
+     * la rotation de la pose. Relevé seul : rien n'est posé, lié ni modifié.
+     *
+     * @param zone    passage dans le monde, {@code null} si {@code refusal} n'est pas vide
+     * @param usedBy  portails entre mondes déjà rattachés à cet emplacement
+     */
+    public record Arch(String site, String siteName, String world, String building, String name, int rotation,
+                       WorldPortalDefinition.Zone zone, String refusal, List<String> usedBy) {
+
+        public Arch {
+            usedBy = usedBy == null ? List.of() : List.copyOf(usedBy);
+        }
+    }
+
     /** Résultat complet de {@code portal.list}. */
     public record View(boolean available, Roles roles, List<Entry> portals, List<Issue> issues,
-                       List<String> worlds, List<PortalAuditLog.Entry> history) {
+                       List<String> worlds, List<PortalAuditLog.Entry> history, List<Arch> arches) {
+
+        public View {
+            arches = arches == null ? List.of() : List.copyOf(arches);
+        }
+
+        public View(boolean available, Roles roles, List<Entry> portals, List<Issue> issues,
+                    List<String> worlds, List<PortalAuditLog.Entry> history) {
+            this(available, roles, portals, issues, worlds, history, List.of());
+        }
 
         public static View unavailable() {
             return new View(false, new Roles("", "", ""), List.of(), List.of(), List.of(), List.of());
@@ -209,7 +248,30 @@ public final class PortalOverview {
         List<String> worlds = new ArrayList<>(in.loadedWorlds().keySet());
         worlds.sort(null);
         return new View(true, in.roles(), List.copyOf(entries), List.copyOf(issues), List.copyOf(worlds),
-                in.history());
+                in.history(), arches(in));
+    }
+
+    /**
+     * Issue #565 : arches de portail posées (définition de type portail), avec le passage déduit
+     * comme le ferait « Lier » (#568). Les autres constructions posées sont ignorées.
+     */
+    private static List<Arch> arches(Inputs in) {
+        List<Arch> out = new ArrayList<>();
+        for (PortalBuildingLink.SiteBuilding sb : in.placed()) {
+            if (sb.definition() == null || !sb.definition().portal()) {
+                continue;
+            }
+            String site = sb.placement().siteId();
+            PortalBuildingLink.Derived derived = PortalBuildingLink.derive(sb);
+            List<String> usedBy = in.worldPortals().stream().filter(p -> site.equals(p.details().site()))
+                    .map(WorldPortalDefinition::id).toList();
+            String siteName = in.sites().apply(site).map(BuildingSite::name).orElse("");
+            out.add(new Arch(site, siteName, sb.placement().world(), sb.placement().buildingId(),
+                    sb.definition().name(), sb.placement().rotationDegrees(), derived.zone(),
+                    derived.ok() ? "" : derived.message(), usedBy));
+        }
+        out.sort(java.util.Comparator.comparing(Arch::site));
+        return List.copyOf(out);
     }
 
     // ---- Portails entre mondes ------------------------------------------------------------------

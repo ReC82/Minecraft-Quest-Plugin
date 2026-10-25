@@ -255,6 +255,11 @@ peut mettre en vente l'objet tenu en main :
     `market_listings` jusqu'à achat ou annulation. Aucune dépendance au
     registre d'objets personnalisés n'est nécessaire : l'objet sérialisé
     porte déjà toute son identité.
+    **Objets liés au joueur refusés (issue #852)** : un objet soulbound ou
+    permanent RPGQuest (`SoulboundItemService#isSoulbound`, identité PDC —
+    jamais nom, lore ni matériau) n'est pas mis en vente ; message
+    « Cet objet est lié à toi : il ne peut pas être mis en vente. » et
+    l'objet reste en main. Les offres déjà en cours ne sont pas modifiées.
 -   Cliquer sur l'offre d'**un autre joueur** dans la vitrine l'achète
     immédiatement (prix fixe, pas de négociation).
 -   Cliquer sur **sa propre** offre l'annule et restitue l'objet — même

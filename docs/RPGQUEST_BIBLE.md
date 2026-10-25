@@ -6917,7 +6917,7 @@ Détail : [docs/ECONOMY.md](ECONOMY.md#catalogue-des-prix-et-coûts-issue-336). 
 | Commande | Type | Permission | Effet | Persistance |
 |---|---|---|---|---|
 | `/market` | Joueur | `rpgquest.market` | Ouvre la vitrine partagée (toutes offres actives, paginée). | non |
-| `/market sell <prix>` | Joueur | `rpgquest.market` | Met en vente la pile entière tenue en main (objet complet, PDC compris). | oui — `market_listings` (migration V5) |
+| `/market sell <prix>` | Joueur | `rpgquest.market` | Met en vente la pile entière tenue en main (objet complet, PDC compris). Refuse les objets liés au joueur (soulbound / permanents : Pierre de retour, Acte de propriété, Journal de quêtes, Rune de rappel — identité PDC), qui restent en main (#852). | oui — `market_listings` (migration V5) |
 | `/market cancel <id>` | Joueur | `rpgquest.market` | Annule **sa propre** offre, restitue l'objet (aussi possible en cliquant dessus dans la vitrine). | oui |
 | `/market admin list` | Admin | `rpgquest.admin` | Liste en lecture seule toutes les offres actives (modération). | non |
 

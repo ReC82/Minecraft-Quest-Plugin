@@ -49,6 +49,35 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - Plugin : /market sell refuse les objets liés au joueur (#852)
+
+### Changement
+
+JAR plugin : `/market sell` refuse les objets soulbound / permanents RPGQuest (Pierre de retour, Acte de
+propriété, Journal de quêtes, Rune de rappel), identifiés par PDC ; l'objet reste en main. Offres en cours
+inchangées.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redémarrage. Aucune configuration, aucune migration, aucune donnée modifiées.
+
+### Sauvegarde préalable
+
+JAR + `data.db` + configuration par `scripts/deploy-verygames.sh`.
+
+### Déploiement
+
+Voir le rapport de session #852 (`docs/claude-reports/`).
+
+### Validation
+
+Tests automatisés `MarketServiceTest` ; en jeu : PENDING MANUAL VALIDATION (TC-435).
+
+### Rollback
+
+`scripts/rollback-verygames.sh` vers la sauvegarde datée, puis redémarrage (l'ancien JAR accepte de nouveau
+la mise en vente de ces objets).
+
 ## 2026-10-25 - Plugin + PlugAdmin : mobs spéciaux tirés uniquement dans le Wild (#851)
 
 ### Changement

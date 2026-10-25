@@ -945,6 +945,8 @@ public final class RPGQuestBootstrap {
         registry.start(soulboundItemService);
         registry.start(new PlayerListenerService(plugin, soulboundItemService.listener()));
         registry.start(new PlayerListenerService(plugin, soulboundItemService.storageListener()));
+        // #852 : un objet lié au joueur ne se vend pas non plus sur /market sell.
+        marketService.setUnsellableItemRule(soulboundItemService::isSoulbound);
 
         // Kit de départ (mission « boucle joueur ») : une Rune de rappel remise une seule fois à
         // chaque joueur, à sa première connexion — marqueur persistant, jamais de duplication.

@@ -9270,6 +9270,18 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 
 **Couverture automatisée** : `QuestProgressTextTest` (quête active à quatre objectifs : titre + quatre compteurs, nom traduit, ligne identique à celle du journal ; quête non en cours ; quête inconnue → jeton visible ; quête à plusieurs étapes et objectif binaire ; id nu ou `rpgquest:…`), `BundledDialoguesValidityTest#theGuardTellsTheActiveTierProgressAndNeverPromisesAReturnVisit` (un choix « Où en suis-je ? » par palier sous `QUEST_STATE … ACTIVE`, nœud avec `%quest_progress:…%`, offres NOT_STARTED / COMPLETED inchangées, plus aucune promesse de retour), `QuestJournalServiceTest` (lignes du journal inchangées après mise en commun de `ObjectiveLabels#counterLine`).
 
+### TC-435 — Marché : un objet lié au joueur ne se met pas en vente (issue #852, PENDING MANUAL VALIDATION)
+
+**But** : `/market sell <prix>` refuse les objets soulbound / permanents RPGQuest ; les objets ordinaires se vendent comme avant.
+
+**Prérequis** : JAR #852 en ligne sur DEV ; permission `rpgquest.market`.
+
+1. Tenir la **Pierre de retour** (ou le Journal de quêtes, l'Acte de propriété, la Rune de rappel) en main, taper `/market sell 10`. **Attendu** : message rouge « Cet objet est lié à toi : il ne peut pas être mis en vente. », l'objet reste en main, `/market` ne montre aucune nouvelle offre.
+2. Tenir un objet ordinaire (ex. 3 diamants), `/market sell 10`. **Attendu** : « Objet mis en vente (#id, 10 …) », l'objet quitte la main, l'offre apparaît dans `/market`.
+3. Cliquer sur sa propre offre. **Attendu** : annulée, objet restitué (inchangé).
+
+**Couverture automatisée** : `MarketServiceTest#sellingAPermanentItemIsRefusedAndTheItemStaysInHand`, `#sellingASoulboundOnlyItemIsRefusedToo`, `#refusalLeavesExistingListingsIntact`, `#anOrdinaryItemNamedLikeAPermanentOneIsStillSellable` (sosie vanilla nommé « Pierre de retour » accepté) ; tests existants du marché inchangés.
+
 ### TC-434 — Mobs spéciaux : aucun tirage automatique au Hub ni dans les Claims (issue #851, PENDING MANUAL VALIDATION)
 
 **But** : un profil `SPECIAL` à `worlds: []` (ex. `creeper_pig`, base PIG) ne transforme jamais un mob né naturellement dans `hub.world` ou `claims.world` ; dans le Wild, le tirage reste inchangé.

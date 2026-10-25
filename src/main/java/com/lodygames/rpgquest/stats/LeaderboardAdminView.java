@@ -209,6 +209,9 @@ public final class LeaderboardAdminView {
         row.put("order", board.order());
         row.put("visible", board.visible());
         row.put("featured", board.featured());
+        if (board.split() != null) {
+            row.put("split", board.split());
+        }
         return row;
     }
 

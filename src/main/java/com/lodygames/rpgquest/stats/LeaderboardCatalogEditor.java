@@ -72,7 +72,7 @@ public final class LeaderboardCatalogEditor {
 
     /** Ordre des clés écrites, une ligne lisible par classement. */
     static final List<String> KEYS = List.of("id", "name", "description", "category", "icon", "metric", "filter",
-            "period", "event", "start", "end", "size", "status", "order", "visible", "featured");
+            "period", "event", "start", "end", "size", "status", "order", "visible", "featured", "split");
     static final int MAX_BOARDS = 200;
 
     static final String HEADER = """

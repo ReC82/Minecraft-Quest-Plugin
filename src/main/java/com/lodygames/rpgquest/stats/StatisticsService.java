@@ -169,7 +169,8 @@ public final class StatisticsService implements PluginService {
     static List<StatPeriod> endedBoardWindows(StatisticsDefinition definition, Instant now) {
         List<StatPeriod> windows = new ArrayList<>();
         for (StatBoard board : definition.activeBoards()) {
-            if (!board.statMetric().windowed()) {
+            // Un classement par type de créature (#734) se relit en direct dans le journal, jamais figé.
+            if (!board.statMetric().windowed() || board.splitByEntity()) {
                 continue;
             }
             if (board.period().calendar()) {

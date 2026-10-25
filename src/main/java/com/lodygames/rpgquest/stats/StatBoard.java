@@ -30,11 +30,13 @@ import java.util.Set;
  * @param order         ordre d'affichage (croissant), puis ordre du fichier
  * @param visible       publié sur le site ; un classement actif mais caché est calculé et figé sans être montré
  * @param event         id de l'événement de {@code statistics.yml} suivi par {@link BoardPeriod#EVENT}, sinon {@code null}
+ * @param split         {@link #SPLIT_ENTITY} : un classement par type de créature réellement tué (#734, mobs
+ *                      spéciaux à part), lu en direct dans le journal ; {@code null} pour un classement unique
  */
 public record StatBoard(String id, String name, String category, String icon, String metric,
                         Map<String, Set<String>> filter, Map<String, List<String>> declared, BoardPeriod period,
                         Instant start, Instant end, int size, boolean featured, String description,
-                        Status status, int order, boolean visible, String event) {
+                        Status status, int order, boolean visible, String event, String split) {
 
     /**
      * Cycle de vie d'un classement (#735). {@link #DRAFT} : en préparation, jamais calculé ;
@@ -59,6 +61,12 @@ public record StatBoard(String id, String name, String category, String icon, St
         }
     }
 
+    /**
+     * Découpage par type de créature (#734) : seul découpage connu, réservé à {@code ENTITY_KILL}. Les
+     * cibles listées sont celles qui ont au moins une ligne dans le journal — jamais un type vide.
+     */
+    public static final String SPLIT_ENTITY = "entity";
+
     /** Thèmes publics, mêmes identifiants que les filtres du portail. */
     public static final List<String> CATEGORIES =
             List.of("aventure", "combat", "recolte", "exploration", "communaute", "autres");
@@ -73,7 +81,12 @@ public record StatBoard(String id, String name, String category, String icon, St
                      Map<String, Set<String>> filter, Map<String, List<String>> declared, BoardPeriod period,
                      Instant start, Instant end, int size, boolean featured) {
         this(id, name, category, icon, metric, filter, declared, period, start, end, size, featured, null,
-                Status.ENABLED, 0, true, null);
+                Status.ENABLED, 0, true, null, null);
+    }
+
+    /** Vrai pour un classement découpé par type de créature ({@link #SPLIT_ENTITY}). */
+    public boolean splitByEntity() {
+        return SPLIT_ENTITY.equals(split);
     }
 
     /** Vrai s'il est calculé et figé (actif), qu'il soit visible ou non. */

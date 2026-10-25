@@ -70,4 +70,16 @@ class StatDimensionsTest {
     private Set<String> members(Kind kind, String id) {
         return dimensions.family(kind, id).orElseThrow().members();
     }
+
+    @Test
+    void everyCountableCreatureHasAFrenchName() {
+        List<String> missing = dimensions.entities().stream().filter(StatDimensions.EntityEntry::countable)
+                .map(StatDimensions.EntityEntry::type)
+                .filter(type -> !dimensions.labelledEntities().contains(type)).toList();
+        assertEquals(List.of(), missing, "nom français manquant dans entity-labels de families.yml");
+        assertEquals("Zombie momifié", dimensions.entityLabel("HUSK"));
+        assertEquals("Mob inconnu", dimensions.entityLabel("MOB_INCONNU"), "repli lisible, jamais masqué");
+        assertEquals(EntityCategory.HOSTILE, dimensions.categoryOf("ZOMBIE"));
+        assertEquals(EntityCategory.EXCLUDED, dimensions.categoryOf("MOB_INCONNU"));
+    }
 }

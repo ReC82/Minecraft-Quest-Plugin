@@ -119,4 +119,75 @@ class BoardCatalogExportTest {
         assertTrue(families.get("entity-family").toString().contains("zombies"));
         assertTrue(families.get("block-family").toString().contains("ores"));
     }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void aSplitBoardPublishesOneRankingPerCreatureTypeActuallyKilled() throws Exception {
+        UUID bob = UUID.fromString("00000000-0000-0000-0000-000000000b0b");
+        new PlayerProfileRepository(database).findOrCreate(bob, "Bob").get(TIMEOUT, TimeUnit.SECONDS);
+        ActivityLogRepository journal = new ActivityLogRepository(database);
+        journal.record(new ActivityLogRepository.Activity("kill:3", bob, StatMetric.ENTITY_KILL, "ZOMBIE", null, 1,
+                Instant.parse("2026-10-21T10:00:00Z"))).get(TIMEOUT, TimeUnit.SECONDS);
+        journal.record(new ActivityLogRepository.Activity("kill:4", bob, StatMetric.ENTITY_KILL, "ZOMBIE", null, 1,
+                Instant.parse("2026-10-21T11:00:00Z"))).get(TIMEOUT, TimeUnit.SECONDS);
+        journal.record(new ActivityLogRepository.Activity("kill:5", alice, StatMetric.ENTITY_KILL, "ZOMBIE",
+                "rpgquest:roi_zombie", 1, Instant.parse("2026-10-22T10:00:00Z"))).get(TIMEOUT, TimeUnit.SECONDS);
+        journal.record(new ActivityLogRepository.Activity("kill:6", alice, StatMetric.ENTITY_KILL, "PIG", null, 1,
+                Instant.parse("2026-10-22T11:00:00Z"))).get(TIMEOUT, TimeUnit.SECONDS);
+        StatisticsDefinition stats = definition("""
+                leaderboards:
+                  - {id: by_type, name: "Par type", category: combat, metric: ENTITY_KILL, split: entity}
+                  - {id: by_type_week, name: "Par type, semaine", metric: ENTITY_KILL, split: entity, period: weekly}
+                  - {id: hostile_by_type, name: "Hostiles", metric: ENTITY_KILL, split: entity,
+                     filter: {entity-family: [hostile]}}
+                """);
+        var catalog = BoardCatalogExport.gather(statistics, stats, NOW, id -> false, Visibility.PUBLIC, List.of(),
+                id -> id.equals("rpgquest:roi_zombie") ? "Roi zombie" : id).get(TIMEOUT, TimeUnit.SECONDS);
+        List<Map<String, Object>> boards = BoardCatalogExport.boards(catalog);
+
+        Map<String, Object> lifetime = boards.get(0);
+        assertEquals("entity", lifetime.get("split"));
+        assertNull(lifetime.get("leaderboard"), "un classement découpé n'a pas de liste unique");
+        List<Map<String, Object>> targets = (List<Map<String, Object>>) lifetime.get("targets");
+        assertEquals(List.of("special:rpgquest:roi_zombie", "ZOMBIE", "HUSK", "PIG"),
+                targets.stream().map(t -> t.get("key")).toList(), "mob spécial à part, puis hostiles, puis non hostiles");
+        assertEquals("Roi zombie", targets.get(0).get("label"));
+        assertEquals("special", targets.get(0).get("category"));
+        assertEquals("Zombie", targets.get(0).get("base"));
+        assertEquals("Zombie momifié", targets.get(2).get("label"), "tri alphabétique français dans la catégorie");
+        assertEquals("hostile", targets.get(1).get("category"));
+        assertEquals("passive", targets.get(3).get("category"));
+        assertEquals(List.of(Map.of("name", "Bob", "value", 2L, "rank", 1), Map.of("name", "Alice", "value", 1L, "rank", 2)),
+                targets.get(1).get("leaderboard"), "le zombie spécial ne compte pas comme un zombie");
+        assertEquals("2026-10-20T10:00:00Z", targets.get(1).get("trackedSince"));
+
+        Map<String, Object> week = boards.get(1);
+        List<Map<String, Object>> weekTargets = (List<Map<String, Object>>) week.get("targets");
+        Map<String, Object> husk = weekTargets.stream().filter(t -> "HUSK".equals(t.get("key"))).findFirst().orElseThrow();
+        assertEquals(List.of(), husk.get("leaderboard"), "type déjà rencontré, personne cette semaine");
+        Map<String, Object> previous = (Map<String, Object>) week.get("previous");
+        assertEquals("2026-W42", previous.get("key"));
+        Map<String, Object> previousHusk = ((List<Map<String, Object>>) previous.get("targets")).stream()
+                .filter(t -> "HUSK".equals(t.get("key"))).findFirst().orElseThrow();
+        assertEquals(List.of(Map.of("name", "Alice", "value", 1L, "rank", 1)), previousHusk.get("leaderboard"));
+
+        List<Map<String, Object>> hostile = (List<Map<String, Object>>) boards.get(2).get("targets");
+        assertFalse(hostile.stream().anyMatch(t -> "PIG".equals(t.get("key"))), "le filtre du classement s'applique");
+        assertFalse(boards.toString().contains(alice.toString()) || boards.toString().contains(bob.toString()),
+                "aucun UUID publié");
+    }
+
+    @Test
+    void splitIsOnlyAcceptedForCreatureKills() throws Exception {
+        YamlConfiguration configuration = new YamlConfiguration();
+        configuration.loadFromString("""
+                leaderboards:
+                  - {id: blocks, name: "Blocs", metric: BLOCK_BREAK, split: entity}
+                  - {id: kills, name: "Kills", metric: ENTITY_KILL, split: biome}
+                """);
+        var result = StatisticsDefinitionLoader.load(configuration);
+        assertFalse(result.valid());
+        assertEquals(2, result.errors().stream().filter(error -> error.contains("« split »")).count(),
+                String.join("\n", result.errors()));
+    }
 }

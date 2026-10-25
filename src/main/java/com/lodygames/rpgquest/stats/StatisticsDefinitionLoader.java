@@ -227,6 +227,12 @@ public final class StatisticsDefinitionLoader {
                 errors.add(where + " : « size » entre 1 et " + MAX_BOARD_SIZE + ".");
                 continue;
             }
+            String split = text(entry.get("split"));
+            if (split != null && (!StatBoard.SPLIT_ENTITY.equals(split) || !StatMetric.ENTITY_KILL.equals(metricId))) {
+                errors.add(where + " : « split » vaut « " + StatBoard.SPLIT_ENTITY + " », et seulement avec metric: "
+                        + StatMetric.ENTITY_KILL + " (un classement par type de créature).");
+                continue;
+            }
             int before = errors.size();
             Map<String, Set<String>> filter = filter(entry.get("filter"), List.of(metricId), where, errors);
             if (errors.size() != before) {
@@ -235,7 +241,7 @@ public final class StatisticsDefinitionLoader {
             boards.add(new StatBoard(id, name, category == null ? "autres" : category, icon, metricId, filter,
                     declared(entry.get("filter")), period.get(), start, end, size,
                     Boolean.TRUE.equals(entry.get("featured")), fields.description(), fields.status(), fields.order(),
-                    fields.visible(), event));
+                    fields.visible(), event, split));
         }
         // Ordre d'affichage (#735), puis ordre du fichier (tri stable).
         boards.sort(java.util.Comparator.comparingInt(StatBoard::order));

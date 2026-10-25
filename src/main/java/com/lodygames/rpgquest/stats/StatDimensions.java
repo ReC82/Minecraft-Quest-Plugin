@@ -104,12 +104,16 @@ public final class StatDimensions {
     private final List<EntityEntry> entities;
     private final Map<Kind, Map<String, Family>> families;
     private final List<String> unknownNames;
+    private final Map<String, String> entityLabels;
+    private final Map<String, EntityCategory> categories = new java.util.HashMap<>();
 
     private StatDimensions(List<EntityEntry> entities, Map<Kind, Map<String, Family>> families,
-                           List<String> unknownNames) {
+                           List<String> unknownNames, Map<String, String> entityLabels) {
         this.entities = List.copyOf(entities);
         this.families = families;
         this.unknownNames = List.copyOf(unknownNames);
+        this.entityLabels = Map.copyOf(entityLabels);
+        entities.forEach(entry -> categories.put(entry.type(), entry.category()));
     }
 
     /** Dimensions du JAR (familles de {@code stats/families.yml}), chargées une fois. */
@@ -151,7 +155,18 @@ public final class StatDimensions {
         Map<String, Family> blockFamilies = new LinkedHashMap<>();
         readFamilies(root.getConfigurationSection("block"), Kind.BLOCK, materialNames(), blockFamilies, unknown);
         families.put(Kind.BLOCK, blockFamilies);
-        return new StatDimensions(entities, families, unknown);
+        Map<String, String> labels = new LinkedHashMap<>();
+        ConfigurationSection labelSection = root.getConfigurationSection("entity-labels");
+        if (labelSection != null) {
+            for (String name : labelSection.getKeys(false)) {
+                if (entityNames.contains(name)) {
+                    labels.put(name, labelSection.getString(name, name));
+                } else {
+                    unknown.add("entity-labels : " + name);
+                }
+            }
+        }
+        return new StatDimensions(entities, families, unknown, labels);
     }
 
     /** Tous les types d'entités Paper, dans l'ordre de l'énumération, avec leur catégorie. */
@@ -165,6 +180,29 @@ public final class StatDimensions {
 
     public Optional<Family> family(Kind kind, String id) {
         return Optional.ofNullable(families.get(kind).get(id));
+    }
+
+    /**
+     * Nom français d'un type d'entité ({@code entity-labels} de {@code families.yml}) ; à défaut son
+     * nom technique lisible ({@code ZOMBIE_HORSE} → « Zombie horse ») — jamais masqué.
+     */
+    public String entityLabel(String type) {
+        String label = entityLabels.get(type);
+        if (label != null) {
+            return label;
+        }
+        String plain = type.replace('_', ' ').toLowerCase(Locale.ROOT);
+        return plain.isEmpty() ? plain : Character.toUpperCase(plain.charAt(0)) + plain.substring(1);
+    }
+
+    /** Catégorie d'un type d'entité par son nom ; {@link EntityCategory#EXCLUDED} s'il est inconnu. */
+    public EntityCategory categoryOf(String type) {
+        return categories.getOrDefault(type, EntityCategory.EXCLUDED);
+    }
+
+    /** Types nommés dans {@code entity-labels}. */
+    public Set<String> labelledEntities() {
+        return entityLabels.keySet();
     }
 
     /** Noms de {@code families.yml} inconnus de Paper (faute de frappe, type retiré) : à corriger. */

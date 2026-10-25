@@ -567,6 +567,45 @@ class BundledDialoguesValidityTest {
     }
 
     /**
+     * Issue #841 : pendant un palier de Gauthier en cours, l'accueil propose « Où en suis-je ? »,
+     * conditionné à CE palier actif, menant à un nœud qui affiche ses compteurs réels. Les choix
+     * NOT_STARTED / COMPLETED existants ne changent pas, et aucune réplique ne promet plus un retour
+     * auprès de Gauthier : le palier se termine automatiquement au dernier monstre.
+     */
+    @Test
+    void theGuardTellsTheActiveTierProgressAndNeverPromisesAReturnVisit() {
+        DialogueLoadReport report = loader.load(Map.of("guard.yml", read("/dialogues/guard.yml")));
+        assertTrue(report.issues().isEmpty(), () -> "guard.yml doit rester valide : " + report.issues());
+        DialogueDefinition guard = report.loaded().get(0);
+        List<DialogueChoice> greeting = guard.nodes().get(guard.startNodeId()).choices();
+
+        for (int tier = 1; tier <= 5; tier++) {
+            NamespacedKey quest = new NamespacedKey("rpgquest", "guard_tier" + tier);
+            List<DialogueChoice> progress = greeting.stream()
+                    .filter(c -> c.conditions().equals(List.of(
+                            new com.lodygames.rpgquest.dialogue.model.QuestStateCondition(
+                                    quest, com.lodygames.rpgquest.quest.model.QuestState.ACTIVE))))
+                    .toList();
+            assertEquals(1, progress.size(), "un seul choix d'avancement pour " + quest);
+            assertEquals("Où en suis-je ?", progress.get(0).text().base());
+            assertTrue(progress.get(0).actions().isEmpty(), "consulter son avancement ne modifie rien");
+            String answer = guard.nodes().get(progress.get(0).next()).text().base();
+            assertTrue(answer.contains("%quest_progress:rpgquest:guard_tier" + tier + "%"),
+                    () -> "compteurs réels attendus : " + answer);
+        }
+        assertEquals(5, greeting.stream().filter(c -> c.text().base().startsWith("Obtenir un terrain")
+                || c.text().base().startsWith("Terrain : palier")).count(), "offres NOT_STARTED inchangées");
+        assertEquals(1, greeting.stream().filter(c -> c.text().base().equals("J'ai fini mes paliers")).count());
+        // « Reviens me voir si tu changes d'avis » (refus) reste juste : seule la promesse d'une
+        // remise auprès de Gauthier à la fin d'un palier est fausse.
+        for (DialogueNode node : guard.nodes().values()) {
+            String text = node.text().base();
+            assertFalse(text.contains("Reviens me voir une fois") || text.contains("revenir me voir"),
+                    () -> node.id() + " promet un retour inutile : " + text);
+        }
+    }
+
+    /**
      * Issue #475, retour du 17/10 (captures 131227 / 131357) : accueil LÉGER. Matériaux, compteurs,
      * état de possession et action de remise n'apparaissent qu'après « Comment améliorer mon kit ? ».
      */

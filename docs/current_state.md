@@ -11,8 +11,8 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > l'étape courante, rendue par `ui.ObjectiveLabels#counterLine`, désormais partagée avec le journal
 > (mêmes compteurs, lus sur `QuestProgressEngine#activeStepView`). Les arguments de jeton acceptent
 > un espace de noms (`rpgquest:guard_tier1`). `dialogues/guard.yml` : « Où en suis-je ? » sous
-> `QUEST_STATE guard_tierN ACTIVE`, répliques alignées sur la fin automatique du palier ; seed aligné
-> sur le retrait de « Les récompenses » fait par le propriétaire. Aucune migration. TC-433.
+> `QUEST_STATE guard_tierN ACTIVE`, répliques alignées sur la fin automatique du palier ; « Les récompenses »
+> laissé intact dans le seed (retiré par le propriétaire sur DEV seulement). Aucune migration. TC-433.
 
 > **Notifications de plusieurs quêtes simultanées (#817, 25/10/2026)** — `feedback.ActionBarFeedback` :
 > une action qui fait progresser plusieurs quêtes donne une ligne courte (libellé une fois, titre abrégé

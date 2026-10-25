@@ -56,8 +56,8 @@ class MiniYamlFidelityTest {
         DialogueDraft d = r.draft();
 
         // Inventaire relevé avec SnakeYAML sur le fichier source (rapport #373).
-        assertEquals(18, d.nodes.size(), "répliques");
-        assertEquals(35, d.choiceCount(), "réponses");
+        assertEquals(23, d.nodes.size(), "répliques");
+        assertEquals(45, d.choiceCount(), "réponses");
         int nexts = 0;
         int conditions = 0;
         int actions = 0;
@@ -73,17 +73,18 @@ class MiniYamlFidelityTest {
                 }
             }
         }
-        assertEquals(25, nexts, "suites");
-        assertEquals(13, conditions, "conditions");
+        assertEquals(35, nexts, "suites");
+        assertEquals(18, conditions, "conditions");
         assertEquals(17, actions, "actions");
         assertTrue(!Diagnostic.hasError(DialogueValidator.validate(d)), DialogueValidator.validate(d).toString());
 
-        // Inventaire mis à jour par #778 (offres first_steps / crystal_hunt retirées du Garde).
+        // Inventaire mis à jour par #778 (offres first_steps / crystal_hunt retirées du Garde), puis
+        // #841 (+5 répliques « Où en suis-je ? », +5 réponses conditionnées ACTIVE, +5 « Merci »).
         DialogueDraft.Node offer = d.nodes.stream().filter(n -> n.id.equals("offer_tier1")).findFirst().orElseThrow();
         assertEquals("<white>La quête s'appelle <gold>Gauthier — Palier 1</gold>.</white><newline> <gray>But : obtenir "
                 + "le droit de poser ton premier terrain.</gray><newline> <gray>Ce qu'il faudra faire : repousser les "
-                + "quatre menaces qui rôdent autour des murs — 5 araignées, 5 zombies, 5 squelettes et 5 creepers — "
-                + "puis revenir me voir.</gray>", offer.text, "le « > » n'est plus pris pour le texte");
+                + "quatre menaces qui rôdent autour des murs — 5 araignées, 5 zombies, 5 squelettes et 5 creepers. "
+                + "Le palier se valide tout seul à la dernière menace repoussée.</gray>", offer.text, "le « > » n'est plus pris pour le texte");
     }
 
     @Test

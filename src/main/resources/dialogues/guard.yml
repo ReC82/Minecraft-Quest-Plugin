@@ -123,6 +123,8 @@ nodes:
         conditions:
           - type: HAS_PENDING_DELIVERY
         next: delivery
+      - text: "Les récompenses"
+        next: reward_info
       - text: "Non merci"
         next: refused
 
@@ -405,6 +407,18 @@ nodes:
       - text: "D'accord"
         actions:
           - type: CLOSE
+
+  # Avant #238, ce nœud annonçait « de l'expérience et une épée en fer » quelle que soit la quête
+  # en cours : vrai pour Premiers pas seulement, faux pour toutes les autres. Il ne promet plus une
+  # récompense qu'il ne connaît pas.
+  reward_info:
+    speaker: "Gauthier"
+    text: >
+      <gray>Chaque quête a sa propre récompense. Elle est écrite dans ton journal de quêtes, et
+      je te la remets en main propre quand tu reviens me voir.</gray>
+    choices:
+      - text: "Retour"
+        next: greeting
 
   refused:
     speaker: "Gauthier"

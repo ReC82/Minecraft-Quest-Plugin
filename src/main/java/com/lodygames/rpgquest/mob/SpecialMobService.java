@@ -19,6 +19,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.random.RandomGenerator;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -26,6 +28,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
+import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Creeper;
@@ -95,6 +98,8 @@ public final class SpecialMobService implements PluginService, Listener {
     private final Logger logger;
     private final RandomGenerator random;
     private final MobSpawnSettingsStore spawnSettingsStore;
+    /** Issue #851 : mondes où le tirage automatique est permis (Wild seulement, jamais Hub ni Claims). */
+    private final Predicate<World> naturalSpawnWorld;
     private final NamespacedKey pdcKey;
     private final NamespacedKey splitDepthKey;
     private final NamespacedKey splitParentKey;
@@ -110,13 +115,14 @@ public final class SpecialMobService implements PluginService, Listener {
 
     public SpecialMobService(Plugin plugin, SpecialMobRegistry registry, ZoneRegistry zoneRegistry,
                               YamlCustomItemRegistry customItemRegistry, Logger logger,
-                              MobSpawnSettingsStore spawnSettingsStore) {
-        this(plugin, registry, zoneRegistry, customItemRegistry, logger, ThreadLocalRandom.current(), spawnSettingsStore);
+                              MobSpawnSettingsStore spawnSettingsStore, Predicate<World> naturalSpawnWorld) {
+        this(plugin, registry, zoneRegistry, customItemRegistry, logger, ThreadLocalRandom.current(), spawnSettingsStore,
+                naturalSpawnWorld);
     }
 
     SpecialMobService(Plugin plugin, SpecialMobRegistry registry, ZoneRegistry zoneRegistry,
                        YamlCustomItemRegistry customItemRegistry, Logger logger, RandomGenerator random,
-                       MobSpawnSettingsStore spawnSettingsStore) {
+                       MobSpawnSettingsStore spawnSettingsStore, Predicate<World> naturalSpawnWorld) {
         this.plugin = plugin;
         this.registry = registry;
         this.zoneRegistry = zoneRegistry;
@@ -124,10 +130,29 @@ public final class SpecialMobService implements PluginService, Listener {
         this.logger = logger;
         this.random = random;
         this.spawnSettingsStore = spawnSettingsStore;
+        this.naturalSpawnWorld = naturalSpawnWorld;
         this.pdcKey = new NamespacedKey(plugin, PDC_KEY_NAME);
         this.splitDepthKey = new NamespacedKey(plugin, SPLIT_DEPTH_KEY_NAME);
         this.splitParentKey = new NamespacedKey(plugin, SPLIT_PARENT_KEY_NAME);
         this.testInstanceKey = new NamespacedKey(plugin, TEST_INSTANCE_KEY_NAME);
+    }
+
+    /**
+     * Issue #851 : périmètre du tirage automatique -- un monde Wild ({@code wildWorld}) qui n'est ni le
+     * Hub ni les Claims ({@code protectedWorlds}, relus à chaque appel), même mal déclarés comme Wild.
+     */
+    public static Predicate<World> wildOnly(Predicate<World> wildWorld, Supplier<Set<String>> protectedWorlds) {
+        return world -> {
+            if (world == null) {
+                return false;
+            }
+            for (String name : protectedWorlds.get()) {
+                if (name.equalsIgnoreCase(world.getName())) {
+                    return false;
+                }
+            }
+            return wildWorld.test(world);
+        };
     }
 
     @Override
@@ -323,6 +348,9 @@ public final class SpecialMobService implements PluginService, Listener {
      * Résout la ou les transformations possibles d'un spawn naturel éligible (issue #174) :
      *
      * <ol>
+     *   <li>monde Wild uniquement (issue #851) -- jamais le Hub ni les Claims, même pour un profil
+     *       {@code worlds: []} : la liste {@code worlds} d'un profil restreint le Wild, elle ne
+     *       l'étend jamais ;</li>
      *   <li>throttle global ({@link MobSpawnSettings#chance()}) -- un seul tirage, évalué une fois,
      *       <i>avant</i> d'examiner les définitions individuelles ;</li>
      *   <li>plafond global de {@code SPECIAL} vivants simultanés ({@link MobSpawnSettings#maxSimultaneousSpecial()}) ;</li>
@@ -337,6 +365,9 @@ public final class SpecialMobService implements PluginService, Listener {
     Optional<SpecialMobDefinition> rollDefinition(LivingEntity entity) {
         MobSpawnSettings settings = spawnSettingsStore.current();
         if (!settings.enabled()) {
+            return Optional.empty();
+        }
+        if (!naturalSpawnWorld.test(entity.getWorld())) {
             return Optional.empty();
         }
         if (random.nextDouble() >= settings.chance()) {

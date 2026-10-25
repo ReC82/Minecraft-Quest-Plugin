@@ -13,6 +13,7 @@ import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 import java.util.random.RandomGenerator;
 import org.bukkit.Location;
@@ -106,7 +107,7 @@ class SpecialMobServiceTest {
     }
 
     private SpecialMobService newService(RandomGenerator random) {
-        return new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), random, spawnSettingsStore);
+        return new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), random, spawnSettingsStore, world -> true);
     }
 
     private static EntityDeathEvent deathEvent(LivingEntity entity, List<org.bukkit.inventory.ItemStack> drops) {
@@ -227,7 +228,7 @@ class SpecialMobServiceTest {
         SpecialMobRegistry bossRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
         bossRegistry.reload();
         SpecialMobService service = new SpecialMobService(
-                plugin, bossRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), fixedRandom(0.0), spawnSettingsStore);
+                plugin, bossRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), fixedRandom(0.0), spawnSettingsStore, world -> true);
 
         LivingEntity zombie = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
         assertTrue(service.rollDefinition(zombie).isEmpty(), "une définition BOSS ne doit jamais sortir du tirage aléatoire");
@@ -248,7 +249,7 @@ class SpecialMobServiceTest {
         throttledSettings.save(new MobSpawnSettings(true, 0.3, null));
         SpecialMobService service = new SpecialMobService(
                 plugin, throttledRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(),
-                fixedRandom(0.5), throttledSettings); // 0.5 >= 0.3 (throttle global) : jamais examiné plus loin.
+                fixedRandom(0.5), throttledSettings, world -> true); // 0.5 >= 0.3 (throttle global) : jamais examiné plus loin.
 
         LivingEntity zombie = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
         assertTrue(service.rollDefinition(zombie).isEmpty(),
@@ -277,14 +278,14 @@ class SpecialMobServiceTest {
 
         // throttle(0.0) passe ; weight_a(0.0<0.5) touche ; weight_b(0.0<0.5) touche ; tirage pondéré(0.9) -> weight_b.
         SpecialMobService serviceB = new SpecialMobService(plugin, weightedRegistry, zoneRegistry, itemRegistry,
-                plugin.getSLF4JLogger(), sequenceRandom(0.0, 0.0, 0.0, 0.9), defaultSettings);
+                plugin.getSLF4JLogger(), sequenceRandom(0.0, 0.0, 0.0, 0.9), defaultSettings, world -> true);
         LivingEntity zombieB = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
         assertEquals("rpgquest:weight_b", serviceB.rollDefinition(zombieB).orElseThrow().id().toString());
 
         // Même tirage mais pondéré(0.1) -> weight_a : prouve que la sélection dépend du tirage pondéré,
         // jamais simplement de la première définition trouvée dans le registre.
         SpecialMobService serviceA = new SpecialMobService(plugin, weightedRegistry, zoneRegistry, itemRegistry,
-                plugin.getSLF4JLogger(), sequenceRandom(0.0, 0.0, 0.0, 0.1), defaultSettings);
+                plugin.getSLF4JLogger(), sequenceRandom(0.0, 0.0, 0.0, 0.1), defaultSettings, world -> true);
         LivingEntity zombieA = (LivingEntity) world.spawnEntity(new Location(world, 1, 64, 1), EntityType.ZOMBIE);
         assertEquals("rpgquest:weight_a", serviceA.rollDefinition(zombieA).orElseThrow().id().toString());
     }
@@ -302,10 +303,61 @@ class SpecialMobServiceTest {
         SpecialMobRegistry disabledRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
         disabledRegistry.reload();
         SpecialMobService service = new SpecialMobService(plugin, disabledRegistry, zoneRegistry, itemRegistry,
-                plugin.getSLF4JLogger(), fixedRandom(0.0), new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()));
+                plugin.getSLF4JLogger(), fixedRandom(0.0), new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()), world -> true);
 
         LivingEntity zombie = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
         assertTrue(service.rollDefinition(zombie).isEmpty(), "une définition désactivée ne doit jamais être tirée");
+    }
+
+    // ---- Monde Wild uniquement (issue #851) ------------------------------------------------
+
+    private SpecialMobService wildOnlyPigService(String profile) throws Exception {
+        Path mobsDir = tempDir.resolve("pig-mobs");
+        Files.writeString(Files.createDirectories(mobsDir).resolve("creeper_pig.yml"), profile);
+        SpecialMobRegistry pigRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
+        pigRegistry.reload();
+        // Configuration volontairement fautive : le Hub est aussi déclaré Wild ; il doit rester exclu.
+        return new SpecialMobService(plugin, pigRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(),
+                fixedRandom(0.0), new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()),
+                SpecialMobService.wildOnly(w -> Set.of("wild", "world_hub").contains(w.getName()),
+                        () -> Set.of("world_hub", "claims")));
+    }
+
+    private static final String CREEPER_PIG_ALL_WORLDS = """
+            id: rpgquest:creeper_pig
+            entity-type: PIG
+            name: "Cochon Creeper"
+            spawn-chance: 1.0
+            worlds: []
+            """;
+
+    @Test
+    void naturalPigInHubOrClaimsIsNeverTransformedEvenWithEmptyWorlds() throws Exception {
+        SpecialMobService service = wildOnlyPigService(CREEPER_PIG_ALL_WORLDS);
+        for (String name : List.of("world_hub", "claims")) {
+            World protectedWorld = server.addSimpleWorld(name);
+            LivingEntity pig = (LivingEntity) protectedWorld.spawnEntity(new Location(protectedWorld, 0, 64, 0), EntityType.PIG);
+            assertTrue(service.rollDefinition(pig).isEmpty(), "aucun mob spécial tiré dans « " + name + " »");
+        }
+    }
+
+    @Test
+    void emptyWorldsMeansWildOnly() throws Exception {
+        SpecialMobService service = wildOnlyPigService(CREEPER_PIG_ALL_WORLDS);
+        World wild = server.addSimpleWorld("wild");
+        LivingEntity wildPig = (LivingEntity) wild.spawnEntity(new Location(wild, 0, 64, 0), EntityType.PIG);
+        assertTrue(service.rollDefinition(wildPig).isPresent(), "worlds: [] -> tiré dans le Wild");
+
+        LivingEntity otherPig = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.PIG);
+        assertTrue(service.rollDefinition(otherPig).isEmpty(), "worlds: [] -> jamais hors des mondes Wild");
+    }
+
+    @Test
+    void profileListingTheHubStillNeverRollsThere() throws Exception {
+        SpecialMobService service = wildOnlyPigService(CREEPER_PIG_ALL_WORLDS.replace("worlds: []", "worlds: [world_hub]"));
+        World hub = server.addSimpleWorld("world_hub");
+        LivingEntity pig = (LivingEntity) hub.spawnEntity(new Location(hub, 0, 64, 0), EntityType.PIG);
+        assertTrue(service.rollDefinition(pig).isEmpty(), "worlds d'un profil restreint le Wild, il ne l'étend jamais");
     }
 
     // ---- Zone interdite -----------------------------------------------------------------------
@@ -325,7 +377,7 @@ class SpecialMobServiceTest {
         SpecialMobRegistry zonedRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
         zonedRegistry.reload();
         SpecialMobService service = new SpecialMobService(
-                plugin, zonedRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), fixedRandom(0.0), spawnSettingsStore);
+                plugin, zonedRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), fixedRandom(0.0), spawnSettingsStore, world -> true);
 
         LivingEntity outside = (LivingEntity) world.spawnEntity(new Location(world, 100, 64, 100), EntityType.ZOMBIE);
         assertTrue(service.rollDefinition(outside).isEmpty(), "hors de toute zone nommée « arena », le spawn est refusé");

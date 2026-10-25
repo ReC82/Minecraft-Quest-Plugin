@@ -49,6 +49,37 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-25 - Plugin + PlugAdmin : mobs spéciaux tirés uniquement dans le Wild (#851)
+
+### Changement
+
+JAR plugin : le tirage automatique des mobs `SPECIAL` n'a lieu que dans les mondes Wild (`wild.worlds`,
+vide = `travel.wild-world`), jamais dans `hub.world` ni `claims.world`, même pour un profil `worlds: []`
+(ex. `creeper_pig` sur un cochon né au Hub). PlugAdmin : aide du champ « Mondes autorisés » de `/mobs`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redémarrage ; redéploiement PlugAdmin (`scripts/plugadmin/deploy.sh`) pour
+l'aide. Aucune configuration, aucun profil de mob, aucune donnée modifiés.
+
+### Sauvegarde préalable
+
+JAR + `data.db` + configuration par `scripts/deploy-verygames.sh`.
+
+### Déploiement
+
+Voir le rapport de session #851 (`docs/claude-reports/`).
+
+### Validation
+
+Tests automatisés `SpecialMobServiceTest` ; en jeu : PENDING MANUAL VALIDATION.
+
+### Rollback
+
+`scripts/rollback-verygames.sh` vers la sauvegarde datée, puis redémarrage (l'ancien JAR rétablit le tirage
+dans tous les mondes pour `worlds: []`).
+
+
 ## 2026-10-25 - Plugin + contenu : Gauthier affiche l'avancement du palier en cours (#841)
 
 ### Changement

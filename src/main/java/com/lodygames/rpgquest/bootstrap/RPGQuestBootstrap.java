@@ -545,8 +545,16 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, new ResourceNodeBreakListener(resourceNodeService)));
 
         registry.start(mobRegistry);
+        com.lodygames.rpgquest.wild.WildHostileRulesService wildRules = new com.lodygames.rpgquest.wild.WildHostileRulesService(
+                plugin, () -> configService.current().wild(), () -> configService.current().travel().wildWorld());
+        // Issue #851 : le tirage automatique ne transforme un mob que dans un monde Wild configuré,
+        // jamais au Hub ni dans les Claims, même si un profil a « worlds: [] » (ou les liste).
         mobService = new SpecialMobService(
-                plugin, mobRegistry, zoneRegistry, customItemRegistry, plugin.getSLF4JLogger(), mobSpawnSettingsStore);
+                plugin, mobRegistry, zoneRegistry, customItemRegistry, plugin.getSLF4JLogger(), mobSpawnSettingsStore,
+                SpecialMobService.wildOnly(wildRules::isWildWorld,
+                        () -> java.util.stream.Stream.of(configService.current().hub().world(),
+                                        configService.current().claims().world())
+                                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet())));
         registry.start(mobService);
         // Issue #542 : un seul moteur pour toutes les capacités de mobs. La politique lit le Hub, les
         // claims (service créé plus loin : lu à chaque appel) et les zones au moment de décider.
@@ -1055,9 +1063,8 @@ public final class RPGQuestBootstrap {
 
         // Issue #168 : hostiles de jour comme de nuit dans les mondes Wild configurés, immunité au
         // soleil (jamais aux autres dégâts de feu) et araignées agressives en pleine lumière.
-        // Strictement limité aux mondes Wild : Hub et Claims inchangés.
-        com.lodygames.rpgquest.wild.WildHostileRulesService wildRules = new com.lodygames.rpgquest.wild.WildHostileRulesService(
-                plugin, () -> configService.current().wild(), () -> configService.current().travel().wildWorld());
+        // Strictement limité aux mondes Wild : Hub et Claims inchangés. (Construit plus haut : son
+        // périmètre Wild sert aussi au tirage des mobs spéciaux, issue #851.)
         registry.start(wildRules);
 
         // Issue #175 : boss communautaires du Wild, construits sur le moteur de mobs spéciaux (même

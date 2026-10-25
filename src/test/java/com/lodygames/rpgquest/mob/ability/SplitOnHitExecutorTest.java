@@ -84,7 +84,7 @@ class SplitOnHitExecutorTest {
         definition = registry.find(SPLIT_ID).orElseThrow();
 
         MobSpawnSettingsStore spawnSettingsStore = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
-        service = new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), spawnSettingsStore);
+        service = new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), spawnSettingsStore, world -> true);
         listener = new AbilityEngine(plugin, registry, service, AbilityWorldPolicy.unrestricted());
     }
 

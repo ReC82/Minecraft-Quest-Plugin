@@ -42,6 +42,10 @@ spawn-chance: 0.005
 # Listes vides = aucune restriction. Non résolues au chargement (simples
 # chaînes comparées par nom au moment du spawn) : jamais de couplage à
 # ZoneRegistry/Biome au chargement du fichier.
+# Tirage automatique (issue #851) : uniquement dans les mondes Wild (config.yml
+# wild.worlds, vide = travel.wild-world), JAMAIS au Hub ni dans les Claims.
+# worlds restreint ces mondes Wild, il ne les étend jamais (worlds: [] = tout
+# le Wild). Les apparitions de test PlugAdmin ne sont pas concernées.
 worlds: []
 biomes: []
 zones: []

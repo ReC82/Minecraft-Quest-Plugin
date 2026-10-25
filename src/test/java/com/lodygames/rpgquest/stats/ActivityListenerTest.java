@@ -65,7 +65,7 @@ class ActivityListenerTest {
         mobRegistry.reload();
         SpecialMobService mobs = new SpecialMobService(plugin, mobRegistry, zones,
                 new com.lodygames.rpgquest.item.YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger()),
-                plugin.getSLF4JLogger(), new MobSpawnSettingsStore(tempDir.resolve("mobs"), plugin.getSLF4JLogger()));
+                plugin.getSLF4JLogger(), new MobSpawnSettingsStore(tempDir.resolve("mobs"), plugin.getSLF4JLogger()), world -> true);
         bypass = new AdminBypassMode(() -> GameSettings.DEFAULTS);
         listener = new ActivityListener(plugin, new ActivityLogRepository(database), mobs, bypass, plugin.getSLF4JLogger());
 

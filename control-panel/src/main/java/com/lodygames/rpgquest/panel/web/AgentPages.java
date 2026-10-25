@@ -14361,12 +14361,12 @@ public final class AgentPages {
                 .append("</div>");
         sb.append(catalogMulti(uid, "worlds", "Mondes autorisés",
                 existing == null ? null : existing.get("worlds"), "dl-mob-world",
-                fieldHelp("Mondes où ce profil peut apparaître au tirage. Préférer cocher explicitement le "
-                                + "Wild : ajouter le Hub ou un monde de claims doit rester un choix délibéré "
-                                + "(leurs propres règles continuent de s'appliquer et peuvent annuler "
-                                + "l'apparition). Liste réelle du serveur.",
-                        "wild", "aucune restriction",
-                        "tous les mondes où le tirage s'applique")));
+                fieldHelp("Mondes Wild où ce profil peut apparaître au tirage. Le tirage automatique n'a "
+                                + "lieu que dans les mondes Wild : jamais au Hub ni dans les Claims, même cochés "
+                                + "ici. Cette liste restreint le Wild, elle ne l'étend jamais. Liste réelle du "
+                                + "serveur.",
+                        "wild", "tout le Wild",
+                        "tous les mondes Wild (jamais le Hub ni les Claims)")));
         sb.append(catalogMulti(uid, "biomes", "Biomes autorisés",
                 existing == null ? null : existing.get("biomes"), "dl-mob-biome",
                 fieldHelp("Biomes où ce profil peut apparaître, comparés par nom au moment de l'apparition. "

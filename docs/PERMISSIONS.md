@@ -67,6 +67,44 @@ une **session explicite** :
 - Hors périmètre : le mode maintenance voyage (`/rpgadmin travel maintenance`, #191) reste un mode
   distinct, déjà explicite et limité à 5 minutes.
 
+## Téléportation par commande : réservée à l'administration (#829)
+
+Un joueur ordinaire (non OP) n'a **aucune** commande de téléportation : il voyage uniquement par les
+mécaniques en jeu, sans rien taper — portails de monde (`hub_to_wild`, `hub_to_claims`), portails
+historiques, bornes du Réseau de voyage (catégorie « Mon claim » comprise), Waystones du Wild,
+Pierre de retour / Rune de rappel, bouton de secours du Hub.
+
+Audit des droits effectifs sur DEV (25/10/2026, lecture seule : copie de la base LuckPerms, JAR des
+plugins installés) :
+
+| Commande | Nœud requis | Défaut | Joueur non OP sur DEV |
+|---|---|---|---|
+| `/tp`, `/teleport`, `/minecraft:tp` | `minecraft.command.teleport` | OP | refusé |
+| `/mv tp`, `/mv spawn` (Multiverse-Core 5.7.3) | `multiverse.teleport.*`, `multiverse.core.spawn.*` | OP | refusé |
+| `/npc tp`, `/npc tphere`, `/npc tpto` (Citizens) | `citizens.npc.tp*` | OP | refusé |
+| Navigation WorldEdit (`/jumpto`, `/thru`, `/up`, `/unstuck`, boussole) | `worldedit.navigation.*` (non déclarés) | OP | refusé |
+| `/rpgadmin world tp`, `/rpgadmin spawn tp`, `/rpgadmin waystone tp` | `rpgquest.admin.world` | OP | refusé |
+| `/claim admin tp`, `/claim admin sendhome` | `rpgquest.admin.world` | OP | refusé |
+
+- LuckPerms DEV (`storage-method: h2`, `enable-ops: true`, `auto-op: false`) : le groupe `default` ne
+  porte **aucun nœud** ; seul le groupe PlugAdmin « Testeur RPGQuest » (`rpgquest.admin.testing`) est
+  attribué. Un joueur ordinaire n'a donc que les défauts « tous » des `plugin.yml`, dont aucun ne
+  téléporte. Le paquet testeur n'ouvre aucune commande de téléportation non plus.
+- Un **OP** détient toutes ces commandes (défaut OP, et `enable-ops` de LuckPerms). Les gardes D1/D2
+  restent une **défense en profondeur** contre un droit accordé par erreur ou un appel d'un autre plugin :
+  vers le claim d'autrui, une téléportation commande/plugin/spectateur est refusée sans
+  `/rpgadmin bypass on`, et `/rpgadmin world tp claims` / `/claim admin tp` exigent ce mode.
+- Contrôle automatique : `TeleportCommandsNonOpAuditTest` exécute chaque commande RPGQuest de
+  téléportation avec un profil non OP vide (celui de DEV) puis avec le paquet testeur : refus explicite,
+  personne ne bouge (ni le joueur, ni la cible d'un `sendhome`) ; aucun nœud `rpgquest.admin*` ou
+  `rpgquest.bypass*` n'est accordé par défaut. Les commandes des autres plugins ne sont pas exécutables
+  en test : leur défaut OP est relevé dans leurs JAR (ci-dessus).
+- **Ne jamais** accorder `minecraft.command.teleport`, `multiverse.teleport.*`, `citizens.npc.tp*`,
+  `worldedit.navigation.*` ou `rpgquest.admin.world` à un groupe de joueurs.
+
+Pour refaire l'audit : `lp group default permission info` (en jeu ; la sortie de LuckPerms ne remonte
+pas par RCON), ou PlugAdmin > Joueurs > « Lire ses droits en jeu » pour un compte précis.
+
 ## Rôles recommandés (groupes LuckPerms, exemples)
 
 ```

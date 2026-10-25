@@ -49,6 +49,15 @@ File complète : {{QUEUE_JSON}}
 8. Avant de terminer : rapport `docs/claude-reports/` (gabarit du README), commentaire sur le ticket
    (fait / déployé / vérifié / à tester en jeu), mise à jour du registre `docs/SUIVI_VALIDATIONS_DEV.md`
    (voir ci-dessous), puis le fichier d'état ci-dessous.
+   **Chaque commentaire GitHub que tu publies se termine par la ligne `<!-- lqorch-session {{SESSION_ID}} -->`** :
+   sans elle, le superviseur le prendrait pour un retour du propriétaire et relancerait le ticket (#836).
+11. **File automatique (#836)** : si `next_action` commence par « Sélection automatique », le ticket a
+   été choisi seul parce qu'il porte `agent:auto` (et, s'il était déjà traité, parce que le
+   propriétaire a écrit depuis). Lis d'abord ses commentaires récents : ils priment sur l'état
+   enregistré. Le label rend le ticket éligible, il n'autorise RIEN de plus : déploiement, appel IA
+   payant, opération réelle sur DEV ou données ne sont permis que si le ticket (ou une décision écrite
+   du propriétaire) les autorise explicitement. S'il n'y a rien d'autorisé à faire, rends
+   `WAITING_OWNER` avec la question précise, sans boucler.
 9. Si le contexte devient long : termine l'unité en cours proprement, commit + push, et rends
    `RUNNING` avec une `next_action` précise. La session suivante reprendra.
 10. Si `lqorch status` (`python3 /opt/lodyquests-orch/lqorch.py status`) indique un mode STOP ou PAUSED,

@@ -110,6 +110,7 @@ public final class WebSnapshotWriter implements PluginService {
 
     private StatisticsService statisticsService;
     private StatisticsRepository statisticsRepository;
+    private volatile java.util.function.Function<String, String> specialMobLabels = id -> id;
 
     /**
      * Issue #54 — saisons, événements et exclusions de {@code statistics.yml}. Sans eux, seule la
@@ -118,6 +119,11 @@ public final class WebSnapshotWriter implements PluginService {
     public void setStatistics(StatisticsService service, StatisticsRepository repository) {
         this.statisticsService = service;
         this.statisticsRepository = repository;
+    }
+
+    /** Issue #734 : nom public d'un mob spécial (classements par type de créature) ; sinon son identifiant. */
+    public void setSpecialMobLabels(java.util.function.Function<String, String> labels) {
+        this.specialMobLabels = labels;
     }
 
     /**
@@ -246,7 +252,7 @@ public final class WebSnapshotWriter implements PluginService {
                 statisticsService == null || statisticsRepository == null
                         ? CompletableFuture.completedFuture(BoardCatalogExport.Catalog.EMPTY)
                         : BoardCatalogExport.gather(statisticsRepository, stats, statisticsService.now(),
-                        statisticsService::isArchived, current.profileVisibilityDefault(), quests));
+                        statisticsService::isArchived, current.profileVisibilityDefault(), quests, specialMobLabels));
         CompletableFuture<Map<SkillType, List<ProgressionRepository.LeaderboardRow>>> leaderboardRows =
                 gatherLeaderboards(current, lifetimeExcluded);
         CompletableFuture<ProfileSources> profileSources = gatherProfileSources(current, lifetimeExcluded);

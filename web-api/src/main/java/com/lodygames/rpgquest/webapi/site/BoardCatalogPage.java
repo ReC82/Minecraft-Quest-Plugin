@@ -29,8 +29,11 @@ final class BoardCatalogPage {
     /** Corps de la page ; {@code periodSlug}/{@code category} déjà lus de l'adresse (vides = tout). */
     @SuppressWarnings("unchecked")
     static String render(Map<String, Object> statistics, SiteRoutes routes, String periodSlug, String category) {
-        List<Map<String, Object>> all = statistics.get("boards") instanceof List<?> list
+        List<Map<String, Object>> every = statistics.get("boards") instanceof List<?> list
                 ? (List<Map<String, Object>>) list : List.of();
+        // Les classements par type de créature (#734) ont leur propre page, avec recherche.
+        List<Map<String, Object>> all = every.stream().filter(board -> board.get("split") == null).toList();
+        boolean creatures = every.size() != all.size();
         Map<String, Object> catalog = statistics.get("catalog") instanceof Map<?, ?> map
                 ? (Map<String, Object>) map : Map.of();
         String period = periodFromSlug(periodSlug);
@@ -39,6 +42,10 @@ final class BoardCatalogPage {
                 + "ses dates exactes (heure de Bruxelles) et depuis quand sa mesure est suivie : aucun score "
                 + "n'est reconstitué avant cette date.</p>");
         html.append("<p><a href=\"").append(routes.boards()).append("\">← Classements principaux</a></p>");
+        if (creatures) {
+            html.append("<p><a class=\"button\" href=\"").append(CreatureBoardsPage.path(routes))
+                    .append("\">Classements par créature : zombies, squelettes, araignées, boss…</a></p>");
+        }
         if (all.isEmpty()) {
             html.append(PortalIcons.empty("trophy", "Aucun classement publié pour le moment."));
             return html.append(planned(catalog)).toString();

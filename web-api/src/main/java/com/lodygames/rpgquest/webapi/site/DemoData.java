@@ -238,7 +238,45 @@ public final class DemoData {
         boards.add(demoBoard("demo_quetes", "Quêtes de la semaine (démo)", "aventure", null, "QUEST_COMPLETION", "weekly",
                 null, weekStart, weekEnd, now, false,
                 board(profiles, profile -> ((Number) profile.get("questsCompleted")).longValue() / 3), List.of()));
+        boards.add(creatureBoard(profiles, now, weekStart, weekEnd));
         return boards;
+    }
+
+    /**
+     * Classement par type de créature fictif (#734) : quelques types avec des joueurs Demo_*, un mob
+     * spécial inventé et un boss rencontré mais personne cette semaine (ligne « déjà vaincus »).
+     */
+    private static Map<String, Object> creatureBoard(List<Map<String, Object>> profiles, Instant now, Instant start,
+                                                     Instant end) {
+        Map<String, Object> board = demoBoard("demo_creatures_semaine", "Créatures vaincues cette semaine, par type (démo)",
+                "combat", "skull", "ENTITY_KILL", "weekly", null, start, end, now, false, List.of(), null);
+        board.remove("leaderboard");
+        board.put("split", "entity");
+        String since = now.minus(Duration.ofDays(40)).toString();
+        board.put("targets", List.of(
+                creature("ENDER_DRAGON", "Ender Dragon", "boss", null, since, List.of()),
+                creature("special:rpgquest:demo_roi_squelette", "Roi squelette (démo)", "special", "Squelette", since,
+                        board(profiles, profile -> skill(profile, "COMBAT") / 2000)),
+                creature("CREEPER", "Creeper", "hostile", null, since, board(profiles, profile -> skill(profile, "COMBAT") / 300)),
+                creature("SPIDER", "Araignée", "hostile", null, since, board(profiles, profile -> skill(profile, "COMBAT") / 200)),
+                creature("SKELETON", "Squelette", "hostile", null, since, board(profiles, profile -> skill(profile, "COMBAT") / 150)),
+                creature("ZOMBIE", "Zombie", "hostile", null, since, board(profiles, profile -> skill(profile, "COMBAT") / 90)),
+                creature("PIG", "Cochon", "passive", null, since, board(profiles, profile -> skill(profile, "COMBAT") / 500))));
+        return board;
+    }
+
+    private static Map<String, Object> creature(String key, String label, String category, String base, String since,
+                                                List<Map<String, Object>> rows) {
+        Map<String, Object> target = new LinkedHashMap<>();
+        target.put("key", key);
+        target.put("label", label);
+        target.put("category", category);
+        if (base != null) {
+            target.put("base", base);
+        }
+        target.put("trackedSince", since);
+        target.put("leaderboard", rows.stream().filter(row -> ((Number) row.get("value")).longValue() > 0).toList());
+        return target;
     }
 
     private static Map<String, Object> demoBoard(String id, String name, String category, String icon, String metric,

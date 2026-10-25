@@ -119,6 +119,86 @@ public final class StatisticsRepository {
     }
 
     /**
+     * Une cible du journal d'activité (#734) : type d'entité ({@code target}) et, pour un mob spécial
+     * RPGQuest, son identifiant ({@code variant}). Un mob spécial reste distinct de son type de base.
+     */
+    public record Target(String target, String variant) {
+        /** Clé publique : le type ({@code ZOMBIE}), ou {@code special:<id>} pour un mob spécial. */
+        public String key() {
+            return variant == null ? target : "special:" + variant;
+        }
+    }
+
+    /**
+     * Classement par cible (#734, « un classement par type de créature ») sur la fenêtre de
+     * {@code period} : une seule requête groupée par (cible, joueur), puis les {@code limit} premiers
+     * de chaque cible, rangés comme {@link #liveTop} (ex aequo, pseudo, UUID). Profils visibles (#55)
+     * seulement, sans les {@code excluded}. Une cible sans joueur visible n'apparaît pas.
+     */
+    public CompletableFuture<Map<Target, List<RankedRow>>> liveTopByTarget(StatPeriod period, StatMetric metric,
+                                                                          int limit,
+                                                                          PublicProfilePolicy.Visibility visibility,
+                                                                          Collection<UUID> excluded) {
+        requireActivity(metric);
+        String sum = "SUM(" + metric.source().amount() + ")";
+        String sql = "SELECT g.target AS target, g.variant AS variant, p.last_name AS name, " + sum + " AS total "
+                + "FROM " + source(metric) + " g JOIN player_profiles p ON p.uuid = g.player_uuid "
+                + "WHERE " + windowFilter(period, metric, List.of())
+                + " AND " + PublicProfilePolicy.visible("p", visibility)
+                + notIn("p.uuid", excluded.size())
+                + " GROUP BY g.target, g.variant, p.uuid, p.last_name HAVING " + sum + " > 0"
+                + " ORDER BY g.target ASC, g.variant ASC, total DESC, p.last_name ASC, p.uuid ASC";
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                int index = bindWindow(statement, 1, period, metric, List.of());
+                bindUuids(statement, index, excluded);
+                Map<Target, List<String>> names = new java.util.LinkedHashMap<>();
+                Map<Target, List<Long>> values = new java.util.LinkedHashMap<>();
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        Target target = new Target(resultSet.getString("target"), resultSet.getString("variant"));
+                        List<String> targetNames = names.computeIfAbsent(target, k -> new ArrayList<>());
+                        if (targetNames.size() < limit) {
+                            targetNames.add(resultSet.getString("name"));
+                            values.computeIfAbsent(target, k -> new ArrayList<>()).add(resultSet.getLong("total"));
+                        }
+                    }
+                }
+                Map<Target, List<RankedRow>> ranked = new java.util.LinkedHashMap<>();
+                names.forEach((target, list) -> ranked.put(target, rank(list, values.get(target))));
+                return ranked;
+            }
+        });
+    }
+
+    /**
+     * Première ligne du journal pour chaque cible d'une métrique d'activité (#734) : « suivi depuis »
+     * par type de créature. Seules les cibles réellement rencontrées sont listées ; aucun pseudo lu.
+     */
+    public CompletableFuture<Map<Target, Instant>> firstSeenByTarget(StatMetric metric) {
+        requireActivity(metric);
+        StatMetric.Source source = metric.source();
+        String sql = "SELECT g.target AS target, g.variant AS variant, MIN(g." + source.timeColumn() + ") AS first FROM "
+                + source.table() + " g WHERE g." + source.keyColumn() + " = ? GROUP BY g.target, g.variant";
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, source.key());
+                Map<Target, Instant> firsts = new java.util.LinkedHashMap<>();
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        String first = resultSet.getString("first");
+                        if (first != null) {
+                            firsts.put(new Target(resultSet.getString("target"), resultSet.getString("variant")),
+                                    Instant.parse(first));
+                        }
+                    }
+                }
+                return firsts;
+            }
+        });
+    }
+
+    /**
      * Total de tous les participants d'un objectif commun (#57), en direct. Les profils privés
      * comptent (aucun pseudo n'est lu), les joueurs exclus non.
      */
@@ -522,6 +602,13 @@ public final class StatisticsRepository {
                 }
             }
         });
+    }
+
+    private static void requireActivity(StatMetric metric) {
+        requireWindowed(metric);
+        if (!"stat_activity_log".equals(metric.source().table())) {
+            throw new IllegalArgumentException("classement par cible réservé au journal d'activité : " + metric.id());
+        }
     }
 
     private static void requireWindowed(StatMetric metric) {

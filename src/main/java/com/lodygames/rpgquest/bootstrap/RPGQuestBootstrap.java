@@ -645,6 +645,13 @@ public final class RPGQuestBootstrap {
         this.statisticsService = statisticsService;
         this.statisticsRepository = statisticsRepository;
         webSnapshotWriter.setStatistics(statisticsService, statisticsRepository);
+        // Issue #734 : classements par type de créature — un mob spécial s'affiche sous son nom public.
+        webSnapshotWriter.setSpecialMobLabels(id -> java.util.Optional.ofNullable(org.bukkit.NamespacedKey.fromString(id))
+                .flatMap(mobRegistry::find)
+                .map(def -> net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(def.displayName())))
+                .filter(name -> !name.isBlank())
+                .orElse(id));
         // Issue #53 : « /lien » et progression personnelle des joueurs reliés au portail. Inerte tant
         // que plugins/RPGQuest/portal-link.properties (hors Git) ne l'active pas.
         portalLinkConfig = new PortalLinkConfigLoader(plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();

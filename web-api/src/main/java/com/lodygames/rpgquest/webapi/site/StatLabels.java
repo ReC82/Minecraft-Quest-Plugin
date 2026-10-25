@@ -84,6 +84,7 @@ public final class StatLabels {
         return switch (metric) {
             case "QUESTS_COMPLETED", "QUEST_COMPLETION" -> "quêtes";
             case "ENTITY_KILL" -> "monstres";
+            case CreatureBoardsPage.UNIT_METRIC -> "créatures";
             case "FISH_CAUGHT" -> "prises";
             case "BLOCK_BREAK" -> "blocs";
             case "WAYPOINT_DISCOVERED" -> "waypoints";

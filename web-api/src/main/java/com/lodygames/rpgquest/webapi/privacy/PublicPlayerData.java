@@ -119,7 +119,7 @@ public final class PublicPlayerData {
         Map<String, Object> safe = new LinkedHashMap<>();
         safe.put("id", id);
         for (String key : List.of("name", "description", "category", "icon", "metric", "period", "status",
-                "trackedSince")) {
+                "trackedSince", "split")) {
             copyString(board, safe, key);
         }
         if (board.get("filter") instanceof Map<?, ?> filter) {
@@ -138,12 +138,40 @@ public final class PublicPlayerData {
             safe.put("window", window);
         }
         safe.put("leaderboard", statRows(board.get("leaderboard")));
+        if (safe.containsKey("split")) {
+            safe.put("targets", targets(board.get("targets")));
+        }
         Map<String, Object> previous = window(board.get("previous"));
         if (previous != null && board.get("previous") instanceof Map<?, ?> rawPrevious) {
             previous.put("leaderboard", statRows(rawPrevious.get("leaderboard")));
+            if (safe.containsKey("split")) {
+                previous.put("targets", targets(rawPrevious.get("targets")));
+            }
             safe.put("previous", previous);
         }
         return safe;
+    }
+
+    /**
+     * Types de créatures d'un classement découpé (#734) : clé, nom, catégorie, type de base d'un mob
+     * spécial, « suivi depuis » et lignes ({@code name}, {@code value}, {@code rank}), rien d'autre.
+     */
+    private static List<Map<String, Object>> targets(Object raw) {
+        List<Map<String, Object>> targets = new ArrayList<>();
+        for (Object item : list(raw)) {
+            if (!(item instanceof Map<?, ?> target) || !(target.get("key") instanceof String key)
+                    || !(target.get("label") instanceof String)) {
+                continue;
+            }
+            Map<String, Object> safe = new LinkedHashMap<>();
+            safe.put("key", key);
+            for (String field : List.of("label", "category", "base", "trackedSince")) {
+                copyString(target, safe, field);
+            }
+            safe.put("leaderboard", statRows(target.get("leaderboard")));
+            targets.add(safe);
+        }
+        return targets;
     }
 
     private static Map<String, Object> window(Object raw) {

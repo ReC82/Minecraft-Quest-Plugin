@@ -61,7 +61,7 @@ class LinkedProgressBuilderTest {
 
     private static StatBoard board(String id, String metric, boolean visible) {
         return new StatBoard(id, "Classement " + id, "combat", null, metric, Map.of(), Map.of(), BoardPeriod.LIFETIME,
-                null, null, 10, false, null, StatBoard.Status.ENABLED, 0, visible, null);
+                null, null, 10, false, null, StatBoard.Status.ENABLED, 0, visible, null, null);
     }
 
     private Map<String, Object> build(UUID player, StatisticsDefinition stats) throws Exception {

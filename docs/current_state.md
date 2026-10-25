@@ -465,6 +465,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 >   mobs et de blocs générées depuis Paper, périodes jour / semaine / mois (Europe/Brussels) / saison /
 >   dates / depuis toujours, dernière fenêtre figée sans migration ; portail `/classements/tous` +
 >   aperçu fictif `/demo/classements/tous` ; publication réelle soumise à #55.
+>   Classements par type de créature (#734, 25/10/2026) : `split: entity` sur un classement
+>   `ENTITY_KILL` (3 par défaut : depuis toujours, mois, semaine → 26 classements par défaut), un
+>   classement par type réellement tué lu dans `stat_activity_log` (mob spécial à part, catégories
+>   boss / spécial / hostile / non hostile, noms français `entity-labels`), page portail
+>   `/classements/creatures` (+ démo) avec période, catégorie et recherche ; aucune migration.
 >   Confidentialité (#55) : profils **privés par défaut** (`web-export.profile-visibility-default`,
 >   accord par `/profile web public`), liste blanche des champs dans l'API, politique d'âge
 >   configurable fermée par défaut (`accounts.*`), registre des données `docs/PRIVACY.md` ;

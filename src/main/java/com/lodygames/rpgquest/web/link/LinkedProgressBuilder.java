@@ -69,6 +69,9 @@ public final class LinkedProgressBuilder {
             if (boards.size() >= MAX_BOARDS) {
                 break;
             }
+            if (board.splitByEntity()) {
+                continue; // un rang par type de créature (#734) n'a pas de rang unique à montrer
+            }
             boards.add(board(stats, board, player, now));
         }
         return skills.thenCombine(questStanding, (skillList, questValue) -> {

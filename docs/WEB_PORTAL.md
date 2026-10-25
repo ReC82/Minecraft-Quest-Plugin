@@ -594,6 +594,7 @@ leaderboards:                      # absent = catalogue du JAR ; [] = aucun clas
     size: 10                       # 1 à 50
     featured: true                 # mise en avant
     enabled: true                  # false = ignoré
+    split: entity                  # facultatif, ENTITY_KILL seulement : un classement par type de créature
 ```
 
 Une erreur rend **tout le fichier** invalide (aucune période, aucun classement), comme §4.
@@ -608,6 +609,44 @@ leaderboard}`) et `statistics.catalog` (`timezone`, `metrics[{id, dated, tracked
 `PublicPlayerData` et les affiche sur **`/classements/tous`** (filtres Période et Thème, podium,
 bornes en heure de Bruxelles, provenance, période précédente repliable, mesures non suivies) ;
 aperçu fictif étiqueté sur **`/demo/classements/tous`**. Lien depuis `/classements`.
+
+### Classements par type de créature — `split: entity` (priorité propriétaire du 25/10/2026)
+
+Un classement `metric: ENTITY_KILL` avec `split: entity` devient **un classement par type de
+créature réellement tué** — toujours une seule entrée déclarative, aucune classe Java par type.
+Catalogue par défaut : `kills_by_type_total` (depuis toujours), `kills_by_type_month`,
+`kills_by_type_week` (26 classements par défaut au total).
+
+- **Source** : le journal `stat_activity_log` existant (#57), qui enregistre déjà le type exact
+  (`target` = `EntityType`) et le mob spécial RPGQuest (`variant`) de chaque mort : **aucune
+  instrumentation nouvelle, aucune migration**. Mêmes exclusions que tous les classements de
+  monstres (créatif/spectateur, mode bypass, spawner, division, mob de test, PvP).
+- **Types publiés** : seulement ceux qui ont au moins une ligne dans le journal
+  (`StatisticsRepository#firstSeenByTarget`), filtrés par le `filter` du classement ; chacun porte
+  son propre « suivi depuis ». Un type jamais tué n'est pas listé (pas de centaines de classements
+  vides). Une seule requête groupée par (type, joueur) par fenêtre (`liveTopByTarget`), top `size`
+  par type, ex aequo comme les autres classements, profils visibles seulement (#55).
+- **Mob spécial** : clé `special:<id>`, catégorie `special`, nom public de sa définition (MiniMessage
+  retiré), `base` = nom de sa créature de base ; il ne compte **jamais** dans le classement de sa
+  créature de base. Un boss vanilla (Ender Dragon, Wither, Warden, Gardien vénérable) est `boss`.
+- **Catégories** : `boss`, `special`, `hostile`, `passive`, déduites des classes Paper. « Neutre »
+  (loup, abeille, piglin…) n'est pas une catégorie distincte : Paper ne l'expose pas — proposition
+  au propriétaire : une famille `neutral` déclarée à la main dans `families.yml` si elle est voulue.
+- **Noms français** : section `entity-labels` de `stats/families.yml`, vérifiée contre Paper ;
+  `StatDimensionsTest` exige un nom pour chaque créature comptable.
+- **Périodes** : celles du classement ; fenêtre en cours + précédente (calendrier), **relues en direct**
+  dans le journal (jamais figées dans `stat_period_results`).
+- **Export** : l'entrée de `statistics.boards[]` porte `split: "entity"` et `targets[{key, label,
+  category, base?, trackedSince, leaderboard[{name, value, rank}]}]` (aussi dans `previous`) au lieu
+  de `leaderboard`. Le portail les relaie par la liste blanche `PublicPlayerData`.
+- **Portail** : **`/classements/creatures`** (et `/demo/classements/creatures`, joueurs fictifs) :
+  onglets Période, onglets Catégorie avec effectifs, recherche par nom sans JavaScript (`?q=`,
+  insensible aux accents, trouve aussi un mob spécial par sa créature de base), une carte par type
+  ayant des joueurs sur la période, les types déjà vaincus sans joueur sur la période résumés en une
+  ligne, période précédente repliable, encadré « Ce qui est compté ». Liens depuis `/classements` et
+  `/classements/tous` (qui n'affiche plus ces classements en carte vide).
+- PlugAdmin : le champ `split` est conservé par l'éditeur (#735) et affiché dans
+  `leaderboard.catalog.status` ; pas encore de case dédiée dans le formulaire.
 
 **Publication** : comme tous les classements nominatifs, rien n'est publié tant que
 `web-export.enabled` (DEV) et `player-data-public` (portail) restent à `false` (décision #55). Le

@@ -279,6 +279,42 @@ des claims :
     administrateur éligible sans aucune sortie : c'est la cause racine du
     blocage signalé le 05/10/2026 (issue #22).
 
+**Défaillances bornées (issue #829).** Le filet ne laisse plus un joueur
+sur place sans vérification :
+
+-   **lecture de `CLAIM_TIER_1` en échec** (base indisponible) → nouvel
+    essai après 5 s puis 15 s (Pierre de retour garantie pendant l'attente) ;
+    si la base ne répond toujours pas, le joueur est ramené au Hub **par
+    précaution** (« impossible de vérifier ton accès… »), comme le portail
+    qui refuse l'entrée dans ce cas. Un propriétaire de claim n'est jamais
+    concerné (sa propriété se lit en mémoire, sans base) ;
+-   **aucun point de retour au Hub** (spawn du village et monde Hub
+    introuvables, point de retour situé dans le monde des claims, ou
+    téléportation refusée) → renvoi retenté avec les mêmes délais, puis
+    échec journalisé en `ERROR` (`[claims-safety] ÉCHEC du renvoi au Hub`),
+    message au joueur et alerte aux administrateurs en ligne
+    (`rpgquest.admin.world`). Le joueur garde sa Pierre de retour ;
+-   **aucune boucle** : une arrivée lance une seule chaîne d'au plus trois
+    essais, abandonnée dès que le joueur quitte le monde, se déconnecte ou
+    arrive à nouveau.
+
+**Téléportations internes (issue #829).** Un `/tp` (cause commande,
+plugin, spectateur ou inconnue) qui reste dans le monde des claims ne
+change pas de monde : il rejoue désormais le même contrôle d'arrivée
+(non éligible → renvoyé au Hub ; éligible → Pierre garantie). Les
+déplacements de gameplay (perle de l'Ender, fruit de chorus…) ne sont pas
+contrôlés. **Présence ≠ droit de construire** : arriver dans le claim
+d'autrui n'accorde aucun droit, la protection reste celle de
+`ClaimProtectionListener` (`Claim#isTrusted`) ; l'arrivée est seulement
+tracée (`[claims-safety] … sans en être membre`). Refuser purement et
+simplement un `/tp` vers le claim d'autrui reste une décision
+propriétaire (non tranchée, voir #829).
+
+**Portails historiques (issue #829).** `travel.PortalService` (portails
+`portals/` à canalisation) applique désormais `ClaimWorldAccessGuard`
+**avant** le débit et la téléportation lorsqu'une destination est dans le
+monde des claims : même règle, mêmes messages que le portail simple.
+
 La commande `/claim admin sendhome` (déclenchée par l'option « Me rendre
 sur ma propriété » de Jo) et `/spawn` restent des voies **auxiliaires**,
 jamais le parcours imposé.

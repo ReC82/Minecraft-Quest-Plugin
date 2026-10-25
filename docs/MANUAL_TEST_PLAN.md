@@ -9294,3 +9294,19 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 4. PlugAdmin → apparition de test d'un profil près d'un joueur. **Attendu** : inchangé.
 
 **Couverture automatisée** : `SpecialMobServiceTest#naturalPigInHubOrClaimsIsNeverTransformedEvenWithEmptyWorlds`, `#emptyWorldsMeansWildOnly`, `#profileListingTheHubStillNeverRollsThere` (Hub refusé même déclaré Wild par erreur) ; tests existants du tirage Wild inchangés ; `MobFormHelpTest` (aide du champ).
+
+### TC-436 — Claims : portails historiques contrôlés, filet d'arrivée borné, `/tp` interne (issue #829, PENDING MANUAL VALIDATION)
+
+**But** : l'accès au monde des claims est vérifié **avant** la téléportation par un portail historique (`portals/`) ; une panne de base ou un Hub introuvable ne laisse plus un joueur non vérifié dans Claims ; un `/tp` qui reste dans Claims rejoue le contrôle sans accorder de droit sur le claim d'autrui.
+
+**Prérequis** : JAR #829 en ligne sur DEV. **Aucune** modification du compte LoDyMcFly (OP, claim, `CLAIM_TIER_1`) : il est éligible, les cas de refus ne se rejouent qu'avec un futur compte de test sans déblocage.
+
+1. LoDyMcFly, mode bypass **inactif** (`/rpgadmin bypass status`), dans le monde Claims : `/tp` vers un point de son propre claim. **Attendu** : aucun renvoi, Pierre de retour toujours présente (jamais en double), console `[claims-safety] LoDyMcFly (propriétaire d'un claim) …`.
+2. Même compte, `/tp` vers le claim d'un autre joueur (s'il en existe un). **Attendu** : pas de renvoi ; casser/poser un bloc y reste **refusé** ; console `[claims-safety] LoDyMcFly téléporté (COMMAND) dans le claim « … » … sans en être membre`.
+3. Une perle de l'Ender lancée dans Claims. **Attendu** : aucune ligne `[claims-safety]` (déplacement de gameplay non contrôlé).
+4. (Si un portail historique mène vers `claims` — sinon passer.) Le franchir avec LoDyMcFly. **Attendu** : téléporté comme avant, coût éventuel débité une fois ; console `[claims-access] … via le portail historique <id> autorisée`.
+5. (Futur compte de test sans déblocage seulement.) Franchir ce portail historique. **Attendu** : refus « réservé aux joueurs qui ont débloqué… », **aucun** débit, pas de déplacement. Un `/tp` admin de ce compte vers Claims puis un second `/tp` interne : renvoyé au Hub.
+
+Pannes de base / Hub introuvable : non rejouables sans altérer DEV — couvertes uniquement par les tests automatisés.
+
+**Couverture automatisée** : `ClaimWorldAccessGuardTest#aHistoricPortalToTheClaimsWorldRefusesANonEligiblePlayerBeforeMovingThem`, `#aHistoricPortalLetsAnUnlockedPlayerThroughExactlyOnceWithAReturnStone`, `#aHistoricPortalLetsAClaimOwnerAndAnExplicitBypassThroughImmediately`, `#anOpWithoutTheBypassModeIsRefusedByAHistoricPortalToo`, `#historicPortalsToAnotherWorldAreNeverAffected` ; `PortalServiceTest#aRefusingDestinationGuardPreventsTheTeleportAndTakesNoMoney`, `#anAllowingDestinationGuardDebitsThenTeleports` ; `ClaimWorldSafetyListenerTest#aTransientDatabaseFailureIsRetriedAndAnEligiblePlayerStays`, `#aPersistentDatabaseFailureSendsThePlayerBackToTheHubAfterBoundedRetries`, `#anUnresolvedHubTargetIsRetriedBoundedThenReportedWithoutLooping`, `#aHubTargetInsideTheClaimsWorldIsNeverUsedAndALateTargetIsUsedOnRetry`, `#leavingTheClaimsWorldStopsPendingRetries`, `#anInternalCommandTeleportOfANonEligiblePlayerReplaysTheEntryCheck`, `#anEligiblePlayerTeleportedIntoSomeoneElsesClaimStaysButGainsNoRight`, `#gameplayMovesInsideTheClaimsWorldAreNotChecked`.

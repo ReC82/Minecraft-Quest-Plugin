@@ -689,7 +689,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'autrui). Décisions D1/D2 (#829, 25/10) : une téléportation commande/plugin/spectateur vers
   l'intérieur du claim d'autrui est annulée sans bypass explicite (`claim.ClaimVisitPolicy`,
   extensible aux futurs amis) ; `/rpgadmin world tp <claims>` et `/claim admin tp` exigent le mode
-  bypass actif, même pour un OP. Les dialogues du Guide (`help_claims`) et de Jo reflètent
+  bypass actif, même pour un OP. Ces gardes sont une défense en profondeur : un joueur non OP n'a
+  aucune commande de téléportation sur DEV (audit des droits du 25/10, `docs/PERMISSIONS.md`,
+  `TeleportCommandsNonOpAuditTest`) et voyage par portails, bornes et Pierre de retour. Les dialogues du Guide (`help_claims`) et de Jo reflètent
   exactement ce prérequis, et Jo adapte son texte aux 3 états (non débloqué / débloqué sans claim /
   claim existant) grâce à `negate: true` sur une condition de dialogue (`dialogue.model.NegatedCondition`).
   Prérequis **opérationnels** (à provisionner par serveur, non portés par le code) : les 4 PNJ Citizens

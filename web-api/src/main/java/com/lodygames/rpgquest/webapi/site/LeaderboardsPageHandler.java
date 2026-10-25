@@ -55,6 +55,9 @@ public final class LeaderboardsPageHandler implements ApiHandler {
         if (BoardCatalogPage.path(routes).equals(exchange.getRequestURI().getPath())) {
             return catalog(exchange);
         }
+        if (CreatureBoardsPage.path(routes).equals(exchange.getRequestURI().getPath())) {
+            return creatures(exchange);
+        }
         if (!routes.boards().equals(exchange.getRequestURI().getPath()) && !"/leaderboards".equals(exchange.getRequestURI().getPath())) {
             return send(exchange, 404, ServerStatus.of(ServerState.resolve(store)), "<p>Cette page n'existe pas.</p>");
         }
@@ -101,6 +104,10 @@ public final class LeaderboardsPageHandler implements ApiHandler {
             body.append("<p><a class=\"button\" href=\"").append(BoardCatalogPage.path(routes))
                     .append("\">Voir tous les classements : jour, semaine, mois, monstres, blocs, exploration…</a></p>");
         }
+        if (!CreatureBoardsPage.splitBoards(statistics).isEmpty()) {
+            body.append("<p><a class=\"button\" href=\"").append(CreatureBoardsPage.path(routes))
+                    .append("\">Classements par créature : zombies, squelettes, araignées…</a></p>");
+        }
         body.append(routes.demo() ? "" : freshness(state));
         return send(exchange, 200, serverStatus, body.toString());
     }
@@ -120,6 +127,26 @@ public final class LeaderboardsPageHandler implements ApiHandler {
                 : new PageMeta(BoardCatalogPage.path(routes), description, PageMeta.BOARDS);
         HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, meta,
                 routes.demo() ? "Tous les classements (démonstration)" : "Tous les classements",
+                ServerStatus.of(live), body));
+        return 200;
+    }
+
+    /** {@code /classements/creatures} (#734) : un classement par type de créature tuée, avec recherche. */
+    private int creatures(HttpExchange exchange) throws IOException {
+        Map<String, Object> live = ServerState.resolve(store);
+        Map<String, Object> state = routes.demo() ? DemoData.state(Instant.now()) : live;
+        Map<String, String> query = QueryParams.parse(exchange.getRequestURI().getRawQuery());
+        String type = CreatureBoardsPage.CATEGORIES.containsKey(query.getOrDefault("type", "")) ? query.get("type") : "";
+        String body = (routes.demo() ? "" : unavailable(state))
+                + CreatureBoardsPage.render(PublicPlayerData.statistics(state.get("statistics")), routes,
+                query.getOrDefault("periode", ""), type, query.getOrDefault("q", "").strip())
+                + (routes.demo() ? "" : freshness(state));
+        String description = "Classements par créature de " + site.title()
+                + " : zombies, squelettes, araignées, boss et mobs spéciaux, par semaine, mois et depuis toujours.";
+        PageMeta meta = routes.demo() ? PageMeta.demo(description, PageMeta.BOARDS)
+                : new PageMeta(CreatureBoardsPage.path(routes), description, PageMeta.BOARDS);
+        HttpResponses.sendHtml(exchange, 200, PageLayout.render(site, meta,
+                routes.demo() ? "Classements par créature (démonstration)" : "Classements par créature",
                 ServerStatus.of(live), body));
         return 200;
     }

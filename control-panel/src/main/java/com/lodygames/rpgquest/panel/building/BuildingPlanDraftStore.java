@@ -319,6 +319,33 @@ public final class BuildingPlanDraftStore {
     }
 
     /**
+     * #828 — les brouillons non archivés d'un agent, rattachés à un projet, dont l'identifiant
+     * commence par {@code prefix} (déjà normalisé par {@link PlanVersionRef#normalize}). Au plus
+     * {@code limit} : deux suffisent pour dire « ambigu ».
+     */
+    public List<BuildingPlanDraft> byIdPrefix(String agentId, String prefix, int limit) {
+        List<BuildingPlanDraft> out = new ArrayList<>();
+        if (PlanVersionRef.normalize(prefix).isEmpty()) {
+            return out;
+        }
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT * FROM building_plan_draft WHERE agent_id = ? AND archived = 0 AND project_id <> '' "
+                        + "AND lower(id) LIKE ? ORDER BY updated_at DESC LIMIT ?")) {
+            ps.setString(1, agentId);
+            ps.setString(2, PlanVersionRef.normalize(prefix).orElseThrow() + "%");
+            ps.setInt(3, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(read(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Recherche de la version " + prefix + " impossible", e);
+        }
+        return out;
+    }
+
+    /**
      * #267 — rattache à un projet les brouillons d'un emplacement qui n'en ont pas encore. Rien n'est
      * supprimé ni réécrit d'autre : {@code site_id} reste en place, c'est la trace d'origine.
      *

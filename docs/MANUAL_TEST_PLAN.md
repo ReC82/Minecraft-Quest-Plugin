@@ -9164,12 +9164,15 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 
 **Prérequis** : JAR et PlugAdmin du lot A #747 (24/10) en ligne sur DEV. Projet de test **« TEST #747c église (ne pas utiliser) »** (jamais l'Église du hub). Un emplacement de test libre dans un monde de test.
 
-1. Atelier → projet de test → **Historique de ce projet** → ouvrir **V-8776ad09**. Cliquer **Vérifier le bâtiment** (gratuit) si la vérification affichée date d'avant le 24/10.
+1. Ouvrir directement **V-8776ad09** par son lien exact (#828) : PlugAdmin, adresse
+   `/buildings/workshop/project?draft=V-8776ad09` (ou, dans le projet, **Historique de ce projet** →
+   **Aller à une version** → `V-8776ad09`). **Attendu** : le titre de l'historique dit « affichée :
+   V-8776ad09 », sa ligne est encadrée et porte « Avertissements acceptables » (`UNSUPPORTED_BLOCK`). Cliquer **Vérifier le bâtiment** (gratuit) si la vérification affichée date d'avant le 24/10.
    **Attendu** : la carte « Vérifier » liste « Des blocs tomberaient à la pose… » et propose, replié, **« Enregistrer malgré les avertissements »** : `UNSUPPORTED_BLOCK` et son effet (« peut se détacher et tomber en objet… »), une case à cocher.
 2. Sans cocher la case, cliquer **Enregistrer avec avertissements**. **Attendu** : « Cochez la confirmation… Rien n'a été envoyé. »
 3. Cocher, cliquer. **Attendu** : « Enregistré avec avertissements » (icône d'alerte) et le bandeau « Version non conforme, enregistrée à votre demande… » ; **Bibliothèque** : la description du bâtiment se termine par « ENREGISTRÉ AVEC AVERTISSEMENTS ACCEPTÉS : UNSUPPORTED_BLOCK. ».
 4. **Choisir un emplacement** → emplacement de test → prévisualiser la pose. **Attendu** : avertissement « Bâtiment non conforme, enregistré avec avertissements acceptés… ». Poser (geste habituel), puis en jeu : l'église complète est posée (nef, tour, cloche, allée) ; la lanterne sous la cloche peut manquer ou tomber. **Retirer le bâtiment et restaurer le terrain** ensuite.
-5. Ouvrir la dernière version **V-007bcdcc** (`PLAN_INVALID`). **Attendu** : aucun « Enregistrer malgré les avertissements » ; l'explication précise du refus reste affichée.
+5. Ouvrir la dernière version **V-007bcdcc** (`PLAN_INVALID`) : `/buildings/workshop/project?draft=V-007bcdcc`. **Attendu** : aucun « Enregistrer malgré les avertissements » ; l'explication précise du refus reste affichée.
 6. Sur une version acceptée d'un projet de test, **Améliorer avec l'IA** avec la consigne « Ajoute un lit rouge. ». Sur la version suivante, rouvrir « Améliorer » : **Attendu** : la ligne « 1 exigence(s) actualisée(s) conservée(s), prioritaires… — la plus récente : « Ajoute un lit rouge. » » ; le lit n'est plus signalé « ajout non demandé ». Journal IA (export texte) : bloc « EXIGENCES ACTUALISÉES PAR L'ADMINISTRATEUR » dans la requête, et « TA PROPOSITION PRÉCÉDENTE A PASSÉ LES CONTRÔLES DU SERVEUR ».
 7. Dans un formulaire payant, ouvrir « Essai avec un autre modèle », saisir `gpt 5` (avec une espace). **Attendu** : « Modèle d'essai invalide… Rien n'a été demandé à l'IA. » ; **Fournisseurs d'IA** : le modèle enregistré n'a pas changé.
 
@@ -9178,6 +9181,24 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 **Résultat attendu** : l'église V-8776ad09 s'enregistre et se pose après acceptation de son unique défaut ; V-007bcdcc reste bloquée ; les consignes repartent à chaque reprise.
 
 **Couverture automatisée** : `AcceptableDefects747Test` (plugin : V-8776ad09 et V-007bcdcc réels — défaut déclaré contournable avec son effet, refus sans confirmation, enregistrement marqué, confirmation d'autres défauts refusée, `PLAN_INVALID` jamais contournable, impossibilités), `RequirementUpdates747Test` (consigne de la cabane prioritaire, dédoublonnage, clôture par la description, bornes), `WorkshopFlowTest` (formulaire, case obligatoire, codes transmis, « Enregistré avec avertissements », impossibilité sans formulaire, consignes conservées d'un appel à l'autre, version acceptée non « refusée », modèle d'essai pour un seul appel, modèle mal formé refusé sans appel).
+
+### TC-432 — #828 — Atelier : identifier et retrouver une version dans l'historique (issue #828, PENDING MANUAL VALIDATION)
+
+**But** : retrouver une version précise sans ouvrir les versions une à une ; lire son statut de vérification réel avant de la reprendre. Préalable à la reprise de TC-428.
+
+**Prérequis** : PlugAdmin #828 en ligne sur DEV. Projet **« TEST #747c église (ne pas utiliser) »**. Uniquement de la consultation : ne cliquer sur aucun bouton payant, d'enregistrement ou de pose.
+
+1. Ouvrir le projet → déplier **Historique de ce projet**. **Attendu** : chaque version affiche `V-xxxxxxxx` (clic = copié), date, provenance (« Corrigé par l'IA », « Réparé par le moteur »…) et une pastille **Conforme** / **Avertissements acceptables** / **Bloqué** / **Non vérifiée**, avec les codes (`PLAN_INVALID`, `UNSUPPORTED_BLOCK`, `DARK_AREA`…) et une phrase. La version affichée est encadrée, porte « Version affichée » et son identifiant figure dans le titre.
+2. **Aller à une version** → saisir `v-8776AD09` → **Afficher**. **Attendu** : V-8776ad09 devient la version affichée (encadrée, « Avertissements acceptables », `UNSUPPORTED_BLOCK`).
+3. Saisir `V-ffffffff`. **Attendu** : bandeau « Version « V-ffffffff » introuvable dans l'historique de ce projet… La version affichée est celle par défaut du projet. »
+4. Dans un nouvel onglet : `/buildings/workshop/project?draft=V-007bcdcc`. **Attendu** : le projet s'ouvre sur V-007bcdcc, statut **Bloqué** `PLAN_INVALID`, aucun « Enregistrer malgré les avertissements ».
+5. Sur une autre ligne, **Copier le lien** puis coller dans la barre d'adresse. **Attendu** : adresse complète, la même version s'ouvre. Le bouton **Reprendre V-…** nomme bien la version qui sera chargée.
+6. Sur téléphone, étapes 1 et 2. **Attendu** : lignes lisibles sans défilement horizontal, champ de recherche et boutons pleine largeur.
+7. **Actions** et **Journal IA** du projet : **Attendu** : aucune action ni appel IA créés par ces consultations.
+
+**Résultat attendu** : V-8776ad09 et V-007bcdcc se retrouvent en un geste, avec leur statut exact ; rien n'est généré, vérifié, enregistré ni posé.
+
+**Couverture automatisée** : `PlanVersionRefTest` (libellé court, saisies courte/complète/sans casse, refus des jokers et du texte libre, préfixe unique, ambigu, absent), `WorkshopFlowTest.everyVersionShowsItsShortIdAndRealStatusAndIsFoundByThatId` (cinq versions : Bloqué `NO_ENTRANCE`, Avertissements acceptables `UNSUPPORTED_BLOCK`, Non vérifiée, Conforme, `PLAN_INVALID` jamais acceptable ; version affichée par ID court en majuscules, bouton « Reprendre V-… », version absente signalée, lien profond sans projet redirigé, lien absent expliqué ; aucun appel IA ni action créés).
 
 ### TC-429 — #815 — supprimer une réplique orpheline sans casser les liens (issue #815, PENDING MANUAL VALIDATION)
 

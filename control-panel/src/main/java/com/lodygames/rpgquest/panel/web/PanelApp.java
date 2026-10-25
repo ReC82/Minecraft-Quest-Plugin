@@ -1411,6 +1411,10 @@ public final class PanelApp {
             return;
         }
         Map<String, String> q = Http.query(exchange);
+        if (q.getOrDefault("id", "").isBlank() && !q.getOrDefault("draft", "").isBlank()) {
+            workshopVersionLink(exchange, agentId, q.get("draft").trim());
+            return;
+        }
         // #273 : orientation et coupe de la vue en 3D — de simples paramètres d'URL, bornés au rendu.
         renderWorkshopProject(exchange, session, agentId, q.getOrDefault("id", "").trim(),
                 q.getOrDefault("draft", "").trim(), q.get("ok"), q.get("err"), null,
@@ -1456,9 +1460,19 @@ public final class PanelApp {
         // où on en était.
         // #655 : sauf si la dernière conception automatique a retenu une version — c'est elle le résultat.
         var latestRun = designRuns.latest(project.get().id());
-        BuildingPlanDraft draft = planDrafts.find(draftId)
-                .filter(d -> !d.archived() && project.get().id().equals(d.projectId()))
-                .orElse(WorkshopPages.defaultDraft(drafts, latestRun));
+        // #828 : la version demandée peut l'être par son identifiant court (V-8776ad09) ; absente,
+        // la page le dit au lieu d'afficher une autre version en silence.
+        Optional<BuildingPlanDraft> asked = planDrafts.find(draftId)
+                .filter(d -> !d.archived() && project.get().id().equals(d.projectId()));
+        if (asked.isEmpty() && draftId != null && !draftId.isBlank()) {
+            var lookup = com.lodygames.rpgquest.panel.building.PlanVersionRef.resolve(draftId, drafts,
+                    "l'historique de ce projet");
+            asked = lookup.draft();
+            if (asked.isEmpty() && (error == null || error.isBlank())) {
+                error = lookup.error() + " La version affichée est celle par défaut du projet.";
+            }
+        }
+        BuildingPlanDraft draft = asked.orElse(WorkshopPages.defaultDraft(drafts, latestRun));
         var none = new BuildingPlanWorkbench.CheckState(BuildingPlanWorkbench.Status.NONE, Optional.empty(), 0, false);
         // #290 : l'état RÉEL du bâtiment dans la bibliothèque — retrait, relevé, enregistrement — et
         // non le seul succès de la version affichée.
@@ -1488,9 +1502,19 @@ public final class PanelApp {
                 conflictText, idTaken, isoView, isoCut, latestRun,
                 referenceImages.list(project.get().id()), catalog, ownBuilding,
                 designDocs.history(project.get().id()), designText, importQuery, importPreview,
-                repairInfo(project.get(), draft), failureInfo(project.get(), drafts, draft));
+                repairInfo(project.get(), draft), failureInfo(project.get(), drafts, draft),
+                versionAudits(drafts));
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /** #828 : le dernier audit de chaque version de l'historique, pour son statut réel. */
+    private Map<String, BuildingPlanWorkbench.CheckState> versionAudits(List<BuildingPlanDraft> drafts) {
+        Map<String, BuildingPlanWorkbench.CheckState> out = new LinkedHashMap<>();
+        for (BuildingPlanDraft d : drafts) {
+            out.put(d.id(), planWorkbench.state(d, BuildingPlanDraftStore.Check.AUDIT));
+        }
+        return out;
     }
 
     /**
@@ -2790,6 +2814,27 @@ public final class PanelApp {
         return PlanOutcome.redirect(projectLocation(project.id(), "", done
                 ? "Version retirée de la liste. Elle reste conservée dans la base du panel." : null,
                 done ? null : "Version introuvable ou déjà retirée."));
+    }
+
+    /**
+     * #828 — lien profond vers une version sans connaître son projet ({@code ?draft=V-8776ad09}) :
+     * redirige vers le projet qui la contient, version affichée, ou dit pourquoi elle est introuvable.
+     * Lecture seule : rien n'est généré, enregistré ni posé.
+     */
+    private void workshopVersionLink(HttpExchange exchange, String agentId, String ref)
+            throws IOException {
+        List<BuildingPlanDraft> hits = planDrafts.byIdPrefix(agentId, ref, 2).stream()
+                .filter(d -> planProjects.find(d.projectId())
+                        .filter(p -> !p.archived() && p.agentId().equals(agentId)).isPresent())
+                .toList();
+        if (hits.size() == 1) {
+            Http.redirect(exchange, projectLocation(hits.get(0).projectId(), hits.get(0).id(), null, null)
+                    + "#ws-history");
+            return;
+        }
+        var lookup = com.lodygames.rpgquest.panel.building.PlanVersionRef.resolve(ref, hits,
+                "les projets de l'Atelier");
+        Http.redirect(exchange, WorkshopPages.BASE + "?err=" + enc(lookup.error()));
     }
 
     /** L'adresse d'un projet, sur une version si on en a une. */

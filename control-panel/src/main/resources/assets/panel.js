@@ -748,15 +748,21 @@
     } catch (e) { /* l'infobulle title reste dispo */ }
   }
 
+  /* [data-copy-url] : un chemin du panel (« /buildings/… ») est copié en adresse complète (#828). */
+  function copyValue(el) {
+    var text = el.getAttribute("data-copy") || el.textContent;
+    return el.hasAttribute("data-copy-url") && text.charAt(0) === "/" ? window.location.origin + text : text;
+  }
+
   function initCopy() {
     document.addEventListener("click", function (ev) {
       var el = ev.target.closest ? ev.target.closest("[data-copy]") : null;
-      if (el) { copyText(el.getAttribute("data-copy") || el.textContent, el); }
+      if (el) { copyText(copyValue(el), el); }
     });
     document.addEventListener("keydown", function (ev) {
       if (ev.key !== "Enter" && ev.key !== " " && ev.key !== "Spacebar") { return; }
       var el = ev.target && ev.target.matches && ev.target.matches("[data-copy]") ? ev.target : null;
-      if (el) { ev.preventDefault(); copyText(el.getAttribute("data-copy") || el.textContent, el); }
+      if (el) { ev.preventDefault(); copyText(copyValue(el), el); }
     });
   }
 

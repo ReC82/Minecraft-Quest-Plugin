@@ -1058,6 +1058,84 @@ class WorkshopFlowTest {
         }
     }
 
+    // ---- #828 : identifier et retrouver une version dans l'historique ------------------------------
+
+    /**
+     * #828 — TC-428 : chaque version porte son identifiant court, son statut réel (bloqué,
+     * avertissements acceptables, non vérifiée) ; une version se retrouve par son identifiant court,
+     * par un lien direct sans projet, et la version affichée est mise en évidence. Rien n'est payé,
+     * enregistré ni posé.
+     */
+    @Test
+    void everyVersionShowsItsShortIdAndRealStatusAndIsFoundByThatId() throws Exception {
+        start();
+        String project = createProject("Église", BRIEF);
+        String withDraft = propose(project);
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+        String blocked = draftId(withDraft);
+        String acceptable = extraDraft(id(project), AUDIT_ACCEPTABLE);
+        String unchecked = extraDraft(id(project), null);
+        String conforming = extraDraft(id(project), AUDIT_OK);
+        String invalid = extraDraft(id(project), "{\"code\":\"PLAN_INVALID\",\"codes\":[\"PLAN_INVALID\"],"
+                + "\"message\":\"Plan illisible.\",\"blocks\":0,\"warnings\":[]}");
+        int actions = store.recentActions(TestConfig.AGENT_ID, 500).size();
+
+        String history = section(get(project).body(), "id=\"ws-history\"");
+        for (String d : List.of(blocked, acceptable, unchecked, conforming, invalid)) {
+            assertTrue(history.contains("data-copy=\"V-" + d.substring(0, 8) + "\""), history);
+        }
+        assertTrue(history.contains("Bloqué") && history.contains("NO_ENTRANCE"), history);
+        assertTrue(history.contains("Avertissements acceptables") && history.contains("UNSUPPORTED_BLOCK"), history);
+        assertTrue(history.contains("Non vérifiée"), history);
+        assertTrue(history.contains("> Conforme</span>"), history);
+        assertTrue(history.contains("PLAN_INVALID"), history);
+        assertFalse(itemOf(history, invalid).contains("Avertissements acceptables"),
+                "PLAN_INVALID n'est jamais contournable");
+
+        String shown = get("/buildings/workshop/project?id=" + id(project) + "&draft=V-"
+                + acceptable.substring(0, 8).toUpperCase()).body();
+        String h = section(shown, "id=\"ws-history\"");
+        assertTrue(h.contains("affichée : V-" + acceptable.substring(0, 8)), h);
+        assertTrue(h.contains("ws-version--open\" id=\"ws-v-" + acceptable.substring(0, 8) + "\" aria-current"), h);
+        assertTrue(h.contains("Reprendre V-" + blocked.substring(0, 8)), "le bouton nomme la version chargée");
+        assertFalse(h.contains("Reprendre V-" + acceptable.substring(0, 8)), "la version affichée n'est pas à reprendre");
+
+        String missing = get("/buildings/workshop/project?id=" + id(project) + "&draft=V-ffffffff").body();
+        assertTrue(missing.contains("introuvable dans l&#39;historique de ce projet")
+                || missing.contains("introuvable dans l'historique de ce projet"), excerpt(missing));
+
+        HttpResponse<String> deep = get("/buildings/workshop/project?draft=V-" + acceptable.substring(0, 8));
+        assertEquals(303, deep.statusCode());
+        assertEquals(id(project), id(location(deep)));
+        assertEquals(acceptable, draftId(location(deep)));
+        String absent = decoded(location(get("/buildings/workshop/project?draft=V-ffffffff")));
+        assertTrue(absent.contains("introuvable dans les projets de l'Atelier"), absent);
+
+        assertEquals(1, aiCalls.get(), "consulter l'historique n'appelle jamais l'IA");
+        assertEquals(actions, store.recentActions(TestConfig.AGENT_ID, 500).size(),
+                "ni vérification, ni enregistrement, ni pose");
+    }
+
+    private static String itemOf(String history, String draftId) {
+        int at = history.indexOf("id=\"ws-v-" + draftId.substring(0, 8) + "\"");
+        assertTrue(at > 0, "version absente : " + draftId);
+        return history.substring(at, history.indexOf("</li>", at));
+    }
+
+    /** Une version de plus dans le projet, vérifiée par {@code audit} (ou jamais si {@code null}). */
+    private String extraDraft(String projectId, String audit) {
+        BuildingPlanDraft d = drafts().create(new BuildingPlanDraftStore.NewDraft(TestConfig.AGENT_ID, "",
+                PLAN, BuildingPlanDraft.Origin.AI_CORRECTION, "", "", "openai", "OpenAI", "gpt-4o", "", "", "",
+                19, 19, 14, "owner", projectId));
+        if (audit != null) {
+            String action = store.createAction(TestConfig.AGENT_ID, "building.plan.audit", Map.of("plan", PLAN),
+                    "owner");
+            drafts().link(d.id(), action, BuildingPlanDraftStore.Check.AUDIT, d.version());
+            answer(store.action(action).orElseThrow(), audit);
+        }
+        return d.id();
+    }
+
     /** L'examen montre provenance, dimensions, orientation et incompatibilités — sans rien écrire. */
     @Test
     void theImportPreviewShowsProvenanceAndConflictsWithoutWritingAnything() throws Exception {
@@ -1143,7 +1221,7 @@ class WorkshopFlowTest {
         start();
         String withDraft = propose(createProject("Bibliothèque", BRIEF));
         String page = get(withDraft).body();
-        String diag = field(page, "data-copy=\"([^\"]*)\"");
+        String diag = field(page, "data-copy=\"([^\"]*)\"><i[^>]*></i>Copier le diagnostic");
         assertTrue(diag.contains("Diagnostic Atelier PlugAdmin"), diag);
         assertTrue(diag.contains("bibliotheque_v2"), "le plan est inclus");
         assertFalse(diag.contains("sk-test"), "jamais la clé d'API");

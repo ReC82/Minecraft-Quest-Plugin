@@ -1099,6 +1099,17 @@ tr.act-row a.act-label:hover, tr.act-row a.act-label:focus { text-decoration: un
 .ws-main .btn-primary { font-size: 1.05rem; }
 .ws-problems { padding-left: 1.2rem; }
 .ws-problems li { margin-bottom: .4rem; }
+/* #828 : historique des versions — identifiant, statut réel, version affichée, recherche par ID. */
+.ws-versions { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: .5rem; }
+.ws-version { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .75rem; min-width: 0; }
+.ws-version--open { border-color: var(--primary); background: var(--primary-soft); box-shadow: inset 4px 0 0 var(--primary); }
+.ws-version-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
+.ws-version-why { margin: .3rem 0; overflow-wrap: anywhere; }
+.ws-version-shown { color: var(--primary-d); }
+.ws-version-search { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+.ws-version-search input[type=search] { flex: 1 1 12rem; min-width: 0; max-width: 20rem; }
+.ws-version-search .field-help { flex-basis: 100%; margin: 0; }
+@media (max-width: 576px) { .ws-version-search input[type=search] { max-width: none; } .ws-version .btnrow .btn { flex: 1 1 auto; } }
 .ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
 .ws-card { text-decoration: none; color: inherit; }
 .ws-card:hover, .ws-card:focus { border-color: var(--bs-primary, #0d6efd); }

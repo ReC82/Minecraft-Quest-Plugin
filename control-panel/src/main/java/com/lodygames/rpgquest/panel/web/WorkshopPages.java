@@ -24,6 +24,8 @@ import com.lodygames.rpgquest.panel.building.PlanDiagnosis;
 import com.lodygames.rpgquest.panel.building.PlanImportPreview;
 import com.lodygames.rpgquest.panel.building.SaveFailure;
 import com.lodygames.rpgquest.panel.building.PlanVerdictText;
+import com.lodygames.rpgquest.panel.building.PlanVersionRef;
+import com.lodygames.rpgquest.panel.building.PlanVersionStatus;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.security.Session;
 import java.time.ZoneOffset;
@@ -248,7 +250,11 @@ public final class WorkshopPages {
                               boolean ownBuilding, List<BuildingDesignDocStore.Doc> designs,
                               String designConflict, String importQuery,
                               Optional<PlanImportPreview> importPreview, RepairInfo repairInfo,
-                              FailureInfo failure) {
+                              FailureInfo failure, Map<String, CheckState> versionAudits) {
+
+        public ProjectView {
+            versionAudits = versionAudits == null ? Map.of() : Map.copyOf(versionAudits);
+        }
     }
 
     /**
@@ -1422,29 +1428,78 @@ public final class WorkshopPages {
     /**
      * L'historique de ce projet : ses seules versions (#308). Un projet neuf le dit, plutôt que
      * d'afficher des plans d'ailleurs.
+     *
+     * <p>#828 : chaque version porte son identifiant court copiable, son lien direct et le statut
+     * réel de sa dernière vérification ; la version affichée est mise en évidence, et une recherche
+     * par identifiant y mène sans ouvrir les versions une à une. Consulter ne génère, n'enregistre et
+     * ne pose rien.</p>
      */
     private static String draftList(ProjectView v) {
         StringBuilder sb = new StringBuilder("<details class=\"npc-registry\" id=\"ws-history\"><summary>")
                 .append(Icons.icon("history")).append("Historique de ce projet — versions du plan (")
-                .append(v.drafts().size()).append(")</summary>");
+                .append(v.drafts().size()).append(")");
+        if (v.draft() != null) {
+            sb.append(" — affichée : ").append(Http.esc(PlanVersionRef.label(v.draft().id())));
+        }
+        sb.append("</summary>");
         if (v.drafts().isEmpty()) {
             return sb.append("<p class=\"faint\">Aucune version de plan pour ce projet : il est neuf. Les "
                     + "plans d'autres projets ne s'affichent jamais ici.</p></details>").toString();
         }
-        sb.append("<ul class=\"tight\">");
+        sb.append(versionSearch(v));
+        sb.append("<ul class=\"ws-versions\">");
         for (BuildingPlanDraft d : v.drafts()) {
-            boolean open = v.draft() != null && v.draft().id().equals(d.id());
-            sb.append("<li>").append(open ? "<strong>" : "").append(Http.esc(d.origin().label()))
-                    .append(" — ").append(Http.esc(WHEN.format(d.updatedAt()))).append(open ? "</strong>" : "");
-            if (open) {
-                sb.append(" <span class=\"faint\">(affichée)</span>");
-            } else {
-                sb.append(" <a class=\"btn btn-sm btn-outline-primary\" href=\"")
-                        .append(projectUrl(v.project().id(), d.id())).append("\">Reprendre cette version</a>");
-            }
-            sb.append("</li>");
+            sb.append(versionItem(v, d));
         }
         return sb.append("</ul></details>").toString();
+    }
+
+    /** Aller directement à une version par son identifiant court ou complet (#828) — une simple navigation. */
+    private static String versionSearch(ProjectView v) {
+        return "<form method=\"get\" action=\"" + BASE + "/project\" class=\"ws-version-search\" role=\"search\">"
+                + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(v.project().id()) + "\">"
+                + "<label for=\"ws-version-q\">Aller à une version</label>"
+                + "<input id=\"ws-version-q\" name=\"draft\" type=\"search\" placeholder=\"V-8776ad09\" "
+                + "autocomplete=\"off\" spellcheck=\"false\" aria-describedby=\"ws-version-help\">"
+                + "<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">Afficher</button>"
+                + "<p id=\"ws-version-help\" class=\"field-help\">Identifiant court (V-8776ad09) ou complet. "
+                + "Afficher une version ne lance aucune IA, n'enregistre rien et ne pose rien en jeu.</p></form>";
+    }
+
+    private static String versionItem(ProjectView v, BuildingPlanDraft d) {
+        boolean open = v.draft() != null && v.draft().id().equals(d.id());
+        String label = PlanVersionRef.label(d.id());
+        PlanVersionStatus st = PlanVersionStatus.of(v.versionAudits().get(d.id()));
+        String link = projectUrl(v.project().id(), d.id());
+        StringBuilder sb = new StringBuilder("<li class=\"ws-version").append(open ? " ws-version--open" : "")
+                .append("\" id=\"ws-v-").append(Http.esc(shortId(d.id()))).append("\"")
+                .append(open ? " aria-current=\"true\"" : "").append(">");
+        sb.append("<div class=\"ws-version-head\">").append(Ui.id(label))
+                .append(" <span class=\"muted\">").append(Http.esc(WHEN.format(d.updatedAt()))).append(" — ")
+                .append(Http.esc(d.origin().label())).append("</span> ")
+                .append(Ui.pill(st.kind().label(), st.kind().pill(), st.kind().glyph()));
+        if (open) {
+            sb.append(" <strong class=\"ws-version-shown\">Version affichée</strong>");
+        }
+        sb.append("</div><p class=\"ws-version-why\">");
+        if (!st.codes().isEmpty()) {
+            sb.append("<code class=\"tid\">").append(Http.esc(String.join(", ", st.codes()))).append("</code> ");
+        }
+        sb.append(Http.esc(st.explanation()));
+        if (st.stale()) {
+            sb.append(" <span class=\"faint\">(vérifiée sur le texte n°").append(st.auditVersion())
+                    .append(", antérieur à l'actuel n°").append(d.version()).append(")</span>");
+        }
+        sb.append("</p><div class=\"btnrow\">");
+        if (!open) {
+            sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"").append(link)
+                    .append("\" aria-label=\"Reprendre la version ").append(Http.esc(label)).append("\">")
+                    .append("Reprendre ").append(Http.esc(label)).append("</a>");
+        }
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"button\" data-copy-url data-copy=\"")
+                .append(link).append("\" aria-label=\"Copier le lien direct vers ").append(Http.esc(label))
+                .append("\">").append(Icons.icon("copy")).append("Copier le lien</button></div></li>");
+        return sb.toString();
     }
 
     // ---- Détails techniques ----------------------------------------------------------------

@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -52,6 +53,9 @@ import org.slf4j.Logger;
  */
 public final class MarketService implements PluginService {
 
+    static final String UNSELLABLE_MESSAGE =
+            "<red>Cet objet est lié à toi : il ne peut pas être mis en vente.</red>";
+
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final String TITLE = "<gold>Marché</gold>";
     private static final int LIST_SIZE = 54;
@@ -68,6 +72,9 @@ public final class MarketService implements PluginService {
     private final Logger logger;
 
     private final Map<UUID, MarketSession> sessions = new ConcurrentHashMap<>();
+
+    /** Issue #852 : objets interdits de vente (soulbound/permanents, identifiés par PDC) ; aucun par défaut. */
+    private volatile Predicate<ItemStack> unsellableItemRule = stack -> false;
 
     public MarketService(RPGQuestPlugin plugin, MarketRepository marketRepository, EconomyService economyService) {
         this.plugin = plugin;
@@ -97,6 +104,14 @@ public final class MarketService implements PluginService {
         return new MarketListener(this);
     }
 
+    /**
+     * Issue #852 : règle de refus de mise en vente, branchée par le bootstrap sur
+     * {@code SoulboundItemService#isSoulbound} — un objet lié au joueur ne passe jamais à un autre.
+     */
+    public void setUnsellableItemRule(Predicate<ItemStack> unsellableItemRule) {
+        this.unsellableItemRule = unsellableItemRule;
+    }
+
     /** {@code /market} : ouvre la vitrine (toutes offres actives, triées par ancienneté), première page. */
     public void open(Player player) {
         showList(player, 0);
@@ -107,6 +122,10 @@ public final class MarketService implements PluginService {
         ItemStack held = player.getInventory().getItemInMainHand();
         if (held.getType().isAir() || held.getAmount() <= 0) {
             player.sendMessage(MM.deserialize("<red>Tu dois tenir en main l'objet à vendre.</red>"));
+            return;
+        }
+        if (unsellableItemRule.test(held)) {
+            player.sendMessage(MM.deserialize(UNSELLABLE_MESSAGE));
             return;
         }
 

@@ -10,10 +10,15 @@ import com.lodygames.rpgquest.database.MarketRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
+import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.item.SoulboundItemService;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +44,7 @@ class MarketServiceTest {
     private EconomyService economyService;
     private MarketService marketService;
     private PlayerProfileRepository profileRepository;
+    private YamlCustomItemRegistry customItemRegistry;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -54,6 +60,16 @@ class MarketServiceTest {
 
         marketService = new MarketService(plugin, marketRepository, economyService);
         marketService.start();
+
+        // #852 : même branchement que le bootstrap — les objets liés au joueur ne se vendent pas.
+        customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
+        customItemRegistry.start();
+        SoulboundItemService soulboundItemService = new SoulboundItemService(customItemRegistry);
+        soulboundItemService.registerStorageLocked(RpgItemKeys.PIERRE_RETOUR);
+        soulboundItemService.registerStorageLocked(RpgItemKeys.ACTE_PROPRIETE);
+        soulboundItemService.registerStorageLocked(RpgItemKeys.JOURNAL_QUETES);
+        soulboundItemService.register(RpgItemKeys.RUNE_RAPPEL);
+        marketService.setUnsellableItemRule(soulboundItemService::isSoulbound);
     }
 
     @AfterEach
@@ -76,6 +92,61 @@ class MarketServiceTest {
         assertEquals(1, active.size());
         assertEquals(100L, active.get(0).price());
         assertEquals(seller.getUniqueId(), active.get(0).sellerUuid());
+    }
+
+    @Test
+    void sellingAPermanentItemIsRefusedAndTheItemStaysInHand() throws Exception {
+        PlayerMock seller = addPlayer();
+        seller.getInventory().setItemInMainHand(customItem(RpgItemKeys.PIERRE_RETOUR));
+
+        marketService.sell(seller, 100);
+        awaitAsyncWork();
+
+        assertEquals(RpgItemKeys.PIERRE_RETOUR,
+                customItemRegistry.identify(seller.getInventory().getItemInMainHand()).orElseThrow());
+        assertEquals(0, marketRepository.activeListings().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void sellingASoulboundOnlyItemIsRefusedToo() throws Exception {
+        PlayerMock seller = addPlayer();
+        seller.getInventory().setItemInMainHand(customItem(RpgItemKeys.RUNE_RAPPEL));
+
+        marketService.sell(seller, 100);
+        awaitAsyncWork();
+
+        assertEquals(RpgItemKeys.RUNE_RAPPEL,
+                customItemRegistry.identify(seller.getInventory().getItemInMainHand()).orElseThrow());
+        assertEquals(0, marketRepository.activeListings().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void refusalLeavesExistingListingsIntact() throws Exception {
+        PlayerMock seller = addPlayer();
+        marketRepository.createListing(seller.getUniqueId(), new ItemStack(Material.DIAMOND, 1).serializeAsBytes(), 30)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        seller.getInventory().setItemInMainHand(customItem(RpgItemKeys.ACTE_PROPRIETE));
+
+        marketService.sell(seller, 100);
+        awaitAsyncWork();
+
+        List<MarketListingRecord> active = marketRepository.activeListings().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(1, active.size());
+        assertEquals(30L, active.get(0).price());
+    }
+
+    @Test
+    void anOrdinaryItemNamedLikeAPermanentOneIsStillSellable() throws Exception {
+        PlayerMock seller = addPlayer();
+        ItemStack lookalike = new ItemStack(Material.ECHO_SHARD);
+        lookalike.editMeta(meta -> meta.displayName(Component.text("Pierre de retour")));
+        seller.getInventory().setItemInMainHand(lookalike);
+
+        marketService.sell(seller, 100);
+        awaitAsyncWork();
+
+        assertTrue(seller.getInventory().getItemInMainHand().getType().isAir());
+        assertEquals(1, marketRepository.activeListings().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
     }
 
     @Test
@@ -171,6 +242,10 @@ class MarketServiceTest {
         // don sans rapport.
         awaitAsyncWork();
         return player;
+    }
+
+    private ItemStack customItem(NamespacedKey id) {
+        return customItemRegistry.create(id, 1).orElseThrow();
     }
 
     private boolean containsMaterial(PlayerMock player, Material material) {

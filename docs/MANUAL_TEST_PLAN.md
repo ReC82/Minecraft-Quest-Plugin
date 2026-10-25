@@ -9269,3 +9269,16 @@ retirées, conflits concurrents, publication individuelle et groupée, publicati
 **Résultat attendu** : le joueur sait, sans commande ni fichier, quel palier est en cours, ce qui reste à faire, et que la fin est automatique.
 
 **Couverture automatisée** : `QuestProgressTextTest` (quête active à quatre objectifs : titre + quatre compteurs, nom traduit, ligne identique à celle du journal ; quête non en cours ; quête inconnue → jeton visible ; quête à plusieurs étapes et objectif binaire ; id nu ou `rpgquest:…`), `BundledDialoguesValidityTest#theGuardTellsTheActiveTierProgressAndNeverPromisesAReturnVisit` (un choix « Où en suis-je ? » par palier sous `QUEST_STATE … ACTIVE`, nœud avec `%quest_progress:…%`, offres NOT_STARTED / COMPLETED inchangées, plus aucune promesse de retour), `QuestJournalServiceTest` (lignes du journal inchangées après mise en commun de `ObjectiveLabels#counterLine`).
+
+### TC-434 — Mobs spéciaux : aucun tirage automatique au Hub ni dans les Claims (issue #851, PENDING MANUAL VALIDATION)
+
+**But** : un profil `SPECIAL` à `worlds: []` (ex. `creeper_pig`, base PIG) ne transforme jamais un mob né naturellement dans `hub.world` ou `claims.world` ; dans le Wild, le tirage reste inchangé.
+
+**Prérequis** : JAR #851 en ligne sur DEV. Aucun profil à modifier (DEV relu le 25/10 : `creeper_pig`, `golden_creeper`, `red_creeper`, `splitting_zombie` activés avec `worlds: []`, tirage global 1.0).
+
+1. PlugAdmin → Mobs spéciaux & boss → Créer un profil : survoler l'aide « Mondes autorisés ». **Attendu** : « Mondes Wild où ce profil peut apparaître… jamais au Hub ni dans les Claims ».
+2. Au Hub et dans le monde Claims, observer les cochons nés naturellement (ou attendre de nouvelles apparitions). **Attendu** : aucun « Cochon Creeper » nouveau (un cochon transformé **avant** le déploiement peut subsister : il n'est pas retiré).
+3. Dans le Wild, parcourir des plaines. **Attendu** : des mobs spéciaux apparaissent toujours (Cochon Creeper, Creeper Rouge/Doré…).
+4. PlugAdmin → apparition de test d'un profil près d'un joueur. **Attendu** : inchangé.
+
+**Couverture automatisée** : `SpecialMobServiceTest#naturalPigInHubOrClaimsIsNeverTransformedEvenWithEmptyWorlds`, `#emptyWorldsMeansWildOnly`, `#profileListingTheHubStillNeverRollsThere` (Hub refusé même déclaré Wild par erreur) ; tests existants du tirage Wild inchangés ; `MobFormHelpTest` (aide du champ).

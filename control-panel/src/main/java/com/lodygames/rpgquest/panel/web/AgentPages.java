@@ -10688,6 +10688,18 @@ public final class AgentPages {
                 .map(o -> String.valueOf(((Map<?, ?>) o).get("id"))).toList();
     }
 
+    /** Issue #881 : portails du dernier relevé {@code portal.list} liés à cette construction. */
+    public List<String> portalsUsingBuilding(String agentId, String buildingId) {
+        if (agentId == null || agentId.isBlank() || buildingId == null || buildingId.isBlank()) {
+            return List.of();
+        }
+        return latestDetails(agentId, "portal.list")
+                .map(d -> d.get("portals") instanceof List<?> l ? l : List.of())
+                .orElse(List.of()).stream()
+                .filter(o -> o instanceof Map<?, ?> m && buildingId.equalsIgnoreCase(String.valueOf(m.get("building"))))
+                .map(o -> String.valueOf(((Map<?, ?>) o).get("id"))).toList();
+    }
+
     private Optional<Map<String, Object>> latestDetails(String agentId, String type) {
         // Dernière action RÉUSSIE du type : une action « Rafraîchir » plus récente encore en cours
         // (ou en échec) ne doit pas vider le catalogue déjà chargé (issue affichage /stories).

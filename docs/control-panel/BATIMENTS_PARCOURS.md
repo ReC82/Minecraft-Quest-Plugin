@@ -72,6 +72,14 @@ Conforme / Avertissements acceptables / Bloqué / Non vérifiée avec ses codes,
 global »** — recherche, « Examiner avant import » (provenance, dimensions, entrée, incompatibilités, rien
 d'écrit), puis « Importer comme nouvelle version de ce projet » : une copie, source inchangée, sans IA.
 
+**Retrouver et nettoyer ses projets (#881).** La liste de l'Atelier a une recherche (nom, nom technique,
+description — sans casse ni accents), des filtres (Tous, Brouillons, En bibliothèque, Utilisés en jeu, Non
+utilisés, Utilisation à vérifier, À corriger) et un tri (récents, anciens, nom). Chaque tuile dit **Utilisé en
+jeu** (avec « Voir où utilisé »), **Non utilisé** ou **Utilisation à vérifier**. En bas de la fiche d'un projet,
+**« Supprimer le projet »** efface seulement ce que le panel garde de la conception, et seulement si le
+bâtiment n'est ni posé, ni lié à un portail, ni publié dans la bibliothèque (pour un bâtiment publié, passer
+par la Bibliothèque, #644), et si l'usage est vérifiable. Aucun bloc du monde n'est touché.
+
 ## Ce que l'ancien parcours devient
 
 - `/buildings/plan?site=…` mène à l'Atelier (au projet repris, ou à la liste avec la reprise proposée).

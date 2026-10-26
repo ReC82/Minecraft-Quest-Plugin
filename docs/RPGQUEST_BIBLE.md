@@ -1873,6 +1873,37 @@ fiche :
   (`building.plan.draft.recover`, avec brouillon et projet source). Depuis la fiche d'une action,
   « Examiner l'import dans ce projet » mène au même examen.
 
+**Liste des projets : recherche, filtres, usage en jeu et suppression (issue #881).** La page
+`/buildings/workshop` se cherche et se filtre côté serveur, par paramètres d'URL (utilisable sans JavaScript,
+lien partageable) : `q` (nom, nom technique, description ou identifiant du projet — casse, accents et espaces
+multiples ignorés, « EGLISE » trouve « Église du Hub »), `filtre` (`brouillons` = jamais enregistré,
+`bibliotheque`, `utilises`, `non_utilises`, `a_verifier`, `a_corriger` = « À corriger » ou « Enregistrement
+échoué » ; une puce n'apparaît que si elle retient au moins un projet), `tri` (`recents` par défaut, `anciens`,
+`nom`). Recherche et filtre se combinent ; « N projet(s) sur M », message « Aucun projet ne correspond à « … »
+dans « … » » et « Effacer la recherche et les filtres ». Chaque tuile affiche **toujours** son usage :
+**Utilisé en jeu** (posé sur un emplacement du dernier relevé `building.site.list`, ou cité par un portail du
+dernier `portal.list` ; nombre d'emplacements et lien « Voir où utilisé »), **Non utilisé**, ou **Utilisation à
+vérifier** (aucun relevé des emplacements chargé, ou bâtiment disparu du relevé de la bibliothèque sans retrait
+connu), plus son état Bibliothèque (#290). La présence en bibliothèque ne vaut **pas** « utilisé ».
+
+La fiche d'un projet porte, repliée, la zone **« Supprimer le projet — <usage> »** : ce qui serait effacé
+(**données du panel uniquement** : la fiche, toutes ses versions de plan — y compris celles retirées de la
+liste — et leurs révisions, liens de vérification et jetons, conceptions détaillées, conceptions automatiques,
+images de référence, avec leurs nombres) et ce qui est **conservé** (bâtiment de la bibliothèque et versions
+archivées, bâtiments posés, emplacements et sauvegardes de terrain, portails, historique des actions de
+l'agent où un plan reste importable, journal IA #739, journal d'audit ; aucun bloc du monde). Le formulaire
+(case « Je supprime définitivement… », bouton rouge) n'apparaît que si la suppression est permise ; sinon
+les motifs sont listés, sans option « forcer ». **Refus côté serveur**, revérifiés à la soumission même
+pour une requête forgée : bâtiment posé ou cité par un portail ; usage incertain ; bâtiment **publié** dans
+la bibliothèque (orienté vers la fiche Bibliothèque et « Supprimer ce bâtiment et toutes ses versions »,
+#644 — supprimer le projet ne retire jamais une définition publiée) ; vérification / enregistrement en
+attente de réponse ou conception automatique en cours ; rôle sans `BUILDING_WRITE` (la page reste gardée
+par `AI_USE`) ; case non cochée ; fiche modifiée depuis l'affichage (`project_version`). Un bâtiment retiré
+(#284) ou supprimé (#644) de la bibliothèque n'empêche pas la suppression du projet : ses versions
+archivées restent côté serveur. Effacement en **une transaction** (tout ou rien) ; le second clic répond
+« Ce projet a déjà été supprimé : rien de plus n'a été fait. ». Audit `building.project.delete` (OK ou
+DENIED avec le motif). Aucune action n'est envoyée au serveur Minecraft, aucune migration de base.
+
 Les garanties de #256 s'appliquent aux projets : redirection après chaque soumission, jeton à usage unique
 sur les gestes payants, versions et contrôle de concurrence, vérifications rattachées à leur version,
 persistance au redémarrage.

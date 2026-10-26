@@ -9328,6 +9328,25 @@ Pannes de base / Hub introuvable : non rejouables sans altérer DEV — couverte
 
 **Couverture automatisée** : `ClaimWorldAccessGuardTest#aHistoricPortalToTheClaimsWorldRefusesANonEligiblePlayerBeforeMovingThem`, `#aHistoricPortalLetsAnUnlockedPlayerThroughExactlyOnceWithAReturnStone`, `#aHistoricPortalLetsAClaimOwnerAndAnExplicitBypassThroughImmediately`, `#anOpWithoutTheBypassModeIsRefusedByAHistoricPortalToo`, `#historicPortalsToAnotherWorldAreNeverAffected` ; `PortalServiceTest#aRefusingDestinationGuardPreventsTheTeleportAndTakesNoMoney`, `#anAllowingDestinationGuardDebitsThenTeleports` ; `ClaimWorldSafetyListenerTest#aTransientDatabaseFailureIsRetriedAndAnEligiblePlayerStays`, `#aPersistentDatabaseFailureSendsThePlayerBackToTheHubAfterBoundedRetries`, `#anUnresolvedHubTargetIsRetriedBoundedThenReportedWithoutLooping`, `#aHubTargetInsideTheClaimsWorldIsNeverUsedAndALateTargetIsUsedOnRetry`, `#leavingTheClaimsWorldStopsPendingRetries`, `#anInternalCommandTeleportOfANonEligiblePlayerReplaysTheEntryCheck`, `#gameplayMovesInsideTheClaimsWorldAreNotChecked`.
 
+### TC-438 — Atelier : rechercher, filtrer et supprimer un projet non utilisé (issue #881, PENDING MANUAL VALIDATION)
+
+**Prérequis** : PlugAdmin issu de #881, compte Propriétaire. **Durée** : 10 minutes. **Ne supprimer aucun
+projet réel** : seulement un projet d'essai créé pour l'occasion (aucun appel IA : ne pas demander de plan).
+
+1.  `/buildings/sites` → Rafraîchir, `/buildings/library` → Rafraîchir (relevés à jour).
+2.  `/buildings/workshop` : chaque tuile affiche « Utilisé en jeu », « Non utilisé » ou « Utilisation à vérifier »
+    et son état Bibliothèque. L'église posée doit être « Utilisé en jeu » avec « Voir où utilisé ».
+3.  Chercher `eglise` (sans accent, minuscules) : l'église apparaît, « 1 projet(s) sur N » ou plus. Chercher
+    `chateau` + filtre « Utilisés en jeu » : message « Aucun projet ne correspond… », « Effacer la recherche et
+    les filtres » ramène la liste complète. Tri « Nom (A → Z) » puis « Plus anciens ».
+4.  Ouvrir l'église → « Supprimer le projet — Utilisé en jeu » : motifs listés (posé sur …), **aucun bouton**.
+5.  Atelier → Nouveau projet « Essai 881 », identifiant `essai_suppression_881`, sans demander de plan. Sa
+    fiche → « Supprimer le projet — Non utilisé » : liste de ce qui serait supprimé et conservé. Cliquer sans
+    cocher : refus. Cocher, cliquer deux fois vite : « Projet « Essai 881 » supprimé… », puis aucune erreur ;
+    le projet a disparu de la liste. Bibliothèque, emplacements et monde inchangés.
+6.  Mobile (390 px) : barre de recherche, puces de filtre, tuiles et zone de suppression lisibles, sans
+    défilement horizontal.
+
 ### TC-437 — Classements par type de créature sur le portail bêta (issue #734, PENDING MANUAL VALIDATION)
 
 **But** : chaque créature réellement tuée (zombie, squelette, araignée…) a son propre classement, distinct du cumul « Monstres » ; un mob spécial RPGQuest a le sien, séparé de sa créature de base ; rien n'est inventé pour les types jamais tués.

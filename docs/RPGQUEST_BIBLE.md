@@ -5492,6 +5492,9 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
   À la vérification et à la publication, le serveur relève le passage **sur la grille** depuis l'ancre
   (`PortalPassageFinder` ; ancre dans la dalle du sol → passage juste au-dessus) et refuse une arche sans passage
   traversant de 2 blocs de haut (`PORTAL_PASSAGE_MISSING`, rien n'est écrit).
+  `building.plan.preview` joint ce passage relevé (`passage` : `minX..maxZ`, coordonnées locales) ; l'aperçu 3D de
+  l'Atelier le dessine en volume violet translucide (zone de téléportation), avec largeur × hauteur × profondeur, sens
+  de traversée et écart éventuel avec le passage demandé au projet (#568, suite du 26/10).
 - **Liaison** portée par le portail : `building: <id>` dans `world-portals/<id>.yml`, à côté de `site:` (ignoré sans
   `site`). Action `portal.building.link` (`PORTAL_EDIT`, sensible, empreinte, portail **non actif** —
   `ACTIVE_ZONE_LOCKED` sinon) : la zone devient le passage de l'arche posée sur l'emplacement, transformé par l'ancre et

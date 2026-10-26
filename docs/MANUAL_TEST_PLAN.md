@@ -8288,7 +8288,12 @@ aucune construction posée, déplacée, remplacée ou supprimée, aucun portail 
     construction » et « Passage de l'arche » visibles (ne rien créer).
 2.  (Feu vert requis — appel IA payant) Atelier : nouveau projet « Arche de test », type « Arche de portail », passage
     3 × 4, entrée au nord, emprise 7 × 5 × 8. Proposer, vérifier. **Attendu** : verdict « Passage du portail : … » ; une
-    arche bouchée est refusée `PORTAL_PASSAGE_MISSING`. Enregistrer : la Bibliothèque la montre sous « Portails » avec sa
+    arche bouchée est refusée `PORTAL_PASSAGE_MISSING`. **Aperçu du bâtiment** (gratuit, suite 26/10) : le passage est un
+    volume **violet translucide à contour pointillé** dans la vue 3D, sous les 4 orientations, tronqué par « Voir
+    l'intérieur » ; sous la vue, « Zone de téléportation : L blocs de large, H de haut, P de profondeur ; on la traverse
+    du nord au sud… aucune coordonnée à saisir » ; si le passage relevé diffère de celui demandé au projet, avertissement
+    « Le passage relevé mesure … le projet en demande … ». Une arche sans passage affiche l'alerte
+    `PORTAL_PASSAGE_MISSING` au lieu du volume. Enregistrer : la Bibliothèque la montre sous « Portails » avec sa
     zone de passage.
 3.  (Feu vert requis) Marquer un emplacement de test (outil #213, face est), créer un portail brouillon depuis cet
     emplacement vers un monde de test. Poser l'arche sur l'emplacement (page Emplacements, aperçu puis confirmation).
@@ -8305,7 +8310,9 @@ aucune construction posée, déplacée, remplacée ou supprimée, aucun portail 
 **Couverture automatisée** : `PortalPassageTest` (passage dans l'emprise et ancre contenue aux 4 rotations, 90° = axe X
 vers l'est, type/zone validés, aller-retour YAML, fichier antérieur identique), `PortalPassageFinderTest` (ouverture
 relevée sur la grille, façade est, ancre dans la dalle, pilier / passage bouché), `BuildingGeneratorTest` (arche publiée
-avec type et passage, refus avant écriture), `WorldPortalBuildingLinkTest` (zone = passage après rotation, jamais activé,
+avec type et passage, refus avant écriture, passage joint à l'aperçu), `AgentActionExecutorTest` (`passage` dans le
+détail de `building.plan.preview`), `PassageVolumeTest` / `WorkshopFlowTest` (volume dessiné aux 4 orientations, coupe,
+largeur et sens de traversée, écart avec le projet), `WorldPortalBuildingLinkTest` (zone = passage après rotation, jamais activé,
 refus sans arche / pas un portail / sans passage / définition retirée, portail actif verrouillé, activation refusée si
 arche libérée / remplacée / réorientée, relier après remplacement garde la destination, délier garde zone et arche, zone
 saisie = délié, contrôle `BUILDING` et bloc `construction`), `PortalListActionTest`, `PortalsPageTest` (bloc Construction,

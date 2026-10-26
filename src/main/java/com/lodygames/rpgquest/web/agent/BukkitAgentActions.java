@@ -3267,10 +3267,25 @@ public final class BukkitAgentActions implements AgentActions {
                     v.codes(), v.warnings(),
                     slices(p == null ? List.of() : p.plans()),
                     slices(p == null ? List.of() : p.elevations()),
-                    p == null ? null : voxels(p.voxels()), repairOf(v.repair()));
+                    p == null ? null : voxels(p.voxels()), repairOf(v.repair()), passageOf(exam.passage()));
         }).exceptionally(error -> new BuildingPlanPreviewView(false, "ERROR",
                 "Échec de l'aperçu du plan : " + rootName(error), "", "", 0, 0, 0, 0, 0, 0, 0, "",
                 List.of(), List.of(), List.of(), List.of()));
+    }
+
+    /** Le passage relevé d'une arche (#568), en coordonnées locales, bornes incluses ; vide sinon. */
+    static Map<String, Integer> passageOf(com.lodygames.rpgquest.building.model.PortalPassage passage) {
+        if (passage == null) {
+            return Map.of();
+        }
+        Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        out.put("minX", passage.minX());
+        out.put("minY", passage.minY());
+        out.put("minZ", passage.minZ());
+        out.put("maxX", passage.maxX());
+        out.put("maxY", passage.maxY());
+        out.put("maxZ", passage.maxZ());
+        return out;
     }
 
     /** La réparation proposée par le moteur (#282), à plat ; vide s'il n'y en a pas. */

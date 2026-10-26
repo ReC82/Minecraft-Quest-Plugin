@@ -4115,6 +4115,10 @@ public final class AgentActionExecutor {
                     voxels.put("layers", v.voxels().layers());
                     voxels.put("omittedReason", v.voxels().omittedReason());
                     details.put("voxels", voxels);
+                    // #568 : le passage d'une arche, que l'Atelier dessine dans la vue 3D.
+                    if (!v.passage().isEmpty()) {
+                        details.put("passage", v.passage());
+                    }
                     details.put("message", v.message());
                     if (!v.repair().isEmpty()) {
                         details.put("repair", v.repair());

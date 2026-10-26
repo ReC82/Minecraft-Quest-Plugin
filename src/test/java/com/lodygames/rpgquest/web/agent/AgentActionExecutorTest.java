@@ -215,6 +215,19 @@ class AgentActionExecutorTest {
      * statut d'échec, sinon on ne verrait jamais <em>pourquoi</em> un plan est refusé.
      */
     @Test
+    @DisplayName("#568 : l'aperçu d'une arche remonte son passage, celui d'un bâtiment n'en remonte aucun")
+    void thePreviewOfAnArchReturnsItsPassage() {
+        AgentActionOutcome arch = run(new AgentAction("bpp9", "building.plan.preview",
+                Map.of("plan", "id: arche")));
+        assertEquals(Map.of("minX", 1, "minY", 1, "minZ", 0, "maxX", 1, "maxY", 2, "maxZ", 0),
+                arch.details().get("passage"));
+
+        AgentActionOutcome building = run(new AgentAction("bpp10", "building.plan.preview",
+                Map.of("plan", "id: hub_library")));
+        assertFalse(building.details().containsKey("passage"));
+    }
+
+    @Test
     @DisplayName("Un plan refusé remonte quand même ses coupes")
     void arefusedPlanStillReturnsItsSlices() {
         AgentActionOutcome outcome = run(new AgentAction("bpp2", "building.plan.preview",
@@ -2479,6 +2492,12 @@ class AgentActionExecutorTest {
         @Override
         public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml) {
             lastPreviewedPlan = planYaml;
+            if (planYaml.startsWith("id: arche")) {
+                return CompletableFuture.completedFuture(new BuildingPlanPreviewView(true, "OK",
+                        "Plan conforme.", "arche", "arche de portail", 3, 4, 1, 9, 1, 0, 0, "NORTH",
+                        List.of(), List.of(), List.of(), List.of(), null, Map.of(),
+                        Map.of("minX", 1, "minY", 1, "minZ", 0, "maxX", 1, "maxY", 2, "maxZ", 0)));
+            }
             return CompletableFuture.completedFuture(new BuildingPlanPreviewView(false,
                     "ARCHITECTURE_REFUSED", "Plan refusé.", "hub_library", "bâtiment habitable",
                     3, 3, 3, 18, 1, 0, 1, "WEST",

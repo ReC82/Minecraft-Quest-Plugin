@@ -398,6 +398,22 @@ class WorkshopFlowTest {
         assertEquals(1, aiCalls.get(), "tourner et couper n'appellent jamais l'IA");
     }
 
+    /** Issue #568 : l'aperçu d'une arche dessine sa future zone de téléportation et la décrit. */
+    @Test
+    void aPreviewWithAPassageDrawsTheTeleportVolume() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        answer(latest("building.plan.preview"), PREVIEW_WITH_GRID.replace("\"front\":\"WEST\",",
+                "\"front\":\"WEST\",\"passage\":{\"minX\":1,\"minY\":1,\"minZ\":0,\"maxX\":1,"
+                        + "\"maxY\":1,\"maxZ\":1},"));
+        String page = get(withDraft).body();
+        assertTrue(page.contains("class=\"iso-passage\""), "le volume est dessiné dans la vue 3D");
+        assertTrue(page.contains("Zone de téléportation : 2 blocs de large, 1 de haut, 1 de profondeur"), page);
+        assertTrue(page.contains("n&#39;active jamais le portail") || page.contains("n'active jamais le portail"));
+        assertEquals(1, aiCalls.get(), "dessiner le passage n'appelle jamais l'IA");
+    }
+
     @Test
     void anOlderPluginWithoutTheGridSaysWhatIsMissing() throws Exception {
         start();

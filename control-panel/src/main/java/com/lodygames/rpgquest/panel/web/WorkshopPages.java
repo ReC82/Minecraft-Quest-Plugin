@@ -22,6 +22,7 @@ import com.lodygames.rpgquest.panel.building.BuildingSiteView;
 import com.lodygames.rpgquest.panel.building.CatalogState;
 import com.lodygames.rpgquest.panel.building.BuildingVoxels;
 import com.lodygames.rpgquest.panel.building.IsometricView;
+import com.lodygames.rpgquest.panel.building.PassageVolume;
 import com.lodygames.rpgquest.panel.building.PlanDiagnosis;
 import com.lodygames.rpgquest.panel.building.PlanImportPreview;
 import com.lodygames.rpgquest.panel.building.SaveFailure;
@@ -813,10 +814,27 @@ public final class WorkshopPages {
         int cut = v.isoCut() >= 0 && v.isoCut() < top ? v.isoCut() : top;
         String title = v.project().name() + ", vu " + IsometricView.viewLabel(view)
                 + (cut < top ? ", coupé au niveau " + cut : "");
-        sb.append("<figure class=\"ws-iso\">").append(IsometricView.svg(voxels, view, cut, title))
+        // #568 : une arche de portail montre sa future zone de téléportation, relevée par le serveur.
+        PassageVolume passage = PassageVolume.from(preview.details(), voxels).orElse(null);
+        sb.append("<figure class=\"ws-iso\">").append(IsometricView.svg(voxels, view, cut, title, passage))
                 .append("<figcaption class=\"muted\">Vu ").append(Http.esc(IsometricView.viewLabel(view)))
                 .append(cut < top ? ", tout ce qui dépasse le niveau " + cut + " est retiré" : "").append(". ")
                 .append(Http.esc(IsometricView.frontHint(front, view))).append("</figcaption></figure>");
+        if (passage != null) {
+            sb.append("<p class=\"ws-passage\"><svg class=\"ws-swatch\" viewBox=\"0 0 10 10\" aria-hidden=\"true\">"
+                    + "<rect width=\"10\" height=\"10\" fill=\"").append(IsometricView.PASSAGE_COLOR)
+                    .append("\" fill-opacity=\".5\"/></svg>").append(Http.esc(passage.describe(front)))
+                    .append(" Construire l'arche n'active jamais le portail.</p>");
+            String off = v.project().portal()
+                    ? passage.mismatch(front, v.project().passageWidth(), v.project().passageHeight()) : "";
+            if (!off.isEmpty()) {
+                sb.append(Ui.banner("warning", Http.esc(off)));
+            }
+        } else if (v.project().portal()) {
+            sb.append(Ui.banner("warning", "Aucune zone de passage n'a été relevée sur cette arche : le serveur "
+                    + "la refusera (PORTAL_PASSAGE_MISSING). Le passage doit traverser l'arche de part en part, "
+                    + "à l'ancre, sur au moins deux blocs de haut."));
+        }
 
         sb.append("<form method=\"get\" action=\"").append(BASE).append("/project\" class=\"ws-iso-controls\">")
                 .append(hidden("id", v.project().id())).append(hidden("draft", d.id()));

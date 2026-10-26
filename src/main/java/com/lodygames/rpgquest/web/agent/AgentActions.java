@@ -942,7 +942,20 @@ public interface AgentActions {
                                    List<String> codes, List<String> warnings,
                                    List<BuildingSliceView> plans,
                                    List<BuildingSliceView> elevations,
-                                   BuildingVoxelsView voxels, Map<String, Object> repair) {
+                                   BuildingVoxelsView voxels, Map<String, Object> repair,
+                                   Map<String, Integer> passage) {
+        /** Sans passage relevé : tout ce qui n'est pas une arche de portail (#568). */
+        public BuildingPlanPreviewView(boolean ok, String code, String message, String buildingId,
+                                       String kind, int sizeX, int sizeY, int sizeZ, int blocks,
+                                       int anchorX, int anchorY, int anchorZ, String front,
+                                       List<String> codes, List<String> warnings,
+                                       List<BuildingSliceView> plans,
+                                       List<BuildingSliceView> elevations,
+                                       BuildingVoxelsView voxels, Map<String, Object> repair) {
+            this(ok, code, message, buildingId, kind, sizeX, sizeY, sizeZ, blocks, anchorX, anchorY,
+                    anchorZ, front, codes, warnings, plans, elevations, voxels, repair, Map.of());
+        }
+
         public BuildingPlanPreviewView(boolean ok, String code, String message, String buildingId,
                                        String kind, int sizeX, int sizeY, int sizeZ, int blocks,
                                        int anchorX, int anchorY, int anchorZ, String front,
@@ -974,6 +987,7 @@ public interface AgentActions {
             warnings = List.copyOf(warnings == null ? List.of() : warnings);
             plans = List.copyOf(plans == null ? List.of() : plans);
             repair = Map.copyOf(repair == null ? Map.of() : repair);
+            passage = Map.copyOf(passage == null ? Map.of() : passage);
             elevations = List.copyOf(elevations == null ? List.of() : elevations);
             voxels = voxels == null ? BuildingVoxelsView.omitted("") : voxels;
         }

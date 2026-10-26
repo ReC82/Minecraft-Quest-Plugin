@@ -208,8 +208,16 @@ public final class BuildingGenerator {
         return examine(planYaml, limits);
     }
 
-    /** Un plan examiné : son verdict, et l'aperçu s'il a pu être construit. */
-    public record Examination(Verdict verdict, PlanPreview.Preview preview) {
+    /**
+     * Un plan examiné : son verdict, l'aperçu s'il a pu être construit et, pour une arche de portail,
+     * le passage relevé sur la grille (issue #568) — {@code null} sinon, ou s'il est introuvable.
+     */
+    public record Examination(Verdict verdict, PlanPreview.Preview preview,
+                              com.lodygames.rpgquest.building.model.PortalPassage passage) {
+
+        public Examination(Verdict verdict, PlanPreview.Preview preview) {
+            this(verdict, preview, null);
+        }
 
         /** Y a-t-il des coupes à montrer ? Un plan illisible n'en a aucune. */
         public boolean hasPreview() {
@@ -250,7 +258,7 @@ public final class BuildingGenerator {
         }
         return new Examination(raw.verdict().withRepair(new Repair(
                 BuildingPlanYaml.write(outcome.plan()), outcome.changes(), outcome.after(),
-                outcome.accepted())), raw.preview());
+                outcome.accepted())), raw.preview(), raw.passage());
     }
 
     /**
@@ -272,7 +280,7 @@ public final class BuildingGenerator {
         codes.addAll(v.codes());
         return Optional.of(new Examination(new Verdict(false, PROJECT_LIMITS_EXCEEDED, message,
                 v.buildingId(), v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(), codes,
-                v.warnings(), v.exists(), v.metrics()), raw.preview()));
+                v.warnings(), v.exists(), v.metrics()), raw.preview(), raw.passage()));
     }
 
     private Examination examineAsIs(String planYaml) {
@@ -315,8 +323,8 @@ public final class BuildingGenerator {
                 expansion.solidCount(), audit.blockingCodes(), List.copyOf(warnings), exists,
                 audit.metrics());
         // #568 : une arche sans passage à l'ancre ne pourrait jamais porter la zone d'un portail.
+        Optional<com.lodygames.rpgquest.building.model.PortalPassage> passage = portalPassage(plan, expansion);
         if (plan.kind() == StructureKind.PORTAL) {
-            Optional<com.lodygames.rpgquest.building.model.PortalPassage> passage = portalPassage(plan, expansion);
             if (passage.isEmpty()) {
                 List<String> codes = new ArrayList<>(audit.blockingCodes());
                 codes.add(PORTAL_PASSAGE_MISSING);
@@ -334,8 +342,9 @@ public final class BuildingGenerator {
         }
         // L'aperçu est produit même pour un plan REFUSÉ, et c'est tout l'intérêt : on veut voir
         // POURQUOI il est refusé. Une façade sans porte se constate sur une coupe en une seconde.
+        // Le passage relevé accompagne l'aperçu : l'Atelier le dessine dans la vue 3D (#568).
         return new Examination(verdict, PlanPreview.of(expansion.blueprint(), plan.front(),
-                plan.anchorX(), plan.anchorY(), plan.anchorZ()));
+                plan.anchorX(), plan.anchorY(), plan.anchorZ()), passage.orElse(null));
     }
 
     /**

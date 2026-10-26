@@ -49,6 +49,32 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-26 - PlugAdmin : Atelier — rechercher, filtrer et supprimer les projets non utilisés (#881, TC-438)
+
+### Changement
+
+PlugAdmin seulement (aucun changement du JAR RPGQuest) : recherche / filtres / tri de `/buildings/workshop`,
+usage en jeu sur chaque tuile, zone « Supprimer le projet » sur la fiche (geste `project_delete`, données du
+panel uniquement, refusé si le bâtiment est posé, lié à un portail, publié ou d'usage incertain).
+
+### Action serveur
+
+- Aucune action VeryGames : pas de JAR, pas de configuration, pas de redémarrage Minecraft.
+- PlugAdmin à redéployer sur AWS avec `scripts/plugadmin/deploy.sh` (voir le rapport de session pour
+  l'état réel du déploiement).
+- **Aucune migration** `control-panel.db` (tables existantes ; la suppression n'a lieu que sur clic).
+- Ne supprimer **aucun projet réel** pour « tester » : TC-438 se fait sur un projet d'essai.
+
+### Validation
+
+TC-438 (PENDING MANUAL VALIDATION).
+
+### Rollback
+
+Release PlugAdmin précédente. Une suppression de projet faite entre-temps n'est pas réversible (son objet) ;
+l'historique des actions de l'agent conserve les plans enregistrés ou vérifiés, importables dans un nouveau
+projet (#308).
+
 ## 2026-10-25 - Plugin : pas de téléportation directe dans le claim d'autrui, bypass obligatoire pour les TP admin (#829, D1/D2)
 
 ### Changement

@@ -49,6 +49,39 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-26 - Plugin + PlugAdmin : aperçu 3D du volume de passage d'une arche de portail (#568, TC-396)
+
+### Changement
+
+`building.plan.preview` joint le passage relevé d'une arche (`passage` : `minX..maxZ`, coordonnées locales) ;
+l'aperçu 3D de l'Atelier le dessine en volume violet translucide (zone de téléportation) avec largeur, hauteur,
+profondeur, sens de traversée et écart éventuel avec le passage demandé au projet. Lecture seule : rien n'est
+écrit, aucun appel IA.
+
+### Action serveur
+
+- **Effectué le 26/10 vers 21:26** : JAR `72227f73` (PR #888, CI PR + fusion vertes) par
+  `scripts/deploy-verygames.sh -y` (« Validation : CI verte », JAR en ligne 4 442 989 octets == local), SHA-256
+  `a0ac7b6a…` re-téléchargé identique ; DEV redémarré par `scripts/verygames-restart.sh` (0 joueur), ONLINE.
+- PlugAdmin `72227f73` par `scripts/plugadmin/deploy.sh` ; `/health` ONLINE à la relecture (KO du script = course
+  connue), classe `PassageVolume` présente dans le JAR servi.
+- **Aucune migration** (`data.db` ni `control-panel.db`), aucune configuration, aucun fichier de contenu.
+- Aucune arche, aucun portail, aucun emplacement touché.
+
+### Sauvegarde préalable
+
+`rpgquest-20261026T202615Z-predeploy.jar` (= JAR `d5a1c48e`), release PlugAdmin précédente sous
+`/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-396 étape 2 (aperçu) — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; `scripts/plugadmin/rollback.sh app`. Un ancien plugin
+n'envoie simplement pas `passage` : l'aperçu reste sans volume, rien ne casse.
+
 ## 2026-10-26 - PlugAdmin : Atelier — rechercher, filtrer et supprimer les projets non utilisés (#881, TC-438)
 
 ### Changement

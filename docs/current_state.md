@@ -121,6 +121,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > jamais activé par la liaison ; activation refusée si l'arche est libérée, remplacée ou réorientée ; délier garde la
 > zone. Migration additive `control-panel.db` (`building_project.kind`, `passage_width`, `passage_height`) ; pas de
 > migration `data.db`.
+> Suite du 26/10 : `building.plan.preview` joint le `passage` relevé ; l'aperçu 3D de l'Atelier le dessine en volume
+> violet translucide (zone de téléportation) avec dimensions, sens de traversée et écart avec le passage demandé. La
+> reprise du volume à la pose existe depuis #565 (`zone_mode=building`). Emplacements « de type portail » : non faits
+> (changement de schéma `building_sites`, décision propriétaire attendue).
 
 > **Portails : messages et avertissement (#569, 21/10/2026)** — sections facultatives `messages:` (attente, réussite,
 > bienvenue, monde indisponible, destination dangereuse, refus par défaut) et `warning:` (mode DEFAULT/ALWAYS/NEVER,

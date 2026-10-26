@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.building.plan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.building.BuildingLibrary;
@@ -160,6 +162,18 @@ class BuildingGeneratorTest {
         assertTrue(yaml.contains("kind: portal"), yaml);
         assertTrue(yaml.contains("passage:"), yaml);
         assertTrue(generator.preview(ARCH_PLAN).verdict().message().contains("Passage du portail : 3 × 3 × 3"));
+    }
+
+    @Test
+    @DisplayName("#568 : l'aperçu d'une arche porte son passage relevé, celui d'un bâtiment n'en porte aucun")
+    void thePreviewOfAnArchCarriesItsPassage() {
+        assertEquals(new com.lodygames.rpgquest.building.model.PortalPassage(2, 1, 0, 4, 3, 2),
+                generator.preview(ARCH_PLAN).passage());
+        assertNull(generator.preview(LIBRARY_PLAN).passage());
+        // Un plan refusé hors des limites du projet garde le passage : on voit ce qui déborde.
+        BuildingGenerator.Examination tooBig = generator.preview(ARCH_PLAN, new PlanRepair.Limits(3, 3, 3));
+        assertFalse(tooBig.verdict().ok());
+        assertNotNull(tooBig.passage());
     }
 
     @Test

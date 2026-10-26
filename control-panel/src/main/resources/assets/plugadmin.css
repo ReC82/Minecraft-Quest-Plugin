@@ -1140,6 +1140,8 @@ tr.act-row a.act-label:hover, tr.act-row a.act-label:focus { text-decoration: un
   font-size: .85rem; }
 .ws-legend li { display: flex; align-items: center; gap: .35rem; }
 .ws-swatch { width: .9rem; height: .9rem; border-radius: 2px; flex: none; }
+.ws-passage { display: flex; align-items: flex-start; gap: .45rem; margin: 0 0 .5rem; overflow-wrap: anywhere; }
+.ws-passage .ws-swatch { margin-top: .2rem; }
 @media (max-width: 576px) { .ws-iso-controls label { width: 100%; } .ws-iso-controls select { flex: 1; } }
 
 /* ---- PNJ : parcours simple (issue #325) ------------------------------------------------- */

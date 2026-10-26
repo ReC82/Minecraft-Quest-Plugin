@@ -238,6 +238,9 @@ Un portail créé **depuis un emplacement** peut suivre l'**arche** qui y est po
    et la hauteur du **passage**. Le serveur relève le passage réel sur le plan (depuis l'ancre, au
    centre du passage) et refuse une arche dont le passage est bouché (`PORTAL_PASSAGE_MISSING`). La
    Bibliothèque garde le type et la **zone de passage** ; son filtre **Portails** les liste.
+   L'**aperçu du bâtiment** dessine ce passage — la future **zone de téléportation** — en volume
+   violet translucide, dans les quatre orientations, avec sa largeur, sa hauteur, sa profondeur et le
+   sens de la traversée ; un écart avec le passage demandé au projet est signalé.
 2. **Poser l'arche** sur l'emplacement du portail depuis la page **Emplacements** (aperçu, puis
    confirmation) — comme tout bâtiment. Poser une arche **n'active jamais** un portail.
 3. **Lier l'arche posée** (action `portal.building.link`, portail non actif) : la zone d'activation

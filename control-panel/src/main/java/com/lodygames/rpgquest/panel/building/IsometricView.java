@@ -97,6 +97,18 @@ public final class IsometricView {
      * @return le SVG, ou une chaîne vide si la grille est absente
      */
     public static String svg(BuildingVoxels voxels, int view, int maxLevel, String title) {
+        return svg(voxels, view, maxLevel, title, null);
+    }
+
+    /**
+     * Le SVG du bâtiment, avec le volume de passage d'une arche de portail (issue #568) dessiné
+     * par-dessus : contour pointillé et faces translucides violettes, comme un portail du Nether.
+     * Le volume est dessiné <em>devant</em> les blocs, volontairement : il est fait d'air, et c'est
+     * lui qu'on veut voir. Une coupe le tronque au même niveau que le bâtiment.
+     *
+     * @param passage le volume à montrer, ou {@code null}
+     */
+    public static String svg(BuildingVoxels voxels, int view, int maxLevel, String title, PassageVolume passage) {
         if (voxels == null || !voxels.present()) {
             return "";
         }
@@ -132,7 +144,41 @@ public final class IsometricView {
                 // compte), et masque les fins interstices que l'anticrénelage laisse entre deux faces
                 // voisines — d'un navigateur à l'autre, sinon, le bâtiment paraîtrait « fissuré ».
                 + "<g stroke=\"#000\" stroke-opacity=\".14\" stroke-width=\".35\" stroke-linejoin=\"round\">"
-                + paths + "</g></svg>";
+                + paths + "</g>" + passageOverlay(g, passage, top) + "</svg>";
+    }
+
+    /** Couleur du volume de passage : le violet d'un portail du Nether. */
+    public static final String PASSAGE_COLOR = "#a64dff";
+
+    private static String passageOverlay(Rotated g, PassageVolume passage, int top) {
+        if (passage == null || passage.minY() > top) {
+            return "";
+        }
+        int[] a = g.view(passage.minX(), passage.minZ());
+        int[] b = g.view(passage.maxX(), passage.maxZ());
+        double u0 = Math.min(a[0], b[0]);
+        double u1 = Math.max(a[0], b[0]) + 1;
+        double v0 = Math.min(a[1], b[1]);
+        double v1 = Math.max(a[1], b[1]) + 1;
+        double y0 = passage.minY();
+        double y1 = Math.min(passage.maxY(), top) + 1;
+        StringBuilder sb = new StringBuilder("<g class=\"iso-passage\" stroke=\"").append(PASSAGE_COLOR)
+                .append("\" stroke-width=\"1.2\" stroke-dasharray=\"3 2\" stroke-linejoin=\"round\">");
+        // Arêtes cachées d'abord (derrière, en pointillé léger), puis les trois faces visibles.
+        String hidden = " fill=\"none\" stroke-opacity=\".55\"";
+        line(sb, hidden, p(u0, y0, v0), p(u1, y0, v0));
+        line(sb, hidden, p(u0, y0, v0), p(u0, y0, v1));
+        line(sb, hidden, p(u0, y0, v0), p(u0, y1, v0));
+        String visible = " fill-opacity=\".28\"";
+        face(sb, PASSAGE_COLOR, visible, p(u0, y1, v0), p(u1, y1, v0), p(u1, y1, v1), p(u0, y1, v1));
+        face(sb, PASSAGE_COLOR, visible, p(u1, y0, v0), p(u1, y1, v0), p(u1, y1, v1), p(u1, y0, v1));
+        face(sb, PASSAGE_COLOR, visible, p(u0, y0, v1), p(u1, y0, v1), p(u1, y1, v1), p(u0, y1, v1));
+        return sb.append("</g>").toString();
+    }
+
+    private static void line(StringBuilder sb, String attrs, double[] from, double[] to) {
+        sb.append("<path d=\"M").append(num(from[0])).append(' ').append(num(from[1])).append('L')
+                .append(num(to[0])).append(' ').append(num(to[1])).append('"').append(attrs).append("/>");
     }
 
     /** Les matériaux présents, du plus employé au moins employé, avec leur couleur. */
@@ -377,6 +423,18 @@ public final class IsometricView {
                 case 2 -> new int[] {sx - 1 - u, sz - 1 - v};
                 case 3 -> new int[] {v, sz - 1 - u};
                 default -> new int[] {u, v};
+            };
+        }
+
+        /** La cellule {@code u, v} de la vue qui montre la colonne {@code x, z} du monde : l'inverse de {@link #world}. */
+        int[] view(int x, int z) {
+            int sx = voxels.sizeX();
+            int sz = voxels.sizeZ();
+            return switch (view) {
+                case 1 -> new int[] {z, sx - 1 - x};
+                case 2 -> new int[] {sx - 1 - x, sz - 1 - z};
+                case 3 -> new int[] {sz - 1 - z, x};
+                default -> new int[] {x, z};
             };
         }
 
